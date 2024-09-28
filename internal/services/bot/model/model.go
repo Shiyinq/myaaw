@@ -71,6 +71,7 @@ type TelegramIncommingChat struct {
 
 type TelegramTextMessage struct {
 	Text             string `json:"text"`
+	ParseMode        string `json:"parse_mode"`
 	ReplyToMessageID *int   `json:"reply_to_message_id"`
 	ChatID           int    `json:"chat_id"`
 }

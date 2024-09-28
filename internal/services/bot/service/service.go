@@ -50,6 +50,7 @@ func sendTelegramMessage(botToken string, text string, chatId int) (*model.Teleg
 
 	message := model.TelegramTextMessage{
 		Text:             text,
+		ParseMode:        "markdown",
 		ReplyToMessageID: nil,
 		ChatID:           chatId,
 	}
