@@ -70,8 +70,6 @@ func sendTelegramMessage(botToken string, text string, chatId int) (*model.Teleg
 	}
 
 	if resp.StatusCode() != 200 {
-		fmt.Println(url)
-		fmt.Println(resp)
 		return &response, errors.New("failed send to telegram")
 	}
 
