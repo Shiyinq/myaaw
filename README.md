@@ -11,6 +11,7 @@ Telegram Ollama Integration
   - [Deployment](#deployment)
   - [Telegram Bot Setup](#telegram-bot-setup)
     - [Setting the Webhook](#setting-the-webhook)
+      - [Public IP or Domain](#public-ip-or-domain)
       - [Localhost Setup](#localhost-setup)
       - [Setting the Webhook](#setting-the-webhook-1)
     - [Optional](#optional)
@@ -129,7 +130,7 @@ Wait a few minutes for the setup to complete. You can then access:
 ### Setting the Webhook
 After running the backend, either using Docker or manually, you need to set up the webhook with the Telegram API.
 
-**Public IP or Domain**
+#### Public IP or Domain
 
 If your server has a public IP or domain, you can directly set the webhook to Telegram using:
 
