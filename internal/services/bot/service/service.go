@@ -98,7 +98,14 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.OllamaRe
 		}
 	}
 
-	messages := user.Messages
+	messages := []model.Message{
+		{
+			Role:    "system",
+			Content: "You are Teo, a helpful assistant living in Telegram. Respond to users using Telegram's supported MarkdownV2 style.",
+		},
+	}
+
+	messages = append(messages, user.Messages...)
 	newMessage := model.Message{
 		Role:    "user",
 		Content: chat.Message.Text,
