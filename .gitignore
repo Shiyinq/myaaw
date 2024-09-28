@@ -1,0 +1,34 @@
+# Binary and build artifacts
+bin/
+build/
+*.exe
+*.out
+
+# Dependency directories
+vendor/
+
+# IDE and editor files
+.vscode/
+.idea/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+
+# System files
+.DS_Store
+Thumbs.db
+**/*.DS_Store
+
+# Environment variable files
+.env
+
+# Go build cache
+*.cache
+*.test
+*.exe
+*.out
+
+# air
+/tmp

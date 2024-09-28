@@ -1,0 +1,90 @@
+basePath: /
+definitions:
+  teo_internal_common.ErrorResponse:
+    properties:
+      error:
+        example: error message
+        type: string
+    type: object
+  teo_internal_services_bot_model.Chat:
+    properties:
+      first_name:
+        type: string
+      id:
+        type: integer
+      type:
+        type: string
+      username:
+        type: string
+    type: object
+  teo_internal_services_bot_model.From:
+    properties:
+      first_name:
+        type: string
+      id:
+        type: integer
+      is_bot:
+        type: boolean
+      language_code:
+        type: string
+      username:
+        type: string
+    type: object
+  teo_internal_services_bot_model.TelegramIncommingChat:
+    properties:
+      message:
+        $ref: '#/definitions/teo_internal_services_bot_model.UserMessage'
+      update_id:
+        type: integer
+    type: object
+  teo_internal_services_bot_model.UserMessage:
+    properties:
+      chat:
+        $ref: '#/definitions/teo_internal_services_bot_model.Chat'
+      date:
+        type: integer
+      from:
+        $ref: '#/definitions/teo_internal_services_bot_model.From'
+      message_id:
+        type: integer
+      text:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: TEO - Telegram Ollama Integration
+  title: TEO API
+  version: "1.0"
+paths:
+  /webhook:
+    post:
+      consumes:
+      - application/json
+      description: To receive incoming message from Telegram
+      parameters:
+      - description: Telegram incoming chat
+        in: body
+        name: book
+        required: true
+        schema:
+          $ref: '#/definitions/teo_internal_services_bot_model.TelegramIncommingChat'
+      produces:
+      - application/json
+      responses:
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/teo_internal_common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/teo_internal_common.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/teo_internal_common.ErrorResponse'
+      summary: Webhook
+      tags:
+      - Bot
+swagger: "2.0"
