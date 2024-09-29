@@ -16,13 +16,15 @@ func Protected(c *fiber.Ctx) error {
 		return utils.ErrorBadRequest(c, "Invalid JSON")
 	}
 
-	owner, err := strconv.Atoi(config.OwnerOnly)
-	if err != nil {
-		return utils.ErrorBadRequest(c, "Invalid owner id")
-	}
+	if config.OwnerOnly != "" {
+		owner, err := strconv.Atoi(config.OwnerOnly)
+		if err != nil {
+			return utils.ErrorBadRequest(c, "Invalid owner id")
+		}
 
-	if data.Message.From.Id != owner {
-		return utils.ErrorBadRequest(c, "Only the owner is allowed to chat")
+		if data.Message.From.Id != owner {
+			return utils.ErrorBadRequest(c, "Only the owner is allowed to chat")
+		}
 	}
 
 	return c.Next()
