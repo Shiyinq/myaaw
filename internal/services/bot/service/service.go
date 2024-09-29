@@ -11,7 +11,9 @@ import (
 )
 
 type BotService interface {
+	checkUser(chat *model.TelegramIncommingChat) (*model.User, error)
 	Bot(chat *model.TelegramIncommingChat) (*model.OllamaResponse, error)
+	conversation(user *model.User, chat *model.TelegramIncommingChat) (*model.OllamaResponse, error)
 }
 
 type BotServiceImpl struct {
@@ -22,7 +24,7 @@ func NewBotService(userRepo repository.UserRepository) BotService {
 	return &BotServiceImpl{userRepo: userRepo}
 }
 
-func ollamaChat(messages []model.Message) (*model.OllamaResponse, error) {
+func ollama(messages []model.Message) (*model.OllamaResponse, error) {
 	client := resty.New()
 
 	request := model.OllamaRequest{
@@ -76,7 +78,7 @@ func sendTelegramMessage(text string, chatId int) (*model.TelegramSendMessageSta
 	return &response, nil
 }
 
-func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.OllamaResponse, error) {
+func (r *BotServiceImpl) checkUser(chat *model.TelegramIncommingChat) (*model.User, error) {
 	var user *model.User
 	var err error
 	user, err = r.userRepo.GetUserById(chat.Message.From.Id)
@@ -96,6 +98,10 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.OllamaRe
 		}
 	}
 
+	return user, nil
+}
+
+func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramIncommingChat) (*model.OllamaResponse, error) {
 	messages := []model.Message{
 		{
 			Role:    "system",
@@ -110,7 +116,7 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.OllamaRe
 	}
 	messages = append(messages, newMessage)
 
-	res, err := ollamaChat(messages)
+	res, err := ollama(messages)
 
 	if err != nil {
 		return nil, err
@@ -124,15 +130,24 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.OllamaRe
 		return nil, err
 	}
 
-	send, err := sendTelegramMessage(res.Message.Content, chat.Message.From.Id)
+	return res, nil
+}
 
+func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.OllamaResponse, error) {
+	user, err := r.checkUser(chat)
 	if err != nil {
 		return nil, err
 	}
 
-	if !send.Ok {
+	conv, err := r.conversation(user, chat)
+	if err != nil {
 		return nil, err
 	}
 
-	return res, nil
+	send, err := sendTelegramMessage(conv.Message.Content, chat.Message.From.Id)
+	if err != nil || !send.Ok {
+		return nil, err
+	}
+
+	return conv, nil
 }
