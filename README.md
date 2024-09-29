@@ -103,17 +103,8 @@ cd noto
 ```
 
 **2. Create Environment Files**
-
-For the backend:
 ```sh
 cp .env.example .env
-```
-
-For the frontend:
-```sh
-cd cmd/client
-cp .env.example .env
-cd ../../
 ```
 
 Open each `.env` file you have created and update the values as needed.
