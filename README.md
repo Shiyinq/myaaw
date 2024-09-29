@@ -1,4 +1,8 @@
 # TEO
+
+| ![Conversations 1](docs/images/conversations-1.png) | ![Conversations 2](docs/images/conversations-2.png) | ![Conversations 3](docs/images/conversations-3.png) | ![Conversations 4](docs/images/conversations-4.png) |
+|:---:|:---:|:---:|:---:|
+
 Telegram Ollama Integration
 
 # Table of Contents
