@@ -130,7 +130,7 @@ https://yourdomain.com/webhook
 ```
 
 #### Localhost Setup
-If you are running the backend locally, you need to use a tool like `ngrok` to expose your local server to the internet. You can run the following command:
+If you are running the backend locally, you need to use a tool like [ngrok](https://ngrok.com) to expose your local server to the internet. You can run the following command:
 
 ```
 ngrok http 8080
