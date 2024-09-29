@@ -45,7 +45,7 @@ func ollamaChat(messages []model.Message) (*model.OllamaResponse, error) {
 	return &response, nil
 }
 
-func sendTelegramMessage(botToken string, text string, chatId int) (*model.TelegramSendMessageStatus, error) {
+func sendTelegramMessage(text string, chatId int) (*model.TelegramSendMessageStatus, error) {
 	client := resty.New()
 
 	message := model.TelegramTextMessage{
@@ -55,7 +55,7 @@ func sendTelegramMessage(botToken string, text string, chatId int) (*model.Teleg
 		ChatID:           chatId,
 	}
 
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", config.BotToken)
 
 	var response model.TelegramSendMessageStatus
 	resp, err := client.R().
@@ -124,7 +124,7 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.OllamaRe
 		return nil, err
 	}
 
-	send, err := sendTelegramMessage(config.BotToken, res.Message.Content, chat.Message.From.Id)
+	send, err := sendTelegramMessage(res.Message.Content, chat.Message.From.Id)
 
 	if err != nil {
 		return nil, err
