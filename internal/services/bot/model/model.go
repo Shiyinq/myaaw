@@ -35,6 +35,8 @@ type User struct {
 	Id        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	UserId    int                `json:"user_id" bson:"userId"`
 	Name      string             `json:"name" bson:"name"`
+	System    string             `json:"system" bson:"system"`
+	Model     string             `json:"model" bson:"model"`
 	Messages  []Message          `json:"messages" bson:"messages"`
 	CreatedAt time.Time          `json:"created_at" bson:"createdAt"`
 	UpdatedAt time.Time          `json:"updated_at" bson:"updatedAt"`

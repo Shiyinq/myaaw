@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"teo/internal/common"
 	"teo/internal/services/bot/model"
 	"time"
 
@@ -38,6 +39,8 @@ func (r *UserRepositoryImpl) GetUserById(userId int) (*model.User, error) {
 }
 
 func (r *UserRepositoryImpl) CreateUser(user *model.User) (*model.User, error) {
+	user.System = common.RoleSystemDefault()
+	user.Model = common.ModelDefault()
 	user.CreatedAt = time.Now()
 	user.UpdatedAt = time.Now()
 
