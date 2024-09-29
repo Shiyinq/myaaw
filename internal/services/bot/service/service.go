@@ -12,7 +12,8 @@ import (
 
 type BotService interface {
 	checkUser(chat *model.TelegramIncommingChat) (*model.User, error)
-	Bot(chat *model.TelegramIncommingChat) (*model.OllamaResponse, error)
+	Bot(chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error)
+	command(chat *model.TelegramIncommingChat) (bool, string, error)
 	conversation(user *model.User, chat *model.TelegramIncommingChat) (*model.OllamaResponse, error)
 }
 
@@ -101,6 +102,25 @@ func (r *BotServiceImpl) checkUser(chat *model.TelegramIncommingChat) (*model.Us
 	return user, nil
 }
 
+func (r *BotServiceImpl) command(chat *model.TelegramIncommingChat) (bool, string, error) {
+	commandText := chat.Message.Text
+
+	if len(commandText) == 0 || commandText[0] != '/' {
+		return false, "", nil
+	}
+
+	command := commandText[1:]
+
+	switch command {
+	case "start":
+		return true, "Welcome! I’m Teo your personal assistant.\nHere are some commands to configure me:\n\n- **/start** - Welcome message and menu display\n- **/system <prompt>** - Set the system prompt\n- **/models** - Change the LLM model\n- **/reset** - Reset the history context windows\n- **/about** - Info about Teo project\n\nYou can interact using natural language without needing to set commands first.", nil
+	case "about":
+		return true, "Feel free to contribute to the project!\nhttps://github.com/Shiyinq/teo", nil
+	default:
+		return false, "", nil
+	}
+}
+
 func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramIncommingChat) (*model.OllamaResponse, error) {
 	messages := []model.Message{
 		{
@@ -133,21 +153,32 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 	return res, nil
 }
 
-func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.OllamaResponse, error) {
+func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error) {
+	var command bool
+	var response string
+
 	user, err := r.checkUser(chat)
 	if err != nil {
 		return nil, err
 	}
 
-	conv, err := r.conversation(user, chat)
+	command, response, err = r.command(chat)
 	if err != nil {
 		return nil, err
 	}
 
-	send, err := sendTelegramMessage(conv.Message.Content, chat.Message.From.Id)
+	if !command {
+		conv, err := r.conversation(user, chat)
+		if err != nil {
+			return nil, err
+		}
+		response = conv.Message.Content
+	}
+
+	send, err := sendTelegramMessage(response, chat.Message.From.Id)
 	if err != nil || !send.Ok {
 		return nil, err
 	}
 
-	return conv, nil
+	return send, nil
 }
