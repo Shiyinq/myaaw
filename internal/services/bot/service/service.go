@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"teo/internal/common"
 	"teo/internal/config"
 	"teo/internal/services/bot/model"
 	"teo/internal/services/bot/repository"
@@ -113,9 +114,9 @@ func (r *BotServiceImpl) command(chat *model.TelegramIncommingChat) (bool, strin
 
 	switch command {
 	case "start":
-		return true, "Welcome! I’m Teo your personal assistant.\nHere are some commands to configure me:\n\n- **/start** - Welcome message and menu display\n- **/system <prompt>** - Set the system prompt\n- **/models** - Change the LLM model\n- **/reset** - Reset the history context windows\n- **/about** - Info about Teo project\n\nYou can interact using natural language without needing to set commands first.", nil
+		return true, common.CommandStart(), nil
 	case "about":
-		return true, "Feel free to contribute to the project!\nhttps://github.com/Shiyinq/teo", nil
+		return true, common.CommandAbout(), nil
 	default:
 		return false, "", nil
 	}
@@ -125,7 +126,7 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 	messages := []model.Message{
 		{
 			Role:    "system",
-			Content: "You are Teo, a helpful assistant living in Telegram. Respond to users using Telegram's supported MarkdownV2 style.",
+			Content: common.RoleSystemDefault(),
 		},
 	}
 
