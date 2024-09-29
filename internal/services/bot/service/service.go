@@ -26,11 +26,11 @@ func NewBotService(userRepo repository.UserRepository) BotService {
 	return &BotServiceImpl{userRepo: userRepo}
 }
 
-func ollama(messages []model.Message) (*model.OllamaResponse, error) {
+func ollama(modelName string, messages []model.Message) (*model.OllamaResponse, error) {
 	client := resty.New()
 
 	request := model.OllamaRequest{
-		Model:    config.OllamaDefaultModel,
+		Model:    modelName,
 		Stream:   false,
 		Messages: messages,
 	}
@@ -126,7 +126,7 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 	messages := []model.Message{
 		{
 			Role:    "system",
-			Content: common.RoleSystemDefault(),
+			Content: user.System,
 		},
 	}
 
@@ -137,14 +137,14 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 	}
 	messages = append(messages, newMessage)
 
-	res, err := ollama(messages)
+	res, err := ollama(user.Model, messages)
 
 	if err != nil {
 		return nil, err
 	}
 
 	messages = append(messages, res.Message)
-
+	messages = messages[1:]
 	updateError := r.userRepo.UpdateMessages(chat.Message.From.Id, &messages)
 
 	if updateError != nil {
