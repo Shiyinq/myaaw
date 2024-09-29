@@ -19,6 +19,7 @@ var DB *mongo.Database
 var BotToken string
 var OllamaDefaultModel string
 var OllamaBaseUrl string
+var OwnerOnly string
 
 func envPath() string {
 	_, b, _, _ := runtime.Caller(0)
@@ -42,6 +43,7 @@ func LoadConfig() {
 	BotToken = os.Getenv("BOT_TOKEN")
 	OllamaDefaultModel = os.Getenv("OLLAMA_DEFAULT_MODEL")
 	OllamaBaseUrl = os.Getenv("OLLAMA_BASE_URL")
+	OwnerOnly = os.Getenv("OWNER_ONLY")
 
 	if AllowedOrigins == "" {
 		AllowedOrigins = "*"
