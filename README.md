@@ -17,6 +17,7 @@ Telegram Ollama Integration
     - [Setting the Webhook](#setting-the-webhook)
       - [Public IP or Domain](#public-ip-or-domain)
       - [Localhost Setup](#localhost-setup)
+      - [Bot Token](#bot-token)
       - [Setting the Webhook](#setting-the-webhook-1)
     - [Optional](#optional)
       - [Get Webhook Info](#get-webhook-info)
@@ -145,6 +146,8 @@ This will generate a public URL, and your webhook will look something like this:
 ```
 https://9e64-114-124-182-000.ngrok-free.app/webhook
 ```
+#### Bot Token
+You can obtain a bot token from [BotFather](https://t.me/BotFather).
 
 #### Setting the Webhook
 To set the webhook with Telegram, use the following API endpoint:
