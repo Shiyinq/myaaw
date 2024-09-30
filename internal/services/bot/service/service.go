@@ -50,10 +50,10 @@ func ollama(modelName string, messages []model.Message) (*model.OllamaResponse, 
 	return &response, nil
 }
 
-func sendTelegramMessage(text string, chatId int) (*model.TelegramSendMessageStatus, error) {
+func sendTelegramMessage(chatId int, text string) (*model.TelegramSendMessageStatus, error) {
 	client := resty.New()
 
-	message := model.TelegramTextMessage{
+	message := model.TelegramSendMessage{
 		Text:             text,
 		ParseMode:        "markdown",
 		ReplyToMessageID: nil,
@@ -189,7 +189,7 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.Telegram
 		response = conv.Message.Content
 	}
 
-	send, err := sendTelegramMessage(response, chat.Message.From.Id)
+	send, err := sendTelegramMessage(chat.Message.From.Id, response)
 	if err != nil || !send.Ok {
 		return nil, err
 	}

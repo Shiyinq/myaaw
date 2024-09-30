@@ -71,7 +71,7 @@ type TelegramIncommingChat struct {
 	UpdateId int64       `json:"update_id"`
 }
 
-type TelegramTextMessage struct {
+type TelegramSendMessage struct {
 	Text             string `json:"text"`
 	ParseMode        string `json:"parse_mode"`
 	ReplyToMessageID *int   `json:"reply_to_message_id"`
