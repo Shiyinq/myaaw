@@ -17,3 +17,23 @@ func CommandStart() string {
 func CommandAbout() string {
 	return "Feel free to contribute to the project!\nhttps://github.com/Shiyinq/teo"
 }
+
+func CommandReset() string {
+	return "History and context window have been reset."
+}
+
+func CommandResetFailed() string {
+	return "Failed to reset history and context window. Please try again later."
+}
+
+func CommandSystem() string {
+	return "System prompt has been updated successfully."
+}
+
+func CommandSystemNeedArgs() string {
+	return "Please provide a prompt after the command.\nExample:\n/system You are a helpful assistant."
+}
+
+func CommandSystemFailed() string {
+	return "Failed to update the system prompt. Please try again later."
+}

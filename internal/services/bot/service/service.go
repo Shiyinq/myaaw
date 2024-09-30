@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"teo/internal/common"
 	"teo/internal/config"
 	"teo/internal/services/bot/model"
@@ -14,7 +15,7 @@ import (
 type BotService interface {
 	checkUser(chat *model.TelegramIncommingChat) (*model.User, error)
 	Bot(chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error)
-	command(chat *model.TelegramIncommingChat) (bool, string, error)
+	command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error)
 	conversation(user *model.User, chat *model.TelegramIncommingChat) (*model.OllamaResponse, error)
 }
 
@@ -103,7 +104,7 @@ func (r *BotServiceImpl) checkUser(chat *model.TelegramIncommingChat) (*model.Us
 	return user, nil
 }
 
-func (r *BotServiceImpl) command(chat *model.TelegramIncommingChat) (bool, string, error) {
+func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error) {
 	commandText := chat.Message.Text
 
 	if len(commandText) == 0 || commandText[0] != '/' {
@@ -112,11 +113,33 @@ func (r *BotServiceImpl) command(chat *model.TelegramIncommingChat) (bool, strin
 
 	command := commandText[1:]
 
+	parts := strings.SplitN(command, " ", 2)
+	command = parts[0]
+	var commandArgs string
+	if len(parts) > 1 {
+		commandArgs = strings.TrimSpace(parts[1])
+	}
+
 	switch command {
 	case "start":
 		return true, common.CommandStart(), nil
 	case "about":
 		return true, common.CommandAbout(), nil
+	case "system":
+		if commandArgs == "" {
+			return true, common.CommandSystemNeedArgs(), nil
+		}
+		err := r.userRepo.UpdateSystem(chat.Message.From.Id, commandArgs)
+		if err != nil {
+			return true, common.CommandSystemFailed(), nil
+		}
+		return true, common.CommandSystem(), nil
+	case "reset":
+		err := r.userRepo.UpdateMessages(chat.Message.From.Id, &[]model.Message{})
+		if err != nil {
+			return true, common.CommandResetFailed(), nil
+		}
+		return true, common.CommandReset(), nil
 	default:
 		return false, "", nil
 	}
@@ -163,7 +186,7 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.Telegram
 		return nil, err
 	}
 
-	command, response, err = r.command(chat)
+	command, response, err = r.command(user, chat)
 	if err != nil {
 		return nil, err
 	}
