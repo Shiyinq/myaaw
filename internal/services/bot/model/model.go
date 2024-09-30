@@ -31,6 +31,15 @@ type OllamaResponse struct {
 	EvalDuration       int64     `json:"eval_duration"`
 }
 
+type OllamaModels struct {
+	Name  string `json:"name"`
+	Model string `json:"model"`
+}
+
+type OllamaTagsResponse struct {
+	Models []OllamaModels `json:"models"`
+}
+
 type User struct {
 	Id        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	UserId    int                `json:"user_id" bson:"userId"`

@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"teo/internal/common"
 	"teo/internal/config"
 	"teo/internal/services/bot/model"
@@ -42,6 +43,22 @@ func ollama(modelName string, messages []model.Message) (*model.OllamaResponse, 
 		SetBody(request).
 		SetResult(&response).
 		Post(config.OllamaBaseUrl + "/api/chat")
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &response, nil
+}
+
+func ollamaTags() (*model.OllamaTagsResponse, error) {
+	client := resty.New()
+
+	var response model.OllamaTagsResponse
+	_, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetResult(&response).
+		Get(config.OllamaBaseUrl + "/api/tags")
 
 	if err != nil {
 		return nil, err
@@ -130,6 +147,31 @@ func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncomming
 			return true, common.CommandResetFailed(), nil
 		}
 		return true, common.CommandReset(), nil
+	case "models":
+		if commandArgs == "" {
+			models, err := ollamaTags()
+			if err != nil {
+				return true, common.CommandModelsFailed(), nil
+			}
+			return true, utils.ListModels(*models), nil
+		}
+
+		models, err := ollamaTags()
+		if err != nil {
+			return true, common.CommandModelsFailed(), nil
+		}
+
+		idModel, err := strconv.Atoi(commandArgs)
+		if err != nil {
+			return true, common.CommandModelsArgsNotInt(), nil
+		}
+
+		err = r.userRepo.UpdateModel(chat.Message.From.Id, models.Models[idModel].Model)
+		if err != nil {
+			return true, common.CommandModelsUpdateFailed(), nil
+		}
+
+		return true, common.CommandModels(), nil
 	default:
 		return true, common.CommandNotFound(command), nil
 	}

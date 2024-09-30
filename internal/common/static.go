@@ -44,3 +44,19 @@ func CommandSystemFailed() string {
 func CommandNotFound(command string) string {
 	return fmt.Sprintf("Command /%s not found.", command)
 }
+
+func CommandModels() string {
+	return "Model has been updated successfully."
+}
+
+func CommandModelsFailed() string {
+	return "Failed to show models. Please try again later."
+}
+
+func CommandModelsArgsNotInt() string {
+	return "The model ID must be an integer. Example: /models 2"
+}
+
+func CommandModelsUpdateFailed() string {
+	return "Failed to update the model. Please try again later."
+}

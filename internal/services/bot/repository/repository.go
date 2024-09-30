@@ -17,6 +17,7 @@ type UserRepository interface {
 	updateUserField(userId int, fields bson.M) error
 	UpdateMessages(userID int, messges *[]model.Message) error
 	UpdateSystem(userID int, system string) error
+	UpdateModel(userId int, model string) error
 }
 
 type UserRepositoryImpl struct {
@@ -83,6 +84,14 @@ func (r *UserRepositoryImpl) UpdateMessages(userId int, messages *[]model.Messag
 func (r *UserRepositoryImpl) UpdateSystem(userId int, system string) error {
 	fields := bson.M{
 		"system":    system,
+		"updatedAt": time.Now(),
+	}
+	return r.updateUserField(userId, fields)
+}
+
+func (r *UserRepositoryImpl) UpdateModel(userId int, model string) error {
+	fields := bson.M{
+		"model":     model,
 		"updatedAt": time.Now(),
 	}
 	return r.updateUserField(userId, fields)
