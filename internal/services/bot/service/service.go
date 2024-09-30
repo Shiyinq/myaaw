@@ -3,11 +3,11 @@ package service
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"teo/internal/common"
 	"teo/internal/config"
 	"teo/internal/services/bot/model"
 	"teo/internal/services/bot/repository"
+	"teo/internal/utils"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -105,19 +105,9 @@ func (r *BotServiceImpl) checkUser(chat *model.TelegramIncommingChat) (*model.Us
 }
 
 func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error) {
-	commandText := chat.Message.Text
-
-	if len(commandText) == 0 || commandText[0] != '/' {
+	isCommand, command, commandArgs := utils.ParseCommand(chat.Message.Text)
+	if !isCommand {
 		return false, "", nil
-	}
-
-	command := commandText[1:]
-
-	parts := strings.SplitN(command, " ", 2)
-	command = parts[0]
-	var commandArgs string
-	if len(parts) > 1 {
-		commandArgs = strings.TrimSpace(parts[1])
 	}
 
 	switch command {
