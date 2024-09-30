@@ -15,6 +15,7 @@ type UserRepository interface {
 	CreateUser(user *model.User) (*model.User, error)
 	GetUserById(userId int) (*model.User, error)
 	UpdateMessages(userID int, messges *[]model.Message) error
+	UpdateSystem(userID int, system string) error
 }
 
 type UserRepositoryImpl struct {
@@ -62,6 +63,17 @@ func (r *UserRepositoryImpl) CreateUser(user *model.User) (*model.User, error) {
 func (r *UserRepositoryImpl) UpdateMessages(userId int, messages *[]model.Message) error {
 	var query = bson.M{"userId": userId}
 	var update = bson.M{"$set": bson.M{"messages": messages, "updatedAt": time.Now()}}
+	_, err := r.users.UpdateOne(context.Background(), query, update)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *UserRepositoryImpl) UpdateSystem(userId int, system string) error {
+	var query = bson.M{"userId": userId}
+	var update = bson.M{"$set": bson.M{"system": system, "updatedAt": time.Now()}}
 	_, err := r.users.UpdateOne(context.Background(), query, update)
 	if err != nil {
 		return err
