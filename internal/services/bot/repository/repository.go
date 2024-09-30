@@ -15,8 +15,8 @@ type UserRepository interface {
 	CreateUser(user *model.User) (*model.User, error)
 	GetUserById(userId int) (*model.User, error)
 	updateUserField(userId int, fields bson.M) error
-	UpdateMessages(userID int, messges *[]model.Message) error
-	UpdateSystem(userID int, system string) error
+	UpdateMessages(userId int, messges *[]model.Message) error
+	UpdateSystem(userId int, system string) error
 	UpdateModel(userId int, model string) error
 }
 
