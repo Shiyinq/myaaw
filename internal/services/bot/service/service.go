@@ -131,7 +131,7 @@ func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncomming
 		}
 		return true, common.CommandReset(), nil
 	default:
-		return false, "", nil
+		return true, common.CommandNotFound(command), nil
 	}
 }
 
