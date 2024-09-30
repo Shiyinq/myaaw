@@ -14,6 +14,7 @@ import (
 type UserRepository interface {
 	CreateUser(user *model.User) (*model.User, error)
 	GetUserById(userId int) (*model.User, error)
+	updateUserField(userId int, fields bson.M) error
 	UpdateMessages(userID int, messges *[]model.Message) error
 	UpdateSystem(userID int, system string) error
 }
@@ -60,9 +61,9 @@ func (r *UserRepositoryImpl) CreateUser(user *model.User) (*model.User, error) {
 	return currentUser, nil
 }
 
-func (r *UserRepositoryImpl) UpdateMessages(userId int, messages *[]model.Message) error {
-	var query = bson.M{"userId": userId}
-	var update = bson.M{"$set": bson.M{"messages": messages, "updatedAt": time.Now()}}
+func (r *UserRepositoryImpl) updateUserField(userId int, fields bson.M) error {
+	query := bson.M{"userId": userId}
+	update := bson.M{"$set": fields}
 	_, err := r.users.UpdateOne(context.Background(), query, update)
 	if err != nil {
 		return err
@@ -71,13 +72,18 @@ func (r *UserRepositoryImpl) UpdateMessages(userId int, messages *[]model.Messag
 	return nil
 }
 
-func (r *UserRepositoryImpl) UpdateSystem(userId int, system string) error {
-	var query = bson.M{"userId": userId}
-	var update = bson.M{"$set": bson.M{"system": system, "updatedAt": time.Now()}}
-	_, err := r.users.UpdateOne(context.Background(), query, update)
-	if err != nil {
-		return err
+func (r *UserRepositoryImpl) UpdateMessages(userId int, messages *[]model.Message) error {
+	fields := bson.M{
+		"messages":  messages,
+		"updatedAt": time.Now(),
 	}
+	return r.updateUserField(userId, fields)
+}
 
-	return nil
+func (r *UserRepositoryImpl) UpdateSystem(userId int, system string) error {
+	fields := bson.M{
+		"system":    system,
+		"updatedAt": time.Now(),
+	}
+	return r.updateUserField(userId, fields)
 }
