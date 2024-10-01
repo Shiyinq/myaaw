@@ -13,7 +13,7 @@ func Protected(c *fiber.Ctx) error {
 	data := new(model.TelegramIncommingChat)
 
 	if err := c.BodyParser(&data); err != nil {
-		return utils.ErrorBadRequest(c, "Invalid JSON")
+		return c.Next()
 	}
 
 	if config.OwnerOnly != "" {
