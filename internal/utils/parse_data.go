@@ -16,7 +16,7 @@ func ListModels(user model.User, response model.OllamaTagsResponse) string {
 		}
 		result.WriteString(fmt.Sprintf("%d - %s%s\n", i, model.Name, status))
 	}
-	result.WriteString("\n\nUsage: /models <number>\nexample: /models 0")
+	result.WriteString("\n\nUsage: /models <number>\nExample: /models 0")
 	return result.String()
 }
 
