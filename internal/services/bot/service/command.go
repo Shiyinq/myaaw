@@ -26,14 +26,14 @@ func (r *BotServiceImpl) handleResetCommand(chat *model.TelegramIncommingChat) (
 	return true, common.CommandReset(), nil
 }
 
-func (r *BotServiceImpl) handleModelsCommand(chat *model.TelegramIncommingChat, args string) (bool, string, error) {
+func (r *BotServiceImpl) handleModelsCommand(user *model.User, chat *model.TelegramIncommingChat, args string) (bool, string, error) {
 	models, err := ollamaTags()
 	if err != nil {
 		return true, common.CommandModelsFailed(), nil
 	}
 
 	if args == "" {
-		return true, utils.ListModels(*models), nil
+		return true, utils.ListModels(*user, *models), nil
 	}
 
 	idModel, err := strconv.Atoi(args)
@@ -74,7 +74,7 @@ func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncomming
 	case "reset":
 		return r.handleResetCommand(chat)
 	case "models":
-		return r.handleModelsCommand(chat, commandArgs)
+		return r.handleModelsCommand(user, chat, commandArgs)
 	case "me":
 		return r.handleMeCommand(chat)
 	default:
