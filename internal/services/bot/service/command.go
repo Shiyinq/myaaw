@@ -49,6 +49,15 @@ func (r *BotServiceImpl) handleModelsCommand(chat *model.TelegramIncommingChat, 
 	return true, common.CommandModels(), nil
 }
 
+func (r *BotServiceImpl) handleMeCommand(chat *model.TelegramIncommingChat) (bool, string, error) {
+	me, err := r.userRepo.GetUserById(chat.Message.From.Id)
+	if err != nil {
+		return true, common.CommandMeFailed(), nil
+	}
+
+	return true, utils.CommandMe(me), nil
+}
+
 func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error) {
 	isCommand, command, commandArgs := utils.ParseCommand(chat.Message.Text)
 	if !isCommand {
@@ -66,6 +75,8 @@ func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncomming
 		return r.handleResetCommand(chat)
 	case "models":
 		return r.handleModelsCommand(chat, commandArgs)
+	case "me":
+		return r.handleMeCommand(chat)
 	default:
 		return true, common.CommandNotFound(command), nil
 	}

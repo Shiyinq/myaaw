@@ -14,7 +14,7 @@ func ModelDefault() string {
 }
 
 func CommandStart() string {
-	return "Welcome! I’m Teo your personal assistant.\nHere are some commands to configure me:\n\n**/start** - Welcome message and menu display\n**/system <prompt>** - Set the system prompt\n**/models** - Change the LLM model\n**/reset** - Reset the history context windows\n**/about** - Info about Teo project\n\nYou can interact using natural language without needing to set commands first."
+	return "Welcome! I’m Teo your personal assistant.\nHere are some commands to configure me:\n\n**/start** - Welcome message and menu display\n**/me** - About me and show current config\n**/system <prompt>** - Set the system prompt\n**/models** - Change the LLM model\n**/reset** - Reset the history context windows\n**/about** - Info about Teo project\n\nYou can interact using natural language without needing to set commands first."
 }
 
 func CommandAbout() string {
@@ -59,4 +59,8 @@ func CommandModelsArgsNotInt() string {
 
 func CommandModelsUpdateFailed() string {
 	return "Failed to update the model. Please try again later."
+}
+
+func CommandMeFailed() string {
+	return "Failed to show info about me. Please try again later."
 }
