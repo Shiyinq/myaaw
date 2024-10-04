@@ -99,6 +99,30 @@ func GetOllamaTagsFromRedis(rd *redis.Client) (*model.OllamaTagsResponse, error)
 	return &tags, nil
 }
 
+func SetChattingStatus(rd *redis.Client, userId int) error {
+	cacheKey := strconv.Itoa(userId) + "_chatting"
+	expiration := 2 * time.Minute
+	err := rd.Set(context.Background(), cacheKey, true, expiration).Err()
+	if err != nil {
+		return fmt.Errorf("error setting chatting status in Redis: %w", err)
+	}
+	fmt.Println("save chatting status to redis")
+	return nil
+}
+
+func IsUserChatting(rd *redis.Client, userId int) (bool, error) {
+	cacheKey := strconv.Itoa(userId) + "_chatting"
+	_, err := rd.Get(context.Background(), cacheKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return false, nil
+		}
+		return false, fmt.Errorf("error retrieving chatting status from Redis: %w", err)
+	}
+	fmt.Println("user is temporarily blocked from chatting")
+	return true, nil
+}
+
 func DeleteDataFromRedis(rd *redis.Client, cacheKey string) error {
 	err := rd.Del(context.Background(), cacheKey).Err()
 	if err != nil {
