@@ -60,7 +60,3 @@ func CommandModelsArgsNotInt() string {
 func CommandModelsUpdateFailed() string {
 	return "❌ Failed to update the model. Please try again later."
 }
-
-func CommandMeFailed() string {
-	return "❌ Failed to show info about me. Please try again later."
-}
