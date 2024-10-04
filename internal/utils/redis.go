@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"teo/internal/services/bot/model"
 	"time"
 
@@ -32,7 +33,7 @@ func SaveUserToRedis(rd *redis.Client, user *model.User) error {
 		return err
 	}
 
-	cacheKey := string(user.UserId)
+	cacheKey := strconv.Itoa(user.UserId)
 	expiration := 24 * time.Hour
 	err = rd.Set(context.Background(), cacheKey, userData, expiration).Err()
 	if err != nil {
@@ -43,7 +44,7 @@ func SaveUserToRedis(rd *redis.Client, user *model.User) error {
 }
 
 func GetUserFromRedis(rd *redis.Client, userId int) (*model.User, error) {
-	cacheKey := string(userId)
+	cacheKey := strconv.Itoa(userId)
 	cachedData, err := rd.Get(context.Background(), cacheKey).Result()
 	if err != nil {
 		if err == redis.Nil {
