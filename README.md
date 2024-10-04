@@ -8,8 +8,11 @@ Telegram Ollama Integration
 # Table of Contents
 - [TEO](#teo)
 - [Table of Contents](#table-of-contents)
-  - [Install Ollama](#install-ollama)
   - [Development](#development)
+    - [Prerequisites](#prerequisites)
+      - [Ollama](#ollama)
+      - [Redis](#redis)
+      - [MongoDB](#mongodb)
     - [Running Local Server](#running-local-server)
     - [Generate Swagger Documentation](#generate-swagger-documentation)
   - [Deployment](#deployment)
@@ -24,19 +27,68 @@ Telegram Ollama Integration
       - [Delete Webhook](#delete-webhook)
 
 
-## Install Ollama
+## Development
+
+### Prerequisites
+
+Before development process, ensure you have the following installed:
+
+#### Ollama
+
 Ensure you have Ollama installed by following the instructions in the official repository [Ollama GitHub](https://github.com/ollama/ollama?tab=readme-ov-file#ollama).
 
-Additionally, you need to have at least one model installed. 
+Additionally, you need to have at least one model installed.
 
-The default model specified in the `.env` file is `qwen2.5:1.5b-instruct`. 
+The default model specified in the `.env `file is `qwen2.5:1.5b-instruct`.
 
 To install it, run the following command in your terminal:
+
 ```
 ollama pull qwen2.5:1.5b-instruct
 ```
+Ensure the model is downloaded:
 
-## Development
+```
+ollama ls
+```
+
+#### Redis
+
+It is recommended to use Docker to install Redis. If you haven’t installed Docker yet, you can follow the official Docker installation guide.
+
+To install Redis using Docker, run the following command:
+
+```
+docker pull redis
+```
+Then, start Redis with:
+
+```
+docker run --name redis-server -d -p 6379:6379 redis
+```
+Ensure Redis is running by checking with:
+
+```
+docker ps
+```
+
+#### MongoDB
+
+Similarly, use Docker to install MongoDB. Run the following command to pull the MongoDB image:
+```
+docker pull mongo
+```
+Start MongoDB with:
+
+```
+docker run --name mongodb-server -p 27017:27017 -v mongodb-data:/data/db -d mongo
+```
+
+Ensure MongoDB is running by checking with:
+```
+docker ps
+```
+
 ### Running Local Server
 1. **Clone the Repository**
    ```sh
