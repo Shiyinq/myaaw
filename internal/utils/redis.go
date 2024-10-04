@@ -63,6 +63,42 @@ func GetUserFromRedis(rd *redis.Client, userId int) (*model.User, error) {
 	return &user, nil
 }
 
+func SaveOllamaTagsToRedis(rd *redis.Client, tags *model.OllamaTagsResponse) error {
+	tagsData, err := json.Marshal(tags)
+	if err != nil {
+		return fmt.Errorf("error serializing ollama tags: %w", err)
+	}
+
+	cacheKey := "ollama_tags"
+	expiration := 24 * time.Hour
+	err = rd.Set(context.Background(), cacheKey, tagsData, expiration).Err()
+	if err != nil {
+		return fmt.Errorf("error saving ollama tags to Redis: %w", err)
+	}
+	fmt.Println("save ollama tags data to redis")
+	return nil
+}
+
+func GetOllamaTagsFromRedis(rd *redis.Client) (*model.OllamaTagsResponse, error) {
+	cacheKey := "ollama_tags"
+	cachedData, err := rd.Get(context.Background(), cacheKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error getting ollama tags from Redis: %w", err)
+	}
+
+	var tags model.OllamaTagsResponse
+	err = json.Unmarshal([]byte(cachedData), &tags)
+	if err != nil {
+		return nil, fmt.Errorf("error deserializing ollama tags: %w", err)
+	}
+
+	fmt.Println("ollama tags data from redis")
+	return &tags, nil
+}
+
 func DeleteDataFromRedis(rd *redis.Client, cacheKey string) error {
 	err := rd.Del(context.Background(), cacheKey).Err()
 	if err != nil {
