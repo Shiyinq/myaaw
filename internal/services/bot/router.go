@@ -11,7 +11,7 @@ import (
 
 func BotRouter(router fiber.Router) {
 
-	repo := repository.NewBotRepository(config.DB)
+	repo := repository.NewBotRepository(config.DB, config.RedisClient)
 	serv := service.NewBotService(repo)
 	hand := handler.NewBotHandler(serv)
 

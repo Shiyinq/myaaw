@@ -2,10 +2,13 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"teo/internal/common"
 	"teo/internal/services/bot/model"
+	"teo/internal/utils"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -22,19 +25,34 @@ type UserRepository interface {
 
 type UserRepositoryImpl struct {
 	users *mongo.Collection
+	rd    *redis.Client
 }
 
-func NewBotRepository(db *mongo.Database) UserRepository {
-	return &UserRepositoryImpl{users: db.Collection("users")}
+func NewBotRepository(db *mongo.Database, rd *redis.Client) UserRepository {
+	return &UserRepositoryImpl{users: db.Collection("users"), rd: rd}
 }
 
 func (r *UserRepositoryImpl) GetUserById(userId int) (*model.User, error) {
+	cachedUser, err := utils.GetUserFromRedis(r.rd, userId)
+	if err != nil {
+		return nil, err
+	}
+
+	if cachedUser != nil {
+		return cachedUser, nil
+	}
+
 	var user model.User
-	err := r.users.FindOne(context.Background(), bson.M{"userId": userId}).Decode(&user)
+	err = r.users.FindOne(context.Background(), bson.M{"userId": userId}).Decode(&user)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return nil, nil
 		}
+		return nil, err
+	}
+
+	err = utils.SaveUserToRedis(r.rd, &user)
+	if err != nil {
 		return nil, err
 	}
 
@@ -66,33 +84,52 @@ func (r *UserRepositoryImpl) updateUserField(userId int, fields bson.M) error {
 	query := bson.M{"userId": userId}
 	update := bson.M{"$set": fields}
 	_, err := r.users.UpdateOne(context.Background(), query, update)
+	return err
+}
+
+func (r *UserRepositoryImpl) updateUserAndCache(userId int, fields bson.M) error {
+	timeNow := time.Now()
+	fields["updatedAt"] = timeNow
+
+	if err := r.updateUserField(userId, fields); err != nil {
+		return err
+	}
+
+	user, err := r.GetUserById(userId)
 	if err != nil {
 		return err
 	}
 
-	return nil
+	for key, value := range fields {
+		switch key {
+		case "messages":
+			if messages, ok := value.(*[]model.Message); ok {
+				user.Messages = *messages
+			} else {
+				return fmt.Errorf("expected *[]model.Message, got %T", value)
+			}
+		case "system":
+			user.System = value.(string)
+		case "model":
+			user.Model = value.(string)
+		}
+	}
+	user.UpdatedAt = timeNow
+
+	return utils.SaveUserToRedis(r.rd, user)
 }
 
 func (r *UserRepositoryImpl) UpdateMessages(userId int, messages *[]model.Message) error {
-	fields := bson.M{
-		"messages":  messages,
-		"updatedAt": time.Now(),
-	}
-	return r.updateUserField(userId, fields)
+	fields := bson.M{"messages": messages}
+	return r.updateUserAndCache(userId, fields)
 }
 
 func (r *UserRepositoryImpl) UpdateSystem(userId int, system string) error {
-	fields := bson.M{
-		"system":    system,
-		"updatedAt": time.Now(),
-	}
-	return r.updateUserField(userId, fields)
+	fields := bson.M{"system": system}
+	return r.updateUserAndCache(userId, fields)
 }
 
 func (r *UserRepositoryImpl) UpdateModel(userId int, model string) error {
-	fields := bson.M{
-		"model":     model,
-		"updatedAt": time.Now(),
-	}
-	return r.updateUserField(userId, fields)
+	fields := bson.M{"model": model}
+	return r.updateUserAndCache(userId, fields)
 }
