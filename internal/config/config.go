@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -20,6 +21,7 @@ var BotToken string
 var OllamaDefaultModel string
 var OllamaBaseUrl string
 var OwnerOnly string
+var RedisClient *redis.Client
 
 func envPath() string {
 	_, b, _, _ := runtime.Caller(0)
@@ -40,6 +42,7 @@ func LoadConfig() {
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
 	mongoURI := os.Getenv("MONGODB_URI")
 	dbName := os.Getenv("DB_NAME")
+	redisURL := os.Getenv("REDIS_URL")
 	BotToken = os.Getenv("BOT_TOKEN")
 	OllamaDefaultModel = os.Getenv("OLLAMA_DEFAULT_MODEL")
 	OllamaBaseUrl = os.Getenv("OLLAMA_BASE_URL")
@@ -50,6 +53,7 @@ func LoadConfig() {
 	}
 
 	ConnectMongoDB(mongoURI, dbName)
+	ConnectRedis(redisURL)
 }
 
 func ConnectMongoDB(mongoURI, dbName string) {
@@ -68,4 +72,23 @@ func ConnectMongoDB(mongoURI, dbName string) {
 
 	log.Println("Connected to MongoDB!")
 	DB = client.Database(dbName)
+}
+
+func ConnectRedis(redisURL string) {
+	opt, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	RedisClient = redis.NewClient(opt)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = RedisClient.Ping(ctx).Result()
+	if err != nil {
+		log.Fatal("Failed to connect to Redis:", err)
+	}
+
+	log.Println("Connected to Redis!")
 }
