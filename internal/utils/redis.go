@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"teo/internal/services/bot/model"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -32,7 +33,8 @@ func SaveUserToRedis(rd *redis.Client, user *model.User) error {
 	}
 
 	cacheKey := string(user.UserId)
-	err = rd.Set(context.Background(), cacheKey, userData, 0).Err()
+	expiration := 24 * time.Hour
+	err = rd.Set(context.Background(), cacheKey, userData, expiration).Err()
 	if err != nil {
 		return fmt.Errorf("error saving user to Redis: %w", err)
 	}
