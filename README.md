@@ -13,6 +13,7 @@ Telegram Ollama Integration
       - [Ollama](#ollama)
       - [Redis](#redis)
       - [MongoDB](#mongodb)
+      - [RabbitMQ](#rabbitmq)
     - [Running Local Server](#running-local-server)
     - [Generate Swagger Documentation](#generate-swagger-documentation)
   - [Deployment](#deployment)
@@ -88,6 +89,38 @@ Ensure MongoDB is running by checking with:
 ```
 docker ps
 ```
+
+#### RabbitMQ
+
+Run the following command to pull the RabbitMQ image:
+
+```bash
+docker pull rabbitmq
+```
+
+Once the image is downloaded, start RabbitMQ with the following command:
+
+```
+docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq
+```
+
+- **Port 5672**: Used for RabbitMQ communication (AMQP).
+- **Port 15672**: Used for accessing the RabbitMQ Management UI.
+
+Ensure RabbitMQ is running by checking with:
+
+```
+docker ps
+```
+
+You can access the RabbitMQ Management UI in your browser at:
+
+```
+http://localhost:15672
+```
+
+**Username:** `guest`  
+**Password:** `guest`
 
 ### Running Local Server
 1. **Clone the Repository**
