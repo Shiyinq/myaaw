@@ -95,13 +95,13 @@ docker ps
 Run the following command to pull the RabbitMQ image:
 
 ```bash
-docker pull rabbitmq
+docker pull rabbitmq:4.0.2-management
 ```
 
 Once the image is downloaded, start RabbitMQ with the following command:
 
 ```
-docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq
+docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:4.0.2-management
 ```
 
 - **Port 5672**: Used for RabbitMQ communication (AMQP).
