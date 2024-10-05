@@ -3,6 +3,7 @@ package repository
 import (
 	"encoding/json"
 	"log"
+	"teo/internal/config"
 	"teo/internal/services/queue/model"
 
 	"github.com/rabbitmq/amqp091-go"
@@ -19,12 +20,12 @@ type QueueRepositoryImpl struct {
 
 func NewQueueRepository(ch *amqp091.Channel) QueueRepository {
 	q, err := ch.QueueDeclare(
-		"telegram_messages", // Queue name
-		false,               // Durable
-		false,               // Delete when unused
-		false,               // Exclusive
-		false,               // No-wait
-		nil,                 // Arguments
+		config.QueueName, // Queue name
+		false,            // Durable
+		false,            // Delete when unused
+		false,            // Exclusive
+		false,            // No-wait
+		nil,              // Arguments
 	)
 	if err != nil {
 		log.Fatalf("Failed to declare a queue: %s", err)

@@ -18,6 +18,7 @@ import (
 var PORT string
 var AllowedOrigins string
 var DB *mongo.Database
+var QueueName string
 var MQ *amqp091.Channel
 var OwnerId string
 var BotType string
@@ -46,6 +47,7 @@ func LoadConfig() {
 	mongoURI := os.Getenv("MONGODB_URI")
 	dbName := os.Getenv("DB_NAME")
 	redisURL := os.Getenv("REDIS_URL")
+	QueueName = os.Getenv("QUEUE_NAME")
 	rabbitMQURL := os.Getenv("RABBIT_MQ_URL")
 	OwnerId = os.Getenv("OWNER_ID")
 	BotType = os.Getenv("BOT_TYPE")
