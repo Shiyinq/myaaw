@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"strconv"
 	"teo/internal/config"
 	"teo/internal/services/bot/model"
@@ -16,13 +17,15 @@ func Protected(c *fiber.Ctx) error {
 		return c.Next()
 	}
 
-	if config.OwnerOnly != "" {
-		owner, err := strconv.Atoi(config.OwnerOnly)
+	if config.BotType == "private" {
+		owner, err := strconv.Atoi(config.OwnerId)
 		if err != nil {
+			fmt.Println("Invalid owner id")
 			return utils.ErrorBadRequest(c, "Invalid owner id")
 		}
 
 		if data.Message.From.Id != owner {
+			fmt.Println("Only the owner is allowed to chat")
 			return utils.ErrorBadRequest(c, "Only the owner is allowed to chat")
 		}
 	}

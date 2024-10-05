@@ -17,10 +17,11 @@ import (
 var PORT string
 var AllowedOrigins string
 var DB *mongo.Database
+var OwnerId string
+var BotType string
 var BotToken string
 var OllamaDefaultModel string
 var OllamaBaseUrl string
-var OwnerOnly string
 var RedisClient *redis.Client
 
 func envPath() string {
@@ -43,10 +44,11 @@ func LoadConfig() {
 	mongoURI := os.Getenv("MONGODB_URI")
 	dbName := os.Getenv("DB_NAME")
 	redisURL := os.Getenv("REDIS_URL")
+	OwnerId = os.Getenv("OWNER_ID")
+	BotType = os.Getenv("BOT_TYPE")
 	BotToken = os.Getenv("BOT_TOKEN")
 	OllamaDefaultModel = os.Getenv("OLLAMA_DEFAULT_MODEL")
 	OllamaBaseUrl = os.Getenv("OLLAMA_BASE_URL")
-	OwnerOnly = os.Getenv("OWNER_ONLY")
 
 	if AllowedOrigins == "" {
 		AllowedOrigins = "*"
