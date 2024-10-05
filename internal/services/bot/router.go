@@ -15,5 +15,5 @@ func BotRouter(router fiber.Router) {
 	serv := service.NewBotService(repo)
 	hand := handler.NewBotHandler(serv)
 
-	router.Post("/webhook", hand.Webhook)
+	router.Post("/webhook/bot", hand.Webhook)
 }

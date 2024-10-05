@@ -23,9 +23,9 @@ func NewBotHandler(botService service.BotService) BookHandler {
 	return &BotHandlerImpl{botService: botService}
 }
 
-// Webhook
-// @Summary		Webhook
-// @Description	To receive incoming message from Telegram
+// Bot
+// @Summary		Bot
+// @Description	To receive incoming message from RabbitMQ consumer
 // @Tags		Bot
 // @Produce		json
 // @Accept		json
@@ -33,7 +33,7 @@ func NewBotHandler(botService service.BotService) BookHandler {
 // @Failure     400    	{object}   	common.ErrorResponse
 // @Failure     401     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
-// @Router		/webhook [post]
+// @Router		/webhook/bot [post]
 func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 	data := new(model.TelegramIncommingChat)
 
