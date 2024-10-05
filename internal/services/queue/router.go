@@ -15,5 +15,5 @@ func QueueRouter(router fiber.Router) {
 	serv := service.NewQueueService(repo)
 	hand := handler.NewQueueHandler(serv)
 
-	router.Post("/receive_messages", hand.HandleTelegramChat)
+	router.Post("/webhook/telegram", hand.HandleTelegramChat)
 }
