@@ -105,8 +105,6 @@ func ConnectRabbitMQ(rabbitMQURL string) {
 		log.Fatalf("%s: %s", "Failed to connect to RabbitMQ", err)
 	}
 
-	defer conn.Close()
-
 	ch, err := conn.Channel()
 	if err != nil {
 		log.Fatalf("%s: %s", "Failed to open a channel", err)
