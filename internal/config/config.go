@@ -48,7 +48,7 @@ func LoadConfig() {
 	dbName := os.Getenv("DB_NAME")
 	redisURL := os.Getenv("REDIS_URL")
 	QueueName = os.Getenv("QUEUE_NAME")
-	rabbitMQURL := os.Getenv("RABBIT_MQ_URL")
+	rabbitMQURL := os.Getenv("RABBITMQ_URL")
 	OwnerId = os.Getenv("OWNER_ID")
 	BotType = os.Getenv("BOT_TYPE")
 	BotToken = os.Getenv("BOT_TOKEN")
