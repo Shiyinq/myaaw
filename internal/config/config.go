@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -17,6 +18,7 @@ import (
 var PORT string
 var AllowedOrigins string
 var DB *mongo.Database
+var MQ *amqp091.Channel
 var OwnerId string
 var BotType string
 var BotToken string
@@ -44,6 +46,7 @@ func LoadConfig() {
 	mongoURI := os.Getenv("MONGODB_URI")
 	dbName := os.Getenv("DB_NAME")
 	redisURL := os.Getenv("REDIS_URL")
+	rabbitMQURL := os.Getenv("RABBIT_MQ_URL")
 	OwnerId = os.Getenv("OWNER_ID")
 	BotType = os.Getenv("BOT_TYPE")
 	BotToken = os.Getenv("BOT_TOKEN")
@@ -56,6 +59,7 @@ func LoadConfig() {
 
 	ConnectMongoDB(mongoURI, dbName)
 	ConnectRedis(redisURL)
+	ConnectRabbitMQ(rabbitMQURL)
 }
 
 func ConnectMongoDB(mongoURI, dbName string) {
@@ -93,4 +97,21 @@ func ConnectRedis(redisURL string) {
 	}
 
 	log.Println("Connected to Redis!")
+}
+
+func ConnectRabbitMQ(rabbitMQURL string) {
+	conn, err := amqp091.Dial("amqp://guest:guest@localhost:5672/")
+	if err != nil {
+		log.Fatalf("%s: %s", "Failed to connect to RabbitMQ", err)
+	}
+
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatalf("%s: %s", "Failed to open a channel", err)
+	}
+
+	log.Println("Connected to RabbitMQ!")
+	MQ = ch
 }
