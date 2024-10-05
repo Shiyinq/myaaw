@@ -15,9 +15,9 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/webhook": {
+        "/webhook/bot": {
             "post": {
-                "description": "To receive incoming message from Telegram",
+                "description": "To receive incoming message from RabbitMQ consumer",
                 "consumes": [
                     "application/json"
                 ],
@@ -27,7 +27,7 @@ const docTemplate = `{
                 "tags": [
                     "Bot"
                 ],
-                "summary": "Webhook",
+                "summary": "Bot",
                 "parameters": [
                     {
                         "description": "Telegram incoming chat",
@@ -36,6 +36,52 @@ const docTemplate = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/teo_internal_services_bot_model.TelegramIncommingChat"
+                        }
+                    }
+                ],
+                "responses": {
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/teo_internal_common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/teo_internal_common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/teo_internal_common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/webhook/telegram": {
+            "post": {
+                "description": "To receive incoming message from Telegram and push to Queue",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Bot"
+                ],
+                "summary": "Queue",
+                "parameters": [
+                    {
+                        "description": "Telegram incoming chat",
+                        "name": "book",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/teo_internal_services_queue_model.TelegramIncommingChat"
                         }
                     }
                 ],
@@ -131,6 +177,74 @@ const docTemplate = `{
                 },
                 "from": {
                     "$ref": "#/definitions/teo_internal_services_bot_model.From"
+                },
+                "message_id": {
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "teo_internal_services_queue_model.Chat": {
+            "type": "object",
+            "properties": {
+                "first_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "teo_internal_services_queue_model.From": {
+            "type": "object",
+            "properties": {
+                "first_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_bot": {
+                    "type": "boolean"
+                },
+                "language_code": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "teo_internal_services_queue_model.TelegramIncommingChat": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "$ref": "#/definitions/teo_internal_services_queue_model.UserMessage"
+                },
+                "update_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "teo_internal_services_queue_model.UserMessage": {
+            "type": "object",
+            "properties": {
+                "chat": {
+                    "$ref": "#/definitions/teo_internal_services_queue_model.Chat"
+                },
+                "date": {
+                    "type": "integer"
+                },
+                "from": {
+                    "$ref": "#/definitions/teo_internal_services_queue_model.From"
                 },
                 "message_id": {
                     "type": "integer"
