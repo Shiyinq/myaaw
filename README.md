@@ -14,7 +14,7 @@ Telegram Ollama Integration
       - [Redis](#redis)
       - [MongoDB](#mongodb)
       - [RabbitMQ](#rabbitmq)
-    - [Running Local Server](#running-local-server)
+    - [Running the Backend](#running-the-backend)
     - [Generate Swagger Documentation](#generate-swagger-documentation)
   - [Deployment](#deployment)
   - [Telegram Bot Setup](#telegram-bot-setup)
@@ -122,7 +122,7 @@ http://localhost:15672
 **Username:** `guest`  
 **Password:** `guest`
 
-### Running Local Server
+### Running the Backend
 1. **Clone the Repository**
    ```sh
    git clone https://github.com/Shiyinq/teo.git
