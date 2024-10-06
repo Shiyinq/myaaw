@@ -15,6 +15,7 @@ Telegram Ollama Integration
       - [MongoDB](#mongodb)
       - [RabbitMQ](#rabbitmq)
     - [Running the Backend](#running-the-backend)
+    - [Running the Consumer](#running-the-consumer)
     - [Generate Swagger Documentation](#generate-swagger-documentation)
   - [Deployment](#deployment)
   - [Telegram Bot Setup](#telegram-bot-setup)
@@ -154,6 +155,16 @@ http://localhost:15672
 6. **Server**
 
     http://localhost:8080
+
+### Running the Consumer
+   The consumer must run alongside the backend to work correctly. 
+   
+   Use the following command in another terminal:
+   ```sh
+      go run cmd/consumer/consumer.go
+   ```
+
+   After starting the backend and consumer, follow this instructions [Telegram Bot Setup](#localhost-setup).
 
 ### Generate Swagger Documentation
 1. **Install Swagger for API Documentation**
