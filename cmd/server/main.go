@@ -29,6 +29,7 @@ func main() {
 
 	app.Use(middleware.NewLogger())
 
+	app.Get("/", middleware.HelloWorldHandler)
 	app.Get("/docs/*", swagger.HandlerDefault)
 	routes.SetupRoutes(app)
 
