@@ -63,13 +63,13 @@ func ollamaTags() (*model.OllamaTagsResponse, error) {
 	return &response, nil
 }
 
-func sendTelegramMessage(chatId int, text string) (*model.TelegramSendMessageStatus, error) {
+func sendTelegramMessage(chatId int, replyId int, text string) (*model.TelegramSendMessageStatus, error) {
 	client := resty.New()
 
 	message := model.TelegramSendMessage{
 		Text:             text,
 		ParseMode:        "markdown",
-		ReplyToMessageID: nil,
+		ReplyToMessageID: replyId,
 		ChatID:           chatId,
 	}
 
