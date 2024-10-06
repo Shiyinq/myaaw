@@ -214,8 +214,19 @@ Open each `.env` file you have created and update the values as needed.
 ```sh
 docker compose up --build -d
 ```
-Wait a few minutes for the setup to complete. You can then access:
-- Backend at http://localhost:8080/docs
+
+Wait a few minutes for the setup to complete, it should look like this:
+
+```sh
+✔ Network teo_default       Created                                                                                                      0.0s 
+✔ Container teo-rabbitmq-1  Healthy                                                                                                      6.4s 
+✔ Container teo-mongodb-1   Healthy                                                                                                      6.4s 
+✔ Container teo-redis-1     Healthy                                                                                                      5.9s 
+✔ Container teo-consumer-1  Started                                                                                                      6.5s 
+✔ Container teo-backend-1   Started                                                                                                      6.5s 
+```
+
+You can access the backend at http://localhost:8080 and the documentation at http://localhost:8080/docs.
 
 ## Telegram Bot Setup
 
