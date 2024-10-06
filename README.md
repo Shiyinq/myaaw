@@ -213,10 +213,10 @@ After running the backend, either using Docker or manually, you need to set up t
 
 #### Public IP or Domain
 
-If your server has a public IP or domain, you can directly set the webhook to Telegram using:
+If your server has a public IP or domain, you can directly set the webhook to Telegram:
 
 ```
-https://yourdomain.com/webhook
+https://yourdomain.com
 ```
 
 #### Localhost Setup
@@ -229,7 +229,7 @@ ngrok http 8080
 This will generate a public URL, and your webhook will look something like this:
 
 ```
-https://9e64-114-124-182-000.ngrok-free.app/webhook
+https://9e64-114-124-182-000.ngrok-free.app
 ```
 #### Bot Token
 You can obtain a bot token from [BotFather](https://t.me/BotFather).
@@ -238,13 +238,13 @@ You can obtain a bot token from [BotFather](https://t.me/BotFather).
 To set the webhook with Telegram, use the following API endpoint:
 
 ```
-https://api.telegram.org/bot{my_bot_token}/setWebhook?url={url_to_send_updates_to}
+https://api.telegram.org/bot{my_bot_token}/setWebhook?url={your_domain_or_your_ip_public_or_ngrok_url}/webhook/telegram
 ```
 
 Example:
 
 ```
-https://api.telegram.org/bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11/setWebhook?url=https://9e64-114-124-182-000.ngrok-free.app/webhook
+https://api.telegram.org/bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11/setWebhook?url=https://9e64-114-124-182-000.ngrok-free.app/webhook/telegram
 ```
 
 ### Optional
