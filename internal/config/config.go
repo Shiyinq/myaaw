@@ -102,7 +102,7 @@ func ConnectRedis(redisURL string) {
 }
 
 func ConnectRabbitMQ(rabbitMQURL string) {
-	conn, err := amqp091.Dial("amqp://guest:guest@localhost:5672/")
+	conn, err := amqp091.Dial(rabbitMQURL)
 	if err != nil {
 		log.Fatalf("%s: %s", "Failed to connect to RabbitMQ", err)
 	}
