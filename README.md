@@ -161,7 +161,7 @@ http://localhost:15672
    
    Use the following command in another terminal:
    ```sh
-      go run cmd/consumer/consumer.go
+   go run cmd/consumer/consumer.go
    ```
 
    After starting the backend and consumer, follow this instructions [Telegram Bot Setup](#localhost-setup).
