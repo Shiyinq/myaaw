@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"teo/internal/common"
+	"teo/internal/pkg"
 	"teo/internal/services/bot/model"
-	"teo/internal/utils"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -33,7 +33,7 @@ func NewBotRepository(db *mongo.Database, rd *redis.Client) UserRepository {
 }
 
 func (r *UserRepositoryImpl) GetUserById(userId int) (*model.User, error) {
-	cachedUser, err := utils.GetUserFromRedis(r.rd, userId)
+	cachedUser, err := pkg.GetUserFromRedis(r.rd, userId)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (r *UserRepositoryImpl) GetUserById(userId int) (*model.User, error) {
 		return nil, err
 	}
 
-	err = utils.SaveUserToRedis(r.rd, &user)
+	err = pkg.SaveUserToRedis(r.rd, &user)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (r *UserRepositoryImpl) updateUserAndCache(userId int, fields bson.M) error
 	}
 	user.UpdatedAt = timeNow
 
-	return utils.SaveUserToRedis(r.rd, user)
+	return pkg.SaveUserToRedis(r.rd, user)
 }
 
 func (r *UserRepositoryImpl) UpdateMessages(userId int, messages *[]model.Message) error {

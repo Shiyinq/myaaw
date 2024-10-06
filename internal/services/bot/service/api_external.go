@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"teo/internal/config"
+	"teo/internal/pkg"
 	"teo/internal/services/bot/model"
-	"teo/internal/utils"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -34,7 +34,7 @@ func ollama(modelName string, messages []model.Message) (*model.OllamaResponse, 
 }
 
 func ollamaTags() (*model.OllamaTagsResponse, error) {
-	tags, errRedis := utils.GetOllamaTagsFromRedis(config.RedisClient)
+	tags, errRedis := pkg.GetOllamaTagsFromRedis(config.RedisClient)
 	if errRedis != nil {
 		return nil, errRedis
 	}
@@ -55,7 +55,7 @@ func ollamaTags() (*model.OllamaTagsResponse, error) {
 		return nil, err
 	}
 
-	err = utils.SaveOllamaTagsToRedis(config.RedisClient, &response)
+	err = pkg.SaveOllamaTagsToRedis(config.RedisClient, &response)
 	if err != nil {
 		return nil, err
 	}
