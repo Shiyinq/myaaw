@@ -9,7 +9,7 @@ services:
       DB_NAME: teo
       MONGODB_URI: mongodb://mongodb:27017
       REDIS_URL: redis://redis:6379
-      OLLAMA_BASE_URL: host.docker.internal:11434
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
     depends_on:
       mongodb:
