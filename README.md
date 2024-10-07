@@ -23,10 +23,11 @@ Telegram Ollama Integration
       - [Public IP or Domain](#public-ip-or-domain)
       - [Localhost Setup](#localhost-setup)
       - [Bot Token](#bot-token)
-      - [Setting the Webhook](#setting-the-webhook-1)
-    - [Optional](#optional)
-      - [Get Webhook Info](#get-webhook-info)
-      - [Delete Webhook](#delete-webhook)
+      - [Use CLI](#use-cli)
+      - [Manual Setup](#manual-setup)
+        - [Set Webhook](#set-webhook)
+        - [Get Webhook Info](#get-webhook-info)
+        - [Delete Webhook](#delete-webhook)
 
 
 ## Development
@@ -254,9 +255,30 @@ This will generate a public URL, and your webhook will look something like this:
 https://9e64-114-124-182-000.ngrok-free.app
 ```
 #### Bot Token
-You can obtain a bot token from [BotFather](https://t.me/BotFather).
+You can obtain a bot token from [BotFather](https://t.me/BotFather) and add bot token to `.env` file.
 
-#### Setting the Webhook
+#### Use CLI
+You can use the CLI app to manage the Telegram webhook.
+```sh
+go run cmd/telegram/telegram.go
+```
+This command will display a CLI menu like this.
+````
+Welcome to Telegram Webhook CLI
+===============================
+Choose an option:
+1. Set Webhook
+2. Get Webhook Info
+3. Delete Webhook
+4. Exit CLI
+
+Enter choice: 
+````
+
+Or you can manually set it up by making a request to the Telegram API.
+
+#### Manual Setup
+##### Set Webhook
 To set the webhook with Telegram, use the following API endpoint:
 
 ```
@@ -268,16 +290,14 @@ Example:
 ```
 https://api.telegram.org/bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11/setWebhook?url=https://9e64-114-124-182-000.ngrok-free.app/webhook/telegram
 ```
-
-### Optional
-#### Get Webhook Info
+##### Get Webhook Info
 You can retrieve the current webhook info using:
 
 ```
 https://api.telegram.org/bot{my_bot_token}/getWebhookInfo
 ```
 
-#### Delete Webhook
+##### Delete Webhook
 To remove the webhook, make a call to the `setWebhook` method with an empty `url` parameter:
 
 ```
