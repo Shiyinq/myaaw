@@ -40,6 +40,12 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/teo_internal_services_bot_model.TelegramSendMessageStatus"
+                        }
+                    },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
@@ -163,6 +169,14 @@ const docTemplate = `{
                 },
                 "update_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "teo_internal_services_bot_model.TelegramSendMessageStatus": {
+            "type": "object",
+            "properties": {
+                "ok": {
+                    "type": "boolean"
                 }
             }
         },

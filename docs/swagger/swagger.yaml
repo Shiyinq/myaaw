@@ -37,6 +37,11 @@ definitions:
       update_id:
         type: integer
     type: object
+  teo_internal_services_bot_model.TelegramSendMessageStatus:
+    properties:
+      ok:
+        type: boolean
+    type: object
   teo_internal_services_bot_model.UserMessage:
     properties:
       chat:
@@ -116,6 +121,10 @@ paths:
       produces:
       - application/json
       responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/teo_internal_services_bot_model.TelegramSendMessageStatus'
         "400":
           description: Bad Request
           schema:
