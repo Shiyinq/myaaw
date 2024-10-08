@@ -30,6 +30,7 @@ func NewBotHandler(botService service.BotService) BookHandler {
 // @Produce		json
 // @Accept		json
 // @Param		book	body		model.TelegramIncommingChat true	"Telegram incoming chat"
+// @Success		200		{object}	model.TelegramSendMessageStatus
 // @Failure     400    	{object}   	common.ErrorResponse
 // @Failure     401     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
