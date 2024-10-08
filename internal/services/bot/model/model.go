@@ -47,6 +47,7 @@ type User struct {
 	System    string             `json:"system" bson:"system"`
 	Model     string             `json:"model" bson:"model"`
 	Messages  []Message          `json:"messages" bson:"messages"`
+	Role      string             `json:"role" bson:"role"`
 	CreatedAt time.Time          `json:"created_at" bson:"createdAt"`
 	UpdatedAt time.Time          `json:"updated_at" bson:"updatedAt"`
 }

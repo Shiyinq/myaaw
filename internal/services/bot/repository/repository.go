@@ -2,8 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"teo/internal/common"
+	"teo/internal/config"
 	"teo/internal/pkg"
 	"teo/internal/services/bot/model"
 	"time"
@@ -60,8 +63,19 @@ func (r *UserRepositoryImpl) GetUserById(userId int) (*model.User, error) {
 }
 
 func (r *UserRepositoryImpl) CreateUser(user *model.User) (*model.User, error) {
+	role := "user"
+	owner, err := strconv.Atoi(config.OwnerId)
+	if err != nil {
+		return nil, errors.New("invalid owner id")
+	}
+
+	if user.UserId == owner {
+		role = "owner"
+	}
+
 	user.System = common.RoleSystemDefault()
 	user.Model = common.ModelDefault()
+	user.Role = role
 	user.CreatedAt = time.Now()
 	user.UpdatedAt = time.Now()
 
