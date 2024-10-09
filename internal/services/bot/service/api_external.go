@@ -6,12 +6,14 @@ import (
 	"teo/internal/config"
 	"teo/internal/pkg"
 	"teo/internal/services/bot/model"
+	"time"
 
 	"github.com/go-resty/resty/v2"
 )
 
 func ollama(modelName string, messages []model.Message) (*model.OllamaResponse, error) {
 	client := resty.New()
+	client.SetTimeout(90 * time.Second)
 
 	request := model.OllamaRequest{
 		Model:    modelName,
