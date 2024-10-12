@@ -4,66 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"teo/internal/config"
-	"teo/internal/pkg"
 	"teo/internal/services/bot/model"
-	"time"
 
 	"github.com/go-resty/resty/v2"
 )
-
-func ollama(modelName string, messages []model.Message) (*model.OllamaResponse, error) {
-	client := resty.New()
-	client.SetTimeout(90 * time.Second)
-
-	request := model.OllamaRequest{
-		Model:    modelName,
-		Stream:   false,
-		Messages: messages,
-	}
-
-	var response model.OllamaResponse
-	_, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(request).
-		SetResult(&response).
-		Post(config.OllamaBaseUrl + "/api/chat")
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &response, nil
-}
-
-func ollamaTags() (*model.OllamaTagsResponse, error) {
-	tags, errRedis := pkg.GetOllamaTagsFromRedis(config.RedisClient)
-	if errRedis != nil {
-		return nil, errRedis
-	}
-
-	if tags != nil {
-		return tags, nil
-	}
-
-	client := resty.New()
-
-	var response model.OllamaTagsResponse
-	_, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetResult(&response).
-		Get(config.OllamaBaseUrl + "/api/tags")
-
-	if err != nil {
-		return nil, err
-	}
-
-	err = pkg.SaveOllamaTagsToRedis(config.RedisClient, &response)
-	if err != nil {
-		return nil, err
-	}
-
-	return &response, nil
-}
 
 func sendTelegramMessage(chatId int, replyId int, text string) (*model.TelegramSendMessageStatus, error) {
 	client := resty.New()
