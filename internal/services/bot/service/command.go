@@ -3,6 +3,7 @@ package service
 import (
 	"strconv"
 	"teo/internal/common"
+	"teo/internal/provider"
 	"teo/internal/services/bot/model"
 	"teo/internal/utils"
 )
@@ -19,7 +20,7 @@ func (r *BotServiceImpl) handleSystemCommand(chat *model.TelegramIncommingChat, 
 }
 
 func (r *BotServiceImpl) handleResetCommand(chat *model.TelegramIncommingChat) (bool, string, error) {
-	err := r.userRepo.UpdateMessages(chat.Message.From.Id, &[]model.Message{})
+	err := r.userRepo.UpdateMessages(chat.Message.From.Id, &[]provider.Message{})
 	if err != nil {
 		return true, common.CommandResetFailed(), nil
 	}

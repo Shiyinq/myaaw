@@ -1,6 +1,7 @@
 package service
 
 import (
+	"teo/internal/provider"
 	"teo/internal/services/bot/model"
 	"teo/internal/services/bot/repository"
 )
@@ -9,15 +10,20 @@ type BotService interface {
 	checkUser(chat *model.TelegramIncommingChat) (*model.User, error)
 	Bot(chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error)
 	command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error)
-	conversation(user *model.User, chat *model.TelegramIncommingChat) (*model.OllamaResponse, error)
+	conversation(user *model.User, chat *model.TelegramIncommingChat) (*provider.Message, error)
 }
 
 type BotServiceImpl struct {
-	userRepo repository.UserRepository
+	userRepo    repository.UserRepository
+	llmProvider provider.LLMProvider
 }
 
 func NewBotService(userRepo repository.UserRepository) BotService {
-	return &BotServiceImpl{userRepo: userRepo}
+	llmProvider, _ := provider.CreateProvider("ollama", "ollama")
+	return &BotServiceImpl{
+		userRepo:    userRepo,
+		llmProvider: llmProvider,
+	}
 }
 
 func (r *BotServiceImpl) checkUser(chat *model.TelegramIncommingChat) (*model.User, error) {
@@ -62,7 +68,7 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.Telegram
 		if err != nil {
 			return nil, err
 		}
-		response = conv.Message.Content
+		response = conv.Content
 	}
 
 	send, err := sendTelegramMessage(chat.Message.From.Id, chat.Message.MessageId, response)
