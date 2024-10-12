@@ -1,6 +1,8 @@
 package service
 
 import (
+	"log"
+	"teo/internal/config"
 	"teo/internal/provider"
 	"teo/internal/services/bot/model"
 	"teo/internal/services/bot/repository"
@@ -19,7 +21,11 @@ type BotServiceImpl struct {
 }
 
 func NewBotService(userRepo repository.UserRepository) BotService {
-	llmProvider, _ := provider.CreateProvider("ollama", "ollama")
+	llmProvider, err := provider.CreateProvider(config.LLMProviderName, config.LLMProviderAPIKey)
+	if err != nil {
+		log.Fatalf("Error create provider - %s: %v", config.LLMProviderName, err)
+	}
+
 	return &BotServiceImpl{
 		userRepo:    userRepo,
 		llmProvider: llmProvider,
