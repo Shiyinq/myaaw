@@ -6,15 +6,15 @@ import (
 	"teo/internal/services/bot/model"
 )
 
-func ListModels(user model.User, response model.OllamaTagsResponse) string {
+func ListModels(user model.User, models []string) string {
 	var result strings.Builder
 	result.WriteString("Available Models\n\n")
-	for i, model := range response.Models {
+	for i := range models {
 		status := ""
-		if model.Name == user.Model {
+		if models[i] == user.Model {
 			status = " ✅*Actived*"
 		}
-		result.WriteString(fmt.Sprintf("%d - %s%s\n", i, model.Name, status))
+		result.WriteString(fmt.Sprintf("%d - %s%s\n", i, models[i], status))
 	}
 	result.WriteString("\n\nUsage: /models <number>\nExample: /models 0")
 	return result.String()

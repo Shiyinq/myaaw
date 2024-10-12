@@ -28,21 +28,21 @@ func (r *BotServiceImpl) handleResetCommand(chat *model.TelegramIncommingChat) (
 }
 
 func (r *BotServiceImpl) handleModelsCommand(user *model.User, chat *model.TelegramIncommingChat, args string) (bool, string, error) {
-	models, err := ollamaTags()
+	models, err := r.llmProvider.Models()
 	if err != nil {
 		return true, common.CommandModelsFailed(), nil
 	}
 
 	if args == "" {
-		return true, utils.ListModels(*user, *models), nil
+		return true, utils.ListModels(*user, models), nil
 	}
 
 	idModel, err := strconv.Atoi(args)
-	if err != nil || idModel < 0 || idModel >= len(models.Models) {
+	if err != nil || idModel < 0 || idModel >= len(models) {
 		return true, common.CommandModelsArgsNotInt(), nil
 	}
 
-	err = r.userRepo.UpdateModel(chat.Message.From.Id, models.Models[idModel].Model)
+	err = r.userRepo.UpdateModel(chat.Message.From.Id, models[idModel])
 	if err != nil {
 		return true, common.CommandModelsUpdateFailed(), nil
 	}
