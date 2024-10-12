@@ -18,7 +18,7 @@ var ProviderFactories = map[string]Factory{
 func CreateProvider(providerName string, apiKey string) (LLMProvider, error) {
 	factory, exists := ProviderFactories[providerName]
 	if !exists {
-		return nil, errors.New("unknown provider")
+		return nil, errors.New("unknown llm provider")
 	}
 	return factory(apiKey), nil
 }
