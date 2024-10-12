@@ -63,40 +63,40 @@ func GetUserFromRedis(rd *redis.Client, userId int) (*model.User, error) {
 	return &user, nil
 }
 
-func SaveOllamaTagsToRedis(rd *redis.Client, tags *model.OllamaTagsResponse) error {
-	tagsData, err := json.Marshal(tags)
+func SaveModelNamesToRedis(rd *redis.Client, models interface{}) error {
+	tagsData, err := json.Marshal(models)
 	if err != nil {
-		return fmt.Errorf("error serializing ollama tags: %w", err)
+		return fmt.Errorf("error serializing model names: %w", err)
 	}
 
-	cacheKey := "ollama_tags"
+	cacheKey := "model_names"
 	expiration := 24 * time.Hour
 	err = rd.Set(context.Background(), cacheKey, tagsData, expiration).Err()
 	if err != nil {
-		return fmt.Errorf("error saving ollama tags to Redis: %w", err)
+		return fmt.Errorf("error saving model names to Redis: %w", err)
 	}
-	fmt.Println("save ollama tags data to redis")
+	fmt.Println("save model names data to redis")
 	return nil
 }
 
-func GetOllamaTagsFromRedis(rd *redis.Client) (*model.OllamaTagsResponse, error) {
-	cacheKey := "ollama_tags"
+func GetModelNamesFromRedis(rd *redis.Client) (map[string]interface{}, error) {
+	cacheKey := "model_names"
 	cachedData, err := rd.Get(context.Background(), cacheKey).Result()
 	if err != nil {
 		if err == redis.Nil {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("error getting ollama tags from Redis: %w", err)
+		return nil, fmt.Errorf("error getting model names from Redis: %w", err)
 	}
 
-	var tags model.OllamaTagsResponse
-	err = json.Unmarshal([]byte(cachedData), &tags)
+	var models map[string]interface{}
+	err = json.Unmarshal([]byte(cachedData), &models)
 	if err != nil {
-		return nil, fmt.Errorf("error deserializing ollama tags: %w", err)
+		return nil, fmt.Errorf("error deserializing model names: %w", err)
 	}
 
-	fmt.Println("ollama tags data from redis")
-	return &tags, nil
+	fmt.Println("model names data from redis")
+	return models, nil
 }
 
 func SetChattingStatus(rd *redis.Client, userId int) error {
