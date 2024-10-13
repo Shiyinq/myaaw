@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"teo/internal/config"
 	"teo/internal/provider"
 	"teo/internal/services/bot/model"
 	"teo/internal/utils"
@@ -22,13 +23,10 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 	}
 	messages = append(messages, newMessage)
 
-	var response provider.Message
-	result, content, err := r.chatStream(user, chat, messages)
+	result, response, err := r.factoryChat(user, chat, messages)
 	if err != nil {
 		return nil, err
 	}
-	response.Role = "assistant"
-	response.Content = content
 
 	messages = append(messages, response)
 	messages = messages[1:]
@@ -39,6 +37,39 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 	}
 
 	return result, nil
+}
+
+func (r *BotServiceImpl) factoryChat(user *model.User, chat *model.TelegramIncommingChat, messages []provider.Message) (*model.TelegramSendMessageStatus, provider.Message, error) {
+	var err error
+	var content string
+	var response provider.Message
+	var result *model.TelegramSendMessageStatus
+
+	if config.StreamResponse {
+		result, content, err = r.chatStream(user, chat, messages)
+	} else {
+		result, content, err = r.chat(user, chat, messages)
+	}
+
+	response.Role = "assistant"
+	response.Content = content
+
+	return result, response, err
+}
+
+func (r *BotServiceImpl) chat(user *model.User, chat *model.TelegramIncommingChat, messages []provider.Message) (*model.TelegramSendMessageStatus, string, error) {
+	res, err := r.llmProvider.Chat(user.Model, messages)
+
+	if err != nil {
+		return nil, "", err
+	}
+
+	send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, utils.Watermark(res.Content, user.Model), true)
+	if err != nil || !send.Ok {
+		return nil, "", nil
+	}
+
+	return send, res.Content, nil
 }
 
 func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncommingChat, messages []provider.Message) (*model.TelegramSendMessageStatus, string, error) {
