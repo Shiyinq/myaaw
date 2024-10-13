@@ -50,6 +50,30 @@ func (r *BotServiceImpl) handleModelsCommand(user *model.User, chat *model.Teleg
 	return true, common.CommandModels(), nil
 }
 
+func (r *BotServiceImpl) handleAgentCommand(chat *model.TelegramIncommingChat, args string) (bool, string, error) {
+	list, detailAgents := utils.Agents()
+
+	if args == "" {
+		return true, list, nil
+	}
+
+	idAgent, err := strconv.Atoi(args)
+	if err != nil {
+		return true, common.CommandAgentArgsNotInt(), nil
+	}
+
+	if idAgent < 0 || idAgent >= len(detailAgents) {
+		return true, common.CommandAgentNotFound(), nil
+	}
+
+	if prompt, ok := detailAgents[idAgent]["prompt"].(string); ok {
+		r.handleResetCommand(chat)
+		return r.handleSystemCommand(chat, prompt)
+	}
+
+	return true, "", nil
+}
+
 func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error) {
 	isCommand, command, commandArgs := utils.ParseCommand(chat.Message.Text)
 	if !isCommand {
@@ -69,6 +93,8 @@ func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncomming
 		return r.handleModelsCommand(user, chat, commandArgs)
 	case "me":
 		return true, utils.CommandMe(user), nil
+	case "agents":
+		return r.handleAgentCommand(chat, commandArgs)
 	default:
 		return true, common.CommandNotFound(command), nil
 	}
