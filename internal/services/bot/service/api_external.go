@@ -10,7 +10,26 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
+func sendTelegramTypingAction(chatId int) {
+	client := resty.New()
+
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendChatAction", config.BotToken)
+	_, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"chat_id": chatId,
+			"action":  "typing",
+		}).
+		Post(url)
+
+	if err != nil {
+		log.Fatalf("Error sending chat action: %v", err)
+	}
+}
+
 func sendTelegramMessage(chatId int, replyId int, text string) (*model.TelegramSendMessageStatus, error) {
+	sendTelegramTypingAction(chatId)
+
 	client := resty.New()
 
 	message := model.TelegramSendMessage{

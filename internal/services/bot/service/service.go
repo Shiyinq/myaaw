@@ -69,6 +69,8 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.Telegram
 		return nil, err
 	}
 
+	sendTelegramTypingAction(chat.Message.Chat.Id)
+
 	if !command {
 		conv, err := r.conversation(user, chat)
 		if err != nil {
