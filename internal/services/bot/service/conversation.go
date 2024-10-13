@@ -23,18 +23,12 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 	messages = append(messages, newMessage)
 
 	var response provider.Message
-	messageId, content, err := r.chatStream(user, chat, messages)
+	result, content, err := r.chatStream(user, chat, messages)
 	if err != nil {
 		return nil, err
 	}
-
 	response.Role = "assistant"
 	response.Content = content
-
-	editMessage, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(content, user.Model), true)
-	if err != nil || !editMessage.Ok {
-		return nil, err
-	}
 
 	messages = append(messages, response)
 	messages = messages[1:]
@@ -44,10 +38,10 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 		return nil, err
 	}
 
-	return editMessage, nil
+	return result, nil
 }
 
-func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncommingChat, messages []provider.Message) (int, string, error) {
+func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncommingChat, messages []provider.Message) (*model.TelegramSendMessageStatus, string, error) {
 	messageId := 0
 	streamingContent := ""
 	err := r.llmProvider.ChatStream(user.Model, messages, func(partial provider.Message) error {
@@ -73,8 +67,13 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncomm
 	})
 
 	if err != nil {
-		return 0, "", err
+		return nil, "", err
 	}
 
-	return messageId, streamingContent, err
+	editMessage, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model), true)
+	if err != nil || !editMessage.Ok {
+		return nil, "", err
+	}
+
+	return editMessage, streamingContent, err
 }
