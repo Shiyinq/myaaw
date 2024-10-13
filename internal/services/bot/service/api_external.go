@@ -57,7 +57,9 @@ func editTelegramMessage(chatId int, replyId int, editMessageId int, text string
 }
 
 func sendTelegramRequest(method string, message interface{}, chatId int) (*model.TelegramSendMessageStatus, error) {
-	sendTelegramTypingAction(chatId)
+	if method != "editMessageText" {
+		sendTelegramTypingAction(chatId)
+	}
 
 	client := resty.New()
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/%s", config.BotToken, method)
