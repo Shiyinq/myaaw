@@ -12,7 +12,7 @@ type BotService interface {
 	checkUser(chat *model.TelegramIncommingChat) (*model.User, error)
 	Bot(chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error)
 	command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error)
-	conversation(user *model.User, chat *model.TelegramIncommingChat) (*provider.Message, error)
+	conversation(user *model.User, chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error)
 }
 
 type BotServiceImpl struct {
@@ -76,13 +76,16 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.Telegram
 		if err != nil {
 			return nil, err
 		}
-		response = conv.Content
+
+		return conv, nil
 	}
 
-	send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, response)
-	if err != nil || !send.Ok {
-		return nil, err
+	if command {
+		send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, response, true)
+		if err != nil || !send.Ok {
+			return nil, err
+		}
 	}
 
-	return send, nil
+	return nil, nil
 }
