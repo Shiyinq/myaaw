@@ -1,6 +1,9 @@
 package provider
 
 import (
+	"bufio"
+	"encoding/json"
+	"io"
 	"teo/internal/config"
 	"time"
 
@@ -76,6 +79,59 @@ func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	return response.Message, nil
+}
+
+func (o *OllamaProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
+	client := resty.New()
+	client.SetTimeout(90 * time.Second)
+	_ = o.apiKey // unused for ollama
+
+	request := OllamaRequest{
+		Model:    modelName,
+		Stream:   true,
+		Messages: messages,
+	}
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(request).
+		SetDoNotParseResponse(true).
+		Post(o.baseURL + "/api/chat")
+
+	if err != nil {
+		return err
+	}
+	defer resp.RawBody().Close()
+
+	reader := bufio.NewReader(resp.RawBody())
+	var response OllamaResponse
+
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		err = json.Unmarshal(line, &response)
+		if err != nil {
+			return err
+		}
+
+		partialMessage := response.Message
+		err = callback(partialMessage)
+		if err != nil {
+			return err
+		}
+
+		if response.Done {
+			break
+		}
+	}
+
+	return nil
 }
 
 func (o *OllamaProvider) Models() ([]string, error) {

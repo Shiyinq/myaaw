@@ -6,6 +6,7 @@ import (
 
 type LLMProvider interface {
 	Chat(modelName string, messages []Message) (Message, error)
+	ChatStream(modelName string, messages []Message, callback func(Message) error) error
 	Models() ([]string, error)
 }
 
