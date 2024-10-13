@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log"
 	"teo/internal/config"
 	"teo/internal/services/bot/model"
 
@@ -34,6 +35,7 @@ func sendTelegramMessage(chatId int, replyId int, text string) (*model.TelegramS
 	}
 
 	if resp.StatusCode() != 200 {
+		log.Println(resp.String())
 		return &response, errors.New("failed send to telegram")
 	}
 
