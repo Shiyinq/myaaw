@@ -27,23 +27,33 @@ func sendTelegramTypingAction(chatId int) {
 	}
 }
 
-func sendTelegramMessage(chatId int, replyId int, text string) (*model.TelegramSendMessageStatus, error) {
-	return sendTelegramRequest("sendMessage", &model.TelegramSendMessage{
+func sendTelegramMessage(chatId int, replyId int, text string, markdown bool) (*model.TelegramSendMessageStatus, error) {
+	body := &model.TelegramSendMessage{
 		Text:             text,
-		ParseMode:        "markdown",
 		ReplyToMessageID: replyId,
 		ChatID:           chatId,
-	}, chatId)
+	}
+
+	if markdown {
+		body.ParseMode = "markdown"
+	}
+
+	return sendTelegramRequest("sendMessage", body, chatId)
 }
 
-func editTelegramMessage(chatId int, replyId int, editMessageId int, text string) (*model.TelegramSendMessageStatus, error) {
-	return sendTelegramRequest("editMessageText", &model.TelegramEditMessage{
+func editTelegramMessage(chatId int, replyId int, editMessageId int, text string, markdown bool) (*model.TelegramSendMessageStatus, error) {
+	body := &model.TelegramEditMessage{
 		Text:             text,
-		ParseMode:        "markdown",
 		MessageID:        editMessageId,
 		ReplyToMessageID: replyId,
 		ChatID:           chatId,
-	}, chatId)
+	}
+
+	if markdown {
+		body.ParseMode = "markdown"
+	}
+
+	return sendTelegramRequest("editMessageText", body, chatId)
 }
 
 func sendTelegramRequest(method string, message interface{}, chatId int) (*model.TelegramSendMessageStatus, error) {

@@ -50,14 +50,14 @@ type TelegramIncommingChat struct {
 
 type TelegramSendMessage struct {
 	Text             string `json:"text"`
-	ParseMode        string `json:"parse_mode"`
+	ParseMode        string `json:"parse_mode,omitempty"`
 	ReplyToMessageID int    `json:"reply_to_message_id"`
 	ChatID           int    `json:"chat_id"`
 }
 
 type TelegramEditMessage struct {
 	Text             string `json:"text"`
-	ParseMode        string `json:"parse_mode"`
+	ParseMode        string `json:"parse_mode,omitempty"`
 	MessageID        int    `json:"message_id"`
 	ReplyToMessageID int    `json:"reply_to_message_id"`
 	ChatID           int    `json:"chat_id"`
