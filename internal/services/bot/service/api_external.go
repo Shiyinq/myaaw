@@ -28,18 +28,29 @@ func sendTelegramTypingAction(chatId int) {
 }
 
 func sendTelegramMessage(chatId int, replyId int, text string) (*model.TelegramSendMessageStatus, error) {
-	sendTelegramTypingAction(chatId)
-
-	client := resty.New()
-
-	message := model.TelegramSendMessage{
+	return sendTelegramRequest("sendMessage", &model.TelegramSendMessage{
 		Text:             text,
 		ParseMode:        "markdown",
 		ReplyToMessageID: replyId,
 		ChatID:           chatId,
-	}
+	}, chatId)
+}
 
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", config.BotToken)
+func editTelegramMessage(chatId int, replyId int, editMessageId int, text string) (*model.TelegramSendMessageStatus, error) {
+	return sendTelegramRequest("editMessageText", &model.TelegramEditMessage{
+		Text:             text,
+		ParseMode:        "markdown",
+		MessageID:        editMessageId,
+		ReplyToMessageID: replyId,
+		ChatID:           chatId,
+	}, chatId)
+}
+
+func sendTelegramRequest(method string, message interface{}, chatId int) (*model.TelegramSendMessageStatus, error) {
+	sendTelegramTypingAction(chatId)
+
+	client := resty.New()
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/%s", config.BotToken, method)
 
 	var response model.TelegramSendMessageStatus
 	resp, err := client.R().
@@ -55,7 +66,8 @@ func sendTelegramMessage(chatId int, replyId int, text string) (*model.TelegramS
 
 	if resp.StatusCode() != 200 {
 		log.Println(resp.String())
-		return &response, errors.New("failed send to telegram")
+		errMessage := fmt.Sprintf("failed to %s message", method)
+		return &response, errors.New(errMessage)
 	}
 
 	return &response, nil
