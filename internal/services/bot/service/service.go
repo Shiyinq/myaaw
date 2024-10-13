@@ -77,7 +77,7 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.Telegram
 		response = conv.Content
 	}
 
-	send, err := sendTelegramMessage(chat.Message.From.Id, chat.Message.MessageId, response)
+	send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, response)
 	if err != nil || !send.Ok {
 		return nil, err
 	}
