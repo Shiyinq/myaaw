@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -29,6 +30,7 @@ var OllamaBaseUrl string
 var RedisClient *redis.Client
 var LLMProviderName string
 var LLMProviderAPIKey string
+var StreamResponse bool
 
 func envPath() string {
 	_, b, _, _ := runtime.Caller(0)
@@ -61,6 +63,11 @@ func LoadConfig() {
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
 	maxRetries := 10
 	retryDelay := 3 * time.Second
+
+	StreamResponse, err = strconv.ParseBool(os.Getenv("STREAM_RESPONSE"))
+	if err != nil {
+		log.Fatalf("Invalid value for STREAM_RESPONSE: %v", err)
+	}
 
 	if AllowedOrigins == "" {
 		AllowedOrigins = "*"
