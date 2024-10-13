@@ -8,7 +8,7 @@ import (
 
 func ListModels(user model.User, models []string) string {
 	var result strings.Builder
-	result.WriteString("Available Models\n\n")
+	result.WriteString("🧠 Available Models\n\n")
 	for i := range models {
 		status := ""
 		if models[i] == user.Model {
