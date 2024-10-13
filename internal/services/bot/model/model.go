@@ -55,6 +55,15 @@ type TelegramSendMessage struct {
 	ChatID           int    `json:"chat_id"`
 }
 
+type TelegramEditMessage struct {
+	Text             string `json:"text"`
+	ParseMode        string `json:"parse_mode"`
+	MessageID        int    `json:"message_id"`
+	ReplyToMessageID int    `json:"reply_to_message_id"`
+	ChatID           int    `json:"chat_id"`
+}
+
 type TelegramSendMessageStatus struct {
-	Ok bool `json:"ok"`
+	Ok     bool        `json:"ok"`
+	Result UserMessage `json:"result"`
 }
