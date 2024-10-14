@@ -39,7 +39,7 @@ func sendToWebhookBot(jsonBody []byte) error {
 	}
 
 	if resp.IsError() {
-		return fmt.Errorf("received error response from webhook: %s", resp.Status())
+		return fmt.Errorf("received error response from webhook: %s %v", resp.Status(), resp.String())
 	}
 
 	log.Println("Message forwarded to webhook bot successfully")
