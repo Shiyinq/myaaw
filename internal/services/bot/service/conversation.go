@@ -80,14 +80,14 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncomm
 		streamingContent += chunk
 
 		if messageId == 0 {
-			send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, "Typing...", false)
+			send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, "✨Typing...", false)
 			if err != nil || !send.Ok {
 				log.Println(err)
 			}
 			messageId = send.Result.MessageId
 		} else {
 			if utils.ContainsPunctuation(chunk) {
-				editMessage, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\nTyping...", false)
+				editMessage, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n✨Typing...", false)
 				if err != nil || !editMessage.Ok {
 					log.Println(err)
 				}
