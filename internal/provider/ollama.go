@@ -58,7 +58,7 @@ func NewOllamaProvider(apiKey string) LLMProvider {
 
 func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, error) {
 	client := resty.New()
-	client.SetTimeout(90 * time.Second)
+	client.SetTimeout(120 * time.Second)
 	_ = o.apiKey // unused for ollama
 
 	request := OllamaRequest{
@@ -83,7 +83,7 @@ func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, er
 
 func (o *OllamaProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
 	client := resty.New()
-	client.SetTimeout(90 * time.Second)
+	client.SetTimeout(120 * time.Second)
 	_ = o.apiKey // unused for ollama
 
 	request := OllamaRequest{

@@ -27,7 +27,7 @@ func connectRabbitMQ(rabbitMQURL string) (*amqp091.Connection, *amqp091.Channel,
 
 func sendToWebhookBot(jsonBody []byte) error {
 	client := resty.New()
-	client.SetTimeout(90 * time.Second)
+	client.SetTimeout(120 * time.Second)
 
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
