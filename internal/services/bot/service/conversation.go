@@ -1,7 +1,7 @@
 package service
 
 import (
-	"fmt"
+	"log"
 	"teo/internal/config"
 	"teo/internal/provider"
 	"teo/internal/services/bot/model"
@@ -82,14 +82,14 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncomm
 		if messageId == 0 {
 			send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, "Typing...", false)
 			if err != nil || !send.Ok {
-				return fmt.Errorf("failed to send message to Telegram: %v", err)
+				log.Println(err)
 			}
 			messageId = send.Result.MessageId
 		} else {
 			if utils.ContainsPunctuation(chunk) {
 				editMessage, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\nTyping...", false)
 				if err != nil || !editMessage.Ok {
-					return fmt.Errorf("failed to edit message on Telegram: %v", err)
+					log.Println(err)
 				}
 			}
 		}

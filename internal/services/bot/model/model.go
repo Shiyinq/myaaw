@@ -64,6 +64,8 @@ type TelegramEditMessage struct {
 }
 
 type TelegramSendMessageStatus struct {
-	Ok     bool        `json:"ok"`
-	Result UserMessage `json:"result"`
+	Ok          bool        `json:"ok"`
+	Result      UserMessage `json:"result,omitempty"`
+	ErrorCode   int         `json:"error_code,omitempty"`
+	Description string      `json:"description,omitempty"`
 }

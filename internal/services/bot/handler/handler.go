@@ -1,8 +1,7 @@
 package handler
 
 import (
-	"encoding/json"
-	"fmt"
+	"log"
 	_ "teo/internal/common"
 	"teo/internal/services/bot/model"
 	"teo/internal/services/bot/service"
@@ -44,16 +43,19 @@ func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 		})
 	}
 
-	jsonData, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		fmt.Println("Error marshalling JSON:", err)
-	} else {
-		fmt.Println(string(jsonData))
-	}
+	// jsonData, err := json.MarshalIndent(data, "", "  ")
+	// if err != nil {
+	// 	fmt.Println("Error marshalling JSON:", err)
+	// } else {
+	// 	fmt.Println(string(jsonData))
+	// }
+
+	log.Printf("message from %v", data.Message.Chat.Id)
 
 	res, err := s.botService.Bot(data)
 
 	if err != nil {
+		log.Printf("failed to process incoming chat: " + err.Error())
 		return utils.ErrorInternalServer(c, "failed to process incoming chat: "+err.Error())
 	}
 

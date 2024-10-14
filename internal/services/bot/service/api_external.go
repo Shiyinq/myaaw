@@ -77,8 +77,7 @@ func sendTelegramRequest(method string, message interface{}, chatId int) (*model
 	}
 
 	if resp.StatusCode() != 200 {
-		log.Println(resp.String())
-		errMessage := fmt.Sprintf("failed to %s message", method)
+		errMessage := fmt.Sprintf("failed to %s message, %v", method, response.Description)
 		return &response, errors.New(errMessage)
 	}
 
