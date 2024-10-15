@@ -103,7 +103,11 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncomm
 
 	editMessage, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model), true)
 	if err != nil || !editMessage.Ok {
-		return nil, "", err
+		_, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model), false)
+		if err != nil {
+			log.Println(err)
+			return nil, "", err
+		}
 	}
 
 	return editMessage, streamingContent, err
