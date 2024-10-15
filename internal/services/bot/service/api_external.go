@@ -70,6 +70,7 @@ func sendTelegramRequest(method string, message interface{}, chatId int) (*model
 		SetHeader("Content-Type", "application/json").
 		SetBody(message).
 		SetResult(&response).
+		SetError(&response).
 		Post(url)
 
 	if err != nil {
@@ -77,7 +78,7 @@ func sendTelegramRequest(method string, message interface{}, chatId int) (*model
 	}
 
 	if resp.StatusCode() != 200 {
-		errMessage := fmt.Sprintf("failed to %s message, %v", method, response.Description)
+		errMessage := fmt.Sprintf("failed to %s message, %s %v", method, resp.Status(), response.Description)
 		return &response, errors.New(errMessage)
 	}
 
