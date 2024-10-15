@@ -2,6 +2,7 @@ package service
 
 import (
 	"log"
+	"strings"
 	"teo/internal/config"
 	"teo/internal/provider"
 	"teo/internal/services/bot/model"
@@ -86,7 +87,7 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncomm
 			}
 			messageId = send.Result.MessageId
 		} else {
-			if utils.ContainsPunctuation(chunk) {
+			if strings.ContainsAny(chunk, ".\n!?") {
 				editMessage, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n✨Typing...", false)
 				if err != nil || !editMessage.Ok {
 					log.Println(err)
