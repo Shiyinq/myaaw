@@ -57,6 +57,10 @@ func NewOllamaProvider(apiKey string) LLMProvider {
 	}
 }
 
+func (o *OllamaProvider) ProviderName() string {
+	return "ollama"
+}
+
 func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
