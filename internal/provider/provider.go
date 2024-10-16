@@ -2,6 +2,7 @@ package provider
 
 import (
 	"errors"
+	"teo/internal/config"
 )
 
 type LLMProvider interface {
@@ -11,10 +12,11 @@ type LLMProvider interface {
 	Models() ([]string, error)
 }
 
-type Factory func(apiKey string) LLMProvider
+type Factory func(baseURL string, apiKey string) LLMProvider
 
 var ProviderFactories = map[string]Factory{
 	"ollama": NewOllamaProvider,
+	"openai": NewOpenAIProvider,
 }
 
 func CreateProvider(providerName string, apiKey string) (LLMProvider, error) {
@@ -22,5 +24,5 @@ func CreateProvider(providerName string, apiKey string) (LLMProvider, error) {
 	if !exists {
 		return nil, errors.New("unknown llm provider")
 	}
-	return factory(apiKey), nil
+	return factory(config.LLMProviderBaseURL, apiKey), nil
 }
