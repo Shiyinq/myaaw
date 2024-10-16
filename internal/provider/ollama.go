@@ -22,8 +22,9 @@ type OllamaRequest struct {
 }
 
 type Message struct {
-	Role    string `json:"role" bson:"role"`
-	Content string `json:"content" bson:"content"`
+	Role    string   `json:"role" bson:"role"`
+	Content string   `json:"content" bson:"content"`
+	Images  []string `json:"images,omitempty"`
 }
 
 type OllamaResponse struct {
