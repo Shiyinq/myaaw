@@ -28,6 +28,7 @@ var BotToken string
 var OllamaDefaultModel string
 var OllamaBaseUrl string
 var RedisClient *redis.Client
+var LLMProviderBaseURL string
 var LLMProviderName string
 var LLMProviderAPIKey string
 var StreamResponse bool
@@ -59,6 +60,7 @@ func LoadConfig() {
 	BotToken = os.Getenv("BOT_TOKEN")
 	OllamaDefaultModel = os.Getenv("OLLAMA_DEFAULT_MODEL")
 	OllamaBaseUrl = os.Getenv("OLLAMA_BASE_URL")
+	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
 	maxRetries := 10
