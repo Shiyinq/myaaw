@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
-	"teo/internal/config"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -50,9 +49,9 @@ type OllamaTagsResponse struct {
 	Models []OllamaModels `json:"models"`
 }
 
-func NewOllamaProvider(apiKey string) LLMProvider {
+func NewOllamaProvider(baseURL string, apiKey string) LLMProvider {
 	return &OllamaProvider{
-		baseURL: config.OllamaBaseUrl,
+		baseURL: baseURL,
 		apiKey:  apiKey,
 	}
 }
