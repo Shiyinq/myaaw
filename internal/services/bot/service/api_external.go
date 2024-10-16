@@ -1,9 +1,12 @@
 package service
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"teo/internal/config"
 	"teo/internal/services/bot/model"
 
@@ -83,4 +86,56 @@ func sendTelegramRequest(method string, message interface{}, chatId int) (*model
 	}
 
 	return &response, nil
+}
+
+type TelegramFileResponse struct {
+	Ok     bool `json:"ok"`
+	Result struct {
+		FileID       string `json:"file_id"`
+		FileUniqueID string `json:"file_unique_id"`
+		FileSize     int    `json:"file_size"`
+		FilePath     string `json:"file_path"`
+	} `json:"result"`
+}
+
+func getFilePath(fileID string) (string, error) {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/getFile?file_id=%s", config.BotToken, fileID)
+	client := resty.New()
+	resp, err := client.R().Get(url)
+	if err != nil {
+		return "", fmt.Errorf("error while making GET request: %v", err)
+	}
+
+	if resp.StatusCode() != 200 {
+		return "", fmt.Errorf("failed to get file path, status code: %d", resp.StatusCode())
+	}
+
+	var fileResponse TelegramFileResponse
+	if err := json.Unmarshal(resp.Body(), &fileResponse); err != nil {
+		return "", fmt.Errorf("error unmarshalling JSON response: %v", err)
+	}
+
+	if !fileResponse.Ok {
+		return "", fmt.Errorf("failed to get file path, API response not OK")
+	}
+
+	return fileResponse.Result.FilePath, nil
+}
+
+func imageURLToBase64(filePath string) (string, error) {
+	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", config.BotToken, filePath)
+	client := resty.New()
+	resp, err := client.R().Get(url)
+	if err != nil {
+		return "", fmt.Errorf("error while making GET request: %v", err)
+	}
+
+	if resp.StatusCode() != 200 {
+		return "", fmt.Errorf("failed to fetch image, status code: %d", resp.StatusCode())
+	}
+
+	base64Image := base64.StdEncoding.EncodeToString(resp.Body())
+	base64Cleaned := strings.TrimPrefix(base64Image, "data:image/png;base64,")
+
+	return base64Cleaned, nil
 }
