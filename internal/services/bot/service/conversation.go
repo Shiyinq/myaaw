@@ -2,7 +2,6 @@ package service
 
 import (
 	"log"
-	"strings"
 	"teo/internal/config"
 	"teo/internal/provider"
 	"teo/internal/services/bot/model"
@@ -73,9 +72,12 @@ func (r *BotServiceImpl) chat(user *model.User, chat *model.TelegramIncommingCha
 func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncommingChat, messages []provider.Message) (*model.TelegramSendMessageStatus, string, error) {
 	messageId := 0
 	streamingContent := ""
+	bufferThreshold := 500
+	bufferedContent := ""
 	err := r.llmProvider.ChatStream(user.Model, messages, func(partial provider.Message) error {
 		chunk := partial.Content
 		streamingContent += chunk
+		bufferedContent += chunk
 
 		if messageId == 0 {
 			send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, "✨Typing...", false)
@@ -84,11 +86,12 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncomm
 			}
 			messageId = send.Result.MessageId
 		} else {
-			if strings.ContainsAny(chunk, ".\n!?") {
+			if len(bufferedContent) >= bufferThreshold {
 				editMessage, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n✨Typing...", false)
 				if err != nil || !editMessage.Ok {
 					log.Println(err)
 				}
+				bufferedContent = ""
 			}
 		}
 
