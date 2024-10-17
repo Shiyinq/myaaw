@@ -79,7 +79,7 @@ func SaveModelNamesToRedis(rd *redis.Client, models interface{}) error {
 	return nil
 }
 
-func GetModelNamesFromRedis(rd *redis.Client) (map[string]interface{}, error) {
+func GetModelNamesFromRedis(rd *redis.Client) ([]string, error) {
 	cacheKey := "model_names"
 	cachedData, err := rd.Get(context.Background(), cacheKey).Result()
 	if err != nil {
@@ -89,7 +89,7 @@ func GetModelNamesFromRedis(rd *redis.Client) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("error getting model names from Redis: %w", err)
 	}
 
-	var models map[string]interface{}
+	var models []string
 	err = json.Unmarshal([]byte(cachedData), &models)
 	if err != nil {
 		return nil, fmt.Errorf("error deserializing model names: %w", err)
