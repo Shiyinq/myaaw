@@ -13,6 +13,7 @@ type BotService interface {
 	Bot(chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error)
 	command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error)
 	conversation(user *model.User, chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error)
+	NotifyError(chatId int, replyId int, text string, markdown bool) (*model.TelegramSendMessageStatus, error)
 }
 
 type BotServiceImpl struct {
@@ -86,4 +87,8 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.Telegram
 	}
 
 	return nil, nil
+}
+
+func (r *BotServiceImpl) NotifyError(chatId int, replyId int, text string, markdown bool) (*model.TelegramSendMessageStatus, error) {
+	return sendTelegramMessage(chatId, replyId, text, markdown)
 }

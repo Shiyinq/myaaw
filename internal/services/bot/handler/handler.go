@@ -56,6 +56,7 @@ func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 
 	if err != nil {
 		log.Printf("failed to process incoming chat: " + err.Error())
+		s.botService.NotifyError(data.Message.Chat.Id, 0, "5️⃣0️⃣0️⃣ Internal Server Error", true)
 		return utils.ErrorInternalServer(c, "failed to process incoming chat: "+err.Error())
 	}
 
