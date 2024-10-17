@@ -108,6 +108,6 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncomm
 			return nil, "", err
 		}
 	}
-
+	err = nil
 	return editMessage, streamingContent, err
 }
