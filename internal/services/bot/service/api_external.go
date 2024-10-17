@@ -122,6 +122,10 @@ func getFilePath(fileID string) (string, error) {
 	return fileResponse.Result.FilePath, nil
 }
 
+func telegramImageURL(filePath string) string {
+	return fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", config.BotToken, filePath)
+}
+
 func imageURLToBase64(filePath string) (string, error) {
 	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", config.BotToken, filePath)
 	client := resty.New()
