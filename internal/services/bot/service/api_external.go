@@ -32,9 +32,12 @@ func sendTelegramTypingAction(chatId int) {
 
 func sendTelegramMessage(chatId int, replyId int, text string, markdown bool) (*model.TelegramSendMessageStatus, error) {
 	body := &model.TelegramSendMessage{
-		Text:             text,
-		ReplyToMessageID: replyId,
-		ChatID:           chatId,
+		Text:   text,
+		ChatID: chatId,
+	}
+
+	if replyId != 0 {
+		body.ReplyToMessageID = replyId
 	}
 
 	if markdown {
