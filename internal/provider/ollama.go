@@ -3,6 +3,7 @@ package provider
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"time"
 
@@ -79,7 +80,7 @@ func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, er
 		Post(o.baseURL + "/api/chat")
 
 	if err != nil {
-		return Message{}, err
+		return Message{}, fmt.Errorf("error fetching model response: %w", err)
 	}
 
 	return response.Message, nil
@@ -116,18 +117,18 @@ func (o *OllamaProvider) ChatStream(modelName string, messages []Message, callba
 			if err == io.EOF {
 				break
 			}
-			return err
+			return fmt.Errorf("error reading stream: %w", err)
 		}
 
 		err = json.Unmarshal(line, &response)
 		if err != nil {
-			return err
+			return fmt.Errorf("error unmarshalling stream data: %w", err)
 		}
 
 		partialMessage := response.Message
 		err = callback(partialMessage)
 		if err != nil {
-			return err
+			return fmt.Errorf("error in callback: %w", err)
 		}
 
 		if response.Done {
@@ -162,7 +163,7 @@ func (o *OllamaProvider) ollamaTags() (*OllamaTagsResponse, error) {
 		Get(o.baseURL + "/api/tags")
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error fetching ollama tags: %w", err)
 	}
 
 	return &response, nil

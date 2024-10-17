@@ -93,7 +93,7 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 		Post(o.baseURL + "/v1/chat/completions")
 
 	if err != nil {
-		return Message{}, err
+		return Message{}, fmt.Errorf("error fetching model response: %w", err)
 	}
 
 	return response.Choices[0].Message, nil
@@ -187,7 +187,7 @@ func (o *OpenAIProvider) openAIModels() (*Models, error) {
 		Get(o.baseURL + "/v1/models")
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error fetching openai models: %w", err)
 	}
 
 	return &response, nil
