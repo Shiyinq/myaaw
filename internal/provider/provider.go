@@ -5,6 +5,22 @@ import (
 	"teo/internal/config"
 )
 
+type Message struct {
+	Role    string      `json:"role" bson:"role"`
+	Content interface{} `json:"content"`
+	Images  []string    `json:"images,omitempty"`
+}
+
+type ContentItem struct {
+	Type     string     `json:"type"`
+	Text     string     `json:"text,omitempty"`
+	ImageURL *ImageInfo `json:"image_url,omitempty"`
+}
+
+type ImageInfo struct {
+	URL string `json:"url,omitempty"`
+}
+
 type LLMProvider interface {
 	ProviderName() string
 	Chat(modelName string, messages []Message) (Message, error)

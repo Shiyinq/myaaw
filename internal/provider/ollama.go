@@ -21,12 +21,6 @@ type OllamaRequest struct {
 	Stream   bool      `json:"stream"`
 }
 
-type Message struct {
-	Role    string   `json:"role" bson:"role"`
-	Content string   `json:"content" bson:"content"`
-	Images  []string `json:"images,omitempty"`
-}
-
 type OllamaResponse struct {
 	Model              string    `json:"model"`
 	CreatedAt          time.Time `json:"created_at"`
