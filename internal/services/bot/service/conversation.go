@@ -17,7 +17,7 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 	}
 
 	messages = append(messages, user.Messages...)
-	newMessage := MessageHandler(chat)
+	newMessage := MessageHandler(r.llmProvider.ProviderName(), chat)
 	messages = append(messages, newMessage)
 
 	result, response, err := r.factoryChat(user, chat, messages)
@@ -61,12 +61,12 @@ func (r *BotServiceImpl) chat(user *model.User, chat *model.TelegramIncommingCha
 		return nil, "", err
 	}
 
-	send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, utils.Watermark(res.Content, user.Model), true)
+	send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, utils.Watermark(res.Content.(string), user.Model), true)
 	if err != nil || !send.Ok {
 		return nil, "", nil
 	}
 
-	return send, res.Content, nil
+	return send, res.Content.(string), nil
 }
 
 func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncommingChat, messages []provider.Message) (*model.TelegramSendMessageStatus, string, error) {
@@ -83,8 +83,8 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncomm
 
 	err = r.llmProvider.ChatStream(user.Model, messages, func(partial provider.Message) error {
 		chunk := partial.Content
-		streamingContent += chunk
-		bufferedContent += chunk
+		streamingContent += chunk.(string)
+		bufferedContent += chunk.(string)
 		if len(bufferedContent) >= bufferThreshold {
 			editMessage, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n✨Typing...", false)
 			if err != nil || !editMessage.Ok {

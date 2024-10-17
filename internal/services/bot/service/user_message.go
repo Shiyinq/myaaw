@@ -13,48 +13,62 @@ type MessageFactory interface {
 type ImageMessageFactory struct{}
 
 func (f *ImageMessageFactory) CreateMessage(chat *model.TelegramIncommingChat) provider.Message {
+	var fileID string
 	var newMessage provider.Message
 
 	if chat.Message.Photo != nil {
-		fileID := chat.Message.Photo[len(chat.Message.Photo)-1].FileID
-		path, err := getFilePath(fileID)
-		if err != nil {
-			log.Println(err)
-			return newMessage
-		}
-		base64, err := imageURLToBase64(path)
-		if err != nil {
-			log.Println(err)
-			return newMessage
-		}
-		newMessage.Role = "user"
-		newMessage.Content = getCaption(chat.Message.Caption)
-		newMessage.Images = append(newMessage.Images, base64)
+		fileID = chat.Message.Photo[len(chat.Message.Photo)-1].FileID
+	} else if chat.Message.Document != nil {
+		fileID = chat.Message.Document.FileID
 	}
+
+	path, err := getFilePath(fileID)
+	if err != nil {
+		log.Println(err)
+		return newMessage
+	}
+	base64, err := imageURLToBase64(path)
+	if err != nil {
+		log.Println(err)
+		return newMessage
+	}
+
+	newMessage.Role = "user"
+	newMessage.Content = getCaption(chat.Message.Caption)
+	newMessage.Images = append(newMessage.Images, base64)
 
 	return newMessage
 }
 
-type DocumentMessageFactory struct{}
+type ImageMessageType2Factory struct{}
 
-func (f *DocumentMessageFactory) CreateMessage(chat *model.TelegramIncommingChat) provider.Message {
+func (f *ImageMessageType2Factory) CreateMessage(chat *model.TelegramIncommingChat) provider.Message {
+	var fileID string
 	var newMessage provider.Message
 
-	if chat.Message.Document != nil {
-		fileID := chat.Message.Document.FileID
-		path, err := getFilePath(fileID)
-		if err != nil {
-			log.Println(err)
-			return newMessage
-		}
-		base64, err := imageURLToBase64(path)
-		if err != nil {
-			log.Println(err)
-			return newMessage
-		}
-		newMessage.Role = "user"
-		newMessage.Content = getCaption(chat.Message.Caption)
-		newMessage.Images = append(newMessage.Images, base64)
+	if chat.Message.Photo != nil {
+		fileID = chat.Message.Photo[len(chat.Message.Photo)-1].FileID
+	} else if chat.Message.Document != nil {
+		fileID = chat.Message.Document.FileID
+	}
+
+	path, err := getFilePath(fileID)
+	if err != nil {
+		return newMessage
+	}
+
+	newMessage.Role = "user"
+	newMessage.Content = []provider.ContentItem{
+		{
+			Type: "text",
+			Text: getCaption(chat.Message.Caption),
+		},
+		{
+			Type: "image_url",
+			ImageURL: &provider.ImageInfo{
+				URL: telegramImageURL(path),
+			},
+		},
 	}
 
 	return newMessage
@@ -76,12 +90,17 @@ func getCaption(caption string) string {
 	return "Explain this image"
 }
 
-func MessageHandler(chat *model.TelegramIncommingChat) provider.Message {
+func MessageHandler(provider string, chat *model.TelegramIncommingChat) provider.Message {
 	var factory MessageFactory
-	if chat.Message.Photo != nil {
+
+	if chat.Message.Photo != nil && provider == "openai" {
+		factory = &ImageMessageType2Factory{}
+	} else if chat.Message.Document != nil && provider == "openai" {
+		factory = &ImageMessageType2Factory{}
+	} else if chat.Message.Photo != nil {
 		factory = &ImageMessageFactory{}
 	} else if chat.Message.Document != nil {
-		factory = &DocumentMessageFactory{}
+		factory = &ImageMessageFactory{}
 	} else {
 		factory = &TextMessageFactory{}
 	}
