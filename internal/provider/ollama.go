@@ -67,14 +67,18 @@ func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	var response OllamaResponse
-	_, err := client.R().
+	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
 		SetResult(&response).
 		Post(o.baseURL + "/api/chat")
 
-	if err != nil {
-		return Message{}, fmt.Errorf("error fetching model response: %w", err)
+	if err != nil || res.StatusCode() != 200 {
+		msg := fmt.Sprintf("error fetching response: %v", err)
+		if err == nil {
+			msg = fmt.Sprintf("error fetching response: %s", res.String())
+		}
+		return Message{}, fmt.Errorf(msg)
 	}
 
 	return response.Message, nil
@@ -91,18 +95,23 @@ func (o *OllamaProvider) ChatStream(modelName string, messages []Message, callba
 		Messages: messages,
 	}
 
-	resp, err := client.R().
+	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
 		SetDoNotParseResponse(true).
 		Post(o.baseURL + "/api/chat")
 
-	if err != nil {
-		return err
+	if err != nil || res.StatusCode() != 200 {
+		msg := fmt.Sprintf("error fetching stream response: %v", err)
+		if err == nil {
+			msg = fmt.Sprintf("error fetching stream response: %s", res.String())
+		}
+		return fmt.Errorf(msg)
 	}
-	defer resp.RawBody().Close()
 
-	reader := bufio.NewReader(resp.RawBody())
+	defer res.RawBody().Close()
+
+	reader := bufio.NewReader(res.RawBody())
 	var response OllamaResponse
 
 	for {
@@ -151,13 +160,17 @@ func (o *OllamaProvider) ollamaTags() (*OllamaTagsResponse, error) {
 	client := resty.New()
 
 	var response OllamaTagsResponse
-	_, err := client.R().
+	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetResult(&response).
 		Get(o.baseURL + "/api/tags")
 
-	if err != nil {
-		return nil, fmt.Errorf("error fetching ollama tags: %w", err)
+	if err != nil || res.StatusCode() != 200 {
+		msg := fmt.Sprintf("error fetching ollama tags: %v", err)
+		if err == nil {
+			msg = fmt.Sprintf("error fetching ollama tags: %s", res.String())
+		}
+		return nil, fmt.Errorf(msg)
 	}
 
 	return &response, nil

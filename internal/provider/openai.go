@@ -85,15 +85,19 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	var response ChatCompletion
-	_, err := client.R().
+	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
 		SetBody(request).
 		SetResult(&response).
 		Post(o.baseURL + "/v1/chat/completions")
 
-	if err != nil {
-		return Message{}, fmt.Errorf("error fetching model response: %w", err)
+	if err != nil || res.StatusCode() != 200 {
+		msg := fmt.Sprintf("error fetching response: %v", err)
+		if err == nil {
+			msg = fmt.Sprintf("error fetching response: %s", res.String())
+		}
+		return Message{}, fmt.Errorf(msg)
 	}
 
 	return response.Choices[0].Message, nil
@@ -109,19 +113,24 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 		Messages: messages,
 	}
 
-	resp, err := client.R().
+	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
 		SetBody(request).
 		SetDoNotParseResponse(true).
 		Post(o.baseURL + "/v1/chat/completions")
 
-	if err != nil {
-		return err
+	if err != nil || res.StatusCode() != 200 {
+		msg := fmt.Sprintf("error fetching stream response: %v", err)
+		if err == nil {
+			msg = fmt.Sprintf("error fetching stream response: %s", res.String())
+		}
+		return fmt.Errorf(msg)
 	}
-	defer resp.RawBody().Close()
 
-	reader := bufio.NewReader(resp.RawBody())
+	defer res.RawBody().Close()
+
+	reader := bufio.NewReader(res.RawBody())
 	var response ChatCompletion
 	for {
 		line, err := reader.ReadString('\n')
@@ -180,14 +189,18 @@ func (o *OpenAIProvider) openAIModels() (*Models, error) {
 	client := resty.New()
 
 	var response Models
-	_, err := client.R().
+	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
 		SetResult(&response).
 		Get(o.baseURL + "/v1/models")
 
-	if err != nil {
-		return nil, fmt.Errorf("error fetching openai models: %w", err)
+	if err != nil || res.StatusCode() != 200 {
+		msg := fmt.Sprintf("error fetching openai models: %v", err)
+		if err == nil {
+			msg = fmt.Sprintf("error fetching openai models: %s", res.String())
+		}
+		return nil, fmt.Errorf(msg)
 	}
 
 	return &response, nil
