@@ -3,6 +3,8 @@ package service
 import (
 	"strconv"
 	"teo/internal/common"
+	"teo/internal/config"
+	"teo/internal/pkg"
 	"teo/internal/provider"
 	"teo/internal/services/bot/model"
 	"teo/internal/utils"
@@ -28,9 +30,20 @@ func (r *BotServiceImpl) handleResetCommand(chat *model.TelegramIncommingChat) (
 }
 
 func (r *BotServiceImpl) handleModelsCommand(user *model.User, chat *model.TelegramIncommingChat, args string) (bool, string, error) {
-	models, err := r.llmProvider.Models()
+	var models []string
+	modelCache, err := pkg.GetModelNamesFromRedis(config.RedisClient)
 	if err != nil {
 		return true, common.CommandModelsFailed(), nil
+	}
+
+	if modelCache != nil {
+		models = modelCache
+	} else {
+		models, err = r.llmProvider.Models()
+		if err != nil {
+			return true, common.CommandModelsFailed(), nil
+		}
+		pkg.SaveModelNamesToRedis(config.RedisClient, models)
 	}
 
 	if args == "" {
