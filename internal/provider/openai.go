@@ -1,7 +1,11 @@
 package provider
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
+	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -10,7 +14,8 @@ import (
 type Choice struct {
 	Index        int     `json:"index"`
 	Message      Message `json:"message"`
-	Logprobs     *string `json:"logprobs"`
+	Delta        Message `json:"delta,omitempty"`
+	Logprobs     *string `json:"logprobs,omitempty"`
 	FinishReason string  `json:"finish_reason"`
 }
 
@@ -95,6 +100,65 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 }
 
 func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
+	client := resty.New()
+	client.SetTimeout(120 * time.Second)
+
+	request := OpenAIRequest{
+		Model:    modelName,
+		Stream:   true,
+		Messages: messages,
+	}
+
+	resp, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
+		SetBody(request).
+		SetDoNotParseResponse(true).
+		Post(o.baseURL + "/v1/chat/completions")
+
+	if err != nil {
+		return err
+	}
+	defer resp.RawBody().Close()
+
+	reader := bufio.NewReader(resp.RawBody())
+	var response ChatCompletion
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("error reading stream: %w", err)
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "[DONE]" {
+			break
+		}
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		jsonData := strings.TrimPrefix(line, "data: ")
+
+		err = json.Unmarshal([]byte(jsonData), &response)
+		if err != nil {
+			return fmt.Errorf("error unmarshalling stream data: %w", err)
+		}
+
+		partialMessage := response.Choices[0].Delta
+		err = callback(partialMessage)
+		if err != nil {
+			return fmt.Errorf("error in callback: %w", err)
+		}
+
+		if response.Choices[0].FinishReason == "stop" {
+			break
+		}
+	}
+
 	return nil
 }
 
