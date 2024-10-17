@@ -41,6 +41,18 @@ type OpenAIRequest struct {
 	Stream   bool      `json:"stream"`
 }
 
+type Models struct {
+	Object string  `json:"object"`
+	Data   []Model `json:"data"`
+}
+
+type Model struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	OwnedBy string `json:"owned_by"`
+}
+
 type OpenAIProvider struct {
 	baseURL string
 	apiKey  string
@@ -87,6 +99,32 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 }
 
 func (o *OpenAIProvider) Models() ([]string, error) {
+	response, err := o.openAIModels()
+	if err != nil {
+		return nil, err
+	}
+
 	var models []string
+	for _, model := range response.Data {
+		models = append(models, model.ID)
+	}
+
 	return models, nil
+}
+
+func (o *OpenAIProvider) openAIModels() (*Models, error) {
+	client := resty.New()
+
+	var response Models
+	_, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
+		SetResult(&response).
+		Get(o.baseURL + "/v1/models")
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &response, nil
 }
