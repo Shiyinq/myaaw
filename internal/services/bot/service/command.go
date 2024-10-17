@@ -31,7 +31,8 @@ func (r *BotServiceImpl) handleResetCommand(chat *model.TelegramIncommingChat) (
 
 func (r *BotServiceImpl) handleModelsCommand(user *model.User, chat *model.TelegramIncommingChat, args string) (bool, string, error) {
 	var models []string
-	modelCache, err := pkg.GetModelNamesFromRedis(config.RedisClient)
+	provider := r.llmProvider.ProviderName()
+	modelCache, err := pkg.GetModelNamesFromRedis(config.RedisClient, provider)
 	if err != nil {
 		return true, common.CommandModelsFailed(), nil
 	}
@@ -43,7 +44,7 @@ func (r *BotServiceImpl) handleModelsCommand(user *model.User, chat *model.Teleg
 		if err != nil {
 			return true, common.CommandModelsFailed(), nil
 		}
-		pkg.SaveModelNamesToRedis(config.RedisClient, models)
+		pkg.SaveModelNamesToRedis(config.RedisClient, provider, models)
 	}
 
 	if args == "" {

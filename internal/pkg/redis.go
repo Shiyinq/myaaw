@@ -63,13 +63,13 @@ func GetUserFromRedis(rd *redis.Client, userId int) (*model.User, error) {
 	return &user, nil
 }
 
-func SaveModelNamesToRedis(rd *redis.Client, models interface{}) error {
+func SaveModelNamesToRedis(rd *redis.Client, provider string, models interface{}) error {
 	tagsData, err := json.Marshal(models)
 	if err != nil {
 		return fmt.Errorf("error serializing model names: %w", err)
 	}
 
-	cacheKey := "model_names"
+	cacheKey := provider + "_model_names"
 	expiration := 24 * time.Hour
 	err = rd.Set(context.Background(), cacheKey, tagsData, expiration).Err()
 	if err != nil {
@@ -79,8 +79,8 @@ func SaveModelNamesToRedis(rd *redis.Client, models interface{}) error {
 	return nil
 }
 
-func GetModelNamesFromRedis(rd *redis.Client) ([]string, error) {
-	cacheKey := "model_names"
+func GetModelNamesFromRedis(rd *redis.Client, provider string) ([]string, error) {
+	cacheKey := provider + "_model_names"
 	cachedData, err := rd.Get(context.Background(), cacheKey).Result()
 	if err != nil {
 		if err == redis.Nil {
