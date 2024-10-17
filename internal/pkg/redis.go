@@ -39,7 +39,7 @@ func SaveUserToRedis(rd *redis.Client, user *model.User) error {
 	if err != nil {
 		return fmt.Errorf("error saving user to Redis: %w", err)
 	}
-	fmt.Println("save user data to redis")
+	// fmt.Println("save user data to redis")
 	return nil
 }
 
@@ -59,7 +59,7 @@ func GetUserFromRedis(rd *redis.Client, userId int) (*model.User, error) {
 		return nil, err
 	}
 
-	fmt.Println("user data from redis")
+	// fmt.Println("user data from redis")
 	return &user, nil
 }
 
