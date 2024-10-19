@@ -10,28 +10,60 @@ import (
 	"teo/internal/utils"
 )
 
-func (r *BotServiceImpl) handleSystemCommand(user *model.User, args string) (bool, string, error) {
+type CommandFactory interface {
+	HandleCommand(user *model.User, args string) (bool, string, error)
+}
+
+type StartCommand struct {
+	r *BotServiceImpl
+}
+
+func (c *StartCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
+	return true, common.CommandStart(), nil
+}
+
+type AboutCommand struct {
+	r *BotServiceImpl
+}
+
+func (c *AboutCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
+	return true, common.CommandAbout(), nil
+}
+
+type SystemCommand struct {
+	r *BotServiceImpl
+}
+
+func (c *SystemCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
 	if args == "" {
 		return true, common.CommandSystemNeedArgs(), nil
 	}
-	err := r.userRepo.UpdateSystem(user.UserId, args)
+	err := c.r.userRepo.UpdateSystem(user.UserId, args)
 	if err != nil {
 		return true, common.CommandSystemFailed(), nil
 	}
 	return true, common.CommandSystem(), nil
 }
 
-func (r *BotServiceImpl) handleResetCommand(user *model.User) (bool, string, error) {
-	err := r.userRepo.UpdateMessages(user.UserId, &[]provider.Message{})
+type ResetCommand struct {
+	r *BotServiceImpl
+}
+
+func (c *ResetCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
+	err := c.r.userRepo.UpdateMessages(user.UserId, &[]provider.Message{})
 	if err != nil {
 		return true, common.CommandResetFailed(), nil
 	}
 	return true, common.CommandReset(), nil
 }
 
-func (r *BotServiceImpl) handleModelsCommand(user *model.User, args string) (bool, string, error) {
+type ModelsCommand struct {
+	r *BotServiceImpl
+}
+
+func (c *ModelsCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
 	var models []string
-	provider := r.llmProvider.ProviderName()
+	provider := c.r.llmProvider.ProviderName()
 	modelCache, err := pkg.GetModelNamesFromRedis(config.RedisClient, provider)
 	if err != nil {
 		return true, common.CommandModelsFailed(), nil
@@ -40,7 +72,7 @@ func (r *BotServiceImpl) handleModelsCommand(user *model.User, args string) (boo
 	if modelCache != nil {
 		models = modelCache
 	} else {
-		models, err = r.llmProvider.Models()
+		models, err = c.r.llmProvider.Models()
 		if err != nil {
 			return true, common.CommandModelsFailed(), nil
 		}
@@ -56,7 +88,7 @@ func (r *BotServiceImpl) handleModelsCommand(user *model.User, args string) (boo
 		return true, common.CommandModelsArgsNotInt(), nil
 	}
 
-	err = r.userRepo.UpdateModel(user.UserId, models[idModel])
+	err = c.r.userRepo.UpdateModel(user.UserId, models[idModel])
 	if err != nil {
 		return true, common.CommandModelsUpdateFailed(), nil
 	}
@@ -64,7 +96,11 @@ func (r *BotServiceImpl) handleModelsCommand(user *model.User, args string) (boo
 	return true, common.CommandModels(), nil
 }
 
-func (r *BotServiceImpl) handleAgentCommand(user *model.User, args string) (bool, string, error) {
+type AgentCommand struct {
+	r *BotServiceImpl
+}
+
+func (c *AgentCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
 	list, detailAgents := utils.Agents()
 
 	if args == "" {
@@ -81,11 +117,32 @@ func (r *BotServiceImpl) handleAgentCommand(user *model.User, args string) (bool
 	}
 
 	if prompt, ok := detailAgents[idAgent]["prompt"].(string); ok {
-		r.handleResetCommand(user)
-		return r.handleSystemCommand(user, prompt)
+		var cf CommandFactory
+
+		cf = &ResetCommand{r: c.r}
+		cf.HandleCommand(user, args)
+
+		cf = &SystemCommand{r: c.r}
+		return cf.HandleCommand(user, prompt)
 	}
 
 	return true, "", nil
+}
+
+type MeCommand struct {
+	r *BotServiceImpl
+}
+
+func (c *MeCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
+	return true, utils.CommandMe(user), nil
+}
+
+type NotFoundCommand struct {
+	r *BotServiceImpl
+}
+
+func (c *NotFoundCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
+	return true, common.CommandNotFound(), nil
 }
 
 func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error) {
@@ -94,22 +151,19 @@ func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncomming
 		return false, "", nil
 	}
 
-	switch command {
-	case "start":
-		return true, common.CommandStart(), nil
-	case "about":
-		return true, common.CommandAbout(), nil
-	case "system":
-		return r.handleSystemCommand(user, commandArgs)
-	case "reset":
-		return r.handleResetCommand(user)
-	case "models":
-		return r.handleModelsCommand(user, commandArgs)
-	case "me":
-		return true, utils.CommandMe(user), nil
-	case "agents":
-		return r.handleAgentCommand(user, commandArgs)
-	default:
-		return true, common.CommandNotFound(command), nil
+	commandMap := map[string]CommandFactory{
+		"start":  &StartCommand{r: r},
+		"about":  &AboutCommand{r: r},
+		"system": &SystemCommand{r: r},
+		"reset":  &ResetCommand{r: r},
+		"models": &ModelsCommand{r: r},
+		"agents": &AgentCommand{r: r},
+		"me":     &MeCommand{r: r},
 	}
+
+	commandMessage, exists := commandMap[command]
+	if !exists {
+		commandMessage = &NotFoundCommand{r: r}
+	}
+	return commandMessage.HandleCommand(user, commandArgs)
 }
