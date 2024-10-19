@@ -1,7 +1,6 @@
 package common
 
 import (
-	"fmt"
 	"teo/internal/config"
 )
 
@@ -41,8 +40,8 @@ func CommandSystemFailed() string {
 	return "❌ Failed to update the system prompt. Please try again later."
 }
 
-func CommandNotFound(command string) string {
-	return fmt.Sprintf("Command /%s not found.", command)
+func CommandNotFound() string {
+	return "4️⃣0️⃣4️⃣ Command not found."
 }
 
 func CommandModels() string {
