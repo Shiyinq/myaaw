@@ -10,26 +10,26 @@ import (
 	"teo/internal/utils"
 )
 
-func (r *BotServiceImpl) handleSystemCommand(chat *model.TelegramIncommingChat, args string) (bool, string, error) {
+func (r *BotServiceImpl) handleSystemCommand(user *model.User, args string) (bool, string, error) {
 	if args == "" {
 		return true, common.CommandSystemNeedArgs(), nil
 	}
-	err := r.userRepo.UpdateSystem(chat.Message.From.Id, args)
+	err := r.userRepo.UpdateSystem(user.UserId, args)
 	if err != nil {
 		return true, common.CommandSystemFailed(), nil
 	}
 	return true, common.CommandSystem(), nil
 }
 
-func (r *BotServiceImpl) handleResetCommand(chat *model.TelegramIncommingChat) (bool, string, error) {
-	err := r.userRepo.UpdateMessages(chat.Message.From.Id, &[]provider.Message{})
+func (r *BotServiceImpl) handleResetCommand(user *model.User) (bool, string, error) {
+	err := r.userRepo.UpdateMessages(user.UserId, &[]provider.Message{})
 	if err != nil {
 		return true, common.CommandResetFailed(), nil
 	}
 	return true, common.CommandReset(), nil
 }
 
-func (r *BotServiceImpl) handleModelsCommand(user *model.User, chat *model.TelegramIncommingChat, args string) (bool, string, error) {
+func (r *BotServiceImpl) handleModelsCommand(user *model.User, args string) (bool, string, error) {
 	var models []string
 	provider := r.llmProvider.ProviderName()
 	modelCache, err := pkg.GetModelNamesFromRedis(config.RedisClient, provider)
@@ -56,7 +56,7 @@ func (r *BotServiceImpl) handleModelsCommand(user *model.User, chat *model.Teleg
 		return true, common.CommandModelsArgsNotInt(), nil
 	}
 
-	err = r.userRepo.UpdateModel(chat.Message.From.Id, models[idModel])
+	err = r.userRepo.UpdateModel(user.UserId, models[idModel])
 	if err != nil {
 		return true, common.CommandModelsUpdateFailed(), nil
 	}
@@ -64,7 +64,7 @@ func (r *BotServiceImpl) handleModelsCommand(user *model.User, chat *model.Teleg
 	return true, common.CommandModels(), nil
 }
 
-func (r *BotServiceImpl) handleAgentCommand(chat *model.TelegramIncommingChat, args string) (bool, string, error) {
+func (r *BotServiceImpl) handleAgentCommand(user *model.User, args string) (bool, string, error) {
 	list, detailAgents := utils.Agents()
 
 	if args == "" {
@@ -81,8 +81,8 @@ func (r *BotServiceImpl) handleAgentCommand(chat *model.TelegramIncommingChat, a
 	}
 
 	if prompt, ok := detailAgents[idAgent]["prompt"].(string); ok {
-		r.handleResetCommand(chat)
-		return r.handleSystemCommand(chat, prompt)
+		r.handleResetCommand(user)
+		return r.handleSystemCommand(user, prompt)
 	}
 
 	return true, "", nil
@@ -100,15 +100,15 @@ func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncomming
 	case "about":
 		return true, common.CommandAbout(), nil
 	case "system":
-		return r.handleSystemCommand(chat, commandArgs)
+		return r.handleSystemCommand(user, commandArgs)
 	case "reset":
-		return r.handleResetCommand(chat)
+		return r.handleResetCommand(user)
 	case "models":
-		return r.handleModelsCommand(user, chat, commandArgs)
+		return r.handleModelsCommand(user, commandArgs)
 	case "me":
 		return true, utils.CommandMe(user), nil
 	case "agents":
-		return r.handleAgentCommand(chat, commandArgs)
+		return r.handleAgentCommand(user, commandArgs)
 	default:
 		return true, common.CommandNotFound(command), nil
 	}
