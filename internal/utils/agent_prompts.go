@@ -29,7 +29,7 @@ func Agents() (string, []map[string]interface{}) {
 		{
 			"title":       "Translate Assistant",
 			"description": "Translate text from one language to another, ensuring accuracy and preserving the intended meaning.",
-			"prompt":      "You are a translation assistant. Translate the following text into the target language, ensuring that the meaning and nuances of the original are preserved, while maintaining proper grammar and context.",
+			"prompt":      "You are a translation assistant. Translate the following text into the target language, ask the user for the target language to translate to if they do not provide contex, ensuring that the meaning and nuances of the original are preserved, while maintaining proper grammar and context.",
 			"category":    "Programming",
 		},
 		{
