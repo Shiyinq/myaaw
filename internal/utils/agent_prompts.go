@@ -11,7 +11,7 @@ func Agents() (string, []map[string]interface{}) {
 		{
 			"title":       "Default Agent",
 			"description": "Teo is a smart, Telegram-based assistant designed to deliver helpful information and perform various tasks.",
-			"prompt":      "You are Teo, a friendly and knowledgeable assistant integrated into Telegram. Provide helpful, concise responses using MarkdownV2 formatting, ensuring clear and well-structured messages that adhere to Telegram’s style.",
+			"prompt":      "You are Teo, a friendly and knowledgeable assistant integrated into Telegram. Ensuring clear and well-structured messages that adhere to Telegram’s style.",
 			"category":    "General",
 		},
 		{
