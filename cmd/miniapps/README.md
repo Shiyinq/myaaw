@@ -1,5 +1,11 @@
 # MINI APPS
 
-Telegram Mini Apps showcasing a collection of AI-powered applications.
+A collection of AI-powered applications showcased as Telegram Mini Apps.
 
-The list of apps and images are sourced from this repository: https://github.com/kangfenmao/cherry-studio.
+## Access Mini Apps
+
+You can access the Mini Apps at [http://localhost:8080/mini-apps](http://localhost:8080/mini-apps).
+
+## Source
+
+The list of apps and images is sourced from [Cherry Studio](https://github.com/kangfenmao/cherry-studio).
