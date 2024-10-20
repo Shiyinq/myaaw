@@ -9,6 +9,21 @@ import (
 )
 
 func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error) {
+	messages := r.buildConversationMessages(user, chat)
+
+	result, response, err := r.factoryChat(user, chat, messages)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := r.updateUserMessages(chat, messages, response); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *model.TelegramIncommingChat) []provider.Message {
 	messages := []provider.Message{
 		{
 			Role:    "system",
@@ -20,20 +35,17 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 	newMessage := NewMessage(r.llmProvider.ProviderName(), chat)
 	messages = append(messages, newMessage)
 
-	result, response, err := r.factoryChat(user, chat, messages)
-	if err != nil {
-		return nil, err
-	}
+	return messages
+}
 
+func (r *BotServiceImpl) updateUserMessages(chat *model.TelegramIncommingChat, messages []provider.Message, response provider.Message) error {
 	messages = append(messages, response)
 	messages = messages[1:]
-	updateError := r.userRepo.UpdateMessages(chat.Message.From.Id, &messages)
-
-	if updateError != nil {
-		return nil, err
+	if err := r.userRepo.UpdateMessages(chat.Message.From.Id, &messages); err != nil {
+		return err
 	}
 
-	return result, nil
+	return nil
 }
 
 func (r *BotServiceImpl) factoryChat(user *model.User, chat *model.TelegramIncommingChat, messages []provider.Message) (*model.TelegramSendMessageStatus, provider.Message, error) {
