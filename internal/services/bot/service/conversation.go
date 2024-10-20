@@ -17,7 +17,7 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 	}
 
 	messages = append(messages, user.Messages...)
-	newMessage := MessageHandler(r.llmProvider.ProviderName(), chat)
+	newMessage := NewMessage(r.llmProvider.ProviderName(), chat)
 	messages = append(messages, newMessage)
 
 	result, response, err := r.factoryChat(user, chat, messages)

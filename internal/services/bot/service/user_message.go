@@ -11,9 +11,13 @@ type MessageFactory interface {
 	CreateMessage(chat *model.TelegramIncommingChat) provider.Message
 }
 
-type ImageMessageFactory struct{}
+type ImageMessage struct{}
 
-func (f *ImageMessageFactory) CreateMessage(chat *model.TelegramIncommingChat) provider.Message {
+func NewImageMessage() MessageFactory {
+	return &ImageMessage{}
+}
+
+func (f *ImageMessage) CreateMessage(chat *model.TelegramIncommingChat) provider.Message {
 	var fileID string
 	var newMessage provider.Message
 
@@ -41,9 +45,13 @@ func (f *ImageMessageFactory) CreateMessage(chat *model.TelegramIncommingChat) p
 	return newMessage
 }
 
-type ImageMessageType2Factory struct{}
+type ImageMessageType2 struct{}
 
-func (f *ImageMessageType2Factory) CreateMessage(chat *model.TelegramIncommingChat) provider.Message {
+func NewImageMessageType2() MessageFactory {
+	return &ImageMessageType2{}
+}
+
+func (f *ImageMessageType2) CreateMessage(chat *model.TelegramIncommingChat) provider.Message {
 	var fileID string
 	var newMessage provider.Message
 
@@ -75,28 +83,33 @@ func (f *ImageMessageType2Factory) CreateMessage(chat *model.TelegramIncommingCh
 	return newMessage
 }
 
-type TextMessageFactory struct{}
+type TextMessage struct{}
 
-func (f *TextMessageFactory) CreateMessage(chat *model.TelegramIncommingChat) provider.Message {
+func NewTextMessage() MessageFactory {
+	return &TextMessage{}
+}
+
+func (f *TextMessage) CreateMessage(chat *model.TelegramIncommingChat) provider.Message {
 	return provider.Message{
 		Role:    "user",
 		Content: chat.Message.Text,
 	}
 }
 
-func MessageHandler(provider string, chat *model.TelegramIncommingChat) provider.Message {
+func NewMessage(provider string, chat *model.TelegramIncommingChat) provider.Message {
 	var factory MessageFactory
 
-	if chat.Message.Photo != nil && provider == "openai" {
-		factory = &ImageMessageType2Factory{}
-	} else if chat.Message.Document != nil && provider == "openai" {
-		factory = &ImageMessageType2Factory{}
-	} else if chat.Message.Photo != nil {
-		factory = &ImageMessageFactory{}
-	} else if chat.Message.Document != nil {
-		factory = &ImageMessageFactory{}
-	} else {
-		factory = &TextMessageFactory{}
+	isOpenAI := provider == "openai"
+	hasPhoto := chat.Message.Photo != nil
+	hasDocument := chat.Message.Document != nil
+
+	switch {
+	case (hasPhoto || hasDocument) && isOpenAI:
+		factory = NewImageMessageType2()
+	case hasPhoto || hasDocument:
+		factory = NewImageMessage()
+	default:
+		factory = NewTextMessage()
 	}
 
 	return factory.CreateMessage(chat)
