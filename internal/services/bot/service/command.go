@@ -18,6 +18,10 @@ type StartCommand struct {
 	r *BotServiceImpl
 }
 
+func NewStartCommand(r *BotServiceImpl) CommandFactory {
+	return &StartCommand{r: r}
+}
+
 func (c *StartCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
 	return true, common.CommandStart(), nil
 }
@@ -26,12 +30,20 @@ type AboutCommand struct {
 	r *BotServiceImpl
 }
 
+func NewAboutCommand(r *BotServiceImpl) CommandFactory {
+	return &AboutCommand{r: r}
+}
+
 func (c *AboutCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
 	return true, common.CommandAbout(), nil
 }
 
 type SystemCommand struct {
 	r *BotServiceImpl
+}
+
+func NewSystemCommand(r *BotServiceImpl) CommandFactory {
+	return &SystemCommand{r: r}
 }
 
 func (c *SystemCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
@@ -49,6 +61,10 @@ type ResetCommand struct {
 	r *BotServiceImpl
 }
 
+func NewResetCommand(r *BotServiceImpl) CommandFactory {
+	return &ResetCommand{r: r}
+}
+
 func (c *ResetCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
 	err := c.r.userRepo.UpdateMessages(user.UserId, &[]provider.Message{})
 	if err != nil {
@@ -59,6 +75,10 @@ func (c *ResetCommand) HandleCommand(user *model.User, args string) (bool, strin
 
 type ModelsCommand struct {
 	r *BotServiceImpl
+}
+
+func NewModelsCommand(r *BotServiceImpl) CommandFactory {
+	return &ModelsCommand{r: r}
 }
 
 func (c *ModelsCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
@@ -96,11 +116,15 @@ func (c *ModelsCommand) HandleCommand(user *model.User, args string) (bool, stri
 	return true, common.CommandModels(), nil
 }
 
-type AgentCommand struct {
+type AgentsCommand struct {
 	r *BotServiceImpl
 }
 
-func (c *AgentCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
+func NewAgentsCommand(r *BotServiceImpl) CommandFactory {
+	return &AgentsCommand{r: r}
+}
+
+func (c *AgentsCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
 	list, detailAgents := utils.Agents()
 
 	if args == "" {
@@ -133,6 +157,10 @@ type MeCommand struct {
 	r *BotServiceImpl
 }
 
+func NewMeCommand(r *BotServiceImpl) CommandFactory {
+	return &MeCommand{r: r}
+}
+
 func (c *MeCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
 	return true, utils.CommandMe(user), nil
 }
@@ -141,29 +169,46 @@ type NotFoundCommand struct {
 	r *BotServiceImpl
 }
 
+func NewNotFoundCommand(r *BotServiceImpl) CommandFactory {
+	return &NotFoundCommand{r: r}
+}
+
 func (c *NotFoundCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
 	return true, common.CommandNotFound(), nil
 }
 
+type CommandExecutor struct {
+	commandMap map[string]CommandFactory
+}
+
+func NewCommandExecutor(r *BotServiceImpl) *CommandExecutor {
+	return &CommandExecutor{
+		commandMap: map[string]CommandFactory{
+			"start":  NewStartCommand(r),
+			"about":  NewAboutCommand(r),
+			"system": NewSystemCommand(r),
+			"reset":  NewResetCommand(r),
+			"models": NewModelsCommand(r),
+			"agents": NewAgentsCommand(r),
+			"me":     NewMeCommand(r),
+		},
+	}
+}
+
+func (e *CommandExecutor) ExecuteCommand(command string, user *model.User, args string) (bool, string, error) {
+	cmd, exists := e.commandMap[command]
+	if !exists {
+		cmd = NewNotFoundCommand(nil)
+	}
+	return cmd.HandleCommand(user, args)
+}
+
 func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error) {
-	isCommand, command, commandArgs := utils.ParseCommand(chat.Message.Text)
+	isCommand, command, args := utils.ParseCommand(chat.Message.Text)
 	if !isCommand {
 		return false, "", nil
 	}
 
-	commandMap := map[string]CommandFactory{
-		"start":  &StartCommand{r: r},
-		"about":  &AboutCommand{r: r},
-		"system": &SystemCommand{r: r},
-		"reset":  &ResetCommand{r: r},
-		"models": &ModelsCommand{r: r},
-		"agents": &AgentCommand{r: r},
-		"me":     &MeCommand{r: r},
-	}
-
-	commandMessage, exists := commandMap[command]
-	if !exists {
-		commandMessage = &NotFoundCommand{r: r}
-	}
-	return commandMessage.HandleCommand(user, commandArgs)
+	executor := NewCommandExecutor(r)
+	return executor.ExecuteCommand(command, user, args)
 }
