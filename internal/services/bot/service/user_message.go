@@ -4,6 +4,7 @@ import (
 	"log"
 	"teo/internal/provider"
 	"teo/internal/services/bot/model"
+	"teo/internal/utils"
 )
 
 type MessageFactory interface {
@@ -34,7 +35,7 @@ func (f *ImageMessageFactory) CreateMessage(chat *model.TelegramIncommingChat) p
 	}
 
 	newMessage.Role = "user"
-	newMessage.Content = getCaption(chat.Message.Caption)
+	newMessage.Content = utils.GetImageCaption(chat.Message.Caption)
 	newMessage.Images = append(newMessage.Images, base64)
 
 	return newMessage
@@ -61,7 +62,7 @@ func (f *ImageMessageType2Factory) CreateMessage(chat *model.TelegramIncommingCh
 	newMessage.Content = []provider.ContentItem{
 		{
 			Type: "text",
-			Text: getCaption(chat.Message.Caption),
+			Text: utils.GetImageCaption(chat.Message.Caption),
 		},
 		{
 			Type: "image_url",
@@ -81,13 +82,6 @@ func (f *TextMessageFactory) CreateMessage(chat *model.TelegramIncommingChat) pr
 		Role:    "user",
 		Content: chat.Message.Text,
 	}
-}
-
-func getCaption(caption string) string {
-	if caption != "" {
-		return caption
-	}
-	return "Explain this image"
 }
 
 func MessageHandler(provider string, chat *model.TelegramIncommingChat) provider.Message {
