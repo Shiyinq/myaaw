@@ -30,6 +30,7 @@ func main() {
 	app.Use(middleware.NewLogger())
 
 	app.Get("/", middleware.HelloWorldHandler)
+	app.Static("/mini-apps", "./cmd/miniapps")
 	app.Get("/docs/*", swagger.HandlerDefault)
 	routes.SetupRoutes(app)
 
