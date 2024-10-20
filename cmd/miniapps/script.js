@@ -30,6 +30,7 @@ const appData = [
     {id: 'bolt', name: 'bolt', url: 'https://bolt.new/', color: '#000000', icon: 'b', iconURL: 'images/bolt.svg'}
 ];
 
+const basePath = '/mini-apps/';
 const appGrid = document.getElementById('appGrid');
 
 appData.forEach(app => {
@@ -41,7 +42,7 @@ appData.forEach(app => {
     iconElement.style.backgroundColor = app.color;
 
     const imgElement = document.createElement('img');
-    imgElement.src = app.iconURL ? app.iconURL : ''; 
+    imgElement.src = app.iconURL ? basePath + app.iconURL : ''; 
     imgElement.alt = app.name;
 
     iconElement.appendChild(imgElement);
