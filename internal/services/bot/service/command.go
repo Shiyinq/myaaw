@@ -104,8 +104,12 @@ func (c *ModelsCommand) HandleCommand(user *model.User, args string) (bool, stri
 	}
 
 	idModel, err := strconv.Atoi(args)
-	if err != nil || idModel < 0 || idModel >= len(models) {
+	if err != nil {
 		return true, common.CommandModelsArgsNotInt(), nil
+	}
+
+	if idModel < 0 || idModel >= len(models) {
+		return true, common.CommandModelsNotFound(), nil
 	}
 
 	err = c.r.userRepo.UpdateModel(user.UserId, models[idModel])

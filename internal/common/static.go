@@ -56,6 +56,10 @@ func CommandModelsArgsNotInt() string {
 	return "⚠️ The model ID must be an integer. Example: /models 2"
 }
 
+func CommandModelsNotFound() string {
+	return "4️⃣0️⃣4️⃣ Model not found"
+}
+
 func CommandModelsUpdateFailed() string {
 	return "❌ Failed to update the model. Please try again later."
 }
