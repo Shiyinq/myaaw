@@ -33,6 +33,7 @@ type Factory func(baseURL string, apiKey string) LLMProvider
 var ProviderFactories = map[string]Factory{
 	"ollama": NewOllamaProvider,
 	"openai": NewOpenAIProvider,
+	"gemini": NewGeminiProvider,
 }
 
 func CreateProvider(providerName string, apiKey string) (LLMProvider, error) {
