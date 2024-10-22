@@ -13,8 +13,8 @@ type Part struct {
 }
 
 type Content struct {
-	Parts []Part `json:"parts"`
-	Role  string `json:"role"`
+	Parts []Part `json:"parts,omitempty"`
+	Role  string `json:"role,omitempty"`
 }
 
 type SafetyRating struct {
@@ -41,7 +41,8 @@ type GenerateContent struct {
 }
 
 type GemeniRequest struct {
-	Contents []Content `json:"contents"`
+	Contents          []Content `json:"contents"`
+	SystemInstruction *Content  `json:"systemInstruction,omitempty"`
 }
 
 type GeminiModel struct {
@@ -126,6 +127,15 @@ func (o *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 
 	request := GemeniRequest{
 		Contents: MessagesToContents(messages),
+	}
+
+	if len(messages) > 0 && messages[0].Role == "system" {
+		request.SystemInstruction = &Content{
+			Parts: []Part{
+				{Text: messages[0].Content.(string)},
+			},
+			Role: "user",
+		}
 	}
 
 	var response GenerateContent
