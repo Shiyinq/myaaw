@@ -8,8 +8,14 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
+type InlineData struct {
+	MimeType string `json:"mime_type,omitempty"`
+	Data     string `json:"data,omitempty"`
+}
+
 type Part struct {
-	Text string `json:"text"`
+	Text       string      `json:"text,omitempty"`
+	InlineData *InlineData `json:"inline_data,omitempty"`
 }
 
 type Content struct {
@@ -94,10 +100,21 @@ func MessagesToContents(messages []Message) []Content {
 		}
 		content := Content{
 			Parts: []Part{
-				{Text: contentStr},
+				{
+					Text: contentStr,
+				},
 			},
 			Role: role,
 		}
+
+		if message.Images != nil {
+			image := &InlineData{
+				MimeType: "image/jpeg",
+				Data:     message.Images[0],
+			}
+			content.Parts = append(content.Parts, Part{InlineData: image})
+		}
+
 		contents = append(contents, content)
 	}
 
@@ -132,7 +149,9 @@ func (o *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 	if len(messages) > 0 && messages[0].Role == "system" {
 		request.SystemInstruction = &Content{
 			Parts: []Part{
-				{Text: messages[0].Content.(string)},
+				{
+					Text: messages[0].Content.(string),
+				},
 			},
 			Role: "user",
 		}
@@ -152,6 +171,10 @@ func (o *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 
 		}
 		return Message{}, fmt.Errorf(msg)
+	}
+
+	if response.Candidates[0].FinishReason == "SAFETY" {
+		return Message{}, fmt.Errorf("SAFETY")
 	}
 
 	return ContentToMessage(response.Candidates[0].Content), nil
