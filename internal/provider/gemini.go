@@ -98,24 +98,28 @@ func MessagesToContents(messages []Message) []Content {
 		if role == "assistant" {
 			role = "model"
 		}
-		content := Content{
-			Parts: []Part{
-				{
-					Text: contentStr,
+
+		var content Content
+		if contentStr != "" {
+			content = Content{
+				Parts: []Part{
+					{
+						Text: contentStr,
+					},
 				},
-			},
-			Role: role,
-		}
-
-		if message.Images != nil {
-			image := &InlineData{
-				MimeType: "image/jpeg",
-				Data:     message.Images[0],
+				Role: role,
 			}
-			content.Parts = append(content.Parts, Part{InlineData: image})
-		}
 
-		contents = append(contents, content)
+			if message.Images != nil {
+				image := &InlineData{
+					MimeType: "image/jpeg",
+					Data:     message.Images[0],
+				}
+				content.Parts = append(content.Parts, Part{InlineData: image})
+			}
+
+			contents = append(contents, content)
+		}
 	}
 
 	return contents
