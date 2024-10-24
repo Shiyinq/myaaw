@@ -3,10 +3,33 @@
 | ![Conversations 1](docs/images/conversations-1.png) | ![Conversations 2](docs/images/conversations-2.png) | ![Conversations 3](docs/images/conversations-3.png) | ![Conversations 4](docs/images/conversations-4.png) |
 |:---:|:---:|:---:|:---:|
 
-Telegram Ollama Integration
+Integrate your favorite LLM with a Telegram bot.
+
+
+## Providers
+- [x] Ollama
+- [x] OpenAI
+- [x] Gemini
+- [ ] Groq
+- [ ] Mistral
+- [ ] Anthropic
+
+## Features
+- [x] Text Input
+- [x] Image Input
+- [x] Basic Response
+- [x] Stream Response
+- [x] Predefine Prompts
+- [ ] Tools
+- [ ] Memory
+- [ ] History
+- [ ] Voice Input
+
 
 # Table of Contents
 - [TEO](#teo)
+  - [Providers](#providers)
+  - [Features](#features)
 - [Table of Contents](#table-of-contents)
   - [Development](#development)
     - [Prerequisites](#prerequisites)
