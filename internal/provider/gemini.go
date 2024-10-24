@@ -1,8 +1,12 @@
 package provider
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -185,6 +189,72 @@ func (o *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 }
 
 func (o *GeminiProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
+	client := resty.New()
+	client.SetTimeout(120 * time.Second)
+
+	request := GemeniRequest{
+		Contents: MessagesToContents(messages),
+	}
+
+	if len(messages) > 0 && messages[0].Role == "system" {
+		request.SystemInstruction = &Content{
+			Parts: []Part{
+				{
+					Text: messages[0].Content.(string),
+				},
+			},
+			Role: "user",
+		}
+	}
+
+	res, err := client.R().
+		SetHeader("Content-Type", "application/json").
+		SetBody(request).
+		SetDoNotParseResponse(true).
+		Post(o.baseURL + fmt.Sprintf("/v1beta/%s:streamGenerateContent?key=%s", modelName, o.apiKey))
+
+	if err != nil || res.StatusCode() != 200 {
+		msg := fmt.Sprintf("error fetching stream response: %v", err)
+		if err == nil {
+			msg = fmt.Sprintf("error fetching stream response: %s", res.String())
+		}
+		return fmt.Errorf(msg)
+	}
+
+	defer res.RawBody().Close()
+
+	reader := bufio.NewReader(res.RawBody())
+	var response GenerateContent
+	bufferJSON := ""
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("error reading stream: %w", err)
+		}
+
+		line = strings.TrimSpace(line)
+		if line != "," {
+			bufferJSON += line
+		}
+
+		bufferJSON = strings.TrimPrefix(bufferJSON, "[")
+		err = json.Unmarshal([]byte(bufferJSON), &response)
+		if err != nil {
+			continue
+		}
+
+		partialMessage := ContentToMessage(response.Candidates[0].Content)
+		err = callback(partialMessage)
+		if err != nil {
+			return fmt.Errorf("error in callback: %w", err)
+		}
+
+		bufferJSON = ""
+	}
+
 	return nil
 }
 
