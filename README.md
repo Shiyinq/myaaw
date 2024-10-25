@@ -10,8 +10,8 @@ Integrate your favorite LLM with a Telegram bot.
 - [x] Ollama
 - [x] OpenAI
 - [x] Gemini
-- [ ] Groq
-- [ ] Mistral
+- [x] Groq
+- [x] Mistral
 - [ ] Anthropic
 
 ## Features
