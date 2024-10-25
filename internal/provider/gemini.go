@@ -12,47 +12,47 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
-type InlineData struct {
+type GeminiInlineData struct {
 	MimeType string `json:"mime_type,omitempty"`
 	Data     string `json:"data,omitempty"`
 }
 
-type Part struct {
-	Text       string      `json:"text,omitempty"`
-	InlineData *InlineData `json:"inline_data,omitempty"`
+type GeminiPart struct {
+	Text       string            `json:"text,omitempty"`
+	InlineData *GeminiInlineData `json:"inline_data,omitempty"`
 }
 
-type Content struct {
-	Parts []Part `json:"parts,omitempty"`
-	Role  string `json:"role,omitempty"`
+type GeminiContent struct {
+	Parts []GeminiPart `json:"parts,omitempty"`
+	Role  string       `json:"role,omitempty"`
 }
 
-type SafetyRating struct {
+type GeminiSafetyRating struct {
 	Category    string `json:"category"`
 	Probability string `json:"probability"`
 }
 
-type Candidate struct {
-	Content       Content        `json:"content"`
-	FinishReason  string         `json:"finishReason"`
-	Index         int            `json:"index"`
-	SafetyRatings []SafetyRating `json:"safetyRatings"`
+type GeminiCandidate struct {
+	Content       GeminiContent        `json:"content"`
+	FinishReason  string               `json:"finishReason"`
+	Index         int                  `json:"index"`
+	SafetyRatings []GeminiSafetyRating `json:"safetyRatings"`
 }
 
-type UsageMetadata struct {
+type GeminiUsageMetadata struct {
 	PromptTokenCount     int `json:"promptTokenCount"`
 	CandidatesTokenCount int `json:"candidatesTokenCount"`
 	TotalTokenCount      int `json:"totalTokenCount"`
 }
 
-type GenerateContent struct {
-	Candidates    []Candidate   `json:"candidates"`
-	UsageMetadata UsageMetadata `json:"usageMetadata"`
+type GeminiGenerateContent struct {
+	Candidates    []GeminiCandidate   `json:"candidates"`
+	UsageMetadata GeminiUsageMetadata `json:"usageMetadata"`
 }
 
 type GemeniRequest struct {
-	Contents          []Content `json:"contents"`
-	SystemInstruction *Content  `json:"systemInstruction,omitempty"`
+	Contents          []GeminiContent `json:"contents"`
+	SystemInstruction *GeminiContent  `json:"systemInstruction,omitempty"`
 }
 
 type GeminiModel struct {
@@ -85,8 +85,8 @@ func NewGeminiProvider(baseURL string, apiKey string) LLMProvider {
 	}
 }
 
-func MessagesToContents(messages []Message) []Content {
-	var contents []Content
+func MessagesToContents(messages []Message) []GeminiContent {
+	var contents []GeminiContent
 	for _, message := range messages {
 		contentStr, ok := message.Content.(string)
 		if !ok {
@@ -103,10 +103,10 @@ func MessagesToContents(messages []Message) []Content {
 			role = "model"
 		}
 
-		var content Content
+		var content GeminiContent
 		if contentStr != "" {
-			content = Content{
-				Parts: []Part{
+			content = GeminiContent{
+				Parts: []GeminiPart{
 					{
 						Text: contentStr,
 					},
@@ -115,11 +115,11 @@ func MessagesToContents(messages []Message) []Content {
 			}
 
 			if message.Images != nil {
-				image := &InlineData{
+				image := &GeminiInlineData{
 					MimeType: "image/jpeg",
 					Data:     message.Images[0],
 				}
-				content.Parts = append(content.Parts, Part{InlineData: image})
+				content.Parts = append(content.Parts, GeminiPart{InlineData: image})
 			}
 
 			contents = append(contents, content)
@@ -129,7 +129,7 @@ func MessagesToContents(messages []Message) []Content {
 	return contents
 }
 
-func ContentToMessage(content Content) Message {
+func ContentToMessage(content GeminiContent) Message {
 	role := content.Role
 	if role == "model" {
 		role = "assistant"
@@ -155,8 +155,8 @@ func (o *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	if len(messages) > 0 && messages[0].Role == "system" {
-		request.SystemInstruction = &Content{
-			Parts: []Part{
+		request.SystemInstruction = &GeminiContent{
+			Parts: []GeminiPart{
 				{
 					Text: messages[0].Content.(string),
 				},
@@ -165,7 +165,7 @@ func (o *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 		}
 	}
 
-	var response GenerateContent
+	var response GeminiGenerateContent
 	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
@@ -197,8 +197,8 @@ func (o *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 	}
 
 	if len(messages) > 0 && messages[0].Role == "system" {
-		request.SystemInstruction = &Content{
-			Parts: []Part{
+		request.SystemInstruction = &GeminiContent{
+			Parts: []GeminiPart{
 				{
 					Text: messages[0].Content.(string),
 				},
@@ -224,7 +224,7 @@ func (o *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 	defer res.RawBody().Close()
 
 	reader := bufio.NewReader(res.RawBody())
-	var response GenerateContent
+	var response GeminiGenerateContent
 	bufferJSON := ""
 	for {
 		line, err := reader.ReadString('\n')
