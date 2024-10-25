@@ -142,11 +142,11 @@ func ContentToMessage(content GeminiContent) Message {
 	return message
 }
 
-func (o *GeminiProvider) ProviderName() string {
+func (g *GeminiProvider) ProviderName() string {
 	return "gemini"
 }
 
-func (o *GeminiProvider) Chat(modelName string, messages []Message) (Message, error) {
+func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
@@ -170,7 +170,7 @@ func (o *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
 		SetResult(&response).
-		Post(o.baseURL + fmt.Sprintf("/v1beta/%s:generateContent?key=%s", modelName, o.apiKey))
+		Post(g.baseURL + fmt.Sprintf("/v1beta/%s:generateContent?key=%s", modelName, g.apiKey))
 
 	if err != nil || res.StatusCode() != 200 {
 		msg := fmt.Sprintf("error fetching response: %v", err)
@@ -188,7 +188,7 @@ func (o *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 	return ContentToMessage(response.Candidates[0].Content), nil
 }
 
-func (o *GeminiProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
+func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
@@ -211,7 +211,7 @@ func (o *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
 		SetDoNotParseResponse(true).
-		Post(o.baseURL + fmt.Sprintf("/v1beta/%s:streamGenerateContent?key=%s", modelName, o.apiKey))
+		Post(g.baseURL + fmt.Sprintf("/v1beta/%s:streamGenerateContent?key=%s", modelName, g.apiKey))
 
 	if err != nil || res.StatusCode() != 200 {
 		msg := fmt.Sprintf("error fetching stream response: %v", err)
@@ -258,8 +258,8 @@ func (o *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 	return nil
 }
 
-func (o *GeminiProvider) Models() ([]string, error) {
-	response, err := o.geminiModels()
+func (g *GeminiProvider) Models() ([]string, error) {
+	response, err := g.geminiModels()
 	if err != nil {
 		return nil, err
 	}
@@ -276,14 +276,14 @@ func (o *GeminiProvider) Models() ([]string, error) {
 	return models, nil
 }
 
-func (o *GeminiProvider) geminiModels() (*GeminiModels, error) {
+func (g *GeminiProvider) geminiModels() (*GeminiModels, error) {
 	client := resty.New()
 
 	var response GeminiModels
 	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetResult(&response).
-		Get(o.baseURL + fmt.Sprintf("/v1beta/models?key=%s", o.apiKey))
+		Get(g.baseURL + fmt.Sprintf("/v1beta/models?key=%s", g.apiKey))
 
 	if err != nil || res.StatusCode() != 200 {
 		msg := fmt.Sprintf("error fetching gemini models: %v", err)
