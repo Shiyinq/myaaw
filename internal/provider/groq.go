@@ -74,11 +74,11 @@ func NewGroqProvider(baseURL string, apiKey string) LLMProvider {
 	}
 }
 
-func (o *GroqProvider) ProviderName() string {
+func (g *GroqProvider) ProviderName() string {
 	return "groq"
 }
 
-func (o *GroqProvider) Chat(modelName string, messages []Message) (Message, error) {
+func (g *GroqProvider) Chat(modelName string, messages []Message) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
@@ -91,10 +91,10 @@ func (o *GroqProvider) Chat(modelName string, messages []Message) (Message, erro
 	var response GroqChatCompletion
 	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
-		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
+		SetHeader("Authorization", fmt.Sprintf("Bearer %s", g.apiKey)).
 		SetBody(request).
 		SetResult(&response).
-		Post(o.baseURL + "/v1/chat/completions")
+		Post(g.baseURL + "/v1/chat/completions")
 
 	if err != nil || res.StatusCode() != 200 {
 		msg := fmt.Sprintf("error fetching response: %v", err)
@@ -107,7 +107,7 @@ func (o *GroqProvider) Chat(modelName string, messages []Message) (Message, erro
 	return response.Choices[0].Message, nil
 }
 
-func (o *GroqProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
+func (g *GroqProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
@@ -119,10 +119,10 @@ func (o *GroqProvider) ChatStream(modelName string, messages []Message, callback
 
 	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
-		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
+		SetHeader("Authorization", fmt.Sprintf("Bearer %s", g.apiKey)).
 		SetBody(request).
 		SetDoNotParseResponse(true).
-		Post(o.baseURL + "/v1/chat/completions")
+		Post(g.baseURL + "/v1/chat/completions")
 
 	if err != nil || res.StatusCode() != 200 {
 		msg := fmt.Sprintf("error fetching stream response: %v", err)
@@ -175,8 +175,8 @@ func (o *GroqProvider) ChatStream(modelName string, messages []Message, callback
 	return nil
 }
 
-func (o *GroqProvider) Models() ([]string, error) {
-	response, err := o.groqModels()
+func (g *GroqProvider) Models() ([]string, error) {
+	response, err := g.groqModels()
 	if err != nil {
 		return nil, err
 	}
@@ -189,15 +189,15 @@ func (o *GroqProvider) Models() ([]string, error) {
 	return models, nil
 }
 
-func (o *GroqProvider) groqModels() (*GroqModels, error) {
+func (g *GroqProvider) groqModels() (*GroqModels, error) {
 	client := resty.New()
 
 	var response GroqModels
 	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
-		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
+		SetHeader("Authorization", fmt.Sprintf("Bearer %s", g.apiKey)).
 		SetResult(&response).
-		Get(o.baseURL + "/v1/models")
+		Get(g.baseURL + "/v1/models")
 
 	if err != nil || res.StatusCode() != 200 {
 		msg := fmt.Sprintf("error fetching openai models: %v", err)
