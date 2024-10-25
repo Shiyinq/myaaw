@@ -11,7 +11,7 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
-type Choice struct {
+type OpenAIChoice struct {
 	Index        int     `json:"index"`
 	Message      Message `json:"message"`
 	Delta        Message `json:"delta,omitempty"`
@@ -19,25 +19,25 @@ type Choice struct {
 	FinishReason string  `json:"finish_reason"`
 }
 
-type CompletionTokensDetails struct {
+type OpenAICompletionTokensDetails struct {
 	ReasoningTokens int `json:"reasoning_tokens"`
 }
 
-type Usage struct {
-	PromptTokens            int                     `json:"prompt_tokens"`
-	CompletionTokens        int                     `json:"completion_tokens"`
-	TotalTokens             int                     `json:"total_tokens"`
-	CompletionTokensDetails CompletionTokensDetails `json:"completion_tokens_details"`
+type OpenAIUsage struct {
+	PromptTokens            int                           `json:"prompt_tokens"`
+	CompletionTokens        int                           `json:"completion_tokens"`
+	TotalTokens             int                           `json:"total_tokens"`
+	CompletionTokensDetails OpenAICompletionTokensDetails `json:"completion_tokens_details"`
 }
 
-type ChatCompletion struct {
-	ID                string   `json:"id"`
-	Object            string   `json:"object"`
-	Created           int64    `json:"created"`
-	Model             string   `json:"model"`
-	SystemFingerprint string   `json:"system_fingerprint"`
-	Choices           []Choice `json:"choices"`
-	Usage             Usage    `json:"usage"`
+type OpenAIChatCompletion struct {
+	ID                string         `json:"id"`
+	Object            string         `json:"object"`
+	Created           int64          `json:"created"`
+	Model             string         `json:"model"`
+	SystemFingerprint string         `json:"system_fingerprint"`
+	Choices           []OpenAIChoice `json:"choices"`
+	Usage             OpenAIUsage    `json:"usage"`
 }
 
 type OpenAIRequest struct {
@@ -46,12 +46,12 @@ type OpenAIRequest struct {
 	Stream   bool      `json:"stream"`
 }
 
-type Models struct {
-	Object string  `json:"object"`
-	Data   []Model `json:"data"`
+type OpenAIModels struct {
+	Object string        `json:"object"`
+	Data   []OpenAIModel `json:"data"`
 }
 
-type Model struct {
+type OpenAIModel struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
 	Created int64  `json:"created"`
@@ -84,7 +84,7 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 		Messages: messages,
 	}
 
-	var response ChatCompletion
+	var response OpenAIChatCompletion
 	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
@@ -131,7 +131,7 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 	defer res.RawBody().Close()
 
 	reader := bufio.NewReader(res.RawBody())
-	var response ChatCompletion
+	var response OpenAIChatCompletion
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -185,10 +185,10 @@ func (o *OpenAIProvider) Models() ([]string, error) {
 	return models, nil
 }
 
-func (o *OpenAIProvider) openAIModels() (*Models, error) {
+func (o *OpenAIProvider) openAIModels() (*OpenAIModels, error) {
 	client := resty.New()
 
-	var response Models
+	var response OpenAIModels
 	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
