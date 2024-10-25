@@ -34,6 +34,7 @@ var ProviderFactories = map[string]Factory{
 	"ollama": NewOllamaProvider,
 	"openai": NewOpenAIProvider,
 	"gemini": NewGeminiProvider,
+	"groq":   NewGroqProvider,
 }
 
 func CreateProvider(providerName string, apiKey string) (LLMProvider, error) {
