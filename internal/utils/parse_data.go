@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"strings"
 	"teo/internal/services/bot/model"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
-func ListModels(user model.User, models []string) string {
+func ListModels(user model.User, provider string, models []string) string {
 	var result strings.Builder
-	result.WriteString("🧠 Available Models\n\n")
+	provider = cases.Title(language.Und).String(provider)
+	result.WriteString(fmt.Sprintf("🧠 %s Available Models\n\n", provider))
 	for i := range models {
 		status := ""
 		if models[i] == user.Model {

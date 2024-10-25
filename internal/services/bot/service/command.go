@@ -100,7 +100,7 @@ func (c *ModelsCommand) HandleCommand(user *model.User, args string) (bool, stri
 	}
 
 	if args == "" {
-		return true, utils.ListModels(*user, models), nil
+		return true, utils.ListModels(*user, c.r.llmProvider.ProviderName(), models), nil
 	}
 
 	idModel, err := strconv.Atoi(args)
