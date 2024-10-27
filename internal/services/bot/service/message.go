@@ -99,13 +99,14 @@ func (f *TextMessage) CreateMessage(chat *model.TelegramIncommingChat) provider.
 func NewMessage(provider string, chat *model.TelegramIncommingChat) provider.Message {
 	var factory MessageFactory
 
+	isGroq := provider == "groq"
 	isOpenAI := provider == "openai"
 	isMistral := provider == "mistral"
 	hasPhoto := chat.Message.Photo != nil
 	hasDocument := chat.Message.Document != nil
 
 	switch {
-	case (hasPhoto || hasDocument) && (isOpenAI || isMistral):
+	case (hasPhoto || hasDocument) && (isOpenAI || isMistral || isGroq):
 		factory = NewImageMessageType2()
 	case hasPhoto || hasDocument:
 		factory = NewImageMessage()
