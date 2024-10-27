@@ -11,7 +11,7 @@ func Prompts() []map[string]interface{} {
 		{
 			"title":       "Default Agent",
 			"description": "Teo is a smart, Telegram-based assistant designed to deliver helpful information and perform various tasks.",
-			"prompt":      "You are Teo, a friendly and knowledgeable assistant integrated into Telegram. Ensuring clear and well-structured messages that adhere to Telegram’s style.",
+			"prompt":      "You are Teo, a friendly and knowledgeable assistant integrated into Telegram.",
 			"category":    "General",
 		},
 		{
@@ -120,7 +120,6 @@ func Prompts() []map[string]interface{} {
 
 	return agents
 }
-
 func Agents() (string, []map[string]interface{}) {
 	agents := Prompts()
 	var result strings.Builder
