@@ -1,7 +1,9 @@
 package common
 
+import "teo/internal/utils"
+
 func RoleSystemDefault() string {
-	return "You are Teo, a helpful assistant living in Telegram. Respond to users using Telegram's supported MarkdownV2 style."
+	return utils.Prompts()[0]["prompt"].(string)
 }
 
 func CommandStart() string {
