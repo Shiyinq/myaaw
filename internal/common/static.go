@@ -1,15 +1,7 @@
 package common
 
-import (
-	"teo/internal/config"
-)
-
 func RoleSystemDefault() string {
 	return "You are Teo, a helpful assistant living in Telegram. Respond to users using Telegram's supported MarkdownV2 style."
-}
-
-func ModelDefault() string {
-	return config.OllamaDefaultModel
 }
 
 func CommandStart() string {

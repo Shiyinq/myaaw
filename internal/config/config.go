@@ -25,8 +25,6 @@ var MQ *amqp091.Channel
 var OwnerId string
 var BotType string
 var BotToken string
-var OllamaDefaultModel string
-var OllamaBaseUrl string
 var RedisClient *redis.Client
 var LLMProviderBaseURL string
 var LLMProviderName string
@@ -58,8 +56,6 @@ func LoadConfig() {
 	OwnerId = os.Getenv("OWNER_ID")
 	BotType = os.Getenv("BOT_TYPE")
 	BotToken = os.Getenv("BOT_TOKEN")
-	OllamaDefaultModel = os.Getenv("OLLAMA_DEFAULT_MODEL")
-	OllamaBaseUrl = os.Getenv("OLLAMA_BASE_URL")
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
