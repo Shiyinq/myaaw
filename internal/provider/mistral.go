@@ -116,7 +116,7 @@ func (m *MistralProvider) ChatStream(modelName string, messages []Message, callb
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
-	request := OpenAIRequest{
+	request := MistralRequest{
 		Model:    modelName,
 		Stream:   true,
 		Messages: messages,
