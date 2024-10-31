@@ -45,9 +45,6 @@ func SetTelegramWebhook() {
 		log.Fatalf("Failed to set Ngrok Forwarder: %v", err)
 	}
 	url := ngrok.URL()
-
-	log.Printf("Ngrok URL: %s\n", url)
-
 	if config.BotToken == "" {
 		log.Fatal("Failed to set Telegram webhook: bot token required")
 	}
@@ -61,7 +58,8 @@ func SetTelegramWebhook() {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 200 {
-		log.Printf("Telegram Webhook has been set successfully!")
+		log.Printf("Connected to Telegram!")
+		log.Printf("Ngrok URL: %s\n", url)
 	} else {
 		log.Printf("Failed to set Telegram webhook: %s\n", resp.Status)
 	}
