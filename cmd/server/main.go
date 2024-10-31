@@ -36,5 +36,7 @@ func main() {
 
 	app.Use(middleware.NotFoundHandler)
 
+	middleware.SetTelegramWebhook()
+
 	app.Listen(config.PORT)
 }
