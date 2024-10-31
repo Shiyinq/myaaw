@@ -18,7 +18,10 @@ import (
 )
 
 var PORT string
+var HOST string
 var AllowedOrigins string
+var NgrokActive string
+var NgrokAuthToken string
 var DB *mongo.Database
 var QueueName string
 var MQ *amqp091.Channel
@@ -47,7 +50,10 @@ func LoadConfig() {
 	}
 
 	PORT = ":" + os.Getenv("PORT")
+	HOST = os.Getenv("HOST")
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
+	NgrokActive = os.Getenv("NGROK_ACTIVE")
+	NgrokAuthToken = os.Getenv("NGROK_AUTHTOKEN")
 	mongoURI := os.Getenv("MONGODB_URI")
 	dbName := os.Getenv("DB_NAME")
 	redisURL := os.Getenv("REDIS_URL")
