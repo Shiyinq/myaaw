@@ -117,6 +117,9 @@ func (c *ModelsCommand) HandleCommand(user *model.User, args string) (bool, stri
 		return true, common.CommandModelsUpdateFailed(), nil
 	}
 
+	reset := NewResetCommand(c.r)
+	reset.HandleCommand(user, args)
+
 	return true, common.CommandModels(), nil
 }
 
