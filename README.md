@@ -43,9 +43,11 @@ Integrate your favorite LLM with a Telegram bot.
   - [Deployment](#deployment)
   - [Telegram Bot Setup](#telegram-bot-setup)
     - [Setting the Webhook](#setting-the-webhook)
-      - [Public IP or Domain](#public-ip-or-domain)
-      - [Localhost Setup](#localhost-setup)
       - [Bot Token](#bot-token)
+      - [Development](#development-1)
+        - [Install ngrok](#install-ngrok)
+        - [Obtain Your ngrok Auth Token](#obtain-your-ngrok-auth-token)
+      - [Production](#production)
       - [Use CLI](#use-cli)
       - [Manual Setup](#manual-setup)
         - [Set Webhook](#set-webhook)
@@ -257,28 +259,39 @@ You can access the backend at http://localhost:8080 and the documentation at htt
 ### Setting the Webhook
 After running the backend, either using Docker or manually, you need to set up the webhook with the Telegram API.
 
-#### Public IP or Domain
+#### Bot Token
+You can obtain a bot token from [BotFather](https://t.me/BotFather) and add bot token to `.env` file.
+
+#### Development
+If you are running the backend locally, you need to use a tool like [ngrok](https://ngrok.com) to expose your local server to the internet. 
+
+##### Install ngrok
+
+Visit the ngrok [Getting Started Documentation](https://ngrok.com/docs/getting-started/) for installation instructions.
+
+##### Obtain Your ngrok Auth Token
+
+Go to the ngrok [Dashboard](https://dashboard.ngrok.com/get-started/your-authtoken) to find your auth token.
+
+Open the `.env` file and edit it as follows:
+
+```
+# NGROK
+NGROK_ACTIVE=true
+NGROK_AUTHTOKEN=your-token-here
+```
+
+Restart the backend using the `air` command, and the Telegram bot will activate automatically.
+
+If you do not want to use ngrok, set `NGROK_ACTIVE` to `false`.
+
+#### Production
 
 If your server has a public IP or domain, you can directly set the webhook to Telegram:
 
 ```
 https://yourdomain.com
 ```
-
-#### Localhost Setup
-If you are running the backend locally, you need to use a tool like [ngrok](https://ngrok.com) to expose your local server to the internet. You can run the following command:
-
-```
-ngrok http 8080
-```
-
-This will generate a public URL, and your webhook will look something like this:
-
-```
-https://9e64-114-124-182-000.ngrok-free.app
-```
-#### Bot Token
-You can obtain a bot token from [BotFather](https://t.me/BotFather) and add bot token to `.env` file.
 
 #### Use CLI
 You can use the CLI app to manage the Telegram webhook.
@@ -311,7 +324,7 @@ https://api.telegram.org/bot{my_bot_token}/setWebhook?url={your_domain_or_your_i
 Example:
 
 ```
-https://api.telegram.org/bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11/setWebhook?url=https://9e64-114-124-182-000.ngrok-free.app/webhook/telegram
+https://api.telegram.org/bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11/setWebhook?url=https://yourdomain.com/webhook/telegram
 ```
 ##### Get Webhook Info
 You can retrieve the current webhook info using:
