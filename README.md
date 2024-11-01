@@ -63,22 +63,7 @@ Before development process, ensure you have the following installed:
 
 #### Ollama
 
-Ensure you have Ollama installed by following the instructions in the official repository [Ollama GitHub](https://github.com/ollama/ollama?tab=readme-ov-file#ollama).
-
-Additionally, you need to have at least one model installed.
-
-The default model specified in the `.env `file is `qwen2.5:1.5b-instruct`.
-
-To install it, run the following command in your terminal:
-
-```
-ollama pull qwen2.5:1.5b-instruct
-```
-Ensure the model is downloaded:
-
-```
-ollama ls
-```
+This project uses Ollama as the default provider. To install it, follow the instructions in the official repository [Ollama GitHub](https://github.com/ollama/ollama?tab=readme-ov-file#ollama). You will need to have at least one model installed.
 
 #### Redis
 
