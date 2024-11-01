@@ -35,7 +35,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_services_bot_model.TelegramIncommingChat"
+                            "$ref": "#/definitions/teo_internal_pkg.TelegramIncommingChat"
                         }
                     }
                 ],
@@ -43,7 +43,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_services_bot_model.TelegramSendMessageStatus"
+                            "$ref": "#/definitions/teo_internal_pkg.TelegramSendMessageStatus"
                         }
                     },
                     "400": {
@@ -87,7 +87,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_services_queue_model.TelegramIncommingChat"
+                            "$ref": "#/definitions/teo_internal_pkg.TelegramIncommingChat"
                         }
                     }
                 ],
@@ -124,7 +124,7 @@ const docTemplate = `{
                 }
             }
         },
-        "teo_internal_services_bot_model.Chat": {
+        "teo_internal_pkg.Chat": {
             "type": "object",
             "properties": {
                 "first_name": {
@@ -141,7 +141,33 @@ const docTemplate = `{
                 }
             }
         },
-        "teo_internal_services_bot_model.From": {
+        "teo_internal_pkg.Document": {
+            "type": "object",
+            "properties": {
+                "file_id": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "file_unique_id": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "thumb": {
+                    "$ref": "#/definitions/teo_internal_pkg.Thumbnail"
+                },
+                "thumbnail": {
+                    "$ref": "#/definitions/teo_internal_pkg.Thumbnail"
+                }
+            }
+        },
+        "teo_internal_pkg.From": {
             "type": "object",
             "properties": {
                 "first_name": {
@@ -161,109 +187,125 @@ const docTemplate = `{
                 }
             }
         },
-        "teo_internal_services_bot_model.TelegramIncommingChat": {
+        "teo_internal_pkg.Photo": {
+            "type": "object",
+            "properties": {
+                "file_id": {
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "file_unique_id": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "width": {
+                    "type": "integer"
+                }
+            }
+        },
+        "teo_internal_pkg.TelegramIncommingChat": {
             "type": "object",
             "properties": {
                 "message": {
-                    "$ref": "#/definitions/teo_internal_services_bot_model.UserMessage"
+                    "$ref": "#/definitions/teo_internal_pkg.UserMessage"
                 },
                 "update_id": {
                     "type": "integer"
                 }
             }
         },
-        "teo_internal_services_bot_model.TelegramSendMessageStatus": {
+        "teo_internal_pkg.TelegramSendMessageStatus": {
             "type": "object",
             "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "error_code": {
+                    "type": "integer"
+                },
                 "ok": {
                     "type": "boolean"
+                },
+                "result": {
+                    "$ref": "#/definitions/teo_internal_pkg.UserMessage"
                 }
             }
         },
-        "teo_internal_services_bot_model.UserMessage": {
+        "teo_internal_pkg.Thumbnail": {
             "type": "object",
             "properties": {
+                "file_id": {
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "file_unique_id": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "integer"
+                },
+                "width": {
+                    "type": "integer"
+                }
+            }
+        },
+        "teo_internal_pkg.UserMessage": {
+            "type": "object",
+            "properties": {
+                "caption": {
+                    "type": "string"
+                },
                 "chat": {
-                    "$ref": "#/definitions/teo_internal_services_bot_model.Chat"
+                    "$ref": "#/definitions/teo_internal_pkg.Chat"
                 },
                 "date": {
                     "type": "integer"
                 },
+                "document": {
+                    "$ref": "#/definitions/teo_internal_pkg.Document"
+                },
                 "from": {
-                    "$ref": "#/definitions/teo_internal_services_bot_model.From"
+                    "$ref": "#/definitions/teo_internal_pkg.From"
                 },
                 "message_id": {
                     "type": "integer"
                 },
-                "text": {
-                    "type": "string"
-                }
-            }
-        },
-        "teo_internal_services_queue_model.Chat": {
-            "type": "object",
-            "properties": {
-                "first_name": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "type": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "teo_internal_services_queue_model.From": {
-            "type": "object",
-            "properties": {
-                "first_name": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "is_bot": {
-                    "type": "boolean"
-                },
-                "language_code": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "teo_internal_services_queue_model.TelegramIncommingChat": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "$ref": "#/definitions/teo_internal_services_queue_model.UserMessage"
-                },
-                "update_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "teo_internal_services_queue_model.UserMessage": {
-            "type": "object",
-            "properties": {
-                "chat": {
-                    "$ref": "#/definitions/teo_internal_services_queue_model.Chat"
-                },
-                "date": {
-                    "type": "integer"
-                },
-                "from": {
-                    "$ref": "#/definitions/teo_internal_services_queue_model.From"
-                },
-                "message_id": {
-                    "type": "integer"
+                "photo": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/teo_internal_pkg.Photo"
+                    }
                 },
                 "text": {
+                    "type": "string"
+                },
+                "voice": {
+                    "$ref": "#/definitions/teo_internal_pkg.Voice"
+                }
+            }
+        },
+        "teo_internal_pkg.Voice": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "integer"
+                },
+                "file_id": {
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "file_unique_id": {
+                    "type": "string"
+                },
+                "mime_type": {
                     "type": "string"
                 }
             }
