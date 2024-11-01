@@ -3,7 +3,7 @@ package handler
 import (
 	"log"
 	_ "teo/internal/common"
-	"teo/internal/services/bot/model"
+	"teo/internal/pkg"
 	"teo/internal/services/bot/service"
 	"teo/internal/utils"
 
@@ -28,14 +28,14 @@ func NewBotHandler(botService service.BotService) BookHandler {
 // @Tags		Bot
 // @Produce		json
 // @Accept		json
-// @Param		book	body		model.TelegramIncommingChat true	"Telegram incoming chat"
-// @Success		200		{object}	model.TelegramSendMessageStatus
+// @Param		book	body		pkg.TelegramIncommingChat true	"Telegram incoming chat"
+// @Success		200		{object}	pkg.TelegramSendMessageStatus
 // @Failure     400    	{object}   	common.ErrorResponse
 // @Failure     401     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/webhook/bot [post]
 func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
-	data := new(model.TelegramIncommingChat)
+	data := new(pkg.TelegramIncommingChat)
 
 	if err := c.BodyParser(&data); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{

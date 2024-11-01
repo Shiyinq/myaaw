@@ -1,12 +1,12 @@
 package service
 
 import (
-	"teo/internal/services/queue/model"
+	"teo/internal/pkg"
 	"teo/internal/services/queue/repository"
 )
 
 type QueueService interface {
-	ProcessAndPublishMessage(msg *model.TelegramIncommingChat) error
+	ProcessAndPublishMessage(msg *pkg.TelegramIncommingChat) error
 }
 
 type QueueServiceImpl struct {
@@ -17,6 +17,6 @@ func NewQueueService(queueRepo repository.QueueRepository) QueueService {
 	return &QueueServiceImpl{queueRepo: queueRepo}
 }
 
-func (r *QueueServiceImpl) ProcessAndPublishMessage(msg *model.TelegramIncommingChat) error {
+func (r *QueueServiceImpl) ProcessAndPublishMessage(msg *pkg.TelegramIncommingChat) error {
 	return r.queueRepo.PublishMessage(msg)
 }

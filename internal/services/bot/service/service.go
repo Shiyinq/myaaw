@@ -3,17 +3,18 @@ package service
 import (
 	"log"
 	"teo/internal/config"
+	"teo/internal/pkg"
 	"teo/internal/provider"
 	"teo/internal/services/bot/model"
 	"teo/internal/services/bot/repository"
 )
 
 type BotService interface {
-	checkUser(chat *model.TelegramIncommingChat) (*model.User, error)
-	Bot(chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error)
-	command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error)
-	conversation(user *model.User, chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error)
-	NotifyError(chatId int, replyId int, text string, markdown bool) (*model.TelegramSendMessageStatus, error)
+	checkUser(chat *pkg.TelegramIncommingChat) (*model.User, error)
+	Bot(chat *pkg.TelegramIncommingChat) (*pkg.TelegramSendMessageStatus, error)
+	command(user *model.User, chat *pkg.TelegramIncommingChat) (bool, string, error)
+	conversation(user *model.User, chat *pkg.TelegramIncommingChat) (*pkg.TelegramSendMessageStatus, error)
+	NotifyError(chatId int, replyId int, text string, markdown bool) (*pkg.TelegramSendMessageStatus, error)
 }
 
 type BotServiceImpl struct {
@@ -33,7 +34,7 @@ func NewBotService(userRepo repository.UserRepository) BotService {
 	}
 }
 
-func (r *BotServiceImpl) checkUser(chat *model.TelegramIncommingChat) (*model.User, error) {
+func (r *BotServiceImpl) checkUser(chat *pkg.TelegramIncommingChat) (*model.User, error) {
 	var user *model.User
 	var err error
 	user, err = r.userRepo.GetUserById(chat.Message.From.Id)
@@ -56,7 +57,7 @@ func (r *BotServiceImpl) checkUser(chat *model.TelegramIncommingChat) (*model.Us
 	return user, nil
 }
 
-func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error) {
+func (r *BotServiceImpl) Bot(chat *pkg.TelegramIncommingChat) (*pkg.TelegramSendMessageStatus, error) {
 	var command bool
 	var response string
 
@@ -80,7 +81,7 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.Telegram
 	}
 
 	if command {
-		send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, response, true)
+		send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, response, true)
 		if err != nil || !send.Ok {
 			return nil, err
 		}
@@ -89,6 +90,6 @@ func (r *BotServiceImpl) Bot(chat *model.TelegramIncommingChat) (*model.Telegram
 	return nil, nil
 }
 
-func (r *BotServiceImpl) NotifyError(chatId int, replyId int, text string, markdown bool) (*model.TelegramSendMessageStatus, error) {
-	return sendTelegramMessage(chatId, replyId, text, markdown)
+func (r *BotServiceImpl) NotifyError(chatId int, replyId int, text string, markdown bool) (*pkg.TelegramSendMessageStatus, error) {
+	return pkg.SendTelegramMessage(chatId, replyId, text, markdown)
 }

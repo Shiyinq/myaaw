@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strconv"
 	"teo/internal/config"
-	"teo/internal/services/bot/model"
+	"teo/internal/pkg"
 	"teo/internal/utils"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 func Protected(c *fiber.Ctx) error {
-	data := new(model.TelegramIncommingChat)
+	data := new(pkg.TelegramIncommingChat)
 
 	if err := c.BodyParser(&data); err != nil {
 		return c.Next()

@@ -3,12 +3,13 @@ package service
 import (
 	"log"
 	"teo/internal/config"
+	"teo/internal/pkg"
 	"teo/internal/provider"
 	"teo/internal/services/bot/model"
 	"teo/internal/utils"
 )
 
-func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramIncommingChat) (*model.TelegramSendMessageStatus, error) {
+func (r *BotServiceImpl) conversation(user *model.User, chat *pkg.TelegramIncommingChat) (*pkg.TelegramSendMessageStatus, error) {
 	messages := r.buildConversationMessages(user, chat)
 
 	result, response, err := r.factoryChat(user, chat, messages)
@@ -23,7 +24,7 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *model.TelegramInco
 	return result, nil
 }
 
-func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *model.TelegramIncommingChat) []provider.Message {
+func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.TelegramIncommingChat) []provider.Message {
 	messages := []provider.Message{
 		{
 			Role:    "system",
@@ -38,7 +39,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *model
 	return messages
 }
 
-func (r *BotServiceImpl) updateUserMessages(chat *model.TelegramIncommingChat, messages []provider.Message, response provider.Message) error {
+func (r *BotServiceImpl) updateUserMessages(chat *pkg.TelegramIncommingChat, messages []provider.Message, response provider.Message) error {
 	messages = append(messages, response)
 	messages = messages[1:]
 	if err := r.userRepo.UpdateMessages(chat.Message.From.Id, &messages); err != nil {
@@ -48,11 +49,11 @@ func (r *BotServiceImpl) updateUserMessages(chat *model.TelegramIncommingChat, m
 	return nil
 }
 
-func (r *BotServiceImpl) factoryChat(user *model.User, chat *model.TelegramIncommingChat, messages []provider.Message) (*model.TelegramSendMessageStatus, provider.Message, error) {
+func (r *BotServiceImpl) factoryChat(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, provider.Message, error) {
 	var err error
 	var content string
 	var response provider.Message
-	var result *model.TelegramSendMessageStatus
+	var result *pkg.TelegramSendMessageStatus
 
 	if config.StreamResponse {
 		result, content, err = r.chatStream(user, chat, messages)
@@ -66,14 +67,14 @@ func (r *BotServiceImpl) factoryChat(user *model.User, chat *model.TelegramIncom
 	return result, response, err
 }
 
-func (r *BotServiceImpl) chat(user *model.User, chat *model.TelegramIncommingChat, messages []provider.Message) (*model.TelegramSendMessageStatus, string, error) {
+func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, string, error) {
 	res, err := r.llmProvider.Chat(user.Model, messages)
 
 	if err != nil {
 		return nil, "", err
 	}
 
-	send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, utils.Watermark(res.Content.(string), user.Model), true)
+	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, utils.Watermark(res.Content.(string), user.Model), true)
 	if err != nil || !send.Ok {
 		return nil, "", nil
 	}
@@ -81,13 +82,13 @@ func (r *BotServiceImpl) chat(user *model.User, chat *model.TelegramIncommingCha
 	return send, res.Content.(string), nil
 }
 
-func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncommingChat, messages []provider.Message) (*model.TelegramSendMessageStatus, string, error) {
+func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, string, error) {
 	messageId := 0
 	streamingContent := ""
 	bufferThreshold := 500
 	bufferedContent := ""
 
-	send, err := sendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, "✨Typing...", false)
+	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, "✨Typing...", false)
 	if err != nil || !send.Ok {
 		log.Println(err)
 	}
@@ -98,7 +99,7 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncomm
 		streamingContent += chunk.(string)
 		bufferedContent += chunk.(string)
 		if len(bufferedContent) >= bufferThreshold {
-			editMessage, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n✨Typing...", false)
+			editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n✨Typing...", false)
 			if err != nil || !editMessage.Ok {
 				log.Println(err)
 			}
@@ -112,9 +113,9 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *model.TelegramIncomm
 		return nil, "", err
 	}
 
-	editMessage, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model), true)
+	editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model), true)
 	if err != nil || !editMessage.Ok {
-		_, err := editTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model), false)
+		_, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model), false)
 		if err != nil {
 			log.Println(err)
 			return nil, "", err

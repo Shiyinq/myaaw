@@ -207,7 +207,7 @@ func (e *CommandExecutor) ExecuteCommand(command string, user *model.User, args 
 	return cmd.HandleCommand(user, args)
 }
 
-func (r *BotServiceImpl) command(user *model.User, chat *model.TelegramIncommingChat) (bool, string, error) {
+func (r *BotServiceImpl) command(user *model.User, chat *pkg.TelegramIncommingChat) (bool, string, error) {
 	isCommand, command, args := utils.ParseCommand(chat.Message.Text)
 	if !isCommand {
 		return false, "", nil

@@ -2,7 +2,7 @@ package handler
 
 import (
 	_ "teo/internal/common"
-	"teo/internal/services/queue/model"
+	"teo/internal/pkg"
 	"teo/internal/services/queue/service"
 	"teo/internal/utils"
 
@@ -28,13 +28,13 @@ func NewQueueHandler(queueService service.QueueService) QueueHandler {
 // @Tags		Bot
 // @Produce		json
 // @Accept		json
-// @Param		book	body		model.TelegramIncommingChat true	"Telegram incoming chat"
+// @Param		book	body		pkg.TelegramIncommingChat true	"Telegram incoming chat"
 // @Failure     400    	{object}   	common.ErrorResponse
 // @Failure     401     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/webhook/telegram [post]
 func (h *QueueHandlerImpl) HandleTelegramChat(c *fiber.Ctx) error {
-	var msg *model.TelegramIncommingChat
+	var msg *pkg.TelegramIncommingChat
 
 	if err := c.BodyParser(&msg); err != nil {
 		return utils.ErrorBadRequest(c, "Failed to parse message")

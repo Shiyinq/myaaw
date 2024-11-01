@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"log"
 	"teo/internal/config"
-	"teo/internal/services/queue/model"
+	"teo/internal/pkg"
 
 	"github.com/rabbitmq/amqp091-go"
 )
 
 type QueueRepository interface {
-	PublishMessage(msg *model.TelegramIncommingChat) error
+	PublishMessage(msg *pkg.TelegramIncommingChat) error
 }
 
 type QueueRepositoryImpl struct {
@@ -37,7 +37,7 @@ func NewQueueRepository(ch *amqp091.Channel) QueueRepository {
 	}
 }
 
-func (r *QueueRepositoryImpl) PublishMessage(msg *model.TelegramIncommingChat) error {
+func (r *QueueRepositoryImpl) PublishMessage(msg *pkg.TelegramIncommingChat) error {
 	body, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("Failed to marshal message to JSON: %s", err)
