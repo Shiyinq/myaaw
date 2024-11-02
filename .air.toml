@@ -2,7 +2,9 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
+pre_cmd = ["bash start-consumer-teo.sh"]
 cmd = "go build -o ./tmp/main ./cmd/server"
+post_cmd = ["bash stop-consumer-teo.sh"]
 bin = "./tmp/main"
 full_bin = "./tmp/main"
 include_ext = ["go", "tpl", "tmpl", "html"]
