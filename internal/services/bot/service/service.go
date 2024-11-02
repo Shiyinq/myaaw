@@ -46,6 +46,7 @@ func (r *BotServiceImpl) checkUser(chat *pkg.TelegramIncommingChat) (*model.User
 		newUser := model.User{
 			UserId: chat.Message.From.Id,
 			Name:   chat.Message.Chat.FirstName,
+			Model:  r.llmProvider.DefaultModel(""),
 		}
 		user, err = r.userRepo.CreateUser(&newUser)
 

@@ -75,7 +75,6 @@ func (r *UserRepositoryImpl) CreateUser(user *model.User) (*model.User, error) {
 	}
 
 	user.System = common.RoleSystemDefault()
-	user.Model = ""
 	user.Role = role
 	user.CreatedAt = time.Now()
 	user.UpdatedAt = time.Now()
