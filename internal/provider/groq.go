@@ -63,14 +63,16 @@ type GroqModel struct {
 }
 
 type GroqProvider struct {
-	baseURL string
-	apiKey  string
+	baseURL      string
+	apiKey       string
+	defaultModel string
 }
 
-func NewGroqProvider(baseURL string, apiKey string) LLMProvider {
+func NewGroqProvider(baseURL string, apiKey string, defaultModel string) LLMProvider {
 	return &GroqProvider{
-		baseURL: baseURL,
-		apiKey:  apiKey,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		defaultModel: defaultModel,
 	}
 }
 
@@ -78,12 +80,19 @@ func (g *GroqProvider) ProviderName() string {
 	return "groq"
 }
 
+func (g *GroqProvider) DefaultModel(modelName string) string {
+	if modelName == "" {
+		return g.defaultModel
+	}
+	return modelName
+}
+
 func (g *GroqProvider) Chat(modelName string, messages []Message) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
 	request := GroqRequest{
-		Model:    modelName,
+		Model:    g.DefaultModel(modelName),
 		Stream:   false,
 		Messages: messages,
 	}
@@ -112,7 +121,7 @@ func (g *GroqProvider) ChatStream(modelName string, messages []Message, callback
 	client.SetTimeout(120 * time.Second)
 
 	request := GroqRequest{
-		Model:    modelName,
+		Model:    g.DefaultModel(modelName),
 		Stream:   true,
 		Messages: messages,
 	}

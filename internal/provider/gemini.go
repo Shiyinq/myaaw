@@ -74,14 +74,16 @@ type GeminiModels struct {
 }
 
 type GeminiProvider struct {
-	baseURL string
-	apiKey  string
+	baseURL      string
+	apiKey       string
+	defaultModel string
 }
 
-func NewGeminiProvider(baseURL string, apiKey string) LLMProvider {
+func NewGeminiProvider(baseURL string, apiKey string, defaultModel string) LLMProvider {
 	return &GeminiProvider{
-		baseURL: baseURL,
-		apiKey:  apiKey,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		defaultModel: defaultModel,
 	}
 }
 
@@ -146,6 +148,13 @@ func (g *GeminiProvider) ProviderName() string {
 	return "gemini"
 }
 
+func (g *GeminiProvider) DefaultModel(modelName string) string {
+	if modelName == "" {
+		return g.defaultModel
+	}
+	return modelName
+}
+
 func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
@@ -170,7 +179,7 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
 		SetResult(&response).
-		Post(g.baseURL + fmt.Sprintf("/v1beta/%s:generateContent?key=%s", modelName, g.apiKey))
+		Post(g.baseURL + fmt.Sprintf("/v1beta/%s:generateContent?key=%s", g.DefaultModel(modelName), g.apiKey))
 
 	if err != nil || res.StatusCode() != 200 {
 		msg := fmt.Sprintf("error fetching response: %v", err)
@@ -211,7 +220,7 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
 		SetDoNotParseResponse(true).
-		Post(g.baseURL + fmt.Sprintf("/v1beta/%s:streamGenerateContent?key=%s", modelName, g.apiKey))
+		Post(g.baseURL + fmt.Sprintf("/v1beta/%s:streamGenerateContent?key=%s", g.DefaultModel(modelName), g.apiKey))
 
 	if err != nil || res.StatusCode() != 200 {
 		msg := fmt.Sprintf("error fetching stream response: %v", err)

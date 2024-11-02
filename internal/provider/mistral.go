@@ -68,14 +68,16 @@ type MistralCapabilities struct {
 }
 
 type MistralProvider struct {
-	baseURL string
-	apiKey  string
+	baseURL      string
+	apiKey       string
+	defaultModel string
 }
 
-func NewMistralProvider(baseURL string, apiKey string) LLMProvider {
+func NewMistralProvider(baseURL string, apiKey string, defaultModel string) LLMProvider {
 	return &MistralProvider{
-		baseURL: baseURL,
-		apiKey:  apiKey,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		defaultModel: defaultModel,
 	}
 }
 
@@ -83,12 +85,19 @@ func (m *MistralProvider) ProviderName() string {
 	return "mistral"
 }
 
+func (m *MistralProvider) DefaultModel(modelName string) string {
+	if modelName == "" {
+		return m.defaultModel
+	}
+	return modelName
+}
+
 func (m *MistralProvider) Chat(modelName string, messages []Message) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
 	request := MistralRequest{
-		Model:    modelName,
+		Model:    m.DefaultModel(modelName),
 		Stream:   false,
 		Messages: messages,
 	}
@@ -117,7 +126,7 @@ func (m *MistralProvider) ChatStream(modelName string, messages []Message, callb
 	client.SetTimeout(120 * time.Second)
 
 	request := MistralRequest{
-		Model:    modelName,
+		Model:    m.DefaultModel(modelName),
 		Stream:   true,
 		Messages: messages,
 	}

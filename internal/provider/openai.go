@@ -59,14 +59,16 @@ type OpenAIModel struct {
 }
 
 type OpenAIProvider struct {
-	baseURL string
-	apiKey  string
+	baseURL      string
+	apiKey       string
+	defaultModel string
 }
 
-func NewOpenAIProvider(baseURL string, apiKey string) LLMProvider {
+func NewOpenAIProvider(baseURL string, apiKey string, defaultModel string) LLMProvider {
 	return &OpenAIProvider{
-		baseURL: baseURL,
-		apiKey:  apiKey,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		defaultModel: defaultModel,
 	}
 }
 
@@ -74,12 +76,19 @@ func (o *OpenAIProvider) ProviderName() string {
 	return "openai"
 }
 
+func (o *OpenAIProvider) DefaultModel(modelName string) string {
+	if modelName == "" {
+		return o.defaultModel
+	}
+	return modelName
+}
+
 func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
 	request := OpenAIRequest{
-		Model:    modelName,
+		Model:    o.DefaultModel(modelName),
 		Stream:   false,
 		Messages: messages,
 	}
@@ -108,7 +117,7 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 	client.SetTimeout(120 * time.Second)
 
 	request := OpenAIRequest{
-		Model:    modelName,
+		Model:    o.DefaultModel(modelName),
 		Stream:   true,
 		Messages: messages,
 	}

@@ -11,8 +11,9 @@ import (
 )
 
 type OllamaProvider struct {
-	baseURL string
-	apiKey  string
+	baseURL      string
+	apiKey       string
+	defaultModel string
 }
 
 type OllamaRequest struct {
@@ -44,15 +45,23 @@ type OllamaTagsResponse struct {
 	Models []OllamaModels `json:"models"`
 }
 
-func NewOllamaProvider(baseURL string, apiKey string) LLMProvider {
+func NewOllamaProvider(baseURL string, apiKey string, defaultModel string) LLMProvider {
 	return &OllamaProvider{
-		baseURL: baseURL,
-		apiKey:  apiKey,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		defaultModel: defaultModel,
 	}
 }
 
 func (o *OllamaProvider) ProviderName() string {
 	return "ollama"
+}
+
+func (o *OllamaProvider) DefaultModel(modelName string) string {
+	if modelName == "" {
+		return o.defaultModel
+	}
+	return modelName
 }
 
 func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, error) {
@@ -61,7 +70,7 @@ func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, er
 	_ = o.apiKey // unused for ollama
 
 	request := OllamaRequest{
-		Model:    modelName,
+		Model:    o.DefaultModel(modelName),
 		Stream:   false,
 		Messages: messages,
 	}
@@ -90,7 +99,7 @@ func (o *OllamaProvider) ChatStream(modelName string, messages []Message, callba
 	_ = o.apiKey // unused for ollama
 
 	request := OllamaRequest{
-		Model:    modelName,
+		Model:    o.DefaultModel(modelName),
 		Stream:   true,
 		Messages: messages,
 	}

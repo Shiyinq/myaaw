@@ -26,9 +26,10 @@ type LLMProvider interface {
 	Chat(modelName string, messages []Message) (Message, error)
 	ChatStream(modelName string, messages []Message, callback func(Message) error) error
 	Models() ([]string, error)
+	DefaultModel(modelName string) string
 }
 
-type Factory func(baseURL string, apiKey string) LLMProvider
+type Factory func(baseURL string, apiKey string, defaultModel string) LLMProvider
 
 var ProviderFactories = map[string]Factory{
 	"ollama":  NewOllamaProvider,
@@ -38,10 +39,20 @@ var ProviderFactories = map[string]Factory{
 	"mistral": NewMistralProvider,
 }
 
+var defaultModels = map[string]string{
+	"ollama":  "qwen2.5:1.5b-instruct",
+	"openai":  "gpt-4o",
+	"gemini":  "models/gemini-1.5-flash",
+	"groq":    "llama-3.2-1b-preview",
+	"mistral": "ministral-3b-latest",
+}
+
 func CreateProvider(providerName string, apiKey string) (LLMProvider, error) {
 	factory, exists := ProviderFactories[providerName]
 	if !exists {
 		return nil, errors.New("unknown llm provider")
 	}
-	return factory(config.LLMProviderBaseURL, apiKey), nil
+	defaultModel := defaultModels[providerName]
+
+	return factory(config.LLMProviderBaseURL, apiKey, defaultModel), nil
 }
