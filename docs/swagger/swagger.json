@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "TEO - Telegram Ollama Integration",
+        "description": "TEO - Integrate your favorite LLM with a Telegram bot.",
         "title": "TEO API",
         "contact": {},
         "version": "1.0"

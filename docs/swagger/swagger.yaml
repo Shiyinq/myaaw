@@ -130,7 +130,7 @@ definitions:
 host: localhost:8080
 info:
   contact: {}
-  description: TEO - Telegram Ollama Integration
+  description: TEO - Integrate your favorite LLM with a Telegram bot.
   title: TEO API
   version: "1.0"
 paths:

@@ -14,7 +14,7 @@ import (
 
 // @title		TEO API
 // @version		1.0
-// @description TEO - Telegram Ollama Integration
+// @description TEO - Integrate your favorite LLM with a Telegram bot.
 
 // @host		localhost:8080
 // @BasePath	/

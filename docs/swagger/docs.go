@@ -320,7 +320,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "TEO API",
-	Description:      "TEO - Telegram Ollama Integration",
+	Description:      "TEO - Integrate your favorite LLM with a Telegram bot.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
