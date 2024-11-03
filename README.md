@@ -38,7 +38,6 @@ Integrate your favorite LLM with a Telegram bot.
       - [MongoDB](#mongodb)
       - [RabbitMQ](#rabbitmq)
     - [Running the Backend](#running-the-backend)
-    - [Running the Consumer](#running-the-consumer)
     - [Generate Swagger Documentation](#generate-swagger-documentation)
   - [Deployment](#deployment)
   - [Telegram Bot Setup](#telegram-bot-setup)
@@ -147,9 +146,12 @@ http://localhost:15672
    ```
 
 3. **Create .env File**
+
+   Copy the .env.example file and create a new `.env` file.
    ```sh
    cp .env.example .env
    ```
+   Open the `.env` file and fill in the necessary variables with your specific configuration.”
 
 4. **Install Air for Live Reloading**
 
@@ -159,23 +161,12 @@ http://localhost:15672
    ```
 
 5. **Run the Development Server**
+
+   This command will start the API, automatically integrate your Telegram bot, and run `cmd/consumer/consumer-teo.go` in the background.
    ```sh
    air
    ```
-
-6. **Server**
-
-    http://localhost:8080
-
-### Running the Consumer
-   The consumer must run alongside the backend to work correctly. 
-   
-   Use the following command in another terminal:
-   ```sh
-   go run cmd/consumer/consumer.go
-   ```
-
-   After starting the backend and consumer, follow this instructions [Telegram Bot Setup](#localhost-setup).
+   After starting the backend, you can chat with your bot on Telegram.
 
 ### Generate Swagger Documentation
 1. **Install Swagger for API Documentation**
@@ -214,12 +205,13 @@ git clone https://github.com/Shiyinq/noto.git
 cd noto
 ```
 
-**2. Create Environment Files**
-```sh
-cp .env.example .env
-```
+**2. Create .env File**
 
-Open each `.env` file you have created and update the values as needed.
+   Copy the .env.example file and create a new `.env` file.
+   ```sh
+   cp .env.example .env
+   ```
+   Open the `.env` file and fill in the necessary variables with your specific configuration.”
 
 **3. Build and Run the Docker Containers**
 ```sh
