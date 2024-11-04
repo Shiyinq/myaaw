@@ -162,11 +162,11 @@ http://localhost:15672
 
 5. **Run the Development Server**
 
-   This command will start the API, automatically integrate your Telegram bot, and run `cmd/consumer/consumer-teo.go` in the background.
+   This command will start the API and run `cmd/consumer/consumer-teo.go` in the background.
    ```sh
    air
    ```
-   After starting the backend, you can chat with your bot on Telegram.
+   After starting the backend, follow these [instructions](#development-1).
 
 ### Generate Swagger Documentation
 1. **Install Swagger for API Documentation**
