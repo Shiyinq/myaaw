@@ -11,8 +11,9 @@ import (
 
 func (r *BotServiceImpl) conversation(user *model.User, chat *pkg.TelegramIncommingChat) (*pkg.TelegramSendMessageStatus, error) {
 	messages := r.buildConversationMessages(user, chat)
+	context := r.contextWindow(messages)
 
-	result, response, err := r.factoryChat(user, chat, messages)
+	result, response, err := r.factoryChat(user, chat, context)
 	if err != nil {
 		return nil, err
 	}
@@ -22,6 +23,23 @@ func (r *BotServiceImpl) conversation(user *model.User, chat *pkg.TelegramIncomm
 	}
 
 	return result, nil
+}
+
+func (r *BotServiceImpl) contextWindow(history []provider.Message) []provider.Message {
+	total := 10
+
+	if total >= len(history) {
+		total = len(history) - 1
+	}
+
+	context := make([]provider.Message, total+1)
+	context[0] = history[0]
+
+	for i := 1; i <= total; i++ {
+		context[i] = history[len(history)-total+i-1]
+	}
+
+	return context
 }
 
 func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.TelegramIncommingChat) []provider.Message {
