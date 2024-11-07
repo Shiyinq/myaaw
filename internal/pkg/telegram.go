@@ -14,6 +14,19 @@ import (
 
 // telegram format message
 type UserMessage struct {
+	Chat           Chat            `json:"chat"`
+	Date           int64           `json:"date"`
+	From           From            `json:"from"`
+	MessageId      int             `json:"message_id"`
+	ReplyToMessage *ReplyToMessage `json:"reply_to_message,omitempty"`
+	Text           string          `json:"text,omitempty"`
+	Photo          []Photo         `json:"photo,omitempty"`
+	Document       *Document       `json:"document,omitempty"`
+	Caption        string          `json:"caption,omitempty"`
+	Voice          *Voice          `json:"voice,omitempty"`
+}
+
+type ReplyToMessage struct {
 	Chat      Chat      `json:"chat"`
 	Date      int64     `json:"date"`
 	From      From      `json:"from"`

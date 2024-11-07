@@ -96,6 +96,22 @@ func (f *TextMessage) CreateMessage(chat *pkg.TelegramIncommingChat) provider.Me
 	}
 }
 
+type ReplyToMessage struct{}
+
+func NewReplyToMessage() MessageFactory {
+	return &ReplyToMessage{}
+}
+
+func (f *ReplyToMessage) CreateMessage(chat *pkg.TelegramIncommingChat) provider.Message {
+	text := chat.Message.Text
+	text += "\n\ncontex:\n" + chat.Message.ReplyToMessage.Text
+
+	return provider.Message{
+		Role:    "user",
+		Content: text,
+	}
+}
+
 func NewMessage(provider string, chat *pkg.TelegramIncommingChat) provider.Message {
 	var factory MessageFactory
 
@@ -104,12 +120,15 @@ func NewMessage(provider string, chat *pkg.TelegramIncommingChat) provider.Messa
 	isMistral := provider == "mistral"
 	hasPhoto := chat.Message.Photo != nil
 	hasDocument := chat.Message.Document != nil
+	isReplyToMessage := chat.Message.ReplyToMessage != nil
 
 	switch {
 	case (hasPhoto || hasDocument) && (isOpenAI || isMistral || isGroq):
 		factory = NewImageMessageType2()
 	case hasPhoto || hasDocument:
 		factory = NewImageMessage()
+	case isReplyToMessage:
+		factory = NewReplyToMessage()
 	default:
 		factory = NewTextMessage()
 	}
