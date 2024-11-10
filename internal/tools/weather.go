@@ -29,9 +29,13 @@ func (c *WeatherTool) CallTool(arguments string) string {
 	client := resty.New()
 
 	var result map[string]interface{}
-	_, err := client.R().SetResult(&result).Get(baseURL)
+	resp, err := client.R().SetResult(&result).Get(baseURL)
 	if err != nil {
 		return fmt.Sprintf("Error making request: %v", err)
+	}
+
+	if resp.StatusCode() != 200 {
+		return fmt.Sprintf("Error response from API: %s", resp.Status())
 	}
 
 	currentCondition, ok := result["current_condition"].([]interface{})
