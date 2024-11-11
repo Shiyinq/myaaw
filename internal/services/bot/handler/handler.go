@@ -50,15 +50,17 @@ func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 	// 	fmt.Println(string(jsonData))
 	// }
 
-	log.Printf("message from %v", data.Message.Chat.Id)
+	log.Printf("Received message from user ID %v", data.Message.Chat.Id)
 
 	res, err := s.botService.Bot(data)
-
 	if err != nil {
-		log.Printf("failed to process incoming chat: " + err.Error())
+		log.Printf("Failed to process incoming chat from user ID %v: %v", data.Message.Chat.Id, err.Error())
 		s.botService.NotifyError(data.Message.Chat.Id, 0, "5️⃣0️⃣0️⃣ Internal Server Error", true)
+
 		return utils.ErrorInternalServer(c, "failed to process incoming chat: "+err.Error())
 	}
+
+	log.Printf("Successfully processed incoming chat from user ID %v", data.Message.Chat.Id)
 
 	return c.Status(fiber.StatusCreated).JSON(res)
 }

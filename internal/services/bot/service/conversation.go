@@ -73,7 +73,9 @@ func (r *BotServiceImpl) factoryChat(user *model.User, chat *pkg.TelegramIncommi
 	var response provider.Message
 	var result *pkg.TelegramSendMessageStatus
 
+	log.Println("Processing incoming message")
 	if config.StreamResponse {
+		log.Println("Starting content streaming")
 		result, content, err = r.chatStream(user, chat, messages)
 	} else {
 		result, content, err = r.chat(user, chat, messages)
