@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"log"
 	"teo/internal/config"
 	"teo/internal/pkg"
@@ -43,10 +44,11 @@ func (r *BotServiceImpl) contextWindow(history []provider.Message) []provider.Me
 }
 
 func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.TelegramIncommingChat) []provider.Message {
+	userSystem := fmt.Sprintf("%s\n\nUser info:\nUser ID: %s\nToday's date is: %s", user.System, user.Id, utils.GetCurrentTime())
 	messages := []provider.Message{
 		{
 			Role:    "system",
-			Content: user.System,
+			Content: userSystem,
 		},
 	}
 
