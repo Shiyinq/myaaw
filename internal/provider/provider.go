@@ -6,9 +6,23 @@ import (
 )
 
 type Message struct {
-	Role    string      `json:"role" bson:"role"`
-	Content interface{} `json:"content"`
-	Images  []string    `json:"images,omitempty"`
+	Role       string      `json:"role" bson:"role"`
+	Name       string      `json:"name,omitempty" bson:"name,omitempty"`
+	Content    interface{} `json:"content,omitempty" bson:"content,omitempty"`
+	Images     []string    `json:"images,omitempty" bson:"images,omitempty"`
+	ToolCalls  []ToolCall  `json:"tool_calls,omitempty" bson:"tool_calls,omitempty"`
+	ToolCallID string      `json:"tool_call_id,omitempty" bson:"tool_call_id,omitempty"`
+}
+
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type,omitempty"`
+	Function FunctionCall `json:"function"`
+}
+
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 type ContentItem struct {

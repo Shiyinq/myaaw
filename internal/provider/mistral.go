@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"teo/internal/tools"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -35,9 +36,11 @@ type MistralChatCompletion struct {
 }
 
 type MistralRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Stream   bool      `json:"stream"`
+	Model      string                   `json:"model"`
+	Messages   []Message                `json:"messages"`
+	Stream     bool                     `json:"stream"`
+	Tools      []map[string]interface{} `json:"tools,omitempty"`
+	ToolChoice string                   `json:"tool_choice,omitempty"`
 }
 
 type MistralModels struct {
@@ -92,14 +95,38 @@ func (m *MistralProvider) DefaultModel(modelName string) string {
 	return modelName
 }
 
+func (m *MistralProvider) CallTools(modelName string, messages []Message, response Message) []Message {
+	messages = append(messages, response)
+	for _, toolCall := range response.ToolCalls {
+		toolId := toolCall.ID
+		toolName := toolCall.Function.Name
+		toolArgs := toolCall.Function.Arguments
+
+		tool := tools.NewTools(toolName, toolArgs)
+		responseTool := []Message{
+			{
+				Role:       "tool",
+				Name:       toolName,
+				Content:    tool,
+				ToolCallID: toolId,
+			},
+		}
+		messages = append(messages, responseTool...)
+	}
+
+	return messages
+}
+
 func (m *MistralProvider) Chat(modelName string, messages []Message) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
 	request := MistralRequest{
-		Model:    m.DefaultModel(modelName),
-		Stream:   false,
-		Messages: messages,
+		Model:      m.DefaultModel(modelName),
+		Stream:     false,
+		Messages:   messages,
+		Tools:      tools.GetTools(),
+		ToolChoice: "auto",
 	}
 
 	var response MistralChatCompletion
@@ -118,6 +145,11 @@ func (m *MistralProvider) Chat(modelName string, messages []Message) (Message, e
 		return Message{}, fmt.Errorf(msg)
 	}
 
+	if response.Choices[0].FinishReason == "tool_calls" {
+		resp_tool := m.CallTools(modelName, messages, response.Choices[0].Message)
+		return m.Chat(modelName, resp_tool)
+	}
+
 	return response.Choices[0].Message, nil
 }
 
@@ -126,9 +158,11 @@ func (m *MistralProvider) ChatStream(modelName string, messages []Message, callb
 	client.SetTimeout(120 * time.Second)
 
 	request := MistralRequest{
-		Model:    m.DefaultModel(modelName),
-		Stream:   true,
-		Messages: messages,
+		Model:      m.DefaultModel(modelName),
+		Stream:     true,
+		Messages:   messages,
+		Tools:      tools.GetTools(),
+		ToolChoice: "auto",
 	}
 
 	res, err := client.R().
@@ -176,6 +210,13 @@ func (m *MistralProvider) ChatStream(modelName string, messages []Message, callb
 		}
 
 		partialMessage := response.Choices[0].Delta
+
+		if response.Choices[0].FinishReason == "tool_calls" {
+			response.Choices[0].Delta.Role = "assistant"
+			resp_tool := m.CallTools(modelName, messages, response.Choices[0].Delta)
+			return m.ChatStream(modelName, resp_tool, callback)
+		}
+
 		err = callback(partialMessage)
 		if err != nil {
 			return fmt.Errorf("error in callback: %w", err)
