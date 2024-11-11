@@ -18,7 +18,7 @@ type WeatherArguments struct {
 	Unit     string `json:"unit"`
 }
 
-func (c *WeatherTool) CallTool(arguments string) string {
+func (w *WeatherTool) CallTool(arguments string) string {
 	var args WeatherArguments
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return fmt.Sprintf("Error parsing arguments: %v", err)
