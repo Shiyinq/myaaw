@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 )
 
 type ToolsFactory interface {
@@ -79,6 +80,9 @@ func NewTools(functionName string, arguments string) string {
 			"scrape_web_data":     NewScrapingTool(),
 		},
 	}
+	log.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)
+	res := tools.toolsMap[functionName].CallTool(arguments)
+	log.Printf("Successfully called tool '%s'. Response: %s", functionName, res)
 
-	return tools.toolsMap[functionName].CallTool(arguments)
+	return res
 }
