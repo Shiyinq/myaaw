@@ -36,6 +36,25 @@ func GetTools() []map[string]interface{} {
                     ]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "scrape_web_data",
+                "description": "Scrape data from a specified URL using the scraping tool",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The full URL of the web page to scrape, e.g. https://r.jina.ai/example"
+                        }
+                    },
+                    "required": [
+                        "url"
+                    ]
+                }
+            }
         }
     ]`
 
@@ -57,6 +76,7 @@ func NewTools(functionName string, arguments string) string {
 	tools := &ToolsCalling{
 		toolsMap: map[string]ToolsFactory{
 			"get_current_weather": NewWeatherTool(),
+			"scrape_web_data":     NewScrapingTool(),
 		},
 	}
 
