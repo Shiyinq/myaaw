@@ -3,6 +3,7 @@ package provider
 import (
 	"errors"
 	"teo/internal/config"
+	"teo/internal/tools"
 )
 
 type Message struct {
@@ -69,4 +70,26 @@ func CreateProvider(providerName string, apiKey string) (LLMProvider, error) {
 	defaultModel := defaultModels[providerName]
 
 	return factory(config.LLMProviderBaseURL, apiKey, defaultModel), nil
+}
+
+func toolCalls(messages []Message, response Message) []Message {
+	messages = append(messages, response)
+	for _, toolCall := range response.ToolCalls {
+		toolId := toolCall.ID
+		toolName := toolCall.Function.Name
+		toolArgs := toolCall.Function.Arguments
+
+		tool := tools.NewTools(toolName, toolArgs)
+		responseTool := []Message{
+			{
+				Role:       "tool",
+				Name:       toolName,
+				Content:    tool,
+				ToolCallID: toolId,
+			},
+		}
+		messages = append(messages, responseTool...)
+	}
+
+	return messages
 }

@@ -90,28 +90,6 @@ func (g *GroqProvider) DefaultModel(modelName string) string {
 	return modelName
 }
 
-func (g *GroqProvider) CallTools(modelName string, messages []Message, response Message) []Message {
-	messages = append(messages, response)
-	for _, toolCall := range response.ToolCalls {
-		toolId := toolCall.ID
-		toolName := toolCall.Function.Name
-		toolArgs := toolCall.Function.Arguments
-
-		tool := tools.NewTools(toolName, toolArgs)
-		responseTool := []Message{
-			{
-				Role:       "tool",
-				Name:       toolName,
-				Content:    tool,
-				ToolCallID: toolId,
-			},
-		}
-		messages = append(messages, responseTool...)
-	}
-
-	return messages
-}
-
 func (g *GroqProvider) Chat(modelName string, messages []Message) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
@@ -141,7 +119,7 @@ func (g *GroqProvider) Chat(modelName string, messages []Message) (Message, erro
 	}
 
 	if response.Choices[0].FinishReason == "tool_calls" {
-		resp_tool := g.CallTools(modelName, messages, response.Choices[0].Message)
+		resp_tool := toolCalls(messages, response.Choices[0].Message)
 		return g.Chat(modelName, resp_tool)
 	}
 
@@ -211,7 +189,7 @@ func (g *GroqProvider) ChatStream(modelName string, messages []Message, callback
 
 		if response.Choices[0].Delta.ToolCalls != nil {
 			response.Choices[0].Delta.Role = "assistant"
-			resp_tool := g.CallTools(modelName, messages, response.Choices[0].Delta)
+			resp_tool := toolCalls(messages, response.Choices[0].Delta)
 			return g.ChatStream(modelName, resp_tool, callback)
 		}
 
