@@ -131,7 +131,7 @@ func MessagesToContents(messages []Message) []GeminiContent {
 	return contents
 }
 
-func ContentToMessage(content GeminiContent) Message {
+func contentToMessage(content GeminiContent) Message {
 	role := content.Role
 	if role == "model" {
 		role = "assistant"
@@ -194,7 +194,7 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 		return Message{}, fmt.Errorf("SAFETY")
 	}
 
-	return ContentToMessage(response.Candidates[0].Content), nil
+	return contentToMessage(response.Candidates[0].Content), nil
 }
 
 func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
@@ -255,7 +255,7 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 			continue
 		}
 
-		partialMessage := ContentToMessage(response.Candidates[0].Content)
+		partialMessage := contentToMessage(response.Candidates[0].Content)
 		err = callback(partialMessage)
 		if err != nil {
 			return fmt.Errorf("error in callback: %w", err)

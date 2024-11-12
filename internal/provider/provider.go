@@ -44,9 +44,9 @@ type LLMProvider interface {
 	DefaultModel(modelName string) string
 }
 
-type Factory func(baseURL string, apiKey string, defaultModel string) LLMProvider
+type factory func(baseURL string, apiKey string, defaultModel string) LLMProvider
 
-var ProviderFactories = map[string]Factory{
+var providerFactories = map[string]factory{
 	"ollama":  NewOllamaProvider,
 	"openai":  NewOpenAIProvider,
 	"gemini":  NewGeminiProvider,
@@ -63,7 +63,7 @@ var defaultModels = map[string]string{
 }
 
 func CreateProvider(providerName string, apiKey string) (LLMProvider, error) {
-	factory, exists := ProviderFactories[providerName]
+	factory, exists := providerFactories[providerName]
 	if !exists {
 		return nil, errors.New("unknown llm provider")
 	}
