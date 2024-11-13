@@ -186,16 +186,15 @@ func (g *GroqProvider) ChatStream(modelName string, messages []Message, callback
 		if partialMessage.Content == nil {
 			partialMessage.Content = ""
 		}
-
-		if response.Choices[0].Delta.ToolCalls != nil {
-			response.Choices[0].Delta.Role = "assistant"
-			resp_tool := toolCalls(messages, response.Choices[0].Delta)
-			return g.ChatStream(modelName, resp_tool, callback)
-		}
-
 		err = callback(partialMessage)
 		if err != nil {
 			return fmt.Errorf("error in callback: %w", err)
+		}
+
+		if response.Choices[0].Delta.ToolCalls != nil {
+			partialMessage.Role = "assistant"
+			resp_tool := toolCalls(messages, partialMessage)
+			return g.ChatStream(modelName, resp_tool, callback)
 		}
 
 		if response.Choices[0].FinishReason == "stop" {

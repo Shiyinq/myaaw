@@ -104,24 +104,37 @@ func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat,
 	return send, res.Content.(string), nil
 }
 
+func indicator(text string) string {
+	if text == "tool" {
+		return "⚙️ Using tool..."
+	}
+	return "✨ Typing..."
+}
+
 func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, string, error) {
 	messageId := 0
 	streamingContent := ""
 	bufferThreshold := 500
 	bufferedContent := ""
 
-	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, "✨Typing...", false)
+	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, indicator("typing"), false)
 	if err != nil || !send.Ok {
 		log.Println(err)
 	}
-	messageId = send.Result.MessageId
 
+	messageId = send.Result.MessageId
 	err = r.llmProvider.ChatStream(user.Model, messages, func(partial provider.Message) error {
+		loading := indicator("typing")
 		chunk := partial.Content
-		streamingContent += chunk.(string)
-		bufferedContent += chunk.(string)
-		if len(bufferedContent) >= bufferThreshold {
-			editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n✨Typing...", false)
+		if partial.ToolCalls != nil {
+			loading = indicator("tool")
+		} else {
+			streamingContent += chunk.(string)
+			bufferedContent += chunk.(string)
+		}
+
+		if len(bufferedContent) >= bufferThreshold || partial.ToolCalls != nil {
+			editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n"+loading, false)
 			if err != nil || !editMessage.Ok {
 				log.Println(err)
 			}

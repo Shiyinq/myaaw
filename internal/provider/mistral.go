@@ -188,16 +188,15 @@ func (m *MistralProvider) ChatStream(modelName string, messages []Message, callb
 		}
 
 		partialMessage := response.Choices[0].Delta
-
-		if response.Choices[0].FinishReason == "tool_calls" {
-			response.Choices[0].Delta.Role = "assistant"
-			resp_tool := toolCalls(messages, response.Choices[0].Delta)
-			return m.ChatStream(modelName, resp_tool, callback)
-		}
-
 		err = callback(partialMessage)
 		if err != nil {
 			return fmt.Errorf("error in callback: %w", err)
+		}
+
+		if response.Choices[0].FinishReason == "tool_calls" {
+			partialMessage.Role = "assistant"
+			resp_tool := toolCalls(messages, partialMessage)
+			return m.ChatStream(modelName, resp_tool, callback)
 		}
 
 		if response.Choices[0].FinishReason == "stop" {
