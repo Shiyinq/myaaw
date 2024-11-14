@@ -43,16 +43,26 @@ func (w *WeatherTool) CallTool(arguments string) string {
 		return "No current weather data available."
 	}
 
-	var temperature string
+	var temp string
+	var tempFeelsLike string
+	var weatherDesc string
+	currentWeather := currentCondition[0].(map[string]interface{})
 	if args.Unit == "celsius" {
-		temperature, ok = currentCondition[0].(map[string]interface{})["temp_C"].(string)
+		temp = currentWeather["temp_C"].(string)
+		tempFeelsLike = currentWeather["FeelsLikeC"].(string)
 	} else if args.Unit == "fahrenheit" {
-		temperature, ok = currentCondition[0].(map[string]interface{})["temp_F"].(string)
+		temp = currentWeather["temp_F"].(string)
+		tempFeelsLike = currentWeather["FeelsLikeF"].(string)
 	}
 
-	if !ok {
-		return "Temperature data unavailable."
+	weather := currentWeather["weatherDesc"].([]interface{})
+	for _, item := range weather {
+		desc, _ := item.(map[string]interface{})
+		weatherDesc += desc["value"].(string) + "\n"
 	}
 
-	return fmt.Sprintf("The current temperature in %s is: %s°%s", args.Location, temperature, args.Unit)
+	return fmt.Sprintf(
+		"The current weather in %s is %s and temperature is %s°%s (feels like %s°%s).",
+		args.Location, weatherDesc, temp, args.Unit, tempFeelsLike, args.Unit,
+	)
 }
