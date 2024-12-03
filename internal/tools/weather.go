@@ -50,7 +50,8 @@ func (w *WeatherTool) CallTool(arguments string) string {
 	if args.Unit == "celsius" {
 		temp = currentWeather["temp_C"].(string)
 		tempFeelsLike = currentWeather["FeelsLikeC"].(string)
-	} else if args.Unit == "fahrenheit" {
+	} else {
+		args.Unit = "fahrenheit"
 		temp = currentWeather["temp_F"].(string)
 		tempFeelsLike = currentWeather["FeelsLikeF"].(string)
 	}
