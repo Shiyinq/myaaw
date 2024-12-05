@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"strings"
+	"teo/internal/tools"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -17,9 +18,21 @@ type GeminiInlineData struct {
 	Data     string `json:"data,omitempty"`
 }
 
+type GeminiFunctionCall struct {
+	Name string                 `json:"name"`
+	Args map[string]interface{} `json:"args"`
+}
+
+type GeminiFunctionResponse struct {
+	Name     string                 `json:"name"`
+	Response map[string]interface{} `json:"response"`
+}
+
 type GeminiPart struct {
-	Text       string            `json:"text,omitempty"`
-	InlineData *GeminiInlineData `json:"inline_data,omitempty"`
+	Text             string                  `json:"text,omitempty"`
+	InlineData       *GeminiInlineData       `json:"inline_data,omitempty"`
+	FunctionCall     *GeminiFunctionCall     `json:"functionCall,omitempty"`
+	FunctionResponse *GeminiFunctionResponse `json:"functionResponse,omitempty"`
 }
 
 type GeminiContent struct {
@@ -50,9 +63,19 @@ type GeminiGenerateContent struct {
 	UsageMetadata GeminiUsageMetadata `json:"usageMetadata"`
 }
 
+type FunctionCallingConfig struct {
+	Mode string `json:"mode"`
+}
+
+type ToolConfig struct {
+	FunctionCallingConfig FunctionCallingConfig `json:"function_calling_config"`
+}
+
 type GemeniRequest struct {
-	Contents          []GeminiContent `json:"contents"`
-	SystemInstruction *GeminiContent  `json:"systemInstruction,omitempty"`
+	Contents          []GeminiContent          `json:"contents"`
+	SystemInstruction *GeminiContent           `json:"systemInstruction,omitempty"`
+	ToolConfig        *ToolConfig              `json:"toolConfig,omitempty"`
+	Tools             []map[string]interface{} `json:"tools,omitempty"`
 }
 
 type GeminiModel struct {
@@ -91,10 +114,6 @@ func MessagesToContents(messages []Message) []GeminiContent {
 	var contents []GeminiContent
 	for _, message := range messages {
 		contentStr, ok := message.Content.(string)
-		if !ok {
-			log.Println("content is not a string, skipping this message")
-			continue
-		}
 
 		role := message.Role
 		if role == "system" {
@@ -106,7 +125,7 @@ func MessagesToContents(messages []Message) []GeminiContent {
 		}
 
 		var content GeminiContent
-		if contentStr != "" {
+		if contentStr != "" && ok {
 			content = GeminiContent{
 				Parts: []GeminiPart{
 					{
@@ -122,6 +141,23 @@ func MessagesToContents(messages []Message) []GeminiContent {
 					Data:     message.Images[0],
 				}
 				content.Parts = append(content.Parts, GeminiPart{InlineData: image})
+			}
+
+			contents = append(contents, content)
+		} else {
+			geminiPart, ok := message.Content.(GeminiPart)
+			if !ok {
+				log.Println("unknown type content")
+			}
+
+			content = GeminiContent{
+				Role: role,
+				Parts: []GeminiPart{
+					{
+						FunctionCall:     geminiPart.FunctionCall,
+						FunctionResponse: geminiPart.FunctionResponse,
+					},
+				},
 			}
 
 			contents = append(contents, content)
@@ -155,12 +191,114 @@ func (g *GeminiProvider) DefaultModel(modelName string) string {
 	return modelName
 }
 
+func (g *GeminiProvider) getToolsTransform() []map[string]interface{} {
+	originalTools := tools.GetTools()
+	if originalTools == nil {
+		return nil
+	}
+
+	var flattenedTools []map[string]interface{}
+	for _, tool := range originalTools {
+		if functionValue, ok := tool["function"].(map[string]interface{}); ok {
+			flattenedTools = append(flattenedTools, functionValue)
+		}
+	}
+
+	return flattenedTools
+}
+
+func (g *GeminiProvider) hasFunctionCall(response GeminiGenerateContent) bool {
+	for _, candidate := range response.Candidates {
+		for _, part := range candidate.Content.Parts {
+			if part.FunctionCall != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (g *GeminiProvider) geminiContentsToMessages(contents []GeminiContent) []Message {
+	var messages []Message
+
+	for _, content := range contents {
+		role := content.Role
+		if role == "model" {
+			role = "assistant"
+		}
+
+		var messageParts interface{}
+		for _, part := range content.Parts {
+			if part.FunctionResponse != nil || part.FunctionCall != nil {
+				messageParts = part
+			} else {
+				messageParts = part.Text
+			}
+		}
+
+		message := Message{
+			Role:    role,
+			Content: messageParts,
+		}
+		messages = append(messages, message)
+	}
+
+	return messages
+}
+
+func (g *GeminiProvider) geminiToolCalls(messages []GeminiContent, parts []GeminiPart) []Message {
+	for _, part := range parts {
+		if part.FunctionCall != nil {
+			functionName := part.FunctionCall.Name
+			functionArgs := part.FunctionCall.Args
+			argsJSON, err := json.Marshal(functionArgs)
+			if err != nil {
+				fmt.Println("Error marshaling functionArgs:", err)
+				continue
+			}
+			tool := tools.NewTools(functionName, string(argsJSON))
+			responseTool := []GeminiContent{
+				{
+					Role:  "model",
+					Parts: parts,
+				},
+				{
+					Role: "user",
+					Parts: []GeminiPart{
+						{
+							FunctionResponse: &GeminiFunctionResponse{
+								Name: functionName,
+								Response: map[string]interface{}{
+									"response": tool,
+								},
+							},
+						},
+					},
+				},
+			}
+			messages = append(messages, responseTool...)
+		}
+	}
+
+	return g.geminiContentsToMessages(messages)
+}
+
 func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
 	request := GemeniRequest{
 		Contents: MessagesToContents(messages),
+		ToolConfig: &ToolConfig{
+			FunctionCallingConfig: FunctionCallingConfig{
+				Mode: "AUTO",
+			},
+		},
+		Tools: []map[string]interface{}{
+			{
+				"function_declarations": g.getToolsTransform(),
+			},
+		},
 	}
 
 	if len(messages) > 0 && messages[0].Role == "system" {
@@ -188,6 +326,11 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 
 		}
 		return Message{}, fmt.Errorf(msg)
+	}
+
+	if g.hasFunctionCall(response) {
+		respTool := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts)
+		return g.Chat(modelName, respTool)
 	}
 
 	if response.Candidates[0].FinishReason == "SAFETY" {
@@ -275,9 +418,11 @@ func (g *GeminiProvider) Models() ([]string, error) {
 
 	var models []string
 	for _, model := range response.Models {
-		for _, method := range model.SupportedGenerationMethods {
-			if method == "generateContent" {
-				models = append(models, model.Name)
+		if !(strings.Contains(model.Name, "1.0") || strings.Contains(model.Name, "gemini-pro") || strings.Contains(model.Name, "exp")) {
+			for _, method := range model.SupportedGenerationMethods {
+				if method == "generateContent" {
+					models = append(models, model.Name)
+				}
 			}
 		}
 	}
