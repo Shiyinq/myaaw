@@ -172,12 +172,18 @@ func contentToMessage(content GeminiContent) Message {
 	if role == "model" {
 		role = "assistant"
 	}
-	message := Message{
-		Role:    role,
-		Content: content.Parts[0].Text,
+	if content.Parts[0].FunctionCall != nil {
+		return Message{
+			Role:      role,
+			Content:   "",
+			ToolCalls: []ToolCall{},
+		}
+	} else {
+		return Message{
+			Role:    role,
+			Content: content.Parts[0].Text,
+		}
 	}
-
-	return message
 }
 
 func (g *GeminiProvider) ProviderName() string {
@@ -346,6 +352,16 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 
 	request := GemeniRequest{
 		Contents: MessagesToContents(messages),
+		ToolConfig: &ToolConfig{
+			FunctionCallingConfig: FunctionCallingConfig{
+				Mode: "AUTO",
+			},
+		},
+		Tools: []map[string]interface{}{
+			{
+				"function_declarations": g.getToolsTransform(),
+			},
+		},
 	}
 
 	if len(messages) > 0 && messages[0].Role == "system" {
@@ -405,6 +421,11 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 		}
 
 		bufferJSON = ""
+
+		if g.hasFunctionCall(response) {
+			respTool := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts)
+			return g.ChatStream(modelName, respTool, callback)
+		}
 	}
 
 	return nil
