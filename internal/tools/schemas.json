@@ -1,0 +1,81 @@
+[
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_weather",
+            "description": "Get the current weather in a given location",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The city and state, e.g. San Francisco, CA"
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": [
+                            "celsius",
+                            "fahrenheit"
+                        ]
+                    }
+                },
+                "required": [
+                    "location"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scrape_web_data",
+            "description": "Scrape data from a specified URL using the scraping tool",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The full URL of the web page to scrape, e.g. https://r.jina.ai/example"
+                    }
+                },
+                "required": [
+                    "url"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "notes",
+            "description": "Manage notes by performing GET, GET_DETAIL, POST, PUT, DELETE operations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "GET",
+                            "GET_DETAIL",
+                            "POST",
+                            "PUT",
+                            "DELETE"
+                        ],
+                        "description": "Action to perform on the note"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "The title of the note"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The content of the note"
+                    }
+                },
+                "required": [
+                    "action"
+                ]
+            }
+        }
+    }
+]
