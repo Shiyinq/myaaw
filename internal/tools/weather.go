@@ -47,13 +47,13 @@ func (w *WeatherTool) CallTool(arguments string) string {
 	var tempFeelsLike string
 	var weatherDesc string
 	currentWeather := currentCondition[0].(map[string]interface{})
-	if args.Unit == "celsius" {
-		temp = currentWeather["temp_C"].(string)
-		tempFeelsLike = currentWeather["FeelsLikeC"].(string)
-	} else {
+	if args.Unit == "fahrenheit" {
 		args.Unit = "fahrenheit"
 		temp = currentWeather["temp_F"].(string)
 		tempFeelsLike = currentWeather["FeelsLikeF"].(string)
+	} else {
+		temp = currentWeather["temp_C"].(string)
+		tempFeelsLike = currentWeather["FeelsLikeC"].(string)
 	}
 
 	weather := currentWeather["weatherDesc"].([]interface{})
