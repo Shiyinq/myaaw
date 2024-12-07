@@ -20,7 +20,7 @@ func GetTools() []map[string]interface{} {
 		return nil
 	}
 
-	filePath := filepath.Join(workingDir, "internal", "tools", "schemas.json")
+	filePath := filepath.Join(workingDir, "internal", "tools", "tools.json")
 	file, err := os.Open(filePath)
 	if err != nil {
 		fmt.Printf("Error opening schemas.json: %v\n", err)
