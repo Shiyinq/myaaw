@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -76,7 +77,12 @@ func (n *NoteTool) getNoteDetail(title string) string {
 }
 
 func (n *NoteTool) saveNote(title, content string) string {
-	filePath := fmt.Sprintf("./notes/%s.txt", title)
+	dirPath := "./notes"
+	filePath := filepath.Join(dirPath, fmt.Sprintf("%s.txt", title))
+
+	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
+		return fmt.Sprintf("Error creating directory: %v", err)
+	}
 
 	if _, err := os.Stat(filePath); err == nil {
 		return fmt.Sprintf("Note with title '%s' already exists. Use PUT to update it.", title)
