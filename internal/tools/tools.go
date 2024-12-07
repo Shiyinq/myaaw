@@ -57,7 +57,15 @@ func NewTools(functionName string, arguments string) string {
 		},
 	}
 	log.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)
-	res := tools.toolsMap[functionName].CallTool(arguments)
+
+	tool, exists := tools.toolsMap[functionName]
+	if !exists {
+		errMsg := fmt.Sprintf("Error: tool '%s' not available.", functionName)
+		log.Println(errMsg)
+		return errMsg
+	}
+
+	res := tool.CallTool(arguments)
 	log.Printf("Successfully called tool '%s'. Response: %s", functionName, res)
 
 	return res
