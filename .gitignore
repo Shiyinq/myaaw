@@ -31,4 +31,7 @@ Thumbs.db
 *.out
 
 # air
-/tmp
+tmp/
+
+# notes
+notes/
