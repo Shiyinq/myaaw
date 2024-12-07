@@ -48,7 +48,7 @@
         "type": "function",
         "function": {
             "name": "notes",
-            "description": "Manage notes by performing GET, GET_DETAIL, POST, PUT, DELETE operations.",
+            "description": "A tool to manage notes with support for multiple operations. The tool supports the following actions:\n1. GET: Retrieves a list of all note file names stored in the system. This provides an overview of the available notes.\n2. GET_DETAIL: Fetches the content of a specific note based on the provided file name. This is useful for viewing or reading a particular note.\n3. POST: Creates a new note with a specified name and content. You must transform the title in the request by converting it to lowercase and replacing spaces with underscores (_) to ensure consistency in file naming. If a note with the transformed title already exists, the operation will return an error.4. PUT: Updates the content of an existing note identified by its file name. If the note does not exist, the operation will return an error.\n5. DELETE: Deletes an existing note based on its file name. If the note does not exist, the operation will return an error.",
             "parameters": {
                 "type": "object",
                 "properties": {
