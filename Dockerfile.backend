@@ -6,7 +6,6 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-COPY ./cmd/miniapps ./cmd/miniapps
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/server
 
@@ -14,6 +13,7 @@ FROM alpine:3.18
 WORKDIR /app
 COPY --from=builder /app/main .
 COPY --from=builder /app/cmd/miniapps ./cmd/miniapps
+COPY --from=builder /app/internal/tools/tools.json ./internal/tools/tools.json
 
 EXPOSE 8080
 
