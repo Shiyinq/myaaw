@@ -12,6 +12,7 @@ type User struct {
 	UserId    int                `json:"user_id" bson:"userId"`
 	Name      string             `json:"name" bson:"name"`
 	System    string             `json:"system" bson:"system"`
+	Provider  string             `json:"provider" bson:"provider"`
 	Model     string             `json:"model" bson:"model"`
 	Messages  []provider.Message `json:"messages" bson:"messages"`
 	Role      string             `json:"role" bson:"role"`

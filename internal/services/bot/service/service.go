@@ -44,15 +44,41 @@ func (r *BotServiceImpl) checkUser(chat *pkg.TelegramIncommingChat) (*model.User
 
 	if user == nil {
 		newUser := model.User{
-			UserId: chat.Message.From.Id,
-			Name:   chat.Message.Chat.FirstName,
-			Model:  r.llmProvider.DefaultModel(""),
+			UserId:   chat.Message.From.Id,
+			Name:     chat.Message.Chat.FirstName,
+			Provider: r.llmProvider.ProviderName(),
+			Model:    r.llmProvider.DefaultModel(""),
 		}
 		user, err = r.userRepo.CreateUser(&newUser)
 
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	return user, nil
+}
+
+func (r *BotServiceImpl) changeProviderAndModel(user *model.User) (*model.User, error) {
+	systemProvider := r.llmProvider.ProviderName()
+	systemModel := r.llmProvider.DefaultModel("")
+
+	log.Printf("Provider mismatch!")
+	log.Printf("Automatically updating user %v configurations", user.UserId)
+
+	err := r.userRepo.UpdateModel(user.UserId, systemModel)
+	if err != nil {
+		return nil, err
+	}
+
+	err = r.userRepo.UpdateProvider(user.UserId, systemProvider)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err = r.userRepo.GetUserById(user.UserId)
+	if err != nil {
+		return nil, err
 	}
 
 	return user, nil
@@ -65,6 +91,13 @@ func (r *BotServiceImpl) Bot(chat *pkg.TelegramIncommingChat) (*pkg.TelegramSend
 	user, err := r.checkUser(chat)
 	if err != nil {
 		return nil, err
+	}
+
+	if user.Provider != r.llmProvider.ProviderName() {
+		user, err = r.changeProviderAndModel(user)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	command, response, err = r.command(user, chat)

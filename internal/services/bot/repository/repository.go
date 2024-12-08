@@ -25,6 +25,7 @@ type UserRepository interface {
 	UpdateMessages(userId int, messges *[]provider.Message) error
 	UpdateSystem(userId int, system string) error
 	UpdateModel(userId int, model string) error
+	UpdateProvider(userId int, provider string) error
 }
 
 type UserRepositoryImpl struct {
@@ -126,6 +127,8 @@ func (r *UserRepositoryImpl) updateUserAndCache(userId int, fields bson.M) error
 			user.System = value.(string)
 		case "model":
 			user.Model = value.(string)
+		case "provider":
+			user.Provider = value.(string)
 		}
 	}
 	user.UpdatedAt = timeNow
@@ -145,5 +148,10 @@ func (r *UserRepositoryImpl) UpdateSystem(userId int, system string) error {
 
 func (r *UserRepositoryImpl) UpdateModel(userId int, model string) error {
 	fields := bson.M{"model": model}
+	return r.updateUserAndCache(userId, fields)
+}
+
+func (r *UserRepositoryImpl) UpdateProvider(userId int, provider string) error {
+	fields := bson.M{"provider": provider}
 	return r.updateUserAndCache(userId, fields)
 }
