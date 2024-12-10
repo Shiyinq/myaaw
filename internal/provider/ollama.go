@@ -76,18 +76,14 @@ func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	var response OllamaResponse
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
 		SetResult(&response).
 		Post(o.baseURL + "/api/chat")
 
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching response: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching response: %s", res.String())
-		}
-		return Message{}, fmt.Errorf(msg)
+	if res.StatusCode() != 200 {
+		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
 	}
 
 	return response.Message, nil
@@ -104,19 +100,11 @@ func (o *OllamaProvider) ChatStream(modelName string, messages []Message, callba
 		Messages: messages,
 	}
 
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
 		SetDoNotParseResponse(true).
 		Post(o.baseURL + "/api/chat")
-
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching stream response: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching stream response: %s", res.String())
-		}
-		return fmt.Errorf(msg)
-	}
 
 	defer res.RawBody().Close()
 
@@ -125,6 +113,11 @@ func (o *OllamaProvider) ChatStream(modelName string, messages []Message, callba
 
 	for {
 		line, err := reader.ReadBytes('\n')
+
+		if res.StatusCode() != 200 {
+			return fmt.Errorf("error fetching stream response: %v", string(line))
+		}
+
 		if err != nil {
 			if err == io.EOF {
 				break
