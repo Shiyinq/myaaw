@@ -103,19 +103,15 @@ func (g *GroqProvider) Chat(modelName string, messages []Message) (Message, erro
 	}
 
 	var response GroqChatCompletion
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", g.apiKey)).
 		SetBody(request).
 		SetResult(&response).
 		Post(g.baseURL + "/v1/chat/completions")
 
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching response: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching response: %s", res.String())
-		}
-		return Message{}, fmt.Errorf(msg)
+	if res.StatusCode() != 200 {
+		return Message{}, fmt.Errorf("error fetching response: %s", res.String())
 	}
 
 	if response.Choices[0].FinishReason == "tool_calls" {
@@ -138,20 +134,12 @@ func (g *GroqProvider) ChatStream(modelName string, messages []Message, callback
 		ToolChoice: "auto",
 	}
 
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", g.apiKey)).
 		SetBody(request).
 		SetDoNotParseResponse(true).
 		Post(g.baseURL + "/v1/chat/completions")
-
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching stream response: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching stream response: %s", res.String())
-		}
-		return fmt.Errorf(msg)
-	}
 
 	defer res.RawBody().Close()
 
@@ -159,6 +147,11 @@ func (g *GroqProvider) ChatStream(modelName string, messages []Message, callback
 	var response GroqChatCompletion
 	for {
 		line, err := reader.ReadString('\n')
+
+		if res.StatusCode() != 200 {
+			return fmt.Errorf("error fetching stream response: %v", line)
+		}
+
 		if err != nil {
 			if err == io.EOF {
 				break
