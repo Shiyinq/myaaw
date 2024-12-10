@@ -108,19 +108,15 @@ func (m *MistralProvider) Chat(modelName string, messages []Message) (Message, e
 	}
 
 	var response MistralChatCompletion
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", m.apiKey)).
 		SetBody(request).
 		SetResult(&response).
 		Post(m.baseURL + "/v1/chat/completions")
 
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching response: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching response: %s", res.String())
-		}
-		return Message{}, fmt.Errorf(msg)
+	if res.StatusCode() != 200 {
+		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
 	}
 
 	if response.Choices[0].FinishReason == "tool_calls" {
@@ -143,20 +139,12 @@ func (m *MistralProvider) ChatStream(modelName string, messages []Message, callb
 		ToolChoice: "auto",
 	}
 
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", m.apiKey)).
 		SetBody(request).
 		SetDoNotParseResponse(true).
 		Post(m.baseURL + "/v1/chat/completions")
-
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching stream response: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching stream response: %s", res.String())
-		}
-		return fmt.Errorf(msg)
-	}
 
 	defer res.RawBody().Close()
 
@@ -164,6 +152,11 @@ func (m *MistralProvider) ChatStream(modelName string, messages []Message, callb
 	var response MistralChatCompletion
 	for {
 		line, err := reader.ReadString('\n')
+
+		if res.StatusCode() != 200 {
+			return fmt.Errorf("error fetching stream response: %v", line)
+		}
+
 		if err != nil {
 			if err == io.EOF {
 				break
