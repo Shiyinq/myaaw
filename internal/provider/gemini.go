@@ -319,19 +319,14 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	var response GeminiGenerateContent
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
 		SetResult(&response).
 		Post(g.baseURL + fmt.Sprintf("/v1beta/%s:generateContent?key=%s", g.DefaultModel(modelName), g.apiKey))
 
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching response: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching response: %s", res.String())
-
-		}
-		return Message{}, fmt.Errorf(msg)
+	if res.StatusCode() != 200 {
+		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
 	}
 
 	if g.hasFunctionCall(response) {
@@ -375,19 +370,11 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 		}
 	}
 
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
 		SetDoNotParseResponse(true).
 		Post(g.baseURL + fmt.Sprintf("/v1beta/%s:streamGenerateContent?key=%s", g.DefaultModel(modelName), g.apiKey))
-
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching stream response: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching stream response: %s", res.String())
-		}
-		return fmt.Errorf(msg)
-	}
 
 	defer res.RawBody().Close()
 
@@ -412,6 +399,10 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 		err = json.Unmarshal([]byte(bufferJSON), &response)
 		if err != nil {
 			continue
+		}
+
+		if res.StatusCode() != 200 {
+			return fmt.Errorf("error fetching stream response: %v", bufferJSON)
 		}
 
 		partialMessage := contentToMessage(response.Candidates[0].Content)
