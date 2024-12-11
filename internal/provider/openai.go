@@ -94,19 +94,15 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	var response OpenAIChatCompletion
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
 		SetBody(request).
 		SetResult(&response).
 		Post(o.baseURL + "/v1/chat/completions")
 
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching response: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching response: %s", res.String())
-		}
-		return Message{}, fmt.Errorf(msg)
+	if res.StatusCode() != 200 {
+		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
 	}
 
 	return response.Choices[0].Message, nil
@@ -122,20 +118,12 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 		Messages: messages,
 	}
 
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
 		SetBody(request).
 		SetDoNotParseResponse(true).
 		Post(o.baseURL + "/v1/chat/completions")
-
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching stream response: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching stream response: %s", res.String())
-		}
-		return fmt.Errorf(msg)
-	}
 
 	defer res.RawBody().Close()
 
@@ -143,6 +131,11 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 	var response OpenAIChatCompletion
 	for {
 		line, err := reader.ReadString('\n')
+
+		if res.StatusCode() != 200 {
+			return fmt.Errorf("error fetching stream response: %v", string(line))
+		}
+
 		if err != nil {
 			if err == io.EOF {
 				break
