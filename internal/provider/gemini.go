@@ -446,17 +446,13 @@ func (g *GeminiProvider) geminiModels() (*GeminiModels, error) {
 	client := resty.New()
 
 	var response GeminiModels
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetResult(&response).
 		Get(g.baseURL + fmt.Sprintf("/v1beta/models?key=%s", g.apiKey))
 
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching gemini models: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching gemini models: %s", res.String())
-		}
-		return nil, fmt.Errorf(msg)
+	if res.StatusCode() != 200 {
+		return nil, fmt.Errorf("error fetching gemini models: %s", res.String())
 	}
 
 	return &response, nil

@@ -218,18 +218,14 @@ func (m *MistralProvider) mistralModels() (*MistralModels, error) {
 	client := resty.New()
 
 	var response MistralModels
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", m.apiKey)).
 		SetResult(&response).
 		Get(m.baseURL + "/v1/models")
 
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching mistral models: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching mistral models: %s", res.String())
-		}
-		return nil, fmt.Errorf(msg)
+	if res.StatusCode() != 200 {
+		return nil, fmt.Errorf("error fetching mistral models: %s", res.String())
 	}
 
 	return &response, nil

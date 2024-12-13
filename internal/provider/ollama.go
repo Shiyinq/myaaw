@@ -162,17 +162,13 @@ func (o *OllamaProvider) ollamaTags() (*OllamaTagsResponse, error) {
 	client := resty.New()
 
 	var response OllamaTagsResponse
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetResult(&response).
 		Get(o.baseURL + "/api/tags")
 
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching ollama tags: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching ollama tags: %s", res.String())
-		}
-		return nil, fmt.Errorf(msg)
+	if res.StatusCode() != 200 {
+		return nil, fmt.Errorf("error fetching ollama models: %s", res.String())
 	}
 
 	return &response, nil

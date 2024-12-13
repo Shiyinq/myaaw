@@ -191,18 +191,14 @@ func (o *OpenAIProvider) openAIModels() (*OpenAIModels, error) {
 	client := resty.New()
 
 	var response OpenAIModels
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
 		SetResult(&response).
 		Get(o.baseURL + "/v1/models")
 
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching openai models: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching openai models: %s", res.String())
-		}
-		return nil, fmt.Errorf(msg)
+	if res.StatusCode() != 200 {
+		return nil, fmt.Errorf("error fetching openai models: %s", res.String())
 	}
 
 	return &response, nil

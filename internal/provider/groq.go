@@ -216,18 +216,14 @@ func (g *GroqProvider) groqModels() (*GroqModels, error) {
 	client := resty.New()
 
 	var response GroqModels
-	res, err := client.R().
+	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", g.apiKey)).
 		SetResult(&response).
 		Get(g.baseURL + "/v1/models")
 
-	if err != nil || res.StatusCode() != 200 {
-		msg := fmt.Sprintf("error fetching openai models: %v", err)
-		if err == nil {
-			msg = fmt.Sprintf("error fetching openai models: %s", res.String())
-		}
-		return nil, fmt.Errorf(msg)
+	if res.StatusCode() != 200 {
+		return nil, fmt.Errorf("error fetching groq models: %s", res.String())
 	}
 
 	return &response, nil
