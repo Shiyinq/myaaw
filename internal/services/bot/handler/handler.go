@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"log"
 	_ "teo/internal/common"
 	"teo/internal/pkg"
@@ -55,7 +56,9 @@ func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 	res, err := s.botService.Bot(data)
 	if err != nil {
 		log.Printf("Failed to process incoming chat from user ID %v: %v", data.Message.Chat.Id, err.Error())
-		s.botService.NotifyError(data.Message.Chat.Id, 0, "5️⃣0️⃣0️⃣ Internal Server Error", true)
+
+		formattedError := utils.FormatErrorMessage(err)
+		s.botService.NotifyError(data.Message.Chat.Id, 0, fmt.Sprintf("❌ Something went wrong\n\n```JSON\n%v```", formattedError), true)
 
 		return utils.ErrorInternalServer(c, "failed to process incoming chat: "+err.Error())
 	}
