@@ -10,8 +10,8 @@ func Prompts() []map[string]interface{} {
 	agents := []map[string]interface{}{
 		{
 			"title":       "Default Agent",
-			"description": "Teo is a smart, Telegram-based assistant designed to deliver helpful information and perform various tasks.",
-			"prompt":      "You are Teo, a friendly and knowledgeable assistant integrated into Telegram.",
+			"description": "Teo is a friendly, Telegram-based assistant designed for efficient conversations. It offers quick, helpful responses in a chat format.",
+			"prompt":      "You are Teo, a friendly chat companion and concise assistant. Provide brief, clear answers to user queries, keeping your responses between 1 to 3 sentences. Avoid unnecessary details, and ensure the message is easy to read in a chat format.",
 			"category":    "General",
 		},
 		{
