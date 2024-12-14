@@ -1,7 +1,9 @@
 package provider
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"teo/internal/config"
 	"teo/internal/tools"
 )
@@ -16,14 +18,14 @@ type Message struct {
 }
 
 type ToolCall struct {
-	ID       string       `json:"id"`
+	ID       string       `json:"id,omitempty"`
 	Type     string       `json:"type,omitempty"`
 	Function FunctionCall `json:"function"`
 }
 
 type FunctionCall struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+	Name      string      `json:"name"`
+	Arguments interface{} `json:"arguments"`
 }
 
 type ContentItem struct {
@@ -72,6 +74,19 @@ func CreateProvider(providerName string, apiKey string) (LLMProvider, error) {
 	return factory(config.LLMProviderBaseURL, apiKey, defaultModel), nil
 }
 
+func argsToString(i interface{}) string {
+	if str, ok := i.(string); ok {
+		return str
+	}
+
+	jsonData, err := json.Marshal(i)
+	if err != nil {
+		return fmt.Sprintf("%v", i)
+	}
+
+	return string(jsonData)
+}
+
 func toolCalls(messages []Message, response Message) []Message {
 	messages = append(messages, response)
 	for _, toolCall := range response.ToolCalls {
@@ -79,7 +94,7 @@ func toolCalls(messages []Message, response Message) []Message {
 		toolName := toolCall.Function.Name
 		toolArgs := toolCall.Function.Arguments
 
-		tool := tools.NewTools(toolName, toolArgs)
+		tool := tools.NewTools(toolName, argsToString(toolArgs))
 		responseTool := []Message{
 			{
 				Role:       "tool",

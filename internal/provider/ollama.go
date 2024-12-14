@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"teo/internal/tools"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -17,9 +18,10 @@ type OllamaProvider struct {
 }
 
 type OllamaRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Stream   bool      `json:"stream"`
+	Model    string                   `json:"model"`
+	Messages []Message                `json:"messages"`
+	Stream   bool                     `json:"stream"`
+	Tools    []map[string]interface{} `json:"tools,omitempty"`
 }
 
 type OllamaResponse struct {
@@ -73,6 +75,7 @@ func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, er
 		Model:    o.DefaultModel(modelName),
 		Stream:   false,
 		Messages: messages,
+		Tools:    tools.GetTools(),
 	}
 
 	var response OllamaResponse
@@ -84,6 +87,11 @@ func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, er
 
 	if res.StatusCode() != 200 {
 		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
+	}
+
+	if response.Message.ToolCalls != nil {
+		resp_tool := toolCalls(messages, response.Message)
+		return o.Chat(modelName, resp_tool)
 	}
 
 	return response.Message, nil
