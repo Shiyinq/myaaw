@@ -20,7 +20,7 @@ Integrate your favorite LLM with a Telegram bot.
 - [x] Basic Response
 - [x] Stream Response
 - [x] Predefine Prompts
-- [ ] Tools
+- [x] Tools
 - [ ] Memory
 - [ ] History
 - [ ] Voice Input
