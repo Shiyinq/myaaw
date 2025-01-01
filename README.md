@@ -22,7 +22,6 @@ Integrate your favorite LLM with a Telegram bot.
 - [x] Predefine Prompts
 - [x] Tools
 - [ ] Memory
-- [ ] History
 - [ ] Voice Input
 
 
