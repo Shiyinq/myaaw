@@ -200,8 +200,8 @@ Before you begin, ensure you have [Docker](https://docs.docker.com/engine/instal
 
 **1. Clone the Repository**
 ```sh
-git clone https://github.com/Shiyinq/noto.git
-cd noto
+git clone https://github.com/Shiyinq/teo.git
+cd teo
 ```
 
 **2. Create .env File**
