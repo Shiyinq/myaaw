@@ -7,7 +7,14 @@ func RoleSystemDefault() string {
 }
 
 func CommandStart() string {
-	return "👋 Welcome! I’m Teo your personal assistant.\nHere are some commands to configure me:\n\n**/start** - Welcome message and menu display\n**/me** - About me and show current config\n**/system <prompt>** - Set the system prompt\n/prompts - List available prompts with specialized tasks\n**/models** - Change the LLM model\n**/reset** - Reset the history context windows\n**/about** - Info about Teo project\n\nℹ️ You can interact using natural language without needing to set commands first."
+	return "👋 Welcome! I’m Teo your personal assistant.\nHere are some commands to configure me:\n\n" +
+		"**/about** - Info about Teo project\n" +
+		"**/me** - About me and show current config\n\n" +
+		"**/models** - Change the LLM model\n" +
+		"**/system <prompt>** - Set the system prompt\n" +
+		"**/prompts** - List available prompts with specialized tasks\n\n" +
+		"**/reset** - Reset the history context windows\n\n" +
+		"ℹ️ You can interact using natural language without needing to set commands first."
 }
 
 func CommandAbout() string {
