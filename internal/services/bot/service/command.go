@@ -192,6 +192,8 @@ func NewCommandExecutor(r *BotServiceImpl) *CommandExecutor {
 	return &CommandExecutor{
 		commandMap: map[string]CommandFactory{
 			"start":   NewStartCommand(r),
+			"menu":    NewStartCommand(r),
+			"help":    NewStartCommand(r),
 			"about":   NewAboutCommand(r),
 			"system":  NewSystemCommand(r),
 			"reset":   NewResetCommand(r),
