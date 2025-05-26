@@ -123,31 +123,31 @@ func (c *ModelsCommand) HandleCommand(user *model.User, args string) (bool, stri
 	return true, common.CommandModels(), nil
 }
 
-type AgentsCommand struct {
+type PromptsCommand struct {
 	r *BotServiceImpl
 }
 
-func NewAgentsCommand(r *BotServiceImpl) CommandFactory {
-	return &AgentsCommand{r: r}
+func NewPromptsCommand(r *BotServiceImpl) CommandFactory {
+	return &PromptsCommand{r: r}
 }
 
-func (c *AgentsCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
-	list, detailAgents := utils.Agents()
+func (c *PromptsCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
+	list, detailPrompts := utils.TemplatePrompts()
 
 	if args == "" {
 		return true, list, nil
 	}
 
-	idAgent, err := strconv.Atoi(args)
+	idPrompt, err := strconv.Atoi(args)
 	if err != nil {
-		return true, common.CommandAgentArgsNotInt(), nil
+		return true, common.CommandPromptsArgsNotInt(), nil
 	}
 
-	if idAgent < 0 || idAgent >= len(detailAgents) {
-		return true, common.CommandAgentNotFound(), nil
+	if idPrompt < 0 || idPrompt >= len(detailPrompts) {
+		return true, common.CommandPromptsNotFound(), nil
 	}
 
-	if prompt, ok := detailAgents[idAgent]["prompt"].(string); ok {
+	if prompt, ok := detailPrompts[idPrompt]["prompt"].(string); ok {
 		var cf CommandFactory
 
 		cf = &ResetCommand{r: c.r}
@@ -191,13 +191,13 @@ type CommandExecutor struct {
 func NewCommandExecutor(r *BotServiceImpl) *CommandExecutor {
 	return &CommandExecutor{
 		commandMap: map[string]CommandFactory{
-			"start":  NewStartCommand(r),
-			"about":  NewAboutCommand(r),
-			"system": NewSystemCommand(r),
-			"reset":  NewResetCommand(r),
-			"models": NewModelsCommand(r),
-			"agents": NewAgentsCommand(r),
-			"me":     NewMeCommand(r),
+			"start":   NewStartCommand(r),
+			"about":   NewAboutCommand(r),
+			"system":  NewSystemCommand(r),
+			"reset":   NewResetCommand(r),
+			"models":  NewModelsCommand(r),
+			"prompts": NewPromptsCommand(r),
+			"me":      NewMeCommand(r),
 		},
 	}
 }
