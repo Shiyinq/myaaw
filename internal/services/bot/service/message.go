@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"log"
 	"teo/internal/pkg"
 	"teo/internal/provider"
@@ -9,6 +10,50 @@ import (
 
 type MessageFactory interface {
 	CreateMessage(chat *pkg.TelegramIncommingChat) provider.Message
+}
+
+type VoiceMessage struct {
+	TTSProvider provider.TTSProvider
+}
+
+func NewVoiceMessage(ttsProvider provider.TTSProvider) MessageFactory {
+	return &VoiceMessage{TTSProvider: ttsProvider}
+}
+
+func (f *VoiceMessage) CreateMessage(chat *pkg.TelegramIncommingChat) provider.Message {
+	var fileID string
+	var newMessage provider.Message
+	var audioData []byte
+	var err error
+
+	if chat.Message.Voice != nil {
+		fileID = chat.Message.Voice.FileID
+	} else {
+		log.Println("VoiceMessage CreateMessage called without Voice or Voice message")
+		return provider.Message{Role: "user", Content: ""}
+	}
+
+	filePath, err := pkg.GetFilePath(fileID)
+	if err != nil {
+		log.Printf("Error getting file path for fileID %s: %v\n", fileID, err)
+		return provider.Message{Role: "user", Content: fmt.Sprintf("[Error getting file path: %s]", fileID)}
+	}
+
+	audioData, err = pkg.DownloadTgFile(filePath)
+	if err != nil {
+		log.Printf("Error downloading audio file %s: %v\n", filePath, err)
+		return provider.Message{Role: "user", Content: fmt.Sprintf("[Error downloading audio file: %s]", filePath)}
+	}
+
+	transcribedText, err := f.TTSProvider.SpeechToText(audioData)
+	if err != nil {
+		log.Printf("Error transcribing audio: %v\n", err)
+		return provider.Message{Role: "user", Content: "[Error transcribing audio]"}
+	}
+
+	newMessage.Role = "user"
+	newMessage.Content = transcribedText
+	return newMessage
 }
 
 type ImageMessage struct{}
@@ -112,17 +157,26 @@ func (f *ReplyToMessage) CreateMessage(chat *pkg.TelegramIncommingChat) provider
 	}
 }
 
-func NewMessage(provider string, chat *pkg.TelegramIncommingChat) provider.Message {
+func NewMessage(chat *pkg.TelegramIncommingChat, llmProviderName string, ttsProvider provider.TTSProvider) provider.Message {
 	var factory MessageFactory
 
-	isGroq := provider == "groq"
-	isOpenAI := provider == "openai"
-	isMistral := provider == "mistral"
+	isGroq := llmProviderName == "groq"
+	isOpenAI := llmProviderName == "openai"
+	isMistral := llmProviderName == "mistral"
+
 	hasPhoto := chat.Message.Photo != nil
 	hasDocument := chat.Message.Document != nil
 	isReplyToMessage := chat.Message.ReplyToMessage != nil
+	isVoiceMessage := chat.Message.Voice != nil
 
 	switch {
+	case isVoiceMessage:
+		if ttsProvider == nil {
+			log.Println("TTS provider is not available for VoiceMessage factory, transcription unavailable.")
+			return provider.Message{Role: "user", Content: "[Voice transcription not available]"}
+		}
+		factory = NewVoiceMessage(ttsProvider)
+
 	case (hasPhoto || hasDocument) && (isOpenAI || isMistral || isGroq):
 		factory = NewImageMessageType2()
 	case hasPhoto || hasDocument:

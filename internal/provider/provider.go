@@ -46,9 +46,13 @@ type LLMProvider interface {
 	DefaultModel(modelName string) string
 }
 
-type factory func(baseURL string, apiKey string, defaultModel string) LLMProvider
+type TTSProvider interface {
+	SpeechToText(audioFile []byte) (string, error)
+}
 
-var providerFactories = map[string]factory{
+type factoryLLM func(baseURL string, apiKey string, defaultModel string) LLMProvider
+
+var providerFactories = map[string]factoryLLM{
 	"ollama":  NewOllamaProvider,
 	"openai":  NewOpenAIProvider,
 	"gemini":  NewGeminiProvider,
@@ -64,7 +68,7 @@ var defaultModels = map[string]string{
 	"mistral": "ministral-3b-latest",
 }
 
-func CreateProvider(providerName string, apiKey string) (LLMProvider, error) {
+func CreateLLMProvider(providerName string, apiKey string) (LLMProvider, error) {
 	factory, exists := providerFactories[providerName]
 	if !exists {
 		return nil, errors.New("unknown llm provider")
@@ -72,6 +76,13 @@ func CreateProvider(providerName string, apiKey string) (LLMProvider, error) {
 	defaultModel := defaultModels[providerName]
 
 	return factory(config.LLMProviderBaseURL, apiKey, defaultModel), nil
+}
+
+func CreateTTSProvider(providerName string, apiKey string, defaultModel string) (TTSProvider, error) {
+	if providerName == "groq" {
+		return NewGroqTTSProvider(apiKey, defaultModel)
+	}
+	return nil, errors.New("unknown tts provider")
 }
 
 func argsToString(i interface{}) string {

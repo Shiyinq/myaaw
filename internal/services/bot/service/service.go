@@ -20,17 +20,24 @@ type BotService interface {
 type BotServiceImpl struct {
 	userRepo    repository.UserRepository
 	llmProvider provider.LLMProvider
+	ttsProvider provider.TTSProvider
 }
 
 func NewBotService(userRepo repository.UserRepository) BotService {
-	llmProvider, err := provider.CreateProvider(config.LLMProviderName, config.LLMProviderAPIKey)
+	llmProvider, err := provider.CreateLLMProvider(config.LLMProviderName, config.LLMProviderAPIKey)
 	if err != nil {
-		log.Fatalf("Error create provider - %s: %v", config.LLMProviderName, err)
+		log.Fatalf("Error create LLM provider - %s: %v", config.LLMProviderName, err)
+	}
+
+	ttsProvider, err := provider.CreateTTSProvider(config.TTSProviderName, config.TTSProviderAPIKey, "")
+	if err != nil {
+		log.Printf("Warning: Error creating TTS provider %s: %v. TTS functionality might be affected or disabled depending on message handling logic.", config.TTSProviderName, err)
 	}
 
 	return &BotServiceImpl{
 		userRepo:    userRepo,
 		llmProvider: llmProvider,
+		ttsProvider: ttsProvider,
 	}
 }
 
