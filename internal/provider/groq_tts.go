@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"teo/internal/config"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -17,21 +16,16 @@ const (
 	groqTTSAPIEndpoint  = "https://api.groq.com/openai/v1/audio/transcriptions"
 )
 
-// GroqTTSProvider implements the TTSProvider interface for Groq.
 type GroqTTSProvider struct {
 	apiKey       string
 	defaultModel string
 	client       *resty.Client
 }
 
-// GroqTranscriptionResponse represents the JSON response from the Groq transcription API.
 type GroqTranscriptionResponse struct {
 	Text string `json:"text"`
 }
 
-// NewGroqTTSProvider creates a new instance of GroqTTSProvider.
-// Note: This function signature needs to match `ttsProviderFactory` if we want to register it directly.
-// For now, let's make it return *GroqTTSProvider and we can wrap it if needed during registration.
 func NewGroqTTSProvider(apiKey string, defaultModel string) (*GroqTTSProvider, error) {
 	if defaultModel == "" {
 		defaultModel = groqTTSDefaultModel
@@ -43,19 +37,11 @@ func NewGroqTTSProvider(apiKey string, defaultModel string) (*GroqTTSProvider, e
 	}, nil
 }
 
-// SpeechToText transcribes the given audio file using the Groq API.
-func (g *GroqTTSProvider) SpeechToText(audioFile []byte, modelName string) (string, error) {
-	model := modelName
-	if model == "" {
-		model = g.defaultModel
-	}
-
-	// Create a buffer to write our multipart form
+func (g *GroqTTSProvider) SpeechToText(audioFile []byte) (string, error) {
+	model := g.defaultModel
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	// Create the file part
-	// Assuming the audio file is ogg, if not, the caller should ensure correct format or we need more info
 	part, err := writer.CreateFormFile("file", "audio.ogg")
 	if err != nil {
 		return "", fmt.Errorf("failed to create form file: %w", err)
@@ -65,13 +51,11 @@ func (g *GroqTTSProvider) SpeechToText(audioFile []byte, modelName string) (stri
 		return "", fmt.Errorf("failed to copy audio data to form: %w", err)
 	}
 
-	// Add the model field
 	err = writer.WriteField("model", model)
 	if err != nil {
 		return "", fmt.Errorf("failed to write model field: %w", err)
 	}
 
-	// Close the writer
 	err = writer.Close()
 	if err != nil {
 		return "", fmt.Errorf("failed to close multipart writer: %w", err)
@@ -88,7 +72,7 @@ func (g *GroqTTSProvider) SpeechToText(audioFile []byte, modelName string) (stri
 	}
 
 	if resp.StatusCode() != http.StatusOK {
-		return "", fmt.Errorf("Groq API request failed with status %s: %s", resp.Status(), resp.String())
+		return "", fmt.Errorf("groq api request failed with status %s: %s", resp.Status(), resp.String())
 	}
 
 	var transcriptionResponse GroqTranscriptionResponse
@@ -98,17 +82,4 @@ func (g *GroqTTSProvider) SpeechToText(audioFile []byte, modelName string) (stri
 	}
 
 	return transcriptionResponse.Text, nil
-}
-
-// Ensure GroqTTSProvider implements TTSProvider
-var _ TTSProvider = (*GroqTTSProvider)(nil)
-
-// init registers the Groq TTS provider.
-// This function will be called automatically when the package is imported.
-func init() {
-	// We need a wrapper function to match the ttsProviderFactory signature
-	groqFactory := func(apiKey string, defaultModel string) (TTSProvider, error) {
-		return NewGroqTTSProvider(apiKey, defaultModel)
-	}
-	RegisterTTSProvider(config.ProviderGroq, groqFactory)
 }
