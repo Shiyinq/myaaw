@@ -16,13 +16,13 @@ Integrate your favorite LLM with a Telegram bot.
 
 ## Features
 - [x] Text Input
+- [x] Voice Input
 - [x] Image Input
 - [x] Basic Response
 - [x] Stream Response
 - [x] Predefine Prompts
 - [x] Tools
 - [ ] Memory
-- [ ] Voice Input
 
 
 # Table of Contents
