@@ -33,6 +33,8 @@ var LLMProviderBaseURL string
 var LLMProviderName string
 var LLMProviderAPIKey string
 var StreamResponse bool
+var TTSProviderName string
+var TTSProviderAPIKey string
 
 func envPath() string {
 	_, b, _, _ := runtime.Caller(0)
@@ -65,6 +67,15 @@ func LoadConfig() {
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
+
+	TTSProviderName = os.Getenv("TTS_PROVIDER_NAME")
+	if TTSProviderName == "" {
+		TTSProviderName = "groq" // Default value if not set
+		log.Println("TTS_PROVIDER_NAME not set, using default:", TTSProviderName)
+	}
+	TTSProviderAPIKey = os.Getenv("TTS_PROVIDER_API_KEY")
+	// No default for API key for security reasons
+
 	maxRetries := 10
 	retryDelay := 3 * time.Second
 

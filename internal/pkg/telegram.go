@@ -247,3 +247,18 @@ func ImageURLToBase64(filePath string) (string, error) {
 
 	return base64Cleaned, nil
 }
+
+func DownloadTgFile(filePath string) ([]byte, error) {
+	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", config.BotToken, filePath)
+	client := resty.New()
+	resp, err := client.R().Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("error while making GET request for file download: %v", err)
+	}
+
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("failed to fetch file, status code: %d, response: %s", resp.StatusCode(), resp.String())
+	}
+
+	return resp.Body(), nil
+}

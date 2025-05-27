@@ -20,17 +20,32 @@ type BotService interface {
 type BotServiceImpl struct {
 	userRepo    repository.UserRepository
 	llmProvider provider.LLMProvider
+	ttsProvider provider.TTSProvider // New field
 }
 
 func NewBotService(userRepo repository.UserRepository) BotService {
 	llmProvider, err := provider.CreateProvider(config.LLMProviderName, config.LLMProviderAPIKey)
 	if err != nil {
-		log.Fatalf("Error create provider - %s: %v", config.LLMProviderName, err)
+		log.Fatalf("Error create LLM provider - %s: %v", config.LLMProviderName, err)
+	}
+
+	var ttsProvider provider.TTSProvider // Declare ttsProvider
+	ttsProvider, err = provider.CreateTTSProvider(config.TTSProviderName, config.TTSProviderAPIKey, "") // Empty for default model
+	if err != nil {
+		// Log a warning and proceed with ttsProvider as nil.
+		// The message handling logic (e.g. in NewMessage factory within message.go)
+		// should already be capable of checking for a nil provider or handling errors from CreateTTSProvider.
+		log.Printf("Warning: Error creating TTS provider %s: %v. TTS functionality might be affected or disabled depending on message handling logic.", config.TTSProviderName, err)
+		// ttsProvider will be nil if an error occurred and wasn't fatal.
+		// If CreateTTSProvider returns a non-nil error, ttsProvider's value is undefined by that call alone,
+		// so explicitly ensuring it's nil or handling as per CreateTTSProvider's contract is important.
+		// Assuming CreateTTSProvider returns (nil, error) on failure for our purposes here.
 	}
 
 	return &BotServiceImpl{
 		userRepo:    userRepo,
 		llmProvider: llmProvider,
+		ttsProvider: ttsProvider, // Assign initialized provider
 	}
 }
 

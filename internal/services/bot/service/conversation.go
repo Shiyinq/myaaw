@@ -53,7 +53,8 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.T
 	}
 
 	messages = append(messages, user.Messages...)
-	newMessage := NewMessage(r.llmProvider.ProviderName(), chat)
+	// Updated call to NewMessage with the new signature
+	newMessage := NewMessage(chat, r.llmProvider.ProviderName(), r.ttsProvider)
 	messages = append(messages, newMessage)
 
 	return messages
