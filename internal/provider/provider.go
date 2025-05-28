@@ -51,8 +51,9 @@ type TTSProvider interface {
 }
 
 type factoryLLM func(baseURL string, apiKey string, defaultModel string) LLMProvider
+type factoryTTS func(apiKey string, defaultModel string) TTSProvider
 
-var providerFactories = map[string]factoryLLM{
+var LLMproviderFactories = map[string]factoryLLM{
 	"ollama":  NewOllamaProvider,
 	"openai":  NewOpenAIProvider,
 	"gemini":  NewGeminiProvider,
@@ -60,7 +61,7 @@ var providerFactories = map[string]factoryLLM{
 	"mistral": NewMistralProvider,
 }
 
-var defaultModels = map[string]string{
+var defaultLLMModels = map[string]string{
 	"ollama":  "qwen2.5:1.5b-instruct",
 	"openai":  "gpt-4o",
 	"gemini":  "models/gemini-1.5-flash",
@@ -68,21 +69,32 @@ var defaultModels = map[string]string{
 	"mistral": "ministral-3b-latest",
 }
 
+var TTSproviderFactories = map[string]factoryTTS{
+	"groq": NewGroqTTSProvider,
+}
+
+var defaultTTSMModels = map[string]string{
+	"groq": "whisper-large-v3-turbo",
+}
+
 func CreateLLMProvider(providerName string, apiKey string) (LLMProvider, error) {
-	factory, exists := providerFactories[providerName]
+	factory, exists := LLMproviderFactories[providerName]
 	if !exists {
 		return nil, errors.New("unknown llm provider")
 	}
-	defaultModel := defaultModels[providerName]
+	defaultModel := defaultLLMModels[providerName]
 
 	return factory(config.LLMProviderBaseURL, apiKey, defaultModel), nil
 }
 
-func CreateTTSProvider(providerName string, apiKey string, defaultModel string) (TTSProvider, error) {
-	if providerName == "groq" {
-		return NewGroqTTSProvider(apiKey, defaultModel)
+func CreateTTSProvider(providerName string, apiKey string) (TTSProvider, error) {
+	factory, exists := TTSproviderFactories[providerName]
+	if !exists {
+		return nil, errors.New("unknown tts provider")
 	}
-	return nil, errors.New("unknown tts provider")
+	defaultModel := defaultTTSMModels[providerName]
+
+	return factory(apiKey, defaultModel), nil
 }
 
 func argsToString(i interface{}) string {

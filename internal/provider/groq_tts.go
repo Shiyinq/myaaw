@@ -26,15 +26,12 @@ type GroqTranscriptionResponse struct {
 	Text string `json:"text"`
 }
 
-func NewGroqTTSProvider(apiKey string, defaultModel string) (*GroqTTSProvider, error) {
-	if defaultModel == "" {
-		defaultModel = groqTTSDefaultModel
-	}
+func NewGroqTTSProvider(apiKey string, defaultModel string) TTSProvider {
 	return &GroqTTSProvider{
 		apiKey:       apiKey,
 		defaultModel: defaultModel,
 		client:       resty.New(),
-	}, nil
+	}
 }
 
 func (g *GroqTTSProvider) SpeechToText(audioFile []byte) (string, error) {

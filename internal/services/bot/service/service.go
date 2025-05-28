@@ -29,7 +29,7 @@ func NewBotService(userRepo repository.UserRepository) BotService {
 		log.Fatalf("Error create LLM provider - %s: %v", config.LLMProviderName, err)
 	}
 
-	ttsProvider, err := provider.CreateTTSProvider(config.TTSProviderName, config.TTSProviderAPIKey, "")
+	ttsProvider, err := provider.CreateTTSProvider(config.TTSProviderName, config.TTSProviderAPIKey)
 	if err != nil {
 		log.Printf("Warning: Error creating TTS provider %s: %v. TTS functionality might be affected or disabled depending on message handling logic.", config.TTSProviderName, err)
 	}
