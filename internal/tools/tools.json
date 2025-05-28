@@ -151,7 +151,7 @@
         "type": "function",
         "function": {
             "name": "tavily_search",
-            "description": "Performs a search or extracts content using the Tavily API. Specify 'search' or 'extract' in the 'action' parameter. For 'search', provide 'query' and optionally 'topic' and 'search_depth'. For 'extract', provide 'url'.",
+            "description": "Performs a search or extracts content using the Tavily API. Specify 'search' or 'extract' in the 'action' parameter. For 'search', provide 'query' and optionally 'topic' and 'search_depth'. For 'extract', provide 'url'. You must always attach the source url to the end of the response.",
             "parameters": {
                 "type": "object",
                 "properties": {
