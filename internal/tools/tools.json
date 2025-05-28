@@ -146,5 +146,122 @@
                 ]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tavily_search",
+            "description": "Performs a search or extracts content using the Tavily API. Specify 'search' or 'extract' in the 'action' parameter. For 'search', provide 'query' and optionally 'topic' and 'search_depth'. For 'extract', provide 'url'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["search", "extract"],
+                        "description": "The action to perform: 'search' for Tavily search API, or 'extract' for Tavily extract API."
+                    },
+                    "search_args": {
+                        "type": "object",
+                        "description": "Arguments for the Tavily search API. Required if action is 'search'.",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query."
+                            },
+                            "topic": {
+                                "type": "string",
+                                "enum": ["general", "news"],
+                                "default": "general",
+                                "description": "Category of the search."
+                            },
+                            "search_depth": {
+                                "type": "string",
+                                "enum": ["basic", "advanced"],
+                                "default": "basic",
+                                "description": "Depth of the search."
+                            },
+                            "chunks_per_source": {
+                                "type": "integer",
+                                "default": 3,
+                                "description": "Number of content chunks per source (advanced search only)."
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "default": 5,
+                                "description": "Maximum number of search results."
+                            },
+                            "time_range": {
+                                "type": "string",
+                                "enum": ["day", "week", "month", "year", "d", "w", "m", "y"],
+                                "description": "Time range to filter results."
+                            },
+                            "days": {
+                                "type": "integer",
+                                "default": 7,
+                                "description": "Number of days back to include (news topic only)."
+                            },
+                            "include_answer": {
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Include LLM-generated answer."
+                            },
+                            "include_raw_content": {
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Include cleaned HTML content of search results."
+                            },
+                            "include_images": {
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Include image search results."
+                            },
+                            "include_image_descriptions": {
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Include descriptive text for images (if include_images is true)."
+                            },
+                            "include_domains": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "List of domains to include."
+                            },
+                            "exclude_domains": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "List of domains to exclude."
+                            }
+                        },
+                        "required": ["query"]
+                    },
+                    "extract_args": {
+                        "type": "object",
+                        "description": "Arguments for the Tavily extract API. Required if action is 'extract'.",
+                        "properties": {
+                            "urls": {
+                                "type": "string",
+                                "description": "URL(s) to extract content from. For multiple URLs, provide them as a single string separated by commas or newlines if the API supports it, or make separate calls."
+                            },
+                            "include_images": {
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Include images from extracted content."
+                            },
+                            "extract_depth": {
+                                "type": "string",
+                                "enum": ["basic", "advanced"],
+                                "default": "basic",
+                                "description": "Depth of the extraction process."
+                            }
+                        },
+                        "required": ["urls"]
+                    }
+                },
+                "required": ["action"]
+            }
+        }
     }
 ]
