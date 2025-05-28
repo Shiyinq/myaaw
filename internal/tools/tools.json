@@ -77,5 +77,69 @@
                 ]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "filesystem",
+            "description": "Provides a suite of tools for interacting with the file system, such as reading, writing, and listing files and directories. All operations are restricted to allowed directories.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": "The specific file system function to execute.",
+                        "enum": [
+                            "read_file",
+                            "read_multiple_files",
+                            "write_file",
+                            "edit_file",
+                            "create_directory",
+                            "list_directory",
+                            "directory_tree",
+                            "move_file",
+                            "search_files",
+                            "get_file_info",
+                            "list_allowed_directories"
+                        ]
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "The primary path for the operation (e.g., file to read, directory to list, file to edit for edit_file). For read_multiple_files, this can be a JSON array of paths or a comma-separated string of paths."
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Content to be written to a file (used by write_file)."
+                    },
+                    "old_path": {
+                        "type": "string",
+                        "description": "The source path for a move operation (for move_file)."
+                    },
+                    "new_path": {
+                        "type": "string",
+                        "description": "The destination path for a move operation (for move_file)."
+                    },
+                    "pattern": {
+                        "type": "string",
+                        "description": "The search pattern for search_files."
+                    },
+                    "edit_start_line": {
+                        "type": "integer",
+                        "description": "The 1-indexed line number where the edit should begin. Required for edit_file."
+                    },
+                    "edit_end_line": {
+                        "type": "integer",
+                        "description": "Optional. The 1-indexed line number where the edit should end (inclusive). If not provided or less than edit_start_line, only the single line at edit_start_line is targeted for replacement by edit_new_content."
+                    },
+                    "edit_new_content": {
+                        "type": "string",
+                        "description": "The new content to replace the specified line(s). Required for edit_file. Multiple lines can be separated by \n."
+                    }
+                },
+                "required": [
+                    "tool_name"
+                ]
+            }
+        }
     }
 ]

@@ -54,6 +54,7 @@ func NewTools(functionName string, arguments string) string {
 			"get_current_weather": NewWeatherTool(),
 			"scrape_web_data":     NewScrapingTool(),
 			"notes":               NewNotesTool(),
+			"filesystem":          NewFileSystemTool(),
 		},
 	}
 	log.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)
