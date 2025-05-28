@@ -100,12 +100,13 @@
                             "move_file",
                             "search_files",
                             "get_file_info",
-                            "list_allowed_directories"
+                            "list_allowed_directories",
+                            "delete_path"
                         ]
                     },
                     "path": {
                         "type": "string",
-                        "description": "The primary path for the operation (e.g., file to read, directory to list, file to edit for edit_file). For read_multiple_files, this can be a JSON array of paths or a comma-separated string of paths."
+                        "description": "The primary path for the operation (e.g., file to read, directory to list, file to edit for edit_file, path to delete for delete_path). For read_multiple_files, this can be a JSON array of paths or a comma-separated string of paths."
                     },
                     "content": {
                         "type": "string",
@@ -134,6 +135,10 @@
                     "edit_new_content": {
                         "type": "string",
                         "description": "The new content to replace the specified line(s). Required for edit_file. Multiple lines can be separated by \n."
+                    },
+                    "delete_recursive": {
+                        "type": "boolean",
+                        "description": "Optional. If true, allows recursive deletion of directories and their contents. Defaults to false. Used by delete_path."
                     }
                 },
                 "required": [

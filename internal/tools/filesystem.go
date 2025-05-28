@@ -45,6 +45,7 @@ type FileSystemArgs struct {
 	EditStartLine    int      `json:"edit_start_line"`    // Line number to start editing (1-indexed)
 	EditEndLine      int      `json:"edit_end_line"`      // Line number to end editing (1-indexed, inclusive, optional)
 	EditNewContent   string   `json:"edit_new_content"`   // New content to replace/insert
+	DeleteRecursive  bool     `json:"delete_recursive"`   // Flag for recursive deletion, used by delete_path
 }
 
 func isAllowed(path string) (string, error) {
@@ -119,6 +120,12 @@ func (f *FileSystemTool) CallTool(arguments string) string {
 		return f.getFileInfo(args.Path)
 	case "list_allowed_directories":
 		return f.listAllowedDirectories()
+	case "delete_path":
+		if args.Path == "" {
+			return "Error: For delete_path, 'path' is a required argument."
+		}
+		// args.DeleteRecursive defaults to false if not provided, which is fine.
+		return f.deletePath(args.Path, args.DeleteRecursive)
 	default:
 		return fmt.Sprintf("Error: tool_name '%s' not recognized within FileSystemTool.", args.ToolName)
 	}
@@ -499,4 +506,42 @@ func (f *FileSystemTool) editFile(path string, startLine int, endLine int, newCo
 	// A more sophisticated diff would show context lines.
 
 	return fmt.Sprintf("File %s edited successfully.\nDiff:\n%s", path, strings.Join(diff, "\n"))
+}
+
+func (f *FileSystemTool) deletePath(path string, recursive bool) string {
+	absPath, err := isAllowed(path)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	info, err := os.Stat(absPath)
+	if os.IsNotExist(err) {
+		return fmt.Sprintf("Error: Path %s does not exist.", path)
+	}
+	if err != nil {
+		return fmt.Sprintf("Error stating path %s: %v", path, err)
+	}
+
+	if recursive {
+		err = os.RemoveAll(absPath)
+		if err != nil {
+			return fmt.Sprintf("Error recursively deleting %s: %v", path, err)
+		}
+		return fmt.Sprintf("Path %s recursively deleted successfully.", path)
+	} else {
+		// Check if it's a directory and not empty (os.Remove will fail, but we can give a better message)
+		if info.IsDir() {
+			dirEntries, _ := os.ReadDir(absPath)
+			if len(dirEntries) > 0 {
+				return fmt.Sprintf("Error: Directory %s is not empty. Use recursive delete if intended.", path)
+			}
+		}
+		err = os.Remove(absPath)
+		if err != nil {
+			// Error might be because it's a non-empty directory and recursive was false
+			// Or other permission issues.
+			return fmt.Sprintf("Error deleting %s: %v. If it is a non-empty directory, recursive delete might be needed.", path, err)
+		}
+		return fmt.Sprintf("Path %s deleted successfully.", path)
+	}
 }
