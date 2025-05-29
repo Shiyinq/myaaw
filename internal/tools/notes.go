@@ -3,16 +3,33 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
-type NoteTool struct{}
+type NoteTool struct {
+	dataPath string
+}
 
 func NewNotesTool() ToolsFactory {
-	return &NoteTool{}
+	workingDir, err := os.Getwd()
+	if err != nil {
+		log.Printf("Error getting working directory: %v\n", err)
+		return nil
+	}
+
+	dataDir := filepath.Join(workingDir, "data", "notes")
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		log.Printf("Error creating notes directory: %v\n", err)
+		return nil
+	}
+
+	return &NoteTool{
+		dataPath: dataDir,
+	}
 }
 
 type NoteArguments struct {
@@ -79,7 +96,7 @@ func (n *NoteTool) validateInput(args NoteArguments) error {
 }
 
 func (n *NoteTool) getNotes() string {
-	files, err := os.ReadDir("./notes")
+	files, err := os.ReadDir(n.dataPath)
 	if err != nil {
 		return fmt.Sprintf("Error reading notes directory: %v", err)
 	}
@@ -104,7 +121,7 @@ func (n *NoteTool) getNotes() string {
 }
 
 func (n *NoteTool) readNoteFile(filename string) (Note, error) {
-	filePath := filepath.Join("./notes", filename)
+	filePath := filepath.Join(n.dataPath, filename)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return Note{}, err
@@ -133,12 +150,7 @@ func (n *NoteTool) getNoteDetail(title string) string {
 }
 
 func (n *NoteTool) saveNote(title, content string) string {
-	dirPath := "./notes"
-	filePath := filepath.Join(dirPath, fmt.Sprintf("%s.json", title))
-
-	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
-		return fmt.Sprintf("Error creating directory: %v", err)
-	}
+	filePath := filepath.Join(n.dataPath, fmt.Sprintf("%s.json", title))
 
 	if _, err := os.Stat(filePath); err == nil {
 		return fmt.Sprintf("Note with title '%s' already exists. Use PUT to update it.", title)
@@ -164,7 +176,7 @@ func (n *NoteTool) saveNote(title, content string) string {
 }
 
 func (n *NoteTool) updateNote(title, content string) string {
-	filePath := filepath.Join("./notes", fmt.Sprintf("%s.json", title))
+	filePath := filepath.Join(n.dataPath, fmt.Sprintf("%s.json", title))
 
 	note, err := n.readNoteFile(fmt.Sprintf("%s.json", title))
 	if err != nil {
@@ -187,7 +199,7 @@ func (n *NoteTool) updateNote(title, content string) string {
 }
 
 func (n *NoteTool) deleteNote(title string) string {
-	filePath := filepath.Join("./notes", fmt.Sprintf("%s.json", title))
+	filePath := filepath.Join(n.dataPath, fmt.Sprintf("%s.json", title))
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		return fmt.Sprintf("Note '%s' does not exist.", title)
@@ -201,7 +213,7 @@ func (n *NoteTool) deleteNote(title string) string {
 }
 
 func (n *NoteTool) searchNotes(query string) string {
-	files, err := os.ReadDir("./notes")
+	files, err := os.ReadDir(n.dataPath)
 	if err != nil {
 		return fmt.Sprintf("Error reading notes directory: %v", err)
 	}
@@ -239,7 +251,7 @@ func (n *NoteTool) getNotesByDate(startDate, endDate string) string {
 		return fmt.Sprintf("Invalid end date format. Use YYYY-MM-DD: %v", err)
 	}
 
-	files, err := os.ReadDir("./notes")
+	files, err := os.ReadDir(n.dataPath)
 	if err != nil {
 		return fmt.Sprintf("Error reading notes directory: %v", err)
 	}
