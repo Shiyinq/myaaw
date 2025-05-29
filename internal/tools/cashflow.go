@@ -21,11 +21,11 @@ const (
 type CurrencyType string
 
 const (
-	IDR CurrencyType = "IDR" 
-	USD CurrencyType = "USD" 
-	EUR CurrencyType = "EUR" 
-	JPY CurrencyType = "JPY" 
-	GBP CurrencyType = "GBP" 
+	IDR CurrencyType = "IDR"
+	USD CurrencyType = "USD"
+	EUR CurrencyType = "EUR"
+	JPY CurrencyType = "JPY"
+	GBP CurrencyType = "GBP"
 )
 
 type Category struct {
@@ -205,7 +205,7 @@ func (ct *CashFlowTool) handleAddTransaction(params map[string]interface{}) stri
 
 	currency, ok := transactionData["currency"].(string)
 	if !ok {
-		currency = string(IDR) 
+		currency = string(IDR)
 	}
 	currencyType := CurrencyType(currency)
 	if currencyType != IDR && currencyType != USD && currencyType != EUR && currencyType != JPY && currencyType != GBP {
@@ -264,7 +264,7 @@ func (ct *CashFlowTool) handleAddTransaction(params map[string]interface{}) stri
 		return fmt.Sprintf("Error saving data: %v", err)
 	}
 
-	return "Transaction added successfully"
+	return fmt.Sprintf("Transaction added successfully with ID: %s", transaction.ID)
 }
 
 func (ct *CashFlowTool) handleGetTransactions(params map[string]interface{}) string {
@@ -300,6 +300,10 @@ func (ct *CashFlowTool) handleGetTransactions(params map[string]interface{}) str
 		return fmt.Sprintf("Error: failed to convert data: %v", err)
 	}
 
+	if err := ct.saveData(data); err != nil {
+		return fmt.Sprintf("Error saving data: %v", err)
+	}
+
 	return string(result)
 }
 
@@ -331,7 +335,7 @@ func (ct *CashFlowTool) handleUpdateTransaction(params map[string]interface{}) s
 
 	currency, ok := transactionData["currency"].(string)
 	if !ok {
-		currency = string(IDR) 
+		currency = string(IDR)
 	}
 	currencyType := CurrencyType(currency)
 	if currencyType != IDR && currencyType != USD && currencyType != EUR && currencyType != JPY && currencyType != GBP {
@@ -409,7 +413,7 @@ func (ct *CashFlowTool) handleUpdateTransaction(params map[string]interface{}) s
 		return fmt.Sprintf("Error saving data: %v", err)
 	}
 
-	return "Transaction updated successfully"
+	return fmt.Sprintf("Transaction updated successfully with ID: %s", transactionID)
 }
 
 func (ct *CashFlowTool) handleDeleteTransaction(params map[string]interface{}) string {
