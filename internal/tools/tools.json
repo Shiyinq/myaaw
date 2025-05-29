@@ -493,5 +493,50 @@
                 "required": ["action"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "converter",
+            "description": "A tool to convert values between various units (excluding currency). Supported categories include Temperature (Celsius, Fahrenheit, Kelvin), Distance (meter, kilometer, centimeter, inch, foot), Mass (gram, kilogram, ounce, pound), Volume (liter, milliliter, gallon, quart), Time (second, minute, hour), and Speed (meter per second, kilometer per hour, mile per hour).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "value": {
+                        "type": "number",
+                        "description": "The value to convert"
+                    },
+                    "from_unit": {
+                        "type": "string",
+                        "description": "The source unit (e.g., meter, ounce, celsius)",
+                        "enum": [
+                            "celsius", "fahrenheit", "kelvin",
+                            "meter", "kilometer", "centimeter", "inch", "foot",
+                            "gram", "kilogram", "ounce", "pound",
+                            "liter", "milliliter", "gallon", "quart",
+                            "second", "minute", "hour",
+                            "meter per second", "kilometer per hour", "mile per hour"
+                        ]
+                    },
+                    "to_unit": {
+                        "type": "string",
+                        "description": "The target unit (e.g., kilometer, gram, fahrenheit)",
+                        "enum": [
+                            "celsius", "fahrenheit", "kelvin",
+                            "meter", "kilometer", "centimeter", "inch", "foot",
+                            "gram", "kilogram", "ounce", "pound",
+                            "liter", "milliliter", "gallon", "quart",
+                            "second", "minute", "hour",
+                            "meter per second", "kilometer per hour", "mile per hour"
+                        ]
+                    }
+                },
+                "required": [
+                    "value",
+                    "from_unit",
+                    "to_unit"
+                ]
+            }
+        }
     }
 ]
