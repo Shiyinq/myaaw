@@ -151,7 +151,7 @@
         "type": "function",
         "function": {
             "name": "tavily_search",
-            "description": "Performs a search or extracts content using the Tavily API. Specify 'search' or 'extract' in the 'action' parameter. For 'search', provide 'query' and optionally 'topic' and 'search_depth'. For 'extract', provide 'url'. You must always attach the source url to the end of the response.",
+            "description": "Performs a search or extracts content using the Tavily API. Specify 'search' or 'extract' in the 'action' parameter. For 'search', provide 'query' and optionally 'topic' and 'search_depth'. For 'extract', provide 'url'. Do not use markdown formatting in your response. Do not use the asterisk symbol under any circumstances. Do not use bullet points; use numbered lists or dashes only. Always include the source URL at the end of your response.",
             "parameters": {
                 "type": "object",
                 "properties": {
