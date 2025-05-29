@@ -263,5 +263,21 @@
                 "required": ["action"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_time",
+            "description": "Get current time information. If timezone is not specified, it will use the system's timezone. Supports checking time in various timezones around the world.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "timezone": {
+                        "type": "string",
+                        "description": "Timezone to check (examples: 'Asia/Jakarta', 'America/New_York', 'Europe/London'). If not specified, will use system timezone."
+                    }
+                }
+            }
+        }
     }
 ]

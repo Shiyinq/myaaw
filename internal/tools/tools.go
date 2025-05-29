@@ -56,6 +56,7 @@ func NewTools(functionName string, arguments string) string {
 			"notes":               NewNotesTool(),
 			"filesystem":          NewFileSystemTool(),
 			"tavily_search":       NewTavilyTool(),
+			"get_time":            NewTimeTool(),
 		},
 	}
 	log.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)
