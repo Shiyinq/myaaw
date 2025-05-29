@@ -1,4 +1,4 @@
-package tools
+package calendar
 
 import (
 	"encoding/json"
@@ -157,7 +157,7 @@ type CalendarTool struct {
 	manager *CalendarManager
 }
 
-func NewCalendarTool() ToolsFactory {
+func NewCalendarTool() *CalendarTool {
 	manager, err := NewCalendarManager()
 	if err != nil {
 		log.Printf("Error creating calendar manager: %v", err)

@@ -7,6 +7,15 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"teo/internal/tools/calendar"
+	"teo/internal/tools/cashflow"
+	"teo/internal/tools/converter"
+	"teo/internal/tools/filesystem"
+	"teo/internal/tools/notes"
+	"teo/internal/tools/scraping"
+	"teo/internal/tools/tavily"
+	"teo/internal/tools/time"
+	"teo/internal/tools/weather"
 )
 
 type ToolsFactory interface {
@@ -51,15 +60,15 @@ type ToolsCalling struct {
 func NewTools(functionName string, arguments string) string {
 	tools := &ToolsCalling{
 		toolsMap: map[string]ToolsFactory{
-			"get_current_weather": NewWeatherTool(),
-			"scrape_web_data":     NewScrapingTool(),
-			"notes":               NewNotesTool(),
-			"filesystem":          NewFileSystemTool(),
-			"tavily_search":       NewTavilyTool(),
-			"get_time":            NewTimeTool(),
-			"cash_flow":           NewCashFlowTool(),
-			"calendar":            NewCalendarTool(),
-			"converter":           NewConverterTool(),
+			"get_current_weather": weather.NewWeatherTool(),
+			"scrape_web_data":     scraping.NewScrapingTool(),
+			"notes":               notes.NewNotesTool(),
+			"filesystem":          filesystem.NewFileSystemTool(),
+			"tavily_search":       tavily.NewTavilyTool(),
+			"get_time":            time.NewTimeTool(),
+			"cash_flow":           cashflow.NewCashFlowTool(),
+			"calendar":            calendar.NewCalendarTool(),
+			"converter":           converter.NewConverterTool(),
 		},
 	}
 	log.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)

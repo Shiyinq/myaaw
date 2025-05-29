@@ -1,4 +1,4 @@
-package tools
+package time
 
 import (
 	"encoding/json"

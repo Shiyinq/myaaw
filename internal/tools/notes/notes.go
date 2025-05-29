@@ -1,4 +1,4 @@
-package tools
+package notes
 
 import (
 	"encoding/json"
@@ -14,7 +14,7 @@ type NoteTool struct {
 	dataPath string
 }
 
-func NewNotesTool() ToolsFactory {
+func NewNotesTool() *NoteTool {
 	workingDir, err := os.Getwd()
 	if err != nil {
 		log.Printf("Error getting working directory: %v\n", err)

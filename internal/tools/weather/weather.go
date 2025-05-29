@@ -1,4 +1,4 @@
-package tools
+package weather
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 
 type WeatherTool struct{}
 
-func NewWeatherTool() ToolsFactory {
+func NewWeatherTool() *WeatherTool {
 	return &WeatherTool{}
 }
 

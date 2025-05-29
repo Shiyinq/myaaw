@@ -1,4 +1,4 @@
-package tools
+package cashflow
 
 import (
 	"encoding/json"

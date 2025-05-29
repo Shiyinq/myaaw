@@ -1,4 +1,4 @@
-package tools
+package scraping
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 
 type ScrapingTool struct{}
 
-func NewScrapingTool() ToolsFactory {
+func NewScrapingTool() *ScrapingTool {
 	return &ScrapingTool{}
 }
 

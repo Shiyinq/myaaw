@@ -1,14 +1,14 @@
-package tools
+package filesystem
 
 import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-	"log"
 )
 
 var allowedDirectories []string
@@ -25,11 +25,12 @@ func init() {
 	}
 	// log.Printf("FileSystemTool initialized. Allowed directories: %v", allowedDirectories) // Optional: for debugging startup
 }
+
 // TODO: Make allowedDirectories configurable (e.g., via environment variable, config file)
 
 type FileSystemTool struct{}
 
-func NewFileSystemTool() ToolsFactory {
+func NewFileSystemTool() *FileSystemTool {
 	return &FileSystemTool{}
 }
 
@@ -42,10 +43,10 @@ type FileSystemArgs struct {
 	Pattern  string `json:"pattern"`
 	// Add other arguments from the issue description as needed for different tools
 	// For example, for edit_file:
-	EditStartLine    int      `json:"edit_start_line"`    // Line number to start editing (1-indexed)
-	EditEndLine      int      `json:"edit_end_line"`      // Line number to end editing (1-indexed, inclusive, optional)
-	EditNewContent   string   `json:"edit_new_content"`   // New content to replace/insert
-	DeleteRecursive  bool     `json:"delete_recursive"`   // Flag for recursive deletion, used by delete_path
+	EditStartLine   int    `json:"edit_start_line"`  // Line number to start editing (1-indexed)
+	EditEndLine     int    `json:"edit_end_line"`    // Line number to end editing (1-indexed, inclusive, optional)
+	EditNewContent  string `json:"edit_new_content"` // New content to replace/insert
+	DeleteRecursive bool   `json:"delete_recursive"` // Flag for recursive deletion, used by delete_path
 }
 
 func isAllowed(path string) (string, error) {
@@ -82,7 +83,7 @@ func (f *FileSystemTool) CallTool(arguments string) string {
 			}
 		}
 	}
-	
+
 	// Based on args.ToolName, call the appropriate private method.
 	// For example:
 	switch args.ToolName {
@@ -115,7 +116,7 @@ func (f *FileSystemTool) CallTool(arguments string) string {
 		return f.moveFile(args.OldPath, args.NewPath)
 	case "search_files":
 		// Assuming args.Path is the directory to search in and args.Pattern is the search pattern
-		return f.searchFiles(args.Path, args.Pattern) 
+		return f.searchFiles(args.Path, args.Pattern)
 	case "get_file_info":
 		return f.getFileInfo(args.Path)
 	case "list_allowed_directories":
@@ -219,88 +220,86 @@ func (f *FileSystemTool) listDirectory(path string) string {
 }
 
 type DirEntry struct {
-    Name     string     `json:"name"`
-    Type     string     `json:"type"`
-    Children []DirEntry `json:"children,omitempty"`
+	Name     string     `json:"name"`
+	Type     string     `json:"type"`
+	Children []DirEntry `json:"children,omitempty"`
 }
 
 func (f *FileSystemTool) directoryTree(basePath string) string {
-    absBasePath, err := isAllowed(basePath)
-    if err != nil {
-        return fmt.Sprintf("Error: %v", err)
-    }
+	absBasePath, err := isAllowed(basePath)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
 
-    var buildTree func(currentPath string) (DirEntry, error)
-    buildTree = func(currentPath string) (DirEntry, error) {
-        info, err := os.Stat(currentPath)
-        if err != nil {
-            return DirEntry{}, fmt.Errorf("error stating path %s: %w", currentPath, err)
-        }
+	var buildTree func(currentPath string) (DirEntry, error)
+	buildTree = func(currentPath string) (DirEntry, error) {
+		info, err := os.Stat(currentPath)
+		if err != nil {
+			return DirEntry{}, fmt.Errorf("error stating path %s: %w", currentPath, err)
+		}
 
-        entry := DirEntry{
-            Name: filepath.Base(currentPath),
-        }
+		entry := DirEntry{
+			Name: filepath.Base(currentPath),
+		}
 
-        if info.IsDir() {
-            entry.Type = "directory"
-            entry.Children = []DirEntry{} // Initialize, even if empty
+		if info.IsDir() {
+			entry.Type = "directory"
+			entry.Children = []DirEntry{} // Initialize, even if empty
 
-            files, err := os.ReadDir(currentPath)
-            if err != nil {
-                return DirEntry{}, fmt.Errorf("error reading directory %s: %w", currentPath, err)
-            }
+			files, err := os.ReadDir(currentPath)
+			if err != nil {
+				return DirEntry{}, fmt.Errorf("error reading directory %s: %w", currentPath, err)
+			}
 
-            for _, file := range files {
-                childPath := filepath.Join(currentPath, file.Name())
-                // Security check for child paths is implicitly handled by the initial basePath check
-                // if traversal outside allowed directories is a concern at deeper levels,
-                // an additional isAllowed check could be added here for childPath.
-                // However, if basePath is allowed, all its children should be too unless symlinks point outside.
-                // For simplicity and given the current isAllowed logic, we assume subdirectories are fine.
-                childEntry, err := buildTree(childPath)
-                if err != nil {
-                    // Decide how to handle errors for individual children, e.g., skip or return error
-                    // For now, let's skip problematic children but log the error
-                    fmt.Printf("Skipping child %s due to error: %v\n", childPath, err)
-                    continue
-                }
-                entry.Children = append(entry.Children, childEntry)
-            }
-        } else {
-            entry.Type = "file"
-            // Files do not have children, so Children remains nil (or empty if initialized)
-        }
-        return entry, nil
-    }
+			for _, file := range files {
+				childPath := filepath.Join(currentPath, file.Name())
+				// Security check for child paths is implicitly handled by the initial basePath check
+				// if traversal outside allowed directories is a concern at deeper levels,
+				// an additional isAllowed check could be added here for childPath.
+				// However, if basePath is allowed, all its children should be too unless symlinks point outside.
+				// For simplicity and given the current isAllowed logic, we assume subdirectories are fine.
+				childEntry, err := buildTree(childPath)
+				if err != nil {
+					// Decide how to handle errors for individual children, e.g., skip or return error
+					// For now, let's skip problematic children but log the error
+					fmt.Printf("Skipping child %s due to error: %v\n", childPath, err)
+					continue
+				}
+				entry.Children = append(entry.Children, childEntry)
+			}
+		} else {
+			entry.Type = "file"
+			// Files do not have children, so Children remains nil (or empty if initialized)
+		}
+		return entry, nil
+	}
 
-    rootEntry, err := buildTree(absBasePath)
-    if err != nil {
-        return fmt.Sprintf("Error building directory tree for %s: %v", basePath, err)
-    }
+	rootEntry, err := buildTree(absBasePath)
+	if err != nil {
+		return fmt.Sprintf("Error building directory tree for %s: %v", basePath, err)
+	}
 
-    // Correctly marshal the root entry which represents the initial basePath directory itself
-    // The issue asks for the children of the basePath to be the primary list if basePath is a directory.
-    // The current buildTree returns the basePath itself as the root DirEntry.
-    // If the root is a directory, we should marshal its Children. If it's a file, marshal the entry itself.
-    var dataToMarshal interface{}
-    if rootEntry.Type == "directory" {
-        // The spec implies the output is an array of entries *within* the directory,
-        // or a single entry if path is a file.
-        // Let's adjust to return the root entry itself for consistency with get_file_info.
-        // The JSON structure {name, type, children} seems to describe the node itself.
-        dataToMarshal = rootEntry
-    } else {
-        dataToMarshal = rootEntry // A file
-    }
+	// Correctly marshal the root entry which represents the initial basePath directory itself
+	// The issue asks for the children of the basePath to be the primary list if basePath is a directory.
+	// The current buildTree returns the basePath itself as the root DirEntry.
+	// If the root is a directory, we should marshal its Children. If it's a file, marshal the entry itself.
+	var dataToMarshal interface{}
+	if rootEntry.Type == "directory" {
+		// The spec implies the output is an array of entries *within* the directory,
+		// or a single entry if path is a file.
+		// Let's adjust to return the root entry itself for consistency with get_file_info.
+		// The JSON structure {name, type, children} seems to describe the node itself.
+		dataToMarshal = rootEntry
+	} else {
+		dataToMarshal = rootEntry // A file
+	}
 
-
-    jsonData, err := json.MarshalIndent(dataToMarshal, "", "  ")
-    if err != nil {
-        return fmt.Sprintf("Error marshalling directory tree to JSON: %v", err)
-    }
-    return string(jsonData)
+	jsonData, err := json.MarshalIndent(dataToMarshal, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("Error marshalling directory tree to JSON: %v", err)
+	}
+	return string(jsonData)
 }
-
 
 func (f *FileSystemTool) moveFile(oldPath, newPath string) string {
 	absOldPath, err := isAllowed(oldPath)
@@ -380,11 +379,11 @@ func (f *FileSystemTool) getFileInfo(path string) string {
 
 	// Simplified representation, can be expanded
 	fileInfo := map[string]interface{}{
-		"name":         info.Name(),
-		"size":         info.Size(), // bytes
-		"type":         fileType,
-		"modified_at":  info.ModTime().Format(time.RFC3339),
-		"permissions":  info.Mode().String(),
+		"name":        info.Name(),
+		"size":        info.Size(), // bytes
+		"type":        fileType,
+		"modified_at": info.ModTime().Format(time.RFC3339),
+		"permissions": info.Mode().String(),
 	}
 	resultBytes, err := json.MarshalIndent(fileInfo, "", "  ")
 	if err != nil {
@@ -426,24 +425,24 @@ func (f *FileSystemTool) editFile(path string, startLine int, endLine int, newCo
 	startIndex := startLine - 1
 	// If endLine is not provided or is less than startLine, assume editing/replacing a single line (or inserting before, depending on interpretation)
 	// For "replaces exact line sequences", let's assume endLine defaults to startLine if not provided or invalid.
-	endIndex := startLine -1 // Default to affecting only the startLine if endLine is not specified
+	endIndex := startLine - 1 // Default to affecting only the startLine if endLine is not specified
 	if endLine >= startLine {
-	    endIndex = endLine - 1
+		endIndex = endLine - 1
 	}
 
 	if startIndex < 0 || startIndex > len(originalLines) { // Allow startIndex == len(originalLines) for appending
 		return fmt.Sprintf("Error: Start line %d is out of bounds for file with %d lines.", startLine, len(originalLines))
 	}
 	if endIndex < 0 || endIndex >= len(originalLines) && startIndex != len(originalLines) { // Allow endIndex for append scenario if startIndex is also at end
-	    if endIndex == len(originalLines) && startIndex == len(originalLines) { // append case 
-            // this is fine, effectively an append
-        } else {
-            return fmt.Sprintf("Error: End line %d is out of bounds for file with %d lines.", endLine, len(originalLines))
-        }
+		if endIndex == len(originalLines) && startIndex == len(originalLines) { // append case
+			// this is fine, effectively an append
+		} else {
+			return fmt.Sprintf("Error: End line %d is out of bounds for file with %d lines.", endLine, len(originalLines))
+		}
 	}
-    if startIndex > endIndex && startIndex != len(originalLines) { // if startIndex is for append, endIndex is irrelevant if smaller
-        return fmt.Sprintf("Error: Start line %d cannot be after end line %d.", startLine, endLine)
-    }
+	if startIndex > endIndex && startIndex != len(originalLines) { // if startIndex is for append, endIndex is irrelevant if smaller
+		return fmt.Sprintf("Error: Start line %d cannot be after end line %d.", startLine, endLine)
+	}
 
 	newContentLines := strings.Split(newContent, "\n")
 
@@ -459,18 +458,18 @@ func (f *FileSystemTool) editFile(path string, startLine int, endLine int, newCo
 	// Add lines after the edit range
 	// If startIndex is for append (i.e. startIndex == len(originalLines)), then originalLines[endIndex+1:] would be empty or panic
 	// and originalLines[:startIndex] would contain all original lines.
-	if endIndex + 1 < len(originalLines) && startIndex <= endIndex {
+	if endIndex+1 < len(originalLines) && startIndex <= endIndex {
 		modifiedLines = append(modifiedLines, originalLines[endIndex+1:]...)
 	} else if startIndex == len(originalLines) {
-        // This is an append operation, no lines after original end to add.
-    } else if startIndex > endIndex { // This implies replacing a single line, originalLines[startIndex+1:]
-        // This case should be handled by endIndex defaulting to startIndex if not specified, 
-        // so this specific else-if might be redundant if logic is clean.
-        // If replacing single line at startIndex, then originalLines[startIndex+1:] are the ones to add after newContent.
-        if startIndex + 1 < len(originalLines) {
-             modifiedLines = append(modifiedLines, originalLines[startIndex+1:]...)
-        }
-    }
+		// This is an append operation, no lines after original end to add.
+	} else if startIndex > endIndex { // This implies replacing a single line, originalLines[startIndex+1:]
+		// This case should be handled by endIndex defaulting to startIndex if not specified,
+		// so this specific else-if might be redundant if logic is clean.
+		// If replacing single line at startIndex, then originalLines[startIndex+1:] are the ones to add after newContent.
+		if startIndex+1 < len(originalLines) {
+			modifiedLines = append(modifiedLines, originalLines[startIndex+1:]...)
+		}
+	}
 
 	finalContent := strings.Join(modifiedLines, "\n")
 	err = os.WriteFile(absPath, []byte(finalContent), 0644)
@@ -483,7 +482,7 @@ func (f *FileSystemTool) editFile(path string, startLine int, endLine int, newCo
 	// For simplicity, this diff will be a full before/after rather than line-by-line additions/deletions marks
 	// A true line-by-line diff is more complex.
 	// Let's do a basic line diff based on what was replaced.
-	
+
 	// i, j := 0, 0 // These variables are declared but not used in the provided code.
 	// beforeLines := originalLines // Declared but not used
 	// afterLines := modifiedLines // Declared but not used
@@ -492,7 +491,7 @@ func (f *FileSystemTool) editFile(path string, startLine int, endLine int, newCo
 	// For now, just show removed and added blocks based on the edit.
 	diff = append(diff, fmt.Sprintf("--- a/%s", path))
 	diff = append(diff, fmt.Sprintf("+++ b/%s", path))
-	
+
 	// Show lines that were replaced/removed
 	for k := startIndex; k <= endIndex && k < len(originalLines); k++ {
 		diff = append(diff, fmt.Sprintf("-%s", originalLines[k]))

@@ -1,4 +1,4 @@
-package tools
+package converter
 
 import (
 	"encoding/json"
@@ -351,6 +351,6 @@ func (f *ConverterToolFactory) CallTool(arguments string) string {
 	return res
 }
 
-func NewConverterTool() ToolsFactory {
+func NewConverterTool() *ConverterToolFactory {
 	return &ConverterToolFactory{&ConverterTool{}}
 }
