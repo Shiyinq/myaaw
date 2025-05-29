@@ -48,7 +48,7 @@
         "type": "function",
         "function": {
             "name": "notes",
-            "description": "A tool to manage notes with support for multiple operations. The tool supports the following actions:\n1. GET: Retrieves a list of all note file names stored in the system. This provides an overview of the available notes.\n2. GET_DETAIL: Fetches the content of a specific note based on the provided file name. This is useful for viewing or reading a particular note.\n3. POST: Creates a new note with a specified name and content. You must transform the title in the request by converting it to lowercase and replacing spaces with underscores (_) to ensure consistency in file naming. If a note with the transformed title already exists, the operation will return an error.4. PUT: Updates the content of an existing note identified by its file name. If the note does not exist, the operation will return an error.\n5. DELETE: Deletes an existing note based on its file name. If the note does not exist, the operation will return an error.",
+            "description": "A tool to manage notes with support for multiple operations. The tool supports the following actions:\n1. GET: Retrieves a list of all notes with their metadata (title, content, creation date, and last update date).\n2. GET_DETAIL: Fetches the complete details of a specific note including metadata.\n3. POST: Creates a new note with a specified title and content. The note will be stored with creation and update timestamps.\n4. PUT: Updates the content of an existing note and updates its timestamp.\n5. DELETE: Deletes an existing note.\n6. SEARCH: Searches through notes by title or content using case-insensitive matching.\n7. GET_BY_DATE: Retrieves notes created within a specified date range (format: YYYY-MM-DD).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -59,17 +59,31 @@
                             "GET_DETAIL",
                             "POST",
                             "PUT",
-                            "DELETE"
+                            "DELETE",
+                            "SEARCH",
+                            "GET_BY_DATE"
                         ],
                         "description": "Action to perform on the note"
                     },
                     "title": {
                         "type": "string",
-                        "description": "The title of the note"
+                        "description": "The title of the note (required for GET_DETAIL, POST, PUT, DELETE)"
                     },
                     "content": {
                         "type": "string",
-                        "description": "The content of the note"
+                        "description": "The content of the note (required for POST and PUT)"
+                    },
+                    "search": {
+                        "type": "string",
+                        "description": "Search query for searching through notes (required for SEARCH action)"
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Start date for filtering notes (format: YYYY-MM-DD, required for GET_BY_DATE)"
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "End date for filtering notes (format: YYYY-MM-DD, required for GET_BY_DATE)"
                     }
                 },
                 "required": [
