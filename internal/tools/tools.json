@@ -293,5 +293,112 @@
                 }
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cash_flow",
+            "description": "A financial management tool to track income and expenses. Supports the following operations:\n1. add_transaction: Add a new transaction (income/expense)\n2. get_transactions: Get a list of transactions within a date range\n3. update_transaction: Update an existing transaction\n4. delete_transaction: Delete a transaction\n5. get_analytics: Get financial analytics within a date range\n6. add_category: Add a new category\n7. get_categories: Get a list of categories",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "add_transaction",
+                            "get_transactions",
+                            "update_transaction",
+                            "delete_transaction",
+                            "get_analytics",
+                            "add_category",
+                            "get_categories"
+                        ],
+                        "description": "Action to perform"
+                    },
+                    "transaction": {
+                        "type": "object",
+                        "description": "Transaction data (required for add_transaction and update_transaction)",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": ["income", "expense"],
+                                "description": "Transaction type"
+                            },
+                            "amount": {
+                                "type": "number",
+                                "description": "Transaction amount"
+                            },
+                            "currency": {
+                                "type": "string",
+                                "enum": ["IDR", "USD", "EUR", "JPY", "GBP"],
+                                "default": "IDR",
+                                "description": "Transaction currency (IDR: Indonesian Rupiah, USD: US Dollar, EUR: Euro, JPY: Japanese Yen, GBP: British Pound)"
+                            },
+                            "category": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "description": "Category ID"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "description": "Category name"
+                                    }
+                                },
+                                "required": ["name"]
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Transaction description"
+                            },
+                            "date": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Transaction date (format: RFC3339)"
+                            }
+                        },
+                        "required": ["type", "amount", "category", "description", "date"]
+                    },
+                    "transaction_id": {
+                        "type": "string",
+                        "description": "Transaction ID (required for update_transaction and delete_transaction)"
+                    },
+                    "date_range": {
+                        "type": "object",
+                        "description": "Date range (required for get_transactions and get_analytics)",
+                        "properties": {
+                            "start": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "Start date (format: RFC3339)"
+                            },
+                            "end": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "End date (format: RFC3339)"
+                            }
+                        },
+                        "required": ["start", "end"]
+                    },
+                    "category": {
+                        "type": "object",
+                        "description": "Category data (required for add_category)",
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "description": "Category ID (optional, will be auto-generated if not provided)"
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": "Category name"
+                            }
+                        },
+                        "required": ["name"]
+                    }
+                },
+                "required": ["action"]
+            }
+        }
     }
 ]
