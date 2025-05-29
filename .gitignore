@@ -33,5 +33,6 @@ Thumbs.db
 # air
 tmp/
 
-# notes
-notes/
+# data
+data/*
+!data/.gitkeep
