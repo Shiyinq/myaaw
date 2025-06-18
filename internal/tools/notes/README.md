@@ -56,6 +56,7 @@ The Notes Tool provides a complete note-taking solution with support for creatin
 ### Example Usage
 
 #### Create a Note
+
 ```json
 {
   "action": "POST",
@@ -65,6 +66,7 @@ The Notes Tool provides a complete note-taking solution with support for creatin
 ```
 
 #### Search Notes
+
 ```json
 {
   "action": "SEARCH",
@@ -73,6 +75,7 @@ The Notes Tool provides a complete note-taking solution with support for creatin
 ```
 
 #### Filter by Date Range
+
 ```json
 {
   "action": "GET_BY_DATE",
@@ -154,4 +157,4 @@ Notes are saved as: `{title}.json`
 - Use descriptive titles for easy searching
 - Regular backups of the notes directory
 - Avoid special characters in titles (used for filenames)
-- Use consistent date formats for filtering 
+- Use consistent date formats for filtering

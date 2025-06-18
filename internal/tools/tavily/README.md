@@ -158,6 +158,7 @@ The tool automatically loads the `.env` file if present.
 The tool returns the raw JSON response from the Tavily API, which includes:
 
 ### Search Response
+
 ```json
 {
   "query": "search query",
@@ -169,6 +170,7 @@ The tool returns the raw JSON response from the Tavily API, which includes:
 ```
 
 ### Extract Response
+
 ```json
 {
   "content": "extracted content",
@@ -205,4 +207,4 @@ The tool returns the raw JSON response from the Tavily API, which includes:
 - Subject to API rate limits and quotas
 - Search quality depends on Tavily's indexing
 - Content extraction limited to accessible URLs
-- No offline search capabilities 
+- No offline search capabilities

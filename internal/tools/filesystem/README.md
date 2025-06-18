@@ -62,6 +62,7 @@ By default, the tool is restricted to: `~/teo_home` (user's home directory + "te
 ## Example Usage
 
 ### Read a File
+
 ```json
 {
   "tool_name": "read_file",
@@ -70,6 +71,7 @@ By default, the tool is restricted to: `~/teo_home` (user's home directory + "te
 ```
 
 ### Write a File
+
 ```json
 {
   "tool_name": "write_file",
@@ -79,6 +81,7 @@ By default, the tool is restricted to: `~/teo_home` (user's home directory + "te
 ```
 
 ### Edit File Lines
+
 ```json
 {
   "tool_name": "edit_file",
@@ -90,6 +93,7 @@ By default, the tool is restricted to: `~/teo_home` (user's home directory + "te
 ```
 
 ### Search Files
+
 ```json
 {
   "tool_name": "search_files",
@@ -143,9 +147,11 @@ By default, the tool is restricted to: `~/teo_home` (user's home directory + "te
 ## Response Formats
 
 ### File Content
+
 Returns raw file content as string
 
 ### Directory Listing
+
 ```json
 [
   {
@@ -160,6 +166,7 @@ Returns raw file content as string
 ```
 
 ### File Information
+
 ```json
 {
   "name": "file.txt",
@@ -185,4 +192,4 @@ Returns raw file content as string
 - Use descriptive file and directory names
 - Regular backups of important data
 - Monitor allowed directory usage
-- Handle errors gracefully in applications 
+- Handle errors gracefully in applications

@@ -23,7 +23,7 @@ Uses the Jina AI Reader API service at `https://r.jina.ai/` for web content extr
 
 | Parameter | Type | Required | Description | Example |
 |-----------|------|----------|-------------|---------|
-| `url` | string | Yes | The full URL of the web page to scrape | "https://example.com/article" |
+| `url` | string | Yes | The full URL of the web page to scrape | "<https://example.com/article>" |
 
 ### Example Usage
 
@@ -90,4 +90,4 @@ The tool returns the raw extracted content from the web page as a string.
 - Ensure the target URL is accessible and public
 - Be respectful of website terms of service
 - Consider rate limiting for multiple requests
-- Validate extracted content for accuracy 
+- Validate extracted content for accuracy

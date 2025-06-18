@@ -88,4 +88,4 @@ The current weather in Jakarta, Indonesia is Partly cloudy and temperature is 28
 - Dependent on wttr.in service availability
 - Rate limiting may apply
 - Weather data accuracy depends on the underlying weather service
-- No historical weather data support 
+- No historical weather data support

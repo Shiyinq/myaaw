@@ -17,11 +17,13 @@ The Unit Converter Tool provides conversion capabilities for various measurement
 ## Supported Conversion Categories
 
 ### Temperature
+
 - **Celsius** (°C)
 - **Fahrenheit** (°F)
 - **Kelvin** (K)
 
 ### Distance/Length
+
 - **Meter** (m)
 - **Kilometer** (km)
 - **Centimeter** (cm)
@@ -29,23 +31,27 @@ The Unit Converter Tool provides conversion capabilities for various measurement
 - **Foot** (ft)
 
 ### Mass/Weight
+
 - **Gram** (g)
 - **Kilogram** (kg)
 - **Ounce** (oz)
 - **Pound** (lb)
 
 ### Volume
+
 - **Liter** (L)
 - **Milliliter** (mL)
 - **Gallon** (gal)
 - **Quart** (qt)
 
 ### Time
+
 - **Second** (s)
 - **Minute** (min)
 - **Hour** (h)
 
 ### Speed
+
 - **Meter per second** (m/s)
 - **Kilometer per hour** (km/h)
 - **Mile per hour** (mph)
@@ -63,6 +69,7 @@ The Unit Converter Tool provides conversion capabilities for various measurement
 ### Example Usage
 
 #### Temperature Conversion
+
 ```json
 {
   "value": 25,
@@ -72,6 +79,7 @@ The Unit Converter Tool provides conversion capabilities for various measurement
 ```
 
 #### Distance Conversion
+
 ```json
 {
   "value": 1000,
@@ -81,6 +89,7 @@ The Unit Converter Tool provides conversion capabilities for various measurement
 ```
 
 #### Mass Conversion
+
 ```json
 {
   "value": 500,
@@ -118,6 +127,7 @@ The tool returns a human-readable string with the conversion result:
 ### Conversion Formulas
 
 #### Temperature
+
 - **Celsius to Fahrenheit**: °F = (°C × 9/5) + 32
 - **Celsius to Kelvin**: K = °C + 273.15
 - **Fahrenheit to Celsius**: °C = (°F - 32) × 5/9
@@ -126,12 +136,14 @@ The tool returns a human-readable string with the conversion result:
 - **Kelvin to Fahrenheit**: °F = (K - 273.15) × 9/5 + 32
 
 #### Distance
+
 - **Meter to Kilometer**: km = m ÷ 1000
 - **Meter to Centimeter**: cm = m × 100
 - **Meter to Inch**: in = m × 39.3701
 - **Meter to Foot**: ft = m × 3.28084
 
 #### Mass
+
 - **Gram to Kilogram**: kg = g ÷ 1000
 - **Gram to Ounce**: oz = g ÷ 28.3495
 - **Gram to Pound**: lb = g ÷ 453.592
@@ -142,16 +154,19 @@ The tool returns a human-readable string with the conversion result:
 ## Error Handling
 
 ### Invalid Units
+
 ```
 Error: unsupported source unit: 'invalid_unit'
 ```
 
 ### Unsupported Conversions
+
 ```
 Error: temperature conversion from celsius to kilometer not supported
 ```
 
 ### Invalid Arguments
+
 ```
 Error: argument "value" must be a number
 Error: invalid "from_unit" argument
@@ -161,10 +176,13 @@ Error: invalid "to_unit" argument
 ## Unit Recognition
 
 ### Case Insensitive
+
 The tool accepts units in any case:
+
 - "CELSIUS", "celsius", "Celsius" all work
 
 ### Common Variations
+
 - "meter", "meters", "m" (for distance)
 - "gram", "grams", "g" (for mass)
 - "celsius", "c", "°c" (for temperature)

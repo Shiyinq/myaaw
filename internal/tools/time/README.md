@@ -25,6 +25,7 @@ The Time Tool provides current time information including date, time, and weekda
 ### Example Usage
 
 #### Get Local Time
+
 ```json
 {
   "timezone": ""
@@ -32,6 +33,7 @@ The Time Tool provides current time information including date, time, and weekda
 ```
 
 #### Get Specific Timezone
+
 ```json
 {
   "timezone": "Asia/Jakarta"
@@ -39,6 +41,7 @@ The Time Tool provides current time information including date, time, and weekda
 ```
 
 #### Get UTC Time
+
 ```json
 {
   "timezone": "UTC"
@@ -211,4 +214,4 @@ The tool supports all timezones in the IANA timezone database, including:
 {}
 ```
 
-This will return the current time in the system's local timezone. 
+This will return the current time in the system's local timezone.

@@ -30,6 +30,7 @@ The Python Execution Tool allows you to run Python code dynamically within the a
 ### Example Usage
 
 #### Basic Python Execution
+
 ```json
 {
   "code": "print('Hello, World!')\nprint('Python is running!')",
@@ -38,6 +39,7 @@ The Python Execution Tool allows you to run Python code dynamically within the a
 ```
 
 #### With Package Installation
+
 ```json
 {
   "code": "import numpy as np\nprint(np.array([1, 2, 3]))",
@@ -47,6 +49,7 @@ The Python Execution Tool allows you to run Python code dynamically within the a
 ```
 
 #### With Input Data
+
 ```json
 {
   "code": "import sys\ndata = sys.stdin.read()\nprint(f'Received: {data}')",
@@ -56,6 +59,7 @@ The Python Execution Tool allows you to run Python code dynamically within the a
 ```
 
 #### Complex Data Processing
+
 ```json
 {
   "code": "import pandas as pd\nimport json\n\ndata = [{'name': 'John', 'age': 30}, {'name': 'Jane', 'age': 25}]\ndf = pd.DataFrame(data)\nresult = df.to_dict('records')\nprint(json.dumps(result))",
@@ -119,11 +123,13 @@ The Python Execution Tool allows you to run Python code dynamically within the a
 ### Common Errors
 
 #### Package Installation Failure
+
 ```
 Error installing package numpy: exit status 1
 ```
 
 #### Code Execution Error
+
 ```
 Error executing Python code: exit status 1
 Output: Traceback (most recent call last):
@@ -133,11 +139,13 @@ NameError: name 'undefined_variable' is not defined
 ```
 
 #### Invalid Arguments
+
 ```
 Error parsing arguments: unexpected end of JSON input
 ```
 
 #### Temporary Directory Creation
+
 ```
 Error creating temp directory: permission denied
 ```
@@ -145,22 +153,26 @@ Error creating temp directory: permission denied
 ## Use Cases
 
 ### Data Processing
+
 - **Data Analysis**: Run pandas/numpy for data manipulation
 - **JSON Processing**: Parse and transform JSON data
 - **Text Processing**: String manipulation and text analysis
 - **Mathematical Calculations**: Complex mathematical operations
 
 ### API Integration
+
 - **HTTP Requests**: Make API calls using requests library
 - **Data Fetching**: Retrieve data from external sources
 - **Web Scraping**: Extract data from websites
 
 ### File Operations
+
 - **File Processing**: Read, write, and manipulate files
 - **Image Processing**: Handle images with PIL/Pillow
 - **CSV/Excel Processing**: Work with spreadsheet data
 
 ### Machine Learning
+
 - **Model Training**: Train simple ML models
 - **Data Preprocessing**: Prepare data for analysis
 - **Prediction**: Make predictions using trained models
@@ -168,6 +180,7 @@ Error creating temp directory: permission denied
 ## Best Practices
 
 ### Code Safety
+
 - Validate all input data
 - Handle exceptions gracefully
 - Use appropriate timeouts
@@ -175,12 +188,14 @@ Error creating temp directory: permission denied
 - Clean up resources properly
 
 ### Package Management
+
 - Only install necessary packages
 - Use specific package versions when needed
 - Consider package size and installation time
 - Test package compatibility
 
 ### Performance
+
 - Keep code execution time reasonable
 - Use efficient algorithms
 - Avoid memory-intensive operations
@@ -189,12 +204,14 @@ Error creating temp directory: permission denied
 ## Limitations
 
 ### System Requirements
+
 - Python 3 must be installed on the system
 - pip must be available for package installation
 - Sufficient disk space for temporary files
 - Adequate memory for code execution
 
 ### Execution Constraints
+
 - Temporary execution environment only
 - No persistent file system access
 - Limited execution time (timeout)
@@ -202,6 +219,7 @@ Error creating temp directory: permission denied
 - No system-level operations
 
 ### Package Limitations
+
 - Only packages available via pip
 - Installation time affects execution
 - Package conflicts possible
@@ -210,6 +228,7 @@ Error creating temp directory: permission denied
 ## Examples
 
 ### Mathematical Calculations
+
 ```json
 {
   "code": "import math\n\n# Calculate area of circle\nradius = 5\narea = math.pi * radius ** 2\nprint(f'Area of circle with radius {radius}: {area:.2f}')",
@@ -218,6 +237,7 @@ Error creating temp directory: permission denied
 ```
 
 ### Data Analysis
+
 ```json
 {
   "code": "import pandas as pd\n\n# Create sample data\ndata = {'Name': ['John', 'Jane', 'Bob'], 'Age': [25, 30, 35], 'City': ['NYC', 'LA', 'Chicago']}\ndf = pd.DataFrame(data)\n\n# Filter data\nfiltered = df[df['Age'] > 28]\nprint(filtered.to_string())",
@@ -227,6 +247,7 @@ Error creating temp directory: permission denied
 ```
 
 ### File Processing
+
 ```json
 {
   "code": "import json\n\n# Process JSON data\ndata = {'items': [1, 2, 3, 4, 5]}\nresult = {\n    'count': len(data['items']),\n    'sum': sum(data['items']),\n    'average': sum(data['items']) / len(data['items'])\n}\nprint(json.dumps(result, indent=2))",
@@ -235,9 +256,10 @@ Error creating temp directory: permission denied
 ```
 
 ### Error Handling Example
+
 ```json
 {
   "code": "try:\n    result = 10 / 0\nexcept ZeroDivisionError:\n    print('Error: Division by zero')\nexcept Exception as e:\n    print(f'Unexpected error: {e}')\nelse:\n    print(f'Result: {result}')",
   "timeout": 10
 }
-``` 
+```
