@@ -538,5 +538,36 @@
                 ]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_python",
+            "description": "Executes Python code and returns the result. This tool supports installing additional packages and stdin input.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Python code to execute"
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Timeout in seconds (optional)"
+                    },
+                    "input": {
+                        "type": "string",
+                        "description": "Input for stdin (optional)"
+                    },
+                    "packages": {
+                        "type": "string",
+                        "description": "List of Python packages to install, comma-separated (optional)"
+                    }
+                },
+                "required": [
+                    "code"
+                ]
+            }
+        }
     }
 ]

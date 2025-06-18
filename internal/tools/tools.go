@@ -12,6 +12,7 @@ import (
 	"teo/internal/tools/converter"
 	"teo/internal/tools/filesystem"
 	"teo/internal/tools/notes"
+	"teo/internal/tools/python"
 	"teo/internal/tools/scraping"
 	"teo/internal/tools/tavily"
 	"teo/internal/tools/time"
@@ -69,6 +70,7 @@ func NewTools(functionName string, arguments string) string {
 			"cash_flow":           cashflow.NewCashFlowTool(),
 			"calendar":            calendar.NewCalendarTool(),
 			"converter":           converter.NewConverterTool(),
+			"execute_python":      python.NewPythonTool(),
 		},
 	}
 	log.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)
