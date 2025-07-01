@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"log"
+	"strings"
 	"teo/internal/config"
 	"teo/internal/pkg"
 	"teo/internal/provider"
@@ -59,7 +60,12 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.T
 	if err == nil && conv != nil {
 		convMessages = conv.Messages
 	} else {
-		conv, err := r.conversationRepo.CreateConversation(user.UserId, "")
+		title, err := r.GenerateConversationTitle(user, messages)
+		if err != nil {
+			title = "New Chat"
+		}
+
+		conv, err := r.conversationRepo.CreateConversation(user.UserId, title)
 		if err == nil {
 			convMessages = conv.Messages
 		} else {
@@ -86,7 +92,18 @@ func (r *BotServiceImpl) updateUserMessages(chat *pkg.TelegramIncommingChat, mes
 
 	convId = conv.Id
 	if convId != primitive.NilObjectID {
-		return r.conversationRepo.UpdateConversationById(convId, messages, "")
+		title := ""
+		if conv.Title == "" || conv.Title == "New Chat" {
+			user, err := r.userRepo.GetUserById(chat.Message.From.Id)
+			if err != nil {
+				return err
+			}
+			title, err = r.GenerateConversationTitle(user, messages)
+			if err != nil {
+				return err
+			}
+		}
+		return r.conversationRepo.UpdateConversationById(convId, messages, title)
 	}
 
 	return nil
@@ -181,4 +198,38 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 	}
 	err = nil
 	return editMessage, streamingContent, err
+}
+
+func (r *BotServiceImpl) GenerateConversationTitle(user *model.User, messages []provider.Message) (string, error) {
+	defaultTitle := "New Chat"
+	var firstUserMsg string
+	for _, msg := range messages {
+		if msg.Role == "user" && msg.Content != nil {
+			if content, ok := msg.Content.(string); ok && content != "" {
+				firstUserMsg = content
+				break
+			}
+		}
+	}
+	if firstUserMsg == "" {
+		return defaultTitle, nil
+	}
+
+	prompt := "Generate a short and clear conversation title (max 7 words) for the following user message: " + firstUserMsg
+	llmMessages := []provider.Message{
+		{Role: "system", Content: "You are a conversation title assistant. The title must be short, clear, and a maximum of 7 words."},
+		{Role: "user", Content: prompt},
+	}
+	res, err := r.llmProvider.Chat(user.Model, llmMessages)
+	if err != nil || res.Content == nil {
+		return defaultTitle, err
+	}
+	if title, ok := res.Content.(string); ok && title != "" {
+		title = strings.ReplaceAll(title, "\n", " ")
+		title = strings.ReplaceAll(title, "\r", " ")
+		title = strings.ReplaceAll(title, "\"", "")
+		title = strings.TrimSpace(title)
+		return title, nil
+	}
+	return defaultTitle, nil
 }
