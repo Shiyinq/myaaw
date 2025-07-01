@@ -33,18 +33,18 @@ func SaveUserToRedis(rd *redis.Client, user *model.User) error {
 		return err
 	}
 
-	cacheKey := strconv.Itoa(user.UserId)
+	cacheKey := fmt.Sprintf("user_%d", user.UserId)
 	expiration := 24 * time.Hour
 	err = rd.Set(context.Background(), cacheKey, userData, expiration).Err()
 	if err != nil {
 		return fmt.Errorf("error saving user to Redis: %w", err)
 	}
-	// fmt.Println("save user data to redis")
+
 	return nil
 }
 
 func GetUserFromRedis(rd *redis.Client, userId int) (*model.User, error) {
-	cacheKey := strconv.Itoa(userId)
+	cacheKey := fmt.Sprintf("user_%d", userId)
 	cachedData, err := rd.Get(context.Background(), cacheKey).Result()
 	if err != nil {
 		if err == redis.Nil {
@@ -59,7 +59,6 @@ func GetUserFromRedis(rd *redis.Client, userId int) (*model.User, error) {
 		return nil, err
 	}
 
-	// fmt.Println("user data from redis")
 	return &user, nil
 }
 
