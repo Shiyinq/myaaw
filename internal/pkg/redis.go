@@ -131,3 +131,81 @@ func DeleteDataFromRedis(rd *redis.Client, cacheKey string) error {
 
 	return nil
 }
+
+func SerializeConversation(conv *model.Conversation) (string, error) {
+	data, err := json.Marshal(conv)
+	if err != nil {
+		return "", fmt.Errorf("error serializing conversation: %w", err)
+	}
+	return string(data), nil
+}
+
+func DeserializeConversation(data string, conv *model.Conversation) error {
+	err := json.Unmarshal([]byte(data), conv)
+	if err != nil {
+		return fmt.Errorf("error deserializing conversation: %w", err)
+	}
+	return nil
+}
+
+func SaveConversationToRedis(rd *redis.Client, conv *model.Conversation) error {
+	convData, err := SerializeConversation(conv)
+	if err != nil {
+		return err
+	}
+
+	cacheKey := fmt.Sprintf("conversation_%d_%s", conv.UserId, conv.Id.Hex())
+	expiration := 24 * time.Hour
+	err = rd.Set(context.Background(), cacheKey, convData, expiration).Err()
+	if err != nil {
+		return fmt.Errorf("error saving conversation to Redis: %w", err)
+	}
+	return nil
+}
+
+func GetConversationFromRedis(rd *redis.Client, userId int, convId string) (*model.Conversation, error) {
+	cacheKey := fmt.Sprintf("conversation_%d_%s", userId, convId)
+	cachedData, err := rd.Get(context.Background(), cacheKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error getting conversation from Redis: %w", err)
+	}
+
+	var conv model.Conversation
+	err = DeserializeConversation(cachedData, &conv)
+	if err != nil {
+		return nil, err
+	}
+	return &conv, nil
+}
+
+func SaveConversationsToRedis(rd *redis.Client, userId int, conversations []*model.Conversation) error {
+	data, err := json.Marshal(conversations)
+	if err != nil {
+		return fmt.Errorf("error serializing conversations: %w", err)
+	}
+	cacheKey := fmt.Sprintf("conversations_%d", userId)
+	expiration := 2 * time.Minute
+	if err := rd.Set(context.Background(), cacheKey, data, expiration).Err(); err != nil {
+		return fmt.Errorf("error saving conversations to Redis: %w", err)
+	}
+	return nil
+}
+
+func GetConversationsFromRedis(rd *redis.Client, userId int) ([]*model.Conversation, error) {
+	cacheKey := fmt.Sprintf("conversations_%d", userId)
+	cachedData, err := rd.Get(context.Background(), cacheKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error getting conversations from Redis: %w", err)
+	}
+	var conversations []*model.Conversation
+	if err := json.Unmarshal([]byte(cachedData), &conversations); err != nil {
+		return nil, fmt.Errorf("error deserializing conversations: %w", err)
+	}
+	return conversations, nil
+}

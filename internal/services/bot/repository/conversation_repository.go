@@ -5,37 +5,36 @@ import (
 	"teo/internal/provider"
 	"time"
 
+	"teo/internal/pkg"
+	"teo/internal/services/bot/model"
+
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-type Conversation struct {
-	Id        primitive.ObjectID `bson:"_id,omitempty"`
-	UserId    int                `bson:"userId"`
-	Title     string             `bson:"title"`
-	Messages  []provider.Message `bson:"messages"`
-	Active    bool               `bson:"active"`
-	CreatedAt time.Time          `bson:"created_at"`
-	UpdatedAt time.Time          `bson:"updated_at"`
-}
-
 type ConversationRepository interface {
-	GetConversationByUserId(userId int) ([]*Conversation, error)
-	CreateConversation(userId int) (*Conversation, error)
+	GetConversationByUserId(userId int) ([]*model.Conversation, error)
+	CreateConversation(userId int) (*model.Conversation, error)
 	UpdateConversationById(id primitive.ObjectID, messages []provider.Message) error
-	GetActiveConversationByUserId(userId int) (*Conversation, error)
+	GetActiveConversationByUserId(userId int) (*model.Conversation, error)
 }
 
 type ConversationRepositoryImpl struct {
 	conversations *mongo.Collection
+	rd            *redis.Client
 }
 
-func NewConversationRepository(db *mongo.Database) ConversationRepository {
-	return &ConversationRepositoryImpl{conversations: db.Collection("conversations")}
+func NewConversationRepository(db *mongo.Database, rd *redis.Client) ConversationRepository {
+	return &ConversationRepositoryImpl{conversations: db.Collection("conversations"), rd: rd}
 }
 
-func (r *ConversationRepositoryImpl) GetConversationByUserId(userId int) ([]*Conversation, error) {
+func (r *ConversationRepositoryImpl) GetConversationByUserId(userId int) ([]*model.Conversation, error) {
+	if cached, err := pkg.GetConversationsFromRedis(r.rd, userId); err == nil && cached != nil {
+		return cached, nil
+	}
+
 	filter := bson.M{"userId": userId}
 	cur, err := r.conversations.Find(context.Background(), filter)
 	if err != nil {
@@ -43,23 +42,25 @@ func (r *ConversationRepositoryImpl) GetConversationByUserId(userId int) ([]*Con
 	}
 	defer cur.Close(context.Background())
 
-	var conversations []*Conversation
+	var conversations []*model.Conversation
 	for cur.Next(context.Background()) {
-		var conv Conversation
+		var conv model.Conversation
 		if err := cur.Decode(&conv); err != nil {
 			return nil, err
 		}
 		conversations = append(conversations, &conv)
 	}
+
+	_ = pkg.SaveConversationsToRedis(r.rd, userId, conversations)
 	return conversations, nil
 }
 
-func (r *ConversationRepositoryImpl) CreateConversation(userId int) (*Conversation, error) {
+func (r *ConversationRepositoryImpl) CreateConversation(userId int) (*model.Conversation, error) {
 	filter := bson.M{"userId": userId, "active": true}
 	update := bson.M{"$set": bson.M{"active": false}}
 	_, _ = r.conversations.UpdateMany(context.Background(), filter, update)
 
-	conversation := &Conversation{
+	conversation := &model.Conversation{
 		UserId:    userId,
 		Title:     "",
 		Messages:  []provider.Message{},
@@ -72,6 +73,7 @@ func (r *ConversationRepositoryImpl) CreateConversation(userId int) (*Conversati
 		return nil, err
 	}
 	conversation.Id = res.InsertedID.(primitive.ObjectID)
+	_ = pkg.SaveConversationToRedis(r.rd, conversation)
 	return conversation, nil
 }
 
@@ -82,12 +84,20 @@ func (r *ConversationRepositoryImpl) UpdateConversationById(id primitive.ObjectI
 	}
 	filter := bson.M{"_id": id}
 	_, err := r.conversations.UpdateOne(context.Background(), filter, bson.M{"$set": update})
+	if err != nil {
+		return err
+	}
+	var conv model.Conversation
+	err = r.conversations.FindOne(context.Background(), filter).Decode(&conv)
+	if err == nil {
+		_ = pkg.SaveConversationToRedis(r.rd, &conv)
+	}
 	return err
 }
 
-func (r *ConversationRepositoryImpl) GetActiveConversationByUserId(userId int) (*Conversation, error) {
+func (r *ConversationRepositoryImpl) GetActiveConversationByUserId(userId int) (*model.Conversation, error) {
 	filter := bson.M{"userId": userId, "active": true}
-	var conv Conversation
+	var conv model.Conversation
 	err := r.conversations.FindOne(context.Background(), filter).Decode(&conv)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -95,6 +105,11 @@ func (r *ConversationRepositoryImpl) GetActiveConversationByUserId(userId int) (
 		}
 		return nil, err
 	}
+	cached, err := pkg.GetConversationFromRedis(r.rd, userId, conv.Id.Hex())
+	if err == nil && cached != nil {
+		return cached, nil
+	}
+	_ = pkg.SaveConversationToRedis(r.rd, &conv)
 	conv.CreatedAt = time.Time{}
 	conv.UpdatedAt = time.Time{}
 	return &conv, nil
