@@ -33,7 +33,7 @@ type UserRepositoryImpl struct {
 	rd    *redis.Client
 }
 
-func NewBotRepository(db *mongo.Database, rd *redis.Client) UserRepository {
+func NewUserRepository(db *mongo.Database, rd *redis.Client) UserRepository {
 	return &UserRepositoryImpl{users: db.Collection("users"), rd: rd}
 }
 
