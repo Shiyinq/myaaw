@@ -18,12 +18,13 @@ type BotService interface {
 }
 
 type BotServiceImpl struct {
-	userRepo    repository.UserRepository
-	llmProvider provider.LLMProvider
-	ttsProvider provider.TTSProvider
+	userRepo         repository.UserRepository
+	conversationRepo repository.ConversationRepository
+	llmProvider      provider.LLMProvider
+	ttsProvider      provider.TTSProvider
 }
 
-func NewBotService(userRepo repository.UserRepository) BotService {
+func NewBotService(userRepo repository.UserRepository, conversationRepo repository.ConversationRepository) BotService {
 	llmProvider, err := provider.CreateLLMProvider(config.LLMProviderName, config.LLMProviderAPIKey)
 	if err != nil {
 		log.Fatalf("Error create LLM provider - %s: %v", config.LLMProviderName, err)
@@ -35,9 +36,10 @@ func NewBotService(userRepo repository.UserRepository) BotService {
 	}
 
 	return &BotServiceImpl{
-		userRepo:    userRepo,
-		llmProvider: llmProvider,
-		ttsProvider: ttsProvider,
+		userRepo:         userRepo,
+		conversationRepo: conversationRepo,
+		llmProvider:      llmProvider,
+		ttsProvider:      ttsProvider,
 	}
 }
 

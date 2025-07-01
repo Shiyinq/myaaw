@@ -5,7 +5,6 @@ import (
 	"teo/internal/common"
 	"teo/internal/config"
 	"teo/internal/pkg"
-	"teo/internal/provider"
 	"teo/internal/services/bot/model"
 	"teo/internal/utils"
 )
@@ -66,7 +65,7 @@ func NewResetCommand(r *BotServiceImpl) CommandFactory {
 }
 
 func (c *ResetCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
-	err := c.r.userRepo.UpdateMessages(user.UserId, &[]provider.Message{})
+	_, err := c.r.conversationRepo.CreateConversation(user.UserId)
 	if err != nil {
 		return true, common.CommandResetFailed(), nil
 	}

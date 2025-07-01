@@ -8,6 +8,8 @@ import (
 	"teo/internal/provider"
 	"teo/internal/services/bot/model"
 	"teo/internal/utils"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func (r *BotServiceImpl) conversation(user *model.User, chat *pkg.TelegramIncommingChat) (*pkg.TelegramSendMessageStatus, error) {
@@ -52,8 +54,20 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.T
 		},
 	}
 
-	messages = append(messages, user.Messages...)
-	// Updated call to NewMessage with the new signature
+	conv, err := r.conversationRepo.GetActiveConversationByUserId(user.UserId)
+	var convMessages []provider.Message
+	if err == nil && conv != nil {
+		convMessages = conv.Messages
+	} else {
+		conv, err := r.conversationRepo.CreateConversation(user.UserId)
+		if err == nil {
+			convMessages = conv.Messages
+		} else {
+			convMessages = []provider.Message{}
+		}
+	}
+
+	messages = append(messages, convMessages...)
 	newMessage := NewMessage(chat, r.llmProvider.ProviderName(), r.ttsProvider)
 	messages = append(messages, newMessage)
 
@@ -62,9 +76,21 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.T
 
 func (r *BotServiceImpl) updateUserMessages(chat *pkg.TelegramIncommingChat, messages []provider.Message, response provider.Message) error {
 	messages = append(messages, response)
-	messages = messages[1:]
-	if err := r.userRepo.UpdateMessages(chat.Message.From.Id, &messages); err != nil {
-		return err
+	messages = messages[1:] // exclude system message
+
+	conv, err := r.conversationRepo.GetActiveConversationByUserId(chat.Message.From.Id)
+	var convId primitive.ObjectID
+	if err == nil && conv != nil {
+		convId = conv.Id
+	} else {
+		conv, err := r.conversationRepo.CreateConversation(chat.Message.From.Id)
+		if err == nil {
+			convId = conv.Id
+		}
+	}
+
+	if convId != primitive.NilObjectID {
+		return r.conversationRepo.UpdateConversationById(convId, messages)
 	}
 
 	return nil
