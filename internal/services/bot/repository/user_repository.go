@@ -3,12 +3,10 @@ package repository
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"teo/internal/common"
 	"teo/internal/config"
 	"teo/internal/pkg"
-	"teo/internal/provider"
 	"teo/internal/services/bot/model"
 	"time"
 
@@ -22,7 +20,6 @@ type UserRepository interface {
 	CreateUser(user *model.User) (*model.User, error)
 	GetUserById(userId int) (*model.User, error)
 	updateUserField(userId int, fields bson.M) error
-	UpdateMessages(userId int, messges *[]provider.Message) error
 	UpdateSystem(userId int, system string) error
 	UpdateModel(userId int, model string) error
 	UpdateProvider(userId int, provider string) error
@@ -117,12 +114,6 @@ func (r *UserRepositoryImpl) updateUserAndCache(userId int, fields bson.M) error
 
 	for key, value := range fields {
 		switch key {
-		case "messages":
-			if messages, ok := value.(*[]provider.Message); ok {
-				user.Messages = *messages
-			} else {
-				return fmt.Errorf("expected *[]provider.Message, got %T", value)
-			}
 		case "system":
 			user.System = value.(string)
 		case "model":
@@ -134,11 +125,6 @@ func (r *UserRepositoryImpl) updateUserAndCache(userId int, fields bson.M) error
 	user.UpdatedAt = timeNow
 
 	return pkg.SaveUserToRedis(r.rd, user)
-}
-
-func (r *UserRepositoryImpl) UpdateMessages(userId int, messages *[]provider.Message) error {
-	fields := bson.M{"messages": messages}
-	return r.updateUserAndCache(userId, fields)
 }
 
 func (r *UserRepositoryImpl) UpdateSystem(userId int, system string) error {

@@ -14,7 +14,6 @@ type User struct {
 	System    string             `json:"system" bson:"system"`
 	Provider  string             `json:"provider" bson:"provider"`
 	Model     string             `json:"model" bson:"model"`
-	Messages  []provider.Message `json:"messages" bson:"messages"`
 	Role      string             `json:"role" bson:"role"`
 	CreatedAt time.Time          `json:"created_at" bson:"createdAt"`
 	UpdatedAt time.Time          `json:"updated_at" bson:"updatedAt"`

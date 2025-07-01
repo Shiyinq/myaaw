@@ -32,7 +32,6 @@ func CommandMe(res *model.User) string {
 	me.WriteString("\n\n🛠️ *Config*\n")
 	me.WriteString(fmt.Sprintf("*System:* %s\n", res.System))
 	me.WriteString(fmt.Sprintf("*Model:* %s\n", res.Model))
-	me.WriteString(fmt.Sprintf("*History:* %d\n", len(res.Messages)))
 
 	return me.String()
 }
