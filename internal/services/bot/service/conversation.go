@@ -59,7 +59,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.T
 	if err == nil && conv != nil {
 		convMessages = conv.Messages
 	} else {
-		conv, err := r.conversationRepo.CreateConversation(user.UserId)
+		conv, err := r.conversationRepo.CreateConversation(user.UserId, "")
 		if err == nil {
 			convMessages = conv.Messages
 		} else {
@@ -80,17 +80,13 @@ func (r *BotServiceImpl) updateUserMessages(chat *pkg.TelegramIncommingChat, mes
 
 	conv, err := r.conversationRepo.GetActiveConversationByUserId(chat.Message.From.Id)
 	var convId primitive.ObjectID
-	if err == nil && conv != nil {
-		convId = conv.Id
-	} else {
-		conv, err := r.conversationRepo.CreateConversation(chat.Message.From.Id)
-		if err == nil {
-			convId = conv.Id
-		}
+	if err != nil && conv != nil {
+		return err
 	}
 
+	convId = conv.Id
 	if convId != primitive.NilObjectID {
-		return r.conversationRepo.UpdateConversationById(convId, messages)
+		return r.conversationRepo.UpdateConversationById(convId, messages, "")
 	}
 
 	return nil

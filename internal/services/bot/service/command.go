@@ -65,7 +65,7 @@ func NewResetCommand(r *BotServiceImpl) CommandFactory {
 }
 
 func (c *ResetCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
-	_, err := c.r.conversationRepo.CreateConversation(user.UserId)
+	_, err := c.r.conversationRepo.CreateConversation(user.UserId, "")
 	if err != nil {
 		return true, common.CommandResetFailed(), nil
 	}

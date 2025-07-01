@@ -16,8 +16,8 @@ import (
 
 type ConversationRepository interface {
 	GetConversationByUserId(userId int) ([]*model.Conversation, error)
-	CreateConversation(userId int) (*model.Conversation, error)
-	UpdateConversationById(id primitive.ObjectID, messages []provider.Message) error
+	CreateConversation(userId int, title string) (*model.Conversation, error)
+	UpdateConversationById(id primitive.ObjectID, messages []provider.Message, title string) error
 	GetActiveConversationByUserId(userId int) (*model.Conversation, error)
 }
 
@@ -55,14 +55,17 @@ func (r *ConversationRepositoryImpl) GetConversationByUserId(userId int) ([]*mod
 	return conversations, nil
 }
 
-func (r *ConversationRepositoryImpl) CreateConversation(userId int) (*model.Conversation, error) {
+func (r *ConversationRepositoryImpl) CreateConversation(userId int, title string) (*model.Conversation, error) {
+	if title == "" {
+		title = "New Chat"
+	}
 	filter := bson.M{"userId": userId, "active": true}
 	update := bson.M{"$set": bson.M{"active": false}}
 	_, _ = r.conversations.UpdateMany(context.Background(), filter, update)
 
 	conversation := &model.Conversation{
 		UserId:    userId,
-		Title:     "",
+		Title:     title,
 		Messages:  []provider.Message{},
 		Active:    true,
 		CreatedAt: time.Now(),
@@ -77,10 +80,13 @@ func (r *ConversationRepositoryImpl) CreateConversation(userId int) (*model.Conv
 	return conversation, nil
 }
 
-func (r *ConversationRepositoryImpl) UpdateConversationById(id primitive.ObjectID, messages []provider.Message) error {
+func (r *ConversationRepositoryImpl) UpdateConversationById(id primitive.ObjectID, messages []provider.Message, title string) error {
 	update := bson.M{
 		"messages":   messages,
 		"updated_at": time.Now(),
+	}
+	if title != "" {
+		update["title"] = title
 	}
 	filter := bson.M{"_id": id}
 	_, err := r.conversations.UpdateOne(context.Background(), filter, bson.M{"$set": update})
