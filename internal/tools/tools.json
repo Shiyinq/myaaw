@@ -65,6 +65,10 @@
                         ],
                         "description": "Action to perform on the note"
                     },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User ID is required for all notes operations"
+                    },
                     "title": {
                         "type": "string",
                         "description": "The title of the note (required for GET_DETAIL, POST, PUT, DELETE)"
@@ -87,7 +91,8 @@
                     }
                 },
                 "required": [
-                    "action"
+                    "action",
+                    "user_id"
                 ]
             }
         }
@@ -315,6 +320,10 @@
                         ],
                         "description": "Action to perform"
                     },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User ID is required for all cash_flow operations"
+                    },
                     "transaction": {
                         "type": "object",
                         "description": "Transaction data (required for add_transaction and update_transaction)",
@@ -397,7 +406,7 @@
                         "required": ["name"]
                     }
                 },
-                "required": ["action"]
+                "required": ["action", "user_id"]
             }
         }
     },
@@ -420,6 +429,10 @@
                             "search_by_tags"
                         ],
                         "description": "Action to perform"
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "User ID is required for all calendar operations"
                     },
                     "schedule": {
                         "type": "object",
@@ -490,7 +503,7 @@
                         "description": "Tags for search (required for search_by_tags)"
                     }
                 },
-                "required": ["action"]
+                "required": ["action", "user_id"]
             }
         }
     },
