@@ -47,7 +47,7 @@ func (r *BotServiceImpl) contextWindow(history []provider.Message) []provider.Me
 }
 
 func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.TelegramIncommingChat) []provider.Message {
-	userSystem := fmt.Sprintf("%s\n\nUser info:\nUser ID: %v\nToday's date is: %s", user.System, user.UserId, utils.GetCurrentTime())
+	userSystem := fmt.Sprintf("%s\n\nUser info:\nUser ID: %v (you can use this User ID for tools if needed)\nToday's date is: %s", user.System, user.UserId, utils.GetCurrentTime())
 	messages := []provider.Message{
 		{
 			Role:    "system",
