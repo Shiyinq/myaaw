@@ -35,6 +35,7 @@ type Category struct {
 
 type Transaction struct {
 	ID          string          `json:"id"`
+	UserID      string          `json:"user_id"`
 	Type        TransactionType `json:"type"`
 	Amount      float64         `json:"amount"`
 	Currency    CurrencyType    `json:"currency"`
@@ -188,6 +189,11 @@ func (ct *CashFlowTool) handleAddTransaction(params map[string]interface{}) stri
 		return fmt.Sprintf("Error loading data: %v", err)
 	}
 
+	userID, ok := params["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
+	}
+
 	transactionData, ok := params["transaction"].(map[string]interface{})
 	if !ok {
 		return "Error: invalid transaction data"
@@ -235,6 +241,7 @@ func (ct *CashFlowTool) handleAddTransaction(params map[string]interface{}) stri
 
 	transaction := Transaction{
 		ID:          fmt.Sprintf("trx_%d", time.Now().UnixNano()),
+		UserID:      userID,
 		Type:        TransactionType(transactionType),
 		Amount:      amount,
 		Currency:    currencyType,
@@ -273,6 +280,11 @@ func (ct *CashFlowTool) handleGetTransactions(params map[string]interface{}) str
 		return fmt.Sprintf("Error loading data: %v", err)
 	}
 
+	userID, ok := params["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
+	}
+
 	dateRange, ok := params["date_range"].(map[string]interface{})
 	if !ok {
 		return "Error: invalid date range"
@@ -290,7 +302,7 @@ func (ct *CashFlowTool) handleGetTransactions(params map[string]interface{}) str
 
 	var filteredTransactions []Transaction
 	for _, t := range data.Transactions {
-		if (t.Date.Equal(start) || t.Date.After(start)) && (t.Date.Equal(end) || t.Date.Before(end)) {
+		if t.UserID == userID && (t.Date.Equal(start) || t.Date.After(start)) && (t.Date.Equal(end) || t.Date.Before(end)) {
 			filteredTransactions = append(filteredTransactions, t)
 		}
 	}
@@ -311,6 +323,11 @@ func (ct *CashFlowTool) handleUpdateTransaction(params map[string]interface{}) s
 	data, err := ct.loadData()
 	if err != nil {
 		return fmt.Sprintf("Error loading data: %v", err)
+	}
+
+	userID, ok := params["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
 	}
 
 	transactionID, ok := params["transaction_id"].(string)
@@ -365,12 +382,13 @@ func (ct *CashFlowTool) handleUpdateTransaction(params map[string]interface{}) s
 
 	found := false
 	for i, t := range data.Transactions {
-		if t.ID == transactionID {
+		if t.ID == transactionID && t.UserID == userID {
 			categoryExists := false
 			for _, c := range data.Categories {
 				if c.Name == categoryName {
 					data.Transactions[i] = Transaction{
 						ID:          transactionID,
+						UserID:      userID,
 						Type:        TransactionType(transactionType),
 						Amount:      amount,
 						Currency:    currencyType,
@@ -391,6 +409,7 @@ func (ct *CashFlowTool) handleUpdateTransaction(params map[string]interface{}) s
 				data.Categories = append(data.Categories, newCategory)
 				data.Transactions[i] = Transaction{
 					ID:          transactionID,
+					UserID:      userID,
 					Type:        TransactionType(transactionType),
 					Amount:      amount,
 					Currency:    currencyType,
@@ -422,6 +441,11 @@ func (ct *CashFlowTool) handleDeleteTransaction(params map[string]interface{}) s
 		return fmt.Sprintf("Error loading data: %v", err)
 	}
 
+	userID, ok := params["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
+	}
+
 	transactionID, ok := params["transaction_id"].(string)
 	if !ok {
 		return "Error: transaction ID not found"
@@ -429,7 +453,7 @@ func (ct *CashFlowTool) handleDeleteTransaction(params map[string]interface{}) s
 
 	found := false
 	for i, t := range data.Transactions {
-		if t.ID == transactionID {
+		if t.ID == transactionID && t.UserID == userID {
 			data.Transactions = append(data.Transactions[:i], data.Transactions[i+1:]...)
 			found = true
 			break
@@ -453,6 +477,11 @@ func (ct *CashFlowTool) handleGetAnalytics(params map[string]interface{}) string
 		return fmt.Sprintf("Error loading data: %v", err)
 	}
 
+	userID, ok := params["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
+	}
+
 	dateRange, ok := params["date_range"].(map[string]interface{})
 	if !ok {
 		return "Error: invalid date range"
@@ -474,7 +503,7 @@ func (ct *CashFlowTool) handleGetAnalytics(params map[string]interface{}) string
 	transactionCount := 0
 
 	for _, t := range data.Transactions {
-		if (t.Date.Equal(start) || t.Date.After(start)) && (t.Date.Equal(end) || t.Date.Before(end)) {
+		if t.UserID == userID && (t.Date.Equal(start) || t.Date.After(start)) && (t.Date.Equal(end) || t.Date.Before(end)) {
 			transactionCount++
 			if t.Type == Income {
 				totalIncome += t.Amount

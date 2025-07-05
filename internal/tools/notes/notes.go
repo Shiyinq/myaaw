@@ -49,30 +49,45 @@ type Note struct {
 }
 
 func (n *NoteTool) CallTool(arguments string) string {
-	var args NoteArguments
+	var args map[string]interface{}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return fmt.Sprintf("Error parsing arguments: %v", err)
 	}
 
-	if err := n.validateInput(args); err != nil {
+	userID, ok := args["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
+	}
+
+	userDataPath := filepath.Join(n.dataPath, userID)
+	if err := os.MkdirAll(userDataPath, 0755); err != nil {
+		return fmt.Sprintf("Error creating user notes directory: %v", err)
+	}
+
+	var noteArgs NoteArguments
+	if b, err := json.Marshal(args); err == nil {
+		_ = json.Unmarshal(b, &noteArgs)
+	}
+
+	if err := n.validateInput(noteArgs); err != nil {
 		return fmt.Sprintf("Validation error: %v", err)
 	}
 
-	switch strings.ToUpper(args.Action) {
+	switch strings.ToUpper(noteArgs.Action) {
 	case "GET":
-		return n.getNotes()
+		return n.getNotes(userDataPath)
 	case "GET_DETAIL":
-		return n.getNoteDetail(args.Title)
+		return n.getNoteDetail(userDataPath, noteArgs.Title)
 	case "POST":
-		return n.saveNote(args.Title, args.Content)
+		return n.saveNote(userDataPath, noteArgs.Title, noteArgs.Content)
 	case "PUT":
-		return n.updateNote(args.Title, args.Content)
+		return n.updateNote(userDataPath, noteArgs.Title, noteArgs.Content)
 	case "DELETE":
-		return n.deleteNote(args.Title)
+		return n.deleteNote(userDataPath, noteArgs.Title)
 	case "SEARCH":
-		return n.searchNotes(args.Search)
+		return n.searchNotes(userDataPath, noteArgs.Search)
 	case "GET_BY_DATE":
-		return n.getNotesByDate(args.StartDate, args.EndDate)
+		return n.getNotesByDate(userDataPath, noteArgs.StartDate, noteArgs.EndDate)
 	default:
 		return "Invalid action specified. Please use GET, GET_DETAIL, POST, PUT, DELETE, SEARCH, or GET_BY_DATE."
 	}
@@ -95,8 +110,8 @@ func (n *NoteTool) validateInput(args NoteArguments) error {
 	return nil
 }
 
-func (n *NoteTool) getNotes() string {
-	files, err := os.ReadDir(n.dataPath)
+func (n *NoteTool) getNotes(userDataPath string) string {
+	files, err := os.ReadDir(userDataPath)
 	if err != nil {
 		return fmt.Sprintf("Error reading notes directory: %v", err)
 	}
@@ -104,7 +119,7 @@ func (n *NoteTool) getNotes() string {
 	var notes []Note
 	for _, file := range files {
 		if !file.IsDir() {
-			note, err := n.readNoteFile(file.Name())
+			note, err := n.readNoteFile(userDataPath, file.Name())
 			if err != nil {
 				continue
 			}
@@ -120,8 +135,8 @@ func (n *NoteTool) getNotes() string {
 	return string(jsonNotes)
 }
 
-func (n *NoteTool) readNoteFile(filename string) (Note, error) {
-	filePath := filepath.Join(n.dataPath, filename)
+func (n *NoteTool) readNoteFile(userDataPath, filename string) (Note, error) {
+	filePath := filepath.Join(userDataPath, filename)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return Note{}, err
@@ -135,8 +150,8 @@ func (n *NoteTool) readNoteFile(filename string) (Note, error) {
 	return note, nil
 }
 
-func (n *NoteTool) getNoteDetail(title string) string {
-	note, err := n.readNoteFile(fmt.Sprintf("%s.json", title))
+func (n *NoteTool) getNoteDetail(userDataPath, title string) string {
+	note, err := n.readNoteFile(userDataPath, fmt.Sprintf("%s.json", title))
 	if err != nil {
 		return fmt.Sprintf("Error reading note %s: %v", title, err)
 	}
@@ -149,8 +164,8 @@ func (n *NoteTool) getNoteDetail(title string) string {
 	return string(jsonNote)
 }
 
-func (n *NoteTool) saveNote(title, content string) string {
-	filePath := filepath.Join(n.dataPath, fmt.Sprintf("%s.json", title))
+func (n *NoteTool) saveNote(userDataPath, title, content string) string {
+	filePath := filepath.Join(userDataPath, fmt.Sprintf("%s.json", title))
 
 	if _, err := os.Stat(filePath); err == nil {
 		return fmt.Sprintf("Note with title '%s' already exists. Use PUT to update it.", title)
@@ -175,10 +190,10 @@ func (n *NoteTool) saveNote(title, content string) string {
 	return fmt.Sprintf("Note '%s' has been saved successfully.", title)
 }
 
-func (n *NoteTool) updateNote(title, content string) string {
-	filePath := filepath.Join(n.dataPath, fmt.Sprintf("%s.json", title))
+func (n *NoteTool) updateNote(userDataPath, title, content string) string {
+	filePath := filepath.Join(userDataPath, fmt.Sprintf("%s.json", title))
 
-	note, err := n.readNoteFile(fmt.Sprintf("%s.json", title))
+	note, err := n.readNoteFile(userDataPath, fmt.Sprintf("%s.json", title))
 	if err != nil {
 		return fmt.Sprintf("Note '%s' does not exist. Use POST to create it.", title)
 	}
@@ -198,8 +213,8 @@ func (n *NoteTool) updateNote(title, content string) string {
 	return fmt.Sprintf("Note '%s' has been updated successfully.", title)
 }
 
-func (n *NoteTool) deleteNote(title string) string {
-	filePath := filepath.Join(n.dataPath, fmt.Sprintf("%s.json", title))
+func (n *NoteTool) deleteNote(userDataPath, title string) string {
+	filePath := filepath.Join(userDataPath, fmt.Sprintf("%s.json", title))
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		return fmt.Sprintf("Note '%s' does not exist.", title)
@@ -212,8 +227,8 @@ func (n *NoteTool) deleteNote(title string) string {
 	return fmt.Sprintf("Note '%s' has been deleted successfully.", title)
 }
 
-func (n *NoteTool) searchNotes(query string) string {
-	files, err := os.ReadDir(n.dataPath)
+func (n *NoteTool) searchNotes(userDataPath, query string) string {
+	files, err := os.ReadDir(userDataPath)
 	if err != nil {
 		return fmt.Sprintf("Error reading notes directory: %v", err)
 	}
@@ -221,7 +236,7 @@ func (n *NoteTool) searchNotes(query string) string {
 	var results []Note
 	for _, file := range files {
 		if !file.IsDir() {
-			note, err := n.readNoteFile(file.Name())
+			note, err := n.readNoteFile(userDataPath, file.Name())
 			if err != nil {
 				continue
 			}
@@ -240,7 +255,7 @@ func (n *NoteTool) searchNotes(query string) string {
 	return string(jsonResults)
 }
 
-func (n *NoteTool) getNotesByDate(startDate, endDate string) string {
+func (n *NoteTool) getNotesByDate(userDataPath, startDate, endDate string) string {
 	start, err := time.Parse("2006-01-02", startDate)
 	if err != nil {
 		return fmt.Sprintf("Invalid start date format. Use YYYY-MM-DD: %v", err)
@@ -251,7 +266,7 @@ func (n *NoteTool) getNotesByDate(startDate, endDate string) string {
 		return fmt.Sprintf("Invalid end date format. Use YYYY-MM-DD: %v", err)
 	}
 
-	files, err := os.ReadDir(n.dataPath)
+	files, err := os.ReadDir(userDataPath)
 	if err != nil {
 		return fmt.Sprintf("Error reading notes directory: %v", err)
 	}
@@ -259,7 +274,7 @@ func (n *NoteTool) getNotesByDate(startDate, endDate string) string {
 	var results []Note
 	for _, file := range files {
 		if !file.IsDir() {
-			note, err := n.readNoteFile(file.Name())
+			note, err := n.readNoteFile(userDataPath, file.Name())
 			if err != nil {
 				continue
 			}
