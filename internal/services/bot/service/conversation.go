@@ -199,6 +199,7 @@ func indicator(text string) string {
 func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, string, error) {
 	messageId := 0
 	streamingContent := ""
+	lastStreamingContent := ""
 	bufferThreshold := 500
 	bufferedContent := ""
 	maxTelegramLength := 4096
@@ -220,7 +221,7 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 		}
 
 		if len(streamingContent) >= maxTelegramLength-100 {
-			streamingContent = ""
+			streamingContent = streamingContent[len(lastStreamingContent):]
 			bufferedContent = ""
 
 			newSend, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, loading, false)
@@ -231,6 +232,9 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 			}
 		} else if len(bufferedContent) >= bufferThreshold || partial.ToolCalls != nil {
 			editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n"+loading, false)
+
+			lastStreamingContent = streamingContent
+
 			if err != nil || !editMessage.Ok {
 				log.Println(err)
 			}
