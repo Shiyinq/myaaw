@@ -12,6 +12,7 @@ import (
 
 type Schedule struct {
 	ID          string    `json:"id"`
+	UserID      string    `json:"user_id"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
 	StartTime   time.Time `json:"start_time"`
@@ -96,9 +97,9 @@ func (cm *CalendarManager) AddSchedule(schedule Schedule) error {
 	return cm.saveSchedules()
 }
 
-func (cm *CalendarManager) UpdateSchedule(id string, updatedSchedule Schedule) error {
+func (cm *CalendarManager) UpdateSchedule(id string, userID string, updatedSchedule Schedule) error {
 	for i, s := range cm.schedules {
-		if s.ID == id {
+		if s.ID == id && s.UserID == userID {
 			cm.schedules[i] = updatedSchedule
 			return cm.saveSchedules()
 		}
@@ -106,9 +107,9 @@ func (cm *CalendarManager) UpdateSchedule(id string, updatedSchedule Schedule) e
 	return fmt.Errorf("schedule with ID %s not found", id)
 }
 
-func (cm *CalendarManager) DeleteSchedule(id string) error {
+func (cm *CalendarManager) DeleteSchedule(id string, userID string) error {
 	for i, s := range cm.schedules {
-		if s.ID == id {
+		if s.ID == id && s.UserID == userID {
 			cm.schedules = append(cm.schedules[:i], cm.schedules[i+1:]...)
 			return cm.saveSchedules()
 		}
@@ -116,31 +117,33 @@ func (cm *CalendarManager) DeleteSchedule(id string) error {
 	return fmt.Errorf("schedule with ID %s not found", id)
 }
 
-func (cm *CalendarManager) SearchByDateRange(start, end time.Time) []Schedule {
+func (cm *CalendarManager) SearchByDateRange(userID string, start, end time.Time) []Schedule {
 	var results []Schedule
 	for _, s := range cm.schedules {
-		if (s.StartTime.Equal(start) || s.StartTime.After(start)) &&
-			(s.EndTime.Equal(end) || s.EndTime.Before(end)) {
+		if s.UserID == userID && (s.StartTime.Equal(start) || s.StartTime.After(start)) && (s.EndTime.Equal(end) || s.EndTime.Before(end)) {
 			results = append(results, s)
 		}
 	}
 	return results
 }
 
-func (cm *CalendarManager) SearchByTitle(title string) []Schedule {
+func (cm *CalendarManager) SearchByTitle(userID string, title string) []Schedule {
 	var results []Schedule
 	searchTitle := strings.ToLower(title)
 	for _, s := range cm.schedules {
-		if strings.Contains(strings.ToLower(s.Title), searchTitle) {
+		if s.UserID == userID && strings.Contains(strings.ToLower(s.Title), searchTitle) {
 			results = append(results, s)
 		}
 	}
 	return results
 }
 
-func (cm *CalendarManager) SearchByTags(tags []string) []Schedule {
+func (cm *CalendarManager) SearchByTags(userID string, tags []string) []Schedule {
 	var results []Schedule
 	for _, s := range cm.schedules {
+		if s.UserID != userID {
+			continue
+		}
 		for _, tag := range tags {
 			for _, scheduleTag := range s.Tags {
 				if tag == scheduleTag {
@@ -196,6 +199,11 @@ func (ct *CalendarTool) CallTool(arguments string) string {
 }
 
 func (ct *CalendarTool) handleAddSchedule(params map[string]interface{}) string {
+	userID, ok := params["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
+	}
+
 	scheduleData, ok := params["schedule"].(map[string]interface{})
 	if !ok {
 		return "Error: invalid schedule data"
@@ -243,6 +251,7 @@ func (ct *CalendarTool) handleAddSchedule(params map[string]interface{}) string 
 
 	schedule := Schedule{
 		ID:          fmt.Sprintf("%d", time.Now().UnixNano()),
+		UserID:      userID,
 		Title:       title,
 		Description: description,
 		StartTime:   startTime,
@@ -258,6 +267,11 @@ func (ct *CalendarTool) handleAddSchedule(params map[string]interface{}) string 
 }
 
 func (ct *CalendarTool) handleUpdateSchedule(params map[string]interface{}) string {
+	userID, ok := params["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
+	}
+
 	scheduleData, ok := params["schedule"].(map[string]interface{})
 	if !ok {
 		return "Error: invalid schedule data"
@@ -310,6 +324,7 @@ func (ct *CalendarTool) handleUpdateSchedule(params map[string]interface{}) stri
 
 	schedule := Schedule{
 		ID:          id,
+		UserID:      userID,
 		Title:       title,
 		Description: description,
 		StartTime:   startTime,
@@ -317,7 +332,7 @@ func (ct *CalendarTool) handleUpdateSchedule(params map[string]interface{}) stri
 		Tags:        tags,
 	}
 
-	if err := ct.manager.UpdateSchedule(id, schedule); err != nil {
+	if err := ct.manager.UpdateSchedule(id, userID, schedule); err != nil {
 		return fmt.Sprintf("Error updating schedule: %v", err)
 	}
 
@@ -325,12 +340,17 @@ func (ct *CalendarTool) handleUpdateSchedule(params map[string]interface{}) stri
 }
 
 func (ct *CalendarTool) handleDeleteSchedule(params map[string]interface{}) string {
+	userID, ok := params["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
+	}
+
 	id, ok := params["schedule_id"].(string)
 	if !ok {
 		return "Error: schedule_id is required"
 	}
 
-	if err := ct.manager.DeleteSchedule(id); err != nil {
+	if err := ct.manager.DeleteSchedule(id, userID); err != nil {
 		return fmt.Sprintf("Error deleting schedule: %v", err)
 	}
 
@@ -338,6 +358,11 @@ func (ct *CalendarTool) handleDeleteSchedule(params map[string]interface{}) stri
 }
 
 func (ct *CalendarTool) handleSearchByDate(params map[string]interface{}) string {
+	userID, ok := params["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
+	}
+
 	dateRange, ok := params["date_range"].(map[string]interface{})
 	if !ok {
 		return "Error: date_range is required"
@@ -361,7 +386,7 @@ func (ct *CalendarTool) handleSearchByDate(params map[string]interface{}) string
 		return fmt.Sprintf("Error: invalid end date format: %v", err)
 	}
 
-	schedules := ct.manager.SearchByDateRange(start, end)
+	schedules := ct.manager.SearchByDateRange(userID, start, end)
 	result, err := json.Marshal(schedules)
 	if err != nil {
 		return fmt.Sprintf("Error marshaling results: %v", err)
@@ -371,12 +396,17 @@ func (ct *CalendarTool) handleSearchByDate(params map[string]interface{}) string
 }
 
 func (ct *CalendarTool) handleSearchByTitle(params map[string]interface{}) string {
+	userID, ok := params["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
+	}
+
 	title, ok := params["title"].(string)
 	if !ok {
 		return "Error: title is required"
 	}
 
-	schedules := ct.manager.SearchByTitle(title)
+	schedules := ct.manager.SearchByTitle(userID, title)
 	result, err := json.Marshal(schedules)
 	if err != nil {
 		return fmt.Sprintf("Error marshaling results: %v", err)
@@ -386,6 +416,11 @@ func (ct *CalendarTool) handleSearchByTitle(params map[string]interface{}) strin
 }
 
 func (ct *CalendarTool) handleSearchByTags(params map[string]interface{}) string {
+	userID, ok := params["user_id"].(string)
+	if !ok || userID == "" {
+		return "Error: user_id is required"
+	}
+
 	tagsInterface, ok := params["tags"].([]interface{})
 	if !ok {
 		return "Error: tags is required"
@@ -399,7 +434,7 @@ func (ct *CalendarTool) handleSearchByTags(params map[string]interface{}) string
 		}
 	}
 
-	schedules := ct.manager.SearchByTags(tags)
+	schedules := ct.manager.SearchByTags(userID, tags)
 	result, err := json.Marshal(schedules)
 	if err != nil {
 		return fmt.Sprintf("Error marshaling results: %v", err)
