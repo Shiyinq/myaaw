@@ -231,7 +231,7 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 				messageId = newSend.Result.MessageId
 			}
 		} else if len(bufferedContent) >= bufferThreshold || partial.ToolCalls != nil {
-			editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n"+loading, false)
+			editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n\n"+loading, false)
 
 			lastStreamingContent = streamingContent
 
