@@ -136,12 +136,57 @@ func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat,
 		return nil, "", err
 	}
 
-	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, utils.Watermark(res.Content.(string), user.Model), true)
+	content := res.Content.(string)
+	maxTelegramLength := 4096
+
+	if len(content) > maxTelegramLength {
+		var chunks []string
+		for i := 0; i < len(content); i += maxTelegramLength {
+			end := i + maxTelegramLength
+			if end > len(content) {
+				end = len(content)
+			}
+			chunks = append(chunks, content[i:end])
+		}
+
+		send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, chunks[0], false)
+		if err != nil || !send.Ok {
+			return nil, "", err
+		}
+
+		for i := 1; i < len(chunks)-1; i++ {
+			_, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, chunks[i], false)
+			if err != nil {
+				log.Println("Error sending chunk:", err)
+			}
+		}
+
+		if len(chunks) > 1 {
+			lastChunk := chunks[len(chunks)-1]
+			watermarkedChunk := utils.Watermark(lastChunk, user.Model)
+
+			if len(watermarkedChunk) > maxTelegramLength {
+				_, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, lastChunk, false)
+				if err != nil {
+					log.Println("Error sending final chunk:", err)
+				}
+			} else {
+				_, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, watermarkedChunk, false)
+				if err != nil {
+					log.Println("Error sending final chunk:", err)
+				}
+			}
+		}
+
+		return send, content, nil
+	}
+
+	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, utils.Watermark(content, user.Model), true)
 	if err != nil || !send.Ok {
 		return nil, "", nil
 	}
 
-	return send, res.Content.(string), nil
+	return send, content, nil
 }
 
 func indicator(text string) string {
@@ -156,6 +201,7 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 	streamingContent := ""
 	bufferThreshold := 500
 	bufferedContent := ""
+	maxTelegramLength := 4096
 
 	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, indicator("typing"), false)
 	if err != nil || !send.Ok {
@@ -173,7 +219,17 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 			bufferedContent += chunk.(string)
 		}
 
-		if len(bufferedContent) >= bufferThreshold || partial.ToolCalls != nil {
+		if len(streamingContent) >= maxTelegramLength-100 {
+			streamingContent = ""
+			bufferedContent = ""
+
+			newSend, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, loading, false)
+			if err != nil || !newSend.Ok {
+				log.Println(err)
+			} else {
+				messageId = newSend.Result.MessageId
+			}
+		} else if len(bufferedContent) >= bufferThreshold || partial.ToolCalls != nil {
 			editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n"+loading, false)
 			if err != nil || !editMessage.Ok {
 				log.Println(err)
