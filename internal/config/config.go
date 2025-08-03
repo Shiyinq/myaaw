@@ -35,6 +35,7 @@ var LLMProviderAPIKey string
 var StreamResponse bool
 var TTSProviderName string
 var TTSProviderAPIKey string
+var WatermarkModel bool
 
 func envPath() string {
 	_, b, _, _ := runtime.Caller(0)
@@ -67,6 +68,7 @@ func LoadConfig() {
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
+	WatermarkModel, _ = strconv.ParseBool(os.Getenv("WATERMARK_MODEL"))
 
 	TTSProviderName = os.Getenv("TTS_PROVIDER_NAME")
 	if TTSProviderName == "" {

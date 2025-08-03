@@ -163,7 +163,7 @@ func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat,
 
 		if len(chunks) > 1 {
 			lastChunk := chunks[len(chunks)-1]
-			watermarkedChunk := utils.Watermark(lastChunk, user.Model)
+			watermarkedChunk := utils.Watermark(lastChunk, user.Model, config.WatermarkModel)
 
 			if len(watermarkedChunk) > maxTelegramLength {
 				_, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, lastChunk, false)
@@ -181,7 +181,7 @@ func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat,
 		return send, content, nil
 	}
 
-	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, utils.Watermark(content, user.Model), true)
+	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, utils.Watermark(content, user.Model, config.WatermarkModel), true)
 	if err != nil || !send.Ok {
 		return nil, "", nil
 	}
@@ -248,9 +248,9 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 		return nil, "", err
 	}
 
-	editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model), true)
+	editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model, config.WatermarkModel), true)
 	if err != nil || !editMessage.Ok {
-		_, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model), false)
+		_, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model, config.WatermarkModel), false)
 		if err != nil {
 			log.Println(err)
 			return nil, "", err
