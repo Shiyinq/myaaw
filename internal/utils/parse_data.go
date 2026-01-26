@@ -24,14 +24,24 @@ func ListModels(user model.User, provider string, models []string) string {
 	return result.String()
 }
 
+func EscapeMarkdown(text string) string {
+	replacer := strings.NewReplacer(
+		"_", "\\_",
+		"*", "\\*",
+		"[", "\\[",
+		"`", "\\`",
+	)
+	return replacer.Replace(text)
+}
+
 func CommandMe(res *model.User) string {
 	var me strings.Builder
 	me.WriteString("ℹ️ *About Me*\n")
 	me.WriteString(fmt.Sprintf("*ID:* %d\n", res.UserId))
-	me.WriteString(fmt.Sprintf("*Name:* %s\n", res.Name))
+	me.WriteString(fmt.Sprintf("*Name:* %s\n", EscapeMarkdown(res.Name)))
 	me.WriteString("\n\n🛠️ *Config*\n")
-	me.WriteString(fmt.Sprintf("*System:* %s\n", res.System))
-	me.WriteString(fmt.Sprintf("*Model:* %s\n", res.Model))
+	me.WriteString(fmt.Sprintf("*System:* %s\n", EscapeMarkdown(res.System)))
+	me.WriteString(fmt.Sprintf("*Model:* %s\n", EscapeMarkdown(res.Model)))
 
 	return me.String()
 }
