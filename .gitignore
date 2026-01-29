@@ -36,3 +36,6 @@ tmp/
 # data
 data/*
 !data/.gitkeep
+
+# python virtual environment
+.venv
