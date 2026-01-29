@@ -313,22 +313,6 @@
     {
         "type": "function",
         "function": {
-            "name": "get_time",
-            "description": "Get current time information. If timezone is not specified, it will use the system's timezone. Supports checking time in various timezones around the world.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "timezone": {
-                        "type": "string",
-                        "description": "Timezone to check (examples: 'Asia/Jakarta', 'America/New_York', 'Europe/London'). If not specified, will use system timezone."
-                    }
-                }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "cash_flow",
             "description": "A financial management tool to track income and expenses. Supports the following operations:\n1. add_transaction: Add a new transaction (income/expense)\n2. get_transactions: Get a list of transactions within a date range\n3. update_transaction: Update an existing transaction\n4. delete_transaction: Delete a transaction\n5. get_analytics: Get financial analytics within a date range\n6. add_category: Add a new category\n7. get_categories: Get a list of categories",
             "parameters": {

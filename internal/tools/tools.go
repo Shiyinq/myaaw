@@ -16,7 +16,6 @@ import (
 	"teo/internal/tools/python"
 	"teo/internal/tools/scraping"
 	"teo/internal/tools/tavily"
-	"teo/internal/tools/time"
 	"teo/internal/tools/weather"
 )
 
@@ -67,7 +66,6 @@ func NewTools(functionName string, arguments string) string {
 			"notes":               notes.NewNotesTool(),
 			"filesystem":          filesystem.NewFileSystemTool(),
 			"tavily_search":       tavily.NewTavilyTool(),
-			"get_time":            time.NewTimeTool(),
 			"cash_flow":           cashflow.NewCashFlowTool(),
 			"calendar":            calendar.NewCalendarTool(),
 			"converter":           converter.NewConverterTool(),
