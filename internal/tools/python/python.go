@@ -43,23 +43,40 @@ func (p *PythonTool) CallTool(arguments string) string {
 		return fmt.Sprintf("Error writing Python script: %v", err)
 	}
 
+	// Determine python and pip executables
+	pythonExec := "python3"
+	pipExec := "pip"
+
+	cwd, err := os.Getwd()
+	if err == nil {
+		venvPython := filepath.Join(cwd, ".venv", "bin", "python")
+		venvPip := filepath.Join(cwd, ".venv", "bin", "pip")
+
+		if _, err := os.Stat(venvPython); err == nil {
+			pythonExec = venvPython
+			pipExec = venvPip
+			// log.Printf("Using virtual environment: %s", venvPython)
+		}
+	}
+
 	// Install packages if needed
 	if args.Packages != "" {
 		packages := strings.Split(args.Packages, ",")
 		for _, pkg := range packages {
 			pkg = strings.TrimSpace(pkg)
 			if pkg != "" {
-				cmd := exec.Command("pip", "install", pkg)
+				cmd := exec.Command(pipExec, "install", pkg)
 				cmd.Dir = tempDir
-				if err := cmd.Run(); err != nil {
-					return fmt.Sprintf("Error installing package %s: %v", pkg, err)
+				// Capture output to debug installation errors if needed
+				if output, err := cmd.CombinedOutput(); err != nil {
+					return fmt.Sprintf("Error installing package %s: %v\nOutput: %s", pkg, err, string(output))
 				}
 			}
 		}
 	}
 
 	// Execute Python code
-	cmd := exec.Command("python3", scriptPath)
+	cmd := exec.Command(pythonExec, scriptPath)
 	if args.Input != "" {
 		cmd.Stdin = strings.NewReader(args.Input)
 	}

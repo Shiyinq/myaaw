@@ -14,16 +14,21 @@ import (
 var allowedDirectories []string
 
 func init() {
+	// Add current working directory to allowed paths to support 'skills' folder
+	cwd, err := os.Getwd()
+	if err == nil {
+		allowedDirectories = append(allowedDirectories, cwd)
+		log.Printf("FileSystemTool: Added current working directory to allowed paths: %s", cwd)
+	}
+
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Printf("Warning: Could not get user home directory: %v. Cannot construct default allowed path. FileSystemTool will have no default allowed directories.", err)
-		allowedDirectories = []string{} // Fallback to an empty list as the base path is unavailable.
+		log.Printf("Warning: Could not get user home directory: %v. Cannot construct default allowed path.", err)
 	} else {
 		combinedPath := filepath.Join(homeDir, "teo_home")
-		allowedDirectories = []string{combinedPath}
+		allowedDirectories = append(allowedDirectories, combinedPath)
 		log.Printf("FileSystemTool: Default allowed directory set to %s", combinedPath)
 	}
-	// log.Printf("FileSystemTool initialized. Allowed directories: %v", allowedDirectories) // Optional: for debugging startup
 }
 
 // TODO: Make allowedDirectories configurable (e.g., via environment variable, config file)
