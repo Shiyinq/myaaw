@@ -176,7 +176,10 @@
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["search", "extract"],
+                        "enum": [
+                            "search",
+                            "extract"
+                        ],
                         "description": "The action to perform: 'search' for Tavily search API, or 'extract' for Tavily extract API."
                     },
                     "search_args": {
@@ -189,13 +192,19 @@
                             },
                             "topic": {
                                 "type": "string",
-                                "enum": ["general", "news"],
+                                "enum": [
+                                    "general",
+                                    "news"
+                                ],
                                 "default": "general",
                                 "description": "Category of the search."
                             },
                             "search_depth": {
                                 "type": "string",
-                                "enum": ["basic", "advanced"],
+                                "enum": [
+                                    "basic",
+                                    "advanced"
+                                ],
                                 "default": "basic",
                                 "description": "Depth of the search."
                             },
@@ -211,7 +220,16 @@
                             },
                             "time_range": {
                                 "type": "string",
-                                "enum": ["day", "week", "month", "year", "d", "w", "m", "y"],
+                                "enum": [
+                                    "day",
+                                    "week",
+                                    "month",
+                                    "year",
+                                    "d",
+                                    "w",
+                                    "m",
+                                    "y"
+                                ],
                                 "description": "Time range to filter results."
                             },
                             "days": {
@@ -254,7 +272,9 @@
                                 "description": "List of domains to exclude."
                             }
                         },
-                        "required": ["query"]
+                        "required": [
+                            "query"
+                        ]
                     },
                     "extract_args": {
                         "type": "object",
@@ -271,15 +291,22 @@
                             },
                             "extract_depth": {
                                 "type": "string",
-                                "enum": ["basic", "advanced"],
+                                "enum": [
+                                    "basic",
+                                    "advanced"
+                                ],
                                 "default": "basic",
                                 "description": "Depth of the extraction process."
                             }
                         },
-                        "required": ["urls"]
+                        "required": [
+                            "urls"
+                        ]
                     }
                 },
-                "required": ["action"]
+                "required": [
+                    "action"
+                ]
             }
         }
     },
@@ -330,7 +357,10 @@
                         "properties": {
                             "type": {
                                 "type": "string",
-                                "enum": ["income", "expense"],
+                                "enum": [
+                                    "income",
+                                    "expense"
+                                ],
                                 "description": "Transaction type"
                             },
                             "amount": {
@@ -339,7 +369,13 @@
                             },
                             "currency": {
                                 "type": "string",
-                                "enum": ["IDR", "USD", "EUR", "JPY", "GBP"],
+                                "enum": [
+                                    "IDR",
+                                    "USD",
+                                    "EUR",
+                                    "JPY",
+                                    "GBP"
+                                ],
                                 "default": "IDR",
                                 "description": "Transaction currency (IDR: Indonesian Rupiah, USD: US Dollar, EUR: Euro, JPY: Japanese Yen, GBP: British Pound)"
                             },
@@ -355,7 +391,9 @@
                                         "description": "Category name"
                                     }
                                 },
-                                "required": ["name"]
+                                "required": [
+                                    "name"
+                                ]
                             },
                             "description": {
                                 "type": "string",
@@ -367,7 +405,13 @@
                                 "description": "Transaction date (format: RFC3339)"
                             }
                         },
-                        "required": ["type", "amount", "category", "description", "date"]
+                        "required": [
+                            "type",
+                            "amount",
+                            "category",
+                            "description",
+                            "date"
+                        ]
                     },
                     "transaction_id": {
                         "type": "string",
@@ -388,7 +432,10 @@
                                 "description": "End date (format: RFC3339)"
                             }
                         },
-                        "required": ["start", "end"]
+                        "required": [
+                            "start",
+                            "end"
+                        ]
                     },
                     "category": {
                         "type": "object",
@@ -403,10 +450,15 @@
                                 "description": "Category name"
                             }
                         },
-                        "required": ["name"]
+                        "required": [
+                            "name"
+                        ]
                     }
                 },
-                "required": ["action", "user_id"]
+                "required": [
+                    "action",
+                    "user_id"
+                ]
             }
         }
     },
@@ -468,7 +520,13 @@
                                 "description": "Schedule tags"
                             }
                         },
-                        "required": ["title", "description", "start_time", "end_time", "tags"]
+                        "required": [
+                            "title",
+                            "description",
+                            "start_time",
+                            "end_time",
+                            "tags"
+                        ]
                     },
                     "schedule_id": {
                         "type": "string",
@@ -489,7 +547,10 @@
                                 "description": "End date (format: RFC3339)"
                             }
                         },
-                        "required": ["start", "end"]
+                        "required": [
+                            "start",
+                            "end"
+                        ]
                     },
                     "title": {
                         "type": "string",
@@ -503,7 +564,10 @@
                         "description": "Tags for search (required for search_by_tags)"
                     }
                 },
-                "required": ["action", "user_id"]
+                "required": [
+                    "action",
+                    "user_id"
+                ]
             }
         }
     },
@@ -523,24 +587,56 @@
                         "type": "string",
                         "description": "The source unit (e.g., meter, ounce, celsius)",
                         "enum": [
-                            "celsius", "fahrenheit", "kelvin",
-                            "meter", "kilometer", "centimeter", "inch", "foot",
-                            "gram", "kilogram", "ounce", "pound",
-                            "liter", "milliliter", "gallon", "quart",
-                            "second", "minute", "hour",
-                            "meter per second", "kilometer per hour", "mile per hour"
+                            "celsius",
+                            "fahrenheit",
+                            "kelvin",
+                            "meter",
+                            "kilometer",
+                            "centimeter",
+                            "inch",
+                            "foot",
+                            "gram",
+                            "kilogram",
+                            "ounce",
+                            "pound",
+                            "liter",
+                            "milliliter",
+                            "gallon",
+                            "quart",
+                            "second",
+                            "minute",
+                            "hour",
+                            "meter per second",
+                            "kilometer per hour",
+                            "mile per hour"
                         ]
                     },
                     "to_unit": {
                         "type": "string",
                         "description": "The target unit (e.g., kilometer, gram, fahrenheit)",
                         "enum": [
-                            "celsius", "fahrenheit", "kelvin",
-                            "meter", "kilometer", "centimeter", "inch", "foot",
-                            "gram", "kilogram", "ounce", "pound",
-                            "liter", "milliliter", "gallon", "quart",
-                            "second", "minute", "hour",
-                            "meter per second", "kilometer per hour", "mile per hour"
+                            "celsius",
+                            "fahrenheit",
+                            "kelvin",
+                            "meter",
+                            "kilometer",
+                            "centimeter",
+                            "inch",
+                            "foot",
+                            "gram",
+                            "kilogram",
+                            "ounce",
+                            "pound",
+                            "liter",
+                            "milliliter",
+                            "gallon",
+                            "quart",
+                            "second",
+                            "minute",
+                            "hour",
+                            "meter per second",
+                            "kilometer per hour",
+                            "mile per hour"
                         ]
                     }
                 },
@@ -579,6 +675,29 @@
                 },
                 "required": [
                     "code"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "Executes a bash command. Use this tool to run existing scripts, system commands, or manage processes. Examples: `python script.py`, `ls -la`, `curl ...`. It runs in the system shell.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The bash command to execute."
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Optional timeout in seconds (default: 60)."
+                    }
+                },
+                "required": [
+                    "command"
                 ]
             }
         }

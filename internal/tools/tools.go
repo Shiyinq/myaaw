@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"teo/internal/tools/bash"
 	"teo/internal/tools/calendar"
 	"teo/internal/tools/cashflow"
 	"teo/internal/tools/converter"
@@ -71,6 +72,7 @@ func NewTools(functionName string, arguments string) string {
 			"calendar":            calendar.NewCalendarTool(),
 			"converter":           converter.NewConverterTool(),
 			"execute_python":      python.NewPythonTool(),
+			"bash":                bash.NewBashTool(),
 		},
 	}
 	log.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)
