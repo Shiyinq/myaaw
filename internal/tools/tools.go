@@ -8,15 +8,16 @@ import (
 	"os"
 	"path/filepath"
 	"teo/internal/tools/bash"
-	"teo/internal/tools/calendar"
-	"teo/internal/tools/cashflow"
-	"teo/internal/tools/converter"
+
+	// "teo/internal/tools/calendar"
+	// "teo/internal/tools/cashflow"
+	// "teo/internal/tools/converter"
 	"teo/internal/tools/filesystem"
-	"teo/internal/tools/notes"
+	// "teo/internal/tools/notes"
 	"teo/internal/tools/python"
-	"teo/internal/tools/scraping"
-	"teo/internal/tools/tavily"
-	"teo/internal/tools/weather"
+	// "teo/internal/tools/scraping"
+	// "teo/internal/tools/tavily"
+	// "teo/internal/tools/weather"
 )
 
 type ToolsFactory interface {
@@ -61,16 +62,16 @@ type ToolsCalling struct {
 func NewTools(functionName string, arguments string) string {
 	tools := &ToolsCalling{
 		toolsMap: map[string]ToolsFactory{
-			"get_current_weather": weather.NewWeatherTool(),
-			"scrape_web_data":     scraping.NewScrapingTool(),
-			"notes":               notes.NewNotesTool(),
-			"filesystem":          filesystem.NewFileSystemTool(),
-			"tavily_search":       tavily.NewTavilyTool(),
-			"cash_flow":           cashflow.NewCashFlowTool(),
-			"calendar":            calendar.NewCalendarTool(),
-			"converter":           converter.NewConverterTool(),
-			"execute_python":      python.NewPythonTool(),
-			"bash":                bash.NewBashTool(),
+			// "get_current_weather": weather.NewWeatherTool(),
+			// "scrape_web_data":     scraping.NewScrapingTool(),
+			// "notes":               notes.NewNotesTool(),
+			// "tavily_search":       tavily.NewTavilyTool(),
+			// "cash_flow":           cashflow.NewCashFlowTool(),
+			// "calendar":            calendar.NewCalendarTool(),
+			// "converter":           converter.NewConverterTool(),
+			"bash":           bash.NewBashTool(),
+			"filesystem":     filesystem.NewFileSystemTool(),
+			"execute_python": python.NewPythonTool(),
 		},
 	}
 	log.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)
