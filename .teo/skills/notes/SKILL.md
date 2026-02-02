@@ -1,5 +1,5 @@
 ---
-name: Notes Tool
+name: Notes
 description: Manage user notes (create, read, update, delete, search).
 ---
 

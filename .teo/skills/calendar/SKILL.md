@@ -1,5 +1,5 @@
 ---
-name: Calendar Tool
+name: Calendar
 description: Manage user schedules (add, update, delete, search).
 ---
 
