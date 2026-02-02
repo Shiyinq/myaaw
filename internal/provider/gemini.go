@@ -124,6 +124,12 @@ func MessagesToContents(messages []Message) []GeminiContent {
 			role = "model"
 		}
 
+		// Gemini API only accepts "user" and "model" roles
+		// "tool" responses should be sent as "user" with FunctionResponse
+		if role == "tool" {
+			role = "user"
+		}
+
 		var content GeminiContent
 		if contentStr != "" && ok {
 			content = GeminiContent{
@@ -172,6 +178,15 @@ func contentToMessage(content GeminiContent) Message {
 	if role == "model" {
 		role = "assistant"
 	}
+
+	// Guard against empty Parts
+	if len(content.Parts) == 0 {
+		return Message{
+			Role:    role,
+			Content: "",
+		}
+	}
+
 	if content.Parts[0].FunctionCall != nil {
 		return Message{
 			Role:      role,
@@ -233,26 +248,44 @@ func (g *GeminiProvider) geminiContentsToMessages(contents []GeminiContent) []Me
 			role = "assistant"
 		}
 
-		var messageParts interface{}
+		message := Message{
+			Role: role,
+		}
+
 		for _, part := range content.Parts {
-			if part.FunctionResponse != nil || part.FunctionCall != nil {
-				messageParts = part
+			if part.FunctionCall != nil {
+				// ReAct: This is an Action
+				argsJSON, _ := json.Marshal(part.FunctionCall.Args)
+				message.Action = part.FunctionCall.Name
+				message.ActionInput = string(argsJSON)
+				message.Thought = fmt.Sprintf("Using tool: %s", part.FunctionCall.Name)
+				message.Content = part
+			} else if part.FunctionResponse != nil {
+				// ReAct: This is an Observation
+				role = "tool"
+				message.Role = role
+				message.Name = part.FunctionResponse.Name
+				if resp, ok := part.FunctionResponse.Response["response"].(string); ok {
+					message.Observation = resp
+					message.Content = resp
+				} else {
+					obsJSON, _ := json.Marshal(part.FunctionResponse.Response)
+					message.Observation = string(obsJSON)
+					message.Content = string(obsJSON)
+				}
 			} else {
-				messageParts = part.Text
+				// Normal text response
+				message.Content = part.Text
 			}
 		}
 
-		message := Message{
-			Role:    role,
-			Content: messageParts,
-		}
 		messages = append(messages, message)
 	}
 
 	return messages
 }
 
-func (g *GeminiProvider) geminiToolCalls(messages []GeminiContent, parts []GeminiPart) []Message {
+func (g *GeminiProvider) geminiToolCalls(messages []GeminiContent, parts []GeminiPart, originalMessages []Message) []Message {
 	for _, part := range parts {
 		if part.FunctionCall != nil {
 			functionName := part.FunctionCall.Name
@@ -262,7 +295,16 @@ func (g *GeminiProvider) geminiToolCalls(messages []GeminiContent, parts []Gemin
 				fmt.Println("Error marshaling functionArgs:", err)
 				continue
 			}
+
+			// Log ReAct Trace using shared functions
+			thought := GenerateThought(functionName)
+			LogThought(thought)
+			LogAction(functionName, string(argsJSON))
+
 			tool := tools.NewTools(functionName, string(argsJSON))
+
+			LogObservation(tool)
+
 			responseTool := []GeminiContent{
 				{
 					Role:  "model",
@@ -281,15 +323,46 @@ func (g *GeminiProvider) geminiToolCalls(messages []GeminiContent, parts []Gemin
 						},
 					},
 				},
+				// Prompt LLM to think about the observation and plan next step
+				{
+					Role: "user",
+					Parts: []GeminiPart{
+						{
+							Text: ThoughtPrompt,
+						},
+					},
+				},
 			}
 			messages = append(messages, responseTool...)
 		}
 	}
 
-	return g.geminiContentsToMessages(messages)
+	// Convert back to Messages and prepend system prompt if it exists
+	result := g.geminiContentsToMessages(messages)
+
+	// Prepend system prompt from original messages
+	if len(originalMessages) > 0 && originalMessages[0].Role == "system" {
+		result = append([]Message{originalMessages[0]}, result...)
+	}
+
+	return result
 }
 
 func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, error) {
+	return g.chatWithIteration(modelName, messages, 0)
+}
+
+func (g *GeminiProvider) chatWithIteration(modelName string, messages []Message, iteration int) (Message, error) {
+	// Check max iterations using shared function
+	if IsMaxIterationsReached(iteration, DefaultReactConfig) {
+		return Message{
+			Role:    "assistant",
+			Content: MaxIterationsMessage,
+		}, nil
+	}
+
+	LogIteration(iteration, DefaultReactConfig, false)
+
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
@@ -306,12 +379,15 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 			},
 		},
 	}
-
 	if len(messages) > 0 && messages[0].Role == "system" {
+		systemText := messages[0].Content.(string)
+		// Add step awareness warning using shared function
+		systemText += GetStepAwarenessWarning(iteration, DefaultReactConfig)
+
 		request.SystemInstruction = &GeminiContent{
 			Parts: []GeminiPart{
 				{
-					Text: messages[0].Content.(string),
+					Text: systemText,
 				},
 			},
 			Role: "user",
@@ -330,8 +406,8 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	if g.hasFunctionCall(response) {
-		respTool := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts)
-		return g.Chat(modelName, respTool)
+		respTool := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts, messages)
+		return g.chatWithIteration(modelName, respTool, iteration+1)
 	}
 
 	if response.Candidates[0].FinishReason == "SAFETY" {
@@ -342,6 +418,20 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 }
 
 func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
+	return g.chatStreamWithIteration(modelName, messages, callback, 0)
+}
+
+func (g *GeminiProvider) chatStreamWithIteration(modelName string, messages []Message, callback func(Message) error, iteration int) error {
+	// Check max iterations using shared function
+	if IsMaxIterationsReached(iteration, DefaultReactConfig) {
+		return callback(Message{
+			Role:    "assistant",
+			Content: MaxIterationsMessage,
+		})
+	}
+
+	LogIteration(iteration, DefaultReactConfig, true)
+
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
@@ -360,10 +450,15 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 	}
 
 	if len(messages) > 0 && messages[0].Role == "system" {
+		systemText := messages[0].Content.(string)
+
+		// Add step awareness warning using shared function
+		systemText += GetStepAwarenessWarning(iteration, DefaultReactConfig)
+
 		request.SystemInstruction = &GeminiContent{
 			Parts: []GeminiPart{
 				{
-					Text: messages[0].Content.(string),
+					Text: systemText,
 				},
 			},
 			Role: "user",
@@ -414,8 +509,8 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 		bufferJSON = ""
 
 		if g.hasFunctionCall(response) {
-			respTool := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts)
-			return g.ChatStream(modelName, respTool, callback)
+			respTool := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts, messages)
+			return g.chatStreamWithIteration(modelName, respTool, callback, iteration+1)
 		}
 	}
 

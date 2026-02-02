@@ -15,6 +15,11 @@ type Message struct {
 	Images     []string    `json:"images,omitempty" bson:"images,omitempty"`
 	ToolCalls  []ToolCall  `json:"tool_calls,omitempty" bson:"tool_calls,omitempty"`
 	ToolCallID string      `json:"tool_call_id,omitempty" bson:"tool_call_id,omitempty"`
+	// ReAct Trace Fields
+	Thought     string `json:"thought,omitempty" bson:"thought,omitempty"`
+	Action      string `json:"action,omitempty" bson:"action,omitempty"`
+	ActionInput string `json:"action_input,omitempty" bson:"action_input,omitempty"`
+	Observation string `json:"observation,omitempty" bson:"observation,omitempty"`
 }
 
 type ToolCall struct {
