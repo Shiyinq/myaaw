@@ -1,6 +1,6 @@
 ---
 name: Converter
-description: A tool to convert values between various units (excluding currency).
+description: Convert values between various units (excluding currency).
 ---
 
 # Converter Skill
