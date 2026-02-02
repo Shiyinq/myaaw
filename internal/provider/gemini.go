@@ -285,7 +285,8 @@ func (g *GeminiProvider) geminiContentsToMessages(contents []GeminiContent) []Me
 	return messages
 }
 
-func (g *GeminiProvider) geminiToolCalls(messages []GeminiContent, parts []GeminiPart, originalMessages []Message) []Message {
+func (g *GeminiProvider) geminiToolCalls(messages []GeminiContent, parts []GeminiPart, originalMessages []Message) ([]Message, ReactStep) {
+	var step ReactStep
 	for _, part := range parts {
 		if part.FunctionCall != nil {
 			functionName := part.FunctionCall.Name
@@ -304,6 +305,14 @@ func (g *GeminiProvider) geminiToolCalls(messages []GeminiContent, parts []Gemin
 			tool := tools.NewTools(functionName, string(argsJSON))
 
 			LogObservation(tool)
+
+			// Collect trace step
+			step = ReactStep{
+				Thought:     thought,
+				Action:      functionName,
+				ActionInput: string(argsJSON),
+				Observation: tool,
+			}
 
 			responseTool := []GeminiContent{
 				{
@@ -345,20 +354,22 @@ func (g *GeminiProvider) geminiToolCalls(messages []GeminiContent, parts []Gemin
 		result = append([]Message{originalMessages[0]}, result...)
 	}
 
-	return result
+	return result, step
 }
 
 func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, error) {
-	return g.chatWithIteration(modelName, messages, 0)
+	return g.chatWithIteration(modelName, messages, 0, nil)
 }
 
-func (g *GeminiProvider) chatWithIteration(modelName string, messages []Message, iteration int) (Message, error) {
+func (g *GeminiProvider) chatWithIteration(modelName string, messages []Message, iteration int, traceSteps []ReactStep) (Message, error) {
 	// Check max iterations using shared function
 	if IsMaxIterationsReached(iteration, DefaultReactConfig) {
-		return Message{
+		msg := Message{
 			Role:    "assistant",
 			Content: MaxIterationsMessage,
-		}, nil
+			Trace:   traceSteps,
+		}
+		return msg, nil
 	}
 
 	LogIteration(iteration, DefaultReactConfig, false)
@@ -406,27 +417,33 @@ func (g *GeminiProvider) chatWithIteration(modelName string, messages []Message,
 	}
 
 	if g.hasFunctionCall(response) {
-		respTool := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts, messages)
-		return g.chatWithIteration(modelName, respTool, iteration+1)
+		respTool, step := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts, messages)
+		// Accumulate trace steps
+		traceSteps = append(traceSteps, step)
+		return g.chatWithIteration(modelName, respTool, iteration+1, traceSteps)
 	}
 
 	if response.Candidates[0].FinishReason == "SAFETY" {
 		return Message{}, fmt.Errorf("SAFETY")
 	}
 
-	return contentToMessage(response.Candidates[0].Content), nil
+	// Final response - include collected trace
+	finalMsg := contentToMessage(response.Candidates[0].Content)
+	finalMsg.Trace = traceSteps
+	return finalMsg, nil
 }
 
 func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
-	return g.chatStreamWithIteration(modelName, messages, callback, 0)
+	return g.chatStreamWithIteration(modelName, messages, callback, 0, nil)
 }
 
-func (g *GeminiProvider) chatStreamWithIteration(modelName string, messages []Message, callback func(Message) error, iteration int) error {
+func (g *GeminiProvider) chatStreamWithIteration(modelName string, messages []Message, callback func(Message) error, iteration int, traceSteps []ReactStep) error {
 	// Check max iterations using shared function
 	if IsMaxIterationsReached(iteration, DefaultReactConfig) {
 		return callback(Message{
 			Role:    "assistant",
 			Content: MaxIterationsMessage,
+			Trace:   traceSteps,
 		})
 	}
 
@@ -501,6 +518,12 @@ func (g *GeminiProvider) chatStreamWithIteration(modelName string, messages []Me
 		}
 
 		partialMessage := contentToMessage(response.Candidates[0].Content)
+
+		// Attach accumulated trace steps to partial message
+		if len(traceSteps) > 0 {
+			partialMessage.Trace = traceSteps
+		}
+
 		err = callback(partialMessage)
 		if err != nil {
 			return fmt.Errorf("error in callback: %w", err)
@@ -509,8 +532,10 @@ func (g *GeminiProvider) chatStreamWithIteration(modelName string, messages []Me
 		bufferJSON = ""
 
 		if g.hasFunctionCall(response) {
-			respTool := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts, messages)
-			return g.chatStreamWithIteration(modelName, respTool, callback, iteration+1)
+			respTool, step := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts, messages)
+			// Accumulate trace steps
+			traceSteps = append(traceSteps, step)
+			return g.chatStreamWithIteration(modelName, respTool, callback, iteration+1, traceSteps)
 		}
 	}
 

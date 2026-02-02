@@ -112,33 +112,36 @@ func (r *BotServiceImpl) updateUserMessages(chat *pkg.TelegramIncommingChat, mes
 
 func (r *BotServiceImpl) factoryChat(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, provider.Message, error) {
 	var err error
-	var content string
 	var response provider.Message
 	var result *pkg.TelegramSendMessageStatus
 
 	log.Println("Processing incoming message")
 	if config.StreamResponse {
 		log.Println("Starting content streaming")
-		result, content, err = r.chatStream(user, chat, messages)
+		result, response, err = r.chatStream(user, chat, messages)
 	} else {
-		result, content, err = r.chat(user, chat, messages)
+		result, response, err = r.chat(user, chat, messages)
 	}
-
-	response.Role = "assistant"
-	response.Content = content
 
 	return result, response, err
 }
 
-func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, string, error) {
+func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, provider.Message, error) {
 	res, err := r.llmProvider.Chat(user.Model, messages)
 
 	if err != nil {
-		return nil, "", err
+		return nil, provider.Message{}, err
 	}
 
 	content := res.Content.(string)
 	maxTelegramLength := 4096
+
+	// Build response with trace from LLM
+	response := provider.Message{
+		Role:    "assistant",
+		Content: content,
+		Trace:   res.Trace,
+	}
 
 	if len(content) > maxTelegramLength {
 		var chunks []string
@@ -152,7 +155,7 @@ func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat,
 
 		send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, chunks[0], false)
 		if err != nil || !send.Ok {
-			return nil, "", err
+			return nil, provider.Message{}, err
 		}
 
 		for i := 1; i < len(chunks)-1; i++ {
@@ -179,15 +182,15 @@ func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat,
 			}
 		}
 
-		return send, content, nil
+		return send, response, nil
 	}
 
 	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, utils.Watermark(content, user.Model, config.WatermarkModel), true)
 	if err != nil || !send.Ok {
-		return nil, "", nil
+		return nil, provider.Message{}, nil
 	}
 
-	return send, content, nil
+	return send, response, nil
 }
 
 func indicator(text string) string {
@@ -197,13 +200,14 @@ func indicator(text string) string {
 	return "✨ Typing..."
 }
 
-func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, string, error) {
+func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, provider.Message, error) {
 	messageId := 0
 	streamingContent := ""
 	lastStreamingContent := ""
 	bufferThreshold := 500
 	bufferedContent := ""
 	maxTelegramLength := 4096
+	var traceSteps []provider.ReactStep
 
 	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, indicator("typing"), false)
 	if err != nil || !send.Ok {
@@ -217,9 +221,18 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 		if partial.ToolCalls != nil {
 			streamingContent += "\n"
 			loading = indicator("tool")
-		} else {
+		} else if chunk != nil {
 			streamingContent += chunk.(string)
 			bufferedContent += chunk.(string)
+		}
+
+		// Capture trace if present
+		if len(partial.Trace) > 0 {
+			if partial.ToolCalls != nil {
+				log.Printf("[ReAct] Captured trace step: %v", partial.Trace[len(partial.Trace)-1].Action)
+				streamingContent += "\n--use " + partial.Trace[len(partial.Trace)-1].Action + " tool--\n\n"
+			}
+			traceSteps = partial.Trace
 		}
 
 		if len(streamingContent) >= maxTelegramLength-100 {
@@ -247,7 +260,7 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 	})
 
 	if err != nil {
-		return nil, "", err
+		return nil, provider.Message{}, err
 	}
 
 	editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model, config.WatermarkModel), true)
@@ -255,11 +268,17 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 		_, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model, config.WatermarkModel), false)
 		if err != nil {
 			log.Println(err)
-			return nil, "", err
+			return nil, provider.Message{}, err
 		}
 	}
-	err = nil
-	return editMessage, streamingContent, err
+
+	// Return full message with trace
+	response := provider.Message{
+		Role:    "assistant",
+		Content: streamingContent,
+		Trace:   traceSteps,
+	}
+	return editMessage, response, nil
 }
 
 func (r *BotServiceImpl) GenerateConversationTitle(user *model.User, messages []provider.Message) (string, error) {
