@@ -20,6 +20,16 @@ type Message struct {
 	Action      string `json:"action,omitempty" bson:"action,omitempty"`
 	ActionInput string `json:"action_input,omitempty" bson:"action_input,omitempty"`
 	Observation string `json:"observation,omitempty" bson:"observation,omitempty"`
+	// Trace stores all ReAct steps as JSON array for final response
+	Trace []ReactStep `json:"trace,omitempty" bson:"trace,omitempty"`
+}
+
+// ReactStep represents a single step in the ReAct loop
+type ReactStep struct {
+	Thought     string `json:"thought,omitempty" bson:"thought,omitempty"`
+	Action      string `json:"action,omitempty" bson:"action,omitempty"`
+	ActionInput string `json:"action_input,omitempty" bson:"action_input,omitempty"`
+	Observation string `json:"observation,omitempty" bson:"observation,omitempty"`
 }
 
 type ToolCall struct {
