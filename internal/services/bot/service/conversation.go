@@ -215,6 +215,7 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 		loading := indicator("typing")
 		chunk := partial.Content
 		if partial.ToolCalls != nil {
+			streamingContent += "\n"
 			loading = indicator("tool")
 		} else {
 			streamingContent += chunk.(string)
