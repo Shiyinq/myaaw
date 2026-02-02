@@ -1,5 +1,5 @@
 ---
-name: Cashflow Tool
+name: Cashflow 
 description: Manage personal finances (income, expense, analytics).
 ---
 
