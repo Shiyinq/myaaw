@@ -532,9 +532,29 @@ func (g *GeminiProvider) chatStreamWithIteration(modelName string, messages []Me
 		bufferJSON = ""
 
 		if g.hasFunctionCall(response) {
+			// PREVIEW CALLBACK: Notify user distinctively that we ARE ABOUT TO execute a tool
+			// This triggers the "Using [tool]..." indicator immediately while the tool runs (blocking)
+			g.sendToolPreviewCallback(response.Candidates[0].Content, traceSteps, callback)
+
 			respTool, step := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts, messages)
 			// Accumulate trace steps
 			traceSteps = append(traceSteps, step)
+
+			// Notify user about the tool execution immediately
+			// Reuse contentToMessage to create basic message structure
+			toolMsg := contentToMessage(response.Candidates[0].Content)
+			toolMsg.Trace = traceSteps
+
+			// Only ensure ToolCalls is not nil to trigger conversation logic
+			// (contentToMessage returns empty slice []ToolCall{} for function calls, which is not nil)
+			if toolMsg.ToolCalls == nil {
+				toolMsg.ToolCalls = []ToolCall{}
+			}
+
+			if err := callback(toolMsg); err != nil {
+				return fmt.Errorf("callback error: %w", err)
+			}
+
 			return g.chatStreamWithIteration(modelName, respTool, callback, iteration+1, traceSteps)
 		}
 	}
@@ -560,6 +580,34 @@ func (g *GeminiProvider) Models() ([]string, error) {
 	}
 
 	return models, nil
+}
+
+func (g *GeminiProvider) sendToolPreviewCallback(content GeminiContent, traceSteps []ReactStep, callback func(Message) error) {
+	var toolName string
+	for _, part := range content.Parts {
+		if part.FunctionCall != nil {
+			toolName = part.FunctionCall.Name
+			break
+		}
+	}
+
+	if toolName != "" {
+		previewStep := ReactStep{
+			Action: toolName,
+		}
+		// Create a copy of traceSteps to avoid modifying the original slice in recursive calls
+		previewTrace := make([]ReactStep, len(traceSteps)+1)
+		copy(previewTrace, traceSteps)
+		previewTrace[len(traceSteps)] = previewStep
+
+		previewMsg := contentToMessage(content)
+		previewMsg.Trace = previewTrace
+		if previewMsg.ToolCalls == nil {
+			previewMsg.ToolCalls = []ToolCall{}
+		}
+		// Ignore error for preview callback
+		_ = callback(previewMsg)
+	}
 }
 
 func (g *GeminiProvider) geminiModels() (*GeminiModels, error) {

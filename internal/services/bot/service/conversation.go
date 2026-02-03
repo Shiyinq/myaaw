@@ -195,7 +195,7 @@ func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat,
 
 func indicator(text string) string {
 	if text == "tool" {
-		return "⚙️ Using tool..."
+		return "🛠️ Using "
 	}
 	return "✨ Typing..."
 }
@@ -208,6 +208,7 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 	bufferedContent := ""
 	maxTelegramLength := 4096
 	var traceSteps []provider.ReactStep
+	lastTraceLen := 0
 
 	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, indicator("typing"), false)
 	if err != nil || !send.Ok {
@@ -219,8 +220,12 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 		loading := indicator("typing")
 		chunk := partial.Content
 		if partial.ToolCalls != nil {
-			streamingContent += "\n"
-			loading = indicator("tool")
+			// streamingContent += "\n"
+			toolName := "tool"
+			if len(partial.Trace) > 0 {
+				toolName = partial.Trace[len(partial.Trace)-1].Action
+			}
+			loading = indicator("tool") + toolName + "..."
 		} else if chunk != nil {
 			streamingContent += chunk.(string)
 			bufferedContent += chunk.(string)
@@ -228,9 +233,19 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 
 		// Capture trace if present
 		if len(partial.Trace) > 0 {
-			if partial.ToolCalls != nil {
-				log.Printf("[ReAct] Captured trace step: %v", partial.Trace[len(partial.Trace)-1].Action)
-				streamingContent += "\n--use " + partial.Trace[len(partial.Trace)-1].Action + " tool--\n\n"
+			// Only process new steps
+			if len(partial.Trace) > lastTraceLen {
+				latestStep := partial.Trace[len(partial.Trace)-1]
+				// Only print if Observation is not empty (tool execution finished)
+				if latestStep.Observation != "" {
+					if partial.ToolCalls != nil {
+						action := latestStep.Action
+						log.Printf("[ReAct] Captured trace tool: %v", action)
+						streamingContent += "\n\n🛠️ " + action + "\n\n"
+						loading = indicator("typing")
+					}
+					lastTraceLen = len(partial.Trace)
+				}
 			}
 			traceSteps = partial.Trace
 		}
