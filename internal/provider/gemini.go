@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"strings"
 	"teo/internal/tools"
 	"time"
@@ -151,22 +150,56 @@ func MessagesToContents(messages []Message) []GeminiContent {
 
 			contents = append(contents, content)
 		} else {
+			// Check if it's a ToolCall message from Assistant which Gemini expects?
+
 			geminiPart, ok := message.Content.(GeminiPart)
-			if !ok {
-				log.Println("unknown type content")
-			}
-
-			content = GeminiContent{
-				Role: role,
-				Parts: []GeminiPart{
-					{
-						FunctionCall:     geminiPart.FunctionCall,
-						FunctionResponse: geminiPart.FunctionResponse,
+			if ok {
+				content = GeminiContent{
+					Role: role,
+					Parts: []GeminiPart{
+						{
+							FunctionCall:     geminiPart.FunctionCall,
+							FunctionResponse: geminiPart.FunctionResponse,
+						},
 					},
-				},
+				}
+				contents = append(contents, content)
 			}
 
-			contents = append(contents, content)
+			// If message has ToolCalls, we should add them as FunctionCall parts (if role is model)
+			if len(message.ToolCalls) > 0 && role == "model" {
+				// Reconstruct FunctionCall parts from ToolCalls for history
+				var parts []GeminiPart
+				// Also include text if any?
+				if contentStr != "" {
+					parts = append(parts, GeminiPart{Text: contentStr})
+				}
+
+				for _, tc := range message.ToolCalls {
+					// Arguments needs to be map[string]interface{}.
+
+					argsMap, ok := tc.Function.Arguments.(map[string]interface{})
+					if !ok {
+						// If it's not a map, maybe string?
+						if strArgs, isStr := tc.Function.Arguments.(string); isStr {
+							_ = json.Unmarshal([]byte(strArgs), &argsMap)
+						}
+					}
+
+					parts = append(parts, GeminiPart{
+						FunctionCall: &GeminiFunctionCall{
+							Name: tc.Function.Name,
+							Args: argsMap,
+						},
+					})
+				}
+
+				content = GeminiContent{
+					Role:  role,
+					Parts: parts,
+				}
+				contents = append(contents, content)
+			}
 		}
 	}
 
@@ -179,26 +212,37 @@ func contentToMessage(content GeminiContent) Message {
 		role = "assistant"
 	}
 
-	// Guard against empty Parts
-	if len(content.Parts) == 0 {
-		return Message{
-			Role:    role,
-			Content: "",
+	var textParts []string
+	var toolCalls []ToolCall
+
+	for _, part := range content.Parts {
+		if part.Text != "" {
+			textParts = append(textParts, part.Text)
+		}
+		if part.FunctionCall != nil {
+			toolCalls = append(toolCalls, ToolCall{
+				Type: "function",
+				Function: FunctionCall{
+					Name:      part.FunctionCall.Name,
+					Arguments: part.FunctionCall.Args,
+				},
+			})
 		}
 	}
 
-	if content.Parts[0].FunctionCall != nil {
-		return Message{
-			Role:      role,
-			Content:   "",
-			ToolCalls: []ToolCall{},
-		}
-	} else {
-		return Message{
-			Role:    role,
-			Content: content.Parts[0].Text,
-		}
+	msg := Message{
+		Role:      role,
+		ToolCalls: toolCalls,
 	}
+
+	if len(textParts) > 0 {
+		msg.Content = strings.Join(textParts, "\n")
+	} else if len(toolCalls) == 0 {
+		// Empty content?
+		msg.Content = ""
+	}
+
+	return msg
 }
 
 func (g *GeminiProvider) ProviderName() string {
@@ -228,152 +272,7 @@ func (g *GeminiProvider) getToolsTransform() []map[string]interface{} {
 	return flattenedTools
 }
 
-func (g *GeminiProvider) hasFunctionCall(response GeminiGenerateContent) bool {
-	for _, candidate := range response.Candidates {
-		for _, part := range candidate.Content.Parts {
-			if part.FunctionCall != nil {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (g *GeminiProvider) geminiContentsToMessages(contents []GeminiContent) []Message {
-	var messages []Message
-
-	for _, content := range contents {
-		role := content.Role
-		if role == "model" {
-			role = "assistant"
-		}
-
-		message := Message{
-			Role: role,
-		}
-
-		for _, part := range content.Parts {
-			if part.FunctionCall != nil {
-				// ReAct: This is an Action
-				argsJSON, _ := json.Marshal(part.FunctionCall.Args)
-				message.Action = part.FunctionCall.Name
-				message.ActionInput = string(argsJSON)
-				message.Thought = fmt.Sprintf("Using tool: %s", part.FunctionCall.Name)
-				message.Content = part
-			} else if part.FunctionResponse != nil {
-				// ReAct: This is an Observation
-				role = "tool"
-				message.Role = role
-				message.Name = part.FunctionResponse.Name
-				if resp, ok := part.FunctionResponse.Response["response"].(string); ok {
-					message.Observation = resp
-					message.Content = resp
-				} else {
-					obsJSON, _ := json.Marshal(part.FunctionResponse.Response)
-					message.Observation = string(obsJSON)
-					message.Content = string(obsJSON)
-				}
-			} else {
-				// Normal text response
-				message.Content = part.Text
-			}
-		}
-
-		messages = append(messages, message)
-	}
-
-	return messages
-}
-
-func (g *GeminiProvider) geminiToolCalls(messages []GeminiContent, parts []GeminiPart, originalMessages []Message) ([]Message, ReactStep) {
-	var step ReactStep
-	for _, part := range parts {
-		if part.FunctionCall != nil {
-			functionName := part.FunctionCall.Name
-			functionArgs := part.FunctionCall.Args
-			argsJSON, err := json.Marshal(functionArgs)
-			if err != nil {
-				fmt.Println("Error marshaling functionArgs:", err)
-				continue
-			}
-
-			// Log ReAct Trace using shared functions
-			thought := GenerateThought(functionName)
-			LogThought(thought)
-			LogAction(functionName, string(argsJSON))
-
-			tool := tools.NewTools(functionName, string(argsJSON))
-
-			LogObservation(tool)
-
-			// Collect trace step
-			step = ReactStep{
-				Thought:     thought,
-				Action:      functionName,
-				ActionInput: string(argsJSON),
-				Observation: tool,
-			}
-
-			responseTool := []GeminiContent{
-				{
-					Role:  "model",
-					Parts: parts,
-				},
-				{
-					Role: "user",
-					Parts: []GeminiPart{
-						{
-							FunctionResponse: &GeminiFunctionResponse{
-								Name: functionName,
-								Response: map[string]interface{}{
-									"response": tool,
-								},
-							},
-						},
-					},
-				},
-				// Prompt LLM to think about the observation and plan next step
-				{
-					Role: "user",
-					Parts: []GeminiPart{
-						{
-							Text: ThoughtPrompt,
-						},
-					},
-				},
-			}
-			messages = append(messages, responseTool...)
-		}
-	}
-
-	// Convert back to Messages and prepend system prompt if it exists
-	result := g.geminiContentsToMessages(messages)
-
-	// Prepend system prompt from original messages
-	if len(originalMessages) > 0 && originalMessages[0].Role == "system" {
-		result = append([]Message{originalMessages[0]}, result...)
-	}
-
-	return result, step
-}
-
 func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, error) {
-	return g.chatWithIteration(modelName, messages, 0, nil)
-}
-
-func (g *GeminiProvider) chatWithIteration(modelName string, messages []Message, iteration int, traceSteps []ReactStep) (Message, error) {
-	// Check max iterations using shared function
-	if IsMaxIterationsReached(iteration, DefaultReactConfig) {
-		msg := Message{
-			Role:    "assistant",
-			Content: MaxIterationsMessage,
-			Trace:   traceSteps,
-		}
-		return msg, nil
-	}
-
-	LogIteration(iteration, DefaultReactConfig, false)
-
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
@@ -392,8 +291,6 @@ func (g *GeminiProvider) chatWithIteration(modelName string, messages []Message,
 	}
 	if len(messages) > 0 && messages[0].Role == "system" {
 		systemText := messages[0].Content.(string)
-		// Add step awareness warning using shared function
-		systemText += GetStepAwarenessWarning(iteration, DefaultReactConfig)
 
 		request.SystemInstruction = &GeminiContent{
 			Parts: []GeminiPart{
@@ -416,39 +313,20 @@ func (g *GeminiProvider) chatWithIteration(modelName string, messages []Message,
 		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
 	}
 
-	if g.hasFunctionCall(response) {
-		respTool, step := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts, messages)
-		// Accumulate trace steps
-		traceSteps = append(traceSteps, step)
-		return g.chatWithIteration(modelName, respTool, iteration+1, traceSteps)
-	}
-
-	if response.Candidates[0].FinishReason == "SAFETY" {
+	// Check safety
+	if len(response.Candidates) > 0 && response.Candidates[0].FinishReason == "SAFETY" {
 		return Message{}, fmt.Errorf("SAFETY")
 	}
 
-	// Final response - include collected trace
+	if len(response.Candidates) == 0 {
+		return Message{}, fmt.Errorf("no candidates returned")
+	}
+
 	finalMsg := contentToMessage(response.Candidates[0].Content)
-	finalMsg.Trace = traceSteps
 	return finalMsg, nil
 }
 
 func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
-	return g.chatStreamWithIteration(modelName, messages, callback, 0, nil)
-}
-
-func (g *GeminiProvider) chatStreamWithIteration(modelName string, messages []Message, callback func(Message) error, iteration int, traceSteps []ReactStep) error {
-	// Check max iterations using shared function
-	if IsMaxIterationsReached(iteration, DefaultReactConfig) {
-		return callback(Message{
-			Role:    "assistant",
-			Content: MaxIterationsMessage,
-			Trace:   traceSteps,
-		})
-	}
-
-	LogIteration(iteration, DefaultReactConfig, true)
-
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
@@ -468,10 +346,6 @@ func (g *GeminiProvider) chatStreamWithIteration(modelName string, messages []Me
 
 	if len(messages) > 0 && messages[0].Role == "system" {
 		systemText := messages[0].Content.(string)
-
-		// Add step awareness warning using shared function
-		systemText += GetStepAwarenessWarning(iteration, DefaultReactConfig)
-
 		request.SystemInstruction = &GeminiContent{
 			Parts: []GeminiPart{
 				{
@@ -482,11 +356,19 @@ func (g *GeminiProvider) chatStreamWithIteration(modelName string, messages []Me
 		}
 	}
 
-	res, _ := client.R().
+	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(request).
 		SetDoNotParseResponse(true).
 		Post(g.baseURL + fmt.Sprintf("/v1beta/%s:streamGenerateContent?key=%s", g.DefaultModel(modelName), g.apiKey))
+
+	if err != nil {
+		return fmt.Errorf("error in stream request: %w", err)
+	}
+
+	if res == nil {
+		return fmt.Errorf("empty response")
+	}
 
 	defer res.RawBody().Close()
 
@@ -517,46 +399,16 @@ func (g *GeminiProvider) chatStreamWithIteration(modelName string, messages []Me
 			return fmt.Errorf("error fetching stream response: %v", bufferJSON)
 		}
 
-		partialMessage := contentToMessage(response.Candidates[0].Content)
+		if len(response.Candidates) > 0 {
+			partialMessage := contentToMessage(response.Candidates[0].Content)
 
-		// Attach accumulated trace steps to partial message
-		if len(traceSteps) > 0 {
-			partialMessage.Trace = traceSteps
-		}
-
-		err = callback(partialMessage)
-		if err != nil {
-			return fmt.Errorf("error in callback: %w", err)
+			err = callback(partialMessage)
+			if err != nil {
+				return fmt.Errorf("error in callback: %w", err)
+			}
 		}
 
 		bufferJSON = ""
-
-		if g.hasFunctionCall(response) {
-			// PREVIEW CALLBACK: Notify user distinctively that we ARE ABOUT TO execute a tool
-			// This triggers the "Using [tool]..." indicator immediately while the tool runs (blocking)
-			g.sendToolPreviewCallback(response.Candidates[0].Content, traceSteps, callback)
-
-			respTool, step := g.geminiToolCalls(MessagesToContents(messages), response.Candidates[0].Content.Parts, messages)
-			// Accumulate trace steps
-			traceSteps = append(traceSteps, step)
-
-			// Notify user about the tool execution immediately
-			// Reuse contentToMessage to create basic message structure
-			toolMsg := contentToMessage(response.Candidates[0].Content)
-			toolMsg.Trace = traceSteps
-
-			// Only ensure ToolCalls is not nil to trigger conversation logic
-			// (contentToMessage returns empty slice []ToolCall{} for function calls, which is not nil)
-			if toolMsg.ToolCalls == nil {
-				toolMsg.ToolCalls = []ToolCall{}
-			}
-
-			if err := callback(toolMsg); err != nil {
-				return fmt.Errorf("callback error: %w", err)
-			}
-
-			return g.chatStreamWithIteration(modelName, respTool, callback, iteration+1, traceSteps)
-		}
 	}
 
 	return nil
@@ -580,34 +432,6 @@ func (g *GeminiProvider) Models() ([]string, error) {
 	}
 
 	return models, nil
-}
-
-func (g *GeminiProvider) sendToolPreviewCallback(content GeminiContent, traceSteps []ReactStep, callback func(Message) error) {
-	var toolName string
-	for _, part := range content.Parts {
-		if part.FunctionCall != nil {
-			toolName = part.FunctionCall.Name
-			break
-		}
-	}
-
-	if toolName != "" {
-		previewStep := ReactStep{
-			Action: toolName,
-		}
-		// Create a copy of traceSteps to avoid modifying the original slice in recursive calls
-		previewTrace := make([]ReactStep, len(traceSteps)+1)
-		copy(previewTrace, traceSteps)
-		previewTrace[len(traceSteps)] = previewStep
-
-		previewMsg := contentToMessage(content)
-		previewMsg.Trace = previewTrace
-		if previewMsg.ToolCalls == nil {
-			previewMsg.ToolCalls = []ToolCall{}
-		}
-		// Ignore error for preview callback
-		_ = callback(previewMsg)
-	}
 }
 
 func (g *GeminiProvider) geminiModels() (*GeminiModels, error) {

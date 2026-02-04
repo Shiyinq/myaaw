@@ -2,6 +2,7 @@ package service
 
 import (
 	"log"
+	"teo/internal/agent"
 	"teo/internal/config"
 	"teo/internal/pkg"
 	"teo/internal/provider"
@@ -22,6 +23,7 @@ type BotServiceImpl struct {
 	conversationRepo repository.ConversationRepository
 	llmProvider      provider.LLMProvider
 	ttsProvider      provider.TTSProvider
+	agent            agent.AgentProvider
 }
 
 func NewBotService(userRepo repository.UserRepository, conversationRepo repository.ConversationRepository) BotService {
@@ -35,11 +37,14 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 		log.Printf("Warning: Error creating TTS provider %s: %v. TTS functionality might be affected or disabled depending on message handling logic.", config.TTSProviderName, err)
 	}
 
+	ag := agent.NewAgent(llmProvider)
+
 	return &BotServiceImpl{
 		userRepo:         userRepo,
 		conversationRepo: conversationRepo,
 		llmProvider:      llmProvider,
 		ttsProvider:      ttsProvider,
+		agent:            ag,
 	}
 }
 
