@@ -127,7 +127,8 @@ func (r *BotServiceImpl) factoryChat(user *model.User, chat *pkg.TelegramIncommi
 }
 
 func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, provider.Message, error) {
-	res, err := r.llmProvider.Chat(user.Model, messages)
+	// Use Agent for iteration
+	res, err := r.agent.Run(user.Model, messages)
 
 	if err != nil {
 		return nil, provider.Message{}, err
@@ -209,6 +210,7 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 	maxTelegramLength := 4096
 	var traceSteps []provider.ReactStep
 	lastTraceLen := 0
+	lastLoading := ""
 
 	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, indicator("typing"), false)
 	if err != nil || !send.Ok {
@@ -216,14 +218,16 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 	}
 
 	messageId = send.Result.MessageId
-	err = r.llmProvider.ChatStream(user.Model, messages, func(partial provider.Message) error {
+
+	// Use Agent for streaming iteration
+	err = r.agent.RunStream(user.Model, messages, func(partial provider.Message) error {
 		loading := indicator("typing")
 		chunk := partial.Content
 		if partial.ToolCalls != nil {
 			// streamingContent += "\n"
 			toolName := "tool"
-			if len(partial.Trace) > 0 {
-				toolName = partial.Trace[len(partial.Trace)-1].Action
+			if len(partial.ToolCalls) > 0 {
+				toolName = partial.ToolCalls[0].Function.Name
 			}
 			loading = indicator("tool") + toolName + "..."
 		} else if chunk != nil {
@@ -233,20 +237,18 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 
 		// Capture trace if present
 		if len(partial.Trace) > 0 {
-			// Only process new steps
-			if len(partial.Trace) > lastTraceLen {
-				latestStep := partial.Trace[len(partial.Trace)-1]
+			// Iterate through all new steps since last check
+			for i := lastTraceLen; i < len(partial.Trace); i++ {
+				step := partial.Trace[i]
 				// Only print if Observation is not empty (tool execution finished)
-				if latestStep.Observation != "" {
-					if partial.ToolCalls != nil {
-						action := latestStep.Action
-						log.Printf("[ReAct] Captured trace tool: %v", action)
-						streamingContent += "\n\n🛠️ " + action + "\n\n"
-						loading = indicator("typing")
-					}
-					lastTraceLen = len(partial.Trace)
+				if step.Observation != "" {
+					action := step.Action
+					log.Printf("[ReAct] Captured trace tool: %v", action)
+					streamingContent += "\n\n🛠️ " + action + "\n\n"
+					loading = indicator("typing")
 				}
 			}
+			lastTraceLen = len(partial.Trace)
 			traceSteps = partial.Trace
 		}
 
@@ -260,10 +262,11 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 			} else {
 				messageId = newSend.Result.MessageId
 			}
-		} else if len(bufferedContent) >= bufferThreshold || partial.ToolCalls != nil {
+		} else if len(bufferedContent) >= bufferThreshold || partial.ToolCalls != nil || lastLoading != loading {
 			editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n\n"+loading, false)
 
 			lastStreamingContent = streamingContent
+			lastLoading = loading
 
 			if err != nil || !editMessage.Ok {
 				log.Println(err)
