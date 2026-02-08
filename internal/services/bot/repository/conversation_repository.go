@@ -2,11 +2,11 @@ package repository
 
 import (
 	"context"
-	"teo/internal/provider"
+	"myaaw/internal/provider"
 	"time"
 
-	"teo/internal/pkg"
-	"teo/internal/services/bot/model"
+	"myaaw/internal/pkg"
+	"myaaw/internal/services/bot/model"
 
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/bson"

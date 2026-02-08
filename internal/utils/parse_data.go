@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"teo/internal/services/bot/model"
+	"myaaw/internal/services/bot/model"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"

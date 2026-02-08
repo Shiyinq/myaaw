@@ -1,12 +1,12 @@
 basePath: /
 definitions:
-  teo_internal_common.ErrorResponse:
+  myaaw_internal_common.ErrorResponse:
     properties:
       error:
         example: error message
         type: string
     type: object
-  teo_internal_pkg.Chat:
+  myaaw_internal_pkg.Chat:
     properties:
       first_name:
         type: string
@@ -17,7 +17,7 @@ definitions:
       username:
         type: string
     type: object
-  teo_internal_pkg.Document:
+  myaaw_internal_pkg.Document:
     properties:
       file_id:
         type: string
@@ -30,11 +30,11 @@ definitions:
       mime_type:
         type: string
       thumb:
-        $ref: '#/definitions/teo_internal_pkg.Thumbnail'
+        $ref: '#/definitions/myaaw_internal_pkg.Thumbnail'
       thumbnail:
-        $ref: '#/definitions/teo_internal_pkg.Thumbnail'
+        $ref: '#/definitions/myaaw_internal_pkg.Thumbnail'
     type: object
-  teo_internal_pkg.From:
+  myaaw_internal_pkg.From:
     properties:
       first_name:
         type: string
@@ -47,7 +47,7 @@ definitions:
       username:
         type: string
     type: object
-  teo_internal_pkg.Photo:
+  myaaw_internal_pkg.Photo:
     properties:
       file_id:
         type: string
@@ -60,14 +60,37 @@ definitions:
       width:
         type: integer
     type: object
-  teo_internal_pkg.TelegramIncommingChat:
+  myaaw_internal_pkg.ReplyToMessage:
+    properties:
+      caption:
+        type: string
+      chat:
+        $ref: '#/definitions/myaaw_internal_pkg.Chat'
+      date:
+        type: integer
+      document:
+        $ref: '#/definitions/myaaw_internal_pkg.Document'
+      from:
+        $ref: '#/definitions/myaaw_internal_pkg.From'
+      message_id:
+        type: integer
+      photo:
+        items:
+          $ref: '#/definitions/myaaw_internal_pkg.Photo'
+        type: array
+      text:
+        type: string
+      voice:
+        $ref: '#/definitions/myaaw_internal_pkg.Voice'
+    type: object
+  myaaw_internal_pkg.TelegramIncommingChat:
     properties:
       message:
-        $ref: '#/definitions/teo_internal_pkg.UserMessage'
+        $ref: '#/definitions/myaaw_internal_pkg.UserMessage'
       update_id:
         type: integer
     type: object
-  teo_internal_pkg.TelegramSendMessageStatus:
+  myaaw_internal_pkg.TelegramSendMessageStatus:
     properties:
       description:
         type: string
@@ -76,9 +99,9 @@ definitions:
       ok:
         type: boolean
       result:
-        $ref: '#/definitions/teo_internal_pkg.UserMessage'
+        $ref: '#/definitions/myaaw_internal_pkg.UserMessage'
     type: object
-  teo_internal_pkg.Thumbnail:
+  myaaw_internal_pkg.Thumbnail:
     properties:
       file_id:
         type: string
@@ -91,30 +114,32 @@ definitions:
       width:
         type: integer
     type: object
-  teo_internal_pkg.UserMessage:
+  myaaw_internal_pkg.UserMessage:
     properties:
       caption:
         type: string
       chat:
-        $ref: '#/definitions/teo_internal_pkg.Chat'
+        $ref: '#/definitions/myaaw_internal_pkg.Chat'
       date:
         type: integer
       document:
-        $ref: '#/definitions/teo_internal_pkg.Document'
+        $ref: '#/definitions/myaaw_internal_pkg.Document'
       from:
-        $ref: '#/definitions/teo_internal_pkg.From'
+        $ref: '#/definitions/myaaw_internal_pkg.From'
       message_id:
         type: integer
       photo:
         items:
-          $ref: '#/definitions/teo_internal_pkg.Photo'
+          $ref: '#/definitions/myaaw_internal_pkg.Photo'
         type: array
+      reply_to_message:
+        $ref: '#/definitions/myaaw_internal_pkg.ReplyToMessage'
       text:
         type: string
       voice:
-        $ref: '#/definitions/teo_internal_pkg.Voice'
+        $ref: '#/definitions/myaaw_internal_pkg.Voice'
     type: object
-  teo_internal_pkg.Voice:
+  myaaw_internal_pkg.Voice:
     properties:
       duration:
         type: integer
@@ -130,8 +155,8 @@ definitions:
 host: localhost:8080
 info:
   contact: {}
-  description: TEO - Integrate your favorite LLM with a Telegram bot.
-  title: TEO API
+  description: Myaaw - Integrate your favorite LLM with a Telegram bot.
+  title: Myaaw API
   version: "1.0"
 paths:
   /webhook/bot:
@@ -145,26 +170,26 @@ paths:
         name: book
         required: true
         schema:
-          $ref: '#/definitions/teo_internal_pkg.TelegramIncommingChat'
+          $ref: '#/definitions/myaaw_internal_pkg.TelegramIncommingChat'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/teo_internal_pkg.TelegramSendMessageStatus'
+            $ref: '#/definitions/myaaw_internal_pkg.TelegramSendMessageStatus'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/teo_internal_common.ErrorResponse'
+            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/teo_internal_common.ErrorResponse'
+            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/teo_internal_common.ErrorResponse'
+            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
       summary: Bot
       tags:
       - Bot
@@ -179,22 +204,22 @@ paths:
         name: book
         required: true
         schema:
-          $ref: '#/definitions/teo_internal_pkg.TelegramIncommingChat'
+          $ref: '#/definitions/myaaw_internal_pkg.TelegramIncommingChat'
       produces:
       - application/json
       responses:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/teo_internal_common.ErrorResponse'
+            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/teo_internal_common.ErrorResponse'
+            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/teo_internal_common.ErrorResponse'
+            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
       summary: Queue
       tags:
       - Bot

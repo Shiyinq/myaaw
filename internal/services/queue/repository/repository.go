@@ -3,8 +3,8 @@ package repository
 import (
 	"encoding/json"
 	"log"
-	"teo/internal/config"
-	"teo/internal/pkg"
+	"myaaw/internal/config"
+	"myaaw/internal/pkg"
 
 	"github.com/rabbitmq/amqp091-go"
 )

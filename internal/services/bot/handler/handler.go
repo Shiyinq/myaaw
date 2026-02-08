@@ -3,10 +3,10 @@ package handler
 import (
 	"fmt"
 	"log"
-	_ "teo/internal/common"
-	"teo/internal/pkg"
-	"teo/internal/services/bot/service"
-	"teo/internal/utils"
+	_ "myaaw/internal/common"
+	"myaaw/internal/pkg"
+	"myaaw/internal/services/bot/service"
+	"myaaw/internal/utils"
 
 	"github.com/gofiber/fiber/v2"
 )

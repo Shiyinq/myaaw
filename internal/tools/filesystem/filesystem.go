@@ -25,7 +25,7 @@ func init() {
 	if err != nil {
 		log.Printf("Warning: Could not get user home directory: %v. Cannot construct default allowed path.", err)
 	} else {
-		combinedPath := filepath.Join(homeDir, "teo_home")
+		combinedPath := filepath.Join(homeDir, "myaaw_home")
 		allowedDirectories = append(allowedDirectories, combinedPath)
 		log.Printf("FileSystemTool: Default allowed directory set to %s", combinedPath)
 	}

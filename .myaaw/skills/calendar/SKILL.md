@@ -29,8 +29,8 @@ The script accepts a single JSON string argument.
 
 1. **Add Schedule:**
    **Bash Command**:
-   `command`: `.venv/bin/python .teo/skills/calendar/scripts/calendar.py '{"action": "add_schedule", "user_id": "u1", "schedule": {"title": "Team Meeting", "description": "Weekly sync", "start_time": "2023-10-27T10:00:00Z", "end_time": "2023-10-27T11:00:00Z", "tags": ["work"]}}'`
+   `command`: `.venv/bin/python .myaaw/skills/calendar/scripts/calendar.py '{"action": "add_schedule", "user_id": "u1", "schedule": {"title": "Team Meeting", "description": "Weekly sync", "start_time": "2023-10-27T10:00:00Z", "end_time": "2023-10-27T11:00:00Z", "tags": ["work"]}}'`
 
 2. **Search by Date:**
    **Bash Command**:
-   `command`: `.venv/bin/python .teo/skills/calendar/scripts/calendar.py '{"action": "search_by_date", "user_id": "u1", "date_range": {"start": "2023-10-27T00:00:00Z", "end": "2023-10-27T23:59:59Z"}}'`
+   `command`: `.venv/bin/python .myaaw/skills/calendar/scripts/calendar.py '{"action": "search_by_date", "user_id": "u1", "date_range": {"start": "2023-10-27T00:00:00Z", "end": "2023-10-27T23:59:59Z"}}'`

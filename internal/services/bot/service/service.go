@@ -2,12 +2,12 @@ package service
 
 import (
 	"log"
-	"teo/internal/agent"
-	"teo/internal/config"
-	"teo/internal/pkg"
-	"teo/internal/provider"
-	"teo/internal/services/bot/model"
-	"teo/internal/services/bot/repository"
+	"myaaw/internal/agent"
+	"myaaw/internal/config"
+	"myaaw/internal/pkg"
+	"myaaw/internal/provider"
+	"myaaw/internal/services/bot/model"
+	"myaaw/internal/services/bot/repository"
 )
 
 type BotService interface {

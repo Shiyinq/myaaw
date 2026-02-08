@@ -1,9 +1,10 @@
-# 🔗 TEO
+# 🔗 Myaaw (My AI Agent Well)
 
-| ![Conversations 1](docs/images/conversations-1.png) | ![Conversations 2](docs/images/conversations-2.png) | ![Conversations 3](docs/images/conversations-3.png) | ![Conversations 4](docs/images/conversations-4.png) |
-|:---:|:---:|:---:|:---:|
+<div align="center">
+  <img src="docs/images/mascot/myaaw.png" alt="Myaaw Mascot" width="200" style="border-radius: 50%;" />
+</div>
 
-Integrate your favorite LLM with a Telegram bot.
+Myaaw is a cat who becomes your personal AI assistant.
 
 
 ## Providers
@@ -26,7 +27,7 @@ Integrate your favorite LLM with a Telegram bot.
 
 
 # Table of Contents
-- [🔗 TEO](#-teo)
+- [🔗 Myaaw](#-myaaw)
   - [Providers](#providers)
   - [Features](#features)
 - [Table of Contents](#table-of-contents)
@@ -135,8 +136,8 @@ http://localhost:15672
 ### Running the Backend
 1. **Clone the Repository**
    ```sh
-   git clone https://github.com/Shiyinq/teo.git
-   cd teo
+   git clone https://github.com/Shiyinq/myaaw.git
+   cd myaaw
    ```
 
 2. **Install Go Modules**
@@ -161,7 +162,7 @@ http://localhost:15672
 
 5. **Run the Development Server**
 
-   This command will start the API and run `cmd/consumer/consumer-teo.go` in the background.
+   This command will start the API and run `cmd/consumer/consumer-myaaw.go` in the background.
    ```sh
    air
    ```
@@ -200,8 +201,8 @@ Before you begin, ensure you have [Docker](https://docs.docker.com/engine/instal
 
 **1. Clone the Repository**
 ```sh
-git clone https://github.com/Shiyinq/teo.git
-cd teo
+git clone https://github.com/Shiyinq/myaaw.git
+cd myaaw
 ```
 
 **2. Create .env File**
@@ -220,12 +221,12 @@ docker compose up --build -d
 Wait a few minutes for the setup to complete, it should look like this:
 
 ```sh
-✔ Network teo_default       Created                                                                                                      0.0s 
-✔ Container teo-rabbitmq-1  Healthy                                                                                                      6.4s 
-✔ Container teo-mongodb-1   Healthy                                                                                                      6.4s 
-✔ Container teo-redis-1     Healthy                                                                                                      5.9s 
-✔ Container teo-consumer-1  Started                                                                                                      6.5s 
-✔ Container teo-backend-1   Started                                                                                                      6.5s 
+✔ Network myaaw_default       Created                                                                                                      0.0s 
+✔ Container myaaw-rabbitmq-1  Healthy                                                                                                      6.4s 
+✔ Container myaaw-mongodb-1   Healthy                                                                                                      6.4s 
+✔ Container myaaw-redis-1     Healthy                                                                                                      5.9s 
+✔ Container myaaw-consumer-1  Started                                                                                                      6.5s 
+✔ Container myaaw-backend-1   Started                                                                                                      6.5s 
 ```
 
 You can access the backend at http://localhost:8080 and the documentation at http://localhost:8080/docs.

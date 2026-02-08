@@ -1,9 +1,9 @@
 package routes
 
 import (
-	"teo/internal/middleware"
-	bot_router "teo/internal/services/bot"
-	queue_router "teo/internal/services/queue"
+	"myaaw/internal/middleware"
+	bot_router "myaaw/internal/services/bot"
+	queue_router "myaaw/internal/services/queue"
 
 	"github.com/gofiber/fiber/v2"
 )

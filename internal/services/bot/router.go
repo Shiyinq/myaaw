@@ -1,10 +1,10 @@
 package bot_router
 
 import (
-	"teo/internal/config"
-	"teo/internal/services/bot/handler"
-	"teo/internal/services/bot/repository"
-	"teo/internal/services/bot/service"
+	"myaaw/internal/config"
+	"myaaw/internal/services/bot/handler"
+	"myaaw/internal/services/bot/repository"
+	"myaaw/internal/services/bot/service"
 
 	"github.com/gofiber/fiber/v2"
 )

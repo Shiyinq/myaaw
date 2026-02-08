@@ -1,10 +1,10 @@
-# TEO Tools Documentation
+# Myaaw Tools Documentation
 
-A comprehensive collection of tools for the TEO application, providing various functionalities for data management, web services, file operations, and more.
+A comprehensive collection of tools for the Myaaw application, providing various functionalities for data management, web services, file operations, and more.
 
 ## Overview
 
-The TEO Tools package contains a set of specialized tools that can be used within the TEO application. Each tool is designed to handle specific tasks and provides a standardized interface for integration.
+The Myaaw Tools package contains a set of specialized tools that can be used within the Myaaw application. Each tool is designed to handle specific tasks and provides a standardized interface for integration.
 
 ## Available Tools
 
@@ -137,7 +137,7 @@ Tools with persistent data store files in the `data/` directory:
 
 ### Security
 
-- **File System Tool**: Restricted to `~/teo_home` directory
+- **File System Tool**: Restricted to `~/myaaw_home` directory
 - **Python Tool**: Temporary execution environment
 - **All Tools**: Input validation and error handling
 
@@ -244,4 +244,4 @@ For issues with specific tools, refer to their individual documentation:
 
 ## License
 
-This tools package is part of the TEO application and follows the same licensing terms.
+This tools package is part of the Myaaw application and follows the same licensing terms.

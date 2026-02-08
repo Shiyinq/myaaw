@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"teo/internal/provider"
-	"teo/internal/tools"
+	"myaaw/internal/provider"
+	"myaaw/internal/tools"
 )
 
 // ReactConfig holds ReAct loop configuration
@@ -25,7 +25,7 @@ var DefaultReactConfig = ReactConfig{
 const ThoughtPrompt = `Based on the tool result above, analyze what happened:
 1. If the tool succeeded: Do you have enough information to answer the user? If yes, provide the final answer. If not, plan your next step carefully.
 2. If the tool failed or returned an error: DON'T GIVE UP! Check your available skills in the system prompt. Read the SKILL.md documentation using filesystem tool to understand how to use them correctly.
-3. Remember: You have skills like Tavily, Scraping, Weather, etc. Use 'filesystem' tool to read '.teo/skills/<skill-name>/SKILL.md' to learn how to use them.
+3. Remember: You have skills like Tavily, Scraping, Weather, etc. Use 'filesystem' tool to read '.myaaw/skills/<skill-name>/SKILL.md' to learn how to use them.
 Never tell the user you can't do something without first trying to read the skill documentation!`
 
 // MaxIterationsMessage returns the message when max iterations is reached

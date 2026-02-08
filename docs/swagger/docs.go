@@ -35,7 +35,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_pkg.TelegramIncommingChat"
+                            "$ref": "#/definitions/myaaw_internal_pkg.TelegramIncommingChat"
                         }
                     }
                 ],
@@ -43,25 +43,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_pkg.TelegramSendMessageStatus"
+                            "$ref": "#/definitions/myaaw_internal_pkg.TelegramSendMessageStatus"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
                         }
                     }
                 }
@@ -87,7 +87,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_pkg.TelegramIncommingChat"
+                            "$ref": "#/definitions/myaaw_internal_pkg.TelegramIncommingChat"
                         }
                     }
                 ],
@@ -95,19 +95,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/teo_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
                         }
                     }
                 }
@@ -115,7 +115,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "teo_internal_common.ErrorResponse": {
+        "myaaw_internal_common.ErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
@@ -124,7 +124,7 @@ const docTemplate = `{
                 }
             }
         },
-        "teo_internal_pkg.Chat": {
+        "myaaw_internal_pkg.Chat": {
             "type": "object",
             "properties": {
                 "first_name": {
@@ -141,7 +141,7 @@ const docTemplate = `{
                 }
             }
         },
-        "teo_internal_pkg.Document": {
+        "myaaw_internal_pkg.Document": {
             "type": "object",
             "properties": {
                 "file_id": {
@@ -160,14 +160,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "thumb": {
-                    "$ref": "#/definitions/teo_internal_pkg.Thumbnail"
+                    "$ref": "#/definitions/myaaw_internal_pkg.Thumbnail"
                 },
                 "thumbnail": {
-                    "$ref": "#/definitions/teo_internal_pkg.Thumbnail"
+                    "$ref": "#/definitions/myaaw_internal_pkg.Thumbnail"
                 }
             }
         },
-        "teo_internal_pkg.From": {
+        "myaaw_internal_pkg.From": {
             "type": "object",
             "properties": {
                 "first_name": {
@@ -187,7 +187,7 @@ const docTemplate = `{
                 }
             }
         },
-        "teo_internal_pkg.Photo": {
+        "myaaw_internal_pkg.Photo": {
             "type": "object",
             "properties": {
                 "file_id": {
@@ -207,18 +207,53 @@ const docTemplate = `{
                 }
             }
         },
-        "teo_internal_pkg.TelegramIncommingChat": {
+        "myaaw_internal_pkg.ReplyToMessage": {
+            "type": "object",
+            "properties": {
+                "caption": {
+                    "type": "string"
+                },
+                "chat": {
+                    "$ref": "#/definitions/myaaw_internal_pkg.Chat"
+                },
+                "date": {
+                    "type": "integer"
+                },
+                "document": {
+                    "$ref": "#/definitions/myaaw_internal_pkg.Document"
+                },
+                "from": {
+                    "$ref": "#/definitions/myaaw_internal_pkg.From"
+                },
+                "message_id": {
+                    "type": "integer"
+                },
+                "photo": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/myaaw_internal_pkg.Photo"
+                    }
+                },
+                "text": {
+                    "type": "string"
+                },
+                "voice": {
+                    "$ref": "#/definitions/myaaw_internal_pkg.Voice"
+                }
+            }
+        },
+        "myaaw_internal_pkg.TelegramIncommingChat": {
             "type": "object",
             "properties": {
                 "message": {
-                    "$ref": "#/definitions/teo_internal_pkg.UserMessage"
+                    "$ref": "#/definitions/myaaw_internal_pkg.UserMessage"
                 },
                 "update_id": {
                     "type": "integer"
                 }
             }
         },
-        "teo_internal_pkg.TelegramSendMessageStatus": {
+        "myaaw_internal_pkg.TelegramSendMessageStatus": {
             "type": "object",
             "properties": {
                 "description": {
@@ -231,11 +266,11 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "result": {
-                    "$ref": "#/definitions/teo_internal_pkg.UserMessage"
+                    "$ref": "#/definitions/myaaw_internal_pkg.UserMessage"
                 }
             }
         },
-        "teo_internal_pkg.Thumbnail": {
+        "myaaw_internal_pkg.Thumbnail": {
             "type": "object",
             "properties": {
                 "file_id": {
@@ -255,23 +290,23 @@ const docTemplate = `{
                 }
             }
         },
-        "teo_internal_pkg.UserMessage": {
+        "myaaw_internal_pkg.UserMessage": {
             "type": "object",
             "properties": {
                 "caption": {
                     "type": "string"
                 },
                 "chat": {
-                    "$ref": "#/definitions/teo_internal_pkg.Chat"
+                    "$ref": "#/definitions/myaaw_internal_pkg.Chat"
                 },
                 "date": {
                     "type": "integer"
                 },
                 "document": {
-                    "$ref": "#/definitions/teo_internal_pkg.Document"
+                    "$ref": "#/definitions/myaaw_internal_pkg.Document"
                 },
                 "from": {
-                    "$ref": "#/definitions/teo_internal_pkg.From"
+                    "$ref": "#/definitions/myaaw_internal_pkg.From"
                 },
                 "message_id": {
                     "type": "integer"
@@ -279,18 +314,21 @@ const docTemplate = `{
                 "photo": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/teo_internal_pkg.Photo"
+                        "$ref": "#/definitions/myaaw_internal_pkg.Photo"
                     }
+                },
+                "reply_to_message": {
+                    "$ref": "#/definitions/myaaw_internal_pkg.ReplyToMessage"
                 },
                 "text": {
                     "type": "string"
                 },
                 "voice": {
-                    "$ref": "#/definitions/teo_internal_pkg.Voice"
+                    "$ref": "#/definitions/myaaw_internal_pkg.Voice"
                 }
             }
         },
-        "teo_internal_pkg.Voice": {
+        "myaaw_internal_pkg.Voice": {
             "type": "object",
             "properties": {
                 "duration": {
@@ -319,8 +357,8 @@ var SwaggerInfo = &swag.Spec{
 	Host:             "localhost:8080",
 	BasePath:         "/",
 	Schemes:          []string{},
-	Title:            "TEO API",
-	Description:      "TEO - Integrate your favorite LLM with a Telegram bot.",
+	Title:            "Myaaw API",
+	Description:      "Myaaw - Integrate your favorite LLM with a Telegram bot.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

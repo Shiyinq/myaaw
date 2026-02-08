@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"teo/internal/services/bot/model"
+	"myaaw/internal/services/bot/model"
 	"time"
 
 	"github.com/redis/go-redis/v9"

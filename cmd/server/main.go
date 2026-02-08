@@ -1,20 +1,20 @@
 package main
 
 import (
-	routes "teo/internal"
+	routes "myaaw/internal"
 
-	"teo/internal/config"
-	"teo/internal/middleware"
+	"myaaw/internal/config"
+	"myaaw/internal/middleware"
 
-	_ "teo/docs/swagger"
+	_ "myaaw/docs/swagger"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/swagger"
 )
 
-// @title		TEO API
+// @title		Myaaw API
 // @version		1.0
-// @description TEO - Integrate your favorite LLM with a Telegram bot.
+// @description Myaaw - Integrate your favorite LLM with a Telegram bot.
 
 // @host		localhost:8080
 // @BasePath	/

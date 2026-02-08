@@ -7,17 +7,17 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"teo/internal/tools/bash"
+	"myaaw/internal/tools/bash"
 
-	// "teo/internal/tools/calendar"
-	// "teo/internal/tools/cashflow"
-	// "teo/internal/tools/converter"
-	"teo/internal/tools/filesystem"
-	// "teo/internal/tools/notes"
-	"teo/internal/tools/python"
-	// "teo/internal/tools/scraping"
-	// "teo/internal/tools/tavily"
-	// "teo/internal/tools/weather"
+	// "myaaw/internal/tools/calendar"
+	// "myaaw/internal/tools/cashflow"
+	// "myaaw/internal/tools/converter"
+	"myaaw/internal/tools/filesystem"
+	// "myaaw/internal/tools/notes"
+	"myaaw/internal/tools/python"
+	// "myaaw/internal/tools/scraping"
+	// "myaaw/internal/tools/tavily"
+	// "myaaw/internal/tools/weather"
 )
 
 type ToolsFactory interface {

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"teo/internal/tools"
+	"myaaw/internal/tools"
 	"time"
 
 	"github.com/go-resty/resty/v2"

@@ -1,7 +1,7 @@
 package model
 
 import (
-	"teo/internal/provider"
+	"myaaw/internal/provider"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"

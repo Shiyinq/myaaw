@@ -32,7 +32,7 @@ func sendToWebhookBot(jsonBody []byte) error {
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(jsonBody).
-		Post(fmt.Sprintf("%s/webhook/bot", os.Getenv("TEO_BASE_URL")))
+		Post(fmt.Sprintf("%s/webhook/bot", os.Getenv("MYAAW_BASE_URL")))
 
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)

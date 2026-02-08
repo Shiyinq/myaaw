@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"teo/internal/config"
-	"teo/internal/pkg"
-	"teo/internal/provider"
-	"teo/internal/services/bot/model"
-	"teo/internal/utils"
+	"myaaw/internal/config"
+	"myaaw/internal/pkg"
+	"myaaw/internal/provider"
+	"myaaw/internal/services/bot/model"
+	"myaaw/internal/utils"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
