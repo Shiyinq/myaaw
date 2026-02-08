@@ -281,7 +281,7 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 		return nil, provider.Message{}, err
 	}
 
-	editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model, config.WatermarkModel), true)
+	editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(utils.ParseTelegramMarkdown(streamingContent), user.Model, config.WatermarkModel), true)
 	if err != nil || !editMessage.Ok {
 		_, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model, config.WatermarkModel), false)
 		if err != nil {
