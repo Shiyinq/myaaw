@@ -103,7 +103,40 @@ func GenerateThought(toolName string) string {
 	return fmt.Sprintf("I need to use the '%s' tool to complete this task", toolName)
 }
 
+// enrichContext adds trace information to the message content (specifically to the assistant's role)
+// ensuring the LLM "remembers" its previous reasoning steps.
+func enrichContext(messages []provider.Message) []provider.Message {
+	enrichedMessages := make([]provider.Message, len(messages))
+	copy(enrichedMessages, messages)
+
+	for i, msg := range enrichedMessages {
+		if len(msg.Trace) > 0 {
+			traceContent := "\n\n---\nTechnical Trace:\n"
+			for _, step := range msg.Trace {
+				if step.Thought != "" {
+					traceContent += fmt.Sprintf("Thought: %s\n", step.Thought)
+				}
+				if step.Action != "" {
+					traceContent += fmt.Sprintf("Action: %s\n", step.Action)
+				}
+				if step.Observation != "" {
+					traceContent += fmt.Sprintf("Observation: %s\n", step.Observation)
+				}
+			}
+			traceContent += "---\n"
+
+			if content, ok := msg.Content.(string); ok {
+				enrichedMessages[i].Content = content + traceContent
+			}
+		}
+	}
+
+	return enrichedMessages
+}
+
 func (a *Agent) Run(modelName string, messages []provider.Message) (provider.Message, error) {
+	// Enrich messages with trace context
+	messages = enrichContext(messages)
 	return a.runWithIteration(modelName, messages, 0, nil)
 }
 
@@ -218,6 +251,8 @@ func argsToString(i interface{}) string {
 }
 
 func (a *Agent) RunStream(modelName string, messages []provider.Message, callback func(provider.Message) error) error {
+	// Enrich messages with trace context
+	messages = enrichContext(messages)
 	return a.runStreamWithIteration(modelName, messages, callback, 0, nil)
 }
 
