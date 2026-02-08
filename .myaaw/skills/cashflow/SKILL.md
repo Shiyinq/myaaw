@@ -28,8 +28,8 @@ The script accepts a single JSON string argument.
 
 1. **Add Transaction:**
    **Bash Command**:
-   `command`: `.venv/bin/python .teo/skills/cashflow/scripts/cashflow.py '{"action": "add_transaction", "user_id": "u1", "transaction": {"type": "expense", "amount": 50000, "category": {"name": "food"}, "description": "Lunch", "date": "2023-10-27T12:00:00Z"}}'`
+   `command`: `.venv/bin/python .myaaw/skills/cashflow/scripts/cashflow.py '{"action": "add_transaction", "user_id": "u1", "transaction": {"type": "expense", "amount": 50000, "category": {"name": "food"}, "description": "Lunch", "date": "2023-10-27T12:00:00Z"}}'`
 
 2. **Get Analytics:**
    **Bash Command**:
-   `command`: `.venv/bin/python .teo/skills/cashflow/scripts/cashflow.py '{"action": "get_analytics", "user_id": "u1", "date_range": {"start": "2023-10-01", "end": "2023-10-31"}}'`
+   `command`: `.venv/bin/python .myaaw/skills/cashflow/scripts/cashflow.py '{"action": "get_analytics", "user_id": "u1", "date_range": {"start": "2023-10-01", "end": "2023-10-31"}}'`

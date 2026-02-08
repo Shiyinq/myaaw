@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"teo/internal/config"
+	"myaaw/internal/config"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"

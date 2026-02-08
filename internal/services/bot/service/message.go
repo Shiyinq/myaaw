@@ -3,9 +3,9 @@ package service
 import (
 	"fmt"
 	"log"
-	"teo/internal/pkg"
-	"teo/internal/provider"
-	"teo/internal/utils"
+	"myaaw/internal/pkg"
+	"myaaw/internal/provider"
+	"myaaw/internal/utils"
 )
 
 type MessageFactory interface {

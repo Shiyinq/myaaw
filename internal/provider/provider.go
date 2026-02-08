@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"teo/internal/config"
-	"teo/internal/tools"
+	"myaaw/internal/config"
+	"myaaw/internal/tools"
 )
 
 type Message struct {
@@ -79,7 +79,7 @@ var LLMproviderFactories = map[string]factoryLLM{
 var defaultLLMModels = map[string]string{
 	"ollama":  "qwen2.5:1.5b-instruct",
 	"openai":  "gpt-4o",
-	"gemini":  "models/gemini-1.5-flash",
+	"gemini":  "models/gemini-3-flash-preview",
 	"groq":    "llama-3.2-1b-preview",
 	"mistral": "ministral-3b-latest",
 }

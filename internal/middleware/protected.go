@@ -3,9 +3,9 @@ package middleware
 import (
 	"fmt"
 	"strconv"
-	"teo/internal/config"
-	"teo/internal/pkg"
-	"teo/internal/utils"
+	"myaaw/internal/config"
+	"myaaw/internal/pkg"
+	"myaaw/internal/utils"
 
 	"github.com/gofiber/fiber/v2"
 )

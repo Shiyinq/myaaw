@@ -9,7 +9,7 @@ Scrape data from a specified URL using the scraping tool.
 
 ## Usage
 
-The skill is executed via a Python script: `.teo/skills/scraping/scripts/scraping.py`.
+The skill is executed via a Python script: `.myaaw/skills/scraping/scripts/scraping.py`.
 It accepts a JSON string as the first argument calling the tool.
 
 ### Arguments
@@ -23,5 +23,5 @@ The input JSON should contain the following fields:
 ### Example
 
 ```bash
-.venv/bin/python .teo/skills/scraping/scripts/scraping.py '{"url": "https://example.com"}'
+.venv/bin/python .myaaw/skills/scraping/scripts/scraping.py '{"url": "https://example.com"}'
 ```

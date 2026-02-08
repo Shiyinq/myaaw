@@ -21,7 +21,7 @@ The File System Tool provides a wide range of file and directory management capa
 
 ### Allowed Directories
 
-By default, the tool is restricted to: `~/teo_home` (user's home directory + "teo_home")
+By default, the tool is restricted to: `~/myaaw_home` (user's home directory + "myaaw_home")
 
 - All operations are validated against allowed directories
 - Path traversal attacks are prevented
@@ -66,7 +66,7 @@ By default, the tool is restricted to: `~/teo_home` (user's home directory + "te
 ```json
 {
   "tool_name": "read_file",
-  "path": "~/teo_home/document.txt"
+  "path": "~/myaaw_home/document.txt"
 }
 ```
 
@@ -75,7 +75,7 @@ By default, the tool is restricted to: `~/teo_home` (user's home directory + "te
 ```json
 {
   "tool_name": "write_file",
-  "path": "~/teo_home/new_file.txt",
+  "path": "~/myaaw_home/new_file.txt",
   "content": "Hello, World!"
 }
 ```
@@ -85,7 +85,7 @@ By default, the tool is restricted to: `~/teo_home` (user's home directory + "te
 ```json
 {
   "tool_name": "edit_file",
-  "path": "~/teo_home/config.txt",
+  "path": "~/myaaw_home/config.txt",
   "edit_start_line": 5,
   "edit_end_line": 7,
   "edit_new_content": "new line 5\nnew line 6\nnew line 7"
@@ -97,7 +97,7 @@ By default, the tool is restricted to: `~/teo_home` (user's home directory + "te
 ```json
 {
   "tool_name": "search_files",
-  "path": "~/teo_home",
+  "path": "~/myaaw_home",
   "pattern": "*.txt"
 }
 ```

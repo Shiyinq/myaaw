@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"teo/internal/tools"
+	"myaaw/internal/tools"
 	"time"
 
 	"github.com/go-resty/resty/v2"

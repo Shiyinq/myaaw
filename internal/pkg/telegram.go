@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"teo/internal/config"
+	"myaaw/internal/config"
 
 	"github.com/go-resty/resty/v2"
 )

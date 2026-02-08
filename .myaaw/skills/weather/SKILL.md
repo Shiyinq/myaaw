@@ -9,7 +9,7 @@ Get the current weather in a given location.
 
 ## Usage
 
-The skill is executed via a Python script: `.teo/skills/weather/scripts/weather.py`.
+The skill is executed via a Python script: `.myaaw/skills/weather/scripts/weather.py`.
 It accepts a JSON string as the first argument calling the tool.
 
 ### Arguments
@@ -24,5 +24,5 @@ The input JSON should contain the following fields:
 ### Example
 
 ```bash
-.venv/bin/python .teo/skills/weather/scripts/weather.py '{"location": "London", "unit": "celsius"}'
+.venv/bin/python .myaaw/skills/weather/scripts/weather.py '{"location": "London", "unit": "celsius"}'
 ```

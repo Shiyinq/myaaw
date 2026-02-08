@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"teo/internal/config"
+	"myaaw/internal/config"
 
 	"golang.ngrok.com/ngrok"
 	cfNgrok "golang.ngrok.com/ngrok/config"

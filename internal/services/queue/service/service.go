@@ -1,8 +1,8 @@
 package service
 
 import (
-	"teo/internal/pkg"
-	"teo/internal/services/queue/repository"
+	"myaaw/internal/pkg"
+	"myaaw/internal/services/queue/repository"
 )
 
 type QueueService interface {

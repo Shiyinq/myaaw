@@ -15,7 +15,7 @@ A tool to convert values between various units (excluding currency). Supported c
 
 ## Usage
 
-The skill is executed via a Python script: `.teo/skills/converter/scripts/converter.py`.
+The skill is executed via a Python script: `.myaaw/skills/converter/scripts/converter.py`.
 It accepts a JSON string as the first argument calling the tool.
 
 ### Arguments
@@ -40,5 +40,5 @@ The input JSON should contain the following fields:
 ### Example
 
 ```bash
-.venv/bin/python .teo/skills/converter/scripts/converter.py '{"value": 100, "from_unit": "celsius", "to_unit": "fahrenheit"}'
+.venv/bin/python .myaaw/skills/converter/scripts/converter.py '{"value": 100, "from_unit": "celsius", "to_unit": "fahrenheit"}'
 ```

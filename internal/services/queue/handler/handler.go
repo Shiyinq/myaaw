@@ -1,10 +1,10 @@
 package handler
 
 import (
-	_ "teo/internal/common"
-	"teo/internal/pkg"
-	"teo/internal/services/queue/service"
-	"teo/internal/utils"
+	_ "myaaw/internal/common"
+	"myaaw/internal/pkg"
+	"myaaw/internal/services/queue/service"
+	"myaaw/internal/utils"
 
 	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"

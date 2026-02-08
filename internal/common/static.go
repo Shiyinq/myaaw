@@ -1,14 +1,14 @@
 package common
 
-import "teo/internal/utils"
+import "myaaw/internal/utils"
 
 func RoleSystemDefault() string {
 	return utils.Prompts()[0]["prompt"].(string)
 }
 
 func CommandStart() string {
-	return "👋 Welcome! I’m Teo your personal assistant.\nHere are some commands to configure me:\n\n" +
-		"**/about** - Info about Teo project\n" +
+	return "👋 Welcome! I’m Myaaw your personal assistant.\nHere are some commands to configure me:\n\n" +
+		"**/about** - Info about Myaaw project\n" +
 		"**/me** - About me and show current config\n\n" +
 		"**/models** - Change the LLM model\n" +
 		"**/system <prompt>** - Set the system prompt\n" +
@@ -18,7 +18,7 @@ func CommandStart() string {
 }
 
 func CommandAbout() string {
-	return "📣 Feel free to contribute to the project!\nhttps://github.com/Shiyinq/teo"
+	return "📣 Feel free to contribute to the project!\nhttps://github.com/Shiyinq/myaaw"
 }
 
 func CommandReset() string {

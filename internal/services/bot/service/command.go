@@ -2,11 +2,11 @@ package service
 
 import (
 	"strconv"
-	"teo/internal/common"
-	"teo/internal/config"
-	"teo/internal/pkg"
-	"teo/internal/services/bot/model"
-	"teo/internal/utils"
+	"myaaw/internal/common"
+	"myaaw/internal/config"
+	"myaaw/internal/pkg"
+	"myaaw/internal/services/bot/model"
+	"myaaw/internal/utils"
 )
 
 type CommandFactory interface {

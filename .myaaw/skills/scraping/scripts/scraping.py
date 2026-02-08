@@ -26,7 +26,7 @@ def main():
         req = urllib.request.Request(api_url)
         # Jina AI might require headers sometimes, but usually works without for basic usage
         # Adding a User-Agent just in case
-        req.add_header('User-Agent', 'Mozilla/5.0 (compatible; TeoSkill/1.0)')
+        req.add_header('User-Agent', 'Mozilla/5.0 (compatible; MyaawSkill/1.0)')
 
         with urllib.request.urlopen(req) as response:
             if response.status != 200:
