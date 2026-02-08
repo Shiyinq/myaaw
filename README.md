@@ -1,7 +1,7 @@
 # 🔗 Myaaw (My AI Agent Well)
 
 <div align="center">
-  <img src="docs/images/mascot/myaaw.png" alt="Myaaw Mascot" width="200" style="border-radius: 50%;" />
+  <img src="docs/images/mascot/myaaw.png" alt="Myaaw Mascot" width="200" />
 </div>
 
 Myaaw is a cat who becomes your personal AI assistant.
