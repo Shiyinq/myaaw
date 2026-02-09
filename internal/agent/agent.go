@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
+	"myaaw/internal/agent/tools"
 	"myaaw/internal/provider"
-	"myaaw/internal/tools"
 )
 
 // ReactConfig holds ReAct loop configuration
