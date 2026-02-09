@@ -60,6 +60,7 @@ type GeminiUsageMetadata struct {
 	PromptTokenCount        int                  `json:"promptTokenCount"`
 	CandidatesTokenCount    int                  `json:"candidatesTokenCount"`
 	TotalTokenCount         int                  `json:"totalTokenCount"`
+	ThoughtsTokenCount      int                  `json:"thoughtsTokenCount"`
 	PromptTokensDetails     []GeminiTokensDetail `json:"promptTokensDetails"`
 	CandidatesTokensDetails []GeminiTokensDetail `json:"candidatesTokensDetails"`
 }
@@ -442,7 +443,7 @@ func (g *GeminiProvider) extractUsage(usage GeminiUsageMetadata) Usage {
 		PromptTokens:     usage.PromptTokenCount,
 		CompletionTokens: usage.CandidatesTokenCount,
 		TotalTokens:      usage.TotalTokenCount,
-		// ThoughtsTokens:   usage.ThoughtsTokenCount, // Not yet available in simple struct
+		ThoughtsTokens:   usage.ThoughtsTokenCount,
 	}
 
 	for _, detail := range usage.PromptTokensDetails {
