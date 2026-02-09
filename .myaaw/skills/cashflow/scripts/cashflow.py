@@ -5,7 +5,7 @@ import datetime
 import time
 
 # Constants
-DATA_DIR = os.path.join("data", "cashflow")
+DATA_DIR = os.path.join(".myaaw", "database", "cashflow")
 DATA_FILE = os.path.join(DATA_DIR, "cashflow.json")
 
 def ensure_data_dir():
