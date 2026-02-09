@@ -3,12 +3,12 @@ package service
 import (
 	"fmt"
 	"log"
-	"strings"
 	"myaaw/internal/config"
 	"myaaw/internal/pkg"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
 	"myaaw/internal/utils"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -142,6 +142,7 @@ func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat,
 		Role:    "assistant",
 		Content: content,
 		Trace:   res.Trace,
+		Usage:   res.Usage,
 	}
 
 	if len(content) > maxTelegramLength {
@@ -219,10 +220,17 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 
 	messageId = send.Result.MessageId
 
+	var finalUsage provider.Usage
 	// Use Agent for streaming iteration
 	err = r.agent.RunStream(user.Model, messages, func(partial provider.Message) error {
 		loading := indicator("typing")
 		chunk := partial.Content
+
+		// Capture Usage if present
+		if partial.Usage.TotalTokens > 0 {
+			finalUsage = partial.Usage
+		}
+
 		if partial.ToolCalls != nil {
 			// streamingContent += "\n"
 			toolName := "tool"
@@ -295,6 +303,7 @@ func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommin
 		Role:    "assistant",
 		Content: streamingContent,
 		Trace:   traceSteps,
+		Usage:   finalUsage,
 	}
 	return editMessage, response, nil
 }

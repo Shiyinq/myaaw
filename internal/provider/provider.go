@@ -22,6 +22,21 @@ type Message struct {
 	Observation string `json:"observation,omitempty" bson:"observation,omitempty"`
 	// Trace stores all ReAct steps as JSON array for final response
 	Trace []ReactStep `json:"trace,omitempty" bson:"trace,omitempty"`
+	// Token Usage
+	Usage Usage `json:"usage,omitempty" bson:"usage,omitempty"`
+}
+
+type UsageDetail struct {
+	Modality   string `json:"modality,omitempty" bson:"modality,omitempty"`
+	TokenCount int    `json:"token_count,omitempty" bson:"token_count,omitempty"`
+}
+
+type Usage struct {
+	PromptTokens     int           `json:"prompt_tokens,omitempty" bson:"prompt_tokens,omitempty"`
+	CompletionTokens int           `json:"completion_tokens,omitempty" bson:"completion_tokens,omitempty"`
+	TotalTokens      int           `json:"total_tokens,omitempty" bson:"total_tokens,omitempty"`
+	ThoughtsTokens   int           `json:"thoughts_tokens,omitempty" bson:"thoughts_tokens,omitempty"`
+	Details          []UsageDetail `json:"details,omitempty" bson:"details,omitempty"`
 }
 
 // ReactStep represents a single step in the ReAct loop

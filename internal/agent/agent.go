@@ -312,6 +312,11 @@ func (a *Agent) runStreamWithIteration(modelName string, messages []provider.Mes
 			accumulatedResponse.Role = msg.Role
 		}
 
+		// Capture Usage
+		if msg.Usage.TotalTokens > 0 {
+			accumulatedResponse.Usage = msg.Usage
+		}
+
 		return callback(msg)
 	}
 
