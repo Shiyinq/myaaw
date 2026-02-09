@@ -33,9 +33,8 @@ Thumbs.db
 # air
 tmp/
 
-# data
-data/*
-!data/.gitkeep
+# database
+.myaaw/database/
 
 # python virtual environment
 .venv

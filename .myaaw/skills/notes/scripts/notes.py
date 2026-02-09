@@ -5,7 +5,7 @@ import datetime
 import glob
 
 # Constants
-DATA_DIR = os.path.join("data", "notes")
+DATA_DIR = os.path.join(".myaaw", "database", "notes")
 
 def ensure_user_dir(user_id):
     user_path = os.path.join(DATA_DIR, user_id)
