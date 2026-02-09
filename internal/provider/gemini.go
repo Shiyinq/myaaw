@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 	"myaaw/internal/tools"
+	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -51,10 +51,17 @@ type GeminiCandidate struct {
 	SafetyRatings []GeminiSafetyRating `json:"safetyRatings"`
 }
 
+type GeminiTokensDetail struct {
+	Modality   string `json:"modality"`
+	TokenCount int    `json:"tokenCount"`
+}
+
 type GeminiUsageMetadata struct {
-	PromptTokenCount     int `json:"promptTokenCount"`
-	CandidatesTokenCount int `json:"candidatesTokenCount"`
-	TotalTokenCount      int `json:"totalTokenCount"`
+	PromptTokenCount        int                  `json:"promptTokenCount"`
+	CandidatesTokenCount    int                  `json:"candidatesTokenCount"`
+	TotalTokenCount         int                  `json:"totalTokenCount"`
+	PromptTokensDetails     []GeminiTokensDetail `json:"promptTokensDetails"`
+	CandidatesTokensDetails []GeminiTokensDetail `json:"candidatesTokensDetails"`
 }
 
 type GeminiGenerateContent struct {
@@ -323,6 +330,10 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	finalMsg := contentToMessage(response.Candidates[0].Content)
+
+	// Populate Usage
+	finalMsg.Usage = g.extractUsage(response.UsageMetadata)
+
 	return finalMsg, nil
 }
 
@@ -401,10 +412,22 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 
 		if len(response.Candidates) > 0 {
 			partialMessage := contentToMessage(response.Candidates[0].Content)
-
 			err = callback(partialMessage)
 			if err != nil {
 				return fmt.Errorf("error in callback: %w", err)
+			}
+		}
+
+		// Check for UsageMetadata (usually at the end or with candidates)
+		if response.UsageMetadata.TotalTokenCount > 0 {
+			usageMsg := Message{
+				Role:  "assistant",
+				Usage: g.extractUsage(response.UsageMetadata),
+			}
+
+			// Send usage update via callback
+			if err := callback(usageMsg); err != nil {
+				return fmt.Errorf("error in callback sending usage: %w", err)
 			}
 		}
 
@@ -412,6 +435,31 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 	}
 
 	return nil
+}
+
+func (g *GeminiProvider) extractUsage(usage GeminiUsageMetadata) Usage {
+	finalUsage := Usage{
+		PromptTokens:     usage.PromptTokenCount,
+		CompletionTokens: usage.CandidatesTokenCount,
+		TotalTokens:      usage.TotalTokenCount,
+		// ThoughtsTokens:   usage.ThoughtsTokenCount, // Not yet available in simple struct
+	}
+
+	for _, detail := range usage.PromptTokensDetails {
+		finalUsage.Details = append(finalUsage.Details, UsageDetail{
+			Modality:   detail.Modality,
+			TokenCount: detail.TokenCount,
+		})
+	}
+
+	for _, detail := range usage.CandidatesTokensDetails {
+		finalUsage.Details = append(finalUsage.Details, UsageDetail{
+			Modality:   detail.Modality,
+			TokenCount: detail.TokenCount,
+		})
+	}
+
+	return finalUsage
 }
 
 func (g *GeminiProvider) Models() ([]string, error) {
