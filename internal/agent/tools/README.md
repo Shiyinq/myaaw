@@ -8,31 +8,7 @@ The Myaaw Tools package contains a set of specialized tools that can be used wit
 
 ## Available Tools
 
-### 1. [Weather Tool](./weather/README.md)
-
-**Function**: `get_current_weather`
-
-- Retrieves current weather information for any location
-- Supports Celsius and Fahrenheit temperature units
-- Uses wttr.in API for real-time weather data
-
-### 2. [Web Scraping Tool](./scraping/README.md)
-
-**Function**: `scrape_web_data`
-
-- Extracts content from web pages using Jina AI Reader API
-- Simple URL-based interface
-- Returns raw extracted content
-
-### 3. [Notes Management Tool](./notes/README.md)
-
-**Function**: `notes`
-
-- Complete note-taking solution with CRUD operations
-- Search functionality and date-based filtering
-- JSON storage with metadata tracking
-
-### 4. [File System Tool](./filesystem/README.md)
+### 1. [File System Tool](./filesystem/README.md)
 
 **Function**: `filesystem`
 
@@ -40,53 +16,21 @@ The Myaaw Tools package contains a set of specialized tools that can be used wit
 - Security-restricted to allowed directories
 - Multiple operations: read, write, edit, move, delete, search
 
-### 5. [Tavily Search Tool](./tavily/README.md)
-
-**Function**: `tavily_search`
-
-- AI-powered web search and content extraction
-- Configurable search depth and topic filtering
-- Requires TAVILY_API_KEY environment variable
-
-### 6. [Time Tool](./time/README.md)
-
-**Function**: `get_time`
-
-- Retrieves current time information for any timezone
-- Full IANA timezone database support
-- Structured JSON output with detailed time components
-
-### 7. [Cash Flow Tool](./cashflow/README.md)
-
-**Function**: `cash_flow`
-
-- Personal/business cash flow management
-- Transaction tracking with categorization
-- Financial analytics and multi-currency support
-
-### 8. [Unit Converter Tool](./converter/README.md)
-
-**Function**: `converter`
-
-- Converts values between different measurement units
-- Supports temperature, distance, mass, volume, time, speed
-- Precise calculations with comprehensive unit support
-
-### 9. [Calendar Tool](./calendar/README.md)
-
-**Function**: `calendar`
-
-- Event scheduling and management
-- Date range, title, and tag-based searches
-- Full CRUD operations for calendar events
-
-### 10. [Python Execution Tool](./python/README.md)
+### 2. [Python Execution Tool](./python/README.md)
 
 **Function**: `execute_python`
 
 - Dynamic Python code execution
 - Package installation support
 - Temporary environment with input/output handling
+
+### 3. [Bash Execution Tool](./bash/README.md)
+
+**Function**: `bash`
+
+- Execute bash commands
+- Manage files and directories
+- Run scripts and utilities
 
 ## Tool Integration
 
@@ -106,16 +50,9 @@ Tools are registered in the `toolsMap` within `NewTools()`:
 
 ```go
 toolsMap: map[string]ToolsFactory{
-    "get_current_weather": weather.NewWeatherTool(),
-    "scrape_web_data":     scraping.NewScrapingTool(),
-    "notes":               notes.NewNotesTool(),
-    "filesystem":          filesystem.NewFileSystemTool(),
-    "tavily_search":       tavily.NewTavilyTool(),
-    "get_time":            time.NewTimeTool(),
-    "cash_flow":           cashflow.NewCashFlowTool(),
-    "calendar":            calendar.NewCalendarTool(),
-    "converter":           converter.NewConverterTool(),
-    "execute_python":      python.NewPythonTool(),
+    "bash":           bash.NewBashTool(),
+    "filesystem":     filesystem.NewFileSystemTool(),
+    "execute_python": python.NewPythonTool(),
 }
 ```
 
@@ -146,16 +83,15 @@ Tools with persistent data store files in the `data/` directory:
 ### Basic Tool Call
 
 ```go
-result := NewTools("get_current_weather", `{"location": "Jakarta", "unit": "celsius"}`)
+result := NewTools("bash", `{"command": "echo 'Hello World'"}`)
 ```
 
 ### Tool with Complex Parameters
 
 ```go
-result := NewTools("notes", `{
-    "action": "POST",
-    "title": "Meeting Notes",
-    "content": "Discussion about project timeline"
+result := NewTools("execute_python", `{
+    "code": "print('Hello World')",
+    "packages": ["requests"]
 }`)
 ```
 
@@ -214,7 +150,7 @@ All tools provide comprehensive error handling:
 
 ### Adding New Tools
 
-1. Create a new directory in `internal/tools/`
+1. Create a new directory in `internal/agent/tools/`
 2. Implement the `ToolsFactory` interface
 3. Add tool registration in `tools.go`
 4. Update `tools.json` with tool schema
@@ -226,21 +162,6 @@ All tools provide comprehensive error handling:
 - Integration tests for tool interactions
 - Error condition testing
 - Performance benchmarking
-
-## Support
-
-For issues with specific tools, refer to their individual documentation:
-
-- [Weather Tool](./weather/README.md)
-- [Web Scraping Tool](./scraping/README.md)
-- [Notes Management Tool](./notes/README.md)
-- [File System Tool](./filesystem/README.md)
-- [Tavily Search Tool](./tavily/README.md)
-- [Time Tool](./time/README.md)
-- [Cash Flow Tool](./cashflow/README.md)
-- [Unit Converter Tool](./converter/README.md)
-- [Calendar Tool](./calendar/README.md)
-- [Python Execution Tool](./python/README.md)
 
 ## License
 

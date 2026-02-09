@@ -5,19 +5,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"myaaw/internal/agent/tools/bash"
+	"myaaw/internal/agent/tools/filesystem"
+	"myaaw/internal/agent/tools/python"
 	"os"
 	"path/filepath"
-	"myaaw/internal/tools/bash"
-
-	// "myaaw/internal/tools/calendar"
-	// "myaaw/internal/tools/cashflow"
-	// "myaaw/internal/tools/converter"
-	"myaaw/internal/tools/filesystem"
-	// "myaaw/internal/tools/notes"
-	"myaaw/internal/tools/python"
-	// "myaaw/internal/tools/scraping"
-	// "myaaw/internal/tools/tavily"
-	// "myaaw/internal/tools/weather"
 )
 
 type ToolsFactory interface {
@@ -31,7 +23,7 @@ func GetTools() []map[string]interface{} {
 		return nil
 	}
 
-	filePath := filepath.Join(workingDir, "internal", "tools", "tools.json")
+	filePath := filepath.Join(workingDir, "internal", "agent", "tools", "tools.json")
 	file, err := os.Open(filePath)
 	if err != nil {
 		fmt.Printf("Error opening schemas.json: %v\n", err)
@@ -62,13 +54,6 @@ type ToolsCalling struct {
 func NewTools(functionName string, arguments string) string {
 	tools := &ToolsCalling{
 		toolsMap: map[string]ToolsFactory{
-			// "get_current_weather": weather.NewWeatherTool(),
-			// "scrape_web_data":     scraping.NewScrapingTool(),
-			// "notes":               notes.NewNotesTool(),
-			// "tavily_search":       tavily.NewTavilyTool(),
-			// "cash_flow":           cashflow.NewCashFlowTool(),
-			// "calendar":            calendar.NewCalendarTool(),
-			// "converter":           converter.NewConverterTool(),
 			"bash":           bash.NewBashTool(),
 			"filesystem":     filesystem.NewFileSystemTool(),
 			"execute_python": python.NewPythonTool(),
