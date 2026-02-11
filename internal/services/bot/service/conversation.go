@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"log"
 	"myaaw/internal/agent"
 	"myaaw/internal/config"
@@ -48,7 +47,7 @@ func (r *BotServiceImpl) contextWindow(history []provider.Message) []provider.Me
 }
 
 func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.TelegramIncommingChat) []provider.Message {
-	userSystem := fmt.Sprintf("%s\n\n# User Info\n\nUser ID: %v (you can use this User ID for tools/skills if needed)\nToday's date is: %s", user.System, user.UserId, utils.GetCurrentTime())
+	userSystem := agent.NewSystemPromptBuilder(int64(user.UserId)).Build()
 	userSystem += agent.GetSkillsInstruction()
 	messages := []provider.Message{
 		{

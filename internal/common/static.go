@@ -1,18 +1,16 @@
 package common
 
-import "myaaw/internal/utils"
+import "myaaw/internal/agent"
 
 func RoleSystemDefault() string {
-	return utils.Prompts()[0]["prompt"].(string)
+	return agent.GetDefaultPersona()
 }
 
 func CommandStart() string {
 	return "👋 Welcome! I’m Myaaw your personal assistant.\nHere are some commands to configure me:\n\n" +
 		"**/about** - Info about Myaaw project\n" +
 		"**/me** - About me and show current config\n\n" +
-		"**/models** - Change the LLM model\n" +
-		"**/system <prompt>** - Set the system prompt\n" +
-		"**/prompts** - List available prompts with specialized tasks\n\n" +
+		"**/models** - Change the LLM model\n\n" +
 		"**/reset** - Reset the history context windows\n\n" +
 		"ℹ️ You can interact using natural language without needing to set commands first."
 }
@@ -63,12 +61,4 @@ func CommandModelsNotFound() string {
 
 func CommandModelsUpdateFailed() string {
 	return "❌ Failed to update the model. Please try again later."
-}
-
-func CommandPromptsArgsNotInt() string {
-	return "⚠️ The Prompt ID must be an integer. Example: /prompts 2"
-}
-
-func CommandPromptsNotFound() string {
-	return "4️⃣0️⃣4️⃣ Template Prompt not found"
 }

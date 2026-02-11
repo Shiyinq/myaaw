@@ -1,12 +1,12 @@
 package service
 
 import (
-	"strconv"
 	"myaaw/internal/common"
 	"myaaw/internal/config"
 	"myaaw/internal/pkg"
 	"myaaw/internal/services/bot/model"
 	"myaaw/internal/utils"
+	"strconv"
 )
 
 type CommandFactory interface {
@@ -35,25 +35,6 @@ func NewAboutCommand(r *BotServiceImpl) CommandFactory {
 
 func (c *AboutCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
 	return true, common.CommandAbout(), nil
-}
-
-type SystemCommand struct {
-	r *BotServiceImpl
-}
-
-func NewSystemCommand(r *BotServiceImpl) CommandFactory {
-	return &SystemCommand{r: r}
-}
-
-func (c *SystemCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
-	if args == "" {
-		return true, common.CommandSystemNeedArgs(), nil
-	}
-	err := c.r.userRepo.UpdateSystem(user.UserId, args)
-	if err != nil {
-		return true, common.CommandSystemFailed(), nil
-	}
-	return true, common.CommandSystem(), nil
 }
 
 type ResetCommand struct {
@@ -122,43 +103,6 @@ func (c *ModelsCommand) HandleCommand(user *model.User, args string) (bool, stri
 	return true, common.CommandModels(), nil
 }
 
-type PromptsCommand struct {
-	r *BotServiceImpl
-}
-
-func NewPromptsCommand(r *BotServiceImpl) CommandFactory {
-	return &PromptsCommand{r: r}
-}
-
-func (c *PromptsCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
-	list, detailPrompts := utils.TemplatePrompts()
-
-	if args == "" {
-		return true, list, nil
-	}
-
-	idPrompt, err := strconv.Atoi(args)
-	if err != nil {
-		return true, common.CommandPromptsArgsNotInt(), nil
-	}
-
-	if idPrompt < 0 || idPrompt >= len(detailPrompts) {
-		return true, common.CommandPromptsNotFound(), nil
-	}
-
-	if prompt, ok := detailPrompts[idPrompt]["prompt"].(string); ok {
-		var cf CommandFactory
-
-		cf = &ResetCommand{r: c.r}
-		cf.HandleCommand(user, args)
-
-		cf = &SystemCommand{r: c.r}
-		return cf.HandleCommand(user, prompt)
-	}
-
-	return true, "", nil
-}
-
 type MeCommand struct {
 	r *BotServiceImpl
 }
@@ -190,15 +134,14 @@ type CommandExecutor struct {
 func NewCommandExecutor(r *BotServiceImpl) *CommandExecutor {
 	return &CommandExecutor{
 		commandMap: map[string]CommandFactory{
-			"start":   NewStartCommand(r),
-			"menu":    NewStartCommand(r),
-			"help":    NewStartCommand(r),
-			"about":   NewAboutCommand(r),
-			"system":  NewSystemCommand(r),
-			"reset":   NewResetCommand(r),
-			"models":  NewModelsCommand(r),
-			"prompts": NewPromptsCommand(r),
-			"me":      NewMeCommand(r),
+			"start":  NewStartCommand(r),
+			"menu":   NewStartCommand(r),
+			"help":   NewStartCommand(r),
+			"about":  NewAboutCommand(r),
+			"reset":  NewResetCommand(r),
+			"models": NewModelsCommand(r),
+
+			"me": NewMeCommand(r),
 		},
 	}
 }
