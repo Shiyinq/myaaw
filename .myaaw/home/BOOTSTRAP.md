@@ -31,6 +31,7 @@ Update these files (located in `.myaaw/home/`) with what you learned:
 
 - `IDENTITY.md` — your name, creature, vibe, emoji
 - `USER.md` — their name, how to address them, timezone, notes
+- `MEMORY.md` — record your first meeting: date, time, and first impressions
 
 Then open `SOUL.md` together and talk about:
 
