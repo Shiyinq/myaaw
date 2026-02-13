@@ -5,7 +5,7 @@ import datetime
 import time
 
 # Constants
-DATA_DIR = os.path.join(".myaaw", "database", "calendar")
+DATA_DIR = os.path.join(os.path.expanduser("~"), ".myaaw", "database", "calendar")
 DATA_FILE = os.path.join(DATA_DIR, "calendar.json")
 
 def ensure_data_dir():
