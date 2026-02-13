@@ -27,7 +27,7 @@
                     },
                     "path": {
                         "type": "string",
-                        "description": "The primary path for the operation (e.g., file to read, directory to list, file to edit for edit_file, path to delete for delete_path). For read_multiple_files, this can be a JSON array of paths or a comma-separated string of paths."
+                        "description": "The primary path for the operation (e.g., file to read, directory to list, file to edit for edit_file, path to delete for delete_path). Required for list_directory and directory_tree. For read_multiple_files, this can be a JSON array of paths or a comma-separated string of paths."
                     },
                     "content": {
                         "type": "string",

@@ -229,6 +229,9 @@ func (f *FileSystemTool) createDirectory(path string) string {
 }
 
 func (f *FileSystemTool) listDirectory(path string) string {
+	if path == "" {
+		return "Error: 'path' argument is required for list_directory."
+	}
 	absPath, err := isAllowed(path)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
@@ -255,6 +258,9 @@ type DirEntry struct {
 }
 
 func (f *FileSystemTool) directoryTree(basePath string) string {
+	if basePath == "" {
+		return "Error: 'path' argument is required for directory_tree."
+	}
 	absBasePath, err := isAllowed(basePath)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
