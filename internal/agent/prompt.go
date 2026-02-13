@@ -15,11 +15,13 @@ type SystemPromptBuilder struct {
 }
 
 func NewSystemPromptBuilder(userID int64) *SystemPromptBuilder {
-	// Use current working directory for .myaaw/home
-	wd, err := os.Getwd()
+	// Ensure .myaaw exists in home directory
+	myaawPath, err := EnsureMyaawConfig()
 	homeDir := ""
 	if err == nil {
-		homeDir = filepath.Join(wd, ".myaaw", "home")
+		homeDir = filepath.Join(myaawPath, "home")
+	} else {
+		fmt.Printf("Error ensuring .myaaw config: %v\n", err)
 	}
 
 	return &SystemPromptBuilder{
@@ -29,11 +31,11 @@ func NewSystemPromptBuilder(userID int64) *SystemPromptBuilder {
 }
 
 func GetDefaultPersona() string {
-	wd, err := os.Getwd()
+	myaawPath, err := EnsureMyaawConfig()
 	if err != nil {
 		return ""
 	}
-	path := filepath.Join(wd, ".myaaw", "home", "AGENTS.md")
+	path := filepath.Join(myaawPath, "home", "AGENTS.md")
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return ""

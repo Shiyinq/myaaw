@@ -9,7 +9,7 @@ Performs a search or extracts content using the Tavily API. Specify 'search' or 
 
 ## Usage
 
-The skill is executed via a Python script: `.myaaw/skills/tavily/scripts/tavily.py`.
+The skill is executed via a Python script: `~/.myaaw/skills/tavily/scripts/tavily.py`.
 It accepts a JSON string as the first argument calling the tool.
 
 ### Arguments
@@ -55,5 +55,5 @@ Requires `TAVILY_API_KEY` to be set in the environment or in a `.env` file in th
 ### Example
 
 ```bash
-.venv/bin/python .myaaw/skills/tavily/scripts/tavily.py '{"action": "search", "search_args": {"query": "AI Agents"}}'
+.venv/bin/python ~/.myaaw/skills/tavily/scripts/tavily.py '{"action": "search", "search_args": {"query": "AI Agents"}}'
 ```

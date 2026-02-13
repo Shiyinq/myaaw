@@ -10,7 +10,7 @@ Run the `time_skill.py` script using the `bash` tool.
 
 **Command:**
 ```bash
-.venv/bin/python .myaaw/skills/time/scripts/time_skill.py [timezone]
+.venv/bin/python ~/.myaaw/skills/time/scripts/time_skill.py [timezone]
 ```
 
 **Arguments:**
@@ -18,10 +18,10 @@ Run the `time_skill.py` script using the `bash` tool.
 
 **Example:**
 To check time in Jakarta:
-`command`: `.venv/bin/python .myaaw/skills/time/scripts/time_skill.py Asia/Jakarta`
+`command`: `.venv/bin/python ~/.myaaw/skills/time/scripts/time_skill.py Asia/Jakarta`
 
 To check local time:
-`command`: `.venv/bin/python .myaaw/skills/time/scripts/time_skill.py`
+`command`: `.venv/bin/python ~/.myaaw/skills/time/scripts/time_skill.py`
 
 **Dependencies:**
 This script requires the `pytz` package. Ensure it is installed in your `.venv`:

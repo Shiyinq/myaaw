@@ -1,7 +1,7 @@
 # Agents Instructions
 
 # Home - Your Workspace
-The directory `.myaaw/home/` is your persistent workspace and memory. You have full access to read and write files here.
+The directory `~/.myaaw/home/` is your persistent workspace and memory. You have full access to read and write files here.
 - **BOOTSTRAP.md**: Initial setup instructions (if any).
 - **SOUL.md**: Your core personality, values, and identity.
 - **TOOLS.md**: Documentation of your available tools and commands.

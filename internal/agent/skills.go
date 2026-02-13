@@ -18,10 +18,14 @@ func GetSkillsInstruction() string {
 	var sb strings.Builder
 	sb.WriteString("\n\n# Agent Skills\n\n")
 	sb.WriteString("You have access to the following skills. You can use the 'filesystem' to read file skill and 'bash' tool to execute script if available.\n")
-	sb.WriteString("To use a skill, you must first read its documentation in the `.myaaw/skills/<skill-name>/SKILL.md` file. \nIf skills need user_id, userId, or userID, you must use User ID from the User Info. \n\n")
+	sb.WriteString("To use a skill, you must first read its documentation in the `~/.myaaw/skills/<skill-name>/SKILL.md` file. \nIf skills need user_id, userId, or userID, you must use User ID from the User Info. \n\n")
 
 	// Walk through the skills directory
-	skillsDir := ".myaaw/skills"
+	myaawPath, err := EnsureMyaawConfig()
+	if err != nil {
+		return ""
+	}
+	skillsDir := filepath.Join(myaawPath, "skills")
 	if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
 		return ""
 	}
@@ -49,7 +53,7 @@ func GetSkillsInstruction() string {
 				if len(parts) >= 3 {
 					var metadata SkillMetadata
 					if err := yaml.Unmarshal([]byte(parts[1]), &metadata); err == nil {
-						sb.WriteString(fmt.Sprintf("- **%s** (`.myaaw/skills/%s`): %s\n", metadata.Name, skillName, metadata.Description))
+						sb.WriteString(fmt.Sprintf("- **%s** (`~/.myaaw/skills/%s`): %s\n", metadata.Name, skillName, metadata.Description))
 					}
 				}
 			}

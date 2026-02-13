@@ -33,12 +33,12 @@ The script implementation accepts a single JSON string argument containing the p
    {"action": "POST", "user_id": "user123", "title": "Meeting Notes", "content": "Discuss project timeline..."}
    ```
    **Bash Command**:
-   `command`: `.venv/bin/python .myaaw/skills/notes/scripts/notes.py '{"action": "POST", "user_id": "user123", "title": "Meeting Notes", "content": "Discuss project timeline..."}'`
+   `command`: `.venv/bin/python ~/.myaaw/skills/notes/scripts/notes.py '{"action": "POST", "user_id": "user123", "title": "Meeting Notes", "content": "Discuss project timeline..."}'`
 
 2. **Get All Notes (GET):**
    **Bash Command**:
-   `command`: `.venv/bin/python .myaaw/skills/notes/scripts/notes.py '{"action": "GET", "user_id": "user123"}'`
+   `command`: `.venv/bin/python ~/.myaaw/skills/notes/scripts/notes.py '{"action": "GET", "user_id": "user123"}'`
 
 3. **Search Notes (SEARCH):**
    **Bash Command**:
-   `command`: `.venv/bin/python .myaaw/skills/notes/scripts/notes.py '{"action": "SEARCH", "user_id": "user123", "search": "timeline"}'`
+   `command`: `.venv/bin/python ~/.myaaw/skills/notes/scripts/notes.py '{"action": "SEARCH", "user_id": "user123", "search": "timeline"}'`
