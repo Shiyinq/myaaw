@@ -25,9 +25,10 @@ func init() {
 	if err != nil {
 		log.Printf("Warning: Could not get user home directory: %v. Cannot construct default allowed path.", err)
 	} else {
-		combinedPath := filepath.Join(homeDir, "myaaw_home")
-		allowedDirectories = append(allowedDirectories, combinedPath)
-		log.Printf("FileSystemTool: Default allowed directory set to %s", combinedPath)
+		// Allow the .myaaw directory in home
+		myaawPath := filepath.Join(homeDir, ".myaaw")
+		allowedDirectories = append(allowedDirectories, myaawPath)
+		log.Printf("FileSystemTool: Allowed directory set to %s", myaawPath)
 	}
 }
 
@@ -54,8 +55,27 @@ type FileSystemArgs struct {
 	DeleteRecursive bool   `json:"delete_recursive"` // Flag for recursive deletion, used by delete_path
 }
 
+func expandPath(path string) (string, error) {
+	if strings.HasPrefix(path, "~") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		if path == "~" {
+			return home, nil
+		}
+		return filepath.Join(home, path[2:]), nil
+	}
+	return path, nil
+}
+
 func isAllowed(path string) (string, error) {
-	absPath, err := filepath.Abs(path)
+	expandedPath, err := expandPath(path)
+	if err != nil {
+		return "", fmt.Errorf("error expanding path: %w", err)
+	}
+
+	absPath, err := filepath.Abs(expandedPath)
 	if err != nil {
 		return "", fmt.Errorf("error getting absolute path: %w", err)
 	}
@@ -66,6 +86,10 @@ func isAllowed(path string) (string, error) {
 			// Log or handle error in resolving allowedDir
 			continue
 		}
+		// Check if absPath starts with allowedDir
+		// We add a separator to allowedDir to ensure we don't match partial folder names
+		// e.g. /foo/bar allowed, /foo/barbaz should not be allowed
+
 		if strings.HasPrefix(absPath, absAllowedDir) {
 			return absPath, nil
 		}
