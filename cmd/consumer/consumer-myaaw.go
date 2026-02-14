@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"myaaw/internal/heartbeat"
 	"os"
 	"time"
 
@@ -81,6 +82,8 @@ func main() {
 		log.Println("Error loading .env file, using environment variables")
 	}
 
+	heartbeatService := heartbeat.NewHeartbeatService()
+
 	rabbitMQURL := os.Getenv("RABBITMQ_URL")
 	conn, ch, err := connectRabbitMQ(rabbitMQURL)
 	if err != nil {
@@ -100,6 +103,10 @@ func main() {
 	)
 	if err != nil {
 		log.Fatalf("Failed to declare queue: %s", err)
+	}
+
+	if heartbeatService != nil {
+		go heartbeatService.Start()
 	}
 
 	err = consumeMessages(ch, q.Name)
