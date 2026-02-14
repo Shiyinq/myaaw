@@ -1,0 +1,8 @@
+{
+    "heartbeat": {
+        "active": true,
+        "every": "30m",
+        "to": "123456789",
+        "channel": "telegram"
+    }
+}
