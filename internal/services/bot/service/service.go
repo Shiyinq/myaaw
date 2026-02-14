@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"log"
 	"myaaw/internal/agent"
 	"myaaw/internal/config"
@@ -8,6 +9,8 @@ import (
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
 	"myaaw/internal/services/bot/repository"
+	"strconv"
+	"time"
 )
 
 type BotService interface {
@@ -16,6 +19,7 @@ type BotService interface {
 	command(user *model.User, chat *pkg.TelegramIncommingChat) (bool, string, error)
 	conversation(user *model.User, chat *pkg.TelegramIncommingChat) (*pkg.TelegramSendMessageStatus, error)
 	NotifyError(chatId int, replyId int, text string, markdown bool) (*pkg.TelegramSendMessageStatus, error)
+	ProcessHeartbeat(prompt, to, channel string) error
 }
 
 type BotServiceImpl struct {
@@ -140,4 +144,49 @@ func (r *BotServiceImpl) Bot(chat *pkg.TelegramIncommingChat) (*pkg.TelegramSend
 
 func (r *BotServiceImpl) NotifyError(chatId int, replyId int, text string, markdown bool) (*pkg.TelegramSendMessageStatus, error) {
 	return pkg.SendTelegramMessage(chatId, replyId, text, markdown)
+}
+
+func (r *BotServiceImpl) ProcessHeartbeat(prompt, to, channel string) error {
+	log.Printf("Processing heartbeat request from %s (Channel: %s)...", to, channel)
+
+	userId, err := strconv.Atoi(to)
+	if err != nil {
+		return fmt.Errorf("invalid user ID format: %v", err)
+	}
+
+	syntheticChat := &pkg.TelegramIncommingChat{
+		UpdateId: 0,
+		Message: pkg.UserMessage{
+			MessageId: 0,
+			Date:      time.Now().Unix(),
+			Text:      prompt,
+			From: pkg.From{
+				Id:           userId,
+				IsBot:        false,
+				FirstName:    "Heartbeat Trigger",
+				Username:     "heartbeat",
+				LanguageCode: "en",
+			},
+			Chat: pkg.Chat{
+				Id:        userId,
+				Type:      "private",
+				FirstName: "Heartbeat Trigger",
+				Username:  "heartbeat",
+			},
+		},
+	}
+
+	user, err := r.checkUser(syntheticChat)
+	if err != nil {
+		return fmt.Errorf("failed to get/create user for heartbeat: %w", err)
+	}
+
+	_, err = r.conversation(user, syntheticChat)
+	if err != nil {
+		log.Printf("Heartbeat conversation error: %v", err)
+		return err
+	}
+
+	log.Println("Heartbeat conversation processed successfully.")
+	return nil
 }

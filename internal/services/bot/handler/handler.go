@@ -13,10 +13,17 @@ import (
 
 type BookHandler interface {
 	Webhook(c *fiber.Ctx) error
+	Heartbeat(c *fiber.Ctx) error
 }
 
 type BotHandlerImpl struct {
 	botService service.BotService
+}
+
+type HeartbeatRequest struct {
+	Prompt  string `json:"prompt"`
+	To      string `json:"to"`
+	Channel string `json:"channel"`
 }
 
 func NewBotHandler(botService service.BotService) BookHandler {
@@ -66,4 +73,39 @@ func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 	log.Printf("Successfully processed incoming chat from user ID %v", data.Message.Chat.Id)
 
 	return c.Status(fiber.StatusCreated).JSON(res)
+}
+
+// Heartbeat
+// @Summary		Heartbeat
+// @Description	To process heartbeat request from consumer
+// @Tags		Bot
+// @Produce		json
+// @Accept		json
+// @Param		request	body		HeartbeatRequest	true	"Heartbeat request"
+// @Success		200
+// @Failure     400    	{object}   	common.ErrorResponse
+// @Failure     500     {object}    common.ErrorResponse
+// @Router		/heartbeat [post]
+func (s *BotHandlerImpl) Heartbeat(c *fiber.Ctx) error {
+	var req HeartbeatRequest
+
+	if err := c.BodyParser(&req); err != nil {
+		log.Printf("Heartbeat 400: Invalid JSON: %v. Raw Body: %s", err, c.Body())
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid JSON",
+		})
+	}
+
+	if req.Prompt == "" {
+		log.Printf("Heartbeat 400: Empty Prompt")
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Prompt is required",
+		})
+	}
+
+	err := s.botService.ProcessHeartbeat(req.Prompt, req.To, req.Channel)
+	if err != nil {
+		return utils.ErrorInternalServer(c, "failed to process heartbeat: "+err.Error())
+	}
+	return c.SendStatus(fiber.StatusOK)
 }
