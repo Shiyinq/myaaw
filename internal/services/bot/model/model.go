@@ -11,7 +11,6 @@ type User struct {
 	Id        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	UserId    int                `json:"user_id" bson:"userId"`
 	Name      string             `json:"name" bson:"name"`
-	System    string             `json:"system" bson:"system"`
 	Provider  string             `json:"provider" bson:"provider"`
 	Model     string             `json:"model" bson:"model"`
 	Role      string             `json:"role" bson:"role"`

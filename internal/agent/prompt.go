@@ -30,19 +30,6 @@ func NewSystemPromptBuilder(userID int64) *SystemPromptBuilder {
 	}
 }
 
-func GetDefaultPersona() string {
-	myaawPath, err := EnsureMyaawConfig()
-	if err != nil {
-		return ""
-	}
-	path := filepath.Join(myaawPath, "home", "AGENTS.md")
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(content)
-}
-
 func (b *SystemPromptBuilder) Build() string {
 	var sb strings.Builder
 
