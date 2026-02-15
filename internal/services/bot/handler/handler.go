@@ -83,6 +83,11 @@ func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 
 	log.Printf("Received message from user ID %v (channel: %s)", msg.UserID, msg.Channel)
 
+	if !s.botService.IsAllowed(msg.UserID) {
+		log.Printf("Access denied for user %d (channel: %s)", msg.UserID, msg.Channel)
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{"ok": true})
+	}
+
 	if config.StreamResponse {
 		out, err := adapter.SendStream(msg, func(onChunk func(chunk channel.StreamChunk)) error {
 			_, err := s.botService.BotStream(msg, onChunk)

@@ -14,6 +14,7 @@ import (
 )
 
 type BotService interface {
+	IsAllowed(userID int) bool
 	checkUser(msg *channel.IncomingMessage) (*model.User, error)
 	Bot(msg *channel.IncomingMessage) (*channel.OutgoingMessage, error)
 	BotStream(msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error)
@@ -52,7 +53,7 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 	}
 }
 
-func (r *BotServiceImpl) isAllowed(userID int) bool {
+func (r *BotServiceImpl) IsAllowed(userID int) bool {
 	if config.BotType != "private" {
 		return true
 	}
@@ -110,9 +111,6 @@ func (r *BotServiceImpl) changeProviderAndModel(user *model.User) (*model.User, 
 }
 
 func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
-	if !r.isAllowed(msg.UserID) {
-		return nil, fmt.Errorf("access denied")
-	}
 
 	user, err := r.checkUser(msg)
 	if err != nil {
@@ -139,9 +137,6 @@ func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMes
 }
 
 func (r *BotServiceImpl) BotStream(msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
-	if !r.isAllowed(msg.UserID) {
-		return nil, fmt.Errorf("access denied")
-	}
 
 	user, err := r.checkUser(msg)
 	if err != nil {
