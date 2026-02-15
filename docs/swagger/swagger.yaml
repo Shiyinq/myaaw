@@ -1,5 +1,14 @@
 basePath: /
 definitions:
+  internal_services_bot_handler.HeartbeatRequest:
+    properties:
+      channel:
+        type: string
+      prompt:
+        type: string
+      to:
+        type: string
+    type: object
   myaaw_internal_common.ErrorResponse:
     properties:
       error:
@@ -159,6 +168,34 @@ info:
   title: Myaaw API
   version: "1.0"
 paths:
+  /heartbeat:
+    post:
+      consumes:
+      - application/json
+      description: To process heartbeat request from consumer
+      parameters:
+      - description: Heartbeat request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_services_bot_handler.HeartbeatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
+      summary: Heartbeat
+      tags:
+      - Bot
   /webhook/bot:
     post:
       consumes:
