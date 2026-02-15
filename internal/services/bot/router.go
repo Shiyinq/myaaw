@@ -32,7 +32,6 @@ func BotRouter(router fiber.Router) {
 
 	registry.Register(apiAdapter.NewAPIAdapter())
 
-	// Register Discord adapter
 	if config.DiscordBotToken != "" {
 		adapter, err := discord.NewDiscordAdapter(config.DiscordBotToken)
 		if err != nil {

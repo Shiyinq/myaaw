@@ -150,14 +150,14 @@ func (s *BotHandlerImpl) Heartbeat(c *fiber.Ctx) error {
 		return utils.ErrorInternalServer(c, "failed to process heartbeat: "+err.Error())
 	}
 
-	// Deliver heartbeat response via channel adapter if possible
 	if out != nil && req.Channel != "" && strings.TrimSpace(out.Text) != "HEARTBEAT_OK" {
 		adapter := s.channelRegistry.Get(req.Channel)
 		if adapter != nil {
 			if msg.RawMeta == nil {
-				if req.Channel == "telegram" {
+				switch req.Channel {
+				case "telegram":
 					msg.RawMeta = telegramMeta(msg.UserID)
-				} else if req.Channel == "discord" {
+				case "discord":
 					msg.RawMeta = discord.DiscordMeta{
 						ChannelID: req.To,
 					}

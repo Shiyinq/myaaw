@@ -40,7 +40,6 @@ func main() {
 
 	middleware.SetTelegramWebhook()
 
-	// Start Discord listener if token is present
 	if config.DiscordBotToken != "" {
 		queueRepo := repository.NewQueueRepository(config.MQ)
 		adapter, err := discord.NewDiscordAdapter(config.DiscordBotToken)
