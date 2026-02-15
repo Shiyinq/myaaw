@@ -1,16 +1,14 @@
 package repository
 
 import (
-	"encoding/json"
 	"log"
 	"myaaw/internal/config"
-	"myaaw/internal/pkg"
 
 	"github.com/rabbitmq/amqp091-go"
 )
 
 type QueueRepository interface {
-	PublishMessage(msg *pkg.TelegramIncommingChat) error
+	PublishMessage(body []byte) error
 }
 
 type QueueRepositoryImpl struct {
@@ -37,14 +35,8 @@ func NewQueueRepository(ch *amqp091.Channel) QueueRepository {
 	}
 }
 
-func (r *QueueRepositoryImpl) PublishMessage(msg *pkg.TelegramIncommingChat) error {
-	body, err := json.Marshal(msg)
-	if err != nil {
-		log.Printf("Failed to marshal message to JSON: %s", err)
-		return err
-	}
-
-	err = r.Channel.Publish(
+func (r *QueueRepositoryImpl) PublishMessage(body []byte) error {
+	err := r.Channel.Publish(
 		"",           // Exchange
 		r.Queue.Name, // Routing key (queue name)
 		false,        // Mandatory
@@ -60,5 +52,5 @@ func (r *QueueRepositoryImpl) PublishMessage(msg *pkg.TelegramIncommingChat) err
 		return err
 	}
 
-	return err
+	return nil
 }
