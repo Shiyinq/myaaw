@@ -26,6 +26,8 @@ func telegramMeta(userID int) telegram.TelegramMeta {
 type BotHandler interface {
 	Webhook(c *fiber.Ctx) error
 	Heartbeat(c *fiber.Ctx) error
+	APIChat(c *fiber.Ctx) error
+	APIChatStream(c *fiber.Ctx) error
 }
 
 type BotHandlerImpl struct {
