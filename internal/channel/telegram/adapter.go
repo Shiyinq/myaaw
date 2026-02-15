@@ -11,18 +11,15 @@ import (
 	"myaaw/internal/utils"
 )
 
-// TelegramMeta holds Telegram-specific metadata needed for sending responses.
 type TelegramMeta struct {
 	ChatID    int
 	MessageID int
 }
 
-// TelegramAdapter implements channel.Adapter for Telegram.
 type TelegramAdapter struct {
 	ttsProvider provider.TTSProvider
 }
 
-// NewTelegramAdapter creates a new Telegram channel adapter.
 func NewTelegramAdapter(ttsProvider provider.TTSProvider) *TelegramAdapter {
 	return &TelegramAdapter{
 		ttsProvider: ttsProvider,
@@ -33,7 +30,6 @@ func (t *TelegramAdapter) Name() string {
 	return "telegram"
 }
 
-// ParseIncoming converts a raw Telegram webhook payload into a generic IncomingMessage.
 func (t *TelegramAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMessage, error) {
 	var chat pkg.TelegramIncommingChat
 	if err := json.Unmarshal(payload, &chat); err != nil {
@@ -49,32 +45,27 @@ func (t *TelegramAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incom
 		},
 	}
 
-	// Voice message
 	if chat.Message.Voice != nil {
 		msg.Text = t.transcribeVoice(chat.Message.Voice.FileID)
 		return msg, nil
 	}
 
-	// Image message (photo or document with image)
 	if chat.Message.Photo != nil || chat.Message.Document != nil {
 		msg.Text = utils.GetImageCaption(chat.Message.Caption)
 		msg.Images = t.extractImages(&chat)
 		return msg, nil
 	}
 
-	// Reply to message
 	if chat.Message.ReplyToMessage != nil {
 		msg.Text = chat.Message.Text
 		msg.ReplyTo = chat.Message.ReplyToMessage.Text
 		return msg, nil
 	}
 
-	// Text message
 	msg.Text = chat.Message.Text
 	return msg, nil
 }
 
-// Send delivers a non-streaming response via Telegram.
 func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMessage) error {
 	meta := msg.RawMeta.(TelegramMeta)
 	content := out.Text
@@ -84,14 +75,13 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 		watermarked := utils.Watermark(utils.ParseTelegramMarkdown(content), "", config.WatermarkModel)
 		send, err := pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, true)
 		if err != nil || !send.Ok {
-			// Fallback without markdown
+
 			watermarked = utils.Watermark(content, "", config.WatermarkModel)
 			_, err = pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, false)
 		}
 		return err
 	}
 
-	// Chunk long messages
 	var chunks []string
 	for i := 0; i < len(content); i += maxLen {
 		end := i + maxLen
@@ -101,13 +91,11 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 		chunks = append(chunks, content[i:end])
 	}
 
-	// Send first chunk
 	_, err := pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, chunks[0], false)
 	if err != nil {
 		return err
 	}
 
-	// Send middle chunks
 	for i := 1; i < len(chunks)-1; i++ {
 		_, err := pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, chunks[i], false)
 		if err != nil {
@@ -115,7 +103,6 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 		}
 	}
 
-	// Send last chunk with watermark
 	if len(chunks) > 1 {
 		lastChunk := chunks[len(chunks)-1]
 		watermarked := utils.Watermark(lastChunk, "", config.WatermarkModel)
@@ -132,13 +119,11 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 	return nil
 }
 
-// SendStream delivers a streaming response via Telegram using send + edit pattern.
 func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onChunk func(chunk channel.StreamChunk)) error) (*channel.OutgoingMessage, error) {
 	meta := msg.RawMeta.(TelegramMeta)
 	maxLen := 4096
 	bufferThreshold := 500
 
-	// Send initial typing indicator
 	send, err := pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, indicator("typing"), false)
 	if err != nil || !send.Ok {
 		log.Println(err)
@@ -153,7 +138,6 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 	lastLoading := ""
 	var finalUsage provider.Usage
 
-	// Run the stream and handle each chunk
 	err = streamFn(func(chunk channel.StreamChunk) {
 		loading := indicator("typing")
 
@@ -172,7 +156,6 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 			bufferedContent += chunk.Text
 		}
 
-		// Capture trace
 		if len(chunk.Trace) > 0 {
 			for i := lastTraceLen; i < len(chunk.Trace); i++ {
 				step := chunk.Trace[i]
@@ -187,7 +170,6 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 			traceSteps = chunk.Trace
 		}
 
-		// Handle message limits and buffered updates
 		if len(streamingContent) >= maxLen-100 {
 			streamingContent = streamingContent[len(lastStreamingContent):]
 			bufferedContent = ""
@@ -214,11 +196,10 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 		return nil, err
 	}
 
-	// Final edit with watermark and markdown
 	watermarked := utils.Watermark(utils.ParseTelegramMarkdown(streamingContent), "", config.WatermarkModel)
 	editMessage, err := pkg.EditTelegramMessage(meta.ChatID, meta.MessageID, messageId, watermarked, true)
 	if err != nil || !editMessage.Ok {
-		// Fallback without markdown
+
 		_, err := pkg.EditTelegramMessage(meta.ChatID, meta.MessageID, messageId, utils.Watermark(streamingContent, "", config.WatermarkModel), false)
 		if err != nil {
 			log.Println(err)
@@ -233,14 +214,11 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 	}, nil
 }
 
-// SendError delivers an error message to the user on Telegram.
 func (t *TelegramAdapter) SendError(msg *channel.IncomingMessage, errText string) error {
 	meta := msg.RawMeta.(TelegramMeta)
 	_, err := pkg.SendTelegramMessage(meta.ChatID, 0, errText, true)
 	return err
 }
-
-// --- Private helpers ---
 
 func indicator(text string) string {
 	if text == "tool" {

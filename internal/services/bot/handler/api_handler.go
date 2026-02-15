@@ -12,7 +12,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// ChatResponse is the JSON response for non-streaming API chat.
 type ChatResponse struct {
 	Text  string         `json:"text"`
 	Trace []TraceStep    `json:"trace,omitempty"`
@@ -49,7 +48,6 @@ func (s *BotHandlerImpl) APIChat(c *fiber.Ctx) error {
 		})
 	}
 
-	// Parse incoming using adapter
 	raw, _ := json.Marshal(req)
 	apiAdapter := s.channelRegistry.Get("api")
 	if apiAdapter == nil {
@@ -67,7 +65,6 @@ func (s *BotHandlerImpl) APIChat(c *fiber.Ctx) error {
 
 	log.Printf("API chat request from user ID %v", msg.UserID)
 
-	// Process through bot service
 	out, err := s.botService.Bot(msg)
 	if err != nil {
 		log.Printf("API chat error for user ID %v: %v", msg.UserID, err)
@@ -77,7 +74,6 @@ func (s *BotHandlerImpl) APIChat(c *fiber.Ctx) error {
 		})
 	}
 
-	// Build response
 	resp := ChatResponse{
 		Text: out.Text,
 	}
@@ -139,7 +135,6 @@ func (s *BotHandlerImpl) APIChatStream(c *fiber.Ctx) error {
 
 	log.Printf("API stream chat request from user ID %v", msg.UserID)
 
-	// Set SSE headers
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
@@ -188,7 +183,6 @@ func (s *BotHandlerImpl) APIChatStream(c *fiber.Ctx) error {
 			return
 		}
 
-		// Send final done event with full response
 		doneData := fiber.Map{
 			"ok":   true,
 			"text": out.Text,

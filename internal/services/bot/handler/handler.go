@@ -14,8 +14,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// telegramMeta creates a TelegramMeta for heartbeat delivery.
-// For Telegram private chats, ChatID equals UserID.
 func telegramMeta(userID int) telegram.TelegramMeta {
 	return telegram.TelegramMeta{
 		ChatID:    userID,
@@ -68,7 +66,6 @@ func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 		})
 	}
 
-	// Get the appropriate channel adapter
 	adapter := s.channelRegistry.Get(envelope.Channel)
 	if adapter == nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -76,7 +73,6 @@ func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 		})
 	}
 
-	// Parse the channel-specific payload into generic message
 	msg, err := adapter.ParseIncoming(envelope.Payload)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -87,7 +83,6 @@ func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 	log.Printf("Received message from user ID %v (channel: %s)", msg.UserID, msg.Channel)
 
 	if config.StreamResponse {
-		// Streaming mode: the adapter handles progressive delivery
 		out, err := adapter.SendStream(msg, func(onChunk func(chunk channel.StreamChunk)) error {
 			_, err := s.botService.BotStream(msg, onChunk)
 			return err
@@ -100,7 +95,6 @@ func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 		}
 		_ = out
 	} else {
-		// Non-streaming mode: collect full response, then deliver
 		out, err := s.botService.Bot(msg)
 		if err != nil {
 			log.Printf("Failed to process incoming chat from user ID %v: %v", msg.UserID, err.Error())
@@ -155,14 +149,10 @@ func (s *BotHandlerImpl) Heartbeat(c *fiber.Ctx) error {
 		return utils.ErrorInternalServer(c, "failed to process heartbeat: "+err.Error())
 	}
 
-	// Deliver heartbeat response via channel adapter if possible
-	// Skip delivery if response is just HEARTBEAT_OK (no action needed)
 	if out != nil && req.Channel != "" && strings.TrimSpace(out.Text) != "HEARTBEAT_OK" {
 		adapter := s.channelRegistry.Get(req.Channel)
 		if adapter != nil {
-			// Set RawMeta if missing (heartbeat doesn't go through ParseIncoming)
 			if msg.RawMeta == nil {
-				// For Telegram, ChatID = UserID for private chats
 				msg.RawMeta = telegramMeta(msg.UserID)
 			}
 			if deliverErr := adapter.Send(msg, out); deliverErr != nil {
