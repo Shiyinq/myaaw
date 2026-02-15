@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"myaaw/internal/channel"
+	"myaaw/internal/channel/discord"
 	telegram "myaaw/internal/channel/telegram"
 	_ "myaaw/internal/common"
 	"myaaw/internal/config"
@@ -149,11 +150,18 @@ func (s *BotHandlerImpl) Heartbeat(c *fiber.Ctx) error {
 		return utils.ErrorInternalServer(c, "failed to process heartbeat: "+err.Error())
 	}
 
+	// Deliver heartbeat response via channel adapter if possible
 	if out != nil && req.Channel != "" && strings.TrimSpace(out.Text) != "HEARTBEAT_OK" {
 		adapter := s.channelRegistry.Get(req.Channel)
 		if adapter != nil {
 			if msg.RawMeta == nil {
-				msg.RawMeta = telegramMeta(msg.UserID)
+				if req.Channel == "telegram" {
+					msg.RawMeta = telegramMeta(msg.UserID)
+				} else if req.Channel == "discord" {
+					msg.RawMeta = discord.DiscordMeta{
+						ChannelID: req.To,
+					}
+				}
 			}
 			if deliverErr := adapter.Send(msg, out); deliverErr != nil {
 				log.Printf("Failed to deliver heartbeat response: %v", deliverErr)
