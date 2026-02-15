@@ -9,6 +9,49 @@
     "host": "localhost:8080",
     "basePath": "/",
     "paths": {
+        "/heartbeat": {
+            "post": {
+                "description": "To process heartbeat request from consumer",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Bot"
+                ],
+                "summary": "Heartbeat",
+                "parameters": [
+                    {
+                        "description": "Heartbeat request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_services_bot_handler.HeartbeatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/webhook/bot": {
             "post": {
                 "description": "To receive incoming message from RabbitMQ consumer",
@@ -109,6 +152,20 @@
         }
     },
     "definitions": {
+        "internal_services_bot_handler.HeartbeatRequest": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "prompt": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
         "myaaw_internal_common.ErrorResponse": {
             "type": "object",
             "properties": {
