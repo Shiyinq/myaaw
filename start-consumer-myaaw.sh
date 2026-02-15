@@ -12,20 +12,18 @@ fi
 
 # Fallback cleanup by name
 pkill -f "consumer-myaaw" || true
-pkill -f "go run ./cmd/consumer" || true
-# Be careful with 'main' as it's common, but maybe necessary for stuck go run children
-# pkill -f "main" || true 
+pkill -f "myaaw consumer" || true
 
 # Build binary first to avoid 'go run' child process issues
-echo "Building consumer..."
-go build -o tmp/consumer-myaaw ./cmd/consumer
+echo "Building myaaw..."
+go build -o tmp/myaaw ./cmd/myaaw
 
 if [ $? -ne 0 ]; then
     echo "Build failed! Check logs."
     exit 1
 fi
 
-echo "Starting consumer binary..."
-./tmp/consumer-myaaw > tmp/consumer-myaaw.log 2>&1 &
+echo "Starting consumer..."
+./tmp/myaaw consumer > tmp/consumer-myaaw.log 2>&1 &
 echo $! > tmp/consumer-myaaw.pid
 echo "Consumer started with PID $(cat tmp/consumer-myaaw.pid)"
