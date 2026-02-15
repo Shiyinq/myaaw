@@ -4,6 +4,7 @@ import (
 	"log"
 	"myaaw/internal/channel"
 	apiAdapter "myaaw/internal/channel/api"
+	"myaaw/internal/channel/discord"
 	"myaaw/internal/channel/telegram"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
@@ -30,6 +31,16 @@ func BotRouter(router fiber.Router) {
 	registry.Register(telegramAdapter)
 
 	registry.Register(apiAdapter.NewAPIAdapter())
+
+	// Register Discord adapter
+	if config.DiscordBotToken != "" {
+		adapter, err := discord.NewDiscordAdapter(config.DiscordBotToken)
+		if err != nil {
+			log.Printf("Failed to init Discord adapter: %v", err)
+		} else {
+			registry.Register(adapter)
+		}
+	}
 
 	hand := handler.NewBotHandler(serv, registry)
 
