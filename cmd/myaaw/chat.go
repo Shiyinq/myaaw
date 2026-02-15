@@ -127,15 +127,37 @@ type chatMessage_ struct {
 
 var (
 	userStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("6")).
+			Foreground(lipgloss.Color("#FFFFFF")). // White (Cat's white fur)
 			Bold(true)
 
 	botStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("5")).
+			Foreground(lipgloss.Color("#FF9F69")). // Peach/Orange (Cat fur)
 			Bold(true)
 
 	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("8"))
+			Foreground(lipgloss.Color("240"))
+
+	headerStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#FF9F69")). // Peach background
+			Bold(true).
+			Padding(0, 1)
+
+	footerStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Italic(true)
+
+	userBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#FFFFFF")).
+			Padding(0, 1).
+			MarginBottom(1)
+
+	botBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#FF9F69")).
+			Padding(0, 1).
+			MarginBottom(1)
 )
 
 func initialModel(botService service.BotService, adapter *cliAdapter.CLIAdapter) model {
@@ -145,13 +167,14 @@ func initialModel(botService service.BotService, adapter *cliAdapter.CLIAdapter)
 	)
 
 	ti := textinput.New()
-	ti.Placeholder = "Type a message..."
+	ti.Placeholder = "Type a message to Myaaw... 🐾"
 	ti.Focus()
 	ti.CharLimit = 1000
 	ti.Width = 80
+	ti.Prompt = userStyle.Render(" 🐾 ❯ ")
 
 	vp := viewport.New(80, 20)
-	vp.SetContent("🤖 Welcome to Myaaw! Type a message to start chatting.\n\n")
+	vp.SetContent(botStyle.Render("🐱 Myaaw: ") + "\n\n" + "Hii! I'm Myaaw, your fluffy assistant! How can I help you today? 🐾" + "\n\n")
 
 	return model{
 		botService: botService,
@@ -176,13 +199,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - 4 // Leave space for input and header
-		m.textInput.Width = msg.Width
+		m.viewport.Height = msg.Height - 6 // Space for header, input, and footer
+		m.textInput.Width = msg.Width - 10
 
-		// Update renderer width
 		m.renderer, _ = glamour.NewTermRenderer(
 			glamour.WithStandardStyle("dark"),
-			glamour.WithWordWrap(msg.Width-2),
+			glamour.WithWordWrap(msg.Width-8), // Adjusted for border padding
 		)
 		m.updateViewportContent()
 		return m, nil
@@ -232,7 +254,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if len(msg.chunk.ToolCalls) > 0 {
-			m.streaming += fmt.Sprintf("\n🛠️  Using %s...\n", msg.chunk.ToolCalls[0].Function.Name)
+			m.streaming += fmt.Sprintf("\n🛠️  *Using %s...*\n", msg.chunk.ToolCalls[0].Function.Name)
 		} else if msg.chunk.Text != "" {
 			m.streaming += msg.chunk.Text
 		}
@@ -253,7 +275,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport, vpCmd = m.viewport.Update(msg)
 	}
 
-	// Handle Text Input
 	m.textInput, tiCmd = m.textInput.Update(msg)
 
 	return m, tea.Batch(tiCmd, vpCmd)
@@ -292,35 +313,35 @@ func (m *model) sendMessage(text string) tea.Cmd {
 func (m *model) updateViewportContent() {
 	var b strings.Builder
 
-	// Header
-	b.WriteString(botStyle.Render("🤖 Myaaw Interactive Chat") + "\n")
-	b.WriteString(dimStyle.Render("Type /exit to quit • Esc to quit • ↑/↓/PgUp/PgDn to scroll") + "\n\n")
-
 	for _, msg := range m.messages {
 		if msg.role == "user" {
-			b.WriteString(userStyle.Render("You: ") + msg.text + "\n\n")
+			// User message: Icon and text on same line, no "You" text
+			content := userStyle.Render("❯ ") + strings.TrimSpace(msg.text)
+			b.WriteString(userBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n")
 		} else {
 			response := msg.text
 			rendered, err := m.renderer.Render(response)
 			if err == nil {
 				response = rendered
 			}
-			b.WriteString(botStyle.Render("Myaaw: ") + "\n" + response + "\n")
+			// Bot message: Name, double newline, Text
+			content := botStyle.Render("🐱 Myaaw") + "\n\n" + strings.TrimSpace(response)
+			b.WriteString(botBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n")
 		}
 	}
 
 	if m.state == stateWaiting {
-		b.WriteString(botStyle.Render("Myaaw: ") + "\n")
 		if m.streaming != "" {
 			rendered, err := m.renderer.Render(m.streaming)
 			if err == nil {
-				b.WriteString(rendered)
+				rendered = strings.TrimSpace(rendered)
 			} else {
-				b.WriteString(m.streaming)
+				rendered = m.streaming
 			}
-			b.WriteString(dimStyle.Render(" ✨"))
+			content := botStyle.Render("🐱 Myaaw") + "\n\n" + rendered + botStyle.Render(" 🐾")
+			b.WriteString(botBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n")
 		} else {
-			b.WriteString(dimStyle.Render("⏳ Thinking..."))
+			b.WriteString(dimStyle.Render("⏳ Myaaw is thinking... 🧶"))
 		}
 		b.WriteString("\n")
 	}
@@ -330,15 +351,19 @@ func (m *model) updateViewportContent() {
 }
 
 func (m model) View() string {
+	header := headerStyle.Render(" 🐾 MYAAW CLI 🐾 ")
+	footer := footerStyle.Render("  Esc/Ctrl+C: Quit • ↑/↓: Scroll • Type /exit to leave  ")
+
 	return fmt.Sprintf(
-		"%s\n%s",
+		"%s\n\n%s\n\n%s\n%s",
+		header,
 		m.viewport.View(),
 		m.textInput.View(),
+		footer,
 	)
 }
 
 func runInteractive(botService service.BotService, adapter *cliAdapter.CLIAdapter) {
-	// Redirect logs to file
 	f, err := os.OpenFile("myaaw-chat.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
