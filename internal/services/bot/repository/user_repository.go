@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"myaaw/internal/common"
 	"myaaw/internal/config"
 	"myaaw/internal/pkg"
 	"myaaw/internal/services/bot/model"
@@ -20,7 +19,6 @@ type UserRepository interface {
 	CreateUser(user *model.User) (*model.User, error)
 	GetUserById(userId int) (*model.User, error)
 	updateUserField(userId int, fields bson.M) error
-	UpdateSystem(userId int, system string) error
 	UpdateModel(userId int, model string) error
 	UpdateProvider(userId int, provider string) error
 }
@@ -68,7 +66,6 @@ func (r *UserRepositoryImpl) CreateUser(user *model.User) (*model.User, error) {
 		role = "owner"
 	}
 
-	user.System = common.RoleSystemDefault()
 	user.Role = role
 	user.CreatedAt = time.Now()
 	user.UpdatedAt = time.Now()
@@ -110,8 +107,7 @@ func (r *UserRepositoryImpl) updateUserAndCache(userId int, fields bson.M) error
 
 	for key, value := range fields {
 		switch key {
-		case "system":
-			user.System = value.(string)
+
 		case "model":
 			user.Model = value.(string)
 		case "provider":
@@ -121,11 +117,6 @@ func (r *UserRepositoryImpl) updateUserAndCache(userId int, fields bson.M) error
 	user.UpdatedAt = timeNow
 
 	return pkg.SaveUserToRedis(r.rd, user)
-}
-
-func (r *UserRepositoryImpl) UpdateSystem(userId int, system string) error {
-	fields := bson.M{"system": system}
-	return r.updateUserAndCache(userId, fields)
 }
 
 func (r *UserRepositoryImpl) UpdateModel(userId int, model string) error {
