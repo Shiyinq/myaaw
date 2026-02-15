@@ -12,6 +12,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
@@ -92,7 +94,6 @@ const (
 	stateWaiting
 )
 
-// nextChunkMsg carries a piece of streamed data or completion signal
 type nextChunkMsg struct {
 	chunk channel.StreamChunk
 	err   error
@@ -100,17 +101,22 @@ type nextChunkMsg struct {
 }
 
 type model struct {
-	input      string
-	messages   []chatMessage_
-	state      tuiState
-	streaming  string
-	width      int
-	quitting   bool
+	// Components
+	viewport  viewport.Model
+	textInput textinput.Model
+
+	// State
+	messages  []chatMessage_
+	state     tuiState
+	streaming string
+	err       error
+
+	// External Services
 	botService service.BotService
 	adapter    *cliAdapter.CLIAdapter
 	renderer   *glamour.TermRenderer
 
-	// Channel for receiving stream chunks from the goroutine
+	// Communication
 	sub chan nextChunkMsg
 }
 
@@ -130,41 +136,60 @@ var (
 
 	dimStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("8"))
-
-	toolStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("3")).
-			Italic(true)
 )
 
 func initialModel(botService service.BotService, adapter *cliAdapter.CLIAdapter) model {
 	renderer, _ := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(100),
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(80),
 	)
+
+	ti := textinput.New()
+	ti.Placeholder = "Type a message..."
+	ti.Focus()
+	ti.CharLimit = 1000
+	ti.Width = 80
+
+	vp := viewport.New(80, 20)
+	vp.SetContent("🤖 Welcome to Myaaw! Type a message to start chatting.\n\n")
 
 	return model{
 		botService: botService,
 		adapter:    adapter,
 		state:      stateInput,
 		renderer:   renderer,
-		width:      80,
+		textInput:  ti,
+		viewport:   vp,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return textinput.Blink
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		tiCmd tea.Cmd
+		vpCmd tea.Cmd
+	)
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
+		m.viewport.Width = msg.Width
+		m.viewport.Height = msg.Height - 4 // Leave space for input and header
+		m.textInput.Width = msg.Width
+
+		// Update renderer width
+		m.renderer, _ = glamour.NewTermRenderer(
+			glamour.WithStandardStyle("dark"),
+			glamour.WithWordWrap(msg.Width-2),
+		)
+		m.updateViewportContent()
 		return m, nil
 
 	case tea.KeyMsg:
 		switch msg.Type {
-		case tea.KeyCtrlC:
-			m.quitting = true
+		case tea.KeyCtrlC, tea.KeyEsc:
 			return m, tea.Quit
 
 		case tea.KeyEnter:
@@ -172,40 +197,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			text := strings.TrimSpace(m.input)
+			text := strings.TrimSpace(m.textInput.Value())
 			if text == "" {
 				return m, nil
 			}
 
-			if text == "/exit" || text == "/quit" || text == "exit" || text == "quit" {
-				m.quitting = true
+			if text == "/exit" || text == "/quit" {
 				return m, tea.Quit
 			}
 
 			m.messages = append(m.messages, chatMessage_{role: "user", text: text})
-			m.input = ""
+			m.textInput.Reset()
 			m.state = stateWaiting
 			m.streaming = ""
-
+			m.updateViewportContent()
 			return m, m.sendMessage(text)
-
-		case tea.KeyBackspace:
-			if len(m.input) > 0 {
-				m.input = m.input[:len(m.input)-1]
-			}
-			return m, nil
-
-		case tea.KeySpace:
-			if m.state == stateInput {
-				m.input += " "
-			}
-			return m, nil
-
-		case tea.KeyRunes:
-			if m.state == stateInput {
-				m.input += string(msg.Runes)
-			}
-			return m, nil
 		}
 
 	case nextChunkMsg:
@@ -213,32 +219,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, chatMessage_{role: "bot", text: fmt.Sprintf("❌ Error: %v", msg.err)})
 			m.state = stateInput
 			m.streaming = ""
+			m.updateViewportContent()
 			return m, nil
 		}
 
 		if msg.done {
-			// Stream finished
 			m.messages = append(m.messages, chatMessage_{role: "bot", text: m.streaming})
 			m.streaming = ""
 			m.state = stateInput
+			m.updateViewportContent()
 			return m, nil
 		}
 
-		// Process chunk
 		if len(msg.chunk.ToolCalls) > 0 {
 			m.streaming += fmt.Sprintf("\n🛠️  Using %s...\n", msg.chunk.ToolCalls[0].Function.Name)
 		} else if msg.chunk.Text != "" {
 			m.streaming += msg.chunk.Text
 		}
 
-		// Continue listening for next chunk
+		m.updateViewportContent()
 		return m, waitForChunk(m.sub)
 	}
 
-	return m, nil
+	// Handle Viewport inputs (scrolling)
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyUp, tea.KeyDown, tea.KeyPgUp, tea.KeyPgDown:
+			m.viewport, vpCmd = m.viewport.Update(msg)
+		}
+	default:
+		// Pass other messages (like mouse events or window resize) to viewport
+		m.viewport, vpCmd = m.viewport.Update(msg)
+	}
+
+	// Handle Text Input
+	m.textInput, tiCmd = m.textInput.Update(msg)
+
+	return m, tea.Batch(tiCmd, vpCmd)
 }
 
-// waitForChunk returns a Cmd that waits for the next value from the channel
 func waitForChunk(sub chan nextChunkMsg) tea.Cmd {
 	return func() tea.Msg {
 		return <-sub
@@ -248,10 +268,8 @@ func waitForChunk(sub chan nextChunkMsg) tea.Cmd {
 func (m *model) sendMessage(text string) tea.Cmd {
 	m.sub = make(chan nextChunkMsg)
 
-	// Start streaming in a goroutine
 	go func() {
 		msg := createIncomingMessage(text)
-
 		if config.StreamResponse {
 			_, err := m.botService.BotStream(msg, func(chunk channel.StreamChunk) {
 				m.sub <- nextChunkMsg{chunk: chunk}
@@ -268,74 +286,59 @@ func (m *model) sendMessage(text string) tea.Cmd {
 		}
 	}()
 
-	// Wait for the first chunk
 	return waitForChunk(m.sub)
 }
 
-func (m model) View() string {
-	if m.quitting {
-		return "\n👋 Goodbye!\n"
-	}
-
+func (m *model) updateViewportContent() {
 	var b strings.Builder
 
-	b.WriteString("\n")
-	b.WriteString(botStyle.Render("🤖 Myaaw Interactive Chat"))
-	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("Type /exit to quit, Ctrl+C to cancel"))
-	b.WriteString("\n")
-	b.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	// Header
+	b.WriteString(botStyle.Render("🤖 Myaaw Interactive Chat") + "\n")
+	b.WriteString(dimStyle.Render("Type /exit to quit • Esc to quit • ↑/↓/PgUp/PgDn to scroll") + "\n\n")
 
 	for _, msg := range m.messages {
 		if msg.role == "user" {
-			b.WriteString(userStyle.Render("You: "))
-			b.WriteString(msg.text)
-			b.WriteString("\n\n")
+			b.WriteString(userStyle.Render("You: ") + msg.text + "\n\n")
 		} else {
-			b.WriteString(botStyle.Render("Myaaw: "))
-
-			rendered, err := m.renderer.Render(msg.text)
-			if err != nil {
-				b.WriteString(msg.text)
-			} else {
-				b.WriteString(rendered)
+			response := msg.text
+			rendered, err := m.renderer.Render(response)
+			if err == nil {
+				response = rendered
 			}
-			b.WriteString("\n")
+			b.WriteString(botStyle.Render("Myaaw: ") + "\n" + response + "\n")
 		}
 	}
 
 	if m.state == stateWaiting {
+		b.WriteString(botStyle.Render("Myaaw: ") + "\n")
 		if m.streaming != "" {
-			b.WriteString(botStyle.Render("Myaaw: "))
-
-			// Render partial streaming markdown if possible, otherwise plain text
 			rendered, err := m.renderer.Render(m.streaming)
-			if err != nil {
-				b.WriteString(m.streaming)
-			} else {
+			if err == nil {
 				b.WriteString(rendered)
+			} else {
+				b.WriteString(m.streaming)
 			}
-
 			b.WriteString(dimStyle.Render(" ✨"))
-			b.WriteString("\n")
 		} else {
 			b.WriteString(dimStyle.Render("⏳ Thinking..."))
-			b.WriteString("\n")
 		}
-	}
-
-	if m.state == stateInput {
-		b.WriteString(userStyle.Render("You: "))
-		b.WriteString(m.input)
-		b.WriteString(dimStyle.Render("█"))
 		b.WriteString("\n")
 	}
 
-	return b.String()
+	m.viewport.SetContent(b.String())
+	m.viewport.GotoBottom()
+}
+
+func (m model) View() string {
+	return fmt.Sprintf(
+		"%s\n%s",
+		m.viewport.View(),
+		m.textInput.View(),
+	)
 }
 
 func runInteractive(botService service.BotService, adapter *cliAdapter.CLIAdapter) {
-	// Redirect logs to file to avoid messing up TUI
+	// Redirect logs to file
 	f, err := os.OpenFile("myaaw-chat.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
@@ -343,7 +346,7 @@ func runInteractive(botService service.BotService, adapter *cliAdapter.CLIAdapte
 	defer f.Close()
 	log.SetOutput(f)
 
-	p := tea.NewProgram(initialModel(botService, adapter), tea.WithAltScreen())
+	p := tea.NewProgram(initialModel(botService, adapter), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		log.Fatal("Error running TUI:", err)
 	}
