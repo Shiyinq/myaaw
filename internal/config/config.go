@@ -99,7 +99,9 @@ func envPath() string {
 	return envPath
 }
 
-func LoadConfig() {
+// LoadBaseConfig loads .env file and config.json settings without connecting to any services.
+// This is the minimum needed for CLI commands that don't need database connections.
+func LoadBaseConfig() {
 	path := envPath()
 	err := godotenv.Load(path)
 	log.Println("Load .env file", path)
@@ -112,11 +114,7 @@ func LoadConfig() {
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
 	NgrokActive = os.Getenv("NGROK_ACTIVE")
 	NgrokAuthToken = os.Getenv("NGROK_AUTHTOKEN")
-	mongoURI := os.Getenv("MONGODB_URI")
-	dbName := os.Getenv("DB_NAME")
-	redisURL := os.Getenv("REDIS_URL")
 	QueueName = os.Getenv("QUEUE_NAME")
-	rabbitMQURL := os.Getenv("RABBITMQ_URL")
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
@@ -129,21 +127,20 @@ func LoadConfig() {
 	TTSProviderAPIKey = os.Getenv("TTS_PROVIDER_API_KEY")
 	// No default for API key for security reasons
 
-	maxRetries := 10
-	retryDelay := 3 * time.Second
-
-	StreamResponse, err = strconv.ParseBool(os.Getenv("STREAM_RESPONSE"))
-	if err != nil {
-		log.Fatalf("Invalid value for STREAM_RESPONSE: %v", err)
+	streamVal := os.Getenv("STREAM_RESPONSE")
+	if streamVal != "" {
+		StreamResponse, err = strconv.ParseBool(streamVal)
+		if err != nil {
+			log.Printf("Warning: Invalid value for STREAM_RESPONSE '%s', defaulting to false", streamVal)
+			StreamResponse = false
+		}
+	} else {
+		StreamResponse = false
 	}
 
 	if AllowedOrigins == "" {
 		AllowedOrigins = "*"
 	}
-
-	ConnectMongoDB(mongoURI, dbName, maxRetries, retryDelay)
-	ConnectRedis(redisURL, maxRetries, retryDelay)
-	ConnectRabbitMQ(rabbitMQURL, maxRetries, retryDelay)
 
 	// Load JSON config and override if present
 	jsonConfig, err := loadJSONConfig()
@@ -177,6 +174,36 @@ func LoadConfig() {
 			}
 		}
 	}
+}
+
+// ConnectDatabases connects to MongoDB and Redis.
+func ConnectDatabases() {
+	maxRetries := 10
+	retryDelay := 3 * time.Second
+
+	mongoURI := os.Getenv("MONGODB_URI")
+	dbName := os.Getenv("DB_NAME")
+	redisURL := os.Getenv("REDIS_URL")
+
+	ConnectMongoDB(mongoURI, dbName, maxRetries, retryDelay)
+	ConnectRedis(redisURL, maxRetries, retryDelay)
+}
+
+// ConnectQueue connects to RabbitMQ.
+func ConnectQueue() {
+	maxRetries := 10
+	retryDelay := 3 * time.Second
+
+	rabbitMQURL := os.Getenv("RABBITMQ_URL")
+	ConnectRabbitMQ(rabbitMQURL, maxRetries, retryDelay)
+}
+
+// LoadConfig loads all configuration and connects to all services.
+// This is a convenience wrapper that calls LoadBaseConfig + ConnectDatabases + ConnectQueue.
+func LoadConfig() {
+	LoadBaseConfig()
+	ConnectDatabases()
+	ConnectQueue()
 }
 
 func retry(attempts int, delay time.Duration, fn func() error) error {

@@ -10,9 +10,55 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/joho/godotenv"
 	"github.com/rabbitmq/amqp091-go"
+	"github.com/spf13/cobra"
 )
 
-func connectRabbitMQ(rabbitMQURL string) (*amqp091.Connection, *amqp091.Channel, error) {
+var consumerCmd = &cobra.Command{
+	Use:   "consumer",
+	Short: "Start the message consumer",
+	Long:  "Start the RabbitMQ message consumer that forwards messages to the webhook endpoint.",
+	Run: func(cmd *cobra.Command, args []string) {
+		err := godotenv.Load()
+		log.Println("Load .env file")
+		if err != nil {
+			log.Println("Error loading .env file, using environment variables")
+		}
+
+		heartbeatService := heartbeat.NewHeartbeatService()
+
+		rabbitMQURL := os.Getenv("RABBITMQ_URL")
+		conn, ch, err := consumerConnectRabbitMQ(rabbitMQURL)
+		if err != nil {
+			log.Fatalf("Error: %s", err)
+		}
+		defer conn.Close()
+		defer ch.Close()
+
+		queueName := os.Getenv("QUEUE_NAME")
+		q, err := ch.QueueDeclare(
+			queueName,
+			false,
+			false,
+			false,
+			false,
+			nil,
+		)
+		if err != nil {
+			log.Fatalf("Failed to declare queue: %s", err)
+		}
+
+		if heartbeatService != nil {
+			go heartbeatService.Start()
+		}
+
+		err = consumeMessages(ch, q.Name)
+		if err != nil {
+			log.Fatalf("Error in consumer: %s", err)
+		}
+	},
+}
+
+func consumerConnectRabbitMQ(rabbitMQURL string) (*amqp091.Connection, *amqp091.Channel, error) {
 	conn, err := amqp091.Dial(rabbitMQURL)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
@@ -50,12 +96,12 @@ func sendToWebhookBot(jsonBody []byte) error {
 func consumeMessages(ch *amqp091.Channel, queueName string) error {
 	msgs, err := ch.Consume(
 		queueName,
-		"",    // Consumer
-		true,  // Auto-ack
-		false, // Exclusive
-		false, // No-local
-		false, // No-wait
-		nil,   // Args
+		"",
+		true,
+		false,
+		false,
+		false,
+		nil,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to register consumer: %w", err)
@@ -73,44 +119,4 @@ func consumeMessages(ch *amqp091.Channel, queueName string) error {
 	}
 
 	return nil
-}
-
-func main() {
-	err := godotenv.Load()
-	log.Println("Load .env file")
-	if err != nil {
-		log.Println("Error loading .env file, using environment variables")
-	}
-
-	heartbeatService := heartbeat.NewHeartbeatService()
-
-	rabbitMQURL := os.Getenv("RABBITMQ_URL")
-	conn, ch, err := connectRabbitMQ(rabbitMQURL)
-	if err != nil {
-		log.Fatalf("Error: %s", err)
-	}
-	defer conn.Close()
-	defer ch.Close()
-
-	queueName := os.Getenv("QUEUE_NAME")
-	q, err := ch.QueueDeclare(
-		queueName, // Queue name
-		false,     // Durable
-		false,     // Delete when unused
-		false,     // Exclusive
-		false,     // No-wait
-		nil,       // Args
-	)
-	if err != nil {
-		log.Fatalf("Failed to declare queue: %s", err)
-	}
-
-	if heartbeatService != nil {
-		go heartbeatService.Start()
-	}
-
-	err = consumeMessages(ch, q.Name)
-	if err != nil {
-		log.Fatalf("Error in consumer: %s", err)
-	}
 }
