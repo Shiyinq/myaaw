@@ -46,7 +46,17 @@ func (d *DiscordAdapter) StartListener(queueRepo repository.QueueRepository) err
 
 		userID, _ := strconv.Atoi(m.Author.ID)
 
-		// TODO: Handle Image/Attachment processing if needed.
+		var images []string
+		for _, attachment := range m.Attachments {
+			if attachment.ContentType != "" && utils.IsImage(attachment.ContentType) {
+				base64Img, err := utils.DownloadFileToBase64(attachment.URL)
+				if err != nil {
+					log.Printf("Failed to download discord image: %v", err)
+					continue
+				}
+				images = append(images, base64Img)
+			}
+		}
 
 		payload := map[string]interface{}{
 			"message": map[string]interface{}{
@@ -58,6 +68,7 @@ func (d *DiscordAdapter) StartListener(queueRepo repository.QueueRepository) err
 				},
 				"message_id": m.ID,
 				"text":       m.Content,
+				"images":     images,
 			},
 			"original_source": "discord",
 			"discord_author": map[string]interface{}{
@@ -93,8 +104,9 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 	// We construct a custom map structure in the listener, so we parse it back here.
 	var data struct {
 		Message struct {
-			Text      string `json:"text"`
-			MessageID string `json:"message_id"`
+			Text      string   `json:"text"`
+			Images    []string `json:"images"`
+			MessageID string   `json:"message_id"`
 			Chat      struct {
 				ID string `json:"id"`
 			} `json:"chat"`
@@ -114,6 +126,7 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 	return &channel.IncomingMessage{
 		UserID:  userID,
 		Text:    data.Message.Text,
+		Images:  data.Message.Images,
 		Channel: "discord",
 		RawMeta: DiscordMeta{
 			ChannelID: data.Message.Chat.ID,
