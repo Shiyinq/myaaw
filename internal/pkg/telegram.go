@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"myaaw/internal/config"
+	"strings"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -127,7 +127,7 @@ type TelegramFileResponse struct {
 func sendTelegramTypingAction(chatId int) {
 	client := resty.New()
 
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendChatAction", config.BotToken)
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendChatAction", config.TelegramBotToken)
 	_, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(map[string]interface{}{
@@ -179,7 +179,7 @@ func SendTelegramRequest(method string, message interface{}, chatId int) (*Teleg
 	}
 
 	client := resty.New()
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/%s", config.BotToken, method)
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/%s", config.TelegramBotToken, method)
 
 	var response TelegramSendMessageStatus
 	resp, err := client.R().
@@ -203,7 +203,7 @@ func SendTelegramRequest(method string, message interface{}, chatId int) (*Teleg
 }
 
 func GetFilePath(fileID string) (string, error) {
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/getFile?file_id=%s", config.BotToken, fileID)
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/getFile?file_id=%s", config.TelegramBotToken, fileID)
 	client := resty.New()
 	resp, err := client.R().Get(url)
 	if err != nil {
@@ -227,11 +227,11 @@ func GetFilePath(fileID string) (string, error) {
 }
 
 func TelegramImageURL(filePath string) string {
-	return fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", config.BotToken, filePath)
+	return fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", config.TelegramBotToken, filePath)
 }
 
 func ImageURLToBase64(filePath string) (string, error) {
-	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", config.BotToken, filePath)
+	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", config.TelegramBotToken, filePath)
 	client := resty.New()
 	resp, err := client.R().Get(url)
 	if err != nil {
@@ -249,7 +249,7 @@ func ImageURLToBase64(filePath string) (string, error) {
 }
 
 func DownloadTgFile(filePath string) ([]byte, error) {
-	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", config.BotToken, filePath)
+	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", config.TelegramBotToken, filePath)
 	client := resty.New()
 	resp, err := client.R().Get(url)
 	if err != nil {
