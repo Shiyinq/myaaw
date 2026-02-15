@@ -30,8 +30,17 @@ type UsageResponse struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-// APIChat handles non-streaming API chat requests.
-// POST /api/chat
+// APIChat
+// @Summary		API Chat
+// @Description	Direct REST API chat endpoint (non-streaming)
+// @Tags		API
+// @Produce		json
+// @Accept		json
+// @Param		request	body		api.ChatRequest	true	"Chat request with user_id and text"
+// @Success		200		{object}	ChatResponse
+// @Failure     400    	{object}   	common.ErrorResponse
+// @Failure     500     {object}    common.ErrorResponse
+// @Router		/api/chat [post]
 func (s *BotHandlerImpl) APIChat(c *fiber.Ctx) error {
 	var req api.ChatRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -93,8 +102,17 @@ func (s *BotHandlerImpl) APIChat(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(resp)
 }
 
-// APIChatStream handles streaming API chat requests using Server-Sent Events.
-// POST /api/chat/stream
+// APIChatStream
+// @Summary		API Chat Stream
+// @Description	Direct REST API chat endpoint with Server-Sent Events streaming
+// @Tags		API
+// @Produce		text/event-stream
+// @Accept		json
+// @Param		request	body		api.ChatRequest	true	"Chat request with user_id and text"
+// @Success		200
+// @Failure     400    	{object}   	common.ErrorResponse
+// @Failure     500     {object}    common.ErrorResponse
+// @Router		/api/chat/stream [post]
 func (s *BotHandlerImpl) APIChatStream(c *fiber.Ctx) error {
 	var req api.ChatRequest
 	if err := c.BodyParser(&req); err != nil {
