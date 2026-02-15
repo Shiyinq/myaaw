@@ -3,21 +3,34 @@ package handler
 import (
 	"fmt"
 	"log"
+	"myaaw/internal/channel"
+	telegram "myaaw/internal/channel/telegram"
 	_ "myaaw/internal/common"
-	"myaaw/internal/pkg"
+	"myaaw/internal/config"
 	"myaaw/internal/services/bot/service"
 	"myaaw/internal/utils"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
 
-type BookHandler interface {
+// telegramMeta creates a TelegramMeta for heartbeat delivery.
+// For Telegram private chats, ChatID equals UserID.
+func telegramMeta(userID int) telegram.TelegramMeta {
+	return telegram.TelegramMeta{
+		ChatID:    userID,
+		MessageID: 0,
+	}
+}
+
+type BotHandler interface {
 	Webhook(c *fiber.Ctx) error
 	Heartbeat(c *fiber.Ctx) error
 }
 
 type BotHandlerImpl struct {
-	botService service.BotService
+	botService      service.BotService
+	channelRegistry *channel.Registry
 }
 
 type HeartbeatRequest struct {
@@ -26,53 +39,85 @@ type HeartbeatRequest struct {
 	Channel string `json:"channel"`
 }
 
-func NewBotHandler(botService service.BotService) BookHandler {
-	return &BotHandlerImpl{botService: botService}
+func NewBotHandler(botService service.BotService, channelRegistry *channel.Registry) BotHandler {
+	return &BotHandlerImpl{
+		botService:      botService,
+		channelRegistry: channelRegistry,
+	}
 }
 
-// Bot
-// @Summary		Bot
-// @Description	To receive incoming message from RabbitMQ consumer
+// Webhook
+// @Summary		Webhook
+// @Description	To receive incoming message from RabbitMQ consumer (channel-agnostic)
 // @Tags		Bot
 // @Produce		json
 // @Accept		json
-// @Param		book	body		pkg.TelegramIncommingChat true	"Telegram incoming chat"
-// @Success		200		{object}	pkg.TelegramSendMessageStatus
+// @Param		envelope	body		channel.QueueEnvelope	true	"Queue envelope with channel and payload"
+// @Success		200
 // @Failure     400    	{object}   	common.ErrorResponse
 // @Failure     401     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/webhook/bot [post]
 func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
-	data := new(pkg.TelegramIncommingChat)
-
-	if err := c.BodyParser(&data); err != nil {
+	var envelope channel.QueueEnvelope
+	if err := c.BodyParser(&envelope); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid JSON",
 		})
 	}
 
-	// jsonData, err := json.MarshalIndent(data, "", "  ")
-	// if err != nil {
-	// 	fmt.Println("Error marshalling JSON:", err)
-	// } else {
-	// 	fmt.Println(string(jsonData))
-	// }
-
-	log.Printf("Received message from user ID %v", data.Message.Chat.Id)
-
-	res, err := s.botService.Bot(data)
-	if err != nil {
-		log.Printf("Failed to process incoming chat from user ID %v: %v", data.Message.Chat.Id, err.Error())
-
-		formattedError := utils.FormatErrorMessage(err)
-		s.botService.NotifyError(data.Message.Chat.Id, 0, fmt.Sprintf("❌ Something went wrong\n\n```JSON\n%v```", formattedError), true)
-
-		return utils.ErrorInternalServer(c, "failed to process incoming chat: "+err.Error())
+	// Get the appropriate channel adapter
+	adapter := s.channelRegistry.Get(envelope.Channel)
+	if adapter == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": fmt.Sprintf("Unknown channel: %s", envelope.Channel),
+		})
 	}
 
-	log.Printf("Successfully processed incoming chat from user ID %v", data.Message.Chat.Id)
+	// Parse the channel-specific payload into generic message
+	msg, err := adapter.ParseIncoming(envelope.Payload)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Failed to parse channel payload: " + err.Error(),
+		})
+	}
 
-	return c.Status(fiber.StatusCreated).JSON(res)
+	log.Printf("Received message from user ID %v (channel: %s)", msg.UserID, msg.Channel)
+
+	if config.StreamResponse {
+		// Streaming mode: the adapter handles progressive delivery
+		out, err := adapter.SendStream(msg, func(onChunk func(chunk channel.StreamChunk)) error {
+			_, err := s.botService.BotStream(msg, onChunk)
+			return err
+		})
+		if err != nil {
+			log.Printf("Failed to process/stream chat from user ID %v: %v", msg.UserID, err.Error())
+			formattedError := utils.FormatErrorMessage(err)
+			adapter.SendError(msg, fmt.Sprintf("❌ Something went wrong\n\n```JSON\n%v```", formattedError))
+			return utils.ErrorInternalServer(c, "failed to process incoming chat: "+err.Error())
+		}
+		_ = out
+	} else {
+		// Non-streaming mode: collect full response, then deliver
+		out, err := s.botService.Bot(msg)
+		if err != nil {
+			log.Printf("Failed to process incoming chat from user ID %v: %v", msg.UserID, err.Error())
+			formattedError := utils.FormatErrorMessage(err)
+			adapter.SendError(msg, fmt.Sprintf("❌ Something went wrong\n\n```JSON\n%v```", formattedError))
+			return utils.ErrorInternalServer(c, "failed to process incoming chat: "+err.Error())
+		}
+
+		err = adapter.Send(msg, out)
+		if err != nil {
+			log.Printf("Failed to deliver response to user ID %v: %v", msg.UserID, err.Error())
+			return utils.ErrorInternalServer(c, "failed to deliver response: "+err.Error())
+		}
+	}
+
+	log.Printf("Successfully processed incoming chat from user ID %v", msg.UserID)
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"ok": true,
+	})
 }
 
 // Heartbeat
@@ -103,9 +148,26 @@ func (s *BotHandlerImpl) Heartbeat(c *fiber.Ctx) error {
 		})
 	}
 
-	err := s.botService.ProcessHeartbeat(req.Prompt, req.To, req.Channel)
+	msg, out, err := s.botService.ProcessHeartbeat(req.Prompt, req.To, req.Channel)
 	if err != nil {
 		return utils.ErrorInternalServer(c, "failed to process heartbeat: "+err.Error())
 	}
+
+	// Deliver heartbeat response via channel adapter if possible
+	// Skip delivery if response is just HEARTBEAT_OK (no action needed)
+	if out != nil && req.Channel != "" && strings.TrimSpace(out.Text) != "HEARTBEAT_OK" {
+		adapter := s.channelRegistry.Get(req.Channel)
+		if adapter != nil {
+			// Set RawMeta if missing (heartbeat doesn't go through ParseIncoming)
+			if msg.RawMeta == nil {
+				// For Telegram, ChatID = UserID for private chats
+				msg.RawMeta = telegramMeta(msg.UserID)
+			}
+			if deliverErr := adapter.Send(msg, out); deliverErr != nil {
+				log.Printf("Failed to deliver heartbeat response: %v", deliverErr)
+			}
+		}
+	}
+
 	return c.SendStatus(fiber.StatusOK)
 }

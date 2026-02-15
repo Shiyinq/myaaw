@@ -1,12 +1,13 @@
 package service
 
 import (
-	"myaaw/internal/pkg"
+	"encoding/json"
+	"myaaw/internal/channel"
 	"myaaw/internal/services/queue/repository"
 )
 
 type QueueService interface {
-	ProcessAndPublishMessage(msg *pkg.TelegramIncommingChat) error
+	ProcessAndPublishMessage(envelope *channel.QueueEnvelope) error
 }
 
 type QueueServiceImpl struct {
@@ -17,6 +18,10 @@ func NewQueueService(queueRepo repository.QueueRepository) QueueService {
 	return &QueueServiceImpl{queueRepo: queueRepo}
 }
 
-func (r *QueueServiceImpl) ProcessAndPublishMessage(msg *pkg.TelegramIncommingChat) error {
-	return r.queueRepo.PublishMessage(msg)
+func (r *QueueServiceImpl) ProcessAndPublishMessage(envelope *channel.QueueEnvelope) error {
+	body, err := json.Marshal(envelope)
+	if err != nil {
+		return err
+	}
+	return r.queueRepo.PublishMessage(body)
 }

@@ -1,8 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
+	"myaaw/internal/channel"
 	_ "myaaw/internal/common"
-	"myaaw/internal/pkg"
 	"myaaw/internal/services/queue/service"
 	"myaaw/internal/utils"
 
@@ -28,19 +29,20 @@ func NewQueueHandler(queueService service.QueueService) QueueHandler {
 // @Tags		Bot
 // @Produce		json
 // @Accept		json
-// @Param		book	body		pkg.TelegramIncommingChat true	"Telegram incoming chat"
+// @Param		book	body		any	true	"Telegram incoming chat"
 // @Failure     400    	{object}   	common.ErrorResponse
 // @Failure     401     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/webhook/telegram [post]
 func (h *QueueHandlerImpl) HandleTelegramChat(c *fiber.Ctx) error {
-	var msg *pkg.TelegramIncommingChat
-
-	if err := c.BodyParser(&msg); err != nil {
-		return utils.ErrorBadRequest(c, "Failed to parse message")
+	// Wrap raw Telegram payload in a QueueEnvelope
+	rawPayload := json.RawMessage(c.Body())
+	envelope := &channel.QueueEnvelope{
+		Channel: "telegram",
+		Payload: rawPayload,
 	}
 
-	err := h.queueService.ProcessAndPublishMessage(msg)
+	err := h.queueService.ProcessAndPublishMessage(envelope)
 	if err != nil {
 		return utils.ErrorInternalServer(c, "Failed to publish message")
 	}

@@ -3,30 +3,89 @@ package service
 import (
 	"log"
 	"myaaw/internal/agent"
+	"myaaw/internal/channel"
 	"myaaw/internal/config"
-	"myaaw/internal/pkg"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
-	"myaaw/internal/utils"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-func (r *BotServiceImpl) conversation(user *model.User, chat *pkg.TelegramIncommingChat) (*pkg.TelegramSendMessageStatus, error) {
-	messages := r.buildConversationMessages(user, chat)
+func (r *BotServiceImpl) conversation(user *model.User, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
+	messages := r.buildConversationMessages(user, msg)
 	context := r.contextWindow(messages)
 
-	result, response, err := r.factoryChat(user, chat, context)
+	response, err := r.factoryChat(user, context)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := r.updateUserMessages(chat, messages, response); err != nil {
+	if err := r.updateUserMessages(msg, messages, response); err != nil {
 		return nil, err
 	}
 
-	return result, nil
+	content := response.Content.(string)
+	return &channel.OutgoingMessage{
+		Text:  content,
+		Trace: response.Trace,
+		Usage: response.Usage,
+	}, nil
+}
+
+func (r *BotServiceImpl) conversationStream(user *model.User, msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
+	messages := r.buildConversationMessages(user, msg)
+	context := r.contextWindow(messages)
+
+	streamingContent := ""
+	var traceSteps []provider.ReactStep
+	var finalUsage provider.Usage
+
+	err := r.agent.RunStream(user.Model, context, func(partial provider.Message) error {
+		chunk := channel.StreamChunk{
+			ToolCalls: partial.ToolCalls,
+			Trace:     partial.Trace,
+			Usage:     partial.Usage,
+		}
+
+		if partial.Usage.TotalTokens > 0 {
+			finalUsage = partial.Usage
+		}
+
+		if partial.Content != nil {
+			text := partial.Content.(string)
+			streamingContent += text
+			chunk.Text = text
+		}
+
+		if len(partial.Trace) > 0 {
+			traceSteps = partial.Trace
+		}
+
+		onChunk(chunk)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	response := provider.Message{
+		Role:    "assistant",
+		Content: streamingContent,
+		Trace:   traceSteps,
+		Usage:   finalUsage,
+	}
+
+	if err := r.updateUserMessages(msg, messages, response); err != nil {
+		return nil, err
+	}
+
+	return &channel.OutgoingMessage{
+		Text:  streamingContent,
+		Trace: traceSteps,
+		Usage: finalUsage,
+	}, nil
 }
 
 func (r *BotServiceImpl) contextWindow(history []provider.Message) []provider.Message {
@@ -46,7 +105,7 @@ func (r *BotServiceImpl) contextWindow(history []provider.Message) []provider.Me
 	return context
 }
 
-func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.TelegramIncommingChat) []provider.Message {
+func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channel.IncomingMessage) []provider.Message {
 	userSystem := agent.NewSystemPromptBuilder(int64(user.UserId)).Build()
 	userSystem += agent.GetSkillsInstruction()
 	messages := []provider.Message{
@@ -75,17 +134,75 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, chat *pkg.T
 	}
 
 	messages = append(messages, convMessages...)
-	newMessage := NewMessage(chat, r.llmProvider.ProviderName(), r.ttsProvider)
+
+	// Build user message from generic IncomingMessage
+	newMessage := r.buildUserMessage(msg)
 	messages = append(messages, newMessage)
 
 	return messages
 }
 
-func (r *BotServiceImpl) updateUserMessages(chat *pkg.TelegramIncommingChat, messages []provider.Message, response provider.Message) error {
+// buildUserMessage converts a generic IncomingMessage to a provider.Message.
+func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider.Message {
+	// Voice: text is already transcribed by channel adapter
+	// Text with reply context
+	if msg.ReplyTo != "" {
+		text := msg.Text + "\n\ncontex:\n" + msg.ReplyTo
+		return provider.Message{
+			Role:    "user",
+			Content: text,
+		}
+	}
+
+	// Image message
+	if len(msg.Images) > 0 {
+		providerName := r.llmProvider.ProviderName()
+		isOpenAI := providerName == "openai"
+		isMistral := providerName == "mistral"
+		isGroq := providerName == "groq"
+
+		if isOpenAI || isMistral || isGroq {
+			// Type 2: content items with image_url
+			contentItems := []provider.ContentItem{
+				{
+					Type: "text",
+					Text: msg.Text,
+				},
+			}
+			for _, img := range msg.Images {
+				contentItems = append(contentItems, provider.ContentItem{
+					Type: "image_url",
+					ImageURL: &provider.ImageInfo{
+						URL: "data:image/jpeg;base64," + img,
+					},
+				})
+			}
+			return provider.Message{
+				Role:    "user",
+				Content: contentItems,
+			}
+		}
+
+		// Type 1: images array (Ollama, Gemini)
+		return provider.Message{
+			Role:    "user",
+			Content: msg.Text,
+			Images:  msg.Images,
+		}
+	}
+
+	// Plain text
+	return provider.Message{
+		Role:    "user",
+		Content: msg.Text,
+	}
+}
+
+func (r *BotServiceImpl) updateUserMessages(msg *channel.IncomingMessage, messages []provider.Message, response provider.Message) error {
 	messages = append(messages, response)
 	messages = messages[1:] // exclude system message
 
-	conv, err := r.conversationRepo.GetActiveConversationByUserId(chat.Message.From.Id)
+	conv, err := r.conversationRepo.GetActiveConversationByUserId(msg.UserID)
 	var convId primitive.ObjectID
 	if err != nil && conv != nil {
 		return err
@@ -95,7 +212,7 @@ func (r *BotServiceImpl) updateUserMessages(chat *pkg.TelegramIncommingChat, mes
 	if convId != primitive.NilObjectID {
 		title := ""
 		if conv.Title == "" || conv.Title == "New Chat" {
-			user, err := r.userRepo.GetUserById(chat.Message.From.Id)
+			user, err := r.userRepo.GetUserById(msg.UserID)
 			if err != nil {
 				return err
 			}
@@ -110,202 +227,63 @@ func (r *BotServiceImpl) updateUserMessages(chat *pkg.TelegramIncommingChat, mes
 	return nil
 }
 
-func (r *BotServiceImpl) factoryChat(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, provider.Message, error) {
-	var err error
-	var response provider.Message
-	var result *pkg.TelegramSendMessageStatus
-
+func (r *BotServiceImpl) factoryChat(user *model.User, messages []provider.Message) (provider.Message, error) {
 	log.Println("Processing incoming message")
 	if config.StreamResponse {
 		log.Println("Starting content streaming")
-		result, response, err = r.chatStream(user, chat, messages)
-	} else {
-		result, response, err = r.chat(user, chat, messages)
+		return r.chatStream(user, messages)
 	}
-
-	return result, response, err
+	return r.chat(user, messages)
 }
 
-func (r *BotServiceImpl) chat(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, provider.Message, error) {
-	// Use Agent for iteration
+func (r *BotServiceImpl) chat(user *model.User, messages []provider.Message) (provider.Message, error) {
 	res, err := r.agent.Run(user.Model, messages)
-
 	if err != nil {
-		return nil, provider.Message{}, err
+		return provider.Message{}, err
 	}
 
 	content := res.Content.(string)
-	maxTelegramLength := 4096
-
-	// Build response with trace from LLM
-	response := provider.Message{
+	return provider.Message{
 		Role:    "assistant",
 		Content: content,
 		Trace:   res.Trace,
 		Usage:   res.Usage,
-	}
-
-	if len(content) > maxTelegramLength {
-		var chunks []string
-		for i := 0; i < len(content); i += maxTelegramLength {
-			end := i + maxTelegramLength
-			if end > len(content) {
-				end = len(content)
-			}
-			chunks = append(chunks, content[i:end])
-		}
-
-		send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, chunks[0], false)
-		if err != nil || !send.Ok {
-			return nil, provider.Message{}, err
-		}
-
-		for i := 1; i < len(chunks)-1; i++ {
-			_, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, chunks[i], false)
-			if err != nil {
-				log.Println("Error sending chunk:", err)
-			}
-		}
-
-		if len(chunks) > 1 {
-			lastChunk := chunks[len(chunks)-1]
-			watermarkedChunk := utils.Watermark(lastChunk, user.Model, config.WatermarkModel)
-
-			if len(watermarkedChunk) > maxTelegramLength {
-				_, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, lastChunk, false)
-				if err != nil {
-					log.Println("Error sending final chunk:", err)
-				}
-			} else {
-				_, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, watermarkedChunk, false)
-				if err != nil {
-					log.Println("Error sending final chunk:", err)
-				}
-			}
-		}
-
-		return send, response, nil
-	}
-
-	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, utils.Watermark(content, user.Model, config.WatermarkModel), true)
-	if err != nil || !send.Ok {
-		return nil, provider.Message{}, nil
-	}
-
-	return send, response, nil
+	}, nil
 }
 
-func indicator(text string) string {
-	if text == "tool" {
-		return "🛠️ Using "
-	}
-	return "✨ Typing..."
-}
-
-func (r *BotServiceImpl) chatStream(user *model.User, chat *pkg.TelegramIncommingChat, messages []provider.Message) (*pkg.TelegramSendMessageStatus, provider.Message, error) {
-	messageId := 0
+func (r *BotServiceImpl) chatStream(user *model.User, messages []provider.Message) (provider.Message, error) {
 	streamingContent := ""
-	lastStreamingContent := ""
-	bufferThreshold := 500
-	bufferedContent := ""
-	maxTelegramLength := 4096
 	var traceSteps []provider.ReactStep
-	lastTraceLen := 0
-	lastLoading := ""
-
-	send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, indicator("typing"), false)
-	if err != nil || !send.Ok {
-		log.Println(err)
-	}
-
-	messageId = send.Result.MessageId
-
 	var finalUsage provider.Usage
-	// Use Agent for streaming iteration
-	err = r.agent.RunStream(user.Model, messages, func(partial provider.Message) error {
-		loading := indicator("typing")
-		chunk := partial.Content
 
-		// Capture Usage if present
+	err := r.agent.RunStream(user.Model, messages, func(partial provider.Message) error {
 		if partial.Usage.TotalTokens > 0 {
 			finalUsage = partial.Usage
 		}
 
 		if partial.ToolCalls != nil {
-			// streamingContent += "\n"
-			toolName := "tool"
-			if len(partial.ToolCalls) > 0 {
-				toolName = partial.ToolCalls[0].Function.Name
-			}
-			loading = indicator("tool") + toolName + "..."
-		} else if chunk != nil {
-			streamingContent += chunk.(string)
-			bufferedContent += chunk.(string)
+			// Tool calls are handled by agent loop, nothing to collect here for content
+		} else if partial.Content != nil {
+			streamingContent += partial.Content.(string)
 		}
 
-		// Capture trace if present
 		if len(partial.Trace) > 0 {
-			// Iterate through all new steps since last check
-			for i := lastTraceLen; i < len(partial.Trace); i++ {
-				step := partial.Trace[i]
-				// Only print if Observation is not empty (tool execution finished)
-				if step.Observation != "" {
-					action := step.Action
-					log.Printf("[ReAct] Captured trace tool: %v", action)
-					streamingContent += "\n\n🛠️ " + action + "\n\n"
-					loading = indicator("typing")
-				}
-			}
-			lastTraceLen = len(partial.Trace)
 			traceSteps = partial.Trace
-		}
-
-		if len(streamingContent) >= maxTelegramLength-100 {
-			streamingContent = streamingContent[len(lastStreamingContent):]
-			bufferedContent = ""
-
-			newSend, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, loading, false)
-			if err != nil || !newSend.Ok {
-				log.Println(err)
-			} else {
-				messageId = newSend.Result.MessageId
-			}
-		} else if len(bufferedContent) >= bufferThreshold || partial.ToolCalls != nil || lastLoading != loading {
-			editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, streamingContent+"\n\n"+loading, false)
-
-			lastStreamingContent = streamingContent
-			lastLoading = loading
-
-			if err != nil || !editMessage.Ok {
-				log.Println(err)
-			}
-			bufferedContent = ""
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		return nil, provider.Message{}, err
+		return provider.Message{}, err
 	}
 
-	editMessage, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(utils.ParseTelegramMarkdown(streamingContent), user.Model, config.WatermarkModel), true)
-	if err != nil || !editMessage.Ok {
-		_, err := pkg.EditTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, messageId, utils.Watermark(streamingContent, user.Model, config.WatermarkModel), false)
-		if err != nil {
-			log.Println(err)
-			return nil, provider.Message{}, err
-		}
-	}
-
-	// Return full message with trace
-	response := provider.Message{
+	return provider.Message{
 		Role:    "assistant",
 		Content: streamingContent,
 		Trace:   traceSteps,
 		Usage:   finalUsage,
-	}
-	return editMessage, response, nil
+	}, nil
 }
 
 func (r *BotServiceImpl) GenerateConversationTitle(user *model.User, messages []provider.Message) (string, error) {
