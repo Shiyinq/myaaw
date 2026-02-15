@@ -9,6 +9,7 @@ import (
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
 	"myaaw/internal/services/bot/repository"
+	"slices"
 	"strconv"
 )
 
@@ -49,6 +50,13 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 		ttsProvider:      ttsProvider,
 		agent:            ag,
 	}
+}
+
+func (r *BotServiceImpl) isAllowed(userID int) bool {
+	if config.BotType != "private" {
+		return true
+	}
+	return slices.Contains(config.OwnerIDs, strconv.Itoa(userID))
 }
 
 func (r *BotServiceImpl) checkUser(msg *channel.IncomingMessage) (*model.User, error) {
@@ -102,6 +110,10 @@ func (r *BotServiceImpl) changeProviderAndModel(user *model.User) (*model.User, 
 }
 
 func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
+	if !r.isAllowed(msg.UserID) {
+		return nil, fmt.Errorf("access denied")
+	}
+
 	user, err := r.checkUser(msg)
 	if err != nil {
 		return nil, err
@@ -127,6 +139,10 @@ func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMes
 }
 
 func (r *BotServiceImpl) BotStream(msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
+	if !r.isAllowed(msg.UserID) {
+		return nil, fmt.Errorf("access denied")
+	}
+
 	user, err := r.checkUser(msg)
 	if err != nil {
 		return nil, err

@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"myaaw/internal/middleware"
 	bot_router "myaaw/internal/services/bot"
 	queue_router "myaaw/internal/services/queue"
 
@@ -10,7 +9,7 @@ import (
 
 func SetupRoutes(app *fiber.App) {
 	prefix := ""
-	router := app.Group(prefix, middleware.Protected)
+	router := app.Group(prefix)
 
 	bot_router.BotRouter(router)
 	queue_router.QueueRouter(router)

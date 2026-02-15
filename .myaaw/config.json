@@ -4,5 +4,22 @@
         "every": "30m",
         "to": "123456789",
         "channel": "telegram"
+    },
+    "bot": {
+        "owner_ids": [
+            "YOUR_OWNER_ID_1"
+        ],
+        "type": "private",
+        "watermark": true
+    },
+    "channels": {
+        "telegram": {
+            "active": true,
+            "token": "YOUR_TELEGRAM_BOT_TOKEN"
+        },
+        "discord": {
+            "active": false,
+            "token": "YOUR_DISCORD_BOT_TOKEN"
+        }
     }
 }

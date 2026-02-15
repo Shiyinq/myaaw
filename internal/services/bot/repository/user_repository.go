@@ -2,12 +2,12 @@ package repository
 
 import (
 	"context"
-	"errors"
-	"strconv"
 	"myaaw/internal/common"
 	"myaaw/internal/config"
 	"myaaw/internal/pkg"
 	"myaaw/internal/services/bot/model"
+	"slices"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -63,12 +63,8 @@ func (r *UserRepositoryImpl) GetUserById(userId int) (*model.User, error) {
 
 func (r *UserRepositoryImpl) CreateUser(user *model.User) (*model.User, error) {
 	role := "user"
-	owner, err := strconv.Atoi(config.OwnerId)
-	if err != nil {
-		return nil, errors.New("invalid owner id")
-	}
-
-	if user.UserId == owner {
+	userIDStr := strconv.Itoa(user.UserId)
+	if slices.Contains(config.OwnerIDs, userIDStr) {
 		role = "owner"
 	}
 
