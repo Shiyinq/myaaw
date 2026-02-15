@@ -14,18 +14,15 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// DiscordMeta holds Discord-specific metadata.
 type DiscordMeta struct {
 	ChannelID string
 	MessageID string
 }
 
-// DiscordAdapter implements channel.Adapter for Discord.
 type DiscordAdapter struct {
 	session *discordgo.Session
 }
 
-// NewDiscordAdapter creates a new Discord channel adapter.
 func NewDiscordAdapter(token string) (*DiscordAdapter, error) {
 	session, err := discordgo.New("Bot " + token)
 	if err != nil {
@@ -40,7 +37,6 @@ func (d *DiscordAdapter) Name() string {
 	return "discord"
 }
 
-// StartListener connects to Discord Gateway and forwards events to RabbitMQ.
 func (d *DiscordAdapter) StartListener(queueRepo repository.QueueRepository) error {
 	d.session.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		// Ignore invalid messages or messages from bot itself
@@ -48,24 +44,14 @@ func (d *DiscordAdapter) StartListener(queueRepo repository.QueueRepository) err
 			return
 		}
 
-		// Parse user ID
-		userID, _ := strconv.Atoi(m.Author.ID) // Discord IDs are strings (snowflakes), but our internal system uses int.
-		// NOTE: Discord IDs are too large for standard int on 32-bit systems, but fit in int64.
-		// Our internal UserID is int. If this overflows we might need to map Discord ID to internal ID or change UserID to string.
-		// For now assuming we just use the numeric value if it fits, or we might need a better mapping strategy.
-		// Actually, Discord IDs are snowflakes (uint64). They WON'T fit in 32-bit int, but might fit in 64-bit int.
-		// However, strict conversion here might be an issue if the system expects small integers.
-		// Let's use a hash or just the last few digits for now if we want to be safe, BUT ideally we should change UserID to string or int64 globally.
-		// Since we can't refactor UserID right now, let's treat it as is (Discord ID as int64 inside int).
-		// If int is 64-bit (standard on 64-bit OS), it's fine.
+		userID, _ := strconv.Atoi(m.Author.ID)
 
 		// TODO: Handle Image/Attachment processing if needed.
 
 		payload := map[string]interface{}{
 			"message": map[string]interface{}{
 				"from": map[string]interface{}{
-					"id": userID, // We pass it as int, hope it fits
-					// Better approach: pass string in raw payload, logic below is for Telegram
+					"id": userID,
 				},
 				"chat": map[string]interface{}{
 					"id": m.ChannelID, // ChannelID is string
@@ -103,7 +89,6 @@ func (d *DiscordAdapter) StartListener(queueRepo repository.QueueRepository) err
 	return nil
 }
 
-// ParseIncoming converts our custom Discord payload from Queue into generic IncomingMessage.
 func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMessage, error) {
 	// We construct a custom map structure in the listener, so we parse it back here.
 	var data struct {
@@ -124,8 +109,6 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 		return nil, fmt.Errorf("failed to parse discord payload: %w", err)
 	}
 
-	// For Discord, we use the numeric ID as UserID (assuming 64-bit env), but better to rely on string ID in metadata.
-	// Since generic IncomingMessage.UserID is int, we try to parse it.
 	userID, _ := strconv.Atoi(data.DiscordAuthor.ID)
 
 	return &channel.IncomingMessage{
@@ -139,7 +122,6 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 	}, nil
 }
 
-// Send delivers a non-streaming response via Discord.
 func (d *DiscordAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMessage) error {
 	meta := msg.RawMeta.(DiscordMeta)
 
@@ -149,8 +131,6 @@ func (d *DiscordAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoin
 		content = utils.Watermark(content, "", true)
 	}
 
-	// Simple send for now (no chunking implemented yet, assuming short responses or verify limit)
-	// TODO: Implement chunking if > 2000 chars
 	if len(content) > 2000 {
 		content = content[:1990] + "..." // Truncate for safety for now
 	}
@@ -159,7 +139,6 @@ func (d *DiscordAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoin
 	return err
 }
 
-// SendStream delivers a streaming response via Discord (Send initial -> Edit loop).
 func (d *DiscordAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onChunk func(chunk channel.StreamChunk)) error) (*channel.OutgoingMessage, error) {
 	meta := msg.RawMeta.(DiscordMeta)
 
@@ -176,7 +155,7 @@ func (d *DiscordAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(
 
 	err = streamFn(func(chunk channel.StreamChunk) {
 		textToAdd := ""
-		if chunk.ToolCalls != nil && len(chunk.ToolCalls) > 0 {
+		if len(chunk.ToolCalls) > 0 {
 			textToAdd = fmt.Sprintf("\n🛠️ Using %s...\n", chunk.ToolCalls[0].Function.Name)
 		} else if chunk.Text != "" {
 			textToAdd = chunk.Text
@@ -210,7 +189,6 @@ func (d *DiscordAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(
 	return &channel.OutgoingMessage{Text: fullContent}, err
 }
 
-// SendError delivers an error message via Discord.
 func (d *DiscordAdapter) SendError(msg *channel.IncomingMessage, errText string) error {
 	meta := msg.RawMeta.(DiscordMeta)
 	_, err := d.session.ChannelMessageSend(meta.ChannelID, "❌ "+errText)
