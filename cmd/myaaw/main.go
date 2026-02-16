@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -19,6 +20,37 @@ func init() {
 	rootCmd.AddCommand(chatCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(webhookCmd)
+	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(dockerCmd)
+	rootCmd.AddCommand(versionCmd)
+
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		// Commands that don't require .myaaw configuration
+		metaCommands := map[string]bool{
+			"onboard": true,
+			"version": true,
+			"help":    true,
+			"update":  true,
+		}
+
+		if metaCommands[cmd.Name()] {
+			return nil
+		}
+
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil // Fallback to system env if home unknown
+		}
+
+		myaawPath := filepath.Join(homeDir, ".myaaw")
+		if _, err := os.Stat(myaawPath); os.IsNotExist(err) {
+			fmt.Println("⚠️  Myaaw is not initialized!")
+			fmt.Println("Please run 'myaaw onboard' to setup your configuration and features.")
+			os.Exit(1)
+		}
+		return nil
+	}
 }
 
 func main() {

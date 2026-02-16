@@ -105,17 +105,25 @@ func fetchUpdates(client *resty.Client, offset int64) ([]json.RawMessage, error)
 func deleteWebhook(client *resty.Client) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/deleteWebhook", config.TelegramBotToken)
 	var resp TelegramBaseResponse
-	_, err := client.R().
-		SetResult(&resp).
-		Get(url)
+	var err error
 
-	if err != nil {
-		return err
+	for i := 1; i <= 3; i++ {
+		_, err = client.R().
+			SetResult(&resp).
+			Get(url)
+
+		if err == nil {
+			if !resp.Ok {
+				return fmt.Errorf("API error (%d): %s", resp.ErrorCode, resp.Description)
+			}
+			return nil
+		}
+
+		log.Printf("⚠️  Attempt %d: Failed to delete Telegram webhook: %v. Retrying in 2s...", i, err)
+		time.Sleep(2 * time.Second)
 	}
-	if !resp.Ok {
-		return fmt.Errorf("API error (%d): %s", resp.ErrorCode, resp.Description)
-	}
-	return nil
+
+	return err
 }
 
 func processUpdate(payload json.RawMessage, q service.QueueService) {

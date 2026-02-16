@@ -9,6 +9,23 @@ import (
 	"time"
 )
 
+// EnsureMyaawConfig checks if the .myaaw configuration directory exists in the user's home directory.
+// Returns the path to the home .myaaw directory if it exists, otherwise returns an error.
+func EnsureMyaawConfig() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	targetDir := filepath.Join(homeDir, ".myaaw")
+
+	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
+		return "", fmt.Errorf("configuration directory %s not found. Please run 'myaaw onboard' first", targetDir)
+	}
+
+	return targetDir, nil
+}
+
 type SystemPromptBuilder struct {
 	userID  int64
 	homeDir string
@@ -41,13 +58,18 @@ func (b *SystemPromptBuilder) Build() string {
 	}
 
 	// 1. Header & Identity
-	// Priority: IDENTITY.md > AGENTS.md
+	// Load IDENTITY.md (Persona) and AGENTS.md (Instructions)
 	identity := b.readContent("IDENTITY.md")
-	if identity == "" {
-		identity = b.readContent("AGENTS.md")
+	if identity != "" {
+		sb.WriteString(identity)
+		sb.WriteString("\n\n")
 	}
-	sb.WriteString(identity)
-	sb.WriteString("\n\n")
+
+	agents := b.readContent("AGENTS.md")
+	if agents != "" {
+		sb.WriteString(agents)
+		sb.WriteString("\n\n")
+	}
 
 	// 2. User Info (Dynamic)
 	sb.WriteString("# User Info\n")
