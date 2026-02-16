@@ -39,6 +39,7 @@ var TTSProviderName string
 var TTSProviderAPIKey string
 var WatermarkModel bool
 var OwnerIDs []string
+var Heartbeat HeartbeatConfig
 
 type Config struct {
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
@@ -99,8 +100,6 @@ func envPath() string {
 	return envPath
 }
 
-// LoadBaseConfig loads .env file and config.json settings without connecting to any services.
-// This is the minimum needed for CLI commands that don't need database connections.
 func LoadBaseConfig() {
 	path := envPath()
 	err := godotenv.Load(path)
@@ -142,13 +141,11 @@ func LoadBaseConfig() {
 		AllowedOrigins = "*"
 	}
 
-	// Load JSON config and override if present
 	jsonConfig, err := loadJSONConfig()
 	if err != nil {
 		log.Printf("Warning: Failed to load JSON config: %v", err)
 	}
 	if jsonConfig != nil {
-		// Global Bot Settings
 		if len(jsonConfig.Bot.OwnerIDs) > 0 {
 			OwnerIDs = jsonConfig.Bot.OwnerIDs
 		}
@@ -157,7 +154,6 @@ func LoadBaseConfig() {
 		}
 		WatermarkModel = jsonConfig.Bot.Watermark
 
-		// Channels
 		if jsonConfig.Channels.Telegram != nil {
 			if jsonConfig.Channels.Telegram.Active {
 				TelegramBotToken = jsonConfig.Channels.Telegram.Token
@@ -173,10 +169,11 @@ func LoadBaseConfig() {
 				DiscordBotToken = ""
 			}
 		}
+
+		Heartbeat = jsonConfig.Heartbeat
 	}
 }
 
-// ConnectDatabases connects to MongoDB and Redis.
 func ConnectDatabases() {
 	maxRetries := 10
 	retryDelay := 3 * time.Second
@@ -189,7 +186,6 @@ func ConnectDatabases() {
 	ConnectRedis(redisURL, maxRetries, retryDelay)
 }
 
-// ConnectQueue connects to RabbitMQ.
 func ConnectQueue() {
 	maxRetries := 10
 	retryDelay := 3 * time.Second
@@ -198,8 +194,6 @@ func ConnectQueue() {
 	ConnectRabbitMQ(rabbitMQURL, maxRetries, retryDelay)
 }
 
-// LoadConfig loads all configuration and connects to all services.
-// This is a convenience wrapper that calls LoadBaseConfig + ConnectDatabases + ConnectQueue.
 func LoadConfig() {
 	LoadBaseConfig()
 	ConnectDatabases()

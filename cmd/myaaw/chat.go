@@ -61,8 +61,6 @@ func createIncomingMessage(text string) *channel.IncomingMessage {
 	return msg
 }
 
-// --- One-Shot Mode ---
-
 func runOneShot(botService service.BotService, adapter *cliAdapter.CLIAdapter, message string) {
 	msg := createIncomingMessage(message)
 
@@ -85,8 +83,6 @@ func runOneShot(botService service.BotService, adapter *cliAdapter.CLIAdapter, m
 	}
 }
 
-// --- Interactive TUI Mode ---
-
 type tuiState int
 
 const (
@@ -101,22 +97,18 @@ type nextChunkMsg struct {
 }
 
 type model struct {
-	// Components
 	viewport  viewport.Model
 	textInput textinput.Model
 
-	// State
 	messages  []chatMessage_
 	state     tuiState
 	streaming string
 	err       error
 
-	// External Services
 	botService service.BotService
 	adapter    *cliAdapter.CLIAdapter
 	renderer   *glamour.TermRenderer
 
-	// Communication
 	sub chan nextChunkMsg
 }
 
@@ -159,8 +151,6 @@ var (
 			Padding(0, 1).
 			MarginBottom(1)
 
-	// Custom ASCII Art for Center Screen (Empty State)
-	// source https://emojicombos.com/cat
 	catAscii = `
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⣿⡷⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⡿⠋⠈⠻⣮⣳⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -200,17 +190,14 @@ func initialModel(botService service.BotService, adapter *cliAdapter.CLIAdapter)
 
 	vp := viewport.New(80, 20)
 
-	// Create centered cat placeholder for empty state
-	// Note: We use Place() to center it in the viewport
 	termWidth := 80
 	termHeight := 20
-	// Use lipgloss to center the ascii art
 	placeholder := lipgloss.NewStyle().
 		Width(termWidth).
 		Height(termHeight).
 		Align(lipgloss.Center).
 		AlignVertical(lipgloss.Center).
-		Foreground(lipgloss.Color("240")). // Dim color for watermark
+		Foreground(lipgloss.Color("240")).
 		Render(catAscii)
 
 	vp.SetContent(placeholder)
@@ -222,7 +209,7 @@ func initialModel(botService service.BotService, adapter *cliAdapter.CLIAdapter)
 		renderer:   renderer,
 		textInput:  ti,
 		viewport:   vp,
-		messages:   []chatMessage_{}, // Empty messages initially (no welcome text)
+		messages:   []chatMessage_{},
 	}
 }
 
@@ -303,7 +290,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitForChunk(m.sub)
 	}
 
-	// Handle Viewport inputs (scrolling)
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.Type {
@@ -311,7 +297,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport, vpCmd = m.viewport.Update(msg)
 		}
 	default:
-		// Pass other messages (like mouse events or window resize) to viewport
 		m.viewport, vpCmd = m.viewport.Update(msg)
 	}
 
@@ -351,14 +336,13 @@ func (m *model) sendMessage(text string) tea.Cmd {
 }
 
 func (m *model) updateViewportContent() {
-	// If no messages, render the watermark/placeholder
 	if len(m.messages) == 0 {
 		placeholder := lipgloss.NewStyle().
 			Width(m.viewport.Width).
 			Height(m.viewport.Height).
 			Align(lipgloss.Center).
 			AlignVertical(lipgloss.Center).
-			Foreground(lipgloss.Color("240")). // Dim color
+			Foreground(lipgloss.Color("240")).
 			Render(catAscii)
 		m.viewport.SetContent(placeholder)
 		return
@@ -368,7 +352,6 @@ func (m *model) updateViewportContent() {
 
 	for _, msg := range m.messages {
 		if msg.role == "user" {
-			// User message: Icon and text on same line, no "You" text
 			content := userStyle.Render("❯ ") + strings.TrimSpace(msg.text)
 			b.WriteString(userBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n")
 		} else {

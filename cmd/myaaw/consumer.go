@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"myaaw/internal/daemon"
 	"myaaw/internal/heartbeat"
 	"os"
 	"time"
@@ -15,47 +16,141 @@ import (
 
 var consumerCmd = &cobra.Command{
 	Use:   "consumer",
-	Short: "Start the message consumer",
-	Long:  "Start the RabbitMQ message consumer that forwards messages to the webhook endpoint.",
+	Short: "Manage the message consumer",
+	Long:  "Manage the RabbitMQ message consumer (run, start, stop, status).",
+}
+
+var consumerRunCmd = &cobra.Command{
+	Use:   "run",
+	Short: "Run consumer in foreground",
 	Run: func(cmd *cobra.Command, args []string) {
-		err := godotenv.Load()
-		log.Println("Load .env file")
+		startConsumer()
+	},
+}
+
+var consumerStartCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Start consumer in background (Daemon)",
+	Run: func(cmd *cobra.Command, args []string) {
+		dm, err := daemon.NewManager("myaaw-consumer")
 		if err != nil {
-			log.Println("Error loading .env file, using environment variables")
+			log.Fatalf("Error: %v", err)
 		}
 
-		heartbeatService := heartbeat.NewHeartbeatService()
-
-		rabbitMQURL := os.Getenv("RABBITMQ_URL")
-		conn, ch, err := consumerConnectRabbitMQ(rabbitMQURL)
-		if err != nil {
-			log.Fatalf("Error: %s", err)
-		}
-		defer conn.Close()
-		defer ch.Close()
-
-		queueName := os.Getenv("QUEUE_NAME")
-		q, err := ch.QueueDeclare(
-			queueName,
-			false,
-			false,
-			false,
-			false,
-			nil,
-		)
-		if err != nil {
-			log.Fatalf("Failed to declare queue: %s", err)
-		}
-
-		if heartbeatService != nil {
-			go heartbeatService.Start()
-		}
-
-		err = consumeMessages(ch, q.Name)
-		if err != nil {
-			log.Fatalf("Error in consumer: %s", err)
+		runArgs := []string{"consumer", "run"}
+		if err := dm.Start(runArgs); err != nil {
+			log.Fatalf("Failed to start consumer: %v", err)
 		}
 	},
+}
+
+var consumerStopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Stop the background consumer",
+	Run: func(cmd *cobra.Command, args []string) {
+		dm, err := daemon.NewManager("myaaw-consumer")
+		if err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+		if err := dm.Stop(); err != nil {
+			log.Fatalf("Failed to stop consumer: %v", err)
+		}
+	},
+}
+
+var consumerRestartCmd = &cobra.Command{
+	Use:   "restart",
+	Short: "Restart the consumer daemon",
+	Run: func(cmd *cobra.Command, args []string) {
+		dm, err := daemon.NewManager("myaaw-consumer")
+		if err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+		fmt.Println("🔄 Stopping consumer...")
+		if err := dm.Stop(); err != nil {
+			fmt.Printf("⚠️  Stop warning: %v\n", err)
+		}
+
+		time.Sleep(1 * time.Second)
+
+		fmt.Println("🚀 Starting consumer...")
+		runArgs := []string{"consumer", "run"}
+		if err := dm.Start(runArgs); err != nil {
+			log.Fatalf("Failed to start consumer: %v", err)
+		}
+	},
+}
+
+var consumerStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Check consumer status",
+	Run: func(cmd *cobra.Command, args []string) {
+		dm, err := daemon.NewManager("myaaw-consumer")
+		if err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+
+		pid, running, err := dm.Status()
+		if err != nil {
+			log.Fatalf("Error checking status: %v", err)
+		}
+
+		if running {
+			fmt.Printf("✅ Consumer is running (PID: %d)\n", pid)
+		} else {
+			fmt.Println("❌ Consumer is stopped")
+		}
+	},
+}
+
+func init() {
+	consumerCmd.AddCommand(consumerRunCmd)
+	consumerCmd.AddCommand(consumerStartCmd)
+	consumerCmd.AddCommand(consumerStopCmd)
+	consumerCmd.AddCommand(consumerRestartCmd)
+	consumerCmd.AddCommand(consumerStatusCmd)
+}
+
+func startConsumer() {
+	err := godotenv.Load()
+	log.Println("Load .env file")
+	if err != nil {
+		log.Println("Error loading .env file, using environment variables")
+	}
+
+	heartbeatService := heartbeat.NewHeartbeatService()
+
+	rabbitMQURL := os.Getenv("RABBITMQ_URL")
+	conn, ch, err := consumerConnectRabbitMQ(rabbitMQURL)
+	if err != nil {
+		log.Fatalf("Error: %s", err)
+	}
+	defer conn.Close()
+	defer ch.Close()
+
+	queueName := os.Getenv("QUEUE_NAME")
+	q, err := ch.QueueDeclare(
+		queueName,
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		log.Fatalf("Failed to declare queue: %s", err)
+	}
+
+	if heartbeatService != nil {
+		go heartbeatService.Start()
+	}
+
+	err = consumeMessages(ch, q.Name)
+	if err != nil {
+		log.Fatalf("Error in consumer: %s", err)
+	}
 }
 
 func consumerConnectRabbitMQ(rabbitMQURL string) (*amqp091.Connection, *amqp091.Channel, error) {
