@@ -1,6 +1,7 @@
 package service
 
 import (
+	"myaaw/internal/channel"
 	"myaaw/internal/common"
 	"myaaw/internal/config"
 	"myaaw/internal/pkg"
@@ -154,8 +155,8 @@ func (e *CommandExecutor) ExecuteCommand(command string, user *model.User, args 
 	return cmd.HandleCommand(user, args)
 }
 
-func (r *BotServiceImpl) command(user *model.User, chat *pkg.TelegramIncommingChat) (bool, string, error) {
-	isCommand, command, args := utils.ParseCommand(chat.Message.Text)
+func (r *BotServiceImpl) command(user *model.User, msg *channel.IncomingMessage) (bool, string, error) {
+	isCommand, command, args := utils.ParseCommand(msg.Text)
 	if !isCommand {
 		return false, "", nil
 	}

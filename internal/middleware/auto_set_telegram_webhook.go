@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"myaaw/internal/config"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"myaaw/internal/config"
 
 	"golang.ngrok.com/ngrok"
 	cfNgrok "golang.ngrok.com/ngrok/config"
@@ -45,12 +45,12 @@ func SetTelegramWebhook() {
 		log.Fatalf("Failed to set Ngrok Forwarder: %v", err)
 	}
 	url := ngrok.URL()
-	if config.BotToken == "" {
+	if config.TelegramBotToken == "" {
 		log.Fatal("Failed to set Telegram webhook: bot token required")
 	}
 
 	trimmedUrl := strings.TrimFunc(url, func(r rune) bool { return r == '/' })
-	webhookUrl := fmt.Sprintf("https://api.telegram.org/bot%s/setWebhook?url=%s/webhook/telegram", config.BotToken, trimmedUrl)
+	webhookUrl := fmt.Sprintf("https://api.telegram.org/bot%s/setWebhook?url=%s/webhook/telegram", config.TelegramBotToken, trimmedUrl)
 	resp, err := http.Get(webhookUrl)
 	if err != nil {
 		log.Fatalf("Error setting Telegram webhook: %v", err)

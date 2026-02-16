@@ -4,22 +4,23 @@ import (
 	"fmt"
 	"log"
 	"myaaw/internal/agent"
+	"myaaw/internal/channel"
 	"myaaw/internal/config"
-	"myaaw/internal/pkg"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
 	"myaaw/internal/services/bot/repository"
+	"slices"
 	"strconv"
-	"time"
 )
 
 type BotService interface {
-	checkUser(chat *pkg.TelegramIncommingChat) (*model.User, error)
-	Bot(chat *pkg.TelegramIncommingChat) (*pkg.TelegramSendMessageStatus, error)
-	command(user *model.User, chat *pkg.TelegramIncommingChat) (bool, string, error)
-	conversation(user *model.User, chat *pkg.TelegramIncommingChat) (*pkg.TelegramSendMessageStatus, error)
-	NotifyError(chatId int, replyId int, text string, markdown bool) (*pkg.TelegramSendMessageStatus, error)
-	ProcessHeartbeat(prompt, to, channel string) error
+	IsAllowed(userID int) bool
+	checkUser(msg *channel.IncomingMessage) (*model.User, error)
+	Bot(msg *channel.IncomingMessage) (*channel.OutgoingMessage, error)
+	BotStream(msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error)
+	command(user *model.User, msg *channel.IncomingMessage) (bool, string, error)
+	conversation(user *model.User, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error)
+	ProcessHeartbeat(prompt, to, channelName string) (*channel.IncomingMessage, *channel.OutgoingMessage, error)
 }
 
 type BotServiceImpl struct {
@@ -52,18 +53,25 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 	}
 }
 
-func (r *BotServiceImpl) checkUser(chat *pkg.TelegramIncommingChat) (*model.User, error) {
+func (r *BotServiceImpl) IsAllowed(userID int) bool {
+	if config.BotType != "private" {
+		return true
+	}
+	return slices.Contains(config.OwnerIDs, strconv.Itoa(userID))
+}
+
+func (r *BotServiceImpl) checkUser(msg *channel.IncomingMessage) (*model.User, error) {
 	var user *model.User
 	var err error
-	user, err = r.userRepo.GetUserById(chat.Message.From.Id)
+	user, err = r.userRepo.GetUserById(msg.UserID)
 	if err != nil {
 		return nil, err
 	}
 
 	if user == nil {
 		newUser := model.User{
-			UserId:   chat.Message.From.Id,
-			Name:     chat.Message.Chat.FirstName,
+			UserId:   msg.UserID,
+			Name:     fmt.Sprintf("user-%d", msg.UserID),
 			Provider: r.llmProvider.ProviderName(),
 			Model:    r.llmProvider.DefaultModel(""),
 		}
@@ -102,11 +110,9 @@ func (r *BotServiceImpl) changeProviderAndModel(user *model.User) (*model.User, 
 	return user, nil
 }
 
-func (r *BotServiceImpl) Bot(chat *pkg.TelegramIncommingChat) (*pkg.TelegramSendMessageStatus, error) {
-	var command bool
-	var response string
+func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
 
-	user, err := r.checkUser(chat)
+	user, err := r.checkUser(msg)
 	if err != nil {
 		return nil, err
 	}
@@ -118,75 +124,71 @@ func (r *BotServiceImpl) Bot(chat *pkg.TelegramIncommingChat) (*pkg.TelegramSend
 		}
 	}
 
-	command, response, err = r.command(user, chat)
+	isCommand, response, err := r.command(user, msg)
 	if err != nil {
 		return nil, err
 	}
 
-	if !command {
-		conv, err := r.conversation(user, chat)
+	if isCommand {
+		return &channel.OutgoingMessage{Text: response}, nil
+	}
+
+	return r.conversation(user, msg)
+}
+
+func (r *BotServiceImpl) BotStream(msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
+
+	user, err := r.checkUser(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	if user.Provider != r.llmProvider.ProviderName() {
+		user, err = r.changeProviderAndModel(user)
 		if err != nil {
 			return nil, err
 		}
-
-		return conv, nil
 	}
 
-	if command {
-		send, err := pkg.SendTelegramMessage(chat.Message.Chat.Id, chat.Message.MessageId, response, true)
-		if err != nil || !send.Ok {
-			return nil, err
-		}
+	isCommand, response, err := r.command(user, msg)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, nil
+	if isCommand {
+		out := &channel.OutgoingMessage{Text: response}
+		onChunk(channel.StreamChunk{Text: response})
+		return out, nil
+	}
+
+	return r.conversationStream(user, msg, onChunk)
 }
 
-func (r *BotServiceImpl) NotifyError(chatId int, replyId int, text string, markdown bool) (*pkg.TelegramSendMessageStatus, error) {
-	return pkg.SendTelegramMessage(chatId, replyId, text, markdown)
-}
-
-func (r *BotServiceImpl) ProcessHeartbeat(prompt, to, channel string) error {
-	log.Printf("Processing heartbeat request from %s (Channel: %s)...", to, channel)
+func (r *BotServiceImpl) ProcessHeartbeat(prompt, to, channelName string) (*channel.IncomingMessage, *channel.OutgoingMessage, error) {
+	log.Printf("Processing heartbeat request from %s (Channel: %s)...", to, channelName)
 
 	userId, err := strconv.Atoi(to)
 	if err != nil {
-		return fmt.Errorf("invalid user ID format: %v", err)
+		return nil, nil, fmt.Errorf("invalid user ID format: %v", err)
 	}
 
-	syntheticChat := &pkg.TelegramIncommingChat{
-		UpdateId: 0,
-		Message: pkg.UserMessage{
-			MessageId: 0,
-			Date:      time.Now().Unix(),
-			Text:      prompt,
-			From: pkg.From{
-				Id:           userId,
-				IsBot:        false,
-				FirstName:    "Heartbeat Trigger",
-				Username:     "heartbeat",
-				LanguageCode: "en",
-			},
-			Chat: pkg.Chat{
-				Id:        userId,
-				Type:      "private",
-				FirstName: "Heartbeat Trigger",
-				Username:  "heartbeat",
-			},
-		},
+	msg := &channel.IncomingMessage{
+		UserID:  userId,
+		Text:    prompt,
+		Channel: channelName,
 	}
 
-	user, err := r.checkUser(syntheticChat)
+	user, err := r.checkUser(msg)
 	if err != nil {
-		return fmt.Errorf("failed to get/create user for heartbeat: %w", err)
+		return nil, nil, fmt.Errorf("failed to get/create user for heartbeat: %w", err)
 	}
 
-	_, err = r.conversation(user, syntheticChat)
+	out, err := r.conversation(user, msg)
 	if err != nil {
 		log.Printf("Heartbeat conversation error: %v", err)
-		return err
+		return msg, nil, err
 	}
 
 	log.Println("Heartbeat conversation processed successfully.")
-	return nil
+	return msg, out, nil
 }

@@ -2,9 +2,9 @@ package utils
 
 import (
 	"fmt"
+	"myaaw/internal/services/bot/model"
 	"regexp"
 	"strings"
-	"myaaw/internal/services/bot/model"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -41,7 +41,6 @@ func CommandMe(res *model.User) string {
 	me.WriteString(fmt.Sprintf("*ID:* %d\n", res.UserId))
 	me.WriteString(fmt.Sprintf("*Name:* %s\n", EscapeMarkdown(res.Name)))
 	me.WriteString("\n\n🛠️ *Config*\n")
-	me.WriteString(fmt.Sprintf("*System:* %s\n", EscapeMarkdown(res.System)))
 	me.WriteString(fmt.Sprintf("*Model:* %s\n", EscapeMarkdown(res.Model)))
 
 	return me.String()

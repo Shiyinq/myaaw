@@ -1,10 +1,13 @@
 package main
 
 import (
+	"log"
 	routes "myaaw/internal"
 
+	"myaaw/internal/channel/discord"
 	"myaaw/internal/config"
 	"myaaw/internal/middleware"
+	"myaaw/internal/services/queue/repository"
 
 	_ "myaaw/docs/swagger"
 
@@ -36,6 +39,20 @@ func main() {
 	app.Use(middleware.NotFoundHandler)
 
 	middleware.SetTelegramWebhook()
+
+	if config.DiscordBotToken != "" {
+		queueRepo := repository.NewQueueRepository(config.MQ)
+		adapter, err := discord.NewDiscordAdapter(config.DiscordBotToken)
+		if err != nil {
+			log.Printf("Failed to create Discord adapter: %v", err)
+		} else {
+			go func() {
+				if err := adapter.StartListener(queueRepo); err != nil {
+					log.Printf("Discord listener error: %v", err)
+				}
+			}()
+		}
+	}
 
 	app.Listen(config.PORT)
 }
