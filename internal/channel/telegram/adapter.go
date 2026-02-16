@@ -6,7 +6,6 @@ import (
 	"log"
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
-	"myaaw/internal/pkg"
 	"myaaw/internal/provider"
 	"myaaw/internal/utils"
 )
@@ -31,7 +30,7 @@ func (t *TelegramAdapter) Name() string {
 }
 
 func (t *TelegramAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMessage, error) {
-	var chat pkg.TelegramIncommingChat
+	var chat TelegramIncommingChat
 	if err := json.Unmarshal(payload, &chat); err != nil {
 		return nil, fmt.Errorf("failed to parse telegram payload: %w", err)
 	}
@@ -73,11 +72,11 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 
 	if len(content) <= maxLen {
 		watermarked := utils.Watermark(utils.ParseTelegramMarkdown(content), "", config.WatermarkModel)
-		send, err := pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, true)
+		send, err := SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, true)
 		if err != nil || !send.Ok {
 
 			watermarked = utils.Watermark(content, "", config.WatermarkModel)
-			_, err = pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, false)
+			_, err = SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, false)
 		}
 		return err
 	}
@@ -91,13 +90,13 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 		chunks = append(chunks, content[i:end])
 	}
 
-	_, err := pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, chunks[0], false)
+	_, err := SendTelegramMessage(meta.ChatID, meta.MessageID, chunks[0], false)
 	if err != nil {
 		return err
 	}
 
 	for i := 1; i < len(chunks)-1; i++ {
-		_, err := pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, chunks[i], false)
+		_, err := SendTelegramMessage(meta.ChatID, meta.MessageID, chunks[i], false)
 		if err != nil {
 			log.Println("Error sending chunk:", err)
 		}
@@ -107,9 +106,9 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 		lastChunk := chunks[len(chunks)-1]
 		watermarked := utils.Watermark(lastChunk, "", config.WatermarkModel)
 		if len(watermarked) > maxLen {
-			_, err = pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, lastChunk, false)
+			_, err = SendTelegramMessage(meta.ChatID, meta.MessageID, lastChunk, false)
 		} else {
-			_, err = pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, false)
+			_, err = SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, false)
 		}
 		if err != nil {
 			log.Println("Error sending final chunk:", err)
@@ -124,7 +123,7 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 	maxLen := 4096
 	bufferThreshold := 500
 
-	send, err := pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, indicator("typing"), false)
+	send, err := SendTelegramMessage(meta.ChatID, meta.MessageID, indicator("typing"), false)
 	if err != nil || !send.Ok {
 		log.Println(err)
 	}
@@ -174,14 +173,14 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 			streamingContent = streamingContent[len(lastStreamingContent):]
 			bufferedContent = ""
 
-			newSend, err := pkg.SendTelegramMessage(meta.ChatID, meta.MessageID, loading, false)
+			newSend, err := SendTelegramMessage(meta.ChatID, meta.MessageID, loading, false)
 			if err != nil || !newSend.Ok {
 				log.Println(err)
 			} else {
 				messageId = newSend.Result.MessageId
 			}
 		} else if len(bufferedContent) >= bufferThreshold || chunk.ToolCalls != nil || lastLoading != loading {
-			editMessage, err := pkg.EditTelegramMessage(meta.ChatID, meta.MessageID, messageId, streamingContent+"\n\n"+loading, false)
+			editMessage, err := EditTelegramMessage(meta.ChatID, meta.MessageID, messageId, streamingContent+"\n\n"+loading, false)
 			lastStreamingContent = streamingContent
 			lastLoading = loading
 
@@ -197,10 +196,10 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 	}
 
 	watermarked := utils.Watermark(utils.ParseTelegramMarkdown(streamingContent), "", config.WatermarkModel)
-	editMessage, err := pkg.EditTelegramMessage(meta.ChatID, meta.MessageID, messageId, watermarked, true)
+	editMessage, err := EditTelegramMessage(meta.ChatID, meta.MessageID, messageId, watermarked, true)
 	if err != nil || !editMessage.Ok {
 
-		_, err := pkg.EditTelegramMessage(meta.ChatID, meta.MessageID, messageId, utils.Watermark(streamingContent, "", config.WatermarkModel), false)
+		_, err := EditTelegramMessage(meta.ChatID, meta.MessageID, messageId, utils.Watermark(streamingContent, "", config.WatermarkModel), false)
 		if err != nil {
 			log.Println(err)
 			return nil, err
@@ -216,7 +215,7 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 
 func (t *TelegramAdapter) SendError(msg *channel.IncomingMessage, errText string) error {
 	meta := msg.RawMeta.(TelegramMeta)
-	_, err := pkg.SendTelegramMessage(meta.ChatID, 0, errText, true)
+	_, err := SendTelegramMessage(meta.ChatID, 0, errText, true)
 	return err
 }
 
@@ -233,13 +232,13 @@ func (t *TelegramAdapter) transcribeVoice(fileID string) string {
 		return "[Voice transcription not available]"
 	}
 
-	filePath, err := pkg.GetFilePath(fileID)
+	filePath, err := GetFilePath(fileID)
 	if err != nil {
 		log.Printf("Error getting file path for voice fileID %s: %v\n", fileID, err)
 		return fmt.Sprintf("[Error getting file path: %s]", fileID)
 	}
 
-	audioData, err := pkg.DownloadTgFile(filePath)
+	audioData, err := DownloadTgFile(filePath)
 	if err != nil {
 		log.Printf("Error downloading audio file %s: %v\n", filePath, err)
 		return fmt.Sprintf("[Error downloading audio file: %s]", filePath)
@@ -253,7 +252,7 @@ func (t *TelegramAdapter) transcribeVoice(fileID string) string {
 	return transcribed
 }
 
-func (t *TelegramAdapter) extractImages(chat *pkg.TelegramIncommingChat) []string {
+func (t *TelegramAdapter) extractImages(chat *TelegramIncommingChat) []string {
 	var fileID string
 	if chat.Message.Photo != nil {
 		fileID = chat.Message.Photo[len(chat.Message.Photo)-1].FileID
@@ -265,13 +264,13 @@ func (t *TelegramAdapter) extractImages(chat *pkg.TelegramIncommingChat) []strin
 		return nil
 	}
 
-	path, err := pkg.GetFilePath(fileID)
+	path, err := GetFilePath(fileID)
 	if err != nil {
 		log.Println("Error getting image file path:", err)
 		return nil
 	}
 
-	base64, err := pkg.ImageURLToBase64(path)
+	base64, err := ImageURLToBase64(path)
 	if err != nil {
 		log.Println("Error converting image to base64:", err)
 		return nil

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"encoding/json"
@@ -40,6 +41,7 @@ var TTSProviderAPIKey string
 var WatermarkModel bool
 var OwnerIDs []string
 var Heartbeat HeartbeatConfig
+var TelegramMode string // "webhook" or "polling"
 
 type Config struct {
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
@@ -59,8 +61,11 @@ type ChannelsConfig struct {
 }
 
 type ChannelConfig struct {
-	Active bool   `json:"active"`
-	Token  string `json:"token"`
+	Active         bool   `json:"active"`
+	Token          string `json:"token"`
+	Mode           string `json:"mode,omitempty"`             // "polling" or "webhook"
+	NgrokActive    bool   `json:"ngrok_active,omitempty"`     // Only for webhook
+	NgrokAuthToken string `json:"ngrok_auth_token,omitempty"` // Only for webhook
 }
 
 type HeartbeatConfig struct {
@@ -145,8 +150,6 @@ func LoadBaseConfig() {
 	PORT = ":" + os.Getenv("PORT")
 	HOST = os.Getenv("HOST")
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
-	NgrokActive = os.Getenv("NGROK_ACTIVE")
-	NgrokAuthToken = os.Getenv("NGROK_AUTHTOKEN")
 	QueueName = os.Getenv("QUEUE_NAME")
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
@@ -191,9 +194,22 @@ func LoadBaseConfig() {
 		WatermarkModel = jsonConfig.Bot.Watermark
 
 		if jsonConfig.Channels.Telegram != nil {
-			if jsonConfig.Channels.Telegram.Active {
-				TelegramBotToken = jsonConfig.Channels.Telegram.Token
+			TelegramBotToken = jsonConfig.Channels.Telegram.Token
+			TelegramMode = jsonConfig.Channels.Telegram.Mode
+			if TelegramMode == "" {
+				TelegramMode = "polling"
 			} else {
+				TelegramMode = strings.ToLower(TelegramMode)
+			}
+
+			if jsonConfig.Channels.Telegram.NgrokActive {
+				NgrokActive = "true"
+			} else {
+				NgrokActive = "false"
+			}
+			NgrokAuthToken = jsonConfig.Channels.Telegram.NgrokAuthToken
+
+			if !jsonConfig.Channels.Telegram.Active {
 				TelegramBotToken = ""
 			}
 		}

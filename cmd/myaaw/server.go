@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	routes "myaaw/internal"
 	"myaaw/internal/channel/discord"
+	"myaaw/internal/channel/telegram"
 	"myaaw/internal/config"
 	"myaaw/internal/daemon"
 	"myaaw/internal/middleware"
 	"myaaw/internal/services/queue/repository"
+	"myaaw/internal/services/queue/service"
 	"time"
 
 	_ "myaaw/docs/swagger"
@@ -28,7 +31,7 @@ var serverRunCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run server in foreground",
 	Run: func(cmd *cobra.Command, args []string) {
-		startServer()
+		startServer(cmd.Context())
 	},
 }
 
@@ -117,7 +120,7 @@ func init() {
 	serverCmd.AddCommand(serverStatusCmd)
 }
 
-func startServer() {
+func startServer(ctx context.Context) {
 	config.LoadBaseConfig()
 	config.ConnectDatabases()
 	config.ConnectQueue()
@@ -135,10 +138,18 @@ func startServer() {
 
 	app.Use(middleware.NotFoundHandler)
 
-	middleware.SetTelegramWebhook()
+	queueRepo := repository.NewQueueRepository(config.MQ)
+	queueServ := service.NewQueueService(queueRepo)
+
+	if config.TelegramBotToken != "" {
+		if config.TelegramMode == "polling" {
+			go telegram.StartLongPolling(ctx, queueServ)
+		} else {
+			middleware.SetTelegramWebhook()
+		}
+	}
 
 	if config.DiscordBotToken != "" {
-		queueRepo := repository.NewQueueRepository(config.MQ)
 		adapter, err := discord.NewDiscordAdapter(config.DiscordBotToken)
 		if err != nil {
 			log.Printf("Failed to create Discord adapter: %v", err)
