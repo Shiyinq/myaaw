@@ -141,13 +141,33 @@ func runConfigWizard(configPath string) {
 
 	if choice == "1" || choice == "3" {
 		if cfg.Channels.Telegram == nil {
-			cfg.Channels.Telegram = &config.ChannelConfig{Active: false}
+			cfg.Channels.Telegram = &config.ChannelConfig{Active: false, Mode: "polling"}
 		}
+
+		// --- Telegram Mode Selection ---
+		fmt.Println("\n[Telegram Connection Mode]")
+		fmt.Println("1) Long Polling (Discord-like, Works behind NAT, No Ngrok needed) [Recommended]")
+		fmt.Println("2) Webhook (Requires public URL & Ngrok)")
+		modeChoice := promptUser(reader, "Select mode", "1")
+
+		if modeChoice == "2" {
+			cfg.Channels.Telegram.Mode = "webhook"
+			cfg.Channels.Telegram.NgrokActive = true
+			fmt.Println("ℹ️  Webhook mode requires an Ngrok Authtoken.")
+			token := promptUser(reader, "Enter Ngrok Authtoken", cfg.Channels.Telegram.NgrokAuthToken)
+			if token != "" {
+				cfg.Channels.Telegram.NgrokAuthToken = token
+			}
+		} else {
+			cfg.Channels.Telegram.Mode = "polling"
+			cfg.Channels.Telegram.NgrokActive = false
+		}
+
 		isUnset := cfg.Channels.Telegram.Token == "" || isPlaceholder(cfg.Channels.Telegram.Token)
 		current := cfg.Channels.Telegram.Token
 		if !isUnset {
-			fmt.Printf("ℹ️  Telegram token is already set: %s\n", maskToken(current))
-			if askYesNo("Update Telegram token?", false) {
+			fmt.Printf("ℹ️  Telegram bot token is already set: %s\n", maskToken(current))
+			if askYesNo("Update Telegram bot token?", false) {
 				isUnset = true
 			}
 		}

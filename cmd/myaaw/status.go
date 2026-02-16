@@ -74,7 +74,7 @@ var statusCmd = &cobra.Command{
 
 		fmt.Println("Channels")
 		if config.TelegramBotToken != "" {
-			fmt.Printf("  %-12s ✅ Configured\n", "Telegram")
+			fmt.Printf("  %-12s ✅ Configured (%s)\n", "Telegram", config.TelegramMode)
 		} else {
 			fmt.Printf("  %-12s ❌ Not configured\n", "Telegram")
 		}

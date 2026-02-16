@@ -13,7 +13,6 @@ import (
 
 var envKeys = []string{
 	"PORT", "HOST", "MYAAW_BASE_URL", "ALLOWED_ORIGINS",
-	"NGROK_ACTIVE", "NGROK_AUTHTOKEN",
 	"DB_NAME", "MONGODB_URI",
 	"REDIS_URL",
 	"QUEUE_NAME", "RABBITMQ_URL",
@@ -68,7 +67,19 @@ var checkCmd = &cobra.Command{
 		if missingCount > 0 {
 			fmt.Println("\n⚠️  Some recommended environment variables are missing.")
 		} else {
-			fmt.Println("\n✨ Configuration looks good!")
+			fmt.Println("\n✨ System environment looks good!")
+		}
+
+		fmt.Println("\nTelegram / Ngrok Status:")
+		fmt.Printf("🔹 Telegram Mode : %s\n", config.TelegramMode)
+		if config.TelegramMode == "webhook" {
+			if config.NgrokActive == "true" {
+				fmt.Printf("✅ Ngrok Active  : [YES] (Token: %s)\n", config.NgrokAuthToken)
+			} else {
+				fmt.Printf("❌ Ngrok Active  : [NO] (Webhook will fail if not publicly reachable)\n")
+			}
+		} else {
+			fmt.Println("✅ Long Polling  : [ACTIVE] (No Ngrok required)")
 		}
 	},
 }
@@ -100,8 +111,13 @@ var dumpCmd = &cobra.Command{
 		}
 
 		fmt.Println("\n--- Internals ---")
-		fmt.Printf("BotType:  %s\n", config.BotType)
-		fmt.Printf("OwnerIDs: %v\n", config.OwnerIDs)
+		fmt.Printf("BotType:       %s\n", config.BotType)
+		fmt.Printf("OwnerIDs:      %v\n", config.OwnerIDs)
+		fmt.Printf("TelegramMode:  %s\n", config.TelegramMode)
+		fmt.Printf("NgrokActive:   %s\n", config.NgrokActive)
+		if config.NgrokActive == "true" {
+			fmt.Printf("NgrokToken:    ******** (Masked)\n")
+		}
 	},
 }
 
