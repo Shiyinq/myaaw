@@ -1,14 +1,12 @@
 package daemon
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 type Manager struct {
@@ -62,9 +60,7 @@ func (m *Manager) Start(args []string) error {
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true,
-	}
+	setSysProcAttr(cmd)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start process: %w", err)
@@ -95,7 +91,8 @@ func (m *Manager) Stop() error {
 		return err
 	}
 
-	if err := proc.Signal(syscall.SIGTERM); err != nil {
+	if err := terminateProcess(proc); err != nil {
+
 		// If permission denied or other error
 		return err
 	}
@@ -128,22 +125,7 @@ func (m *Manager) Status() (int, bool, error) {
 		return 0, false, nil
 	}
 
-	err = proc.Signal(syscall.Signal(0))
-	if err != nil {
-		if errors.Is(err, os.ErrProcessDone) || err.Error() == "os: process already finished" || strings.Contains(err.Error(), "process already finished") {
-			return 0, false, nil
-		}
-		if sysErr, ok := err.(syscall.Errno); ok {
-			if sysErr == syscall.ESRCH {
-				return 0, false, nil
-			}
-		}
-		if sysErr, ok := err.(syscall.Errno); ok {
-			if sysErr == syscall.EPERM {
-				return pid, true, nil
-			}
-		}
-
+	if !isProcessRunning(proc) {
 		return 0, false, nil
 	}
 

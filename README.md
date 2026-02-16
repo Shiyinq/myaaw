@@ -31,38 +31,44 @@ Myaaw is a cat who becomes your personal AI assistant.
   - [Providers](#providers)
   - [Features](#features)
 - [Table of Contents](#table-of-contents)
-  - [Development](#development)
+  - [🚀 Quick Start (Non-Technical)](#-quick-start-non-technical)
+  - [🛠 Development](#-development)
     - [Prerequisites](#prerequisites)
-      - [Ollama](#ollama)
-      - [Redis](#redis)
-      - [MongoDB](#mongodb)
-      - [RabbitMQ](#rabbitmq)
-    - [Running the Backend](#running-the-backend)
-    - [Generate Swagger Documentation](#generate-swagger-documentation)
-  - [Deployment](#deployment)
-  - [Telegram Bot Setup](#telegram-bot-setup)
-    - [Setting the Webhook](#setting-the-webhook)
-      - [Bot Token](#bot-token)
-      - [Development](#development-1)
-        - [Install ngrok](#install-ngrok)
-        - [Obtain Your ngrok Auth Token](#obtain-your-ngrok-auth-token)
-      - [Production](#production)
-      - [Use CLI](#use-cli)
-      - [Manual Setup](#manual-setup)
-        - [Set Webhook](#set-webhook)
-        - [Get Webhook Info](#get-webhook-info)
-        - [Delete Webhook](#delete-webhook)
+    - [Getting Started](#getting-started)
+  - [🐳 Docker Usage](#-docker-usage)
+  - [📡 Telegram/Discord Setup](#-telegramdiscord-setup)
 
 
-## Development
+## 🚀 Quick Start (Non-Technical)
+
+If you just want to use Myaaw without worrying about code:
+
+1.  **Download Myaaw**: Go to [Releases](https://github.com/Shiyinq/myaaw/releases) and download the binary for your OS (e.g., `myaaw-windows-amd64.exe` or `myaaw-macos-arm64`).
+2.  **Onboard**: Open your terminal/command prompt in the folder where you downloaded it and run:
+    ```bash
+    ./myaaw onboard
+    ```
+    *This will guide you through setting up your API keys and configuration.*
+3.  **Start Databases**: If you have Docker installed, run:
+    ```bash
+    myaaw docker setup
+    ```
+4.  **Launch**:
+    ```bash
+    myaaw gateway start
+    ```
+5.  **Check Status**:
+    ```bash
+    myaaw status
+    ```
+
+## 🛠 Development
+
 
 ### Prerequisites
 
 Before development process, ensure you have the following installed:
 
-#### Ollama
-
-This project uses Ollama as the default provider. To install it, follow the instructions in the official repository [Ollama GitHub](https://github.com/ollama/ollama?tab=readme-ov-file#ollama). You will need to have at least one model installed.
 
 #### Redis
 
@@ -133,40 +139,32 @@ http://localhost:15672
 **Username:** `guest`  
 **Password:** `guest`
 
-### Running the Backend
+### Getting Started
+
 1. **Clone the Repository**
-   ```sh
+   ```bash
    git clone https://github.com/Shiyinq/myaaw.git
    cd myaaw
    ```
 
-2. **Install Go Modules**
-   ```sh
-   go mod tidy
+2. **Onboard (Dev Mode)**
+   Since you have the source code, you can run the onboarding flow directly:
+   ```bash
+   go run ./cmd/myaaw onboard
    ```
 
-3. **Create .env File**
-
-   Copy the .env.example file and create a new `.env` file.
-   ```sh
-   cp .env.example .env
-   ```
-   Open the `.env` file and fill in the necessary variables with your specific configuration.”
-
-4. **Install Air for Live Reloading**
-
-   If you don't have `air` installed on your machine, install it first:
-   ```sh
-   go install github.com/air-verse/air@latest
-   ```
-
-5. **Run the Development Server**
-
-   This command will start the API and run `cmd/consumer/consumer-myaaw.go` in the background.
-   ```sh
+3. **Run with Live Reload**
+   We recommend using `air` for development:
+   ```bash
    air
    ```
-   After starting the backend, follow these [instructions](#development-1).
+
+4. **Manage via CLI**
+   ```bash
+   go run ./cmd/myaaw status
+   go run ./cmd/myaaw docker setup
+   ```
+
 
 ### Generate Swagger Documentation
 1. **Install Swagger for API Documentation**
@@ -195,46 +193,29 @@ http://localhost:15672
 
     http://localhost:8080/docs/index.html
 
-## Deployment
+## 🐳 Docker Usage
 
-Before you begin, ensure you have [Docker](https://docs.docker.com/engine/install/) installed.
+Myaaw uses Docker primarily for infrastructure (MongoDB, Redis, RabbitMQ).
 
-**1. Clone the Repository**
-```sh
-git clone https://github.com/Shiyinq/myaaw.git
-cd myaaw
-```
+- **Start Infrastructure**: `myaaw docker setup`
+- **Stop Infrastructure**: `myaaw docker stop`
+- **View Logs**: `myaaw docker logs`
 
-**2. Create .env File**
-
-   Copy the .env.example file and create a new `.env` file.
-   ```sh
-   cp .env.example .env
-   ```
-   Open the `.env` file and fill in the necessary variables with your specific configuration.”
-
-**3. Build and Run the Docker Containers**
-```sh
+For full containerized deployment (Production):
+```bash
 docker compose up --build -d
 ```
 
-Wait a few minutes for the setup to complete, it should look like this:
-
-```sh
-✔ Network myaaw_default       Created                                                                                                      0.0s 
-✔ Container myaaw-rabbitmq-1  Healthy                                                                                                      6.4s 
-✔ Container myaaw-mongodb-1   Healthy                                                                                                      6.4s 
-✔ Container myaaw-redis-1     Healthy                                                                                                      5.9s 
-✔ Container myaaw-consumer-1  Started                                                                                                      6.5s 
-✔ Container myaaw-backend-1   Started                                                                                                      6.5s 
-```
-
-You can access the backend at http://localhost:8080 and the documentation at http://localhost:8080/docs.
-
-## Telegram Bot Setup
+## 📡 Telegram/Discord Setup
 
 ### Setting the Webhook
-After running the backend, either using Docker or manually, you need to set up the webhook with the Telegram API.
+Use the built-in CLI to manage your webhooks easily:
+
+```bash
+myaaw webhook set
+myaaw webhook info
+```
+
 
 #### Bot Token
 You can obtain a bot token from [BotFather](https://t.me/BotFather) and add bot token to `.env` file.

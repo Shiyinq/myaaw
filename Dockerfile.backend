@@ -16,4 +16,4 @@ COPY --from=builder /app/internal/tools/tools.json ./internal/tools/tools.json
 
 EXPOSE 8080
 
-CMD ["./myaaw", "server"]
+CMD ["./myaaw", "server", "run"]

@@ -71,41 +71,75 @@ type HeartbeatConfig struct {
 }
 
 func loadJSONConfig() (*Config, error) {
+	// 1. Check Current Directory
+	if _, err := os.Stat("config.json"); err == nil {
+		log.Println("Reading config from current directory: config.json")
+		return parseJSONFile("config.json")
+	}
+
+	// 2. Check Home Directory
 	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-
-	configPath := filepath.Join(homeDir, ".myaaw", "config.json")
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil // Config file doesn't exist, that's fine
+	if err == nil {
+		configPath := filepath.Join(homeDir, ".myaaw", "config.json")
+		if _, err := os.Stat(configPath); err == nil {
+			log.Println("Reading config from home directory:", configPath)
+			return parseJSONFile(configPath)
 		}
-		return nil, err
 	}
 
+	return nil, nil // No config file found
+}
+
+func parseJSONFile(path string) (*Config, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
 	var config Config
 	if err := json.Unmarshal(content, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config.json: %w", err)
+		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
-
 	return &config, nil
 }
 
 func envPath() string {
+	// 1. Check Current Directory
+	if abs, err := filepath.Abs(".env"); err == nil {
+		if _, err := os.Stat(abs); err == nil {
+			return abs
+		}
+	}
+
+	// 2. Check Home Directory
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		path := filepath.Join(homeDir, ".myaaw", ".env")
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	// 3. Fallback to hardcoded dev path (only if it exists)
 	_, b, _, _ := runtime.Caller(0)
-	basePath := filepath.Join(filepath.Dir(b), "../..")
-	envPath := filepath.Join(basePath, ".env")
-	return envPath
+	devPath := filepath.Join(filepath.Dir(b), "../../.env")
+	if _, err := os.Stat(devPath); err == nil {
+		return devPath
+	}
+
+	return ""
 }
 
 func LoadBaseConfig() {
 	path := envPath()
-	err := godotenv.Load(path)
-	log.Println("Load .env file", path)
-	if err != nil {
-		log.Println("Error loading .env file, using environment variables")
+	if path != "" {
+		err := godotenv.Load(path)
+		if err != nil {
+			log.Printf("⚠️  Warning: Error loading .env file from %s: %v\n", path, err)
+		} else {
+			log.Printf("✅ Loaded environment from: %s\n", path)
+		}
+	} else {
+		log.Println("ℹ️  No .env file found in current directory, ~/.myaaw/, or dev fallback. Using system environment variables.")
 	}
 
 	PORT = ":" + os.Getenv("PORT")
@@ -128,10 +162,12 @@ func LoadBaseConfig() {
 
 	streamVal := os.Getenv("STREAM_RESPONSE")
 	if streamVal != "" {
-		StreamResponse, err = strconv.ParseBool(streamVal)
+		boolVal, err := strconv.ParseBool(streamVal)
 		if err != nil {
 			log.Printf("Warning: Invalid value for STREAM_RESPONSE '%s', defaulting to false", streamVal)
 			StreamResponse = false
+		} else {
+			StreamResponse = boolVal
 		}
 	} else {
 		StreamResponse = false
@@ -264,8 +300,12 @@ func ConnectRedis(redisURL string, maxRetries int, retryDelay time.Duration) {
 }
 
 func ConnectRabbitMQ(rabbitMQURL string, maxRetries int, retryDelay time.Duration) {
+	if rabbitMQURL == "" {
+		log.Fatal("❌ Error: RABBITMQ_URL is not set. Please check your .env file.")
+	}
 	err := retry(maxRetries, retryDelay, func() error {
 		conn, err := amqp091.Dial(rabbitMQURL)
+
 		if err != nil {
 			return err
 		}

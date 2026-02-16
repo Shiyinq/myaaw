@@ -1,40 +1,43 @@
+# infrastructure services
 services:
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
-    ports:
-      - "8080:8080"
-    env_file:
-      - .env
-    environment:
-      DB_NAME: myaaw
-      MONGODB_URI: mongodb://mongodb:27017
-      REDIS_URL: redis://redis:6379
-      QUEUE_NAME: telegram_messages
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
-      NGROK_ACTIVE: false
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+  # App services are now run via myaaw binary
+  # backend:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.backend
+  #   ports:
+  #     - "8080:8080"
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     DB_NAME: myaaw
+  #     MONGODB_URI: mongodb://mongodb:27017
+  #     REDIS_URL: redis://redis:6379
+  #     QUEUE_NAME: telegram_messages
+  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+  #     NGROK_ACTIVE: false
+  #   depends_on:
+  #     mongodb:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #     rabbitmq:
+  #       condition: service_healthy
+  # 
+  # consumer:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.consumer
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     MYAAW_BASE_URL: http://backend:8080
+  #     QUEUE_NAME: telegram_messages
+  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+  #   depends_on:
+  #     rabbitmq:
+  #       condition: service_healthy
 
-  consumer:
-    build:
-      context: .
-      dockerfile: Dockerfile.consumer
-    env_file:
-      - .env
-    environment:
-      MYAAW_BASE_URL: http://backend:8080
-      QUEUE_NAME: telegram_messages
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
 
   mongodb:
     image: mongo:latest
