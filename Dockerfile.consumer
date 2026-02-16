@@ -15,4 +15,4 @@ COPY --from=builder /app/myaaw .
 # Expose any ports if needed (if your consumer listens on a port)
 # EXPOSE 8081
 
-CMD ["./myaaw", "consumer"]
+CMD ["./myaaw", "consumer", "run"]

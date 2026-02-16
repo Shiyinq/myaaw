@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	"log"
+	"myaaw/internal/config"
 	"myaaw/internal/daemon"
 	"myaaw/internal/heartbeat"
 	"os"
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/joho/godotenv"
 	"github.com/rabbitmq/amqp091-go"
 	"github.com/spf13/cobra"
 )
@@ -114,24 +114,17 @@ func init() {
 }
 
 func startConsumer() {
-	err := godotenv.Load()
-	log.Println("Load .env file")
-	if err != nil {
-		log.Println("Error loading .env file, using environment variables")
+	config.LoadConfig()
+
+	if config.Heartbeat.Active {
+		hb := heartbeat.NewHeartbeatService()
+		go hb.Start()
 	}
 
-	heartbeatService := heartbeat.NewHeartbeatService()
+	ch := config.MQ
+	queueName := config.QueueName
 
-	rabbitMQURL := os.Getenv("RABBITMQ_URL")
-	conn, ch, err := consumerConnectRabbitMQ(rabbitMQURL)
-	if err != nil {
-		log.Fatalf("Error: %s", err)
-	}
-	defer conn.Close()
-	defer ch.Close()
-
-	queueName := os.Getenv("QUEUE_NAME")
-	q, err := ch.QueueDeclare(
+	_, err := ch.QueueDeclare(
 		queueName,
 		false,
 		false,
@@ -143,38 +136,25 @@ func startConsumer() {
 		log.Fatalf("Failed to declare queue: %s", err)
 	}
 
-	if heartbeatService != nil {
-		go heartbeatService.Start()
-	}
-
-	err = consumeMessages(ch, q.Name)
+	err = consumeMessages(ch, queueName)
 	if err != nil {
 		log.Fatalf("Error in consumer: %s", err)
 	}
-}
-
-func consumerConnectRabbitMQ(rabbitMQURL string) (*amqp091.Connection, *amqp091.Channel, error) {
-	conn, err := amqp091.Dial(rabbitMQURL)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
-	}
-	log.Println("Connected to RabbitMQ!")
-
-	ch, err := conn.Channel()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open channel: %w", err)
-	}
-	return conn, ch, nil
 }
 
 func sendToWebhookBot(jsonBody []byte) error {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
+	baseURL := os.Getenv("MYAAW_BASE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
+
 	resp, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetBody(jsonBody).
-		Post(fmt.Sprintf("%s/webhook/bot", os.Getenv("MYAAW_BASE_URL")))
+		Post(fmt.Sprintf("%s/webhook/bot", baseURL))
 
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
