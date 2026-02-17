@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"net/http"
 	"os"
@@ -27,7 +28,7 @@ var webhookInfoCmd = &cobra.Command{
 		config.LoadBaseConfig()
 		token := config.TelegramBotToken
 		if token == "" {
-			fmt.Println("❌ Telegram bot token not configured")
+			fmt.Println(theme.RenderError("❌ Telegram bot token not configured"))
 			return
 		}
 		getWebhookInfo(token)
@@ -41,7 +42,7 @@ var webhookSetCmd = &cobra.Command{
 		config.LoadBaseConfig()
 		token := config.TelegramBotToken
 		if token == "" {
-			fmt.Println("❌ Telegram bot token not configured")
+			fmt.Println(theme.RenderError("❌ Telegram bot token not configured"))
 			return
 		}
 
@@ -49,7 +50,7 @@ var webhookSetCmd = &cobra.Command{
 			setWebhookURL(token, args[0])
 		} else {
 			reader := bufio.NewReader(os.Stdin)
-			fmt.Print("Enter your domain or ngrok URL: ")
+			fmt.Print(theme.RenderPrimary("Enter your domain or ngrok URL: "))
 			domain, _ := reader.ReadString('\n')
 			domain = strings.TrimSpace(domain)
 			setWebhookURL(token, domain)
@@ -64,7 +65,7 @@ var webhookDeleteCmd = &cobra.Command{
 		config.LoadBaseConfig()
 		token := config.TelegramBotToken
 		if token == "" {
-			fmt.Println("❌ Telegram bot token not configured")
+			fmt.Println(theme.RenderError("❌ Telegram bot token not configured"))
 			return
 		}
 		deleteWebhookURL(token)
@@ -88,9 +89,9 @@ func setWebhookURL(botToken string, url string) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == 200 {
-		fmt.Printf("✅ Webhook set successfully! Response status: %s\n", resp.Status)
+		fmt.Printf("%s Response status: %s\n", theme.RenderSuccess("✅ Webhook set successfully!"), resp.Status)
 	} else {
-		fmt.Printf("❌ Error setting webhook: %s\n", resp.Status)
+		fmt.Printf("%s: %s\n", theme.RenderError("❌ Error setting webhook"), resp.Status)
 	}
 }
 
@@ -116,7 +117,7 @@ func getWebhookInfo(botToken string) {
 	if err != nil {
 		log.Fatalf("Error formatting JSON: %v", err)
 	}
-	fmt.Println("📡 Webhook Info:")
+	fmt.Println(theme.RenderPrimary("📡 Webhook Info:"))
 	fmt.Println(string(jsonData))
 }
 
@@ -128,5 +129,5 @@ func deleteWebhookURL(botToken string) {
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("✅ Webhook deleted successfully! Response status: %s\n", resp.Status)
+	fmt.Printf("%s Response status: %s\n", theme.RenderSuccess("✅ Webhook deleted successfully!"), resp.Status)
 }

@@ -7,6 +7,7 @@ import (
 	routes "myaaw/internal"
 	"myaaw/internal/channel/discord"
 	"myaaw/internal/channel/telegram"
+	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/daemon"
 	"myaaw/internal/middleware"
@@ -75,14 +76,14 @@ var serverRestartCmd = &cobra.Command{
 			log.Fatalf("Error: %v", err)
 		}
 
-		fmt.Println("🔄 Stopping server...")
+		fmt.Println(theme.RenderSecondary("🔄 Stopping server..."))
 		if err := dm.Stop(); err != nil {
-			fmt.Printf("⚠️  Stop warning: %v\n", err)
+			fmt.Printf("%s: %v\n", theme.RenderError("⚠️  Stop warning"), err)
 		}
 
 		time.Sleep(1 * time.Second)
 
-		fmt.Println("🚀 Starting server...")
+		fmt.Println(theme.RenderPrimary("🚀 Starting server..."))
 		runArgs := []string{"server", "run"}
 		if err := dm.Start(runArgs); err != nil {
 			log.Fatalf("Failed to start server: %v", err)
@@ -105,9 +106,9 @@ var serverStatusCmd = &cobra.Command{
 		}
 
 		if running {
-			fmt.Printf("✅ Server is running (PID: %d)\n", pid)
+			fmt.Printf("%s (PID: %d)\n", theme.RenderSuccess("✅ Server is running"), pid)
 		} else {
-			fmt.Println("❌ Server is stopped")
+			fmt.Println(theme.RenderError("❌ Server is stopped"))
 		}
 	},
 }

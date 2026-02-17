@@ -5,8 +5,8 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"log"
 	"myaaw"
+	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"os"
 	"os/exec"
@@ -14,6 +14,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
 
@@ -29,241 +32,725 @@ func init() {
 }
 
 func runOnboard(cmd *cobra.Command, args []string) {
-	fmt.Println("🌟 Welcome to Myaaw Onboarding!")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Fatalf("❌ Error getting home directory: %v", err)
+	p := tea.NewProgram(initialOnboardModel(), tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Alas, there's been an error: %v", err)
+		os.Exit(1)
 	}
-	myaawHome := filepath.Join(homeDir, ".myaaw")
-
-	// 1. Initialize Folder
-	setupMyaawHome(myaawHome)
-
-	// 2. Setup .env
-	setupEnv(myaawHome)
-
-	// 3. Docker setup (optional)
-	askDockerSetup()
-
-	fmt.Println("\n✨ Onboarding complete!")
-	fmt.Println("💡 You can now run 'myaaw status' to check your setup.")
 }
 
-func setupMyaawHome(targetDir string) {
-	if _, err := os.Stat(targetDir); err == nil {
-		if !askYesNo(fmt.Sprintf("⚠️  %s already exists. Re-initialize with defaults?", targetDir), false) {
-			fmt.Println("ℹ️  Skipping folder initialization.")
+// Steps
+const (
+	stepWelcome = iota
+	stepInitHome
+	stepEnvLLM
+	stepChannelChoice
+	stepTelegramMode
+	stepTelegramToken
+	stepDiscordToken
+	stepHeartbeatChannel
+	stepHeartbeatID
+	stepOwner
+	stepDocker
+	stepInstallGlobal
+	stepSudoPassword
+	stepDone
+)
+
+type onboardModel struct {
+	step      int
+	width     int
+	height    int
+	textInput textinput.Model
+	err       error
+
+	// State for choices
+	cursor  int
+	choices []string
+
+	// Config Data
+	homeDir    string
+	myaawHome  string
+	envFile    string
+	configFile string
+
+	// Collected Data
+	llmKey           string
+	channelChoice    string // "telegram", "discord", "both", "skip"
+	telegramMode     string // "polling", "webhook"
+	telegramToken    string
+	telegramNgrok    string
+	discordToken     string
+	heartbeat        bool
+	heartbeatChannel string
+	heartbeatTo      string
+	ownerID          string
+	sudoPassword     string
+
+	// Flags
+	dockerSetupDone bool
+	globalPathDone  bool
+
+	// Command output
+	cmdOutput  []string
+	isRunning  bool
+	outputChan chan tea.Msg
+}
+
+func initialOnboardModel() onboardModel {
+	ti := textinput.New()
+	ti.Focus()
+	ti.CharLimit = 156
+	ti.Width = 40
+
+	home, _ := os.UserHomeDir()
+	myaawHome := filepath.Join(home, ".myaaw")
+
+	return onboardModel{
+		step:       stepWelcome,
+		textInput:  ti,
+		homeDir:    home,
+		myaawHome:  myaawHome,
+		envFile:    filepath.Join(myaawHome, ".env"),
+		configFile: filepath.Join(myaawHome, "config.json"),
+		choices:    []string{"Yes", "No"}, // Default choices
+		outputChan: make(chan tea.Msg, 10),
+	}
+}
+
+func (m onboardModel) Init() tea.Cmd {
+	return textinput.Blink
+}
+
+func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc":
+			return m, tea.Quit
+		case "enter":
+			m_next, cmd_next := m.nextStep(msg)
+			m = m_next.(onboardModel)
+			cmd = cmd_next
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(m.choices)-1 {
+				m.cursor++
+			}
+		default:
+			if m.isTextInputStep() {
+				m.textInput, cmd = m.textInput.Update(msg)
+			}
+		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+	}
+
+	// Handle async command results
+	switch msg := msg.(type) {
+	case dockerFinishedMsg:
+		m.isRunning = false
+		m.dockerSetupDone = msg.err == nil
+		if msg.err != nil {
+			m.cmdOutput = append(m.cmdOutput, theme.ErrorStyle.Render("Error: "+msg.err.Error()))
+		} else {
+			m.cmdOutput = append(m.cmdOutput, theme.SuccessStyle.Render("Docker setup complete!"))
+		}
+	case globalPathFinishedMsg:
+		m.isRunning = false
+		if msg.err != nil {
+			m.globalPathDone = false
+			m.cmdOutput = []string{theme.ErrorStyle.Render("Sudo failed: " + msg.err.Error())}
+			m.textInput.Reset()
+			m.textInput.EchoMode = textinput.EchoPassword // Ensure it's masked on retry
+		} else {
+			m.globalPathDone = true
+			targetPath := "/usr/local/bin/myaaw"
+			if runtime.GOOS == "windows" {
+				targetPath = "C:\\Windows\\System32\\myaaw.exe (Manual step recommended)"
+			}
+			m.cmdOutput = []string{theme.SuccessStyle.Render(fmt.Sprintf("Successfully installed globally at %s!", targetPath))}
+			m.textInput.Reset()
+		}
+	case cmdOutputMsg:
+		m.cmdOutput = append(m.cmdOutput, string(msg))
+		if len(m.cmdOutput) > 8 {
+			m.cmdOutput = m.cmdOutput[1:]
+		}
+		return m, m.listenForOutput()
+	}
+
+	// Important: If we are running a background command, we MUST keep listening
+	// Unless we just received the finish message or cmd is already a listener
+	if m.isRunning && cmd == nil {
+		cmd = m.listenForOutput()
+	}
+
+	return m, cmd
+}
+
+func (m onboardModel) View() string {
+	// Layout: Timeline on Left, Content on Right
+
+	timeline := m.renderTimeline()
+	content := m.renderContent()
+
+	// container style
+	mainStyle := lipgloss.NewStyle().Margin(1, 1)
+
+	return mainStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, timeline, content))
+}
+
+// --- Logic ---
+
+func (m onboardModel) isTextInputStep() bool {
+	switch m.step {
+	case stepEnvLLM, stepTelegramToken, stepDiscordToken, stepHeartbeatID, stepOwner, stepSudoPassword:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch m.step {
+	case stepWelcome:
+		m.step = stepInitHome
+		m.cursor = 0
+		m.choices = []string{"Initialize .myaaw directory"}
+
+	case stepInitHome:
+		setupMyaawHome(m.myaawHome)
+		m.step = stepEnvLLM
+		m.textInput.Placeholder = "sk-..."
+		m.textInput.Reset()
+
+	case stepEnvLLM:
+		m.llmKey = m.textInput.Value()
+		if m.llmKey != "" {
+			ensureEnvFile(m.envFile)
+			updateEnvFile(m.envFile, "LLM_PROVIDER_API_KEY", m.llmKey)
+		}
+		m.step = stepChannelChoice
+		m.cursor = 0
+		m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
+
+	case stepChannelChoice:
+		m.channelChoice = strings.ToLower(m.choices[m.cursor])
+		if m.channelChoice == "skip" {
+			m.setupHeartbeatChannel()
+		} else if m.channelChoice == "discord" {
+			m.step = stepDiscordToken
+			m.textInput.Placeholder = "Discord Bot Token"
+			m.textInput.Reset()
+		} else { // Telegram or Both
+			m.step = stepTelegramMode
+			m.cursor = 0
+			m.choices = []string{"Polling (Recommended)", "Webhook"}
+		}
+
+	case stepTelegramMode:
+		if m.cursor == 0 {
+			m.telegramMode = "polling"
+		} else {
+			m.telegramMode = "webhook"
+		}
+		m.step = stepTelegramToken
+		m.textInput.Placeholder = "Telegram Bot Token"
+		m.textInput.Reset()
+
+	case stepTelegramToken:
+		m.telegramToken = m.textInput.Value()
+		if m.channelChoice == "both" {
+			m.step = stepDiscordToken
+			m.textInput.Placeholder = "Discord Bot Token"
+			m.textInput.Reset()
+		} else {
+			m.setupHeartbeatChannel()
+		}
+
+	case stepDiscordToken:
+		m.discordToken = m.textInput.Value()
+		m.setupHeartbeatChannel()
+
+	case stepHeartbeatChannel:
+		choice := strings.ToLower(m.choices[m.cursor])
+		if choice == "skip" {
+			m.heartbeat = false
+			m.step = stepOwner
+			m.setupOwnerInput()
+		} else {
+			m.heartbeat = true
+			m.heartbeatChannel = choice
+			m.step = stepHeartbeatID
+			m.textInput.Placeholder = "Recipient User/Channel ID"
+			m.textInput.Reset()
+		}
+
+	case stepHeartbeatID:
+		m.heartbeatTo = m.textInput.Value()
+		m.step = stepOwner
+		m.setupOwnerInput()
+
+	case stepOwner:
+		m.ownerID = m.textInput.Value()
+		// Save Configuration
+		m.saveConfig()
+
+		m.step = stepDocker
+		m.cursor = 0
+		m.choices = []string{"Yes, setup Docker containers", "No, skip"}
+
+	case stepDocker:
+		if m.isRunning {
+			return m, nil
+		}
+		if len(m.cmdOutput) > 0 {
+			// Paused after completion
+			m.step = stepInstallGlobal
+			m.cursor = 0
+			m.choices = []string{"Yes, install globally", "No"}
+			m.cmdOutput = nil
+			return m, nil
+		}
+		if m.cursor == 0 {
+			m.isRunning = true
+			m.cmdOutput = []string{"Starting Docker setup..."}
+			return m, m.runDockerCmd()
+		}
+		m.step = stepInstallGlobal
+		m.cursor = 0
+		m.choices = []string{"Yes, install globally", "No"}
+
+	case stepInstallGlobal:
+		if m.cursor == 0 {
+			m.step = stepSudoPassword
+			m.textInput.Placeholder = "System Password (for sudo)"
+			m.textInput.EchoMode = textinput.EchoPassword
+			m.textInput.Reset()
+		} else {
+			m.step = stepDone
+		}
+
+	case stepSudoPassword:
+		if m.isRunning {
+			return m, nil
+		}
+		if m.globalPathDone {
+			// Paused after completion
+			m.step = stepDone
+			m.cmdOutput = nil
+			return m, nil
+		}
+		m.sudoPassword = m.textInput.Value()
+		// Do NOT set EchoNormal here, keep it EchoPassword
+		m.isRunning = true
+		m.cmdOutput = []string{"Installing binary..."}
+		return m, m.runGlobalPathCmd()
+
+	case stepDone:
+		if msg, ok := msg.(tea.KeyMsg); ok && msg.String() == "enter" {
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m *onboardModel) setupHeartbeatChannel() {
+	m.step = stepHeartbeatChannel
+	m.cursor = 0
+	m.choices = []string{}
+	// Only offer active channels
+	if m.telegramToken != "" {
+		m.choices = append(m.choices, "Telegram")
+	}
+	if m.discordToken != "" {
+		m.choices = append(m.choices, "Discord")
+	}
+	m.choices = append(m.choices, "Skip")
+}
+
+func (m *onboardModel) setupOwnerInput() {
+	m.textInput.Placeholder = "Owner ID (Telegram/Discord ID)"
+	m.textInput.Reset()
+}
+
+func (m onboardModel) runDockerCmd() tea.Cmd {
+	// Start the command and the goroutines to stream output
+	go func() {
+		composePath := findDockerComposePath()
+		// ... check/create composePath
+		if composePath == "" {
+			home, _ := os.UserHomeDir()
+			myaawDir := filepath.Join(home, ".myaaw")
+			os.MkdirAll(myaawDir, 0755)
+			composePath = filepath.Join(myaawDir, "docker-compose.yml")
+			os.WriteFile(composePath, []byte(myaaw.DefaultDockerCompose), 0644)
+		}
+
+		c := exec.Command("docker", "compose", "-f", composePath, "up", "-d", "--pull", "missing")
+		stdout, _ := c.StdoutPipe()
+		stderr, _ := c.StderrPipe()
+
+		if err := c.Start(); err != nil {
+			m.outputChan <- dockerFinishedMsg{err}
 			return
 		}
-	}
 
-	fmt.Printf("📂 Initializing %s...\n", targetDir)
-	err := extractEmbedDir(myaaw.DefaultMyaawDir, ".myaaw", targetDir)
-	if err != nil {
-		log.Printf("❌ Error extracting defaults: %v", err)
-	} else {
-		fmt.Println("✅ Default configuration and skills extracted.")
-	}
+		// Stream output
+		go func() {
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				m.outputChan <- cmdOutputMsg(scanner.Text())
+			}
+		}()
+		go func() {
+			scanner := bufio.NewScanner(stderr)
+			for scanner.Scan() {
+				m.outputChan <- cmdOutputMsg(scanner.Text())
+			}
+		}()
+
+		err := c.Wait()
+		m.outputChan <- dockerFinishedMsg{err}
+	}()
+
+	return m.listenForOutput()
 }
 
-func setupEnv(targetDir string) {
-	envFile := filepath.Join(targetDir, ".env")
-	configFile := filepath.Join(targetDir, "config.json")
-
-	exists := false
-	if _, err := os.Stat(envFile); err == nil {
-		exists = true
-	}
-
-	if exists {
-		if !askYesNo("⚠️  .env already exists. Update it with new keys?", false) {
-			fmt.Println("ℹ️  Skipping .env setup.")
-		} else {
-
-			runEnvWizard(envFile)
+func (m onboardModel) runGlobalPathCmd() tea.Cmd {
+	go func() {
+		exe, _ := os.Executable()
+		if runtime.GOOS == "windows" {
+			m.outputChan <- globalPathFinishedMsg{nil}
+			return
 		}
-	} else {
-		err := os.WriteFile(envFile, []byte(myaaw.DefaultEnvExample), 0644)
+
+		// Use -S to read password from stdin
+		// Redirecting stderr to stdout to capture sudo errors in output if needed
+		cmd := exec.Command("sudo", "-S", "mv", exe, "/usr/local/bin/myaaw")
+		cmd.Stdin = strings.NewReader(m.sudoPassword + "\n")
+
+		var combinedOut strings.Builder
+		cmd.Stdout = &combinedOut
+		cmd.Stderr = &combinedOut
+
+		err := cmd.Run()
 		if err != nil {
-			log.Fatalf("❌ Error creating .env: %v", err)
+			// If sudo failed, include its output in the error if possible
+			outStr := strings.TrimSpace(combinedOut.String())
+			if outStr != "" {
+				m.outputChan <- globalPathFinishedMsg{fmt.Errorf("%v: %s", err, outStr)}
+			} else {
+				m.outputChan <- globalPathFinishedMsg{err}
+			}
+			return
 		}
-		fmt.Println("📝 Created .env from template.")
-		runEnvWizard(envFile)
-	}
-
-	if askYesNo("\n💬 Configure Channels (Telegram/Discord) and Heartbeat?", true) {
-		runConfigWizard(configFile)
-	}
-
-	setupGlobalPath()
+		m.outputChan <- globalPathFinishedMsg{nil}
+	}()
+	return m.listenForOutput()
 }
 
-func runEnvWizard(envFile string) {
-	fmt.Println("\n🔑 Environment Variables Wizard")
-	fmt.Println("---------------------------------------")
-	reader := bufio.NewReader(os.Stdin)
-
-	apiKey := promptUser(reader, "Enter LLM Provider API Key", "")
-	if apiKey != "" {
-		updateEnvFile(envFile, "LLM_PROVIDER_API_KEY", apiKey)
+func (m onboardModel) listenForOutput() tea.Cmd {
+	return func() tea.Msg {
+		return <-m.outputChan
 	}
-
-	fmt.Println("✅ Environment variables updated.")
 }
 
-func runConfigWizard(configPath string) {
-	fmt.Println("\n📡 Channel & Heartbeat Wizard")
-	fmt.Println("---------------------------------------")
-	reader := bufio.NewReader(os.Stdin)
+type cmdOutputMsg string
+type dockerFinishedMsg struct{ err error }
+type globalPathFinishedMsg struct{ err error }
 
-	// 1. Load current config
-	cfg, err := loadConfigFromFile(configPath)
-	if err != nil {
-		fmt.Printf("⚠️  Warning: Could not load config.json: %v\n", err)
-		return
-	}
+func (m *onboardModel) setupHeartbeatInput() {
+	m.textInput.Placeholder = "Heartbeat Output ID (Empty to skip)"
+	m.textInput.Reset()
+}
+
+func (m onboardModel) saveConfig() {
+	// Logic to load, update, save config.json
+	cfg, _ := loadConfigFromFile(m.configFile)
 	if cfg == nil {
 		cfg = &config.Config{}
 	}
 
-	fmt.Println("ℹ️  This wizard helps you set basic tokens.")
-	fmt.Printf("👉 For advanced settings, please edit: %s\n", configPath)
-
-	// --- Channel Selection ---
-	fmt.Println("\nWhich channels would you like to configure?")
-	fmt.Println("1) Telegram")
-	fmt.Println("2) Discord")
-	fmt.Println("3) Both")
-	fmt.Println("4) Skip / Keep Current")
-	choice := promptUser(reader, "Select an option [1-4]", "4")
-
-	if choice == "1" || choice == "3" {
+	// Update Channels
+	if m.telegramToken != "" {
 		if cfg.Channels.Telegram == nil {
-			cfg.Channels.Telegram = &config.ChannelConfig{Active: false, Mode: "polling"}
+			cfg.Channels.Telegram = &config.ChannelConfig{}
 		}
-
-		// --- Telegram Mode Selection ---
-		fmt.Println("\n[Telegram Connection Mode]")
-		fmt.Println("1) Long Polling (Discord-like, Works behind NAT, No Ngrok needed) [Recommended]")
-		fmt.Println("2) Webhook (Requires public URL & Ngrok)")
-		modeChoice := promptUser(reader, "Select mode", "1")
-
-		if modeChoice == "2" {
-			cfg.Channels.Telegram.Mode = "webhook"
-			cfg.Channels.Telegram.NgrokActive = true
-			fmt.Println("ℹ️  Webhook mode requires an Ngrok Authtoken.")
-			token := promptUser(reader, "Enter Ngrok Authtoken", cfg.Channels.Telegram.NgrokAuthToken)
-			if token != "" {
-				cfg.Channels.Telegram.NgrokAuthToken = token
-			}
-		} else {
-			cfg.Channels.Telegram.Mode = "polling"
-			cfg.Channels.Telegram.NgrokActive = false
-		}
-
-		isUnset := cfg.Channels.Telegram.Token == "" || isPlaceholder(cfg.Channels.Telegram.Token)
-		current := cfg.Channels.Telegram.Token
-		if !isUnset {
-			fmt.Printf("ℹ️  Telegram bot token is already set: %s\n", maskToken(current))
-			if askYesNo("Update Telegram bot token?", false) {
-				isUnset = true
-			}
-		}
-		if isUnset {
-			token := promptUser(reader, "Enter Telegram Bot Token", "")
-			if token != "" {
-				cfg.Channels.Telegram.Active = true
-				cfg.Channels.Telegram.Token = token
-				fmt.Println("✅ Telegram configuration updated.")
-			}
-		}
+		cfg.Channels.Telegram.Active = true
+		cfg.Channels.Telegram.Token = m.telegramToken
+		cfg.Channels.Telegram.Mode = m.telegramMode
 	}
-
-	if choice == "2" || choice == "3" {
+	if m.discordToken != "" {
 		if cfg.Channels.Discord == nil {
-			cfg.Channels.Discord = &config.ChannelConfig{Active: false}
+			cfg.Channels.Discord = &config.ChannelConfig{}
 		}
-		isUnset := cfg.Channels.Discord.Token == "" || isPlaceholder(cfg.Channels.Discord.Token)
-		current := cfg.Channels.Discord.Token
-		if !isUnset {
-			fmt.Printf("ℹ️  Discord token is already set: %s\n", maskToken(current))
-			if askYesNo("Update Discord token?", false) {
-				isUnset = true
-			}
-		}
-		if isUnset {
-			token := promptUser(reader, "Enter Discord Bot Token", "")
-			if token != "" {
-				cfg.Channels.Discord.Active = true
-				cfg.Channels.Discord.Token = token
-				fmt.Println("✅ Discord configuration updated.")
-			}
-		}
+		cfg.Channels.Discord.Active = true
+		cfg.Channels.Discord.Token = m.discordToken
 	}
 
-	// --- Heartbeat Routing ---
-	fmt.Println("\n[Heartbeat Service]")
-	if askYesNo("Activate Heartbeat?", false) {
+	// Heartbeat
+	if m.heartbeat {
 		cfg.Heartbeat.Active = true
-		to := promptUser(reader, "Enter Heartbeat Recipient ID", cfg.Heartbeat.To)
-		if to == "" || isPlaceholder(to) {
-			to = "123456789"
-		}
-		cfg.Heartbeat.To = to
-
-		fmt.Println("Route heartbeat to:")
-		fmt.Println("1) Telegram")
-		fmt.Println("2) Discord")
-		hbChannel := promptUser(reader, "Select channel [1-2]", "1")
-		if hbChannel == "2" {
-			cfg.Heartbeat.Channel = "discord"
-		} else {
+		cfg.Heartbeat.To = m.heartbeatTo
+		// Default to telegram if active, else discord
+		if m.telegramToken != "" {
 			cfg.Heartbeat.Channel = "telegram"
+		} else {
+			cfg.Heartbeat.Channel = "discord"
 		}
 		cfg.Heartbeat.Every = "30m"
-		fmt.Printf("✅ Heartbeat set to channel '%s' for recipient: %s\n", cfg.Heartbeat.Channel, to)
 	}
 
-	// --- Bot Owner ---
-	isOwnerPlaceholder := len(cfg.Bot.OwnerIDs) == 1 && isPlaceholder(cfg.Bot.OwnerIDs[0])
-	if len(cfg.Bot.OwnerIDs) == 0 || isOwnerPlaceholder {
-		fmt.Println("\n[Bot Owner]")
-		ownerID := promptUser(reader, "Enter Your Primary Owner ID (Telegram/Discord ID)", "")
-		if ownerID != "" {
-			cfg.Bot.OwnerIDs = []string{ownerID}
-			fmt.Println("✅ Owner ID set.")
+	// Owner
+	if m.ownerID != "" {
+		cfg.Bot.OwnerIDs = []string{m.ownerID}
+	}
+
+	saveConfigToFile(m.configFile, cfg)
+}
+
+// --- Rendering ---
+
+func (m onboardModel) renderContent() string {
+	var b strings.Builder
+
+	padding := lipgloss.NewStyle().PaddingLeft(4)
+	titleStyle := theme.HighlightStyle.MarginBottom(1)
+
+	switch m.step {
+	case stepWelcome:
+		b.WriteString(titleStyle.Render("Welcome to Myaaw!"))
+		b.WriteString("\n\nThis wizard will guide you through setting up your AI assistant.\n")
+		b.WriteString("We'll configure your keys, channels, and infrastructure.\n\n")
+		b.WriteString(theme.SecondaryStyle.Render("Press Enter to start."))
+
+	case stepInitHome:
+		b.WriteString(titleStyle.Render("Initialize Configuration"))
+		b.WriteString(fmt.Sprintf("\n\nDirectory: %s\n\n", m.myaawHome))
+		b.WriteString(m.renderChoices())
+
+	case stepEnvLLM:
+		b.WriteString(titleStyle.Render("LLM Provider API Key"))
+		b.WriteString("\n\nEnter your API key (e.g., OpenAI, Anthropic).\n")
+		b.WriteString(m.textInput.View())
+
+	case stepChannelChoice:
+		b.WriteString(titleStyle.Render("Select Channels"))
+		b.WriteString("\n\nWhere should your bot live?\n\n")
+		b.WriteString(m.renderChoices())
+
+	case stepTelegramMode:
+		b.WriteString(titleStyle.Render("Telegram Connection Mode"))
+		b.WriteString("\n\n")
+		b.WriteString(m.renderChoices())
+
+	case stepTelegramToken:
+		b.WriteString(titleStyle.Render("Telegram Bot Token"))
+		b.WriteString("\n\nGet this from @BotFather on Telegram.\n")
+		b.WriteString(m.textInput.View())
+
+	case stepDiscordToken:
+		b.WriteString(titleStyle.Render("Discord Bot Token"))
+		b.WriteString("\n\nGet this from the Discord Developer Portal.\n")
+		b.WriteString(m.textInput.View())
+
+	case stepHeartbeatChannel:
+		b.WriteString(titleStyle.Render("Heartbeat Channel"))
+		b.WriteString("\n\nSelect a channel for status updates:\n\n")
+		b.WriteString(m.renderChoices())
+
+	case stepHeartbeatID:
+		b.WriteString(titleStyle.Render("Heartbeat User/Channel ID"))
+		b.WriteString(fmt.Sprintf("\n\nEnter the ID on %s:\n", strings.Title(m.heartbeatChannel)))
+		b.WriteString(m.textInput.View())
+
+	case stepOwner:
+		b.WriteString(titleStyle.Render("Bot Owner"))
+		b.WriteString("\n\nEnter your User ID (Telegram/Discord) to be the bot admin.\n")
+		b.WriteString(m.textInput.View())
+
+	case stepDocker:
+		b.WriteString(titleStyle.Render("Docker Infrastructure"))
+		if m.isRunning {
+			b.WriteString("\n\n" + theme.SecondaryStyle.Render("Installing services..."))
+			b.WriteString("\n" + theme.MutedStyle.Render(strings.Join(m.cmdOutput, "\n")))
+		} else if len(m.cmdOutput) > 0 {
+			b.WriteString("\n\n" + strings.Join(m.cmdOutput, "\n"))
+			b.WriteString("\n\n" + theme.SecondaryStyle.Render("Press Enter to continue."))
+		} else {
+			b.WriteString("\n\nInitialize MongoDB, Redis, and RabbitMQ containers?\n\n")
+			b.WriteString(m.renderChoices())
+		}
+
+	case stepInstallGlobal:
+		b.WriteString(titleStyle.Render("Install Globally"))
+		b.WriteString("\n\nMake 'myaaw' available globally in your terminal?\n\n")
+		b.WriteString(m.renderChoices())
+
+	case stepSudoPassword:
+		b.WriteString(titleStyle.Render("Install Globally"))
+		if m.isRunning {
+			b.WriteString("\n\n" + theme.SecondaryStyle.Render("Moving binary..."))
+		} else if m.globalPathDone {
+			b.WriteString("\n\n" + strings.Join(m.cmdOutput, "\n"))
+			b.WriteString("\n\n" + theme.SecondaryStyle.Render("Press Enter to finish."))
+		} else {
+			if len(m.cmdOutput) > 0 {
+				b.WriteString("\n" + strings.Join(m.cmdOutput, "\n") + "\n")
+			}
+			b.WriteString("\nPlease enter your sudo password to move the binary to /usr/local/bin.\n")
+			b.WriteString(m.textInput.View())
+		}
+
+	case stepDone:
+		b.WriteString(theme.SuccessStyle.Render("✨ Onboarding Complete!"))
+		b.WriteString("\n\nYou're all set. Try running:\n")
+		b.WriteString(theme.HighlightStyle.Render("  myaaw status") + "\n")
+		b.WriteString(theme.HighlightStyle.Render("  myaaw chat") + "\n\n")
+		b.WriteString(theme.SecondaryStyle.Render("Press Enter to finish and exit."))
+	}
+
+	return padding.Render(b.String())
+}
+
+func (m onboardModel) renderChoices() string {
+	s := ""
+	for i, choice := range m.choices {
+		cursor := "  "
+		style := theme.BaseStyle
+		if m.cursor == i {
+			cursor = "👉"
+			style = theme.HighlightStyle
+		}
+		s += fmt.Sprintf("%s %s\n", cursor, style.Render(choice))
+	}
+	return s
+}
+
+func (m onboardModel) renderTimeline() string {
+	steps := []string{
+		"Disclaimer",
+		"Initialize",
+		"API Keys",
+		"Channels",
+		"Heartbeat",
+		"Owner",
+		"Docker",
+		"Install Global",
+		"Done",
+	}
+
+	// Map current machine step to timeline index
+	timelineIdx := 0
+	switch m.step {
+	case stepWelcome:
+		timelineIdx = 0
+	case stepInitHome:
+		timelineIdx = 1
+	case stepEnvLLM:
+		timelineIdx = 2
+	case stepChannelChoice, stepTelegramMode, stepTelegramToken, stepDiscordToken:
+		timelineIdx = 3
+	case stepHeartbeatChannel, stepHeartbeatID:
+		timelineIdx = 4
+	case stepOwner:
+		timelineIdx = 5
+	case stepDocker:
+		timelineIdx = 6
+	case stepInstallGlobal, stepSudoPassword:
+		timelineIdx = 7
+	case stepDone:
+		timelineIdx = 8
+	}
+
+	var b strings.Builder
+	for i, label := range steps {
+		bullet := "○"
+		style := theme.MutedStyle
+
+		if i < timelineIdx {
+			bullet = "◉"
+			style = theme.SuccessStyle // Completed
+		} else if i == timelineIdx {
+			bullet = "◉"
+			style = theme.HighlightStyle // Active
+		}
+
+		b.WriteString(style.Render(fmt.Sprintf("%s %s", bullet, label)) + "\n")
+		if i < len(steps)-1 {
+			lineStyle := theme.MutedStyle
+			if i < timelineIdx {
+				lineStyle = theme.SuccessStyle
+			}
+			b.WriteString(lineStyle.Render("│") + "\n")
 		}
 	}
 
-	// Save back
-	err = saveConfigToFile(configPath, cfg)
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, true, false, false).
+		BorderForeground(lipgloss.Color(theme.ColorMuted)).
+		PaddingRight(2).
+		Render(b.String())
+}
+
+// --- Copied Utilities (Adapted) ---
+
+func setupMyaawHome(targetDir string) {
+	if _, err := os.Stat(targetDir); err == nil {
+		return // Already exists
+	}
+	extractEmbedDir(myaaw.DefaultMyaawDir, ".myaaw", targetDir)
+}
+
+func ensureEnvFile(path string) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		os.WriteFile(path, []byte(myaaw.DefaultEnvExample), 0644)
+	}
+}
+
+func setupGlobalPath() {
+	exe, _ := os.Executable()
+	if runtime.GOOS != "windows" {
+		cmd := exec.Command("sudo", "mv", exe, "/usr/local/bin/myaaw")
+		cmd.Run()
+	}
+}
+
+// Reuse existing helpers from original file
+func updateEnvFile(path, key, value string) {
+	input, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Printf("❌ Failed to save config.json: %v\n", err)
-	} else {
-		fmt.Println("\n✅ Configuration file updated successfully.")
+		return
 	}
-}
 
-func maskToken(t string) string {
-	if len(t) < 10 {
-		return "****"
+	lines := strings.Split(string(input), "\n")
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(line, key+"=") {
+			lines[i] = fmt.Sprintf("%s=%s", key, value)
+			found = true
+			break
+		}
 	}
-	return t[:4] + "...." + t[len(t)-4:]
-}
-
-func isPlaceholder(val string) bool {
-	v := strings.ToUpper(val)
-	return strings.HasPrefix(v, "YOUR_") || strings.Contains(v, "PLACEHOLDER")
+	if !found {
+		lines = append(lines, fmt.Sprintf("%s=%s", key, value))
+	}
+	os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
 }
 
 func loadConfigFromFile(path string) (*config.Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	var cfg config.Config
@@ -281,112 +768,6 @@ func saveConfigToFile(path string, cfg *config.Config) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-func setupGlobalPath() {
-	fmt.Println("\n🌍 Global Command Setup")
-	fmt.Println("---------------------------------------")
-	exe, _ := os.Executable()
-
-	if runtime.GOOS == "windows" {
-		fmt.Println("To use 'myaaw' from anywhere, run this in PowerShell as Administrator:")
-		fmt.Printf("[Environment]::SetEnvironmentVariable(\"Path\", $env:Path + \";%s\", \"User\")\n", filepath.Dir(exe))
-	} else {
-		fmt.Printf("Current binary location: %s\n", exe)
-		if askYesNo("Would you like to move 'myaaw' to /usr/local/bin/ so it's available everywhere?", false) {
-			fmt.Println("ℹ️  Running: sudo mv", exe, "/usr/local/bin/myaaw")
-			// Use exec.Command to allow interactive sudo password prompt
-			cmd := exec.Command("sudo", "mv", exe, "/usr/local/bin/myaaw")
-			cmd.Stdin = os.Stdin
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-
-			err := cmd.Run()
-			if err != nil {
-				fmt.Println("⚠️  Failed to move binary automatically.")
-				fmt.Println("Please run this command manually to make 'myaaw' global:")
-				fmt.Printf("sudo mv %s /usr/local/bin/myaaw\n", exe)
-			} else {
-				fmt.Println("✅ Success! 'myaaw' is now a global command.")
-			}
-		}
-	}
-}
-
-func askDockerSetup() {
-	fmt.Println("\n🐳 Database Setup (Infrastructure)")
-	fmt.Println("---------------------------------------")
-	if askYesNo("Would you like to setup databases now? (Docker required)", true) {
-		fmt.Println("ℹ️  Running 'myaaw docker setup'...")
-		if err := runDockerSetup(); err != nil {
-			fmt.Printf("❌ Docker setup failed: %v\n", err)
-		}
-	}
-}
-
-// runDockerSetup is implemented in docker.go
-
-// Helpers
-
-func askYesNo(question string, defaultYes bool) bool {
-	prompt := "[y/N]"
-	if defaultYes {
-		prompt = "[Y/n]"
-	}
-	fmt.Printf("%s %s: ", question, prompt)
-
-	var input string
-	fmt.Scanln(&input)
-	input = strings.ToLower(strings.TrimSpace(input))
-
-	if input == "" {
-		return defaultYes
-	}
-	return input == "y" || input == "yes"
-}
-
-func promptUser(reader *bufio.Reader, label string, defaultValue string) string {
-	if defaultValue != "" {
-		fmt.Printf("%s [%s]: ", label, defaultValue)
-	} else {
-		fmt.Printf("%s: ", label)
-	}
-
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-
-	if input == "" {
-		return defaultValue
-	}
-	return input
-}
-
-func updateEnvFile(path, key, value string) {
-	input, err := os.ReadFile(path)
-	if err != nil {
-		log.Printf("Error reading env file: %v", err)
-		return
-	}
-
-	lines := strings.Split(string(input), "\n")
-	found := false
-	for i, line := range lines {
-		if strings.HasPrefix(line, key+"=") {
-			lines[i] = fmt.Sprintf("%s=%s", key, value)
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		lines = append(lines, fmt.Sprintf("%s=%s", key, value))
-	}
-
-	output := strings.Join(lines, "\n")
-	err = os.WriteFile(path, []byte(output), 0644)
-	if err != nil {
-		log.Printf("Error writing env file: %v", err)
-	}
-}
-
 func extractEmbedDir(embeddedFS embed.FS, src string, dest string) error {
 	entries, err := embeddedFS.ReadDir(src)
 	if err != nil {
@@ -398,24 +779,14 @@ func extractEmbedDir(embeddedFS embed.FS, src string, dest string) error {
 		destPath := filepath.Join(dest, entry.Name())
 
 		if entry.IsDir() {
-			err = os.MkdirAll(destPath, 0755)
-			if err != nil {
-				return err
-			}
-			err = extractEmbedDir(embeddedFS, srcPath, destPath)
-			if err != nil {
-				return err
-			}
+			os.MkdirAll(destPath, 0755)
+			extractEmbedDir(embeddedFS, srcPath, destPath)
 		} else {
-			data, err := embeddedFS.ReadFile(srcPath)
-			if err != nil {
-				return err
-			}
-			err = os.WriteFile(destPath, data, 0644)
-			if err != nil {
-				return err
-			}
+			data, _ := embeddedFS.ReadFile(srcPath)
+			os.WriteFile(destPath, data, 0644)
 		}
 	}
 	return nil
 }
+
+// runDockerSetup is in docker.go

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 
 	"github.com/spf13/cobra"
@@ -31,22 +32,22 @@ var checkCmd = &cobra.Command{
 	Use:   "check",
 	Short: "Validate environment variables and config files",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("🔍 Loading configuration...")
+		fmt.Println(theme.RenderSecondary("🔍 Loading configuration..."))
 		config.LoadBaseConfig()
 
-		fmt.Println("\nChecking Environment Variables (.env / OS):")
+		fmt.Println("\n" + theme.RenderPrimary("Checking Environment Variables (.env / OS):"))
 		missingCount := 0
 		for _, key := range envKeys {
 			val := os.Getenv(key)
 			if val == "" {
 				if key == "TTS_PROVIDER_NAME" && config.TTSProviderName != "" {
-					fmt.Printf("✅ %-25s : [OK] (Default: %s)\n", key, config.TTSProviderName)
+					fmt.Printf("%-25s : %s (Default: %s)\n", theme.RenderPrimary(key), theme.RenderSuccess("[OK]"), config.TTSProviderName)
 					continue
 				}
-				fmt.Printf("❌ %-25s : [MISSING]\n", key)
+				fmt.Printf("%-25s : %s\n", theme.RenderPrimary(key), theme.RenderError("[MISSING]"))
 				missingCount++
 			} else {
-				fmt.Printf("✅ %-25s : [OK]\n", key)
+				fmt.Printf("%-25s : %s\n", theme.RenderPrimary(key), theme.RenderSuccess("[OK]"))
 			}
 		}
 
@@ -58,9 +59,9 @@ var checkCmd = &cobra.Command{
 		}
 		configPath := filepath.Join(homeDir, ".myaaw", "config.json")
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			fmt.Printf("ℹ️  %-25s : Not Found (Optional)\n", "~/.myaaw/config.json")
+			fmt.Printf("%-25s : %s (Optional)\n", theme.RenderPrimary("~/.myaaw/config.json"), theme.RenderMuted("Not Found"))
 		} else {
-			fmt.Printf("✅ %-25s : [FOUND]\n", "~/.myaaw/config.json")
+			fmt.Printf("%-25s : %s\n", theme.RenderPrimary("~/.myaaw/config.json"), theme.RenderSuccess("[FOUND]"))
 			// We could validate JSON content here if desired
 		}
 
@@ -70,16 +71,16 @@ var checkCmd = &cobra.Command{
 			fmt.Println("\n✨ System environment looks good!")
 		}
 
-		fmt.Println("\nTelegram / Ngrok Status:")
+		fmt.Println("\n" + theme.RenderPrimary("Telegram / Ngrok Status:"))
 		fmt.Printf("🔹 Telegram Mode : %s\n", config.TelegramMode)
 		if config.TelegramMode == "webhook" {
 			if config.NgrokActive == "true" {
-				fmt.Printf("✅ Ngrok Active  : [YES] (Token: %s)\n", config.NgrokAuthToken)
+				fmt.Printf("%-16s : %s (Token: %s)\n", theme.RenderPrimary("Ngrok Active"), theme.RenderSuccess("[YES]"), config.NgrokAuthToken)
 			} else {
-				fmt.Printf("❌ Ngrok Active  : [NO] (Webhook will fail if not publicly reachable)\n")
+				fmt.Printf("%-16s : %s (Webhook will fail if not publicly reachable)\n", theme.RenderPrimary("Ngrok Active"), theme.RenderError("[NO]"))
 			}
 		} else {
-			fmt.Println("✅ Long Polling  : [ACTIVE] (No Ngrok required)")
+			fmt.Printf("%-16s : %s (No Ngrok required)\n", theme.RenderPrimary("Long Polling"), theme.RenderSuccess("[ACTIVE]"))
 		}
 	},
 }

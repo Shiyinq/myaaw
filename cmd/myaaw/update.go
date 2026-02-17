@@ -10,34 +10,36 @@ import (
 
 	"github.com/go-resty/resty/v2"
 	"github.com/spf13/cobra"
+
+	"myaaw/internal/cli/theme"
 )
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Check for and install updates",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("🔍 Checking for updates at %s...\n", githubRepo)
+		fmt.Printf("%s %s...\n", theme.RenderSecondary("🔍 Checking for updates at"), githubRepo)
 
 		latestVersion, downloadURL, err := getLatestReleaseInfo()
 		if err != nil {
-			log.Fatalf("❌ Error checking for updates: %v", err)
+			log.Fatalf("%s checking for updates: %v", theme.RenderError("❌ Error"), err)
 		}
 
 		if latestVersion == Version {
-			fmt.Printf("✅ Myaaw is already up to date (Version: %s)\n", Version)
+			fmt.Printf("%s (Version: %s)\n", theme.RenderSuccess("✅ Myaaw is already up to date"), Version)
 			return
 		}
 
-		fmt.Printf("🆕 New version available: %s (Current: %s)\n", latestVersion, Version)
+		fmt.Printf("%s: %s (Current: %s)\n", theme.RenderPrimary("🆕 New version available"), latestVersion, Version)
 		if !askYesNo("Would you like to download and install it?", true) {
 			return
 		}
 
 		if err := performUpdate(downloadURL); err != nil {
-			log.Fatalf("❌ Update failed: %v", err)
+			log.Fatalf("%s: %v", theme.RenderError("❌ Update failed"), err)
 		}
 
-		fmt.Println("🚀 Update complete! Please restart Myaaw.")
+		fmt.Println(theme.RenderSuccess("🚀 Update complete! Please restart Myaaw."))
 	},
 }
 
@@ -108,7 +110,7 @@ func performUpdate(url string) error {
 	tempFile := exe + ".tmp"
 	client := resty.New()
 
-	fmt.Printf("📥 Downloading...")
+	fmt.Printf(theme.RenderSecondary("📥 Downloading..."))
 	resp, err := client.R().SetOutput(tempFile).Get(url)
 	if err != nil {
 		return err
@@ -116,7 +118,7 @@ func performUpdate(url string) error {
 	if resp.StatusCode() != http.StatusOK {
 		return fmt.Errorf("download failed with status %d", resp.StatusCode())
 	}
-	fmt.Println(" Done.")
+	fmt.Println(theme.RenderSuccess(" Done."))
 
 	// 2. Make it executable
 	if runtime.GOOS != "windows" {
@@ -139,6 +141,6 @@ func performUpdate(url string) error {
 		return fmt.Errorf("failed to replace binary: %w", err)
 	}
 
-	fmt.Println("✅ Binary replaced successfully.")
+	fmt.Println(theme.RenderSuccess("✅ Binary replaced successfully."))
 	return nil
 }

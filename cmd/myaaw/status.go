@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"net/url"
 	"os"
@@ -17,100 +18,100 @@ var statusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		config.LoadBaseConfig()
 
-		fmt.Println("🔍 Myaaw Service Status")
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println(theme.RenderPrimary("🔍 Myaaw Service Status"))
+		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
 
 		srv, srvRunning, _ := checkService("myaaw-server")
 		cons, consRunning, _ := checkService("myaaw-consumer")
 
 		if srvRunning && consRunning {
-			fmt.Printf("%-14s ✅ OPERATIONAL\n", "Gateway")
+			fmt.Printf("%-14s %s\n", "Gateway", theme.RenderSuccess("✅ OPERATIONAL"))
 		} else if !srvRunning && !consRunning {
-			fmt.Printf("%-14s ❌ OFFLINE\n", "Gateway")
+			fmt.Printf("%-14s %s\n", "Gateway", theme.RenderError("❌ OFFLINE"))
 		} else {
 			if srvRunning {
-				fmt.Printf("%-14s ⚠️  PARTIAL (Server Only)\n", "Gateway")
+				fmt.Printf("%-14s %s\n", "Gateway", theme.RenderError("⚠️  PARTIAL (Server Only)"))
 			} else {
-				fmt.Printf("%-14s ⚠️  PARTIAL (Consumer Only)\n", "Gateway")
+				fmt.Printf("%-14s %s\n", "Gateway", theme.RenderError("⚠️  PARTIAL (Consumer Only)"))
 			}
 		}
 
 		if srvRunning {
-			fmt.Printf("  %-12s ✅ Running (PID: %d, Port: %s)\n", "Server", srv, config.PORT)
+			fmt.Printf("  %-12s %s (PID: %d, Port: %s)\n", "Server", theme.RenderSuccess("✅ Running"), srv, config.PORT)
 		} else {
-			fmt.Printf("  %-12s ❌ Stopped\n", "Server")
+			fmt.Printf("  %-12s %s\n", "Server", theme.RenderError("❌ Stopped"))
 		}
 
 		if consRunning {
-			fmt.Printf("  %-12s ✅ Running (PID: %d)\n", "Consumer", cons)
+			fmt.Printf("  %-12s %s (PID: %d)\n", "Consumer", theme.RenderSuccess("✅ Running"), cons)
 		} else {
-			fmt.Printf("  %-12s ❌ Stopped\n", "Consumer")
+			fmt.Printf("  %-12s %s\n", "Consumer", theme.RenderError("❌ Stopped"))
 		}
 
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
 
 		mongoPort := getPortFromURL(os.Getenv("MONGODB_URI"), "27017")
 		if err := config.PingMongoDB(); err != nil {
-			fmt.Printf("  %-12s [ERR] Offline (%s)\n", "MongoDB", err)
+			fmt.Printf("  %-12s %s (%s)\n", "MongoDB", theme.RenderError("[ERR] Offline"), err)
 		} else {
-			fmt.Printf("  %-12s ✅ Online (Port: %s)\n", "MongoDB", mongoPort)
+			fmt.Printf("  %-12s %s (Port: %s)\n", "MongoDB", theme.RenderSuccess("✅ Online"), mongoPort)
 		}
 
 		redisPort := getPortFromURL(os.Getenv("REDIS_URL"), "6379")
 		if err := config.PingRedis(); err != nil {
-			fmt.Printf("  %-12s ❌ Offline (%s)\n", "Redis", err)
+			fmt.Printf("  %-12s %s (%s)\n", "Redis", theme.RenderError("❌ Offline"), err)
 		} else {
-			fmt.Printf("  %-12s ✅ Online (Port: %s)\n", "Redis", redisPort)
+			fmt.Printf("  %-12s %s (Port: %s)\n", "Redis", theme.RenderSuccess("✅ Online"), redisPort)
 		}
 
 		rabbitPort := getPortFromURL(os.Getenv("RABBITMQ_URL"), "5672")
 		if err := config.PingRabbitMQ(); err != nil {
-			fmt.Printf("  %-12s ❌ Offline (%s)\n", "RabbitMQ", err)
+			fmt.Printf("  %-12s %s (%s)\n", "RabbitMQ", theme.RenderError("❌ Offline"), err)
 		} else {
-			fmt.Printf("  %-12s ✅ Online (Port: %s)\n", "RabbitMQ", rabbitPort)
+			fmt.Printf("  %-12s %s (Port: %s)\n", "RabbitMQ", theme.RenderSuccess("✅ Online"), rabbitPort)
 		}
 
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
 
-		fmt.Println("Channels")
+		fmt.Println(theme.RenderPrimary("Channels"))
 		if config.TelegramBotToken != "" {
-			fmt.Printf("  %-12s ✅ Configured (%s)\n", "Telegram", config.TelegramMode)
+			fmt.Printf("  %-12s %s (%s)\n", "Telegram", theme.RenderSuccess("✅ Configured"), config.TelegramMode)
 		} else {
-			fmt.Printf("  %-12s ❌ Not configured\n", "Telegram")
+			fmt.Printf("  %-12s %s\n", "Telegram", theme.RenderError("❌ Not configured"))
 		}
 
 		if config.DiscordBotToken != "" {
-			fmt.Printf("  %-12s ✅ Configured\n", "Discord")
+			fmt.Printf("  %-12s %s\n", "Discord", theme.RenderSuccess("✅ Configured"))
 		} else {
-			fmt.Printf("  %-12s ❌ Not configured\n", "Discord")
+			fmt.Printf("  %-12s %s\n", "Discord", theme.RenderError("❌ Not configured"))
 		}
 
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
 
-		fmt.Println("Heartbeat")
+		fmt.Println(theme.RenderPrimary("Heartbeat"))
 		if config.Heartbeat.Active {
-			fmt.Printf("  %-12s ✅ Active (Every %s)\n", "Status", config.Heartbeat.Every)
-			fmt.Printf("  %-12s To: %s (%s)\n", "Channel", config.Heartbeat.To, config.Heartbeat.Channel)
+			fmt.Printf("  %-12s %s (Every %s)\n", "Status", theme.RenderSuccess("✅ Active"), config.Heartbeat.Every)
+			fmt.Printf("  %-12s %s: %s (%s)\n", "Channel", theme.RenderSecondary("To"), config.Heartbeat.To, config.Heartbeat.Channel)
 		} else {
-			fmt.Printf("  %-12s ❌ Disabled\n", "Status")
+			fmt.Printf("  %-12s %s\n", "Status", theme.RenderError("❌ Disabled"))
 		}
 
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
 
-		fmt.Println("LLM Provider")
+		fmt.Println(theme.RenderPrimary("LLM Provider"))
 		if config.LLMProviderName != "" {
-			fmt.Printf("  %-12s %s\n", "Provider", config.LLMProviderName)
+			fmt.Printf("  %-12s %s\n", "Provider", theme.RenderPrimary(config.LLMProviderName))
 		} else {
-			fmt.Printf("  %-12s ❌ Not configured\n", "Provider")
+			fmt.Printf("  %-12s %s\n", "Provider", theme.RenderError("❌ Not configured"))
 		}
 
 		if config.StreamResponse {
-			fmt.Printf("  %-12s ✅ Enabled\n", "Streaming")
+			fmt.Printf("  %-12s %s\n", "Streaming", theme.RenderSuccess("✅ Enabled"))
 		} else {
-			fmt.Printf("  %-12s ❌ Disabled\n", "Streaming")
+			fmt.Printf("  %-12s %s\n", "Streaming", theme.RenderError("❌ Disabled"))
 		}
 
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
 	},
 }
 
