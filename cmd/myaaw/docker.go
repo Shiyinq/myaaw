@@ -62,7 +62,9 @@ func runDockerSetup() error {
 	}
 
 	fmt.Println("🚀 Starting infrastructure services (MongoDB, Redis, RabbitMQ)...")
-	return runDockerCompose("up", "-d", "mongodb", "redis", "rabbitmq")
+	// Use --remove-orphans to cleanup old containers from previous setups (e.g. backend/consumer)
+	// Use --pull missing to prefer local images if available
+	return runDockerCompose("up", "-d", "--pull", "missing", "--remove-orphans", "mongodb", "redis", "rabbitmq")
 }
 
 func isDockerInstalled() bool {
