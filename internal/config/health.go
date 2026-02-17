@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -48,6 +49,12 @@ func PingRedis() error {
 		return fmt.Errorf("invalid URL: %w", err)
 	}
 
+	// Disable internal logging for this check to avoid spamming "connection refused" unless verbose
+	if !Verbose {
+		redis.SetLogger(&noOpLogger{})
+		defer redis.SetLogger(&defaultLogger{})
+	}
+
 	client := redis.NewClient(opt)
 	defer client.Close()
 
@@ -59,6 +66,16 @@ func PingRedis() error {
 	}
 
 	return nil
+}
+
+type noOpLogger struct{}
+
+func (l *noOpLogger) Printf(ctx context.Context, format string, v ...interface{}) {}
+
+type defaultLogger struct{}
+
+func (l *defaultLogger) Printf(ctx context.Context, format string, v ...interface{}) {
+	log.Printf(format, v...)
 }
 
 // PingRabbitMQ checks if RabbitMQ is reachable without using log.Fatal.

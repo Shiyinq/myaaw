@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"myaaw/internal/config"
 	"os"
 	"path/filepath"
 
@@ -24,6 +25,8 @@ func init() {
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(dockerCmd)
 	rootCmd.AddCommand(versionCmd)
+
+	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false, "enable verbose logging")
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		// Commands that don't require .myaaw configuration

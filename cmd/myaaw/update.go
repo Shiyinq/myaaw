@@ -44,10 +44,6 @@ var updateCmd = &cobra.Command{
 const githubRepo = "https://github.com/Shiyinq/myaaw"
 const githubAPI = "https://api.github.com/repos/Shiyinq/myaaw/releases/latest"
 
-func init() {
-	rootCmd.AddCommand(updateCmd)
-}
-
 func getLatestReleaseInfo() (version string, downloadURL string, err error) {
 	client := resty.New()
 	var result struct {

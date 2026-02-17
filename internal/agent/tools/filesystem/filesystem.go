@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"myaaw/internal/config"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,9 +28,13 @@ func init() {
 		myaawHome := filepath.Join(homeDir, ".myaaw", "home")
 		defaultBaseDir = myaawHome
 		allowedDirectories = append(allowedDirectories, myaawHome)
-		log.Printf("FileSystemTool: Allowed directory set to %s", myaawHome)
+		if config.Verbose {
+			log.Printf("FileSystemTool: Allowed directory set to %s", myaawHome)
+		}
 	} else {
-		log.Printf("Error: Could not determine home directory, sandbox limited.")
+		if config.Verbose {
+			log.Printf("Error: Could not determine home directory, sandbox limited.")
+		}
 	}
 
 	// Smart CWD Detection:
@@ -48,9 +53,13 @@ func init() {
 	if isProject {
 		defaultBaseDir = cwd
 		allowedDirectories = append(allowedDirectories, cwd)
-		log.Printf("FileSystemTool: Project detected at %s. Added to allowed paths.", cwd)
+		if config.Verbose {
+			log.Printf("FileSystemTool: Project detected at %s. Added to allowed paths.", cwd)
+		}
 	} else {
-		log.Printf("FileSystemTool: Current directory %s does not look like a project. Sandbox restricted to %s", cwd, defaultBaseDir)
+		if config.Verbose {
+			log.Printf("FileSystemTool: Current directory %s does not look like a project. Sandbox restricted to %s", cwd, defaultBaseDir)
+		}
 	}
 }
 
