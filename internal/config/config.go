@@ -42,6 +42,7 @@ var WatermarkModel bool
 var OwnerIDs []string
 var Heartbeat HeartbeatConfig
 var TelegramMode string // "webhook" or "polling"
+var Verbose bool
 
 type Config struct {
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
@@ -78,7 +79,9 @@ type HeartbeatConfig struct {
 func loadJSONConfig() (*Config, error) {
 	// 1. Check Current Directory
 	if _, err := os.Stat("config.json"); err == nil {
-		log.Println("Reading config from current directory: config.json")
+		if Verbose {
+			log.Println("Reading config from current directory: config.json")
+		}
 		return parseJSONFile("config.json")
 	}
 
@@ -87,7 +90,9 @@ func loadJSONConfig() (*Config, error) {
 	if err == nil {
 		configPath := filepath.Join(homeDir, ".myaaw", "config.json")
 		if _, err := os.Stat(configPath); err == nil {
-			log.Println("Reading config from home directory:", configPath)
+			if Verbose {
+				log.Println("Reading config from home directory:", configPath)
+			}
 			return parseJSONFile(configPath)
 		}
 	}
@@ -141,10 +146,14 @@ func LoadBaseConfig() {
 		if err != nil {
 			log.Printf("⚠️  Warning: Error loading .env file from %s: %v\n", path, err)
 		} else {
-			log.Printf("✅ Loaded environment from: %s\n", path)
+			if Verbose {
+				log.Printf("✅ Loaded environment from: %s\n", path)
+			}
 		}
 	} else {
-		log.Println("ℹ️  No .env file found in current directory, ~/.myaaw/, or dev fallback. Using system environment variables.")
+		if Verbose {
+			log.Println("ℹ️  No .env file found in current directory, ~/.myaaw/, or dev fallback. Using system environment variables.")
+		}
 	}
 
 	PORT = ":" + os.Getenv("PORT")
@@ -259,7 +268,10 @@ func retry(attempts int, delay time.Duration, fn func() error) error {
 			return nil
 		}
 
-		log.Printf("Attempt %d failed: %v. Retrying in %v...\n", i+1, err, delay)
+		// Only log on the first failure or every 5th failure to reduce noise, unless verbose is on
+		if Verbose || i == 0 || (i+1)%5 == 0 {
+			log.Printf("Attempt %d/%d failed: %v. Retrying in %v...", i+1, attempts, err, delay)
+		}
 		time.Sleep(delay)
 	}
 	return fmt.Errorf("failed after %d attempts", attempts)
@@ -281,7 +293,9 @@ func ConnectMongoDB(mongoURI, dbName string, maxRetries int, retryDelay time.Dur
 		}
 
 		DB = client.Database(dbName)
-		log.Println("Connected to MongoDB!")
+		if Verbose {
+			log.Println("Connected to MongoDB!")
+		}
 		return nil
 	})
 
@@ -306,7 +320,9 @@ func ConnectRedis(redisURL string, maxRetries int, retryDelay time.Duration) {
 			return err
 		}
 
-		log.Println("Connected to Redis!")
+		if Verbose {
+			log.Println("Connected to Redis!")
+		}
 		return nil
 	})
 
@@ -332,7 +348,9 @@ func ConnectRabbitMQ(rabbitMQURL string, maxRetries int, retryDelay time.Duratio
 		}
 
 		MQ = ch
-		log.Println("Connected to RabbitMQ!")
+		if Verbose {
+			log.Println("Connected to RabbitMQ!")
+		}
 		return nil
 	})
 

@@ -25,7 +25,3 @@ var versionCmd = &cobra.Command{
 		fmt.Printf("OS/Arch:           %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	},
 }
-
-func init() {
-	rootCmd.AddCommand(versionCmd)
-}

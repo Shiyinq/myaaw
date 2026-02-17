@@ -51,7 +51,6 @@ func init() {
 	dockerCmd.AddCommand(dockerSetupCmd)
 	dockerCmd.AddCommand(dockerStopCmd)
 	dockerCmd.AddCommand(dockerLogsCmd)
-	rootCmd.AddCommand(dockerCmd)
 }
 
 func runDockerSetup() error {

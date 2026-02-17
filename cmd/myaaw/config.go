@@ -124,5 +124,4 @@ var dumpCmd = &cobra.Command{
 func init() {
 	configCmd.AddCommand(checkCmd)
 	configCmd.AddCommand(dumpCmd)
-	rootCmd.AddCommand(configCmd)
 }
