@@ -25,6 +25,7 @@ func init() {
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(dockerCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(logsCmd)
 
 	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false, "enable verbose logging")
 
