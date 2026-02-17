@@ -26,10 +26,13 @@ func init() {
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
 		myaawHome := filepath.Join(homeDir, ".myaaw", "home")
+		myaawSkills := filepath.Join(homeDir, ".myaaw", "skills")
+
 		defaultBaseDir = myaawHome
-		allowedDirectories = append(allowedDirectories, myaawHome)
+		allowedDirectories = append(allowedDirectories, myaawHome, myaawSkills)
+
 		if config.Verbose {
-			log.Printf("FileSystemTool: Allowed directory set to %s", myaawHome)
+			log.Printf("FileSystemTool: Allowed directories set to: %v", allowedDirectories)
 		}
 	} else {
 		if config.Verbose {
