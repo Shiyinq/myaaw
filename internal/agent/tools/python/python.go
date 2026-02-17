@@ -49,6 +49,7 @@ func (p *PythonTool) CallTool(arguments string) string {
 
 	cwd, err := os.Getwd()
 	if err == nil {
+		// 1. Check CWD (Project)
 		venvPython := filepath.Join(cwd, ".venv", "bin", "python")
 		venvPip := filepath.Join(cwd, ".venv", "bin", "pip")
 
@@ -56,6 +57,18 @@ func (p *PythonTool) CallTool(arguments string) string {
 			pythonExec = venvPython
 			pipExec = venvPip
 			// log.Printf("Using virtual environment: %s", venvPython)
+		} else {
+			// 2. Check Sandbox Home (Global)
+			if homeDir, err := os.UserHomeDir(); err == nil {
+				myaawHome := filepath.Join(homeDir, ".myaaw", "home")
+				venvPythonHome := filepath.Join(myaawHome, ".venv", "bin", "python")
+				venvPipHome := filepath.Join(myaawHome, ".venv", "bin", "pip")
+
+				if _, err := os.Stat(venvPythonHome); err == nil {
+					pythonExec = venvPythonHome
+					pipExec = venvPipHome
+				}
+			}
 		}
 	}
 
@@ -77,6 +90,15 @@ func (p *PythonTool) CallTool(arguments string) string {
 
 	// Execute Python code
 	cmd := exec.Command(pythonExec, scriptPath)
+
+	// Set working directory to ~/.myaaw/home
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		myaawHome := strings.ReplaceAll(filepath.Join(homeDir, ".myaaw", "home"), "\\", "/")
+		if info, err := os.Stat(myaawHome); err == nil && info.IsDir() {
+			cmd.Dir = myaawHome
+		}
+	}
+
 	if args.Input != "" {
 		cmd.Stdin = strings.NewReader(args.Input)
 	}

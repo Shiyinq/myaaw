@@ -3,7 +3,9 @@ package bash
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -54,7 +56,7 @@ func (b *BashTool) CallTool(arguments string) string {
 	}
 
 	if !isCommandSafe(args.Command) {
-		return fmt.Sprintf("Error: Command contains forbidden/dangerous keywords. Blocked for security.")
+		return "Error: Command contains forbidden/dangerous keywords. Blocked for security."
 	}
 
 	// Default timeout to 60 seconds if not specified
@@ -67,6 +69,15 @@ func (b *BashTool) CallTool(arguments string) string {
 	// Using "bash -c" to allow complex commands (pipes, redirects, etc)
 	// If bash is not available, sh could be a fallback, but user requested "bash"
 	cmd := exec.Command("bash", "-c", args.Command)
+
+	// Set working directory to ~/.myaaw/home to contain execution
+	// Fallback to default if error occurs (which shouldn't happen if onboarded)
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		myaawHome := strings.ReplaceAll(filepath.Join(homeDir, ".myaaw", "home"), "\\", "/")
+		if info, err := os.Stat(myaawHome); err == nil && info.IsDir() {
+			cmd.Dir = myaawHome
+		}
+	}
 
 	// Create a timer to kill the process if it runs too long
 	// Simple implementation without context for now, or use time.AfterFunc
