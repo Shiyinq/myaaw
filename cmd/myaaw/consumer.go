@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/daemon"
 	"myaaw/internal/heartbeat"
@@ -68,14 +69,14 @@ var consumerRestartCmd = &cobra.Command{
 			log.Fatalf("Error: %v", err)
 		}
 
-		fmt.Println("🔄 Stopping consumer...")
+		fmt.Println(theme.RenderSecondary("🔄 Stopping consumer..."))
 		if err := dm.Stop(); err != nil {
-			fmt.Printf("⚠️  Stop warning: %v\n", err)
+			fmt.Printf("%s: %v\n", theme.RenderError("⚠️  Stop warning"), err)
 		}
 
 		time.Sleep(1 * time.Second)
 
-		fmt.Println("🚀 Starting consumer...")
+		fmt.Println(theme.RenderPrimary("🚀 Starting consumer..."))
 		runArgs := []string{"consumer", "run"}
 		if err := dm.Start(runArgs); err != nil {
 			log.Fatalf("Failed to start consumer: %v", err)
@@ -98,9 +99,9 @@ var consumerStatusCmd = &cobra.Command{
 		}
 
 		if running {
-			fmt.Printf("✅ Consumer is running (PID: %d)\n", pid)
+			fmt.Printf("%s (PID: %d)\n", theme.RenderSuccess("✅ Consumer is running"), pid)
 		} else {
-			fmt.Println("❌ Consumer is stopped")
+			fmt.Println(theme.RenderError("❌ Consumer is stopped"))
 		}
 	},
 }

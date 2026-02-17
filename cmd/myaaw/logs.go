@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"myaaw/internal/cli/theme"
+
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -167,7 +169,7 @@ func (m logsModel) View() string {
 	return logsDocStyle.Render(m.list.View())
 }
 
-var logsDocStyle = lipgloss.NewStyle().Margin(1, 2)
+var logsDocStyle = theme.BaseStyle.Margin(1, 2)
 
 func selectLogFilesInteractive(files []os.DirEntry, logDir string) []string {
 	items := []list.Item{
@@ -191,8 +193,13 @@ func selectLogFilesInteractive(files []os.DirEntry, logDir string) []string {
 	const defaultWidth = 20
 	const listHeight = 14
 
-	l := list.New(items, list.NewDefaultDelegate(), defaultWidth, listHeight)
+	d := list.NewDefaultDelegate()
+	d.Styles.SelectedTitle = theme.HighlightStyle.Border(lipgloss.NormalBorder(), false, false, false, true).BorderForeground(lipgloss.Color(theme.ColorPrimary)).Foreground(lipgloss.Color(theme.ColorPrimary)).Padding(0, 0, 0, 1)
+	d.Styles.SelectedDesc = theme.SecondaryStyle.Border(lipgloss.NormalBorder(), false, false, false, true).BorderForeground(lipgloss.Color(theme.ColorPrimary)).Foreground(lipgloss.Color(theme.ColorSecondary)).Padding(0, 0, 0, 1)
+
+	l := list.New(items, d, defaultWidth, listHeight)
 	l.Title = "Select Log File to Stream"
+	l.Styles.Title = theme.HeaderStyle
 	l.SetShowHelp(false)
 
 	m := logsModel{list: l}

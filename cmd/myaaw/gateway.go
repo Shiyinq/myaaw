@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"myaaw/internal/cli/theme"
 	"myaaw/internal/daemon"
 	"time"
 
@@ -40,7 +41,7 @@ var gatewayRestartCmd = &cobra.Command{
 		stopService("myaaw-server")
 		stopService("myaaw-consumer")
 
-		fmt.Println("⏳ Waiting for services to stop...")
+		fmt.Println(theme.RenderSecondary("⏳ Waiting for services to stop..."))
 		time.Sleep(2 * time.Second)
 
 		startService("myaaw-server", []string{"server", "run"})
@@ -55,29 +56,29 @@ var gatewayStatusCmd = &cobra.Command{
 		srv, srvRunning, _ := checkService("myaaw-server")
 		cons, consRunning, _ := checkService("myaaw-consumer")
 
-		fmt.Println("🖥️  Gateway Process Status")
+		fmt.Println(theme.RenderPrimary("🖥️  Gateway Process Status"))
 		if srvRunning {
-			fmt.Printf("  Server      ✅ Running (PID: %d)\n", srv)
+			fmt.Printf("  %-12s %s (PID: %d)\n", "Server", theme.RenderSuccess("✅ Running"), srv)
 		} else {
-			fmt.Println("  Server      ❌ Stopped")
+			fmt.Printf("  %-12s %s\n", "Server", theme.RenderError("❌ Stopped"))
 		}
 
 		if consRunning {
-			fmt.Printf("  Consumer    ✅ Running (PID: %d)\n", cons)
+			fmt.Printf("  %-12s %s (PID: %d)\n", "Consumer", theme.RenderSuccess("✅ Running"), cons)
 		} else {
-			fmt.Println("  Consumer    ❌ Stopped")
+			fmt.Printf("  %-12s %s\n", "Consumer", theme.RenderError("❌ Stopped"))
 		}
 
-		fmt.Println("  ---------------------------")
+		fmt.Println(theme.RenderSecondary("  ---------------------------"))
 		if srvRunning && consRunning {
-			fmt.Println("  Gateway     ✅ OPERATIONAL")
+			fmt.Printf("  %-12s %s\n", "Gateway", theme.RenderSuccess("✅ OPERATIONAL"))
 		} else if !srvRunning && !consRunning {
-			fmt.Println("  Gateway     ❌ OFFLINE")
+			fmt.Printf("  %-12s %s\n", "Gateway", theme.RenderError("❌ OFFLINE"))
 		} else {
 			if srvRunning {
-				fmt.Println("  Gateway     ⚠️ PARTIAL (Server Only)")
+				fmt.Printf("  %-12s %s\n", "Gateway", theme.RenderError("⚠️  PARTIAL (Server Only)"))
 			} else {
-				fmt.Println("  Gateway     ⚠️ PARTIAL (Consumer Only)")
+				fmt.Printf("  %-12s %s\n", "Gateway", theme.RenderError("⚠️  PARTIAL (Consumer Only)"))
 			}
 		}
 	},

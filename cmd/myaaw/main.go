@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"os"
 	"path/filepath"
@@ -11,8 +12,8 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "myaaw",
-	Short: "Myaaw — Personal AI Assistant",
-	Long:  "Myaaw — Integrate your favorite LLM with Telegram, Discord, and more.\nRun as a server, consumer, or chat directly from the terminal.",
+	Short: "Personal AI Assistant",
+	Long:  "Integrate your favorite LLM with Telegram, Discord, and more.\nRun as a server, consumer, or chat directly from the terminal.",
 }
 
 func init() {
@@ -30,6 +31,9 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false, "enable verbose logging")
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		// Add global spacing
+		fmt.Println()
+
 		// Commands that don't require .myaaw configuration
 		metaCommands := map[string]bool{
 			"onboard": true,
@@ -55,6 +59,37 @@ func init() {
 		}
 		return nil
 	}
+
+	// Apply Theme to Help
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, strings []string) {
+		fmt.Println()
+		// Capitalize app name for the main header
+		name := cmd.Name()
+		if name == "myaaw" {
+			name = "Myaaw"
+		}
+		title := theme.RenderPrimary(fmt.Sprintf("%s — %s", name, cmd.Short))
+		fmt.Println(title)
+		fmt.Println(theme.RenderSecondary(cmd.Long))
+		fmt.Println("")
+		fmt.Println(theme.RenderPrimary("Usage:"))
+		fmt.Printf("  %s\n\n", cmd.UseLine())
+
+		if len(cmd.Commands()) > 0 {
+			fmt.Println(theme.RenderPrimary("Available Commands:"))
+			for _, c := range cmd.Commands() {
+				if c.IsAvailableCommand() {
+					fmt.Printf("  %-15s %s\n", theme.RenderSecondary(c.Name()), c.Short)
+				}
+			}
+			fmt.Println("")
+		}
+
+		if len(cmd.LocalFlags().FlagUsages()) > 0 {
+			fmt.Println(theme.RenderPrimary("Flags:"))
+			fmt.Println(cmd.LocalFlags().FlagUsages())
+		}
+	})
 }
 
 func main() {

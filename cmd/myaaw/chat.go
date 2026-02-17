@@ -6,6 +6,7 @@ import (
 	"log"
 	"myaaw/internal/channel"
 	cliAdapter "myaaw/internal/channel/cli"
+	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/services/bot/repository"
 	"myaaw/internal/services/bot/service"
@@ -119,37 +120,24 @@ type chatMessage_ struct {
 }
 
 var (
-	userStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")). // White (Cat's white fur)
+	userStyle = theme.BaseStyle.
 			Bold(true)
 
-	botStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF9F69")). // Peach/Orange (Cat fur)
+	botStyle = theme.HighlightStyle.
 			Bold(true)
 
-	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("240"))
+	dimStyle = theme.MutedStyle
 
-	headerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#FF9F69")). // Peach background
-			Bold(true).
-			Padding(0, 1)
+	headerStyle = theme.HeaderStyle
 
-	footerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			Italic(true)
+	footerStyle = theme.MutedStyle
 
-	userBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#FFFFFF")).
-			Padding(0, 1).
+	userBoxStyle = theme.BoxStyle.
+			BorderForeground(lipgloss.Color(theme.ColorText)).
 			MarginBottom(1)
 
-	botBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#FF9F69")).
-			Padding(0, 1).
+	botBoxStyle = theme.BoxStyle.
+			BorderForeground(lipgloss.Color(theme.ColorPrimary)).
 			MarginBottom(1)
 
 	catAscii = `

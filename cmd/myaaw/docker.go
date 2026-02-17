@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"myaaw"
+	"myaaw/internal/cli/theme"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,7 +24,7 @@ var dockerSetupCmd = &cobra.Command{
 	Short: "Start infrastructure services in detached mode",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := runDockerSetup(); err != nil {
-			log.Fatalf("❌ Error: %v", err)
+			log.Fatalf("%s: %v", theme.RenderError("❌ Error"), err)
 		}
 	},
 }
@@ -33,9 +34,9 @@ var dockerStopCmd = &cobra.Command{
 	Short: "Stop infrastructure services",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := runDockerCompose("stop"); err != nil {
-			log.Fatalf("❌ Error stopping services: %v", err)
+			log.Fatalf("%s: %v", theme.RenderError("❌ Error stopping services"), err)
 		}
-		fmt.Println("✅ Infrastructure services stopped.")
+		fmt.Println(theme.RenderSuccess("✅ Infrastructure services stopped."))
 	},
 }
 
@@ -54,14 +55,14 @@ func init() {
 }
 
 func runDockerSetup() error {
-	fmt.Println("🔍 Checking Docker...")
+	fmt.Println(theme.RenderSecondary("🔍 Checking Docker..."))
 	if !isDockerInstalled() {
-		fmt.Println("❌ Docker is not installed or not running.")
+		fmt.Println(theme.RenderError("❌ Docker is not installed or not running."))
 		openDockerDownload()
 		return fmt.Errorf("Docker not found. Opening download page...")
 	}
 
-	fmt.Println("🚀 Starting infrastructure services (MongoDB, Redis, RabbitMQ)...")
+	fmt.Println(theme.RenderPrimary("🚀 Starting infrastructure services (MongoDB, Redis, RabbitMQ)..."))
 	// Use --remove-orphans to cleanup old containers from previous setups (e.g. backend/consumer)
 	// Use --pull missing to prefer local images if available
 	return runDockerCompose("up", "-d", "--pull", "missing", "--remove-orphans", "mongodb", "redis", "rabbitmq")
@@ -82,7 +83,7 @@ func isDockerInstalled() bool {
 
 func openDockerDownload() {
 	url := "https://www.docker.com/products/docker-desktop"
-	fmt.Printf("🌐 Opening Docker download page: %s\n", url)
+	fmt.Printf("%s: %s\n", theme.RenderPrimary("🌐 Opening Docker download page"), url)
 
 	var err error
 	switch runtime.GOOS {
@@ -94,7 +95,9 @@ func openDockerDownload() {
 		err = exec.Command("open", url).Start()
 	}
 	if err != nil {
-		fmt.Printf("👉 Please open this link manually: %s\n", url)
+		if err != nil {
+			fmt.Printf(theme.RenderSecondary("👉 Please open this link manually: %s\n"), url)
+		}
 	}
 }
 
@@ -111,7 +114,7 @@ func runDockerCompose(args ...string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create docker-compose.yml: %w", err)
 		}
-		fmt.Println("📄 Created docker-compose.yml in ~/.myaaw")
+		fmt.Println(theme.RenderSuccess("📄 Created docker-compose.yml in ~/.myaaw"))
 	}
 
 	fullArgs := []string{"compose", "-f", composePath}
@@ -122,8 +125,8 @@ func runDockerCompose(args ...string) error {
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
-		fmt.Println("\n❌ Docker command failed.")
-		fmt.Println("💡 Tip: If you see 'timeout' or 'proxyconnect' errors, check your internet connection or Docker proxy settings.")
+		fmt.Println(theme.RenderError("\n❌ Docker command failed."))
+		fmt.Println(theme.RenderMuted("💡 Tip: If you see 'timeout' or 'proxyconnect' errors, check your internet connection or Docker proxy settings."))
 		return err
 	}
 	return nil
