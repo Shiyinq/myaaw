@@ -76,13 +76,55 @@ func init() {
 		fmt.Printf("  %s\n\n", cmd.UseLine())
 
 		if len(cmd.Commands()) > 0 {
-			fmt.Println(theme.RenderPrimary("Available Commands:"))
-			for _, c := range cmd.Commands() {
-				if c.IsAvailableCommand() {
-					fmt.Printf("  %-15s %s\n", theme.RenderSecondary(c.Name()), c.Short)
+			// Custom grouping ONLY for the root command
+			if cmd.Name() == "myaaw" && cmd.HasParent() == false {
+				type cmdGroup struct {
+					name     string
+					cmdNames []string
 				}
+
+				groups := []cmdGroup{
+					{name: "Core Commands", cmdNames: []string{"chat", "status"}},
+					{name: "Service Management", cmdNames: []string{"gateway", "server", "consumer", "docker", "webhook"}},
+					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},
+				}
+
+				findCmd := func(name string) *cobra.Command {
+					for _, c := range cmd.Commands() {
+						if c.Name() == name {
+							return c
+						}
+					}
+					return nil
+				}
+
+				// Render groups
+				for _, g := range groups {
+					fmt.Printf("  %s\n", theme.RenderMuted(g.name+":"))
+					for _, name := range g.cmdNames {
+						c := findCmd(name)
+						if c != nil && c.IsAvailableCommand() {
+							fmt.Printf("    %-15s %s\n", theme.RenderSecondary(c.Name()), c.Short)
+						}
+					}
+					fmt.Println("")
+				}
+
+				// Render onboard separately
+				if c := findCmd("onboard"); c != nil && c.IsAvailableCommand() {
+					fmt.Printf("  %s\n", theme.RenderMuted("Getting Started:"))
+					fmt.Printf("    %-15s %s\n\n", theme.RenderSecondary(c.Name()), c.Short)
+				}
+			} else {
+				// Standard layout for subcommands
+				fmt.Printf("  %s\n", theme.RenderMuted("Available Commands:"))
+				for _, c := range cmd.Commands() {
+					if c.IsAvailableCommand() {
+						fmt.Printf("    %-15s %s\n", theme.RenderSecondary(c.Name()), c.Short)
+					}
+				}
+				fmt.Println("")
 			}
-			fmt.Println("")
 		}
 
 		if len(cmd.LocalFlags().FlagUsages()) > 0 {
