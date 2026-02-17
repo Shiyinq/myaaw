@@ -10,6 +10,7 @@ import (
 	"myaaw/internal/services/bot/repository"
 	"myaaw/internal/services/bot/service"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -401,9 +402,20 @@ func (m model) View() string {
 }
 
 func runInteractive(botService service.BotService, adapter *cliAdapter.CLIAdapter) {
-	f, err := os.OpenFile("myaaw-chat.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatalf("error opening file: %v", err)
+		log.Fatal("Error getting home directory:", err)
+	}
+
+	logDir := filepath.Join(homeDir, ".myaaw", "logs")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		log.Fatal("Error creating log directory:", err)
+	}
+
+	logPath := filepath.Join(logDir, "myaaw-chat-cli.log")
+	f, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("error opening log file: %v", err)
 	}
 	defer f.Close()
 	log.SetOutput(f)
