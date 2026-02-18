@@ -2,41 +2,53 @@
 
 <div align="center">
   <img src="docs/images/mascot/myaaw.png" alt="Myaaw Mascot" width="200" />
+
+  [![Go Report Card](https://goreportcard.com/badge/github.com/Shiyinq/myaaw)](https://goreportcard.com/report/github.com/Shiyinq/myaaw)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+  [![Go Version](https://img.shields.io/github/go-mod/go-version/Shiyinq/myaaw)](https://github.com/Shiyinq/myaaw)
+  [![GitHub stars](https://img.shields.io/github/stars/Shiyinq/myaaw?style=social)](https://github.com/Shiyinq/myaaw/stargazers)
+
+  **Myaaw is a cat who becomes your personal AI assistant.**
 </div>
 
-Myaaw is a cat who becomes your personal AI assistant.
+---
 
 
-## Providers
-- [x] Ollama
-- [x] OpenAI
-- [x] Gemini
-- [x] Groq
-- [x] Mistral
-- [ ] Anthropic
 
-## Features
-- [x] Text Input
-- [x] Voice Input
-- [x] Image Input
-- [x] Basic Response
-- [x] Stream Response
-- [x] Predefine Prompts
-- [x] Tools
-- [ ] Memory
+## ✨ Key Features
+- [x] **Multimodal Input**: Supports Text, Voice (Transcribed), and Image input.
+- [x] **Smart Responses**: Supports both Basic and Streamed responses for real-time interaction.
+- [x] **Conversation Memory**: Remembers your chat history for natural flow.
+- [x] **Agent Skills**: Dynamically extensible capabilities via `SKILL.md` definitions.
+- [x] **Powerful Tools**: Native integration with Filesystem, Bash, and Python execution.
+- [x] **Heartbeat (Autonomous Check)**: Scheduled background checks for health and tasks via `HEARTBEAT.md`.
+
+## 🤖 Supported Providers
+
+Myaaw currently focuses on delivering the best experience with **Google Gemini API**.
+
+
+## 📡 Supported Channels
+
+Myaaw can be integrated with various platforms:
+
+- 📨 **Telegram**: Integration via Bot API (Polling or Webhook).
+- 👾 **Discord**: Integration via Discord Bot.
+- 💻 **Terminal**: Interactive TUI chat and CLI management.
 
 
 # Table of Contents
-- [🔗 Myaaw](#-myaaw)
-  - [Providers](#providers)
-  - [Features](#features)
-- [Table of Contents](#table-of-contents)
-  - [🚀 Quick Start (Non-Technical)](#-quick-start-non-technical)
-  - [🛠 Development](#-development)
-    - [Prerequisites](#prerequisites)
-    - [Getting Started](#getting-started)
-  - [🐳 Docker Usage](#-docker-usage)
-  - [📡 Telegram/Discord Setup](#-telegramdiscord-setup)
+- [✨ Key Features](#-key-features)
+- [🤖 Supported Providers](#-supported-providers)
+- [📡 Supported Channels](#-supported-channels)
+- [🚀 Quick Start (Non-Technical)](#-quick-start-non-technical)
+- [🛠 Development](#-development)
+  - [Prerequisites](#prerequisites)
+  - [Getting Started](#getting-started)
+  - [Start Development](#start-development)
+  - [Generate Swagger Documentation](#generate-swagger-documentation)
+  - [Build from Source](#build-from-source-optional)
+- [💻 Myaaw CLI Reference](#-myaaw-cli-reference)
 
 
 ## 🚀 Quick Start (Non-Technical)
@@ -67,77 +79,33 @@ If you just want to use Myaaw without worrying about code:
 
 ### Prerequisites
 
-Before development process, ensure you have the following installed:
+Before you start, ensure you have:
+- [Go](https://go.dev/) **1.24.2** or later installed.
+- [Docker](https://www.docker.com/) installed.
 
+#### Infrastructure (Docker Compose)
 
-#### Redis
-
-It is recommended to use Docker to install Redis. If you haven’t installed Docker yet, you can follow the official Docker installation guide.
-
-To install Redis using Docker, run the following command:
-
-```
-docker pull redis
-```
-Then, start Redis with:
-
-```
-docker run --name redis-server -d -p 6379:6379 redis
-```
-Ensure Redis is running by checking with:
-
-```
-docker ps
-```
-
-#### MongoDB
-
-Similarly, use Docker to install MongoDB. Run the following command to pull the MongoDB image:
-```
-docker pull mongo
-```
-Start MongoDB with:
-
-```
-docker run --name mongodb-server -p 27017:27017 -v mongodb-data:/data/db -d mongo
-```
-
-Ensure MongoDB is running by checking with:
-```
-docker ps
-```
-
-#### RabbitMQ
-
-Run the following command to pull the RabbitMQ image:
+Myaaw requires Redis, MongoDB, and RabbitMQ. You can start all of them with a single command:
 
 ```bash
-docker pull rabbitmq:4.0.2-management
+docker compose up -d
 ```
 
-Once the image is downloaded, start RabbitMQ with the following command:
-
-```
-docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:4.0.2-management
-```
-
-- **Port 5672**: Used for RabbitMQ communication (AMQP).
-- **Port 15672**: Used for accessing the RabbitMQ Management UI.
-
-Ensure RabbitMQ is running by checking with:
-
-```
-docker ps
+**Alternative (CLI)**:
+If you prefer using the built-in CLI for setup and monitoring:
+```bash
+go run ./cmd/myaaw docker setup
+go run ./cmd/myaaw status
 ```
 
-You can access the RabbitMQ Management UI in your browser at:
+| Service | Port | Description |
+| :--- | :--- | :--- |
+| **Redis** | `6379` | Message caching |
+| **MongoDB** | `27018` | Data storage |
+| **RabbitMQ** | `5672`, `15672` | Task queue & Management UI |
 
-```
-http://localhost:15672
-```
-
-**Username:** `guest`  
-**Password:** `guest`
+> [!NOTE]
+> RabbitMQ Management UI is available at `http://localhost:15672` (guest/guest).
 
 ### Getting Started
 
@@ -147,24 +115,53 @@ http://localhost:15672
    cd myaaw
    ```
 
-2. **Onboard (Dev Mode)**
+2. **Install Dependencies**
+   Like `npm install` for `package.json`, you should download the Go modules:
+   ```bash
+   go mod tidy
+   ```
+
+3. **Onboard (Dev Mode)**
    Since you have the source code, you can run the onboarding flow directly:
    ```bash
    go run ./cmd/myaaw onboard
    ```
 
-3. **Run with Live Reload**
-   We recommend using `air` for development:
+### Start Development
+
+Once everything is set up, you can start the gateway using **one** of the following methods:
+
+#### Option A: Direct Execution (Standard)
+```bash
+go run ./cmd/myaaw gateway start
+```
+
+#### Option B: Live Reload (Recommended for Dev)
+If you want the server to restart automatically when you change the code, use [Air](https://github.com/air-verse/air). 
+
+1. Install it globally (first time only):
+   ```bash
+   go install github.com/air-verse/air@latest
+   ```
+2. Run it in the root directory:
    ```bash
    air
    ```
 
-4. **Manage via CLI**
-   ```bash
-   go run ./cmd/myaaw status
-   go run ./cmd/myaaw docker setup
-   ```
+---
 
+**Monitor Status & Logs**:
+In a separate terminal, you can monitor the gateway:
+```bash
+go run ./cmd/myaaw status
+go run ./cmd/myaaw logs
+```
+
+> [!NOTE]
+> These commands only track services started via **Option A**. 
+> If you are using **Option B (Air)**, the status and logs will appear directly in the same terminal where the `air` command is running.
+
+---
 
 ### Generate Swagger Documentation
 1. **Install Swagger for API Documentation**
@@ -192,108 +189,60 @@ http://localhost:15672
 3. **Swagger Documentation**
 
     http://localhost:8080/docs/index.html
+### Build from Source (Optional)
 
-## 🐳 Docker Usage
+If you want to build the Myaaw binaries yourself (e.g., for distribution or custom versions), you can use the provided build script:
 
-Myaaw uses Docker primarily for infrastructure (MongoDB, Redis, RabbitMQ).
-
-- **Start Infrastructure**: `myaaw docker setup`
-- **Stop Infrastructure**: `myaaw docker stop`
-- **View Logs**: `myaaw docker logs`
-
-For full containerized deployment (Production):
-```bash
-docker compose up --build -d
-```
-
-## 📡 Telegram/Discord Setup
-
-### Setting the Webhook
-Use the built-in CLI to manage your webhooks easily:
-
-```bash
-myaaw webhook set
-myaaw webhook info
-```
+1.  **Make the script executable**:
+    ```bash
+    chmod +x build.sh
+    ```
+2.  **Run the build**:
+    ```bash
+    ./build.sh v1.0.0
+    ```
+    *This will generate binaries for macOS (Intel/M1), Linux, and Windows in the `bin/` directory.*
 
 
-#### Bot Token
-You can obtain a bot token from [BotFather](https://t.me/BotFather) and add bot token to `.env` file.
+## 💻 Myaaw CLI Reference
 
-#### Development
-If you are running the backend locally, you need to use a tool like [ngrok](https://ngrok.com) to expose your local server to the internet. 
+The `myaaw` CLI is your control center for managing the AI assistant, infrastructure, and services. You can run these commands via `go run ./cmd/myaaw` (Development) or simply `myaaw` (if installed globally).
 
-##### Install ngrok
+### 🛠️ Getting Started
+| Command | Description |
+| :--- | :--- |
+| `onboard` | Interactive setup for first-time users (Keys, Channels, Docker). |
 
-Visit the ngrok [Getting Started Documentation](https://ngrok.com/docs/getting-started/) for installation instructions.
+### 🐱 Core Interaction
+| Command | Description |
+| :--- | :--- |
+| `chat` | Start an interactive TUI chat session with Myaaw. Use `-m "text"` for one-shot. |
+| `status` | Check the health of MongoDB, Redis, RabbitMQ, and channel configs. |
+| `logs` | Interactive TUI to select and stream logs from `~/.myaaw/logs/`. |
 
-##### Obtain Your ngrok Auth Token
+### 🚀 Service Management
+Myaaw runs as two components: a **Server** (Gateway/API) and a **Consumer** (Task processing).
 
-Go to the ngrok [Dashboard](https://dashboard.ngrok.com/get-started/your-authtoken) to find your auth token.
+| Command | Subcommands | Description |
+| :--- | :--- | :--- |
+| **`gateway`** | `start`, `stop`, `restart`, `status` | Manage **both** Server & Consumer as background daemons. |
+| **`server`** | `run`, `start`, `stop`, `status` | Manage the Fiber Web Server specifically. |
+| **`consumer`** | `run`, `start`, `stop`, `status` | Manage the RabbitMQ Message Consumer specifically. |
 
-Open the `.env` file and edit it as follows:
+> [!TIP]
+> Use `run` for foreground execution (useful for debugging) and `start` for background execution.
 
-```
-# NGROK
-NGROK_ACTIVE=true
-NGROK_AUTHTOKEN=your-token-here
-```
+### 🐳 Infrastructure & Webhooks
+| Command | Subcommands | Description |
+| :--- | :--- | :--- |
+| **`docker`** | `setup`, `stop`, `logs` | Helper to manage Redis, Mongo, and RabbitMQ via Docker Compose. |
+| **`webhook`** | `set`, `info`, `delete` | Manage Telegram bot webhook configuration easily. |
 
-Restart the backend using the `air` command, and the Telegram bot will activate automatically.
+### ⚙️ System & Config
+| Command | Description |
+| :--- | :--- |
+| `config check` | Validate your `.env` and `config.json` for missing requirements. |
+| `config dump` | Print current configuration (sensitive data is masked). |
+| `update` | Automatically check for and install the latest version from GitHub. |
+| `version` | Show build version, commit hash, and system information. |
 
-If you do not want to use ngrok, set `NGROK_ACTIVE` to `false`.
-
-#### Production
-
-If your server has a public IP or domain, you can directly set the webhook to Telegram:
-
-```
-https://yourdomain.com
-```
-
-#### Use CLI
-You can use the CLI app to manage the Telegram webhook.
-```sh
-go run cmd/telegram/telegram.go
-```
-This command will display a CLI menu like this.
-````
-Welcome to Telegram Webhook CLI
-===============================
-Choose an option:
-1. Set Webhook
-2. Get Webhook Info
-3. Delete Webhook
-4. Exit CLI
-
-Enter choice: 
-````
-
-Or you can manually set it up by making a request to the Telegram API.
-
-#### Manual Setup
-##### Set Webhook
-To set the webhook with Telegram, use the following API endpoint:
-
-```
-https://api.telegram.org/bot{my_bot_token}/setWebhook?url={your_domain_or_your_ip_public_or_ngrok_url}/webhook/telegram
-```
-
-Example:
-
-```
-https://api.telegram.org/bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11/setWebhook?url=https://yourdomain.com/webhook/telegram
-```
-##### Get Webhook Info
-You can retrieve the current webhook info using:
-
-```
-https://api.telegram.org/bot{my_bot_token}/getWebhookInfo
-```
-
-##### Delete Webhook
-To remove the webhook, make a call to the `setWebhook` method with an empty `url` parameter:
-
-```
-https://api.telegram.org/bot{my_bot_token}/setWebhook?url=
-```
