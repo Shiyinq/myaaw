@@ -36,8 +36,8 @@ var LLMProviderBaseURL string
 var LLMProviderName string
 var LLMProviderAPIKey string
 var StreamResponse bool
-var TTSProviderName string
-var TTSProviderAPIKey string
+var TranscriberProviderName string
+var TranscriberAPIKey string
 var WatermarkModel bool
 var OwnerIDs []string
 var Heartbeat HeartbeatConfig
@@ -164,12 +164,21 @@ func LoadBaseConfig() {
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
 
-	TTSProviderName = os.Getenv("TTS_PROVIDER_NAME")
-	if TTSProviderName == "" {
-		TTSProviderName = "groq" // Default value if not set
-		log.Println("TTS_PROVIDER_NAME not set, using default:", TTSProviderName)
+	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")
+	if TranscriberProviderName == "" {
+		if LLMProviderName == "gemini" {
+			TranscriberProviderName = "gemini"
+		} else {
+			TranscriberProviderName = "groq"
+		}
+		log.Println("TRANSCRIBER_PROVIDER_NAME not set, using default:", TranscriberProviderName)
 	}
-	TTSProviderAPIKey = os.Getenv("TTS_PROVIDER_API_KEY")
+
+	TranscriberAPIKey = os.Getenv("TRANSCRIBER_API_KEY")
+	if TranscriberAPIKey == "" && TranscriberProviderName == "gemini" && LLMProviderName == "gemini" {
+		TranscriberAPIKey = LLMProviderAPIKey
+		log.Println("TRANSCRIBER_API_KEY not set, reusing LLM_PROVIDER_API_KEY for Gemini")
+	}
 	// No default for API key for security reasons
 
 	streamVal := os.Getenv("STREAM_RESPONSE")

@@ -76,12 +76,12 @@ type LLMProvider interface {
 	DefaultModel(modelName string) string
 }
 
-type TTSProvider interface {
-	SpeechToText(audioFile []byte) (string, error)
+type Transcriber interface {
+	Transcribe(audioFile []byte) (string, error)
 }
 
 type factoryLLM func(baseURL string, apiKey string, defaultModel string) LLMProvider
-type factoryTTS func(apiKey string, defaultModel string) TTSProvider
+type factoryTranscriber func(apiKey string, defaultModel string) Transcriber
 
 var LLMproviderFactories = map[string]factoryLLM{
 	"ollama":  NewOllamaProvider,
@@ -99,12 +99,14 @@ var defaultLLMModels = map[string]string{
 	"mistral": "ministral-3b-latest",
 }
 
-var TTSproviderFactories = map[string]factoryTTS{
-	"groq": NewGroqTTSProvider,
+var TranscriberFactories = map[string]factoryTranscriber{
+	"groq":   NewGroqTranscriber,
+	"gemini": NewGeminiTranscriber,
 }
 
-var defaultTTSMModels = map[string]string{
-	"groq": "whisper-large-v3-turbo",
+var defaultTranscriberModels = map[string]string{
+	"groq":   "whisper-large-v3-turbo",
+	"gemini": "models/gemini-2.0-flash",
 }
 
 func CreateLLMProvider(providerName string, apiKey string) (LLMProvider, error) {
@@ -117,12 +119,12 @@ func CreateLLMProvider(providerName string, apiKey string) (LLMProvider, error) 
 	return factory(config.LLMProviderBaseURL, apiKey, defaultModel), nil
 }
 
-func CreateTTSProvider(providerName string, apiKey string) (TTSProvider, error) {
-	factory, exists := TTSproviderFactories[providerName]
+func CreateTranscriber(providerName string, apiKey string) (Transcriber, error) {
+	factory, exists := TranscriberFactories[providerName]
 	if !exists {
-		return nil, errors.New("unknown tts provider")
+		return nil, errors.New("unknown transcriber provider")
 	}
-	defaultModel := defaultTTSMModels[providerName]
+	defaultModel := defaultTranscriberModels[providerName]
 
 	return factory(apiKey, defaultModel), nil
 }

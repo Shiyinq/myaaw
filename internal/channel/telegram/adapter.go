@@ -16,12 +16,12 @@ type TelegramMeta struct {
 }
 
 type TelegramAdapter struct {
-	ttsProvider provider.TTSProvider
+	transcriber provider.Transcriber
 }
 
-func NewTelegramAdapter(ttsProvider provider.TTSProvider) *TelegramAdapter {
+func NewTelegramAdapter(transcriber provider.Transcriber) *TelegramAdapter {
 	return &TelegramAdapter{
-		ttsProvider: ttsProvider,
+		transcriber: transcriber,
 	}
 }
 
@@ -227,8 +227,8 @@ func indicator(text string) string {
 }
 
 func (t *TelegramAdapter) transcribeVoice(fileID string) string {
-	if t.ttsProvider == nil {
-		log.Println("TTS provider is not available, transcription unavailable.")
+	if t.transcriber == nil {
+		log.Println("Transcriber provider is not available, transcription unavailable.")
 		return "[Voice transcription not available]"
 	}
 
@@ -244,7 +244,7 @@ func (t *TelegramAdapter) transcribeVoice(fileID string) string {
 		return fmt.Sprintf("[Error downloading audio file: %s]", filePath)
 	}
 
-	transcribed, err := t.ttsProvider.SpeechToText(audioData)
+	transcribed, err := t.transcriber.Transcribe(audioData)
 	if err != nil {
 		log.Printf("Error transcribing audio: %v\n", err)
 		return "[Error transcribing audio]"
