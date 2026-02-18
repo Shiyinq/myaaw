@@ -24,6 +24,6 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Starting consumer..."
-./tmp/myaaw consumer > tmp/consumer-myaaw.log 2>&1 &
+./tmp/myaaw consumer run > tmp/consumer-myaaw.log 2>&1 &
 echo $! > tmp/consumer-myaaw.pid
 echo "Consumer started with PID $(cat tmp/consumer-myaaw.pid)"
