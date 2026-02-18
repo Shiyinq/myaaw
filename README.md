@@ -239,10 +239,11 @@ Myaaw runs as two components: a **Server** (Gateway/API) and a **Consumer** (Tas
 | **`webhook`** | `set`, `info`, `delete` | Manage Telegram bot webhook configuration easily. |
 
 ### ⚙️ System & Config
-| Command | Description |
-| :--- | :--- |
-| `config check` | Validate your `.env` and `config.json` for missing requirements. |
-| `config dump` | Print current configuration (sensitive data is masked). |
-| `update` | Automatically check for and install the latest version from GitHub. |
-| `version` | Show build version, commit hash, and system information. |
+| Command | Subcommands | Description |
+| :--- | :--- | :--- |
+| **`config`** | `check`, `dump` | Validate your `.env` or print current configuration (masked). |
+| **`completion`** | `bash`, `zsh`, `fish`, `ps` | Generate autocompletion scripts for your shell. |
+| **`help`** | `[command]` | Display help information for Myaaw or any specific command. |
+| **`update`** | - | Automatically check for and install the latest version. |
+| **`version`** | - | Show build version, commit hash, and system info. |
 
