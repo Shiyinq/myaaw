@@ -22,12 +22,12 @@ func BotRouter(router fiber.Router) {
 
 	registry := channel.NewRegistry()
 
-	var ttsProvider provider.TTSProvider
-	ttsProvider, err := provider.CreateTTSProvider(config.TTSProviderName, config.TTSProviderAPIKey)
+	var transcriber provider.Transcriber
+	transcriber, err := provider.CreateTranscriber(config.TranscriberProviderName, config.TranscriberAPIKey)
 	if err != nil {
-		log.Printf("Warning: TTS provider not available for Telegram adapter: %v", err)
+		log.Printf("Warning: Transcriber provider not available for Telegram adapter: %v", err)
 	}
-	telegramAdapter := telegram.NewTelegramAdapter(ttsProvider)
+	telegramAdapter := telegram.NewTelegramAdapter(transcriber)
 	registry.Register(telegramAdapter)
 
 	registry.Register(apiAdapter.NewAPIAdapter())

@@ -27,7 +27,7 @@ type BotServiceImpl struct {
 	userRepo         repository.UserRepository
 	conversationRepo repository.ConversationRepository
 	llmProvider      provider.LLMProvider
-	ttsProvider      provider.TTSProvider
+	transcriber      provider.Transcriber
 	agent            agent.AgentProvider
 }
 
@@ -37,9 +37,9 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 		log.Fatalf("Error create LLM provider - %s: %v", config.LLMProviderName, err)
 	}
 
-	ttsProvider, err := provider.CreateTTSProvider(config.TTSProviderName, config.TTSProviderAPIKey)
+	transcriber, err := provider.CreateTranscriber(config.TranscriberProviderName, config.TranscriberAPIKey)
 	if err != nil {
-		log.Printf("Warning: Error creating TTS provider %s: %v. TTS functionality might be affected or disabled depending on message handling logic.", config.TTSProviderName, err)
+		log.Printf("Warning: Error creating Transcriber provider %s: %v. Transcriber functionality might be affected or disabled depending on message handling logic.", config.TranscriberProviderName, err)
 	}
 
 	ag := agent.NewAgent(llmProvider)
@@ -48,7 +48,7 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 		userRepo:         userRepo,
 		conversationRepo: conversationRepo,
 		llmProvider:      llmProvider,
-		ttsProvider:      ttsProvider,
+		transcriber:      transcriber,
 		agent:            ag,
 	}
 }

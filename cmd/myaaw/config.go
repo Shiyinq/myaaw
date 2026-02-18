@@ -19,7 +19,7 @@ var envKeys = []string{
 	"QUEUE_NAME", "RABBITMQ_URL",
 	"LLM_PROVIDER_NAME", "LLM_PROVIDER_API_KEY", "LLM_PROVIDER_BASE_URL",
 	"STREAM_RESPONSE",
-	"TTS_PROVIDER_NAME", "TTS_PROVIDER_API_KEY",
+	"TRANSCRIBER_PROVIDER_NAME", "TRANSCRIBER_API_KEY",
 	"TAVILY_API_KEY",
 }
 
@@ -40,8 +40,8 @@ var checkCmd = &cobra.Command{
 		for _, key := range envKeys {
 			val := os.Getenv(key)
 			if val == "" {
-				if key == "TTS_PROVIDER_NAME" && config.TTSProviderName != "" {
-					fmt.Printf("%-25s : %s (Default: %s)\n", theme.RenderPrimary(key), theme.RenderSuccess("[OK]"), config.TTSProviderName)
+				if key == "TRANSCRIBER_PROVIDER_NAME" && config.TranscriberProviderName != "" {
+					fmt.Printf("%-25s : %s (Default: %s)\n", theme.RenderPrimary(key), theme.RenderSuccess("[OK]"), config.TranscriberProviderName)
 					continue
 				}
 				fmt.Printf("%-25s : %s\n", theme.RenderPrimary(key), theme.RenderError("[MISSING]"))
