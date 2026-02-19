@@ -26,6 +26,9 @@ Executes Python code and returns the result. This tool supports installing addit
 ### Bash
 Executes a bash command. Use this tool to run existing scripts, system commands, or manage processes. Examples: `python script.py`, `ls -la`, `curl ...`. It runs in the system shell.
 
+### Cron
+Manages cron jobs. Use this tool to schedule reminders or execute tasks at specific times or intervals. You can use this to set up follow-up actions after scheduling events on the calendar.
+
 ## User Commands
 - **/start**: Welcome message
 - **/about**: Info about Myaaw
