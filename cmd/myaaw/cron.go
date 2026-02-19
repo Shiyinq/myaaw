@@ -218,11 +218,126 @@ var cronRunCmd = &cobra.Command{
 	},
 }
 
+var cronHistoryCmd = &cobra.Command{
+	Use:   "history [id]",
+	Short: "View execution history of a job (or all jobs if no ID provided)",
+	Args:  cobra.RangeArgs(0, 1),
+	Run: func(cmd *cobra.Command, args []string) {
+		limit, _ := cmd.Flags().GetInt("limit")
+		store := getStore()
+		history := getHistoryLogger()
+
+		// Case 1: Global History (No ID provided)
+		if len(args) == 0 {
+			results, err := history.GetGlobalHistory(limit)
+			if err != nil {
+				fmt.Println(theme.RenderError(fmt.Sprintf("Failed to load global history: %v", err)))
+				return
+			}
+
+			if len(results) == 0 {
+				fmt.Println(theme.RenderMuted("No execution history found."))
+				return
+			}
+
+			fmt.Println(theme.RenderPrimary(fmt.Sprintf("Recent History (Last %d runs):", limit)))
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+			fmt.Fprintln(w, theme.RenderSecondary("Time\tJob ID\tStatus\tResult"))
+
+			for _, res := range results {
+				status := res.Status
+				switch res.Status {
+				case "success":
+					status = theme.RenderSuccess(res.Status)
+				case "failed", "failed_schedule":
+					status = theme.RenderError(res.Status)
+				case "skipped":
+					status = theme.RenderWarning(res.Status)
+				}
+
+				// Short ID for display
+				displayID := res.JobID
+				if len(displayID) > 8 {
+					displayID = displayID[:8]
+				}
+
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+					res.Timestamp.Format("2006-01-02 15:04:05"),
+					displayID,
+					status,
+					res.Result,
+				)
+			}
+			w.Flush()
+			return
+		}
+
+		// Case 2: Specific Job History
+		id := args[0]
+
+		// If ID is short, try to find full ID
+		if len(id) < 36 {
+			jobs, _ := store.Load()
+			for _, j := range jobs {
+				if len(j.ID) >= len(id) && j.ID[:len(id)] == id {
+					id = j.ID
+					break
+				}
+			}
+		}
+
+		// Check if job exists (optional, but good for UX)
+		job, err := store.Get(id)
+		if err != nil {
+			fmt.Println(theme.RenderError(fmt.Sprintf("Job not found: %s", id)))
+			return
+		}
+
+		// limit is already defined above
+		results, err := history.GetHistory(id, limit)
+		if err != nil {
+			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to load history: %v", err)))
+			return
+		}
+
+		if len(results) == 0 {
+			fmt.Println(theme.RenderMuted(fmt.Sprintf("No history found for job: %s (%s)", job.Name, id)))
+			return
+		}
+
+		fmt.Println(theme.RenderPrimary(fmt.Sprintf("History for job: %s (%s)", job.Name, id)))
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+		fmt.Fprintln(w, theme.RenderSecondary("Time\tStatus\tResult"))
+
+		for _, res := range results {
+			status := res.Status
+			switch res.Status {
+			case "success":
+				status = theme.RenderSuccess(res.Status)
+			case "failed", "failed_schedule":
+				status = theme.RenderError(res.Status)
+			case "skipped":
+				status = theme.RenderWarning(res.Status)
+			}
+
+			fmt.Fprintf(w, "%s\t%s\t%s\n",
+				res.Timestamp.Format("2006-01-02 15:04:05"),
+				status,
+				res.Result,
+			)
+		}
+		w.Flush()
+	},
+}
+
 func init() {
 	cronCmd.AddCommand(cronListCmd)
 	cronCmd.AddCommand(cronAddCmd)
 	cronCmd.AddCommand(cronRemoveCmd)
 	cronCmd.AddCommand(cronRunCmd)
+	cronCmd.AddCommand(cronHistoryCmd)
+
+	cronHistoryCmd.Flags().Int("limit", 10, "Number of history entries to show")
 
 	cronAddCmd.Flags().String("name", "", "Name of the job")
 	cronAddCmd.Flags().String("cron", "", "Cron expression (e.g. '0 7 * * *')")
