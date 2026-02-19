@@ -238,6 +238,29 @@ Myaaw runs as two components: a **Server** (Gateway/API) and a **Consumer** (Tas
 | **`docker`** | `setup`, `stop`, `logs` | Helper to manage Redis, Mongo, and RabbitMQ via Docker Compose. |
 | **`webhook`** | `set`, `info`, `delete` | Manage Telegram bot webhook configuration easily. |
 
+### ⏰ Cron Scheduler & Tasks
+Myaaw includes a built-in scheduler to automate tasks (like sending recurring messages or reminders).
+
+| Command | Subcommands | Description |
+| :--- | :--- | :--- |
+| **`cron`** | `list` | View all scheduled jobs in a neat table. |
+|  | `add` | Create a new job (supports cron expression, interval, or one-time `at`). |
+|  | `remove` | Delete a scheduled job by ID. |
+|  | `run` | Manually trigger a specific job immediately. |
+|  | `history` | View execution logs (success/fail/skipped) for a job or globally. |
+
+**Examples:**
+```bash
+# Every morning at 7 AM
+myaaw cron add --name "Morning Greeting" --cron "0 7 * * *" --message "Selamat Pagi!" --channel telegram --to 123456789
+
+# Every 2 hours
+myaaw cron add --name "Hydration Check" --every "2h" --message "Drink water!" --channel telegram --to 123456789
+
+# One-time reminder in 30 minutes
+myaaw cron add --name "Meeting Remind" --at "30m" --message "Meeting in 30 mins" --channel telegram --to 123456789
+```
+
 ### ⚙️ System & Config
 | Command | Subcommands | Description |
 | :--- | :--- | :--- |
