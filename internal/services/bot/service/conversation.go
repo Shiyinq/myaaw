@@ -108,7 +108,6 @@ func (r *BotServiceImpl) contextWindow(history []provider.Message) []provider.Me
 func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channel.IncomingMessage) []provider.Message {
 	userSystem := agent.NewSystemPromptBuilder(int64(user.UserId), msg.Channel).Build()
 	userSystem += agent.GetSkillsInstruction()
-	log.Println("User System Prompt:", userSystem)
 	messages := []provider.Message{
 		{
 			Role:    "system",
