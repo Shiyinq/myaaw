@@ -191,15 +191,15 @@ go run ./cmd/myaaw logs
     http://localhost:8080/docs/index.html
 ### Build from Source (Optional)
 
-If you want to build the Myaaw binaries yourself (e.g., for distribution or custom versions), you can use the provided build script:
+If you want to build the Myaaw binaries yourself (e.g., for distribution or custom versions), you can use the provided `Makefile`:
 
-1.  **Make the script executable**:
+1.  **Build for current platform**:
     ```bash
-    chmod +x build.sh
+    make build
     ```
-2.  **Run the build**:
+2.  **Cross-compile for all platforms**:
     ```bash
-    ./build.sh v1.0.0
+    make build-all
     ```
     *This will generate binaries for macOS (Intel/M1), Linux, and Windows in the `bin/` directory.*
 
