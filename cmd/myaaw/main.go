@@ -85,6 +85,7 @@ func init() {
 
 				groups := []cmdGroup{
 					{name: "Core Commands", cmdNames: []string{"chat", "status"}},
+					{name: "Automation", cmdNames: []string{"cron"}},
 					{name: "Service Management", cmdNames: []string{"gateway", "server", "consumer", "docker", "webhook"}},
 					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},
 				}

@@ -24,5 +24,8 @@
             "active": false,
             "token": "YOUR_DISCORD_BOT_TOKEN"
         }
+    },
+    "cron": {
+        "active": true
     }
 }
