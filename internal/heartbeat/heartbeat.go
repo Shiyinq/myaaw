@@ -113,28 +113,22 @@ func (s *HeartbeatService) process() error {
 		return nil
 	}
 
-	content, err := s.readHeartbeatFile()
-	if err != nil {
-		return err
-	}
-	if content == nil {
-		return nil
-	}
+	prompt := `SYSTEM: You are in HEARTBEAT checking mode.
 
-	heartbeatContent := string(content)
-	if strings.TrimSpace(heartbeatContent) == "" {
-		return nil
-	}
+INSTRUCTION:
+1. Read the file "HEARTBEAT.md".
+2. Check the items listed in that file.
 
-	prompt := fmt.Sprintf(`SYSTEM: You are in HEARTBEAT checking mode.
-CONTEXT:
-%s
+DECISION LOGIC:
+A. If you need to perform actions or send a message to the user:
+   - Perform the actions using tools.
+   - Do NOT output "HEARTBEAT_OK".
 
-INSTRUCTION: Check the items above.
-- If everything is fine or no action is needed, reply ONLY with "HEARTBEAT_OK".
-- If there is an issue or a task to do, take action using your tools.
-- Do NOT chat with the user unless necessary.
-`, heartbeatContent)
+B. If everything is fine and NO action is needed:
+   - Reply ONLY with the exact string "HEARTBEAT_OK".
+   - Do not output anything else.
+
+CRITICAL: "HEARTBEAT_OK" acts as a "silent skip". If you output it, the system assumes you did nothing. If you did something, DO NOT output it.`
 
 	payload := map[string]interface{}{
 		"prompt":  prompt,
@@ -162,27 +156,6 @@ INSTRUCTION: Check the items above.
 
 	log.Println("Heartbeat triggered successfully.")
 	return nil
-}
-
-func (s *HeartbeatService) readHeartbeatFile() ([]byte, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Printf("Warning: Failed to get user home directory: %v", err)
-		return nil, nil
-	}
-
-	heartbeatPath := strings.Join([]string{homeDir, ".myaaw", "home", "HEARTBEAT.md"}, string(os.PathSeparator))
-
-	content, err := os.ReadFile(heartbeatPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Quietly skip if file doesn't exist
-			return nil, nil
-		}
-		log.Printf("Warning: Failed to read HEARTBEAT.md: %v", err)
-		return nil, nil
-	}
-	return content, nil
 }
 
 func (s *HeartbeatService) readConfig() (*HeartbeatConfig, error) {
