@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"myaaw/internal/agent/tools/bash"
+	"myaaw/internal/agent/tools/cron"
 	"myaaw/internal/agent/tools/filesystem"
 	"myaaw/internal/agent/tools/python"
 	"os"
@@ -59,6 +60,7 @@ func NewTools(functionName string, arguments string) string {
 			"bash":           bash.NewBashTool(),
 			"filesystem":     filesystem.NewFileSystemTool(),
 			"execute_python": python.NewPythonTool(),
+			"cron":           cron.NewCronTool(),
 		},
 	}
 	log.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)

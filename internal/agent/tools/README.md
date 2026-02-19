@@ -32,6 +32,14 @@ The Myaaw Tools package contains a set of specialized tools that can be used wit
 - Manage files and directories
 - Run scripts and utilities
 
+### 4. [Cron Tool](./cron/README.md)
+
+**Function**: `cron`
+
+- Manage scheduled jobs (list, add, remove, run, history)
+- Supports Cron, Interval, and One-Time schedules
+- Integration with messaging channels (Telegram, Discord)
+
 ## Tool Integration
 
 ### Factory Pattern
