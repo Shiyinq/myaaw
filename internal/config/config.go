@@ -13,6 +13,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
 	"github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
@@ -48,6 +49,11 @@ type Config struct {
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Bot       GlobalBotConfig `json:"bot,omitempty"`
 	Channels  ChannelsConfig  `json:"channels"`
+	Cron      CronConfig      `json:"cron"`
+}
+
+type CronConfig struct {
+	Active bool `json:"active"`
 }
 
 type GlobalBotConfig struct {
@@ -75,6 +81,8 @@ type HeartbeatConfig struct {
 	To      string `json:"to"`
 	Channel string `json:"channel"`
 }
+
+var CronActive bool
 
 func loadJSONConfig() (*Config, error) {
 	// 1. Check Current Directory
@@ -241,6 +249,7 @@ func LoadBaseConfig() {
 		}
 
 		Heartbeat = jsonConfig.Heartbeat
+		CronActive = jsonConfig.Cron.Active
 	}
 }
 
@@ -366,4 +375,69 @@ func ConnectRabbitMQ(rabbitMQURL string, maxRetries int, retryDelay time.Duratio
 	if err != nil {
 		log.Fatal("RabbitMQ connection failed:", err)
 	}
+}
+
+// WatchConfig watches for changes in config.json and reloads the config
+func WatchConfig(onChange func()) {
+	// Identify config path
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("Failed to get home dir for watcher: %v", err)
+		return
+	}
+	configPath := filepath.Join(homeDir, ".myaaw", "config.json")
+
+	// Create watcher
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Printf("Failed to create config watcher: %v", err)
+		return
+	}
+
+	// Watch the directory
+	configDir := filepath.Dir(configPath)
+	if err := watcher.Add(configDir); err != nil {
+		log.Printf("Failed to watch config directory: %v", err)
+		watcher.Close()
+		return
+	}
+
+	log.Println("Global Config Watcher started...")
+
+	// Debounce timer
+	var debounceTimer *time.Timer
+	debounceDuration := 500 * time.Millisecond
+
+	go func() {
+		defer watcher.Close()
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if filepath.Base(event.Name) == filepath.Base(configPath) {
+					if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Chmod) {
+						// Stop existing timer if any
+						if debounceTimer != nil {
+							debounceTimer.Stop()
+						}
+						// Reset timer
+						debounceTimer = time.AfterFunc(debounceDuration, func() {
+							log.Println("Config file changed, reloading...")
+							LoadBaseConfig() // Reloads global vars
+							if onChange != nil {
+								onChange()
+							}
+						})
+					}
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Printf("Config watcher error: %v", err)
+			}
+		}
+	}()
 }

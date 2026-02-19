@@ -5,6 +5,7 @@ import (
 	"log"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
+	"myaaw/internal/cron"
 	"myaaw/internal/daemon"
 	"myaaw/internal/heartbeat"
 	"os"
@@ -117,8 +118,9 @@ func init() {
 func startConsumer() {
 	config.LoadConfig()
 
+	var hb *heartbeat.HeartbeatService
 	if config.Heartbeat.Active {
-		hb := heartbeat.NewHeartbeatService()
+		hb = heartbeat.NewHeartbeatService()
 		go hb.Start()
 	}
 
@@ -136,6 +138,34 @@ func startConsumer() {
 	if err != nil {
 		log.Fatalf("Failed to declare queue: %s", err)
 	}
+
+	// Start Cron Scheduler & Watcher
+	scheduler, err := cron.NewDefaultScheduler()
+	if err != nil {
+		log.Printf("Failed to initialize cron scheduler: %v", err)
+	} else {
+		if err := scheduler.Start(); err != nil {
+			log.Printf("Failed to start cron scheduler: %v", err)
+		}
+		defer scheduler.Stop()
+		// Start Hot-Reload Watcher for jobs.json
+		go scheduler.Watch()
+	}
+
+	// Start Global Config Watcher for config.json
+	config.WatchConfig(func() {
+		log.Println("Global config changed. Reloading components...")
+
+		// Reload Cron Scheduler config (Active/Inactive)
+		if scheduler != nil {
+			scheduler.ReloadConfig()
+		}
+
+		// Reload Heartbeat config (Interval/Active)
+		if hb != nil {
+			hb.ReloadConfig()
+		}
+	})
 
 	err = consumeMessages(ch, queueName)
 	if err != nil {
