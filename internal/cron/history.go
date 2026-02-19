@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 )
 
@@ -101,4 +102,67 @@ func splitLines(data []byte) []string {
 		lines = append(lines, string(data[start:]))
 	}
 	return lines
+}
+
+type JobExecutionResult struct {
+	JobID     string    `json:"job_id"`
+	Timestamp time.Time `json:"ts"`
+	Status    string    `json:"status"`
+	Result    string    `json:"result"`
+}
+
+func (h *HistoryLogger) GetGlobalHistory(limit int) ([]JobExecutionResult, error) {
+	dir := filepath.Join(h.basePath, "runs")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []JobExecutionResult{}, nil
+		}
+		return nil, err
+	}
+
+	var allResults []JobExecutionResult
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".jsonl" {
+			continue
+		}
+
+		jobID := entry.Name()[:len(entry.Name())-len(".jsonl")]
+
+		// To be efficient, we might want to read only the last few lines.
+		// For simplicity, treating files as small enough for now.
+		path := filepath.Join(dir, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		lines := splitLines(data)
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+			var res ExecutionResult
+			if err := json.Unmarshal([]byte(line), &res); err == nil {
+				allResults = append(allResults, JobExecutionResult{
+					JobID:     jobID,
+					Timestamp: res.Timestamp,
+					Status:    res.Status,
+					Result:    res.Result,
+				})
+			}
+		}
+	}
+
+	// Sort by timestamp descending
+	sort.Slice(allResults, func(i, j int) bool {
+		return allResults[i].Timestamp.After(allResults[j].Timestamp)
+	})
+
+	if limit > 0 && len(allResults) > limit {
+		return allResults[:limit], nil
+	}
+
+	return allResults, nil
 }

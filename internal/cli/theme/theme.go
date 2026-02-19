@@ -36,6 +36,9 @@ var (
 	// Error Style
 	ErrorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorError)).Bold(true)
 
+	// Warning Style
+	WarningStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#f9e2af")).Bold(true) // Hex for yellow/gold
+
 	// Box Style (for panels)
 	BoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -65,6 +68,10 @@ func RenderSuccess(text string) string {
 
 func RenderError(text string) string {
 	return ErrorStyle.Render(text)
+}
+
+func RenderWarning(text string) string {
+	return WarningStyle.Render(text)
 }
 
 func RenderMuted(text string) string {
