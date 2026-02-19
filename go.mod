@@ -24,7 +24,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/fsnotify/fsnotify v1.9.0 // indirect
+require github.com/fsnotify/fsnotify v1.9.0
 
 require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
@@ -53,7 +53,7 @@ require (
 	github.com/go-openapi/swag v0.19.15 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/inconshreveable/log15 v3.0.0-testing.5+incompatible // indirect
