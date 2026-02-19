@@ -27,11 +27,12 @@ func EnsureMyaawConfig() (string, error) {
 }
 
 type SystemPromptBuilder struct {
-	userID  int64
-	homeDir string
+	userID      int64
+	channelName string
+	homeDir     string
 }
 
-func NewSystemPromptBuilder(userID int64) *SystemPromptBuilder {
+func NewSystemPromptBuilder(userID int64, channelName string) *SystemPromptBuilder {
 	// Ensure .myaaw exists in home directory
 	myaawPath, err := EnsureMyaawConfig()
 	homeDir := ""
@@ -42,8 +43,9 @@ func NewSystemPromptBuilder(userID int64) *SystemPromptBuilder {
 	}
 
 	return &SystemPromptBuilder{
-		userID:  userID,
-		homeDir: homeDir,
+		userID:      userID,
+		channelName: channelName,
+		homeDir:     homeDir,
 	}
 }
 
@@ -73,21 +75,24 @@ func (b *SystemPromptBuilder) Build() string {
 
 	// 2. User Info (Dynamic)
 	sb.WriteString("# User Info\n")
-	sb.WriteString(fmt.Sprintf("User ID: %d\n", b.userID))
+	fmt.Fprintf(&sb, "User ID: %d\n", b.userID)
+	if b.channelName != "" {
+		fmt.Fprintf(&sb, "Channel Platform: %s\n", b.channelName)
+	}
 	// We can add more dynamic user info here if needed (e.g. from DB)
 	sb.WriteString("\n")
 
 	// 3. Date & Time
 	now := time.Now()
 	sb.WriteString("## Date & Time\n")
-	sb.WriteString(fmt.Sprintf("Current Date: %s\n", now.Format("Monday, January 02, 2006")))
-	sb.WriteString(fmt.Sprintf("Current Time: %s\n", now.Format("15:04:05 MST")))
+	fmt.Fprintf(&sb, "Current Date: %s\n", now.Format("Monday, January 02, 2006"))
+	fmt.Fprintf(&sb, "Current Time: %s\n", now.Format("15:04:05 MST"))
 	sb.WriteString("\n")
 
 	// 4. Runtime
 	sb.WriteString("## Runtime\n")
-	sb.WriteString(fmt.Sprintf("OS: %s\n", runtime.GOOS))
-	sb.WriteString(fmt.Sprintf("Arch: %s\n", runtime.GOARCH))
+	fmt.Fprintf(&sb, "OS: %s\n", runtime.GOOS)
+	fmt.Fprintf(&sb, "Arch: %s\n", runtime.GOARCH)
 	sb.WriteString("\n")
 
 	// 5. Workspace / Context Injection
@@ -97,7 +102,7 @@ func (b *SystemPromptBuilder) Build() string {
 	for _, fileName := range files {
 		content := b.readContent(fileName)
 		if content != "" {
-			sb.WriteString(fmt.Sprintf("## %s\n", fileName))
+			fmt.Fprintf(&sb, "## %s\n", fileName)
 			sb.WriteString(content)
 			sb.WriteString("\n\n")
 		}
