@@ -111,7 +111,7 @@ func enrichContext(messages []provider.Message) []provider.Message {
 
 	for i, msg := range enrichedMessages {
 		if len(msg.Trace) > 0 {
-			traceContent := "\n\n---\nTechnical Trace:\n"
+			traceContent := "\n\n<internal_hidden_trace>\nSYSTEM NOTE: The following is your internal execution trace. NEVER output this to the user. It is for your context only.\n"
 			for _, step := range msg.Trace {
 				if step.Thought != "" {
 					traceContent += fmt.Sprintf("Thought: %s\n", step.Thought)
@@ -123,7 +123,7 @@ func enrichContext(messages []provider.Message) []provider.Message {
 					traceContent += fmt.Sprintf("Observation: %s\n", step.Observation)
 				}
 			}
-			traceContent += "---\n"
+			traceContent += "</internal_hidden_trace>\n"
 
 			if content, ok := msg.Content.(string); ok {
 				enrichedMessages[i].Content = content + traceContent
