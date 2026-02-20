@@ -3,6 +3,7 @@ package telegram
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
@@ -70,13 +71,22 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 	content := out.Text
 	maxLen := 4096
 
+	if out.Thought != "" {
+		strippedThought := utils.StripMarkdown(out.Thought)
+		displayThought := fmt.Sprintf("💭 <b>Reasoning...</b>\n<blockquote expandable>%s</blockquote>", html.EscapeString(strippedThought))
+		send, err := SendTelegramMessage(meta.ChatID, meta.MessageID, displayThought, "HTML")
+		if err != nil || !send.Ok {
+			log.Println(err)
+		}
+	}
+
 	if len(content) <= maxLen {
 		watermarked := utils.Watermark(utils.ParseTelegramMarkdown(content), "", config.WatermarkModel)
-		send, err := SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, true)
+		send, err := SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, "markdown")
 		if err != nil || !send.Ok {
 
 			watermarked = utils.Watermark(content, "", config.WatermarkModel)
-			_, err = SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, false)
+			_, err = SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, "markdown")
 		}
 		return err
 	}
@@ -90,13 +100,13 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 		chunks = append(chunks, content[i:end])
 	}
 
-	_, err := SendTelegramMessage(meta.ChatID, meta.MessageID, chunks[0], false)
+	_, err := SendTelegramMessage(meta.ChatID, meta.MessageID, chunks[0], "markdown")
 	if err != nil {
 		return err
 	}
 
 	for i := 1; i < len(chunks)-1; i++ {
-		_, err := SendTelegramMessage(meta.ChatID, meta.MessageID, chunks[i], false)
+		_, err := SendTelegramMessage(meta.ChatID, meta.MessageID, chunks[i], "markdown")
 		if err != nil {
 			log.Println("Error sending chunk:", err)
 		}
@@ -106,9 +116,9 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 		lastChunk := chunks[len(chunks)-1]
 		watermarked := utils.Watermark(lastChunk, "", config.WatermarkModel)
 		if len(watermarked) > maxLen {
-			_, err = SendTelegramMessage(meta.ChatID, meta.MessageID, lastChunk, false)
+			_, err = SendTelegramMessage(meta.ChatID, meta.MessageID, lastChunk, "markdown")
 		} else {
-			_, err = SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, false)
+			_, err = SendTelegramMessage(meta.ChatID, meta.MessageID, watermarked, "markdown")
 		}
 		if err != nil {
 			log.Println("Error sending final chunk:", err)
@@ -123,19 +133,24 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 	maxLen := 4096
 	bufferThreshold := 500
 
-	send, err := SendTelegramMessage(meta.ChatID, meta.MessageID, indicator("typing"), false)
+	send, err := SendTelegramMessage(meta.ChatID, meta.MessageID, indicator("typing"), "markdown")
 	if err != nil || !send.Ok {
 		log.Println(err)
 	}
-	messageId := send.Result.MessageId
+	firstMessageId := send.Result.MessageId
 
 	streamingContent := ""
+	streamingThought := "" // Store thought and trace output here
 	lastStreamingContent := ""
 	bufferedContent := ""
+	bufferedThought := ""
 	var traceSteps []provider.ReactStep
 	lastTraceLen := 0
 	lastLoading := ""
 	var finalUsage provider.Usage
+
+	thoughtMessageId := 0
+	mainMessageId := 0
 
 	err = streamFn(func(chunk channel.StreamChunk) {
 		loading := indicator("typing")
@@ -150,7 +165,15 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 				toolName = chunk.ToolCalls[0].Function.Name
 			}
 			loading = indicator("tool") + toolName + "..."
-		} else if chunk.Text != "" {
+		}
+
+		if chunk.Thought != "" {
+			streamingThought += chunk.Thought
+			bufferedThought += chunk.Thought
+			loading = indicator("reasoning")
+		}
+
+		if chunk.Text != "" {
 			streamingContent += chunk.Text
 			bufferedContent += chunk.Text
 		}
@@ -161,7 +184,8 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 				if step.Observation != "" {
 					action := step.Action
 					log.Printf("[ReAct] Captured trace tool: %v", action)
-					streamingContent += "\n\n🛠️ " + action + "\n\n"
+					streamingThought += "\n\n🛠️ " + action + "\n\n"
+					bufferedThought += "\n\n🛠️ " + action + "\n\n"
 					loading = indicator("typing")
 				}
 			}
@@ -169,37 +193,112 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 			traceSteps = chunk.Trace
 		}
 
-		if len(streamingContent) >= maxLen-100 {
-			streamingContent = streamingContent[len(lastStreamingContent):]
-			bufferedContent = ""
+		// Handle UI updates based on whether we are showing thoughts or main text
+		isThoughtUpdate := len(bufferedThought) >= bufferThreshold || chunk.ToolCalls != nil || (streamingThought != "" && lastLoading != loading)
+		isMainUpdate := len(bufferedContent) >= bufferThreshold || (streamingContent != "" && lastLoading != loading)
 
-			newSend, err := SendTelegramMessage(meta.ChatID, meta.MessageID, loading, false)
-			if err != nil || !newSend.Ok {
-				log.Println(err)
-			} else {
-				messageId = newSend.Result.MessageId
+		if streamingThought != "" {
+			if thoughtMessageId == 0 {
+				if mainMessageId == 0 {
+					thoughtMessageId = firstMessageId
+				} else {
+					// Main message already took the first bubble. Spin up a new one for thoughts.
+					newSend, err := SendTelegramMessage(meta.ChatID, meta.MessageID, loading, "markdown")
+					if err != nil || !newSend.Ok {
+						log.Println(err)
+						thoughtMessageId = mainMessageId // Fallback to sharing
+					} else {
+						thoughtMessageId = newSend.Result.MessageId
+					}
+				}
 			}
-		} else if len(bufferedContent) >= bufferThreshold || chunk.ToolCalls != nil || lastLoading != loading {
-			editMessage, err := EditTelegramMessage(meta.ChatID, meta.MessageID, messageId, streamingContent+"\n\n"+loading, false)
-			lastStreamingContent = streamingContent
-			lastLoading = loading
 
-			if err != nil || !editMessage.Ok {
-				log.Println(err)
+			if len(streamingThought) >= maxLen-100 {
+				// Prevent thoughts from exceeding message max length
+				streamingThought = streamingThought[(len(streamingThought) - lastTraceLen):] // Very rough truncation safeguard
+				bufferedThought = ""
+			} else if isThoughtUpdate {
+				strippedThought := utils.StripMarkdown(streamingThought)
+				displayThought := fmt.Sprintf("💭 <b>Reasoning...</b>\n<blockquote expandable>%s</blockquote>", html.EscapeString(strippedThought))
+				editMessage, err := EditTelegramMessage(meta.ChatID, meta.MessageID, thoughtMessageId, displayThought+"\n\n"+html.EscapeString(loading), "HTML")
+				if err != nil || !editMessage.Ok {
+					log.Println(err)
+				}
+				bufferedThought = ""
 			}
-			bufferedContent = ""
 		}
+
+		if streamingContent != "" {
+			if mainMessageId == 0 {
+				if thoughtMessageId == 0 {
+					mainMessageId = firstMessageId
+				} else {
+					// Finalize the thought message without the loading indicator
+					parsedThought := utils.ParseTelegramHTML(html.EscapeString(streamingThought))
+					displayThought := fmt.Sprintf("💭 <b>Reasoning...</b>\n<blockquote expandable>%s</blockquote>", parsedThought)
+					EditTelegramMessage(meta.ChatID, meta.MessageID, thoughtMessageId, displayThought, "HTML")
+
+					newSend, err := SendTelegramMessage(meta.ChatID, meta.MessageID, loading, "markdown")
+					if err != nil || !newSend.Ok {
+						log.Println(err)
+						// Fallback: overwrite the thought message if creation fails
+						mainMessageId = thoughtMessageId
+					} else {
+						mainMessageId = newSend.Result.MessageId
+					}
+				}
+			}
+
+			if len(streamingContent) >= maxLen-100 {
+				streamingContent = streamingContent[len(lastStreamingContent):]
+				bufferedContent = ""
+
+				newSend, err := SendTelegramMessage(meta.ChatID, meta.MessageID, loading, "markdown")
+				if err != nil || !newSend.Ok {
+					log.Println(err)
+				} else {
+					mainMessageId = newSend.Result.MessageId
+				}
+			} else if isMainUpdate {
+				strippedContent := utils.StripMarkdown(streamingContent)
+				editMessage, err := EditTelegramMessage(meta.ChatID, meta.MessageID, mainMessageId, strippedContent+"\n\n"+loading, "markdown")
+				lastStreamingContent = streamingContent
+
+				if err != nil || !editMessage.Ok {
+					log.Println(err)
+				}
+				bufferedContent = ""
+			}
+		}
+
+		lastLoading = loading
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
+	// Make sure the thought bubble has the indicator removed if no text ever came
+	if thoughtMessageId > 0 && streamingThought != "" {
+		parsedThought := utils.ParseTelegramHTML(html.EscapeString(streamingThought))
+		displayThought := fmt.Sprintf("💭 <b>Reasoning...</b>\n<blockquote expandable>%s</blockquote>", parsedThought)
+		EditTelegramMessage(meta.ChatID, meta.MessageID, thoughtMessageId, displayThought, "HTML")
+	}
+
+	// If no main message was ever created, use the original messageId for the final watermark (or if it's empty)
+	targetMessageId := mainMessageId
+	if targetMessageId == 0 {
+		targetMessageId = thoughtMessageId
+	}
+	if targetMessageId == 0 {
+		targetMessageId = firstMessageId
+	}
+
 	watermarked := utils.Watermark(utils.ParseTelegramMarkdown(streamingContent), "", config.WatermarkModel)
-	editMessage, err := EditTelegramMessage(meta.ChatID, meta.MessageID, messageId, watermarked, true)
+	editMessage, err := EditTelegramMessage(meta.ChatID, meta.MessageID, targetMessageId, watermarked, "markdown")
 	if err != nil || !editMessage.Ok {
 
-		_, err := EditTelegramMessage(meta.ChatID, meta.MessageID, messageId, utils.Watermark(streamingContent, "", config.WatermarkModel), false)
+		_, err := EditTelegramMessage(meta.ChatID, meta.MessageID, targetMessageId, utils.Watermark(streamingContent, "", config.WatermarkModel), "markdown")
 		if err != nil {
 			log.Println(err)
 			return nil, err
@@ -215,7 +314,7 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 
 func (t *TelegramAdapter) SendError(msg *channel.IncomingMessage, errText string) error {
 	meta := msg.RawMeta.(TelegramMeta)
-	_, err := SendTelegramMessage(meta.ChatID, 0, errText, true)
+	_, err := SendTelegramMessage(meta.ChatID, 0, errText, "markdown")
 	return err
 }
 

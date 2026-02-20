@@ -32,6 +32,7 @@ type GeminiPart struct {
 	InlineData       *GeminiInlineData       `json:"inline_data,omitempty"`
 	FunctionCall     *GeminiFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *GeminiFunctionResponse `json:"functionResponse,omitempty"`
+	Thought          bool                    `json:"thought,omitempty"`
 }
 
 type GeminiContent struct {
@@ -74,6 +75,15 @@ type FunctionCallingConfig struct {
 	Mode string `json:"mode"`
 }
 
+type GemeniGenerationConfig struct {
+	ThinkingConfig *GeminiThinkingConfig `json:"thinkingConfig,omitempty"`
+}
+
+type GeminiThinkingConfig struct {
+	IncludeThoughts bool   `json:"includeThoughts"`
+	ThinkingLevel   string `json:"thinkingLevel,omitempty"`
+}
+
 type ToolConfig struct {
 	FunctionCallingConfig FunctionCallingConfig `json:"function_calling_config"`
 }
@@ -83,6 +93,7 @@ type GemeniRequest struct {
 	SystemInstruction *GeminiContent           `json:"systemInstruction,omitempty"`
 	ToolConfig        *ToolConfig              `json:"toolConfig,omitempty"`
 	Tools             []map[string]interface{} `json:"tools,omitempty"`
+	GenerationConfig  *GemeniGenerationConfig  `json:"generationConfig,omitempty"`
 }
 
 type GeminiModel struct {
@@ -139,13 +150,20 @@ func MessagesToContents(messages []Message) []GeminiContent {
 
 		var content GeminiContent
 		if contentStr != "" && ok {
+			var parts []GeminiPart
+			if message.Thought != "" && role == "model" {
+				parts = append(parts, GeminiPart{
+					Text:    message.Thought,
+					Thought: true,
+				})
+			}
+			parts = append(parts, GeminiPart{
+				Text: contentStr,
+			})
+
 			content = GeminiContent{
-				Parts: []GeminiPart{
-					{
-						Text: contentStr,
-					},
-				},
-				Role: role,
+				Parts: parts,
+				Role:  role,
 			}
 
 			if message.Images != nil {
@@ -221,10 +239,25 @@ func contentToMessage(content GeminiContent) Message {
 	}
 
 	var textParts []string
+	var thoughtParts []string
 	var toolCalls []ToolCall
 
 	for _, part := range content.Parts {
-		if part.Text != "" {
+		if part.Thought {
+			if part.Text != "" {
+				text := part.Text
+
+				// Fallback string matching for Gemini thinking payload missing the flag
+				// because gemini sometimes doesn't set the thought flag to false even if is not thought part
+				if strings.HasPrefix(text, "**") && strings.Contains(text, "**\n\n") && strings.HasSuffix(text, "\n\n\n") {
+					thoughtParts = append(thoughtParts, text)
+				} else {
+					part.Thought = false
+					textParts = append(textParts, text)
+				}
+
+			}
+		} else if part.Text != "" {
 			textParts = append(textParts, part.Text)
 		}
 		if part.FunctionCall != nil {
@@ -241,6 +274,10 @@ func contentToMessage(content GeminiContent) Message {
 	msg := Message{
 		Role:      role,
 		ToolCalls: toolCalls,
+	}
+
+	if len(thoughtParts) > 0 {
+		msg.Thought = strings.Join(thoughtParts, "\n")
 	}
 
 	if len(textParts) > 0 {
@@ -295,6 +332,12 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 			{
 				"function_declarations": g.getToolsTransform(),
 			},
+		},
+	}
+
+	request.GenerationConfig = &GemeniGenerationConfig{
+		ThinkingConfig: &GeminiThinkingConfig{
+			IncludeThoughts: true,
 		},
 	}
 	if len(messages) > 0 && messages[0].Role == "system" {
@@ -353,6 +396,12 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 			{
 				"function_declarations": g.getToolsTransform(),
 			},
+		},
+	}
+
+	request.GenerationConfig = &GemeniGenerationConfig{
+		ThinkingConfig: &GeminiThinkingConfig{
+			IncludeThoughts: true,
 		},
 	}
 

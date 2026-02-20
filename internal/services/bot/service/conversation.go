@@ -16,20 +16,29 @@ func (r *BotServiceImpl) conversation(user *model.User, msg *channel.IncomingMes
 	messages := r.buildConversationMessages(user, msg)
 	context := r.contextWindow(messages)
 
-	response, err := r.factoryChat(user, context)
+	res, err := r.agent.Run(user.Model, context)
 	if err != nil {
 		return nil, err
+	}
+
+	content := res.Content.(string)
+	response := provider.Message{
+		Role:    "assistant",
+		Content: content,
+		Trace:   res.Trace,
+		Usage:   res.Usage,
+		Thought: res.Thought,
 	}
 
 	if err := r.updateUserMessages(msg, messages, response); err != nil {
 		return nil, err
 	}
 
-	content := response.Content.(string)
 	return &channel.OutgoingMessage{
-		Text:  content,
-		Trace: response.Trace,
-		Usage: response.Usage,
+		Text:    content,
+		Trace:   response.Trace,
+		Usage:   response.Usage,
+		Thought: response.Thought,
 	}, nil
 }
 
@@ -40,6 +49,7 @@ func (r *BotServiceImpl) conversationStream(user *model.User, msg *channel.Incom
 	streamingContent := ""
 	var traceSteps []provider.ReactStep
 	var finalUsage provider.Usage
+	var thought string
 
 	err := r.agent.RunStream(user.Model, context, func(partial provider.Message) error {
 		chunk := channel.StreamChunk{
@@ -50,6 +60,12 @@ func (r *BotServiceImpl) conversationStream(user *model.User, msg *channel.Incom
 
 		if partial.Usage.TotalTokens > 0 {
 			finalUsage = partial.Usage
+		}
+
+		if partial.Thought != "" {
+			text := partial.Thought
+			chunk.Thought = text
+			thought += text
 		}
 
 		if partial.Content != nil {
@@ -75,6 +91,7 @@ func (r *BotServiceImpl) conversationStream(user *model.User, msg *channel.Incom
 		Content: streamingContent,
 		Trace:   traceSteps,
 		Usage:   finalUsage,
+		Thought: thought,
 	}
 
 	if err := r.updateUserMessages(msg, messages, response); err != nil {
@@ -82,9 +99,10 @@ func (r *BotServiceImpl) conversationStream(user *model.User, msg *channel.Incom
 	}
 
 	return &channel.OutgoingMessage{
-		Text:  streamingContent,
-		Trace: traceSteps,
-		Usage: finalUsage,
+		Text:    streamingContent,
+		Trace:   traceSteps,
+		Usage:   finalUsage,
+		Thought: thought,
 	}, nil
 }
 
