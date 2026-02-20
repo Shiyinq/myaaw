@@ -110,7 +110,7 @@ func performUpdate(url string) error {
 	tempFile := exe + ".tmp"
 	client := resty.New()
 
-	fmt.Printf(theme.RenderSecondary("📥 Downloading..."))
+	fmt.Print(theme.RenderSecondary("📥 Downloading..."))
 	resp, err := client.R().SetOutput(tempFile).Get(url)
 	if err != nil {
 		return err

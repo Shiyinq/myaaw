@@ -37,17 +37,37 @@ func (a *CLIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 }
 
 func (a *CLIAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMessage) error {
+	if out.Thought != "" {
+		fmt.Fprintln(os.Stderr, "\033[90m"+"💭 Reasoning:\n"+out.Thought+"\033[0m")
+	}
 	fmt.Fprintln(os.Stdout, out.Text)
 	return nil
 }
 
 func (a *CLIAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onChunk func(chunk channel.StreamChunk)) error) (*channel.OutgoingMessage, error) {
 	fullContent := ""
+	lastThoughtLen := 0
+	lastTraceLen := 0
 	err := streamFn(func(chunk channel.StreamChunk) {
-		if len(chunk.ToolCalls) > 0 {
-			toolText := fmt.Sprintf("\n🛠️  Using %s...\n", chunk.ToolCalls[0].Function.Name)
-			fmt.Fprint(os.Stderr, toolText)
-		} else if chunk.Text != "" {
+		if chunk.Thought != "" {
+			if len(chunk.Thought) > lastThoughtLen {
+				delta := chunk.Thought[lastThoughtLen:]
+				fmt.Fprint(os.Stderr, "\033[90m"+delta+"\033[0m")
+				lastThoughtLen = len(chunk.Thought)
+			}
+		}
+
+		if len(chunk.Trace) > lastTraceLen {
+			for i := lastTraceLen; i < len(chunk.Trace); i++ {
+				step := chunk.Trace[i]
+				if step.Observation != "" {
+					fmt.Fprintf(os.Stderr, "\n\033[90m🛠️  Using %s...\033[0m\n", step.Action)
+				}
+			}
+			lastTraceLen = len(chunk.Trace)
+		}
+
+		if chunk.Text != "" {
 			fmt.Fprint(os.Stdout, chunk.Text)
 			fullContent += chunk.Text
 		}
