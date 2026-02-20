@@ -95,9 +95,7 @@ func openDockerDownload() {
 		err = exec.Command("open", url).Start()
 	}
 	if err != nil {
-		if err != nil {
-			fmt.Printf(theme.RenderSecondary("👉 Please open this link manually: %s\n"), url)
-		}
+		fmt.Printf(theme.RenderSecondary("👉 Please open this link manually: %s\n"), url)
 	}
 }
 
