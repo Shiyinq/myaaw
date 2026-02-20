@@ -295,6 +295,10 @@ func (a *Agent) runStreamWithIteration(modelName string, messages []provider.Mes
 		}
 
 		// Accumulate logic (simplistic update)
+		if msg.Thought != "" {
+			accumulatedResponse.Thought += msg.Thought
+		}
+
 		if msg.Content != nil {
 			if str, ok := msg.Content.(string); ok {
 				if accumulatedResponse.Content == nil {
