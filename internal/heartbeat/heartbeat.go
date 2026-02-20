@@ -12,7 +12,9 @@ import (
 )
 
 type HeartbeatService struct {
-	client *resty.Client
+	client     *resty.Client
+	stopChan   chan struct{}
+	reloadChan chan struct{}
 }
 
 type HeartbeatConfig struct {
@@ -26,41 +28,72 @@ type HeartbeatConfig struct {
 
 func NewHeartbeatService() *HeartbeatService {
 	return &HeartbeatService{
-		client: resty.New(),
+		client:     resty.New(),
+		stopChan:   make(chan struct{}),
+		reloadChan: make(chan struct{}),
 	}
 }
 
 func (s *HeartbeatService) Start() {
-	var interval time.Duration
-	config, err := s.readConfig()
+	go s.runLoop()
+}
 
-	if err == nil && config != nil && config.Heartbeat.Every != "" {
-		parsed, parseErr := time.ParseDuration(config.Heartbeat.Every)
-		if parseErr == nil {
-			interval = parsed
-		} else {
-			log.Printf("Invalid interval format in config.json (%s), defaulting to 30m: %v", config.Heartbeat.Every, parseErr)
-			interval = 30 * time.Minute
-		}
-	} else {
-		log.Printf("Could not read config.json or interval missing, defaulting to 30m: %v", err)
-		interval = 30 * time.Minute
+func (s *HeartbeatService) Stop() {
+	close(s.stopChan)
+}
+
+func (s *HeartbeatService) ReloadConfig() {
+	// Signal runLoop to reload
+	select {
+	case s.reloadChan <- struct{}{}:
+	default:
+		// If channel is full (e.g. reload happening), skip
 	}
+}
 
+func (s *HeartbeatService) runLoop() {
 	baseURL := os.Getenv("MYAAW_BASE_URL")
 	if baseURL == "" {
 		baseURL = "http://localhost:8080"
 	}
-	log.Printf("Heartbeat scheduler started. Interval: %s, Target: %s/heartbeat", interval, baseURL)
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	for {
+		// 1. Load Config & Determine Interval
+		interval := 30 * time.Minute
+		config, err := s.readConfig()
+		if err == nil && config != nil && config.Heartbeat.Every != "" {
+			parsed, parseErr := time.ParseDuration(config.Heartbeat.Every)
+			if parseErr == nil {
+				interval = parsed
+			}
+		}
 
-	for range ticker.C {
-		log.Println("Triggering heartbeat...")
-		err := s.process()
-		if err != nil {
-			log.Printf("Heartbeat trigger failed: %v", err)
+		log.Printf("Heartbeat scheduler active. Interval: %s", interval)
+
+		// 2. Create Ticker
+		ticker := time.NewTicker(interval)
+
+		// 3. Wait for Tick, Reload, or Stop
+		select {
+		case <-ticker.C:
+			// Time to trigger
+			log.Println("Triggering heartbeat...")
+			if err := s.process(); err != nil {
+				log.Printf("Heartbeat trigger failed: %v", err)
+			}
+			ticker.Stop() // Stop current ticker to loop and potentially reload config/interval next time?
+			// Actually, if we want strict interval, we stay in loop.
+			// But if we want hot reload support, breaking the loop and restarting ticker is easier
+			// OR we can select on reloadChan inside the ticker loop.
+		case <-s.reloadChan:
+			log.Println("Heartbeat config reloading...")
+			ticker.Stop()
+			// Loop restarts, reading new config and setting new interval
+			continue
+		case <-s.stopChan:
+			ticker.Stop()
+			log.Println("Heartbeat scheduler stopped.")
+			return
 		}
 	}
 }
@@ -80,28 +113,22 @@ func (s *HeartbeatService) process() error {
 		return nil
 	}
 
-	content, err := s.readHeartbeatFile()
-	if err != nil {
-		return err
-	}
-	if content == nil {
-		return nil
-	}
+	prompt := `SYSTEM: You are in HEARTBEAT checking mode.
 
-	heartbeatContent := string(content)
-	if strings.TrimSpace(heartbeatContent) == "" {
-		return nil
-	}
+INSTRUCTION:
+1. Read the file "HEARTBEAT.md".
+2. Check the items listed in that file.
 
-	prompt := fmt.Sprintf(`SYSTEM: You are in HEARTBEAT checking mode.
-CONTEXT:
-%s
+DECISION LOGIC:
+A. If you need to perform actions or send a message to the user:
+   - Perform the actions using tools.
+   - Do NOT output "HEARTBEAT_OK".
 
-INSTRUCTION: Check the items above.
-- If everything is fine or no action is needed, reply ONLY with "HEARTBEAT_OK".
-- If there is an issue or a task to do, take action using your tools.
-- Do NOT chat with the user unless necessary.
-`, heartbeatContent)
+B. If everything is fine and NO action is needed:
+   - Reply ONLY with the exact string "HEARTBEAT_OK".
+   - Do not output anything else.
+
+CRITICAL: "HEARTBEAT_OK" acts as a "silent skip". If you output it, the system assumes you did nothing. If you did something, DO NOT output it.`
 
 	payload := map[string]interface{}{
 		"prompt":  prompt,
@@ -129,27 +156,6 @@ INSTRUCTION: Check the items above.
 
 	log.Println("Heartbeat triggered successfully.")
 	return nil
-}
-
-func (s *HeartbeatService) readHeartbeatFile() ([]byte, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Printf("Warning: Failed to get user home directory: %v", err)
-		return nil, nil
-	}
-
-	heartbeatPath := strings.Join([]string{homeDir, ".myaaw", "home", "HEARTBEAT.md"}, string(os.PathSeparator))
-
-	content, err := os.ReadFile(heartbeatPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Quietly skip if file doesn't exist
-			return nil, nil
-		}
-		log.Printf("Warning: Failed to read HEARTBEAT.md: %v", err)
-		return nil, nil
-	}
-	return content, nil
 }
 
 func (s *HeartbeatService) readConfig() (*HeartbeatConfig, error) {

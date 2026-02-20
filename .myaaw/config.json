@@ -15,11 +15,17 @@
     "channels": {
         "telegram": {
             "active": true,
-            "token": "YOUR_TELEGRAM_BOT_TOKEN"
+            "token": "YOUR_TELEGRAM_BOT_TOKEN",
+            "mode": "polling",
+            "ngrok_active": false,
+            "ngrok_auth_token": ""
         },
         "discord": {
             "active": false,
             "token": "YOUR_DISCORD_BOT_TOKEN"
         }
+    },
+    "cron": {
+        "active": true
     }
 }

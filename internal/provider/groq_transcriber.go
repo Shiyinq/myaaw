@@ -16,7 +16,7 @@ const (
 	groqTTSAPIEndpoint  = "https://api.groq.com/openai/v1/audio/transcriptions"
 )
 
-type GroqTTSProvider struct {
+type GroqTranscriber struct {
 	apiKey       string
 	defaultModel string
 	client       *resty.Client
@@ -26,15 +26,15 @@ type GroqTranscriptionResponse struct {
 	Text string `json:"text"`
 }
 
-func NewGroqTTSProvider(apiKey string, defaultModel string) TTSProvider {
-	return &GroqTTSProvider{
+func NewGroqTranscriber(apiKey string, defaultModel string) Transcriber {
+	return &GroqTranscriber{
 		apiKey:       apiKey,
 		defaultModel: defaultModel,
 		client:       resty.New(),
 	}
 }
 
-func (g *GroqTTSProvider) SpeechToText(audioFile []byte) (string, error) {
+func (g *GroqTranscriber) Transcribe(audioFile []byte) (string, error) {
 	model := g.defaultModel
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)

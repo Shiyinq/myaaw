@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"encoding/json"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
 	"github.com/rabbitmq/amqp091-go"
 	"github.com/redis/go-redis/v9"
@@ -35,15 +37,23 @@ var LLMProviderBaseURL string
 var LLMProviderName string
 var LLMProviderAPIKey string
 var StreamResponse bool
-var TTSProviderName string
-var TTSProviderAPIKey string
+var TranscriberProviderName string
+var TranscriberAPIKey string
 var WatermarkModel bool
 var OwnerIDs []string
+var Heartbeat HeartbeatConfig
+var TelegramMode string // "webhook" or "polling"
+var Verbose bool
 
 type Config struct {
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Bot       GlobalBotConfig `json:"bot,omitempty"`
 	Channels  ChannelsConfig  `json:"channels"`
+	Cron      CronConfig      `json:"cron"`
+}
+
+type CronConfig struct {
+	Active bool `json:"active"`
 }
 
 type GlobalBotConfig struct {
@@ -58,8 +68,11 @@ type ChannelsConfig struct {
 }
 
 type ChannelConfig struct {
-	Active bool   `json:"active"`
-	Token  string `json:"token"`
+	Active         bool   `json:"active"`
+	Token          string `json:"token"`
+	Mode           string `json:"mode,omitempty"`             // "polling" or "webhook"
+	NgrokActive    bool   `json:"ngrok_active,omitempty"`     // Only for webhook
+	NgrokAuthToken string `json:"ngrok_auth_token,omitempty"` // Only for webhook
 }
 
 type HeartbeatConfig struct {
@@ -69,89 +82,135 @@ type HeartbeatConfig struct {
 	Channel string `json:"channel"`
 }
 
+var CronActive bool
+
 func loadJSONConfig() (*Config, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-
-	configPath := filepath.Join(homeDir, ".myaaw", "config.json")
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil // Config file doesn't exist, that's fine
+	// 1. Check Current Directory
+	if _, err := os.Stat("config.json"); err == nil {
+		if Verbose {
+			log.Println("Reading config from current directory: config.json")
 		}
-		return nil, err
+		return parseJSONFile("config.json")
 	}
 
+	// 2. Check Home Directory
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		configPath := filepath.Join(homeDir, ".myaaw", "config.json")
+		if _, err := os.Stat(configPath); err == nil {
+			if Verbose {
+				log.Println("Reading config from home directory:", configPath)
+			}
+			return parseJSONFile(configPath)
+		}
+	}
+
+	return nil, nil // No config file found
+}
+
+func parseJSONFile(path string) (*Config, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
 	var config Config
 	if err := json.Unmarshal(content, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config.json: %w", err)
+		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
-
 	return &config, nil
 }
 
 func envPath() string {
+	// 1. Check Current Directory
+	if abs, err := filepath.Abs(".env"); err == nil {
+		if _, err := os.Stat(abs); err == nil {
+			return abs
+		}
+	}
+
+	// 2. Check Home Directory
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		path := filepath.Join(homeDir, ".myaaw", ".env")
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	// 3. Fallback to hardcoded dev path (only if it exists)
 	_, b, _, _ := runtime.Caller(0)
-	basePath := filepath.Join(filepath.Dir(b), "../..")
-	envPath := filepath.Join(basePath, ".env")
-	return envPath
+	devPath := filepath.Join(filepath.Dir(b), "../../.env")
+	if _, err := os.Stat(devPath); err == nil {
+		return devPath
+	}
+
+	return ""
 }
 
-func LoadConfig() {
+func LoadBaseConfig() {
 	path := envPath()
-	err := godotenv.Load(path)
-	log.Println("Load .env file", path)
-	if err != nil {
-		log.Println("Error loading .env file, using environment variables")
+	if path != "" {
+		err := godotenv.Load(path)
+		if err != nil {
+			log.Printf("⚠️  Warning: Error loading .env file from %s: %v\n", path, err)
+		} else {
+			if Verbose {
+				log.Printf("✅ Loaded environment from: %s\n", path)
+			}
+		}
+	} else {
+		if Verbose {
+			log.Println("ℹ️  No .env file found in current directory, ~/.myaaw/, or dev fallback. Using system environment variables.")
+		}
 	}
 
 	PORT = ":" + os.Getenv("PORT")
 	HOST = os.Getenv("HOST")
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
-	NgrokActive = os.Getenv("NGROK_ACTIVE")
-	NgrokAuthToken = os.Getenv("NGROK_AUTHTOKEN")
-	mongoURI := os.Getenv("MONGODB_URI")
-	dbName := os.Getenv("DB_NAME")
-	redisURL := os.Getenv("REDIS_URL")
 	QueueName = os.Getenv("QUEUE_NAME")
-	rabbitMQURL := os.Getenv("RABBITMQ_URL")
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
 
-	TTSProviderName = os.Getenv("TTS_PROVIDER_NAME")
-	if TTSProviderName == "" {
-		TTSProviderName = "groq" // Default value if not set
-		log.Println("TTS_PROVIDER_NAME not set, using default:", TTSProviderName)
+	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")
+	if TranscriberProviderName == "" {
+		if LLMProviderName == "gemini" {
+			TranscriberProviderName = "gemini"
+		} else {
+			TranscriberProviderName = "groq"
+		}
+		log.Println("TRANSCRIBER_PROVIDER_NAME not set, using default:", TranscriberProviderName)
 	}
-	TTSProviderAPIKey = os.Getenv("TTS_PROVIDER_API_KEY")
+
+	TranscriberAPIKey = os.Getenv("TRANSCRIBER_API_KEY")
+	if TranscriberAPIKey == "" && TranscriberProviderName == "gemini" && LLMProviderName == "gemini" {
+		TranscriberAPIKey = LLMProviderAPIKey
+		log.Println("TRANSCRIBER_API_KEY not set, reusing LLM_PROVIDER_API_KEY for Gemini")
+	}
 	// No default for API key for security reasons
 
-	maxRetries := 10
-	retryDelay := 3 * time.Second
-
-	StreamResponse, err = strconv.ParseBool(os.Getenv("STREAM_RESPONSE"))
-	if err != nil {
-		log.Fatalf("Invalid value for STREAM_RESPONSE: %v", err)
+	streamVal := os.Getenv("STREAM_RESPONSE")
+	if streamVal != "" {
+		boolVal, err := strconv.ParseBool(streamVal)
+		if err != nil {
+			log.Printf("Warning: Invalid value for STREAM_RESPONSE '%s', defaulting to false", streamVal)
+			StreamResponse = false
+		} else {
+			StreamResponse = boolVal
+		}
+	} else {
+		StreamResponse = false
 	}
 
 	if AllowedOrigins == "" {
 		AllowedOrigins = "*"
 	}
 
-	ConnectMongoDB(mongoURI, dbName, maxRetries, retryDelay)
-	ConnectRedis(redisURL, maxRetries, retryDelay)
-	ConnectRabbitMQ(rabbitMQURL, maxRetries, retryDelay)
-
-	// Load JSON config and override if present
 	jsonConfig, err := loadJSONConfig()
 	if err != nil {
 		log.Printf("Warning: Failed to load JSON config: %v", err)
 	}
 	if jsonConfig != nil {
-		// Global Bot Settings
 		if len(jsonConfig.Bot.OwnerIDs) > 0 {
 			OwnerIDs = jsonConfig.Bot.OwnerIDs
 		}
@@ -160,11 +219,23 @@ func LoadConfig() {
 		}
 		WatermarkModel = jsonConfig.Bot.Watermark
 
-		// Channels
 		if jsonConfig.Channels.Telegram != nil {
-			if jsonConfig.Channels.Telegram.Active {
-				TelegramBotToken = jsonConfig.Channels.Telegram.Token
+			TelegramBotToken = jsonConfig.Channels.Telegram.Token
+			TelegramMode = jsonConfig.Channels.Telegram.Mode
+			if TelegramMode == "" {
+				TelegramMode = "polling"
 			} else {
+				TelegramMode = strings.ToLower(TelegramMode)
+			}
+
+			if jsonConfig.Channels.Telegram.NgrokActive {
+				NgrokActive = "true"
+			} else {
+				NgrokActive = "false"
+			}
+			NgrokAuthToken = jsonConfig.Channels.Telegram.NgrokAuthToken
+
+			if !jsonConfig.Channels.Telegram.Active {
 				TelegramBotToken = ""
 			}
 		}
@@ -176,7 +247,36 @@ func LoadConfig() {
 				DiscordBotToken = ""
 			}
 		}
+
+		Heartbeat = jsonConfig.Heartbeat
+		CronActive = jsonConfig.Cron.Active
 	}
+}
+
+func ConnectDatabases() {
+	maxRetries := 10
+	retryDelay := 3 * time.Second
+
+	mongoURI := os.Getenv("MONGODB_URI")
+	dbName := os.Getenv("DB_NAME")
+	redisURL := os.Getenv("REDIS_URL")
+
+	ConnectMongoDB(mongoURI, dbName, maxRetries, retryDelay)
+	ConnectRedis(redisURL, maxRetries, retryDelay)
+}
+
+func ConnectQueue() {
+	maxRetries := 10
+	retryDelay := 3 * time.Second
+
+	rabbitMQURL := os.Getenv("RABBITMQ_URL")
+	ConnectRabbitMQ(rabbitMQURL, maxRetries, retryDelay)
+}
+
+func LoadConfig() {
+	LoadBaseConfig()
+	ConnectDatabases()
+	ConnectQueue()
 }
 
 func retry(attempts int, delay time.Duration, fn func() error) error {
@@ -186,7 +286,10 @@ func retry(attempts int, delay time.Duration, fn func() error) error {
 			return nil
 		}
 
-		log.Printf("Attempt %d failed: %v. Retrying in %v...\n", i+1, err, delay)
+		// Only log on the first failure or every 5th failure to reduce noise, unless verbose is on
+		if Verbose || i == 0 || (i+1)%5 == 0 {
+			log.Printf("Attempt %d/%d failed: %v. Retrying in %v...", i+1, attempts, err, delay)
+		}
 		time.Sleep(delay)
 	}
 	return fmt.Errorf("failed after %d attempts", attempts)
@@ -208,7 +311,9 @@ func ConnectMongoDB(mongoURI, dbName string, maxRetries int, retryDelay time.Dur
 		}
 
 		DB = client.Database(dbName)
-		log.Println("Connected to MongoDB!")
+		if Verbose {
+			log.Println("Connected to MongoDB!")
+		}
 		return nil
 	})
 
@@ -233,7 +338,9 @@ func ConnectRedis(redisURL string, maxRetries int, retryDelay time.Duration) {
 			return err
 		}
 
-		log.Println("Connected to Redis!")
+		if Verbose {
+			log.Println("Connected to Redis!")
+		}
 		return nil
 	})
 
@@ -243,8 +350,12 @@ func ConnectRedis(redisURL string, maxRetries int, retryDelay time.Duration) {
 }
 
 func ConnectRabbitMQ(rabbitMQURL string, maxRetries int, retryDelay time.Duration) {
+	if rabbitMQURL == "" {
+		log.Fatal("❌ Error: RABBITMQ_URL is not set. Please check your .env file.")
+	}
 	err := retry(maxRetries, retryDelay, func() error {
 		conn, err := amqp091.Dial(rabbitMQURL)
+
 		if err != nil {
 			return err
 		}
@@ -255,11 +366,78 @@ func ConnectRabbitMQ(rabbitMQURL string, maxRetries int, retryDelay time.Duratio
 		}
 
 		MQ = ch
-		log.Println("Connected to RabbitMQ!")
+		if Verbose {
+			log.Println("Connected to RabbitMQ!")
+		}
 		return nil
 	})
 
 	if err != nil {
 		log.Fatal("RabbitMQ connection failed:", err)
 	}
+}
+
+// WatchConfig watches for changes in config.json and reloads the config
+func WatchConfig(onChange func()) {
+	// Identify config path
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("Failed to get home dir for watcher: %v", err)
+		return
+	}
+	configPath := filepath.Join(homeDir, ".myaaw", "config.json")
+
+	// Create watcher
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Printf("Failed to create config watcher: %v", err)
+		return
+	}
+
+	// Watch the directory
+	configDir := filepath.Dir(configPath)
+	if err := watcher.Add(configDir); err != nil {
+		log.Printf("Failed to watch config directory: %v", err)
+		watcher.Close()
+		return
+	}
+
+	log.Println("Global Config Watcher started...")
+
+	// Debounce timer
+	var debounceTimer *time.Timer
+	debounceDuration := 500 * time.Millisecond
+
+	go func() {
+		defer watcher.Close()
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if filepath.Base(event.Name) == filepath.Base(configPath) {
+					if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Chmod) {
+						// Stop existing timer if any
+						if debounceTimer != nil {
+							debounceTimer.Stop()
+						}
+						// Reset timer
+						debounceTimer = time.AfterFunc(debounceDuration, func() {
+							log.Println("Config file changed, reloading...")
+							LoadBaseConfig() // Reloads global vars
+							if onChange != nil {
+								onChange()
+							}
+						})
+					}
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Printf("Config watcher error: %v", err)
+			}
+		}
+	}()
 }

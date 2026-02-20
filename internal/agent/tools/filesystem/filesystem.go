@@ -5,30 +5,64 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"myaaw/internal/config"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
-var allowedDirectories []string
+var (
+	allowedDirectories []string
+	defaultBaseDir     string
+)
 
 func init() {
-	// Add current working directory to allowed paths to support 'skills' folder
 	cwd, err := os.Getwd()
-	if err == nil {
-		allowedDirectories = append(allowedDirectories, cwd)
-		log.Printf("FileSystemTool: Added current working directory to allowed paths: %s", cwd)
+	if err != nil {
+		log.Printf("Warning: Could not get current working directory: %v", err)
 	}
 
 	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Printf("Warning: Could not get user home directory: %v. Cannot construct default allowed path.", err)
+	if err == nil {
+		myaawHome := filepath.Join(homeDir, ".myaaw", "home")
+		myaawSkills := filepath.Join(homeDir, ".myaaw", "skills")
+
+		defaultBaseDir = myaawHome
+		allowedDirectories = append(allowedDirectories, myaawHome, myaawSkills)
+
+		if config.Verbose {
+			log.Printf("FileSystemTool: Allowed directories set to: %v", allowedDirectories)
+		}
 	} else {
-		// Allow the .myaaw directory in home
-		myaawPath := filepath.Join(homeDir, ".myaaw")
-		allowedDirectories = append(allowedDirectories, myaawPath)
-		log.Printf("FileSystemTool: Allowed directory set to %s", myaawPath)
+		if config.Verbose {
+			log.Printf("Error: Could not determine home directory, sandbox limited.")
+		}
+	}
+
+	// Smart CWD Detection:
+	// Only treat CWD as project root if it looks like one (has go.mod, .git, or .env)
+	isProject := false
+	if cwd != "" {
+		markers := []string{"go.mod", ".git", ".env"}
+		for _, marker := range markers {
+			if _, err := os.Stat(filepath.Join(cwd, marker)); err == nil {
+				isProject = true
+				break
+			}
+		}
+	}
+
+	if isProject {
+		defaultBaseDir = cwd
+		allowedDirectories = append(allowedDirectories, cwd)
+		if config.Verbose {
+			log.Printf("FileSystemTool: Project detected at %s. Added to allowed paths.", cwd)
+		}
+	} else {
+		if config.Verbose {
+			log.Printf("FileSystemTool: Current directory %s does not look like a project. Sandbox restricted to %s", cwd, defaultBaseDir)
+		}
 	}
 }
 
@@ -65,6 +99,10 @@ func expandPath(path string) (string, error) {
 			return home, nil
 		}
 		return filepath.Join(home, path[2:]), nil
+	}
+	// If path is relative, join it with the defaultBaseDir (Smart CWD)
+	if !filepath.IsAbs(path) {
+		return filepath.Join(defaultBaseDir, path), nil
 	}
 	return path, nil
 }
