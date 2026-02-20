@@ -176,10 +176,9 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 	if len(msg.Images) > 0 {
 		providerName := r.llmProvider.ProviderName()
 		isOpenAI := providerName == "openai"
-		isMistral := providerName == "mistral"
 		isGroq := providerName == "groq"
 
-		if isOpenAI || isMistral || isGroq {
+		if isOpenAI || isGroq {
 			// Type 2: content items with image_url
 			contentItems := []provider.ContentItem{
 				{

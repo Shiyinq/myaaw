@@ -84,19 +84,17 @@ type factoryLLM func(baseURL string, apiKey string, defaultModel string) LLMProv
 type factoryTranscriber func(apiKey string, defaultModel string) Transcriber
 
 var LLMproviderFactories = map[string]factoryLLM{
-	"ollama":  NewOllamaProvider,
-	"openai":  NewOpenAIProvider,
-	"gemini":  NewGeminiProvider,
-	"groq":    NewGroqProvider,
-	"mistral": NewMistralProvider,
+	"ollama": NewOllamaProvider,
+	"openai": NewOpenAIProvider,
+	"gemini": NewGeminiProvider,
+	"groq":   NewGroqProvider,
 }
 
 var defaultLLMModels = map[string]string{
-	"ollama":  "qwen2.5:1.5b-instruct",
-	"openai":  "gpt-4o",
-	"gemini":  "models/gemini-3-flash-preview",
-	"groq":    "llama-3.2-1b-preview",
-	"mistral": "ministral-3b-latest",
+	"ollama": "qwen2.5:1.5b-instruct",
+	"openai": "gpt-4o",
+	"gemini": "models/gemini-3-flash-preview",
+	"groq":   "llama-3.2-1b-preview",
 }
 
 var TranscriberFactories = map[string]factoryTranscriber{
