@@ -108,6 +108,7 @@ type GeminiModel struct {
 	TopP                       float64  `json:"topP,omitempty"`
 	TopK                       int      `json:"topK,omitempty"`
 	MaxTemperature             float64  `json:"maxTemperature,omitempty"`
+	Thinking                   bool     `json:"thinking,omitempty"`
 }
 
 type GeminiModels struct {
@@ -301,6 +302,109 @@ func (g *GeminiProvider) DefaultModel(modelName string) string {
 	return modelName
 }
 
+func (g *GeminiProvider) isThinkingModel(modelName string) bool {
+	name := strings.TrimPrefix(modelName, "models/")
+	thinkingModels := map[string]bool{
+		"gemini-flash-latest":                   true,
+		"gemini-flash-lite-latest":              true,
+		"gemini-2.5-flash":                      true,
+		"gemini-2.5-pro":                        true,
+		"gemini-2.5-flash-lite":                 true,
+		"gemini-2.5-flash-lite-preview-09-2025": true,
+		"gemini-3-pro-preview":                  true,
+		"gemini-3-flash-preview":                true,
+		"gemini-3.1-pro-preview":                true,
+	}
+	return thinkingModels[name]
+}
+
+func (g *GeminiProvider) supportsTools(modelName string) bool {
+	name := strings.TrimPrefix(modelName, "models/")
+	supportedPrefixes := []string{
+		"gemini-flash",
+		"gemini-2.0-flash",
+		"gemini-2.0-flash-lite",
+		"gemini-2.0-pro",
+		"gemini-2.5-pro",
+		"gemini-2.5-flash",
+		"gemini-3-pro",
+		"gemini-3-flash",
+		"gemini-3.1-pro",
+		"gemini-3.1-flash",
+	}
+
+	for _, prefix := range supportedPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			if strings.Contains(name, "-tts") || strings.Contains(name, "-image-generation") ||
+				strings.Contains(name, "-native-audio") || strings.Contains(name, "robotics") {
+				return false
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func (g *GeminiProvider) supportsSystemInstruction(modelName string) bool {
+	name := strings.TrimPrefix(modelName, "models/")
+	if strings.HasPrefix(name, "gemma-") {
+		return false
+	}
+	if strings.HasPrefix(name, "gemini-1.0") || name == "gemini-pro" || name == "gemini-pro-vision" {
+		return false
+	}
+	return g.supportsTools(modelName)
+}
+
+func (g *GeminiProvider) buildRequest(modelName string, messages []Message) GemeniRequest {
+	fullModel := g.DefaultModel(modelName)
+	request := GemeniRequest{
+		Contents: MessagesToContents(messages),
+	}
+
+	if g.supportsTools(fullModel) {
+		request.ToolConfig = &ToolConfig{
+			FunctionCallingConfig: FunctionCallingConfig{
+				Mode: "AUTO",
+			},
+		}
+		request.Tools = []map[string]any{
+			{
+				"function_declarations": g.getToolsTransform(),
+			},
+		}
+	}
+
+	if g.isThinkingModel(fullModel) {
+		request.GenerationConfig = &GemeniGenerationConfig{
+			ThinkingConfig: &GeminiThinkingConfig{
+				IncludeThoughts: true,
+			},
+		}
+	}
+
+	if len(messages) > 0 && messages[0].Role == "system" {
+		systemText := messages[0].Content.(string)
+
+		if g.supportsSystemInstruction(fullModel) {
+			request.SystemInstruction = &GeminiContent{
+				Parts: []GeminiPart{
+					{
+						Text: systemText,
+					},
+				},
+				Role: "user",
+			}
+		} else {
+			if len(request.Contents) > 0 && len(request.Contents[0].Parts) > 0 {
+				request.Contents[0].Parts[0].Text = fmt.Sprintf("System: %s\n\n%s", systemText, request.Contents[0].Parts[0].Text)
+			}
+		}
+	}
+
+	return request
+}
+
 func (g *GeminiProvider) getToolsTransform() []map[string]interface{} {
 	originalTools := tools.GetTools()
 	if originalTools == nil {
@@ -321,37 +425,7 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
-	request := GemeniRequest{
-		Contents: MessagesToContents(messages),
-		ToolConfig: &ToolConfig{
-			FunctionCallingConfig: FunctionCallingConfig{
-				Mode: "AUTO",
-			},
-		},
-		Tools: []map[string]interface{}{
-			{
-				"function_declarations": g.getToolsTransform(),
-			},
-		},
-	}
-
-	request.GenerationConfig = &GemeniGenerationConfig{
-		ThinkingConfig: &GeminiThinkingConfig{
-			IncludeThoughts: true,
-		},
-	}
-	if len(messages) > 0 && messages[0].Role == "system" {
-		systemText := messages[0].Content.(string)
-
-		request.SystemInstruction = &GeminiContent{
-			Parts: []GeminiPart{
-				{
-					Text: systemText,
-				},
-			},
-			Role: "user",
-		}
-	}
+	request := g.buildRequest(modelName, messages)
 
 	var response GeminiGenerateContent
 	res, _ := client.R().
@@ -385,37 +459,7 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
-	request := GemeniRequest{
-		Contents: MessagesToContents(messages),
-		ToolConfig: &ToolConfig{
-			FunctionCallingConfig: FunctionCallingConfig{
-				Mode: "AUTO",
-			},
-		},
-		Tools: []map[string]interface{}{
-			{
-				"function_declarations": g.getToolsTransform(),
-			},
-		},
-	}
-
-	request.GenerationConfig = &GemeniGenerationConfig{
-		ThinkingConfig: &GeminiThinkingConfig{
-			IncludeThoughts: true,
-		},
-	}
-
-	if len(messages) > 0 && messages[0].Role == "system" {
-		systemText := messages[0].Content.(string)
-		request.SystemInstruction = &GeminiContent{
-			Parts: []GeminiPart{
-				{
-					Text: systemText,
-				},
-			},
-			Role: "user",
-		}
-	}
+	request := g.buildRequest(modelName, messages)
 
 	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
@@ -520,12 +564,43 @@ func (g *GeminiProvider) Models() ([]string, error) {
 
 	var models []string
 	for _, model := range response.Models {
-		if !(strings.Contains(model.Name, "1.0") || strings.Contains(model.Name, "gemini-pro") || strings.Contains(model.Name, "exp")) {
-			for _, method := range model.SupportedGenerationMethods {
-				if method == "generateContent" {
-					models = append(models, model.Name)
-				}
+		name := strings.TrimPrefix(model.Name, "models/")
+
+		supportsGenerate := false
+		for _, method := range model.SupportedGenerationMethods {
+			if method == "generateContent" {
+				supportsGenerate = true
+				break
 			}
+		}
+		if !supportsGenerate {
+			continue
+		}
+
+		if strings.Contains(name, "-tts") || strings.Contains(name, "-image") ||
+			strings.Contains(name, "-generation") || strings.Contains(name, "native-audio") ||
+			strings.Contains(name, "robotics") || strings.Contains(name, "computer-use") ||
+			strings.Contains(name, "aqa") || strings.Contains(name, "embedding") ||
+			strings.Contains(name, "imagen") || strings.Contains(name, "veo") {
+			continue
+		}
+
+		if strings.HasPrefix(name, "deep-research") || strings.HasPrefix(name, "gemma-") {
+			continue
+		}
+
+		isFlash := strings.Contains(name, "flash")
+		isV2Plus := false
+		prefixes := []string{"gemini-2.", "gemini-3.", "gemini-3-"}
+		for _, p := range prefixes {
+			if strings.HasPrefix(name, p) {
+				isV2Plus = true
+				break
+			}
+		}
+
+		if isFlash || isV2Plus {
+			models = append(models, model.Name)
 		}
 	}
 
