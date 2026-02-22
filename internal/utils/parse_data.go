@@ -186,6 +186,14 @@ func StripMarkdown(text string) string {
 		"_", "",
 		"`", "",
 		"~", "",
+		"[", "",
+		"]", "",
+		"(", "",
+		")", "",
+		"#", "",
+		"!", "",
+		">", "",
+		".", "",
 	)
 
 	// Also strip markdown links [text](url) -> text

@@ -261,7 +261,7 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 				}
 			} else if isMainUpdate {
 				strippedContent := utils.StripMarkdown(streamingContent)
-				editMessage, err := EditTelegramMessage(meta.ChatID, meta.MessageID, mainMessageId, strippedContent+"\n\n"+loading, "markdown")
+				editMessage, err := EditTelegramMessage(meta.ChatID, meta.MessageID, mainMessageId, strippedContent+"\n\n"+utils.EscapeMarkdown(loading), "markdown")
 				lastStreamingContent = streamingContent
 
 				if err != nil || !editMessage.Ok {
