@@ -41,10 +41,12 @@ type Usage struct {
 
 // ReactStep represents a single step in the ReAct loop
 type ReactStep struct {
-	Thought     string `json:"thought,omitempty" bson:"thought,omitempty"`
-	Action      string `json:"action,omitempty" bson:"action,omitempty"`
-	ActionInput string `json:"action_input,omitempty" bson:"action_input,omitempty"`
-	Observation string `json:"observation,omitempty" bson:"observation,omitempty"`
+	Thought          string `json:"thought,omitempty" bson:"thought,omitempty"`
+	Action           string `json:"action,omitempty" bson:"action,omitempty"`
+	ActionInput      string `json:"action_input,omitempty" bson:"action_input,omitempty"`
+	Observation      string `json:"observation,omitempty" bson:"observation,omitempty"`
+	ThoughtSignature string `json:"thought_signature,omitempty" bson:"thought_signature,omitempty"`
+	StepGroup        int    `json:"step_group,omitempty" bson:"step_group,omitempty"`
 }
 
 type ToolCall struct {
@@ -54,8 +56,9 @@ type ToolCall struct {
 }
 
 type FunctionCall struct {
-	Name      string      `json:"name"`
-	Arguments interface{} `json:"arguments"`
+	Name             string      `json:"name"`
+	Arguments        interface{} `json:"arguments"`
+	ThoughtSignature string      `json:"thought_signature,omitempty"`
 }
 
 type ContentItem struct {

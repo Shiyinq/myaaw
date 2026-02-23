@@ -103,40 +103,117 @@ func GenerateThought(toolName string) string {
 	return fmt.Sprintf("I need to use the '%s' tool to complete this task", toolName)
 }
 
-// enrichContext adds trace information to the message content (specifically to the assistant's role)
-// ensuring the LLM "remembers" its previous reasoning steps.
-func enrichContext(messages []provider.Message) []provider.Message {
-	enrichedMessages := make([]provider.Message, len(messages))
-	copy(enrichedMessages, messages)
+// reconstructHistory expands messages that contain a Trace into their constituent
+// assistant thought/tool call and tool response messages. This ensures the LLM
+// has full context of previous reasoning without leaking internal trace tags into content.
+func reconstructHistory(messages []provider.Message) []provider.Message {
+	var expanded []provider.Message
+	for _, msg := range messages {
+		// We only reconstruct from assistant messages that have a trace.
+		if len(msg.Trace) > 0 && msg.Role == "assistant" {
+			groups := groupTraceSteps(msg.Trace)
+			for _, group := range groups {
+				// 1. Build ONE assistant message with ALL ToolCalls in this group
+				var toolCalls []provider.ToolCall
+				thought := group[0].Thought
 
-	for i, msg := range enrichedMessages {
-		if len(msg.Trace) > 0 {
-			traceContent := "\n\n<internal_hidden_trace>\nSYSTEM NOTE: The following is your internal execution trace. NEVER output this to the user. It is for your context only.\n"
-			for _, step := range msg.Trace {
-				if step.Thought != "" {
-					traceContent += fmt.Sprintf("Thought: %s\n", step.Thought)
-				}
-				if step.Action != "" {
-					traceContent += fmt.Sprintf("Action: %s\n", step.Action)
-				}
-				if step.Observation != "" {
-					traceContent += fmt.Sprintf("Observation: %s\n", step.Observation)
-				}
-			}
-			traceContent += "</internal_hidden_trace>\n"
+				for i, step := range group {
+					var args interface{}
+					if step.ActionInput != "" {
+						var mapArgs map[string]interface{}
+						if err := json.Unmarshal([]byte(step.ActionInput), &mapArgs); err == nil {
+							args = mapArgs
+						} else {
+							args = step.ActionInput
+						}
+					}
 
-			if content, ok := msg.Content.(string); ok {
-				enrichedMessages[i].Content = content + traceContent
+					toolID := fmt.Sprintf("trace-%s-%d", step.Action, i)
+
+					// ThoughtSignature only on the first ToolCall
+					sig := ""
+					if i == 0 {
+						sig = step.ThoughtSignature
+					}
+
+					toolCalls = append(toolCalls, provider.ToolCall{
+						ID:   toolID,
+						Type: "function",
+						Function: provider.FunctionCall{
+							Name:             step.Action,
+							Arguments:        args,
+							ThoughtSignature: sig,
+						},
+					})
+				}
+
+				expanded = append(expanded, provider.Message{
+					Role:      "assistant",
+					Thought:   thought,
+					ToolCalls: toolCalls,
+				})
+
+				// 2. Build ALL tool responses for this group
+				for i, step := range group {
+					toolID := fmt.Sprintf("trace-%s-%d", step.Action, i)
+					expanded = append(expanded, provider.Message{
+						Role:       "tool",
+						Name:       step.Action,
+						Content:    step.Observation,
+						ToolCallID: toolID,
+					})
+				}
 			}
 		}
+		// Add the original message
+		expanded = append(expanded, msg)
 	}
 
-	return enrichedMessages
+	return expanded
+}
+
+// groupTraceSteps groups trace steps by StepGroup.
+// Steps with the same non-zero StepGroup are parallel (same iteration).
+// Steps with StepGroup=0 (old data) are treated as sequential (each is its own group).
+func groupTraceSteps(steps []provider.ReactStep) [][]provider.ReactStep {
+	if len(steps) == 0 {
+		return nil
+	}
+
+	var groups [][]provider.ReactStep
+	var currentGroup []provider.ReactStep
+	currentGroupID := -1
+
+	for _, step := range steps {
+		if step.StepGroup == 0 {
+			// Old data: each step is its own group (sequential)
+			if len(currentGroup) > 0 {
+				groups = append(groups, currentGroup)
+				currentGroup = nil
+				currentGroupID = -1
+			}
+			groups = append(groups, []provider.ReactStep{step})
+		} else if step.StepGroup != currentGroupID {
+			// New group
+			if len(currentGroup) > 0 {
+				groups = append(groups, currentGroup)
+			}
+			currentGroup = []provider.ReactStep{step}
+			currentGroupID = step.StepGroup
+		} else {
+			// Same group (parallel)
+			currentGroup = append(currentGroup, step)
+		}
+	}
+	if len(currentGroup) > 0 {
+		groups = append(groups, currentGroup)
+	}
+
+	return groups
 }
 
 func (a *Agent) Run(modelName string, messages []provider.Message) (provider.Message, error) {
-	// Enrich messages with trace context
-	messages = enrichContext(messages)
+	messages = reconstructHistory(messages)
 	return a.runWithIteration(modelName, messages, 0, nil)
 }
 
@@ -179,23 +256,31 @@ func (a *Agent) runWithIteration(modelName string, messages []provider.Message, 
 
 	// Check for ToolCalls
 	if len(response.ToolCalls) > 0 {
-		// Log Trace
-		var currentStep provider.ReactStep
-
-		// For now, we handle the first tool call for trace logging,
-		// but we execute all of them.
-		// Note from gemini logic: it seemed to process tool calls and return a step.
-
 		messages = append(messages, response) // Add Assistant's tool call message
 
-		for _, toolCall := range response.ToolCalls {
+		// Use real thought from model if available
+		thought := ""
+		if response.Thought != "" {
+			thought = response.Thought
+		}
+
+		// Capture ThoughtSignature from the first tool call that has one
+		var stepSignature string
+		for _, tc := range response.ToolCalls {
+			if tc.Function.ThoughtSignature != "" {
+				stepSignature = tc.Function.ThoughtSignature
+				break
+			}
+		}
+
+		stepGroup := iteration + 1
+
+		for i, toolCall := range response.ToolCalls {
 			functionName := toolCall.Function.Name
 			argsStr := argsToString(toolCall.Function.Arguments)
 
-			// Log ReAct Trace
-			thought := GenerateThought(functionName)
-			if response.Thought != "" {
-				thought = response.Thought // Use provided thought if available
+			if thought == "" {
+				thought = GenerateThought(functionName)
 			}
 
 			LogThought(thought)
@@ -204,15 +289,20 @@ func (a *Agent) runWithIteration(modelName string, messages []provider.Message, 
 			output := tools.NewTools(functionName, argsStr)
 			LogObservation(output)
 
-			// Record step (mostly for the first tool call if multiple, or aggregate?)
-			// The original code returned one 'step'. Let's record the last one or accumulate?
-			// Provider's Message.Trace is []ReactStep.
-			currentStep = provider.ReactStep{
-				Thought:     thought,
-				Action:      functionName,
-				ActionInput: argsStr,
-				Observation: output,
+			// ThoughtSignature only on the first step of the group
+			sig := ""
+			if i == 0 {
+				sig = stepSignature
 			}
+
+			traceSteps = append(traceSteps, provider.ReactStep{
+				Thought:          thought,
+				Action:           functionName,
+				ActionInput:      argsStr,
+				Observation:      output,
+				ThoughtSignature: sig,
+				StepGroup:        stepGroup,
+			})
 
 			// Add Tool Response Message
 			messages = append(messages, provider.Message{
@@ -228,8 +318,6 @@ func (a *Agent) runWithIteration(modelName string, messages []provider.Message, 
 			Role:    "user",
 			Content: ThoughtPrompt,
 		})
-
-		traceSteps = append(traceSteps, currentStep)
 
 		return a.runWithIteration(modelName, messages, iteration+1, traceSteps)
 	}
@@ -251,8 +339,7 @@ func argsToString(i interface{}) string {
 }
 
 func (a *Agent) RunStream(modelName string, messages []provider.Message, callback func(provider.Message) error) error {
-	// Enrich messages with trace context
-	messages = enrichContext(messages)
+	messages = reconstructHistory(messages)
 	return a.runStreamWithIteration(modelName, messages, callback, 0, nil)
 }
 
@@ -331,34 +418,53 @@ func (a *Agent) runStreamWithIteration(modelName string, messages []provider.Mes
 
 	// After stream finishes, check accumulatedResponse for tools
 	if len(accumulatedResponse.ToolCalls) > 0 {
-		// It's a tool call!
-		// Logic similar to Run
-
-		// Send preview of tool usage (optional, or already sent by provider?)
-		// In generic agent, we can send a "Thought" or "Status" message if we want.
-
 		messages = append(messages, accumulatedResponse)
 
-		var currentStep provider.ReactStep
+		// Use real thought from model if available
+		thought := ""
+		if accumulatedResponse.Thought != "" {
+			thought = accumulatedResponse.Thought
+		}
 
-		for _, toolCall := range accumulatedResponse.ToolCalls {
+		// Capture ThoughtSignature from the first tool call that has one
+		var stepSignature string
+		for _, tc := range accumulatedResponse.ToolCalls {
+			if tc.Function.ThoughtSignature != "" {
+				stepSignature = tc.Function.ThoughtSignature
+				break
+			}
+		}
+
+		stepGroup := iteration + 1
+
+		for i, toolCall := range accumulatedResponse.ToolCalls {
 			functionName := toolCall.Function.Name
 			argsStr := argsToString(toolCall.Function.Arguments)
 
-			thought := GenerateThought(functionName)
-			// Log
+			if thought == "" {
+				thought = GenerateThought(functionName)
+			}
+
 			LogThought(thought)
 			LogAction(functionName, argsStr)
 
 			output := tools.NewTools(functionName, argsStr)
 			LogObservation(output)
 
-			currentStep = provider.ReactStep{
-				Thought:     thought,
-				Action:      functionName,
-				ActionInput: argsStr,
-				Observation: output,
+			// ThoughtSignature only on the first step of the group
+			sig := ""
+			if i == 0 {
+				sig = stepSignature
 			}
+
+			traceSteps = append(traceSteps, provider.ReactStep{
+				Thought:          thought,
+				Action:           functionName,
+				ActionInput:      argsStr,
+				Observation:      output,
+				ThoughtSignature: sig,
+				StepGroup:        stepGroup,
+			})
 
 			messages = append(messages, provider.Message{
 				Role:       "tool",
@@ -372,8 +478,6 @@ func (a *Agent) runStreamWithIteration(modelName string, messages []provider.Mes
 			Role:    "user",
 			Content: ThoughtPrompt,
 		})
-
-		traceSteps = append(traceSteps, currentStep)
 
 		// Emit trace update immediately so UI can show tool result before next chunk
 		if err := callback(provider.Message{
