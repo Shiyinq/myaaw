@@ -81,7 +81,32 @@ If you just want to use Myaaw without worrying about code:
 
 Before you start, ensure you have:
 - [Go](https://go.dev/) **1.24.2** or later installed.
-- [Docker](https://www.docker.com/) installed.
+- [Docker](https://www.docker.com/) installed (for services).
+
+#### 🎤 Voice Feature Requirements (CGo)
+The `myaaw voice` feature relies on native system libraries for audio (PortAudio) and screen/camera capture. If you are building from source, you must install these dependencies:
+
+**macOS**
+```bash
+brew install pkg-config portaudio
+```
+*Note: macOS will prompt for Microphone, Screen Recording, and Camera permissions upon first use.*
+
+**Linux (Ubuntu/Debian)**
+```bash
+sudo apt update
+sudo apt install -y portaudio19-dev libasound2-dev pkg-config
+# For screen/camera capture:
+sudo apt install -y libx11-dev libxext-dev
+```
+
+**Windows**
+Building with CGo on Windows requires a C compiler environment like MSYS2/MinGW:
+1. Install [MSYS2](https://www.msys2.org/).
+2. Open MSYS2 MinGW 64-bit terminal and run:
+   ```bash
+   pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-portaudio
+   ```
 
 #### Infrastructure (Docker Compose)
 
@@ -217,6 +242,7 @@ The `myaaw` CLI is your control center for managing the AI assistant, infrastruc
 | Command | Description |
 | :--- | :--- |
 | `chat` | Start an interactive TUI chat session with Myaaw. Use `-m "text"` for one-shot. |
+| `voice` | Start a real-time voice conversation. Use `--video=screen,camera` to stream vision. |
 | `status` | Check the health of MongoDB, Redis, RabbitMQ, and channel configs. |
 | `logs` | Interactive TUI to select and stream logs from `~/.myaaw/logs/`. |
 
