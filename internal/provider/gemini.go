@@ -33,6 +33,7 @@ type GeminiPart struct {
 	FunctionCall     *GeminiFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *GeminiFunctionResponse `json:"functionResponse,omitempty"`
 	Thought          bool                    `json:"thought,omitempty"`
+	ThoughtSignature string                  `json:"thoughtSignature,omitempty"`
 }
 
 type GeminiContent struct {
@@ -131,102 +132,101 @@ func NewGeminiProvider(baseURL string, apiKey string, defaultModel string) LLMPr
 
 func MessagesToContents(messages []Message) []GeminiContent {
 	var contents []GeminiContent
-	for _, message := range messages {
-		contentStr, ok := message.Content.(string)
 
-		role := message.Role
-		if role == "system" {
+	for _, message := range messages {
+		if message.Role == "system" {
 			continue
 		}
 
+		role := message.Role
 		if role == "assistant" {
 			role = "model"
-		}
-
-		// Gemini API only accepts "user" and "model" roles
-		// "tool" responses should be sent as "user" with FunctionResponse
-		if role == "tool" {
+		} else if role == "tool" {
 			role = "user"
 		}
 
-		var content GeminiContent
-		if contentStr != "" && ok {
-			var parts []GeminiPart
-			if message.Thought != "" && role == "model" {
-				parts = append(parts, GeminiPart{
-					Text:    message.Thought,
-					Thought: true,
-				})
-			}
+		var parts []GeminiPart
+
+		// 1. Handle Thought (for model)
+		if message.Thought != "" && role == "model" {
+			parts = append(parts, GeminiPart{
+				Text:    message.Thought,
+				Thought: true,
+			})
+		}
+
+		// 2. Handle Text Content
+		contentStr, isStr := message.Content.(string)
+		if isStr && contentStr != "" {
 			parts = append(parts, GeminiPart{
 				Text: contentStr,
 			})
+		} else if geminiPart, isPart := message.Content.(GeminiPart); isPart {
+			// Backward compatibility or direct GeminiPart passing
+			parts = append(parts, geminiPart)
+		}
 
-			content = GeminiContent{
-				Parts: parts,
-				Role:  role,
-			}
-
-			if message.Images != nil {
-				image := &GeminiInlineData{
-					MimeType: "image/jpeg",
-					Data:     message.Images[0],
-				}
-				content.Parts = append(content.Parts, GeminiPart{InlineData: image})
-			}
-
-			contents = append(contents, content)
-		} else {
-			// Check if it's a ToolCall message from Assistant which Gemini expects?
-
-			geminiPart, ok := message.Content.(GeminiPart)
-			if ok {
-				content = GeminiContent{
-					Role: role,
-					Parts: []GeminiPart{
-						{
-							FunctionCall:     geminiPart.FunctionCall,
-							FunctionResponse: geminiPart.FunctionResponse,
-						},
-					},
-				}
-				contents = append(contents, content)
-			}
-
-			// If message has ToolCalls, we should add them as FunctionCall parts (if role is model)
-			if len(message.ToolCalls) > 0 && role == "model" {
-				// Reconstruct FunctionCall parts from ToolCalls for history
-				var parts []GeminiPart
-				// Also include text if any?
-				if contentStr != "" {
-					parts = append(parts, GeminiPart{Text: contentStr})
-				}
-
-				for _, tc := range message.ToolCalls {
-					// Arguments needs to be map[string]interface{}.
-
-					argsMap, ok := tc.Function.Arguments.(map[string]interface{})
-					if !ok {
-						// If it's not a map, maybe string?
-						if strArgs, isStr := tc.Function.Arguments.(string); isStr {
-							_ = json.Unmarshal([]byte(strArgs), &argsMap)
-						}
+		// 3. Handle Tool Calls (for model)
+		if role == "model" && len(message.ToolCalls) > 0 {
+			for _, tc := range message.ToolCalls {
+				var argsMap map[string]interface{}
+				if tc.Function.Arguments != nil {
+					switch a := tc.Function.Arguments.(type) {
+					case map[string]interface{}:
+						argsMap = a
+					case string:
+						_ = json.Unmarshal([]byte(a), &argsMap)
 					}
-
-					parts = append(parts, GeminiPart{
-						FunctionCall: &GeminiFunctionCall{
-							Name: tc.Function.Name,
-							Args: argsMap,
-						},
-					})
 				}
 
-				content = GeminiContent{
-					Role:  role,
-					Parts: parts,
-				}
-				contents = append(contents, content)
+				parts = append(parts, GeminiPart{
+					FunctionCall: &GeminiFunctionCall{
+						Name: tc.Function.Name,
+						Args: argsMap,
+					},
+					ThoughtSignature: tc.Function.ThoughtSignature,
+				})
 			}
+		}
+
+		// 4. Handle Tool Responses (for tool role)
+		if message.Role == "tool" {
+			// Gemini expects FunctionResponse to be matched by Name
+			parts = append(parts, GeminiPart{
+				FunctionResponse: &GeminiFunctionResponse{
+					Name: message.Name,
+					Response: map[string]interface{}{
+						"result": message.Content,
+					},
+				},
+			})
+		}
+
+		// 5. Handle Images (usually for user)
+		if len(message.Images) > 0 && role == "user" {
+			for _, img := range message.Images {
+				parts = append(parts, GeminiPart{
+					InlineData: &GeminiInlineData{
+						MimeType: "image/jpeg",
+						Data:     img,
+					},
+				})
+			}
+		}
+
+		if len(parts) == 0 {
+			continue
+		}
+
+		// BUNDLING LOGIC: If the last content has the same role, merge parts.
+		// This handles consecutive tool responses and user prompts (like ThoughtPrompt).
+		if len(contents) > 0 && contents[len(contents)-1].Role == role {
+			contents[len(contents)-1].Parts = append(contents[len(contents)-1].Parts, parts...)
+		} else {
+			contents = append(contents, GeminiContent{
+				Role:  role,
+				Parts: parts,
+			})
 		}
 	}
 
@@ -265,8 +265,9 @@ func contentToMessage(content GeminiContent) Message {
 			toolCalls = append(toolCalls, ToolCall{
 				Type: "function",
 				Function: FunctionCall{
-					Name:      part.FunctionCall.Name,
-					Arguments: part.FunctionCall.Args,
+					Name:             part.FunctionCall.Name,
+					Arguments:        part.FunctionCall.Args,
+					ThoughtSignature: part.ThoughtSignature,
 				},
 			})
 		}
