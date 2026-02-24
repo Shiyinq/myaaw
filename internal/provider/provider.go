@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,8 +84,13 @@ type Transcriber interface {
 	Transcribe(audioFile []byte) (string, error)
 }
 
+type Synthesizer interface {
+	Synthesize(ctx context.Context, text string) ([]byte, string, error)
+}
+
 type factoryLLM func(baseURL string, apiKey string, defaultModel string) LLMProvider
 type factoryTranscriber func(apiKey string, defaultModel string) Transcriber
+type factorySynthesizer func(apiKey string, defaultModel string) (Synthesizer, error)
 
 var LLMproviderFactories = map[string]factoryLLM{
 	"ollama": NewOllamaProvider,
@@ -110,6 +116,14 @@ var defaultTranscriberModels = map[string]string{
 	"gemini": "models/gemini-2.0-flash",
 }
 
+var SynthesizerFactories = map[string]factorySynthesizer{
+	"gemini": NewGeminiSynthesizer,
+}
+
+var defaultSynthesizerModels = map[string]string{
+	"gemini": "gemini-2.5-flash-preview-tts",
+}
+
 func CreateLLMProvider(providerName string, apiKey string) (LLMProvider, error) {
 	factory, exists := LLMproviderFactories[providerName]
 	if !exists {
@@ -128,6 +142,15 @@ func CreateTranscriber(providerName string, apiKey string) (Transcriber, error) 
 	defaultModel := defaultTranscriberModels[providerName]
 
 	return factory(apiKey, defaultModel), nil
+}
+
+func CreateSynthesizer(providerName string, apiKey string) (Synthesizer, error) {
+	factory, exists := SynthesizerFactories[providerName]
+	if !exists {
+		return nil, errors.New("unknown synthesizer provider")
+	}
+	defaultModel := defaultSynthesizerModels[providerName]
+	return factory(apiKey, defaultModel)
 }
 
 func argsToString(i interface{}) string {

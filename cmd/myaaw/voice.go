@@ -29,7 +29,7 @@ var (
 
 var voiceCmd = &cobra.Command{
 	Use:   "voice",
-	Short: "Talk to your AI assistant with voice",
+	Short: "Talk to your AI assistant with real-time voice (Gemini Live)",
 	Long:  "Start a real-time voice conversation with live audio, screen sharing, and camera support.",
 	Run: func(cmd *cobra.Command, args []string) {
 		config.LoadBaseConfig()
@@ -128,8 +128,20 @@ func runVoice() {
 	fmt.Println(theme.RenderPrimary(" 🎤 MYAAW VOICE 🎤 "))
 	fmt.Println()
 
-	// System instruction
+	// System instruction — dynamically include video awareness
 	systemInstruction := "You are Myaaw, a friendly and helpful AI voice assistant. Keep your responses concise and conversational since you are speaking out loud. Be warm and natural."
+	if len(videoModes) > 0 {
+		systemInstruction += "\n\nYou have visual capabilities. "
+		for _, mode := range videoModes {
+			switch mode {
+			case voice.VideoModeScreen:
+				systemInstruction += "You can see the user's screen (a screenshot is sent to you periodically). "
+			case voice.VideoModeCamera:
+				systemInstruction += "You can see the user through their camera (a photo is sent to you periodically). "
+			}
+		}
+		systemInstruction += "When asked about what you see, describe the visual content. You ARE able to see the screen/camera."
+	}
 
 	// Connect to Gemini Live API
 	fmt.Println(theme.RenderSecondary("  Connecting to Gemini Live API..."))
@@ -160,7 +172,7 @@ func runVoice() {
 	defer mic.Close()
 
 	// Setup speaker output
-	speaker, err := voice.NewAudioPlayer()
+	speaker, err := voice.NewAudioPlayer(0)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  ❌ Failed to open speaker: %v\n", err)
 		os.Exit(1)

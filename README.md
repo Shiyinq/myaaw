@@ -22,6 +22,7 @@
 - [x] **Agent Skills**: Dynamically extensible capabilities via `SKILL.md` definitions.
 - [x] **Powerful Tools**: Native integration with Filesystem, Bash, and Python execution.
 - [x] **Heartbeat (Autonomous Check)**: Scheduled background checks for health and tasks via `HEARTBEAT.md`.
+- [x] **CLI Voice Chat**: Native support for Real-time Voice (Gemini Live) and Classic STT/TTS pipeline with screen/camera sharing via CLI.
 
 ## 🤖 Supported Providers
 
@@ -242,7 +243,8 @@ The `myaaw` CLI is your control center for managing the AI assistant, infrastruc
 | Command | Description |
 | :--- | :--- |
 | `chat` | Start an interactive TUI chat session with Myaaw. Use `-m "text"` for one-shot. |
-| `voice` | Start a real-time voice conversation. Use `--video=screen,camera` to stream vision. |
+| `voice` | Start a real-time voice conversation (Gemini Live). Use `--video=screen,camera` to stream vision. |
+| `voice-classic` | Voice chat using STT → Agent → TTS pipeline. Supports tools. Use `--video=screen,camera` to stream vision.|
 | `status` | Check the health of MongoDB, Redis, RabbitMQ, and channel configs. |
 | `logs` | Interactive TUI to select and stream logs from `~/.myaaw/logs/`. |
 

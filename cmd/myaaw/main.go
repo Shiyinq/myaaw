@@ -21,6 +21,7 @@ func init() {
 	rootCmd.AddCommand(consumerCmd)
 	rootCmd.AddCommand(chatCmd)
 	rootCmd.AddCommand(voiceCmd)
+	rootCmd.AddCommand(voiceClassicCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(webhookCmd)
 	rootCmd.AddCommand(configCmd)
@@ -85,7 +86,7 @@ func init() {
 				}
 
 				groups := []cmdGroup{
-					{name: "Core Commands", cmdNames: []string{"chat", "voice", "status"}},
+					{name: "Core Commands", cmdNames: []string{"chat", "voice", "voice-classic", "status"}},
 					{name: "Automation", cmdNames: []string{"cron"}},
 					{name: "Service Management", cmdNames: []string{"gateway", "server", "consumer", "docker", "webhook"}},
 					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},

@@ -50,6 +50,11 @@ func (a *AudioCapture) Start() error {
 	return a.stream.Start()
 }
 
+// Stop pauses audio capture without closing the stream
+func (a *AudioCapture) Stop() error {
+	return a.stream.Stop()
+}
+
 // Read reads the next chunk of audio data as raw bytes (little-endian int16)
 func (a *AudioCapture) Read() ([]byte, error) {
 	err := a.stream.Read()
@@ -89,15 +94,20 @@ type AudioPlayer struct {
 	sampleQ  []int16 // accumulated samples waiting to be played
 	playing  bool
 	stopChan chan struct{}
+	doneChan chan struct{} // signals drainLoop has exited
 }
 
-// NewAudioPlayer creates a new audio output instance
-func NewAudioPlayer() (*AudioPlayer, error) {
+// NewAudioPlayer creates a new audio output instance.
+// sampleRate defaults to OutputSampleRate (24000) if 0 is passed.
+func NewAudioPlayer(sampleRate int) (*AudioPlayer, error) {
+	if sampleRate == 0 {
+		sampleRate = OutputSampleRate
+	}
 	outBuf := make([]int16, OutputFrameSize)
 	stream, err := portaudio.OpenDefaultStream(
 		0,              // input channels
 		OutputChannels, // output channels
-		float64(OutputSampleRate),
+		float64(sampleRate),
 		OutputFrameSize,
 		&outBuf,
 	)
@@ -108,8 +118,9 @@ func NewAudioPlayer() (*AudioPlayer, error) {
 	return &AudioPlayer{
 		stream:   stream,
 		outBuf:   outBuf,
-		sampleQ:  make([]int16, 0, OutputSampleRate*2), // pre-alloc 2s
+		sampleQ:  make([]int16, 0, sampleRate*2), // pre-alloc 2s
 		stopChan: make(chan struct{}),
+		doneChan: make(chan struct{}),
 	}, nil
 }
 
@@ -126,6 +137,7 @@ func (p *AudioPlayer) Start() error {
 
 // drainLoop continuously writes queued samples to PortAudio
 func (p *AudioPlayer) drainLoop() {
+	defer close(p.doneChan)
 	for {
 		select {
 		case <-p.stopChan:
@@ -145,7 +157,12 @@ func (p *AudioPlayer) drainLoop() {
 
 			// Write the buffer (this blocks until PortAudio consumes it)
 			if err := p.stream.Write(); err != nil {
-				log.Printf("Audio write error: %v", err)
+				select {
+				case <-p.stopChan:
+					return // shutting down, ignore error
+				default:
+					log.Printf("Audio write error: %v", err)
+				}
 			}
 		} else if available > 0 {
 			// Write a partial frame: copy what we have, zero-pad the rest
@@ -158,7 +175,12 @@ func (p *AudioPlayer) drainLoop() {
 			p.mu.Unlock()
 
 			if err := p.stream.Write(); err != nil {
-				log.Printf("Audio write error: %v", err)
+				select {
+				case <-p.stopChan:
+					return
+				default:
+					log.Printf("Audio write error: %v", err)
+				}
 			}
 		} else {
 			// Nothing to play — write silence to keep the stream alive
@@ -169,7 +191,12 @@ func (p *AudioPlayer) drainLoop() {
 				p.outBuf[i] = 0
 			}
 			if err := p.stream.Write(); err != nil {
-				log.Printf("Audio write error: %v", err)
+				select {
+				case <-p.stopChan:
+					return
+				default:
+					log.Printf("Audio write error: %v", err)
+				}
 			}
 		}
 	}
@@ -200,6 +227,7 @@ func (p *AudioPlayer) IsPlaying() bool {
 // Close stops and closes the audio stream
 func (p *AudioPlayer) Close() {
 	close(p.stopChan)
+	<-p.doneChan // wait for drainLoop to exit
 	if p.stream != nil {
 		if err := p.stream.Stop(); err != nil {
 			log.Printf("Error stopping audio player: %v", err)
