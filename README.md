@@ -42,6 +42,7 @@ Myaaw can be integrated with various platforms:
 - [✨ Key Features](#-key-features)
 - [🤖 Supported Providers](#-supported-providers)
 - [📡 Supported Channels](#-supported-channels)
+- [🏗 Architecture](#-architecture)
 - [🚀 Quick Start (Non-Technical)](#-quick-start-non-technical)
 - [🛠 Development](#-development)
   - [Prerequisites](#prerequisites)
@@ -51,6 +52,127 @@ Myaaw can be integrated with various platforms:
   - [Build from Source](#build-from-source-optional)
 - [💻 Myaaw CLI Reference](#-myaaw-cli-reference)
 
+
+## 🏗 Architecture
+
+Myaaw follows a modular, service-oriented architecture designed to seamlessly handle multiple communication channels, queue-based background processing, and a robust AI Agentic loop.
+
+```mermaid
+graph TD
+    %% Users
+    User([User])
+
+    %% Entry Points
+    subgraph "Channels & Entry Points"
+        TG[Telegram Bot]
+        DC[Discord Bot]
+        CLI_Term[Terminal CLI]
+        CLI_Voice[Voice CLI / Gemini Live]
+        CLI_Classic[Voice Classic CLI]
+        API[REST API]
+    end
+
+    User <--> TG
+    User <--> DC
+    User <--> CLI_Term
+    User <--> CLI_Voice
+    User <--> CLI_Classic
+    User <--> API
+
+    %% Async processing
+    subgraph "Message Queue Layer"
+        MQ[(RabbitMQ)]
+    end
+
+    TG --> MQ
+    DC --> MQ
+
+    %% Core Services
+    subgraph "Core System"
+        Router[Fiber Server]
+        BotSvc[Bot Service]
+        ChReg[Channel Registry]
+        DB[(MongoDB)]
+        Cache[(Redis)]
+    end
+
+    API --> Router
+
+    %% Consumer & Background Tasks
+    subgraph "Consumer Daemon"
+        Consumer[Myaaw Consumer]
+        Cron[Cron Scheduler]
+        Heartbeat[Heartbeat Monitor]
+    end
+
+    MQ --> Consumer
+    
+    Cron -- "Webhook forwarding" --> Router
+    Heartbeat -- "Webhook forwarding" --> Router
+    Consumer -- "Webhook forwarding" --> Router
+
+    Router --> BotSvc
+    CLI_Term --> BotSvc
+
+    BotSvc <--> ChReg
+    BotSvc <--> DB
+    BotSvc <--> Cache
+
+    %% Agentic Layer
+    subgraph "Agentic Layer"
+        Agent[ReAct Agent Loop]
+        Tools[Tools: Bash, FS, Python]
+        Prov[Providers: Gemini]
+    end
+
+    %% Agent Local Workspace
+    subgraph "Local Workspace"
+        direction TB
+        Skills[~/.myaaw/skills/ <br> Additional Agent Skills]
+        Home[~/.myaaw/home/ <br> AGENTS.md, BOOTSTRAP.md, HEARTBEAT.md, <br> MEMORY.md, SOUL.md, TOOLS.md, USER.md, <br> memory/]
+    end
+
+    BotSvc <--> Agent
+    CLI_Classic <--> Agent
+    CLI_Voice <--> Prov
+    Agent <--> Tools
+    Agent <--> Prov
+    
+    Agent -. "Loads definitions" .-> Skills
+    Agent -. "Reads/Writes" .-> Home
+
+    %% Styling
+    classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px,color:#000;
+    classDef storage fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#000;
+    classDef core fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000;
+    classDef agent fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000;
+    classDef auto fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px,color:#000;
+    classDef wksp fill:#e0f7fa,stroke:#00acc1,stroke-width:2px,color:#000;
+    
+    class MQ,DB,Cache storage;
+    class BotSvc,Router,ChReg core;
+    class Agent,Tools,Prov agent;
+    class Consumer,Cron,Heartbeat auto;
+    class Skills,Home wksp;
+```
+
+### Key Components
+
+1. **Channels (`internal/channel`)**: The entry point for interactions. It provides an `Adapter` interface to normalize messages from Telegram, Discord, REST APIs, or Terminal CLI into a standard format.
+2. **Gateway & Daemons (`cmd/myaaw`)**: Uses Cobra CLI to manage the application. It runs the Fiber Web Server and the RabbitMQ Consumer as independent background daemons. It also provides pure CLI modalities like `myaaw chat` and `myaaw voice`.
+3. **Bot Service (`internal/services/bot`)**: The core brain of the application. It processes normalized messages from external channels and Terminal CLI, retrieves chat history from MongoDB, and invokes the AI Agent. Voice CLIs (`myaaw voice`/`voice-classic`) bypass this to connect directly to the Agent/Providers for lower latency.
+4. **Agentic Layer (`internal/agent`)**: Implements the ReAct (Reasoning and Action) loop. It intelligently decides when to interact with the LLM or when to execute tools (Bash, Python, FileSystem) to accomplish the user's objective.
+5. **Providers (`internal/provider`)**: A factory-based abstraction layer for various LLMs (Gemini, OpenAI, Groq, Ollama), Transcribers (STT), and Synthesizers (TTS). Currently, Gemini is the main provider for Myaaw's intelligence and live-voice functionality.
+6. **Message Queue (`internal/services/queue`)**: Handles asynchronous webhook messaging. Webhook payloads are pushed to RabbitMQ and processed by the Consumer daemon to reliably deliver messages.
+7. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers residing inside the Consumer Daemon. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
+8. **Local Workspace (`~/.myaaw`)**: The operational directory for the Agent.
+   - `skills/`: Dynamically parsed text definitions of new tools that Myaaw can learn and execute.
+   - `home/`: Long-term file storage containing Myaaw's core definitions:
+     - `AGENTS.md` / `SOUL.md`: Persona and behavior instructions.
+     - `BOOTSTRAP.md` / `TOOLS.md`: Initialization steps and tool usage rules.
+     - `USER.md`: Facts and details learned about the user.
+     - `HEARTBEAT.md`: Ongoing active background jobs and tasks.
+     - `MEMORY.md` & `memory/`: Historical conversation summarizations and logs.
 
 ## 🚀 Quick Start (Non-Technical)
 
@@ -74,6 +196,8 @@ If you just want to use Myaaw without worrying about code:
     ```bash
     myaaw status
     ```
+
+
 
 ## 🛠 Development
 
