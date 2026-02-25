@@ -217,6 +217,14 @@ func (p *AudioPlayer) Play(data []byte) error {
 	return nil
 }
 
+// Flush clears the current audio playback queue immediately
+func (p *AudioPlayer) Flush() {
+	p.mu.Lock()
+	p.sampleQ = p.sampleQ[:0]
+	p.playing = false
+	p.mu.Unlock()
+}
+
 // IsPlaying returns true if there is audio data being played
 func (p *AudioPlayer) IsPlaying() bool {
 	p.mu.Lock()

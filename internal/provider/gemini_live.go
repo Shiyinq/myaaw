@@ -22,6 +22,7 @@ const (
 	LiveResponseTurnDone                            // model finished speaking
 	LiveResponseUserSpeech                          // user speech transcription (input)
 	LiveResponseModelSpeech                         // model speech transcription (output)
+	LiveResponseInterrupted                         // model was interrupted by user
 )
 
 // LiveResponse represents a response from the Gemini Live API
@@ -114,6 +115,17 @@ func (s *GeminiLiveSession) SendVideoFrame(jpegData []byte) error {
 	)
 }
 
+// Interrupt signals the model to stop its current turn and listen immediately
+func (s *GeminiLiveSession) Interrupt() error {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+
+	turnComplete := true
+	return s.session.SendClientContent(genai.LiveClientContentInput{
+		TurnComplete: &turnComplete,
+	})
+}
+
 // Receive listens for responses from the session and sends them to the provided channel.
 // This function blocks and should be run in a goroutine.
 func (s *GeminiLiveSession) Receive(responseChan chan<- LiveResponse) {
@@ -153,6 +165,11 @@ func (s *GeminiLiveSession) Receive(responseChan chan<- LiveResponse) {
 						Type: LiveResponseModelSpeech,
 						Text: msg.ServerContent.OutputTranscription.Text,
 					}
+				}
+
+				// Handle interruption signal from server
+				if msg.ServerContent.Interrupted {
+					responseChan <- LiveResponse{Type: LiveResponseInterrupted}
 				}
 
 				// Handle model audio/text content

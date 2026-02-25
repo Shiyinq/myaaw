@@ -10,13 +10,14 @@ import (
 	"myaaw/internal/provider"
 	"myaaw/internal/voice"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
+	"sync/atomic"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gordonklaus/portaudio"
 	"github.com/spf13/cobra"
 )
@@ -152,8 +153,6 @@ func runVoice() {
 		os.Exit(1)
 	}
 	defer session.Close()
-	fmt.Println(theme.RenderSecondary("  ✓ Connected!"))
-	fmt.Println()
 
 	// Initialize PortAudio
 	if err := portaudio.Initialize(); err != nil {
@@ -179,31 +178,7 @@ func runVoice() {
 	}
 	defer speaker.Close()
 
-	// Print status
-	fmt.Print(theme.RenderSecondary("  🎤 Mic: "))
-	fmt.Println("Ready")
-	fmt.Print(theme.RenderSecondary("  🔊 Speaker: "))
-	fmt.Println("Ready")
-
-	if len(videoModes) > 0 {
-		for _, mode := range videoModes {
-			switch mode {
-			case voice.VideoModeScreen:
-				fmt.Print(theme.RenderSecondary("  🖥️  Screen: "))
-				fmt.Printf("Capturing every %ds\n", videoInterval)
-			case voice.VideoModeCamera:
-				fmt.Print(theme.RenderSecondary("  📷 Camera: "))
-				fmt.Printf("Capturing every %ds\n", videoInterval)
-			}
-		}
-	}
-
-	if transcript != nil {
-		fmt.Print(theme.RenderSecondary("  📝 Transcript: "))
-		fmt.Printf("voice-transcript-%s.log\n", time.Now().Format("2006-01-02"))
-	}
-
-	// Setup frame saving early so we can display info in status section
+	// Setup frame saving early
 	var framesDir string
 	if saveFrames && len(videoModes) > 0 {
 		sessionName := time.Now().Format("2006-01-02") + "/" + time.Now().Format("15.04.05")
@@ -214,50 +189,36 @@ func runVoice() {
 		if err := os.MkdirAll(framesDir, 0755); err != nil {
 			log.Printf("Warning: could not create frames dir: %v", err)
 			framesDir = ""
-		} else {
-			fmt.Print(theme.RenderSecondary("  💾 Frames: "))
-			fmt.Printf("~/.myaaw/logs/frames/%s/\n", sessionName)
 		}
 	}
-
-	fmt.Println()
-	fmt.Println(theme.RenderPrimary("  Start speaking! Press Ctrl+C to stop."))
-	fmt.Println()
-
-	// Show initial listening indicator
-	fmt.Print("  🎤 Listening... ")
 
 	// Context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle Ctrl+C
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
 	var wg sync.WaitGroup
+	var aiSpeaking atomic.Bool
 
-	// State tracking for UI
-	var uiMu sync.Mutex
-	aiSpeaking := false
-	lastUserText := ""
-	lastAIText := ""
+	// Initialize Bubble Tea Program
+	p := tea.NewProgram(initialVoiceModel(videoModes, videoInterval, transcript, framesDir), tea.WithAltScreen())
 
-	// Response channel from Gemini
 	responseChan := make(chan provider.LiveResponse, 100)
 
-	// Start receiving responses from Gemini
+	// Receiver
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		session.Receive(responseChan)
 	}()
 
-	// Start microphone capture goroutine
+	// Microphone — always sends audio to Gemini, server-side VAD handles interruption
 	mic.Start()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		silenceFrames := 0
+		isSpeaking := false
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -271,29 +232,48 @@ func runVoice() {
 					log.Printf("Mic read error: %v", err)
 					continue
 				}
-				// During AI speech, only send mic audio if it's loud enough
-				// (user speaking directly into mic vs. speaker echo picked up)
-				uiMu.Lock()
-				speaking := aiSpeaking
-				uiMu.Unlock()
-				if speaking && !isLoudEnough(data, 1500) {
-					continue // skip quiet audio (likely speaker echo)
-				}
+
+				// Always send all audio to Gemini — it handles VAD server-side
 				if err := session.SendAudio(data); err != nil {
 					if ctx.Err() != nil {
 						return
 					}
 					log.Printf("Send audio error: %v", err)
 				}
+
+				// UI indicator only when AI is NOT speaking
+				if aiSpeaking.Load() {
+					continue
+				}
+
+				loud := isLoudEnough(data, 800)
+				if loud {
+					silenceFrames = 0
+					if !isSpeaking {
+						isSpeaking = true
+						p.Send(userLoudMsg{})
+					}
+				} else if isSpeaking {
+					silenceFrames++
+					if silenceFrames > 8 {
+						isSpeaking = false
+						p.Send(userQuietMsg{})
+					}
+				}
 			}
 		}
 	}()
 
-	// Start speaker playback + response handling goroutine
+	// Speaker & AI logic
 	speaker.Start()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+
+		lastUserText := ""
+		lastAISpoken := ""   // what the model actually says out loud
+		lastAIThoughts := "" // internal reasoning/thinking text
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -303,75 +283,50 @@ func runVoice() {
 					return
 				}
 
-				uiMu.Lock()
 				switch resp.Type {
 				case provider.LiveResponseUserSpeech:
-					// Stream user speech inline
-					if !aiSpeaking {
-						if lastUserText == "" {
-							fmt.Print("\r\033[K  🎤 You: ") // clear "Listening..." and print prefix
-						}
-						fmt.Print(resp.Text) // just append the delta
-						lastUserText += resp.Text
-					}
+					lastUserText += resp.Text
+					p.Send(userTextMsg(lastUserText))
 
 				case provider.LiveResponseModelSpeech:
-					// Stream AI speech inline
-					if lastUserText != "" && lastAIText == "" {
-						// User finished, AI starting
-						fmt.Println()
-						fmt.Println() // blank line between user and AI
-						if transcript != nil {
-							transcript.LogUser(lastUserText)
-						}
+					if lastAISpoken == "" {
+						p.Send(aiStartMsg{})
+						aiSpeaking.Store(true)
 					}
-					if lastAIText == "" {
-						fmt.Print("\r\033[K  🐱 Myaaw: ") // clear indicator and print prefix
-					}
-					fmt.Print(resp.Text) // just append the delta
-					lastAIText += resp.Text
+					lastAISpoken += resp.Text
+					p.Send(aiTextMsg(lastAISpoken))
 
 				case provider.LiveResponseAudio:
-					if !aiSpeaking {
-						aiSpeaking = true
-						if lastUserText != "" && lastAIText == "" {
-							fmt.Println()
-							fmt.Println()
-							if transcript != nil {
-								transcript.LogUser(lastUserText)
-							}
-						}
-						if lastAIText == "" {
-							fmt.Print("\r\033[K  ⏳ AI is responding...")
-						}
+					if !aiSpeaking.Load() {
+						p.Send(aiStartMsg{})
+						aiSpeaking.Store(true)
 					}
 					if err := speaker.Play(resp.AudioData); err != nil {
 						log.Printf("Speaker play error: %v", err)
 					}
 
 				case provider.LiveResponseText:
-					if lastUserText != "" && lastAIText == "" {
-						fmt.Println()
-						if transcript != nil {
-							transcript.LogUser(lastUserText)
-						}
-						lastUserText = ""
-					}
-					fmt.Printf("\n  🐱 %s", resp.Text)
+					lastAIThoughts += resp.Text
 
 				case provider.LiveResponseTurnDone:
-					if lastAIText != "" {
-						if transcript != nil {
-							transcript.LogAI(lastAIText)
+					if transcript != nil {
+						if lastUserText != "" {
+							transcript.LogUser(lastUserText)
+						}
+						if lastAISpoken != "" {
+							transcript.LogAI(lastAISpoken)
+						}
+						if lastAIThoughts != "" {
+							log.Printf("AI Thoughts: %s", lastAIThoughts)
 						}
 					}
-					lastAIText = ""
+					p.Send(turnDoneMsg{userText: lastUserText, aiText: lastAISpoken})
 					lastUserText = ""
-					aiSpeaking = false
-					fmt.Println()
-					fmt.Print("\n  🎤 Listening... ")
+					lastAISpoken = ""
+					lastAIThoughts = ""
+					aiSpeaking.Store(false)
+					p.Send(aiDoneMsg{})
 				}
-				uiMu.Unlock()
 			}
 		}
 	}()
@@ -416,8 +371,11 @@ func runVoice() {
 		}()
 	}
 
-	// Wait for shutdown signal
-	<-sigChan
+	// START TEA PROGRAM (blocks until ctrl+c)
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Error running UI: %v\n", err)
+	}
+
 	fmt.Println("\n\n  👋 Stopping voice session...")
 	cancel()
 
@@ -436,6 +394,291 @@ func runVoice() {
 
 	fmt.Println(theme.RenderSecondary("  Session ended. See you! 🐾"))
 	fmt.Println()
+}
+
+type uiState int
+
+const (
+	stateIdle uiState = iota
+	stateUserSpeaking
+	stateAIThinking
+	stateAISpeaking
+)
+
+type tickMsg time.Time
+type userLoudMsg struct{}
+type userQuietMsg struct{}
+type aiStartMsg struct{}
+type aiDoneMsg struct{}
+type userTextMsg string
+type aiTextMsg string
+type turnDoneMsg struct {
+	userText string
+	aiText   string
+}
+
+type voiceModel struct {
+	state        uiState
+	waveOffset   int
+	width        int
+	height       int
+	quitting     bool
+	currentUser  string // current turn user text (streaming)
+	currentAI    string // current turn AI text (streaming)
+	lastUserText string // last completed turn user text
+	lastAIText   string // last completed turn AI text
+	// Session info for bottom display
+	videoModes    []voice.VideoMode
+	videoInterval int
+	transcriptLog string // transcript file path display
+	framesDir     string // frames dir display
+}
+
+func initialVoiceModel(videoModes []voice.VideoMode, videoInterval int, transcript *voiceTranscriptLogger, framesDir string) voiceModel {
+	transcriptLog := ""
+	if transcript != nil {
+		transcriptLog = "~/.myaaw/logs/voice-transcript-" + time.Now().Format("2006-01-02") + ".log"
+	}
+	framesDirDisplay := ""
+	if framesDir != "" {
+		homeDir, _ := os.UserHomeDir()
+		framesDirDisplay = strings.TrimPrefix(framesDir, homeDir)
+		framesDirDisplay = "~" + framesDirDisplay
+	}
+	return voiceModel{
+		state:         stateIdle,
+		videoModes:    videoModes,
+		videoInterval: videoInterval,
+		transcriptLog: transcriptLog,
+		framesDir:     framesDirDisplay,
+	}
+}
+
+func (m voiceModel) Init() tea.Cmd {
+	return tickCmd()
+}
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(time.Millisecond*100, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
+func (m voiceModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			m.quitting = true
+			return m, tea.Quit
+		}
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+	case tickMsg:
+		m.waveOffset++
+		return m, tickCmd()
+	case userLoudMsg:
+		m.state = stateUserSpeaking
+		m.lastUserText = "" // clear old user text when speaking again
+	case userQuietMsg:
+		if m.state == stateUserSpeaking {
+			m.state = stateIdle
+		}
+	case aiStartMsg:
+		m.state = stateAISpeaking
+		m.currentUser = ""  // clear user text when AI starts
+		m.lastUserText = "" // fully clear previous user text
+	case aiDoneMsg:
+		m.state = stateIdle
+		m.currentAI = ""
+		m.currentUser = ""
+	case userTextMsg:
+		m.currentUser = string(msg)
+	case aiTextMsg:
+		m.currentAI = string(msg)
+	case turnDoneMsg:
+		if msg.userText != "" {
+			m.lastUserText = msg.userText
+		}
+		if msg.aiText != "" {
+			m.lastAIText = msg.aiText
+		}
+	}
+	return m, nil
+}
+
+func wordWrap(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return s
+	}
+	var result strings.Builder
+	lineLen := 0
+	words := strings.Fields(s)
+	for i, word := range words {
+		wLen := len(word)
+		if i > 0 && lineLen+1+wLen > maxWidth {
+			result.WriteString("\n")
+			lineLen = 0
+		}
+		if lineLen > 0 {
+			result.WriteString(" ")
+			lineLen++
+		}
+		result.WriteString(word)
+		lineLen += wLen
+	}
+	return result.String()
+}
+
+func (m voiceModel) View() string {
+	if m.width == 0 || m.height == 0 || m.quitting {
+		return ""
+	}
+
+	var text string
+	var wave string
+
+	waveChars := []rune{' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
+	bars := make([]rune, 5)
+	for i := 0; i < 5; i++ {
+		idx := int((math.Sin(float64(m.waveOffset)/2.0+float64(i)) + 1.0) * 3.5)
+		if idx < 0 {
+			idx = 0
+		}
+		if idx > 7 {
+			idx = 7
+		}
+		bars[i] = waveChars[idx]
+	}
+	wave = string(bars)
+
+	switch m.state {
+	case stateIdle:
+		text = theme.RenderSecondary("Listening...")
+	case stateUserSpeaking:
+		text = theme.RenderSuccess(wave + " You are speaking...")
+	case stateAIThinking:
+		text = theme.RenderWarning("Myaaw is thinking...")
+	case stateAISpeaking:
+		text = theme.HighlightStyle.Render("🐱")
+		text = lipgloss.JoinVertical(lipgloss.Center,
+			text,
+			theme.HighlightStyle.Render(wave+" Myaaw is speaking..."),
+		)
+	}
+
+	statusLine := text
+
+	// Build chat text section below the animation
+	maxTextWidth := m.width / 2
+	if maxTextWidth < 30 {
+		maxTextWidth = 30
+	}
+	if maxTextWidth > 80 {
+		maxTextWidth = 80
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+
+	var chatLines []string
+
+	// Show ONLY current speaker's text (not both at the same time)
+	switch m.state {
+	case stateUserSpeaking, stateIdle:
+		// When user is speaking or idle, show user text
+		if m.currentUser != "" {
+			chatLines = append(chatLines, dimStyle.Render(wordWrap(m.currentUser, maxTextWidth)))
+		} else if m.lastUserText != "" {
+			chatLines = append(chatLines, dimStyle.Render(wordWrap(m.lastUserText, maxTextWidth)))
+		}
+	case stateAISpeaking, stateAIThinking:
+		// When AI is speaking, show AI text
+		if m.currentAI != "" {
+			chatLines = append(chatLines, dimStyle.Render(wordWrap(m.currentAI, maxTextWidth)))
+		} else if m.lastAIText != "" {
+			chatLines = append(chatLines, dimStyle.Render(wordWrap(m.lastAIText, maxTextWidth)))
+		}
+	}
+
+	chatSection := ""
+	if len(chatLines) > 0 {
+		// Left-align chat lines within a fixed-width centered box
+		chatSection = lipgloss.JoinVertical(lipgloss.Left, chatLines...)
+	}
+
+	// Build info section (video modes, transcript, frames) — no emojis
+	var infoLines []string
+	for _, mode := range m.videoModes {
+		switch mode {
+		case voice.VideoModeScreen:
+			infoLines = append(infoLines, dimStyle.Render(fmt.Sprintf("Screen: Capturing every %ds", m.videoInterval)))
+		case voice.VideoModeCamera:
+			infoLines = append(infoLines, dimStyle.Render(fmt.Sprintf("Camera: Capturing every %ds", m.videoInterval)))
+		}
+	}
+	if m.transcriptLog != "" {
+		infoLines = append(infoLines, dimStyle.Render("Transcript: "+m.transcriptLog))
+	}
+	if m.framesDir != "" {
+		infoLines = append(infoLines, dimStyle.Render("Frames: "+m.framesDir))
+	}
+
+	infoSection := ""
+	if len(infoLines) > 0 {
+		infoSection = lipgloss.JoinVertical(lipgloss.Left, infoLines...)
+	}
+
+	instruction := dimStyle.Render("Press Ctrl+C to stop")
+
+	// --- Layout: center animation + chat in the middle, info + instruction at bottom ---
+	// Top section: animation + chat (vertically centered)
+	var topParts []string
+	topParts = append(topParts, statusLine)
+	if chatSection != "" {
+		topParts = append(topParts, "", lipgloss.PlaceHorizontal(lipgloss.Width(statusLine), lipgloss.Center, chatSection))
+	}
+	topBlock := lipgloss.JoinVertical(lipgloss.Center, topParts...)
+
+	// Bottom section: info + ctrl+c (centered)
+	var bottomParts []string
+	if infoSection != "" {
+		bottomParts = append(bottomParts, infoSection)
+	}
+	bottomParts = append(bottomParts, "", instruction)
+	bottomBlock := lipgloss.JoinVertical(lipgloss.Center, bottomParts...)
+
+	// Place top block in center of screen, bottom block at absolute bottom
+	topBlockHeight := lipgloss.Height(topBlock)
+	bottomBlockHeight := lipgloss.Height(bottomBlock)
+
+	// Center the top block vertically (offset slightly above true center)
+	topPad := (m.height - topBlockHeight - bottomBlockHeight) / 2
+	if topPad < 1 {
+		topPad = 1
+	}
+
+	// Gap between top and bottom
+	gap := m.height - topPad - topBlockHeight - bottomBlockHeight
+	if gap < 1 {
+		gap = 1
+	}
+
+	// Center everything horizontally
+	topCentered := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, topBlock)
+	bottomCentered := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, bottomBlock)
+
+	// Build full screen: top padding + top block + gap + bottom block
+	var sb strings.Builder
+	for i := 0; i < topPad; i++ {
+		sb.WriteString("\n")
+	}
+	sb.WriteString(topCentered)
+	for i := 0; i < gap; i++ {
+		sb.WriteString("\n")
+	}
+	sb.WriteString(bottomCentered)
+
+	return sb.String()
 }
 
 func parseVideoModes(source string) []voice.VideoMode {
