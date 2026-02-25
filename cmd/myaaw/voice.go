@@ -233,17 +233,17 @@ func runVoice() {
 					continue
 				}
 
-				// Always send all audio to Gemini — it handles VAD server-side
+				// Skip mic input while AI is speaking (avoids sending speaker echo to Gemini)
+				if aiSpeaking.Load() {
+					continue
+				}
+
+				// Send audio to Gemini only when AI is NOT speaking
 				if err := session.SendAudio(data); err != nil {
 					if ctx.Err() != nil {
 						return
 					}
 					log.Printf("Send audio error: %v", err)
-				}
-
-				// UI indicator only when AI is NOT speaking
-				if aiSpeaking.Load() {
-					continue
 				}
 
 				loud := isLoudEnough(data, 800)
