@@ -402,6 +402,7 @@ const (
 	stateIdle uiState = iota
 	stateUserSpeaking
 	stateAIThinking
+	stateAIGeneratingAudio
 	stateAISpeaking
 )
 
