@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"myaaw/internal/services/bot/service"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -36,7 +38,12 @@ var chatCmd = &cobra.Command{
 		adapter := cliAdapter.NewCLIAdapter()
 
 		if chatMessage != "" {
-			runOneShot(botService, adapter, chatMessage)
+			text, images, err := parseFileAttachments(chatMessage)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "❌ Error parsing attachments: %v\n", err)
+				os.Exit(1)
+			}
+			runOneShot(botService, adapter, text, images)
 		} else {
 			runInteractive(botService, adapter)
 		}
@@ -53,18 +60,19 @@ func createBotService() service.BotService {
 	return service.NewBotService(userRepo, convRepo)
 }
 
-func createIncomingMessage(text string) *channel.IncomingMessage {
+func createIncomingMessage(text string, images []string) *channel.IncomingMessage {
 	payload, _ := json.Marshal(map[string]interface{}{
 		"user_id": 0,
 		"text":    text,
 	})
 	adapter := cliAdapter.NewCLIAdapter()
 	msg, _ := adapter.ParseIncoming(payload)
+	msg.Images = images
 	return msg
 }
 
-func runOneShot(botService service.BotService, adapter *cliAdapter.CLIAdapter, message string) {
-	msg := createIncomingMessage(message)
+func runOneShot(botService service.BotService, adapter *cliAdapter.CLIAdapter, message string, images []string) {
+	msg := createIncomingMessage(message, images)
 
 	if config.StreamResponse {
 		_, err := adapter.SendStream(msg, func(onChunk func(chunk channel.StreamChunk)) error {
@@ -114,6 +122,10 @@ type model struct {
 	renderer   *glamour.TermRenderer
 
 	sub chan nextChunkMsg
+
+	suggestions      []string
+	suggestionIndex  int
+	isAutocompleting bool
 }
 
 type chatMessage_ struct {
@@ -229,6 +241,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.isAutocompleting && len(m.suggestions) > 0 {
+			switch msg.String() {
+			case "up":
+				m.suggestionIndex = (m.suggestionIndex - 1 + len(m.suggestions)) % len(m.suggestions)
+				return m, nil
+			case "down":
+				m.suggestionIndex = (m.suggestionIndex + 1) % len(m.suggestions)
+				return m, nil
+			case "tab", "enter":
+				isDir := m.applySuggestion()
+				if !isDir {
+					m.isAutocompleting = false
+					m.suggestions = nil
+				}
+				return m, nil
+			}
+		}
+
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			return m, tea.Quit
@@ -247,14 +277,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 
+			processedText, images, err := parseFileAttachments(text)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage_{role: "bot", text: fmt.Sprintf("❌ Error attachment: %v", err)})
+				m.textInput.Reset()
+				m.state = stateInput
+				m.updateViewportContent()
+				return m, nil
+			}
+
 			m.messages = append(m.messages, chatMessage_{role: "user", text: text})
 			m.textInput.Reset()
 			m.state = stateWaiting
 			m.streaming = ""
 			m.streamingThought = ""
 			m.thoughtExpanded = false
+			m.isAutocompleting = false
+			m.suggestions = nil
 			m.updateViewportContent()
-			return m, m.sendMessage(text)
+			return m, m.sendMessage(processedText, images)
 		}
 
 		if msg.String() == "ctrl+t" {
@@ -332,7 +373,139 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	m.textInput, tiCmd = m.textInput.Update(msg)
 
+	// Check for autocomplete trigger
+	if m.state == stateInput {
+		m.updateAutocomplete()
+	}
+
 	return m, tea.Batch(tiCmd, vpCmd)
+}
+
+func (m *model) updateAutocomplete() {
+	val := m.textInput.Value()
+	cursor := m.textInput.Position()
+
+	// Find the last '@' before the cursor
+	lastAt := strings.LastIndex(val[:cursor], "@")
+	if lastAt == -1 {
+		m.isAutocompleting = false
+		m.suggestions = nil
+		return
+	}
+
+	// Only autocomplete if there's no space between '@' and cursor
+	if strings.Contains(val[lastAt:cursor], " ") {
+		m.isAutocompleting = false
+		m.suggestions = nil
+		return
+	}
+
+	m.isAutocompleting = true
+	prefix := val[lastAt+1 : cursor]
+	m.updateSuggestions(prefix)
+}
+
+func (m *model) updateSuggestions(prefix string) {
+	dir := "."
+	originalPrefix := prefix
+
+	if strings.HasSuffix(prefix, "/") {
+		dir = prefix
+		prefix = ""
+	} else if strings.Contains(prefix, "/") {
+		dir = filepath.Dir(prefix)
+		prefix = filepath.Base(prefix)
+	}
+
+	// Resolve ~ in dir
+	if strings.HasPrefix(dir, "~") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			dir = filepath.Join(home, dir[1:])
+		}
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		m.suggestions = nil
+		return
+	}
+
+	var matches []string
+	for _, f := range entries {
+		name := f.Name()
+		if f.IsDir() {
+			name += "/"
+		}
+
+		// If prefix is empty (just @ or ending in /), show all (non-hidden unless prefix starts with .)
+		if prefix == "" {
+			if !strings.HasPrefix(name, ".") || strings.HasPrefix(originalPrefix, ".") {
+				fullPath := name
+				if dir != "." && dir != "./" {
+					fullPath = filepath.Join(dir, name)
+					if f.IsDir() && !strings.HasSuffix(fullPath, "/") {
+						fullPath += "/"
+					}
+				}
+				matches = append(matches, fullPath)
+			}
+			continue
+		}
+
+		if strings.HasPrefix(strings.ToLower(name), strings.ToLower(prefix)) {
+			fullPath := name
+			if dir != "." && dir != "./" {
+				fullPath = filepath.Join(dir, name)
+				if f.IsDir() && !strings.HasSuffix(fullPath, "/") {
+					fullPath += "/"
+				}
+			}
+			matches = append(matches, fullPath)
+		}
+	}
+	if len(matches) == 0 {
+		m.suggestions = []string{"(no files found)"}
+		m.suggestionIndex = 0
+		return
+	}
+	m.suggestions = matches
+	if m.suggestionIndex >= len(matches) {
+		m.suggestionIndex = 0
+	}
+}
+
+func (m *model) applySuggestion() bool {
+	if len(m.suggestions) == 0 {
+		return false
+	}
+	val := m.textInput.Value()
+	cursor := m.textInput.Position()
+	lastAt := strings.LastIndex(val[:cursor], "@")
+	if lastAt == -1 {
+		return false
+	}
+
+	suggestion := m.suggestions[m.suggestionIndex]
+	if suggestion == "(no files found)" {
+		return false
+	}
+	isDir := strings.HasSuffix(suggestion, "/")
+
+	applied := suggestion
+	if !isDir {
+		// Wrap in quotes if it contains spaces
+		if strings.Contains(applied, " ") {
+			applied = "\"" + applied + "\""
+		}
+		applied += " "
+	}
+
+	newVal := val[:lastAt+1] + applied + val[cursor:]
+	m.textInput.SetValue(newVal)
+	m.textInput.SetCursor(lastAt + 1 + len(applied))
+
+	return isDir
 }
 
 func waitForChunk(sub chan nextChunkMsg) tea.Cmd {
@@ -341,11 +514,11 @@ func waitForChunk(sub chan nextChunkMsg) tea.Cmd {
 	}
 }
 
-func (m *model) sendMessage(text string) tea.Cmd {
+func (m *model) sendMessage(text string, images []string) tea.Cmd {
 	m.sub = make(chan nextChunkMsg)
 
 	go func() {
-		msg := createIncomingMessage(text)
+		msg := createIncomingMessage(text, images)
 		if config.StreamResponse {
 			_, err := m.botService.BotStream(msg, func(chunk channel.StreamChunk) {
 				m.sub <- nextChunkMsg{chunk: chunk}
@@ -442,13 +615,71 @@ func (m *model) updateViewportContent() {
 
 func (m model) View() string {
 	header := headerStyle.Render(" 🐾 MYAAW CLI 🐾 ")
-	footer := footerStyle.Render("  Esc/Ctrl+C: Quit • ↑/↓: Scroll • Ctrl+T/Click: Toggle Reasoning • Type /exit to leave  ")
+
+	footerText := "  Esc/Ctrl+C: Quit • ↑/↓: Scroll Chat • @: Attach File • Ctrl+T/Click: Toggle Reasoning  "
+	if m.isAutocompleting && len(m.suggestions) > 0 {
+		footerText = "  Esc: Cancel • ↑/↓: Navigate • Tab/Enter: Select  "
+	}
+	footer := footerStyle.Render(footerText)
+
+	var autocomplete string
+	if m.isAutocompleting && len(m.suggestions) > 0 {
+		var b strings.Builder
+
+		maxItems := 10
+		start := 0
+		if m.suggestionIndex >= maxItems {
+			start = m.suggestionIndex - maxItems + 1
+		}
+		end := start + maxItems
+		if end > len(m.suggestions) {
+			end = len(m.suggestions)
+		}
+
+		b.WriteString(theme.HighlightStyle.Render("  Suggestions (Arrow Up/Down to navigate, Tab/Enter to select):") + "\n")
+
+		if start > 0 {
+			b.WriteString(theme.MutedStyle.Render("    ↑ ... more") + "\n")
+		}
+
+		for i := start; i < end; i++ {
+			s := m.suggestions[i]
+			marker := "  "
+			style := lipgloss.NewStyle()
+			if s == "(no files found)" {
+				style = theme.MutedStyle.Italic(true)
+			} else if i == m.suggestionIndex {
+				marker = "❯ "
+				style = theme.HighlightStyle.Bold(true)
+			}
+			b.WriteString(fmt.Sprintf("%s%s\n", marker, style.Render(s)))
+		}
+
+		if end < len(m.suggestions) {
+			b.WriteString(theme.MutedStyle.Render("    ↓ ... more") + "\n")
+		}
+
+		autocomplete = b.String()
+	}
+
+	inputView := m.textInput.View()
+	if autocomplete != "" {
+		// Place autocomplete above footer, but separated
+		return fmt.Sprintf(
+			"%s\n\n%s\n\n%s\n%s\n%s",
+			header,
+			m.viewport.View(),
+			autocomplete,
+			inputView,
+			footer,
+		)
+	}
 
 	return fmt.Sprintf(
-		"%s\n\n%s\n\n%s\n%s",
+		"%s\n\n%s\n\n%s\n\n%s",
 		header,
 		m.viewport.View(),
-		m.textInput.View(),
+		inputView,
 		footer,
 	)
 }
@@ -476,4 +707,83 @@ func runInteractive(botService service.BotService, adapter *cliAdapter.CLIAdapte
 	if _, err := p.Run(); err != nil {
 		log.Fatal("Error running TUI:", err)
 	}
+}
+
+func parseFileAttachments(text string) (string, []string, error) {
+	// 1. Collect potential paths from @ tags
+	reAt := regexp.MustCompile(`@(?:"([^"]+)"|([^\s"]+))`)
+	matchesAt := reAt.FindAllStringSubmatch(text, -1)
+
+	// 2. Collect potential paths from absolute/home paths (common in drag-and-drop)
+	// This matches strings starting with / or ~ and continues until a space (not preceded by \) or end of string.
+	rePath := regexp.MustCompile(`(?:^|\s)(/[^\s\\]*(?:\\.[^\s\\]*)*|~[^\s\\]*(?:\\.[^\s\\]*)*)`)
+	matchesPath := rePath.FindAllStringSubmatch(text, -1)
+
+	var images []string
+	processedText := text
+
+	// Process @ matches
+	for _, match := range matchesAt {
+		original := match[0]
+		path := match[1]
+		if path == "" {
+			path = match[2]
+		}
+		processedText, images, _ = processPath(processedText, original, path, images)
+	}
+
+	// Process absolute path matches
+	for _, match := range matchesPath {
+		original := strings.TrimSpace(match[1])
+		// Unescape spaces: "\ " -> " "
+		path := strings.ReplaceAll(original, `\ `, " ")
+
+		// Check if it's a valid existing file
+		tempPath := path
+		if strings.HasPrefix(tempPath, "~") {
+			home, _ := os.UserHomeDir()
+			tempPath = filepath.Join(home, tempPath[1:])
+		}
+		if _, err := os.Stat(tempPath); err == nil {
+			processedText, images, _ = processPath(processedText, match[1], path, images)
+		}
+	}
+
+	return processedText, images, nil
+}
+
+func processPath(text, original, path string, images []string) (string, []string, error) {
+	if strings.HasPrefix(path, "~") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = filepath.Join(home, path[1:])
+		}
+	}
+
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		absPath = path
+	}
+
+	markdownLink := fmt.Sprintf("[%s](file://%s)", filepath.Base(absPath), absPath)
+	text = strings.Replace(text, original, markdownLink, 1)
+
+	ext := strings.ToLower(filepath.Ext(path))
+	if isImageExtension(ext) {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			base64Data := base64.StdEncoding.EncodeToString(data)
+			images = append(images, base64Data)
+		}
+	}
+
+	return text, images, nil
+}
+
+func isImageExtension(ext string) bool {
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".webp", ".gif":
+		return true
+	}
+	return false
 }
