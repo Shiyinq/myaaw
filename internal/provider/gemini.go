@@ -32,6 +32,8 @@ type GeminiPart struct {
 	InlineData       *GeminiInlineData       `json:"inline_data,omitempty"`
 	FunctionCall     *GeminiFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *GeminiFunctionResponse `json:"functionResponse,omitempty"`
+	Thought          bool                    `json:"thought,omitempty"`
+	ThoughtSignature string                  `json:"thoughtSignature,omitempty"`
 }
 
 type GeminiContent struct {
@@ -74,6 +76,15 @@ type FunctionCallingConfig struct {
 	Mode string `json:"mode"`
 }
 
+type GemeniGenerationConfig struct {
+	ThinkingConfig *GeminiThinkingConfig `json:"thinkingConfig,omitempty"`
+}
+
+type GeminiThinkingConfig struct {
+	IncludeThoughts bool   `json:"includeThoughts"`
+	ThinkingLevel   string `json:"thinkingLevel,omitempty"`
+}
+
 type ToolConfig struct {
 	FunctionCallingConfig FunctionCallingConfig `json:"function_calling_config"`
 }
@@ -83,6 +94,7 @@ type GemeniRequest struct {
 	SystemInstruction *GeminiContent           `json:"systemInstruction,omitempty"`
 	ToolConfig        *ToolConfig              `json:"toolConfig,omitempty"`
 	Tools             []map[string]interface{} `json:"tools,omitempty"`
+	GenerationConfig  *GemeniGenerationConfig  `json:"generationConfig,omitempty"`
 }
 
 type GeminiModel struct {
@@ -97,6 +109,7 @@ type GeminiModel struct {
 	TopP                       float64  `json:"topP,omitempty"`
 	TopK                       int      `json:"topK,omitempty"`
 	MaxTemperature             float64  `json:"maxTemperature,omitempty"`
+	Thinking                   bool     `json:"thinking,omitempty"`
 }
 
 type GeminiModels struct {
@@ -119,95 +132,101 @@ func NewGeminiProvider(baseURL string, apiKey string, defaultModel string) LLMPr
 
 func MessagesToContents(messages []Message) []GeminiContent {
 	var contents []GeminiContent
-	for _, message := range messages {
-		contentStr, ok := message.Content.(string)
 
-		role := message.Role
-		if role == "system" {
+	for _, message := range messages {
+		if message.Role == "system" {
 			continue
 		}
 
+		role := message.Role
 		if role == "assistant" {
 			role = "model"
-		}
-
-		// Gemini API only accepts "user" and "model" roles
-		// "tool" responses should be sent as "user" with FunctionResponse
-		if role == "tool" {
+		} else if role == "tool" {
 			role = "user"
 		}
 
-		var content GeminiContent
-		if contentStr != "" && ok {
-			content = GeminiContent{
-				Parts: []GeminiPart{
-					{
-						Text: contentStr,
+		var parts []GeminiPart
+
+		// 1. Handle Thought (for model)
+		if message.Thought != "" && role == "model" {
+			parts = append(parts, GeminiPart{
+				Text:    message.Thought,
+				Thought: true,
+			})
+		}
+
+		// 2. Handle Text Content
+		contentStr, isStr := message.Content.(string)
+		if isStr && contentStr != "" {
+			parts = append(parts, GeminiPart{
+				Text: contentStr,
+			})
+		} else if geminiPart, isPart := message.Content.(GeminiPart); isPart {
+			// Backward compatibility or direct GeminiPart passing
+			parts = append(parts, geminiPart)
+		}
+
+		// 3. Handle Tool Calls (for model)
+		if role == "model" && len(message.ToolCalls) > 0 {
+			for _, tc := range message.ToolCalls {
+				var argsMap map[string]interface{}
+				if tc.Function.Arguments != nil {
+					switch a := tc.Function.Arguments.(type) {
+					case map[string]interface{}:
+						argsMap = a
+					case string:
+						_ = json.Unmarshal([]byte(a), &argsMap)
+					}
+				}
+
+				parts = append(parts, GeminiPart{
+					FunctionCall: &GeminiFunctionCall{
+						Name: tc.Function.Name,
+						Args: argsMap,
+					},
+					ThoughtSignature: tc.Function.ThoughtSignature,
+				})
+			}
+		}
+
+		// 4. Handle Tool Responses (for tool role)
+		if message.Role == "tool" {
+			// Gemini expects FunctionResponse to be matched by Name
+			parts = append(parts, GeminiPart{
+				FunctionResponse: &GeminiFunctionResponse{
+					Name: message.Name,
+					Response: map[string]interface{}{
+						"result": message.Content,
 					},
 				},
-				Role: role,
-			}
+			})
+		}
 
-			if message.Images != nil {
-				image := &GeminiInlineData{
-					MimeType: "image/jpeg",
-					Data:     message.Images[0],
-				}
-				content.Parts = append(content.Parts, GeminiPart{InlineData: image})
-			}
-
-			contents = append(contents, content)
-		} else {
-			// Check if it's a ToolCall message from Assistant which Gemini expects?
-
-			geminiPart, ok := message.Content.(GeminiPart)
-			if ok {
-				content = GeminiContent{
-					Role: role,
-					Parts: []GeminiPart{
-						{
-							FunctionCall:     geminiPart.FunctionCall,
-							FunctionResponse: geminiPart.FunctionResponse,
-						},
+		// 5. Handle Images (usually for user)
+		if len(message.Images) > 0 && role == "user" {
+			for _, img := range message.Images {
+				parts = append(parts, GeminiPart{
+					InlineData: &GeminiInlineData{
+						MimeType: "image/jpeg",
+						Data:     img,
 					},
-				}
-				contents = append(contents, content)
+				})
 			}
+		}
 
-			// If message has ToolCalls, we should add them as FunctionCall parts (if role is model)
-			if len(message.ToolCalls) > 0 && role == "model" {
-				// Reconstruct FunctionCall parts from ToolCalls for history
-				var parts []GeminiPart
-				// Also include text if any?
-				if contentStr != "" {
-					parts = append(parts, GeminiPart{Text: contentStr})
-				}
+		if len(parts) == 0 {
+			continue
+		}
 
-				for _, tc := range message.ToolCalls {
-					// Arguments needs to be map[string]interface{}.
-
-					argsMap, ok := tc.Function.Arguments.(map[string]interface{})
-					if !ok {
-						// If it's not a map, maybe string?
-						if strArgs, isStr := tc.Function.Arguments.(string); isStr {
-							_ = json.Unmarshal([]byte(strArgs), &argsMap)
-						}
-					}
-
-					parts = append(parts, GeminiPart{
-						FunctionCall: &GeminiFunctionCall{
-							Name: tc.Function.Name,
-							Args: argsMap,
-						},
-					})
-				}
-
-				content = GeminiContent{
-					Role:  role,
-					Parts: parts,
-				}
-				contents = append(contents, content)
-			}
+		// BUNDLING LOGIC: If the last content has the same role, merge parts.
+		// This handles consecutive tool responses and user prompts (like ThoughtPrompt).
+		if len(contents) > 0 && contents[len(contents)-1].Role == role {
+			contents[len(contents)-1].Parts = append(contents[len(contents)-1].Parts, parts...)
+		} else {
+			contents = append(contents, GeminiContent{
+				Role:  role,
+				Parts: parts,
+			})
 		}
 	}
 
@@ -221,18 +240,34 @@ func contentToMessage(content GeminiContent) Message {
 	}
 
 	var textParts []string
+	var thoughtParts []string
 	var toolCalls []ToolCall
 
 	for _, part := range content.Parts {
-		if part.Text != "" {
+		if part.Thought {
+			if part.Text != "" {
+				text := part.Text
+
+				// Fallback string matching for Gemini thinking payload missing the flag
+				// because gemini sometimes doesn't set the thought flag to false even if is not thought part
+				if strings.HasPrefix(text, "**") && strings.Contains(text, "**\n\n") && strings.HasSuffix(text, "\n\n\n") {
+					thoughtParts = append(thoughtParts, text)
+				} else {
+					part.Thought = false
+					textParts = append(textParts, text)
+				}
+
+			}
+		} else if part.Text != "" {
 			textParts = append(textParts, part.Text)
 		}
 		if part.FunctionCall != nil {
 			toolCalls = append(toolCalls, ToolCall{
 				Type: "function",
 				Function: FunctionCall{
-					Name:      part.FunctionCall.Name,
-					Arguments: part.FunctionCall.Args,
+					Name:             part.FunctionCall.Name,
+					Arguments:        part.FunctionCall.Args,
+					ThoughtSignature: part.ThoughtSignature,
 				},
 			})
 		}
@@ -241,6 +276,10 @@ func contentToMessage(content GeminiContent) Message {
 	msg := Message{
 		Role:      role,
 		ToolCalls: toolCalls,
+	}
+
+	if len(thoughtParts) > 0 {
+		msg.Thought = strings.Join(thoughtParts, "\n")
 	}
 
 	if len(textParts) > 0 {
@@ -264,6 +303,109 @@ func (g *GeminiProvider) DefaultModel(modelName string) string {
 	return modelName
 }
 
+func (g *GeminiProvider) isThinkingModel(modelName string) bool {
+	name := strings.TrimPrefix(modelName, "models/")
+	thinkingModels := map[string]bool{
+		"gemini-flash-latest":                   true,
+		"gemini-flash-lite-latest":              true,
+		"gemini-2.5-flash":                      true,
+		"gemini-2.5-pro":                        true,
+		"gemini-2.5-flash-lite":                 true,
+		"gemini-2.5-flash-lite-preview-09-2025": true,
+		"gemini-3-pro-preview":                  true,
+		"gemini-3-flash-preview":                true,
+		"gemini-3.1-pro-preview":                true,
+	}
+	return thinkingModels[name]
+}
+
+func (g *GeminiProvider) supportsTools(modelName string) bool {
+	name := strings.TrimPrefix(modelName, "models/")
+	supportedPrefixes := []string{
+		"gemini-flash",
+		"gemini-2.0-flash",
+		"gemini-2.0-flash-lite",
+		"gemini-2.0-pro",
+		"gemini-2.5-pro",
+		"gemini-2.5-flash",
+		"gemini-3-pro",
+		"gemini-3-flash",
+		"gemini-3.1-pro",
+		"gemini-3.1-flash",
+	}
+
+	for _, prefix := range supportedPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			if strings.Contains(name, "-tts") || strings.Contains(name, "-image-generation") ||
+				strings.Contains(name, "-native-audio") || strings.Contains(name, "robotics") {
+				return false
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func (g *GeminiProvider) supportsSystemInstruction(modelName string) bool {
+	name := strings.TrimPrefix(modelName, "models/")
+	if strings.HasPrefix(name, "gemma-") {
+		return false
+	}
+	if strings.HasPrefix(name, "gemini-1.0") || name == "gemini-pro" || name == "gemini-pro-vision" {
+		return false
+	}
+	return g.supportsTools(modelName)
+}
+
+func (g *GeminiProvider) buildRequest(modelName string, messages []Message) GemeniRequest {
+	fullModel := g.DefaultModel(modelName)
+	request := GemeniRequest{
+		Contents: MessagesToContents(messages),
+	}
+
+	if g.supportsTools(fullModel) {
+		request.ToolConfig = &ToolConfig{
+			FunctionCallingConfig: FunctionCallingConfig{
+				Mode: "AUTO",
+			},
+		}
+		request.Tools = []map[string]any{
+			{
+				"function_declarations": g.getToolsTransform(),
+			},
+		}
+	}
+
+	if g.isThinkingModel(fullModel) {
+		request.GenerationConfig = &GemeniGenerationConfig{
+			ThinkingConfig: &GeminiThinkingConfig{
+				IncludeThoughts: true,
+			},
+		}
+	}
+
+	if len(messages) > 0 && messages[0].Role == "system" {
+		systemText := messages[0].Content.(string)
+
+		if g.supportsSystemInstruction(fullModel) {
+			request.SystemInstruction = &GeminiContent{
+				Parts: []GeminiPart{
+					{
+						Text: systemText,
+					},
+				},
+				Role: "user",
+			}
+		} else {
+			if len(request.Contents) > 0 && len(request.Contents[0].Parts) > 0 {
+				request.Contents[0].Parts[0].Text = fmt.Sprintf("System: %s\n\n%s", systemText, request.Contents[0].Parts[0].Text)
+			}
+		}
+	}
+
+	return request
+}
+
 func (g *GeminiProvider) getToolsTransform() []map[string]interface{} {
 	originalTools := tools.GetTools()
 	if originalTools == nil {
@@ -284,31 +426,7 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
-	request := GemeniRequest{
-		Contents: MessagesToContents(messages),
-		ToolConfig: &ToolConfig{
-			FunctionCallingConfig: FunctionCallingConfig{
-				Mode: "AUTO",
-			},
-		},
-		Tools: []map[string]interface{}{
-			{
-				"function_declarations": g.getToolsTransform(),
-			},
-		},
-	}
-	if len(messages) > 0 && messages[0].Role == "system" {
-		systemText := messages[0].Content.(string)
-
-		request.SystemInstruction = &GeminiContent{
-			Parts: []GeminiPart{
-				{
-					Text: systemText,
-				},
-			},
-			Role: "user",
-		}
-	}
+	request := g.buildRequest(modelName, messages)
 
 	var response GeminiGenerateContent
 	res, _ := client.R().
@@ -342,31 +460,7 @@ func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callba
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
-	request := GemeniRequest{
-		Contents: MessagesToContents(messages),
-		ToolConfig: &ToolConfig{
-			FunctionCallingConfig: FunctionCallingConfig{
-				Mode: "AUTO",
-			},
-		},
-		Tools: []map[string]interface{}{
-			{
-				"function_declarations": g.getToolsTransform(),
-			},
-		},
-	}
-
-	if len(messages) > 0 && messages[0].Role == "system" {
-		systemText := messages[0].Content.(string)
-		request.SystemInstruction = &GeminiContent{
-			Parts: []GeminiPart{
-				{
-					Text: systemText,
-				},
-			},
-			Role: "user",
-		}
-	}
+	request := g.buildRequest(modelName, messages)
 
 	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
@@ -471,12 +565,43 @@ func (g *GeminiProvider) Models() ([]string, error) {
 
 	var models []string
 	for _, model := range response.Models {
-		if !(strings.Contains(model.Name, "1.0") || strings.Contains(model.Name, "gemini-pro") || strings.Contains(model.Name, "exp")) {
-			for _, method := range model.SupportedGenerationMethods {
-				if method == "generateContent" {
-					models = append(models, model.Name)
-				}
+		name := strings.TrimPrefix(model.Name, "models/")
+
+		supportsGenerate := false
+		for _, method := range model.SupportedGenerationMethods {
+			if method == "generateContent" {
+				supportsGenerate = true
+				break
 			}
+		}
+		if !supportsGenerate {
+			continue
+		}
+
+		if strings.Contains(name, "-tts") || strings.Contains(name, "-image") ||
+			strings.Contains(name, "-generation") || strings.Contains(name, "native-audio") ||
+			strings.Contains(name, "robotics") || strings.Contains(name, "computer-use") ||
+			strings.Contains(name, "aqa") || strings.Contains(name, "embedding") ||
+			strings.Contains(name, "imagen") || strings.Contains(name, "veo") {
+			continue
+		}
+
+		if strings.HasPrefix(name, "deep-research") || strings.HasPrefix(name, "gemma-") {
+			continue
+		}
+
+		isFlash := strings.Contains(name, "flash")
+		isV2Plus := false
+		prefixes := []string{"gemini-2.", "gemini-3.", "gemini-3-"}
+		for _, p := range prefixes {
+			if strings.HasPrefix(name, p) {
+				isV2Plus = true
+				break
+			}
+		}
+
+		if isFlash || isV2Plus {
+			models = append(models, model.Name)
 		}
 	}
 

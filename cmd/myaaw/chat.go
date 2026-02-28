@@ -102,10 +102,12 @@ type model struct {
 	viewport  viewport.Model
 	textInput textinput.Model
 
-	messages  []chatMessage_
-	state     tuiState
-	streaming string
-	err       error
+	messages         []chatMessage_
+	state            tuiState
+	streaming        string
+	streamingThought string
+	err              error
+	thoughtExpanded  bool
 
 	botService service.BotService
 	adapter    *cliAdapter.CLIAdapter
@@ -115,8 +117,9 @@ type model struct {
 }
 
 type chatMessage_ struct {
-	role string
-	text string
+	role    string
+	text    string
+	thought string
 }
 
 var (
@@ -248,30 +251,68 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.Reset()
 			m.state = stateWaiting
 			m.streaming = ""
+			m.streamingThought = ""
+			m.thoughtExpanded = false
 			m.updateViewportContent()
 			return m, m.sendMessage(text)
 		}
 
+		if msg.String() == "ctrl+t" {
+			m.thoughtExpanded = !m.thoughtExpanded
+			m.updateViewportContent()
+			return m, nil
+		}
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			m.thoughtExpanded = !m.thoughtExpanded
+			m.updateViewportContent()
+			return m, nil
+		}
 	case nextChunkMsg:
 		if msg.err != nil {
 			m.messages = append(m.messages, chatMessage_{role: "bot", text: fmt.Sprintf("❌ Error: %v", msg.err)})
 			m.state = stateInput
 			m.streaming = ""
+			m.streamingThought = ""
 			m.updateViewportContent()
 			return m, nil
 		}
 
 		if msg.done {
-			m.messages = append(m.messages, chatMessage_{role: "bot", text: m.streaming})
+			m.messages = append(m.messages, chatMessage_{
+				role:    "bot",
+				text:    m.streaming,
+				thought: m.streamingThought,
+			})
 			m.streaming = ""
+			m.streamingThought = ""
 			m.state = stateInput
 			m.updateViewportContent()
 			return m, nil
 		}
 
-		if len(msg.chunk.ToolCalls) > 0 {
-			m.streaming += fmt.Sprintf("\n🛠️  *Using %s...*\n", msg.chunk.ToolCalls[0].Function.Name)
-		} else if msg.chunk.Text != "" {
+		if msg.chunk.Thought != "" {
+			// For interactive mode, we usually get deltas or cumulative.
+			// But Gemini provider currently seems to emit deltas for Thought?
+			// Let's be safe and handle it as cumulative if it grows, or use it as is if it's deltas.
+			// Actually, if it's deltas, we just append. If it's cumulative, we need offsets.
+			// To be consistent with the adapter:
+			m.streamingThought = msg.chunk.Thought
+		}
+
+		if len(msg.chunk.Trace) > 0 {
+			// In TUI we don't have a lastTraceLen easily accessible per message without more state.
+			// However, m.streamingThought is reset per message.
+			// Let's check how many tools are already in streamingThought
+			m.streamingThought = msg.chunk.Thought
+			for _, step := range msg.chunk.Trace {
+				if step.Observation != "" {
+					m.streamingThought += fmt.Sprintf("\n🛠️  Using %s...\n", step.Action)
+				}
+			}
+		}
+
+		if msg.chunk.Text != "" {
 			m.streaming += msg.chunk.Text
 		}
 
@@ -315,7 +356,10 @@ func (m *model) sendMessage(text string) tea.Cmd {
 			if err != nil {
 				m.sub <- nextChunkMsg{done: true, err: err}
 			} else {
-				m.sub <- nextChunkMsg{chunk: channel.StreamChunk{Text: out.Text}}
+				m.sub <- nextChunkMsg{chunk: channel.StreamChunk{
+					Text:    out.Text,
+					Thought: out.Thought,
+				}}
 				m.sub <- nextChunkMsg{done: true}
 			}
 		}
@@ -344,6 +388,16 @@ func (m *model) updateViewportContent() {
 			content := userStyle.Render("❯ ") + strings.TrimSpace(msg.text)
 			b.WriteString(userBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n")
 		} else {
+			if msg.thought != "" {
+				if m.thoughtExpanded {
+					rendered, _ := m.renderer.Render(msg.thought)
+					b.WriteString(dimStyle.Render(" ▾ Reasoning (ctrl+t to collapse)") + "\n")
+					b.WriteString(theme.BoxStyle.Padding(0, 1).BorderForeground(lipgloss.Color("240")).Render(rendered) + "\n")
+				} else {
+					b.WriteString(dimStyle.Render(" ▸ Reasoning (ctrl+t to expand)") + "\n\n")
+				}
+			}
+
 			response := msg.text
 			rendered, err := m.renderer.Render(response)
 			if err == nil {
@@ -356,6 +410,16 @@ func (m *model) updateViewportContent() {
 	}
 
 	if m.state == stateWaiting {
+		if m.streamingThought != "" {
+			if m.thoughtExpanded {
+				rendered, _ := m.renderer.Render(m.streamingThought)
+				b.WriteString(dimStyle.Render(" ▾ Reasoning (ctrl+t to collapse)") + "\n")
+				b.WriteString(theme.BoxStyle.Padding(0, 1).BorderForeground(lipgloss.Color("240")).Render(rendered) + "\n")
+			} else {
+				b.WriteString(dimStyle.Render(" ▸ Reasoning (ctrl+t to expand)") + "\n\n")
+			}
+		}
+
 		if m.streaming != "" {
 			rendered, err := m.renderer.Render(m.streaming)
 			if err == nil {
@@ -378,7 +442,7 @@ func (m *model) updateViewportContent() {
 
 func (m model) View() string {
 	header := headerStyle.Render(" 🐾 MYAAW CLI 🐾 ")
-	footer := footerStyle.Render("  Esc/Ctrl+C: Quit • ↑/↓: Scroll • Type /exit to leave  ")
+	footer := footerStyle.Render("  Esc/Ctrl+C: Quit • ↑/↓: Scroll • Ctrl+T/Click: Toggle Reasoning • Type /exit to leave  ")
 
 	return fmt.Sprintf(
 		"%s\n\n%s\n\n%s\n%s",

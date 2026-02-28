@@ -41,10 +41,12 @@ type Usage struct {
 
 // ReactStep represents a single step in the ReAct loop
 type ReactStep struct {
-	Thought     string `json:"thought,omitempty" bson:"thought,omitempty"`
-	Action      string `json:"action,omitempty" bson:"action,omitempty"`
-	ActionInput string `json:"action_input,omitempty" bson:"action_input,omitempty"`
-	Observation string `json:"observation,omitempty" bson:"observation,omitempty"`
+	Thought          string `json:"thought,omitempty" bson:"thought,omitempty"`
+	Action           string `json:"action,omitempty" bson:"action,omitempty"`
+	ActionInput      string `json:"action_input,omitempty" bson:"action_input,omitempty"`
+	Observation      string `json:"observation,omitempty" bson:"observation,omitempty"`
+	ThoughtSignature string `json:"thought_signature,omitempty" bson:"thought_signature,omitempty"`
+	StepGroup        int    `json:"step_group,omitempty" bson:"step_group,omitempty"`
 }
 
 type ToolCall struct {
@@ -54,8 +56,9 @@ type ToolCall struct {
 }
 
 type FunctionCall struct {
-	Name      string      `json:"name"`
-	Arguments interface{} `json:"arguments"`
+	Name             string      `json:"name"`
+	Arguments        interface{} `json:"arguments"`
+	ThoughtSignature string      `json:"thought_signature,omitempty"`
 }
 
 type ContentItem struct {
@@ -84,19 +87,17 @@ type factoryLLM func(baseURL string, apiKey string, defaultModel string) LLMProv
 type factoryTranscriber func(apiKey string, defaultModel string) Transcriber
 
 var LLMproviderFactories = map[string]factoryLLM{
-	"ollama":  NewOllamaProvider,
-	"openai":  NewOpenAIProvider,
-	"gemini":  NewGeminiProvider,
-	"groq":    NewGroqProvider,
-	"mistral": NewMistralProvider,
+	"ollama": NewOllamaProvider,
+	"openai": NewOpenAIProvider,
+	"gemini": NewGeminiProvider,
+	"groq":   NewGroqProvider,
 }
 
 var defaultLLMModels = map[string]string{
-	"ollama":  "qwen2.5:1.5b-instruct",
-	"openai":  "gpt-4o",
-	"gemini":  "models/gemini-3-flash-preview",
-	"groq":    "llama-3.2-1b-preview",
-	"mistral": "ministral-3b-latest",
+	"ollama": "qwen2.5:1.5b-instruct",
+	"openai": "gpt-4o",
+	"gemini": "models/gemini-3-flash-preview",
+	"groq":   "llama-3.2-1b-preview",
 }
 
 var TranscriberFactories = map[string]factoryTranscriber{

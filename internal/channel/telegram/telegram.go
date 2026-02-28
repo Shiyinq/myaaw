@@ -141,7 +141,7 @@ func sendTelegramTypingAction(chatId int) {
 	}
 }
 
-func SendTelegramMessage(chatId int, replyId int, text string, markdown bool) (*TelegramSendMessageStatus, error) {
+func SendTelegramMessage(chatId int, replyId int, text string, parseMode string) (*TelegramSendMessageStatus, error) {
 	body := &TelegramSendMessage{
 		Text:   text,
 		ChatID: chatId,
@@ -151,14 +151,14 @@ func SendTelegramMessage(chatId int, replyId int, text string, markdown bool) (*
 		body.ReplyToMessageID = replyId
 	}
 
-	if markdown {
-		body.ParseMode = "markdown"
+	if parseMode != "" {
+		body.ParseMode = parseMode
 	}
 
 	return SendTelegramRequest("sendMessage", body, chatId)
 }
 
-func EditTelegramMessage(chatId int, replyId int, editMessageId int, text string, markdown bool) (*TelegramSendMessageStatus, error) {
+func EditTelegramMessage(chatId int, replyId int, editMessageId int, text string, parseMode string) (*TelegramSendMessageStatus, error) {
 	body := &TelegramEditMessage{
 		Text:             text,
 		MessageID:        editMessageId,
@@ -166,8 +166,8 @@ func EditTelegramMessage(chatId int, replyId int, editMessageId int, text string
 		ChatID:           chatId,
 	}
 
-	if markdown {
-		body.ParseMode = "markdown"
+	if parseMode != "" {
+		body.ParseMode = parseMode
 	}
 
 	return SendTelegramRequest("editMessageText", body, chatId)

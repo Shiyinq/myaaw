@@ -16,9 +16,10 @@ type IncomingMessage struct {
 }
 
 type OutgoingMessage struct {
-	Text  string
-	Trace []provider.ReactStep
-	Usage provider.Usage
+	Text    string
+	Trace   []provider.ReactStep
+	Usage   provider.Usage
+	Thought string
 }
 
 type StreamChunk struct {
@@ -26,6 +27,7 @@ type StreamChunk struct {
 	ToolCalls []provider.ToolCall
 	Trace     []provider.ReactStep
 	Usage     provider.Usage
+	Thought   string
 }
 
 type QueueEnvelope struct {

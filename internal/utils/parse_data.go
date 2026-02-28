@@ -137,3 +137,68 @@ func ParseTelegramMarkdown(text string) string {
 
 	return text
 }
+
+func ParseTelegramHTML(text string) string {
+	// 1. Remove image markers ![alt](url) -> [alt](url)
+	text = strings.ReplaceAll(text, "![", "[")
+
+	// 2. Protect Preformatted Blocks (```...```) -> <pre><code>...</code></pre>
+	rePre := regexp.MustCompile("(?s)```(.*?)```")
+	text = rePre.ReplaceAllString(text, "<pre>$1</pre>")
+
+	// 3. Protect Inline Code Blocks (`...`) -> <code>...</code>
+	reCode := regexp.MustCompile("`([^`]+)`")
+	text = reCode.ReplaceAllString(text, "<code>$1</code>")
+
+	// 4. Protect Links [text](url) -> <a href="url">text</a>
+	reLink := regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+	text = reLink.ReplaceAllString(text, `<a href="$2">$1</a>`)
+
+	// 5. Convert Headers (### Title -> <b>Title</b>)
+	reHeader := regexp.MustCompile(`(?m)^[ \t]*#{1,6}[ \t]+(.*?)[ \t]*$`)
+	text = reHeader.ReplaceAllString(text, "<b>$1</b>")
+
+	// 6. Convert Bold **text** -> <b>text</b>
+	reBold := regexp.MustCompile(`\*\*([^\*]+)\*\*`)
+	text = reBold.ReplaceAllString(text, "<b>$1</b>")
+
+	// 7. Convert Italic *text* -> <i>text</i>
+	reItalicAss := regexp.MustCompile(`\*([^\*]+)\*`)
+	text = reItalicAss.ReplaceAllString(text, "<i>$1</i>")
+
+	// Convert Italic _text_ -> <i>text</i> (making sure no word boundaries get broken)
+	reItalicUS := regexp.MustCompile(`\b_([^_]+)_\b`)
+	text = reItalicUS.ReplaceAllString(text, "<i>$1</i>")
+
+	// 8. Protect Bullets (* at start of line followed by space) -> we can just keep them as literal strings
+	// HTML mode allows • or * just fine natively in text nodes
+
+	return text
+}
+
+// StripMarkdown removes markdown entity characters so text can be streamed safely without
+// unclosed formatting errors from the Telegram API.
+func StripMarkdown(text string) string {
+	replacer := strings.NewReplacer(
+		"**", "",
+		"__", "",
+		"*", "",
+		"_", "",
+		"`", "",
+		"~", "",
+		"[", "",
+		"]", "",
+		"(", "",
+		")", "",
+		"#", "",
+		"!", "",
+		">", "",
+		".", "",
+	)
+
+	// Also strip markdown links [text](url) -> text
+	reLink := regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`)
+	text = reLink.ReplaceAllString(text, "$1")
+
+	return replacer.Replace(text)
+}

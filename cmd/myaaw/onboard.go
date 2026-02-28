@@ -243,13 +243,14 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stepChannelChoice:
 		m.channelChoice = strings.ToLower(m.choices[m.cursor])
-		if m.channelChoice == "skip" {
+		switch m.channelChoice {
+		case "skip":
 			m.setupHeartbeatChannel()
-		} else if m.channelChoice == "discord" {
+		case "discord":
 			m.step = stepDiscordToken
 			m.textInput.Placeholder = "Discord Bot Token"
 			m.textInput.Reset()
-		} else { // Telegram or Both
+		default: // Telegram or Both
 			m.step = stepTelegramMode
 			m.cursor = 0
 			m.choices = []string{"Polling (Recommended)", "Webhook"}
