@@ -1,4 +1,4 @@
-.PHONY: all build build-all install uninstall clean check run help
+.PHONY: all build build-all install uninstall clean check run help swagger
 
 # Build variables
 BINARY_NAME=myaaw
@@ -53,12 +53,19 @@ BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)$(BINARY_EXT)
 all: help
 
 ## build: Build the binary for current platform
-build:
+build: swagger
 	@echo "🚧 Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@echo "   Version: $(VERSION)"
 	@mkdir -p $(BUILD_DIR)
 	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
 	@echo "✅ Build complete: $(BINARY_PATH)"
+
+## swagger: Generate Swagger documentation
+swagger:
+	@echo "📝 Generating Swagger documentation..."
+	@mkdir -p docs/swagger
+	@swag init -g $(MAIN_GO) --parseDependency --parseInternal --output docs/swagger --exclude .myaaw --parseGoList=false
+	@echo "✅ Swagger generated"
 
 ## build-all: Cross-compile for Linux, Darwin, and Windows
 build-all:

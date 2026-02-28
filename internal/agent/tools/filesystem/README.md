@@ -15,7 +15,11 @@ The File System Tool provides a wide range of file and directory management capa
 - **File Editing**: Line-based file editing with diff output
 - **Search Capabilities**: Recursive file and directory search
 - **File Information**: Detailed metadata retrieval
-- **Directory Tree**: JSON tree view of directory structure
+- **Directory Tree**: JSON tree view with `depth` and node limits
+- **Binary Detection**: Automatically detects and Base64 encodes binary files
+- **Grep Search**: Search for specific content strings or regex patterns inside files
+- **Output Truncation**: Large outputs (>32KB) are automatically saved to log files
+
 
 ## Security Model
 
@@ -24,8 +28,9 @@ The File System Tool provides a wide range of file and directory management capa
 By default, the tool is restricted to: `~/myaaw_home` (user's home directory + "myaaw_home")
 
 - All operations are validated against allowed directories
-- Path traversal attacks are prevented
+- **Symlink Evaluation**: Symbolic links are followed and validated to prevent escaping the sandbox
 - Absolute path resolution ensures security
+
 
 ## Available Operations
 
@@ -40,6 +45,7 @@ By default, the tool is restricted to: `~/myaaw_home` (user's home directory + "
 | `directory_tree` | Get recursive directory tree | `path` |
 | `move_file` | Move/rename files/directories | `old_path`, `new_path` |
 | `search_files` | Search files by pattern | `path`, `pattern` |
+| `grep_search` | Search content inside files | `path`, `pattern` |
 | `get_file_info` | Get file metadata | `path` |
 | `list_allowed_directories` | Show allowed directories | None |
 | `delete_path` | Delete file/directory | `path` |
@@ -58,17 +64,24 @@ By default, the tool is restricted to: `~/myaaw_home` (user's home directory + "
 | `edit_end_line` | integer | Conditional | End line for editing (optional) |
 | `edit_new_content` | string | Conditional | New content for editing |
 | `delete_recursive` | boolean | Conditional | Enable recursive deletion |
+| `start_line` | integer | Yes (for read_file) | Starting line for reading (1-indexed) |
+| `end_line` | integer | Yes (for read_file) | Ending line for reading (1-indexed) |
+| `regex` | boolean | No | Use regex for grep_search |
+| `depth` | integer | No | Max depth for directory_tree (default: 2) |
 
 ## Example Usage
 
-### Read a File
+### Read a File (Mandatory line range)
 
 ```json
 {
   "tool_name": "read_file",
-  "path": "~/myaaw_home/document.txt"
+  "path": "~/myaaw_home/document.txt",
+  "start_line": 1,
+  "end_line": 100
 }
 ```
+
 
 ### Write a File
 
@@ -92,8 +105,6 @@ By default, the tool is restricted to: `~/myaaw_home` (user's home directory + "
 }
 ```
 
-### Search Files
-
 ```json
 {
   "tool_name": "search_files",
@@ -101,6 +112,18 @@ By default, the tool is restricted to: `~/myaaw_home` (user's home directory + "
   "pattern": "*.txt"
 }
 ```
+
+### Grep Search Content
+
+```json
+{
+  "tool_name": "grep_search",
+  "path": "~/myaaw_home",
+  "pattern": "TODO:",
+  "regex": false
+}
+```
+
 
 ## Implementation Details
 
@@ -183,8 +206,10 @@ Returns raw file content as string
 - No network file system support
 - No file compression/decompression
 - No file encryption/decryption
-- No symbolic link handling
+- No symbolic link handling (except for security validation)
 - File size limited by system memory
+- **Output Limit**: Outputs are truncated at 32KB; full results are saved to `~/.myaaw/home/.logs/`
+- **Node Limit**: `directory_tree` is limited to 1000 nodes to prevent oversized JSON
 
 ## Best Practices
 

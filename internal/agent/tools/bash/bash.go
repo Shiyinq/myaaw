@@ -1,6 +1,7 @@
 package bash
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,8 +14,9 @@ import (
 type BashTool struct{}
 
 type BashArgs struct {
-	Command string `json:"command"`
-	Timeout int    `json:"timeout,omitempty"` // Timeout in seconds
+	Command string            `json:"command"`
+	Timeout int               `json:"timeout,omitempty"` // Timeout in seconds
+	Env     map[string]string `json:"env,omitempty"`     // Environment variables
 }
 
 // Simple blacklist of dangerous commands/keywords
@@ -65,13 +67,20 @@ func (b *BashTool) CallTool(arguments string) string {
 		timeout = time.Duration(args.Timeout) * time.Second
 	}
 
-	// Create command execution context
+	// Create command execution context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	// Using "bash -c" to allow complex commands (pipes, redirects, etc)
-	// If bash is not available, sh could be a fallback, but user requested "bash"
-	cmd := exec.Command("bash", "-c", args.Command)
+	cmd := exec.CommandContext(ctx, "bash", "-c", args.Command)
+
+	// Set environment variables
+	cmd.Env = os.Environ() // Inherit current environment
+	for k, v := range args.Env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
 
 	// Set working directory to ~/.myaaw/home to contain execution
-	// Fallback to default if error occurs (which shouldn't happen if onboarded)
 	if homeDir, err := os.UserHomeDir(); err == nil {
 		myaawHome := strings.ReplaceAll(filepath.Join(homeDir, ".myaaw", "home"), "\\", "/")
 		if info, err := os.Stat(myaawHome); err == nil && info.IsDir() {
@@ -79,35 +88,34 @@ func (b *BashTool) CallTool(arguments string) string {
 		}
 	}
 
-	// Create a timer to kill the process if it runs too long
-	// Simple implementation without context for now, or use time.AfterFunc
-	// A robust implementation would use context.WithTimeout
+	output, err := cmd.CombinedOutput()
 
-	// Let's use a channel to handle timeout/completion
-	done := make(chan error, 1)
-
-	// Buffers to capture output
-	// cmd.CombinedOutput() is simpler if we don't need separate stdout/stderr
-
-	var output []byte
-	var err error
-
-	go func() {
-		output, err = cmd.CombinedOutput()
-		done <- err
-	}()
-
-	select {
-	case <-time.After(timeout):
-		if cmd.Process != nil {
-			cmd.Process.Kill()
+	// Truncate output if it exceeds 32KB to avoid crashing LLMs
+	const maxOutputSize = 32 * 1024
+	outStr := string(output)
+	if len(outStr) > maxOutputSize {
+		// Save full output to a file
+		logPath := "unknown"
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			logsDir := filepath.Join(homeDir, ".myaaw", "home", ".logs")
+			os.MkdirAll(logsDir, 0755)
+			if f, err := os.CreateTemp(logsDir, "bash-output-*.log"); err == nil {
+				f.Write(output)
+				logPath = f.Name()
+				f.Close()
+			}
 		}
-		return fmt.Sprintf("Error: Command execution timed out after %v seconds.", args.Timeout)
-	case err := <-done:
-		if err != nil {
-			// If it's an exit code error, we still want the output
-			return fmt.Sprintf("Error: %v\nOutput:\n%s", err, string(output))
-		}
-		return string(output)
+
+		outStr = outStr[:maxOutputSize] + fmt.Sprintf("\n\n... [Output truncated because it exceeded 32KB limit. Full output saved to: %s. Use 'read_file' tool with start_line and end_line to read it.] ...", logPath)
 	}
+
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Sprintf("Error: Command execution timed out after %v.\nPartial Output:\n%s", timeout, outStr)
+	}
+
+	if err != nil {
+		return fmt.Sprintf("Error: %v\nOutput:\n%s", err, outStr)
+	}
+
+	return outStr
 }

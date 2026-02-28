@@ -7,12 +7,12 @@ import (
 	"myaaw/internal/services/queue/service"
 	"myaaw/internal/utils"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
 type QueueHandler interface {
-	HandleTelegramChat(c *fiber.Ctx) error
+	HandleTelegramChat(c fiber.Ctx) error
 }
 
 type QueueHandlerImpl struct {
@@ -34,7 +34,7 @@ func NewQueueHandler(queueService service.QueueService) QueueHandler {
 // @Failure     401     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/webhook/telegram [post]
-func (h *QueueHandlerImpl) HandleTelegramChat(c *fiber.Ctx) error {
+func (h *QueueHandlerImpl) HandleTelegramChat(c fiber.Ctx) error {
 	// Wrap raw Telegram payload in a QueueEnvelope
 	rawPayload := json.RawMessage(c.Body())
 	envelope := &channel.QueueEnvelope{

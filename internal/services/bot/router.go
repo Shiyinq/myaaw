@@ -12,7 +12,7 @@ import (
 	"myaaw/internal/services/bot/repository"
 	"myaaw/internal/services/bot/service"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func BotRouter(router fiber.Router) {

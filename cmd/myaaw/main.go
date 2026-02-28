@@ -1,3 +1,8 @@
+// @title           Myaaw API Gateway
+// @version         0.0.1
+// @description     Myaaw is an intelligent API Gateway with multi-channel support (Telegram, Discord, etc.).
+// @host      localhost:8080
+// @BasePath  /
 package main
 
 import (
@@ -20,6 +25,8 @@ func init() {
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(consumerCmd)
 	rootCmd.AddCommand(chatCmd)
+	rootCmd.AddCommand(voiceCmd)
+	rootCmd.AddCommand(voiceClassicCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(webhookCmd)
 	rootCmd.AddCommand(configCmd)
@@ -84,7 +91,7 @@ func init() {
 				}
 
 				groups := []cmdGroup{
-					{name: "Core Commands", cmdNames: []string{"chat", "status"}},
+					{name: "Core Commands", cmdNames: []string{"chat", "voice", "voice-classic", "status"}},
 					{name: "Automation", cmdNames: []string{"cron"}},
 					{name: "Service Management", cmdNames: []string{"gateway", "server", "consumer", "docker", "webhook"}},
 					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},
