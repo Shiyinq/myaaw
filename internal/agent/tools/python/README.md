@@ -13,8 +13,12 @@ The Python Execution Tool allows you to run Python code dynamically within the a
 - **Input Handling**: Provide input data to Python scripts
 - **Temporary Environment**: Isolated execution environment
 - **Error Handling**: Comprehensive error reporting
-- **Timeout Support**: Configurable execution timeouts
+- **Timeout Support**: Real timeout enforcement via context
 - **Safe Execution**: Temporary file system isolation
+- **Virtual Environment**: Automatically manages `.venv` in workspace or global sandbox
+- **Optimized Pip**: Checks for existing packages before attempting installation
+- **Output Pagination**: Large outputs (>32KB) are saved to log files
+
 
 ## Usage
 

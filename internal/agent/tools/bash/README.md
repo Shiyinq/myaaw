@@ -8,10 +8,9 @@ The Bash tool allows the agent to execute shell commands within a controlled env
 
 ## Parameters
 
-| Parameter | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
 | `command` | `string` | Yes | The bash command to execute. |
 | `timeout` | `integer` | No | Timeout in seconds (default: 60). |
+| `env` | `object` | No | Optional map of environment variables. |
 
 ## Usage Examples
 
@@ -31,14 +30,29 @@ The Bash tool allows the agent to execute shell commands within a controlled env
 }
 ```
 
-### Run a Script with Timeout
-
 ```json
 {
   "command": "./myscript.sh",
   "timeout": 120
 }
 ```
+
+### Run with Environment Variables
+
+```json
+{
+  "command": "go build main.go",
+  "env": {
+    "GOOS": "linux",
+    "GOARCH": "amd64"
+  }
+}
+```
+
+## Output Truncation
+
+Command output is limited to **32KB** per call to maintain performance. If an output is truncated, a message will indicate the location of the **full log file** in `~/.myaaw/home/.logs/`. You can read the full output incrementally using the `filesystem` tool (with `read_file` and line ranges).
+
 
 ## Security
 
