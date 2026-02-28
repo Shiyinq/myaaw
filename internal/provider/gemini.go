@@ -205,9 +205,18 @@ func MessagesToContents(messages []Message) []GeminiContent {
 		// 5. Handle Images (usually for user)
 		if len(message.Images) > 0 && role == "user" {
 			for _, img := range message.Images {
+				mimeType := "image/jpeg" // default
+				if strings.HasPrefix(img, "iVBORw0KGgo") {
+					mimeType = "image/png"
+				} else if strings.HasPrefix(img, "UklGR") {
+					mimeType = "image/webp"
+				} else if strings.HasPrefix(img, "/9j/") {
+					mimeType = "image/jpeg"
+				}
+
 				parts = append(parts, GeminiPart{
 					InlineData: &GeminiInlineData{
-						MimeType: "image/jpeg",
+						MimeType: mimeType,
 						Data:     img,
 					},
 				})
