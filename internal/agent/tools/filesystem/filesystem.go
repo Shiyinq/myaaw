@@ -1,13 +1,17 @@
 package filesystem
 
 import (
+	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
 	"myaaw/internal/config"
+	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -87,6 +91,10 @@ type FileSystemArgs struct {
 	EditEndLine     int    `json:"edit_end_line"`    // Line number to end editing (1-indexed, inclusive, optional)
 	EditNewContent  string `json:"edit_new_content"` // New content to replace/insert
 	DeleteRecursive bool   `json:"delete_recursive"` // Flag for recursive deletion, used by delete_path
+	StartLine       int    `json:"start_line"`       // Optional start line for read_file
+	EndLine         int    `json:"end_line"`         // Optional end line for read_file
+	Regex           bool   `json:"regex"`            // Flag for grep_search to use regex pattern
+	Depth           int    `json:"depth"`            // Depth for directory_tree
 }
 
 func expandPath(path string) (string, error) {
@@ -118,21 +126,33 @@ func isAllowed(path string) (string, error) {
 		return "", fmt.Errorf("error getting absolute path: %w", err)
 	}
 
-	for _, allowedDir := range allowedDirectories {
-		absAllowedDir, err := filepath.Abs(allowedDir)
-		if err != nil {
-			// Log or handle error in resolving allowedDir
-			continue
-		}
-		// Check if absPath starts with allowedDir
-		// We add a separator to allowedDir to ensure we don't match partial folder names
-		// e.g. /foo/bar allowed, /foo/barbaz should not be allowed
-
-		if strings.HasPrefix(absPath, absAllowedDir) {
-			return absPath, nil
+	// Evaluate symlinks to prevent path traversal
+	evaluatedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// If it doesn't exist yet, we still check the intended absolute path
+			evaluatedPath = absPath
+		} else {
+			return "", fmt.Errorf("error evaluating symlinks: %w", err)
 		}
 	}
-	return "", fmt.Errorf("path '%s' (resolved to '%s') is not within allowed directories", path, absPath)
+
+	for _, allowedDir := range allowedDirectories {
+		// Also evaluate allowedDir symlinks for consistency
+		absAllowedDir, err := filepath.Abs(allowedDir)
+		if err != nil {
+			continue
+		}
+		evalAllowedDir, err := filepath.EvalSymlinks(absAllowedDir)
+		if err == nil {
+			absAllowedDir = evalAllowedDir
+		}
+
+		if strings.HasPrefix(evaluatedPath, absAllowedDir) {
+			return evaluatedPath, nil
+		}
+	}
+	return "", fmt.Errorf("path '%s' (resolved to '%s') is not within allowed directories", path, evaluatedPath)
 }
 
 func (f *FileSystemTool) CallTool(arguments string) string {
@@ -155,7 +175,10 @@ func (f *FileSystemTool) CallTool(arguments string) string {
 	// For example:
 	switch args.ToolName {
 	case "read_file":
-		return f.readFile(args.Path)
+		if args.Path == "" || args.StartLine == 0 || args.EndLine == 0 {
+			return "Error: For read_file, 'path', 'start_line', and 'end_line' are required arguments."
+		}
+		return f.readFile(args.Path, args.StartLine, args.EndLine)
 	case "read_multiple_files":
 		// Assuming Path might be a comma-separated list of files or JSON array string
 		var multiFilePaths []string
@@ -176,14 +199,20 @@ func (f *FileSystemTool) CallTool(arguments string) string {
 	case "create_directory":
 		return f.createDirectory(args.Path)
 	case "list_directory":
-		return f.listDirectory(args.Path)
+		return f.truncateAndLog(f.listDirectory(args.Path), "filesystem-list")
 	case "directory_tree":
-		return f.directoryTree(args.Path)
+		return f.truncateAndLog(f.directoryTree(args.Path, args.Depth), "filesystem-tree")
 	case "move_file":
 		return f.moveFile(args.OldPath, args.NewPath)
 	case "search_files":
 		// Assuming args.Path is the directory to search in and args.Pattern is the search pattern
-		return f.searchFiles(args.Path, args.Pattern)
+		return f.truncateAndLog(f.searchFiles(args.Path, args.Pattern), "filesystem-search")
+	case "grep_search":
+		// Search for content within files
+		if args.Path == "" || args.Pattern == "" {
+			return "Error: For grep_search, 'path' and 'pattern' are required arguments."
+		}
+		return f.truncateAndLog(f.grepSearch(args.Path, args.Pattern, args.Regex), "filesystem-grep")
 	case "get_file_info":
 		return f.getFileInfo(args.Path)
 	case "list_allowed_directories":
@@ -199,9 +228,28 @@ func (f *FileSystemTool) CallTool(arguments string) string {
 	}
 }
 
+// truncateAndLog truncates output if it exceeds 32KB and saves to a log file
+func (f *FileSystemTool) truncateAndLog(output string, prefix string) string {
+	const maxOutputSize = 32 * 1024
+	if len(output) > maxOutputSize {
+		logPath := "unknown"
+		if homeDir, err := os.UserHomeDir(); err == nil {
+			logsDir := filepath.Join(homeDir, ".myaaw", "home", ".logs")
+			os.MkdirAll(logsDir, 0755)
+			if tempFile, err := os.CreateTemp(logsDir, fmt.Sprintf("%s-*.log", prefix)); err == nil {
+				tempFile.WriteString(output)
+				logPath = tempFile.Name()
+				tempFile.Close()
+			}
+		}
+		return output[:maxOutputSize] + fmt.Sprintf("\n\n... [Output truncated because it exceeded 32KB limit. Full output saved to: %s. Use 'read_file' tool with start_line and end_line to read it.] ...", logPath)
+	}
+	return output
+}
+
 // Implement private methods for each file system operation here.
 // Example for readFile:
-func (f *FileSystemTool) readFile(path string) string {
+func (f *FileSystemTool) readFile(path string, startLine, endLine int) string {
 	absPath, err := isAllowed(path)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
@@ -210,7 +258,25 @@ func (f *FileSystemTool) readFile(path string) string {
 	if err != nil {
 		return fmt.Sprintf("Error reading file %s: %v", path, err)
 	}
-	return string(data)
+
+	// Detect binary
+	contentType := http.DetectContentType(data)
+	if !strings.HasPrefix(contentType, "text/") && contentType != "application/json" && !strings.Contains(contentType, "xml") {
+		encodedStr := base64.StdEncoding.EncodeToString(data)
+		return fmt.Sprintf("[[BINARY FILE DETECTED]]\nFormat: Base64\nMIME Type: %s\nContent:\n%s", contentType, encodedStr)
+	}
+
+	strData := string(data)
+	lines := strings.Split(strData, "\n")
+
+	startIndex := startLine - 1
+	endIndex := endLine - 1
+
+	if startIndex < 0 || startIndex >= len(lines) || endIndex < startIndex || endIndex >= len(lines) {
+		return fmt.Sprintf("Error: Line range [%d, %d] is invalid or out of bounds for file with %d lines.", startLine, endLine, len(lines))
+	}
+
+	return strings.Join(lines[startIndex:endIndex+1], "\n")
 }
 
 func (f *FileSystemTool) readMultipleFiles(paths []string) string {
@@ -295,7 +361,7 @@ type DirEntry struct {
 	Children []DirEntry `json:"children,omitempty"`
 }
 
-func (f *FileSystemTool) directoryTree(basePath string) string {
+func (f *FileSystemTool) directoryTree(basePath string, depth int) string {
 	if basePath == "" {
 		return "Error: 'path' argument is required for directory_tree."
 	}
@@ -304,8 +370,20 @@ func (f *FileSystemTool) directoryTree(basePath string) string {
 		return fmt.Sprintf("Error: %v", err)
 	}
 
-	var buildTree func(currentPath string) (DirEntry, error)
-	buildTree = func(currentPath string) (DirEntry, error) {
+	if depth <= 0 {
+		depth = 2 // Default depth
+	}
+
+	nodeCount := 0
+	const maxNodes = 1000
+
+	var buildTree func(currentPath string, currentDepth int) (DirEntry, error)
+	buildTree = func(currentPath string, currentDepth int) (DirEntry, error) {
+		if nodeCount >= maxNodes {
+			return DirEntry{Name: filepath.Base(currentPath), Type: "limit_reached"}, nil
+		}
+		nodeCount++
+
 		info, err := os.Stat(currentPath)
 		if err != nil {
 			return DirEntry{}, fmt.Errorf("error stating path %s: %w", currentPath, err)
@@ -317,7 +395,12 @@ func (f *FileSystemTool) directoryTree(basePath string) string {
 
 		if info.IsDir() {
 			entry.Type = "directory"
-			entry.Children = []DirEntry{} // Initialize, even if empty
+
+			if currentDepth >= depth {
+				return entry, nil // Stop at depth
+			}
+
+			entry.Children = []DirEntry{}
 
 			files, err := os.ReadDir(currentPath)
 			if err != nil {
@@ -325,16 +408,14 @@ func (f *FileSystemTool) directoryTree(basePath string) string {
 			}
 
 			for _, file := range files {
+				if nodeCount >= maxNodes {
+					entry.Children = append(entry.Children, DirEntry{Name: "... [Node limit reached]", Type: "limit_reached"})
+					break
+				}
+
 				childPath := filepath.Join(currentPath, file.Name())
-				// Security check for child paths is implicitly handled by the initial basePath check
-				// if traversal outside allowed directories is a concern at deeper levels,
-				// an additional isAllowed check could be added here for childPath.
-				// However, if basePath is allowed, all its children should be too unless symlinks point outside.
-				// For simplicity and given the current isAllowed logic, we assume subdirectories are fine.
-				childEntry, err := buildTree(childPath)
+				childEntry, err := buildTree(childPath, currentDepth+1)
 				if err != nil {
-					// Decide how to handle errors for individual children, e.g., skip or return error
-					// For now, let's skip problematic children but log the error
 					fmt.Printf("Skipping child %s due to error: %v\n", childPath, err)
 					continue
 				}
@@ -342,36 +423,26 @@ func (f *FileSystemTool) directoryTree(basePath string) string {
 			}
 		} else {
 			entry.Type = "file"
-			// Files do not have children, so Children remains nil (or empty if initialized)
 		}
 		return entry, nil
 	}
 
-	rootEntry, err := buildTree(absBasePath)
+	rootEntry, err := buildTree(absBasePath, 0)
 	if err != nil {
 		return fmt.Sprintf("Error building directory tree for %s: %v", basePath, err)
 	}
 
-	// Correctly marshal the root entry which represents the initial basePath directory itself
-	// The issue asks for the children of the basePath to be the primary list if basePath is a directory.
-	// The current buildTree returns the basePath itself as the root DirEntry.
-	// If the root is a directory, we should marshal its Children. If it's a file, marshal the entry itself.
-	var dataToMarshal interface{}
-	if rootEntry.Type == "directory" {
-		// The spec implies the output is an array of entries *within* the directory,
-		// or a single entry if path is a file.
-		// Let's adjust to return the root entry itself for consistency with get_file_info.
-		// The JSON structure {name, type, children} seems to describe the node itself.
-		dataToMarshal = rootEntry
-	} else {
-		dataToMarshal = rootEntry // A file
-	}
-
+	var dataToMarshal interface{} = rootEntry
 	jsonData, err := json.MarshalIndent(dataToMarshal, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("Error marshalling directory tree to JSON: %v", err)
 	}
-	return string(jsonData)
+
+	result := string(jsonData)
+	if nodeCount >= maxNodes {
+		result += "\n\n... [Warning: Directory tree was truncated due to node limit (1000)] ..."
+	}
+	return result
 }
 
 func (f *FileSystemTool) moveFile(oldPath, newPath string) string {
@@ -433,6 +504,94 @@ func (f *FileSystemTool) searchFiles(dirPath, pattern string) string {
 		return fmt.Sprintf("Error marshalling search results: %v", err)
 	}
 	return string(resultBytes)
+}
+
+func (f *FileSystemTool) grepSearch(dirPath, pattern string, useRegex bool) string {
+	absDirPath, err := isAllowed(dirPath)
+	if err != nil {
+		return fmt.Sprintf("Error: %v", err)
+	}
+
+	var compiledRegex *regexp.Regexp
+	if useRegex {
+		var errRegex error
+		compiledRegex, errRegex = regexp.Compile(pattern)
+		if errRegex != nil {
+			return fmt.Sprintf("Error compiling regex pattern: %v", errRegex)
+		}
+	} else {
+		pattern = strings.ToLower(pattern)
+	}
+
+	var results []string
+
+	err = filepath.WalkDir(absDirPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		// Quick check before reading the full file to avoid opening binaries
+		file, err := os.Open(path)
+		if err != nil {
+			return nil
+		}
+		defer file.Close()
+
+		// Read first 512 bytes for content type detection
+		buffer := make([]byte, 512)
+		n, _ := file.Read(buffer)
+		if n > 0 {
+			contentType := http.DetectContentType(buffer[:n])
+			if !strings.HasPrefix(contentType, "text/") && contentType != "application/json" && !strings.Contains(contentType, "xml") {
+				return nil // Skip binary files
+			}
+		}
+
+		// Reset file pointer to beginning
+		file.Seek(0, 0)
+
+		scanner := bufio.NewScanner(file)
+		lineNumber := 1
+		for scanner.Scan() {
+			line := scanner.Text()
+			match := false
+			if useRegex {
+				match = compiledRegex.MatchString(line)
+			} else {
+				match = strings.Contains(strings.ToLower(line), pattern)
+			}
+
+			if match {
+				// Relativize path for nicer output
+				relPath := path
+				if relative, err := filepath.Rel(absDirPath, path); err == nil {
+					relPath = relative
+				}
+				results = append(results, fmt.Sprintf("%s:%d: %s", relPath, lineNumber, strings.TrimSpace(line)))
+
+				// Limit to a reasonable number of overall matches to avoid overwhelming output
+				if len(results) > 100 {
+					results = append(results, "... [Output truncated due to too many matches (>100)] ...")
+					return filepath.SkipAll // Stop walking if we have too many
+				}
+			}
+			lineNumber++
+		}
+		return nil
+	})
+
+	if err != nil && err != filepath.SkipAll {
+		return fmt.Sprintf("Error during grep_search in %s: %v", dirPath, err)
+	}
+
+	if len(results) == 0 {
+		return fmt.Sprintf("No content found matching pattern '%s' in %s.", pattern, dirPath)
+	}
+
+	return strings.Join(results, "\n")
 }
 
 func (f *FileSystemTool) getFileInfo(path string) string {

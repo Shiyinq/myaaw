@@ -3,7 +3,7 @@
         "type": "function",
         "function": {
             "name": "filesystem",
-            "description": "Manages files and directories within allowed locations. You can combine these functions to perform complex tasks. All paths must be within permitted directories.\nAvailable functions:\n- \"read_file\": Reads the entire content of a single specified file.\n- \"read_multiple_files\": Reads contents of several files at once. Provide paths as a JSON array or comma-separated string for the 'path' argument.\n- \"write_file\": Creates a new file or overwrites an existing one with provided content. Use with caution.\n- \"edit_file\": Performs line-based edits on a text file. Specify start/end lines and new content. Returns a diff.\n- \"create_directory\": Creates a new directory. Can create nested directories. Silent if directory already exists.\n- \"list_directory\": Lists all files and subdirectories in a specified directory, marking type (FILE/DIR).\n- \"directory_tree\": Provides a recursive JSON tree view of files and directories from a starting path.\n- \"move_file\": Moves or renames files/directories. Fails if destination exists.\n- \"search_files\": Recursively searches for files/directories matching a case-insensitive pattern.\n- \"get_file_info\": Retrieves detailed metadata (size, type, modified time, permissions) for a file or directory.\n- \"list_allowed_directories\": Shows the list of directories this tool can access.\n- \"delete_path\": Deletes a specified file or directory. Use the 'delete_recursive' boolean parameter to delete non-empty directories.\n\nConsider chaining these operations. For example: list files with `list_directory`, read one with `read_file`, modify it with `edit_file`, then verify with `get_file_info`. Or, create a directory structure with `create_directory` then populate it using `write_file` or `move_file`.",
+            "description": "Manages files and directories within allowed locations. You can combine these functions to perform complex tasks. All paths must be within permitted directories.\nAvailable functions:\n- \"read_file\": Reads specific lines of a specified file. Requires 'start_line' and 'end_line'.\n- \"read_multiple_files\": Reads contents of several files at once. Provide paths as a JSON array or comma-separated string for the 'path' argument.\n- \"write_file\": Creates a new file or overwrites an existing one with provided content. Use with caution.\n- \"edit_file\": Performs line-based edits on a text file. Specify start/end lines and new content. Returns a diff.\n- \"create_directory\": Creates a new directory. Can create nested directories. Silent if directory already exists.\n- \"list_directory\": Lists all files and subdirectories in a specified directory, marking type (FILE/DIR). Output is truncated at 32KB.\n- \"directory_tree\": Provides a recursive JSON tree view of files and directories from a starting path. Supports 'depth' limit and is truncated at 32KB.\n- \"move_file\": Moves or renames files/directories. Fails if destination exists.\n- \"search_files\": Recursively searches for files/directories matching a case-insensitive pattern. Output is truncated at 32KB.\n- \"grep_search\": Searches for specific text or regex patterns inside files within a directory. Output is truncated at 32KB.\n- \"get_file_info\": Retrieves detailed metadata (size, type, modified time, permissions) for a file or directory.\n- \"list_allowed_directories\": Shows the list of directories this tool can access.\n- \"delete_path\": Deletes a specified file or directory. Use the 'delete_recursive' boolean parameter to delete non-empty directories.\n\nConsider chaining ini operations. For example: list files with `list_directory`, read one with `read_file`, modify it with `edit_file`, then verify with `get_file_info`. Or, create a directory structure with `create_directory` then populate it using `write_file` or `move_file`.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -20,6 +20,7 @@
                             "directory_tree",
                             "move_file",
                             "search_files",
+                            "grep_search",
                             "get_file_info",
                             "list_allowed_directories",
                             "delete_path"
@@ -60,6 +61,22 @@
                     "delete_recursive": {
                         "type": "boolean",
                         "description": "Optional. If true, allows recursive deletion of directories and their contents. Defaults to false. Used by delete_path."
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "The 1-indexed line number where the reading should begin. Required for read_file."
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "The 1-indexed line number where the reading should end (inclusive). Required for read_file."
+                    },
+                    "regex": {
+                        "type": "boolean",
+                        "description": "If true, treats the pattern as a regular expression. Used by grep_search."
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "The maximum depth for recursive directory tree view. Default is 2. Used by directory_tree."
                     }
                 },
                 "required": [
@@ -72,7 +89,7 @@
         "type": "function",
         "function": {
             "name": "execute_python",
-            "description": "Executes Python code and returns the result. This tool supports installing additional packages and stdin input.",
+            "description": "Executes Python code and returns the result. This tool supports installing additional packages and stdin input. It uses a virtual environment (auto-created if missing). Output is truncated at 32KB; full results are saved to logs.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -103,7 +120,7 @@
         "type": "function",
         "function": {
             "name": "bash",
-            "description": "Executes a bash command. Use this tool to run existing scripts, system commands, or manage processes. Examples: `python script.py`, `ls -la`, `curl ...`. It runs in the system shell.",
+            "description": "Executes a bash command. Use this tool to run existing scripts, system commands, or manage processes. Examples: `python script.py`, `ls -la`, `curl ...`. It supports environment variables. Output is truncated at 32KB; full results are saved to logs.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -114,6 +131,10 @@
                     "timeout": {
                         "type": "integer",
                         "description": "Optional timeout in seconds (default: 60)."
+                    },
+                    "env": {
+                        "type": "object",
+                        "description": "Optional environment variables for the command."
                     }
                 },
                 "required": [
