@@ -9,7 +9,7 @@ import (
 	api "myaaw/internal/channel/api"
 	"myaaw/internal/utils"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type ChatResponse struct {
@@ -40,9 +40,9 @@ type UsageResponse struct {
 // @Failure     400    	{object}   	common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/api/chat [post]
-func (s *BotHandlerImpl) APIChat(c *fiber.Ctx) error {
+func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 	var req api.ChatRequest
-	if err := c.BodyParser(&req); err != nil {
+	if err := c.Bind().JSON(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid JSON request body",
 		})
@@ -109,9 +109,9 @@ func (s *BotHandlerImpl) APIChat(c *fiber.Ctx) error {
 // @Failure     400    	{object}   	common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/api/chat/stream [post]
-func (s *BotHandlerImpl) APIChatStream(c *fiber.Ctx) error {
+func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {
 	var req api.ChatRequest
-	if err := c.BodyParser(&req); err != nil {
+	if err := c.Bind().JSON(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid JSON request body",
 		})
@@ -140,7 +140,7 @@ func (s *BotHandlerImpl) APIChatStream(c *fiber.Ctx) error {
 	c.Set("Connection", "keep-alive")
 	c.Set("Transfer-Encoding", "chunked")
 
-	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+	c.SendStreamWriter(func(w *bufio.Writer) {
 		writeSSE := func(event string, data interface{}) {
 			jsonData, err := json.Marshal(data)
 			if err != nil {

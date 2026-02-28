@@ -15,6 +15,95 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/chat": {
+            "post": {
+                "description": "Direct REST API chat endpoint (non-streaming)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API"
+                ],
+                "summary": "API Chat",
+                "parameters": [
+                    {
+                        "description": "Chat request with user_id and text",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.ChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ChatResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/chat/stream": {
+            "post": {
+                "description": "Direct REST API chat endpoint with Server-Sent Events streaming",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "API"
+                ],
+                "summary": "API Chat Stream",
+                "parameters": [
+                    {
+                        "description": "Chat request with user_id and text",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.ChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/heartbeat": {
             "post": {
                 "description": "To process heartbeat request from consumer",
@@ -35,7 +124,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_services_bot_handler.HeartbeatRequest"
+                            "$ref": "#/definitions/handler.HeartbeatRequest"
                         }
                     }
                 ],
@@ -46,13 +135,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     }
                 }
@@ -60,7 +149,7 @@ const docTemplate = `{
         },
         "/webhook/bot": {
             "post": {
-                "description": "To receive incoming message from RabbitMQ consumer",
+                "description": "To receive incoming message from RabbitMQ consumer (channel-agnostic)",
                 "consumes": [
                     "application/json"
                 ],
@@ -70,41 +159,38 @@ const docTemplate = `{
                 "tags": [
                     "Bot"
                 ],
-                "summary": "Bot",
+                "summary": "Webhook",
                 "parameters": [
                     {
-                        "description": "Telegram incoming chat",
-                        "name": "book",
+                        "description": "Queue envelope with channel and payload",
+                        "name": "envelope",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/myaaw_internal_pkg.TelegramIncommingChat"
+                            "$ref": "#/definitions/channel.QueueEnvelope"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/myaaw_internal_pkg.TelegramSendMessageStatus"
-                        }
+                        "description": "OK"
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     }
                 }
@@ -129,28 +215,26 @@ const docTemplate = `{
                         "name": "book",
                         "in": "body",
                         "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/myaaw_internal_pkg.TelegramIncommingChat"
-                        }
+                        "schema": {}
                     }
                 ],
                 "responses": {
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/myaaw_internal_common.ErrorResponse"
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     }
                 }
@@ -158,7 +242,64 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "internal_services_bot_handler.HeartbeatRequest": {
+        "api.ChatRequest": {
+            "type": "object",
+            "properties": {
+                "images": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "text": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "channel.QueueEnvelope": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "common.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "error message"
+                }
+            }
+        },
+        "handler.ChatResponse": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string"
+                },
+                "trace": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.TraceStep"
+                    }
+                },
+                "usage": {
+                    "$ref": "#/definitions/handler.UsageResponse"
+                }
+            }
+        },
+        "handler.HeartbeatRequest": {
             "type": "object",
             "properties": {
                 "channel": {
@@ -172,236 +313,28 @@ const docTemplate = `{
                 }
             }
         },
-        "myaaw_internal_common.ErrorResponse": {
+        "handler.TraceStep": {
             "type": "object",
             "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "error message"
-                }
-            }
-        },
-        "myaaw_internal_pkg.Chat": {
-            "type": "object",
-            "properties": {
-                "first_name": {
+                "action": {
                     "type": "string"
                 },
-                "id": {
-                    "type": "integer"
-                },
-                "type": {
-                    "type": "string"
-                },
-                "username": {
+                "observation": {
                     "type": "string"
                 }
             }
         },
-        "myaaw_internal_pkg.Document": {
+        "handler.UsageResponse": {
             "type": "object",
             "properties": {
-                "file_id": {
-                    "type": "string"
-                },
-                "file_name": {
-                    "type": "string"
-                },
-                "file_size": {
+                "completion_tokens": {
                     "type": "integer"
                 },
-                "file_unique_id": {
-                    "type": "string"
-                },
-                "mime_type": {
-                    "type": "string"
-                },
-                "thumb": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.Thumbnail"
-                },
-                "thumbnail": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.Thumbnail"
-                }
-            }
-        },
-        "myaaw_internal_pkg.From": {
-            "type": "object",
-            "properties": {
-                "first_name": {
-                    "type": "string"
-                },
-                "id": {
+                "prompt_tokens": {
                     "type": "integer"
                 },
-                "is_bot": {
-                    "type": "boolean"
-                },
-                "language_code": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "myaaw_internal_pkg.Photo": {
-            "type": "object",
-            "properties": {
-                "file_id": {
-                    "type": "string"
-                },
-                "file_size": {
+                "total_tokens": {
                     "type": "integer"
-                },
-                "file_unique_id": {
-                    "type": "string"
-                },
-                "height": {
-                    "type": "integer"
-                },
-                "width": {
-                    "type": "integer"
-                }
-            }
-        },
-        "myaaw_internal_pkg.ReplyToMessage": {
-            "type": "object",
-            "properties": {
-                "caption": {
-                    "type": "string"
-                },
-                "chat": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.Chat"
-                },
-                "date": {
-                    "type": "integer"
-                },
-                "document": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.Document"
-                },
-                "from": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.From"
-                },
-                "message_id": {
-                    "type": "integer"
-                },
-                "photo": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/myaaw_internal_pkg.Photo"
-                    }
-                },
-                "text": {
-                    "type": "string"
-                },
-                "voice": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.Voice"
-                }
-            }
-        },
-        "myaaw_internal_pkg.TelegramIncommingChat": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.UserMessage"
-                },
-                "update_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "myaaw_internal_pkg.TelegramSendMessageStatus": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "error_code": {
-                    "type": "integer"
-                },
-                "ok": {
-                    "type": "boolean"
-                },
-                "result": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.UserMessage"
-                }
-            }
-        },
-        "myaaw_internal_pkg.Thumbnail": {
-            "type": "object",
-            "properties": {
-                "file_id": {
-                    "type": "string"
-                },
-                "file_size": {
-                    "type": "integer"
-                },
-                "file_unique_id": {
-                    "type": "string"
-                },
-                "height": {
-                    "type": "integer"
-                },
-                "width": {
-                    "type": "integer"
-                }
-            }
-        },
-        "myaaw_internal_pkg.UserMessage": {
-            "type": "object",
-            "properties": {
-                "caption": {
-                    "type": "string"
-                },
-                "chat": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.Chat"
-                },
-                "date": {
-                    "type": "integer"
-                },
-                "document": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.Document"
-                },
-                "from": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.From"
-                },
-                "message_id": {
-                    "type": "integer"
-                },
-                "photo": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/myaaw_internal_pkg.Photo"
-                    }
-                },
-                "reply_to_message": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.ReplyToMessage"
-                },
-                "text": {
-                    "type": "string"
-                },
-                "voice": {
-                    "$ref": "#/definitions/myaaw_internal_pkg.Voice"
-                }
-            }
-        },
-        "myaaw_internal_pkg.Voice": {
-            "type": "object",
-            "properties": {
-                "duration": {
-                    "type": "integer"
-                },
-                "file_id": {
-                    "type": "string"
-                },
-                "file_size": {
-                    "type": "integer"
-                },
-                "file_unique_id": {
-                    "type": "string"
-                },
-                "mime_type": {
-                    "type": "string"
                 }
             }
         }
@@ -410,12 +343,12 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "1.0",
+	Version:          "0.0.1",
 	Host:             "localhost:8080",
 	BasePath:         "/",
 	Schemes:          []string{},
-	Title:            "Myaaw API",
-	Description:      "Myaaw - Integrate your favorite LLM with a Telegram bot.",
+	Title:            "Myaaw API Gateway",
+	Description:      "Myaaw is an intelligent API Gateway with multi-channel support (Telegram, Discord, etc.).",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

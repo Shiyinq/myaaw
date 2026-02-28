@@ -6,7 +6,7 @@ import (
 	"myaaw/internal/services/queue/repository"
 	"myaaw/internal/services/queue/service"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func QueueRouter(router fiber.Router) {

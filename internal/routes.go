@@ -4,7 +4,7 @@ import (
 	bot_router "myaaw/internal/services/bot"
 	queue_router "myaaw/internal/services/queue"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func SetupRoutes(app *fiber.App) {
