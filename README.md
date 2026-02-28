@@ -159,7 +159,7 @@ graph TD
 ### Key Components
 
 1. **Channels (`internal/channel`)**: The entry point for interactions. It provides an `Adapter` interface to normalize messages from Telegram, Discord, REST APIs, or Terminal CLI into a standard format.
-2. **Gateway & Daemons (`cmd/myaaw`)**: Uses Cobra CLI to manage the application. It runs the Fiber Web Server and the RabbitMQ Consumer as independent background daemons. It also provides pure CLI modalities like `myaaw chat` and `myaaw voice`.
+2. **Gateway & Daemons (`cmd/myaaw`)**: Uses Cobra CLI to manage the application. It runs the Fiber v3 Web Server and the RabbitMQ Consumer as independent background daemons. It also provides pure CLI modalities like `myaaw chat` and `myaaw voice`.
 3. **Bot Service (`internal/services/bot`)**: The core brain of the application. It processes normalized messages from external channels and Terminal CLI, retrieves chat history from MongoDB, and invokes the AI Agent. Voice CLIs (`myaaw voice`/`voice-classic`) bypass this to connect directly to the Agent/Providers for lower latency.
 4. **Agentic Layer (`internal/agent`)**: Implements the ReAct (Reasoning and Action) loop. It intelligently decides when to interact with the LLM or when to execute tools (Bash, Python, FileSystem) to accomplish the user's objective.
 5. **Providers (`internal/provider`)**: A factory-based abstraction layer for various LLMs (Gemini, OpenAI, Groq, Ollama), Transcribers (STT), and Synthesizers (TTS). Currently, Gemini is the main provider for Myaaw's intelligence and live-voice functionality.
@@ -205,7 +205,7 @@ If you just want to use Myaaw without worrying about code:
 ### Prerequisites
 
 Before you start, ensure you have:
-- [Go](https://go.dev/) **1.24.2** or later installed.
+- [Go](https://go.dev/) **1.26.0** or later installed.
 - [Docker](https://www.docker.com/) installed (for services).
 
 #### 🎤 Voice Feature Requirements (CGo)
@@ -314,31 +314,20 @@ go run ./cmd/myaaw logs
 ---
 
 ### Generate Swagger Documentation
-1. **Install Swagger for API Documentation**
 
-   If you don't have `swag` installed on your machine, install it first:
-   ```sh
-   go install github.com/swaggo/swag/cmd/swag@latest
+Swagger documentation is automatically updated every time you run `make build` or `make install`.
+
+1. **Manual Update**
+   If you only want to update the documentation without building:
+   ```bash
+   make swagger
    ```
 
-2. **Generate or Update Documentation**
-    ```sh
-    swag init -g ./cmd/server/main.go --parseDependency --parseInternal --output docs/swagger
-    ```
-    Or you can use the `swag.sh` script:
+2. **Accessing the UI**
+   Once the server is running, the interactive documentation is available at:
+   `http://localhost:8080/docs/index.html`
 
-    For the first time, before running the script, execute:
-    ```
-    chmod +x swag.sh
-    ```
-    Then, run:
-    ```
-    ./swag.sh
-    ```
 
-3. **Swagger Documentation**
-
-    http://localhost:8080/docs/index.html
 ### Build from Source (Optional)
 
 If you want to build the Myaaw binaries yourself (e.g., for distribution or custom versions), you can use the provided `Makefile`:

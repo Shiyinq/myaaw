@@ -12,7 +12,7 @@ import (
 	"myaaw/internal/utils"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func telegramMeta(userID int) telegram.TelegramMeta {
@@ -23,10 +23,10 @@ func telegramMeta(userID int) telegram.TelegramMeta {
 }
 
 type BotHandler interface {
-	Webhook(c *fiber.Ctx) error
-	Heartbeat(c *fiber.Ctx) error
-	APIChat(c *fiber.Ctx) error
-	APIChatStream(c *fiber.Ctx) error
+	Webhook(c fiber.Ctx) error
+	Heartbeat(c fiber.Ctx) error
+	APIChat(c fiber.Ctx) error
+	APIChatStream(c fiber.Ctx) error
 }
 
 type BotHandlerImpl struct {
@@ -59,9 +59,9 @@ func NewBotHandler(botService service.BotService, channelRegistry *channel.Regis
 // @Failure     401     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/webhook/bot [post]
-func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
+func (s *BotHandlerImpl) Webhook(c fiber.Ctx) error {
 	var envelope channel.QueueEnvelope
-	if err := c.BodyParser(&envelope); err != nil {
+	if err := c.Bind().JSON(&envelope); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid JSON",
 		})
@@ -133,10 +133,10 @@ func (s *BotHandlerImpl) Webhook(c *fiber.Ctx) error {
 // @Failure     400    	{object}   	common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/heartbeat [post]
-func (s *BotHandlerImpl) Heartbeat(c *fiber.Ctx) error {
+func (s *BotHandlerImpl) Heartbeat(c fiber.Ctx) error {
 	var req HeartbeatRequest
 
-	if err := c.BodyParser(&req); err != nil {
+	if err := c.Bind().JSON(&req); err != nil {
 		log.Printf("Heartbeat 400: Invalid JSON: %v. Raw Body: %s", err, c.Body())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid JSON",

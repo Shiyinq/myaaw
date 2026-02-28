@@ -17,8 +17,8 @@ import (
 
 	_ "myaaw/docs/swagger"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/swagger"
+	"github.com/gofiber/contrib/v3/swaggo"
+	"github.com/gofiber/fiber/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -126,15 +126,13 @@ func startServer(ctx context.Context) {
 	config.ConnectDatabases()
 	config.ConnectQueue()
 
-	app := fiber.New(fiber.Config{
-		EnablePrintRoutes: false,
-	})
+	app := fiber.New(fiber.Config{})
 
 	app.Use(middleware.SetupCORS())
 	app.Use(middleware.NewLogger())
 
 	app.Get("/", middleware.HelloWorldHandler)
-	app.Get("/docs/*", swagger.HandlerDefault)
+	app.Get("/docs/*", swaggo.New())
 	routes.SetupRoutes(app)
 
 	app.Use(middleware.NotFoundHandler)

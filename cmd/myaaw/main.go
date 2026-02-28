@@ -1,3 +1,8 @@
+// @title           Myaaw API Gateway
+// @version         0.0.1
+// @description     Myaaw is an intelligent API Gateway with multi-channel support (Telegram, Discord, etc.).
+// @host      localhost:8080
+// @BasePath  /
 package main
 
 import (

@@ -1,6 +1,43 @@
 basePath: /
 definitions:
-  internal_services_bot_handler.HeartbeatRequest:
+  api.ChatRequest:
+    properties:
+      images:
+        items:
+          type: string
+        type: array
+      text:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  channel.QueueEnvelope:
+    properties:
+      channel:
+        type: string
+      payload:
+        items:
+          type: integer
+        type: array
+    type: object
+  common.ErrorResponse:
+    properties:
+      error:
+        example: error message
+        type: string
+    type: object
+  handler.ChatResponse:
+    properties:
+      text:
+        type: string
+      trace:
+        items:
+          $ref: '#/definitions/handler.TraceStep'
+        type: array
+      usage:
+        $ref: '#/definitions/handler.UsageResponse'
+    type: object
+  handler.HeartbeatRequest:
     properties:
       channel:
         type: string
@@ -9,165 +46,88 @@ definitions:
       to:
         type: string
     type: object
-  myaaw_internal_common.ErrorResponse:
+  handler.TraceStep:
     properties:
-      error:
-        example: error message
+      action:
+        type: string
+      observation:
         type: string
     type: object
-  myaaw_internal_pkg.Chat:
+  handler.UsageResponse:
     properties:
-      first_name:
-        type: string
-      id:
+      completion_tokens:
         type: integer
-      type:
-        type: string
-      username:
-        type: string
-    type: object
-  myaaw_internal_pkg.Document:
-    properties:
-      file_id:
-        type: string
-      file_name:
-        type: string
-      file_size:
+      prompt_tokens:
         type: integer
-      file_unique_id:
-        type: string
-      mime_type:
-        type: string
-      thumb:
-        $ref: '#/definitions/myaaw_internal_pkg.Thumbnail'
-      thumbnail:
-        $ref: '#/definitions/myaaw_internal_pkg.Thumbnail'
-    type: object
-  myaaw_internal_pkg.From:
-    properties:
-      first_name:
-        type: string
-      id:
+      total_tokens:
         type: integer
-      is_bot:
-        type: boolean
-      language_code:
-        type: string
-      username:
-        type: string
-    type: object
-  myaaw_internal_pkg.Photo:
-    properties:
-      file_id:
-        type: string
-      file_size:
-        type: integer
-      file_unique_id:
-        type: string
-      height:
-        type: integer
-      width:
-        type: integer
-    type: object
-  myaaw_internal_pkg.ReplyToMessage:
-    properties:
-      caption:
-        type: string
-      chat:
-        $ref: '#/definitions/myaaw_internal_pkg.Chat'
-      date:
-        type: integer
-      document:
-        $ref: '#/definitions/myaaw_internal_pkg.Document'
-      from:
-        $ref: '#/definitions/myaaw_internal_pkg.From'
-      message_id:
-        type: integer
-      photo:
-        items:
-          $ref: '#/definitions/myaaw_internal_pkg.Photo'
-        type: array
-      text:
-        type: string
-      voice:
-        $ref: '#/definitions/myaaw_internal_pkg.Voice'
-    type: object
-  myaaw_internal_pkg.TelegramIncommingChat:
-    properties:
-      message:
-        $ref: '#/definitions/myaaw_internal_pkg.UserMessage'
-      update_id:
-        type: integer
-    type: object
-  myaaw_internal_pkg.TelegramSendMessageStatus:
-    properties:
-      description:
-        type: string
-      error_code:
-        type: integer
-      ok:
-        type: boolean
-      result:
-        $ref: '#/definitions/myaaw_internal_pkg.UserMessage'
-    type: object
-  myaaw_internal_pkg.Thumbnail:
-    properties:
-      file_id:
-        type: string
-      file_size:
-        type: integer
-      file_unique_id:
-        type: string
-      height:
-        type: integer
-      width:
-        type: integer
-    type: object
-  myaaw_internal_pkg.UserMessage:
-    properties:
-      caption:
-        type: string
-      chat:
-        $ref: '#/definitions/myaaw_internal_pkg.Chat'
-      date:
-        type: integer
-      document:
-        $ref: '#/definitions/myaaw_internal_pkg.Document'
-      from:
-        $ref: '#/definitions/myaaw_internal_pkg.From'
-      message_id:
-        type: integer
-      photo:
-        items:
-          $ref: '#/definitions/myaaw_internal_pkg.Photo'
-        type: array
-      reply_to_message:
-        $ref: '#/definitions/myaaw_internal_pkg.ReplyToMessage'
-      text:
-        type: string
-      voice:
-        $ref: '#/definitions/myaaw_internal_pkg.Voice'
-    type: object
-  myaaw_internal_pkg.Voice:
-    properties:
-      duration:
-        type: integer
-      file_id:
-        type: string
-      file_size:
-        type: integer
-      file_unique_id:
-        type: string
-      mime_type:
-        type: string
     type: object
 host: localhost:8080
 info:
   contact: {}
-  description: Myaaw - Integrate your favorite LLM with a Telegram bot.
-  title: Myaaw API
-  version: "1.0"
+  description: Myaaw is an intelligent API Gateway with multi-channel support (Telegram,
+    Discord, etc.).
+  title: Myaaw API Gateway
+  version: 0.0.1
 paths:
+  /api/chat:
+    post:
+      consumes:
+      - application/json
+      description: Direct REST API chat endpoint (non-streaming)
+      parameters:
+      - description: Chat request with user_id and text
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.ChatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ChatResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      summary: API Chat
+      tags:
+      - API
+  /api/chat/stream:
+    post:
+      consumes:
+      - application/json
+      description: Direct REST API chat endpoint with Server-Sent Events streaming
+      parameters:
+      - description: Chat request with user_id and text
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.ChatRequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      summary: API Chat Stream
+      tags:
+      - API
   /heartbeat:
     post:
       consumes:
@@ -179,7 +139,7 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_services_bot_handler.HeartbeatRequest'
+          $ref: '#/definitions/handler.HeartbeatRequest'
       produces:
       - application/json
       responses:
@@ -188,11 +148,11 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
+            $ref: '#/definitions/common.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
+            $ref: '#/definitions/common.ErrorResponse'
       summary: Heartbeat
       tags:
       - Bot
@@ -200,34 +160,32 @@ paths:
     post:
       consumes:
       - application/json
-      description: To receive incoming message from RabbitMQ consumer
+      description: To receive incoming message from RabbitMQ consumer (channel-agnostic)
       parameters:
-      - description: Telegram incoming chat
+      - description: Queue envelope with channel and payload
         in: body
-        name: book
+        name: envelope
         required: true
         schema:
-          $ref: '#/definitions/myaaw_internal_pkg.TelegramIncommingChat'
+          $ref: '#/definitions/channel.QueueEnvelope'
       produces:
       - application/json
       responses:
         "200":
           description: OK
-          schema:
-            $ref: '#/definitions/myaaw_internal_pkg.TelegramSendMessageStatus'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
+            $ref: '#/definitions/common.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
+            $ref: '#/definitions/common.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
-      summary: Bot
+            $ref: '#/definitions/common.ErrorResponse'
+      summary: Webhook
       tags:
       - Bot
   /webhook/telegram:
@@ -240,23 +198,22 @@ paths:
         in: body
         name: book
         required: true
-        schema:
-          $ref: '#/definitions/myaaw_internal_pkg.TelegramIncommingChat'
+        schema: {}
       produces:
       - application/json
       responses:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
+            $ref: '#/definitions/common.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
+            $ref: '#/definitions/common.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/myaaw_internal_common.ErrorResponse'
+            $ref: '#/definitions/common.ErrorResponse'
       summary: Queue
       tags:
       - Bot
