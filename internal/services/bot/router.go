@@ -16,8 +16,8 @@ import (
 )
 
 func BotRouter(router fiber.Router) {
-	userRepo := repository.NewUserRepository(config.DB, config.RedisClient)
-	convRepo := repository.NewConversationRepository(config.DB, config.RedisClient)
+	userRepo := repository.NewUserRepository(config.DB)
+	convRepo := repository.NewConversationRepository(config.DB)
 	serv := service.NewBotService(userRepo, convRepo)
 
 	registry := channel.NewRegistry()

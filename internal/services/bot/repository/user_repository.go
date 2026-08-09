@@ -1,58 +1,43 @@
 package repository
 
 import (
-	"context"
+	"database/sql"
+	"fmt"
 	"myaaw/internal/config"
-	"myaaw/internal/pkg"
 	"myaaw/internal/services/bot/model"
 	"slices"
 	"strconv"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
+	"github.com/google/uuid"
 )
 
 type UserRepository interface {
 	CreateUser(user *model.User) (*model.User, error)
 	GetUserById(userId int) (*model.User, error)
-	updateUserField(userId int, fields bson.M) error
 	UpdateModel(userId int, model string) error
 	UpdateProvider(userId int, provider string) error
 }
 
 type UserRepositoryImpl struct {
-	users *mongo.Collection
-	rd    *redis.Client
+	db *sql.DB
 }
 
-func NewUserRepository(db *mongo.Database, rd *redis.Client) UserRepository {
-	return &UserRepositoryImpl{users: db.Collection("users"), rd: rd}
+func NewUserRepository(db *sql.DB) UserRepository {
+	return &UserRepositoryImpl{db: db}
 }
 
 func (r *UserRepositoryImpl) GetUserById(userId int) (*model.User, error) {
-	cachedUser, err := pkg.GetUserFromRedis(r.rd, userId)
-	if err != nil {
-		return nil, err
-	}
-
-	if cachedUser != nil {
-		return cachedUser, nil
-	}
-
 	var user model.User
-	err = r.users.FindOne(context.Background(), bson.M{"userId": userId}).Decode(&user)
+	query := `SELECT id, user_id, name, provider, model, role, created_at, updated_at FROM users WHERE user_id = ?`
+	err := r.db.QueryRow(query, userId).Scan(
+		&user.Id, &user.UserId, &user.Name, &user.Provider, &user.Model, &user.Role, &user.CreatedAt, &user.UpdatedAt,
+	)
+
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if err == sql.ErrNoRows {
 			return nil, nil
 		}
-		return nil, err
-	}
-
-	err = pkg.SaveUserToRedis(r.rd, &user)
-	if err != nil {
 		return nil, err
 	}
 
@@ -66,65 +51,38 @@ func (r *UserRepositoryImpl) CreateUser(user *model.User) (*model.User, error) {
 		role = "owner"
 	}
 
+	user.Id = uuid.New().String()
 	user.Role = role
 	user.CreatedAt = time.Now()
 	user.UpdatedAt = time.Now()
 
-	newuser, err := r.users.InsertOne(context.Background(), user)
-	if err != nil {
-		return nil, err
-	}
-
-	user.Id = newuser.InsertedID.(primitive.ObjectID)
-	currentUser, err := r.GetUserById(user.UserId)
+	query := `INSERT INTO users (id, user_id, name, provider, model, role, created_at, updated_at) 
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := r.db.Exec(query,
+		user.Id, user.UserId, user.Name, user.Provider, user.Model, user.Role, user.CreatedAt, user.UpdatedAt,
+	)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return currentUser, nil
+	return r.GetUserById(user.UserId)
 }
 
-func (r *UserRepositoryImpl) updateUserField(userId int, fields bson.M) error {
-	query := bson.M{"userId": userId}
-	update := bson.M{"$set": fields}
-	_, err := r.users.UpdateOne(context.Background(), query, update)
-	return err
-}
-
-func (r *UserRepositoryImpl) updateUserAndCache(userId int, fields bson.M) error {
-	timeNow := time.Now()
-	fields["updatedAt"] = timeNow
-
-	if err := r.updateUserField(userId, fields); err != nil {
-		return err
-	}
-
-	user, err := r.GetUserById(userId)
+func (r *UserRepositoryImpl) UpdateModel(userId int, modelName string) error {
+	query := `UPDATE users SET model = ?, updated_at = ? WHERE user_id = ?`
+	_, err := r.db.Exec(query, modelName, time.Now(), userId)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to update model: %w", err)
 	}
-
-	for key, value := range fields {
-		switch key {
-
-		case "model":
-			user.Model = value.(string)
-		case "provider":
-			user.Provider = value.(string)
-		}
-	}
-	user.UpdatedAt = timeNow
-
-	return pkg.SaveUserToRedis(r.rd, user)
-}
-
-func (r *UserRepositoryImpl) UpdateModel(userId int, model string) error {
-	fields := bson.M{"model": model}
-	return r.updateUserAndCache(userId, fields)
+	return nil
 }
 
 func (r *UserRepositoryImpl) UpdateProvider(userId int, provider string) error {
-	fields := bson.M{"provider": provider}
-	return r.updateUserAndCache(userId, fields)
+	query := `UPDATE users SET provider = ?, updated_at = ? WHERE user_id = ?`
+	_, err := r.db.Exec(query, provider, time.Now(), userId)
+	if err != nil {
+		return fmt.Errorf("failed to update provider: %w", err)
+	}
+	return nil
 }

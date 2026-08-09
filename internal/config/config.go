@@ -1,7 +1,8 @@
 package config
 
 import (
-	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -11,14 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"encoding/json"
-
 	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
-	"github.com/rabbitmq/amqp091-go"
-	"github.com/redis/go-redis/v9"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var PORT string
@@ -26,13 +22,10 @@ var HOST string
 var AllowedOrigins string
 var NgrokActive string
 var NgrokAuthToken string
-var DB *mongo.Database
-var QueueName string
-var MQ *amqp091.Channel
+var DB *sql.DB
 var BotType string
 var TelegramBotToken string
 var DiscordBotToken string
-var RedisClient *redis.Client
 var LLMProviderBaseURL string
 var LLMProviderName string
 var LLMProviderAPIKey string
@@ -167,7 +160,6 @@ func LoadBaseConfig() {
 	PORT = ":" + os.Getenv("PORT")
 	HOST = os.Getenv("HOST")
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
-	QueueName = os.Getenv("QUEUE_NAME")
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
@@ -187,7 +179,6 @@ func LoadBaseConfig() {
 		TranscriberAPIKey = LLMProviderAPIKey
 		log.Println("TRANSCRIBER_API_KEY not set, reusing LLM_PROVIDER_API_KEY for Gemini")
 	}
-	// No default for API key for security reasons
 
 	streamVal := os.Getenv("STREAM_RESPONSE")
 	if streamVal != "" {
@@ -254,127 +245,73 @@ func LoadBaseConfig() {
 }
 
 func ConnectDatabases() {
-	maxRetries := 10
-	retryDelay := 3 * time.Second
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		homeDir, err := os.UserHomeDir()
+		if err == nil {
+			dbPath = filepath.Join(homeDir, ".myaaw", "myaaw.db")
+		} else {
+			dbPath = "myaaw.db"
+		}
+	}
 
-	mongoURI := os.Getenv("MONGODB_URI")
-	dbName := os.Getenv("DB_NAME")
-	redisURL := os.Getenv("REDIS_URL")
+	// Ensure directory exists
+	dir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Fatalf("Failed to create db directory: %v", err)
+	}
 
-	ConnectMongoDB(mongoURI, dbName, maxRetries, retryDelay)
-	ConnectRedis(redisURL, maxRetries, retryDelay)
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		log.Fatal("Failed to open SQLite database:", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		log.Fatal("Failed to ping SQLite database:", err)
+	}
+
+	DB = db
+	if Verbose {
+		log.Println("Connected to SQLite database at:", dbPath)
+	}
+
+	// Initialize Schema
+	initSchema(db)
 }
 
-func ConnectQueue() {
-	maxRetries := 10
-	retryDelay := 3 * time.Second
+func initSchema(db *sql.DB) {
+	queries := []string{
+		`CREATE TABLE IF NOT EXISTS users (
+			id TEXT PRIMARY KEY,
+			user_id INTEGER UNIQUE,
+			name TEXT,
+			provider TEXT,
+			model TEXT,
+			role TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		);`,
+		`CREATE TABLE IF NOT EXISTS conversations (
+			id TEXT PRIMARY KEY,
+			user_id INTEGER,
+			title TEXT,
+			messages TEXT,
+			active BOOLEAN,
+			created_at DATETIME,
+			updated_at DATETIME
+		);`,
+	}
 
-	rabbitMQURL := os.Getenv("RABBITMQ_URL")
-	ConnectRabbitMQ(rabbitMQURL, maxRetries, retryDelay)
+	for _, q := range queries {
+		if _, err := db.Exec(q); err != nil {
+			log.Fatalf("Failed to execute schema query: %v", err)
+		}
+	}
 }
 
 func LoadConfig() {
 	LoadBaseConfig()
 	ConnectDatabases()
-	ConnectQueue()
-}
-
-func retry(attempts int, delay time.Duration, fn func() error) error {
-	for i := 0; i < attempts; i++ {
-		err := fn()
-		if err == nil {
-			return nil
-		}
-
-		// Only log on the first failure or every 5th failure to reduce noise, unless verbose is on
-		if Verbose || i == 0 || (i+1)%5 == 0 {
-			log.Printf("Attempt %d/%d failed: %v. Retrying in %v...", i+1, attempts, err, delay)
-		}
-		time.Sleep(delay)
-	}
-	return fmt.Errorf("failed after %d attempts", attempts)
-}
-
-func ConnectMongoDB(mongoURI, dbName string, maxRetries int, retryDelay time.Duration) {
-	err := retry(maxRetries, retryDelay, func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		clientOptions := options.Client().ApplyURI(mongoURI)
-		client, err := mongo.Connect(ctx, clientOptions)
-		if err != nil {
-			return err
-		}
-
-		err = client.Ping(ctx, nil)
-		if err != nil {
-			return err
-		}
-
-		DB = client.Database(dbName)
-		if Verbose {
-			log.Println("Connected to MongoDB!")
-		}
-		return nil
-	})
-
-	if err != nil {
-		log.Fatal("MongoDB connection failed:", err)
-	}
-}
-
-func ConnectRedis(redisURL string, maxRetries int, retryDelay time.Duration) {
-	err := retry(maxRetries, retryDelay, func() error {
-		opt, err := redis.ParseURL(redisURL)
-		if err != nil {
-			return err
-		}
-
-		RedisClient = redis.NewClient(opt)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		_, err = RedisClient.Ping(ctx).Result()
-		if err != nil {
-			return err
-		}
-
-		if Verbose {
-			log.Println("Connected to Redis!")
-		}
-		return nil
-	})
-
-	if err != nil {
-		log.Fatal("Redis connection failed:", err)
-	}
-}
-
-func ConnectRabbitMQ(rabbitMQURL string, maxRetries int, retryDelay time.Duration) {
-	if rabbitMQURL == "" {
-		log.Fatal("❌ Error: RABBITMQ_URL is not set. Please check your .env file.")
-	}
-	err := retry(maxRetries, retryDelay, func() error {
-		conn, err := amqp091.Dial(rabbitMQURL)
-
-		if err != nil {
-			return err
-		}
-
-		ch, err := conn.Channel()
-		if err != nil {
-			return err
-		}
-
-		MQ = ch
-		if Verbose {
-			log.Println("Connected to RabbitMQ!")
-		}
-		return nil
-	})
-
-	if err != nil {
-		log.Fatal("RabbitMQ connection failed:", err)
-	}
 }
 
 // WatchConfig watches for changes in config.json and reloads the config

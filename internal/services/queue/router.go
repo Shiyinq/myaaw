@@ -1,7 +1,6 @@
 package queue_router
 
 import (
-	"myaaw/internal/config"
 	"myaaw/internal/services/queue/handler"
 	"myaaw/internal/services/queue/repository"
 	"myaaw/internal/services/queue/service"
@@ -11,7 +10,7 @@ import (
 
 func QueueRouter(router fiber.Router) {
 
-	repo := repository.NewQueueRepository(config.MQ)
+	repo := repository.NewQueueRepository()
 	serv := service.NewQueueService(repo)
 	hand := handler.NewQueueHandler(serv)
 

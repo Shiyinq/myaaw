@@ -124,7 +124,6 @@ func init() {
 func startServer(ctx context.Context) {
 	config.LoadBaseConfig()
 	config.ConnectDatabases()
-	config.ConnectQueue()
 
 	app := fiber.New(fiber.Config{})
 
@@ -137,7 +136,7 @@ func startServer(ctx context.Context) {
 
 	app.Use(middleware.NotFoundHandler)
 
-	queueRepo := repository.NewQueueRepository(config.MQ)
+	queueRepo := repository.NewQueueRepository()
 	queueServ := service.NewQueueService(queueRepo)
 
 	if config.TelegramBotToken != "" {
@@ -160,6 +159,8 @@ func startServer(ctx context.Context) {
 			}()
 		}
 	}
+
+	go startBackgroundWorkers()
 
 	log.Fatal(app.Listen(config.PORT))
 }

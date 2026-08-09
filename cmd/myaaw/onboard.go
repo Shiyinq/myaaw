@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -51,7 +50,6 @@ const (
 	stepHeartbeatChannel
 	stepHeartbeatID
 	stepOwner
-	stepDocker
 	stepInstallGlobal
 	stepSudoPassword
 	stepDone
@@ -88,8 +86,7 @@ type onboardModel struct {
 	sudoPassword     string
 
 	// Flags
-	dockerSetupDone bool
-	globalPathDone  bool
+	globalPathDone bool
 
 	// Command output
 	cmdOutput  []string
@@ -154,14 +151,6 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle async command results
 	switch msg := msg.(type) {
-	case dockerFinishedMsg:
-		m.isRunning = false
-		m.dockerSetupDone = msg.err == nil
-		if msg.err != nil {
-			m.cmdOutput = append(m.cmdOutput, theme.ErrorStyle.Render("Error: "+msg.err.Error()))
-		} else {
-			m.cmdOutput = append(m.cmdOutput, theme.SuccessStyle.Render("Docker setup complete!"))
-		}
 	case globalPathFinishedMsg:
 		m.isRunning = false
 		if msg.err != nil {
@@ -304,27 +293,6 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Save Configuration
 		m.saveConfig()
 
-		m.step = stepDocker
-		m.cursor = 0
-		m.choices = []string{"Yes, setup Docker containers", "No, skip"}
-
-	case stepDocker:
-		if m.isRunning {
-			return m, nil
-		}
-		if len(m.cmdOutput) > 0 {
-			// Paused after completion
-			m.step = stepInstallGlobal
-			m.cursor = 0
-			m.choices = []string{"Yes, install globally", "No"}
-			m.cmdOutput = nil
-			return m, nil
-		}
-		if m.cursor == 0 {
-			m.isRunning = true
-			m.cmdOutput = []string{"Starting Docker setup..."}
-			return m, m.runDockerCmd()
-		}
 		m.step = stepInstallGlobal
 		m.cursor = 0
 		m.choices = []string{"Yes, install globally", "No"}
@@ -384,49 +352,6 @@ func (m *onboardModel) setupOwnerInput() {
 	m.textInput.Reset()
 }
 
-func (m onboardModel) runDockerCmd() tea.Cmd {
-	// Start the command and the goroutines to stream output
-	go func() {
-		composePath := findDockerComposePath()
-		// ... check/create composePath
-		if composePath == "" {
-			home, _ := os.UserHomeDir()
-			myaawDir := filepath.Join(home, ".myaaw")
-			os.MkdirAll(myaawDir, 0755)
-			composePath = filepath.Join(myaawDir, "docker-compose.yml")
-			os.WriteFile(composePath, []byte(myaaw.DefaultDockerCompose), 0644)
-		}
-
-		c := exec.Command("docker", "compose", "-f", composePath, "up", "-d", "--pull", "missing")
-		stdout, _ := c.StdoutPipe()
-		stderr, _ := c.StderrPipe()
-
-		if err := c.Start(); err != nil {
-			m.outputChan <- dockerFinishedMsg{err}
-			return
-		}
-
-		// Stream output
-		go func() {
-			scanner := bufio.NewScanner(stdout)
-			for scanner.Scan() {
-				m.outputChan <- cmdOutputMsg(scanner.Text())
-			}
-		}()
-		go func() {
-			scanner := bufio.NewScanner(stderr)
-			for scanner.Scan() {
-				m.outputChan <- cmdOutputMsg(scanner.Text())
-			}
-		}()
-
-		err := c.Wait()
-		m.outputChan <- dockerFinishedMsg{err}
-	}()
-
-	return m.listenForOutput()
-}
-
 func (m onboardModel) runGlobalPathCmd() tea.Cmd {
 	go func() {
 		exe, _ := os.Executable()
@@ -467,7 +392,6 @@ func (m onboardModel) listenForOutput() tea.Cmd {
 }
 
 type cmdOutputMsg string
-type dockerFinishedMsg struct{ err error }
 type globalPathFinishedMsg struct{ err error }
 
 func (m *onboardModel) setupHeartbeatInput() {
@@ -580,19 +504,6 @@ func (m onboardModel) renderContent() string {
 		b.WriteString("\n\nEnter your User ID (Telegram/Discord) to be the bot admin.\n")
 		b.WriteString(m.textInput.View())
 
-	case stepDocker:
-		b.WriteString(titleStyle.Render("Docker Infrastructure"))
-		if m.isRunning {
-			b.WriteString("\n\n" + theme.SecondaryStyle.Render("Installing services..."))
-			b.WriteString("\n" + theme.MutedStyle.Render(strings.Join(m.cmdOutput, "\n")))
-		} else if len(m.cmdOutput) > 0 {
-			b.WriteString("\n\n" + strings.Join(m.cmdOutput, "\n"))
-			b.WriteString("\n\n" + theme.SecondaryStyle.Render("Press Enter to continue."))
-		} else {
-			b.WriteString("\n\nInitialize MongoDB, Redis, and RabbitMQ containers?\n\n")
-			b.WriteString(m.renderChoices())
-		}
-
 	case stepInstallGlobal:
 		b.WriteString(titleStyle.Render("Install Globally"))
 		b.WriteString("\n\nMake 'myaaw' available globally in your terminal?\n\n")
@@ -646,7 +557,6 @@ func (m onboardModel) renderTimeline() string {
 		"Channels",
 		"Heartbeat",
 		"Owner",
-		"Docker",
 		"Install Global",
 		"Done",
 	}
@@ -666,12 +576,10 @@ func (m onboardModel) renderTimeline() string {
 		timelineIdx = 4
 	case stepOwner:
 		timelineIdx = 5
-	case stepDocker:
-		timelineIdx = 6
 	case stepInstallGlobal, stepSudoPassword:
-		timelineIdx = 7
+		timelineIdx = 6
 	case stepDone:
-		timelineIdx = 8
+		timelineIdx = 7
 	}
 
 	var b strings.Builder
@@ -790,4 +698,4 @@ func extractEmbedDir(embeddedFS embed.FS, src string, dest string) error {
 	return nil
 }
 
-// runDockerSetup is in docker.go
+// onboarding utilities

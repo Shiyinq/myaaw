@@ -7,6 +7,3 @@ var DefaultMyaawDir embed.FS
 
 //go:embed .env.example
 var DefaultEnvExample string
-
-//go:embed docker-compose.yml
-var DefaultDockerCompose string
