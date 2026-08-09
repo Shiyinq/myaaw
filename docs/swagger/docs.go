@@ -260,7 +260,18 @@ const docTemplate = `{
             }
         },
         "channel.QueueEnvelope": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
         },
         "common.ErrorResponse": {
             "type": "object",
