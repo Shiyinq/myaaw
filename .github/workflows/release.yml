@@ -23,11 +23,6 @@ jobs:
             goos: darwin
             goarch: arm64
             ext: ""
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
-            ext: ".exe"
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -49,17 +44,6 @@ jobs:
         if: startsWith(matrix.os, 'macos')
         run: brew install portaudio
 
-      # Install C dependencies for Windows (MSYS2)
-      - name: Install Dependencies (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-portaudio
-          path-type: inherit
-
       - name: Build Binary
         env:
           GOOS: ${{ matrix.goos }}
@@ -67,11 +51,6 @@ jobs:
           CGO_ENABLED: 1
         shell: bash
         run: |
-          # Use MSYS2 shell on Windows to ensure correct GCC is used
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            export PATH="/c/msys64/mingw64/bin:$PATH"
-          fi
-          
           mkdir -p bin
           echo "Building for ${{ matrix.goos }}/${{ matrix.goarch }}..."
           go build -v -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X main.Commit=${{ github.sha }}" -o bin/myaaw-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/myaaw
