@@ -19,7 +19,7 @@ GO?=go
 GOFLAGS?=-v
 
 # Installation
-PREFIX?=/usr/local
+PREFIX?=$(HOME)/.local
 ifeq ($(OS),Windows_NT)
 	INSTALL_DIR=$(HOME)/AppData/Local/bin
 	BINARY_EXT=.exe

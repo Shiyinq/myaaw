@@ -53,7 +53,7 @@ jobs:
         run: |
           mkdir -p bin
           echo "Building for ${{ matrix.goos }}/${{ matrix.goarch }}..."
-          go build -v -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X main.Commit=${{ github.sha }}" -o bin/myaaw-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/myaaw
+          go build -v -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X main.Commit=${{ github.sha }} -X main.Date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" -o bin/myaaw-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/myaaw
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

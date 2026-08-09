@@ -4,7 +4,7 @@ set -e
 
 REPO="Shiyinq/myaaw"
 BIN_NAME="myaaw"
-INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="$HOME/.local/bin"
 
 echo "================================================="
 echo "🐈 Welcome to MyAAW (Personal AI Assistant) Setup"
@@ -59,14 +59,17 @@ chmod +x "$TMP_FILE"
 echo "📦 Installing to ${INSTALL_DIR}..."
 mkdir -p "$INSTALL_DIR" || true
 
-if [ -w "$INSTALL_DIR" ]; then
-    mv "$TMP_FILE" "${INSTALL_DIR}/${BIN_NAME}${EXT}"
-else
-    echo "Requires sudo privileges to move binary to ${INSTALL_DIR}"
-    sudo mv "$TMP_FILE" "${INSTALL_DIR}/${BIN_NAME}${EXT}"
-fi
+mv "$TMP_FILE" "${INSTALL_DIR}/${BIN_NAME}${EXT}"
 
 echo "✅ Installation successful! MyAAW is now installed at ${INSTALL_DIR}/${BIN_NAME}${EXT}."
+
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]] && [ "$OS_NAME" != "windows" ]; then
+    echo ""
+    echo "⚠️  WARNING: ${INSTALL_DIR} is not in your PATH."
+    echo "You may need to add the following line to your ~/.zshrc or ~/.bashrc:"
+    echo "export PATH=\"\$HOME/.local/bin:\$PATH\""
+fi
+
 echo ""
 echo "🚀 Launching onboarding process..."
 echo ""

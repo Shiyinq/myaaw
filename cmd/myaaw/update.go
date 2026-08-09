@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -14,11 +16,20 @@ import (
 	"myaaw/internal/cli/theme"
 )
 
+var autoConfirm bool
+
+func init() {
+	updateCmd.Flags().BoolVar(&autoConfirm, "auto-confirm", false, "Automatically confirm prompts")
+	updateCmd.Flags().MarkHidden("auto-confirm")
+}
+
 var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Check for and install updates",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("%s %s...\n", theme.RenderSecondary("🔍 Checking for updates at"), githubRepo)
+		if !autoConfirm {
+			fmt.Printf("%s %s...\n", theme.RenderSecondary("🔍 Checking for updates at"), githubRepo)
+		}
 
 		latestVersion, downloadURL, err := getLatestReleaseInfo()
 		if err != nil {
@@ -26,13 +37,17 @@ var updateCmd = &cobra.Command{
 		}
 
 		if latestVersion == Version {
-			fmt.Printf("%s (Version: %s)\n", theme.RenderSuccess("✅ Myaaw is already up to date"), Version)
+			if !autoConfirm {
+				fmt.Printf("%s (Version: %s)\n", theme.RenderSuccess("✅ Myaaw is already up to date"), Version)
+			}
 			return
 		}
 
-		fmt.Printf("%s: %s (Current: %s)\n", theme.RenderPrimary("🆕 New version available"), latestVersion, Version)
-		if !askYesNo("Would you like to download and install it?", true) {
-			return
+		if !autoConfirm {
+			fmt.Printf("%s: %s (Current: %s)\n", theme.RenderPrimary("🆕 New version available"), latestVersion, Version)
+			if !askYesNo("Would you like to download and install it?", true) {
+				return
+			}
 		}
 
 		if err := performUpdate(downloadURL); err != nil {
@@ -71,7 +86,7 @@ func getLatestReleaseInfo() (version string, downloadURL string, err error) {
 		return "", "", fmt.Errorf("GitHub API returned status %d", resp.StatusCode())
 	}
 
-	version = strings.TrimPrefix(result.TagName, "v")
+	version = result.TagName
 
 	// Find asset for current platform
 	expectedName := getBinaryNameForPlatform()
@@ -105,6 +120,37 @@ func performUpdate(url string) error {
 	if err != nil {
 		return err
 	}
+
+	// 0. Check write permissions and elevate if needed
+	dir := filepath.Dir(exe)
+	testFile := filepath.Join(dir, ".myaaw_write_test")
+	f, err := os.OpenFile(testFile, os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		if os.IsPermission(err) {
+			if runtime.GOOS != "windows" {
+				fmt.Println(theme.RenderSecondary("🔐 Administrator privileges required. Prompting for password..."))
+				
+				// Re-run the current command with sudo and --auto-confirm
+				args := append([]string{exe}, os.Args[1:]...)
+				args = append(args, "--auto-confirm")
+				cmd := exec.Command("sudo", args...)
+				cmd.Stdin = os.Stdin
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("sudo failed: %w", err)
+				}
+				
+				// Exit gracefully since the elevated child process completed the update
+				os.Exit(0)
+			}
+			return fmt.Errorf("permission denied. Please run your terminal as Administrator")
+		}
+		return err
+	}
+	f.Close()
+	os.Remove(testFile)
 
 	// 1. Download to temporary file
 	tempFile := exe + ".tmp"
