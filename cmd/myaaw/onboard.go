@@ -51,7 +51,6 @@ const (
 	stepHeartbeatID
 	stepOwner
 	stepInstallGlobal
-	stepSudoPassword
 	stepDone
 )
 
@@ -160,11 +159,12 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.EchoMode = textinput.EchoPassword // Ensure it's masked on retry
 		} else {
 			m.globalPathDone = true
-			targetPath := "/usr/local/bin/myaaw"
+			home, _ := os.UserHomeDir()
+			targetPath := filepath.Join(home, ".local", "bin", "myaaw")
 			if runtime.GOOS == "windows" {
 				targetPath = "C:\\Windows\\System32\\myaaw.exe (Manual step recommended)"
 			}
-			m.cmdOutput = []string{theme.SuccessStyle.Render(fmt.Sprintf("Successfully installed globally at %s!", targetPath))}
+			m.cmdOutput = []string{theme.SuccessStyle.Render(fmt.Sprintf("Successfully installed at %s!", targetPath))}
 			m.textInput.Reset()
 		}
 	case cmdOutputMsg:
@@ -200,7 +200,7 @@ func (m onboardModel) View() string {
 
 func (m onboardModel) isTextInputStep() bool {
 	switch m.step {
-	case stepEnvLLM, stepTelegramToken, stepDiscordToken, stepHeartbeatID, stepOwner, stepSudoPassword:
+	case stepEnvLLM, stepTelegramToken, stepDiscordToken, stepHeartbeatID, stepOwner:
 		return true
 	default:
 		return false
@@ -298,30 +298,21 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.choices = []string{"Yes, install globally", "No"}
 
 	case stepInstallGlobal:
-		if m.cursor == 0 {
-			m.step = stepSudoPassword
-			m.textInput.Placeholder = "System Password (for sudo)"
-			m.textInput.EchoMode = textinput.EchoPassword
-			m.textInput.Reset()
-		} else {
-			m.step = stepDone
-		}
-
-	case stepSudoPassword:
 		if m.isRunning {
 			return m, nil
 		}
 		if m.globalPathDone {
-			// Paused after completion
 			m.step = stepDone
 			m.cmdOutput = nil
 			return m, nil
 		}
-		m.sudoPassword = m.textInput.Value()
-		// Do NOT set EchoNormal here, keep it EchoPassword
-		m.isRunning = true
-		m.cmdOutput = []string{"Installing binary..."}
-		return m, m.runGlobalPathCmd()
+		if m.cursor == 0 {
+			m.isRunning = true
+			m.cmdOutput = []string{"Installing binary..."}
+			return m, m.runGlobalPathCmd()
+		} else {
+			m.step = stepDone
+		}
 
 	case stepDone:
 		if msg, ok := msg.(tea.KeyMsg); ok && msg.String() == "enter" {
@@ -360,10 +351,12 @@ func (m onboardModel) runGlobalPathCmd() tea.Cmd {
 			return
 		}
 
-		// Use -S to read password from stdin
-		// Redirecting stderr to stdout to capture sudo errors in output if needed
-		cmd := exec.Command("sudo", "-S", "mv", exe, "/usr/local/bin/myaaw")
-		cmd.Stdin = strings.NewReader(m.sudoPassword + "\n")
+		home, _ := os.UserHomeDir()
+		targetDir := filepath.Join(home, ".local", "bin")
+		os.MkdirAll(targetDir, 0755)
+		targetPath := filepath.Join(targetDir, "myaaw")
+
+		cmd := exec.Command("mv", exe, targetPath)
 
 		var combinedOut strings.Builder
 		cmd.Stdout = &combinedOut
@@ -371,7 +364,6 @@ func (m onboardModel) runGlobalPathCmd() tea.Cmd {
 
 		err := cmd.Run()
 		if err != nil {
-			// If sudo failed, include its output in the error if possible
 			outStr := strings.TrimSpace(combinedOut.String())
 			if outStr != "" {
 				m.outputChan <- globalPathFinishedMsg{fmt.Errorf("%v: %s", err, outStr)}
@@ -506,11 +498,6 @@ func (m onboardModel) renderContent() string {
 
 	case stepInstallGlobal:
 		b.WriteString(titleStyle.Render("Install Globally"))
-		b.WriteString("\n\nMake 'myaaw' available globally in your terminal?\n\n")
-		b.WriteString(m.renderChoices())
-
-	case stepSudoPassword:
-		b.WriteString(titleStyle.Render("Install Globally"))
 		if m.isRunning {
 			b.WriteString("\n\n" + theme.SecondaryStyle.Render("Moving binary..."))
 		} else if m.globalPathDone {
@@ -520,8 +507,8 @@ func (m onboardModel) renderContent() string {
 			if len(m.cmdOutput) > 0 {
 				b.WriteString("\n" + strings.Join(m.cmdOutput, "\n") + "\n")
 			}
-			b.WriteString("\nPlease enter your sudo password to move the binary to /usr/local/bin.\n")
-			b.WriteString(m.textInput.View())
+			b.WriteString("\n\nMake 'myaaw' available globally in your terminal?\n\n")
+			b.WriteString(m.renderChoices())
 		}
 
 	case stepDone:
@@ -576,7 +563,7 @@ func (m onboardModel) renderTimeline() string {
 		timelineIdx = 4
 	case stepOwner:
 		timelineIdx = 5
-	case stepInstallGlobal, stepSudoPassword:
+	case stepInstallGlobal:
 		timelineIdx = 6
 	case stepDone:
 		timelineIdx = 7
@@ -630,7 +617,10 @@ func ensureEnvFile(path string) {
 func setupGlobalPath() {
 	exe, _ := os.Executable()
 	if runtime.GOOS != "windows" {
-		cmd := exec.Command("sudo", "mv", exe, "/usr/local/bin/myaaw")
+		home, _ := os.UserHomeDir()
+		targetDir := filepath.Join(home, ".local", "bin")
+		os.MkdirAll(targetDir, 0755)
+		cmd := exec.Command("mv", exe, filepath.Join(targetDir, "myaaw"))
 		cmd.Run()
 	}
 }
