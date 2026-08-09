@@ -215,6 +215,7 @@ func (s *Scheduler) executeJob(job Job) {
 		"prompt":  job.Payload.Content,
 		"to":      job.Delivery.To,
 		"channel": job.Delivery.Channel,
+		"trigger": "cron",
 	}
 
 	resp, err := client.R().

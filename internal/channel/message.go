@@ -10,9 +10,10 @@ type IncomingMessage struct {
 	Text    string   // text content (or transcribed voice)
 	Images  []string // base64 encoded images
 	Voice   []byte   // raw audio bytes
-	Channel string   // "telegram", "api", etc.
-	ReplyTo string   // quoted/replied text context
-	RawMeta any      // channel-specific metadata (e.g. chat ID, message ID)
+	Channel     string   // "telegram", "api", etc.
+	ReplyTo     string   // quoted/replied text context
+	RawMeta     any      // channel-specific metadata (e.g. chat ID, message ID)
+	TriggerType string   // "cron", "heartbeat", or empty
 }
 
 type OutgoingMessage struct {

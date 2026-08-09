@@ -20,7 +20,7 @@ type BotService interface {
 	BotStream(msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error)
 	command(user *model.User, msg *channel.IncomingMessage) (bool, string, error)
 	conversation(user *model.User, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error)
-	ProcessHeartbeat(prompt, to, channelName string) (*channel.IncomingMessage, *channel.OutgoingMessage, error)
+	ProcessHeartbeat(prompt, to, channelName, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error)
 }
 
 type BotServiceImpl struct {
@@ -164,7 +164,7 @@ func (r *BotServiceImpl) BotStream(msg *channel.IncomingMessage, onChunk func(ch
 	return r.conversationStream(user, msg, onChunk)
 }
 
-func (r *BotServiceImpl) ProcessHeartbeat(prompt, to, channelName string) (*channel.IncomingMessage, *channel.OutgoingMessage, error) {
+func (r *BotServiceImpl) ProcessHeartbeat(prompt, to, channelName, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error) {
 	log.Printf("Processing heartbeat request from %s (Channel: %s)...", to, channelName)
 
 	userId, err := strconv.Atoi(to)
@@ -173,9 +173,10 @@ func (r *BotServiceImpl) ProcessHeartbeat(prompt, to, channelName string) (*chan
 	}
 
 	msg := &channel.IncomingMessage{
-		UserID:  userId,
-		Text:    prompt,
-		Channel: channelName,
+		UserID:      userId,
+		Text:        prompt,
+		Channel:     channelName,
+		TriggerType: triggerType,
 	}
 
 	user, err := r.checkUser(msg)
