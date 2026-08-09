@@ -129,7 +129,7 @@ func performUpdate(url string) error {
 		if os.IsPermission(err) {
 			if runtime.GOOS != "windows" {
 				fmt.Println(theme.RenderSecondary("🔐 Administrator privileges required. Prompting for password..."))
-				
+
 				// Re-run the current command with sudo and --auto-confirm
 				args := append([]string{exe}, os.Args[1:]...)
 				args = append(args, "--auto-confirm")
@@ -137,11 +137,11 @@ func performUpdate(url string) error {
 				cmd.Stdin = os.Stdin
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
-				
+
 				if err := cmd.Run(); err != nil {
 					return fmt.Errorf("sudo failed: %w", err)
 				}
-				
+
 				// Exit gracefully since the elevated child process completed the update
 				os.Exit(0)
 			}

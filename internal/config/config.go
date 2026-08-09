@@ -171,13 +171,11 @@ func LoadBaseConfig() {
 		} else {
 			TranscriberProviderName = "groq"
 		}
-		log.Println("TRANSCRIBER_PROVIDER_NAME not set, using default:", TranscriberProviderName)
 	}
 
 	TranscriberAPIKey = os.Getenv("TRANSCRIBER_API_KEY")
 	if TranscriberAPIKey == "" && TranscriberProviderName == "gemini" && LLMProviderName == "gemini" {
 		TranscriberAPIKey = LLMProviderAPIKey
-		log.Println("TRANSCRIBER_API_KEY not set, reusing LLM_PROVIDER_API_KEY for Gemini")
 	}
 
 	streamVal := os.Getenv("STREAM_RESPONSE")

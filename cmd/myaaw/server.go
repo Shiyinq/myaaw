@@ -38,7 +38,7 @@ var serverRunCmd = &cobra.Command{
 
 var serverStartCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start server in background (Daemon)",
+	Short: "Start the bot as a persistent background service",
 	Run: func(cmd *cobra.Command, args []string) {
 		dm, err := daemon.NewManager("myaaw-server")
 		if err != nil {
@@ -54,7 +54,7 @@ var serverStartCmd = &cobra.Command{
 
 var serverStopCmd = &cobra.Command{
 	Use:   "stop",
-	Short: "Stop the background server",
+	Short: "Stop and unregister the background service",
 	Run: func(cmd *cobra.Command, args []string) {
 		dm, err := daemon.NewManager("myaaw-server")
 		if err != nil {
@@ -69,7 +69,7 @@ var serverStopCmd = &cobra.Command{
 
 var serverRestartCmd = &cobra.Command{
 	Use:   "restart",
-	Short: "Restart the server daemon",
+	Short: "Restart the background service",
 	Run: func(cmd *cobra.Command, args []string) {
 		dm, err := daemon.NewManager("myaaw-server")
 		if err != nil {
