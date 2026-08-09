@@ -90,6 +90,7 @@ build-all:
 install: build
 	@echo "🚀 Installing $(BINARY_NAME) to $(INSTALL_DIR)..."
 	@mkdir -p $(INSTALL_DIR)
+	@rm -f $(INSTALL_DIR)/$(BINARY_NAME)$(BINARY_EXT)
 	@cp $(BINARY_PATH) $(INSTALL_DIR)/$(BINARY_NAME)$(BINARY_EXT)
 	@chmod +x $(INSTALL_DIR)/$(BINARY_NAME)$(BINARY_EXT)
 	@echo "✅ Installed!"

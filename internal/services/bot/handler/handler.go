@@ -38,6 +38,7 @@ type HeartbeatRequest struct {
 	Prompt  string `json:"prompt"`
 	To      string `json:"to"`
 	Channel string `json:"channel"`
+	Trigger string `json:"trigger"`
 }
 
 func NewBotHandler(botService service.BotService, channelRegistry *channel.Registry) BotHandler {
@@ -150,7 +151,7 @@ func (s *BotHandlerImpl) Heartbeat(c fiber.Ctx) error {
 		})
 	}
 
-	msg, out, err := s.botService.ProcessHeartbeat(req.Prompt, req.To, req.Channel)
+	msg, out, err := s.botService.ProcessHeartbeat(req.Prompt, req.To, req.Channel, req.Trigger)
 	if err != nil {
 		return utils.ErrorInternalServer(c, "failed to process heartbeat: "+err.Error())
 	}

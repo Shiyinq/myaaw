@@ -134,6 +134,7 @@ CRITICAL: "HEARTBEAT_OK" acts as a "silent skip". If you output it, the system a
 		"prompt":  prompt,
 		"to":      config.Heartbeat.To,
 		"channel": config.Heartbeat.Channel,
+		"trigger": "heartbeat",
 	}
 
 	baseURL := os.Getenv("MYAAW_BASE_URL")

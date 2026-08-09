@@ -160,10 +160,18 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 
 // buildUserMessage converts a generic IncomingMessage to a provider.Message.
 func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider.Message {
+	text := msg.Text
+	switch msg.TriggerType {
+	case "heartbeat":
+		text = "[SYSTEM TRIGGER: HEARTBEAT]\n" + text
+	case "cron":
+		text = "[SYSTEM TRIGGER: CRON JOB]\n(NOTE: The user does NOT see this trigger message. You must now deliver the reminder or perform the scheduled task for the user based on this prompt)\n\n" + text
+	}
+
 	// Voice: text is already transcribed by channel adapter
 	// Text with reply context
 	if msg.ReplyTo != "" {
-		text := msg.Text + "\n\ncontex:\n" + msg.ReplyTo
+		text = text + "\n\ncontex:\n" + msg.ReplyTo
 		return provider.Message{
 			Role:    "user",
 			Content: text,
@@ -181,7 +189,7 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 			contentItems := []provider.ContentItem{
 				{
 					Type: "text",
-					Text: msg.Text,
+					Text: text,
 				},
 			}
 			for _, img := range msg.Images {
@@ -201,7 +209,7 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 		// Type 1: images array (Ollama, Gemini)
 		return provider.Message{
 			Role:    "user",
-			Content: msg.Text,
+			Content: text,
 			Images:  msg.Images,
 		}
 	}
@@ -209,11 +217,17 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 	// Plain text
 	return provider.Message{
 		Role:    "user",
-		Content: msg.Text,
+		Content: text,
 	}
 }
 
 func (r *BotServiceImpl) updateUserMessages(msg *channel.IncomingMessage, messages []provider.Message, response provider.Message) error {
+	if msg.TriggerType == "heartbeat" {
+		if contentStr, ok := response.Content.(string); ok && strings.TrimSpace(contentStr) == "HEARTBEAT_OK" {
+			return nil
+		}
+	}
+
 	messages = append(messages, response)
 	messages = messages[1:] // exclude system message
 
