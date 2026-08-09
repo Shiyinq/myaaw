@@ -18,7 +18,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "myaaw",
 	Short: "Personal AI Assistant",
-	Long:  "Integrate your favorite LLM with Telegram, Discord, and more.\nRun as a server, or chat directly from the terminal.",
+	Long:  "😼 A Cat who becomes your personal AI assistant.",
 }
 
 func init() {
