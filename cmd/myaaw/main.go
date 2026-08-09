@@ -18,12 +18,11 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "myaaw",
 	Short: "Personal AI Assistant",
-	Long:  "Integrate your favorite LLM with Telegram, Discord, and more.\nRun as a server, consumer, or chat directly from the terminal.",
+	Long:  "Integrate your favorite LLM with Telegram, Discord, and more.\nRun as a server, or chat directly from the terminal.",
 }
 
 func init() {
 	rootCmd.AddCommand(serverCmd)
-	rootCmd.AddCommand(consumerCmd)
 	rootCmd.AddCommand(chatCmd)
 	rootCmd.AddCommand(voiceCmd)
 	rootCmd.AddCommand(voiceClassicCmd)
@@ -31,7 +30,6 @@ func init() {
 	rootCmd.AddCommand(webhookCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(updateCmd)
-	rootCmd.AddCommand(dockerCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(logsCmd)
 
@@ -93,7 +91,7 @@ func init() {
 				groups := []cmdGroup{
 					{name: "Core Commands", cmdNames: []string{"chat", "voice", "voice-classic", "status"}},
 					{name: "Automation", cmdNames: []string{"cron"}},
-					{name: "Service Management", cmdNames: []string{"gateway", "server", "consumer", "docker", "webhook"}},
+					{name: "Service Management", cmdNames: []string{"server", "webhook"}},
 					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},
 				}
 

@@ -1,56 +1,20 @@
 package repository
 
-import (
-	"log"
-	"myaaw/internal/config"
-
-	"github.com/rabbitmq/amqp091-go"
-)
-
 type QueueRepository interface {
 	PublishMessage(body []byte) error
 }
 
-type QueueRepositoryImpl struct {
-	Channel *amqp091.Channel
-	Queue   amqp091.Queue
-}
+// In-memory queue
+var WebhookQueue = make(chan []byte, 1000)
 
-func NewQueueRepository(ch *amqp091.Channel) QueueRepository {
-	q, err := ch.QueueDeclare(
-		config.QueueName, // Queue name
-		false,            // Durable
-		false,            // Delete when unused
-		false,            // Exclusive
-		false,            // No-wait
-		nil,              // Arguments
-	)
-	if err != nil {
-		log.Fatalf("Failed to declare a queue: %s", err)
-	}
+type QueueRepositoryImpl struct{}
 
-	return &QueueRepositoryImpl{
-		Channel: ch,
-		Queue:   q,
-	}
+func NewQueueRepository() QueueRepository {
+	return &QueueRepositoryImpl{}
 }
 
 func (r *QueueRepositoryImpl) PublishMessage(body []byte) error {
-	err := r.Channel.Publish(
-		"",           // Exchange
-		r.Queue.Name, // Routing key (queue name)
-		false,        // Mandatory
-		false,        // Immediate
-		amqp091.Publishing{
-			ContentType: "application/json",
-			Body:        body,
-		},
-	)
-
-	if err != nil {
-		log.Printf("Failed to publish message: %s", err)
-		return err
-	}
-
+	// Push to the in-memory queue
+	WebhookQueue <- body
 	return nil
 }

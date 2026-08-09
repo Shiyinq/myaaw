@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
-	"net/url"
+	"myaaw/internal/daemon"
 	"os"
-	"strings"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -14,7 +14,7 @@ import (
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check service status",
-	Long:  "Check the connection status of all services (MongoDB, Redis, RabbitMQ) and channel configurations.",
+	Long:  "Check the connection status of the application components and channel configurations.",
 	Run: func(cmd *cobra.Command, args []string) {
 		config.LoadBaseConfig()
 
@@ -22,18 +22,11 @@ var statusCmd = &cobra.Command{
 		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
 
 		srv, srvRunning, _ := checkService("myaaw-server")
-		cons, consRunning, _ := checkService("myaaw-consumer")
 
-		if srvRunning && consRunning {
+		if srvRunning {
 			fmt.Printf("%-14s %s\n", "Gateway", theme.RenderSuccess("✅ OPERATIONAL"))
-		} else if !srvRunning && !consRunning {
-			fmt.Printf("%-14s %s\n", "Gateway", theme.RenderError("❌ OFFLINE"))
 		} else {
-			if srvRunning {
-				fmt.Printf("%-14s %s\n", "Gateway", theme.RenderError("⚠️  PARTIAL (Server Only)"))
-			} else {
-				fmt.Printf("%-14s %s\n", "Gateway", theme.RenderError("⚠️  PARTIAL (Consumer Only)"))
-			}
+			fmt.Printf("%-14s %s\n", "Gateway", theme.RenderError("❌ OFFLINE"))
 		}
 
 		if srvRunning {
@@ -42,33 +35,18 @@ var statusCmd = &cobra.Command{
 			fmt.Printf("  %-12s %s\n", "Server", theme.RenderError("❌ Stopped"))
 		}
 
-		if consRunning {
-			fmt.Printf("  %-12s %s (PID: %d)\n", "Consumer", theme.RenderSuccess("✅ Running"), cons)
-		} else {
-			fmt.Printf("  %-12s %s\n", "Consumer", theme.RenderError("❌ Stopped"))
-		}
-
 		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
 
-		mongoPort := getPortFromURL(os.Getenv("MONGODB_URI"), "27017")
-		if err := config.PingMongoDB(); err != nil {
-			fmt.Printf("  %-12s %s (%s)\n", "MongoDB", theme.RenderError("[ERR] Offline"), err)
-		} else {
-			fmt.Printf("  %-12s %s (Port: %s)\n", "MongoDB", theme.RenderSuccess("✅ Online"), mongoPort)
+		dbPath := os.Getenv("DB_PATH")
+		if dbPath == "" {
+			homeDir, _ := os.UserHomeDir()
+			dbPath = filepath.Join(homeDir, ".myaaw", "myaaw.db")
 		}
 
-		redisPort := getPortFromURL(os.Getenv("REDIS_URL"), "6379")
-		if err := config.PingRedis(); err != nil {
-			fmt.Printf("  %-12s %s (%s)\n", "Redis", theme.RenderError("❌ Offline"), err)
+		if err := config.PingSQLite(); err != nil {
+			fmt.Printf("  %-12s %s (%s)\n", "SQLite DB", theme.RenderError("[ERR] Offline"), err)
 		} else {
-			fmt.Printf("  %-12s %s (Port: %s)\n", "Redis", theme.RenderSuccess("✅ Online"), redisPort)
-		}
-
-		rabbitPort := getPortFromURL(os.Getenv("RABBITMQ_URL"), "5672")
-		if err := config.PingRabbitMQ(); err != nil {
-			fmt.Printf("  %-12s %s (%s)\n", "RabbitMQ", theme.RenderError("❌ Offline"), err)
-		} else {
-			fmt.Printf("  %-12s %s (Port: %s)\n", "RabbitMQ", theme.RenderSuccess("✅ Online"), rabbitPort)
+			fmt.Printf("  %-12s %s (Path: %s)\n", "SQLite DB", theme.RenderSuccess("✅ Online"), dbPath)
 		}
 
 		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
@@ -115,20 +93,10 @@ var statusCmd = &cobra.Command{
 	},
 }
 
-func getPortFromURL(uri string, defaultPort string) string {
-	if uri == "" {
-		return defaultPort
-	}
-	if !strings.Contains(uri, "://") {
-	}
-
-	u, err := url.Parse(uri)
+func checkService(serviceName string) (int, bool, error) {
+	dm, err := daemon.NewManager(serviceName)
 	if err != nil {
-		return defaultPort
+		return 0, false, err
 	}
-	port := u.Port()
-	if port == "" {
-		return defaultPort
-	}
-	return port
+	return dm.Status()
 }

@@ -8,8 +8,6 @@ import (
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
 	"strings"
-
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func (r *BotServiceImpl) conversation(user *model.User, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
@@ -220,13 +218,12 @@ func (r *BotServiceImpl) updateUserMessages(msg *channel.IncomingMessage, messag
 	messages = messages[1:] // exclude system message
 
 	conv, err := r.conversationRepo.GetActiveConversationByUserId(msg.UserID)
-	var convId primitive.ObjectID
 	if err != nil && conv != nil {
 		return err
 	}
 
-	convId = conv.Id
-	if convId != primitive.NilObjectID {
+	if conv != nil && conv.Id != "" {
+		convId := conv.Id
 		title := ""
 		if conv.Title == "" || conv.Title == "New Chat" {
 			user, err := r.userRepo.GetUserById(msg.UserID)

@@ -3,8 +3,6 @@ package service
 import (
 	"myaaw/internal/channel"
 	"myaaw/internal/common"
-	"myaaw/internal/config"
-	"myaaw/internal/pkg"
 	"myaaw/internal/services/bot/model"
 	"myaaw/internal/utils"
 	"strconv"
@@ -63,21 +61,9 @@ func NewModelsCommand(r *BotServiceImpl) CommandFactory {
 }
 
 func (c *ModelsCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
-	var models []string
-	provider := c.r.llmProvider.ProviderName()
-	modelCache, err := pkg.GetModelNamesFromRedis(config.RedisClient, provider)
+	models, err := c.r.llmProvider.Models()
 	if err != nil {
 		return true, common.CommandModelsFailed(), nil
-	}
-
-	if modelCache != nil {
-		models = modelCache
-	} else {
-		models, err = c.r.llmProvider.Models()
-		if err != nil {
-			return true, common.CommandModelsFailed(), nil
-		}
-		pkg.SaveModelNamesToRedis(config.RedisClient, provider, models)
 	}
 
 	if args == "" {

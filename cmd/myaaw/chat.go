@@ -55,8 +55,8 @@ func init() {
 }
 
 func createBotService() service.BotService {
-	userRepo := repository.NewUserRepository(config.DB, config.RedisClient)
-	convRepo := repository.NewConversationRepository(config.DB, config.RedisClient)
+	userRepo := repository.NewUserRepository(config.DB)
+	convRepo := repository.NewConversationRepository(config.DB)
 	return service.NewBotService(userRepo, convRepo)
 }
 
