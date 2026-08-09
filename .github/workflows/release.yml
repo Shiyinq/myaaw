@@ -19,7 +19,7 @@ jobs:
             goos: linux
             goarch: amd64
             ext: ""
-          - os: macos-latest
+          - os: macos-13
             goos: darwin
             goarch: amd64
             ext: ""
@@ -50,7 +50,7 @@ jobs:
 
       # Install C dependencies for macOS
       - name: Install Dependencies (macOS)
-        if: matrix.os == 'macos-latest'
+        if: startsWith(matrix.os, 'macos')
         run: brew install portaudio
 
       # Install C dependencies for Windows (MSYS2)
