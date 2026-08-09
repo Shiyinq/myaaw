@@ -33,6 +33,11 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(logsCmd)
 
+	// Aliases for convenience so users can type `myaaw start` instead of `myaaw server start`
+	rootCmd.AddCommand(serverStartCmd)
+	rootCmd.AddCommand(serverStopCmd)
+	rootCmd.AddCommand(serverRestartCmd)
+
 	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false, "enable verbose logging")
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
@@ -91,7 +96,7 @@ func init() {
 				groups := []cmdGroup{
 					{name: "Core Commands", cmdNames: []string{"chat", "voice", "voice-classic", "status"}},
 					{name: "Automation", cmdNames: []string{"cron"}},
-					{name: "Service Management", cmdNames: []string{"server", "webhook"}},
+					{name: "Service Management", cmdNames: []string{"start", "stop", "restart", "webhook"}},
 					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},
 				}
 

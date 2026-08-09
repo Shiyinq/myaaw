@@ -514,8 +514,8 @@ func (m onboardModel) renderContent() string {
 	case stepDone:
 		b.WriteString(theme.SuccessStyle.Render("✨ Onboarding Complete!"))
 		b.WriteString("\n\nYou're all set. Try running:\n")
-		b.WriteString(theme.HighlightStyle.Render("  myaaw status") + "\n")
-		b.WriteString(theme.HighlightStyle.Render("  myaaw chat") + "\n\n")
+		b.WriteString(theme.HighlightStyle.Render("  myaaw start") + " (to run bot in background for Telegram/Discord)\n")
+		b.WriteString(theme.HighlightStyle.Render("  myaaw chat") + " (to chat directly in the terminal)\n\n")
 		b.WriteString(theme.SecondaryStyle.Render("Press Enter to finish and exit."))
 	}
 

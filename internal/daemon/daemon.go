@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -44,6 +45,36 @@ func (m *Manager) Start(args []string) error {
 		return fmt.Errorf("%s is already running with PID %d", m.Name, pid)
 	}
 
+	if runtime.GOOS == "darwin" {
+		return startDarwin(m, args)
+	} else if runtime.GOOS == "linux" {
+		return startLinux(m, args)
+	}
+
+	return m.startPID(args)
+}
+
+func (m *Manager) Stop() error {
+	if runtime.GOOS == "darwin" {
+		return stopDarwin(m)
+	} else if runtime.GOOS == "linux" {
+		return stopLinux(m)
+	}
+
+	return m.stopPID()
+}
+
+func (m *Manager) Status() (int, bool, error) {
+	if runtime.GOOS == "darwin" {
+		return statusDarwin(m)
+	} else if runtime.GOOS == "linux" {
+		return statusLinux(m)
+	}
+
+	return m.statusPID()
+}
+
+func (m *Manager) startPID(args []string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -76,8 +107,8 @@ func (m *Manager) Start(args []string) error {
 	return nil
 }
 
-func (m *Manager) Stop() error {
-	pid, running, err := m.Status()
+func (m *Manager) stopPID() error {
+	pid, running, err := m.statusPID()
 	if err != nil {
 		return err
 	}
@@ -92,8 +123,6 @@ func (m *Manager) Stop() error {
 	}
 
 	if err := terminateProcess(proc); err != nil {
-
-		// If permission denied or other error
 		return err
 	}
 
@@ -105,7 +134,7 @@ func (m *Manager) Stop() error {
 	return nil
 }
 
-func (m *Manager) Status() (int, bool, error) {
+func (m *Manager) statusPID() (int, bool, error) {
 	data, err := os.ReadFile(m.PIDFile)
 	if err != nil {
 		if os.IsNotExist(err) {
