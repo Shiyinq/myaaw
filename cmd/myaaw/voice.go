@@ -129,6 +129,15 @@ func runVoice() {
 	fmt.Println(theme.RenderPrimary(" 🎤 MYAAW VOICE 🎤 "))
 	fmt.Println()
 
+	// Guard: Ensure provider is Gemini
+	if strings.ToLower(config.LLMProviderName) != "gemini" {
+		fmt.Println(theme.RenderError("❌ Error: Myaaw Voice uses the Gemini Multimodal Live API."))
+		fmt.Printf("   Your active provider is set to '%s' (type: %s).\n\n", config.CurrentProviderID, config.LLMProviderName)
+		fmt.Println(theme.RenderSecondary("   Please switch to a Gemini provider to use this feature, or use"))
+		fmt.Println(theme.RenderSecondary("   the classic voice mode: 'myaaw voice-classic'"))
+		os.Exit(1)
+	}
+
 	// System instruction — dynamically include video awareness
 	systemInstruction := "You are Myaaw, a friendly and helpful AI voice assistant. Keep your responses concise and conversational since you are speaking out loud. Be warm and natural."
 	if len(videoModes) > 0 {
