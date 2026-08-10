@@ -104,7 +104,8 @@ func init() {
 					{name: "Core Commands", cmdNames: []string{"chat", "voice", "voice-classic", "status"}},
 					{name: "Automation", cmdNames: []string{"cron"}},
 					{name: "Service Management", cmdNames: []string{"start", "stop", "restart", "webhook"}},
-					{name: "System & Config", cmdNames: []string{"logs", "config", "provider", "completion", "update", "version"}},
+					{name: "Integrations", cmdNames: []string{"provider", "channel"}},
+					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},
 				}
 
 				findCmd := func(name string) *cobra.Command {
