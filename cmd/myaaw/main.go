@@ -12,6 +12,12 @@ import (
 	"os"
 	"path/filepath"
 
+	_ "myaaw/internal/agent/tools/bash"
+	_ "myaaw/internal/agent/tools/cron"
+	_ "myaaw/internal/agent/tools/filesystem"
+	_ "myaaw/internal/agent/tools/provider"
+	_ "myaaw/internal/agent/tools/python"
+
 	"github.com/spf13/cobra"
 )
 
