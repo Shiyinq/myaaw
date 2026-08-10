@@ -9,11 +9,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/spf13/cobra"
 
 	"myaaw/internal/cli/theme"
+	"myaaw/internal/daemon"
 )
 
 var autoConfirm bool
@@ -54,7 +56,25 @@ var updateCmd = &cobra.Command{
 			log.Fatalf("%s: %v", theme.RenderError("❌ Update failed"), err)
 		}
 
-		fmt.Println(theme.RenderSuccess("🚀 Update complete! Please restart Myaaw."))
+		fmt.Println(theme.RenderSuccess("🚀 Update downloaded and installed!"))
+		
+		// Attempt to auto-restart if running as a daemon
+		dm, err := daemon.NewManager("myaaw-server")
+		if err == nil {
+			if _, running, _ := dm.Status(); running {
+				fmt.Println(theme.RenderSecondary("🔄 Restarting Myaaw background service..."))
+				_ = dm.Stop()
+				time.Sleep(1 * time.Second)
+				if err := dm.Start([]string{"server", "run"}); err == nil {
+					fmt.Println(theme.RenderSuccess("✅ Service restarted successfully!"))
+					return
+				} else {
+					fmt.Printf("%s: %v\n", theme.RenderError("⚠️  Failed to start service automatically"), err)
+				}
+			}
+		}
+
+		fmt.Println(theme.RenderPrimary("ℹ️  If Myaaw is running in another terminal, please run 'myaaw restart' to apply the update."))
 	},
 }
 
