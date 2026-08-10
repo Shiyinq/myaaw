@@ -10,7 +10,8 @@
             "YOUR_OWNER_ID_1"
         ],
         "type": "private",
-        "watermark": true
+        "watermark": false,
+        "stream": true
     },
     "channels": {
         "telegram": {

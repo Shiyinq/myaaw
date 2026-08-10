@@ -273,9 +273,115 @@ var providerDeleteCmd = &cobra.Command{
 	},
 }
 
+var providerSetModelCmd = &cobra.Command{
+	Use:   "set-model [name]",
+	Short: "Change the default model for an LLM provider integration",
+	Args:  cobra.MaximumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		cfg, _ := config.LoadJSONConfigOnly()
+		if cfg == nil || len(cfg.Providers) == 0 {
+			fmt.Println("No providers configured.")
+			return
+		}
+
+		var name string
+		if len(args) == 0 {
+			options := []huh.Option[string]{}
+			for n := range cfg.Providers {
+				label := n
+				if n == cfg.DefaultProvider {
+					label = n + " (Active)"
+				}
+				options = append(options, huh.NewOption(label, n))
+			}
+
+			err := huh.NewSelect[string]().
+				Title("Select provider to update model").
+				Options(options...).
+				Value(&name).
+				Run()
+
+			if err != nil {
+				fmt.Println(theme.RenderError("Cancelled."))
+				return
+			}
+		} else {
+			name = args[0]
+		}
+
+		pConfig, exists := cfg.Providers[name]
+		if !exists {
+			fmt.Println(theme.RenderError(fmt.Sprintf("Provider '%s' not found.", name)))
+			return
+		}
+
+		fmt.Println(theme.RenderSecondary(fmt.Sprintf("\nFetching available models for %s...", name)))
+		
+		// Temporarily override config to initialize provider
+		config.LLMProviderBaseURL = pConfig.BaseURL
+		llm, err := provider.CreateLLMProvider(pConfig.Type, pConfig.APIKey)
+		if err != nil {
+			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to create provider: %v", err)))
+			return
+		}
+
+		models, err := llm.Models()
+		if err != nil {
+			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to fetch models: %v", err)))
+			fmt.Print("Enter default model manually: ")
+		}
+
+		var defaultModel string
+		if len(models) > 0 {
+			options := []huh.Option[string]{}
+			for _, m := range models {
+				label := m
+				if m == pConfig.DefaultModel {
+					label = m + " (Current)"
+				}
+				options = append(options, huh.NewOption(label, m))
+			}
+
+			err = huh.NewSelect[string]().
+				Title(fmt.Sprintf("Select default model for %s", name)).
+				Options(options...).
+				Value(&defaultModel).
+				Run()
+
+			if err != nil {
+				fmt.Println(theme.RenderError("Setup cancelled."))
+				return
+			}
+		} else {
+			err = huh.NewInput().
+				Title(fmt.Sprintf("Enter default model manually for %s", name)).
+				Value(&defaultModel).
+				Run()
+
+			if err != nil {
+				fmt.Println(theme.RenderError("Setup cancelled."))
+				return
+			}
+			defaultModel = strings.TrimSpace(defaultModel)
+		}
+
+		pConfig.DefaultModel = defaultModel
+		cfg.Providers[name] = pConfig
+
+		err = config.SaveConfig(cfg)
+		if err != nil {
+			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to save config: %v", err)))
+			return
+		}
+
+		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✨ Model for provider '%s' updated to '%s'", name, defaultModel)))
+	},
+}
+
 func init() {
 	providerCmd.AddCommand(providerCreateCmd)
 	providerCmd.AddCommand(providerListCmd)
 	providerCmd.AddCommand(providerDefaultCmd)
+	providerCmd.AddCommand(providerSetModelCmd)
 	providerCmd.AddCommand(providerDeleteCmd)
 }

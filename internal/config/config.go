@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +37,7 @@ var OwnerIDs []string
 var Heartbeat HeartbeatConfig
 var TelegramMode string // "webhook" or "polling"
 var Verbose bool
+var CurrentProviderID string
 
 type Config struct {
 	DefaultProvider string                    `json:"default_provider,omitempty"`
@@ -63,6 +63,7 @@ type GlobalBotConfig struct {
 	OwnerIDs  []string `json:"owner_ids"`
 	Type      string   `json:"type"`
 	Watermark bool     `json:"watermark"`
+	Stream    *bool    `json:"stream,omitempty"`
 }
 
 type ChannelsConfig struct {
@@ -222,17 +223,11 @@ func LoadBaseConfig() {
 		TranscriberAPIKey = LLMProviderAPIKey
 	}
 
-	streamVal := os.Getenv("STREAM_RESPONSE")
-	if streamVal != "" {
-		boolVal, err := strconv.ParseBool(streamVal)
-		if err != nil {
-			log.Printf("Warning: Invalid value for STREAM_RESPONSE '%s', defaulting to false", streamVal)
-			StreamResponse = false
-		} else {
-			StreamResponse = boolVal
-		}
-	} else {
+	streamVal := strings.ToLower(os.Getenv("STREAM_RESPONSE"))
+	if streamVal == "false" || streamVal == "0" {
 		StreamResponse = false
+	} else {
+		StreamResponse = true // Default to true
 	}
 
 	if AllowedOrigins == "" {
@@ -251,6 +246,9 @@ func LoadBaseConfig() {
 			BotType = jsonConfig.Bot.Type
 		}
 		WatermarkModel = jsonConfig.Bot.Watermark
+		if jsonConfig.Bot.Stream != nil {
+			StreamResponse = *jsonConfig.Bot.Stream
+		}
 
 		if jsonConfig.Channels.Telegram != nil {
 			TelegramBotToken = jsonConfig.Channels.Telegram.Token
@@ -286,6 +284,7 @@ func LoadBaseConfig() {
 		
 		// Priority: config.json Providers > .env
 		if jsonConfig.DefaultProvider != "" && jsonConfig.Providers != nil {
+			CurrentProviderID = jsonConfig.DefaultProvider
 			if provider, exists := jsonConfig.Providers[jsonConfig.DefaultProvider]; exists {
 				LLMProviderName = provider.Type
 				LLMProviderAPIKey = provider.APIKey
