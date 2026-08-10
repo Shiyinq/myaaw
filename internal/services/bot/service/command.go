@@ -5,7 +5,6 @@ import (
 	"myaaw/internal/common"
 	"myaaw/internal/services/bot/model"
 	"myaaw/internal/utils"
-	"strconv"
 )
 
 type CommandFactory interface {
@@ -52,44 +51,6 @@ func (c *ResetCommand) HandleCommand(user *model.User, args string) (bool, strin
 	return true, common.CommandReset(), nil
 }
 
-type ModelsCommand struct {
-	r *BotServiceImpl
-}
-
-func NewModelsCommand(r *BotServiceImpl) CommandFactory {
-	return &ModelsCommand{r: r}
-}
-
-func (c *ModelsCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
-	models, err := c.r.llmProvider.Models()
-	if err != nil {
-		return true, common.CommandModelsFailed(), nil
-	}
-
-	if args == "" {
-		return true, utils.ListModels(*user, c.r.llmProvider.ProviderName(), models), nil
-	}
-
-	idModel, err := strconv.Atoi(args)
-	if err != nil {
-		return true, common.CommandModelsArgsNotInt(), nil
-	}
-
-	if idModel < 0 || idModel >= len(models) {
-		return true, common.CommandModelsNotFound(), nil
-	}
-
-	err = c.r.userRepo.UpdateModel(user.UserId, models[idModel])
-	if err != nil {
-		return true, common.CommandModelsUpdateFailed(), nil
-	}
-
-	reset := NewResetCommand(c.r)
-	reset.HandleCommand(user, args)
-
-	return true, common.CommandModels(), nil
-}
-
 type MeCommand struct {
 	r *BotServiceImpl
 }
@@ -126,7 +87,6 @@ func NewCommandExecutor(r *BotServiceImpl) *CommandExecutor {
 			"help":   NewStartCommand(r),
 			"about":  NewAboutCommand(r),
 			"reset":  NewResetCommand(r),
-			"models": NewModelsCommand(r),
 
 			"me": NewMeCommand(r),
 		},

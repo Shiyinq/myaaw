@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"myaaw/internal/agent/tools"
 	"myaaw/internal/config"
 )
 
@@ -51,6 +50,7 @@ type ReactStep struct {
 }
 
 type ToolCall struct {
+	Index    *int         `json:"index,omitempty"`
 	ID       string       `json:"id,omitempty"`
 	Type     string       `json:"type,omitempty"`
 	Function FunctionCall `json:"function"`
@@ -129,7 +129,10 @@ func CreateLLMProvider(providerName string, apiKey string) (LLMProvider, error) 
 	if !exists {
 		return nil, errors.New("unknown llm provider")
 	}
-	defaultModel := defaultLLMModels[providerName]
+	defaultModel := config.LLMDefaultModel
+	if defaultModel == "" {
+		defaultModel = defaultLLMModels[providerName]
+	}
 
 	return factory(config.LLMProviderBaseURL, apiKey, defaultModel), nil
 }
@@ -166,24 +169,3 @@ func argsToString(i interface{}) string {
 	return string(jsonData)
 }
 
-func toolCalls(messages []Message, response Message) []Message {
-	messages = append(messages, response)
-	for _, toolCall := range response.ToolCalls {
-		toolId := toolCall.ID
-		toolName := toolCall.Function.Name
-		toolArgs := toolCall.Function.Arguments
-
-		tool := tools.NewTools(toolName, argsToString(toolArgs))
-		responseTool := []Message{
-			{
-				Role:       "tool",
-				Name:       toolName,
-				Content:    tool,
-				ToolCallID: toolId,
-			},
-		}
-		messages = append(messages, responseTool...)
-	}
-
-	return messages
-}

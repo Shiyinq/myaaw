@@ -5,12 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"myaaw/internal/agent/tools"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+func init() {
+	tools.Register("execute_python", NewPythonTool())
+}
 
 type PythonTool struct{}
 

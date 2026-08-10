@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"myaaw/internal/agent/tools"
 	"myaaw/internal/config"
 	"net/http"
 	"os"
@@ -22,6 +23,8 @@ var (
 )
 
 func init() {
+	tools.Register("filesystem", NewFileSystemTool())
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		log.Printf("Warning: Could not get current working directory: %v", err)

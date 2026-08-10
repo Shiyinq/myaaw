@@ -115,8 +115,7 @@ func (g *GroqProvider) Chat(modelName string, messages []Message) (Message, erro
 	}
 
 	if response.Choices[0].FinishReason == "tool_calls" {
-		resp_tool := toolCalls(messages, response.Choices[0].Message)
-		return g.Chat(modelName, resp_tool)
+		return response.Choices[0].Message, nil
 	}
 
 	return response.Choices[0].Message, nil
@@ -170,6 +169,7 @@ func (g *GroqProvider) ChatStream(modelName string, messages []Message, callback
 
 		jsonData := strings.TrimPrefix(line, "data: ")
 
+		response = GroqChatCompletion{}
 		err = json.Unmarshal([]byte(jsonData), &response)
 		if err != nil {
 			return fmt.Errorf("error unmarshalling stream data: %w", err)
@@ -185,12 +185,10 @@ func (g *GroqProvider) ChatStream(modelName string, messages []Message, callback
 		}
 
 		if response.Choices[0].Delta.ToolCalls != nil {
-			partialMessage.Role = "assistant"
-			resp_tool := toolCalls(messages, partialMessage)
-			return g.ChatStream(modelName, resp_tool, callback)
+			// We already passed partialMessage to callback above
 		}
 
-		if response.Choices[0].FinishReason == "stop" {
+		if response.Choices[0].FinishReason == "stop" || response.Choices[0].FinishReason == "tool_calls" {
 			break
 		}
 	}

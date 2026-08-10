@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +28,7 @@ var DiscordBotToken string
 var LLMProviderBaseURL string
 var LLMProviderName string
 var LLMProviderAPIKey string
+var LLMDefaultModel string
 var StreamResponse bool
 var TranscriberProviderName string
 var TranscriberAPIKey string
@@ -37,12 +37,29 @@ var OwnerIDs []string
 var Heartbeat HeartbeatConfig
 var TelegramMode string // "webhook" or "polling"
 var Verbose bool
-
+var CurrentProviderID string
+var AgentMaxIterations int = 100
+var AgentWarningIterations int = 90
 type Config struct {
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Bot       GlobalBotConfig `json:"bot,omitempty"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Cron      CronConfig      `json:"cron"`
+	DefaultProvider string                    `json:"default_provider,omitempty"`
+	Providers       map[string]ProviderConfig `json:"providers,omitempty"`
+	Heartbeat       HeartbeatConfig           `json:"heartbeat"`
+	Bot             GlobalBotConfig           `json:"bot,omitempty"`
+	Channels        ChannelsConfig            `json:"channels"`
+	Cron            CronConfig                `json:"cron"`
+	Transcriber     TranscriberConfig         `json:"transcriber,omitempty"`
+}
+
+type ProviderConfig struct {
+	Type         string `json:"type"`
+	BaseURL      string `json:"base_url,omitempty"`
+	APIKey       string `json:"api_key,omitempty"`
+	DefaultModel string `json:"default_model,omitempty"`
+}
+
+type TranscriberConfig struct {
+	Provider string `json:"provider,omitempty"`
+	APIKey   string `json:"api_key,omitempty"`
 }
 
 type CronConfig struct {
@@ -50,9 +67,12 @@ type CronConfig struct {
 }
 
 type GlobalBotConfig struct {
-	OwnerIDs  []string `json:"owner_ids"`
-	Type      string   `json:"type"`
-	Watermark bool     `json:"watermark"`
+	OwnerIDs           []string `json:"owner_ids"`
+	Type               string   `json:"type"`
+	Watermark          bool     `json:"watermark"`
+	Stream             *bool    `json:"stream,omitempty"`
+	MaxIterations      *int     `json:"max_iterations,omitempty"`
+	WarningIterations  *int     `json:"warning_iterations,omitempty"`
 }
 
 type ChannelsConfig struct {
@@ -113,6 +133,39 @@ func parseJSONFile(path string) (*Config, error) {
 	return &config, nil
 }
 
+func GetConfigPath() string {
+	// Try current directory
+	if _, err := os.Stat("config.json"); err == nil {
+		return "config.json"
+	}
+	
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		return filepath.Join(homeDir, ".myaaw", "config.json")
+	}
+	return "config.json"
+}
+
+func SaveConfig(config *Config) error {
+	path := GetConfigPath()
+	
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(config, "", "    ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+func LoadJSONConfigOnly() (*Config, error) {
+	return loadJSONConfig()
+}
+
 func envPath() string {
 	// 1. Check Current Directory
 	if abs, err := filepath.Abs(".env"); err == nil {
@@ -163,6 +216,7 @@ func LoadBaseConfig() {
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
+	LLMDefaultModel = ""
 
 	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")
 	if TranscriberProviderName == "" {
@@ -178,17 +232,11 @@ func LoadBaseConfig() {
 		TranscriberAPIKey = LLMProviderAPIKey
 	}
 
-	streamVal := os.Getenv("STREAM_RESPONSE")
-	if streamVal != "" {
-		boolVal, err := strconv.ParseBool(streamVal)
-		if err != nil {
-			log.Printf("Warning: Invalid value for STREAM_RESPONSE '%s', defaulting to false", streamVal)
-			StreamResponse = false
-		} else {
-			StreamResponse = boolVal
-		}
-	} else {
+	streamVal := strings.ToLower(os.Getenv("STREAM_RESPONSE"))
+	if streamVal == "false" || streamVal == "0" {
 		StreamResponse = false
+	} else {
+		StreamResponse = true // Default to true
 	}
 
 	if AllowedOrigins == "" {
@@ -207,6 +255,15 @@ func LoadBaseConfig() {
 			BotType = jsonConfig.Bot.Type
 		}
 		WatermarkModel = jsonConfig.Bot.Watermark
+		if jsonConfig.Bot.Stream != nil {
+			StreamResponse = *jsonConfig.Bot.Stream
+		}
+		if jsonConfig.Bot.MaxIterations != nil {
+			AgentMaxIterations = *jsonConfig.Bot.MaxIterations
+		}
+		if jsonConfig.Bot.WarningIterations != nil {
+			AgentWarningIterations = *jsonConfig.Bot.WarningIterations
+		}
 
 		if jsonConfig.Channels.Telegram != nil {
 			TelegramBotToken = jsonConfig.Channels.Telegram.Token
@@ -239,6 +296,25 @@ func LoadBaseConfig() {
 
 		Heartbeat = jsonConfig.Heartbeat
 		CronActive = jsonConfig.Cron.Active
+		
+		// Priority: config.json Providers > .env
+		if jsonConfig.DefaultProvider != "" && jsonConfig.Providers != nil {
+			CurrentProviderID = jsonConfig.DefaultProvider
+			if provider, exists := jsonConfig.Providers[jsonConfig.DefaultProvider]; exists {
+				LLMProviderName = provider.Type
+				LLMProviderAPIKey = provider.APIKey
+				LLMProviderBaseURL = provider.BaseURL
+				LLMDefaultModel = provider.DefaultModel
+			}
+		}
+		
+		// Priority: config.json Transcriber > .env
+		if jsonConfig.Transcriber.Provider != "" {
+			TranscriberProviderName = jsonConfig.Transcriber.Provider
+			if jsonConfig.Transcriber.APIKey != "" {
+				TranscriberAPIKey = jsonConfig.Transcriber.APIKey
+			}
+		}
 	}
 }
 

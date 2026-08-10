@@ -1,4 +1,15 @@
 {
+    "default_provider": "gemini",
+    "providers": {
+        "gemini": {
+            "type": "gemini",
+            "api_key": "YOUR_GEMINI_API_KEY"
+        }
+    },
+    "transcriber": {
+        "provider": "groq",
+        "api_key": "YOUR_GROQ_API_KEY"
+    },
     "heartbeat": {
         "active": true,
         "every": "30m",
@@ -10,7 +21,10 @@
             "YOUR_OWNER_ID_1"
         ],
         "type": "private",
-        "watermark": true
+        "watermark": false,
+        "stream": true,
+        "max_iterations": 100,
+        "warning_iterations": 90
     },
     "channels": {
         "telegram": {

@@ -42,6 +42,7 @@ func runOnboard(cmd *cobra.Command, args []string) {
 const (
 	stepWelcome = iota
 	stepInitHome
+	stepProviderChoice
 	stepEnvLLM
 	stepChannelChoice
 	stepTelegramMode
@@ -72,6 +73,7 @@ type onboardModel struct {
 	configFile string
 
 	// Collected Data
+	providerChoice   string // "openai", "groq", "gemini", "ollama"
 	llmKey           string
 	channelChoice    string // "telegram", "discord", "both", "skip"
 	telegramMode     string // "polling", "webhook"
@@ -216,16 +218,19 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stepInitHome:
 		setupMyaawHome(m.myaawHome)
+		m.step = stepProviderChoice
+		m.cursor = 0
+		m.choices = []string{"OpenAI", "Gemini"}
+
+	case stepProviderChoice:
+		m.providerChoice = strings.ToLower(m.choices[m.cursor])
 		m.step = stepEnvLLM
 		m.textInput.Placeholder = "sk-..."
 		m.textInput.Reset()
 
 	case stepEnvLLM:
 		m.llmKey = m.textInput.Value()
-		if m.llmKey != "" {
-			ensureEnvFile(m.envFile)
-			updateEnvFile(m.envFile, "LLM_PROVIDER_API_KEY", m.llmKey)
-		}
+		// Credentials will be saved in config.json in saveConfig()
 		m.step = stepChannelChoice
 		m.cursor = 0
 		m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
@@ -398,6 +403,20 @@ func (m onboardModel) saveConfig() {
 		cfg = &config.Config{}
 	}
 
+	// Update Provider
+	if cfg.Providers == nil {
+		cfg.Providers = make(map[string]config.ProviderConfig)
+	}
+	baseURL := ""
+	apiKey := m.llmKey
+	
+	cfg.DefaultProvider = m.providerChoice
+	cfg.Providers[m.providerChoice] = config.ProviderConfig{
+		Type:    m.providerChoice,
+		APIKey:  apiKey,
+		BaseURL: baseURL,
+	}
+
 	// Update Channels
 	if m.telegramToken != "" {
 		if cfg.Channels.Telegram == nil {
@@ -456,9 +475,14 @@ func (m onboardModel) renderContent() string {
 		b.WriteString(fmt.Sprintf("\n\nDirectory: %s\n\n", m.myaawHome))
 		b.WriteString(m.renderChoices())
 
+	case stepProviderChoice:
+		b.WriteString(titleStyle.Render("Select Default LLM Provider"))
+		b.WriteString("\n\nChoose the AI engine for your assistant:\n\n")
+		b.WriteString(m.renderChoices())
+
 	case stepEnvLLM:
-		b.WriteString(titleStyle.Render("LLM Provider API Key"))
-		b.WriteString("\n\nEnter your API key (e.g., OpenAI, Anthropic).\n")
+		b.WriteString(titleStyle.Render(strings.Title(m.providerChoice) + " API Key"))
+		b.WriteString("\n\nEnter your API key to connect to the provider.\n")
 		b.WriteString(m.textInput.View())
 
 	case stepChannelChoice:

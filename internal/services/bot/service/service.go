@@ -29,6 +29,8 @@ type BotServiceImpl struct {
 	llmProvider      provider.LLMProvider
 	transcriber      provider.Transcriber
 	agent            agent.AgentProvider
+	currentProviderID string
+	currentModel     string
 }
 
 func NewBotService(userRepo repository.UserRepository, conversationRepo repository.ConversationRepository) BotService {
@@ -50,6 +52,23 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 		llmProvider:      llmProvider,
 		transcriber:      transcriber,
 		agent:            ag,
+		currentProviderID: config.CurrentProviderID,
+		currentModel:     config.LLMDefaultModel,
+	}
+}
+
+func (r *BotServiceImpl) checkAndReloadProvider() {
+	if (r.currentProviderID != config.CurrentProviderID || r.currentModel != config.LLMDefaultModel) && config.CurrentProviderID != "" {
+		llmProvider, err := provider.CreateLLMProvider(config.LLMProviderName, config.LLMProviderAPIKey)
+		if err == nil {
+			r.llmProvider = llmProvider
+			r.agent = agent.NewAgent(llmProvider)
+			r.currentProviderID = config.CurrentProviderID
+			r.currentModel = config.LLMDefaultModel
+			log.Printf("Successfully hot-reloaded LLM Provider to: %s (Model: %s)", config.CurrentProviderID, config.LLMDefaultModel)
+		} else {
+			log.Printf("Failed to hot-reload provider %s: %v", config.CurrentProviderID, err)
+		}
 	}
 }
 
@@ -111,13 +130,14 @@ func (r *BotServiceImpl) changeProviderAndModel(user *model.User) (*model.User, 
 }
 
 func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
+	r.checkAndReloadProvider()
 
 	user, err := r.checkUser(msg)
 	if err != nil {
 		return nil, err
 	}
 
-	if user.Provider != r.llmProvider.ProviderName() {
+	if user.Provider != r.llmProvider.ProviderName() || user.Model != r.llmProvider.DefaultModel("") {
 		user, err = r.changeProviderAndModel(user)
 		if err != nil {
 			return nil, err
@@ -137,13 +157,14 @@ func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMes
 }
 
 func (r *BotServiceImpl) BotStream(msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
+	r.checkAndReloadProvider()
 
 	user, err := r.checkUser(msg)
 	if err != nil {
 		return nil, err
 	}
 
-	if user.Provider != r.llmProvider.ProviderName() {
+	if user.Provider != r.llmProvider.ProviderName() || user.Model != r.llmProvider.DefaultModel("") {
 		user, err = r.changeProviderAndModel(user)
 		if err != nil {
 			return nil, err
@@ -165,6 +186,7 @@ func (r *BotServiceImpl) BotStream(msg *channel.IncomingMessage, onChunk func(ch
 }
 
 func (r *BotServiceImpl) ProcessHeartbeat(prompt, to, channelName, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error) {
+	r.checkAndReloadProvider()
 	log.Printf("Processing heartbeat request from %s (Channel: %s)...", to, channelName)
 
 	userId, err := strconv.Atoi(to)

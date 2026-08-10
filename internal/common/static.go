@@ -4,7 +4,6 @@ func CommandStart() string {
 	return "👋 Welcome! I’m Myaaw your personal assistant.\nHere are some commands to configure me:\n\n" +
 		"**/about** - Info about Myaaw project\n" +
 		"**/me** - About me and show current config\n\n" +
-		"**/models** - Change the LLM model\n\n" +
 		"**/reset** - Reset the history context windows\n\n" +
 		"ℹ️ You can interact using natural language without needing to set commands first."
 }
@@ -23,24 +22,4 @@ func CommandResetFailed() string {
 
 func CommandNotFound() string {
 	return "4️⃣0️⃣4️⃣ Command not found."
-}
-
-func CommandModels() string {
-	return "✅ Model has been updated successfully."
-}
-
-func CommandModelsFailed() string {
-	return "❌ Failed to show models. Please try again later."
-}
-
-func CommandModelsArgsNotInt() string {
-	return "⚠️ The model ID must be an integer. Example: /models 2"
-}
-
-func CommandModelsNotFound() string {
-	return "4️⃣0️⃣4️⃣ Model not found"
-}
-
-func CommandModelsUpdateFailed() string {
-	return "❌ Failed to update the model. Please try again later."
 }

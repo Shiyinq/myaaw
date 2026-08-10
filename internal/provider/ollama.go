@@ -90,8 +90,7 @@ func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	if response.Message.ToolCalls != nil {
-		resp_tool := toolCalls(messages, response.Message)
-		return o.Chat(modelName, resp_tool)
+		return response.Message, nil
 	}
 
 	return response.Message, nil

@@ -6,10 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"myaaw/internal/agent/tools/bash"
-	"myaaw/internal/agent/tools/cron"
-	"myaaw/internal/agent/tools/filesystem"
-	"myaaw/internal/agent/tools/python"
 	"os"
 	"path/filepath"
 )
@@ -50,18 +46,19 @@ func GetTools() []map[string]interface{} {
 	return tools
 }
 
+var registry = map[string]ToolsFactory{}
+
+func Register(name string, factory ToolsFactory) {
+	registry[name] = factory
+}
+
 type ToolsCalling struct {
 	toolsMap map[string]ToolsFactory
 }
 
 func NewTools(functionName string, arguments string) string {
 	tools := &ToolsCalling{
-		toolsMap: map[string]ToolsFactory{
-			"bash":           bash.NewBashTool(),
-			"filesystem":     filesystem.NewFileSystemTool(),
-			"execute_python": python.NewPythonTool(),
-			"cron":           cron.NewCronTool(),
-		},
+		toolsMap: registry,
 	}
 	log.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)
 

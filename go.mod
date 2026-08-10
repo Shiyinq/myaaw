@@ -33,6 +33,10 @@ require (
 	cloud.google.com/go v0.116.0 // indirect
 	cloud.google.com/go/auth v0.9.3 // indirect
 	cloud.google.com/go/compute/metadata v0.5.0 // indirect
+	github.com/catppuccin/go v0.3.0 // indirect
+	github.com/charmbracelet/huh v1.0.0 // indirect
+	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/gen2brain/shm v0.1.0 // indirect
 	github.com/go-openapi/swag/conv v0.25.4 // indirect
 	github.com/go-openapi/swag/jsonname v0.25.4 // indirect
@@ -51,6 +55,7 @@ require (
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lxn/win v0.0.0-20210218163916-a377121e959e // indirect
+	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/swaggo/files/v2 v2.0.2 // indirect
 	github.com/tinylib/msgp v1.6.3 // indirect

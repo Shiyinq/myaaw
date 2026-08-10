@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
+
+	"myaaw/internal/agent/tools"
 )
 
 type OpenAIChoice struct {
@@ -41,9 +43,11 @@ type OpenAIChatCompletion struct {
 }
 
 type OpenAIRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Stream   bool      `json:"stream"`
+	Model      string                   `json:"model"`
+	Messages   []Message                `json:"messages"`
+	Stream     bool                     `json:"stream"`
+	Tools      []map[string]interface{} `json:"tools,omitempty"`
+	ToolChoice string                   `json:"tool_choice,omitempty"`
 }
 
 type OpenAIModels struct {
@@ -88,9 +92,11 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 	client.SetTimeout(120 * time.Second)
 
 	request := OpenAIRequest{
-		Model:    o.DefaultModel(modelName),
-		Stream:   false,
-		Messages: messages,
+		Model:      o.DefaultModel(modelName),
+		Stream:     false,
+		Messages:   messages,
+		Tools:      tools.GetTools(),
+		ToolChoice: "auto",
 	}
 
 	var response OpenAIChatCompletion
@@ -105,6 +111,10 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
 	}
 
+	if response.Choices[0].FinishReason == "tool_calls" {
+		return response.Choices[0].Message, nil
+	}
+
 	return response.Choices[0].Message, nil
 }
 
@@ -113,9 +123,11 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 	client.SetTimeout(120 * time.Second)
 
 	request := OpenAIRequest{
-		Model:    o.DefaultModel(modelName),
-		Stream:   true,
-		Messages: messages,
+		Model:      o.DefaultModel(modelName),
+		Stream:     true,
+		Messages:   messages,
+		Tools:      tools.GetTools(),
+		ToolChoice: "auto",
 	}
 
 	res, _ := client.R().
@@ -129,6 +141,9 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 
 	reader := bufio.NewReader(res.RawBody())
 	var response OpenAIChatCompletion
+	var accumulatedMessage Message
+	accumulatedMessage.Role = "assistant"
+
 	for {
 		line, err := reader.ReadString('\n')
 
@@ -154,15 +169,54 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 
 		jsonData := strings.TrimPrefix(line, "data: ")
 
+		response = OpenAIChatCompletion{}
 		err = json.Unmarshal([]byte(jsonData), &response)
 		if err != nil {
 			return fmt.Errorf("error unmarshalling stream data: %w", err)
 		}
 
 		partialMessage := response.Choices[0].Delta
-		err = callback(partialMessage)
-		if err != nil {
-			return fmt.Errorf("error in callback: %w", err)
+
+		if len(partialMessage.ToolCalls) > 0 {
+			for _, tcDelta := range partialMessage.ToolCalls {
+				idx := 0
+				if tcDelta.Index != nil {
+					idx = *tcDelta.Index
+				}
+				for len(accumulatedMessage.ToolCalls) <= idx {
+					accumulatedMessage.ToolCalls = append(accumulatedMessage.ToolCalls, ToolCall{})
+				}
+				if tcDelta.ID != "" {
+					accumulatedMessage.ToolCalls[idx].ID = tcDelta.ID
+				}
+				if tcDelta.Type != "" {
+					accumulatedMessage.ToolCalls[idx].Type = tcDelta.Type
+				}
+				if tcDelta.Function.Name != "" {
+					accumulatedMessage.ToolCalls[idx].Function.Name = tcDelta.Function.Name
+				}
+				if tcDelta.Function.Arguments != nil {
+					if argStr, ok := tcDelta.Function.Arguments.(string); ok {
+						currArg, _ := accumulatedMessage.ToolCalls[idx].Function.Arguments.(string)
+						accumulatedMessage.ToolCalls[idx].Function.Arguments = currArg + argStr
+					}
+				}
+			}
+		}
+
+		if partialMessage.Content != nil && partialMessage.Content != "" {
+			err = callback(partialMessage)
+			if err != nil {
+				return fmt.Errorf("error in callback: %w", err)
+			}
+		}
+
+		if response.Choices[0].FinishReason == "tool_calls" {
+			err = callback(accumulatedMessage)
+			if err != nil {
+				return fmt.Errorf("error in callback for tool calls: %w", err)
+			}
+			break
 		}
 
 		if response.Choices[0].FinishReason == "stop" {

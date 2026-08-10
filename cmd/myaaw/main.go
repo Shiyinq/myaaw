@@ -12,6 +12,12 @@ import (
 	"os"
 	"path/filepath"
 
+	_ "myaaw/internal/agent/tools/bash"
+	_ "myaaw/internal/agent/tools/cron"
+	_ "myaaw/internal/agent/tools/filesystem"
+	_ "myaaw/internal/agent/tools/provider"
+	_ "myaaw/internal/agent/tools/python"
+
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +35,7 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(webhookCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(providerCmd)
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(logsCmd)
@@ -97,6 +104,7 @@ func init() {
 					{name: "Core Commands", cmdNames: []string{"chat", "voice", "voice-classic", "status"}},
 					{name: "Automation", cmdNames: []string{"cron"}},
 					{name: "Service Management", cmdNames: []string{"start", "stop", "restart", "webhook"}},
+					{name: "Integrations", cmdNames: []string{"provider", "channel"}},
 					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},
 				}
 

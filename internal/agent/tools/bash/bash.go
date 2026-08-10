@@ -4,12 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"myaaw/internal/agent/tools"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+func init() {
+	tools.Register("bash", NewBashTool())
+}
 
 type BashTool struct{}
 

@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/config"
 	"myaaw/internal/provider"
 )
 
@@ -15,11 +16,7 @@ type ReactConfig struct {
 	WarningThreshold int
 }
 
-// DefaultReactConfig is the default configuration for ReAct loop
-var DefaultReactConfig = ReactConfig{
-	MaxIterations:    20,
-	WarningThreshold: 17,
-}
+
 
 // ThoughtPrompt is sent after observation to prompt LLM to think about next step
 const ThoughtPrompt = `Based on the tool result above, analyze what happened:
@@ -45,7 +42,10 @@ type Agent struct {
 func NewAgent(prov provider.LLMProvider) AgentProvider {
 	return &Agent{
 		Provider: prov,
-		Config:   DefaultReactConfig,
+		Config: ReactConfig{
+			MaxIterations:    config.AgentMaxIterations,
+			WarningThreshold: config.AgentWarningIterations,
+		},
 	}
 }
 
@@ -120,12 +120,7 @@ func reconstructHistory(messages []provider.Message) []provider.Message {
 				for i, step := range group {
 					var args interface{}
 					if step.ActionInput != "" {
-						var mapArgs map[string]interface{}
-						if err := json.Unmarshal([]byte(step.ActionInput), &mapArgs); err == nil {
-							args = mapArgs
-						} else {
-							args = step.ActionInput
-						}
+						args = step.ActionInput
 					}
 
 					toolID := fmt.Sprintf("trace-%s-%d", step.Action, i)

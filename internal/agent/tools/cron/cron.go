@@ -3,10 +3,15 @@ package cron
 import (
 	"encoding/json"
 	"fmt"
+	"myaaw/internal/agent/tools"
 	"os"
 	"os/exec"
 	"strings"
 )
+
+func init() {
+	tools.Register("cron", NewCronTool())
+}
 
 type CronTool struct{}
 
