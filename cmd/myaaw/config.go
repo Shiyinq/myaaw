@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"myaaw/internal/cli/theme"
@@ -14,12 +13,7 @@ import (
 
 var envKeys = []string{
 	"PORT", "HOST", "MYAAW_BASE_URL", "ALLOWED_ORIGINS",
-	"DB_NAME", "MONGODB_URI",
-	"REDIS_URL",
-	"QUEUE_NAME", "RABBITMQ_URL",
-	"LLM_PROVIDER_NAME", "LLM_PROVIDER_API_KEY", "LLM_PROVIDER_BASE_URL",
-	"STREAM_RESPONSE",
-	"TRANSCRIBER_PROVIDER_NAME", "TRANSCRIBER_API_KEY",
+	"DB_PATH",
 	"TAVILY_API_KEY",
 }
 
@@ -34,54 +28,74 @@ var checkCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(theme.RenderSecondary("🔍 Loading configuration..."))
 		config.LoadBaseConfig()
+		
+		cfg, err := config.LoadJSONConfigOnly()
+		if err != nil {
+			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to load config.json: %v", err)))
+			fmt.Println(theme.RenderMuted("You might want to run 'myaaw onboard' to generate one."))
+			cfg = &config.Config{}
+		}
 
 		fmt.Println("\n" + theme.RenderPrimary("Checking Environment Variables (.env / OS):"))
-		missingCount := 0
 		for _, key := range envKeys {
 			val := os.Getenv(key)
 			if val == "" {
-				if key == "TRANSCRIBER_PROVIDER_NAME" && config.TranscriberProviderName != "" {
-					fmt.Printf("%-25s : %s (Default: %s)\n", theme.RenderPrimary(key), theme.RenderSuccess("[OK]"), config.TranscriberProviderName)
-					continue
+				if key == "DB_PATH" {
+					fmt.Printf("%-25s : %s (Default: ~/.myaaw/myaaw.db)\n", theme.RenderPrimary(key), theme.RenderMuted("[EMPTY]"))
+				} else {
+					fmt.Printf("%-25s : %s\n", theme.RenderPrimary(key), theme.RenderMuted("[EMPTY]"))
 				}
-				fmt.Printf("%-25s : %s\n", theme.RenderPrimary(key), theme.RenderError("[MISSING]"))
-				missingCount++
 			} else {
 				fmt.Printf("%-25s : %s\n", theme.RenderPrimary(key), theme.RenderSuccess("[OK]"))
 			}
 		}
 
-		fmt.Println("\nChecking config.json:")
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			fmt.Printf("❌ Failed to get Home Dir: %v\n", err)
-			return
-		}
-		configPath := filepath.Join(homeDir, ".myaaw", "config.json")
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			fmt.Printf("%-25s : %s (Optional)\n", theme.RenderPrimary("~/.myaaw/config.json"), theme.RenderMuted("Not Found"))
+		fmt.Println("\n" + theme.RenderPrimary("Checking config.json Health:"))
+		
+		// 1. LLM
+		if cfg.DefaultProvider == "" {
+			fmt.Printf("%-25s : %s\n", theme.RenderPrimary("Default LLM Provider"), theme.RenderError("[MISSING]"))
 		} else {
-			fmt.Printf("%-25s : %s\n", theme.RenderPrimary("~/.myaaw/config.json"), theme.RenderSuccess("[FOUND]"))
-			// We could validate JSON content here if desired
-		}
-
-		if missingCount > 0 {
-			fmt.Println("\n⚠️  Some recommended environment variables are missing.")
-		} else {
-			fmt.Println("\n✨ System environment looks good!")
-		}
-
-		fmt.Println("\n" + theme.RenderPrimary("Telegram / Ngrok Status:"))
-		fmt.Printf("🔹 Telegram Mode : %s\n", config.TelegramMode)
-		if config.TelegramMode == "webhook" {
-			if config.NgrokActive == "true" {
-				fmt.Printf("%-16s : %s (Token: %s)\n", theme.RenderPrimary("Ngrok Active"), theme.RenderSuccess("[YES]"), config.NgrokAuthToken)
+			if _, exists := cfg.Providers[cfg.DefaultProvider]; exists {
+				fmt.Printf("%-25s : %s (Active: %s)\n", theme.RenderPrimary("Default LLM Provider"), theme.RenderSuccess("[OK]"), cfg.DefaultProvider)
 			} else {
-				fmt.Printf("%-16s : %s (Webhook will fail if not publicly reachable)\n", theme.RenderPrimary("Ngrok Active"), theme.RenderError("[NO]"))
+				fmt.Printf("%-25s : %s (Provider '%s' not found in providers block)\n", theme.RenderPrimary("Default LLM Provider"), theme.RenderError("[BROKEN REF]"), cfg.DefaultProvider)
+			}
+		}
+
+		// 2. Transcriber
+		if cfg.Transcriber.Provider == "" {
+			fmt.Printf("%-25s : %s\n", theme.RenderPrimary("Transcriber"), theme.RenderMuted("[NOT SET] (Will fallback to default/OS)"))
+		} else {
+			if cfg.Transcriber.APIKey != "" {
+				fmt.Printf("%-25s : %s (Active: %s)\n", theme.RenderPrimary("Transcriber"), theme.RenderSuccess("[OK]"), cfg.Transcriber.Provider)
+			} else {
+				fmt.Printf("%-25s : %s (Missing API Key for '%s')\n", theme.RenderPrimary("Transcriber"), theme.RenderError("[WARNING]"), cfg.Transcriber.Provider)
+			}
+		}
+
+		// 3. Channels
+		if cfg.Channels.Telegram != nil && cfg.Channels.Telegram.Active {
+			if cfg.Channels.Telegram.Token != "" {
+				fmt.Printf("%-25s : %s (Mode: %s)\n", theme.RenderPrimary("Channel: Telegram"), theme.RenderSuccess("[OK]"), cfg.Channels.Telegram.Mode)
+			} else {
+				fmt.Printf("%-25s : %s\n", theme.RenderPrimary("Channel: Telegram"), theme.RenderError("[MISSING TOKEN]"))
 			}
 		} else {
-			fmt.Printf("%-16s : %s (No Ngrok required)\n", theme.RenderPrimary("Long Polling"), theme.RenderSuccess("[ACTIVE]"))
+			fmt.Printf("%-25s : %s\n", theme.RenderPrimary("Channel: Telegram"), theme.RenderMuted("[INACTIVE]"))
 		}
+
+		if cfg.Channels.Discord != nil && cfg.Channels.Discord.Active {
+			if cfg.Channels.Discord.Token != "" {
+				fmt.Printf("%-25s : %s\n", theme.RenderPrimary("Channel: Discord"), theme.RenderSuccess("[OK]"))
+			} else {
+				fmt.Printf("%-25s : %s\n", theme.RenderPrimary("Channel: Discord"), theme.RenderError("[MISSING TOKEN]"))
+			}
+		} else {
+			fmt.Printf("%-25s : %s\n", theme.RenderPrimary("Channel: Discord"), theme.RenderMuted("[INACTIVE]"))
+		}
+
+		fmt.Println("\n✨ System health check completed!")
 	},
 }
 
@@ -90,20 +104,22 @@ var dumpCmd = &cobra.Command{
 	Short: "Print current configuration (Secrets Masked)",
 	Run: func(cmd *cobra.Command, args []string) {
 		config.LoadBaseConfig()
-
-		fmt.Println("--- Current Configuration ---")
+		
+		fmt.Println(theme.RenderPrimary("--- OS / Environment Variables ---"))
 		for _, key := range envKeys {
 			val := os.Getenv(key)
 
 			isSensitive := strings.Contains(key, "KEY") ||
 				strings.Contains(key, "TOKEN") ||
 				strings.Contains(key, "PASSWORD") ||
-				strings.Contains(key, "SECRET") ||
-				strings.Contains(key, "URL") ||
-				strings.Contains(key, "URI")
+				strings.Contains(key, "SECRET")
 
 			if val == "" {
-				fmt.Printf("%-25s: <EMPTY>\n", key)
+				if key == "DB_PATH" {
+					fmt.Printf("%-25s: <EMPTY> (Default: ~/.myaaw/myaaw.db)\n", key)
+				} else {
+					fmt.Printf("%-25s: <EMPTY>\n", key)
+				}
 			} else if isSensitive {
 				fmt.Printf("%-25s: ******** (Masked)\n", key)
 			} else {
@@ -111,13 +127,43 @@ var dumpCmd = &cobra.Command{
 			}
 		}
 
-		fmt.Println("\n--- Internals ---")
-		fmt.Printf("BotType:       %s\n", config.BotType)
-		fmt.Printf("OwnerIDs:      %v\n", config.OwnerIDs)
-		fmt.Printf("TelegramMode:  %s\n", config.TelegramMode)
-		fmt.Printf("NgrokActive:   %s\n", config.NgrokActive)
-		if config.NgrokActive == "true" {
-			fmt.Printf("NgrokToken:    ******** (Masked)\n")
+		fmt.Println("\n" + theme.RenderPrimary("--- Config.json Values ---"))
+		cfg, err := config.LoadJSONConfigOnly()
+		if err != nil || cfg == nil {
+			fmt.Println(theme.RenderError("No config.json found."))
+			return
+		}
+
+		fmt.Printf("DefaultProvider: %s\n", cfg.DefaultProvider)
+		for name, p := range cfg.Providers {
+			fmt.Printf("\n[Provider: %s]\n", name)
+			fmt.Printf("  Type:         %s\n", p.Type)
+			fmt.Printf("  BaseURL:      %s\n", p.BaseURL)
+			fmt.Printf("  DefaultModel: %s\n", p.DefaultModel)
+			if p.APIKey != "" {
+				fmt.Printf("  APIKey:       ******** (Masked)\n")
+			}
+		}
+
+		fmt.Println("\n[Transcriber]")
+		fmt.Printf("  Provider:     %s\n", cfg.Transcriber.Provider)
+		if cfg.Transcriber.APIKey != "" {
+			fmt.Printf("  APIKey:       ******** (Masked)\n")
+		}
+
+		fmt.Println("\n[Channels]")
+		if cfg.Channels.Telegram != nil {
+			fmt.Printf("  Telegram.Active: %v\n", cfg.Channels.Telegram.Active)
+			fmt.Printf("  Telegram.Mode:   %s\n", cfg.Channels.Telegram.Mode)
+			if cfg.Channels.Telegram.Token != "" {
+				fmt.Printf("  Telegram.Token:  ******** (Masked)\n")
+			}
+		}
+		if cfg.Channels.Discord != nil {
+			fmt.Printf("  Discord.Active:  %v\n", cfg.Channels.Discord.Active)
+			if cfg.Channels.Discord.Token != "" {
+				fmt.Printf("  Discord.Token:   ******** (Masked)\n")
+			}
 		}
 	},
 }
