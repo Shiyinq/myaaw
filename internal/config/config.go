@@ -46,6 +46,7 @@ type Config struct {
 	Bot             GlobalBotConfig           `json:"bot,omitempty"`
 	Channels        ChannelsConfig            `json:"channels"`
 	Cron            CronConfig                `json:"cron"`
+	Transcriber     TranscriberConfig         `json:"transcriber,omitempty"`
 }
 
 type ProviderConfig struct {
@@ -53,6 +54,11 @@ type ProviderConfig struct {
 	BaseURL      string `json:"base_url,omitempty"`
 	APIKey       string `json:"api_key,omitempty"`
 	DefaultModel string `json:"default_model,omitempty"`
+}
+
+type TranscriberConfig struct {
+	Provider string `json:"provider,omitempty"`
+	APIKey   string `json:"api_key,omitempty"`
 }
 
 type CronConfig struct {
@@ -290,6 +296,14 @@ func LoadBaseConfig() {
 				LLMProviderAPIKey = provider.APIKey
 				LLMProviderBaseURL = provider.BaseURL
 				LLMDefaultModel = provider.DefaultModel
+			}
+		}
+		
+		// Priority: config.json Transcriber > .env
+		if jsonConfig.Transcriber.Provider != "" {
+			TranscriberProviderName = jsonConfig.Transcriber.Provider
+			if jsonConfig.Transcriber.APIKey != "" {
+				TranscriberAPIKey = jsonConfig.Transcriber.APIKey
 			}
 		}
 	}

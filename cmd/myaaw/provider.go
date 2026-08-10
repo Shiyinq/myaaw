@@ -32,8 +32,6 @@ var providerCreateCmd = &cobra.Command{
 					Options(
 						huh.NewOption("OpenAI (or OpenAI Compatible)", "openai"),
 						huh.NewOption("Gemini", "gemini"),
-						huh.NewOption("Groq", "groq"),
-						huh.NewOption("Ollama", "ollama"),
 					).
 					Value(&pType),
 
