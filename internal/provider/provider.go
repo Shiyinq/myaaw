@@ -51,6 +51,7 @@ type ReactStep struct {
 }
 
 type ToolCall struct {
+	Index    *int         `json:"index,omitempty"`
 	ID       string       `json:"id,omitempty"`
 	Type     string       `json:"type,omitempty"`
 	Function FunctionCall `json:"function"`
@@ -129,7 +130,10 @@ func CreateLLMProvider(providerName string, apiKey string) (LLMProvider, error) 
 	if !exists {
 		return nil, errors.New("unknown llm provider")
 	}
-	defaultModel := defaultLLMModels[providerName]
+	defaultModel := config.LLMDefaultModel
+	if defaultModel == "" {
+		defaultModel = defaultLLMModels[providerName]
+	}
 
 	return factory(config.LLMProviderBaseURL, apiKey, defaultModel), nil
 }

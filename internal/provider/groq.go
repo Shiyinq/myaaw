@@ -170,6 +170,7 @@ func (g *GroqProvider) ChatStream(modelName string, messages []Message, callback
 
 		jsonData := strings.TrimPrefix(line, "data: ")
 
+		response = GroqChatCompletion{}
 		err = json.Unmarshal([]byte(jsonData), &response)
 		if err != nil {
 			return fmt.Errorf("error unmarshalling stream data: %w", err)

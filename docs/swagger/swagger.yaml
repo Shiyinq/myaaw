@@ -12,6 +12,13 @@ definitions:
         type: integer
     type: object
   channel.QueueEnvelope:
+    properties:
+      channel:
+        type: string
+      payload:
+        items:
+          type: integer
+        type: array
     type: object
   common.ErrorResponse:
     properties:

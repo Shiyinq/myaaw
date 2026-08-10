@@ -29,6 +29,7 @@ var DiscordBotToken string
 var LLMProviderBaseURL string
 var LLMProviderName string
 var LLMProviderAPIKey string
+var LLMDefaultModel string
 var StreamResponse bool
 var TranscriberProviderName string
 var TranscriberAPIKey string
@@ -39,10 +40,19 @@ var TelegramMode string // "webhook" or "polling"
 var Verbose bool
 
 type Config struct {
-	Heartbeat HeartbeatConfig `json:"heartbeat"`
-	Bot       GlobalBotConfig `json:"bot,omitempty"`
-	Channels  ChannelsConfig  `json:"channels"`
-	Cron      CronConfig      `json:"cron"`
+	DefaultProvider string                    `json:"default_provider,omitempty"`
+	Providers       map[string]ProviderConfig `json:"providers,omitempty"`
+	Heartbeat       HeartbeatConfig           `json:"heartbeat"`
+	Bot             GlobalBotConfig           `json:"bot,omitempty"`
+	Channels        ChannelsConfig            `json:"channels"`
+	Cron            CronConfig                `json:"cron"`
+}
+
+type ProviderConfig struct {
+	Type         string `json:"type"`
+	BaseURL      string `json:"base_url,omitempty"`
+	APIKey       string `json:"api_key,omitempty"`
+	DefaultModel string `json:"default_model,omitempty"`
 }
 
 type CronConfig struct {
@@ -113,6 +123,39 @@ func parseJSONFile(path string) (*Config, error) {
 	return &config, nil
 }
 
+func GetConfigPath() string {
+	// Try current directory
+	if _, err := os.Stat("config.json"); err == nil {
+		return "config.json"
+	}
+	
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		return filepath.Join(homeDir, ".myaaw", "config.json")
+	}
+	return "config.json"
+}
+
+func SaveConfig(config *Config) error {
+	path := GetConfigPath()
+	
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(config, "", "    ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+func LoadJSONConfigOnly() (*Config, error) {
+	return loadJSONConfig()
+}
+
 func envPath() string {
 	// 1. Check Current Directory
 	if abs, err := filepath.Abs(".env"); err == nil {
@@ -163,6 +206,7 @@ func LoadBaseConfig() {
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
+	LLMDefaultModel = ""
 
 	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")
 	if TranscriberProviderName == "" {
@@ -239,6 +283,16 @@ func LoadBaseConfig() {
 
 		Heartbeat = jsonConfig.Heartbeat
 		CronActive = jsonConfig.Cron.Active
+		
+		// Priority: config.json Providers > .env
+		if jsonConfig.DefaultProvider != "" && jsonConfig.Providers != nil {
+			if provider, exists := jsonConfig.Providers[jsonConfig.DefaultProvider]; exists {
+				LLMProviderName = provider.Type
+				LLMProviderAPIKey = provider.APIKey
+				LLMProviderBaseURL = provider.BaseURL
+				LLMDefaultModel = provider.DefaultModel
+			}
+		}
 	}
 }
 
