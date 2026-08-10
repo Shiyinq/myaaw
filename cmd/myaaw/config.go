@@ -145,6 +145,15 @@ var dumpCmd = &cobra.Command{
 			}
 		}
 
+		fmt.Println("\n[Bot]")
+		fmt.Printf("  Type:              %s\n", cfg.Bot.Type)
+		if cfg.Bot.MaxIterations != nil {
+			fmt.Printf("  MaxIterations:     %d\n", *cfg.Bot.MaxIterations)
+		}
+		if cfg.Bot.WarningIterations != nil {
+			fmt.Printf("  WarningIterations: %d\n", *cfg.Bot.WarningIterations)
+		}
+
 		fmt.Println("\n[Transcriber]")
 		fmt.Printf("  Provider:     %s\n", cfg.Transcriber.Provider)
 		if cfg.Transcriber.APIKey != "" {

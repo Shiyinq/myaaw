@@ -38,7 +38,8 @@ var Heartbeat HeartbeatConfig
 var TelegramMode string // "webhook" or "polling"
 var Verbose bool
 var CurrentProviderID string
-
+var AgentMaxIterations int = 100
+var AgentWarningIterations int = 90
 type Config struct {
 	DefaultProvider string                    `json:"default_provider,omitempty"`
 	Providers       map[string]ProviderConfig `json:"providers,omitempty"`
@@ -66,10 +67,12 @@ type CronConfig struct {
 }
 
 type GlobalBotConfig struct {
-	OwnerIDs  []string `json:"owner_ids"`
-	Type      string   `json:"type"`
-	Watermark bool     `json:"watermark"`
-	Stream    *bool    `json:"stream,omitempty"`
+	OwnerIDs           []string `json:"owner_ids"`
+	Type               string   `json:"type"`
+	Watermark          bool     `json:"watermark"`
+	Stream             *bool    `json:"stream,omitempty"`
+	MaxIterations      *int     `json:"max_iterations,omitempty"`
+	WarningIterations  *int     `json:"warning_iterations,omitempty"`
 }
 
 type ChannelsConfig struct {
@@ -254,6 +257,12 @@ func LoadBaseConfig() {
 		WatermarkModel = jsonConfig.Bot.Watermark
 		if jsonConfig.Bot.Stream != nil {
 			StreamResponse = *jsonConfig.Bot.Stream
+		}
+		if jsonConfig.Bot.MaxIterations != nil {
+			AgentMaxIterations = *jsonConfig.Bot.MaxIterations
+		}
+		if jsonConfig.Bot.WarningIterations != nil {
+			AgentWarningIterations = *jsonConfig.Bot.WarningIterations
 		}
 
 		if jsonConfig.Channels.Telegram != nil {

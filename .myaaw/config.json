@@ -22,7 +22,9 @@
         ],
         "type": "private",
         "watermark": false,
-        "stream": true
+        "stream": true,
+        "max_iterations": 100,
+        "warning_iterations": 90
     },
     "channels": {
         "telegram": {
