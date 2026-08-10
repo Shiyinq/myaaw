@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"myaaw/internal/agent/tools"
 	"myaaw/internal/config"
 )
 
@@ -170,24 +169,3 @@ func argsToString(i interface{}) string {
 	return string(jsonData)
 }
 
-func toolCalls(messages []Message, response Message) []Message {
-	messages = append(messages, response)
-	for _, toolCall := range response.ToolCalls {
-		toolId := toolCall.ID
-		toolName := toolCall.Function.Name
-		toolArgs := toolCall.Function.Arguments
-
-		tool := tools.NewTools(toolName, argsToString(toolArgs))
-		responseTool := []Message{
-			{
-				Role:       "tool",
-				Name:       toolName,
-				Content:    tool,
-				ToolCallID: toolId,
-			},
-		}
-		messages = append(messages, responseTool...)
-	}
-
-	return messages
-}

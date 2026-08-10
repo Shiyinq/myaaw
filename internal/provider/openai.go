@@ -112,8 +112,7 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	if response.Choices[0].FinishReason == "tool_calls" {
-		resp_tool := toolCalls(messages, response.Choices[0].Message)
-		return o.Chat(modelName, resp_tool)
+		return response.Choices[0].Message, nil
 	}
 
 	return response.Choices[0].Message, nil
@@ -213,8 +212,11 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 		}
 
 		if response.Choices[0].FinishReason == "tool_calls" {
-			resp_tool := toolCalls(messages, accumulatedMessage)
-			return o.ChatStream(modelName, resp_tool, callback)
+			err = callback(accumulatedMessage)
+			if err != nil {
+				return fmt.Errorf("error in callback for tool calls: %w", err)
+			}
+			break
 		}
 
 		if response.Choices[0].FinishReason == "stop" {

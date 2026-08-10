@@ -120,12 +120,7 @@ func reconstructHistory(messages []provider.Message) []provider.Message {
 				for i, step := range group {
 					var args interface{}
 					if step.ActionInput != "" {
-						var mapArgs map[string]interface{}
-						if err := json.Unmarshal([]byte(step.ActionInput), &mapArgs); err == nil {
-							args = mapArgs
-						} else {
-							args = step.ActionInput
-						}
+						args = step.ActionInput
 					}
 
 					toolID := fmt.Sprintf("trace-%s-%d", step.Action, i)
