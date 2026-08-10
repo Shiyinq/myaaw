@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -30,51 +31,51 @@ var updateCmd = &cobra.Command{
 	Short: "Check for and install updates",
 	Run: func(cmd *cobra.Command, args []string) {
 		if !autoConfirm {
-			fmt.Printf("%s %s...\n", theme.RenderSecondary("🔍 Checking for updates at"), githubRepo)
+			fmt.Printf("%s %s...\n", theme.RenderSecondary("Checking for updates at"), githubRepo)
 		}
 
 		latestVersion, downloadURL, err := getLatestReleaseInfo()
 		if err != nil {
-			log.Fatalf("%s checking for updates: %v", theme.RenderError("❌ Error"), err)
+			log.Fatalf("%s checking for updates: %v", theme.RenderError("Error"), err)
 		}
 
 		if latestVersion == Version {
 			if !autoConfirm {
-				fmt.Printf("%s (Version: %s)\n", theme.RenderSuccess("✅ Myaaw is already up to date"), Version)
+				fmt.Printf("%s (Version: %s)\n", theme.RenderSuccess("Myaaw is already up to date"), Version)
 			}
 			return
 		}
 
 		if !autoConfirm {
-			fmt.Printf("%s: %s (Current: %s)\n", theme.RenderPrimary("🆕 New version available"), latestVersion, Version)
+			fmt.Printf("%s: %s (Current: %s)\n", theme.RenderPrimary("New version available"), latestVersion, Version)
 			if !askYesNo("Would you like to download and install it?", true) {
 				return
 			}
 		}
 
 		if err := performUpdate(downloadURL); err != nil {
-			log.Fatalf("%s: %v", theme.RenderError("❌ Update failed"), err)
+			log.Fatalf("%s: %v", theme.RenderError("Update failed"), err)
 		}
 
-		fmt.Println(theme.RenderSuccess("🚀 Update downloaded and installed!"))
+		fmt.Println(theme.RenderSuccess("Update downloaded and installed!"))
 		
 		// Attempt to auto-restart if running as a daemon
 		dm, err := daemon.NewManager("myaaw-server")
 		if err == nil {
 			if _, running, _ := dm.Status(); running {
-				fmt.Println(theme.RenderSecondary("🔄 Restarting Myaaw background service..."))
+				fmt.Println(theme.RenderSecondary("Restarting Myaaw background service..."))
 				_ = dm.Stop()
 				time.Sleep(1 * time.Second)
 				if err := dm.Start([]string{"server", "run"}); err == nil {
-					fmt.Println(theme.RenderSuccess("✅ Service restarted successfully!"))
+					fmt.Println(theme.RenderSuccess("Service restarted successfully!"))
 					return
 				} else {
-					fmt.Printf("%s: %v\n", theme.RenderError("⚠️  Failed to start service automatically"), err)
+					fmt.Printf("%s: %v\n", theme.RenderError("Failed to start service automatically"), err)
 				}
 			}
 		}
 
-		fmt.Println(theme.RenderPrimary("ℹ️  If Myaaw is running in another terminal, please run 'myaaw restart' to apply the update."))
+		fmt.Println(theme.RenderPrimary("If Myaaw is running in another terminal, please run 'myaaw restart' to apply the update."))
 	},
 }
 
@@ -135,6 +136,22 @@ func getBinaryNameForPlatform() string {
 	return name
 }
 
+type progressWriter struct {
+	Total      int64
+	Downloaded int64
+}
+
+func (pw *progressWriter) Write(p []byte) (int, error) {
+	pw.Downloaded += int64(len(p))
+	if pw.Total > 0 {
+		percent := float64(pw.Downloaded) / float64(pw.Total) * 100
+		fmt.Printf("\r%s %.0f%%", theme.RenderSecondary("Downloading..."), percent)
+	} else {
+		fmt.Printf("\r%s %d bytes", theme.RenderSecondary("Downloading..."), pw.Downloaded)
+	}
+	return len(p), nil
+}
+
 func performUpdate(url string) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -148,7 +165,7 @@ func performUpdate(url string) error {
 	if err != nil {
 		if os.IsPermission(err) {
 			if runtime.GOOS != "windows" {
-				fmt.Println(theme.RenderSecondary("🔐 Administrator privileges required. Prompting for password..."))
+				fmt.Println(theme.RenderSecondary("Administrator privileges required. Prompting for password..."))
 
 				// Re-run the current command with sudo and --auto-confirm
 				args := append([]string{exe}, os.Args[1:]...)
@@ -174,17 +191,31 @@ func performUpdate(url string) error {
 
 	// 1. Download to temporary file
 	tempFile := exe + ".tmp"
-	client := resty.New()
+	fmt.Print(theme.RenderSecondary("Downloading..."))
 
-	fmt.Print(theme.RenderSecondary("📥 Downloading..."))
-	resp, err := client.R().SetOutput(tempFile).Get(url)
+	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
-	if resp.StatusCode() != http.StatusOK {
-		return fmt.Errorf("download failed with status %d", resp.StatusCode())
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed with status %d", resp.StatusCode)
 	}
-	fmt.Println(theme.RenderSuccess(" Done."))
+
+	out, err := os.Create(tempFile)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	pw := &progressWriter{Total: resp.ContentLength}
+	_, err = io.Copy(out, io.TeeReader(resp.Body, pw))
+	if err != nil {
+		return err
+	}
+	fmt.Println() // Newline after progress bar
+	fmt.Println(theme.RenderSuccess("Download Done."))
 
 	// 2. Make it executable
 	if runtime.GOOS != "windows" {
@@ -207,6 +238,6 @@ func performUpdate(url string) error {
 		return fmt.Errorf("failed to replace binary: %w", err)
 	}
 
-	fmt.Println(theme.RenderSuccess("✅ Binary replaced successfully."))
+	fmt.Println(theme.RenderSuccess("Binary replaced successfully."))
 	return nil
 }
