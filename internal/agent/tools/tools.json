@@ -108,10 +108,15 @@
                     "packages": {
                         "type": "string",
                         "description": "List of Python packages to install, comma-separated (optional)"
+                    },
+                    "async": {
+                        "type": "boolean",
+                        "description": "If true, runs the command in the background. MUST be true if timeout > 60."
                     }
                 },
                 "required": [
-                    "code"
+                    "code",
+                    "async"
                 ]
             }
         }
@@ -135,10 +140,15 @@
                     "env": {
                         "type": "object",
                         "description": "Optional environment variables for the command."
+                    },
+                    "async": {
+                        "type": "boolean",
+                        "description": "If true, runs the command in the background. MUST be true if timeout > 60."
                     }
                 },
                 "required": [
-                    "command"
+                    "command",
+                    "async"
                 ]
             }
         }

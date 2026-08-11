@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"myaaw/internal/agent/tools"
 	"os"
 	"os/exec"
@@ -22,6 +23,7 @@ type BashArgs struct {
 	Command string            `json:"command"`
 	Timeout int               `json:"timeout,omitempty"` // Timeout in seconds
 	Env     map[string]string `json:"env,omitempty"`     // Environment variables
+	Async   bool              `json:"async,omitempty"`
 }
 
 // Simple blacklist of dangerous commands/keywords
@@ -66,6 +68,43 @@ func (b *BashTool) CallTool(arguments string) string {
 		return "Error: Command contains forbidden/dangerous keywords. Blocked for security."
 	}
 
+	if args.Timeout > 60 && !args.Async {
+		return "Error: Timeout is set to > 60 seconds, but async is false. You MUST set async to true for tasks that take longer than 60 seconds to prevent blocking the system."
+	}
+
+	if args.Async {
+		jobID := fmt.Sprintf("job_%d", time.Now().UnixNano())
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Sprintf("Error getting home dir: %v", err)
+		}
+		
+		resultsDir := filepath.Join(homeDir, ".myaaw", "jobs")
+		if err := os.MkdirAll(resultsDir, 0755); err != nil {
+			return fmt.Sprintf("Error creating jobs dir: %v", err)
+		}
+		
+		outputPath := filepath.Join(resultsDir, jobID+".log")
+
+		go func() {
+			outStr := b.executeCommand(args)
+			err := os.WriteFile(outputPath, []byte(outStr), 0644)
+			if err != nil {
+				log.Printf("Error writing async output to file %s: %v", outputPath, err)
+			}
+		}()
+
+		baseInstruction := fmt.Sprintf("Command started in background. The output will be saved to: %s. IMPORTANT: You MUST immediately use the 'cron' tool to schedule a reminder for yourself to read this file and notify the user of the result.", outputPath)
+		if args.Timeout > 300 {
+			return baseInstruction + " Since the timeout is > 5 minutes, you MUST schedule multiple cron jobs at intervals to check the progress in case it finishes much earlier."
+		}
+		return baseInstruction + " Estimate a reasonable wait time based on the task."
+	}
+
+	return b.executeCommand(args)
+}
+
+func (b *BashTool) executeCommand(args BashArgs) string {
 	// Default timeout to 60 seconds if not specified
 	timeout := 60 * time.Second
 	if args.Timeout > 0 {
