@@ -87,8 +87,20 @@ func runVoiceClassic() {
 		Content: systemPrompt,
 	})
 
+	if config.TranscriberProviderName == "" || config.TranscriberAPIKey == "" {
+		fmt.Fprintf(os.Stderr, "  ❌ Error: Transcriber is not configured.\n")
+		fmt.Fprintf(os.Stderr, "  Please configure the 'transcriber' block in your config.json.\n")
+		os.Exit(1)
+	}
+
+	if config.SynthesizerProviderName == "" || config.SynthesizerAPIKey == "" {
+		fmt.Fprintf(os.Stderr, "  ❌ Error: Synthesizer is not configured.\n")
+		fmt.Fprintf(os.Stderr, "  Please configure the 'synthesizer' block in your config.json.\n")
+		os.Exit(1)
+	}
+
 	// Create Synthesizer (TTS) via factory
-	synthesizer, err := provider.CreateSynthesizer("gemini", config.LLMProviderAPIKey)
+	synthesizer, err := provider.CreateSynthesizer(config.SynthesizerProviderName, config.SynthesizerAPIKey)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  ❌ Failed to create TTS synthesizer: %v\n", err)
 		os.Exit(1)
