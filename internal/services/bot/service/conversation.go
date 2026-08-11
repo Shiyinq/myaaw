@@ -161,6 +161,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 // buildUserMessage converts a generic IncomingMessage to a provider.Message.
 func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider.Message {
 	text := msg.Text
+	role := "user"
 	switch msg.TriggerType {
 	case "heartbeat":
 		text = "[SYSTEM TRIGGER: HEARTBEAT]\n" + text
@@ -173,7 +174,7 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 	if msg.ReplyTo != "" {
 		text = text + "\n\ncontex:\n" + msg.ReplyTo
 		return provider.Message{
-			Role:    "user",
+			Role:    role,
 			Content: text,
 		}
 	}
@@ -201,14 +202,14 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 				})
 			}
 			return provider.Message{
-				Role:    "user",
+				Role:    role,
 				Content: contentItems,
 			}
 		}
 
 		// Type 1: images array (Ollama, Gemini)
 		return provider.Message{
-			Role:    "user",
+			Role:    role,
 			Content: text,
 			Images:  msg.Images,
 		}
@@ -216,7 +217,7 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 
 	// Plain text
 	return provider.Message{
-		Role:    "user",
+		Role:    role,
 		Content: text,
 	}
 }

@@ -133,15 +133,15 @@ func NewGeminiProvider(baseURL string, apiKey string, defaultModel string) LLMPr
 func MessagesToContents(messages []Message) []GeminiContent {
 	var contents []GeminiContent
 
-	for _, message := range messages {
-		if message.Role == "system" {
+	for i, message := range messages {
+		if message.Role == "system" && i == 0 {
 			continue
 		}
 
 		role := message.Role
 		if role == "assistant" {
 			role = "model"
-		} else if role == "tool" {
+		} else if role == "tool" || role == "system" {
 			role = "user"
 		}
 

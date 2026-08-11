@@ -13,12 +13,21 @@ import (
 	"myaaw/internal/agent/tools"
 )
 
+type OpenAIMessage struct {
+	Role             string      `json:"role"`
+	Name             string      `json:"name,omitempty"`
+	Content          interface{} `json:"content,omitempty"`
+	ReasoningContent string      `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall  `json:"tool_calls,omitempty"`
+	ToolCallID       string      `json:"tool_call_id,omitempty"`
+}
+
 type OpenAIChoice struct {
-	Index        int     `json:"index"`
-	Message      Message `json:"message"`
-	Delta        Message `json:"delta,omitempty"`
-	Logprobs     *string `json:"logprobs,omitempty"`
-	FinishReason string  `json:"finish_reason"`
+	Index        int           `json:"index"`
+	Message      OpenAIMessage `json:"message"`
+	Delta        OpenAIMessage `json:"delta,omitempty"`
+	Logprobs     *string       `json:"logprobs,omitempty"`
+	FinishReason string        `json:"finish_reason"`
 }
 
 type OpenAICompletionTokensDetails struct {
@@ -44,10 +53,36 @@ type OpenAIChatCompletion struct {
 
 type OpenAIRequest struct {
 	Model      string                   `json:"model"`
-	Messages   []Message                `json:"messages"`
+	Messages   []OpenAIMessage          `json:"messages"`
 	Stream     bool                     `json:"stream"`
 	Tools      []map[string]interface{} `json:"tools,omitempty"`
 	ToolChoice string                   `json:"tool_choice,omitempty"`
+}
+
+func messagesToOpenAIMessages(messages []Message) []OpenAIMessage {
+	var openAIMessages []OpenAIMessage
+	for _, m := range messages {
+		openAIMessages = append(openAIMessages, OpenAIMessage{
+			Role:             m.Role,
+			Name:             m.Name,
+			Content:          m.Content,
+			ReasoningContent: m.Thought,
+			ToolCalls:        m.ToolCalls,
+			ToolCallID:       m.ToolCallID,
+		})
+	}
+	return openAIMessages
+}
+
+func openAIMessageToMessage(o OpenAIMessage) Message {
+	return Message{
+		Role:       o.Role,
+		Name:       o.Name,
+		Content:    o.Content,
+		Thought:    o.ReasoningContent,
+		ToolCalls:  o.ToolCalls,
+		ToolCallID: o.ToolCallID,
+	}
 }
 
 type OpenAIModels struct {
@@ -94,7 +129,7 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 	request := OpenAIRequest{
 		Model:      o.DefaultModel(modelName),
 		Stream:     false,
-		Messages:   messages,
+		Messages:   messagesToOpenAIMessages(messages),
 		Tools:      tools.GetTools(),
 		ToolChoice: "auto",
 	}
@@ -112,10 +147,10 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 	}
 
 	if response.Choices[0].FinishReason == "tool_calls" {
-		return response.Choices[0].Message, nil
+		return openAIMessageToMessage(response.Choices[0].Message), nil
 	}
 
-	return response.Choices[0].Message, nil
+	return openAIMessageToMessage(response.Choices[0].Message), nil
 }
 
 func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
@@ -125,7 +160,7 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 	request := OpenAIRequest{
 		Model:      o.DefaultModel(modelName),
 		Stream:     true,
-		Messages:   messages,
+		Messages:   messagesToOpenAIMessages(messages),
 		Tools:      tools.GetTools(),
 		ToolChoice: "auto",
 	}
@@ -141,7 +176,7 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 
 	reader := bufio.NewReader(res.RawBody())
 	var response OpenAIChatCompletion
-	var accumulatedMessage Message
+	var accumulatedMessage OpenAIMessage
 	accumulatedMessage.Role = "assistant"
 
 	for {
@@ -204,15 +239,18 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 			}
 		}
 
-		if partialMessage.Content != nil && partialMessage.Content != "" {
-			err = callback(partialMessage)
+		hasContent := partialMessage.Content != nil && partialMessage.Content != ""
+		hasReasoning := partialMessage.ReasoningContent != ""
+
+		if hasContent || hasReasoning {
+			err = callback(openAIMessageToMessage(partialMessage))
 			if err != nil {
 				return fmt.Errorf("error in callback: %w", err)
 			}
 		}
 
 		if response.Choices[0].FinishReason == "tool_calls" {
-			err = callback(accumulatedMessage)
+			err = callback(openAIMessageToMessage(accumulatedMessage))
 			if err != nil {
 				return fmt.Errorf("error in callback for tool calls: %w", err)
 			}
