@@ -113,7 +113,7 @@ var TranscriberFactories = map[string]factoryTranscriber{
 
 var defaultTranscriberModels = map[string]string{
 	"groq":   "whisper-large-v3-turbo",
-	"gemini": "models/gemini-2.0-flash",
+	"gemini": "models/gemini-2.5-flash",
 }
 
 var SynthesizerFactories = map[string]factorySynthesizer{
