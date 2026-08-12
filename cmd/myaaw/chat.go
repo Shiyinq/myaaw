@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -126,6 +128,22 @@ type model struct {
 	suggestions      []string
 	suggestionIndex  int
 	isAutocompleting bool
+
+	queueFileSize int64
+}
+
+type queueMessage struct {
+	Timestamp time.Time `json:"timestamp"`
+	Text      string    `json:"text"`
+	Thought   string    `json:"thought"`
+}
+
+type queueTickMsg time.Time
+
+func queueTickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return queueTickMsg(t)
+	})
 }
 
 type chatMessage_ struct {
@@ -206,19 +224,27 @@ func initialModel(botService service.BotService, adapter *cliAdapter.CLIAdapter)
 
 	vp.SetContent(placeholder)
 
+	home, _ := os.UserHomeDir()
+	queuePath := filepath.Join(home, ".myaaw", "cli_queue.jsonl")
+	var initialSize int64
+	if stat, err := os.Stat(queuePath); err == nil {
+		initialSize = stat.Size()
+	}
+
 	return model{
-		botService: botService,
-		adapter:    adapter,
-		state:      stateInput,
-		renderer:   renderer,
-		textInput:  ti,
-		viewport:   vp,
-		messages:   []chatMessage_{},
+		botService:    botService,
+		adapter:       adapter,
+		state:         stateInput,
+		renderer:      renderer,
+		textInput:     ti,
+		viewport:      vp,
+		messages:      []chatMessage_{},
+		queueFileSize: initialSize,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, queueTickCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -359,6 +385,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.updateViewportContent()
 		return m, waitForChunk(m.sub)
+
+	case queueTickMsg:
+		home, _ := os.UserHomeDir()
+		queuePath := filepath.Join(home, ".myaaw", "cli_queue.jsonl")
+		stat, err := os.Stat(queuePath)
+		if err == nil && stat.Size() > m.queueFileSize {
+			f, err := os.Open(queuePath)
+			if err == nil {
+				f.Seek(m.queueFileSize, 0)
+				scanner := bufio.NewScanner(f)
+				for scanner.Scan() {
+					line := scanner.Text()
+					var qm queueMessage
+					if json.Unmarshal([]byte(line), &qm) == nil {
+						m.messages = append(m.messages, chatMessage_{
+							role:    "bot",
+							text:    qm.Text,
+							thought: qm.Thought,
+						})
+					}
+				}
+				f.Close()
+				m.queueFileSize = stat.Size()
+				m.updateViewportContent()
+			}
+		}
+		return m, queueTickCmd()
 	}
 
 	switch msg := msg.(type) {

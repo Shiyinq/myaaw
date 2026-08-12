@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"myaaw/internal/channel"
 	"os"
+	"path/filepath"
+	"time"
 )
 
 type CLIMeta struct{}
@@ -36,7 +38,38 @@ func (a *CLIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 	}, nil
 }
 
+type queueMessage struct {
+	Timestamp time.Time `json:"timestamp"`
+	Text      string    `json:"text"`
+	Thought   string    `json:"thought"`
+}
+
+func (a *CLIAdapter) appendQueue(out *channel.OutgoingMessage) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	
+	queuePath := filepath.Join(home, ".myaaw", "cli_queue.jsonl")
+	f, err := os.OpenFile(queuePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	msg := queueMessage{
+		Timestamp: time.Now(),
+		Text:      out.Text,
+		Thought:   out.Thought,
+	}
+	
+	b, _ := json.Marshal(msg)
+	f.Write(append(b, '\n'))
+}
+
 func (a *CLIAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMessage) error {
+	a.appendQueue(out)
+
 	if out.Thought != "" {
 		fmt.Fprintln(os.Stderr, "\033[90m"+"💭 Reasoning:\n"+out.Thought+"\033[0m")
 	}
