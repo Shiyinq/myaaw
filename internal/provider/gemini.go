@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"myaaw/internal/agent/tools"
 	"strings"
 	"time"
 
@@ -366,21 +365,29 @@ func (g *GeminiProvider) supportsSystemInstruction(modelName string) bool {
 	return g.supportsTools(modelName)
 }
 
-func (g *GeminiProvider) buildRequest(modelName string, messages []Message) GemeniRequest {
+func (g *GeminiProvider) buildRequest(modelName string, messages []Message, toolsList []map[string]interface{}) GemeniRequest {
 	fullModel := g.DefaultModel(modelName)
 	request := GemeniRequest{
 		Contents: MessagesToContents(messages),
 	}
 
-	if g.supportsTools(fullModel) {
+	if g.supportsTools(fullModel) && len(toolsList) > 0 {
 		request.ToolConfig = &ToolConfig{
 			FunctionCallingConfig: FunctionCallingConfig{
 				Mode: "AUTO",
 			},
 		}
+
+		var flattenedTools []map[string]interface{}
+		for _, tool := range toolsList {
+			if functionValue, ok := tool["function"].(map[string]interface{}); ok {
+				flattenedTools = append(flattenedTools, functionValue)
+			}
+		}
+
 		request.Tools = []map[string]any{
 			{
-				"function_declarations": g.getToolsTransform(),
+				"function_declarations": flattenedTools,
 			},
 		}
 	}
@@ -415,27 +422,11 @@ func (g *GeminiProvider) buildRequest(modelName string, messages []Message) Geme
 	return request
 }
 
-func (g *GeminiProvider) getToolsTransform() []map[string]interface{} {
-	originalTools := tools.GetTools()
-	if originalTools == nil {
-		return nil
-	}
-
-	var flattenedTools []map[string]interface{}
-	for _, tool := range originalTools {
-		if functionValue, ok := tool["function"].(map[string]interface{}); ok {
-			flattenedTools = append(flattenedTools, functionValue)
-		}
-	}
-
-	return flattenedTools
-}
-
-func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, error) {
+func (g *GeminiProvider) Chat(modelName string, messages []Message, toolsList []map[string]interface{}) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
-	request := g.buildRequest(modelName, messages)
+	request := g.buildRequest(modelName, messages, toolsList)
 
 	var response GeminiGenerateContent
 	res, _ := client.R().
@@ -465,11 +456,11 @@ func (g *GeminiProvider) Chat(modelName string, messages []Message) (Message, er
 	return finalMsg, nil
 }
 
-func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
+func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callback func(Message) error, toolsList []map[string]interface{}) error {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
-	request := g.buildRequest(modelName, messages)
+	request := g.buildRequest(modelName, messages, toolsList)
 
 	res, err := client.R().
 		SetHeader("Content-Type", "application/json").

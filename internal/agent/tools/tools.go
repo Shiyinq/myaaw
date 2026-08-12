@@ -23,7 +23,7 @@ type ToolsFactory interface {
 	CallTool(arguments string, ctx *ToolsContext) string
 }
 
-func GetTools() []map[string]interface{} {
+func GetTools(excludedTools ...string) []map[string]interface{} {
 	// Default to embedded data for standalone binary support
 	byteValue := embeddedToolsData
 
@@ -42,14 +42,37 @@ func GetTools() []map[string]interface{} {
 		}
 	}
 
-	var tools []map[string]interface{}
-	err = json.Unmarshal(byteValue, &tools)
+	var allTools []map[string]interface{}
+	err = json.Unmarshal(byteValue, &allTools)
 	if err != nil {
-		fmt.Printf("Error unmarshalling tools from tools.json: %v\n", err)
+		log.Printf("Error parsing tools.json: %v", err)
 		return nil
 	}
 
-	return tools
+	if len(excludedTools) == 0 {
+		return allTools
+	}
+
+	var filteredTools []map[string]interface{}
+	for _, tool := range allTools {
+		if funcMap, ok := tool["function"].(map[string]interface{}); ok {
+			name, _ := funcMap["name"].(string)
+			excluded := false
+			for _, ex := range excludedTools {
+				if ex == name {
+					excluded = true
+					break
+				}
+			}
+			if !excluded {
+				filteredTools = append(filteredTools, tool)
+			}
+		} else {
+			filteredTools = append(filteredTools, tool)
+		}
+	}
+
+	return filteredTools
 }
 
 var registry = map[string]ToolsFactory{}

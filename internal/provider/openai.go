@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-
-	"myaaw/internal/agent/tools"
 )
 
 type OpenAIMessage struct {
@@ -122,17 +120,26 @@ func (o *OpenAIProvider) DefaultModel(modelName string) string {
 	return modelName
 }
 
-func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, error) {
+func (o *OpenAIProvider) buildRequest(modelName string, messages []Message, stream bool, toolsList []map[string]interface{}) OpenAIRequest {
+	req := OpenAIRequest{
+		Model:      o.DefaultModel(modelName),
+		Stream:     stream,
+		Messages:   messagesToOpenAIMessages(messages),
+	}
+	
+	if len(toolsList) > 0 {
+		req.Tools = toolsList
+		req.ToolChoice = "auto"
+	}
+	
+	return req
+}
+
+func (o *OpenAIProvider) Chat(modelName string, messages []Message, toolsList []map[string]interface{}) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
-	request := OpenAIRequest{
-		Model:      o.DefaultModel(modelName),
-		Stream:     false,
-		Messages:   messagesToOpenAIMessages(messages),
-		Tools:      tools.GetTools(),
-		ToolChoice: "auto",
-	}
+	request := o.buildRequest(modelName, messages, false, toolsList)
 
 	var response OpenAIChatCompletion
 	res, _ := client.R().
@@ -152,18 +159,15 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 
 	return openAIMessageToMessage(response.Choices[0].Message), nil
 }
+func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callback func(Message) error, toolsList []map[string]interface{}) error {
+	if modelName == "" {
+		modelName = o.DefaultModel(modelName)
+	}
 
-func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
+	request := o.buildRequest(modelName, messages, true, toolsList)
+
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
-
-	request := OpenAIRequest{
-		Model:      o.DefaultModel(modelName),
-		Stream:     true,
-		Messages:   messagesToOpenAIMessages(messages),
-		Tools:      tools.GetTools(),
-		ToolChoice: "auto",
-	}
 
 	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").

@@ -74,8 +74,8 @@ type ImageInfo struct {
 
 type LLMProvider interface {
 	ProviderName() string
-	Chat(modelName string, messages []Message) (Message, error)
-	ChatStream(modelName string, messages []Message, callback func(Message) error) error
+	Chat(modelName string, messages []Message, tools []map[string]interface{}) (Message, error)
+	ChatStream(modelName string, messages []Message, callback func(Message) error, tools []map[string]interface{}) error
 	Models() ([]string, error)
 	DefaultModel(modelName string) string
 }

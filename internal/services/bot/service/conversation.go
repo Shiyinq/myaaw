@@ -337,7 +337,7 @@ func (r *BotServiceImpl) GenerateConversationTitle(user *model.User, messages []
 		{Role: "system", Content: "You are a conversation title assistant. The title must be short, clear, and a maximum of 7 words."},
 		{Role: "user", Content: prompt},
 	}
-	res, err := r.llmProvider.Chat(user.Model, llmMessages)
+	res, err := r.llmProvider.Chat(user.Model, llmMessages, nil)
 	if err != nil || res.Content == nil {
 		return defaultTitle, err
 	}
