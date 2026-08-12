@@ -165,7 +165,7 @@ func (s *HeartbeatService) readConfig() (*HeartbeatConfig, error) {
 		return nil, fmt.Errorf("failed to get user home directory: %w", err)
 	}
 
-	configPath := strings.Join([]string{homeDir, ".myaaw", "config.json"}, string(os.PathSeparator))
+	configPath := strings.Join([]string{homeDir, ".myaaw", "config", "config.json"}, string(os.PathSeparator))
 
 	content, err := os.ReadFile(configPath)
 	if err != nil {

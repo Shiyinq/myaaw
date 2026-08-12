@@ -40,7 +40,7 @@ var statusCmd = &cobra.Command{
 		dbPath := os.Getenv("DB_PATH")
 		if dbPath == "" {
 			homeDir, _ := os.UserHomeDir()
-			dbPath = filepath.Join(homeDir, ".myaaw", "myaaw.db")
+			dbPath = filepath.Join(homeDir, ".myaaw", "database", "myaaw.db")
 		}
 
 		if err := config.PingSQLite(); err != nil {

@@ -117,7 +117,7 @@ func loadJSONConfig() (*Config, error) {
 	// 2. Check Home Directory
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
-		configPath := filepath.Join(homeDir, ".myaaw", "config.json")
+		configPath := filepath.Join(homeDir, ".myaaw", "config", "config.json")
 		if _, err := os.Stat(configPath); err == nil {
 			if Verbose {
 				log.Println("Reading config from home directory:", configPath)
@@ -149,7 +149,7 @@ func GetConfigPath() string {
 	
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
-		return filepath.Join(homeDir, ".myaaw", "config.json")
+		return filepath.Join(homeDir, ".myaaw", "config", "config.json")
 	}
 	return "config.json"
 }
@@ -331,7 +331,7 @@ func ConnectDatabases() {
 	if dbPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err == nil {
-			dbPath = filepath.Join(homeDir, ".myaaw", "myaaw.db")
+			dbPath = filepath.Join(homeDir, ".myaaw", "database", "myaaw.db")
 		} else {
 			dbPath = "myaaw.db"
 		}
@@ -404,7 +404,7 @@ func WatchConfig(onChange func()) {
 		log.Printf("Failed to get home dir for watcher: %v", err)
 		return
 	}
-	configPath := filepath.Join(homeDir, ".myaaw", "config.json")
+	configPath := filepath.Join(homeDir, ".myaaw", "config", "config.json")
 
 	// Create watcher
 	watcher, err := fsnotify.NewWatcher()

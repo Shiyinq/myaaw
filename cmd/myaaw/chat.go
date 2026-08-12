@@ -225,7 +225,7 @@ func initialModel(botService service.BotService, adapter *cliAdapter.CLIAdapter)
 	vp.SetContent(placeholder)
 
 	home, _ := os.UserHomeDir()
-	queuePath := filepath.Join(home, ".myaaw", "cli_queue.jsonl")
+	queuePath := filepath.Join(home, ".myaaw", "logs", "cli_queue.jsonl")
 	var initialSize int64
 	if stat, err := os.Stat(queuePath); err == nil {
 		initialSize = stat.Size()
@@ -388,7 +388,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case queueTickMsg:
 		home, _ := os.UserHomeDir()
-		queuePath := filepath.Join(home, ".myaaw", "cli_queue.jsonl")
+		queuePath := filepath.Join(home, ".myaaw", "logs", "cli_queue.jsonl")
 		stat, err := os.Stat(queuePath)
 		if err == nil && stat.Size() > m.queueFileSize {
 			f, err := os.Open(queuePath)

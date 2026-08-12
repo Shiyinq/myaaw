@@ -50,7 +50,7 @@ func (a *CLIAdapter) appendQueue(out *channel.OutgoingMessage) {
 		return
 	}
 	
-	queuePath := filepath.Join(home, ".myaaw", "cli_queue.jsonl")
+	queuePath := filepath.Join(home, ".myaaw", "logs", "cli_queue.jsonl")
 	f, err := os.OpenFile(queuePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return

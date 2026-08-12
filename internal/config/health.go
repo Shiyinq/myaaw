@@ -15,7 +15,7 @@ func PingSQLite() error {
 	if dbPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err == nil {
-			dbPath = filepath.Join(homeDir, ".myaaw", "myaaw.db")
+			dbPath = filepath.Join(homeDir, ".myaaw", "database", "myaaw.db")
 		} else {
 			dbPath = "myaaw.db"
 		}
