@@ -9,6 +9,81 @@ import (
 	"strings"
 )
 
+const toolSchema = `{
+    "type": "function",
+    "function": {
+        "name": "cron",
+        "description": "Manage scheduled jobs (cron) for the agent. You can list, add, remove, run, and view history of jobs. Jobs can restart generic prompts or messages on a schedule.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "list",
+                        "add",
+                        "remove",
+                        "run",
+                        "history"
+                    ],
+                    "description": "The action to perform."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Name of the job (required for 'add')."
+                },
+                "cron": {
+                    "type": "string",
+                    "description": "Cron expression e.g. '0 7 * * *' (optional for 'add')."
+                },
+                "every": {
+                    "type": "string",
+                    "description": "Interval e.g. '1h30m' (optional for 'add')."
+                },
+                "at": {
+                    "type": "string",
+                    "description": "Specific time or delay e.g. '10m' or '2023-01-01T10:00:00' (optional for 'add')."
+                },
+                "message": {
+                    "type": "string",
+                    "description": "The content/prompt to send (required for 'add')."
+                },
+                "channel": {
+                    "type": "string",
+                    "description": "Target channel (telegram, discord) (required for 'add')."
+                },
+                "to": {
+                    "type": "string",
+                    "description": "Target recipient ID (user ID from the related channel) (required for 'add')."
+                },
+                "tz": {
+                    "type": "string",
+                    "description": "Timezone e.g. 'Asia/Jakarta' (optional)."
+                },
+                "agent": {
+                    "type": "string",
+                    "description": "Agent ID to handle the job (default: main)."
+                },
+                "id": {
+                    "type": "string",
+                    "description": "Job ID (required for 'remove' and 'run')."
+                },
+                "job_id": {
+                    "type": "string",
+                    "description": "Job ID for history (optional for 'history', defaults to global)."
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Limit number of history entries (optional)."
+                }
+            },
+            "required": [
+                "action"
+            ]
+        }
+    }
+}`
+
 func init() {
 	tools.Register("cron", NewCronTool())
 }
@@ -17,6 +92,10 @@ type CronTool struct{}
 
 func NewCronTool() *CronTool {
 	return &CronTool{}
+}
+
+func (t *CronTool) ToolDefinition() []byte {
+	return []byte(toolSchema)
 }
 
 func (t *CronTool) CallTool(arguments string, ctx *tools.ToolsContext) string {

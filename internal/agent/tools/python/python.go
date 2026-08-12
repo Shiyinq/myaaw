@@ -13,6 +13,43 @@ import (
 	"time"
 )
 
+const toolSchema = `{
+    "type": "function",
+    "function": {
+        "name": "execute_python",
+        "description": "Executes Python code and returns the result. This tool supports installing additional packages and stdin input. It uses a virtual environment (auto-created if missing). Output is truncated at 32KB; full results are saved to logs.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "Python code to execute"
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds (optional)"
+                },
+                "input": {
+                    "type": "string",
+                    "description": "Input for stdin (optional)"
+                },
+                "packages": {
+                    "type": "string",
+                    "description": "List of Python packages to install, comma-separated (optional)"
+                },
+                "async": {
+                    "type": "boolean",
+                    "description": "If true, runs the command in the background. MUST be true if timeout > 60."
+                }
+            },
+            "required": [
+                "code",
+                "async"
+            ]
+        }
+    }
+}`
+
 func init() {
 	tools.Register("execute_python", NewPythonTool())
 }
@@ -29,6 +66,10 @@ type PythonArgs struct {
 
 func NewPythonTool() *PythonTool {
 	return &PythonTool{}
+}
+
+func (p *PythonTool) ToolDefinition() []byte {
+	return []byte(toolSchema)
 }
 
 func (p *PythonTool) CallTool(arguments string, ctx *tools.ToolsContext) string {

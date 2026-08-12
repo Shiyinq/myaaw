@@ -17,6 +17,42 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
+const toolSchema = `{
+    "type": "function",
+    "function": {
+        "name": "subagent",
+        "description": "Delegate one or more complex tasks to background sub-agents. Each task will run independently in its own ReAct loop. Sub-agents have access to all tools (bash, python, filesystem) and skills. Use this when tasks are complex, time-consuming, or can run in parallel.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tasks": {
+                    "type": "array",
+                    "description": "List of tasks to delegate to sub-agents.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "Short descriptive name for this sub-agent task (e.g. 'fix-bug', 'run-tests')."
+                            },
+                            "instruction": {
+                                "type": "string",
+                                "description": "Detailed instruction of what the sub-agent should accomplish."
+                            },
+                            "skills": {
+                                "type": "string",
+                                "description": "Optional. Comma-separated list of skill names to focus on."
+                            }
+                        },
+                        "required": ["name", "instruction"]
+                    }
+                }
+            },
+            "required": ["tasks"]
+        }
+    }
+}`
+
 func init() {
 	tools.Register("subagent", NewSubAgentTool())
 }
@@ -35,6 +71,10 @@ type SubAgentTool struct{}
 
 func NewSubAgentTool() *SubAgentTool {
 	return &SubAgentTool{}
+}
+
+func (t *SubAgentTool) ToolDefinition() []byte {
+	return []byte(toolSchema)
 }
 
 func (t *SubAgentTool) CallTool(arguments string, ctx *tools.ToolsContext) string {

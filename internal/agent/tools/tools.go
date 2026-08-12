@@ -1,14 +1,10 @@
 package tools
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log"
 )
-
-//go:embed tools.json
-var embeddedToolsData []byte
 
 type ToolsContext struct {
 	UserID  string
@@ -18,40 +14,20 @@ type ToolsContext struct {
 
 type ToolsFactory interface {
 	CallTool(arguments string, ctx *ToolsContext) string
+	ToolDefinition() []byte
 }
 
 func GetTools(excludedTools ...string) []map[string]interface{} {
-	// Default to embedded data for standalone binary support
-	byteValue := embeddedToolsData
-
-	/*
-		// DEPRECATED: Local file fallback for development.
-		// This block is commented out for production safety. When installed globally,
-		// allowing the app to read tools.json from the current working directory
-		// introduces a potential security risk (tool injection) if the user executes
-		// the binary from a directory that coincidentally has 'internal/agent/tools/tools.json'.
-		// The application will now strictly rely on the securely embedded 'embeddedToolsData'.
-
-		workingDir, err := os.Getwd()
-		if err == nil {
-			filePath := filepath.Join(workingDir, "internal", "agent", "tools", "tools.json")
-			if _, err := os.Stat(filePath); err == nil {
-				file, err := os.Open(filePath)
-				if err == nil {
-					defer file.Close()
-					if data, err := io.ReadAll(file); err == nil {
-						byteValue = data
-					}
-				}
-			}
-		}
-	*/
-
 	var allTools []map[string]interface{}
-	err := json.Unmarshal(byteValue, &allTools)
-	if err != nil {
-		log.Printf("Error parsing tools.json: %v", err)
-		return nil
+
+	for _, factory := range registry {
+		var toolDef map[string]interface{}
+		err := json.Unmarshal(factory.ToolDefinition(), &toolDef)
+		if err != nil {
+			log.Printf("Error parsing tool definition: %v", err)
+			continue
+		}
+		allTools = append(allTools, toolDef)
 	}
 
 	if len(excludedTools) == 0 {

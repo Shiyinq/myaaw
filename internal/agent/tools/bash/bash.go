@@ -13,6 +13,39 @@ import (
 	"time"
 )
 
+const toolSchema = `{
+    "type": "function",
+    "function": {
+        "name": "bash",
+        "description": "Executes a bash command. Use this tool to run existing scripts, system commands, or manage processes. Examples: ` + "`python script.py`" + `, ` + "`ls -la`" + `, ` + "`curl ...`" + `. It supports environment variables. Output is truncated at 32KB; full results are saved to logs.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The bash command to execute."
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Optional timeout in seconds (default: 60)."
+                },
+                "env": {
+                    "type": "object",
+                    "description": "Optional environment variables for the command."
+                },
+                "async": {
+                    "type": "boolean",
+                    "description": "If true, runs the command in the background. MUST be true if timeout > 60."
+                }
+            },
+            "required": [
+                "command",
+                "async"
+            ]
+        }
+    }
+}`
+
 func init() {
 	tools.Register("bash", NewBashTool())
 }
@@ -43,6 +76,10 @@ var dangerousCommands = []string{
 
 func NewBashTool() *BashTool {
 	return &BashTool{}
+}
+
+func (t *BashTool) ToolDefinition() []byte {
+	return []byte(toolSchema)
 }
 
 func isCommandSafe(cmd string) bool {
