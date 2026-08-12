@@ -11,6 +11,7 @@ import (
 	"myaaw/internal/services/bot/service"
 	"myaaw/internal/utils"
 	"strings"
+	"sync"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -123,6 +124,13 @@ func (s *BotHandlerImpl) Webhook(c fiber.Ctx) error {
 	})
 }
 
+var heartbeatLocks sync.Map
+
+func getUserLock(userID string) *sync.Mutex {
+	val, _ := heartbeatLocks.LoadOrStore(userID, &sync.Mutex{})
+	return val.(*sync.Mutex)
+}
+
 // Heartbeat
 // @Summary		Heartbeat
 // @Description	To process heartbeat request from consumer
@@ -150,6 +158,11 @@ func (s *BotHandlerImpl) Heartbeat(c fiber.Ctx) error {
 			"error": "Prompt is required",
 		})
 	}
+
+	// Use per-user lock to prevent race conditions during concurrent heartbeats (e.g., from sub-agents)
+	lock := getUserLock(req.To)
+	lock.Lock()
+	defer lock.Unlock()
 
 	msg, out, err := s.botService.ProcessHeartbeat(req.Prompt, req.To, req.Channel, req.Trigger)
 	if err != nil {

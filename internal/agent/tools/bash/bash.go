@@ -37,6 +37,7 @@ var dangerousCommands = []string{
 	"mv /",                       // Move root (unlikely but dangerous)
 	"chmod -R 777 /", "chown -R", // Permission destruction
 	"wget ", "curl ", // Downloading scripts (can be used for legitimate purposes, but risky in this context without review)
+	"env ", "printenv ", "env\n", "printenv\n", // Environment variables disclosure
 	// Add more as needed
 }
 
@@ -46,6 +47,9 @@ func NewBashTool() *BashTool {
 
 func isCommandSafe(cmd string) bool {
 	cmd = strings.TrimSpace(cmd)
+	if cmd == "env" || cmd == "printenv" {
+		return false
+	}
 	for _, dangerous := range dangerousCommands {
 		if strings.Contains(cmd, dangerous) {
 			return false
@@ -54,7 +58,7 @@ func isCommandSafe(cmd string) bool {
 	return true
 }
 
-func (b *BashTool) CallTool(arguments string) string {
+func (b *BashTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 	var args BashArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return fmt.Sprintf("Error parsing arguments: %v", err)

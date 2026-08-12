@@ -18,6 +18,7 @@ import (
 
 var PORT string
 var HOST string
+var MYAAWBaseURL string
 var AllowedOrigins string
 var NgrokActive string
 var NgrokAuthToken string
@@ -220,6 +221,7 @@ func LoadBaseConfig() {
 
 	PORT = ":" + os.Getenv("PORT")
 	HOST = os.Getenv("HOST")
+	MYAAWBaseURL = os.Getenv("MYAAW_BASE_URL")
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")

@@ -13,8 +13,14 @@ import (
 //go:embed tools.json
 var embeddedToolsData []byte
 
+type ToolsContext struct {
+	UserID  string
+	Channel string
+	BaseURL string
+}
+
 type ToolsFactory interface {
-	CallTool(arguments string) string
+	CallTool(arguments string, ctx *ToolsContext) string
 }
 
 func GetTools() []map[string]interface{} {
@@ -56,7 +62,7 @@ type ToolsCalling struct {
 	toolsMap map[string]ToolsFactory
 }
 
-func NewTools(functionName string, arguments string) string {
+func NewTools(functionName string, arguments string, ctx *ToolsContext) string {
 	tools := &ToolsCalling{
 		toolsMap: registry,
 	}
@@ -69,7 +75,7 @@ func NewTools(functionName string, arguments string) string {
 		return errMsg
 	}
 
-	res := tool.CallTool(arguments)
+	res := tool.CallTool(arguments, ctx)
 	log.Printf("Successfully called tool '%s'. Response: %s", functionName, res)
 
 	return res

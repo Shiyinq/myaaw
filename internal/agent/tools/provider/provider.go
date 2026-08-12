@@ -19,7 +19,7 @@ func NewProviderTool() *ProviderTool {
 	return &ProviderTool{}
 }
 
-func (t *ProviderTool) CallTool(arguments string) string {
+func (t *ProviderTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 	var args map[string]interface{}
 	err := json.Unmarshal([]byte(arguments), &args)
 	if err != nil {

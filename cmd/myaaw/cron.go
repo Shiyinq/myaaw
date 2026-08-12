@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"myaaw/internal/cli/theme"
+	"myaaw/internal/config"
 	"myaaw/internal/cron"
 	"os"
 	"path/filepath"
@@ -200,8 +201,8 @@ var cronRunCmd = &cobra.Command{
 		history := getHistoryLogger()
 		scheduler := cron.NewScheduler(store, history)
 
-		// Manually set baseURL for CLI
-		os.Setenv("MYAAW_BASE_URL", "http://localhost:8080") // Default if not set
+		// Load config for MYAAWBaseURL instead of manually setting env
+		config.LoadConfig()
 		if err := scheduler.Start(); err != nil {
 			log.Printf("Warning: scheduler start failed: %v", err)
 		}

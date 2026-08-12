@@ -31,7 +31,7 @@ func NewPythonTool() *PythonTool {
 	return &PythonTool{}
 }
 
-func (p *PythonTool) CallTool(arguments string) string {
+func (p *PythonTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 	var args PythonArgs
 	err := json.Unmarshal([]byte(arguments), &args)
 	if err != nil {

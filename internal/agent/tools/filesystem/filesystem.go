@@ -158,7 +158,7 @@ func isAllowed(path string) (string, error) {
 	return "", fmt.Errorf("path '%s' (resolved to '%s') is not within allowed directories", path, evaluatedPath)
 }
 
-func (f *FileSystemTool) CallTool(arguments string) string {
+func (f *FileSystemTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 	var args FileSystemArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return fmt.Sprintf("Error parsing arguments: %v", err)

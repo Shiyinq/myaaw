@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 
 	"myaaw/internal/agent/tools"
 	"myaaw/internal/config"
@@ -63,6 +64,37 @@ func LogAction(action, input string) {
 // LogObservation logs ReAct observation to console
 func LogObservation(observation string) {
 	log.Printf("[ReAct] Observation: %s", observation)
+}
+
+func extractContext(messages []provider.Message) tools.ToolsContext {
+	baseURL := config.MYAAWBaseURL
+	if baseURL == "" {
+		baseURL = "http://localhost" + config.PORT
+	}
+	ctx := tools.ToolsContext{
+		BaseURL: baseURL,
+	}
+	
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			content, ok := msg.Content.(string)
+			if ok {
+				reUser := regexp.MustCompile(`User ID: (\d+)`)
+				mUser := reUser.FindStringSubmatch(content)
+				if len(mUser) > 1 {
+					ctx.UserID = mUser[1]
+				}
+
+				reChannel := regexp.MustCompile(`Channel Platform: (\w+)`)
+				mChannel := reChannel.FindStringSubmatch(content)
+				if len(mChannel) > 1 {
+					ctx.Channel = mChannel[1]
+				}
+			}
+			break
+		}
+	}
+	return ctx
 }
 
 // LogIteration logs current iteration number
@@ -281,7 +313,8 @@ func (a *Agent) runWithIteration(modelName string, messages []provider.Message, 
 			LogThought(thought)
 			LogAction(functionName, argsStr)
 
-			output := tools.NewTools(functionName, argsStr)
+			ctx := extractContext(messages)
+			output := tools.NewTools(functionName, argsStr, &ctx)
 			LogObservation(output)
 
 			// ThoughtSignature only on the first step of the group
@@ -443,7 +476,8 @@ func (a *Agent) runStreamWithIteration(modelName string, messages []provider.Mes
 			LogThought(thought)
 			LogAction(functionName, argsStr)
 
-			output := tools.NewTools(functionName, argsStr)
+			ctx := extractContext(messages)
+			output := tools.NewTools(functionName, argsStr, &ctx)
 			LogObservation(output)
 
 			// ThoughtSignature only on the first step of the group

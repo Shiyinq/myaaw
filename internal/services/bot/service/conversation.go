@@ -167,6 +167,8 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 		text = "[SYSTEM TRIGGER: HEARTBEAT]\n" + text
 	case "cron":
 		text = "[SYSTEM TRIGGER: CRON JOB]\n(NOTE: The user does NOT see this trigger message. You must now deliver the reminder or perform the scheduled task for the user based on this prompt)\n\n" + text
+	case "subagent":
+		text = "[SYSTEM TRIGGER: SUB-AGENT RESULT]\n(NOTE: The user does NOT see this trigger message. A background sub-agent has completed its task. Review its report below, inform the user about the completion, and summarize the key findings/results. If you started multiple sub-agents, check the batch progress.)\n\n" + text
 	}
 
 	// Voice: text is already transcribed by channel adapter
