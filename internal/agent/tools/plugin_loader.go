@@ -66,30 +66,32 @@ func LoadExternalTools() {
 	os.MkdirAll(toolsDir, 0755)
 
 	// Load JSON Config
-	loadConfigTools(configPath)
+	disabledTools := loadConfigTools(configPath)
 
 	// Load Zero-Config Tools
-	loadDirectoryTools(toolsDir)
+	loadDirectoryTools(toolsDir, disabledTools)
 
 	// Log total active tools and their names as an array
 	LogActiveTools()
 }
 
-func loadConfigTools(configPath string) {
+func loadConfigTools(configPath string) map[string]bool {
+	disabledTools := make(map[string]bool)
+
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			ToolsLogger.Printf("Warning: Failed to read %s: %v", configPath, err)
 		}
 		ApplyBuiltinToolsFilter(nil)
-		return
+		return disabledTools
 	}
 
 	var config PluginConfig
 	if err := json.Unmarshal(data, &config); err != nil {
 		ToolsLogger.Printf("Warning: Failed to parse %s: %v", configPath, err)
 		ApplyBuiltinToolsFilter(nil)
-		return
+		return disabledTools
 	}
 
 	// 0. Apply Built-in Tools Filter
@@ -98,6 +100,12 @@ func loadConfigTools(configPath string) {
 	// 1. Load CLI Tools from config
 	for _, ct := range config.CustomTools {
 		if ct.Enabled != nil && !*ct.Enabled {
+			ToolsLogger.Printf("Custom tool '%s' disabled by config", ct.Name)
+			disabledTools[ct.Name] = true
+			disabledTools[filepath.Base(ct.Command)] = true
+			for _, arg := range ct.Args {
+				disabledTools[filepath.Base(arg)] = true
+			}
 			continue
 		}
 		schemaBytes, err := json.Marshal(ct.Schema)
@@ -130,13 +138,16 @@ func loadConfigTools(configPath string) {
 	// 2. Load MCP Servers from config
 	for _, ms := range config.MCPServers {
 		if ms.Enabled != nil && !*ms.Enabled {
+			ToolsLogger.Printf("MCP server '%s' disabled by config", ms.Name)
 			continue
 		}
 		startMCPServer(ms)
 	}
+
+	return disabledTools
 }
 
-func loadDirectoryTools(toolsDir string) {
+func loadDirectoryTools(toolsDir string, disabledTools map[string]bool) {
 	entries, err := os.ReadDir(toolsDir)
 	if err != nil {
 		ToolsLogger.Printf("Warning: Failed to read tools dir: %v", err)
@@ -145,6 +156,10 @@ func loadDirectoryTools(toolsDir string) {
 
 	for _, entry := range entries {
 		if entry.IsDir() || entry.Name() == "tools.json" {
+			continue
+		}
+
+		if disabledTools[entry.Name()] {
 			continue
 		}
 
@@ -176,6 +191,10 @@ func loadDirectoryTools(toolsDir string) {
 				if n, ok := fn["name"].(string); ok && n != "" {
 					name = n
 				}
+			}
+
+			if disabledTools[name] {
+				continue
 			}
 
 			tool := NewCustomTool(name, fullPath, nil, out)
@@ -302,7 +321,7 @@ func WatchExternalTools() {
 							debounceTimer.Stop()
 						}
 						debounceTimer = time.AfterFunc(debounceDuration, func() {
-							ToolsLogger.Println("External tools configuration changed, reloading...")
+							ToolsLogger.Println("Tools configuration changed, reloading...")
 							LoadExternalTools()
 						})
 					}
@@ -311,7 +330,7 @@ func WatchExternalTools() {
 				if !ok {
 					return
 				}
-				ToolsLogger.Printf("External tools watcher error: %v", err)
+				ToolsLogger.Printf("Tools watcher error: %v", err)
 			}
 		}
 	}()
