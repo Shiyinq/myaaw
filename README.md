@@ -161,7 +161,8 @@ graph TD
 7. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
 8. **Local Workspace (`~/.myaaw`)**: The operational directory for the Agent.
    - `myaaw.db`: The local SQLite database holding user data and conversation history.
-   - `skills/`: Dynamically parsed text definitions of new tools that Myaaw can learn and execute.
+   - `skills/`: Dynamically parsed text definitions of new tools that Myaaw can learn and execute. (See [Agent Skills Guide](docs/agent_skills.md))
+   - `tools/`: MCP servers and standalone custom CLI tools. (See [MCP & Custom Tools Guide](docs/mcp_and_custom_tools.md))
    - `home/`: Long-term file storage containing Myaaw's core definitions:
      - `AGENTS.md` / `SOUL.md`: Persona and behavior instructions.
      - `BOOTSTRAP.md` / `TOOLS.md`: Initialization steps and tool usage rules.
