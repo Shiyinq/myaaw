@@ -85,7 +85,7 @@ const toolSchema = `{
 }`
 
 func init() {
-	tools.Register("cron", NewCronTool())
+	tools.RegisterBuiltin("cron", NewCronTool())
 }
 
 type CronTool struct{}

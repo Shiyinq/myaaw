@@ -47,7 +47,7 @@ const toolSchema = `{
 }`
 
 func init() {
-	tools.Register("bash", NewBashTool())
+	tools.RegisterBuiltin("bash", NewBashTool())
 }
 
 type BashTool struct{}

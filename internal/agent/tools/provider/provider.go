@@ -39,7 +39,7 @@ const toolSchema = `{
 }`
 
 func init() {
-	tools.Register("provider", NewProviderTool())
+	tools.RegisterBuiltin("provider", NewProviderTool())
 }
 
 type ProviderTool struct{}

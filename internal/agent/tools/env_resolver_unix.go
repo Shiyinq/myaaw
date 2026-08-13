@@ -22,7 +22,11 @@ func resolveUserPath() string {
 	userPathOnce.Do(func() {
 		shell := os.Getenv("SHELL")
 		if shell == "" {
-			shell = "/bin/sh"
+			if _, err := os.Stat("/bin/zsh"); err == nil {
+				shell = "/bin/zsh"
+			} else {
+				shell = "/bin/sh"
+			}
 		}
 
 		// Use -ilc to source both login and interactive configs (.zshrc, .bashrc)

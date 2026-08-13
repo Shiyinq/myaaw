@@ -17,8 +17,9 @@ import (
 )
 
 type PluginConfig struct {
-	CustomTools []CustomToolConfig `json:"custom_tools"`
-	MCPServers  []MCPServerConfig  `json:"mcp_servers"`
+	BuiltinTools map[string]bool    `json:"builtin_tools,omitempty"`
+	CustomTools  []CustomToolConfig `json:"custom_tools"`
+	MCPServers   []MCPServerConfig  `json:"mcp_servers"`
 }
 
 type CustomToolConfig struct {
@@ -26,6 +27,7 @@ type CustomToolConfig struct {
 	Command string                 `json:"command"`
 	Args    []string               `json:"args,omitempty"`
 	Schema  map[string]interface{} `json:"schema,omitempty"`
+	Enabled *bool                  `json:"enabled,omitempty"`
 }
 
 type MCPServerConfig struct {
@@ -33,6 +35,7 @@ type MCPServerConfig struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
+	Enabled *bool             `json:"enabled,omitempty"`
 }
 
 var (
@@ -67,6 +70,9 @@ func LoadExternalTools() {
 
 	// Load Zero-Config Tools
 	loadDirectoryTools(toolsDir)
+
+	// Log total active tools and their names as an array
+	LogActiveTools()
 }
 
 func loadConfigTools(configPath string) {
@@ -75,17 +81,25 @@ func loadConfigTools(configPath string) {
 		if !os.IsNotExist(err) {
 			ToolsLogger.Printf("Warning: Failed to read %s: %v", configPath, err)
 		}
+		ApplyBuiltinToolsFilter(nil)
 		return
 	}
 
 	var config PluginConfig
 	if err := json.Unmarshal(data, &config); err != nil {
 		ToolsLogger.Printf("Warning: Failed to parse %s: %v", configPath, err)
+		ApplyBuiltinToolsFilter(nil)
 		return
 	}
 
+	// 0. Apply Built-in Tools Filter
+	ApplyBuiltinToolsFilter(config.BuiltinTools)
+
 	// 1. Load CLI Tools from config
 	for _, ct := range config.CustomTools {
+		if ct.Enabled != nil && !*ct.Enabled {
+			continue
+		}
 		schemaBytes, err := json.Marshal(ct.Schema)
 
 		// If schema is not explicitly defined, try running --schema
@@ -115,6 +129,9 @@ func loadConfigTools(configPath string) {
 
 	// 2. Load MCP Servers from config
 	for _, ms := range config.MCPServers {
+		if ms.Enabled != nil && !*ms.Enabled {
+			continue
+		}
 		startMCPServer(ms)
 	}
 }

@@ -111,7 +111,7 @@ var (
 )
 
 func init() {
-	tools.Register("filesystem", NewFileSystemTool())
+	tools.RegisterBuiltin("filesystem", NewFileSystemTool())
 
 	cwd, err := os.Getwd()
 	if err != nil {

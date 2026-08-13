@@ -54,7 +54,7 @@ const toolSchema = `{
 }`
 
 func init() {
-	tools.Register("subagent", NewSubAgentTool())
+	tools.RegisterBuiltin("subagent", NewSubAgentTool())
 }
 
 type SubAgentTask struct {

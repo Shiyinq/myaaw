@@ -51,7 +51,7 @@ const toolSchema = `{
 }`
 
 func init() {
-	tools.Register("execute_python", NewPythonTool())
+	tools.RegisterBuiltin("execute_python", NewPythonTool())
 }
 
 type PythonTool struct{}

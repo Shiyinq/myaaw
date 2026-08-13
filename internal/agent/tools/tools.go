@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 )
 
@@ -64,9 +65,10 @@ func GetTools(excludedTools ...string) []map[string]interface{} {
 }
 
 var (
-	registry    = map[string]ToolsFactory{}
-	registryMu  sync.RWMutex
-	ToolsLogger *log.Logger
+	builtinRegistry = map[string]ToolsFactory{}
+	registry        = map[string]ToolsFactory{}
+	registryMu      sync.RWMutex
+	ToolsLogger     *log.Logger
 )
 
 func init() {
@@ -75,7 +77,7 @@ func init() {
 		logDir := filepath.Join(homeDir, ".myaaw", "logs")
 		os.MkdirAll(logDir, 0755)
 		logPath := filepath.Join(logDir, "tools.log")
-
+		
 		f, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		if err == nil {
 			ToolsLogger = log.New(f, "", log.LstdFlags)
@@ -92,10 +94,71 @@ func Register(name string, factory ToolsFactory) {
 	registry[name] = factory
 }
 
+func RegisterBuiltin(name string, factory ToolsFactory) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	builtinRegistry[name] = factory
+	registry[name] = factory
+}
+
+func isBuiltinEnabled(name string, filter map[string]bool) bool {
+	if filter == nil {
+		return true
+	}
+	// Check exact match
+	if enabled, exists := filter[name]; exists {
+		return enabled
+	}
+	// Support aliases
+	if name == "execute_python" {
+		if enabled, exists := filter["python"]; exists {
+			return enabled
+		}
+	}
+	if name == "python" {
+		if enabled, exists := filter["execute_python"]; exists {
+			return enabled
+		}
+	}
+	// Default to enabled if not explicitly disabled
+	return true
+}
+
+func ApplyBuiltinToolsFilter(filter map[string]bool) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+
+	for name, factory := range builtinRegistry {
+		if isBuiltinEnabled(name, filter) {
+			registry[name] = factory
+		} else {
+			delete(registry, name)
+			ToolsLogger.Printf("Built-in tool '%s' disabled by config", name)
+		}
+	}
+}
+
 func ClearRegistryKey(name string) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	delete(registry, name)
+}
+
+func GetRegisteredToolNames() []string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
+	names := make([]string, 0, len(registry))
+	for name := range registry {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func LogActiveTools() {
+	names := GetRegisteredToolNames()
+	ToolsLogger.Printf("Total active tools: %d | Tools: %v", len(names), names)
 }
 
 type ToolsCalling struct {
