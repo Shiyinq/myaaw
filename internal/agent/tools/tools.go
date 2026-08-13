@@ -3,7 +3,11 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
+	"sync"
 )
 
 type ToolsContext struct {
@@ -19,6 +23,9 @@ type ToolsFactory interface {
 
 func GetTools(excludedTools ...string) []map[string]interface{} {
 	var allTools []map[string]interface{}
+
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 
 	for _, factory := range registry {
 		var toolDef map[string]interface{}
@@ -56,10 +63,39 @@ func GetTools(excludedTools ...string) []map[string]interface{} {
 	return filteredTools
 }
 
-var registry = map[string]ToolsFactory{}
+var (
+	registry    = map[string]ToolsFactory{}
+	registryMu  sync.RWMutex
+	ToolsLogger *log.Logger
+)
+
+func init() {
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		logDir := filepath.Join(homeDir, ".myaaw", "logs")
+		os.MkdirAll(logDir, 0755)
+		logPath := filepath.Join(logDir, "tools.log")
+
+		f, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err == nil {
+			ToolsLogger = log.New(f, "", log.LstdFlags)
+			return
+		}
+	}
+	// Fallback to discard if failed
+	ToolsLogger = log.New(io.Discard, "", 0)
+}
 
 func Register(name string, factory ToolsFactory) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
 	registry[name] = factory
+}
+
+func ClearRegistryKey(name string) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	delete(registry, name)
 }
 
 type ToolsCalling struct {
@@ -67,20 +103,20 @@ type ToolsCalling struct {
 }
 
 func NewTools(functionName string, arguments string, ctx *ToolsContext) string {
-	tools := &ToolsCalling{
-		toolsMap: registry,
-	}
-	log.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)
+	ToolsLogger.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)
 
-	tool, exists := tools.toolsMap[functionName]
+	registryMu.RLock()
+	tool, exists := registry[functionName]
+	registryMu.RUnlock()
+
 	if !exists {
 		errMsg := fmt.Sprintf("Error: tool '%s' not available.", functionName)
-		log.Println(errMsg)
+		ToolsLogger.Println(errMsg)
 		return errMsg
 	}
 
 	res := tool.CallTool(arguments, ctx)
-	log.Printf("Successfully called tool '%s'. Response: %s", functionName, res)
+	ToolsLogger.Printf("Successfully called tool '%s'", functionName)
 
 	return res
 }

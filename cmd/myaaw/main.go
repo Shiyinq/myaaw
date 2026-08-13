@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"myaaw/internal/agent/tools"
+
 	_ "myaaw/internal/agent/tools/bash"
 	_ "myaaw/internal/agent/tools/cron"
 	_ "myaaw/internal/agent/tools/filesystem"
@@ -75,6 +77,11 @@ func init() {
 			fmt.Println("Please run 'myaaw onboard' to setup your configuration and features.")
 			os.Exit(1)
 		}
+
+		// Load and watch external tools globally for all active commands
+		tools.LoadExternalTools()
+		tools.WatchExternalTools()
+
 		return nil
 	}
 
