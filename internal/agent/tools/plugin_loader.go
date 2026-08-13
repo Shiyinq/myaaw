@@ -232,7 +232,7 @@ func startMCPServer(ms MCPServerConfig) {
 		// Use server name + tool name to prevent collisions
 		toolName := fmt.Sprintf("%s_%s", ms.Name, t.Name)
 
-		proxy := NewMCPToolProxy(*session, toolName, *t)
+		proxy := NewMCPToolProxy(session, toolName, *t)
 
 		externalMu.Lock()
 		externalRegistry[toolName] = proxy

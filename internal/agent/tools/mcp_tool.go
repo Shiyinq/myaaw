@@ -12,7 +12,7 @@ import (
 
 // MCPToolProxy implements ToolsFactory to proxy requests to an MCP Server tool.
 type MCPToolProxy struct {
-	session mcp.ClientSession
+	session *mcp.ClientSession
 	tool    mcp.Tool
 	schema  []byte
 }
@@ -42,7 +42,7 @@ func cleanSchema(v interface{}) interface{} {
 	}
 }
 
-func NewMCPToolProxy(session mcp.ClientSession, prefixedName string, tool mcp.Tool) *MCPToolProxy {
+func NewMCPToolProxy(session *mcp.ClientSession, prefixedName string, tool mcp.Tool) *MCPToolProxy {
 	// Convert the MCP InputSchema to an OpenAI function schema format
 	openAISchema := map[string]interface{}{
 		"type": "function",
