@@ -20,6 +20,17 @@ var (
 // don't inherit the user's shell environment (NVM, Homebrew, GVM, etc.).
 func resolveUserPath() string {
 	userPathOnce.Do(func() {
+		currentPath := os.Getenv("PATH")
+		// If PATH already contains user directories (Homebrew, /usr/local/bin, nvm, etc.), use it directly
+		if strings.Contains(currentPath, "/opt/homebrew") ||
+			strings.Contains(currentPath, "/usr/local/bin") ||
+			strings.Contains(currentPath, ".nvm") ||
+			strings.Contains(currentPath, ".cargo") ||
+			len(filepath.SplitList(currentPath)) > 4 {
+			userPath = currentPath
+			return
+		}
+
 		shell := os.Getenv("SHELL")
 		if shell == "" {
 			if _, err := os.Stat("/bin/zsh"); err == nil {
@@ -29,16 +40,16 @@ func resolveUserPath() string {
 			}
 		}
 
-		// Use -ilc to source both login and interactive configs (.zshrc, .bashrc)
-		// Use a unique marker to parse PATH from potential shell noise (motd, banners)
+		// Use -ilc (interactive + login) to source .zshrc/.bashrc which often contain nvm/npx paths.
+		// cmd.Stdin = strings.NewReader("") prevents SIGTTIN (suspended tty input) hangs.
 		marker := "__MYAAW_PATH__"
 		cmd := exec.Command(shell, "-ilc", "echo "+marker+"=$PATH")
-		cmd.Stdin = nil
+		cmd.Stdin = strings.NewReader("")
 
 		out, err := cmd.Output()
 		if err != nil {
 			ToolsLogger.Printf("[WARN] Failed to resolve user PATH from %s: %v", shell, err)
-			userPath = os.Getenv("PATH")
+			userPath = currentPath
 			return
 		}
 
@@ -50,7 +61,7 @@ func resolveUserPath() string {
 		}
 
 		// Fallback
-		userPath = os.Getenv("PATH")
+		userPath = currentPath
 	})
 
 	return userPath
