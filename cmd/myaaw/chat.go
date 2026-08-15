@@ -446,6 +446,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.activeConvID = ""
 					}
 					m.messages = []chatMessage_{}
+					m.totalTokens = 0
 					m.state = stateInput
 					m.textInput.Focus()
 					m.updateViewportContent(true)
@@ -458,6 +459,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					selected := m.conversations[selectedIdx]
 					m.activeConvID = selected.Id
 					m.messages = convertProviderMessages(selected.Messages)
+					
+					// Restore token usage from history
+					m.totalTokens = 0
+					for i := len(selected.Messages) - 1; i >= 0; i-- {
+						if selected.Messages[i].Usage.TotalTokens > 0 {
+							m.totalTokens = selected.Messages[i].Usage.TotalTokens
+							break
+						}
+					}
+					
 					m.state = stateInput
 					m.textInput.Focus()
 					m.updateViewportContent(true)
