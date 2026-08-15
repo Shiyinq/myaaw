@@ -624,7 +624,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			if text == "/exit" || text == "/quit" {
+			if text == "/exit" {
 				return m, tea.Quit
 			}
 
@@ -638,7 +638,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, loadSessionsCmd(m.convRepo)
 			}
 
-			if text == "/new" || text == "/reset" {
+			if text == "/new" {
 				m.textInput.Reset()
 				m.isAutocompleting = false
 				m.suggestions = nil
@@ -655,7 +655,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if strings.HasPrefix(text, "/") {
 				m.messages = append(m.messages, chatMessage_{
 					role: "bot",
-					text: fmt.Sprintf("❓ Unknown command: `%s`\n\nAvailable commands:\n• `/sessions` - Open session picker\n• `/new` or `/reset` - Start new session\n• `/exit` or `/quit` - Exit chat", text),
+					text: fmt.Sprintf("❓ Unknown command: `%s`\n\nAvailable commands:\n• `/sessions` - Open session picker\n• `/new` - Start new session\n• `/exit` - Exit chat", text),
 				})
 				m.textInput.Reset()
 				m.isAutocompleting = false
@@ -848,9 +848,7 @@ var slashCommands = []struct {
 }{
 	{"/sessions", "Open session picker"},
 	{"/new", "Create a new chat session"},
-	{"/reset", "Reset to a new chat session"},
 	{"/exit", "Exit the chat"},
-	{"/quit", "Quit the chat"},
 }
 
 func (m *model) updateCommandSuggestions(prefix string) {
