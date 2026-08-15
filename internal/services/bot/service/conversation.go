@@ -131,10 +131,19 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		},
 	}
 
-	conv, err := r.conversationRepo.GetActiveConversationByUserId(user.UserId)
+	var conv *model.Conversation
+	var err error
+	if msg.ConversationID != "" {
+		conv, err = r.conversationRepo.GetConversationById(msg.ConversationID)
+	}
+	if conv == nil {
+		conv, err = r.conversationRepo.GetActiveConversationByUserId(user.UserId)
+	}
+
 	var convMessages []provider.Message
 	if err == nil && conv != nil {
 		convMessages = conv.Messages
+		msg.ConversationID = conv.Id
 	} else {
 		title, err := r.GenerateConversationTitle(user, messages)
 		if err != nil {
@@ -144,6 +153,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		conv, err := r.conversationRepo.CreateConversation(user.UserId, title)
 		if err == nil {
 			convMessages = conv.Messages
+			msg.ConversationID = conv.Id
 		} else {
 			convMessages = []provider.Message{}
 		}
@@ -234,7 +244,14 @@ func (r *BotServiceImpl) updateUserMessages(msg *channel.IncomingMessage, messag
 	messages = append(messages, response)
 	messages = messages[1:] // exclude system message
 
-	conv, err := r.conversationRepo.GetActiveConversationByUserId(msg.UserID)
+	var conv *model.Conversation
+	var err error
+	if msg.ConversationID != "" {
+		conv, err = r.conversationRepo.GetConversationById(msg.ConversationID)
+	}
+	if conv == nil {
+		conv, err = r.conversationRepo.GetActiveConversationByUserId(msg.UserID)
+	}
 	if err != nil && conv != nil {
 		return err
 	}

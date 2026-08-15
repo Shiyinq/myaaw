@@ -78,9 +78,11 @@ func init() {
 			os.Exit(1)
 		}
 
-		// Load and watch external tools globally for all active commands
-		tools.LoadExternalTools()
-		tools.WatchExternalTools()
+		// Load and watch external tools asynchronously in the background so CLI commands open instantly
+		go func() {
+			tools.LoadExternalTools()
+			tools.WatchExternalTools()
+		}()
 
 		return nil
 	}

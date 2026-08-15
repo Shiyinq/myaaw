@@ -14,8 +14,10 @@ import (
 
 type ConversationRepository interface {
 	GetConversationByUserId(userId int) ([]*model.Conversation, error)
+	GetConversationById(id string) (*model.Conversation, error)
 	CreateConversation(userId int, title string) (*model.Conversation, error)
 	UpdateConversationById(id string, messages []provider.Message, title string) error
+	DeleteConversationById(id string) error
 	GetActiveConversationByUserId(userId int) (*model.Conversation, error)
 }
 
@@ -28,7 +30,7 @@ func NewConversationRepository(db *sql.DB) ConversationRepository {
 }
 
 func (r *ConversationRepositoryImpl) GetConversationByUserId(userId int) ([]*model.Conversation, error) {
-	query := `SELECT id, user_id, title, messages, active, created_at, updated_at FROM conversations WHERE user_id = ?`
+	query := `SELECT id, user_id, title, messages, active, created_at, updated_at FROM conversations WHERE user_id = ? ORDER BY updated_at DESC, created_at DESC`
 	rows, err := r.db.Query(query, userId)
 	if err != nil {
 		return nil, err
@@ -53,6 +55,36 @@ func (r *ConversationRepositoryImpl) GetConversationByUserId(userId int) ([]*mod
 	}
 
 	return conversations, nil
+}
+
+func (r *ConversationRepositoryImpl) GetConversationById(id string) (*model.Conversation, error) {
+	query := `SELECT id, user_id, title, messages, active, created_at, updated_at FROM conversations WHERE id = ? LIMIT 1`
+
+	var conv model.Conversation
+	var messagesJSON string
+
+	err := r.db.QueryRow(query, id).Scan(
+		&conv.Id, &conv.UserId, &conv.Title, &messagesJSON, &conv.Active, &conv.CreatedAt, &conv.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if err := json.Unmarshal([]byte(messagesJSON), &conv.Messages); err != nil {
+		conv.Messages = []provider.Message{}
+	}
+
+	return &conv, nil
+}
+
+func (r *ConversationRepositoryImpl) DeleteConversationById(id string) error {
+	query := `DELETE FROM conversations WHERE id = ?`
+	_, err := r.db.Exec(query, id)
+	return err
 }
 
 func (r *ConversationRepositoryImpl) CreateConversation(userId int, title string) (*model.Conversation, error) {

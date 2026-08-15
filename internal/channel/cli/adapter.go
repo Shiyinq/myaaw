@@ -23,18 +23,20 @@ func (a *CLIAdapter) Name() string {
 
 func (a *CLIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMessage, error) {
 	var req struct {
-		UserID int    `json:"user_id"`
-		Text   string `json:"text"`
+		UserID         int    `json:"user_id"`
+		Text           string `json:"text"`
+		ConversationID string `json:"conversation_id"`
 	}
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, fmt.Errorf("failed to parse CLI payload: %w", err)
 	}
 
 	return &channel.IncomingMessage{
-		UserID:  req.UserID,
-		Text:    req.Text,
-		Channel: "cli",
-		RawMeta: CLIMeta{},
+		UserID:         req.UserID,
+		Text:           req.Text,
+		ConversationID: req.ConversationID,
+		Channel:        "cli",
+		RawMeta:        CLIMeta{},
 	}, nil
 }
 

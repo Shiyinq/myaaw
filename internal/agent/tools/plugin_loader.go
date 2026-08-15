@@ -224,6 +224,7 @@ func runSchemaCommand(command string, args []string) ([]byte, error) {
 	resolvedCmd := resolveCommand(command)
 	cmd := exec.CommandContext(ctxTimeout, resolvedCmd, cmdArgs...)
 	cmd.Env = getUserEnv()
+	cmd.Stdin = strings.NewReader("")
 	return cmd.Output()
 }
 
