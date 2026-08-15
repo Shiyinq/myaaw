@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -108,6 +109,8 @@ const (
 	stateInput tuiState = iota
 	stateWaiting
 	stateSessionSelect
+	stateModelSelect
+	stateModelLoading
 )
 
 type nextChunkMsg struct {
@@ -129,6 +132,92 @@ func loadSessionsCmd(convRepo repository.ConversationRepository) tea.Cmd {
 			conversations: convs,
 			err:           err,
 		}
+	}
+}
+
+type modelsLoadedMsg struct {
+	models []string
+}
+
+func loadModelsCmd() tea.Cmd {
+	return func() tea.Msg {
+		cfg, err := config.LoadJSONConfigOnly()
+		var modelsList []string
+		
+		if err == nil && cfg != nil && cfg.Providers != nil {
+			type modelInfo struct {
+				id         string
+				provType   string
+				modelName  string
+			}
+			
+			var allFetched []modelInfo
+
+			// Query each provider in parallel
+			type result struct {
+				id       string
+				provType string
+				models   []string
+			}
+			resultChan := make(chan result, len(cfg.Providers))
+
+			for id, p := range cfg.Providers {
+				go func(provID, provType, apiKey, baseURL string) {
+					factory, exists := provider.LLMproviderFactories[provType]
+					if exists {
+						llmProv := factory(baseURL, apiKey, p.DefaultModel)
+						provModels, mErr := llmProv.Models()
+						if mErr == nil {
+							resultChan <- result{id: provID, provType: provType, models: provModels}
+							return
+						}
+					}
+					// fallback to default model if api fails
+					resultChan <- result{id: provID, provType: provType, models: []string{p.DefaultModel}}
+				}(id, p.Type, p.APIKey, p.BaseURL)
+			}
+
+			// Collect results
+			for i := 0; i < len(cfg.Providers); i++ {
+				res := <-resultChan
+				for _, m := range res.models {
+					allFetched = append(allFetched, modelInfo{
+						id:        res.id,
+						provType:  res.provType,
+						modelName: m,
+					})
+				}
+			}
+			
+			// Format strings
+			var others []string
+			var active string
+			activeID := config.CurrentProviderID
+			activeModel := config.LLMDefaultModel
+			
+			for _, info := range allFetched {
+				line := fmt.Sprintf("%s (%s: %s)", info.id, info.provType, info.modelName)
+				if info.id == activeID && info.modelName == activeModel {
+					active = "★ " + line
+				} else {
+					others = append(others, "  " + line)
+				}
+			}
+			
+			sort.Strings(others)
+			
+			if active != "" {
+				modelsList = append([]string{active}, others...)
+			} else {
+				modelsList = others
+			}
+		}
+
+		if len(modelsList) == 0 {
+			modelsList = []string{"  No models found"}
+		}
+		
+		return modelsLoadedMsg{models: modelsList}
 	}
 }
 
@@ -168,6 +257,9 @@ type model struct {
 	traceCount        int
 	lastHistoryScroll time.Time
 	totalTokens       int
+
+	availableModels []string
+	modelCursor     int
 }
 
 type pawTickMsg struct{}
@@ -414,6 +506,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case modelsLoadedMsg:
+		m.availableModels = msg.models
+		m.state = stateModelSelect
+		m.modelCursor = 0
+		m.updateViewportContent(true)
+		return m, nil
+
 	case tea.KeyMsg:
 		// 1. Session Picker State Handling
 		if m.state == stateSessionSelect {
@@ -495,6 +594,67 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, loadSessionsCmd(m.convRepo)
 					}
 				}
+				return m, nil
+			}
+			return m, nil
+		}
+
+		if m.state == stateModelSelect {
+			totalItems := len(m.availableModels)
+			if totalItems == 0 {
+				totalItems = 1
+			}
+			switch msg.String() {
+			case "ctrl+c":
+				return m, tea.Quit
+
+			case "esc", "q":
+				m.state = stateInput
+				m.textInput.Focus()
+				return m, nil
+
+			case "up", "k":
+				m.modelCursor = (m.modelCursor - 1 + totalItems) % totalItems
+				return m, nil
+
+			case "down", "j":
+				m.modelCursor = (m.modelCursor + 1) % totalItems
+				return m, nil
+
+			case "enter":
+				if len(m.availableModels) > 0 && m.modelCursor < len(m.availableModels) && !strings.HasPrefix(m.availableModels[0], "No models") {
+					selectedLine := m.availableModels[m.modelCursor]
+					selectedLine = strings.TrimPrefix(selectedLine, "★ ")
+					selectedLine = strings.TrimSpace(selectedLine)
+					
+					parts := strings.SplitN(selectedLine, " (", 2)
+					if len(parts) == 2 {
+						selectedID := parts[0]
+						modelPart := strings.TrimSuffix(parts[1], ")")
+						typeModelParts := strings.SplitN(modelPart, ": ", 2)
+						if len(typeModelParts) == 2 {
+							modelName := typeModelParts[1]
+							
+							cfg, err := config.LoadJSONConfigOnly()
+							if err == nil && cfg != nil && cfg.Providers != nil {
+								if p, exists := cfg.Providers[selectedID]; exists {
+									cfg.DefaultProvider = selectedID
+									p.DefaultModel = modelName
+									cfg.Providers[selectedID] = p
+									_ = config.SaveConfig(cfg)
+									
+									config.CurrentProviderID = selectedID
+									config.LLMProviderName = p.Type
+									config.LLMDefaultModel = modelName
+									config.LLMProviderAPIKey = p.APIKey
+									config.LLMProviderBaseURL = p.BaseURL
+								}
+							}
+						}
+					}
+				}
+				m.state = stateInput
+				m.textInput.Focus()
 				return m, nil
 			}
 			return m, nil
@@ -661,6 +821,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.totalTokens = 0
 				m.updateViewportContent(true)
 				return m, nil
+			}
+
+			if text == "/models" || text == "/model" {
+				m.textInput.Reset()
+				m.isAutocompleting = false
+				m.suggestions = nil
+				m.state = stateModelLoading
+				m.modelCursor = 0
+				m.textInput.Blur()
+				m.updateViewportContent(true)
+				return m, loadModelsCmd()
 			}
 
 			if strings.HasPrefix(text, "/") {
@@ -866,6 +1037,7 @@ var slashCommands = []struct {
 }{
 	{"/sessions", "Open session picker"},
 	{"/new", "Create a new chat session"},
+	{"/models", "Switch LLM model (Provider & Model)"},
 	{"/exit", "Exit the chat"},
 }
 
@@ -1302,9 +1474,129 @@ func (m model) renderSessionPicker() string {
 	)
 }
 
+func (m model) renderModelPicker() string {
+	header := headerStyle.Render(" 🐾 MYAAW MODELS 🐾 ")
+
+	mainPanelHeight := m.height - 4
+	if mainPanelHeight < 10 {
+		mainPanelHeight = 10
+	}
+
+	listWidth := 60
+	if m.width > 120 {
+		listWidth = m.width/2 - 10
+		if listWidth > 90 {
+			listWidth = 90
+		}
+	}
+	if listWidth < 50 {
+		listWidth = 50
+	}
+	
+	catWidth := m.width - listWidth - 6
+	if catWidth < 20 {
+		catWidth = 20
+	}
+
+	availableForModels := mainPanelHeight - 6
+	if availableForModels < 3 {
+		availableForModels = 3
+	}
+	maxVisible := availableForModels
+	totalItems := len(m.availableModels)
+	if totalItems == 0 {
+		totalItems = 1
+	}
+
+	start := 0
+	if m.modelCursor >= maxVisible {
+		start = m.modelCursor - maxVisible + 1
+	}
+	end := start + maxVisible
+	if end > totalItems {
+		end = totalItems
+	}
+
+	var leftLines []string
+	leftLines = append(leftLines, theme.HighlightStyle.Bold(true).Render(" 🤖 SELECT LLM MODEL"))
+	leftLines = append(leftLines, theme.MutedStyle.Render(" Choose the model to use for this chat."))
+	leftLines = append(leftLines, "")
+
+	if len(m.availableModels) == 0 && m.state != stateModelLoading {
+		leftLines = append(leftLines, theme.ErrorStyle.Render(" No models configured."))
+	} else if m.state == stateModelLoading {
+		leftLines = append(leftLines, theme.WarningStyle.Render(" ⏳ Fetching live models from providers..."))
+	} else {
+		for i := start; i < end; i++ {
+			line := m.availableModels[i]
+			
+			// Prevent lipgloss word wrap which breaks the layout height
+			maxLen := listWidth - 6
+			if len(line) > maxLen && maxLen > 3 {
+				line = line[:maxLen-3] + "..."
+			}
+			
+			if i == m.modelCursor {
+				leftLines = append(leftLines, " "+theme.HighlightStyle.Render("► "+line))
+			} else {
+				leftLines = append(leftLines, "   "+line)
+			}
+		}
+	}
+	for len(leftLines) < mainPanelHeight {
+		leftLines = append(leftLines, "")
+	}
+
+	leftColStyle := lipgloss.NewStyle().Width(listWidth)
+	var paddedLeftLines []string
+	for _, l := range leftLines[:mainPanelHeight] {
+		paddedLeftLines = append(paddedLeftLines, leftColStyle.Render(l))
+	}
+
+	rawCatLines := strings.Split(strings.Trim(catAscii, "\n"), "\n")
+	catColStyle := lipgloss.NewStyle().Width(catWidth).Align(lipgloss.Center).Foreground(lipgloss.Color("240"))
+
+	catHeight := len(rawCatLines)
+	topPad := 0
+	if mainPanelHeight > catHeight {
+		topPad = (mainPanelHeight - catHeight) / 2
+	}
+
+	var rightLines []string
+	for i := 0; i < topPad; i++ {
+		rightLines = append(rightLines, catColStyle.Render(""))
+	}
+	for _, cl := range rawCatLines {
+		if len(rightLines) < mainPanelHeight {
+			rightLines = append(rightLines, catColStyle.Render(cl))
+		}
+	}
+	for len(rightLines) < mainPanelHeight {
+		rightLines = append(rightLines, catColStyle.Render(""))
+	}
+
+	var mainViewLines []string
+	for i := 0; i < mainPanelHeight; i++ {
+		mainViewLines = append(mainViewLines, paddedLeftLines[i]+"  "+rightLines[i])
+	}
+	mainView := strings.Join(mainViewLines, "\n")
+
+	footer := footerStyle.Render("  Enter: Select • ↑/↓ or j/k: Navigate • Esc: Cancel  ")
+
+	return fmt.Sprintf(
+		"%s\n\n%s\n\n%s",
+		header,
+		mainView,
+		footer,
+	)
+}
+
 func (m model) View() string {
 	if m.state == stateSessionSelect {
 		return m.renderSessionPicker()
+	}
+	if m.state == stateModelSelect || m.state == stateModelLoading {
+		return m.renderModelPicker()
 	}
 
 	header := headerStyle.Render(" 🐾 MYAAW CLI 🐾 ")
