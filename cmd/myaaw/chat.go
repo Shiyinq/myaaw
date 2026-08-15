@@ -111,9 +111,10 @@ const (
 )
 
 type nextChunkMsg struct {
-	chunk channel.StreamChunk
-	err   error
-	done  bool
+	chunk     channel.StreamChunk
+	done      bool
+	err       error
+	newConvID string
 }
 
 type sessionsLoadedMsg struct {
@@ -287,7 +288,7 @@ var (
 ⣿⣧⠀⠀⠀⠓⠛⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⠛⠋⠀⠀⢸⣧⣤⣤⣶⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣿⡿⠀⠀
 ⣿⣿⣤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠉⠻⣷⣶⣶⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣿⣿⠁⠀⠀
 ⠈⠛⠻⠿⢿⣿⣷⣶⣦⣤⣄⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣴⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⣿⡏⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠉⠙⠛⠻⠿⢿⣿⣷⣶⣦⣤⣄⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠿⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢿⣿⡄⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠉⠙⠛⠻⠿⢿⣿⣷⣶⣦⣤⣄⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠿⠛⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀☘⢿⣿⡄⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠙⠛⠻⠿⢿⣿⣷⣶⣦⣤⣄⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢿⣿⡄⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠛⠛⠿⠿⣿⣷⣶⣶⣤⣤⣀⡀⠀⠀⠀⢀⣴⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢿⡿⣄
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠛⠛⠿⠿⣿⣷⣶⡿⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⣿⣹
@@ -343,7 +344,7 @@ func initialModel(botService service.BotService, convRepo repository.Conversatio
 		messages:      []chatMessage_{},
 		conversations: []*botModel.Conversation{},
 		sessionCursor: 0,
-		activeConvID:  "",
+		activeConvID:  "NEW",
 		queueFileSize: initialSize,
 		width:         80,
 		height:        24,
@@ -643,10 +644,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.isAutocompleting = false
 				m.suggestions = nil
 				m.userScrolledUp = false
-				newConv, _ := m.convRepo.CreateConversation(0, "New Chat")
-				if newConv != nil {
-					m.activeConvID = newConv.Id
-				}
+				m.activeConvID = "NEW"
 				m.messages = []chatMessage_{}
 				m.updateViewportContent(true)
 				return m, nil
@@ -738,6 +736,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
 				m.cancelFunc = nil
 				m.traceCount = 0
+				if msg.newConvID != "" {
+					m.activeConvID = msg.newConvID
+				}
 				m.updateViewportContent(true)
 			}
 			return m, nil
@@ -1012,7 +1013,7 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 			select {
 			case <-ctx.Done():
 				return
-			case m.sub <- nextChunkMsg{done: true, err: err}:
+			case m.sub <- nextChunkMsg{done: true, err: err, newConvID: msg.ConversationID}:
 			}
 		} else {
 			out, err := m.botService.Bot(msg)
@@ -1021,13 +1022,13 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 				return
 			default:
 				if err != nil {
-					m.sub <- nextChunkMsg{done: true, err: err}
+					m.sub <- nextChunkMsg{done: true, err: err, newConvID: msg.ConversationID}
 				} else {
 					m.sub <- nextChunkMsg{chunk: channel.StreamChunk{
 						Text:    out.Text,
 						Thought: out.Thought,
 					}}
-					m.sub <- nextChunkMsg{done: true}
+					m.sub <- nextChunkMsg{done: true, newConvID: msg.ConversationID}
 				}
 			}
 		}

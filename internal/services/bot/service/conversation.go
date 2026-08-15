@@ -7,6 +7,7 @@ import (
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
+	"errors"
 	"strings"
 )
 
@@ -133,10 +134,14 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 
 	var conv *model.Conversation
 	var err error
-	if msg.ConversationID != "" {
+	if msg.ConversationID == "NEW" {
+		conv = nil
+		err = errors.New("force new")
+	} else if msg.ConversationID != "" {
 		conv, err = r.conversationRepo.GetConversationById(msg.ConversationID)
 	}
-	if conv == nil {
+	
+	if conv == nil && msg.ConversationID != "NEW" {
 		conv, err = r.conversationRepo.GetActiveConversationByUserId(user.UserId)
 	}
 
