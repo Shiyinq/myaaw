@@ -1297,7 +1297,22 @@ func (m model) View() string {
 	} else if m.isAutocompleting && len(m.suggestions) > 0 {
 		footerText = "  Esc: Cancel • ↑/↓: Navigate • Tab/Enter: Select  "
 	}
-	footer := footerStyle.Render(footerText)
+	leftText := footerStyle.Render(footerText)
+	prov := config.CurrentProviderID
+	if prov == "" {
+		prov = config.LLMProviderName
+	}
+	mod := config.LLMDefaultModel
+	if mod == "" {
+		mod = "default"
+	}
+	rightText := footerStyle.Render(fmt.Sprintf(" %s • %s ", prov, mod))
+
+	spaceWidth := m.width - lipgloss.Width(leftText) - lipgloss.Width(rightText)
+	if spaceWidth < 0 {
+		spaceWidth = 0
+	}
+	footer := leftText + strings.Repeat(" ", spaceWidth) + rightText
 
 	var autocomplete string
 	acLineCount := 0
