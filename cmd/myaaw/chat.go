@@ -167,6 +167,7 @@ type model struct {
 	userScrolledUp    bool
 	traceCount        int
 	lastHistoryScroll time.Time
+	totalTokens       int
 }
 
 type pawTickMsg struct{}
@@ -646,6 +647,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.userScrolledUp = false
 				m.activeConvID = "NEW"
 				m.messages = []chatMessage_{}
+				m.totalTokens = 0
 				m.updateViewportContent(true)
 				return m, nil
 			}
@@ -742,6 +744,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateViewportContent(true)
 			}
 			return m, nil
+		}
+
+		if msg.chunk.Usage.TotalTokens > 0 {
+			m.totalTokens = msg.chunk.Usage.TotalTokens
 		}
 
 		if msg.chunk.Thought != "" {
@@ -1027,6 +1033,7 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 					m.sub <- nextChunkMsg{chunk: channel.StreamChunk{
 						Text:    out.Text,
 						Thought: out.Thought,
+						Usage:   out.Usage,
 					}}
 					m.sub <- nextChunkMsg{done: true, newConvID: msg.ConversationID}
 				}
@@ -1306,7 +1313,13 @@ func (m model) View() string {
 	if mod == "" {
 		mod = "default"
 	}
-	rightText := footerStyle.Render(fmt.Sprintf(" %s • %s ", prov, mod))
+	
+	tokenText := ""
+	if m.totalTokens > 0 {
+		tokenText = fmt.Sprintf(" • %d tokens ", m.totalTokens)
+	}
+
+	rightText := footerStyle.Render(fmt.Sprintf(" %s • %s%s ", prov, mod, tokenText))
 
 	spaceWidth := m.width - lipgloss.Width(leftText) - lipgloss.Width(rightText)
 	if spaceWidth < 0 {

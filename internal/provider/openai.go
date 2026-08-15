@@ -53,8 +53,13 @@ type OpenAIRequest struct {
 	Model      string                   `json:"model"`
 	Messages   []OpenAIMessage          `json:"messages"`
 	Stream     bool                     `json:"stream"`
-	Tools      []map[string]interface{} `json:"tools,omitempty"`
-	ToolChoice string                   `json:"tool_choice,omitempty"`
+	Tools         []map[string]interface{} `json:"tools,omitempty"`
+	ToolChoice    string                   `json:"tool_choice,omitempty"`
+	StreamOptions *OpenAIStreamOptions     `json:"stream_options,omitempty"`
+}
+
+type OpenAIStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 func messagesToOpenAIMessages(messages []Message) []OpenAIMessage {
@@ -122,11 +127,17 @@ func (o *OpenAIProvider) DefaultModel(modelName string) string {
 
 func (o *OpenAIProvider) buildRequest(modelName string, messages []Message, stream bool, toolsList []map[string]interface{}) OpenAIRequest {
 	req := OpenAIRequest{
-		Model:      o.DefaultModel(modelName),
-		Stream:     stream,
-		Messages:   messagesToOpenAIMessages(messages),
+		Model:    o.DefaultModel(modelName),
+		Messages: messagesToOpenAIMessages(messages),
+		Stream:   stream,
 	}
-	
+
+	if stream {
+		req.StreamOptions = &OpenAIStreamOptions{
+			IncludeUsage: true,
+		}
+	}
+
 	if len(toolsList) > 0 {
 		req.Tools = toolsList
 		req.ToolChoice = "auto"
@@ -153,11 +164,21 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message, toolsList []
 		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
 	}
 
-	if response.Choices[0].FinishReason == "tool_calls" {
-		return openAIMessageToMessage(response.Choices[0].Message), nil
+	if len(response.Choices) == 0 {
+		return Message{}, fmt.Errorf("no choices returned from OpenAI")
 	}
 
-	return openAIMessageToMessage(response.Choices[0].Message), nil
+	msg := openAIMessageToMessage(response.Choices[0].Message)
+	if response.Usage.TotalTokens > 0 {
+		msg.Usage = Usage{
+			PromptTokens:     response.Usage.PromptTokens,
+			CompletionTokens: response.Usage.CompletionTokens,
+			TotalTokens:      response.Usage.TotalTokens,
+			ThoughtsTokens:   response.Usage.CompletionTokensDetails.ReasoningTokens,
+		}
+	}
+
+	return msg, nil
 }
 func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callback func(Message) error, toolsList []map[string]interface{}) error {
 	if modelName == "" {
@@ -207,6 +228,9 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 		}
 
 		jsonData := strings.TrimPrefix(line, "data: ")
+		if jsonData == "[DONE]" {
+			break
+		}
 
 		response = OpenAIChatCompletion{}
 		err = json.Unmarshal([]byte(jsonData), &response)
@@ -214,55 +238,74 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 			return fmt.Errorf("error unmarshalling stream data: %w", err)
 		}
 
-		partialMessage := response.Choices[0].Delta
+		if len(response.Choices) > 0 {
+			partialMessage := response.Choices[0].Delta
 
-		if len(partialMessage.ToolCalls) > 0 {
-			for _, tcDelta := range partialMessage.ToolCalls {
-				idx := 0
-				if tcDelta.Index != nil {
-					idx = *tcDelta.Index
-				}
-				for len(accumulatedMessage.ToolCalls) <= idx {
-					accumulatedMessage.ToolCalls = append(accumulatedMessage.ToolCalls, ToolCall{})
-				}
-				if tcDelta.ID != "" {
-					accumulatedMessage.ToolCalls[idx].ID = tcDelta.ID
-				}
-				if tcDelta.Type != "" {
-					accumulatedMessage.ToolCalls[idx].Type = tcDelta.Type
-				}
-				if tcDelta.Function.Name != "" {
-					accumulatedMessage.ToolCalls[idx].Function.Name = tcDelta.Function.Name
-				}
-				if tcDelta.Function.Arguments != nil {
-					if argStr, ok := tcDelta.Function.Arguments.(string); ok {
-						currArg, _ := accumulatedMessage.ToolCalls[idx].Function.Arguments.(string)
-						accumulatedMessage.ToolCalls[idx].Function.Arguments = currArg + argStr
+			if len(partialMessage.ToolCalls) > 0 {
+				for _, tcDelta := range partialMessage.ToolCalls {
+					idx := 0
+					if tcDelta.Index != nil {
+						idx = *tcDelta.Index
+					}
+					for len(accumulatedMessage.ToolCalls) <= idx {
+						accumulatedMessage.ToolCalls = append(accumulatedMessage.ToolCalls, ToolCall{})
+					}
+					if tcDelta.ID != "" {
+						accumulatedMessage.ToolCalls[idx].ID = tcDelta.ID
+					}
+					if tcDelta.Type != "" {
+						accumulatedMessage.ToolCalls[idx].Type = tcDelta.Type
+					}
+					if tcDelta.Function.Name != "" {
+						accumulatedMessage.ToolCalls[idx].Function.Name = tcDelta.Function.Name
+					}
+					if tcDelta.Function.Arguments != nil {
+						if argStr, ok := tcDelta.Function.Arguments.(string); ok {
+							currArg, _ := accumulatedMessage.ToolCalls[idx].Function.Arguments.(string)
+							accumulatedMessage.ToolCalls[idx].Function.Arguments = currArg + argStr
+						}
 					}
 				}
 			}
-		}
 
-		hasContent := partialMessage.Content != nil && partialMessage.Content != ""
-		hasReasoning := partialMessage.ReasoningContent != ""
+			hasContent := partialMessage.Content != nil && partialMessage.Content != ""
+			hasReasoning := partialMessage.ReasoningContent != ""
 
-		if hasContent || hasReasoning {
-			err = callback(openAIMessageToMessage(partialMessage))
-			if err != nil {
-				return fmt.Errorf("error in callback: %w", err)
+			if hasContent || hasReasoning {
+				err = callback(openAIMessageToMessage(partialMessage))
+				if err != nil {
+					return fmt.Errorf("error in callback: %w", err)
+				}
 			}
 		}
 
-		if response.Choices[0].FinishReason == "tool_calls" {
-			err = callback(openAIMessageToMessage(accumulatedMessage))
-			if err != nil {
-				return fmt.Errorf("error in callback for tool calls: %w", err)
+		if len(response.Choices) > 0 {
+			if response.Choices[0].FinishReason == "tool_calls" {
+				err = callback(openAIMessageToMessage(accumulatedMessage))
+				if err != nil {
+					return fmt.Errorf("error in callback for tool calls: %w", err)
+				}
 			}
-			break
 		}
 
-		if response.Choices[0].FinishReason == "stop" {
-			break
+		if response.Usage.TotalTokens > 0 {
+			msg := Message{
+				Usage: Usage{
+					PromptTokens:     response.Usage.PromptTokens,
+					CompletionTokens: response.Usage.CompletionTokens,
+					TotalTokens:      response.Usage.TotalTokens,
+					ThoughtsTokens:   response.Usage.CompletionTokensDetails.ReasoningTokens,
+				},
+			}
+			err = callback(msg)
+			if err != nil {
+				return fmt.Errorf("error in callback for usage: %w", err)
+			}
+		}
+
+		if len(response.Choices) > 0 && response.Choices[0].FinishReason == "stop" {
+			// Do not break immediately if usage is provided in the same chunk or a subsequent chunk.
+			// Actually, standard behavior is to break on "[DONE]", so we just ignore this break.
 		}
 	}
 
