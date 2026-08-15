@@ -153,18 +153,19 @@ type model struct {
 
 	sub chan nextChunkMsg
 
-	suggestions      []string
-	suggestionIndex  int
-	isAutocompleting bool
+	suggestions          []string
+	suggestionIndex      int
+	isAutocompleting     bool
 
 	queueFileSize int64
 	width         int
 	height        int
 
-	pawFrame       int
-	cancelFunc     context.CancelFunc
-	userScrolledUp bool
-	traceCount     int
+	pawFrame          int
+	cancelFunc        context.CancelFunc
+	userScrolledUp    bool
+	traceCount        int
+	lastHistoryScroll time.Time
 }
 
 type pawTickMsg struct{}
@@ -393,12 +394,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.MouseButtonWheelUp:
 			m.viewport.LineUp(3)
 			m.userScrolledUp = true
+			m.lastHistoryScroll = time.Now()
 			return m, nil
 		case tea.MouseButtonWheelDown:
 			m.viewport.LineDown(3)
 			if m.viewport.AtBottom() {
 				m.userScrolledUp = false
 			}
+			m.lastHistoryScroll = time.Now()
 			return m, nil
 		case tea.MouseButtonLeft:
 			if msg.Action == tea.MouseActionPress {
@@ -488,9 +491,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.isAutocompleting && len(m.suggestions) > 0 {
 			switch msg.String() {
 			case "up":
+				if time.Since(m.lastHistoryScroll) < 200*time.Millisecond {
+					m.lastHistoryScroll = time.Now()
+					m.viewport.LineUp(2)
+					m.userScrolledUp = true
+					return m, nil
+				}
 				m.suggestionIndex = (m.suggestionIndex - 1 + len(m.suggestions)) % len(m.suggestions)
 				return m, nil
 			case "down":
+				if time.Since(m.lastHistoryScroll) < 200*time.Millisecond {
+					m.lastHistoryScroll = time.Now()
+					m.viewport.LineDown(2)
+					if m.viewport.AtBottom() {
+						m.userScrolledUp = false
+					}
+					return m, nil
+				}
 				m.suggestionIndex = (m.suggestionIndex + 1) % len(m.suggestions)
 				return m, nil
 			case "tab":
@@ -548,6 +565,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyUp:
 			m.viewport.LineUp(2)
 			m.userScrolledUp = true
+			m.lastHistoryScroll = time.Now()
 			return m, nil
 
 		case tea.KeyDown:
@@ -555,11 +573,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.viewport.AtBottom() {
 				m.userScrolledUp = false
 			}
+			m.lastHistoryScroll = time.Now()
 			return m, nil
 
 		case tea.KeyPgUp:
 			m.viewport.HalfViewUp()
 			m.userScrolledUp = true
+			m.lastHistoryScroll = time.Now()
 			return m, nil
 
 		case tea.KeyPgDown:
@@ -567,6 +587,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.viewport.AtBottom() {
 				m.userScrolledUp = false
 			}
+			m.lastHistoryScroll = time.Now()
 			return m, nil
 
 		case tea.KeyEnter:
@@ -786,9 +807,14 @@ func (m *model) updateAutocomplete() {
 	val := m.textInput.Value()
 	cursor := m.textInput.Position()
 
+	wasAutocompleting := m.isAutocompleting
+
 	// Check for slash command autocomplete (only at the start of input)
 	if strings.HasPrefix(val, "/") && !strings.Contains(val[:cursor], " ") {
 		m.isAutocompleting = true
+		if !wasAutocompleting {
+			m.suggestionIndex = 0
+		}
 		prefix := val[1:cursor] // text after "/"
 		m.updateCommandSuggestions(prefix)
 		return
@@ -809,6 +835,9 @@ func (m *model) updateAutocomplete() {
 	}
 
 	m.isAutocompleting = true
+	if !wasAutocompleting {
+		m.suggestionIndex = 0
+	}
 	prefix := val[lastAt+1 : cursor]
 	m.updateSuggestions(prefix)
 }
