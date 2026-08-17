@@ -7,6 +7,7 @@ import (
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
+	"errors"
 	"strings"
 )
 
@@ -131,10 +132,23 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		},
 	}
 
-	conv, err := r.conversationRepo.GetActiveConversationByUserId(user.UserId)
+	var conv *model.Conversation
+	var err error
+	if msg.ConversationID == "NEW" {
+		conv = nil
+		err = errors.New("force new")
+	} else if msg.ConversationID != "" {
+		conv, err = r.conversationRepo.GetConversationById(msg.ConversationID)
+	}
+	
+	if conv == nil && msg.ConversationID != "NEW" {
+		conv, err = r.conversationRepo.GetActiveConversationByUserId(user.UserId)
+	}
+
 	var convMessages []provider.Message
 	if err == nil && conv != nil {
 		convMessages = conv.Messages
+		msg.ConversationID = conv.Id
 	} else {
 		title, err := r.GenerateConversationTitle(user, messages)
 		if err != nil {
@@ -144,6 +158,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		conv, err := r.conversationRepo.CreateConversation(user.UserId, title)
 		if err == nil {
 			convMessages = conv.Messages
+			msg.ConversationID = conv.Id
 		} else {
 			convMessages = []provider.Message{}
 		}
@@ -161,11 +176,14 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 // buildUserMessage converts a generic IncomingMessage to a provider.Message.
 func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider.Message {
 	text := msg.Text
+	role := "user"
 	switch msg.TriggerType {
 	case "heartbeat":
 		text = "[SYSTEM TRIGGER: HEARTBEAT]\n" + text
 	case "cron":
 		text = "[SYSTEM TRIGGER: CRON JOB]\n(NOTE: The user does NOT see this trigger message. You must now deliver the reminder or perform the scheduled task for the user based on this prompt)\n\n" + text
+	case "subagent":
+		text = "[SYSTEM TRIGGER: SUB-AGENT RESULT]\n(NOTE: The user does NOT see this trigger message. A background sub-agent has completed its task. Review its report below, inform the user about the completion, and summarize the key findings/results. If you started multiple sub-agents, check the batch progress.)\n\n" + text
 	}
 
 	// Voice: text is already transcribed by channel adapter
@@ -173,7 +191,7 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 	if msg.ReplyTo != "" {
 		text = text + "\n\ncontex:\n" + msg.ReplyTo
 		return provider.Message{
-			Role:    "user",
+			Role:    role,
 			Content: text,
 		}
 	}
@@ -201,14 +219,14 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 				})
 			}
 			return provider.Message{
-				Role:    "user",
+				Role:    role,
 				Content: contentItems,
 			}
 		}
 
 		// Type 1: images array (Ollama, Gemini)
 		return provider.Message{
-			Role:    "user",
+			Role:    role,
 			Content: text,
 			Images:  msg.Images,
 		}
@@ -216,7 +234,7 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 
 	// Plain text
 	return provider.Message{
-		Role:    "user",
+		Role:    role,
 		Content: text,
 	}
 }
@@ -231,7 +249,14 @@ func (r *BotServiceImpl) updateUserMessages(msg *channel.IncomingMessage, messag
 	messages = append(messages, response)
 	messages = messages[1:] // exclude system message
 
-	conv, err := r.conversationRepo.GetActiveConversationByUserId(msg.UserID)
+	var conv *model.Conversation
+	var err error
+	if msg.ConversationID != "" {
+		conv, err = r.conversationRepo.GetConversationById(msg.ConversationID)
+	}
+	if conv == nil {
+		conv, err = r.conversationRepo.GetActiveConversationByUserId(msg.UserID)
+	}
 	if err != nil && conv != nil {
 		return err
 	}
@@ -334,7 +359,7 @@ func (r *BotServiceImpl) GenerateConversationTitle(user *model.User, messages []
 		{Role: "system", Content: "You are a conversation title assistant. The title must be short, clear, and a maximum of 7 words."},
 		{Role: "user", Content: prompt},
 	}
-	res, err := r.llmProvider.Chat(user.Model, llmMessages)
+	res, err := r.llmProvider.Chat(user.Model, llmMessages, nil)
 	if err != nil || res.Content == nil {
 		return defaultTitle, err
 	}

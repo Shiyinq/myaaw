@@ -10,6 +10,10 @@
         "provider": "groq",
         "api_key": "YOUR_GROQ_API_KEY"
     },
+    "synthesizer": {
+        "provider": "gemini",
+        "api_key": "YOUR_GEMINI_API_KEY"
+    },
     "heartbeat": {
         "active": true,
         "every": "30m",

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	globalConfig "myaaw/internal/config"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -52,9 +53,9 @@ func (s *HeartbeatService) ReloadConfig() {
 }
 
 func (s *HeartbeatService) runLoop() {
-	baseURL := os.Getenv("MYAAW_BASE_URL")
+	baseURL := globalConfig.MYAAWBaseURL
 	if baseURL == "" {
-		baseURL = "http://localhost:8080"
+		baseURL = "http://localhost" + globalConfig.PORT
 	}
 
 	for {
@@ -137,9 +138,9 @@ CRITICAL: "HEARTBEAT_OK" acts as a "silent skip". If you output it, the system a
 		"trigger": "heartbeat",
 	}
 
-	baseURL := os.Getenv("MYAAW_BASE_URL")
+	baseURL := globalConfig.MYAAWBaseURL
 	if baseURL == "" {
-		baseURL = "http://localhost:8080"
+		baseURL = "http://localhost" + globalConfig.PORT
 	}
 
 	resp, err := s.client.R().
@@ -165,7 +166,7 @@ func (s *HeartbeatService) readConfig() (*HeartbeatConfig, error) {
 		return nil, fmt.Errorf("failed to get user home directory: %w", err)
 	}
 
-	configPath := strings.Join([]string{homeDir, ".myaaw", "config.json"}, string(os.PathSeparator))
+	configPath := strings.Join([]string{homeDir, ".myaaw", "config", "config.json"}, string(os.PathSeparator))
 
 	content, err := os.ReadFile(configPath)
 	if err != nil {

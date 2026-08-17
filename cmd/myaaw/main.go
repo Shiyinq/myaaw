@@ -12,11 +12,14 @@ import (
 	"os"
 	"path/filepath"
 
+	"myaaw/internal/agent/tools"
+
 	_ "myaaw/internal/agent/tools/bash"
 	_ "myaaw/internal/agent/tools/cron"
 	_ "myaaw/internal/agent/tools/filesystem"
 	_ "myaaw/internal/agent/tools/provider"
 	_ "myaaw/internal/agent/tools/python"
+	_ "myaaw/internal/agent/tools/subagent"
 
 	"github.com/spf13/cobra"
 )
@@ -74,6 +77,13 @@ func init() {
 			fmt.Println("Please run 'myaaw onboard' to setup your configuration and features.")
 			os.Exit(1)
 		}
+
+		// Load and watch external tools asynchronously in the background so CLI commands open instantly
+		go func() {
+			tools.LoadExternalTools()
+			tools.WatchExternalTools()
+		}()
+
 		return nil
 	}
 

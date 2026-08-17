@@ -7,7 +7,6 @@ import (
 	"myaaw/internal/cron"
 	"myaaw/internal/heartbeat"
 	"myaaw/internal/services/queue/repository"
-	"os"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -57,9 +56,9 @@ func sendToWebhookBot(jsonBody []byte) error {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
-	baseURL := os.Getenv("MYAAW_BASE_URL")
+	baseURL := config.MYAAWBaseURL
 	if baseURL == "" {
-		baseURL = "http://localhost:8080"
+		baseURL = "http://localhost" + config.PORT
 	}
 
 	resp, err := client.R().

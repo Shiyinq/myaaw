@@ -18,6 +18,7 @@ import (
 
 var PORT string
 var HOST string
+var MYAAWBaseURL string
 var AllowedOrigins string
 var NgrokActive string
 var NgrokAuthToken string
@@ -32,6 +33,8 @@ var LLMDefaultModel string
 var StreamResponse bool
 var TranscriberProviderName string
 var TranscriberAPIKey string
+var SynthesizerProviderName string
+var SynthesizerAPIKey string
 var WatermarkModel bool
 var OwnerIDs []string
 var Heartbeat HeartbeatConfig
@@ -48,6 +51,7 @@ type Config struct {
 	Channels        ChannelsConfig            `json:"channels"`
 	Cron            CronConfig                `json:"cron"`
 	Transcriber     TranscriberConfig         `json:"transcriber,omitempty"`
+	Synthesizer     SynthesizerConfig         `json:"synthesizer,omitempty"`
 }
 
 type ProviderConfig struct {
@@ -58,6 +62,11 @@ type ProviderConfig struct {
 }
 
 type TranscriberConfig struct {
+	Provider string `json:"provider,omitempty"`
+	APIKey   string `json:"api_key,omitempty"`
+}
+
+type SynthesizerConfig struct {
 	Provider string `json:"provider,omitempty"`
 	APIKey   string `json:"api_key,omitempty"`
 }
@@ -109,7 +118,7 @@ func loadJSONConfig() (*Config, error) {
 	// 2. Check Home Directory
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
-		configPath := filepath.Join(homeDir, ".myaaw", "config.json")
+		configPath := filepath.Join(homeDir, ".myaaw", "config", "config.json")
 		if _, err := os.Stat(configPath); err == nil {
 			if Verbose {
 				log.Println("Reading config from home directory:", configPath)
@@ -141,7 +150,7 @@ func GetConfigPath() string {
 	
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
-		return filepath.Join(homeDir, ".myaaw", "config.json")
+		return filepath.Join(homeDir, ".myaaw", "config", "config.json")
 	}
 	return "config.json"
 }
@@ -212,6 +221,7 @@ func LoadBaseConfig() {
 
 	PORT = ":" + os.Getenv("PORT")
 	HOST = os.Getenv("HOST")
+	MYAAWBaseURL = os.Getenv("MYAAW_BASE_URL")
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
@@ -219,18 +229,10 @@ func LoadBaseConfig() {
 	LLMDefaultModel = ""
 
 	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")
-	if TranscriberProviderName == "" {
-		if LLMProviderName == "gemini" {
-			TranscriberProviderName = "gemini"
-		} else {
-			TranscriberProviderName = "groq"
-		}
-	}
-
 	TranscriberAPIKey = os.Getenv("TRANSCRIBER_API_KEY")
-	if TranscriberAPIKey == "" && TranscriberProviderName == "gemini" && LLMProviderName == "gemini" {
-		TranscriberAPIKey = LLMProviderAPIKey
-	}
+	
+	SynthesizerProviderName = os.Getenv("SYNTHESIZER_PROVIDER_NAME")
+	SynthesizerAPIKey = os.Getenv("SYNTHESIZER_API_KEY")
 
 	streamVal := strings.ToLower(os.Getenv("STREAM_RESPONSE"))
 	if streamVal == "false" || streamVal == "0" {
@@ -315,6 +317,14 @@ func LoadBaseConfig() {
 				TranscriberAPIKey = jsonConfig.Transcriber.APIKey
 			}
 		}
+
+		// Priority: config.json Synthesizer > .env
+		if jsonConfig.Synthesizer.Provider != "" {
+			SynthesizerProviderName = jsonConfig.Synthesizer.Provider
+			if jsonConfig.Synthesizer.APIKey != "" {
+				SynthesizerAPIKey = jsonConfig.Synthesizer.APIKey
+			}
+		}
 	}
 }
 
@@ -323,7 +333,7 @@ func ConnectDatabases() {
 	if dbPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err == nil {
-			dbPath = filepath.Join(homeDir, ".myaaw", "myaaw.db")
+			dbPath = filepath.Join(homeDir, ".myaaw", "database", "myaaw.db")
 		} else {
 			dbPath = "myaaw.db"
 		}
@@ -396,7 +406,7 @@ func WatchConfig(onChange func()) {
 		log.Printf("Failed to get home dir for watcher: %v", err)
 		return
 	}
-	configPath := filepath.Join(homeDir, ".myaaw", "config.json")
+	configPath := filepath.Join(homeDir, ".myaaw", "config", "config.json")
 
 	// Create watcher
 	watcher, err := fsnotify.NewWatcher()

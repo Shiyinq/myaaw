@@ -35,20 +35,20 @@ func (c *AboutCommand) HandleCommand(user *model.User, args string) (bool, strin
 	return true, common.CommandAbout(), nil
 }
 
-type ResetCommand struct {
+type NewCommand struct {
 	r *BotServiceImpl
 }
 
-func NewResetCommand(r *BotServiceImpl) CommandFactory {
-	return &ResetCommand{r: r}
+func NewNewCommand(r *BotServiceImpl) CommandFactory {
+	return &NewCommand{r: r}
 }
 
-func (c *ResetCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
+func (c *NewCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
 	_, err := c.r.conversationRepo.CreateConversation(user.UserId, "")
 	if err != nil {
-		return true, common.CommandResetFailed(), nil
+		return true, common.CommandNewFailed(), nil
 	}
-	return true, common.CommandReset(), nil
+	return true, common.CommandNew(), nil
 }
 
 type MeCommand struct {
@@ -86,7 +86,7 @@ func NewCommandExecutor(r *BotServiceImpl) *CommandExecutor {
 			"menu":   NewStartCommand(r),
 			"help":   NewStartCommand(r),
 			"about":  NewAboutCommand(r),
-			"reset":  NewResetCommand(r),
+			"new":    NewNewCommand(r),
 
 			"me": NewMeCommand(r),
 		},

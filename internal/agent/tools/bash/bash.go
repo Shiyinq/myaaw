@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"myaaw/internal/agent/tools"
 	"os"
 	"os/exec"
@@ -12,8 +13,41 @@ import (
 	"time"
 )
 
+const toolSchema = `{
+    "type": "function",
+    "function": {
+        "name": "bash",
+        "description": "Executes a bash command. Use this tool to run existing scripts, system commands, or manage processes. Examples: ` + "`python script.py`" + `, ` + "`ls -la`" + `, ` + "`curl ...`" + `. It supports environment variables. Output is truncated at 32KB; full results are saved to logs.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The bash command to execute."
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Optional timeout in seconds (default: 60)."
+                },
+                "env": {
+                    "type": "object",
+                    "description": "Optional environment variables for the command."
+                },
+                "async": {
+                    "type": "boolean",
+                    "description": "If true, runs the command in the background. MUST be true if timeout > 60."
+                }
+            },
+            "required": [
+                "command",
+                "async"
+            ]
+        }
+    }
+}`
+
 func init() {
-	tools.Register("bash", NewBashTool())
+	tools.RegisterBuiltin("bash", NewBashTool())
 }
 
 type BashTool struct{}
@@ -22,6 +56,7 @@ type BashArgs struct {
 	Command string            `json:"command"`
 	Timeout int               `json:"timeout,omitempty"` // Timeout in seconds
 	Env     map[string]string `json:"env,omitempty"`     // Environment variables
+	Async   bool              `json:"async,omitempty"`
 }
 
 // Simple blacklist of dangerous commands/keywords
@@ -35,6 +70,7 @@ var dangerousCommands = []string{
 	"mv /",                       // Move root (unlikely but dangerous)
 	"chmod -R 777 /", "chown -R", // Permission destruction
 	"wget ", "curl ", // Downloading scripts (can be used for legitimate purposes, but risky in this context without review)
+	"env ", "printenv ", "env\n", "printenv\n", // Environment variables disclosure
 	// Add more as needed
 }
 
@@ -42,8 +78,15 @@ func NewBashTool() *BashTool {
 	return &BashTool{}
 }
 
+func (t *BashTool) ToolDefinition() []byte {
+	return []byte(toolSchema)
+}
+
 func isCommandSafe(cmd string) bool {
 	cmd = strings.TrimSpace(cmd)
+	if cmd == "env" || cmd == "printenv" {
+		return false
+	}
 	for _, dangerous := range dangerousCommands {
 		if strings.Contains(cmd, dangerous) {
 			return false
@@ -52,7 +95,7 @@ func isCommandSafe(cmd string) bool {
 	return true
 }
 
-func (b *BashTool) CallTool(arguments string) string {
+func (b *BashTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 	var args BashArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return fmt.Sprintf("Error parsing arguments: %v", err)
@@ -66,6 +109,43 @@ func (b *BashTool) CallTool(arguments string) string {
 		return "Error: Command contains forbidden/dangerous keywords. Blocked for security."
 	}
 
+	if args.Timeout > 60 && !args.Async {
+		return "Error: Timeout is set to > 60 seconds, but async is false. You MUST set async to true for tasks that take longer than 60 seconds to prevent blocking the system."
+	}
+
+	if args.Async {
+		jobID := fmt.Sprintf("job_%d", time.Now().UnixNano())
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Sprintf("Error getting home dir: %v", err)
+		}
+		
+		resultsDir := filepath.Join(homeDir, ".myaaw", "jobs")
+		if err := os.MkdirAll(resultsDir, 0755); err != nil {
+			return fmt.Sprintf("Error creating jobs dir: %v", err)
+		}
+		
+		outputPath := filepath.Join(resultsDir, jobID+".log")
+
+		go func() {
+			outStr := b.executeCommand(args)
+			err := os.WriteFile(outputPath, []byte(outStr), 0644)
+			if err != nil {
+				log.Printf("Error writing async output to file %s: %v", outputPath, err)
+			}
+		}()
+
+		baseInstruction := fmt.Sprintf("Command started in background. The output will be saved to: %s. IMPORTANT: You MUST immediately use the 'cron' tool to schedule a reminder for yourself to read this file and notify the user of the result.", outputPath)
+		if args.Timeout > 300 {
+			return baseInstruction + " Since the timeout is > 5 minutes, you MUST schedule multiple cron jobs at intervals to check the progress in case it finishes much earlier."
+		}
+		return baseInstruction + " Estimate a reasonable wait time based on the task."
+	}
+
+	return b.executeCommand(args)
+}
+
+func (b *BashTool) executeCommand(args BashArgs) string {
 	// Default timeout to 60 seconds if not specified
 	timeout := 60 * time.Second
 	if args.Timeout > 0 {

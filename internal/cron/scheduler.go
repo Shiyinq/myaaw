@@ -56,9 +56,9 @@ func NewDefaultScheduler() (*Scheduler, error) {
 }
 
 func (s *Scheduler) Start() error {
-	s.baseURL = os.Getenv("MYAAW_BASE_URL")
+	s.baseURL = config.MYAAWBaseURL
 	if s.baseURL == "" {
-		s.baseURL = "http://localhost:8080"
+		s.baseURL = "http://localhost" + config.PORT
 	}
 
 	if !config.CronActive {

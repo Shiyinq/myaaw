@@ -110,7 +110,7 @@ func initialOnboardModel() onboardModel {
 		homeDir:    home,
 		myaawHome:  myaawHome,
 		envFile:    filepath.Join(myaawHome, ".env"),
-		configFile: filepath.Join(myaawHome, "config.json"),
+		configFile: filepath.Join(myaawHome, "config", "config.json"),
 		choices:    []string{"Yes", "No"}, // Default choices
 		outputChan: make(chan tea.Msg, 10),
 	}

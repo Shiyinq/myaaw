@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"myaaw/internal/channel"
 	"os"
+	"path/filepath"
+	"time"
 )
 
 type CLIMeta struct{}
@@ -21,22 +23,55 @@ func (a *CLIAdapter) Name() string {
 
 func (a *CLIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMessage, error) {
 	var req struct {
-		UserID int    `json:"user_id"`
-		Text   string `json:"text"`
+		UserID         int    `json:"user_id"`
+		Text           string `json:"text"`
+		ConversationID string `json:"conversation_id"`
 	}
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return nil, fmt.Errorf("failed to parse CLI payload: %w", err)
 	}
 
 	return &channel.IncomingMessage{
-		UserID:  req.UserID,
-		Text:    req.Text,
-		Channel: "cli",
-		RawMeta: CLIMeta{},
+		UserID:         req.UserID,
+		Text:           req.Text,
+		ConversationID: req.ConversationID,
+		Channel:        "cli",
+		RawMeta:        CLIMeta{},
 	}, nil
 }
 
+type queueMessage struct {
+	Timestamp time.Time `json:"timestamp"`
+	Text      string    `json:"text"`
+	Thought   string    `json:"thought"`
+}
+
+func (a *CLIAdapter) appendQueue(out *channel.OutgoingMessage) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	
+	queuePath := filepath.Join(home, ".myaaw", "logs", "cli_queue.jsonl")
+	f, err := os.OpenFile(queuePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	msg := queueMessage{
+		Timestamp: time.Now(),
+		Text:      out.Text,
+		Thought:   out.Thought,
+	}
+	
+	b, _ := json.Marshal(msg)
+	f.Write(append(b, '\n'))
+}
+
 func (a *CLIAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMessage) error {
+	a.appendQueue(out)
+
 	if out.Thought != "" {
 		fmt.Fprintln(os.Stderr, "\033[90m"+"💭 Reasoning:\n"+out.Thought+"\033[0m")
 	}

@@ -8,12 +8,13 @@
   [![Go Version](https://img.shields.io/github/go-mod/go-version/Shiyinq/myaaw)](https://github.com/Shiyinq/myaaw)
   [![GitHub stars](https://img.shields.io/github/stars/Shiyinq/myaaw?style=social)](https://github.com/Shiyinq/myaaw/stargazers)
 
-  **Myaaw is a cat who becomes your personal AI assistant.**
 </div>
+
+  **Myaaw is my personal AI assistant. You don't need to waste your time trying it out—I recommend sticking with your beloved [Hermes Agent](https://github.com/nousresearch/hermes-agent), [OpenClaw](https://github.com/openclaw/openclaw), or whatever else you use. Hmm, or maybe you can try [Pi Agent](https://github.com/earendil-works/pi).**
 
 ---
 
-
+> **Note:** The details below are only for my personal reference and my AI Assistant. You really don't need to read this!
 
 ## ✨ Key Features
 - [x] **Multimodal Input**: Supports Text, Voice (Transcribed), and Image input.
@@ -160,7 +161,8 @@ graph TD
 7. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
 8. **Local Workspace (`~/.myaaw`)**: The operational directory for the Agent.
    - `myaaw.db`: The local SQLite database holding user data and conversation history.
-   - `skills/`: Dynamically parsed text definitions of new tools that Myaaw can learn and execute.
+   - `skills/`: Dynamically parsed text definitions of new tools that Myaaw can learn and execute. (See [Agent Skills Guide](docs/agent_skills.md))
+   - `tools/`: MCP servers and standalone custom CLI tools. (See [MCP & Custom Tools Guide](docs/mcp_and_custom_tools.md))
    - `home/`: Long-term file storage containing Myaaw's core definitions:
      - `AGENTS.md` / `SOUL.md`: Persona and behavior instructions.
      - `BOOTSTRAP.md` / `TOOLS.md`: Initialization steps and tool usage rules.

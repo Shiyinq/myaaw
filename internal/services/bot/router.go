@@ -4,6 +4,7 @@ import (
 	"log"
 	"myaaw/internal/channel"
 	apiAdapter "myaaw/internal/channel/api"
+	cliAdapter "myaaw/internal/channel/cli"
 	"myaaw/internal/channel/discord"
 	"myaaw/internal/channel/telegram"
 	"myaaw/internal/config"
@@ -40,6 +41,8 @@ func BotRouter(router fiber.Router) {
 			registry.Register(adapter)
 		}
 	}
+
+	registry.Register(cliAdapter.NewCLIAdapter())
 
 	hand := handler.NewBotHandler(serv, registry)
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"myaaw/internal/agent/tools"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -66,17 +65,26 @@ func (o *OllamaProvider) DefaultModel(modelName string) string {
 	return modelName
 }
 
-func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, error) {
+func (o *OllamaProvider) buildRequest(modelName string, messages []Message, stream bool, toolsList []map[string]interface{}) OllamaRequest {
+	req := OllamaRequest{
+		Model:    o.DefaultModel(modelName),
+		Stream:   stream,
+		Messages: messages,
+	}
+	
+	if len(toolsList) > 0 {
+		req.Tools = toolsList
+	}
+	
+	return req
+}
+
+func (o *OllamaProvider) Chat(modelName string, messages []Message, toolsList []map[string]interface{}) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 	_ = o.apiKey // unused for ollama
 
-	request := OllamaRequest{
-		Model:    o.DefaultModel(modelName),
-		Stream:   false,
-		Messages: messages,
-		Tools:    tools.GetTools(),
-	}
+	request := o.buildRequest(modelName, messages, false, toolsList)
 
 	var response OllamaResponse
 	res, _ := client.R().
@@ -96,16 +104,12 @@ func (o *OllamaProvider) Chat(modelName string, messages []Message) (Message, er
 	return response.Message, nil
 }
 
-func (o *OllamaProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
+func (o *OllamaProvider) ChatStream(modelName string, messages []Message, callback func(Message) error, toolsList []map[string]interface{}) error {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 	_ = o.apiKey // unused for ollama
 
-	request := OllamaRequest{
-		Model:    o.DefaultModel(modelName),
-		Stream:   true,
-		Messages: messages,
-	}
+	request := o.buildRequest(modelName, messages, true, toolsList)
 
 	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").

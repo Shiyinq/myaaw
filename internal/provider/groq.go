@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"myaaw/internal/agent/tools"
 	"strings"
 	"time"
 
@@ -90,17 +89,30 @@ func (g *GroqProvider) DefaultModel(modelName string) string {
 	return modelName
 }
 
-func (g *GroqProvider) Chat(modelName string, messages []Message) (Message, error) {
+func (g *GroqProvider) buildRequest(modelName string, messages []Message, stream bool, toolsList []map[string]interface{}) GroqRequest {
+	req := GroqRequest{
+		Model:      modelName,
+		Stream:     stream,
+		Messages:   messages,
+	}
+	
+	if len(toolsList) > 0 {
+		req.Tools = toolsList
+		req.ToolChoice = "auto"
+	}
+	
+	return req
+}
+
+func (g *GroqProvider) Chat(modelName string, messages []Message, toolsList []map[string]interface{}) (Message, error) {
+	if modelName == "" {
+		modelName = g.DefaultModel(modelName)
+	}
+
+	request := g.buildRequest(modelName, messages, false, toolsList)
+
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
-
-	request := GroqRequest{
-		Model:      g.DefaultModel(modelName),
-		Stream:     false,
-		Messages:   messages,
-		Tools:      tools.GetTools(),
-		ToolChoice: "auto",
-	}
 
 	var response GroqChatCompletion
 	res, _ := client.R().
@@ -121,17 +133,15 @@ func (g *GroqProvider) Chat(modelName string, messages []Message) (Message, erro
 	return response.Choices[0].Message, nil
 }
 
-func (g *GroqProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
+func (g *GroqProvider) ChatStream(modelName string, messages []Message, callback func(Message) error, toolsList []map[string]interface{}) error {
+	if modelName == "" {
+		modelName = g.DefaultModel(modelName)
+	}
+
+	request := g.buildRequest(modelName, messages, true, toolsList)
+
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
-
-	request := GroqRequest{
-		Model:      g.DefaultModel(modelName),
-		Stream:     true,
-		Messages:   messages,
-		Tools:      tools.GetTools(),
-		ToolChoice: "auto",
-	}
 
 	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").

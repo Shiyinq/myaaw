@@ -9,16 +9,23 @@ import (
 	"time"
 
 	"github.com/go-resty/resty/v2"
-
-	"myaaw/internal/agent/tools"
 )
 
+type OpenAIMessage struct {
+	Role             string      `json:"role"`
+	Name             string      `json:"name,omitempty"`
+	Content          interface{} `json:"content,omitempty"`
+	ReasoningContent string      `json:"reasoning_content,omitempty"`
+	ToolCalls        []ToolCall  `json:"tool_calls,omitempty"`
+	ToolCallID       string      `json:"tool_call_id,omitempty"`
+}
+
 type OpenAIChoice struct {
-	Index        int     `json:"index"`
-	Message      Message `json:"message"`
-	Delta        Message `json:"delta,omitempty"`
-	Logprobs     *string `json:"logprobs,omitempty"`
-	FinishReason string  `json:"finish_reason"`
+	Index        int           `json:"index"`
+	Message      OpenAIMessage `json:"message"`
+	Delta        OpenAIMessage `json:"delta,omitempty"`
+	Logprobs     *string       `json:"logprobs,omitempty"`
+	FinishReason string        `json:"finish_reason"`
 }
 
 type OpenAICompletionTokensDetails struct {
@@ -44,10 +51,41 @@ type OpenAIChatCompletion struct {
 
 type OpenAIRequest struct {
 	Model      string                   `json:"model"`
-	Messages   []Message                `json:"messages"`
+	Messages   []OpenAIMessage          `json:"messages"`
 	Stream     bool                     `json:"stream"`
-	Tools      []map[string]interface{} `json:"tools,omitempty"`
-	ToolChoice string                   `json:"tool_choice,omitempty"`
+	Tools         []map[string]interface{} `json:"tools,omitempty"`
+	ToolChoice    string                   `json:"tool_choice,omitempty"`
+	StreamOptions *OpenAIStreamOptions     `json:"stream_options,omitempty"`
+}
+
+type OpenAIStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
+func messagesToOpenAIMessages(messages []Message) []OpenAIMessage {
+	var openAIMessages []OpenAIMessage
+	for _, m := range messages {
+		openAIMessages = append(openAIMessages, OpenAIMessage{
+			Role:             m.Role,
+			Name:             m.Name,
+			Content:          m.Content,
+			ReasoningContent: m.Thought,
+			ToolCalls:        m.ToolCalls,
+			ToolCallID:       m.ToolCallID,
+		})
+	}
+	return openAIMessages
+}
+
+func openAIMessageToMessage(o OpenAIMessage) Message {
+	return Message{
+		Role:       o.Role,
+		Name:       o.Name,
+		Content:    o.Content,
+		Thought:    o.ReasoningContent,
+		ToolCalls:  o.ToolCalls,
+		ToolCallID: o.ToolCallID,
+	}
 }
 
 type OpenAIModels struct {
@@ -87,17 +125,32 @@ func (o *OpenAIProvider) DefaultModel(modelName string) string {
 	return modelName
 }
 
-func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, error) {
+func (o *OpenAIProvider) buildRequest(modelName string, messages []Message, stream bool, toolsList []map[string]interface{}) OpenAIRequest {
+	req := OpenAIRequest{
+		Model:    o.DefaultModel(modelName),
+		Messages: messagesToOpenAIMessages(messages),
+		Stream:   stream,
+	}
+
+	if stream {
+		req.StreamOptions = &OpenAIStreamOptions{
+			IncludeUsage: true,
+		}
+	}
+
+	if len(toolsList) > 0 {
+		req.Tools = toolsList
+		req.ToolChoice = "auto"
+	}
+	
+	return req
+}
+
+func (o *OpenAIProvider) Chat(modelName string, messages []Message, toolsList []map[string]interface{}) (Message, error) {
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
 
-	request := OpenAIRequest{
-		Model:      o.DefaultModel(modelName),
-		Stream:     false,
-		Messages:   messages,
-		Tools:      tools.GetTools(),
-		ToolChoice: "auto",
-	}
+	request := o.buildRequest(modelName, messages, false, toolsList)
 
 	var response OpenAIChatCompletion
 	res, _ := client.R().
@@ -111,24 +164,31 @@ func (o *OpenAIProvider) Chat(modelName string, messages []Message) (Message, er
 		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
 	}
 
-	if response.Choices[0].FinishReason == "tool_calls" {
-		return response.Choices[0].Message, nil
+	if len(response.Choices) == 0 {
+		return Message{}, fmt.Errorf("no choices returned from OpenAI")
 	}
 
-	return response.Choices[0].Message, nil
-}
+	msg := openAIMessageToMessage(response.Choices[0].Message)
+	if response.Usage.TotalTokens > 0 {
+		msg.Usage = Usage{
+			PromptTokens:     response.Usage.PromptTokens,
+			CompletionTokens: response.Usage.CompletionTokens,
+			TotalTokens:      response.Usage.TotalTokens,
+			ThoughtsTokens:   response.Usage.CompletionTokensDetails.ReasoningTokens,
+		}
+	}
 
-func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callback func(Message) error) error {
+	return msg, nil
+}
+func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callback func(Message) error, toolsList []map[string]interface{}) error {
+	if modelName == "" {
+		modelName = o.DefaultModel(modelName)
+	}
+
+	request := o.buildRequest(modelName, messages, true, toolsList)
+
 	client := resty.New()
 	client.SetTimeout(120 * time.Second)
-
-	request := OpenAIRequest{
-		Model:      o.DefaultModel(modelName),
-		Stream:     true,
-		Messages:   messages,
-		Tools:      tools.GetTools(),
-		ToolChoice: "auto",
-	}
 
 	res, _ := client.R().
 		SetHeader("Content-Type", "application/json").
@@ -141,7 +201,7 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 
 	reader := bufio.NewReader(res.RawBody())
 	var response OpenAIChatCompletion
-	var accumulatedMessage Message
+	var accumulatedMessage OpenAIMessage
 	accumulatedMessage.Role = "assistant"
 
 	for {
@@ -168,6 +228,9 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 		}
 
 		jsonData := strings.TrimPrefix(line, "data: ")
+		if jsonData == "[DONE]" {
+			break
+		}
 
 		response = OpenAIChatCompletion{}
 		err = json.Unmarshal([]byte(jsonData), &response)
@@ -175,52 +238,74 @@ func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callba
 			return fmt.Errorf("error unmarshalling stream data: %w", err)
 		}
 
-		partialMessage := response.Choices[0].Delta
+		if len(response.Choices) > 0 {
+			partialMessage := response.Choices[0].Delta
 
-		if len(partialMessage.ToolCalls) > 0 {
-			for _, tcDelta := range partialMessage.ToolCalls {
-				idx := 0
-				if tcDelta.Index != nil {
-					idx = *tcDelta.Index
-				}
-				for len(accumulatedMessage.ToolCalls) <= idx {
-					accumulatedMessage.ToolCalls = append(accumulatedMessage.ToolCalls, ToolCall{})
-				}
-				if tcDelta.ID != "" {
-					accumulatedMessage.ToolCalls[idx].ID = tcDelta.ID
-				}
-				if tcDelta.Type != "" {
-					accumulatedMessage.ToolCalls[idx].Type = tcDelta.Type
-				}
-				if tcDelta.Function.Name != "" {
-					accumulatedMessage.ToolCalls[idx].Function.Name = tcDelta.Function.Name
-				}
-				if tcDelta.Function.Arguments != nil {
-					if argStr, ok := tcDelta.Function.Arguments.(string); ok {
-						currArg, _ := accumulatedMessage.ToolCalls[idx].Function.Arguments.(string)
-						accumulatedMessage.ToolCalls[idx].Function.Arguments = currArg + argStr
+			if len(partialMessage.ToolCalls) > 0 {
+				for _, tcDelta := range partialMessage.ToolCalls {
+					idx := 0
+					if tcDelta.Index != nil {
+						idx = *tcDelta.Index
+					}
+					for len(accumulatedMessage.ToolCalls) <= idx {
+						accumulatedMessage.ToolCalls = append(accumulatedMessage.ToolCalls, ToolCall{})
+					}
+					if tcDelta.ID != "" {
+						accumulatedMessage.ToolCalls[idx].ID = tcDelta.ID
+					}
+					if tcDelta.Type != "" {
+						accumulatedMessage.ToolCalls[idx].Type = tcDelta.Type
+					}
+					if tcDelta.Function.Name != "" {
+						accumulatedMessage.ToolCalls[idx].Function.Name = tcDelta.Function.Name
+					}
+					if tcDelta.Function.Arguments != nil {
+						if argStr, ok := tcDelta.Function.Arguments.(string); ok {
+							currArg, _ := accumulatedMessage.ToolCalls[idx].Function.Arguments.(string)
+							accumulatedMessage.ToolCalls[idx].Function.Arguments = currArg + argStr
+						}
 					}
 				}
 			}
-		}
 
-		if partialMessage.Content != nil && partialMessage.Content != "" {
-			err = callback(partialMessage)
-			if err != nil {
-				return fmt.Errorf("error in callback: %w", err)
+			hasContent := partialMessage.Content != nil && partialMessage.Content != ""
+			hasReasoning := partialMessage.ReasoningContent != ""
+
+			if hasContent || hasReasoning {
+				err = callback(openAIMessageToMessage(partialMessage))
+				if err != nil {
+					return fmt.Errorf("error in callback: %w", err)
+				}
 			}
 		}
 
-		if response.Choices[0].FinishReason == "tool_calls" {
-			err = callback(accumulatedMessage)
-			if err != nil {
-				return fmt.Errorf("error in callback for tool calls: %w", err)
+		if len(response.Choices) > 0 {
+			if response.Choices[0].FinishReason == "tool_calls" {
+				err = callback(openAIMessageToMessage(accumulatedMessage))
+				if err != nil {
+					return fmt.Errorf("error in callback for tool calls: %w", err)
+				}
 			}
-			break
 		}
 
-		if response.Choices[0].FinishReason == "stop" {
-			break
+		if response.Usage.TotalTokens > 0 {
+			msg := Message{
+				Usage: Usage{
+					PromptTokens:     response.Usage.PromptTokens,
+					CompletionTokens: response.Usage.CompletionTokens,
+					TotalTokens:      response.Usage.TotalTokens,
+					ThoughtsTokens:   response.Usage.CompletionTokensDetails.ReasoningTokens,
+				},
+			}
+			err = callback(msg)
+			if err != nil {
+				return fmt.Errorf("error in callback for usage: %w", err)
+			}
+		}
+
+		if len(response.Choices) > 0 && response.Choices[0].FinishReason == "stop" {
+			// Do not break immediately if usage is provided in the same chunk or a subsequent chunk.
+			// Actually, standard behavior is to break on "[DONE]", so we just ignore this break.
 		}
 	}
 

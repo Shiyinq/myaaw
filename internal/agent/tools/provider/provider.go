@@ -9,8 +9,37 @@ import (
 	"strings"
 )
 
+const toolSchema = `{
+    "type": "function",
+    "function": {
+        "name": "provider",
+        "description": "Manage LLM Provider integrations. Allows changing the active provider, fetching available models, or changing the default model of a provider.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "set_default", "set_model", "fetch_models"],
+                    "description": "The action to perform."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "The name of the provider (required for set_default, set_model, fetch_models)."
+                },
+                "model": {
+                    "type": "string",
+                    "description": "The name of the model (required for set_model)."
+                }
+            },
+            "required": [
+                "action"
+            ]
+        }
+    }
+}`
+
 func init() {
-	tools.Register("provider", NewProviderTool())
+	tools.RegisterBuiltin("provider", NewProviderTool())
 }
 
 type ProviderTool struct{}
@@ -19,7 +48,11 @@ func NewProviderTool() *ProviderTool {
 	return &ProviderTool{}
 }
 
-func (t *ProviderTool) CallTool(arguments string) string {
+func (t *ProviderTool) ToolDefinition() []byte {
+	return []byte(toolSchema)
+}
+
+func (t *ProviderTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 	var args map[string]interface{}
 	err := json.Unmarshal([]byte(arguments), &args)
 	if err != nil {

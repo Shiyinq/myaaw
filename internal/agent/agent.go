@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 
 	"myaaw/internal/agent/tools"
 	"myaaw/internal/config"
@@ -15,8 +16,6 @@ type ReactConfig struct {
 	MaxIterations    int
 	WarningThreshold int
 }
-
-
 
 // ThoughtPrompt is sent after observation to prompt LLM to think about next step
 const ThoughtPrompt = `Based on the tool result above, analyze what happened:
@@ -32,11 +31,13 @@ const MaxIterationsMessage = "⚠️ Maximum iterations reached. Task may be inc
 type AgentProvider interface {
 	Run(modelName string, messages []provider.Message) (provider.Message, error)
 	RunStream(modelName string, messages []provider.Message, callback func(provider.Message) error) error
+	WithExcludedTools(tools ...string) AgentProvider
 }
 
 type Agent struct {
-	Provider provider.LLMProvider
-	Config   ReactConfig
+	Provider      provider.LLMProvider
+	Config        ReactConfig
+	ExcludedTools []string
 }
 
 func NewAgent(prov provider.LLMProvider) AgentProvider {
@@ -47,6 +48,11 @@ func NewAgent(prov provider.LLMProvider) AgentProvider {
 			WarningThreshold: config.AgentWarningIterations,
 		},
 	}
+}
+
+func (a *Agent) WithExcludedTools(tools ...string) AgentProvider {
+	a.ExcludedTools = tools
+	return a
 }
 
 // LogThought logs ReAct thought to console
@@ -63,6 +69,37 @@ func LogAction(action, input string) {
 // LogObservation logs ReAct observation to console
 func LogObservation(observation string) {
 	log.Printf("[ReAct] Observation: %s", observation)
+}
+
+func extractContext(messages []provider.Message) tools.ToolsContext {
+	baseURL := config.MYAAWBaseURL
+	if baseURL == "" {
+		baseURL = "http://localhost" + config.PORT
+	}
+	ctx := tools.ToolsContext{
+		BaseURL: baseURL,
+	}
+
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			content, ok := msg.Content.(string)
+			if ok {
+				reUser := regexp.MustCompile(`User ID: (\d+)`)
+				mUser := reUser.FindStringSubmatch(content)
+				if len(mUser) > 1 {
+					ctx.UserID = mUser[1]
+				}
+
+				reChannel := regexp.MustCompile(`Channel Platform: (\w+)`)
+				mChannel := reChannel.FindStringSubmatch(content)
+				if len(mChannel) > 1 {
+					ctx.Channel = mChannel[1]
+				}
+			}
+			break
+		}
+	}
+	return ctx
 }
 
 // LogIteration logs current iteration number
@@ -244,7 +281,8 @@ func (a *Agent) runWithIteration(modelName string, messages []provider.Message, 
 		}
 	}
 
-	response, err := a.Provider.Chat(modelName, messages)
+	currentTools := tools.GetTools(a.ExcludedTools...)
+	response, err := a.Provider.Chat(modelName, messages, currentTools)
 	if err != nil {
 		return provider.Message{}, err
 	}
@@ -281,7 +319,8 @@ func (a *Agent) runWithIteration(modelName string, messages []provider.Message, 
 			LogThought(thought)
 			LogAction(functionName, argsStr)
 
-			output := tools.NewTools(functionName, argsStr)
+			ctx := extractContext(messages)
+			output := tools.NewTools(functionName, argsStr, &ctx)
 			LogObservation(output)
 
 			// ThoughtSignature only on the first step of the group
@@ -406,7 +445,8 @@ func (a *Agent) runStreamWithIteration(modelName string, messages []provider.Mes
 		return callback(msg)
 	}
 
-	err := a.Provider.ChatStream(modelName, messages, internalCallback)
+	currentTools := tools.GetTools(a.ExcludedTools...)
+	err := a.Provider.ChatStream(modelName, messages, internalCallback, currentTools)
 	if err != nil {
 		return err
 	}
@@ -443,7 +483,8 @@ func (a *Agent) runStreamWithIteration(modelName string, messages []provider.Mes
 			LogThought(thought)
 			LogAction(functionName, argsStr)
 
-			output := tools.NewTools(functionName, argsStr)
+			ctx := extractContext(messages)
+			output := tools.NewTools(functionName, argsStr, &ctx)
 			LogObservation(output)
 
 			// ThoughtSignature only on the first step of the group
