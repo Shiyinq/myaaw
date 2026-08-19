@@ -64,7 +64,9 @@ build: swagger
 swagger:
 	@echo "📝 Generating Swagger documentation..."
 	@mkdir -p docs/swagger
-	@swag init -g $(MAIN_GO) --parseDependency --parseInternal --output docs/swagger --exclude .myaaw --parseGoList=false
+	# NB: do NOT add --parseGoList=false here — it makes swag recursively parse
+	# the Go stdlib + all dependency sources and can take over an hour.
+	@swag init -g $(MAIN_GO) --parseDependency --parseInternal --output docs/swagger --exclude .myaaw
 	@echo "✅ Swagger generated"
 
 ## build-all: Cross-compile for Linux, Darwin, and Windows

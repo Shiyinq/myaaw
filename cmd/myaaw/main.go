@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"myaaw/internal/agent/skills"
 	"myaaw/internal/agent/tools"
 
 	_ "myaaw/internal/agent/tools/bash"
@@ -80,6 +81,9 @@ func init() {
 
 		// Load and watch external tools asynchronously in the background so CLI commands open instantly
 		go func() {
+			// Log skills state first — it's independent of tool loading and should
+			// appear immediately, even if loading external tools is slow.
+			skills.WatchSkills()
 			tools.LoadExternalTools()
 			tools.WatchExternalTools()
 		}()

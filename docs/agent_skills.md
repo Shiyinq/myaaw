@@ -17,6 +17,7 @@ Each skill is self-contained within its own directory and defined by a `SKILL.md
   - [1. Discovery & Prompt Injection](#1-discovery--prompt-injection)
   - [2. On-Demand Inspection (Filesystem)](#2-on-demand-inspection-filesystem)
   - [3. Execution (Bash / Python)](#3-execution-bash--python)
+- [Managing Skills (Enable / Disable)](#managing-skills-enable--disable)
 - [Step-by-Step: Creating a New Skill](#step-by-step-creating-a-new-skill)
   - [Step 1: Create the Skill Directory](#step-1-create-the-skill-directory)
   - [Step 2: Implement the Execution Script](#step-2-implement-the-execution-script)
@@ -132,6 +133,7 @@ description: A concise 1-2 sentence description explaining what the skill does a
 | :--- | :--- | :--- | :--- |
 | `name` | string | **Yes** | Human-readable title of the skill (e.g., `Weather`, `Cashflow`, `Notes`). |
 | `description` | string | **Yes** | Clear summary of capabilities. The LLM uses this to determine if the skill is relevant to the user query. |
+| `enabled` | boolean | No | Set to `false` to disable the skill without deleting it. Defaults to `true`. Note: `~/.myaaw/skills/skills.json` takes priority when it explicitly lists the skill. |
 
 > **Important**: Keep the `description` clear and keyword-rich so the LLM recognizes when to use it (e.g., mention `"manage personal finances"`, `"search the web"`, `"convert units"`).
 
@@ -188,7 +190,7 @@ Instructions for the agent on how to format or present the output to the user.
 
 ### 1. Discovery & Prompt Injection
 
-During conversation setup, Myaaw calls `agent.GetSkillsInstruction()`, which reads all directories inside `~/.myaaw/skills/`, parses the `SKILL.md` frontmatter, and formats them:
+During conversation setup, Myaaw calls `skills.GetSkillsInstruction()`, which reads all directories inside `~/.myaaw/skills/` (skipping any disabled via `skills.json`), parses the `SKILL.md` frontmatter, and formats them:
 
 ```markdown
 # Agent Skills
@@ -215,6 +217,75 @@ The agent invokes the skill script with JSON payload via the `bash` tool:
 ```
 
 The script processes the input and prints results to `stdout`. The agent formats the output into a natural conversational response for the user.
+
+---
+
+## Managing Skills (Enable / Disable)
+
+You can enable or disable individual skills **without deleting them** by creating `~/.myaaw/skills/skills.json`. Each key is a skill **directory name** (`~/.myaaw/skills/<dir_name>`) mapped to a boolean:
+
+```json
+{
+  "weather": true,
+  "tavily": false,
+  "notes": true
+}
+```
+
+### Rules
+
+| Situation | Behavior |
+| :--- | :--- |
+| `"<skill>": true` | **Enabled** — skill appears in the agent's system prompt |
+| `"<skill>": false` | **Disabled** — skill is hidden from the agent's system prompt |
+| Omitted (not listed) | Falls back to the skill's `SKILL.md` frontmatter `enabled` field (default: **enabled**) |
+
+> **Note**: Keys are the skill **directory names** (e.g. `tavily`), not the display `name` from the `SKILL.md` frontmatter (e.g. `Tavily`).
+
+### Alternative: Frontmatter `enabled` Field
+
+You can also disable a skill directly in its `SKILL.md` frontmatter — useful when you don't want a separate config file or when shipping skills:
+
+```yaml
+---
+name: Tavily
+description: Search the web using Tavily.
+enabled: false
+---
+```
+
+**Priority**: when `skills.json` explicitly lists a skill, it wins over the frontmatter. The frontmatter only applies to skills not listed in `skills.json`.
+
+### Hot-Reload & Logs
+
+Changes to `skills.json` take effect immediately for new conversations — **no restart required** — because the config is read fresh every time `skills.GetSkillsInstruction()` runs (at the start of each conversation or sub-agent).
+
+Myaaw also watches the skills directory (like it does for tools) and logs the resulting skill state to its own log file, **separate from the tools log**:
+
+```bash
+tail -f ~/.myaaw/logs/skills.log
+```
+
+**Example Log Output:**
+```log
+2026/08/18 10:15:03 Total active skills: 8 | Skills: [calendar cashflow converter notes scraping tavily time weather]
+2026/08/18 10:15:44 Skills configuration changed, reloading...
+2026/08/18 10:15:44 Skill 'tavily' disabled by config
+2026/08/18 10:15:44 Total active skills: 7 | Skills: [calendar cashflow converter notes scraping time weather]
+```
+
+At startup, the active skill set is logged once; after every change to `skills.json` (or the skills directory), the skills disabled by config and the new active set are logged.
+
+### Disabled Skill Validation
+
+If a sub-agent task references a disabled skill via its `skills` field, the `subagent` tool rejects the task with a clear error:
+
+```
+Error in task 'research': Skill 'tavily' is disabled. Enable it in ~/.myaaw/skills/skills.json
+```
+
+> [!NOTE]
+> Disabling a skill hides it from the agent's prompt, but skills are executed through the `bash`/`filesystem` tools, so a user or agent that already knows the script path can still run it. For full removal, delete the skill directory.
 
 ---
 
@@ -583,7 +654,12 @@ When delegating a task to a subagent:
 ### Q: Why didn't the agent use my new skill?
 1. Check that `~/.myaaw/skills/<skill_name>/SKILL.md` exists and contains valid YAML frontmatter (`---`).
 2. Make sure the `description` in frontmatter contains relevant keywords that match the user's intent.
-3. Check Myaaw console logs to verify that `agent.GetSkillsInstruction()` picked up the skill without syntax errors.
+3. Check Myaaw console logs to verify that `skills.GetSkillsInstruction()` picked up the skill without syntax errors.
+
+### Q: Why is my skill missing from the agent's skills list?
+1. Check `~/.myaaw/skills/skills.json` — if the skill's directory name is set to `false`, it is disabled and will not be injected into the prompt.
+2. Confirm the key uses the skill **directory name** (e.g. `tavily`), not the display `name` from the frontmatter.
+3. Verify the skill directory still exists at `~/.myaaw/skills/<skill_name>/SKILL.md`.
 
 ### Q: The agent read `SKILL.md` but got `command not found` or `ModuleNotFoundError`
 1. Ensure required Python packages are installed in the active virtual environment:

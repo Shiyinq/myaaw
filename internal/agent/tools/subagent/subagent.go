@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"myaaw/internal/agent"
+	"myaaw/internal/agent/skills"
 	"myaaw/internal/agent/tools"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
@@ -134,9 +135,11 @@ CRITICAL INSTRUCTIONS:
 
 	if task.Skills != "" {
 		systemPrompt += fmt.Sprintf("\n\nYou should focus on using the following skills if applicable: %s", task.Skills)
-		systemPrompt += agent.GetSkillsInstruction() // In a real scenario we'd filter this, but for now we append all and tell it to focus
+		// GetSkillsInstruction already filters out disabled skills (skills.json / frontmatter);
+		// all remaining enabled skills are appended and the focus line above prioritizes them.
+		systemPrompt += skills.GetSkillsInstruction()
 	} else {
-		systemPrompt += agent.GetSkillsInstruction()
+		systemPrompt += skills.GetSkillsInstruction()
 	}
 
 	messages := []provider.Message{
@@ -204,11 +207,10 @@ func validateSkills(skillsStr string) error {
 	if err != nil {
 		return err
 	}
-	
-	skillsDir := filepath.Join(homeDir, ".myaaw", "skills")
-	skills := strings.Split(skillsStr, ",")
 
-	for _, s := range skills {
+	skillsDir := filepath.Join(homeDir, ".myaaw", "skills")
+
+	for s := range strings.SplitSeq(skillsStr, ",") {
 		s = strings.TrimSpace(s)
 		if s == "" {
 			continue
@@ -216,6 +218,9 @@ func validateSkills(skillsStr string) error {
 		skillPath := filepath.Join(skillsDir, s)
 		if _, err := os.Stat(skillPath); os.IsNotExist(err) {
 			return fmt.Errorf("Skill '%s' not found. Please ensure it is installed in ~/.myaaw/skills/", s)
+		}
+		if !skills.IsSkillEnabled(s) {
+			return fmt.Errorf("Skill '%s' is disabled. Enable it in ~/.myaaw/skills/skills.json", s)
 		}
 	}
 

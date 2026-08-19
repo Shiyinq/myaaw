@@ -1,13 +1,14 @@
 package service
 
 import (
+	"errors"
 	"log"
 	"myaaw/internal/agent"
+	"myaaw/internal/agent/skills"
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
-	"errors"
 	"strings"
 )
 
@@ -124,7 +125,7 @@ func (r *BotServiceImpl) contextWindow(history []provider.Message) []provider.Me
 
 func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channel.IncomingMessage) []provider.Message {
 	userSystem := agent.NewSystemPromptBuilder(int64(user.UserId), msg.Channel).Build()
-	userSystem += agent.GetSkillsInstruction()
+	userSystem += skills.GetSkillsInstruction()
 	messages := []provider.Message{
 		{
 			Role:    "system",
@@ -140,7 +141,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 	} else if msg.ConversationID != "" {
 		conv, err = r.conversationRepo.GetConversationById(msg.ConversationID)
 	}
-	
+
 	if conv == nil && msg.ConversationID != "NEW" {
 		conv, err = r.conversationRepo.GetActiveConversationByUserId(user.UserId)
 	}
