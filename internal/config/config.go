@@ -98,6 +98,7 @@ type GlobalBotConfig struct {
 	ToolTimeoutSeconds   *int     `json:"tool_timeout_seconds,omitempty"`
 	RunTimeoutSeconds    *int     `json:"run_timeout_seconds,omitempty"`
 	StreamTimeoutSeconds *int     `json:"stream_timeout_seconds,omitempty"`
+	RequestRetries       *int     `json:"request_retries,omitempty"`
 	BlockedTools         []string `json:"blocked_tools,omitempty"`
 }
 
@@ -309,6 +310,9 @@ func LoadBaseConfig() {
 		}
 		if jsonConfig.Bot.StreamTimeoutSeconds != nil {
 			LLMStreamTimeoutSeconds = *jsonConfig.Bot.StreamTimeoutSeconds
+		}
+		if jsonConfig.Bot.RequestRetries != nil {
+			LLMRequestRetries = *jsonConfig.Bot.RequestRetries
 		}
 		if len(jsonConfig.Bot.BlockedTools) > 0 {
 			AgentBlockedTools = jsonConfig.Bot.BlockedTools

@@ -28,7 +28,15 @@
         "watermark": false,
         "stream": true,
         "max_iterations": 100,
-        "warning_iterations": 90
+        "warning_iterations": 90,
+        "context_max_tokens": 64000,
+        "max_tool_output_bytes": 32768,
+        "repeat_tool_call_limit": 3,
+        "tool_timeout_seconds": 300,
+        "run_timeout_seconds": 900,
+        "stream_timeout_seconds": 180,
+        "request_retries": 1,
+        "blocked_tools": []
     },
     "channels": {
         "telegram": {
