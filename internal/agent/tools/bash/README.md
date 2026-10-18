@@ -51,7 +51,7 @@ The Bash tool allows the agent to execute shell commands within a controlled env
 
 ## Output Truncation
 
-Command output is limited to **32KB** per call to maintain performance. If an output is truncated, a message will indicate the location of the **full log file** in `~/.myaaw/home/.logs/`. You can read the full output incrementally using the `filesystem` tool (with `read_file` and line ranges).
+Command output is limited to **32KB** per call to maintain performance. If an output is truncated, a message will indicate the location of the **full log file** in `~/.myaaw/<agent>/home/.logs/`. You can read the full output incrementally using the `filesystem` tool (with `read_file` and line ranges).
 
 
 ## Security

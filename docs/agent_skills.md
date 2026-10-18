@@ -4,6 +4,8 @@ Myaaw provides a dynamic, lightweight, and extensible **Agent Skills System**. S
 
 Each skill is self-contained within its own directory and defined by a `SKILL.md` specification file. When needed, Myaaw agents dynamically read skill documentation using filesystem tools and execute corresponding scripts in an isolated environment.
 
+> Paths such as `~/.myaaw/skills/` in this guide refer to the active agent's directory: `~/.myaaw/<agent>/skills/`. The default agent uses `~/.myaaw/default/skills/`.
+
 ---
 
 ## Table of Contents

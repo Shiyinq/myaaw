@@ -27,9 +27,9 @@ The File System Tool provides a wide range of file and directory management capa
 
 By default, the tool is restricted to:
 
-- `~/.myaaw/home` — agent workspace and memory files
-- `~/.myaaw/skills` — agent skill definitions
-- `~/.myaaw/jobs` — async Bash/Python and subagent job logs
+- `~/.myaaw/<agent>/home` — agent workspace and memory files
+- `~/.myaaw/<agent>/skills` — agent skill definitions
+- `~/.myaaw/<agent>/jobs` — async Bash/Python and subagent job logs
 - the launch directory for local CLI sessions, even when it has no marker files
 - the detected project root, when Myaaw is launched inside a development project
 
@@ -218,7 +218,7 @@ Returns raw file content as string
 - No file encryption/decryption
 - No symbolic link handling (except for security validation)
 - File size limited by system memory
-- **Output Limit**: Outputs are truncated at 32KB; full results are saved to `~/.myaaw/home/.logs/`
+- **Output Limit**: Outputs are truncated at 32KB; full results are saved to `~/.myaaw/<agent>/home/.logs/`
 - **Node Limit**: `directory_tree` is limited to 1000 nodes to prevent oversized JSON
 
 ## Best Practices

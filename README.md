@@ -122,8 +122,8 @@ graph TD
     %% Agent Local Workspace
     subgraph "Local Workspace"
         direction TB
-        Skills[~/.myaaw/skills/ <br> Additional Agent Skills]
-        Home[~/.myaaw/home/ <br> AGENTS.md, BOOTSTRAP.md, HEARTBEAT.md, <br> MEMORY.md, SOUL.md, TOOLS.md, USER.md, <br> memory/, workspace/]
+        Skills[~/.myaaw/{agent}/skills/ <br> Additional Agent Skills]
+        Home[~/.myaaw/{agent}/home/ <br> AGENTS.md, BOOTSTRAP.md, HEARTBEAT.md, <br> MEMORY.md, SOUL.md, TOOLS.md, USER.md, <br> memory/, workspace/]
     end
 
     BotSvc <--> Agent
@@ -160,22 +160,68 @@ graph TD
 6. **Message Queue (`internal/services/queue`)**: Handles asynchronous messaging using fast, native **Go Channels**. Polled or webhook payloads are pushed to the in-memory queue and processed by the Consumer worker to reliably deliver messages.
 7. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
 8. **Local Workspace (`~/.myaaw`)**: The operational directory for the Agent.
-   - `myaaw.db`: The local SQLite database holding user data and conversation history.
-   - `skills/`: Dynamically parsed text definitions of new tools that Myaaw can learn and execute. (See [Agent Skills Guide](docs/agent_skills.md))
-   - `tools/`: MCP servers and standalone custom CLI tools. (See [MCP & Custom Tools Guide](docs/mcp_and_custom_tools.md))
-   - `home/`: Long-term file storage containing Myaaw's core definitions:
-     - `AGENTS.md` / `SOUL.md`: Persona and behavior instructions.
-     - `BOOTSTRAP.md` / `TOOLS.md`: Initialization steps and tool usage rules.
-     - `USER.md`: Facts and details learned about the user.
-     - `HEARTBEAT.md`: Ongoing active background jobs and tasks.
-     - `MEMORY.md` & `memory/`: Historical conversation summarizations and logs.
-     - `workspace/`: All agent-created output. Coding projects live in `workspace/projects/` and downloads in `workspace/downloads/`; the home root stays reserved for identity and memory files.
+   - `agents.json`: Registry of isolated agents and the default agent.
+   - `<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The default agent is `default/`.
+     - `home/`: Long-term file storage containing the agent's core definitions:
+       - `AGENTS.md` / `SOUL.md`: Persona and behavior instructions.
+       - `BOOTSTRAP.md` / `TOOLS.md`: Initialization steps and tool usage rules.
+       - `USER.md`: Facts and details learned about the user.
+       - `HEARTBEAT.md`: Ongoing active background jobs and tasks.
+       - `MEMORY.md` & `memory/`: Historical conversation summarizations and logs.
+       - `workspace/`: All agent-created output. Coding projects live in `workspace/projects/` and downloads in `workspace/downloads/`; the home root stays reserved for identity and memory files.
 
 ### CLI Project Context
 
 When `myaaw chat` or `myaaw voice-classic` starts, Myaaw treats the directory it was launched from as the active project and injects it as `## Current Directory` in the system prompt. The filesystem tool also registers that directory as an allowed project root, even when it has no marker files, so the agent can work on it in place without copying it into `workspace/`.
 
-Telegram and Discord sessions do not receive the server's working directory. New projects and downloads always go to `~/.myaaw/home/workspace/`.
+Telegram and Discord sessions do not receive the server's working directory. New projects and downloads always go to `~/.myaaw/<agent>/home/workspace/`.
+
+### Multiple Agents
+
+Myaaw can run several isolated agents on one machine:
+
+```bash
+myaaw chat                       # agent picker (arrow keys) when multiple agents exist
+myaaw chat --agent myfriend
+myaaw agent create myfriend
+myaaw agent list
+myaaw agent use                 # interactive picker
+myaaw agent use default
+myaaw agent delete              # interactive picker + confirmation
+myaaw --agent myfriend onboard
+myaaw server --agent myfriend start
+myaaw server --agent myfriend status
+```
+
+Configure a provider or channel for one agent:
+
+```bash
+myaaw --agent myfriend provider create
+myaaw --agent myfriend provider list
+myaaw --agent myfriend provider default deepseek
+
+myaaw --agent myfriend channel create
+myaaw --agent myfriend channel list
+myaaw --agent myfriend channel edit
+```
+
+Every command that uses agent configuration respects `--agent`. This includes `provider`, `channel`, `config`, `cron`, `logs`, `status`, `server`, `webhook`, `voice`, `voice-classic`, and `consumer`. Without `--agent`, the registry default is used.
+
+Each agent lives under `~/.myaaw/<agent>/` with its own config, `.env`, database, memory, workspace, skills, logs, and channels:
+
+```text
+~/.myaaw/myfriend/config/config.json
+~/.myaaw/myfriend/.env
+~/.myaaw/myfriend/database/myaaw.db
+```
+
+Restart the agent server after changing channel tokens:
+
+```bash
+myaaw server --agent myfriend restart
+```
+
+The default agent is `~/.myaaw/default/`. Agent names use only letters, numbers, `_`, and `-`.
 
 ## 🚀 Quick Start (Non-Technical)
 

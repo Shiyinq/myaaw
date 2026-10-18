@@ -59,6 +59,6 @@ The Sub-Agent tool allows the main agent to delegate long-running or parallel ta
 
 1. **Batch ID & Concurrency:** When called, the tool assigns a unique `Batch ID` to the group of tasks and spawns a separate, non-blocking *goroutine* for each task. The main agent receives an immediate response confirming the tasks have started.
 2. **Execution Environment:** Each sub-agent runs an isolated instance of the `AgentProvider`. Sub-agents are intentionally restricted from spawning further nested sub-agents. 
-3. **Execution Logs:** Sub-agents stream their step-by-step logs into the file system (usually `~/.myaaw/jobs/`).
+3. **Execution Logs:** Sub-agents stream their step-by-step logs into the file system (usually `~/.myaaw/<agent>/jobs/`).
 4. **Heartbeat & IPC:** When a sub-agent completes its task (either successfully or with an error), it saves a final report and sends an HTTP POST request to the local `/heartbeat` endpoint. 
 5. **Main Agent Notification:** The `/heartbeat` endpoint securely locks the state per-user (to prevent race conditions) and injects a `[SYSTEM TRIGGER: SUB-AGENT RESULT]` message into the main agent's conversation. This "wakes up" the main agent, allowing it to read the sub-agent's report, track batch progress, and summarize the findings back to the user.
