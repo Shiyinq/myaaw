@@ -85,3 +85,36 @@ func TestSystemPromptSkipsWorkspaceWithoutHome(t *testing.T) {
 		t.Fatalf("expected no workspace section when home is unavailable:\n\n%s", prompt)
 	}
 }
+
+func TestSystemPromptIncludesCurrentDirectory(t *testing.T) {
+	builder := &SystemPromptBuilder{
+		homeDir:    t.TempDir(),
+		currentDir: "/Users/example/my-project",
+	}
+
+	prompt := builder.Build()
+	for _, want := range []string{
+		"## Current Directory",
+		"Myaaw launch directory: /Users/example/my-project",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("system prompt missing %q\n\n%s", want, prompt)
+		}
+	}
+}
+
+func TestLocalChannelDetection(t *testing.T) {
+	cases := map[string]bool{
+		"cli":           true,
+		"voice-classic": true,
+		"telegram":      false,
+		"discord":       false,
+		"":              false,
+	}
+
+	for channel, want := range cases {
+		if got := isLocalChannel(channel); got != want {
+			t.Errorf("isLocalChannel(%q) = %v, want %v", channel, got, want)
+		}
+	}
+}

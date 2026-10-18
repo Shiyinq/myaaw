@@ -24,7 +24,7 @@ Manages files and directories within allowed locations. You can combine these fu
 Executes Python code and returns the result. This tool supports installing additional packages and stdin input. Write any files produced by the code under `~/.myaaw/home/workspace/`, not in the agent home root.
 
 ### Bash
-Executes a bash command. Use this tool to run existing scripts, system commands, or manage processes. Examples: `python script.py`, `ls -la`, `curl ...`. It runs in the system shell with `~/.myaaw/home` as the working directory. Before downloading or generating files, `cd ~/.myaaw/home/workspace` or use absolute paths under `workspace/`.
+Executes a bash command. Use this tool to run existing scripts, system commands, or manage processes. Examples: `python script.py`, `ls -la`, `curl ...`. It runs in the system shell with `~/.myaaw/home` as the working directory. Before downloading or generating files, `cd ~/.myaaw/home/workspace` or use absolute paths under `workspace/`. When the user asks to work on the current project, `cd` to the `Current Directory` shown in the system prompt first.
 
 ### Cron
 Manages cron jobs. Use this tool to schedule reminders or execute tasks at specific times or intervals. You can use this to set up follow-up actions after scheduling events on the calendar.

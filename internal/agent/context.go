@@ -35,6 +35,7 @@ type SystemPromptBuilder struct {
 	channelName  string
 	homeDir      string
 	workspaceDir string
+	currentDir   string
 }
 
 func NewSystemPromptBuilder(userID int64, channelName string) *SystemPromptBuilder {
@@ -49,11 +50,22 @@ func NewSystemPromptBuilder(userID int64, channelName string) *SystemPromptBuild
 		fmt.Printf("Error ensuring .myaaw config: %v\n", err)
 	}
 
+	// Local sessions run inside the user's project directory. Remote channels
+	// (Telegram/Discord) use the server process directory, which is not useful
+	// project context, so it is intentionally omitted for them.
+	currentDir := ""
+	if isLocalChannel(channelName) {
+		if wd, err := os.Getwd(); err == nil {
+			currentDir = wd
+		}
+	}
+
 	return &SystemPromptBuilder{
 		userID:       userID,
 		channelName:  channelName,
 		homeDir:      homeDir,
 		workspaceDir: workspaceDir,
+		currentDir:   currentDir,
 	}
 }
 
@@ -116,7 +128,14 @@ func (b *SystemPromptBuilder) Build() string {
 		fmt.Fprintf(&sb, "- Downloads: %s/\n\n", downloadsDir)
 	}
 
-	// 6. Workspace / Context Injection
+	// 6. Current Directory (Dynamic)
+	// Only local CLI sessions have a meaningful project directory.
+	if b.currentDir != "" {
+		sb.WriteString("## Current Directory\n")
+		fmt.Fprintf(&sb, "Myaaw launch directory: %s\n\n", b.currentDir)
+	}
+
+	// 7. Workspace / Context Injection
 	// Order: SOUL, TOOLS, USER
 	files := []string{"SOUL.md", "TOOLS.md", "USER.md"}
 
@@ -130,6 +149,17 @@ func (b *SystemPromptBuilder) Build() string {
 	}
 
 	return strings.TrimSpace(sb.String())
+}
+
+// isLocalChannel reports whether the channel runs in the user's local working
+// directory and should therefore receive current-directory context.
+func isLocalChannel(channelName string) bool {
+	switch strings.ToLower(channelName) {
+	case "cli", "voice-classic":
+		return true
+	default:
+		return false
+	}
 }
 
 // ensureWorkspace creates the workspace directory tree and returns its path.
