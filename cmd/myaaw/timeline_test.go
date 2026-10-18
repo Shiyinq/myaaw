@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -142,8 +143,119 @@ func TestToggleTimelineItem(t *testing.T) {
 	if !m.messages[0].items[0].Expanded || !m.messages[0].items[1].Expanded || !m.streamingItems[0].Expanded {
 		t.Fatal("expand-all did not update every item")
 	}
+	if !m.messages[0].groupExpanded || !m.streamingGroupExpanded {
+		t.Fatal("expand-all did not update every group")
+	}
 	if !m.anyTimelineExpanded() {
 		t.Fatal("anyTimelineExpanded should be true")
+	}
+}
+
+func TestToggleTimelineGroup(t *testing.T) {
+	m := &model{
+		messages: []chatMessage_{{
+			role:  "bot",
+			items: []timelineItem{{Kind: "thinking", Text: "think"}},
+		}},
+		streamingItems: []timelineItem{{Kind: "tool", ToolName: "bash"}},
+	}
+
+	m.toggleTimelineGroup(0)
+	if !m.messages[0].groupExpanded {
+		t.Fatal("click did not expand the message group")
+	}
+	m.toggleTimelineGroup(0)
+	if m.messages[0].groupExpanded {
+		t.Fatal("second click did not collapse the message group")
+	}
+
+	m.toggleTimelineGroup(-1)
+	if !m.streamingGroupExpanded {
+		t.Fatal("click did not expand the streaming group")
+	}
+	if !m.anyTimelineExpanded() {
+		t.Fatal("anyTimelineExpanded should see the open streaming group")
+	}
+
+	m.setAllTimelineExpanded(false)
+	if m.messages[0].groupExpanded || m.streamingGroupExpanded || m.messages[0].items[0].Expanded || m.streamingItems[0].Expanded {
+		t.Fatal("collapse-all did not close every group and item")
+	}
+	if m.anyTimelineExpanded() {
+		t.Fatal("anyTimelineExpanded should be false after collapse-all")
+	}
+}
+
+func TestRenderAgentTimelineGroupsIntermediateItems(t *testing.T) {
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	items := []timelineItem{
+		{Kind: "thinking", Text: "inspect the directory"},
+		{Kind: "tool", ToolName: "bash", ToolArgs: `{"command":"ls"}`, ToolResult: "file1"},
+		{Kind: "text", Text: "intermediate note"},
+		{Kind: "thinking", Text: "second thought"},
+		{Kind: "text", Text: "final answer"},
+	}
+
+	collapsed, spans, group := m.renderAgentTimeline(items, timelineRenderOptions{})
+	if !strings.Contains(collapsed, "Agent timeline") || !strings.Contains(collapsed, "4 steps") {
+		t.Fatalf("collapsed group header missing: %q", collapsed)
+	}
+	for _, hidden := range []string{"inspect the directory", "tool: bash", "intermediate note", "second thought"} {
+		if strings.Contains(collapsed, hidden) {
+			t.Fatalf("collapsed group should hide %q:\n%s", hidden, collapsed)
+		}
+	}
+	if !strings.Contains(collapsed, "final answer") {
+		t.Fatalf("final answer must stay visible:\n%s", collapsed)
+	}
+	if len(spans) != len(items) {
+		t.Fatalf("spans = %d, want %d", len(spans), len(items))
+	}
+	for i, span := range spans {
+		if span.End > span.Start {
+			t.Fatalf("hidden item %d should have no click span: %+v", i, span)
+		}
+	}
+	if group.End <= group.Start {
+		t.Fatalf("group header should be clickable: %+v", group)
+	}
+
+	expanded, spans, group := m.renderAgentTimeline(items, timelineRenderOptions{GroupExpanded: true})
+	for _, want := range []string{"▾ Agent timeline", "inspect the directory", "tool: bash", "intermediate note", "second thought", "final answer"} {
+		if !strings.Contains(expanded, want) {
+			t.Fatalf("expanded group is missing %q:\n%s", want, expanded)
+		}
+	}
+	for i := 0; i < len(items)-1; i++ {
+		if spans[i].End <= spans[i].Start {
+			t.Fatalf("expanded item %d should be clickable: %+v", i, spans[i])
+		}
+	}
+	if spans[len(items)-1].End > spans[len(items)-1].Start {
+		t.Fatalf("final answer should not be a timeline target: %+v", spans[len(items)-1])
+	}
+	if group.End <= group.Start {
+		t.Fatalf("expanded group header should be clickable: %+v", group)
+	}
+}
+
+func TestRenderAgentTimelineShowsDuration(t *testing.T) {
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	items := []timelineItem{
+		{Kind: "tool", ToolName: "bash"},
+		{Kind: "text", Text: "done"},
+	}
+
+	out, _, _ := m.renderAgentTimeline(items, timelineRenderOptions{Duration: 12400 * time.Millisecond})
+	if !strings.Contains(out, "Completed in 12.4s") {
+		t.Fatalf("completion duration missing:\n%s", out)
+	}
+
+	out, _, _ = m.renderAgentTimeline(items, timelineRenderOptions{Duration: 12400 * time.Millisecond, Interrupted: true})
+	if !strings.Contains(out, "Interrupted after 12.4s") {
+		t.Fatalf("interruption duration missing:\n%s", out)
 	}
 }
 
@@ -153,7 +265,8 @@ func TestClickTargetsMatchRenderedItemLines(t *testing.T) {
 	m.messages = []chatMessage_{
 		{role: "user", text: "hello"},
 		{
-			role: "bot",
+			role:          "bot",
+			groupExpanded: true,
 			items: []timelineItem{
 				{Kind: "thinking", Text: "inspect the directory"},
 				{Kind: "tool", ToolName: "bash", ToolArgs: `{"command":"ls"}`, ToolResult: "file1"},
@@ -167,14 +280,91 @@ func TestClickTargetsMatchRenderedItemLines(t *testing.T) {
 		t.Fatalf("click targets = %d, want 3: %+v", len(m.clickTargets), m.clickTargets)
 	}
 	lines := strings.Split(m.viewport.View(), "\n")
-	for i, want := range []string{"Thinking", "tool:", "Done."} {
+	wants := []struct {
+		label string
+		group bool
+		item  int
+	}{
+		{"Agent timeline", true, 0},
+		{"Thinking", false, 0},
+		{"tool:", false, 1},
+	}
+	for i, want := range wants {
 		target := m.clickTargets[i]
-		if target.MessageIndex != 1 || target.ItemIndex != i {
-			t.Fatalf("click target %d has wrong item index: %+v", i, target)
+		if target.MessageIndex != 1 || target.Group != want.group || (!want.group && target.ItemIndex != want.item) {
+			t.Fatalf("click target %d has wrong indices: %+v", i, target)
 		}
-		if target.StartLine >= len(lines) || !strings.Contains(lines[target.StartLine], want) {
-			t.Fatalf("click target %d points at wrong line; want %q, got %q (target=%+v)", i, want, lines[target.StartLine], target)
+		if target.StartLine >= len(lines) || !strings.Contains(lines[target.StartLine], want.label) {
+			t.Fatalf("click target %d points at wrong line; want %q, got %q (target=%+v)", i, want.label, lines[target.StartLine], target)
 		}
+	}
+	if !strings.Contains(m.viewport.View(), "Done.") {
+		t.Fatal("final answer should stay visible when the group is expanded")
+	}
+
+	// The second render uses the cached view; the group header must stay clickable.
+	m.updateViewportContent(false)
+	if len(m.clickTargets) != 3 || !m.clickTargets[0].Group {
+		t.Fatalf("cached click targets = %+v, want 3 with a group target", m.clickTargets)
+	}
+}
+
+func TestStreamingShowsElapsedCounter(t *testing.T) {
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	m.state = stateWaiting
+	m.streamStartedAt = time.Now().Add(-3 * time.Second)
+	m.messages = []chatMessage_{{role: "user", text: "hi"}}
+
+	m.updateViewportContent(false)
+	if view := sanitizeForTUI(m.viewport.View()); !strings.Contains(view, "Myaaw is thinking... 3s") {
+		t.Fatalf("thinking state is missing the elapsed counter:\n%s", view)
+	}
+
+	m.streamingItems = []timelineItem{
+		{Kind: "thinking", Text: "working"},
+		{Kind: "text", Text: "partial"},
+	}
+	m.streamingGroupExpanded = true
+	m.updateViewportContent(false)
+	if view := sanitizeForTUI(m.viewport.View()); !strings.Contains(view, "working 3s") {
+		t.Fatalf("streaming title is missing the elapsed counter:\n%s", view)
+	}
+}
+
+func TestItemMessageShowsDurationOnce(t *testing.T) {
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	m.messages = []chatMessage_{
+		{
+			role: "bot",
+			items: []timelineItem{
+				{Kind: "tool", ToolName: "bash"},
+				{Kind: "text", Text: "done"},
+			},
+			duration: 3200 * time.Millisecond,
+		},
+	}
+
+	m.updateViewportContent(false)
+	if view := sanitizeForTUI(m.viewport.View()); strings.Count(view, "Completed in 3.2s") != 1 {
+		t.Fatalf("duration footer should appear exactly once:\n%s", view)
+	}
+}
+
+func TestPlainMessageShowsDuration(t *testing.T) {
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	m.messages = []chatMessage_{{
+		role:         "bot",
+		text:         "hello",
+		renderedText: "hello",
+		duration:     3200 * time.Millisecond,
+	}}
+
+	m.updateViewportContent(false)
+	if view := sanitizeForTUI(m.viewport.View()); !strings.Contains(view, "Completed in 3.2s") {
+		t.Fatalf("plain message is missing its duration:\n%s", view)
 	}
 }
 
@@ -182,6 +372,8 @@ func TestClickTargetsMatchStreamingLines(t *testing.T) {
 	m := &model{}
 	m.viewport = viewport.New(80, 100)
 	m.state = stateWaiting
+	m.streamStartedAt = time.Now()
+	m.streamingGroupExpanded = true
 	m.messages = []chatMessage_{{role: "user", text: "hello"}}
 	m.streamingItems = []timelineItem{
 		{Kind: "thinking", Text: "inspect the directory"},
@@ -194,13 +386,22 @@ func TestClickTargetsMatchStreamingLines(t *testing.T) {
 		t.Fatalf("click targets = %d, want 3: %+v", len(m.clickTargets), m.clickTargets)
 	}
 	lines := strings.Split(m.viewport.View(), "\n")
-	for i, want := range []string{"Thinking", "tool:", "Done."} {
+	wants := []struct {
+		label string
+		group bool
+		item  int
+	}{
+		{"Agent timeline", true, 0},
+		{"Thinking", false, 0},
+		{"tool:", false, 1},
+	}
+	for i, want := range wants {
 		target := m.clickTargets[i]
-		if target.MessageIndex != -1 || target.ItemIndex != i {
-			t.Fatalf("streaming click target %d has wrong item index: %+v", i, target)
+		if target.MessageIndex != -1 || target.Group != want.group || (!want.group && target.ItemIndex != want.item) {
+			t.Fatalf("streaming click target %d has wrong indices: %+v", i, target)
 		}
-		if target.StartLine >= len(lines) || !strings.Contains(lines[target.StartLine], want) {
-			t.Fatalf("streaming click target %d points at wrong line; want %q, got %q (target=%+v)", i, want, lines[target.StartLine], target)
+		if target.StartLine >= len(lines) || !strings.Contains(lines[target.StartLine], want.label) {
+			t.Fatalf("streaming click target %d points at wrong line; want %q, got %q (target=%+v)", i, want.label, lines[target.StartLine], target)
 		}
 	}
 }
@@ -214,7 +415,8 @@ func TestClickTargetsAccountForWrappedToolLines(t *testing.T) {
 	m.messages = []chatMessage_{
 		{role: "user", text: "hello"},
 		{
-			role: "bot",
+			role:          "bot",
+			groupExpanded: true,
 			items: []timelineItem{
 				{Kind: "tool", ToolName: longName, ToolArgs: longArgs, ToolResult: longResult},
 				{Kind: "tool", ToolName: "tooltwo", ToolArgs: longArgs, ToolResult: longResult},
@@ -224,18 +426,18 @@ func TestClickTargetsAccountForWrappedToolLines(t *testing.T) {
 	}
 
 	m.updateViewportContent(false)
-	if len(m.clickTargets) != 3 {
-		t.Fatalf("click targets = %d, want 3: %+v", len(m.clickTargets), m.clickTargets)
+	if len(m.clickTargets) != 4 {
+		t.Fatalf("click targets = %d, want 4: %+v", len(m.clickTargets), m.clickTargets)
 	}
 	lines := strings.Split(m.viewport.View(), "\n")
-	for i, want := range []string{"▸ tool:", "tooltwo", "Thinking"} {
+	for i, want := range []string{"Agent timeline", "▸ tool:", "tooltwo", "Thinking"} {
 		target := m.clickTargets[i]
 		if target.StartLine >= len(lines) || !strings.Contains(lines[target.StartLine], want) {
 			t.Fatalf("wrapped click target %d points at wrong line; want %q, got %q (target=%+v, lines=%v)", i, want, lines[target.StartLine], target, lines)
 		}
 	}
-	if m.clickTargets[0].EndLine-m.clickTargets[0].StartLine < 2 {
-		t.Fatalf("wrapped tool item should span more than one display row: %+v", m.clickTargets[0])
+	if m.clickTargets[1].EndLine-m.clickTargets[1].StartLine < 2 {
+		t.Fatalf("wrapped tool item should span more than one display row: %+v", m.clickTargets[1])
 	}
 }
 

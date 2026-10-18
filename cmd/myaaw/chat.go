@@ -235,6 +235,9 @@ type model struct {
 	err             error
 	thoughtExpanded bool
 
+	streamStartedAt        time.Time
+	streamingGroupExpanded bool
+
 	botService service.BotService
 	convRepo   repository.ConversationRepository
 	adapter    *cliAdapter.CLIAdapter
@@ -302,13 +305,17 @@ type chatMessage_ struct {
 	text            string
 	thought         string
 	items           []timelineItem
+	groupExpanded   bool
+	duration        time.Duration
+	interrupted     bool
 	renderedText    string
 	renderedThought string
 
-	cachedView     string
-	cachedWidth    int
-	cachedExpanded bool
-	cachedSpans    []timelineLineSpan
+	cachedView      string
+	cachedWidth     int
+	cachedExpanded  bool
+	cachedSpans     []timelineLineSpan
+	cachedGroupSpan timelineLineSpan
 }
 
 type timelineClickTarget struct {
@@ -316,6 +323,7 @@ type timelineClickTarget struct {
 	EndLine      int
 	MessageIndex int // -1 means the live streaming message
 	ItemIndex    int
+	Group        bool
 }
 
 func convertProviderMessages(providerMsgs []provider.Message) []chatMessage_ {
@@ -598,7 +606,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					contentY := msg.Y - viewportTop + m.viewport.YOffset
 					for _, target := range m.clickTargets {
 						if contentY >= target.StartLine && contentY < target.EndLine {
-							m.toggleTimelineItem(target.MessageIndex, target.ItemIndex)
+							if target.Group {
+								m.toggleTimelineGroup(target.MessageIndex)
+							} else {
+								m.toggleTimelineItem(target.MessageIndex, target.ItemIndex)
+							}
 							m.updateViewportContent(false)
 							return m, nil
 						}
@@ -812,17 +824,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cancelFunc()
 					m.cancelFunc = nil
 				}
+				duration := m.streamElapsed()
 				if len(m.streamingItems) > 0 {
 					items := append([]timelineItem(nil), m.streamingItems...)
 					items = append(items, timelineItem{Kind: "text", Text: "🛑 *(interrupted)*"})
-					m.messages = append(m.messages, chatMessage_{role: "bot", items: items})
+					m.messages = append(m.messages, chatMessage_{role: "bot", items: items, duration: duration, interrupted: true})
 				} else {
 					m.messages = append(m.messages, chatMessage_{
-						role: "bot",
-						text: "🛑 *(response interrupted)*",
+						role:        "bot",
+						text:        "🛑 *(response interrupted)*",
+						duration:    duration,
+						interrupted: true,
 					})
 				}
 				m.streamingItems = nil
+				m.streamingGroupExpanded = false
+				m.streamStartedAt = time.Time{}
 				m.state = stateInput
 				m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
 				m.updateViewportContent(true)
@@ -965,6 +982,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.Reset()
 			m.state = stateWaiting
 			m.streamingItems = nil
+			m.streamingGroupExpanded = true
+			m.streamStartedAt = time.Now()
 			m.thoughtExpanded = false
 			m.isAutocompleting = false
 			m.suggestions = nil
@@ -1004,6 +1023,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.messages = append(m.messages, chatMessage_{role: "bot", text: fmt.Sprintf("❌ Error: %v", msg.err)})
 				m.state = stateInput
 				m.streamingItems = nil
+				m.streamingGroupExpanded = false
+				m.streamStartedAt = time.Time{}
 				m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
 				m.cancelFunc = nil
 				m.updateViewportContent(true)
@@ -1013,6 +1034,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if msg.done {
 			if m.state == stateWaiting {
+				duration := m.streamElapsed()
 				items := m.streamingItems
 				if len(msg.trace) > 0 && !hasToolItems(items) {
 					// Non-stream responses carry the tool timeline in Trace.
@@ -1022,12 +1044,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if len(items) > 0 || msg.finalText != "" {
 					m.messages = append(m.messages, chatMessage_{
-						role:  "bot",
-						text:  msg.finalText,
-						items: items,
+						role:     "bot",
+						text:     msg.finalText,
+						items:    items,
+						duration: duration,
 					})
 				}
 				m.streamingItems = nil
+				m.streamingGroupExpanded = false
+				m.streamStartedAt = time.Time{}
 				m.state = stateInput
 				m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
 				m.cancelFunc = nil
@@ -1317,6 +1342,13 @@ func waitForChunk(sub chan nextChunkMsg) tea.Cmd {
 	}
 }
 
+func (m *model) streamElapsed() time.Duration {
+	if m.streamStartedAt.IsZero() {
+		return 0
+	}
+	return time.Since(m.streamStartedAt)
+}
+
 func (m *model) sendMessage(text string, images []string) tea.Cmd {
 	m.sub = make(chan nextChunkMsg)
 	convID := m.activeConvID
@@ -1392,7 +1424,18 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 	for i, msg := range m.messages {
 		if msg.cachedView != "" && msg.cachedWidth == m.viewport.Width && msg.cachedExpanded == m.thoughtExpanded {
 			b.WriteString(msg.cachedView)
+			if msg.cachedGroupSpan.End > msg.cachedGroupSpan.Start {
+				m.clickTargets = append(m.clickTargets, timelineClickTarget{
+					StartLine:    contentLine + msg.cachedGroupSpan.Start,
+					EndLine:      contentLine + msg.cachedGroupSpan.End,
+					MessageIndex: i,
+					Group:        true,
+				})
+			}
 			for itemIndex, span := range msg.cachedSpans {
+				if span.End <= span.Start {
+					continue
+				}
 				m.clickTargets = append(m.clickTargets, timelineClickTarget{
 					StartLine:    contentLine + span.Start,
 					EndLine:      contentLine + span.End,
@@ -1405,20 +1448,26 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 		}
 
 		var (
-			msgBuilder  strings.Builder
-			cachedSpans []timelineLineSpan
+			msgBuilder      strings.Builder
+			cachedSpans     []timelineLineSpan
+			cachedGroupSpan timelineLineSpan
 		)
 
 		if msg.role == "user" {
-			content := userStyle.Render("❯ ") + strings.TrimSpace(msg.text)
+			content := strings.TrimSpace(msg.text)
 			msgBuilder.WriteString(userBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n")
 		} else {
 			var (
-				inner string
-				spans []timelineLineSpan
+				inner     string
+				spans     []timelineLineSpan
+				groupSpan timelineLineSpan
 			)
 			if len(msg.items) > 0 {
-				inner, spans = m.renderTimeline(msg.items, false)
+				inner, spans, groupSpan = m.renderAgentTimeline(msg.items, timelineRenderOptions{
+					GroupExpanded: msg.groupExpanded,
+					Duration:      msg.duration,
+					Interrupted:   msg.interrupted,
+				})
 			} else {
 				// Legacy fallback for plain messages (commands, errors) and
 				// in-memory messages created before the timeline model.
@@ -1452,15 +1501,35 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 				inner = msg.renderedText
 			}
 
+			if len(msg.items) == 0 && msg.duration > 0 && inner != "" {
+				label := fmt.Sprintf("Completed in %s", formatDuration(msg.duration))
+				if msg.interrupted {
+					label = fmt.Sprintf("Interrupted after %s", formatDuration(msg.duration))
+				}
+				inner += "\n\n" + dimStyle.Render(label)
+			}
+
 			content := botStyle.Render("🐱 Myaaw") + "\n\n" + inner
 			msgView := botBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n"
 			msgBuilder.WriteString(msgView)
 
+			if groupSpan.End > groupSpan.Start {
+				// The bot box adds one top border line and the header adds
+				// two lines (title + blank line) before the timeline.
+				cachedGroupSpan = timelineLineSpan{Start: 3 + groupSpan.Start, End: 3 + groupSpan.End}
+				m.clickTargets = append(m.clickTargets, timelineClickTarget{
+					StartLine:    contentLine + cachedGroupSpan.Start,
+					EndLine:      contentLine + cachedGroupSpan.End,
+					MessageIndex: i,
+					Group:        true,
+				})
+			}
 			if len(spans) > 0 {
 				cachedSpans = make([]timelineLineSpan, len(spans))
 				for j, span := range spans {
-					// The bot box adds one top border line and the header adds
-					// two lines (title + blank line) before the timeline.
+					if span.End <= span.Start {
+						continue
+					}
 					cachedSpans[j] = timelineLineSpan{Start: 3 + span.Start, End: 3 + span.End}
 					m.clickTargets = append(m.clickTargets, timelineClickTarget{
 						StartLine:    contentLine + cachedSpans[j].Start,
@@ -1476,6 +1545,7 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 		msg.cachedWidth = m.viewport.Width
 		msg.cachedExpanded = m.thoughtExpanded
 		msg.cachedSpans = cachedSpans
+		msg.cachedGroupSpan = cachedGroupSpan
 		m.messages[i] = msg
 
 		b.WriteString(msg.cachedView)
@@ -1483,14 +1553,30 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 	}
 
 	if m.state == stateWaiting {
+		elapsed := m.streamElapsed()
+		title := botStyle.Render("🐱 Myaaw") + dimStyle.Render(" · working "+formatElapsed(elapsed))
 		if len(m.streamingItems) > 0 {
 			// Fast render during live stream without running the CPU-heavy
 			// glamour parser on every token.
-			inner, spans := m.renderTimeline(m.streamingItems, true)
-			content := botStyle.Render("🐱 Myaaw") + "\n\n" + inner + botStyle.Render(" 🐾")
+			inner, spans, groupSpan := m.renderAgentTimeline(m.streamingItems, timelineRenderOptions{
+				Streaming:     true,
+				GroupExpanded: m.streamingGroupExpanded,
+			})
+			content := title + "\n\n" + inner + botStyle.Render(" 🐾")
 			msgView := botBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n"
 			b.WriteString(msgView)
+			if groupSpan.End > groupSpan.Start {
+				m.clickTargets = append(m.clickTargets, timelineClickTarget{
+					StartLine:    contentLine + 3 + groupSpan.Start,
+					EndLine:      contentLine + 3 + groupSpan.End,
+					MessageIndex: -1,
+					Group:        true,
+				})
+			}
 			for j, span := range spans {
+				if span.End <= span.Start {
+					continue
+				}
 				m.clickTargets = append(m.clickTargets, timelineClickTarget{
 					StartLine:    contentLine + 3 + span.Start,
 					EndLine:      contentLine + 3 + span.End,
@@ -1499,7 +1585,7 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 				})
 			}
 		} else {
-			b.WriteString(dimStyle.Render("Myaaw is thinking..."))
+			b.WriteString(dimStyle.Render("Myaaw is thinking... " + formatElapsed(elapsed)))
 		}
 		b.WriteString("\n")
 	}

@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/glamour"
@@ -155,28 +157,44 @@ func toolResultLooksLikeError(text string) bool {
 }
 
 // timelineLineSpan is the line range of one timeline item inside a rendered
-// timeline string. It is used for mouse hit-testing.
+// timeline string. It is used for mouse hit-testing. A zero span (End <= Start)
+// means the item is currently hidden, e.g. inside a collapsed group.
 type timelineLineSpan struct {
 	Start int
 	End   int
+}
+
+// timelineRenderOptions controls how an agent turn is rendered in the TUI.
+type timelineRenderOptions struct {
+	Streaming     bool
+	GroupExpanded bool
+	Duration      time.Duration
+	Interrupted   bool
+}
+
+func (m *model) timelineWidth() int {
+	width := m.viewport.Width - 8
+	if width < 24 {
+		width = 24
+	}
+	return width
+}
+
+// timelineWrapWidth is the width at which the bot box word-wraps its content.
+func (m *model) timelineWrapWidth() int {
+	wrapWidth := m.viewport.Width - 6
+	if wrapWidth < 1 {
+		wrapWidth = 1
+	}
+	return wrapWidth
 }
 
 func (m *model) renderTimeline(items []timelineItem, streaming bool) (string, []timelineLineSpan) {
 	if len(items) == 0 {
 		return "", nil
 	}
-	width := m.viewport.Width - 8
-	if width < 24 {
-		width = 24
-	}
-	// The bot box wraps its content at viewport width minus the box width
-	// offset (4) and horizontal padding (2). Click spans must be measured in
-	// these display rows, not in logical lines, or wrapped previews shift
-	// every click target below them.
-	wrapWidth := m.viewport.Width - 6
-	if wrapWidth < 1 {
-		wrapWidth = 1
-	}
+	width := m.timelineWidth()
+	wrapWidth := m.timelineWrapWidth()
 
 	var b strings.Builder
 	spans := make([]timelineLineSpan, len(items))
@@ -204,6 +222,120 @@ func (m *model) renderTimeline(items []timelineItem, streaming bool) (string, []
 		spans[i].End = line
 	}
 	return strings.TrimRight(b.String(), "\n"), spans
+}
+
+// renderAgentTimeline renders one agent turn as a collapsible activity group
+// followed by the final answer. The last text item is treated as the final
+// answer and stays visible while the group is collapsed; thinking, tool calls,
+// and intermediate text are kept inside the group.
+func (m *model) renderAgentTimeline(items []timelineItem, opts timelineRenderOptions) (string, []timelineLineSpan, timelineLineSpan) {
+	itemSpans := make([]timelineLineSpan, len(items))
+	if len(items) == 0 {
+		return "", itemSpans, timelineLineSpan{}
+	}
+
+	finalIndex := -1
+	if items[len(items)-1].Kind == "text" {
+		finalIndex = len(items) - 1
+	}
+	groupEnd := len(items)
+	if finalIndex >= 0 {
+		groupEnd = finalIndex
+	}
+
+	var b strings.Builder
+	line := 0
+	wrapWidth := m.timelineWrapWidth()
+	groupSpan := timelineLineSpan{}
+	if groupEnd > 0 {
+		header := renderActivityHeader(groupEnd, opts.GroupExpanded)
+		b.WriteString(header)
+		b.WriteString("\n")
+		line += timelineDisplayRows(header, wrapWidth)
+		groupSpan = timelineLineSpan{Start: 0, End: line}
+
+		if opts.GroupExpanded {
+			b.WriteString("\n")
+			line++
+			groupSpan.End = line
+			body, spans := m.renderTimeline(items[:groupEnd], opts.Streaming)
+			b.WriteString(body)
+			b.WriteString("\n")
+			for i, span := range spans {
+				if span.End > span.Start {
+					itemSpans[i] = timelineLineSpan{Start: span.Start + line, End: span.End + line}
+				}
+			}
+			line += timelineDisplayRows(body, wrapWidth)
+		}
+	}
+
+	if finalIndex >= 0 {
+		if line > 0 {
+			b.WriteString("\n")
+			line++
+		}
+		rendered := renderTextItem(items[finalIndex].Text, m.renderer, opts.Streaming)
+		b.WriteString(rendered)
+		b.WriteString("\n")
+		line += timelineDisplayRows(rendered, wrapWidth)
+	}
+
+	if !opts.Streaming && opts.Duration > 0 {
+		if line > 0 {
+			b.WriteString("\n")
+			line++
+		}
+		label := fmt.Sprintf("Completed in %s", formatDuration(opts.Duration))
+		if opts.Interrupted {
+			label = fmt.Sprintf("Interrupted after %s", formatDuration(opts.Duration))
+		}
+		b.WriteString(dimStyle.Render(label))
+		b.WriteString("\n")
+		line++
+	}
+
+	return strings.TrimRight(b.String(), "\n"), itemSpans, groupSpan
+}
+
+func renderActivityHeader(steps int, expanded bool) string {
+	arrow := "▸"
+	hint := "click to expand"
+	if expanded {
+		arrow = "▾"
+		hint = "click to collapse"
+	}
+	plural := "s"
+	if steps == 1 {
+		plural = ""
+	}
+	label := fmt.Sprintf("Agent timeline · %d step%s", steps, plural)
+	return thinkingStyle.Render(arrow+" ") + dimStyle.Bold(true).Render(label) + dimStyle.Render(" ("+hint+")")
+}
+
+func formatElapsed(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	totalSeconds := int(d.Round(time.Second) / time.Second)
+	return fmt.Sprintf("%dm %02ds", totalSeconds/60, totalSeconds%60)
+}
+
+func formatDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	totalSeconds := int(d.Round(time.Second) / time.Second)
+	return fmt.Sprintf("%dm %02ds", totalSeconds/60, totalSeconds%60)
 }
 
 // timelineDisplayRows returns how many terminal rows a rendered block occupies
@@ -257,23 +389,46 @@ func (m *model) toggleTimelineItem(messageIndex, itemIndex int) {
 	msg.cachedSpans = nil
 }
 
+func (m *model) toggleTimelineGroup(messageIndex int) {
+	if messageIndex < 0 {
+		m.streamingGroupExpanded = !m.streamingGroupExpanded
+		return
+	}
+	if messageIndex >= len(m.messages) {
+		return
+	}
+	msg := &m.messages[messageIndex]
+	msg.groupExpanded = !msg.groupExpanded
+	msg.cachedView = ""
+	msg.cachedSpans = nil
+	msg.cachedGroupSpan = timelineLineSpan{}
+}
+
+func hasTimelineGroup(items []timelineItem) bool {
+	if len(items) == 0 {
+		return false
+	}
+	if items[len(items)-1].Kind == "text" {
+		return len(items) > 1
+	}
+	return true
+}
+
 func (m *model) anyTimelineExpanded() bool {
-	for _, item := range m.streamingItems {
-		if item.Expanded {
-			return true
-		}
+	if len(m.streamingItems) > 0 && m.streamingGroupExpanded {
+		return true
 	}
 	for _, msg := range m.messages {
-		for _, item := range msg.items {
-			if item.Expanded {
-				return true
-			}
+		if !msg.groupExpanded || !hasTimelineGroup(msg.items) {
+			continue
 		}
+		return true
 	}
 	return false
 }
 
 func (m *model) setAllTimelineExpanded(expanded bool) {
+	m.streamingGroupExpanded = expanded
 	for i := range m.streamingItems {
 		m.streamingItems[i].Expanded = expanded
 	}
@@ -281,11 +436,13 @@ func (m *model) setAllTimelineExpanded(expanded bool) {
 		if len(m.messages[i].items) == 0 {
 			continue
 		}
+		m.messages[i].groupExpanded = expanded
 		for j := range m.messages[i].items {
 			m.messages[i].items[j].Expanded = expanded
 		}
 		m.messages[i].cachedView = ""
 		m.messages[i].cachedSpans = nil
+		m.messages[i].cachedGroupSpan = timelineLineSpan{}
 	}
 }
 
