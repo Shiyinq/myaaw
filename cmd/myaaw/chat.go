@@ -2003,7 +2003,7 @@ func (m model) View() string {
 		return m.renderModelPicker()
 	}
 
-	header := headerStyle.Render(" 🐾 MYAAW CLI 🐾 ")
+	header := headerStyle.Render(" 🐾 MYAAW CHAT 🐾 ")
 
 	footerText := "  Esc/Ctrl+C: Quit • /sessions: Pick Session • ↑/↓: Scroll Chat • @: Attach File • Ctrl+T: Thinking/Tools  "
 	if m.state == stateWaiting {
