@@ -51,6 +51,14 @@ func doWithRetry(request func() (*resty.Response, error)) (*resty.Response, erro
 	return lastResponse, lastErr
 }
 
+func streamRequestTimeout() time.Duration {
+	seconds := config.LLMStreamTimeoutSeconds
+	if seconds <= 0 {
+		seconds = 180
+	}
+	return time.Duration(seconds) * time.Second
+}
+
 func isRetryableStatus(status int) bool {
 	switch status {
 	case 408, 425, 429, 500, 502, 503, 504:

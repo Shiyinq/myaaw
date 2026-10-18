@@ -30,9 +30,10 @@ type AgentEvent struct {
 	Delta         string // EventMessageUpdate (user-visible text)
 	ThinkingDelta string // EventMessageUpdate (reasoning text)
 
-	ToolCallID string      // tool execution lifecycle
-	ToolName   string      // tool execution lifecycle
-	ToolResult *ToolResult // tool execution lifecycle
+	ToolCallID    string      // tool execution lifecycle
+	ToolName      string      // tool execution lifecycle
+	ToolArguments string      // raw JSON arguments (tool execution start)
+	ToolResult    *ToolResult // tool execution lifecycle
 
 	Trace []provider.ReactStep // EventTraceUpdate / tool execution
 

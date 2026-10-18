@@ -45,6 +45,8 @@ type RunConfig struct {
 	ExcludedTools []string
 	ToolsContext  *tools.ToolsContext
 
+	// RunTimeout is an optional overall deadline for the whole run.
+	RunTimeout time.Duration
 	// ToolTimeout is an optional per-tool deadline. Zero disables the outer
 	// deadline (individual tools may still impose their own).
 	ToolTimeout time.Duration
@@ -78,6 +80,7 @@ func DefaultRunConfig(model string) RunConfig {
 		MaxToolOutputBytes:  config.AgentMaxToolOutputBytes,
 		ContextMaxTokens:    config.AgentContextMaxTokens,
 		RepeatToolCallLimit: config.AgentRepeatToolCallLimit,
+		RunTimeout:          time.Duration(config.AgentRunTimeoutSeconds) * time.Second,
 		ToolTimeout:         time.Duration(config.AgentToolTimeoutSeconds) * time.Second,
 	}
 
@@ -128,6 +131,9 @@ func (a *Agent) applyDefaults(cfg RunConfig) RunConfig {
 	}
 	if cfg.RepeatToolCallLimit == 0 {
 		cfg.RepeatToolCallLimit = config.AgentRepeatToolCallLimit
+	}
+	if cfg.RunTimeout == 0 {
+		cfg.RunTimeout = time.Duration(config.AgentRunTimeoutSeconds) * time.Second
 	}
 	return cfg
 }

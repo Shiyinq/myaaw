@@ -17,6 +17,7 @@ type ConversationRepository interface {
 	GetConversationById(id string) (*model.Conversation, error)
 	CreateConversation(userId int, title string) (*model.Conversation, error)
 	UpdateConversationById(id string, messages []provider.Message, title string) error
+	UpdateConversationTitle(id string, title string) error
 	DeleteConversationById(id string) error
 	GetActiveConversationByUserId(userId int) (*model.Conversation, error)
 }
@@ -107,7 +108,7 @@ func (r *ConversationRepositoryImpl) CreateConversation(userId int, title string
 	}
 
 	messagesJSON, _ := json.Marshal(conversation.Messages)
-	insertQuery := `INSERT INTO conversations (id, user_id, title, messages, active, created_at, updated_at) 
+	insertQuery := `INSERT INTO conversations (id, user_id, title, messages, active, created_at, updated_at)
 	                VALUES (?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := r.db.Exec(insertQuery,
@@ -141,6 +142,17 @@ func (r *ConversationRepositoryImpl) UpdateConversationById(id string, messages 
 		return fmt.Errorf("failed to update conversation: %w", err)
 	}
 
+	return nil
+}
+
+func (r *ConversationRepositoryImpl) UpdateConversationTitle(id string, title string) error {
+	_, err := r.db.Exec(
+		`UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?`,
+		title, time.Now(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update conversation title: %w", err)
+	}
 	return nil
 }
 

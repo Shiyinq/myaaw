@@ -50,6 +50,8 @@ var AgentRepeatToolCallLimit int = 3
 var AgentToolTimeoutSeconds int = 300
 var AgentBlockedTools []string
 var LLMRequestRetries int = 1
+var LLMStreamTimeoutSeconds int = 180
+var AgentRunTimeoutSeconds int = 900
 
 type Config struct {
 	DefaultProvider string                    `json:"default_provider,omitempty"`
@@ -84,17 +86,19 @@ type CronConfig struct {
 }
 
 type GlobalBotConfig struct {
-	OwnerIDs            []string `json:"owner_ids"`
-	Type                string   `json:"type"`
-	Watermark           bool     `json:"watermark"`
-	Stream              *bool    `json:"stream,omitempty"`
-	MaxIterations       *int     `json:"max_iterations,omitempty"`
-	WarningIterations   *int     `json:"warning_iterations,omitempty"`
-	ContextMaxTokens    *int     `json:"context_max_tokens,omitempty"`
-	MaxToolOutputBytes  *int     `json:"max_tool_output_bytes,omitempty"`
-	RepeatToolCallLimit *int     `json:"repeat_tool_call_limit,omitempty"`
-	ToolTimeoutSeconds  *int     `json:"tool_timeout_seconds,omitempty"`
-	BlockedTools        []string `json:"blocked_tools,omitempty"`
+	OwnerIDs             []string `json:"owner_ids"`
+	Type                 string   `json:"type"`
+	Watermark            bool     `json:"watermark"`
+	Stream               *bool    `json:"stream,omitempty"`
+	MaxIterations        *int     `json:"max_iterations,omitempty"`
+	WarningIterations    *int     `json:"warning_iterations,omitempty"`
+	ContextMaxTokens     *int     `json:"context_max_tokens,omitempty"`
+	MaxToolOutputBytes   *int     `json:"max_tool_output_bytes,omitempty"`
+	RepeatToolCallLimit  *int     `json:"repeat_tool_call_limit,omitempty"`
+	ToolTimeoutSeconds   *int     `json:"tool_timeout_seconds,omitempty"`
+	RunTimeoutSeconds    *int     `json:"run_timeout_seconds,omitempty"`
+	StreamTimeoutSeconds *int     `json:"stream_timeout_seconds,omitempty"`
+	BlockedTools         []string `json:"blocked_tools,omitempty"`
 }
 
 type ChannelsConfig struct {
@@ -253,6 +257,8 @@ func LoadBaseConfig() {
 	AgentToolTimeoutSeconds = envInt("AGENT_TOOL_TIMEOUT_SECONDS", AgentToolTimeoutSeconds)
 	AgentBlockedTools = splitCSV(os.Getenv("AGENT_BLOCKED_TOOLS"))
 	LLMRequestRetries = envInt("LLM_REQUEST_RETRIES", LLMRequestRetries)
+	LLMStreamTimeoutSeconds = envInt("LLM_STREAM_TIMEOUT_SECONDS", LLMStreamTimeoutSeconds)
+	AgentRunTimeoutSeconds = envInt("AGENT_RUN_TIMEOUT_SECONDS", AgentRunTimeoutSeconds)
 
 	streamVal := strings.ToLower(os.Getenv("STREAM_RESPONSE"))
 	if streamVal == "false" || streamVal == "0" {
@@ -297,6 +303,12 @@ func LoadBaseConfig() {
 		}
 		if jsonConfig.Bot.ToolTimeoutSeconds != nil {
 			AgentToolTimeoutSeconds = *jsonConfig.Bot.ToolTimeoutSeconds
+		}
+		if jsonConfig.Bot.RunTimeoutSeconds != nil {
+			AgentRunTimeoutSeconds = *jsonConfig.Bot.RunTimeoutSeconds
+		}
+		if jsonConfig.Bot.StreamTimeoutSeconds != nil {
+			LLMStreamTimeoutSeconds = *jsonConfig.Bot.StreamTimeoutSeconds
 		}
 		if len(jsonConfig.Bot.BlockedTools) > 0 {
 			AgentBlockedTools = jsonConfig.Bot.BlockedTools
@@ -417,6 +429,12 @@ func validateAgentConfig() {
 	}
 	if LLMRequestRetries < 0 {
 		LLMRequestRetries = 0
+	}
+	if LLMStreamTimeoutSeconds <= 0 {
+		LLMStreamTimeoutSeconds = 180
+	}
+	if AgentRunTimeoutSeconds <= 0 {
+		AgentRunTimeoutSeconds = 900
 	}
 }
 

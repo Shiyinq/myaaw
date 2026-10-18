@@ -55,8 +55,10 @@ func (r *BotServiceImpl) runConversation(
 			}
 		case agent.EventToolExecutionStart:
 			onChunk(channel.StreamChunk{
-				Kind:       "tool",
-				ToolCallID: event.ToolCallID,
+				Kind:          "tool",
+				ToolCallID:    event.ToolCallID,
+				ToolName:      event.ToolName,
+				ToolArguments: event.ToolArguments,
 				ToolCalls: []provider.ToolCall{{
 					ID:   event.ToolCallID,
 					Type: "function",
@@ -68,9 +70,11 @@ func (r *BotServiceImpl) runConversation(
 		case agent.EventToolExecutionEnd:
 			if event.ToolResult != nil {
 				onChunk(channel.StreamChunk{
-					Kind:       "tool_result",
-					ToolCallID: event.ToolCallID,
-					IsError:    event.ToolResult.IsError,
+					Kind:           "tool_result",
+					ToolCallID:     event.ToolCallID,
+					ToolName:       event.ToolName,
+					ToolResultText: agent.ToolResultText(*event.ToolResult),
+					IsError:        event.ToolResult.IsError,
 				})
 			}
 		case agent.EventTraceUpdate:
@@ -121,8 +125,14 @@ func (r *BotServiceImpl) runConversation(
 	}
 
 	if runErr != nil {
-		if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
+		if errors.Is(runErr, context.Canceled) {
 			return out, runErr
+		}
+		if errors.Is(runErr, context.DeadlineExceeded) {
+			// The terminal message explains the timeout; keep the partial
+			// timeline and transcript instead of turning it into an error UI.
+			log.Printf("Agent run timed out: %v", runErr)
+			return out, nil
 		}
 		// Provider errors are already surfaced in finalText; keep the partial
 		// result and transcript instead of discarding them.
@@ -244,15 +254,32 @@ func (r *BotServiceImpl) saveConversation(user *model.User, msg *channel.Incomin
 		return nil
 	}
 
-	title := ""
-	if conv.Title == "" || conv.Title == "New Chat" {
-		title, err = r.GenerateConversationTitle(user, messages)
-		if err != nil {
-			log.Printf("Failed to generate conversation title: %v", err)
-			title = ""
-		}
+	if err := r.conversationRepo.UpdateConversationById(conv.Id, messages, ""); err != nil {
+		return err
 	}
-	return r.conversationRepo.UpdateConversationById(conv.Id, messages, title)
+
+	// Title generation is a second LLM call. Keep it off the response path so a
+	// slow provider cannot make the chat appear stuck after the answer is ready.
+	if conv.Title == "" || conv.Title == "New Chat" {
+		messagesCopy := make([]provider.Message, len(messages))
+		copy(messagesCopy, messages)
+		go r.updateConversationTitle(user, conv.Id, messagesCopy)
+	}
+	return nil
+}
+
+func (r *BotServiceImpl) updateConversationTitle(user *model.User, conversationID string, messages []provider.Message) {
+	title, err := r.GenerateConversationTitle(user, messages)
+	if err != nil {
+		log.Printf("Failed to generate conversation title: %v", err)
+		return
+	}
+	if title == "" || title == "New Chat" {
+		return
+	}
+	if err := r.conversationRepo.UpdateConversationTitle(conversationID, title); err != nil {
+		log.Printf("Failed to save conversation title: %v", err)
+	}
 }
 
 func (r *BotServiceImpl) GenerateConversationTitle(user *model.User, messages []provider.Message) (string, error) {

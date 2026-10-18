@@ -113,11 +113,12 @@ func (p *scriptedProvider) ChatStreamEvents(
 }
 
 type fakeTool struct {
-	name  string
-	mode  tools.ExecutionMode
-	panic bool
-	sleep time.Duration
-	run   func(args string) string
+	name          string
+	mode          tools.ExecutionMode
+	panic         bool
+	sleep         time.Duration
+	ignoreContext bool
+	run           func(args string) string
 }
 
 func (f *fakeTool) CallTool(arguments string, _ *tools.ToolsContext) string {
@@ -129,10 +130,14 @@ func (f *fakeTool) CallToolContext(ctx context.Context, arguments string, _ *too
 		panic("boom")
 	}
 	if f.sleep > 0 {
-		select {
-		case <-time.After(f.sleep):
-		case <-ctx.Done():
-			return "canceled"
+		if f.ignoreContext {
+			time.Sleep(f.sleep)
+		} else {
+			select {
+			case <-time.After(f.sleep):
+			case <-ctx.Done():
+				return "canceled"
+			}
 		}
 	}
 	if f.run != nil {
@@ -426,6 +431,52 @@ func TestAgentLoopRecoversToolPanic(t *testing.T) {
 	}
 	if !sawPanic {
 		t.Fatal("panic was not converted into an error tool result")
+	}
+}
+
+func TestAgentLoopToolTimeoutDoesNotHang(t *testing.T) {
+	registerFakeTool(t, "test_slow_tool", &fakeTool{
+		sleep:         300 * time.Millisecond,
+		ignoreContext: true,
+		run:           func(args string) string { return "late" },
+	})
+
+	prov := &scriptedProvider{turns: []provider.Message{
+		{
+			Role:      "assistant",
+			ToolCalls: []provider.ToolCall{toolCall("c1", "test_slow_tool", `{"x":"1"}`)},
+		},
+		{Role: "assistant", Content: "done"},
+	}}
+	a := NewAgent(prov)
+
+	start := time.Now()
+	result, err := a.RunEvents(context.Background(), RunConfig{
+		Model:            "test-model",
+		MaxIterations:    3,
+		WarningThreshold: 2,
+		ExcludedTools:    []string{},
+		ToolTimeout:      30 * time.Millisecond,
+	}, nil, nil)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("RunEvents returned error: %v", err)
+	}
+	if elapsed >= 250*time.Millisecond {
+		t.Fatalf("agent waited for the tool despite its timeout: %v", elapsed)
+	}
+	if provider.MessageText(result.Final) != "done" {
+		t.Fatalf("final text = %q", provider.MessageText(result.Final))
+	}
+	var sawTimeout bool
+	for _, message := range result.Transcript {
+		if message.Role == "tool" && message.IsError && strings.Contains(provider.MessageText(message), "timed out") {
+			sawTimeout = true
+		}
+	}
+	if !sawTimeout {
+		t.Fatal("tool timeout was not surfaced as an error tool result")
 	}
 }
 

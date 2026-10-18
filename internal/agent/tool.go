@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -287,7 +288,7 @@ func executeToolCalls(
 		if ctx.Err() != nil {
 			result := errorToolResult("Operation aborted")
 			results[i] = result
-			safeEmit(AgentEvent{Type: EventToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name})
+			safeEmit(AgentEvent{Type: EventToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name, ToolArguments: string(call.Arguments)})
 			safeEmit(AgentEvent{Type: EventToolExecutionEnd, ToolCallID: call.ID, ToolName: call.Name, ToolResult: &result})
 			continue
 		}
@@ -296,14 +297,14 @@ func executeToolCalls(
 		if !ok {
 			result := errorToolResult(fmt.Sprintf("Error: tool %q not available", call.Name))
 			results[i] = result
-			safeEmit(AgentEvent{Type: EventToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name})
+			safeEmit(AgentEvent{Type: EventToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name, ToolArguments: string(call.Arguments)})
 			safeEmit(AgentEvent{Type: EventToolExecutionEnd, ToolCallID: call.ID, ToolName: call.Name, ToolResult: &result})
 			continue
 		}
 		if err := validateToolArguments(tool.Schema(), call.Arguments); err != nil {
 			result := errorToolResult(fmt.Sprintf("Error: invalid arguments for %q: %v", call.Name, err))
 			results[i] = result
-			safeEmit(AgentEvent{Type: EventToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name})
+			safeEmit(AgentEvent{Type: EventToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name, ToolArguments: string(call.Arguments)})
 			safeEmit(AgentEvent{Type: EventToolExecutionEnd, ToolCallID: call.ID, ToolName: call.Name, ToolResult: &result})
 			continue
 		}
@@ -317,7 +318,7 @@ func executeToolCalls(
 				result := errorToolResult("Error: " + reason)
 				result.Terminate = block.Terminate
 				results[i] = result
-				safeEmit(AgentEvent{Type: EventToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name})
+				safeEmit(AgentEvent{Type: EventToolExecutionStart, ToolCallID: call.ID, ToolName: call.Name, ToolArguments: string(call.Arguments)})
 				safeEmit(AgentEvent{Type: EventToolExecutionEnd, ToolCallID: call.ID, ToolName: call.Name, ToolResult: &result})
 				continue
 			}
@@ -383,9 +384,10 @@ func runPreparedToolCall(
 	}()
 
 	_ = emit(AgentEvent{
-		Type:       EventToolExecutionStart,
-		ToolCallID: prepared.call.ID,
-		ToolName:   prepared.call.Name,
+		Type:          EventToolExecutionStart,
+		ToolCallID:    prepared.call.ID,
+		ToolName:      prepared.call.Name,
+		ToolArguments: string(prepared.call.Arguments),
 	})
 
 	ctx := parentCtx
@@ -395,7 +397,11 @@ func runPreparedToolCall(
 	}
 	defer cancel()
 
+	var finished atomic.Bool
 	onUpdate := func(partial ToolResult) {
+		if finished.Load() {
+			return
+		}
 		_ = emit(AgentEvent{
 			Type:       EventToolExecutionUpdate,
 			ToolCallID: prepared.call.ID,
@@ -404,7 +410,24 @@ func runPreparedToolCall(
 		})
 	}
 
-	result = prepared.tool.Execute(ctx, prepared.call, onUpdate)
+	// Run the tool in a goroutine so a tool that ignores context cancellation
+	// cannot block the whole agent loop forever.
+	resultCh := make(chan ToolResult, 1)
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				resultCh <- errorToolResult(fmt.Sprintf("Error: tool %q panicked: %v", prepared.call.Name, recovered))
+			}
+		}()
+		resultCh <- prepared.tool.Execute(ctx, prepared.call, onUpdate)
+	}()
+
+	select {
+	case result = <-resultCh:
+	case <-ctx.Done():
+		result = errorToolResult(fmt.Sprintf("Error: tool %q was canceled or timed out: %v", prepared.call.Name, ctx.Err()))
+	}
+	finished.Store(true)
 	if cfg.AfterToolCall != nil {
 		if override := cfg.AfterToolCall(ctx, prepared.call, &result); override != nil {
 			result = *override

@@ -63,7 +63,11 @@ func streamOpenAICompatible(
 		req.StreamOptions = &OpenAIStreamOptions{IncludeUsage: true}
 	}
 
-	client := resty.New().SetTimeout(10 * time.Minute)
+	timeout := streamRequestTimeout()
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	client := resty.New().SetTimeout(timeout)
 	res, err := doWithRetry(func() (*resty.Response, error) {
 		return client.R().
 			SetContext(ctx).

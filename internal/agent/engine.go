@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -38,6 +39,11 @@ func (a *Agent) RunEvents(
 		emit = func(AgentEvent) error { return nil }
 	}
 	cfg = a.applyDefaults(cfg)
+	if cfg.RunTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, cfg.RunTimeout)
+		defer cancel()
+	}
 
 	transcript := MigrateLegacyTranscript(history)
 	newMessages := make([]provider.Message, 0, 4)
@@ -67,7 +73,11 @@ func (a *Agent) RunEvents(
 
 	for {
 		if err := ctx.Err(); err != nil {
-			final = terminalMessage("⚠️ Request aborted.", provider.StopAborted, err)
+			text := "⚠️ Request aborted."
+			if errors.Is(err, context.DeadlineExceeded) {
+				text = fmt.Sprintf("⚠️ Agent run timed out after %s. Task may be incomplete.", cfg.RunTimeout)
+			}
+			final = terminalMessage(text, provider.StopAborted, err)
 			transcript = append(transcript, final)
 			newMessages = append(newMessages, final)
 			emitAssistantMessage(emit, final)
@@ -116,6 +126,8 @@ func (a *Agent) RunEvents(
 			streamStop      provider.StopReason
 			streamErr       error
 			messageStarted  bool
+			sawTextDelta    bool
+			sawThoughtDelta bool
 		)
 
 		startMessage := func() {
@@ -133,6 +145,7 @@ func (a *Agent) RunEvents(
 				if event.Text == "" {
 					return nil
 				}
+				sawTextDelta = true
 				startMessage()
 				streamedText.WriteString(event.Text)
 				return emit(AgentEvent{Type: EventMessageUpdate, Delta: event.Text})
@@ -140,6 +153,7 @@ func (a *Agent) RunEvents(
 				if event.Thought == "" {
 					return nil
 				}
+				sawThoughtDelta = true
 				startMessage()
 				streamedThought.WriteString(event.Thought)
 				return emit(AgentEvent{Type: EventMessageUpdate, ThinkingDelta: event.Thought})
@@ -212,6 +226,18 @@ func (a *Agent) RunEvents(
 			if final.ToolCalls[i].ID == "" {
 				final.ToolCalls[i].ID = fmt.Sprintf("call_%d_%d_%d", runID, iteration, i)
 			}
+		}
+
+		// Some providers only expose the full thought/text on StreamDone.
+		// Emit it as a delta so every consumer (including the TUI timeline)
+		// sees the same content as providers that stream token deltas.
+		if final.Thought != "" && !sawThoughtDelta {
+			startMessage()
+			_ = emit(AgentEvent{Type: EventMessageUpdate, ThinkingDelta: final.Thought})
+		}
+		if text := provider.MessageText(final); text != "" && !sawTextDelta {
+			startMessage()
+			_ = emit(AgentEvent{Type: EventMessageUpdate, Delta: text})
 		}
 
 		startMessage()
@@ -385,7 +411,12 @@ func failTruncatedCalls(
 	for _, toolCall := range final.ToolCalls {
 		reason := fmt.Sprintf("Tool call %q was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the call with complete arguments.", toolCall.Function.Name)
 		result := errorToolResult(reason)
-		_ = emit(AgentEvent{Type: EventToolExecutionStart, ToolCallID: toolCall.ID, ToolName: toolCall.Function.Name})
+		_ = emit(AgentEvent{
+			Type:          EventToolExecutionStart,
+			ToolCallID:    toolCall.ID,
+			ToolName:      toolCall.Function.Name,
+			ToolArguments: argsToString(toolCall.Function.Arguments),
+		})
 		_ = emit(AgentEvent{Type: EventToolExecutionEnd, ToolCallID: toolCall.ID, ToolName: toolCall.Function.Name, ToolResult: &result})
 		trace = append(trace, provider.ReactStep{
 			Thought:     final.Thought,

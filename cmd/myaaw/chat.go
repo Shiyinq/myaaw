@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"myaaw/internal/agent"
 	"myaaw/internal/channel"
 	cliAdapter "myaaw/internal/channel/cli"
 	"myaaw/internal/cli/theme"
@@ -119,6 +120,7 @@ type nextChunkMsg struct {
 	err       error
 	newConvID string
 	finalText string
+	trace     []provider.ReactStep
 }
 
 type sessionsLoadedMsg struct {
@@ -226,12 +228,12 @@ type model struct {
 	viewport  viewport.Model
 	textInput textinput.Model
 
-	messages         []chatMessage_
-	state            tuiState
-	streaming        string
-	streamingThought string
-	err              error
-	thoughtExpanded  bool
+	messages        []chatMessage_
+	state           tuiState
+	streamingItems  []timelineItem
+	clickTargets    []timelineClickTarget
+	err             error
+	thoughtExpanded bool
 
 	botService service.BotService
 	convRepo   repository.ConversationRepository
@@ -255,7 +257,6 @@ type model struct {
 	pawFrame          int
 	cancelFunc        context.CancelFunc
 	userScrolledUp    bool
-	traceCount        int
 	lastHistoryScroll time.Time
 	totalTokens       int
 
@@ -300,49 +301,135 @@ type chatMessage_ struct {
 	role            string
 	text            string
 	thought         string
+	items           []timelineItem
 	renderedText    string
 	renderedThought string
 
 	cachedView     string
 	cachedWidth    int
 	cachedExpanded bool
+	cachedSpans    []timelineLineSpan
+}
+
+type timelineClickTarget struct {
+	StartLine    int
+	EndLine      int
+	MessageIndex int // -1 means the live streaming message
+	ItemIndex    int
 }
 
 func convertProviderMessages(providerMsgs []provider.Message) []chatMessage_ {
+	providerMsgs = agent.MigrateLegacyTranscript(providerMsgs)
+
 	var chatMsgs []chatMessage_
-	for _, m := range providerMsgs {
-		if m.Role != "user" && m.Role != "assistant" {
-			// Skip system prompts and tool results; only conversational
-			// messages are rendered in the transcript view.
-			continue
+	var current *chatMessage_
+	toolIndex := map[string]int{}
+
+	flush := func() {
+		if current != nil && len(current.items) > 0 {
+			chatMsgs = append(chatMsgs, *current)
 		}
-		role := "user"
-		if m.Role == "assistant" {
-			role = "bot"
-		}
-		var text string
-		switch c := m.Content.(type) {
-		case string:
-			text = c
-		case []interface{}:
-			for _, item := range c {
-				if itemMap, ok := item.(map[string]interface{}); ok {
-					if t, ok := itemMap["text"].(string); ok {
-						text += t
-					}
+		current = nil
+		toolIndex = map[string]int{}
+	}
+
+	for _, msg := range providerMsgs {
+		switch msg.Role {
+		case "user":
+			flush()
+			text := provider.MessageText(msg)
+			if text == "" && len(msg.Images) == 0 {
+				continue
+			}
+			chatMsgs = append(chatMsgs, chatMessage_{role: "user", text: text})
+
+		case "assistant":
+			if current == nil {
+				current = &chatMessage_{role: "bot"}
+			}
+			if msg.Thought != "" {
+				current.items = appendThinkingItem(current.items, msg.Thought)
+			}
+			if text := provider.MessageText(msg); text != "" {
+				current.items = appendTextItem(current.items, text)
+			}
+			for _, call := range msg.ToolCalls {
+				id := call.ID
+				if id == "" {
+					id = fmt.Sprintf("history-%d-%d", len(chatMsgs), len(current.items))
 				}
+				current.items = append(current.items, timelineItem{
+					Kind:       "tool",
+					ToolCallID: id,
+					ToolName:   call.Function.Name,
+					ToolArgs:   toolArgsToString(call.Function.Arguments),
+					Running:    true,
+				})
+				toolIndex[id] = len(current.items) - 1
+			}
+
+		case "tool":
+			if current == nil {
+				current = &chatMessage_{role: "bot"}
+			}
+			result := provider.MessageText(msg)
+			if idx, ok := toolIndex[msg.ToolCallID]; ok {
+				current.items[idx].ToolResult = result
+				current.items[idx].IsError = msg.IsError
+				current.items[idx].Running = false
+			} else {
+				current.items = append(current.items, timelineItem{
+					Kind:       "tool",
+					ToolCallID: msg.ToolCallID,
+					ToolName:   msg.Name,
+					ToolResult: result,
+					IsError:    msg.IsError,
+				})
 			}
 		}
-		if text == "" && m.Thought == "" {
-			continue
-		}
-		chatMsgs = append(chatMsgs, chatMessage_{
-			role:    role,
-			text:    text,
-			thought: m.Thought,
-		})
 	}
+	flush()
+
 	return chatMsgs
+}
+
+var mouseFragmentPattern = regexp.MustCompile(`\[?<[0-9]+(;[0-9]+)*[Mm]`)
+
+func looksLikeMouseEscape(value string) bool {
+	if strings.Contains(value, "[<") {
+		return true
+	}
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || (!strings.HasSuffix(trimmed, "M") && !strings.HasSuffix(trimmed, "m")) {
+		return false
+	}
+	trimmed = strings.TrimSuffix(strings.TrimSuffix(trimmed, "M"), "m")
+	if !strings.Contains(trimmed, ";") {
+		return false
+	}
+	for _, r := range trimmed {
+		if r != ';' && r != '<' && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func toolArgsToString(value interface{}) string {
+	if value == nil {
+		return "{}"
+	}
+	if text, ok := value.(string); ok {
+		if text == "" {
+			return "{}"
+		}
+		return text
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf("%v", value)
+	}
+	return string(data)
 }
 
 var (
@@ -486,6 +573,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
+		// Only the chat view has clickable timeline items.
+		if m.state == stateSessionSelect || m.state == stateModelSelect || m.state == stateModelLoading {
+			return m, nil
+		}
 		// Handle mouse scrolling & clicks exclusively so escape sequences never leak into textinput
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
@@ -502,8 +593,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.MouseButtonLeft:
 			if msg.Action == tea.MouseActionPress {
-				m.thoughtExpanded = !m.thoughtExpanded
-				m.updateViewportContent(false)
+				const viewportTop = 2 // header + blank line
+				if msg.Y >= viewportTop && msg.Y < viewportTop+m.viewport.Height {
+					contentY := msg.Y - viewportTop + m.viewport.YOffset
+					for _, target := range m.clickTargets {
+						if contentY >= target.StartLine && contentY < target.EndLine {
+							m.toggleTimelineItem(target.MessageIndex, target.ItemIndex)
+							m.updateViewportContent(false)
+							return m, nil
+						}
+					}
+				}
 				return m, nil
 			}
 		}
@@ -517,6 +617,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Some terminals do not decode SGR mouse reports correctly; drop the
+		// raw escape sequence instead of letting it leak into the text input.
+		if looksLikeMouseEscape(msg.String()) {
+			return m, nil
+		}
+
 		// 1. Session Picker State Handling
 		if m.state == stateSessionSelect {
 			totalItems := len(m.conversations) + 1 // 0 is "+ Create New Session"
@@ -706,20 +812,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cancelFunc()
 					m.cancelFunc = nil
 				}
-				if m.streaming != "" || m.streamingThought != "" {
-					m.messages = append(m.messages, chatMessage_{
-						role:    "bot",
-						text:    m.streaming + " 🛑 *(interrupted)*",
-						thought: m.streamingThought,
-					})
+				if len(m.streamingItems) > 0 {
+					items := append([]timelineItem(nil), m.streamingItems...)
+					items = append(items, timelineItem{Kind: "text", Text: "🛑 *(interrupted)*"})
+					m.messages = append(m.messages, chatMessage_{role: "bot", items: items})
 				} else {
 					m.messages = append(m.messages, chatMessage_{
 						role: "bot",
 						text: "🛑 *(response interrupted)*",
 					})
 				}
-				m.streaming = ""
-				m.streamingThought = ""
+				m.streamingItems = nil
 				m.state = stateInput
 				m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
 				m.updateViewportContent(true)
@@ -861,13 +964,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, chatMessage_{role: "user", text: text})
 			m.textInput.Reset()
 			m.state = stateWaiting
-			m.streaming = ""
-			m.streamingThought = ""
+			m.streamingItems = nil
 			m.thoughtExpanded = false
 			m.isAutocompleting = false
 			m.suggestions = nil
 			m.userScrolledUp = false
-			m.traceCount = 0
 			m.updateViewportContent(true)
 			return m, m.sendMessage(processedText, images)
 		}
@@ -879,8 +980,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, loadSessionsCmd(m.convRepo)
 		}
 
-		if msg.String() == "ctrl+t" {
-			m.thoughtExpanded = !m.thoughtExpanded
+		if msg.String() == "ctrl+t" && (m.state == stateInput || m.state == stateWaiting) {
+			expanded := m.anyTimelineExpanded() || m.thoughtExpanded
+			m.setAllTimelineExpanded(!expanded)
+			m.thoughtExpanded = !expanded
 			m.updateViewportContent(false)
 			return m, nil
 		}
@@ -900,11 +1003,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == stateWaiting {
 				m.messages = append(m.messages, chatMessage_{role: "bot", text: fmt.Sprintf("❌ Error: %v", msg.err)})
 				m.state = stateInput
-				m.streaming = ""
-				m.streamingThought = ""
+				m.streamingItems = nil
 				m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
 				m.cancelFunc = nil
-				m.traceCount = 0
 				m.updateViewportContent(true)
 			}
 			return m, nil
@@ -912,20 +1013,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if msg.done {
 			if m.state == stateWaiting {
-				if msg.finalText != "" {
-					m.streaming = msg.finalText
+				items := m.streamingItems
+				if len(msg.trace) > 0 && !hasToolItems(items) {
+					// Non-stream responses carry the tool timeline in Trace.
+					items = timelineFromTrace(msg.trace, msg.finalText)
+				} else if msg.finalText != "" {
+					items = setFinalText(items, msg.finalText)
 				}
-				m.messages = append(m.messages, chatMessage_{
-					role:    "bot",
-					text:    m.streaming,
-					thought: m.streamingThought,
-				})
-				m.streaming = ""
-				m.streamingThought = ""
+				if len(items) > 0 || msg.finalText != "" {
+					m.messages = append(m.messages, chatMessage_{
+						role:  "bot",
+						text:  msg.finalText,
+						items: items,
+					})
+				}
+				m.streamingItems = nil
 				m.state = stateInput
 				m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
 				m.cancelFunc = nil
-				m.traceCount = 0
 				if msg.newConvID != "" {
 					m.activeConvID = msg.newConvID
 				}
@@ -935,7 +1040,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.chunk.Kind == "final" {
-			m.streaming = msg.chunk.Text
+			if msg.chunk.Text != "" {
+				m.streamingItems = setFinalText(m.streamingItems, msg.chunk.Text)
+			}
 			if msg.chunk.Usage.TotalTokens > 0 {
 				m.totalTokens = msg.chunk.Usage.TotalTokens
 			}
@@ -949,20 +1056,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.totalTokens = msg.chunk.Usage.TotalTokens
 		}
 
-		if msg.chunk.Thought != "" {
-			m.streamingThought += msg.chunk.Thought
-		}
-
-		if len(msg.chunk.Trace) > m.traceCount {
-			for i := m.traceCount; i < len(msg.chunk.Trace); i++ {
-				step := msg.chunk.Trace[i]
-				m.streamingThought += fmt.Sprintf("\n\n🛠️  Using %s...\n\n", step.Action)
+		switch msg.chunk.Kind {
+		case "thinking", "thought":
+			m.streamingItems = appendThinkingItem(m.streamingItems, msg.chunk.Thought)
+		case "text":
+			m.streamingItems = appendTextItem(m.streamingItems, msg.chunk.Text)
+		case "tool":
+			name := msg.chunk.ToolName
+			if name == "" && len(msg.chunk.ToolCalls) > 0 {
+				name = msg.chunk.ToolCalls[0].Function.Name
 			}
-			m.traceCount = len(msg.chunk.Trace)
-		}
-
-		if msg.chunk.Text != "" {
-			m.streaming += msg.chunk.Text
+			m.streamingItems = startToolItem(m.streamingItems, msg.chunk.ToolCallID, name, msg.chunk.ToolArguments)
+		case "tool_result":
+			m.streamingItems = finishToolItem(m.streamingItems, msg.chunk.ToolCallID, msg.chunk.ToolResultText, msg.chunk.IsError)
+		case "trace", "usage":
+			// Tool lifecycle events already carry the descriptive data.
+		default:
+			if msg.chunk.Thought != "" {
+				m.streamingItems = appendThinkingItem(m.streamingItems, msg.chunk.Thought)
+			}
+			if msg.chunk.Text != "" {
+				m.streamingItems = appendTextItem(m.streamingItems, msg.chunk.Text)
+			}
+			if len(msg.chunk.ToolCalls) > 0 {
+				m.streamingItems = startToolItem(m.streamingItems, msg.chunk.ToolCallID, msg.chunk.ToolCalls[0].Function.Name, msg.chunk.ToolArguments)
+			}
 		}
 
 		if m.state == stateWaiting {
@@ -1001,6 +1119,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Update textInput in stateInput or stateWaiting so user can type while bot is responding
 	if m.state == stateInput || m.state == stateWaiting {
 		m.textInput, tiCmd = m.textInput.Update(msg)
+		if cleaned := mouseFragmentPattern.ReplaceAllString(m.textInput.Value(), ""); cleaned != m.textInput.Value() {
+			m.textInput.SetValue(cleaned)
+		}
 		if m.state == stateInput {
 			m.updateAutocomplete()
 		}
@@ -1217,13 +1338,15 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 				}
 			})
 			finalText := ""
+			var finalTrace []provider.ReactStep
 			if out != nil {
 				finalText = out.Text
+				finalTrace = out.Trace
 			}
 			select {
 			case <-ctx.Done():
 				return
-			case m.sub <- nextChunkMsg{done: true, err: err, newConvID: msg.ConversationID, finalText: finalText}:
+			case m.sub <- nextChunkMsg{done: true, err: err, newConvID: msg.ConversationID, finalText: finalText, trace: finalTrace}:
 			}
 		} else {
 			out, err := m.botService.BotContext(ctx, msg)
@@ -1238,8 +1361,9 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 						Text:    out.Text,
 						Thought: out.Thought,
 						Usage:   out.Usage,
+						Trace:   out.Trace,
 					}}
-					m.sub <- nextChunkMsg{done: true, newConvID: msg.ConversationID, finalText: out.Text}
+					m.sub <- nextChunkMsg{done: true, newConvID: msg.ConversationID, finalText: out.Text, trace: out.Trace}
 				}
 			}
 		}
@@ -1249,6 +1373,7 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 }
 
 func (m *model) updateViewportContent(scrollToBottom bool) {
+	m.clickTargets = m.clickTargets[:0]
 	if len(m.messages) == 0 {
 		placeholder := lipgloss.NewStyle().
 			Width(m.viewport.Width).
@@ -1262,78 +1387,119 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 	}
 
 	var b strings.Builder
+	contentLine := 0
 
 	for i, msg := range m.messages {
 		if msg.cachedView != "" && msg.cachedWidth == m.viewport.Width && msg.cachedExpanded == m.thoughtExpanded {
 			b.WriteString(msg.cachedView)
+			for itemIndex, span := range msg.cachedSpans {
+				m.clickTargets = append(m.clickTargets, timelineClickTarget{
+					StartLine:    contentLine + span.Start,
+					EndLine:      contentLine + span.End,
+					MessageIndex: i,
+					ItemIndex:    itemIndex,
+				})
+			}
+			contentLine += advanceLines(msg.cachedView)
 			continue
 		}
 
-		var msgBuilder strings.Builder
+		var (
+			msgBuilder  strings.Builder
+			cachedSpans []timelineLineSpan
+		)
 
 		if msg.role == "user" {
 			content := userStyle.Render("❯ ") + strings.TrimSpace(msg.text)
 			msgBuilder.WriteString(userBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n")
 		} else {
-			if msg.thought != "" {
-				if m.thoughtExpanded {
-					if msg.renderedThought == "" {
-						// Force Markdown hard line breaks by adding two spaces before newlines
-						hardLineBreakThought := strings.ReplaceAll(msg.thought, "\n", "  \n")
-						rendered, err := m.renderer.Render(hardLineBreakThought)
-						if err == nil && strings.TrimSpace(rendered) != "" {
-							msg.renderedThought = strings.TrimSpace(rendered)
-						} else {
-							msg.renderedThought = strings.TrimSpace(msg.thought)
+			var (
+				inner string
+				spans []timelineLineSpan
+			)
+			if len(msg.items) > 0 {
+				inner, spans = m.renderTimeline(msg.items, false)
+			} else {
+				// Legacy fallback for plain messages (commands, errors) and
+				// in-memory messages created before the timeline model.
+				if msg.thought != "" {
+					if m.thoughtExpanded {
+						if msg.renderedThought == "" {
+							// Force Markdown hard line breaks by adding two spaces before newlines
+							hardLineBreakThought := strings.ReplaceAll(msg.thought, "\n", "  \n")
+							rendered, err := m.renderer.Render(hardLineBreakThought)
+							if err == nil && strings.TrimSpace(rendered) != "" {
+								msg.renderedThought = strings.TrimSpace(rendered)
+							} else {
+								msg.renderedThought = strings.TrimSpace(msg.thought)
+							}
 						}
+						msgBuilder.WriteString(dimStyle.Render(" ▾ Thinking (click to collapse)") + "\n")
+						msgBuilder.WriteString(theme.BoxStyle.Padding(0, 1).BorderForeground(lipgloss.Color("240")).Width(m.viewport.Width-4).Render(msg.renderedThought) + "\n")
+					} else {
+						msgBuilder.WriteString(dimStyle.Render(" ▸ Thinking (click to expand)") + "\n\n")
 					}
-					msgBuilder.WriteString(dimStyle.Render(" ▾ Reasoning (ctrl+t to collapse)") + "\n")
-					msgBuilder.WriteString(theme.BoxStyle.Padding(0, 1).BorderForeground(lipgloss.Color("240")).Width(m.viewport.Width-4).Render(msg.renderedThought) + "\n")
-				} else {
-					msgBuilder.WriteString(dimStyle.Render(" ▸ Reasoning (ctrl+t to expand)") + "\n\n")
 				}
+
+				if msg.renderedText == "" {
+					rendered, err := m.renderer.Render(msg.text)
+					if err == nil && strings.TrimSpace(rendered) != "" {
+						msg.renderedText = strings.TrimSpace(rendered)
+					} else {
+						msg.renderedText = strings.TrimSpace(msg.text)
+					}
+				}
+				inner = msg.renderedText
 			}
 
-			if msg.renderedText == "" {
-				rendered, err := m.renderer.Render(msg.text)
-				if err == nil && strings.TrimSpace(rendered) != "" {
-					msg.renderedText = strings.TrimSpace(rendered)
-				} else {
-					msg.renderedText = strings.TrimSpace(msg.text)
+			content := botStyle.Render("🐱 Myaaw") + "\n\n" + inner
+			msgView := botBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n"
+			msgBuilder.WriteString(msgView)
+
+			if len(spans) > 0 {
+				cachedSpans = make([]timelineLineSpan, len(spans))
+				for j, span := range spans {
+					// The bot box adds one top border line and the header adds
+					// two lines (title + blank line) before the timeline.
+					cachedSpans[j] = timelineLineSpan{Start: 3 + span.Start, End: 3 + span.End}
+					m.clickTargets = append(m.clickTargets, timelineClickTarget{
+						StartLine:    contentLine + cachedSpans[j].Start,
+						EndLine:      contentLine + cachedSpans[j].End,
+						MessageIndex: i,
+						ItemIndex:    j,
+					})
 				}
 			}
-
-			content := botStyle.Render("🐱 Myaaw") + "\n\n" + msg.renderedText
-			msgBuilder.WriteString(botBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n")
 		}
 
 		msg.cachedView = msgBuilder.String()
 		msg.cachedWidth = m.viewport.Width
 		msg.cachedExpanded = m.thoughtExpanded
+		msg.cachedSpans = cachedSpans
 		m.messages[i] = msg
 
 		b.WriteString(msg.cachedView)
+		contentLine += advanceLines(msg.cachedView)
 	}
 
 	if m.state == stateWaiting {
-		if m.streamingThought != "" {
-			if m.thoughtExpanded {
-				b.WriteString(dimStyle.Render(" ▾ Reasoning (ctrl+t to collapse)") + "\n")
-				// Fast render without glamour during streaming
-				b.WriteString(theme.BoxStyle.Padding(0, 1).BorderForeground(lipgloss.Color("240")).Width(m.viewport.Width-4).Render(m.streamingThought) + "\n")
-			} else {
-				b.WriteString(dimStyle.Render(" ▸ Reasoning (ctrl+t to expand)") + "\n\n")
+		if len(m.streamingItems) > 0 {
+			// Fast render during live stream without running the CPU-heavy
+			// glamour parser on every token.
+			inner, spans := m.renderTimeline(m.streamingItems, true)
+			content := botStyle.Render("🐱 Myaaw") + "\n\n" + inner + botStyle.Render(" 🐾")
+			msgView := botBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n"
+			b.WriteString(msgView)
+			for j, span := range spans {
+				m.clickTargets = append(m.clickTargets, timelineClickTarget{
+					StartLine:    contentLine + 3 + span.Start,
+					EndLine:      contentLine + 3 + span.End,
+					MessageIndex: -1,
+					ItemIndex:    j,
+				})
 			}
-		}
-
-		if m.streaming != "" {
-			// Fast render during live stream without running CPU-heavy glamour parser per token
-			// Avoid TrimSpace here: trimming trailing newlines generated by the stream
-			// causes the viewport height to fluctuate and visually jump!
-			content := botStyle.Render("🐱 Myaaw") + "\n\n" + m.streaming + botStyle.Render(" 🐾")
-			b.WriteString(botBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n")
 		} else {
-			b.WriteString(dimStyle.Render("⏳ Myaaw is thinking... 🧶"))
+			b.WriteString(dimStyle.Render("Myaaw is thinking..."))
 		}
 		b.WriteString("\n")
 	}
@@ -1424,7 +1590,7 @@ func (m model) renderSessionPicker() string {
 
 			msgCount := 0
 			for _, message := range conv.Messages {
-				if message.Role == "user" || message.Role == "assistant" {
+				if message.Role == "user" || (message.Role == "assistant" && provider.MessageText(message) != "") {
 					msgCount++
 				}
 			}
@@ -1627,9 +1793,9 @@ func (m model) View() string {
 
 	header := headerStyle.Render(" 🐾 MYAAW CLI 🐾 ")
 
-	footerText := "  Esc/Ctrl+C: Quit • /sessions: Pick Session • ↑/↓: Scroll Chat • @: Attach File • Ctrl+T: Reasoning  "
+	footerText := "  Esc/Ctrl+C: Quit • /sessions: Pick Session • ↑/↓: Scroll Chat • @: Attach File • Ctrl+T: Thinking/Tools  "
 	if m.state == stateWaiting {
-		footerText = "  Esc: Interrupt Response • ↑/↓: Scroll Chat • Ctrl+T: Reasoning  "
+		footerText = "  Esc: Interrupt Response • ↑/↓: Scroll Chat • Ctrl+T: Thinking/Tools  "
 	} else if m.isAutocompleting && len(m.suggestions) > 0 {
 		footerText = "  Esc: Cancel • ↑/↓: Navigate • Tab/Enter: Select  "
 	}
@@ -1760,7 +1926,7 @@ func runInteractive(botService service.BotService, convRepo repository.Conversat
 	defer f.Close()
 	log.SetOutput(f)
 
-	p := tea.NewProgram(initialModel(botService, convRepo, adapter), tea.WithAltScreen())
+	p := tea.NewProgram(initialModel(botService, convRepo, adapter), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		log.Fatal("Error running TUI:", err)
 	}

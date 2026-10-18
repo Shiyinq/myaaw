@@ -466,7 +466,11 @@ func (g *GeminiProvider) ChatStreamEvents(
 	toolsList []map[string]interface{},
 	onEvent func(StreamEvent) error,
 ) error {
-	client := resty.New().SetTimeout(10 * time.Minute)
+	timeout := streamRequestTimeout()
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	client := resty.New().SetTimeout(timeout)
 
 	request := g.buildRequest(modelName, messages, toolsList)
 
