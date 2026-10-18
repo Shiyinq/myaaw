@@ -26,26 +26,34 @@ func EnsureMyaawConfig() (string, error) {
 	return targetDir, nil
 }
 
+// workspaceDirName is the directory inside the agent home where all generated
+// projects, cloned repositories, downloads, and build artifacts must be stored.
+const workspaceDirName = "workspace"
+
 type SystemPromptBuilder struct {
-	userID      int64
-	channelName string
-	homeDir     string
+	userID       int64
+	channelName  string
+	homeDir      string
+	workspaceDir string
 }
 
 func NewSystemPromptBuilder(userID int64, channelName string) *SystemPromptBuilder {
 	// Ensure .myaaw exists in home directory
 	myaawPath, err := EnsureMyaawConfig()
 	homeDir := ""
+	workspaceDir := ""
 	if err == nil {
 		homeDir = filepath.Join(myaawPath, "home")
+		workspaceDir = ensureWorkspace(homeDir)
 	} else {
 		fmt.Printf("Error ensuring .myaaw config: %v\n", err)
 	}
 
 	return &SystemPromptBuilder{
-		userID:      userID,
-		channelName: channelName,
-		homeDir:     homeDir,
+		userID:       userID,
+		channelName:  channelName,
+		homeDir:      homeDir,
+		workspaceDir: workspaceDir,
 	}
 }
 
@@ -95,7 +103,20 @@ func (b *SystemPromptBuilder) Build() string {
 	fmt.Fprintf(&sb, "Arch: %s\n", runtime.GOARCH)
 	sb.WriteString("\n")
 
-	// 5. Workspace / Context Injection
+	// 5. Workspace (Dynamic)
+	// Expose absolute paths so the agent never has to guess where the workspace
+	// is. The behavioral rules live in AGENTS.md.
+	if b.workspaceDir != "" {
+		projectsDir := filepath.Join(b.workspaceDir, "projects")
+		downloadsDir := filepath.Join(b.workspaceDir, "downloads")
+
+		sb.WriteString("## Workspace\n")
+		fmt.Fprintf(&sb, "Workspace root: %s\n", b.workspaceDir)
+		fmt.Fprintf(&sb, "- Projects: %s/<project-name>/\n", projectsDir)
+		fmt.Fprintf(&sb, "- Downloads: %s/\n\n", downloadsDir)
+	}
+
+	// 6. Workspace / Context Injection
 	// Order: SOUL, TOOLS, USER
 	files := []string{"SOUL.md", "TOOLS.md", "USER.md"}
 
@@ -109,6 +130,31 @@ func (b *SystemPromptBuilder) Build() string {
 	}
 
 	return strings.TrimSpace(sb.String())
+}
+
+// ensureWorkspace creates the workspace directory tree and returns its path.
+// The workspace is the only location where the agent should create generated
+// projects and downloads. It lives inside the allowed filesystem root.
+func ensureWorkspace(homeDir string) string {
+	if homeDir == "" {
+		return ""
+	}
+
+	workspaceDir := filepath.Join(homeDir, workspaceDirName)
+	dirs := []string{
+		workspaceDir,
+		filepath.Join(workspaceDir, "projects"),
+		filepath.Join(workspaceDir, "downloads"),
+	}
+
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			fmt.Printf("Error creating workspace directory %s: %v\n", dir, err)
+			return workspaceDir
+		}
+	}
+
+	return workspaceDir
 }
 
 func (b *SystemPromptBuilder) readContent(fileName string) string {

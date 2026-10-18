@@ -123,7 +123,7 @@ graph TD
     subgraph "Local Workspace"
         direction TB
         Skills[~/.myaaw/skills/ <br> Additional Agent Skills]
-        Home[~/.myaaw/home/ <br> AGENTS.md, BOOTSTRAP.md, HEARTBEAT.md, <br> MEMORY.md, SOUL.md, TOOLS.md, USER.md, <br> memory/]
+        Home[~/.myaaw/home/ <br> AGENTS.md, BOOTSTRAP.md, HEARTBEAT.md, <br> MEMORY.md, SOUL.md, TOOLS.md, USER.md, <br> memory/, workspace/]
     end
 
     BotSvc <--> Agent
@@ -169,6 +169,7 @@ graph TD
      - `USER.md`: Facts and details learned about the user.
      - `HEARTBEAT.md`: Ongoing active background jobs and tasks.
      - `MEMORY.md` & `memory/`: Historical conversation summarizations and logs.
+     - `workspace/`: All agent-created output. Coding projects live in `workspace/projects/` and downloads in `workspace/downloads/`; the home root stays reserved for identity and memory files.
 
 ## 🚀 Quick Start (Non-Technical)
 

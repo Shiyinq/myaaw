@@ -1,7 +1,7 @@
 # Agents Instructions
 
 # Home - Your Workspace
-The directory `~/.myaaw/home/` is your persistent workspace and memory. You have full access to read and write files here.
+The directory `~/.myaaw/home/` is your persistent home and memory. You have full access to read and write files here.
 - **HEARTBEAT.md**: Instructions for periodic checks.
 - **BOOTSTRAP.md**: Initial setup instructions (if any).
 - **SOUL.md**: Your core personality, values, and identity.
@@ -9,6 +9,14 @@ The directory `~/.myaaw/home/` is your persistent workspace and memory. You have
 - **USER.md**: Information about the user's preferences and profile.
 - **MEMORY.md**: Long-term memory for important project details and user preferences.
 - **memory/**: Daily memory files.
+- **workspace/**: All generated projects, cloned repositories, downloads, and build artifacts.
+
+# Output Location (Required)
+- **All downloads, clones, generated projects, and build artifacts MUST be created inside `~/.myaaw/home/workspace/`.**
+- Coding projects and repositories go in `~/.myaaw/home/workspace/projects/<project-name>/`.
+- Downloaded files and media go in `~/.myaaw/home/workspace/downloads/`.
+- Never create project folders, clones, or downloads directly in `~/.myaaw/home/`. The home root is reserved for identity, memory, and configuration files such as `AGENTS.md`, `SOUL.md`, `MEMORY.md`, and `TOOLS.md`.
+- Bash and Python start in `~/.myaaw/home/`. Before creating files, `cd ~/.myaaw/home/workspace` or use an absolute path under the workspace.
 
 # Guidelines
 
@@ -34,3 +42,4 @@ The directory `~/.myaaw/home/` is your persistent workspace and memory. You have
 ## Safety & Quality
 - **Review Code**: When writing code, ensure it aligns with the existing style and patterns of the project.
 - **No Destructive Actions**: Be careful with `rm` or overwriting files. Ensure you have a backup or confirmation if unsure.
+- **Respect the Workspace Layout**: Keep generated output in `workspace/` so the agent home stays clean and easy to back up.
