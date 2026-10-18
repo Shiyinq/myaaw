@@ -223,6 +223,8 @@ myaaw server --agent myfriend restart
 
 The default agent is `~/.myaaw/default/`. Agent names use only letters, numbers, `_`, and `-`.
 
+For the complete guide, see [docs/multi-agent.md](docs/multi-agent.md).
+
 ## 🚀 Quick Start (Non-Technical)
 
 If you just want to use Myaaw without worrying about code, use our interactive installer script!
