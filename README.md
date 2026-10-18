@@ -173,7 +173,7 @@ graph TD
 
 ### CLI Project Context
 
-When `myaaw chat` or `myaaw voice-classic` starts, Myaaw injects the directory it was launched from as `## Current Directory` in the system prompt. The agent can therefore work on an existing project in place without copying it into `workspace/`.
+When `myaaw chat` or `myaaw voice-classic` starts, Myaaw treats the directory it was launched from as the active project and injects it as `## Current Directory` in the system prompt. The filesystem tool also registers that directory as an allowed project root, even when it has no marker files, so the agent can work on it in place without copying it into `workspace/`.
 
 Telegram and Discord sessions do not receive the server's working directory. New projects and downloads always go to `~/.myaaw/home/workspace/`.
 

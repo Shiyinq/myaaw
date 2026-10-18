@@ -476,7 +476,7 @@ Neither channel adds new configuration. Both use:
 `agent.SystemPromptBuilder` rebuilds the system message for each request from `~/.myaaw/home`:
 
 - It always injects the absolute `workspace/` paths.
-- For local sessions (`cli`, `voice-classic`), it injects the launch directory as `## Current Directory`.
+- For local sessions (`cli`, `voice-classic`), it injects the launch directory as `## Current Directory`, and the filesystem tool registers that directory as an allowed project root even when no marker files are present.
 - For remote channels (`telegram`, `discord`), it omits the server process working directory because it is not user project context.
 
 ---

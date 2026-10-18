@@ -15,10 +15,10 @@ import (
 	"myaaw/internal/agent"
 	"myaaw/internal/agent/skills"
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/agent/tools/filesystem"
 
 	_ "myaaw/internal/agent/tools/bash"
 	_ "myaaw/internal/agent/tools/cron"
-	_ "myaaw/internal/agent/tools/filesystem"
 	_ "myaaw/internal/agent/tools/provider"
 	_ "myaaw/internal/agent/tools/python"
 	_ "myaaw/internal/agent/tools/subagent"
@@ -84,6 +84,16 @@ func init() {
 		// the first agent request.
 		if _, err := agent.EnsureWorkspace(); err != nil {
 			fmt.Fprintf(os.Stderr, "⚠️  Could not prepare agent workspace: %v\n", err)
+		}
+
+		// Local agent sessions treat their launch directory as the active
+		// project, even when it has no marker files.
+		if cmd.Name() == "chat" || cmd.Name() == "voice-classic" {
+			if cwd, err := os.Getwd(); err == nil {
+				if err := filesystem.SetProjectDirectory(cwd); err != nil {
+					fmt.Fprintf(os.Stderr, "⚠️  Could not register current directory as project: %v\n", err)
+				}
+			}
 		}
 
 		// Load and watch external tools asynchronously in the background so CLI commands open instantly

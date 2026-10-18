@@ -120,45 +120,143 @@ func init() {
 
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
-		myaawHome := filepath.Join(homeDir, ".myaaw", "home")
-		myaawSkills := filepath.Join(homeDir, ".myaaw", "skills")
-
-		defaultBaseDir = myaawHome
-		allowedDirectories = append(allowedDirectories, myaawHome, myaawSkills)
-
+		projectRoot := configureAllowedDirectories(homeDir, cwd)
 		if config.Verbose {
 			log.Printf("FileSystemTool: Allowed directories set to: %v", allowedDirectories)
+			if projectRoot != "" {
+				log.Printf("FileSystemTool: Project detected at %s. Added to allowed paths.", projectRoot)
+			} else {
+				log.Printf("FileSystemTool: Current directory %s does not look like a project. Sandbox restricted to %s", cwd, defaultBaseDir)
+			}
 		}
 	} else {
 		if config.Verbose {
 			log.Printf("Error: Could not determine home directory, sandbox limited.")
 		}
 	}
+}
 
-	// Smart CWD Detection:
-	// Only treat CWD as project root if it looks like one (has go.mod, .git, or .env)
-	isProject := false
-	if cwd != "" {
-		markers := []string{"go.mod", ".git", ".env"}
-		for _, marker := range markers {
-			if _, err := os.Stat(filepath.Join(cwd, marker)); err == nil {
-				isProject = true
-				break
-			}
-		}
+// configureAllowedDirectories sets the sandbox roots for the filesystem tool.
+// It always allows Myaaw's home, skills, and internal job-log directories, and
+// adds the detected project root when the process was launched from one.
+func configureAllowedDirectories(homeDir, cwd string) string {
+	myaawHome := filepath.Join(homeDir, ".myaaw", "home")
+	myaawSkills := filepath.Join(homeDir, ".myaaw", "skills")
+	myaawJobs := filepath.Join(homeDir, ".myaaw", "jobs")
+
+	defaultBaseDir = myaawHome
+	allowedDirectories = []string{myaawHome, myaawSkills, myaawJobs}
+
+	projectRoot := detectProjectRoot(cwd)
+	if filepath.Clean(projectRoot) == filepath.Clean(homeDir) {
+		// A repository at the user's home directory would otherwise grant
+		// access to the entire home tree. Treat it as a non-project cwd.
+		projectRoot = ""
 	}
-
-	if isProject {
+	if projectRoot != "" {
 		defaultBaseDir = cwd
-		allowedDirectories = append(allowedDirectories, cwd)
-		if config.Verbose {
-			log.Printf("FileSystemTool: Project detected at %s. Added to allowed paths.", cwd)
+		allowedDirectories = append(allowedDirectories, projectRoot)
+	}
+
+	return projectRoot
+}
+
+var projectMarkers = []string{
+	"go.mod",
+	"package.json",
+	"pyproject.toml",
+	"requirements.txt",
+	"Cargo.toml",
+	"composer.json",
+	"Gemfile",
+	"pom.xml",
+	"build.gradle",
+	"build.gradle.kts",
+	"CMakeLists.txt",
+	".sln",
+	".git",
+}
+
+// detectProjectRoot walks up from start until it finds a development project
+// marker. It returns an empty string when no ancestor looks like a project.
+func detectProjectRoot(start string) string {
+	if start == "" {
+		return ""
+	}
+
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return ""
+	}
+
+	for {
+		if isProjectDir(dir) {
+			return dir
 		}
-	} else {
-		if config.Verbose {
-			log.Printf("FileSystemTool: Current directory %s does not look like a project. Sandbox restricted to %s", cwd, defaultBaseDir)
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+func isProjectDir(dir string) bool {
+	for _, marker := range projectMarkers {
+		if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
+			return true
 		}
 	}
+
+	// C# projects use per-project *.csproj files instead of a fixed marker.
+	for _, pattern := range []string{"*.csproj", "*.sln"} {
+		matches, err := filepath.Glob(filepath.Join(dir, pattern))
+		if err == nil && len(matches) > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+// SetProjectDirectory registers dir as an allowed project root and makes it
+// the base for relative filesystem paths. It is intended for local CLI sessions
+// so the launch directory works even when it has no project marker files.
+func SetProjectDirectory(dir string) error {
+	if dir == "" {
+		return fmt.Errorf("project directory is empty")
+	}
+
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("resolve project directory: %w", err)
+	}
+
+	info, err := os.Stat(absDir)
+	if err != nil {
+		return fmt.Errorf("stat project directory: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("project path is not a directory: %s", absDir)
+	}
+
+	// Do not grant access to the whole home tree just because a local session
+	// was launched there. The agent home, skills, and jobs are already allowed.
+	if homeDir, err := os.UserHomeDir(); err == nil && filepath.Clean(absDir) == filepath.Clean(homeDir) {
+		return fmt.Errorf("refusing to use the user home directory as a project root")
+	}
+
+	for _, existing := range allowedDirectories {
+		if filepath.Clean(existing) == filepath.Clean(absDir) {
+			defaultBaseDir = absDir
+			return nil
+		}
+	}
+
+	allowedDirectories = append(allowedDirectories, absDir)
+	defaultBaseDir = absDir
+	return nil
 }
 
 // TODO: Make allowedDirectories configurable (e.g., via environment variable, config file)
@@ -211,43 +309,93 @@ func expandPath(path string) (string, error) {
 }
 
 func isAllowed(path string) (string, error) {
+	return isPathAllowed(path, allowedDirectories)
+}
+
+func isPathAllowed(path string, allowedDirs []string) (string, error) {
 	expandedPath, err := expandPath(path)
 	if err != nil {
 		return "", fmt.Errorf("error expanding path: %w", err)
 	}
 
-	absPath, err := filepath.Abs(expandedPath)
+	evaluatedPath, err := resolvePath(expandedPath)
 	if err != nil {
-		return "", fmt.Errorf("error getting absolute path: %w", err)
+		return "", fmt.Errorf("error resolving path: %w", err)
 	}
 
-	// Evaluate symlinks to prevent path traversal
-	evaluatedPath, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// If it doesn't exist yet, we still check the intended absolute path
-			evaluatedPath = absPath
-		} else {
-			return "", fmt.Errorf("error evaluating symlinks: %w", err)
-		}
-	}
-
-	for _, allowedDir := range allowedDirectories {
-		// Also evaluate allowedDir symlinks for consistency
+	for _, allowedDir := range allowedDirs {
 		absAllowedDir, err := filepath.Abs(allowedDir)
 		if err != nil {
 			continue
 		}
-		evalAllowedDir, err := filepath.EvalSymlinks(absAllowedDir)
-		if err == nil {
-			absAllowedDir = evalAllowedDir
+		if resolvedDir, err := filepath.EvalSymlinks(absAllowedDir); err == nil {
+			absAllowedDir = resolvedDir
 		}
 
-		if strings.HasPrefix(evaluatedPath, absAllowedDir) {
+		if isWithinBase(absAllowedDir, evaluatedPath) {
 			return evaluatedPath, nil
 		}
 	}
+
 	return "", fmt.Errorf("path '%s' (resolved to '%s') is not within allowed directories", path, evaluatedPath)
+}
+
+// resolvePath returns a cleaned absolute path with all existing symlinks
+// resolved. For paths that do not exist yet, it resolves the nearest existing
+// ancestor and appends the missing components. Broken symlinks are rejected
+// instead of being treated as normal missing files.
+func resolvePath(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	absPath = filepath.Clean(absPath)
+
+	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+		return resolved, nil
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+
+	current := absPath
+	missing := make([]string, 0, 4)
+
+	for {
+		_, err := os.Lstat(current)
+		if err == nil {
+			resolved, err := filepath.EvalSymlinks(current)
+			if err != nil {
+				return "", fmt.Errorf("cannot resolve symlink %s: %w", current, err)
+			}
+			if len(missing) == 0 {
+				return resolved, nil
+			}
+			return filepath.Join(append([]string{resolved}, missing...)...), nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return absPath, nil
+		}
+		missing = append([]string{filepath.Base(current)}, missing...)
+		current = parent
+	}
+}
+
+// isWithinBase reports whether target is base itself or a descendant of base.
+// It compares path components, so /allowed/home-evil is not inside /allowed/home.
+func isWithinBase(base, target string) bool {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
 
 func (f *FileSystemTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
@@ -256,8 +404,13 @@ func (f *FileSystemTool) CallTool(arguments string, ctx *tools.ToolsContext) str
 		return fmt.Sprintf("Error parsing arguments: %v", err)
 	}
 
-	// Security check for all paths involved in the operation
+	// Security check for all paths involved in the operation.
+	// read_multiple_files carries a list in args.Path; each entry is validated
+	// individually by readMultipleFiles.
 	pathsToCheck := []string{args.Path, args.OldPath, args.NewPath}
+	if args.ToolName == "read_multiple_files" {
+		pathsToCheck = []string{args.OldPath, args.NewPath}
+	}
 	for _, p := range pathsToCheck {
 		if p != "" { // Only check non-empty paths
 			if _, err := isAllowed(p); err != nil {
