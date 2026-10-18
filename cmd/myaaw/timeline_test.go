@@ -1,12 +1,14 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 
 	"myaaw/internal/provider"
 )
@@ -460,6 +462,100 @@ func TestCollapsedToolHeaderFitsTimelineWidth(t *testing.T) {
 	}
 	if spans[1].Start != 2 {
 		t.Fatalf("second item should start after the header and separator, got %+v", spans)
+	}
+}
+
+func TestInterruptLocksInputUntilSaveAck(t *testing.T) {
+	m := model{
+		viewport:        viewport.New(80, 100),
+		state:           stateWaiting,
+		streamStartedAt: time.Now().Add(-2 * time.Second),
+		streamingItems:  []timelineItem{{Kind: "thinking", Text: "working"}},
+		cancelFunc:      func() {},
+		stopAck:         make(chan error, 1),
+		messages:        []chatMessage_{{role: "user", text: "hi"}},
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	if m.state != stateStopping {
+		t.Fatalf("state = %v, want stateStopping", m.state)
+	}
+	if cmd == nil {
+		t.Fatal("interrupt should wait for the persistence ack")
+	}
+	if len(m.messages) != 2 || !m.messages[1].interrupted {
+		t.Fatalf("interrupted message was not appended: %+v", m.messages)
+	}
+	if m.interruptedIndex != 1 {
+		t.Fatalf("interrupted index = %d, want 1", m.interruptedIndex)
+	}
+
+	m.stopAck <- nil
+	updated, _ = m.Update(stopAckMsg{err: nil})
+	m = updated.(model)
+	if m.state != stateInput {
+		t.Fatalf("state after ack = %v, want stateInput", m.state)
+	}
+	if len(m.messages) != 2 {
+		t.Fatalf("ack should not add messages: %+v", m.messages)
+	}
+	if m.interruptedIndex != -1 || m.stopAck != nil {
+		t.Fatalf("interrupt state was not reset: index=%d ack=%v", m.interruptedIndex, m.stopAck)
+	}
+}
+
+func TestInterruptWarnsWhenContextCannotBeSaved(t *testing.T) {
+	m := model{
+		viewport:        viewport.New(80, 100),
+		state:           stateStopping,
+		streamStartedAt: time.Now().Add(-2 * time.Second),
+		stopAck:         make(chan error, 1),
+		messages: []chatMessage_{
+			{role: "user", text: "hi"},
+			{role: "bot", text: "🛑 *(response interrupted)*", renderedText: "interrupted", interrupted: true},
+		},
+		interruptedIndex: 1,
+	}
+
+	updated, _ := m.Update(stopAckMsg{err: errors.New("database unavailable")})
+	m = updated.(model)
+	if m.state != stateInput {
+		t.Fatalf("state = %v, want stateInput", m.state)
+	}
+	last := m.messages[len(m.messages)-1]
+	if !strings.Contains(last.text, "may not be saved") || !strings.Contains(last.text, "database unavailable") {
+		t.Fatalf("missing persistence warning: %+v", last)
+	}
+}
+
+func TestStoppedRunReplacesInterruptedMessage(t *testing.T) {
+	m := model{
+		viewport:         viewport.New(80, 100),
+		state:            stateStopping,
+		streamStartedAt:  time.Now().Add(-2 * time.Second),
+		stopAck:          make(chan error, 1),
+		interruptedIndex: 1,
+		messages: []chatMessage_{
+			{role: "user", text: "hi"},
+			{role: "bot", items: []timelineItem{{Kind: "text", Text: "🛑 *(interrupted)*"}}, interrupted: true},
+		},
+	}
+
+	updated, _ := m.Update(nextChunkMsg{done: true, finalText: "real answer"})
+	m = updated.(model)
+	if m.state != stateInput {
+		t.Fatalf("state = %v, want stateInput", m.state)
+	}
+	if len(m.messages) != 2 {
+		t.Fatalf("completed response should replace the interrupted marker, messages=%+v", m.messages)
+	}
+	done := m.messages[1]
+	if done.interrupted || len(done.items) == 0 || done.items[0].Text != "real answer" {
+		t.Fatalf("interrupted message was not replaced: %+v", done)
+	}
+	if done.duration <= 0 {
+		t.Fatalf("completed response is missing its duration: %+v", done)
 	}
 }
 

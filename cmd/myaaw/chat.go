@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"myaaw/internal/agent"
@@ -109,6 +110,7 @@ type tuiState int
 const (
 	stateInput tuiState = iota
 	stateWaiting
+	stateStopping
 	stateSessionSelect
 	stateModelSelect
 	stateModelLoading
@@ -121,6 +123,10 @@ type nextChunkMsg struct {
 	newConvID string
 	finalText string
 	trace     []provider.ReactStep
+}
+
+type stopAckMsg struct {
+	err error
 }
 
 type sessionsLoadedMsg struct {
@@ -237,6 +243,8 @@ type model struct {
 
 	streamStartedAt        time.Time
 	streamingGroupExpanded bool
+	stopAck                chan error
+	interruptedIndex       int
 
 	botService service.BotService
 	convRepo   repository.ConversationRepository
@@ -837,12 +845,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						interrupted: true,
 					})
 				}
+				m.interruptedIndex = len(m.messages) - 1
 				m.streamingItems = nil
 				m.streamingGroupExpanded = false
-				m.streamStartedAt = time.Time{}
-				m.state = stateInput
+				m.state = stateStopping
 				m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
 				m.updateViewportContent(true)
+
+				// Wait for the service to finish persisting the interrupted turn
+				// before accepting another message. Starting a new run earlier can
+				// read a transcript from before the save and lose the context.
+				if m.stopAck != nil {
+					return m, waitForStopAck(m.stopAck)
+				}
+				m.finishStopping(nil)
 				return m, nil
 			}
 
@@ -999,7 +1015,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, loadSessionsCmd(m.convRepo)
 		}
 
-		if msg.String() == "ctrl+t" && (m.state == stateInput || m.state == stateWaiting) {
+		if msg.String() == "ctrl+t" && (m.state == stateInput || m.state == stateWaiting || m.state == stateStopping) {
 			expanded := m.anyTimelineExpanded() || m.thoughtExpanded
 			m.setAllTimelineExpanded(!expanded)
 			m.thoughtExpanded = !expanded
@@ -1018,15 +1034,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case nextChunkMsg:
+		if m.state == stateStopping {
+			if msg.done {
+				m.completeStoppedResponse(msg)
+				m.updateViewportContent(true)
+			}
+			// Late chunks are ignored; the stop ack unlocks the input.
+			return m, nil
+		}
+
 		if msg.err != nil {
 			if m.state == stateWaiting {
 				m.messages = append(m.messages, chatMessage_{role: "bot", text: fmt.Sprintf("❌ Error: %v", msg.err)})
-				m.state = stateInput
-				m.streamingItems = nil
-				m.streamingGroupExpanded = false
-				m.streamStartedAt = time.Time{}
-				m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
-				m.cancelFunc = nil
+				m.resetStreamState()
 				m.updateViewportContent(true)
 			}
 			return m, nil
@@ -1050,12 +1070,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						duration: duration,
 					})
 				}
-				m.streamingItems = nil
-				m.streamingGroupExpanded = false
-				m.streamStartedAt = time.Time{}
-				m.state = stateInput
-				m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
-				m.cancelFunc = nil
+				m.resetStreamState()
 				if msg.newConvID != "" {
 					m.activeConvID = msg.newConvID
 				}
@@ -1113,6 +1128,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case stopAckMsg:
+		if m.state == stateStopping {
+			m.finishStopping(msg.err)
+			m.updateViewportContent(true)
+		}
+		return m, nil
+
 	case queueTickMsg:
 		home, _ := os.UserHomeDir()
 		queuePath := filepath.Join(home, ".myaaw", "logs", "cli_queue.jsonl")
@@ -1142,7 +1164,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Update textInput in stateInput or stateWaiting so user can type while bot is responding
-	if m.state == stateInput || m.state == stateWaiting {
+	if m.state == stateInput || m.state == stateWaiting || m.state == stateStopping {
 		m.textInput, tiCmd = m.textInput.Update(msg)
 		if cleaned := mouseFragmentPattern.ReplaceAllString(m.textInput.Value(), ""); cleaned != m.textInput.Value() {
 			m.textInput.SetValue(cleaned)
@@ -1342,6 +1364,12 @@ func waitForChunk(sub chan nextChunkMsg) tea.Cmd {
 	}
 }
 
+func waitForStopAck(ack chan error) tea.Cmd {
+	return func() tea.Msg {
+		return stopAckMsg{err: <-ack}
+	}
+}
+
 func (m *model) streamElapsed() time.Duration {
 	if m.streamStartedAt.IsZero() {
 		return 0
@@ -1349,8 +1377,75 @@ func (m *model) streamElapsed() time.Duration {
 	return time.Since(m.streamStartedAt)
 }
 
+// finishStopping unlocks the input after the service has finished persisting an
+// interrupted turn.
+func (m *model) finishStopping(err error) {
+	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		m.messages = append(m.messages, chatMessage_{
+			role: "bot",
+			text: fmt.Sprintf("⚠️ Interrupted context may not be saved: %v", err),
+		})
+	}
+	m.resetStreamState()
+}
+
+// completeStoppedResponse handles a run that finished normally just as the user
+// interrupted it. It replaces the local interrupted marker with the real
+// response so nothing is shown twice.
+func (m *model) completeStoppedResponse(msg nextChunkMsg) {
+	duration := m.streamElapsed()
+	items := m.streamingItems
+	if len(msg.trace) > 0 && !hasToolItems(items) {
+		items = timelineFromTrace(msg.trace, msg.finalText)
+	} else if msg.finalText != "" {
+		items = setFinalText(items, msg.finalText)
+	}
+
+	if msg.err != nil {
+		m.replaceInterruptedMessage(chatMessage_{role: "bot", text: fmt.Sprintf("❌ Error: %v", msg.err)})
+		m.resetStreamState()
+		return
+	}
+	if len(items) == 0 && msg.finalText == "" {
+		m.resetStreamState()
+		return
+	}
+
+	m.replaceInterruptedMessage(chatMessage_{
+		role:     "bot",
+		text:     msg.finalText,
+		items:    items,
+		duration: duration,
+	})
+	if msg.newConvID != "" {
+		m.activeConvID = msg.newConvID
+	}
+	m.resetStreamState()
+}
+
+func (m *model) replaceInterruptedMessage(msg chatMessage_) {
+	if m.interruptedIndex >= 0 && m.interruptedIndex < len(m.messages) {
+		m.messages[m.interruptedIndex] = msg
+		return
+	}
+	m.messages = append(m.messages, msg)
+}
+
+func (m *model) resetStreamState() {
+	m.interruptedIndex = -1
+	m.streamingItems = nil
+	m.streamingGroupExpanded = false
+	m.streamStartedAt = time.Time{}
+	m.state = stateInput
+	m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
+	m.cancelFunc = nil
+	m.stopAck = nil
+}
+
 func (m *model) sendMessage(text string, images []string) tea.Cmd {
 	m.sub = make(chan nextChunkMsg)
+	stopAck := make(chan error, 1)
+	m.stopAck = stopAck
 	convID := m.activeConvID
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1361,6 +1456,17 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 	go func() {
 		defer cancel()
 		msg := createIncomingMessage(text, images, convID)
+
+		// Signal that the service has finished (and therefore persisted the
+		// turn) before sending the terminal event. If the user pressed Esc, the
+		// model waits for this ack before accepting another message.
+		signalStopAck := func(err error) {
+			select {
+			case stopAck <- err:
+			default:
+			}
+		}
+
 		if config.StreamResponse {
 			out, err := m.botService.BotStreamContext(ctx, msg, func(chunk channel.StreamChunk) {
 				select {
@@ -1375,33 +1481,45 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 				finalText = out.Text
 				finalTrace = out.Trace
 			}
-			select {
-			case <-ctx.Done():
+			if streamStopped(ctx, err) {
+				signalStopAck(err)
 				return
-			case m.sub <- nextChunkMsg{done: true, err: err, newConvID: msg.ConversationID, finalText: finalText, trace: finalTrace}:
 			}
-		} else {
-			out, err := m.botService.BotContext(ctx, msg)
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				if err != nil {
-					m.sub <- nextChunkMsg{done: true, err: err, newConvID: msg.ConversationID}
-				} else {
-					m.sub <- nextChunkMsg{chunk: channel.StreamChunk{
-						Text:    out.Text,
-						Thought: out.Thought,
-						Usage:   out.Usage,
-						Trace:   out.Trace,
-					}}
-					m.sub <- nextChunkMsg{done: true, newConvID: msg.ConversationID, finalText: out.Text, trace: out.Trace}
-				}
-			}
+			signalStopAck(nil)
+			m.sub <- nextChunkMsg{done: true, err: err, newConvID: msg.ConversationID, finalText: finalText, trace: finalTrace}
+			return
 		}
+
+		out, err := m.botService.BotContext(ctx, msg)
+		if streamStopped(ctx, err) {
+			signalStopAck(err)
+			return
+		}
+		if err != nil {
+			signalStopAck(nil)
+			m.sub <- nextChunkMsg{done: true, err: err, newConvID: msg.ConversationID}
+			return
+		}
+		signalStopAck(nil)
+		m.sub <- nextChunkMsg{chunk: channel.StreamChunk{
+			Text:    out.Text,
+			Thought: out.Thought,
+			Usage:   out.Usage,
+			Trace:   out.Trace,
+		}}
+		m.sub <- nextChunkMsg{done: true, newConvID: msg.ConversationID, finalText: out.Text, trace: out.Trace}
 	}()
 
 	return tea.Batch(waitForChunk(m.sub), pawTickCmd())
+}
+
+// streamStopped reports whether a run ended because its context was canceled
+// rather than because it produced a final answer.
+func streamStopped(ctx context.Context, err error) bool {
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	return ctx.Err() != nil && err != nil
 }
 
 func (m *model) updateViewportContent(scrollToBottom bool) {
@@ -1474,13 +1592,17 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 				if msg.thought != "" {
 					if m.thoughtExpanded {
 						if msg.renderedThought == "" {
-							// Force Markdown hard line breaks by adding two spaces before newlines
-							hardLineBreakThought := strings.ReplaceAll(msg.thought, "\n", "  \n")
-							rendered, err := m.renderer.Render(hardLineBreakThought)
-							if err == nil && strings.TrimSpace(rendered) != "" {
-								msg.renderedThought = strings.TrimSpace(rendered)
-							} else {
+							if m.renderer == nil {
 								msg.renderedThought = strings.TrimSpace(msg.thought)
+							} else {
+								// Force Markdown hard line breaks by adding two spaces before newlines
+								hardLineBreakThought := strings.ReplaceAll(msg.thought, "\n", "  \n")
+								rendered, err := m.renderer.Render(hardLineBreakThought)
+								if err == nil && strings.TrimSpace(rendered) != "" {
+									msg.renderedThought = strings.TrimSpace(rendered)
+								} else {
+									msg.renderedThought = strings.TrimSpace(msg.thought)
+								}
 							}
 						}
 						msgBuilder.WriteString(dimStyle.Render(" ▾ Thinking (click to collapse)") + "\n")
@@ -1491,11 +1613,15 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 				}
 
 				if msg.renderedText == "" {
-					rendered, err := m.renderer.Render(msg.text)
-					if err == nil && strings.TrimSpace(rendered) != "" {
-						msg.renderedText = strings.TrimSpace(rendered)
-					} else {
+					if m.renderer == nil {
 						msg.renderedText = strings.TrimSpace(msg.text)
+					} else {
+						rendered, err := m.renderer.Render(msg.text)
+						if err == nil && strings.TrimSpace(rendered) != "" {
+							msg.renderedText = strings.TrimSpace(rendered)
+						} else {
+							msg.renderedText = strings.TrimSpace(msg.text)
+						}
 					}
 				}
 				inner = msg.renderedText
@@ -1562,7 +1688,7 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 				Streaming:     true,
 				GroupExpanded: m.streamingGroupExpanded,
 			})
-			content := title + "\n\n" + inner + botStyle.Render(" 🐾")
+			content := title + "\n\n" + inner
 			msgView := botBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n"
 			b.WriteString(msgView)
 			if groupSpan.End > groupSpan.Start {
@@ -1882,6 +2008,8 @@ func (m model) View() string {
 	footerText := "  Esc/Ctrl+C: Quit • /sessions: Pick Session • ↑/↓: Scroll Chat • @: Attach File • Ctrl+T: Thinking/Tools  "
 	if m.state == stateWaiting {
 		footerText = "  Esc: Interrupt Response • ↑/↓: Scroll Chat • Ctrl+T: Thinking/Tools  "
+	} else if m.state == stateStopping {
+		footerText = "  Saving interrupted context... • Ctrl+C: Quit  "
 	} else if m.isAutocompleting && len(m.suggestions) > 0 {
 		footerText = "  Esc: Cancel • ↑/↓: Navigate • Tab/Enter: Select  "
 	}
