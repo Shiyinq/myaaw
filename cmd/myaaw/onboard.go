@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"myaaw"
 	"myaaw/internal/agent"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"os"
@@ -32,7 +33,20 @@ func init() {
 }
 
 func runOnboard(cmd *cobra.Command, args []string) {
-	p := tea.NewProgram(initialOnboardModel(), tea.WithAltScreen())
+	agentName := agentFlag
+	if agentName == "" {
+		agentName = agentdir.DefaultAgentName
+	}
+	if err := agentdir.ValidateName(agentName); err != nil {
+		fmt.Printf("Invalid agent name: %v\n", err)
+		os.Exit(1)
+	}
+	if err := agentdir.EnsureLayout(); err != nil {
+		fmt.Printf("Failed to prepare agent layout: %v\n", err)
+		os.Exit(1)
+	}
+
+	p := tea.NewProgram(initialOnboardModel(agentName), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
@@ -69,6 +83,7 @@ type onboardModel struct {
 
 	// Config Data
 	homeDir    string
+	agentName  string
 	myaawHome  string
 	envFile    string
 	configFile string
@@ -96,22 +111,23 @@ type onboardModel struct {
 	outputChan chan tea.Msg
 }
 
-func initialOnboardModel() onboardModel {
+func initialOnboardModel(agentName string) onboardModel {
 	ti := textinput.New()
 	ti.Focus()
 	ti.CharLimit = 156
 	ti.Width = 40
 
 	home, _ := os.UserHomeDir()
-	myaawHome := filepath.Join(home, ".myaaw")
+	agentRoot := filepath.Join(home, ".myaaw", agentName)
 
 	return onboardModel{
 		step:       stepWelcome,
 		textInput:  ti,
 		homeDir:    home,
-		myaawHome:  myaawHome,
-		envFile:    filepath.Join(myaawHome, ".env"),
-		configFile: filepath.Join(myaawHome, "config", "config.json"),
+		agentName:  agentName,
+		myaawHome:  agentRoot,
+		envFile:    filepath.Join(agentRoot, ".env"),
+		configFile: filepath.Join(agentRoot, "config", "config.json"),
 		choices:    []string{"Yes", "No"}, // Default choices
 		outputChan: make(chan tea.Msg, 10),
 	}
@@ -219,6 +235,15 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stepInitHome:
 		setupMyaawHome(m.myaawHome)
+		if err := agentdir.RewriteLegacyPaths(m.myaawHome, m.agentName); err != nil {
+			m.err = err
+		}
+		if err := agentdir.RegisterAgent(m.agentName); err != nil {
+			m.err = err
+		}
+		if err := agentdir.SetActive(m.agentName); err != nil {
+			m.err = err
+		}
 		if _, err := agent.EnsureWorkspace(); err != nil {
 			m.err = err
 		}
@@ -476,7 +501,7 @@ func (m onboardModel) renderContent() string {
 
 	case stepInitHome:
 		b.WriteString(titleStyle.Render("Initialize Configuration"))
-		b.WriteString(fmt.Sprintf("\n\nDirectory: %s\n\n", m.myaawHome))
+		b.WriteString(fmt.Sprintf("\n\nAgent: %s\nDirectory: %s\n\n", m.agentName, m.myaawHome))
 		b.WriteString(m.renderChoices())
 
 	case stepProviderChoice:
@@ -630,8 +655,16 @@ func (m onboardModel) renderTimeline() string {
 // --- Copied Utilities (Adapted) ---
 
 func setupMyaawHome(targetDir string) {
-	if _, err := os.Stat(targetDir); err == nil {
-		return // Already exists
+	homeReady := false
+	configReady := false
+	if _, err := os.Stat(filepath.Join(targetDir, "home", "AGENTS.md")); err == nil {
+		homeReady = true
+	}
+	if _, err := os.Stat(filepath.Join(targetDir, "config", "config.json")); err == nil {
+		configReady = true
+	}
+	if homeReady && configReady {
+		return // Agent is already initialized
 	}
 	extractEmbedDir(myaaw.DefaultMyaawDir, ".myaaw", targetDir)
 }

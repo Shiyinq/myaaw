@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/agentdir"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,12 +94,10 @@ func (p *PythonTool) CallToolContext(ctx context.Context, arguments string, tctx
 
 	if args.Async {
 		jobID := fmt.Sprintf("job_%d", time.Now().UnixNano())
-		homeDir, err := os.UserHomeDir()
+		resultsDir, err := agentdir.ActiveJobsDir()
 		if err != nil {
-			return fmt.Sprintf("Error getting home dir: %v", err)
+			return fmt.Sprintf("Error resolving agent jobs dir: %v", err)
 		}
-
-		resultsDir := filepath.Join(homeDir, ".myaaw", "jobs")
 		if err := os.MkdirAll(resultsDir, 0755); err != nil {
 			return fmt.Sprintf("Error creating jobs dir: %v", err)
 		}
@@ -139,12 +138,10 @@ func (p *PythonTool) executePython(parent context.Context, args PythonArgs) stri
 	}
 
 	// 1. Check/Setup Virtual Environment
-	homeDir, err := os.UserHomeDir()
+	myaawDir, err := agentdir.ActiveHome()
 	if err != nil {
-		return fmt.Sprintf("Error getting home dir: %v", err)
+		return fmt.Sprintf("Error resolving agent home: %v", err)
 	}
-
-	myaawDir := filepath.Join(homeDir, ".myaaw", "home")
 	if err := os.MkdirAll(myaawDir, 0755); err != nil {
 		return fmt.Sprintf("Error creating myaaw home dir: %v", err)
 	}
@@ -190,6 +187,13 @@ func (p *PythonTool) executePython(parent context.Context, args PythonArgs) stri
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, pythonBin, scriptPath)
+
+	// Expose the active agent root to skills that persist their own data.
+	cmd.Env = os.Environ()
+	if agentRoot, err := agentdir.ActiveRoot(); err == nil {
+		cmd.Env = tools.SetEnv(cmd.Env, "MYAAW_AGENT", agentdir.Active())
+		cmd.Env = tools.SetEnv(cmd.Env, "MYAAW_AGENT_ROOT", agentRoot)
+	}
 
 	// Set Working Directory to myaaw home
 	cmd.Dir = myaawDir

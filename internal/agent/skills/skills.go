@@ -53,10 +53,10 @@ func buildSkillsInstruction(skillsDir string, filter map[string]bool) string {
 	var sb strings.Builder
 	sb.WriteString("\n\n# Agent Skills\n\n")
 	sb.WriteString("You have access to the following skills. You can use the 'filesystem' to read file skill and 'bash' tool to execute script if available.\n")
-	sb.WriteString("To use a skill, you must first read its documentation in the `~/.myaaw/skills/<skill-name>/SKILL.md` file. \nIf skills need user_id, userId, or userID, you must use User ID from the User Info. \n\n")
+	sb.WriteString(fmt.Sprintf("To use a skill, you must first read its documentation in the `%s/<skill-name>/SKILL.md` file. \nIf skills need user_id, userId, or userID, you must use User ID from the User Info. \n\n", skillsDir))
 
 	for _, skill := range skills {
-		sb.WriteString(fmt.Sprintf("- **%s** (`~/.myaaw/skills/%s`): %s\n", skill.displayName, skill.dirName, skill.description))
+		sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s\n", skill.displayName, filepath.Join(skillsDir, skill.dirName), skill.description))
 	}
 
 	return sb.String()

@@ -5,7 +5,8 @@ import datetime
 import time
 
 # Constants
-DATA_DIR = os.path.join(os.path.expanduser("~"), ".myaaw", "database", "cashflow")
+AGENT_ROOT = os.environ.get("MYAAW_AGENT_ROOT") or os.path.join(os.path.expanduser("~"), ".myaaw", "default")
+DATA_DIR = os.path.join(AGENT_ROOT, "database", "cashflow")
 DATA_FILE = os.path.join(DATA_DIR, "cashflow.json")
 
 def ensure_data_dir():

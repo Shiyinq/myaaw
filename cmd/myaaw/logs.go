@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -24,7 +25,7 @@ var (
 var logsCmd = &cobra.Command{
 	Use:   "logs [filter]",
 	Short: "View or stream application logs",
-	Long: `Stream logs from ~/.myaaw/logs/.
+	Long: `Stream logs from the active agent's logs directory.
 
 Modes:
   1. Interactive: Run without arguments to select files from a menu.
@@ -42,12 +43,10 @@ func init() {
 }
 
 func runLogs(cmd *cobra.Command, args []string) {
-	homeDir, err := os.UserHomeDir()
+	logDir, err := agentdir.ActiveLogsDir()
 	if err != nil {
-		log.Fatal("Error getting home directory:", err)
+		log.Fatal("Error resolving log directory:", err)
 	}
-
-	logDir := filepath.Join(homeDir, ".myaaw", "logs")
 	if _, err := os.Stat(logDir); os.IsNotExist(err) {
 		fmt.Printf("No logs found. Directory %s does not exist.\n", logDir)
 		return

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/agentdir"
 )
 
 const toolSchema = `{
@@ -117,38 +118,45 @@ func init() {
 	if err != nil {
 		log.Printf("Warning: Could not get current working directory: %v", err)
 	}
-
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		projectRoot := configureAllowedDirectories(homeDir, cwd)
-		if config.Verbose {
-			log.Printf("FileSystemTool: Allowed directories set to: %v", allowedDirectories)
-			if projectRoot != "" {
-				log.Printf("FileSystemTool: Project detected at %s. Added to allowed paths.", projectRoot)
-			} else {
-				log.Printf("FileSystemTool: Current directory %s does not look like a project. Sandbox restricted to %s", cwd, defaultBaseDir)
-			}
-		}
-	} else {
-		if config.Verbose {
-			log.Printf("Error: Could not determine home directory, sandbox limited.")
-		}
+	if err := ConfigureForActiveAgent(cwd); err != nil {
+		log.Printf("Warning: Could not configure filesystem paths: %v", err)
 	}
 }
 
-// configureAllowedDirectories sets the sandbox roots for the filesystem tool.
-// It always allows Myaaw's home, skills, and internal job-log directories, and
-// adds the detected project root when the process was launched from one.
-func configureAllowedDirectories(homeDir, cwd string) string {
-	myaawHome := filepath.Join(homeDir, ".myaaw", "home")
-	myaawSkills := filepath.Join(homeDir, ".myaaw", "skills")
-	myaawJobs := filepath.Join(homeDir, ".myaaw", "jobs")
+// ConfigureForActiveAgent recomputes the allowed directories for the active
+// agent. Commands call it again after resolving --agent, since package init runs
+// before CLI flags are parsed.
+func ConfigureForActiveAgent(cwd string) error {
+	agentRoot, err := agentdir.ActiveRoot()
+	if err != nil {
+		return err
+	}
 
-	defaultBaseDir = myaawHome
-	allowedDirectories = []string{myaawHome, myaawSkills, myaawJobs}
+	projectRoot := configureAllowedDirectories(agentRoot, cwd)
+	if config.Verbose {
+		log.Printf("FileSystemTool: Allowed directories set to: %v", allowedDirectories)
+		if projectRoot != "" {
+			log.Printf("FileSystemTool: Project detected at %s. Added to allowed paths.", projectRoot)
+		} else {
+			log.Printf("FileSystemTool: Current directory %s does not look like a project. Sandbox restricted to %s", cwd, defaultBaseDir)
+		}
+	}
+	return nil
+}
+
+// configureAllowedDirectories sets the sandbox roots for the filesystem tool.
+// It always allows the agent home, skills, and job-log directories, and adds the
+// detected project root when the process was launched from one.
+func configureAllowedDirectories(agentRoot, cwd string) string {
+	agentHome := filepath.Join(agentRoot, "home")
+	agentSkills := filepath.Join(agentRoot, "skills")
+	agentJobs := filepath.Join(agentRoot, "jobs")
+
+	defaultBaseDir = agentHome
+	allowedDirectories = []string{agentHome, agentSkills, agentJobs}
 
 	projectRoot := detectProjectRoot(cwd)
-	if filepath.Clean(projectRoot) == filepath.Clean(homeDir) {
+	if homeDir, err := os.UserHomeDir(); err == nil && filepath.Clean(projectRoot) == filepath.Clean(homeDir) {
 		// A repository at the user's home directory would otherwise grant
 		// access to the entire home tree. Treat it as a non-project cwd.
 		projectRoot = ""
@@ -245,6 +253,15 @@ func SetProjectDirectory(dir string) error {
 	// was launched there. The agent home, skills, and jobs are already allowed.
 	if homeDir, err := os.UserHomeDir(); err == nil && filepath.Clean(absDir) == filepath.Clean(homeDir) {
 		return fmt.Errorf("refusing to use the user home directory as a project root")
+	}
+
+	// Keep agents isolated: never register another agent's directory as a
+	// project, even if the user launches chat from inside it.
+	if myaawRoot, err := agentdir.MyaawRoot(); err == nil {
+		activeRoot, activeErr := agentdir.ActiveRoot()
+		if activeErr == nil && isWithinBase(myaawRoot, absDir) && !isWithinBase(activeRoot, absDir) {
+			return fmt.Errorf("refusing to use another agent's directory as a project root")
+		}
 	}
 
 	for _, existing := range allowedDirectories {
@@ -481,8 +498,8 @@ func (f *FileSystemTool) truncateAndLog(output string, prefix string) string {
 	const maxOutputSize = 32 * 1024
 	if len(output) > maxOutputSize {
 		logPath := "unknown"
-		if homeDir, err := os.UserHomeDir(); err == nil {
-			logsDir := filepath.Join(homeDir, ".myaaw", "home", ".logs")
+		if homeDir, err := agentdir.ActiveHome(); err == nil {
+			logsDir := filepath.Join(homeDir, ".logs")
 			os.MkdirAll(logsDir, 0755)
 			if tempFile, err := os.CreateTemp(logsDir, fmt.Sprintf("%s-*.log", prefix)); err == nil {
 				tempFile.WriteString(output)

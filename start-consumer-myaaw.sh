@@ -1,29 +1,37 @@
 #!/bin/bash
+# Development helper: build the Myaaw binary once, then run the consumer for
+# one agent. Usage: ./start-consumer-myaaw.sh [agent]
+set -euo pipefail
+
 cd "$(dirname "$0")"
+
+AGENT="${1:-default}"
+if ! [[ "$AGENT" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
+  echo "Invalid agent name: $AGENT"
+  echo "Use only letters, numbers, '_' and '-', starting with a letter or number."
+  exit 1
+fi
 
 mkdir -p tmp
 
-# Kill previous PID if exists
-if [ -f tmp/consumer-myaaw.pid ]; then
-  pkill -P $(cat tmp/consumer-myaaw.pid) || true
-  kill $(cat tmp/consumer-myaaw.pid) || true
-  rm tmp/consumer-myaaw.pid
+PID_FILE="tmp/consumer-myaaw-${AGENT}.pid"
+LOG_FILE="tmp/consumer-myaaw-${AGENT}.log"
+
+# Stop the previous consumer for this agent only.
+if [ -f "$PID_FILE" ]; then
+  OLD_PID="$(cat "$PID_FILE")"
+  pkill -P "$OLD_PID" 2>/dev/null || true
+  kill "$OLD_PID" 2>/dev/null || true
+  rm -f "$PID_FILE"
 fi
+pkill -f "myaaw --agent ${AGENT} consumer run" 2>/dev/null || true
 
-# Fallback cleanup by name
-pkill -f "consumer-myaaw" || true
-pkill -f "myaaw consumer" || true
-
-# Build binary first to avoid 'go run' child process issues
-echo "Building myaaw..."
+# Build once; all agents share the same development binary.
+echo "Building myaaw development binary..."
 go build -o tmp/myaaw ./cmd/myaaw
 
-if [ $? -ne 0 ]; then
-    echo "Build failed! Check logs."
-    exit 1
-fi
-
-echo "Starting consumer..."
-./tmp/myaaw consumer run > tmp/consumer-myaaw.log 2>&1 &
-echo $! > tmp/consumer-myaaw.pid
-echo "Consumer started with PID $(cat tmp/consumer-myaaw.pid)"
+echo "Starting consumer for agent ${AGENT}..."
+./tmp/myaaw --agent "$AGENT" consumer run > "$LOG_FILE" 2>&1 &
+echo $! > "$PID_FILE"
+echo "Consumer agent ${AGENT} started with PID $(cat "$PID_FILE")"
+echo "Logs: $LOG_FILE"

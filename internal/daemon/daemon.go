@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"myaaw/internal/agentdir"
 )
 
 type Manager struct {
@@ -17,14 +19,14 @@ type Manager struct {
 }
 
 func NewManager(name string) (*Manager, error) {
-	home, err := os.UserHomeDir()
+	pidDir, err := agentdir.PIDDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home dir: %w", err)
+		return nil, fmt.Errorf("failed to resolve pid dir: %w", err)
 	}
-
-	baseDir := filepath.Join(home, ".myaaw")
-	pidDir := filepath.Join(baseDir, "pids")
-	logDir := filepath.Join(baseDir, "logs")
+	logDir, err := agentdir.ActiveLogsDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve log dir: %w", err)
+	}
 
 	if err := os.MkdirAll(pidDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create pid dir: %w", err)

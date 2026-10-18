@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"myaaw/internal/agent"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
@@ -50,10 +51,10 @@ func init() {
 }
 
 func runVoiceClassic() {
-	homeDir, _ := os.UserHomeDir()
-
-	// Setup logging
-	logDir := filepath.Join(homeDir, ".myaaw", "logs")
+	logDir, err := agentdir.ActiveLogsDir()
+	if err != nil {
+		log.Fatal("Error resolving log directory:", err)
+	}
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		log.Fatal("Error creating log directory:", err)
 	}
@@ -126,7 +127,7 @@ func runVoiceClassic() {
 		if transcript != nil {
 			sessionName = transcript.SessionName
 		}
-		audioDir = filepath.Join(homeDir, ".myaaw", "logs", "audio", sessionName)
+		audioDir = filepath.Join(logDir, "audio", sessionName)
 		if err := os.MkdirAll(audioDir, 0755); err != nil {
 			log.Printf("Warning: could not create audio dir: %v", err)
 			audioDir = ""
@@ -172,7 +173,7 @@ func runVoiceClassic() {
 		if transcript != nil {
 			sessionName = transcript.SessionName
 		}
-		framesDir = filepath.Join(homeDir, ".myaaw", "logs", "frames", sessionName)
+		framesDir = filepath.Join(logDir, "frames", sessionName)
 		if err := os.MkdirAll(framesDir, 0755); err != nil {
 			log.Printf("Warning: could not create frames dir: %v", err)
 			framesDir = ""

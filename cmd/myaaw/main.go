@@ -10,12 +10,12 @@ import (
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"os"
-	"path/filepath"
 
 	"myaaw/internal/agent"
 	"myaaw/internal/agent/skills"
 	"myaaw/internal/agent/tools"
 	"myaaw/internal/agent/tools/filesystem"
+	"myaaw/internal/agentdir"
 
 	_ "myaaw/internal/agent/tools/bash"
 	_ "myaaw/internal/agent/tools/cron"
@@ -30,6 +30,29 @@ var rootCmd = &cobra.Command{
 	Use:   "myaaw",
 	Short: "Personal AI Assistant",
 	Long:  "😼 A Cat who becomes your personal AI assistant.",
+}
+
+var agentFlag string
+
+func isAgentCommand(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if current.Name() == "agent" {
+			return true
+		}
+	}
+	return false
+}
+
+func startAgentBackgroundLoaders() {
+	tools.ConfigureLogging()
+	skills.ConfigureLogging()
+	go func() {
+		// Log skills state first — it's independent of tool loading and should
+		// appear immediately, even if loading external tools is slow.
+		skills.WatchSkills()
+		tools.LoadExternalTools()
+		tools.WatchExternalTools()
+	}()
 }
 
 func init() {
@@ -51,6 +74,7 @@ func init() {
 	rootCmd.AddCommand(serverRestartCmd)
 
 	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false, "enable verbose logging")
+	rootCmd.PersistentFlags().StringVar(&agentFlag, "agent", "", "agent name to use (defaults to the registry default)")
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		// Add global spacing
@@ -62,22 +86,39 @@ func init() {
 			"version": true,
 			"help":    true,
 			"update":  true,
+			"agent":   true,
 		}
 
-		if metaCommands[cmd.Name()] {
+		if metaCommands[cmd.Name()] || isAgentCommand(cmd) {
 			return nil
 		}
 
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil // Fallback to system env if home unknown
+		if err := agentdir.EnsureLayout(); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  Could not prepare agent layout: %v\n", err)
+			os.Exit(1)
 		}
 
-		myaawPath := filepath.Join(homeDir, ".myaaw")
-		if _, err := os.Stat(myaawPath); os.IsNotExist(err) {
-			fmt.Println("⚠️  Myaaw is not initialized!")
-			fmt.Println("Please run 'myaaw onboard' to setup your configuration and features.")
+		activeAgent, err := agentdir.ResolveActive(agentFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Invalid agent: %v\n", err)
 			os.Exit(1)
+		}
+		if !agentdir.AgentInitialized(activeAgent) && agentFlag == "" {
+			// The registry default may be missing while another agent exists.
+			if names, listErr := agentdir.ListAgents(); listErr == nil && len(names) > 0 {
+				activeAgent = names[0]
+				_ = agentdir.SetActive(activeAgent)
+			}
+		}
+		if !agentdir.AgentInitialized(activeAgent) {
+			fmt.Printf("⚠️  Agent %q is not initialized!\n", activeAgent)
+			fmt.Println("Please run 'myaaw onboard' or 'myaaw agent create <name>' first.")
+			os.Exit(1)
+		}
+
+		cwd, _ := os.Getwd()
+		if err := filesystem.ConfigureForActiveAgent(cwd); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  Could not configure filesystem paths: %v\n", err)
 		}
 
 		// Prepare the workspace before any command runs so it exists even before
@@ -89,21 +130,18 @@ func init() {
 		// Local agent sessions treat their launch directory as the active
 		// project, even when it has no marker files.
 		if cmd.Name() == "chat" || cmd.Name() == "voice-classic" {
-			if cwd, err := os.Getwd(); err == nil {
+			if cwd != "" {
 				if err := filesystem.SetProjectDirectory(cwd); err != nil {
 					fmt.Fprintf(os.Stderr, "⚠️  Could not register current directory as project: %v\n", err)
 				}
 			}
 		}
 
-		// Load and watch external tools asynchronously in the background so CLI commands open instantly
-		go func() {
-			// Log skills state first — it's independent of tool loading and should
-			// appear immediately, even if loading external tools is slow.
-			skills.WatchSkills()
-			tools.LoadExternalTools()
-			tools.WatchExternalTools()
-		}()
+		// Load and watch external tools asynchronously in the background so CLI commands open instantly.
+		// Chat defers this until the agent picker has resolved the active agent.
+		if cmd.Name() != "chat" {
+			startAgentBackgroundLoaders()
+		}
 
 		return nil
 	}

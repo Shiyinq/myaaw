@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/channel"
 	"os"
 	"path/filepath"
@@ -47,12 +48,12 @@ type queueMessage struct {
 }
 
 func (a *CLIAdapter) appendQueue(out *channel.OutgoingMessage) {
-	home, err := os.UserHomeDir()
+	logDir, err := agentdir.ActiveLogsDir()
 	if err != nil {
 		return
 	}
 
-	queuePath := filepath.Join(home, ".myaaw", "logs", "cli_queue.jsonl")
+	queuePath := filepath.Join(logDir, "cli_queue.jsonl")
 	f, err := os.OpenFile(queuePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return

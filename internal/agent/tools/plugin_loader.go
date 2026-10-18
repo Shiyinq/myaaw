@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"myaaw/internal/agentdir"
+
 	"github.com/fsnotify/fsnotify"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -53,13 +55,11 @@ func LoadExternalTools() {
 	}
 	externalMu.Unlock()
 
-	homeDir, err := os.UserHomeDir()
+	toolsDir, err := agentdir.ActiveToolsDir()
 	if err != nil {
-		ToolsLogger.Printf("Failed to get home dir for plugins: %v", err)
+		ToolsLogger.Printf("Failed to resolve tools dir for plugins: %v", err)
 		return
 	}
-
-	toolsDir := filepath.Join(homeDir, ".myaaw", "tools")
 	configPath := filepath.Join(toolsDir, "tools.json")
 
 	// Create directories if they don't exist
@@ -280,13 +280,11 @@ func startMCPServer(ms MCPServerConfig) {
 }
 
 func WatchExternalTools() {
-	homeDir, err := os.UserHomeDir()
+	toolsDir, err := agentdir.ActiveToolsDir()
 	if err != nil {
-		ToolsLogger.Printf("Failed to get home dir for tools watcher: %v", err)
+		ToolsLogger.Printf("Failed to resolve tools dir for watcher: %v", err)
 		return
 	}
-
-	toolsDir := filepath.Join(homeDir, ".myaaw", "tools")
 	configPath := filepath.Join(toolsDir, "tools.json")
 
 	watcher, err := fsnotify.NewWatcher()

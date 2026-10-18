@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log"
 	"myaaw/internal/agent"
+	"myaaw/internal/agent/tools/filesystem"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/channel"
 	cliAdapter "myaaw/internal/channel/cli"
 	"myaaw/internal/cli/theme"
@@ -29,6 +31,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
@@ -41,6 +44,14 @@ var chatCmd = &cobra.Command{
 	Short: "Chat with your AI assistant",
 	Long:  "Start an interactive TUI chat session, or send a one-shot message with -m flag.",
 	Run: func(cmd *cobra.Command, args []string) {
+		if agentFlag == "" && chatMessage == "" {
+			if err := chooseAgentForChat(); err != nil {
+				fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+				os.Exit(1)
+			}
+		}
+
+		startAgentBackgroundLoaders()
 		config.LoadBaseConfig()
 		config.ConnectDatabases()
 
@@ -62,6 +73,66 @@ var chatCmd = &cobra.Command{
 
 func init() {
 	chatCmd.Flags().StringVarP(&chatMessage, "message", "m", "", "Send a one-shot message (non-interactive)")
+}
+
+func chooseAgentForChat() error {
+	names, err := agentdir.ListAgents()
+	if err != nil || len(names) <= 1 {
+		return nil
+	}
+
+	registry, _ := agentdir.LoadRegistry()
+	active := agentdir.Active()
+
+	options := make([]huh.Option[string], 0, len(names))
+	for _, name := range names {
+		label := name
+		if registry != nil && name == registry.Default {
+			label += " (default)"
+		}
+		if name == active {
+			label += " (current)"
+		}
+		options = append(options, huh.NewOption(label, name))
+	}
+
+	selected := active
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Select an agent").
+				Options(options...).
+				Value(&selected),
+		),
+	).Run()
+	if err != nil {
+		return err
+	}
+
+	if err := agentdir.ValidateName(selected); err != nil {
+		return err
+	}
+	if !agentdir.AgentInitialized(selected) {
+		return fmt.Errorf("agent %q does not exist", selected)
+	}
+	if err := agentdir.SetActive(selected); err != nil {
+		return err
+	}
+
+	cwd, _ := os.Getwd()
+	if err := filesystem.ConfigureForActiveAgent(cwd); err != nil {
+		return err
+	}
+	if _, err := agent.EnsureWorkspace(); err != nil {
+		return err
+	}
+	if cwd != "" {
+		if err := filesystem.SetProjectDirectory(cwd); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  %v\n", err)
+		}
+	}
+
+	return nil
 }
 
 func createBotService() (service.BotService, repository.ConversationRepository) {
@@ -524,11 +595,13 @@ func initialModel(botService service.BotService, convRepo repository.Conversatio
 
 	vp.SetContent(placeholder)
 
-	home, _ := os.UserHomeDir()
-	queuePath := filepath.Join(home, ".myaaw", "logs", "cli_queue.jsonl")
+	logDir, err := agentdir.ActiveLogsDir()
 	var initialSize int64
-	if stat, err := os.Stat(queuePath); err == nil {
-		initialSize = stat.Size()
+	if err == nil {
+		queuePath := filepath.Join(logDir, "cli_queue.jsonl")
+		if stat, statErr := os.Stat(queuePath); statErr == nil {
+			initialSize = stat.Size()
+		}
 	}
 
 	// Session will be created lazily by the service layer on first message send
@@ -1136,8 +1209,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case queueTickMsg:
-		home, _ := os.UserHomeDir()
-		queuePath := filepath.Join(home, ".myaaw", "logs", "cli_queue.jsonl")
+		logDir, err := agentdir.ActiveLogsDir()
+		if err != nil {
+			return m, queueTickCmd()
+		}
+		queuePath := filepath.Join(logDir, "cli_queue.jsonl")
 		stat, err := os.Stat(queuePath)
 		if err == nil && stat.Size() > m.queueFileSize {
 			f, err := os.Open(queuePath)
@@ -2003,7 +2079,7 @@ func (m model) View() string {
 		return m.renderModelPicker()
 	}
 
-	header := headerStyle.Render(" 🐾 MYAAW CHAT 🐾 ")
+	header := headerStyle.Render(fmt.Sprintf(" 🐾 MYAAW CHAT · %s 🐾 ", agentdir.Active()))
 
 	footerText := "  Esc/Ctrl+C: Quit • /sessions: Pick Session • ↑/↓: Scroll Chat • @: Attach File • Ctrl+T: Thinking/Tools  "
 	if m.state == stateWaiting {
@@ -2122,12 +2198,11 @@ func (m model) View() string {
 }
 
 func runInteractive(botService service.BotService, convRepo repository.ConversationRepository, adapter *cliAdapter.CLIAdapter) {
-	homeDir, err := os.UserHomeDir()
+	logDir, err := agentdir.ActiveLogsDir()
 	if err != nil {
-		log.Fatal("Error getting home directory:", err)
+		log.Fatal("Error resolving agent log directory:", err)
 	}
 
-	logDir := filepath.Join(homeDir, ".myaaw", "logs")
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		log.Fatal("Error creating log directory:", err)
 	}
