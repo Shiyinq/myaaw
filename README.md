@@ -171,6 +171,12 @@ graph TD
      - `MEMORY.md` & `memory/`: Historical conversation summarizations and logs.
      - `workspace/`: All agent-created output. Coding projects live in `workspace/projects/` and downloads in `workspace/downloads/`; the home root stays reserved for identity and memory files.
 
+### CLI Project Context
+
+When `myaaw chat` or `myaaw voice-classic` starts, Myaaw injects the directory it was launched from as `## Current Directory` in the system prompt. The agent can therefore work on an existing project in place without copying it into `workspace/`.
+
+Telegram and Discord sessions do not receive the server's working directory. New projects and downloads always go to `~/.myaaw/home/workspace/`.
+
 ## 🚀 Quick Start (Non-Technical)
 
 If you just want to use Myaaw without worrying about code, use our interactive installer script!

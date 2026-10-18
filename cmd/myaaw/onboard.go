@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"myaaw"
+	"myaaw/internal/agent"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"os"
@@ -218,6 +219,9 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stepInitHome:
 		setupMyaawHome(m.myaawHome)
+		if _, err := agent.EnsureWorkspace(); err != nil {
+			m.err = err
+		}
 		m.step = stepProviderChoice
 		m.cursor = 0
 		m.choices = []string{"OpenAI", "Gemini"}
@@ -409,7 +413,7 @@ func (m onboardModel) saveConfig() {
 	}
 	baseURL := ""
 	apiKey := m.llmKey
-	
+
 	cfg.DefaultProvider = m.providerChoice
 	cfg.Providers[m.providerChoice] = config.ProviderConfig{
 		Type:    m.providerChoice,

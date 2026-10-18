@@ -10,7 +10,10 @@ import (
 func TestEnsureWorkspaceCreatesDirectoryTree(t *testing.T) {
 	homeDir := t.TempDir()
 
-	workspaceDir := ensureWorkspace(homeDir)
+	workspaceDir, err := ensureWorkspace(homeDir)
+	if err != nil {
+		t.Fatalf("ensureWorkspace() error = %v", err)
+	}
 
 	if want := filepath.Join(homeDir, workspaceDirName); workspaceDir != want {
 		t.Fatalf("ensureWorkspace() = %q, want %q", workspaceDir, want)
@@ -29,6 +32,10 @@ func TestEnsureWorkspaceCreatesDirectoryTree(t *testing.T) {
 			t.Fatalf("expected %s to be a directory", dir)
 		}
 	}
+
+	if _, err := ensureWorkspace(""); err == nil {
+		t.Error("expected an error for an empty home directory")
+	}
 }
 
 func TestSystemPromptIncludesWorkspacePaths(t *testing.T) {
@@ -41,16 +48,20 @@ func TestSystemPromptIncludesWorkspacePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	workspaceDir, err := ensureWorkspace(homeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	builder := &SystemPromptBuilder{
 		userID:       42,
 		channelName:  "test",
 		homeDir:      homeDir,
-		workspaceDir: ensureWorkspace(homeDir),
+		workspaceDir: workspaceDir,
 	}
 
 	prompt := builder.Build()
 
-	workspaceDir := filepath.Join(homeDir, workspaceDirName)
 	required := []string{
 		"## Workspace",
 		"Workspace root: " + workspaceDir,
@@ -100,6 +111,43 @@ func TestSystemPromptIncludesCurrentDirectory(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("system prompt missing %q\n\n%s", want, prompt)
 		}
+	}
+}
+
+func TestNewSystemPromptBuilderCapturesLocalDirectory(t *testing.T) {
+	myaawDir := t.TempDir()
+
+	builder := newSystemPromptBuilder(7, "cli", func() (string, error) {
+		return "/Users/example/my-project", nil
+	}, func() (string, error) {
+		return myaawDir, nil
+	})
+
+	if builder.currentDir != "/Users/example/my-project" {
+		t.Fatalf("currentDir = %q, want %q", builder.currentDir, "/Users/example/my-project")
+	}
+
+	projectsDir := filepath.Join(myaawDir, "home", workspaceDirName, "projects")
+	if info, err := os.Stat(projectsDir); err != nil || !info.IsDir() {
+		t.Fatalf("expected workspace projects directory at %s: %v", projectsDir, err)
+	}
+}
+
+func TestNewSystemPromptBuilderOmitsRemoteDirectory(t *testing.T) {
+	getwdCalled := false
+
+	builder := newSystemPromptBuilder(7, "telegram", func() (string, error) {
+		getwdCalled = true
+		return "/server/cwd", nil
+	}, func() (string, error) {
+		return t.TempDir(), nil
+	})
+
+	if getwdCalled {
+		t.Error("getwd should not be called for remote channels")
+	}
+	if builder.currentDir != "" {
+		t.Errorf("currentDir = %q, want empty", builder.currentDir)
 	}
 }
 

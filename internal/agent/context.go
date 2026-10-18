@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -39,15 +40,22 @@ type SystemPromptBuilder struct {
 }
 
 func NewSystemPromptBuilder(userID int64, channelName string) *SystemPromptBuilder {
-	// Ensure .myaaw exists in home directory
-	myaawPath, err := EnsureMyaawConfig()
+	return newSystemPromptBuilder(userID, channelName, os.Getwd, EnsureMyaawConfig)
+}
+
+func newSystemPromptBuilder(userID int64, channelName string, getwd func() (string, error), ensureConfig func() (string, error)) *SystemPromptBuilder {
+	myaawPath, err := ensureConfig()
 	homeDir := ""
 	workspaceDir := ""
 	if err == nil {
 		homeDir = filepath.Join(myaawPath, "home")
-		workspaceDir = ensureWorkspace(homeDir)
+		var workspaceErr error
+		workspaceDir, workspaceErr = ensureWorkspace(homeDir)
+		if workspaceErr != nil {
+			log.Printf("Error creating agent workspace: %v", workspaceErr)
+		}
 	} else {
-		fmt.Printf("Error ensuring .myaaw config: %v\n", err)
+		log.Printf("Error ensuring .myaaw config: %v", err)
 	}
 
 	// Local sessions run inside the user's project directory. Remote channels
@@ -55,8 +63,10 @@ func NewSystemPromptBuilder(userID int64, channelName string) *SystemPromptBuild
 	// project context, so it is intentionally omitted for them.
 	currentDir := ""
 	if isLocalChannel(channelName) {
-		if wd, err := os.Getwd(); err == nil {
+		if wd, err := getwd(); err == nil {
 			currentDir = wd
+		} else {
+			log.Printf("Error getting current directory: %v", err)
 		}
 	}
 
@@ -162,12 +172,23 @@ func isLocalChannel(channelName string) bool {
 	}
 }
 
+// EnsureWorkspace prepares the agent workspace under ~/.myaaw/home and returns
+// its absolute path. It is safe to call repeatedly, so onboarding and command
+// startup can use it to make the workspace visible before the first request.
+func EnsureWorkspace() (string, error) {
+	myaawPath, err := EnsureMyaawConfig()
+	if err != nil {
+		return "", err
+	}
+	return ensureWorkspace(filepath.Join(myaawPath, "home"))
+}
+
 // ensureWorkspace creates the workspace directory tree and returns its path.
 // The workspace is the only location where the agent should create generated
 // projects and downloads. It lives inside the allowed filesystem root.
-func ensureWorkspace(homeDir string) string {
+func ensureWorkspace(homeDir string) (string, error) {
 	if homeDir == "" {
-		return ""
+		return "", fmt.Errorf("agent home directory is empty")
 	}
 
 	workspaceDir := filepath.Join(homeDir, workspaceDirName)
@@ -179,12 +200,11 @@ func ensureWorkspace(homeDir string) string {
 
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			fmt.Printf("Error creating workspace directory %s: %v\n", dir, err)
-			return workspaceDir
+			return workspaceDir, fmt.Errorf("create workspace directory %s: %w", dir, err)
 		}
 	}
 
-	return workspaceDir
+	return workspaceDir, nil
 }
 
 func (b *SystemPromptBuilder) readContent(fileName string) string {

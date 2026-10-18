@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"myaaw/internal/agent"
 	"myaaw/internal/agent/skills"
 	"myaaw/internal/agent/tools"
 
@@ -77,6 +78,12 @@ func init() {
 			fmt.Println("⚠️  Myaaw is not initialized!")
 			fmt.Println("Please run 'myaaw onboard' to setup your configuration and features.")
 			os.Exit(1)
+		}
+
+		// Prepare the workspace before any command runs so it exists even before
+		// the first agent request.
+		if _, err := agent.EnsureWorkspace(); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  Could not prepare agent workspace: %v\n", err)
 		}
 
 		// Load and watch external tools asynchronously in the background so CLI commands open instantly

@@ -471,6 +471,14 @@ Neither channel adds new configuration. Both use:
 - `bot.stream` / `STREAM_RESPONSE` to select streaming;
 - `bot.watermark` for the final-answer watermark.
 
+### 10.6 System prompt context
+
+`agent.SystemPromptBuilder` rebuilds the system message for each request from `~/.myaaw/home`:
+
+- It always injects the absolute `workspace/` paths.
+- For local sessions (`cli`, `voice-classic`), it injects the launch directory as `## Current Directory`.
+- For remote channels (`telegram`, `discord`), it omits the server process working directory because it is not user project context.
+
 ---
 
 ## 11. Configuration
