@@ -188,6 +188,16 @@ func (d *DiscordAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(
 	mainMessageID := ""
 
 	err = streamFn(func(chunk channel.StreamChunk) {
+		if chunk.Kind == "final" {
+			streamingContent = chunk.Text
+			if chunk.Thought != "" {
+				streamingThought = chunk.Thought
+			}
+			contentOffset = 0
+			thoughtOffset = 0
+			return
+		}
+
 		loading := "✨ Typing..."
 
 		if len(chunk.ToolCalls) > 0 {

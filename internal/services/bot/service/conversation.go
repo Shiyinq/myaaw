@@ -1,126 +1,135 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"log"
+	"strings"
+
 	"myaaw/internal/agent"
 	"myaaw/internal/agent/skills"
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
-	"strings"
 )
 
 func (r *BotServiceImpl) conversation(user *model.User, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
-	messages := r.buildConversationMessages(user, msg)
-	context := r.contextWindow(messages)
-
-	res, err := r.agent.Run(user.Model, context)
-	if err != nil {
-		return nil, err
-	}
-
-	content := res.Content.(string)
-	response := provider.Message{
-		Role:    "assistant",
-		Content: content,
-		Trace:   res.Trace,
-		Usage:   res.Usage,
-		Thought: res.Thought,
-	}
-
-	if err := r.updateUserMessages(msg, messages, response); err != nil {
-		return nil, err
-	}
-
-	return &channel.OutgoingMessage{
-		Text:    content,
-		Trace:   response.Trace,
-		Usage:   response.Usage,
-		Thought: response.Thought,
-	}, nil
+	return r.runConversation(context.Background(), user, msg, nil)
 }
 
 func (r *BotServiceImpl) conversationStream(user *model.User, msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
+	return r.runConversation(context.Background(), user, msg, onChunk)
+}
+
+func (r *BotServiceImpl) conversationContext(ctx context.Context, user *model.User, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
+	return r.runConversation(ctx, user, msg, nil)
+}
+
+func (r *BotServiceImpl) conversationStreamContext(ctx context.Context, user *model.User, msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
+	return r.runConversation(ctx, user, msg, onChunk)
+}
+
+func (r *BotServiceImpl) runConversation(
+	ctx context.Context,
+	user *model.User,
+	msg *channel.IncomingMessage,
+	onChunk func(channel.StreamChunk),
+) (*channel.OutgoingMessage, error) {
 	messages := r.buildConversationMessages(user, msg)
-	context := r.contextWindow(messages)
 
-	streamingContent := ""
-	var traceSteps []provider.ReactStep
-	var finalUsage provider.Usage
-	var thought string
+	cfg := agent.DefaultRunConfig(user.Model)
+	cfg.ContextMaxTokens = config.AgentContextMaxTokens
 
-	err := r.agent.RunStream(user.Model, context, func(partial provider.Message) error {
-		chunk := channel.StreamChunk{
-			ToolCalls: partial.ToolCalls,
-			Trace:     partial.Trace,
-			Usage:     partial.Usage,
+	result, runErr := r.agent.RunEvents(ctx, cfg, messages, func(event agent.AgentEvent) error {
+		if onChunk == nil {
+			return nil
 		}
-
-		if partial.Usage.TotalTokens > 0 {
-			finalUsage = partial.Usage
+		switch event.Type {
+		case agent.EventMessageUpdate:
+			if event.Delta != "" {
+				onChunk(channel.StreamChunk{Kind: "text", Text: event.Delta})
+			}
+			if event.ThinkingDelta != "" {
+				onChunk(channel.StreamChunk{Kind: "thought", Thought: event.ThinkingDelta})
+			}
+		case agent.EventToolExecutionStart:
+			onChunk(channel.StreamChunk{
+				Kind:       "tool",
+				ToolCallID: event.ToolCallID,
+				ToolCalls: []provider.ToolCall{{
+					ID:   event.ToolCallID,
+					Type: "function",
+					Function: provider.FunctionCall{
+						Name: event.ToolName,
+					},
+				}},
+			})
+		case agent.EventToolExecutionEnd:
+			if event.ToolResult != nil {
+				onChunk(channel.StreamChunk{
+					Kind:       "tool_result",
+					ToolCallID: event.ToolCallID,
+					IsError:    event.ToolResult.IsError,
+				})
+			}
+		case agent.EventTraceUpdate:
+			if len(event.Trace) > 0 {
+				onChunk(channel.StreamChunk{Kind: "trace", Trace: event.Trace})
+			}
+		case agent.EventUsage:
+			if event.Usage.TotalTokens > 0 {
+				onChunk(channel.StreamChunk{Kind: "usage", Usage: event.Usage})
+			}
 		}
-
-		if partial.Thought != "" {
-			text := partial.Thought
-			chunk.Thought = text
-			thought += text
-		}
-
-		if partial.Content != nil {
-			text := partial.Content.(string)
-			streamingContent += text
-			chunk.Text = text
-		}
-
-		if len(partial.Trace) > 0 {
-			traceSteps = partial.Trace
-		}
-
-		onChunk(chunk)
 		return nil
 	})
 
-	if err != nil {
-		return nil, err
+	finalText := provider.MessageText(result.Final)
+	if finalText == "" && result.StopReason == provider.StopMaxIterations {
+		finalText = agent.MaxIterationsMessage
+	}
+	if finalText == "" && result.Err != nil {
+		finalText = "⚠️ Agent error: " + result.Err.Error()
 	}
 
-	response := provider.Message{
-		Role:    "assistant",
-		Content: streamingContent,
-		Trace:   traceSteps,
-		Usage:   finalUsage,
-		Thought: thought,
+	out := &channel.OutgoingMessage{
+		Text:    finalText,
+		Trace:   result.Final.Trace,
+		Usage:   result.Usage,
+		Thought: result.Final.Thought,
 	}
 
-	if err := r.updateUserMessages(msg, messages, response); err != nil {
-		return nil, err
+	// Tell streaming consumers which text is the final answer. Intermediate
+	// assistant text (before tool calls) must not be persisted or displayed as
+	// the final message.
+	if onChunk != nil {
+		onChunk(channel.StreamChunk{
+			Kind:    "final",
+			Text:    finalText,
+			Trace:   result.Final.Trace,
+			Usage:   result.Usage,
+			Thought: result.Final.Thought,
+		})
 	}
 
-	return &channel.OutgoingMessage{
-		Text:    streamingContent,
-		Trace:   traceSteps,
-		Usage:   finalUsage,
-		Thought: thought,
-	}, nil
-}
-
-func (r *BotServiceImpl) contextWindow(history []provider.Message) []provider.Message {
-	total := 10
-
-	if total >= len(history) {
-		total = len(history) - 1
+	skipPersistence := msg.TriggerType == "heartbeat" && strings.TrimSpace(finalText) == "HEARTBEAT_OK"
+	if !skipPersistence {
+		if err := r.saveConversation(user, msg, result.Transcript); err != nil {
+			return nil, err
+		}
 	}
 
-	context := make([]provider.Message, total+1)
-	context[0] = history[0]
-
-	for i := 1; i <= total; i++ {
-		context[i] = history[len(history)-total+i-1]
+	if runErr != nil {
+		if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
+			return out, runErr
+		}
+		// Provider errors are already surfaced in finalText; keep the partial
+		// result and transcript instead of discarding them.
+		log.Printf("Agent run ended with %s: %v", result.StopReason, runErr)
 	}
 
-	return context
+	return out, nil
 }
 
 func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channel.IncomingMessage) []provider.Message {
@@ -130,6 +139,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		{
 			Role:    "system",
 			Content: userSystem,
+			Version: 2,
 		},
 	}
 
@@ -148,17 +158,12 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 
 	var convMessages []provider.Message
 	if err == nil && conv != nil {
-		convMessages = conv.Messages
+		convMessages = agent.MigrateLegacyTranscript(conv.Messages)
 		msg.ConversationID = conv.Id
 	} else {
-		title, err := r.GenerateConversationTitle(user, messages)
-		if err != nil {
-			title = "New Chat"
-		}
-
-		conv, err := r.conversationRepo.CreateConversation(user.UserId, title)
+		conv, err := r.conversationRepo.CreateConversation(user.UserId, "New Chat")
 		if err == nil {
-			convMessages = conv.Messages
+			convMessages = agent.MigrateLegacyTranscript(conv.Messages)
 			msg.ConversationID = conv.Id
 		} else {
 			convMessages = []provider.Message{}
@@ -166,11 +171,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 	}
 
 	messages = append(messages, convMessages...)
-
-	// Build user message from generic IncomingMessage
-	newMessage := r.buildUserMessage(msg)
-	messages = append(messages, newMessage)
-
+	messages = append(messages, r.buildUserMessage(msg))
 	return messages
 }
 
@@ -187,68 +188,46 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 		text = "[SYSTEM TRIGGER: SUB-AGENT RESULT]\n(NOTE: The user does NOT see this trigger message. A background sub-agent has completed its task. Review its report below, inform the user about the completion, and summarize the key findings/results. If you started multiple sub-agents, check the batch progress.)\n\n" + text
 	}
 
-	// Voice: text is already transcribed by channel adapter
-	// Text with reply context
 	if msg.ReplyTo != "" {
 		text = text + "\n\ncontex:\n" + msg.ReplyTo
-		return provider.Message{
-			Role:    role,
-			Content: text,
-		}
+		return provider.Message{Role: role, Content: text, Version: 2}
 	}
 
-	// Image message
 	if len(msg.Images) > 0 {
 		providerName := r.llmProvider.ProviderName()
 		isOpenAI := providerName == "openai"
 		isGroq := providerName == "groq"
 
 		if isOpenAI || isGroq {
-			// Type 2: content items with image_url
-			contentItems := []provider.ContentItem{
-				{
-					Type: "text",
-					Text: text,
-				},
-			}
+			contentItems := []provider.ContentItem{{Type: "text", Text: text}}
 			for _, img := range msg.Images {
 				contentItems = append(contentItems, provider.ContentItem{
-					Type: "image_url",
-					ImageURL: &provider.ImageInfo{
-						URL: "data:image/jpeg;base64," + img,
-					},
+					Type:     "image_url",
+					ImageURL: &provider.ImageInfo{URL: "data:image/jpeg;base64," + img},
 				})
 			}
-			return provider.Message{
-				Role:    role,
-				Content: contentItems,
-			}
+			return provider.Message{Role: role, Content: contentItems, Version: 2}
 		}
 
-		// Type 1: images array (Ollama, Gemini)
-		return provider.Message{
-			Role:    role,
-			Content: text,
-			Images:  msg.Images,
-		}
+		return provider.Message{Role: role, Content: text, Images: msg.Images, Version: 2}
 	}
 
-	// Plain text
-	return provider.Message{
-		Role:    role,
-		Content: text,
-	}
+	return provider.Message{Role: role, Content: text, Version: 2}
 }
 
-func (r *BotServiceImpl) updateUserMessages(msg *channel.IncomingMessage, messages []provider.Message, response provider.Message) error {
-	if msg.TriggerType == "heartbeat" {
-		if contentStr, ok := response.Content.(string); ok && strings.TrimSpace(contentStr) == "HEARTBEAT_OK" {
-			return nil
-		}
+func (r *BotServiceImpl) saveConversation(user *model.User, msg *channel.IncomingMessage, transcript []provider.Message) error {
+	start := 0
+	for start < len(transcript) && transcript[start].Role == "system" {
+		start++
 	}
-
-	messages = append(messages, response)
-	messages = messages[1:] // exclude system message
+	messages := make([]provider.Message, len(transcript)-start)
+	copy(messages, transcript[start:])
+	for i := range messages {
+		messages[i].Version = 2
+	}
+	if len(messages) == 0 {
+		return nil
+	}
 
 	var conv *model.Conversation
 	var err error
@@ -258,86 +237,22 @@ func (r *BotServiceImpl) updateUserMessages(msg *channel.IncomingMessage, messag
 	if conv == nil {
 		conv, err = r.conversationRepo.GetActiveConversationByUserId(msg.UserID)
 	}
-	if err != nil && conv != nil {
+	if err != nil && conv == nil {
 		return err
 	}
-
-	if conv != nil && conv.Id != "" {
-		convId := conv.Id
-		title := ""
-		if conv.Title == "" || conv.Title == "New Chat" {
-			user, err := r.userRepo.GetUserById(msg.UserID)
-			if err != nil {
-				return err
-			}
-			title, err = r.GenerateConversationTitle(user, messages)
-			if err != nil {
-				return err
-			}
-		}
-		return r.conversationRepo.UpdateConversationById(convId, messages, title)
-	}
-
-	return nil
-}
-
-func (r *BotServiceImpl) factoryChat(user *model.User, messages []provider.Message) (provider.Message, error) {
-	log.Println("Processing incoming message")
-	if config.StreamResponse {
-		log.Println("Starting content streaming")
-		return r.chatStream(user, messages)
-	}
-	return r.chat(user, messages)
-}
-
-func (r *BotServiceImpl) chat(user *model.User, messages []provider.Message) (provider.Message, error) {
-	res, err := r.agent.Run(user.Model, messages)
-	if err != nil {
-		return provider.Message{}, err
-	}
-
-	content := res.Content.(string)
-	return provider.Message{
-		Role:    "assistant",
-		Content: content,
-		Trace:   res.Trace,
-		Usage:   res.Usage,
-	}, nil
-}
-
-func (r *BotServiceImpl) chatStream(user *model.User, messages []provider.Message) (provider.Message, error) {
-	streamingContent := ""
-	var traceSteps []provider.ReactStep
-	var finalUsage provider.Usage
-
-	err := r.agent.RunStream(user.Model, messages, func(partial provider.Message) error {
-		if partial.Usage.TotalTokens > 0 {
-			finalUsage = partial.Usage
-		}
-
-		if partial.ToolCalls != nil {
-			// Tool calls are handled by agent loop, nothing to collect here for content
-		} else if partial.Content != nil {
-			streamingContent += partial.Content.(string)
-		}
-
-		if len(partial.Trace) > 0 {
-			traceSteps = partial.Trace
-		}
-
+	if conv == nil || conv.Id == "" {
 		return nil
-	})
-
-	if err != nil {
-		return provider.Message{}, err
 	}
 
-	return provider.Message{
-		Role:    "assistant",
-		Content: streamingContent,
-		Trace:   traceSteps,
-		Usage:   finalUsage,
-	}, nil
+	title := ""
+	if conv.Title == "" || conv.Title == "New Chat" {
+		title, err = r.GenerateConversationTitle(user, messages)
+		if err != nil {
+			log.Printf("Failed to generate conversation title: %v", err)
+			title = ""
+		}
+	}
+	return r.conversationRepo.UpdateConversationById(conv.Id, messages, title)
 }
 
 func (r *BotServiceImpl) GenerateConversationTitle(user *model.User, messages []provider.Message) (string, error) {

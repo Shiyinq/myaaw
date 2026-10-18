@@ -1,11 +1,8 @@
 package provider
 
 import (
-	"bufio"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
-	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -39,20 +36,31 @@ type OpenAIUsage struct {
 	CompletionTokensDetails OpenAICompletionTokensDetails `json:"completion_tokens_details"`
 }
 
+type OpenAIGroqUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+type OpenAIGroqMeta struct {
+	Usage *OpenAIGroqUsage `json:"usage"`
+}
+
 type OpenAIChatCompletion struct {
-	ID                string         `json:"id"`
-	Object            string         `json:"object"`
-	Created           int64          `json:"created"`
-	Model             string         `json:"model"`
-	SystemFingerprint string         `json:"system_fingerprint"`
-	Choices           []OpenAIChoice `json:"choices"`
-	Usage             OpenAIUsage    `json:"usage"`
+	ID                string          `json:"id"`
+	Object            string          `json:"object"`
+	Created           int64           `json:"created"`
+	Model             string          `json:"model"`
+	SystemFingerprint string          `json:"system_fingerprint"`
+	Choices           []OpenAIChoice  `json:"choices"`
+	Usage             OpenAIUsage     `json:"usage"`
+	XGroq             *OpenAIGroqMeta `json:"x_groq,omitempty"`
 }
 
 type OpenAIRequest struct {
-	Model      string                   `json:"model"`
-	Messages   []OpenAIMessage          `json:"messages"`
-	Stream     bool                     `json:"stream"`
+	Model         string                   `json:"model"`
+	Messages      []OpenAIMessage          `json:"messages"`
+	Stream        bool                     `json:"stream"`
 	Tools         []map[string]interface{} `json:"tools,omitempty"`
 	ToolChoice    string                   `json:"tool_choice,omitempty"`
 	StreamOptions *OpenAIStreamOptions     `json:"stream_options,omitempty"`
@@ -63,7 +71,7 @@ type OpenAIStreamOptions struct {
 }
 
 func messagesToOpenAIMessages(messages []Message) []OpenAIMessage {
-	var openAIMessages []OpenAIMessage
+	openAIMessages := make([]OpenAIMessage, 0, len(messages))
 	for _, m := range messages {
 		openAIMessages = append(openAIMessages, OpenAIMessage{
 			Role:             m.Role,
@@ -125,191 +133,31 @@ func (o *OpenAIProvider) DefaultModel(modelName string) string {
 	return modelName
 }
 
-func (o *OpenAIProvider) buildRequest(modelName string, messages []Message, stream bool, toolsList []map[string]interface{}) OpenAIRequest {
-	req := OpenAIRequest{
-		Model:    o.DefaultModel(modelName),
-		Messages: messagesToOpenAIMessages(messages),
-		Stream:   stream,
+func (o *OpenAIProvider) config() openAICompatConfig {
+	return openAICompatConfig{
+		baseURL:      o.baseURL,
+		apiKey:       o.apiKey,
+		defaultModel: o.defaultModel,
+		includeUsage: true,
 	}
-
-	if stream {
-		req.StreamOptions = &OpenAIStreamOptions{
-			IncludeUsage: true,
-		}
-	}
-
-	if len(toolsList) > 0 {
-		req.Tools = toolsList
-		req.ToolChoice = "auto"
-	}
-	
-	return req
 }
 
 func (o *OpenAIProvider) Chat(modelName string, messages []Message, toolsList []map[string]interface{}) (Message, error) {
-	client := resty.New()
-	client.SetTimeout(120 * time.Second)
-
-	request := o.buildRequest(modelName, messages, false, toolsList)
-
-	var response OpenAIChatCompletion
-	res, _ := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
-		SetBody(request).
-		SetResult(&response).
-		Post(o.baseURL + "/v1/chat/completions")
-
-	if res.StatusCode() != 200 {
-		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
-	}
-
-	if len(response.Choices) == 0 {
-		return Message{}, fmt.Errorf("no choices returned from OpenAI")
-	}
-
-	msg := openAIMessageToMessage(response.Choices[0].Message)
-	if response.Usage.TotalTokens > 0 {
-		msg.Usage = Usage{
-			PromptTokens:     response.Usage.PromptTokens,
-			CompletionTokens: response.Usage.CompletionTokens,
-			TotalTokens:      response.Usage.TotalTokens,
-			ThoughtsTokens:   response.Usage.CompletionTokensDetails.ReasoningTokens,
-		}
-	}
-
-	return msg, nil
+	return chatOpenAICompatible(context.Background(), o.config(), modelName, messages, toolsList)
 }
+
 func (o *OpenAIProvider) ChatStream(modelName string, messages []Message, callback func(Message) error, toolsList []map[string]interface{}) error {
-	if modelName == "" {
-		modelName = o.DefaultModel(modelName)
-	}
+	return chatStreamFromEvents(context.Background(), o, modelName, messages, toolsList, callback)
+}
 
-	request := o.buildRequest(modelName, messages, true, toolsList)
-
-	client := resty.New()
-	client.SetTimeout(120 * time.Second)
-
-	res, _ := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
-		SetBody(request).
-		SetDoNotParseResponse(true).
-		Post(o.baseURL + "/v1/chat/completions")
-
-	defer res.RawBody().Close()
-
-	reader := bufio.NewReader(res.RawBody())
-	var response OpenAIChatCompletion
-	var accumulatedMessage OpenAIMessage
-	accumulatedMessage.Role = "assistant"
-
-	for {
-		line, err := reader.ReadString('\n')
-
-		if res.StatusCode() != 200 {
-			return fmt.Errorf("error fetching stream response: %v", string(line))
-		}
-
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return fmt.Errorf("error reading stream: %w", err)
-		}
-
-		line = strings.TrimSpace(line)
-		if line == "[DONE]" {
-			break
-		}
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		jsonData := strings.TrimPrefix(line, "data: ")
-		if jsonData == "[DONE]" {
-			break
-		}
-
-		response = OpenAIChatCompletion{}
-		err = json.Unmarshal([]byte(jsonData), &response)
-		if err != nil {
-			return fmt.Errorf("error unmarshalling stream data: %w", err)
-		}
-
-		if len(response.Choices) > 0 {
-			partialMessage := response.Choices[0].Delta
-
-			if len(partialMessage.ToolCalls) > 0 {
-				for _, tcDelta := range partialMessage.ToolCalls {
-					idx := 0
-					if tcDelta.Index != nil {
-						idx = *tcDelta.Index
-					}
-					for len(accumulatedMessage.ToolCalls) <= idx {
-						accumulatedMessage.ToolCalls = append(accumulatedMessage.ToolCalls, ToolCall{})
-					}
-					if tcDelta.ID != "" {
-						accumulatedMessage.ToolCalls[idx].ID = tcDelta.ID
-					}
-					if tcDelta.Type != "" {
-						accumulatedMessage.ToolCalls[idx].Type = tcDelta.Type
-					}
-					if tcDelta.Function.Name != "" {
-						accumulatedMessage.ToolCalls[idx].Function.Name = tcDelta.Function.Name
-					}
-					if tcDelta.Function.Arguments != nil {
-						if argStr, ok := tcDelta.Function.Arguments.(string); ok {
-							currArg, _ := accumulatedMessage.ToolCalls[idx].Function.Arguments.(string)
-							accumulatedMessage.ToolCalls[idx].Function.Arguments = currArg + argStr
-						}
-					}
-				}
-			}
-
-			hasContent := partialMessage.Content != nil && partialMessage.Content != ""
-			hasReasoning := partialMessage.ReasoningContent != ""
-
-			if hasContent || hasReasoning {
-				err = callback(openAIMessageToMessage(partialMessage))
-				if err != nil {
-					return fmt.Errorf("error in callback: %w", err)
-				}
-			}
-		}
-
-		if len(response.Choices) > 0 {
-			if response.Choices[0].FinishReason == "tool_calls" {
-				err = callback(openAIMessageToMessage(accumulatedMessage))
-				if err != nil {
-					return fmt.Errorf("error in callback for tool calls: %w", err)
-				}
-			}
-		}
-
-		if response.Usage.TotalTokens > 0 {
-			msg := Message{
-				Usage: Usage{
-					PromptTokens:     response.Usage.PromptTokens,
-					CompletionTokens: response.Usage.CompletionTokens,
-					TotalTokens:      response.Usage.TotalTokens,
-					ThoughtsTokens:   response.Usage.CompletionTokensDetails.ReasoningTokens,
-				},
-			}
-			err = callback(msg)
-			if err != nil {
-				return fmt.Errorf("error in callback for usage: %w", err)
-			}
-		}
-
-		if len(response.Choices) > 0 && response.Choices[0].FinishReason == "stop" {
-			// Do not break immediately if usage is provided in the same chunk or a subsequent chunk.
-			// Actually, standard behavior is to break on "[DONE]", so we just ignore this break.
-		}
-	}
-
-	return nil
+func (o *OpenAIProvider) ChatStreamEvents(
+	ctx context.Context,
+	modelName string,
+	messages []Message,
+	toolsList []map[string]interface{},
+	onEvent func(StreamEvent) error,
+) error {
+	return streamOpenAICompatible(ctx, o.config(), modelName, messages, toolsList, onEvent)
 }
 
 func (o *OpenAIProvider) Models() ([]string, error) {
@@ -318,7 +166,7 @@ func (o *OpenAIProvider) Models() ([]string, error) {
 		return nil, err
 	}
 
-	var models []string
+	models := make([]string, 0, len(response.Data))
 	for _, model := range response.Data {
 		models = append(models, model.ID)
 	}
@@ -327,14 +175,20 @@ func (o *OpenAIProvider) Models() ([]string, error) {
 }
 
 func (o *OpenAIProvider) openAIModels() (*OpenAIModels, error) {
-	client := resty.New()
+	client := resty.New().SetTimeout(30 * time.Second)
 
 	var response OpenAIModels
-	res, _ := client.R().
+	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetHeader("Authorization", fmt.Sprintf("Bearer %s", o.apiKey)).
 		SetResult(&response).
 		Get(o.baseURL + "/v1/models")
+	if err != nil {
+		return nil, fmt.Errorf("error fetching openai models: %w", err)
+	}
+	if res == nil {
+		return nil, fmt.Errorf("error fetching openai models: nil response")
+	}
 
 	if res.StatusCode() != 200 {
 		return nil, fmt.Errorf("error fetching openai models: %s", res.String())

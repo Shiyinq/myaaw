@@ -118,6 +118,7 @@ type nextChunkMsg struct {
 	done      bool
 	err       error
 	newConvID string
+	finalText string
 }
 
 type sessionsLoadedMsg struct {
@@ -143,14 +144,14 @@ func loadModelsCmd() tea.Cmd {
 	return func() tea.Msg {
 		cfg, err := config.LoadJSONConfigOnly()
 		var modelsList []string
-		
+
 		if err == nil && cfg != nil && cfg.Providers != nil {
 			type modelInfo struct {
-				id         string
-				provType   string
-				modelName  string
+				id        string
+				provType  string
+				modelName string
 			}
-			
+
 			var allFetched []modelInfo
 
 			// Query each provider in parallel
@@ -188,24 +189,24 @@ func loadModelsCmd() tea.Cmd {
 					})
 				}
 			}
-			
+
 			// Format strings
 			var others []string
 			var active string
 			activeID := config.CurrentProviderID
 			activeModel := config.LLMDefaultModel
-			
+
 			for _, info := range allFetched {
 				line := fmt.Sprintf("%s (%s: %s)", info.id, info.provType, info.modelName)
 				if info.id == activeID && info.modelName == activeModel {
 					active = "★ " + line
 				} else {
-					others = append(others, "  " + line)
+					others = append(others, "  "+line)
 				}
 			}
-			
+
 			sort.Strings(others)
-			
+
 			if active != "" {
 				modelsList = append([]string{active}, others...)
 			} else {
@@ -216,7 +217,7 @@ func loadModelsCmd() tea.Cmd {
 		if len(modelsList) == 0 {
 			modelsList = []string{"  No models found"}
 		}
-		
+
 		return modelsLoadedMsg{models: modelsList}
 	}
 }
@@ -243,9 +244,9 @@ type model struct {
 
 	sub chan nextChunkMsg
 
-	suggestions          []string
-	suggestionIndex      int
-	isAutocompleting     bool
+	suggestions      []string
+	suggestionIndex  int
+	isAutocompleting bool
 
 	queueFileSize int64
 	width         int
@@ -301,16 +302,18 @@ type chatMessage_ struct {
 	thought         string
 	renderedText    string
 	renderedThought string
-	
-	cachedView      string
-	cachedWidth     int
-	cachedExpanded  bool
+
+	cachedView     string
+	cachedWidth    int
+	cachedExpanded bool
 }
 
 func convertProviderMessages(providerMsgs []provider.Message) []chatMessage_ {
 	var chatMsgs []chatMessage_
 	for _, m := range providerMsgs {
-		if m.Role == "system" {
+		if m.Role != "user" && m.Role != "assistant" {
+			// Skip system prompts and tool results; only conversational
+			// messages are rendered in the transcript view.
 			continue
 		}
 		role := "user"
@@ -558,7 +561,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					selected := m.conversations[selectedIdx]
 					m.activeConvID = selected.Id
 					m.messages = convertProviderMessages(selected.Messages)
-					
+
 					// Restore token usage from history
 					m.totalTokens = 0
 					for i := len(selected.Messages) - 1; i >= 0; i-- {
@@ -567,7 +570,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							break
 						}
 					}
-					
+
 					m.state = stateInput
 					m.textInput.Focus()
 					m.updateViewportContent(true)
@@ -626,7 +629,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					selectedLine := m.availableModels[m.modelCursor]
 					selectedLine = strings.TrimPrefix(selectedLine, "★ ")
 					selectedLine = strings.TrimSpace(selectedLine)
-					
+
 					parts := strings.SplitN(selectedLine, " (", 2)
 					if len(parts) == 2 {
 						selectedID := parts[0]
@@ -634,7 +637,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						typeModelParts := strings.SplitN(modelPart, ": ", 2)
 						if len(typeModelParts) == 2 {
 							modelName := typeModelParts[1]
-							
+
 							cfg, err := config.LoadJSONConfigOnly()
 							if err == nil && cfg != nil && cfg.Providers != nil {
 								if p, exists := cfg.Providers[selectedID]; exists {
@@ -642,7 +645,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									p.DefaultModel = modelName
 									cfg.Providers[selectedID] = p
 									_ = config.SaveConfig(cfg)
-									
+
 									config.CurrentProviderID = selectedID
 									config.LLMProviderName = p.Type
 									config.LLMDefaultModel = modelName
@@ -711,8 +714,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					})
 				} else {
 					m.messages = append(m.messages, chatMessage_{
-						role:    "bot",
-						text:    "🛑 *(response interrupted)*",
+						role: "bot",
+						text: "🛑 *(response interrupted)*",
 					})
 				}
 				m.streaming = ""
@@ -909,6 +912,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if msg.done {
 			if m.state == stateWaiting {
+				if msg.finalText != "" {
+					m.streaming = msg.finalText
+				}
 				m.messages = append(m.messages, chatMessage_{
 					role:    "bot",
 					text:    m.streaming,
@@ -924,6 +930,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.activeConvID = msg.newConvID
 				}
 				m.updateViewportContent(true)
+			}
+			return m, nil
+		}
+
+		if msg.chunk.Kind == "final" {
+			m.streaming = msg.chunk.Text
+			if msg.chunk.Usage.TotalTokens > 0 {
+				m.totalTokens = msg.chunk.Usage.TotalTokens
+			}
+			if m.state == stateWaiting {
+				return m, waitForChunk(m.sub)
 			}
 			return m, nil
 		}
@@ -1192,20 +1209,24 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 		defer cancel()
 		msg := createIncomingMessage(text, images, convID)
 		if config.StreamResponse {
-			_, err := m.botService.BotStream(msg, func(chunk channel.StreamChunk) {
+			out, err := m.botService.BotStreamContext(ctx, msg, func(chunk channel.StreamChunk) {
 				select {
 				case <-ctx.Done():
 					return
 				case m.sub <- nextChunkMsg{chunk: chunk}:
 				}
 			})
+			finalText := ""
+			if out != nil {
+				finalText = out.Text
+			}
 			select {
 			case <-ctx.Done():
 				return
-			case m.sub <- nextChunkMsg{done: true, err: err, newConvID: msg.ConversationID}:
+			case m.sub <- nextChunkMsg{done: true, err: err, newConvID: msg.ConversationID, finalText: finalText}:
 			}
 		} else {
-			out, err := m.botService.Bot(msg)
+			out, err := m.botService.BotContext(ctx, msg)
 			select {
 			case <-ctx.Done():
 				return
@@ -1218,7 +1239,7 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 						Thought: out.Thought,
 						Usage:   out.Usage,
 					}}
-					m.sub <- nextChunkMsg{done: true, newConvID: msg.ConversationID}
+					m.sub <- nextChunkMsg{done: true, newConvID: msg.ConversationID, finalText: out.Text}
 				}
 			}
 		}
@@ -1307,7 +1328,7 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 
 		if m.streaming != "" {
 			// Fast render during live stream without running CPU-heavy glamour parser per token
-			// Avoid TrimSpace here: trimming trailing newlines generated by the stream 
+			// Avoid TrimSpace here: trimming trailing newlines generated by the stream
 			// causes the viewport height to fluctuate and visually jump!
 			content := botStyle.Render("🐱 Myaaw") + "\n\n" + m.streaming + botStyle.Render(" 🐾")
 			b.WriteString(botBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n")
@@ -1401,7 +1422,12 @@ func (m model) renderSessionPicker() string {
 				timeStr = "recently"
 			}
 
-			msgCount := len(conv.Messages)
+			msgCount := 0
+			for _, message := range conv.Messages {
+				if message.Role == "user" || message.Role == "assistant" {
+					msgCount++
+				}
+			}
 			meta := fmt.Sprintf("%s • %d msgs", timeStr, msgCount)
 
 			if m.sessionCursor == i {
@@ -1492,7 +1518,7 @@ func (m model) renderModelPicker() string {
 	if listWidth < 50 {
 		listWidth = 50
 	}
-	
+
 	catWidth := m.width - listWidth - 6
 	if catWidth < 20 {
 		catWidth = 20
@@ -1529,13 +1555,13 @@ func (m model) renderModelPicker() string {
 	} else {
 		for i := start; i < end; i++ {
 			line := m.availableModels[i]
-			
+
 			// Prevent lipgloss word wrap which breaks the layout height
 			maxLen := listWidth - 6
 			if len(line) > maxLen && maxLen > 3 {
 				line = line[:maxLen-3] + "..."
 			}
-			
+
 			if i == m.modelCursor {
 				leftLines = append(leftLines, " "+theme.HighlightStyle.Render("► "+line))
 			} else {
@@ -1616,7 +1642,7 @@ func (m model) View() string {
 	if mod == "" {
 		mod = "default"
 	}
-	
+
 	tokenText := ""
 	if m.totalTokens > 0 {
 		tokenText = fmt.Sprintf(" • %d tokens ", m.totalTokens)

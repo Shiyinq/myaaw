@@ -51,7 +51,7 @@ func (a *CLIAdapter) appendQueue(out *channel.OutgoingMessage) {
 	if err != nil {
 		return
 	}
-	
+
 	queuePath := filepath.Join(home, ".myaaw", "logs", "cli_queue.jsonl")
 	f, err := os.OpenFile(queuePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -64,7 +64,7 @@ func (a *CLIAdapter) appendQueue(out *channel.OutgoingMessage) {
 		Text:      out.Text,
 		Thought:   out.Thought,
 	}
-	
+
 	b, _ := json.Marshal(msg)
 	f.Write(append(b, '\n'))
 }
@@ -81,6 +81,7 @@ func (a *CLIAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMes
 
 func (a *CLIAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onChunk func(chunk channel.StreamChunk)) error) (*channel.OutgoingMessage, error) {
 	fullContent := ""
+	printedText := false
 	lastThoughtLen := 0
 	lastTraceLen := 0
 	err := streamFn(func(chunk channel.StreamChunk) {
@@ -102,9 +103,19 @@ func (a *CLIAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onCh
 			lastTraceLen = len(chunk.Trace)
 		}
 
-		if chunk.Text != "" {
+		if chunk.Kind == "final" {
+			if chunk.Text != "" && chunk.Text != fullContent {
+				if printedText {
+					fmt.Fprint(os.Stdout, "\n\n")
+				}
+				fmt.Fprint(os.Stdout, chunk.Text)
+			}
+			fullContent = chunk.Text
+			printedText = true
+		} else if chunk.Text != "" {
 			fmt.Fprint(os.Stdout, chunk.Text)
 			fullContent += chunk.Text
+			printedText = true
 		}
 	})
 	fmt.Println()

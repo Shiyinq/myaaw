@@ -153,6 +153,20 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 	mainMessageId := 0
 
 	err = streamFn(func(chunk channel.StreamChunk) {
+		if chunk.Kind == "final" {
+			streamingContent = chunk.Text
+			if chunk.Thought != "" {
+				streamingThought = chunk.Thought
+			}
+			if chunk.Usage.TotalTokens > 0 {
+				finalUsage = chunk.Usage
+			}
+			if len(chunk.Trace) > 0 {
+				traceSteps = chunk.Trace
+			}
+			return
+		}
+
 		loading := indicator("typing")
 
 		if chunk.Usage.TotalTokens > 0 {

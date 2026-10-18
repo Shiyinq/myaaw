@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +21,58 @@ type ToolsContext struct {
 type ToolsFactory interface {
 	CallTool(arguments string, ctx *ToolsContext) string
 	ToolDefinition() []byte
+}
+
+// ContextTool is an optional interface for tools that support cancellation
+// and deadlines. Tools that do not implement it are executed with
+// context.Background().
+type ContextTool interface {
+	CallToolContext(ctx context.Context, arguments string, tctx *ToolsContext) string
+}
+
+// ExecutionMode controls how a tool is scheduled when an assistant message
+// contains multiple tool calls.
+type ExecutionMode string
+
+const (
+	ExecutionSequential ExecutionMode = "sequential"
+	ExecutionParallel   ExecutionMode = "parallel"
+)
+
+// ExecutionModeAware is an optional interface for tools that can safely run
+// concurrently with other tool calls. Tools that do not implement it default
+// to sequential execution.
+type ExecutionModeAware interface {
+	ExecutionMode() ExecutionMode
+}
+
+// NamedFactory pairs a registry name with its factory. It is used by the
+// agent tool executor to build per-run tool adapters.
+type NamedFactory struct {
+	Name    string
+	Factory ToolsFactory
+}
+
+// GetFactories returns the currently registered tool factories, sorted by
+// name, excluding the given tool names.
+func GetFactories(excluded ...string) []NamedFactory {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
+	excludedSet := make(map[string]struct{}, len(excluded))
+	for _, name := range excluded {
+		excludedSet[name] = struct{}{}
+	}
+
+	factories := make([]NamedFactory, 0, len(registry))
+	for name, factory := range registry {
+		if _, skip := excludedSet[name]; skip {
+			continue
+		}
+		factories = append(factories, NamedFactory{Name: name, Factory: factory})
+	}
+	sort.Slice(factories, func(i, j int) bool { return factories[i].Name < factories[j].Name })
+	return factories
 }
 
 func GetTools(excludedTools ...string) []map[string]interface{} {
@@ -77,7 +130,7 @@ func init() {
 		logDir := filepath.Join(homeDir, ".myaaw", "logs")
 		os.MkdirAll(logDir, 0755)
 		logPath := filepath.Join(logDir, "tools.log")
-		
+
 		f, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		if err == nil {
 			ToolsLogger = log.New(f, "", log.LstdFlags)
@@ -165,8 +218,15 @@ type ToolsCalling struct {
 	toolsMap map[string]ToolsFactory
 }
 
+func truncateForLog(value string, max int) string {
+	if max <= 0 || len(value) <= max {
+		return value
+	}
+	return value[:max] + "...[truncated]"
+}
+
 func NewTools(functionName string, arguments string, ctx *ToolsContext) string {
-	ToolsLogger.Printf("Starting call to tool '%s' with arguments: %s", functionName, arguments)
+	ToolsLogger.Printf("Starting call to tool '%s' with arguments: %s", functionName, truncateForLog(arguments, 512))
 
 	registryMu.RLock()
 	tool, exists := registry[functionName]

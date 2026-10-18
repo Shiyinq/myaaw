@@ -319,45 +319,38 @@ func runVoiceClassic() {
 
 				conversationHistory = append(conversationHistory, userMsg)
 
-				var responseText string
 				var responseThought string
-				var responseTrace []provider.ReactStep
 
-				err = ag.RunStream(modelName, conversationHistory, func(partial provider.Message) error {
-					if partial.Thought != "" {
-						responseThought += partial.Thought
-						p.Send(aiStreamThoughtMsg{thought: responseThought, trace: partial.Trace})
-					}
-					if len(partial.Trace) > 0 {
-						responseTrace = partial.Trace
-						// Also update even if thought didn't change, for showing tools
-						p.Send(aiStreamThoughtMsg{thought: responseThought, trace: partial.Trace})
-					}
-
-					if partial.Content != nil {
-						if str, ok := partial.Content.(string); ok {
-							responseText += str
+				cfg := agent.DefaultRunConfig(modelName)
+				result, runErr := ag.RunEvents(ctx, cfg, conversationHistory, func(event agent.AgentEvent) error {
+					switch event.Type {
+					case agent.EventMessageUpdate:
+						if event.ThinkingDelta != "" {
+							responseThought += event.ThinkingDelta
+							p.Send(aiStreamThoughtMsg{thought: responseThought})
+						}
+					case agent.EventTraceUpdate:
+						if len(event.Trace) > 0 {
+							p.Send(aiStreamThoughtMsg{thought: responseThought, trace: event.Trace})
 						}
 					}
 					return nil
 				})
 
-				if err != nil {
-					log.Printf("Agent error: %v", err)
+				if runErr != nil {
+					log.Printf("Agent error: %v", runErr)
 					p.Send(aiDoneMsg{})
 					audioBuffer = nil
 					continue
 				}
 
-				response := provider.Message{
-					Role:    "assistant",
-					Content: responseText,
-					Thought: responseThought,
-					Trace:   responseTrace,
+				responseText := provider.MessageText(result.Final)
+				if result.Final.Thought != "" {
+					responseThought = result.Final.Thought
 				}
-
-				// Add assistant response to history
-				conversationHistory = append(conversationHistory, response)
+				// Replace the in-memory history with the engine transcript,
+				// applying the same token budget used for requests.
+				conversationHistory = agent.CompactTranscript(result.Transcript, cfg.ContextMaxTokens)
 				if transcript != nil {
 					transcript.LogAI(responseText)
 				}

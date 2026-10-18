@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,6 +44,13 @@ var Verbose bool
 var CurrentProviderID string
 var AgentMaxIterations int = 100
 var AgentWarningIterations int = 90
+var AgentContextMaxTokens int = 64000
+var AgentMaxToolOutputBytes int = 32 * 1024
+var AgentRepeatToolCallLimit int = 3
+var AgentToolTimeoutSeconds int = 300
+var AgentBlockedTools []string
+var LLMRequestRetries int = 1
+
 type Config struct {
 	DefaultProvider string                    `json:"default_provider,omitempty"`
 	Providers       map[string]ProviderConfig `json:"providers,omitempty"`
@@ -76,12 +84,17 @@ type CronConfig struct {
 }
 
 type GlobalBotConfig struct {
-	OwnerIDs           []string `json:"owner_ids"`
-	Type               string   `json:"type"`
-	Watermark          bool     `json:"watermark"`
-	Stream             *bool    `json:"stream,omitempty"`
-	MaxIterations      *int     `json:"max_iterations,omitempty"`
-	WarningIterations  *int     `json:"warning_iterations,omitempty"`
+	OwnerIDs            []string `json:"owner_ids"`
+	Type                string   `json:"type"`
+	Watermark           bool     `json:"watermark"`
+	Stream              *bool    `json:"stream,omitempty"`
+	MaxIterations       *int     `json:"max_iterations,omitempty"`
+	WarningIterations   *int     `json:"warning_iterations,omitempty"`
+	ContextMaxTokens    *int     `json:"context_max_tokens,omitempty"`
+	MaxToolOutputBytes  *int     `json:"max_tool_output_bytes,omitempty"`
+	RepeatToolCallLimit *int     `json:"repeat_tool_call_limit,omitempty"`
+	ToolTimeoutSeconds  *int     `json:"tool_timeout_seconds,omitempty"`
+	BlockedTools        []string `json:"blocked_tools,omitempty"`
 }
 
 type ChannelsConfig struct {
@@ -147,7 +160,7 @@ func GetConfigPath() string {
 	if _, err := os.Stat("config.json"); err == nil {
 		return "config.json"
 	}
-	
+
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
 		return filepath.Join(homeDir, ".myaaw", "config", "config.json")
@@ -157,7 +170,7 @@ func GetConfigPath() string {
 
 func SaveConfig(config *Config) error {
 	path := GetConfigPath()
-	
+
 	// Ensure directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -230,9 +243,16 @@ func LoadBaseConfig() {
 
 	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")
 	TranscriberAPIKey = os.Getenv("TRANSCRIBER_API_KEY")
-	
+
 	SynthesizerProviderName = os.Getenv("SYNTHESIZER_PROVIDER_NAME")
 	SynthesizerAPIKey = os.Getenv("SYNTHESIZER_API_KEY")
+
+	AgentContextMaxTokens = envInt("AGENT_CONTEXT_MAX_TOKENS", AgentContextMaxTokens)
+	AgentMaxToolOutputBytes = envInt("AGENT_MAX_TOOL_OUTPUT_BYTES", AgentMaxToolOutputBytes)
+	AgentRepeatToolCallLimit = envInt("AGENT_REPEAT_TOOL_CALL_LIMIT", AgentRepeatToolCallLimit)
+	AgentToolTimeoutSeconds = envInt("AGENT_TOOL_TIMEOUT_SECONDS", AgentToolTimeoutSeconds)
+	AgentBlockedTools = splitCSV(os.Getenv("AGENT_BLOCKED_TOOLS"))
+	LLMRequestRetries = envInt("LLM_REQUEST_RETRIES", LLMRequestRetries)
 
 	streamVal := strings.ToLower(os.Getenv("STREAM_RESPONSE"))
 	if streamVal == "false" || streamVal == "0" {
@@ -266,6 +286,21 @@ func LoadBaseConfig() {
 		if jsonConfig.Bot.WarningIterations != nil {
 			AgentWarningIterations = *jsonConfig.Bot.WarningIterations
 		}
+		if jsonConfig.Bot.ContextMaxTokens != nil {
+			AgentContextMaxTokens = *jsonConfig.Bot.ContextMaxTokens
+		}
+		if jsonConfig.Bot.MaxToolOutputBytes != nil {
+			AgentMaxToolOutputBytes = *jsonConfig.Bot.MaxToolOutputBytes
+		}
+		if jsonConfig.Bot.RepeatToolCallLimit != nil {
+			AgentRepeatToolCallLimit = *jsonConfig.Bot.RepeatToolCallLimit
+		}
+		if jsonConfig.Bot.ToolTimeoutSeconds != nil {
+			AgentToolTimeoutSeconds = *jsonConfig.Bot.ToolTimeoutSeconds
+		}
+		if len(jsonConfig.Bot.BlockedTools) > 0 {
+			AgentBlockedTools = jsonConfig.Bot.BlockedTools
+		}
 
 		if jsonConfig.Channels.Telegram != nil {
 			TelegramBotToken = jsonConfig.Channels.Telegram.Token
@@ -298,7 +333,7 @@ func LoadBaseConfig() {
 
 		Heartbeat = jsonConfig.Heartbeat
 		CronActive = jsonConfig.Cron.Active
-		
+
 		// Priority: config.json Providers > .env
 		if jsonConfig.DefaultProvider != "" && jsonConfig.Providers != nil {
 			CurrentProviderID = jsonConfig.DefaultProvider
@@ -309,7 +344,7 @@ func LoadBaseConfig() {
 				LLMDefaultModel = provider.DefaultModel
 			}
 		}
-		
+
 		// Priority: config.json Transcriber > .env
 		if jsonConfig.Transcriber.Provider != "" {
 			TranscriberProviderName = jsonConfig.Transcriber.Provider
@@ -325,6 +360,63 @@ func LoadBaseConfig() {
 				SynthesizerAPIKey = jsonConfig.Synthesizer.APIKey
 			}
 		}
+	}
+
+	validateAgentConfig()
+}
+
+func splitCSV(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func envInt(name string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		log.Printf("Warning: invalid %s=%q, using %d", name, value, fallback)
+		return fallback
+	}
+	return parsed
+}
+
+func validateAgentConfig() {
+	if AgentMaxIterations < 1 {
+		AgentMaxIterations = 100
+	}
+	if AgentWarningIterations < 1 || AgentWarningIterations >= AgentMaxIterations {
+		AgentWarningIterations = AgentMaxIterations - 10
+		if AgentWarningIterations < 1 {
+			AgentWarningIterations = 1
+		}
+	}
+	if AgentContextMaxTokens < 0 {
+		AgentContextMaxTokens = 0
+	}
+	if AgentMaxToolOutputBytes <= 0 {
+		AgentMaxToolOutputBytes = 32 * 1024
+	}
+	if AgentRepeatToolCallLimit < 0 {
+		AgentRepeatToolCallLimit = 0
+	}
+	if AgentToolTimeoutSeconds < 0 {
+		AgentToolTimeoutSeconds = 0
+	}
+	if LLMRequestRetries < 0 {
+		LLMRequestRetries = 0
 	}
 }
 

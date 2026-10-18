@@ -1,6 +1,7 @@
 package subagent
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -78,7 +79,19 @@ func (t *SubAgentTool) ToolDefinition() []byte {
 	return []byte(toolSchema)
 }
 
-func (t *SubAgentTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
+func (t *SubAgentTool) CallTool(arguments string, tctx *tools.ToolsContext) string {
+	return t.CallToolContext(context.Background(), arguments, tctx)
+}
+
+func (t *SubAgentTool) ExecutionMode() tools.ExecutionMode {
+	return tools.ExecutionSequential
+}
+
+const maxConcurrentSubAgents = 4
+
+var subAgentSlots = make(chan struct{}, maxConcurrentSubAgents)
+
+func (t *SubAgentTool) CallToolContext(ctx context.Context, arguments string, tctx *tools.ToolsContext) string {
 	var args SubAgentArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return fmt.Sprintf("Error parsing arguments: %v", err)
@@ -88,7 +101,7 @@ func (t *SubAgentTool) CallTool(arguments string, ctx *tools.ToolsContext) strin
 		return "Error: 'tasks' array cannot be empty."
 	}
 
-	if ctx == nil || ctx.Channel == "" || ctx.UserID == "" || ctx.BaseURL == "" {
+	if tctx == nil || tctx.Channel == "" || tctx.UserID == "" || tctx.BaseURL == "" {
 		return "Error: Missing context (MYAAW_CHANNEL, MYAAW_USER_ID, MYAAW_BASE_URL). Cannot spawn sub-agents."
 	}
 
@@ -102,15 +115,25 @@ func (t *SubAgentTool) CallTool(arguments string, ctx *tools.ToolsContext) strin
 		}
 	}
 
-	// Spawn a goroutine for each task
+	// Background sub-agents are expected to outlive the originating request.
+	bgCtx := context.WithoutCancel(ctx)
+
+	// Spawn a goroutine for each task, bounded by maxConcurrentSubAgents.
 	for i, task := range args.Tasks {
-		go t.runSubAgent(task, ctx.Channel, ctx.UserID, ctx.BaseURL, batchID, i+1, totalTasks)
+		go t.runSubAgent(bgCtx, task, tctx.Channel, tctx.UserID, tctx.BaseURL, batchID, i+1, totalTasks)
 	}
 
 	return fmt.Sprintf("Successfully started %d sub-agents in background (Batch ID: %s). You will receive notifications as they complete. You do not need to wait or set a cron job.", totalTasks, batchID)
 }
 
-func (t *SubAgentTool) runSubAgent(task SubAgentTask, channelName, userID, baseURL, batchID string, taskNum, totalTasks int) {
+func (t *SubAgentTool) runSubAgent(ctx context.Context, task SubAgentTask, channelName, userID, baseURL, batchID string, taskNum, totalTasks int) {
+	select {
+	case subAgentSlots <- struct{}{}:
+		defer func() { <-subAgentSlots }()
+	case <-ctx.Done():
+		log.Printf("[SubAgent %s] Canceled before start: %v", task.Name, ctx.Err())
+		return
+	}
 	log.Printf("[SubAgent %s] Starting task %d/%d for user %s", task.Name, taskNum, totalTasks, userID)
 
 	prov, err := provider.CreateLLMProvider(config.LLMProviderName, config.LLMProviderAPIKey)
@@ -153,12 +176,17 @@ CRITICAL INSTRUCTIONS:
 		},
 	}
 
-	res, err := subAgent.Run(config.LLMDefaultModel, messages)
-	var report string
+	res, err := subAgent.RunContext(ctx, config.LLMDefaultModel, messages)
+	report := provider.MessageText(res)
 	if err != nil {
-		report = fmt.Sprintf("Error executing sub-agent task: %v", err)
-	} else {
-		report = res.Content.(string)
+		if strings.TrimSpace(report) != "" {
+			report += fmt.Sprintf("\n\n⚠️ Sub-agent ended with an error: %v", err)
+		} else {
+			report = fmt.Sprintf("Error executing sub-agent task: %v", err)
+		}
+	}
+	if strings.TrimSpace(report) == "" {
+		report = "Sub-agent finished without producing a textual report."
 	}
 
 	// Save to log file

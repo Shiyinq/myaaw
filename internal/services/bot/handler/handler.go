@@ -92,7 +92,7 @@ func (s *BotHandlerImpl) Webhook(c fiber.Ctx) error {
 
 	if config.StreamResponse {
 		out, err := adapter.SendStream(msg, func(onChunk func(chunk channel.StreamChunk)) error {
-			_, err := s.botService.BotStream(msg, onChunk)
+			_, err := s.botService.BotStreamContext(c.Context(), msg, onChunk)
 			return err
 		})
 		if err != nil {
@@ -103,7 +103,7 @@ func (s *BotHandlerImpl) Webhook(c fiber.Ctx) error {
 		}
 		_ = out
 	} else {
-		out, err := s.botService.Bot(msg)
+		out, err := s.botService.BotContext(c.Context(), msg)
 		if err != nil {
 			log.Printf("Failed to process incoming chat from user ID %v: %v", msg.UserID, err.Error())
 			formattedError := utils.FormatErrorMessage(err)
