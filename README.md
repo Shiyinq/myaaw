@@ -78,12 +78,12 @@ graph TD
     User --> API
 
     subgraph SHARED["~/.myaaw (shared state)"]
-        REG[(agents.json)]
-        PIDS[(pids/)]
+        REG[(agents.json<br/>default agent + registry)]
+        PIDS[(pids/<br/>myaaw-server-AGENT.pid)]
         REG ~~~ PIDS
     end
 
-    SEL[Agent Selection<br/>--agent / picker / MYAAW_AGENT]
+    SEL[Agent Selection<br/>--agent / picker / MYAAW_AGENT<br/>reads agents.json]
     CLI --> SEL
     Voice --> SEL
     SEL -- "chat → default" --> BOT_A
@@ -91,7 +91,7 @@ graph TD
     SEL -- "voice → default" --> PROV_A
     SEL -- "voice → myfriend" --> PROV_B
 
-    subgraph "Agent Process A - default (port 8080)"
+    subgraph PROC_A["Agent Process A - default (port 8080)"]
         CH_A[Telegram / Discord<br/>token A]
         SRV_A[Fiber Server]
         BOT_A[Bot Service]
@@ -127,7 +127,7 @@ graph TD
         LOOP_A -- "events" --> UI_A
     end
 
-    subgraph "Agent Process B - myfriend (port 8081)"
+    subgraph PROC_B["Agent Process B - myfriend (port 8081)"]
         CH_B[Telegram / Discord<br/>token B]
         SRV_B[Fiber Server]
         BOT_B[Bot Service]
@@ -170,13 +170,9 @@ graph TD
     API --> SRV_A
     API --> SRV_B
 
-    %% Keep the shared state between the two agent processes.
-    CH_A ~~~ REG
-    CH_B ~~~ REG
-
-    SEL -- "reads" --> REG
-    PIDS -- "pid files" --> SRV_A
-    PIDS -- "pid files" --> SRV_B
+    %% Each process resolves the registry and exposes its PID file here.
+    PROC_A -- "registry + pid" --> SHARED
+    PROC_B -- "registry + pid" --> SHARED
 
     %% Styling
     classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px,color:#000;
@@ -194,6 +190,8 @@ graph TD
 ```
 
 Telegram and Discord payloads always pass through a queue first: **channel adapter → in-memory queue → queue consumer → that agent's own `POST /webhook/bot`**. The queue is an in-process Go channel, so each agent process has its own queue; messages can never move between agents. Cron and heartbeat are the exception: they call `POST /heartbeat` directly on their own server.
+
+Both processes share `~/.myaaw/agents.json` (registry and default agent) and `~/.myaaw/pids/` (one `myaaw-server-<agent>.pid` file per running server). Nothing else is shared: config, `.env`, SQLite, `home/`, skills, jobs, logs, and ports are per agent.
 
 `Agent Core` marks the components that belong to the agent itself (system prompt builder, event loop, transcript, tools, provider). The `System Prompt Builder` reads identity files from `home/` (`BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) and `skills/`, and Bot Service passes the resulting messages to the loop. `MEMORY.md` and `memory/` are not auto-injected: the agent reads and writes them through tools during a run, following the rules in `AGENTS.md`.
 
