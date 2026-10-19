@@ -103,6 +103,7 @@ graph TD
         UI_A[Event Timeline<br/>TUI / Telegram / Discord]
 
         subgraph "Agent Core A"
+            SP_A[System Prompt Builder<br/>identity + skills]
             LOOP_A[RunEvents Loop<br/>event-driven]
             TRANS_A[Transcript v2<br/>compaction]
             TOOL_A[Tools<br/>Bash / FS / Python / Skills]
@@ -114,13 +115,14 @@ graph TD
         CONSUMER_A -- "POST /webhook/bot" --> SRV_A
         CRON_A -- "POST /heartbeat" --> SRV_A
         SRV_A --> BOT_A
-        BOT_A --> LOOP_A
+        BOT_A -- "builds messages" --> SP_A
+        SP_A --> LOOP_A
         LOOP_A <--> TRANS_A
         TRANS_A <--> DB_A
         LOOP_A <--> TOOL_A
         LOOP_A <--> PROV_A
         BOT_A <--> DB_A
-        BOT_A -- "reads identity / persona" --> HOME_A
+        SP_A -- "reads identity / persona" --> HOME_A
         TOOL_A -- "read/write workspace + memory" --> HOME_A
         LOOP_A -- "events" --> UI_A
     end
@@ -137,6 +139,7 @@ graph TD
         UI_B[Event Timeline<br/>TUI / Telegram / Discord]
 
         subgraph "Agent Core B"
+            SP_B[System Prompt Builder<br/>identity + skills]
             LOOP_B[RunEvents Loop<br/>event-driven]
             TRANS_B[Transcript v2<br/>compaction]
             TOOL_B[Tools<br/>Bash / FS / Python / Skills]
@@ -148,13 +151,14 @@ graph TD
         CONSUMER_B -- "POST /webhook/bot" --> SRV_B
         CRON_B -- "POST /heartbeat" --> SRV_B
         SRV_B --> BOT_B
-        BOT_B --> LOOP_B
+        BOT_B -- "builds messages" --> SP_B
+        SP_B --> LOOP_B
         LOOP_B <--> TRANS_B
         TRANS_B <--> DB_B
         LOOP_B <--> TOOL_B
         LOOP_B <--> PROV_B
         BOT_B <--> DB_B
-        BOT_B -- "reads identity / persona" --> HOME_B
+        SP_B -- "reads identity / persona" --> HOME_B
         TOOL_B -- "read/write workspace + memory" --> HOME_B
         LOOP_B -- "events" --> UI_B
     end
@@ -180,14 +184,14 @@ graph TD
 
     class REG,PIDS,DB_A,DB_B storage;
     class SEL,CH_A,CH_B,SRV_A,SRV_B,BOT_A,BOT_B core;
-    class LOOP_A,LOOP_B,TRANS_A,TRANS_B,TOOL_A,TOOL_B,PROV_A,PROV_B agent;
+    class LOOP_A,LOOP_B,TRANS_A,TRANS_B,TOOL_A,TOOL_B,PROV_A,PROV_B,SP_A,SP_B agent;
     class QUEUE_A,QUEUE_B,CONSUMER_A,CONSUMER_B,CRON_A,CRON_B,UI_A,UI_B auto;
     class HOME_A,HOME_B wksp;
 ```
 
 Telegram and Discord payloads always pass through a queue first: **channel adapter → in-memory queue → queue consumer → that agent's own `POST /webhook/bot`**. The queue is an in-process Go channel, so each agent process has its own queue; messages can never move between agents. Cron and heartbeat are the exception: they call `POST /heartbeat` directly on their own server.
 
-`Agent Core` marks the components that belong to the agent itself (event loop, transcript, tools, provider). `Bot Service` builds the system prompt from identity files in `home/` (`BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) and `skills/`. `MEMORY.md` and `memory/` are not auto-injected: the agent reads and writes them through tools during a run, following the rules in `AGENTS.md`.
+`Agent Core` marks the components that belong to the agent itself (system prompt builder, event loop, transcript, tools, provider). The `System Prompt Builder` reads identity files from `home/` (`BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) and `skills/`, and Bot Service passes the resulting messages to the loop. `MEMORY.md` and `memory/` are not auto-injected: the agent reads and writes them through tools during a run, following the rules in `AGENTS.md`.
 
 Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, and `home/`. `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
 
