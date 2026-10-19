@@ -91,7 +91,7 @@ graph TD
     SEL -- "voice → default" --> PROV_A
     SEL -- "voice → myfriend" --> PROV_B
 
-    subgraph "Agent Process A - default (port 8080)"
+    subgraph PROC_A["Agent Process A - default (port 8080)"]
         CH_A[Telegram / Discord<br/>token A]
         SRV_A[Fiber Server]
         BOT_A[Bot Service]
@@ -127,7 +127,7 @@ graph TD
         LOOP_A -- "events" --> UI_A
     end
 
-    subgraph "Agent Process B - myfriend (port 8081)"
+    subgraph PROC_B["Agent Process B - myfriend (port 8081)"]
         CH_B[Telegram / Discord<br/>token B]
         SRV_B[Fiber Server]
         BOT_B[Bot Service]
@@ -173,6 +173,9 @@ graph TD
     SEL -- "reads" --> REG
     PIDS -- "pid files" --> SRV_A
     PIDS -- "pid files" --> SRV_B
+
+    SHARED ~~~ PROC_A
+    SHARED ~~~ PROC_B
 
     %% Styling
     classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px,color:#000;
