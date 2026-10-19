@@ -103,7 +103,7 @@ graph TD
         CRON_A[Cron / Heartbeat]
         UI_A[Event Timeline<br/>TUI / Telegram / Discord]
 
-        CH_A --> QUEUE_A
+        CH_A -- "enqueue" --> QUEUE_A
         QUEUE_A --> CONSUMER_A
         CONSUMER_A -- "POST /webhook/bot" --> SRV_A
         CRON_A -- "POST /heartbeat" --> SRV_A
@@ -133,7 +133,7 @@ graph TD
         CRON_B[Cron / Heartbeat]
         UI_B[Event Timeline<br/>TUI / Telegram / Discord]
 
-        CH_B --> QUEUE_B
+        CH_B -- "enqueue" --> QUEUE_B
         QUEUE_B --> CONSUMER_B
         CONSUMER_B -- "POST /webhook/bot" --> SRV_B
         CRON_B -- "POST /heartbeat" --> SRV_B
@@ -173,6 +173,8 @@ graph TD
     class QUEUE_A,QUEUE_B,CONSUMER_A,CONSUMER_B,CRON_A,CRON_B,UI_A,UI_B auto;
     class HOME_A,HOME_B wksp;
 ```
+
+Telegram and Discord payloads always pass through a queue first: **channel adapter → in-memory queue → queue consumer → that agent's own `POST /webhook/bot`**. The queue is an in-process Go channel, so each agent process has its own queue; messages can never move between agents. Cron and heartbeat are the exception: they call `POST /heartbeat` directly on their own server.
 
 ### Key Components
 
