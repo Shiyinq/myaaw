@@ -201,6 +201,86 @@ func TestRouterFilesystem(t *testing.T) {
 	doJSON(t, app, "DELETE", "/agents/myfriend/fs?path=/home", token, "", fiber.StatusBadRequest, nil)
 }
 
+func TestRouterContext(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	agentHome := filepath.Join(home, ".myaaw", "myfriend", "home")
+	if err := os.MkdirAll(filepath.Join(agentHome, "memory", "daily"), 0o755); err != nil {
+		t.Fatalf("mkdir memory: %v", err)
+	}
+	for path, content := range map[string]string{
+		filepath.Join(agentHome, "AGENTS.md"):          "# Agents",
+		filepath.Join(agentHome, "memory", "RULES.md"): "# Rules",
+		filepath.Join(agentHome, "NOTES.md"):           "# Not allowed",
+		filepath.Join(agentHome, "BOOTSTRAP.md"):       "# Not allowed either",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	type contextList struct {
+		Files []struct {
+			Name   string `json:"name"`
+			Path   string `json:"path"`
+			Folder string `json:"folder"`
+			Size   int64  `json:"size"`
+		} `json:"files"`
+	}
+	var list contextList
+	doJSON(t, app, "GET", "/agents/myfriend/context", token, "", fiber.StatusOK, &list)
+	if len(list.Files) != 2 {
+		t.Fatalf("files = %+v", list.Files)
+	}
+	if list.Files[0].Path != "AGENTS.md" || list.Files[0].Folder != "root" {
+		t.Fatalf("first file = %+v", list.Files[0])
+	}
+	if list.Files[1].Path != "memory/RULES.md" || list.Files[1].Folder != "memory" {
+		t.Fatalf("second file = %+v", list.Files[1])
+	}
+
+	var read struct {
+		Name    string `json:"name"`
+		Path    string `json:"path"`
+		Folder  string `json:"folder"`
+		Content string `json:"content"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/context/file?path=memory/RULES.md", token, "", fiber.StatusOK, &read)
+	if read.Path != "memory/RULES.md" || read.Folder != "memory" || read.Content != "# Rules" {
+		t.Fatalf("read = %+v", read)
+	}
+
+	var written struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	doJSON(t, app, "PUT", "/agents/myfriend/context/file", token,
+		`{"path":"memory/daily/2026-10-20.md","content":"# Log"}`, fiber.StatusOK, &written)
+	if written.Path != "memory/daily/2026-10-20.md" || written.Content != "# Log" {
+		t.Fatalf("written = %+v", written)
+	}
+
+	doJSON(t, app, "GET", "/agents/myfriend/context", token, "", fiber.StatusOK, &list)
+	if len(list.Files) != 3 {
+		t.Fatalf("files after write = %+v", list.Files)
+	}
+
+	doJSON(t, app, "GET", "/agents/myfriend/context/file?path=notes/todo.md", token, "", fiber.StatusBadRequest, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/context/file?path=../secret.md", token, "", fiber.StatusBadRequest, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/context/file?path=NOTES.md", token, "", fiber.StatusBadRequest, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/context/file?path=BOOTSTRAP.md", token, "", fiber.StatusBadRequest, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/context/file?path=MISSING.md", token, "", fiber.StatusBadRequest, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/context/file?path=HEARTBEAT.md", token, "", fiber.StatusNotFound, nil)
+	doJSON(t, app, "PUT", "/agents/myfriend/context/file", token,
+		`{"path":"NOTES.md","content":"x"}`, fiber.StatusBadRequest, nil)
+}
+
 func TestRouterReadOnlyManagement(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	home, err := os.UserHomeDir()

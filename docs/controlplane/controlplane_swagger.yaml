@@ -169,6 +169,13 @@ definitions:
       usage:
         $ref: '#/definitions/handler.UsageResponse'
     type: object
+  handler.ContextFilesResponse:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/service.ContextFile'
+        type: array
+    type: object
   handler.CreateAgentRequest:
     properties:
       name:
@@ -356,6 +363,15 @@ definitions:
         type: integer
       username:
         example: myaaw
+        type: string
+    type: object
+  handler.WriteContextRequest:
+    properties:
+      content:
+        example: '# Daily rules'
+        type: string
+      path:
+        example: memory/RULES.md
         type: string
     type: object
   handler.WriteFileRequest:
@@ -574,6 +590,34 @@ definitions:
         $ref: '#/definitions/service.ServiceSecretView'
       transcriber:
         $ref: '#/definitions/service.ServiceSecretView'
+    type: object
+  service.ContextContent:
+    properties:
+      content:
+        type: string
+      folder:
+        type: string
+      mod_time:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+    type: object
+  service.ContextFile:
+    properties:
+      folder:
+        type: string
+      mod_time:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
     type: object
   service.ConversationDetail:
     properties:
@@ -1106,6 +1150,128 @@ paths:
       summary: Get agent config
       tags:
       - Config
+  /agents/{name}/context:
+    get:
+      description: Returns the allowed core Markdown files and every .md file under
+        memory/. Other .md files are never listed.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ContextFilesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List context files
+      tags:
+      - Context
+  /agents/{name}/context/file:
+    get:
+      description: Reads an allowed core Markdown file or any .md file under memory/.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Home-relative path
+        example: AGENTS.md
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ContextContent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Read a context file
+      tags:
+      - Context
+    put:
+      consumes:
+      - application/json
+      description: Writes an allowed core Markdown file or any .md file under memory/.
+        Parent directories under memory/ are created automatically.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Path and content
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.WriteContextRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ContextContent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a context file
+      tags:
+      - Context
   /agents/{name}/conversations:
     get:
       description: Conversations are scoped to the authenticated user unless user_id

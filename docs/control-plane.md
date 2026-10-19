@@ -246,6 +246,72 @@ curl -X POST "http://localhost:9000/agents/myfriend/fs/write" \
 
 Limits: reads and writes are capped at 2 MiB, binary files return `415`, and the three roots cannot be deleted or renamed.
 
+### Context files
+
+Dedicated endpoints for the agent's identity and memory files. The only allowed root files are:
+
+```text
+AGENTS.md  HEARTBEAT.md  IDENTITY.md  MEMORY.md  SOUL.md  TOOLS.md  USER.md
+```
+
+Any `.md` file under `home/memory/` (including nested folders) is also allowed. Other `.md` files, such as `BOOTSTRAP.md`, `NOTES.md`, `workspace/README.md`, or `notes/todo.md`, are never listed and cannot be read or updated through this API. Use `/fs` for arbitrary files.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/agents/:name/context` | list allowed context files |
+| `GET` | `/agents/:name/context/file?path=AGENTS.md` | read one file |
+| `PUT` | `/agents/:name/context/file` | create or update `{path, content}` |
+
+```bash
+# List the allowlisted root files plus every .md file under memory/
+curl "http://localhost:9000/agents/myfriend/context" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Read memory/RULES.md
+curl "http://localhost:9000/agents/myfriend/context/file?path=memory/RULES.md" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Update it (missing parent folders under memory/ are created)
+curl -X PUT "http://localhost:9000/agents/myfriend/context/file" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"memory/RULES.md","content":"# Updated rules\n"}'
+```
+
+List response:
+
+```json
+{
+  "files": [
+    {"name": "AGENTS.md", "path": "AGENTS.md", "folder": "root", "size": 1234, "mod_time": "2026-10-20T00:00:00Z"},
+    {"name": "RULES.md", "path": "memory/RULES.md", "folder": "memory", "size": 456, "mod_time": "2026-10-20T00:00:00Z"}
+  ]
+}
+```
+
+Read and write responses add `content`:
+
+```json
+{
+  "name": "RULES.md",
+  "path": "memory/RULES.md",
+  "folder": "memory",
+  "content": "# Updated rules\n",
+  "size": 16,
+  "mod_time": "2026-10-20T00:00:00Z"
+}
+```
+
+Path rules:
+
+- Root files must be one of the seven allowlisted names, exactly.
+- `memory/2026/notes.md` is valid; nested memory folders are supported.
+- Any other root `.md` file, non-`.md` files, traversal, and absolute paths return `400`.
+- A missing allowlisted root file returns `404`; it can still be created with `PUT`.
+- Writes create missing parent folders under `memory/` and overwrite existing files.
+
+The same 2 MiB limit applies. Reads still reject binary content with `415`.
+
 ## 7. Providers
 
 | Method | Path | Purpose |
@@ -435,6 +501,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 | Agents | `GET/POST /agents`, `GET/DELETE /agents/:name`, `POST /agents/:name/default` |
 | Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream` |
 | Files | `GET/DELETE /agents/:name/fs`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
+| Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config` |

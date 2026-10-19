@@ -76,6 +76,17 @@ type WriteFileRequest struct {
 	Content string `json:"content" example:"# Instructions"`
 }
 
+// WriteContextRequest updates a context file by home-relative path.
+type WriteContextRequest struct {
+	Path    string `json:"path" example:"memory/RULES.md"`
+	Content string `json:"content" example:"# Daily rules"`
+}
+
+// ContextFilesResponse is the dedicated context file listing.
+type ContextFilesResponse struct {
+	Files []service.ContextFile `json:"files"`
+}
+
 type MkdirRequest struct {
 	Path string `json:"path" example:"/home/notes"`
 }

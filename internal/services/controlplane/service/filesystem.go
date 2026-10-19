@@ -45,6 +45,37 @@ type FileContent struct {
 	ModTime string `json:"mod_time,omitempty"`
 }
 
+// coreContextFiles are the only root-level Markdown files exposed by the
+// context API. Files under memory/ are additional allowed context files.
+var coreContextFiles = []string{
+	"AGENTS.md",
+	"HEARTBEAT.md",
+	"IDENTITY.md",
+	"MEMORY.md",
+	"SOUL.md",
+	"TOOLS.md",
+	"USER.md",
+}
+
+// ContextFile describes a core context file or a memory Markdown file.
+type ContextFile struct {
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Folder  string `json:"folder"`
+	Size    int64  `json:"size"`
+	ModTime string `json:"mod_time,omitempty"`
+}
+
+// ContextContent is a context file with its text content.
+type ContextContent struct {
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Folder  string `json:"folder"`
+	Content string `json:"content"`
+	Size    int64  `json:"size"`
+	ModTime string `json:"mod_time,omitempty"`
+}
+
 // SearchMatch is one matching line found under an agent root.
 type SearchMatch struct {
 	Path string `json:"path"`
@@ -294,6 +325,168 @@ func (s *FileService) Search(agentName, virtualPath, query string) ([]SearchMatc
 		return nil, walkErr
 	}
 	return matches, nil
+}
+
+// ListContext returns the allowed core files and .md files under memory/.
+func (s *FileService) ListContext(agentName string) ([]ContextFile, error) {
+	if err := agentdirValidateAgent(agentName); err != nil {
+		return nil, err
+	}
+	home, err := agentdir.Home(agentName)
+	if err != nil {
+		return nil, err
+	}
+
+	files := make([]ContextFile, 0, len(coreContextFiles))
+	for _, name := range coreContextFiles {
+		info, statErr := os.Lstat(filepath.Join(home, name))
+		if statErr != nil {
+			if os.IsNotExist(statErr) {
+				continue
+			}
+			return nil, statErr
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		files = append(files, ContextFile{
+			Name:    name,
+			Path:    name,
+			Folder:  "root",
+			Size:    info.Size(),
+			ModTime: info.ModTime().UTC().Format(time.RFC3339),
+		})
+	}
+
+	memoryFiles := make([]ContextFile, 0)
+	memoryDir := filepath.Join(home, "memory")
+	walkErr := filepath.WalkDir(memoryDir, func(filePath string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry == nil {
+			return nil
+		}
+		if entry.IsDir() || entry.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		if !strings.EqualFold(path.Ext(entry.Name()), ".md") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(home, filePath)
+		if relErr != nil {
+			return nil
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return nil
+		}
+		memoryFiles = append(memoryFiles, ContextFile{
+			Name:    entry.Name(),
+			Path:    filepath.ToSlash(rel),
+			Folder:  "memory",
+			Size:    info.Size(),
+			ModTime: info.ModTime().UTC().Format(time.RFC3339),
+		})
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+
+	sort.Slice(memoryFiles, func(i, j int) bool {
+		return memoryFiles[i].Path < memoryFiles[j].Path
+	})
+	return append(files, memoryFiles...), nil
+}
+
+// ReadContext returns an allowed core file or a .md file under memory/.
+func (s *FileService) ReadContext(agentName, relPath string) (ContextContent, error) {
+	cleaned, err := normalizeContextPath(relPath)
+	if err != nil {
+		return ContextContent{}, err
+	}
+
+	content, err := s.Read(agentName, "/home/"+cleaned)
+	if err != nil {
+		return ContextContent{}, err
+	}
+	return ContextContent{
+		Name:    path.Base(cleaned),
+		Path:    cleaned,
+		Folder:  contextFolder(cleaned),
+		Content: content.Content,
+		Size:    content.Size,
+		ModTime: content.ModTime,
+	}, nil
+}
+
+// WriteContext creates or updates an allowed core file or a .md file under memory/.
+func (s *FileService) WriteContext(agentName, relPath, content string) (ContextContent, error) {
+	cleaned, err := normalizeContextPath(relPath)
+	if err != nil {
+		return ContextContent{}, err
+	}
+
+	written, err := s.Write(agentName, "/home/"+cleaned, content)
+	if err != nil {
+		return ContextContent{}, err
+	}
+	return ContextContent{
+		Name:    path.Base(cleaned),
+		Path:    cleaned,
+		Folder:  contextFolder(cleaned),
+		Content: written.Content,
+		Size:    written.Size,
+		ModTime: written.ModTime,
+	}, nil
+}
+
+// normalizeContextPath accepts a home-relative path and limits it to the core
+// allowlist or any .md file under memory/.
+func normalizeContextPath(rel string) (string, error) {
+	rel = strings.TrimSpace(rel)
+	rel = strings.TrimPrefix(rel, "/")
+	rel = strings.TrimPrefix(rel, "home/")
+	if rel == "" {
+		return "", fmt.Errorf("%w: path is required", ErrInvalidPath)
+	}
+	if strings.ContainsAny(rel, "\\:\x00") {
+		return "", fmt.Errorf("%w: path contains unsupported characters", ErrInvalidPath)
+	}
+
+	cleaned := path.Clean(rel)
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("%w: path escapes the home directory", ErrInvalidPath)
+	}
+	if !strings.EqualFold(path.Ext(cleaned), ".md") {
+		return "", fmt.Errorf("%w: only .md files are supported", ErrInvalidPath)
+	}
+
+	if strings.Contains(cleaned, "/") {
+		if !strings.HasPrefix(cleaned, "memory/") {
+			return "", fmt.Errorf("%w: only core context files or files under memory/ are supported", ErrInvalidPath)
+		}
+		return cleaned, nil
+	}
+
+	if !isCoreContextFile(cleaned) {
+		return "", fmt.Errorf("%w: %s is not a supported context file (allowed: %s)", ErrInvalidPath, cleaned, strings.Join(coreContextFiles, ", "))
+	}
+	return cleaned, nil
+}
+
+func isCoreContextFile(name string) bool {
+	for _, candidate := range coreContextFiles {
+		if name == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+func contextFolder(cleaned string) string {
+	if strings.HasPrefix(cleaned, "memory/") {
+		return "memory"
+	}
+	return "root"
 }
 
 // resolve maps a virtual path (/home, /skills, /jobs) to a filesystem path and

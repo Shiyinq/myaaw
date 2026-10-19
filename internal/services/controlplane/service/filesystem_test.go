@@ -175,4 +175,101 @@ func TestFileServiceUnknownAgent(t *testing.T) {
 	if _, err := files.List("missing", "/home"); !errors.Is(err, ErrAgentNotFound) {
 		t.Fatalf("err = %v, want ErrAgentNotFound", err)
 	}
+	if _, err := files.ListContext("missing"); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("context err = %v, want ErrAgentNotFound", err)
+	}
+}
+
+func TestFileServiceContextListReadWrite(t *testing.T) {
+	_, agentRoot := setupFileAgent(t)
+	home := filepath.Join(agentRoot, "home")
+	for _, dir := range []string{
+		filepath.Join(home, "memory", "2026"),
+		filepath.Join(home, "workspace"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	for path, content := range map[string]string{
+		filepath.Join(home, "memory", "RULES.md"):       "# Rules",
+		filepath.Join(home, "memory", "2026", "jan.md"): "# January",
+		filepath.Join(home, "memory", "notes.txt"):      "not markdown",
+		filepath.Join(home, "workspace", "README.md"):   "excluded",
+		filepath.Join(home, "notes", "nested.md"):       "excluded too",
+		filepath.Join(home, "NOTES.md"):                 "not a core file",
+		filepath.Join(home, "BOOTSTRAP.md"):             "not in the allowlist",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	files := NewFileService()
+	list, err := files.ListContext("myfriend")
+	if err != nil {
+		t.Fatalf("ListContext: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("list = %+v", list)
+	}
+	if list[0].Path != "AGENTS.md" || list[0].Folder != "root" {
+		t.Fatalf("first file = %+v", list[0])
+	}
+	if list[1].Path != "memory/2026/jan.md" || list[1].Folder != "memory" {
+		t.Fatalf("second file = %+v", list[1])
+	}
+	if list[2].Path != "memory/RULES.md" {
+		t.Fatalf("third file = %+v", list[2])
+	}
+
+	read, err := files.ReadContext("myfriend", "/home/memory/RULES.md")
+	if err != nil {
+		t.Fatalf("ReadContext: %v", err)
+	}
+	if read.Path != "memory/RULES.md" || read.Folder != "memory" || read.Content != "# Rules" {
+		t.Fatalf("read = %+v", read)
+	}
+
+	written, err := files.WriteContext("myfriend", "memory/2026/feb.md", "# February")
+	if err != nil {
+		t.Fatalf("WriteContext: %v", err)
+	}
+	if written.Path != "memory/2026/feb.md" || written.Content != "# February" {
+		t.Fatalf("written = %+v", written)
+	}
+
+	updated, err := files.WriteContext("myfriend", "AGENTS.md", "# Updated agents")
+	if err != nil {
+		t.Fatalf("WriteContext root: %v", err)
+	}
+	if updated.Folder != "root" || updated.Content != "# Updated agents" {
+		t.Fatalf("updated = %+v", updated)
+	}
+}
+
+func TestFileServiceContextRejectsUnsupportedPaths(t *testing.T) {
+	setupFileAgent(t)
+	files := NewFileService()
+
+	for _, path := range []string{
+		"",
+		"notes/todo.md",
+		"workspace/README.md",
+		"../secret.md",
+		"memory/../../AGENTS.md",
+		"/etc/passwd.md",
+		"AGENTS.txt",
+		"memory",
+		"NOTES.md",
+		"BOOTSTRAP.md",
+		"agents.md",
+	} {
+		if _, err := files.ReadContext("myfriend", path); !errors.Is(err, ErrInvalidPath) {
+			t.Errorf("ReadContext(%q) err = %v, want ErrInvalidPath", path, err)
+		}
+		if _, err := files.WriteContext("myfriend", path, "x"); !errors.Is(err, ErrInvalidPath) {
+			t.Errorf("WriteContext(%q) err = %v, want ErrInvalidPath", path, err)
+		}
+	}
 }
