@@ -397,6 +397,25 @@ func TestRouterWriteManagement(t *testing.T) {
 	doJSON(t, app, "DELETE", "/agents/myfriend/cron/missing", token, "", fiber.StatusNotFound, nil)
 }
 
+func TestRouterAcceptsRawAuthorizationToken(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	req := httptest.NewRequest("GET", "/agents", nil)
+	req.Header.Set("Authorization", token)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, body)
+	}
+}
+
 func TestRouterDocsRedirectsToIndex(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	app := mustNewApp(t)

@@ -3302,7 +3302,7 @@
     },
     "securityDefinitions": {
         "BearerAuth": {
-            "description": "Bearer token returned by POST /auth/login",
+            "description": "Token returned by POST /auth/login. Paste it with or without the \"Bearer \" prefix.",
             "type": "apiKey",
             "name": "Authorization",
             "in": "header"

@@ -27,10 +27,16 @@ func RequireAuth(auth *service.AuthService) fiber.Handler {
 }
 
 func BearerToken(c fiber.Ctx) string {
-	const prefix = "Bearer "
-	header := c.Get("Authorization")
-	if !strings.HasPrefix(header, prefix) {
+	header := strings.TrimSpace(c.Get("Authorization"))
+	if header == "" {
 		return ""
 	}
-	return strings.TrimSpace(strings.TrimPrefix(header, prefix))
+
+	// Swagger UI's apiKey auth sends the raw value. Accept both forms so the
+	// same token works with "Bearer <token>" and with the plain token.
+	parts := strings.SplitN(header, " ", 2)
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		return strings.TrimSpace(parts[1])
+	}
+	return header
 }

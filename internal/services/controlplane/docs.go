@@ -9,5 +9,5 @@
 // @securityDefinitions.apikey BearerAuth
 // @in              header
 // @name            Authorization
-// @description     Bearer token returned by POST /auth/login
+// @description     Token returned by POST /auth/login. Paste it with or without the "Bearer " prefix.
 package controlplane

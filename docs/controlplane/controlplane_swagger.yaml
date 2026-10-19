@@ -2127,7 +2127,8 @@ paths:
       - System
 securityDefinitions:
   BearerAuth:
-    description: Bearer token returned by POST /auth/login
+    description: Token returned by POST /auth/login. Paste it with or without the
+      "Bearer " prefix.
     in: header
     name: Authorization
     type: apiKey
