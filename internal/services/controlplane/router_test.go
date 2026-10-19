@@ -397,6 +397,43 @@ func TestRouterWriteManagement(t *testing.T) {
 	doJSON(t, app, "DELETE", "/agents/myfriend/cron/missing", token, "", fiber.StatusNotFound, nil)
 }
 
+func TestRouterDocsRedirectsToIndex(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+
+	req := httptest.NewRequest("GET", "/docs/", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", resp.StatusCode)
+	}
+	if location := resp.Header.Get("Location"); location != "/docs/index.html" {
+		t.Fatalf("location = %q", location)
+	}
+
+	req = httptest.NewRequest("GET", "/docs/index.html", nil)
+	resp, err = app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test index: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "swagger-ui") {
+		t.Fatal("index page does not look like Swagger UI")
+	}
+}
+
 func TestAllowedOrigins(t *testing.T) {
 	t.Setenv("ALLOWED_ORIGINS", "")
 	if got := allowedOrigins(); len(got) != 1 || got[0] != "*" {

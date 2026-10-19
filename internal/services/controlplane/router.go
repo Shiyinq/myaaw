@@ -45,7 +45,7 @@ func NewApp() (*fiber.App, error) {
 
 	app.Get("/health", h.Health)
 	app.Get("/docs", func(c fiber.Ctx) error {
-		return c.Redirect().To("/docs/")
+		return c.Redirect().To("/docs/index.html")
 	})
 	app.Get("/docs/*", swaggo.New(swaggo.Config{
 		InstanceName: "controlplane",
