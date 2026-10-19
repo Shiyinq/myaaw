@@ -83,8 +83,12 @@ graph TD
     SEL[Agent Selection<br/>--agent / picker / MYAAW_AGENT]
     CLI --> SEL
     Voice --> SEL
+    SEL -- "chat → default" --> BOT_A
+    SEL -- "chat → myfriend" --> BOT_B
+    SEL -- "voice → default" --> PROV_A
+    SEL -- "voice → myfriend" --> PROV_B
 
-    subgraph PROC_A["Agent Process A - default (port 8080)"]
+    subgraph "Agent Process A - default (port 8080)"
         CH_A[Telegram / Discord<br/>token A]
         SRV_A[Fiber Server]
         BOT_A[Bot Service]
@@ -113,12 +117,12 @@ graph TD
         LOOP_A <--> TOOL_A
         LOOP_A <--> PROV_A
         BOT_A <--> DB_A
-        BOT_A -. "reads identity / memory" .-> HOME_A
-        TOOL_A -. "read/write workspace" .-> HOME_A
-        LOOP_A -. "events" .-> UI_A
+        BOT_A -- "reads identity / memory" --> HOME_A
+        TOOL_A -- "read/write workspace" --> HOME_A
+        LOOP_A -- "events" --> UI_A
     end
 
-    subgraph PROC_B["Agent Process B - myfriend (port 8081)"]
+    subgraph "Agent Process B - myfriend (port 8081)"
         CH_B[Telegram / Discord<br/>token B]
         SRV_B[Fiber Server]
         BOT_B[Bot Service]
@@ -147,9 +151,9 @@ graph TD
         LOOP_B <--> TOOL_B
         LOOP_B <--> PROV_B
         BOT_B <--> DB_B
-        BOT_B -. "reads identity / memory" .-> HOME_B
-        TOOL_B -. "read/write workspace" .-> HOME_B
-        LOOP_B -. "events" .-> UI_B
+        BOT_B -- "reads identity / memory" --> HOME_B
+        TOOL_B -- "read/write workspace" --> HOME_B
+        LOOP_B -- "events" --> UI_B
     end
 
     TG --> CH_A
@@ -159,12 +163,9 @@ graph TD
     API --> SRV_A
     API --> SRV_B
 
-    SEL -. "binds CLI session" .-> PROC_A
-    SEL -. "binds CLI session" .-> PROC_B
-
     SEL -. "reads" .-> REG
-    PIDS -. "pid files" .-> SRV_A
-    PIDS -. "pid files" .-> SRV_B
+    PIDS -- "pid files" --> SRV_A
+    PIDS -- "pid files" --> SRV_B
 
     %% Styling
     classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px,color:#000;
@@ -187,7 +188,7 @@ Telegram and Discord payloads always pass through a queue first: **channel adapt
 
 Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, and `home/`. `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
 
-Solid arrows are the main request/data path. Dotted arrows are auxiliary relationships: agent selection, registry and PID lookups, and the event side-channel to the timeline. Telegram and Discord do not use the selection node: each bot token already binds messages to one agent process (solid arrows). Only CLI sessions resolve `--agent` / picker / `MYAAW_AGENT` (dotted arrows). A CLI session then uses the selected agent's config, SQLite, and `home/`: `myaaw chat` drives the Bot Service and loop in its own process, `myaaw voice` goes straight to the provider, and `myaaw voice-classic` drives the loop with tools.
+Dotted arrows are used only for the `agents.json` registry read during agent selection; every other arrow shows a real request/data path. Telegram and Discord do not use the selection node: each bot token already binds messages to one agent process. Only CLI sessions resolve `--agent` / picker / `MYAAW_AGENT`, and they use the selected agent's config, SQLite, and `home/`: `myaaw chat` drives the Bot Service and loop in its own process, `myaaw voice` goes straight to the provider, and `myaaw voice-classic` drives the loop with tools.
 
 ### Key Components
 
