@@ -1,4 +1,4 @@
-.PHONY: all build build-all install uninstall clean check run help swagger
+.PHONY: all build build-all install uninstall clean check run help swagger swagger-controlplane
 
 # Build variables
 BINARY_NAME=myaaw
@@ -53,7 +53,7 @@ BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)$(BINARY_EXT)
 all: help
 
 ## build: Build the binary for current platform
-build: swagger
+build: swagger swagger-controlplane
 	@echo "🚧 Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@echo "   Version: $(VERSION)"
 	@mkdir -p $(BUILD_DIR)
@@ -66,8 +66,15 @@ swagger:
 	@mkdir -p docs/swagger
 	# NB: do NOT add --parseGoList=false here — it makes swag recursively parse
 	# the Go stdlib + all dependency sources and can take over an hour.
-	@swag init -g $(MAIN_GO) --parseDependency --parseInternal --output docs/swagger --exclude .myaaw
+	@swag init -g $(MAIN_GO) --parseDependency --parseInternal --output docs/swagger --exclude .myaaw,internal/services/controlplane
 	@echo "✅ Swagger generated"
+
+## swagger-controlplane: Generate Swagger documentation for `myaaw api`
+swagger-controlplane:
+	@echo "📝 Generating control plane Swagger documentation..."
+	@mkdir -p docs/controlplane
+	@swag init -g internal/services/controlplane/docs.go --parseDependency --parseInternal --output docs/controlplane --exclude .myaaw,internal/services/bot/handler,internal/services/queue/handler --instanceName controlplane
+	@echo "✅ Control plane Swagger generated"
 
 ## build-all: Cross-compile for Linux, Darwin, and Windows
 build-all:

@@ -43,17 +43,6 @@ definitions:
         example: error message
         type: string
     type: object
-  handler.ChatResponse:
-    properties:
-      text:
-        type: string
-      timeline:
-        items:
-          $ref: '#/definitions/api.TimelineItem'
-        type: array
-      usage:
-        $ref: '#/definitions/handler.UsageResponse'
-    type: object
   handler.HeartbeatRequest:
     properties:
       channel:
@@ -65,7 +54,18 @@ definitions:
       trigger:
         type: string
     type: object
-  handler.UsageResponse:
+  myaaw_internal_services_bot_handler.ChatResponse:
+    properties:
+      text:
+        type: string
+      timeline:
+        items:
+          $ref: '#/definitions/api.TimelineItem'
+        type: array
+      usage:
+        $ref: '#/definitions/myaaw_internal_services_bot_handler.UsageResponse'
+    type: object
+  myaaw_internal_services_bot_handler.UsageResponse:
     properties:
       completion_tokens:
         type: integer
@@ -100,7 +100,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.ChatResponse'
+            $ref: '#/definitions/myaaw_internal_services_bot_handler.ChatResponse'
         "400":
           description: Bad Request
           schema:

@@ -87,6 +87,7 @@ func init() {
 			"help":    true,
 			"update":  true,
 			"agent":   true,
+			"api":     true,
 		}
 
 		if metaCommands[cmd.Name()] || isAgentCommand(cmd) {

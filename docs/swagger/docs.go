@@ -43,7 +43,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.ChatResponse"
+                            "$ref": "#/definitions/myaaw_internal_services_bot_handler.ChatResponse"
                         }
                     },
                     "400": {
@@ -308,23 +308,6 @@ const docTemplate = `{
                 }
             }
         },
-        "handler.ChatResponse": {
-            "type": "object",
-            "properties": {
-                "text": {
-                    "type": "string"
-                },
-                "timeline": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.TimelineItem"
-                    }
-                },
-                "usage": {
-                    "$ref": "#/definitions/handler.UsageResponse"
-                }
-            }
-        },
         "handler.HeartbeatRequest": {
             "type": "object",
             "properties": {
@@ -342,7 +325,24 @@ const docTemplate = `{
                 }
             }
         },
-        "handler.UsageResponse": {
+        "myaaw_internal_services_bot_handler.ChatResponse": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string"
+                },
+                "timeline": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.TimelineItem"
+                    }
+                },
+                "usage": {
+                    "$ref": "#/definitions/myaaw_internal_services_bot_handler.UsageResponse"
+                }
+            }
+        },
+        "myaaw_internal_services_bot_handler.UsageResponse": {
             "type": "object",
             "properties": {
                 "completion_tokens": {
