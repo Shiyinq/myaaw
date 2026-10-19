@@ -92,16 +92,19 @@ graph TD
         CH_A[Telegram / Discord<br/>token A]
         SRV_A[Fiber Server]
         BOT_A[Bot Service]
-        LOOP_A[RunEvents Loop<br/>event-driven]
-        TRANS_A[Transcript v2<br/>compaction]
-        TOOL_A[Tools<br/>Bash / FS / Python / Skills]
-        PROV_A[LLM Provider A]
         DB_A[(SQLite A)]
         HOME_A[home/ + workspace/]
         QUEUE_A[In-Memory Queue A]
         CONSUMER_A[Queue Consumer]
         CRON_A[Cron / Heartbeat]
         UI_A[Event Timeline<br/>TUI / Telegram / Discord]
+
+        subgraph "Agent Core A"
+            LOOP_A[RunEvents Loop<br/>event-driven]
+            TRANS_A[Transcript v2<br/>compaction]
+            TOOL_A[Tools<br/>Bash / FS / Python / Skills]
+            PROV_A[LLM Provider A]
+        end
 
         CH_A -- "enqueue" --> QUEUE_A
         QUEUE_A --> CONSUMER_A
@@ -114,7 +117,8 @@ graph TD
         LOOP_A <--> TOOL_A
         LOOP_A <--> PROV_A
         BOT_A <--> DB_A
-        BOT_A -. "reads/writes" .-> HOME_A
+        BOT_A -. "reads identity / memory" .-> HOME_A
+        TOOL_A -. "read/write workspace" .-> HOME_A
         LOOP_A -. "events" .-> UI_A
     end
 
@@ -122,16 +126,19 @@ graph TD
         CH_B[Telegram / Discord<br/>token B]
         SRV_B[Fiber Server]
         BOT_B[Bot Service]
-        LOOP_B[RunEvents Loop<br/>event-driven]
-        TRANS_B[Transcript v2<br/>compaction]
-        TOOL_B[Tools<br/>Bash / FS / Python / Skills]
-        PROV_B[LLM Provider B]
         DB_B[(SQLite B)]
         HOME_B[home/ + workspace/]
         QUEUE_B[In-Memory Queue B]
         CONSUMER_B[Queue Consumer]
         CRON_B[Cron / Heartbeat]
         UI_B[Event Timeline<br/>TUI / Telegram / Discord]
+
+        subgraph "Agent Core B"
+            LOOP_B[RunEvents Loop<br/>event-driven]
+            TRANS_B[Transcript v2<br/>compaction]
+            TOOL_B[Tools<br/>Bash / FS / Python / Skills]
+            PROV_B[LLM Provider B]
+        end
 
         CH_B -- "enqueue" --> QUEUE_B
         QUEUE_B --> CONSUMER_B
@@ -144,7 +151,8 @@ graph TD
         LOOP_B <--> TOOL_B
         LOOP_B <--> PROV_B
         BOT_B <--> DB_B
-        BOT_B -. "reads/writes" .-> HOME_B
+        BOT_B -. "reads identity / memory" .-> HOME_B
+        TOOL_B -. "read/write workspace" .-> HOME_B
         LOOP_B -. "events" .-> UI_B
     end
 
@@ -175,6 +183,8 @@ graph TD
 ```
 
 Telegram and Discord payloads always pass through a queue first: **channel adapter → in-memory queue → queue consumer → that agent's own `POST /webhook/bot`**. The queue is an in-process Go channel, so each agent process has its own queue; messages can never move between agents. Cron and heartbeat are the exception: they call `POST /heartbeat` directly on their own server.
+
+`Agent Core` marks the components that belong to the agent itself (event loop, transcript, tools, provider). `Bot Service` reads identity and memory files from `home/` (`AGENTS.md`, `SOUL.md`, `MEMORY.md`, `USER.md`, `skills/`) to build the system prompt, while the tools read and write the actual `home/workspace/` during a run.
 
 ### Key Components
 
