@@ -32,7 +32,7 @@ type UsageResponse struct {
 // @Tags		API
 // @Produce		json
 // @Accept		json
-// @Param		request	body		api.ChatRequest	true	"Chat request with user_id and text"
+// @Param		request	body		api.ChatRequest	true	"Chat request; user_id is optional and defaults to 0"
 // @Success		200		{object}	ChatResponse
 // @Failure     400     {object}    common.ErrorResponse
 // @Failure     403     {object}    common.ErrorResponse
@@ -105,7 +105,7 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 // @Tags		API
 // @Produce		text/event-stream
 // @Accept		json
-// @Param		request	body		api.ChatRequest	true	"Chat request with user_id and text"
+// @Param		request	body		api.ChatRequest	true	"Chat request; user_id is optional and defaults to 0"
 // @Success		200
 // @Failure     400     {object}    common.ErrorResponse
 // @Failure     403     {object}    common.ErrorResponse

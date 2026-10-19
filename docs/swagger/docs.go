@@ -30,7 +30,7 @@ const docTemplate = `{
                 "summary": "API Chat",
                 "parameters": [
                     {
-                        "description": "Chat request with user_id and text",
+                        "description": "Chat request; user_id is optional and defaults to 0",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -88,7 +88,7 @@ const docTemplate = `{
                 "summary": "API Chat Stream",
                 "parameters": [
                     {
-                        "description": "Chat request with user_id and text",
+                        "description": "Chat request; user_id is optional and defaults to 0",
                         "name": "request",
                         "in": "body",
                         "required": true,

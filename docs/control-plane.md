@@ -56,19 +56,42 @@ Store the returned `token` and send it on every other request:
 Authorization: Bearer <token>
 ```
 
-Credentials live in `~/.myaaw/controlplane.json` with a bcrypt hash, never plaintext.
+Credentials live in `~/.myaaw/controlplane.json` with a bcrypt hash and the agent `user_id`, never plaintext:
+
+```json
+{
+  "username": "myaaw",
+  "password_hash": "$2a$...",
+  "user_id": 0,
+  "created_at": "2026-10-20T00:00:00Z"
+}
+```
+
+New installs seed `user_id` as `0`. Existing credential files without the field are rewritten with `user_id: 0` the next time `myaaw api` starts. Edit the value and restart the API to change which agent user chat and conversation requests use. Clients do not need to send `user_id`.
 
 ## 3. Authentication
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/auth/login` | `{username, password}` → `{token, expires_at}` |
-| `GET` | `/auth/me` | current username |
+| `POST` | `/auth/login` | `{username, password}` → `{token, expires_at, user_id}` |
+| `GET` | `/auth/me` | current `{username, user_id}` |
 | `POST` | `/auth/logout` | invalidate the current token |
 | `POST` | `/auth/change-password` | `{current_password, new_password}` |
 | `PUT` | `/auth/username` | `{password, new_username}` |
 
 Tokens are valid for 24 hours. Changing the password invalidates all sessions. Restarting `myaaw api` also clears sessions. `/health` and `/docs/*` are public; every other route requires the bearer token.
+
+The login response includes `user_id` (default `0`):
+
+```json
+{
+  "token": "...",
+  "expires_at": "2026-10-20T20:00:00Z",
+  "user_id": 0
+}
+```
+
+Chat and conversation endpoints use this ID automatically. Clients do not need to send `user_id` at all.
 
 ## 4. Agents
 
@@ -98,14 +121,15 @@ Chat is proxied to the selected agent server, so it uses that agent's config, SQ
 curl -X POST http://localhost:9000/agents/myfriend/chat \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"user_id":12345,"text":"Check my workspace"}'
+  -d '{"text":"Check my workspace"}'
 ```
+
+`user_id` is ignored in the request body. The control plane always sends the ID from `~/.myaaw/controlplane.json` (default `0`), so chat and conversation endpoints stay in the same scope. Direct calls to the agent server's `/api/chat` still default a missing `user_id` to `0`.
 
 To continue an existing conversation, pass its `conversation_id`. Omit it to start a **new conversation** every time; `"NEW"` also forces a new conversation. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
 
 ```json
 {
-  "user_id": 12345,
   "text": "And the downloads folder?",
   "conversation_id": "conv-id-from-a-previous-response"
 }
@@ -136,7 +160,7 @@ Response:
 curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"user_id":12345,"text":"Check my workspace"}'
+  -d '{"text":"Check my workspace"}'
 ```
 
 | Event | Data |
@@ -161,7 +185,7 @@ const response = await fetch(`http://localhost:9000/agents/${selectedAgent}/chat
     "Content-Type": "application/json",
     "Authorization": `Bearer ${token}`,
   },
-  body: JSON.stringify({ user_id: 12345, text: "Check my workspace" }),
+  body: JSON.stringify({ text: "Check my workspace" }),
 });
 
 const reader = response.body.getReader();
@@ -279,10 +303,23 @@ Rules:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents/:name/conversations?user_id=&limit=&offset=` | paginated conversation list |
+| `GET` | `/agents/:name/conversations?search=&limit=&offset=` | paginated conversation list |
 | `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages |
+| `PATCH` | `/agents/:name/conversations/:id` | rename `{title}` |
+| `DELETE` | `/agents/:name/conversations/:id` | delete a conversation |
 
-List response:
+**User scoping.** List, detail, rename, and delete use the `user_id` from `~/.myaaw/controlplane.json` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
+
+**Search.** `search` matches the **title only**, case-insensitive for ASCII, and is applied before pagination. `total` reflects the filtered count.
+
+**Create.** There is no explicit create endpoint: call chat without `conversation_id` and use the `conversation_id` returned in the response.
+
+### List
+
+```bash
+curl "http://localhost:9000/agents/myfriend/conversations?limit=20&search=report" \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 ```json
 {
@@ -294,7 +331,42 @@ List response:
 }
 ```
 
-Detail response adds `messages`, `total_messages`, `limit`, `offset`, and `has_more`. `limit=0` returns all messages; otherwise the maximum page size is 500.
+`limit` defaults to 50; values above 200 fall back to 50. `offset` defaults to 0.
+
+### Detail
+
+```bash
+curl "http://localhost:9000/agents/myfriend/conversations/conv-id?limit=20&offset=0" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+The detail response adds `messages`, `total_messages`, `limit`, `offset`, and `has_more`. `limit=0` returns all messages; otherwise the maximum page size is 500.
+
+### Rename
+
+```bash
+curl -X PATCH http://localhost:9000/agents/myfriend/conversations/conv-id \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Workspace cleanup"}'
+```
+
+```json
+{"ok": true, "id": "conv-id", "title": "Workspace cleanup"}
+```
+
+The title is trimmed and must not be empty (`400`).
+
+### Delete
+
+```bash
+curl -X DELETE http://localhost:9000/agents/myfriend/conversations/conv-id \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{"ok": true}
+```
 
 Conversations come from the agent's own SQLite database. Legacy traces are migrated on read. If the database does not exist yet, the list is empty.
 
@@ -366,7 +438,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config` |
-| Conversations | `GET /conversations`, `GET /conversations/:id` |
+| Conversations | `GET /conversations?search=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id` |
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |
 | Cron | `GET/POST /cron`, `DELETE /cron/:id`, `POST /cron/:id/run`, `GET /cron/:id/history` |

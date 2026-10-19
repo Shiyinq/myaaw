@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,10 +18,29 @@ func newTestAuth(t *testing.T) *AuthService {
 }
 
 func TestAuthServiceSeedsDefaultUser(t *testing.T) {
-	auth := newTestAuth(t)
+	path := filepath.Join(t.TempDir(), "controlplane.json")
+	auth, err := NewAuthServiceAt(path)
+	if err != nil {
+		t.Fatalf("NewAuthServiceAt: %v", err)
+	}
 
 	if auth.Username() != DefaultUsername {
 		t.Fatalf("username = %q, want %q", auth.Username(), DefaultUsername)
+	}
+	if auth.UserID() != 0 {
+		t.Fatalf("user id = %d, want 0", auth.UserID())
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read credentials: %v", err)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatalf("unmarshal credentials: %v", err)
+	}
+	if stored["user_id"] != float64(0) {
+		t.Fatalf("stored user_id = %v, want 0", stored["user_id"])
 	}
 
 	token, expiresAt, err := auth.Login(DefaultUsername, DefaultPassword)
@@ -32,6 +52,75 @@ func TestAuthServiceSeedsDefaultUser(t *testing.T) {
 	}
 	if !auth.Validate(token) {
 		t.Fatal("token should be valid")
+	}
+}
+
+func TestAuthServiceMigratesMissingUserID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "controlplane.json")
+	if _, err := NewAuthServiceAt(path); err != nil {
+		t.Fatalf("NewAuthServiceAt: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read credentials: %v", err)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatalf("unmarshal credentials: %v", err)
+	}
+	delete(stored, "user_id")
+	data, _ = json.Marshal(stored)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write legacy credentials: %v", err)
+	}
+
+	auth, err := NewAuthServiceAt(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if auth.UserID() != 0 {
+		t.Fatalf("user id = %d, want 0", auth.UserID())
+	}
+
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read migrated credentials: %v", err)
+	}
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatalf("unmarshal migrated credentials: %v", err)
+	}
+	if stored["user_id"] != float64(0) {
+		t.Fatalf("migrated user_id = %v, want 0", stored["user_id"])
+	}
+}
+
+func TestAuthServiceLoadsConfiguredUserID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "controlplane.json")
+	if _, err := NewAuthServiceAt(path); err != nil {
+		t.Fatalf("NewAuthServiceAt: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read credentials: %v", err)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatalf("unmarshal credentials: %v", err)
+	}
+	stored["user_id"] = 42
+	data, _ = json.Marshal(stored)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write credentials: %v", err)
+	}
+
+	auth, err := NewAuthServiceAt(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if auth.UserID() != 42 {
+		t.Fatalf("user id = %d, want 42", auth.UserID())
 	}
 }
 

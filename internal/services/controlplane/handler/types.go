@@ -14,10 +14,12 @@ type LoginRequest struct {
 type LoginResponse struct {
 	Token     string `json:"token" example:"a1b2c3"`
 	ExpiresAt string `json:"expires_at" example:"2026-10-20T20:00:00Z"`
+	UserID    int    `json:"user_id" example:"0"`
 }
 
 type UsernameResponse struct {
 	Username string `json:"username" example:"myaaw"`
+	UserID   int    `json:"user_id" example:"0"`
 }
 
 type ChangePasswordRequest struct {
@@ -49,7 +51,7 @@ type HealthResponse struct {
 
 // ChatRequest mirrors the agent chat request for documentation purposes.
 type ChatRequest struct {
-	UserID         int      `json:"user_id" example:"12345"`
+	UserID         int      `json:"user_id" example:"0"`
 	Text           string   `json:"text" example:"Check my workspace"`
 	Images         []string `json:"images,omitempty"`
 	ConversationID string   `json:"conversation_id,omitempty" example:"conv-id or NEW"`
@@ -81,6 +83,16 @@ type MkdirRequest struct {
 type RenameRequest struct {
 	From string `json:"from" example:"/home/AGENTS.md"`
 	To   string `json:"to" example:"/home/AGENTS.old.md"`
+}
+
+type RenameConversationRequest struct {
+	Title string `json:"title" example:"Workspace cleanup"`
+}
+
+type RenameConversationResponse struct {
+	OK    bool   `json:"ok" example:"true"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
 }
 
 type FileListResponse struct {

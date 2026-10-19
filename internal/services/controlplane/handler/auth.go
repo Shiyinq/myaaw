@@ -44,11 +44,13 @@ func (h *Handler) Login(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"token":      token,
 		"expires_at": expiresAt.UTC().Format(time.RFC3339),
+		"user_id":    h.auth.UserID(),
 	})
 }
 
 // Me returns the authenticated user.
 // @Summary      Current user
+// @Description  Returns the control-plane username and the agent user ID that conversation and chat requests default to.
 // @Tags         Auth
 // @Produce      json
 // @Security     BearerAuth
@@ -56,7 +58,10 @@ func (h *Handler) Login(c fiber.Ctx) error {
 // @Failure      401 {object} common.ErrorResponse
 // @Router       /auth/me [get]
 func (h *Handler) Me(c fiber.Ctx) error {
-	return c.JSON(fiber.Map{"username": h.auth.Username()})
+	return c.JSON(fiber.Map{
+		"username": h.auth.Username(),
+		"user_id":  h.auth.UserID(),
+	})
 }
 
 // Logout invalidates the current bearer token.

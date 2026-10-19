@@ -188,7 +188,7 @@ func TestAPIChatInvalidConversation(t *testing.T) {
 	}
 }
 
-func TestAPIChatRejectsMissingUserID(t *testing.T) {
+func TestAPIChatAllowsMissingUserID(t *testing.T) {
 	app := newAPIApp(t, newFakeBotService())
 
 	req := httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"text":"hi"}`))
@@ -200,7 +200,7 @@ func TestAPIChatRejectsMissingUserID(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != fiber.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 }

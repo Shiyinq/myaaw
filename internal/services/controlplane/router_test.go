@@ -16,6 +16,7 @@ import (
 	"myaaw/internal/agentdir"
 
 	"github.com/gofiber/fiber/v3"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestRouterRequiresAuth(t *testing.T) {
@@ -240,7 +241,7 @@ func TestRouterReadOnlyManagement(t *testing.T) {
 	}
 	if _, err := db.Exec(
 		`INSERT INTO conversations (id, user_id, title, messages, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
-		"conv-1", 7, "First", `[{"role":"user","content":"hello"}]`, 1, time.Now().UTC(), time.Now().UTC(),
+		"conv-1", 0, "First", `[{"role":"user","content":"hello"}]`, 1, time.Now().UTC(), time.Now().UTC(),
 	); err != nil {
 		t.Fatalf("insert conversation: %v", err)
 	}
@@ -309,6 +310,215 @@ func TestRouterReadOnlyManagement(t *testing.T) {
 	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-1", token, "", fiber.StatusOK, &conversation)
 	if conversation.Title != "First" {
 		t.Fatalf("conversation = %+v", conversation)
+	}
+}
+
+func TestRouterConversationManagement(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	dbDir := filepath.Join(agentRoot, "database")
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatalf("mkdir database: %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", filepath.Join(dbDir, "myaaw.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE conversations (
+		id TEXT PRIMARY KEY, user_id INTEGER, title TEXT, messages TEXT, active INTEGER, created_at DATETIME, updated_at DATETIME
+	)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	now := time.Now().UTC()
+	for _, row := range []struct {
+		id     string
+		userID int
+		title  string
+	}{
+		{"conv-mine", 0, "Mine report"},
+		{"conv-other", 7, "Secret plan"},
+	} {
+		if _, err := db.Exec(
+			`INSERT INTO conversations (id, user_id, title, messages, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
+			row.id, row.userID, row.title, `[{"role":"user","content":"hello"}]`, 1, now, now,
+		); err != nil {
+			t.Fatalf("insert %s: %v", row.id, err)
+		}
+	}
+	db.Close()
+
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var me struct {
+		Username string `json:"username"`
+		UserID   int    `json:"user_id"`
+	}
+	doJSON(t, app, "GET", "/auth/me", token, "", fiber.StatusOK, &me)
+	if me.Username != "myaaw" || me.UserID != 0 {
+		t.Fatalf("me = %+v", me)
+	}
+
+	type conversationList struct {
+		Conversations []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"conversations"`
+		Total int `json:"total"`
+	}
+
+	// No user_id: defaults to the authenticated user (0).
+	var mine conversationList
+	doJSON(t, app, "GET", "/agents/myfriend/conversations", token, "", fiber.StatusOK, &mine)
+	if mine.Total != 1 || len(mine.Conversations) != 1 || mine.Conversations[0].ID != "conv-mine" {
+		t.Fatalf("mine = %+v", mine)
+	}
+
+	// Explicit user_id still works for administration.
+	var other conversationList
+	doJSON(t, app, "GET", "/agents/myfriend/conversations?user_id=7", token, "", fiber.StatusOK, &other)
+	if other.Total != 1 || len(other.Conversations) != 1 || other.Conversations[0].ID != "conv-other" {
+		t.Fatalf("other = %+v", other)
+	}
+
+	var search conversationList
+	doJSON(t, app, "GET", "/agents/myfriend/conversations?search=report", token, "", fiber.StatusOK, &search)
+	if search.Total != 1 || len(search.Conversations) != 1 || search.Conversations[0].ID != "conv-mine" {
+		t.Fatalf("search = %+v", search)
+	}
+
+	var searchMiss conversationList
+	doJSON(t, app, "GET", "/agents/myfriend/conversations?search=secret", token, "", fiber.StatusOK, &searchMiss)
+	if searchMiss.Total != 0 || len(searchMiss.Conversations) != 0 {
+		t.Fatalf("search miss = %+v", searchMiss)
+	}
+
+	var detail struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine", token, "", fiber.StatusOK, &detail)
+	if detail.Title != "Mine report" {
+		t.Fatalf("detail = %+v", detail)
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-other", token, "", fiber.StatusForbidden, nil)
+
+	var renamed struct {
+		OK    bool   `json:"ok"`
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	doJSON(t, app, "PATCH", "/agents/myfriend/conversations/conv-mine", token,
+		`{"title":"  Updated title  "}`, fiber.StatusOK, &renamed)
+	if !renamed.OK || renamed.ID != "conv-mine" || renamed.Title != "Updated title" {
+		t.Fatalf("renamed = %+v", renamed)
+	}
+	doJSON(t, app, "PATCH", "/agents/myfriend/conversations/conv-other", token,
+		`{"title":"Stolen"}`, fiber.StatusForbidden, nil)
+	doJSON(t, app, "PATCH", "/agents/myfriend/conversations/conv-mine", token,
+		`{"title":"   "}`, fiber.StatusBadRequest, nil)
+	doJSON(t, app, "PATCH", "/agents/myfriend/conversations/missing", token,
+		`{"title":"Nope"}`, fiber.StatusNotFound, nil)
+
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine", token, "", fiber.StatusOK, &detail)
+	if detail.Title != "Updated title" {
+		t.Fatalf("detail after rename = %+v", detail)
+	}
+
+	doJSON(t, app, "DELETE", "/agents/myfriend/conversations/conv-other", token, "", fiber.StatusForbidden, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/conversations/conv-mine", token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine", token, "", fiber.StatusNotFound, nil)
+}
+
+func TestRouterUsesConfiguredUserID(t *testing.T) {
+	gotUser := make(chan int, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			UserID int `json:"user_id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		gotUser <- payload.UserID
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"text":"ok"}`))
+	}))
+	defer upstream.Close()
+
+	setupTestAgent(t, upstream.URL)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("myaawadmin"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	credentialsPath := filepath.Join(home, ".myaaw", "controlplane.json")
+	credentials := fmt.Sprintf(
+		`{"username":"myaaw","password_hash":%q,"user_id":7,"created_at":"2026-01-01T00:00:00Z"}`,
+		string(hash),
+	)
+	if err := os.WriteFile(credentialsPath, []byte(credentials), 0o600); err != nil {
+		t.Fatalf("write credentials: %v", err)
+	}
+
+	dbDir := filepath.Join(home, ".myaaw", "myfriend", "database")
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatalf("mkdir database: %v", err)
+	}
+	db, err := sql.Open("sqlite3", filepath.Join(dbDir, "myaaw.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE conversations (
+		id TEXT PRIMARY KEY, user_id INTEGER, title TEXT, messages TEXT, active INTEGER, created_at DATETIME, updated_at DATETIME
+	)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	now := time.Now().UTC()
+	if _, err := db.Exec(
+		`INSERT INTO conversations (id, user_id, title, messages, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
+		"conv-config", 7, "Configured user", `[]`, 1, now, now,
+	); err != nil {
+		t.Fatalf("insert conversation: %v", err)
+	}
+	db.Close()
+
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var me struct {
+		UserID int `json:"user_id"`
+	}
+	doJSON(t, app, "GET", "/auth/me", token, "", fiber.StatusOK, &me)
+	if me.UserID != 7 {
+		t.Fatalf("me.UserID = %d, want 7", me.UserID)
+	}
+
+	var list struct {
+		Total         int `json:"total"`
+		Conversations []struct {
+			ID string `json:"id"`
+		} `json:"conversations"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/conversations", token, "", fiber.StatusOK, &list)
+	if list.Total != 1 || len(list.Conversations) != 1 || list.Conversations[0].ID != "conv-config" {
+		t.Fatalf("conversations = %+v", list)
+	}
+
+	doJSON(t, app, "GET", "/agents/myfriend/conversations?user_id=0", token, "", fiber.StatusOK, &list)
+	if list.Total != 0 || len(list.Conversations) != 0 {
+		t.Fatalf("user 0 should not see user 7 conversations: %+v", list)
+	}
+
+	doJSON(t, app, "POST", "/agents/myfriend/chat", token, `{"user_id":123,"text":"hi"}`, fiber.StatusOK, nil)
+	if userID := <-gotUser; userID != 7 {
+		t.Fatalf("proxied user_id = %d, want 7", userID)
 	}
 }
 

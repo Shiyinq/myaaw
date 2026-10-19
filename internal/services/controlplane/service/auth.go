@@ -37,6 +37,7 @@ var (
 type credentials struct {
 	Username     string `json:"username"`
 	PasswordHash string `json:"password_hash"`
+	UserID       int    `json:"user_id"`
 	CreatedAt    string `json:"created_at"`
 }
 
@@ -75,6 +76,14 @@ func (s *AuthService) Username() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.creds.Username
+}
+
+// UserID returns the agent user ID associated with the control-plane login.
+// Existing credential files without a user_id default to 0.
+func (s *AuthService) UserID() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.creds.UserID
 }
 
 // Login validates credentials and returns a new session token.
@@ -168,11 +177,34 @@ func (s *AuthService) load() error {
 		return s.seed()
 	}
 
-	if err := json.Unmarshal(data, &s.creds); err != nil {
+	var raw struct {
+		Username     string `json:"username"`
+		PasswordHash string `json:"password_hash"`
+		UserID       *int   `json:"user_id"`
+		CreatedAt    string `json:"created_at"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("parse %s: %w", s.path, err)
 	}
-	if s.creds.Username == "" || s.creds.PasswordHash == "" {
+	if raw.Username == "" || raw.PasswordHash == "" {
 		return fmt.Errorf("%s is missing username or password_hash", s.path)
+	}
+
+	s.creds = credentials{
+		Username:     raw.Username,
+		PasswordHash: raw.PasswordHash,
+		CreatedAt:    raw.CreatedAt,
+	}
+	if raw.UserID != nil {
+		s.creds.UserID = *raw.UserID
+		return nil
+	}
+
+	// Older credential files predate user scoping. Persist the default so the
+	// value is visible and editable instead of living only in code.
+	s.creds.UserID = 0
+	if err := s.saveLocked(); err != nil {
+		return fmt.Errorf("persist default user_id: %w", err)
 	}
 	return nil
 }
@@ -185,6 +217,7 @@ func (s *AuthService) seed() error {
 	s.creds = credentials{
 		Username:     DefaultUsername,
 		PasswordHash: string(hash),
+		UserID:       0,
 		CreatedAt:    s.now().UTC().Format(time.RFC3339),
 	}
 	return s.saveLocked()

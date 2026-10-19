@@ -378,6 +378,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Proxies to the agent server. user_id defaults to the authenticated control-plane user when omitted or 0.",
                 "consumes": [
                     "application/json"
                 ],
@@ -453,7 +454,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Relays the agent's Server-Sent Events (thought, chunk, tool, tool_result, done, error).",
+                "description": "Relays the agent's Server-Sent Events (thought, chunk, tool, tool_result, done, error). user_id defaults to the authenticated control-plane user when omitted or 0.",
                 "consumes": [
                     "application/json"
                 ],
@@ -574,6 +575,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Conversations are scoped to the authenticated user unless user_id is provided. search matches the title only.",
                 "produces": [
                     "application/json"
                 ],
@@ -591,8 +593,14 @@ const docTemplatecontrolplane = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Filter by user ID",
+                        "description": "User ID (defaults to the authenticated user)",
                         "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Case-insensitive title search",
+                        "name": "search",
                         "in": "query"
                     },
                     {
@@ -637,6 +645,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Returns 403 when the conversation belongs to another user.",
                 "produces": [
                     "application/json"
                 ],
@@ -661,6 +670,12 @@ const docTemplatecontrolplane = `{
                     },
                     {
                         "type": "integer",
+                        "description": "User ID (defaults to the authenticated user)",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
                         "description": "Message page size (0 = all, max 500)",
                         "name": "limit",
                         "in": "query"
@@ -681,6 +696,156 @@ const docTemplatecontrolplane = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Only the owner can delete a conversation.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Delete conversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User ID (defaults to the authenticated user)",
+                        "name": "user_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Only the owner can rename a conversation. Titles are trimmed and must not be empty.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Rename conversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User ID (defaults to the authenticated user)",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "description": "New title",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.RenameConversationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.RenameConversationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -2183,6 +2348,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Returns the control-plane username and the agent user ID that conversation and chat requests default to.",
                 "produces": [
                     "application/json"
                 ],
@@ -2508,7 +2674,7 @@ const docTemplatecontrolplane = `{
                 },
                 "user_id": {
                     "type": "integer",
-                    "example": 12345
+                    "example": 0
                 }
             }
         },
@@ -2678,6 +2844,10 @@ const docTemplatecontrolplane = `{
                 "token": {
                     "type": "string",
                     "example": "a1b2c3"
+                },
+                "user_id": {
+                    "type": "integer",
+                    "example": 0
                 }
             }
         },
@@ -2707,6 +2877,30 @@ const docTemplatecontrolplane = `{
                 "ok": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "handler.RenameConversationRequest": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "example": "Workspace cleanup"
+                }
+            }
+        },
+        "handler.RenameConversationResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "ok": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "title": {
+                    "type": "string"
                 }
             }
         },
@@ -2777,6 +2971,10 @@ const docTemplatecontrolplane = `{
         "handler.UsernameResponse": {
             "type": "object",
             "properties": {
+                "user_id": {
+                    "type": "integer",
+                    "example": 0
+                },
                 "username": {
                     "type": "string",
                     "example": "myaaw"

@@ -92,7 +92,7 @@ paths:
       - application/json
       description: Direct REST API chat endpoint (non-streaming)
       parameters:
-      - description: Chat request with user_id and text
+      - description: Chat request; user_id is optional and defaults to 0
         in: body
         name: request
         required: true
@@ -130,7 +130,7 @@ paths:
       - application/json
       description: Direct REST API chat endpoint with Server-Sent Events streaming
       parameters:
-      - description: Chat request with user_id and text
+      - description: Chat request; user_id is optional and defaults to 0
         in: body
         name: request
         required: true

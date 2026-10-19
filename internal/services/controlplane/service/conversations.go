@@ -15,7 +15,11 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-var ErrConversationNotFound = errors.New("conversation not found")
+var (
+	ErrConversationNotFound  = errors.New("conversation not found")
+	ErrConversationForbidden = errors.New("conversation belongs to another user")
+	ErrInvalidTitle          = errors.New("title must not be empty")
+)
 
 type ConversationSummary struct {
 	ID           string    `json:"id"`
@@ -49,20 +53,22 @@ type ConversationDetail struct {
 	HasMore       bool               `json:"has_more"`
 }
 
-// ConversationService reads conversations from an agent's SQLite database.
+// ConversationService reads and mutates conversations in an agent's SQLite database.
 type ConversationService struct{}
 
 func NewConversationService() *ConversationService {
 	return &ConversationService{}
 }
 
-func (s *ConversationService) List(agentName string, userID, limit, offset int) (ConversationPage, error) {
+// List returns conversations owned by userID. search matches the title only.
+func (s *ConversationService) List(agentName string, userID, limit, offset int, search string) (ConversationPage, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	if offset < 0 {
 		offset = 0
 	}
+	search = strings.TrimSpace(search)
 
 	page := ConversationPage{
 		Conversations: []ConversationSummary{},
@@ -79,12 +85,13 @@ func (s *ConversationService) List(agentName string, userID, limit, offset int) 
 	}
 	defer db.Close()
 
-	where := ""
-	args := make([]any, 0, 3)
-	if userID > 0 {
-		where = " WHERE user_id = ?"
-		args = append(args, userID)
+	conditions := []string{"user_id = ?"}
+	args := []any{userID}
+	if search != "" {
+		conditions = append(conditions, `title LIKE ? ESCAPE '\'`)
+		args = append(args, "%"+escapeLike(search)+"%")
 	}
+	where := " WHERE " + strings.Join(conditions, " AND ")
 
 	if err := db.QueryRow(`SELECT COUNT(*) FROM conversations`+where, args...).Scan(&page.Total); err != nil {
 		if strings.Contains(err.Error(), "no such table") {
@@ -98,9 +105,9 @@ func (s *ConversationService) List(agentName string, userID, limit, offset int) 
 
 	query := `SELECT id, user_id, title, active, created_at, updated_at, messages FROM conversations` +
 		where + ` ORDER BY updated_at DESC, created_at DESC LIMIT ? OFFSET ?`
-	args = append(args, limit, offset)
+	queryArgs := append(append([]any{}, args...), limit, offset)
 
-	rows, err := db.Query(query, args...)
+	rows, err := db.Query(query, queryArgs...)
 	if err != nil {
 		return page, err
 	}
@@ -136,7 +143,8 @@ func (s *ConversationService) List(agentName string, userID, limit, offset int) 
 	return page, nil
 }
 
-func (s *ConversationService) Get(agentName, id string, limit, offset int) (ConversationDetail, error) {
+// Get returns one conversation owned by userID with a page of its transcript.
+func (s *ConversationService) Get(agentName, id string, userID, limit, offset int) (ConversationDetail, error) {
 	db, err := openAgentDB(agentName)
 	if err != nil {
 		return ConversationDetail{}, err
@@ -165,6 +173,9 @@ func (s *ConversationService) Get(agentName, id string, limit, offset int) (Conv
 	}
 	if err != nil {
 		return ConversationDetail{}, err
+	}
+	if detail.UserID != userID {
+		return ConversationDetail{}, ErrConversationForbidden
 	}
 
 	if err := json.Unmarshal([]byte(messagesJSON), &detail.Messages); err != nil {
@@ -200,6 +211,78 @@ func (s *ConversationService) Get(agentName, id string, limit, offset int) (Conv
 	detail.Offset = offset
 	detail.HasMore = offset+len(detail.Messages) < detail.TotalMessages
 	return detail, nil
+}
+
+// Rename updates a conversation title. It only affects conversations owned by userID.
+func (s *ConversationService) Rename(agentName, id string, userID int, title string) (string, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "", ErrInvalidTitle
+	}
+
+	db, err := openAgentDB(agentName)
+	if err != nil {
+		return "", err
+	}
+	if db == nil {
+		return "", ErrConversationNotFound
+	}
+	defer db.Close()
+
+	owner, err := conversationOwner(db, id)
+	if err != nil {
+		return "", err
+	}
+	if owner != userID {
+		return "", ErrConversationForbidden
+	}
+
+	if _, err := db.Exec(
+		`UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?`,
+		title, time.Now().UTC(), id,
+	); err != nil {
+		return "", err
+	}
+	return title, nil
+}
+
+// Delete removes a conversation. It only affects conversations owned by userID.
+func (s *ConversationService) Delete(agentName, id string, userID int) error {
+	db, err := openAgentDB(agentName)
+	if err != nil {
+		return err
+	}
+	if db == nil {
+		return ErrConversationNotFound
+	}
+	defer db.Close()
+
+	owner, err := conversationOwner(db, id)
+	if err != nil {
+		return err
+	}
+	if owner != userID {
+		return ErrConversationForbidden
+	}
+
+	_, err = db.Exec(`DELETE FROM conversations WHERE id = ?`, id)
+	return err
+}
+
+func conversationOwner(db *sql.DB, id string) (int, error) {
+	var userID int
+	err := db.QueryRow(`SELECT user_id FROM conversations WHERE id = ? LIMIT 1`, id).Scan(&userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrConversationNotFound
+	}
+	return userID, err
+}
+
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }
 
 func openAgentDB(agentName string) (*sql.DB, error) {

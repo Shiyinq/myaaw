@@ -31,9 +31,8 @@ func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 		return nil, fmt.Errorf("failed to parse API payload: %w", err)
 	}
 
-	if req.UserID == 0 {
-		return nil, fmt.Errorf("user_id is required")
-	}
+	// user_id is optional. Direct agent API calls default to 0; the control
+	// plane injects its configured user ID before proxying chat requests.
 
 	if req.Text == "" {
 		return nil, fmt.Errorf("text is required")

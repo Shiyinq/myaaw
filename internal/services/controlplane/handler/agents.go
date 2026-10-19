@@ -48,6 +48,7 @@ func (h *Handler) GetAgent(c fiber.Ctx) error {
 
 // Chat proxies a non-streaming chat request to the selected agent server.
 // @Summary      Chat with an agent
+// @Description  Proxies to the agent server. user_id defaults to the authenticated control-plane user when omitted or 0.
 // @Tags         Chat
 // @Accept       json
 // @Produce      json
@@ -62,7 +63,7 @@ func (h *Handler) GetAgent(c fiber.Ctx) error {
 // @Failure      502 {object} common.ErrorResponse
 // @Router       /agents/{name}/chat [post]
 func (h *Handler) Chat(c fiber.Ctx) error {
-	if err := h.proxy.Chat(c, c.Params("name")); err != nil {
+	if err := h.proxy.Chat(c, c.Params("name"), h.auth.UserID()); err != nil {
 		return proxyError(c, err)
 	}
 	return nil
@@ -70,7 +71,7 @@ func (h *Handler) Chat(c fiber.Ctx) error {
 
 // ChatStream proxies a streaming chat request to the selected agent server.
 // @Summary      Stream chat with an agent
-// @Description  Relays the agent's Server-Sent Events (thought, chunk, tool, tool_result, done, error).
+// @Description  Relays the agent's Server-Sent Events (thought, chunk, tool, tool_result, done, error). user_id defaults to the authenticated control-plane user when omitted or 0.
 // @Tags         Chat
 // @Accept       json
 // @Produce      text/event-stream
@@ -85,7 +86,7 @@ func (h *Handler) Chat(c fiber.Ctx) error {
 // @Failure      502 {object} common.ErrorResponse
 // @Router       /agents/{name}/chat/stream [post]
 func (h *Handler) ChatStream(c fiber.Ctx) error {
-	if err := h.proxy.ChatStream(c, c.Params("name")); err != nil {
+	if err := h.proxy.ChatStream(c, c.Params("name"), h.auth.UserID()); err != nil {
 		return proxyError(c, err)
 	}
 	return nil

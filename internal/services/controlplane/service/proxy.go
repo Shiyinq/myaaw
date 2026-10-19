@@ -3,6 +3,7 @@ package service
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,21 +25,22 @@ func NewProxyService(agents *AgentService) *ProxyService {
 	}
 }
 
-func (p *ProxyService) Chat(c fiber.Ctx, agentName string) error {
-	return p.forward(c, agentName, "/api/chat")
+func (p *ProxyService) Chat(c fiber.Ctx, agentName string, userID int) error {
+	return p.forward(c, agentName, "/api/chat", userID)
 }
 
-func (p *ProxyService) ChatStream(c fiber.Ctx, agentName string) error {
-	return p.forward(c, agentName, "/api/chat/stream")
+func (p *ProxyService) ChatStream(c fiber.Ctx, agentName string, userID int) error {
+	return p.forward(c, agentName, "/api/chat/stream", userID)
 }
 
-func (p *ProxyService) forward(c fiber.Ctx, agentName, path string) error {
+func (p *ProxyService) forward(c fiber.Ctx, agentName, path string, userID int) error {
 	baseURL, _, err := p.agents.BaseURL(agentName)
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(c.Context(), http.MethodPost, baseURL+path, bytes.NewReader(c.Body()))
+	body := injectUserID(c.Body(), userID)
+	req, err := http.NewRequestWithContext(c.Context(), http.MethodPost, baseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -88,9 +90,32 @@ func (p *ProxyService) forward(c fiber.Ctx, agentName, path string) error {
 	}
 
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	return c.Send(body)
+	return c.Send(responseBody)
+}
+
+// injectUserID always sets user_id from the authenticated control-plane user.
+// The control plane represents one logged-in user, so a user_id in the request
+// body is ignored and cannot escape the configured conversation scope.
+func injectUserID(body []byte, userID int) []byte {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		// Leave malformed JSON untouched; the agent server returns the error.
+		return body
+	}
+
+	encoded, err := json.Marshal(userID)
+	if err != nil {
+		return body
+	}
+	payload["user_id"] = encoded
+
+	updated, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return updated
 }
