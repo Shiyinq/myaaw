@@ -20,4 +20,12 @@ func TestParseIncomingMapsConversationID(t *testing.T) {
 	if msg.ConversationID != "NEW" {
 		t.Fatalf("conversation id = %q", msg.ConversationID)
 	}
+
+	msg, err = adapter.ParseIncoming([]byte(`{"user_id":7,"text":"hi"}`))
+	if err != nil {
+		t.Fatalf("ParseIncoming without id: %v", err)
+	}
+	if msg.ConversationID != "NEW" {
+		t.Fatalf("missing conversation id should start a new session, got %q", msg.ConversationID)
+	}
 }

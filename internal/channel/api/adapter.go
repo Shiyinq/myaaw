@@ -39,12 +39,19 @@ func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 		return nil, fmt.Errorf("text is required")
 	}
 
+	conversationID := req.ConversationID
+	if conversationID == "" {
+		// API clients must opt in to an existing session; without an ID each
+		// request starts a new conversation.
+		conversationID = "NEW"
+	}
+
 	return &channel.IncomingMessage{
 		UserID:         req.UserID,
 		Text:           req.Text,
 		Images:         req.Images,
 		Channel:        "api",
-		ConversationID: req.ConversationID,
+		ConversationID: conversationID,
 		RawMeta:        APIMeta{},
 	}, nil
 }

@@ -101,7 +101,7 @@ curl -X POST http://localhost:9000/agents/myfriend/chat \
   -d '{"user_id":12345,"text":"Check my workspace"}'
 ```
 
-To continue an existing conversation, pass its `conversation_id`. Use `"NEW"` to force a new conversation. Omit it to continue the user's active conversation. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
+To continue an existing conversation, pass its `conversation_id`. Omit it to start a **new conversation** every time; `"NEW"` also forces a new conversation. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
 
 ```json
 {

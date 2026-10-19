@@ -53,9 +53,9 @@ Anyone who can reach the port can run the agent and its tools. Keep the server o
 | `user_id` | integer | yes | must be non-zero; identifies the user and conversation owner |
 | `text` | string | yes | must not be empty |
 | `images` | string[] | no | base64 image data; only the Gemini provider consumes them |
-| `conversation_id` | string | no | continue a specific conversation, or `"NEW"` to force a new one |
+| `conversation_id` | string | no | continue a specific conversation; omit it to start a new session (`"NEW"` also starts a new session) |
 
-`user_id` maps to a row in the agent's SQLite database. Omit `conversation_id` to continue the user's active conversation. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
+`user_id` maps to a row in the agent's SQLite database. Omit `conversation_id` and every request starts a **new conversation**. To continue a session, pass the `conversation_id` returned by the previous response. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
 
 ## 4. Non-streaming: `POST /api/chat`
 
