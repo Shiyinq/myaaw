@@ -441,6 +441,7 @@ Myaaw runs as a unified background service daemon.
 | Command | Subcommands | Description |
 | :--- | :--- | :--- |
 | **`server`** | `run`, `start`, `stop`, `status` | Manage the Myaaw Server (API + Background Workers) daemon. |
+| **`api`** | `--port` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000). |
 | **`webhook`** | `set`, `info`, `delete` | Manage Telegram bot webhook configuration easily. |
 
 > [!TIP]
@@ -487,3 +488,4 @@ myaaw cron add --name "Meeting Remind" --at "30m" --message "Meeting in 30 mins"
 | [MCP & Custom Tools](docs/mcp_and_custom_tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
 | [Multi-Agent Guide](docs/multi-agent.md) | Isolated agents: registry, per-agent config, channels, ports, servers, and commands. |
 | [REST API](docs/rest-api.md) | `/api/chat` and `/api/chat/stream`: requests, timeline items, SSE events, and response handling. |
+| [Control Plane API](docs/control-plane.md) | `myaaw api`: auth, agent switching, chat proxy, files, providers, channels, logs, and cron. |

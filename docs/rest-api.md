@@ -2,6 +2,8 @@
 
 This guide explains how to call the Myaaw REST API and how to consume its responses, both non-streaming and streaming (Server-Sent Events).
 
+> This document covers the per-agent API served by each agent server. For one unified API across multiple agents, see [control-plane.md](control-plane.md).
+
 ## 1. Overview
 
 Every running agent exposes its own HTTP server. The API uses the same agent loop, SQLite database, `home/`, tools, and provider as `myaaw chat`, Telegram, and Discord.
