@@ -57,83 +57,107 @@ Myaaw can be integrated with various platforms:
 
 ## 🏗 Architecture
 
-Myaaw follows a modular, single-binary architecture designed for simplicity and performance. It seamlessly handles multiple communication channels, in-memory queue processing, and a robust AI Agentic loop, backed entirely by SQLite.
+Myaaw uses one binary with **one isolated process per agent**. Each agent process owns its Fiber server, channels, database, workspace, and event-driven agent loop (v2). A shared registry and PID directory coordinate the agents on one machine.
 
 ```mermaid
 graph TD
-    %% Users
     User([User])
 
-    %% Entry Points
-    subgraph "Channels & Entry Points"
-        TG[Telegram Bot]
-        DC[Discord Bot]
-        CLI_Term[Terminal CLI]
-        CLI_Voice[Voice CLI / Gemini Live]
-        CLI_Classic[Voice Classic CLI]
+    subgraph "Entry Points"
+        TG[Telegram]
+        DC[Discord]
+        CLI[Terminal Chat]
+        Voice[Voice / Voice Classic]
         API[REST API]
     end
 
-    User <--> TG
-    User <--> DC
-    User <--> CLI_Term
-    User <--> CLI_Voice
-    User <--> CLI_Classic
-    User <--> API
+    User --> TG
+    User --> DC
+    User --> CLI
+    User --> Voice
+    User --> API
 
-    %% Core Services (Single Binary)
-    subgraph "Core System (Single Binary)"
-        Router[Fiber Server]
-        BotSvc[Bot Service]
-        ChReg[Channel Registry]
-        DB[(SQLite DB)]
-        
-        %% Async processing inside Server
-        subgraph "Background Workers"
-            MQ[[In-Memory Channel Queue]]
-            Consumer[Queue Consumer]
-            Cron[Cron Scheduler]
-            Heartbeat[Heartbeat Monitor]
-        end
+    REG[(~/.myaaw/agents.json)]
+    PIDS[(~/.myaaw/pids)]
+
+    SEL[Agent Selection<br/>--agent / picker / MYAAW_AGENT]
+    CLI --> SEL
+    Voice --> SEL
+    SEL -. "chat: selected agent" .-> BOT_A
+    SEL -. "chat: selected agent" .-> BOT_B
+    SEL -. "voice: selected agent" .-> PROV_A
+    SEL -. "voice: selected agent" .-> PROV_B
+
+    subgraph "Agent Process A - default (port 8080)"
+        CH_A[Telegram / Discord<br/>token A]
+        SRV_A[Fiber Server]
+        BOT_A[Bot Service]
+        LOOP_A[RunEvents Loop<br/>event-driven]
+        TRANS_A[Transcript v2<br/>compaction]
+        TOOL_A[Tools<br/>Bash / FS / Python / Skills]
+        PROV_A[LLM Provider A]
+        DB_A[(SQLite A)]
+        HOME_A[home/ + workspace/]
+        QUEUE_A[In-Memory Queue A]
+        CONSUMER_A[Queue Consumer]
+        CRON_A[Cron / Heartbeat]
+        UI_A[Event Timeline<br/>TUI / Telegram / Discord]
+
+        CH_A --> QUEUE_A
+        QUEUE_A --> CONSUMER_A
+        CONSUMER_A -- "POST /webhook/bot" --> SRV_A
+        CRON_A -- "POST /heartbeat" --> SRV_A
+        SRV_A --> BOT_A
+        BOT_A --> LOOP_A
+        LOOP_A <--> TRANS_A
+        TRANS_A <--> DB_A
+        LOOP_A <--> TOOL_A
+        LOOP_A <--> PROV_A
+        BOT_A <--> DB_A
+        BOT_A -. "reads/writes" .-> HOME_A
+        LOOP_A -. "events" .-> UI_A
     end
 
-    API --> Router
-    TG --> MQ
-    DC --> MQ
-    
-    Cron -- "Triggers" --> Router
-    Heartbeat -- "Triggers" --> Router
-    MQ --> Consumer
-    Consumer -- "Processes" --> Router
+    subgraph "Agent Process B - myfriend (port 8081)"
+        CH_B[Telegram / Discord<br/>token B]
+        SRV_B[Fiber Server]
+        BOT_B[Bot Service]
+        LOOP_B[RunEvents Loop<br/>event-driven]
+        TRANS_B[Transcript v2<br/>compaction]
+        TOOL_B[Tools<br/>Bash / FS / Python / Skills]
+        PROV_B[LLM Provider B]
+        DB_B[(SQLite B)]
+        HOME_B[home/ + workspace/]
+        QUEUE_B[In-Memory Queue B]
+        CONSUMER_B[Queue Consumer]
+        CRON_B[Cron / Heartbeat]
+        UI_B[Event Timeline<br/>TUI / Telegram / Discord]
 
-    Router --> BotSvc
-    CLI_Term --> BotSvc
-
-    BotSvc <--> ChReg
-    BotSvc <--> DB
-
-    %% Agentic Layer
-    subgraph "Agentic Layer"
-        Agent[ReAct Agent Loop]
-        Tools[Tools: Bash, FS, Python]
-        Prov[Providers: Gemini]
+        CH_B --> QUEUE_B
+        QUEUE_B --> CONSUMER_B
+        CONSUMER_B -- "POST /webhook/bot" --> SRV_B
+        CRON_B -- "POST /heartbeat" --> SRV_B
+        SRV_B --> BOT_B
+        BOT_B --> LOOP_B
+        LOOP_B <--> TRANS_B
+        TRANS_B <--> DB_B
+        LOOP_B <--> TOOL_B
+        LOOP_B <--> PROV_B
+        BOT_B <--> DB_B
+        BOT_B -. "reads/writes" .-> HOME_B
+        LOOP_B -. "events" .-> UI_B
     end
 
-    %% Agent Local Workspace
-    subgraph "Local Workspace"
-        direction TB
-        Skills[~/.myaaw/{agent}/skills/ <br> Additional Agent Skills]
-        Home[~/.myaaw/{agent}/home/ <br> AGENTS.md, BOOTSTRAP.md, HEARTBEAT.md, <br> MEMORY.md, SOUL.md, TOOLS.md, USER.md, <br> memory/, workspace/]
-    end
+    TG --> CH_A
+    TG --> CH_B
+    DC --> CH_A
+    DC --> CH_B
+    API --> SRV_A
+    API --> SRV_B
 
-    BotSvc <--> Agent
-    CLI_Classic <--> Agent
-    CLI_Voice <--> Prov
-    Agent <--> Tools
-    Agent <--> Prov
-    
-    Agent -. "Loads definitions" .-> Skills
-    Agent -. "Reads/Writes" .-> Home
+    SEL -. "reads" .-> REG
+    PIDS -. "pid files" .-> SRV_A
+    PIDS -. "pid files" .-> SRV_B
 
     %% Styling
     classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px,color:#000;
@@ -142,19 +166,19 @@ graph TD
     classDef agent fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000;
     classDef auto fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px,color:#000;
     classDef wksp fill:#e0f7fa,stroke:#00acc1,stroke-width:2px,color:#000;
-    
-    class DB storage;
-    class BotSvc,Router,ChReg core;
-    class Agent,Tools,Prov agent;
-    class Consumer,Cron,Heartbeat,MQ auto;
-    class Skills,Home wksp;
+
+    class REG,PIDS,DB_A,DB_B storage;
+    class SEL,CH_A,CH_B,SRV_A,SRV_B,BOT_A,BOT_B core;
+    class LOOP_A,LOOP_B,TRANS_A,TRANS_B,TOOL_A,TOOL_B,PROV_A,PROV_B agent;
+    class QUEUE_A,QUEUE_B,CONSUMER_A,CONSUMER_B,CRON_A,CRON_B,UI_A,UI_B auto;
+    class HOME_A,HOME_B wksp;
 ```
 
 ### Key Components
 
 1. **Channels (`internal/channel`)**: The entry point for interactions. It provides an `Adapter` interface to normalize messages from Telegram, Discord, REST APIs, or Terminal CLI into a standard format.
-2. **Server & Workers (`cmd/myaaw`)**: Uses Cobra CLI to manage the application. The `server` command boots the Fiber v3 Web Server while simultaneously spinning up background goroutines for Queue Consumers, Cron, and Heartbeat. It also provides pure CLI modalities like `myaaw chat` and `myaaw voice`.
-3. **Bot Service (`internal/services/bot`)**: The core brain of the application. It processes normalized messages from external channels and Terminal CLI, retrieves chat history from **SQLite**, and invokes the AI Agent. Voice CLIs (`myaaw voice`/`voice-classic`) bypass this to connect directly to the Agent/Providers for lower latency.
+2. **Server & Workers (`cmd/myaaw`)**: Uses Cobra CLI to manage the application. `myaaw server --agent <name>` boots one Fiber server for that agent while spinning up its own background goroutines for Queue Consumer, Cron, and Heartbeat. The CLI also provides `myaaw chat`, `myaaw voice`, and `myaaw voice-classic`.
+3. **Bot Service (`internal/services/bot`)**: The per-agent core brain. It processes normalized messages from that agent's channels and Terminal CLI, retrieves chat history from the agent's SQLite database, and invokes the event-driven agent loop. Voice CLIs (`myaaw voice`/`voice-classic`) bypass this to connect directly to the Agent/Providers for lower latency.
 4. **Agentic Layer (`internal/agent`)**: Implements an event-driven ReAct (Reasoning and Action) loop. It streams lifecycle events (turns, message deltas, tool execution), executes tool calls with validation and parallel scheduling, and manages transcript compaction and usage aggregation. Legacy trace-based conversations are migrated on read.
 5. **Providers (`internal/provider`)**: A factory-based abstraction layer for various LLMs (Gemini, OpenAI, Groq, Ollama), Transcribers (STT), and Synthesizers (TTS). Currently, Gemini is the main provider for Myaaw's intelligence and live-voice functionality.
 6. **Message Queue (`internal/services/queue`)**: Handles asynchronous messaging using fast, native **Go Channels**. Polled or webhook payloads are pushed to the in-memory queue and processed by the Consumer worker to reliably deliver messages.
@@ -169,6 +193,7 @@ graph TD
        - `HEARTBEAT.md`: Ongoing active background jobs and tasks.
        - `MEMORY.md` & `memory/`: Historical conversation summarizations and logs.
        - `workspace/`: All agent-created output. Coding projects live in `workspace/projects/` and downloads in `workspace/downloads/`; the home root stays reserved for identity and memory files.
+9. **Multi-Agent Runtime (`internal/agentdir`)**: Resolves the active agent from `--agent`, `MYAAW_AGENT`, or `agents.json`. Each agent process gets an isolated config, `.env`, SQLite database, home, workspace, skills, jobs, logs, cron, tools, channels, and server port.
 
 ### CLI Project Context
 
