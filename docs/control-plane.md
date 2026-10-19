@@ -55,7 +55,7 @@ Credentials live in `~/.myaaw/controlplane.json` with a bcrypt hash, never plain
 | `POST` | `/auth/change-password` | `{current_password, new_password}` |
 | `PUT` | `/auth/username` | `{password, new_username}` |
 
-Tokens are valid for 24 hours. Changing the password invalidates all sessions. `/health` and `/docs/*` are public; every other route requires the bearer token.
+Tokens are valid for 24 hours. Changing the password invalidates all sessions. Restarting `myaaw api` also clears sessions. `/health` and `/docs/*` are public; every other route requires the bearer token.
 
 ## 4. Agents
 
@@ -277,6 +277,8 @@ data: {"line":"..."}
 
 The stream sends the last 64 KiB, then polls every 500 ms for new lines. File names are validated; paths are rejected.
 
+`EventSource` cannot set the `Authorization` header. Use the `fetch` streaming pattern from the chat section, or proxy the request through a same-origin endpoint that injects the header.
+
 ## 12. Server control
 
 | Method | Path | Purpose |
@@ -349,4 +351,4 @@ All `/agents/...` paths are prefixed with `/agents/:name`.
 - There is no rate limiting in the first version.
 - `/api/*` on the agent servers still has no auth; only the control plane protects access. Do not expose agent ports directly.
 - Tools can run Bash, filesystem, and Python operations, so control-plane access is privileged.
-- Keep `ALLOWED_ORIGINS` restrictive before serving a browser UI.
+- Keep `ALLOWED_ORIGINS` restrictive before serving a browser UI. The control plane reads it directly and allows `Authorization` in CORS preflight requests.

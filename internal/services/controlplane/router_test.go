@@ -397,6 +397,19 @@ func TestRouterWriteManagement(t *testing.T) {
 	doJSON(t, app, "DELETE", "/agents/myfriend/cron/missing", token, "", fiber.StatusNotFound, nil)
 }
 
+func TestAllowedOrigins(t *testing.T) {
+	t.Setenv("ALLOWED_ORIGINS", "")
+	if got := allowedOrigins(); len(got) != 1 || got[0] != "*" {
+		t.Fatalf("origins = %v, want *", got)
+	}
+
+	t.Setenv("ALLOWED_ORIGINS", "https://a.example, https://b.example")
+	got := allowedOrigins()
+	if len(got) != 2 || got[0] != "https://a.example" || got[1] != "https://b.example" {
+		t.Fatalf("origins = %v", got)
+	}
+}
+
 func TestRouterRejectsUnknownAgent(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	app := mustNewApp(t)

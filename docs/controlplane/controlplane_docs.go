@@ -1007,7 +1007,6 @@ const docTemplatecontrolplane = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "default": "default",
                         "description": "Agent name",
                         "name": "name",
                         "in": "path",

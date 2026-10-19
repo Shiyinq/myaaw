@@ -15,7 +15,7 @@ import (
 // @Tags         Files
 // @Produce      json
 // @Security     BearerAuth
-// @Param        name path string true "Agent name" default(default)
+// @Param        name path string true "Agent name"
 // @Param        path query string false "Virtual path" default(/)
 // @Success      200 {object} FileListResponse
 // @Failure      400 {object} common.ErrorResponse

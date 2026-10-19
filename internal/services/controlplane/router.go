@@ -1,6 +1,9 @@
 package controlplane
 
 import (
+	"os"
+	"strings"
+
 	_ "myaaw/docs/controlplane"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/services/controlplane/handler"
@@ -9,6 +12,7 @@ import (
 
 	"github.com/gofiber/contrib/v3/swaggo"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cors"
 )
 
 // NewApp builds the control-plane Fiber app. Public routes are registered
@@ -33,6 +37,11 @@ func NewApp() (*fiber.App, error) {
 	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api"})
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: allowedOrigins(),
+		AllowMethods: []string{"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"},
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
+	}))
 
 	app.Get("/health", h.Health)
 	app.Get("/docs", func(c fiber.Ctx) error {
@@ -99,4 +108,23 @@ func Run(addr string) error {
 		return err
 	}
 	return app.Listen(addr)
+}
+
+func allowedOrigins() []string {
+	raw := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS"))
+	if raw == "" || raw == "*" {
+		return []string{"*"}
+	}
+
+	parts := strings.Split(raw, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if origin := strings.TrimSpace(part); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	if len(origins) == 0 {
+		return []string{"*"}
+	}
+	return origins
 }

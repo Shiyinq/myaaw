@@ -1372,8 +1372,7 @@ paths:
       description: Lists the virtual roots (/home, /skills, /jobs) or the entries
         of one directory.
       parameters:
-      - default: default
-        description: Agent name
+      - description: Agent name
         in: path
         name: name
         required: true
