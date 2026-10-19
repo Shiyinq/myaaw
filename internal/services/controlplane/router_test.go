@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -197,6 +198,118 @@ func TestRouterFilesystem(t *testing.T) {
 
 	doJSON(t, app, "GET", "/agents/myfriend/fs/read?path=/etc/passwd", token, "", fiber.StatusBadRequest, nil)
 	doJSON(t, app, "DELETE", "/agents/myfriend/fs?path=/home", token, "", fiber.StatusBadRequest, nil)
+}
+
+func TestRouterReadOnlyManagement(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+
+	agentConfig := `{
+		"default_provider":"openai",
+		"providers":{"openai":{"type":"openai","base_url":"https://api.openai.com","api_key":"sk-secret","default_model":"gpt-4o"}},
+		"channels":{"telegram":{"active":true,"token":"telegram-secret","mode":"polling"}}
+	}`
+	if err := os.WriteFile(filepath.Join(agentRoot, "config", "config.json"), []byte(agentConfig), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	logsDir := filepath.Join(agentRoot, "logs")
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		t.Fatalf("mkdir logs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(logsDir, "app.log"), []byte("line1\nline2\n"), 0o644); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+
+	dbDir := filepath.Join(agentRoot, "database")
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatalf("mkdir database: %v", err)
+	}
+	db, err := sql.Open("sqlite3", filepath.Join(dbDir, "myaaw.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE conversations (
+		id TEXT PRIMARY KEY, user_id INTEGER, title TEXT, messages TEXT, active INTEGER, created_at DATETIME, updated_at DATETIME
+	)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO conversations (id, user_id, title, messages, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
+		"conv-1", 7, "First", `[{"role":"user","content":"hello"}]`, 1, time.Now().UTC(), time.Now().UTC(),
+	); err != nil {
+		t.Fatalf("insert conversation: %v", err)
+	}
+	db.Close()
+
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var providers struct {
+		Default   string `json:"default_provider"`
+		Providers []struct {
+			Name   string `json:"name"`
+			APIKey struct {
+				Configured bool   `json:"configured"`
+				Masked     string `json:"masked"`
+			} `json:"api_key"`
+		} `json:"providers"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/providers", token, "", fiber.StatusOK, &providers)
+	if providers.Default != "openai" || len(providers.Providers) != 1 {
+		t.Fatalf("providers = %+v", providers)
+	}
+	if !providers.Providers[0].APIKey.Configured || providers.Providers[0].APIKey.Masked != "********" {
+		t.Fatalf("api key not masked: %+v", providers.Providers[0])
+	}
+
+	var channels struct {
+		Channels []struct {
+			Name  string `json:"name"`
+			Token struct {
+				Configured bool `json:"configured"`
+			} `json:"token"`
+		} `json:"channels"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/channels", token, "", fiber.StatusOK, &channels)
+	if len(channels.Channels) != 1 || channels.Channels[0].Name != "telegram" || !channels.Channels[0].Token.Configured {
+		t.Fatalf("channels = %+v", channels)
+	}
+
+	var logs struct {
+		Files []struct {
+			Name string `json:"name"`
+		} `json:"files"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/logs", token, "", fiber.StatusOK, &logs)
+	if len(logs.Files) != 1 || logs.Files[0].Name != "app.log" {
+		t.Fatalf("logs = %+v", logs)
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/logs/stream?file=../app.log", token, "", fiber.StatusBadRequest, nil)
+
+	var conversations struct {
+		Conversations []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"conversations"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/conversations", token, "", fiber.StatusOK, &conversations)
+	if len(conversations.Conversations) != 1 || conversations.Conversations[0].ID != "conv-1" {
+		t.Fatalf("conversations = %+v", conversations)
+	}
+
+	var conversation struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-1", token, "", fiber.StatusOK, &conversation)
+	if conversation.Title != "First" {
+		t.Fatalf("conversation = %+v", conversation)
+	}
 }
 
 func TestRouterRejectsUnknownAgent(t *testing.T) {

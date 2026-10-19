@@ -7,18 +7,32 @@ import (
 )
 
 type Handler struct {
-	auth   *service.AuthService
-	agents *service.AgentService
-	proxy  *service.ProxyService
-	files  *service.FileService
+	auth          *service.AuthService
+	agents        *service.AgentService
+	proxy         *service.ProxyService
+	files         *service.FileService
+	config        *service.ConfigService
+	conversations *service.ConversationService
+	logs          *service.LogsService
 }
 
-func New(auth *service.AuthService, agents *service.AgentService, proxy *service.ProxyService, files *service.FileService) *Handler {
+func New(
+	auth *service.AuthService,
+	agents *service.AgentService,
+	proxy *service.ProxyService,
+	files *service.FileService,
+	configSvc *service.ConfigService,
+	conversations *service.ConversationService,
+	logs *service.LogsService,
+) *Handler {
 	return &Handler{
-		auth:   auth,
-		agents: agents,
-		proxy:  proxy,
-		files:  files,
+		auth:          auth,
+		agents:        agents,
+		proxy:         proxy,
+		files:         files,
+		config:        configSvc,
+		conversations: conversations,
+		logs:          logs,
 	}
 }
 

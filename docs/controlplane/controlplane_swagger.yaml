@@ -23,6 +23,57 @@ definitions:
         example: error message
         type: string
     type: object
+  config.CronConfig:
+    properties:
+      active:
+        type: boolean
+    type: object
+  config.GlobalBotConfig:
+    properties:
+      blocked_tools:
+        items:
+          type: string
+        type: array
+      context_max_tokens:
+        type: integer
+      max_iterations:
+        type: integer
+      max_tool_output_bytes:
+        type: integer
+      owner_ids:
+        items:
+          type: string
+        type: array
+      repeat_tool_call_limit:
+        type: integer
+      request_retries:
+        type: integer
+      run_timeout_seconds:
+        type: integer
+      stream:
+        type: boolean
+      stream_timeout_seconds:
+        type: integer
+      tool_timeout_seconds:
+        type: integer
+      type:
+        type: string
+      warning_iterations:
+        type: integer
+      watermark:
+        type: boolean
+    type: object
+  config.HeartbeatConfig:
+    properties:
+      active:
+        type: boolean
+      channel:
+        type: string
+      every:
+        type: string
+      to:
+        type: string
+    type: object
   handler.AgentsResponse:
     properties:
       agents:
@@ -68,6 +119,32 @@ definitions:
       usage:
         $ref: '#/definitions/handler.UsageResponse'
     type: object
+  handler.ConversationResponse:
+    properties:
+      active:
+        type: boolean
+      created_at:
+        type: string
+      id:
+        type: string
+      messages:
+        items:
+          $ref: '#/definitions/provider.Message'
+        type: array
+      title:
+        type: string
+      updated_at:
+        type: string
+      userId:
+        type: integer
+    type: object
+  handler.ConversationsResponse:
+    properties:
+      conversations:
+        items:
+          $ref: '#/definitions/service.ConversationSummary'
+        type: array
+    type: object
   handler.FileListResponse:
     properties:
       entries:
@@ -109,6 +186,13 @@ definitions:
       token:
         example: a1b2c3
         type: string
+    type: object
+  handler.LogsResponse:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/service.LogFile'
+        type: array
     type: object
   handler.MkdirRequest:
     properties:
@@ -162,6 +246,123 @@ definitions:
         example: /home/AGENTS.md
         type: string
     type: object
+  provider.FunctionCall:
+    properties:
+      arguments: {}
+      name:
+        type: string
+      thought_signature:
+        type: string
+    type: object
+  provider.Message:
+    properties:
+      action:
+        type: string
+      action_input:
+        type: string
+      content: {}
+      duration_ms:
+        type: integer
+      error_message:
+        type: string
+      images:
+        items:
+          type: string
+        type: array
+      is_error:
+        description: Transcript metadata (agent loop v2)
+        type: boolean
+      name:
+        type: string
+      observation:
+        type: string
+      role:
+        type: string
+      stop_reason:
+        $ref: '#/definitions/provider.StopReason'
+      thought:
+        description: ReAct Trace Fields (UI metadata; not sent to providers)
+        type: string
+      tool_call_id:
+        type: string
+      tool_calls:
+        items:
+          $ref: '#/definitions/provider.ToolCall'
+        type: array
+      trace:
+        description: Trace stores all ReAct steps as JSON array for final response
+        items:
+          $ref: '#/definitions/provider.ReactStep'
+        type: array
+      usage:
+        allOf:
+        - $ref: '#/definitions/provider.Usage'
+        description: Token Usage
+      v:
+        type: integer
+    type: object
+  provider.ReactStep:
+    properties:
+      action:
+        type: string
+      action_input:
+        type: string
+      observation:
+        type: string
+      step_group:
+        type: integer
+      thought:
+        type: string
+      thought_signature:
+        type: string
+    type: object
+  provider.StopReason:
+    enum:
+    - normal
+    - max_iterations
+    - length
+    - error
+    - aborted
+    type: string
+    x-enum-varnames:
+    - StopNormal
+    - StopMaxIterations
+    - StopLength
+    - StopError
+    - StopAborted
+  provider.ToolCall:
+    properties:
+      function:
+        $ref: '#/definitions/provider.FunctionCall'
+      id:
+        type: string
+      index:
+        type: integer
+      type:
+        type: string
+    type: object
+  provider.Usage:
+    properties:
+      completion_tokens:
+        type: integer
+      details:
+        items:
+          $ref: '#/definitions/provider.UsageDetail'
+        type: array
+      prompt_tokens:
+        type: integer
+      thoughts_tokens:
+        type: integer
+      total_tokens:
+        type: integer
+    type: object
+  provider.UsageDetail:
+    properties:
+      modality:
+        type: string
+      token_count:
+        type: integer
+    type: object
   service.AgentInfo:
     properties:
       base_url:
@@ -174,6 +375,68 @@ definitions:
         type: integer
       running:
         type: boolean
+    type: object
+  service.ChannelView:
+    properties:
+      active:
+        type: boolean
+      mode:
+        type: string
+      name:
+        type: string
+      ngrok_active:
+        type: boolean
+      ngrok_auth_token:
+        $ref: '#/definitions/service.SecretState'
+      token:
+        $ref: '#/definitions/service.SecretState'
+    type: object
+  service.ChannelsView:
+    properties:
+      channels:
+        items:
+          $ref: '#/definitions/service.ChannelView'
+        type: array
+    type: object
+  service.ConfigView:
+    properties:
+      bot:
+        $ref: '#/definitions/config.GlobalBotConfig'
+      channels:
+        items:
+          $ref: '#/definitions/service.ChannelView'
+        type: array
+      cron:
+        $ref: '#/definitions/config.CronConfig'
+      default_provider:
+        type: string
+      heartbeat:
+        $ref: '#/definitions/config.HeartbeatConfig'
+      providers:
+        items:
+          $ref: '#/definitions/service.ProviderView'
+        type: array
+      synthesizer:
+        $ref: '#/definitions/service.ServiceSecretView'
+      transcriber:
+        $ref: '#/definitions/service.ServiceSecretView'
+    type: object
+  service.ConversationSummary:
+    properties:
+      active:
+        type: boolean
+      created_at:
+        type: string
+      id:
+        type: string
+      message_count:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
     type: object
   service.FileContent:
     properties:
@@ -199,6 +462,37 @@ definitions:
       size:
         type: integer
     type: object
+  service.LogFile:
+    properties:
+      mod_time:
+        type: string
+      name:
+        type: string
+      size:
+        type: integer
+    type: object
+  service.ProviderView:
+    properties:
+      api_key:
+        $ref: '#/definitions/service.SecretState'
+      base_url:
+        type: string
+      default_model:
+        type: string
+      name:
+        type: string
+      type:
+        type: string
+    type: object
+  service.ProvidersView:
+    properties:
+      default_provider:
+        type: string
+      providers:
+        items:
+          $ref: '#/definitions/service.ProviderView'
+        type: array
+    type: object
   service.SearchMatch:
     properties:
       line:
@@ -206,6 +500,20 @@ definitions:
       path:
         type: string
       text:
+        type: string
+    type: object
+  service.SecretState:
+    properties:
+      configured:
+        type: boolean
+      masked:
+        type: string
+    type: object
+  service.ServiceSecretView:
+    properties:
+      api_key:
+        $ref: '#/definitions/service.SecretState'
+      provider:
         type: string
     type: object
 host: localhost:9000
@@ -268,6 +576,34 @@ paths:
       summary: Get agent
       tags:
       - Agents
+  /agents/{name}/channels:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ChannelsView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List channels
+      tags:
+      - Channels
   /agents/{name}/chat:
     post:
       consumes:
@@ -358,6 +694,103 @@ paths:
       summary: Stream chat with an agent
       tags:
       - Chat
+  /agents/{name}/config:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ConfigView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get agent config
+      tags:
+      - Config
+  /agents/{name}/conversations:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Filter by user ID
+        in: query
+        name: user_id
+        type: integer
+      - description: Maximum results (default 50)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ConversationsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List conversations
+      tags:
+      - Conversations
+  /agents/{name}/conversations/{id}:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ConversationResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get conversation
+      tags:
+      - Conversations
   /agents/{name}/fs:
     delete:
       parameters:
@@ -650,6 +1083,101 @@ paths:
       summary: Write an agent file
       tags:
       - Files
+  /agents/{name}/logs:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.LogsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List log files
+      tags:
+      - Logs
+  /agents/{name}/logs/stream:
+    get:
+      description: 'Sends existing lines, then new lines as they are written. Events:
+        ready, line.'
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Log file name
+        in: query
+        name: file
+        required: true
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Tail a log file
+      tags:
+      - Logs
+  /agents/{name}/providers:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ProvidersView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List providers
+      tags:
+      - Providers
   /auth/change-password:
     post:
       consumes:

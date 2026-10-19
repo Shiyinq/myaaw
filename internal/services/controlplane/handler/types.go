@@ -2,6 +2,7 @@ package handler
 
 import (
 	api "myaaw/internal/channel/api"
+	"myaaw/internal/services/bot/model"
 	"myaaw/internal/services/controlplane/service"
 )
 
@@ -88,4 +89,14 @@ type FileListResponse struct {
 
 type SearchResponse struct {
 	Matches []service.SearchMatch `json:"matches"`
+}
+
+type ConversationsResponse struct {
+	Conversations []service.ConversationSummary `json:"conversations"`
+}
+
+type ConversationResponse = model.Conversation
+
+type LogsResponse struct {
+	Files []service.LogFile `json:"files"`
 }

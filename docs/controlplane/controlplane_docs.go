@@ -97,6 +97,51 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/channels": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Channels"
+                ],
+                "summary": "List channels",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChannelsView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/chat": {
             "post": {
                 "security": [
@@ -229,6 +274,160 @@ const docTemplatecontrolplane = `{
                     },
                     "502": {
                         "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/config": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Get agent config",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ConfigView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/conversations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "List conversations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by user ID",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum results (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ConversationsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/conversations/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Get conversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ConversationResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -689,6 +888,155 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/logs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Logs"
+                ],
+                "summary": "List log files",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.LogsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/logs/stream": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sends existing lines, then new lines as they are written. Events: ready, line.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Logs"
+                ],
+                "summary": "Tail a log file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Log file name",
+                        "name": "file",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/providers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "List providers",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ProvidersView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/change-password": {
             "post": {
                 "security": [
@@ -951,6 +1299,84 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "config.CronConfig": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "config.GlobalBotConfig": {
+            "type": "object",
+            "properties": {
+                "blocked_tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "context_max_tokens": {
+                    "type": "integer"
+                },
+                "max_iterations": {
+                    "type": "integer"
+                },
+                "max_tool_output_bytes": {
+                    "type": "integer"
+                },
+                "owner_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "repeat_tool_call_limit": {
+                    "type": "integer"
+                },
+                "request_retries": {
+                    "type": "integer"
+                },
+                "run_timeout_seconds": {
+                    "type": "integer"
+                },
+                "stream": {
+                    "type": "boolean"
+                },
+                "stream_timeout_seconds": {
+                    "type": "integer"
+                },
+                "tool_timeout_seconds": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "warning_iterations": {
+                    "type": "integer"
+                },
+                "watermark": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "config.HeartbeatConfig": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "channel": {
+                    "type": "string"
+                },
+                "every": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.AgentsResponse": {
             "type": "object",
             "properties": {
@@ -1020,6 +1446,46 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "handler.ConversationResponse": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.Message"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "userId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.ConversationsResponse": {
+            "type": "object",
+            "properties": {
+                "conversations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ConversationSummary"
+                    }
+                }
+            }
+        },
         "handler.FileListResponse": {
             "type": "object",
             "properties": {
@@ -1079,6 +1545,17 @@ const docTemplatecontrolplane = `{
                 "token": {
                     "type": "string",
                     "example": "a1b2c3"
+                }
+            }
+        },
+        "handler.LogsResponse": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.LogFile"
+                    }
                 }
             }
         },
@@ -1160,6 +1637,180 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "provider.FunctionCall": {
+            "type": "object",
+            "properties": {
+                "arguments": {},
+                "name": {
+                    "type": "string"
+                },
+                "thought_signature": {
+                    "type": "string"
+                }
+            }
+        },
+        "provider.Message": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "action_input": {
+                    "type": "string"
+                },
+                "content": {},
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "images": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "is_error": {
+                    "description": "Transcript metadata (agent loop v2)",
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "observation": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "stop_reason": {
+                    "$ref": "#/definitions/provider.StopReason"
+                },
+                "thought": {
+                    "description": "ReAct Trace Fields (UI metadata; not sent to providers)",
+                    "type": "string"
+                },
+                "tool_call_id": {
+                    "type": "string"
+                },
+                "tool_calls": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.ToolCall"
+                    }
+                },
+                "trace": {
+                    "description": "Trace stores all ReAct steps as JSON array for final response",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.ReactStep"
+                    }
+                },
+                "usage": {
+                    "description": "Token Usage",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/provider.Usage"
+                        }
+                    ]
+                },
+                "v": {
+                    "type": "integer"
+                }
+            }
+        },
+        "provider.ReactStep": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "action_input": {
+                    "type": "string"
+                },
+                "observation": {
+                    "type": "string"
+                },
+                "step_group": {
+                    "type": "integer"
+                },
+                "thought": {
+                    "type": "string"
+                },
+                "thought_signature": {
+                    "type": "string"
+                }
+            }
+        },
+        "provider.StopReason": {
+            "type": "string",
+            "enum": [
+                "normal",
+                "max_iterations",
+                "length",
+                "error",
+                "aborted"
+            ],
+            "x-enum-varnames": [
+                "StopNormal",
+                "StopMaxIterations",
+                "StopLength",
+                "StopError",
+                "StopAborted"
+            ]
+        },
+        "provider.ToolCall": {
+            "type": "object",
+            "properties": {
+                "function": {
+                    "$ref": "#/definitions/provider.FunctionCall"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "provider.Usage": {
+            "type": "object",
+            "properties": {
+                "completion_tokens": {
+                    "type": "integer"
+                },
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.UsageDetail"
+                    }
+                },
+                "prompt_tokens": {
+                    "type": "integer"
+                },
+                "thoughts_tokens": {
+                    "type": "integer"
+                },
+                "total_tokens": {
+                    "type": "integer"
+                }
+            }
+        },
+        "provider.UsageDetail": {
+            "type": "object",
+            "properties": {
+                "modality": {
+                    "type": "string"
+                },
+                "token_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "service.AgentInfo": {
             "type": "object",
             "properties": {
@@ -1177,6 +1828,101 @@ const docTemplatecontrolplane = `{
                 },
                 "running": {
                     "type": "boolean"
+                }
+            }
+        },
+        "service.ChannelView": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "ngrok_active": {
+                    "type": "boolean"
+                },
+                "ngrok_auth_token": {
+                    "$ref": "#/definitions/service.SecretState"
+                },
+                "token": {
+                    "$ref": "#/definitions/service.SecretState"
+                }
+            }
+        },
+        "service.ChannelsView": {
+            "type": "object",
+            "properties": {
+                "channels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ChannelView"
+                    }
+                }
+            }
+        },
+        "service.ConfigView": {
+            "type": "object",
+            "properties": {
+                "bot": {
+                    "$ref": "#/definitions/config.GlobalBotConfig"
+                },
+                "channels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ChannelView"
+                    }
+                },
+                "cron": {
+                    "$ref": "#/definitions/config.CronConfig"
+                },
+                "default_provider": {
+                    "type": "string"
+                },
+                "heartbeat": {
+                    "$ref": "#/definitions/config.HeartbeatConfig"
+                },
+                "providers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ProviderView"
+                    }
+                },
+                "synthesizer": {
+                    "$ref": "#/definitions/service.ServiceSecretView"
+                },
+                "transcriber": {
+                    "$ref": "#/definitions/service.ServiceSecretView"
+                }
+            }
+        },
+        "service.ConversationSummary": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "message_count": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -1217,6 +1963,54 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.LogFile": {
+            "type": "object",
+            "properties": {
+                "mod_time": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.ProviderView": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "$ref": "#/definitions/service.SecretState"
+                },
+                "base_url": {
+                    "type": "string"
+                },
+                "default_model": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ProvidersView": {
+            "type": "object",
+            "properties": {
+                "default_provider": {
+                    "type": "string"
+                },
+                "providers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ProviderView"
+                    }
+                }
+            }
+        },
         "service.SearchMatch": {
             "type": "object",
             "properties": {
@@ -1227,6 +2021,28 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.SecretState": {
+            "type": "object",
+            "properties": {
+                "configured": {
+                    "type": "boolean"
+                },
+                "masked": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ServiceSecretView": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "$ref": "#/definitions/service.SecretState"
+                },
+                "provider": {
                     "type": "string"
                 }
             }
