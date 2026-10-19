@@ -43,7 +43,8 @@ Anyone who can reach the port can run the agent and its tools. Keep the server o
 {
   "user_id": 12345,
   "text": "Check my workspace",
-  "images": ["<base64-image>"]
+  "images": ["<base64-image>"],
+  "conversation_id": "conv-id-or-NEW"
 }
 ```
 
@@ -52,8 +53,9 @@ Anyone who can reach the port can run the agent and its tools. Keep the server o
 | `user_id` | integer | yes | must be non-zero; identifies the user and conversation owner |
 | `text` | string | yes | must not be empty |
 | `images` | string[] | no | base64 image data; only the Gemini provider consumes them |
+| `conversation_id` | string | no | continue a specific conversation, or `"NEW"` to force a new one |
 
-`user_id` maps to a row in the agent's SQLite database. The API has no `conversation_id` field, so the request always continues the **active conversation** for that `user_id`.
+`user_id` maps to a row in the agent's SQLite database. Omit `conversation_id` to continue the user's active conversation. If the ID does not exist, the agent falls back to the active conversation.
 
 ## 4. Non-streaming: `POST /api/chat`
 
@@ -68,6 +70,7 @@ curl -X POST http://localhost:8080/api/chat \
 ```json
 {
   "text": "There are 3 files.",
+  "conversation_id": "conv-id",
   "timeline": [
     {
       "kind": "thought",
@@ -96,6 +99,7 @@ curl -X POST http://localhost:8080/api/chat \
 | Field | Meaning |
 |---|---|
 | `text` | authoritative final answer from the agent loop |
+| `conversation_id` | conversation used for this run; pass it to continue the session |
 | `timeline` | ordered steps: `thought`, `tool`, `text` |
 | `usage` | token usage; omitted when `total_tokens` is 0 |
 
@@ -134,7 +138,7 @@ data: <json>
 | `chunk` | `{"text": "..."}` | answer text delta |
 | `tool` | `{"id","name","arguments"}` | tool execution started |
 | `tool_result` | `{"id","name","result","is_error"}` | tool execution finished |
-| `done` | `{"ok":true,"text":"...","usage":{...}}` | run finished; `usage` is optional |
+| `done` | `{"ok":true,"text":"...","conversation_id":"...","usage":{...}}` | run finished; `conversation_id` and `usage` are optional |
 | `error` | `{"error":"..."}` | run failed; followed by `done` with `ok:false` |
 
 The `chunk` name is kept for compatibility. Treat it as `text`.
@@ -252,6 +256,6 @@ data: {"ok":false}
 ## 8. Limitations
 
 - No authentication or per-key rate limiting.
-- No `conversation_id` field; only the active conversation for `user_id` is used.
+- This per-agent API has no conversation listing endpoint; use the control plane API for history and pagination.
 - Images are only consumed by the Gemini provider, as raw base64 without a `data:` prefix.
 - The API can execute tools (Bash, filesystem, Python, skills), so treat access to the port as privileged.

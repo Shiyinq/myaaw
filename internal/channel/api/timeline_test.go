@@ -113,7 +113,8 @@ func TestTimelineDoneIncludesUsage(t *testing.T) {
 	timeline, events := collectTimeline()
 
 	timeline.Done(&channel.OutgoingMessage{
-		Text: "final answer",
+		Text:           "final answer",
+		ConversationID: "conv-1",
 		Usage: provider.Usage{
 			PromptTokens:     10,
 			CompletionTokens: 5,
@@ -128,7 +129,7 @@ func TestTimelineDoneIncludesUsage(t *testing.T) {
 	if !ok {
 		t.Fatalf("done data = %#v", (*events)[0].Data)
 	}
-	if data["ok"] != true || data["text"] != "final answer" {
+	if data["ok"] != true || data["text"] != "final answer" || data["conversation_id"] != "conv-1" {
 		t.Errorf("done data = %#v", data)
 	}
 	usage, ok := data["usage"].(map[string]int)

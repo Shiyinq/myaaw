@@ -68,7 +68,8 @@ func newFakeBotService() *fakeBotService {
 			{Kind: "text", Text: "done"},
 		},
 		out: &channel.OutgoingMessage{
-			Text: "done",
+			Text:           "done",
+			ConversationID: "conv-1",
 			Usage: provider.Usage{
 				PromptTokens:     10,
 				CompletionTokens: 4,
@@ -103,8 +104,8 @@ func TestAPIChatReturnsTimeline(t *testing.T) {
 		t.Fatalf("unmarshal: %v, body = %s", err, body)
 	}
 
-	if got.Text != "done" {
-		t.Errorf("text = %q", got.Text)
+	if got.Text != "done" || got.ConversationID != "conv-1" {
+		t.Errorf("text/conversation = %q/%q", got.Text, got.ConversationID)
 	}
 	if got.Usage == nil || got.Usage.TotalTokens != 14 {
 		t.Errorf("usage = %+v", got.Usage)
@@ -152,6 +153,7 @@ func TestAPIChatStreamEmitsTimelineEvents(t *testing.T) {
 		"event: done",
 		`"arguments":"{\"command\":\"ls\"}"`,
 		`"result":"file1.txt"`,
+		`"conversation_id":"conv-1"`,
 	} {
 		if !strings.Contains(stream, want) {
 			t.Errorf("stream missing %q:\n%s", want, stream)

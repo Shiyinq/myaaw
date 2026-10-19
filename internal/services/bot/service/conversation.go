@@ -98,10 +98,11 @@ func (r *BotServiceImpl) runConversation(
 	}
 
 	out := &channel.OutgoingMessage{
-		Text:    finalText,
-		Trace:   result.Final.Trace,
-		Usage:   result.Usage,
-		Thought: result.Final.Thought,
+		Text:           finalText,
+		Trace:          result.Final.Trace,
+		Usage:          result.Usage,
+		Thought:        result.Final.Thought,
+		ConversationID: msg.ConversationID,
 	}
 
 	// Tell streaming consumers which text is the final answer. Intermediate
@@ -160,6 +161,11 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		err = errors.New("force new")
 	} else if msg.ConversationID != "" {
 		conv, err = r.conversationRepo.GetConversationById(msg.ConversationID)
+		if conv != nil && conv.UserId != user.UserId {
+			// Never read or overwrite another user's conversation.
+			conv = nil
+			err = errors.New("conversation belongs to another user")
+		}
 	}
 
 	if conv == nil && msg.ConversationID != "NEW" {

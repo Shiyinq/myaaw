@@ -12,9 +12,10 @@ import (
 )
 
 type ChatResponse struct {
-	Text     string             `json:"text"`
-	Timeline []api.TimelineItem `json:"timeline,omitempty"`
-	Usage    *UsageResponse     `json:"usage,omitempty"`
+	Text           string             `json:"text"`
+	ConversationID string             `json:"conversation_id,omitempty"`
+	Timeline       []api.TimelineItem `json:"timeline,omitempty"`
+	Usage          *UsageResponse     `json:"usage,omitempty"`
 }
 
 type UsageResponse struct {
@@ -71,8 +72,9 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 	}
 
 	resp := ChatResponse{
-		Text:     out.Text,
-		Timeline: timeline.Items(),
+		Text:           out.Text,
+		ConversationID: out.ConversationID,
+		Timeline:       timeline.Items(),
 	}
 
 	if out.Usage.TotalTokens > 0 {

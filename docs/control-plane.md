@@ -101,11 +101,22 @@ curl -X POST http://localhost:9000/agents/myfriend/chat \
   -d '{"user_id":12345,"text":"Check my workspace"}'
 ```
 
+To continue an existing conversation, pass its `conversation_id`. Use `"NEW"` to force a new conversation. Omit it to continue the user's active conversation.
+
+```json
+{
+  "user_id": 12345,
+  "text": "And the downloads folder?",
+  "conversation_id": "conv-id-from-a-previous-response"
+}
+```
+
 Response:
 
 ```json
 {
   "text": "There are 3 files.",
+  "conversation_id": "conv-id",
   "timeline": [
     {"kind": "thought", "text": "I should list the workspace first."},
     {"kind": "tool", "id": "call_1", "name": "bash", "arguments": "{\"command\":\"ls\"}", "result": "a.txt\nb.txt\nc.txt"},
@@ -134,7 +145,7 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | `chunk` | `{"text":"..."}` (answer delta) |
 | `tool` | `{"id","name","arguments"}` |
 | `tool_result` | `{"id","name","result","is_error"}` |
-| `done` | `{"ok":true,"text","usage"?}` |
+| `done` | `{"ok":true,"text","conversation_id"?,"usage"?}` |
 | `error` | `{"error":"..."}` followed by `done {"ok":false}` |
 
 Merge consecutive deltas per kind. On `done`, use `done.text` as the authoritative final answer; it can differ from the accumulated deltas when the run stops without normal output.
@@ -266,8 +277,22 @@ Rules:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents/:name/conversations?user_id=&limit=` | recent conversations |
-| `GET` | `/agents/:name/conversations/:id` | full transcript |
+| `GET` | `/agents/:name/conversations?user_id=&limit=&offset=` | paginated conversation list |
+| `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages |
+
+List response:
+
+```json
+{
+  "conversations": [],
+  "total": 42,
+  "limit": 50,
+  "offset": 0,
+  "has_more": false
+}
+```
+
+Detail response adds `messages`, `total_messages`, `limit`, `offset`, and `has_more`. `limit=0` returns all messages; otherwise the maximum page size is 500.
 
 Conversations come from the agent's own SQLite database. Legacy traces are migrated on read. If the database does not exist yet, the list is empty.
 

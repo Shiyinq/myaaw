@@ -585,8 +585,14 @@ const docTemplatecontrolplane = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Maximum results (default 50)",
+                        "description": "Page size (default 50, max 200)",
                         "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset (default 0)",
+                        "name": "offset",
                         "in": "query"
                     }
                 ],
@@ -594,7 +600,7 @@ const docTemplatecontrolplane = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.ConversationsResponse"
+                            "$ref": "#/definitions/service.ConversationPage"
                         }
                     },
                     "401": {
@@ -640,13 +646,25 @@ const docTemplatecontrolplane = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Message page size (0 = all, max 500)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Message offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.ConversationResponse"
+                            "$ref": "#/definitions/service.ConversationDetail"
                         }
                     },
                     "401": {
@@ -2462,6 +2480,10 @@ const docTemplatecontrolplane = `{
         "handler.ChatRequest": {
             "type": "object",
             "properties": {
+                "conversation_id": {
+                    "type": "string",
+                    "example": "conv-id or NEW"
+                },
                 "images": {
                     "type": "array",
                     "items": {
@@ -2481,6 +2503,9 @@ const docTemplatecontrolplane = `{
         "handler.ChatResponse": {
             "type": "object",
             "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
                 "text": {
                     "type": "string"
                 },
@@ -2492,46 +2517,6 @@ const docTemplatecontrolplane = `{
                 },
                 "usage": {
                     "$ref": "#/definitions/handler.UsageResponse"
-                }
-            }
-        },
-        "handler.ConversationResponse": {
-            "type": "object",
-            "properties": {
-                "active": {
-                    "type": "boolean"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "messages": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/provider.Message"
-                    }
-                },
-                "title": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "userId": {
-                    "type": "integer"
-                }
-            }
-        },
-        "handler.ConversationsResponse": {
-            "type": "object",
-            "properties": {
-                "conversations": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/service.ConversationSummary"
-                    }
                 }
             }
         },
@@ -3108,6 +3093,70 @@ const docTemplatecontrolplane = `{
                 },
                 "transcriber": {
                     "$ref": "#/definitions/service.ServiceSecretView"
+                }
+            }
+        },
+        "service.ConversationDetail": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.Message"
+                    }
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "total_messages": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.ConversationPage": {
+            "type": "object",
+            "properties": {
+                "conversations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ConversationSummary"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },

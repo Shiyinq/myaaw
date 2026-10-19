@@ -3,7 +3,6 @@ package handler
 import (
 	api "myaaw/internal/channel/api"
 	"myaaw/internal/cron"
-	"myaaw/internal/services/bot/model"
 	"myaaw/internal/services/controlplane/service"
 )
 
@@ -50,17 +49,18 @@ type HealthResponse struct {
 
 // ChatRequest mirrors the agent chat request for documentation purposes.
 type ChatRequest struct {
-	UserID int      `json:"user_id" example:"12345"`
-	Text   string   `json:"text" example:"Check my workspace"`
-	Images []string `json:"images,omitempty"`
+	UserID         int      `json:"user_id" example:"12345"`
+	Text           string   `json:"text" example:"Check my workspace"`
+	Images         []string `json:"images,omitempty"`
+	ConversationID string   `json:"conversation_id,omitempty" example:"conv-id or NEW"`
 }
 
 // ChatResponse mirrors the agent server response for documentation purposes.
-// Chat requests are proxied, so this type is not used at runtime.
 type ChatResponse struct {
-	Text     string             `json:"text"`
-	Timeline []api.TimelineItem `json:"timeline,omitempty"`
-	Usage    *UsageResponse     `json:"usage,omitempty"`
+	Text           string             `json:"text"`
+	ConversationID string             `json:"conversation_id,omitempty"`
+	Timeline       []api.TimelineItem `json:"timeline,omitempty"`
+	Usage          *UsageResponse     `json:"usage,omitempty"`
 }
 
 type UsageResponse struct {
@@ -91,12 +91,6 @@ type FileListResponse struct {
 type SearchResponse struct {
 	Matches []service.SearchMatch `json:"matches"`
 }
-
-type ConversationsResponse struct {
-	Conversations []service.ConversationSummary `json:"conversations"`
-}
-
-type ConversationResponse = model.Conversation
 
 type LogsResponse struct {
 	Files []service.LogFile `json:"files"`

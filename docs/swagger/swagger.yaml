@@ -2,6 +2,8 @@ basePath: /
 definitions:
   api.ChatRequest:
     properties:
+      conversation_id:
+        type: string
       images:
         items:
           type: string
@@ -56,6 +58,8 @@ definitions:
     type: object
   myaaw_internal_services_bot_handler.ChatResponse:
     properties:
+      conversation_id:
+        type: string
       text:
         type: string
       timeline:

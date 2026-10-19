@@ -19,9 +19,10 @@ func (a *APIAdapter) Name() string {
 }
 
 type ChatRequest struct {
-	UserID int      `json:"user_id"`
-	Text   string   `json:"text"`
-	Images []string `json:"images,omitempty"`
+	UserID         int      `json:"user_id"`
+	Text           string   `json:"text"`
+	Images         []string `json:"images,omitempty"`
+	ConversationID string   `json:"conversation_id,omitempty"`
 }
 
 func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMessage, error) {
@@ -39,11 +40,12 @@ func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 	}
 
 	return &channel.IncomingMessage{
-		UserID:  req.UserID,
-		Text:    req.Text,
-		Images:  req.Images,
-		Channel: "api",
-		RawMeta: APIMeta{},
+		UserID:         req.UserID,
+		Text:           req.Text,
+		Images:         req.Images,
+		Channel:        "api",
+		ConversationID: req.ConversationID,
+		RawMeta:        APIMeta{},
 	}, nil
 }
 

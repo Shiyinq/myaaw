@@ -71,26 +71,61 @@ func TestConversationServiceList(t *testing.T) {
 	setupConversationAgent(t)
 	conversations := NewConversationService()
 
-	items, err := conversations.List("myfriend", 0, 10)
+	page, err := conversations.List("myfriend", 0, 10, 0)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(items) != 2 {
-		t.Fatalf("items = %+v", items)
+	if page.Total != 2 || len(page.Conversations) != 2 || page.HasMore {
+		t.Fatalf("page = %+v", page)
 	}
-	if items[0].ID != "conv-2" {
-		t.Fatalf("newest conversation should be first: %+v", items)
+	if page.Conversations[0].ID != "conv-2" {
+		t.Fatalf("newest conversation should be first: %+v", page.Conversations)
 	}
-	if items[1].MessageCount != 3 {
-		t.Fatalf("message count = %d, want 3", items[1].MessageCount)
+	if page.Conversations[1].MessageCount != 3 {
+		t.Fatalf("message count = %d, want 3", page.Conversations[1].MessageCount)
 	}
 
-	filtered, err := conversations.List("myfriend", 7, 10)
+	filtered, err := conversations.List("myfriend", 7, 10, 0)
 	if err != nil {
 		t.Fatalf("List filtered: %v", err)
 	}
-	if len(filtered) != 1 || filtered[0].ID != "conv-1" {
+	if filtered.Total != 1 || len(filtered.Conversations) != 1 || filtered.Conversations[0].ID != "conv-1" {
 		t.Fatalf("filtered = %+v", filtered)
+	}
+}
+
+func TestConversationServiceListPagination(t *testing.T) {
+	setupConversationAgent(t)
+	conversations := NewConversationService()
+
+	first, err := conversations.List("myfriend", 0, 1, 0)
+	if err != nil {
+		t.Fatalf("List first: %v", err)
+	}
+	if first.Total != 2 || len(first.Conversations) != 1 || !first.HasMore {
+		t.Fatalf("first page = %+v", first)
+	}
+	if first.Conversations[0].ID != "conv-2" {
+		t.Fatalf("first page = %+v", first.Conversations)
+	}
+
+	second, err := conversations.List("myfriend", 0, 1, 1)
+	if err != nil {
+		t.Fatalf("List second: %v", err)
+	}
+	if second.Total != 2 || len(second.Conversations) != 1 || second.HasMore {
+		t.Fatalf("second page = %+v", second)
+	}
+	if second.Conversations[0].ID != "conv-1" {
+		t.Fatalf("second page = %+v", second.Conversations)
+	}
+
+	empty, err := conversations.List("myfriend", 0, 1, 5)
+	if err != nil {
+		t.Fatalf("List empty: %v", err)
+	}
+	if len(empty.Conversations) != 0 || empty.HasMore {
+		t.Fatalf("empty page = %+v", empty)
 	}
 }
 
@@ -98,18 +133,32 @@ func TestConversationServiceGet(t *testing.T) {
 	setupConversationAgent(t)
 	conversations := NewConversationService()
 
-	conv, err := conversations.Get("myfriend", "conv-1")
+	detail, err := conversations.Get("myfriend", "conv-1", 0, 0)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if conv.Title != "First" || len(conv.Messages) != 3 {
-		t.Fatalf("conversation = %+v", conv)
+	if detail.Title != "First" || detail.TotalMessages != 3 || len(detail.Messages) != 3 {
+		t.Fatalf("detail = %+v", detail)
 	}
-	if conv.Messages[1].Role != "user" || conv.Messages[1].Content != "hello" {
-		t.Fatalf("messages = %+v", conv.Messages)
+	if detail.Messages[1].Role != "user" || detail.Messages[1].Content != "hello" {
+		t.Fatalf("messages = %+v", detail.Messages)
+	}
+	if detail.HasMore {
+		t.Fatalf("detail = %+v", detail)
 	}
 
-	if _, err := conversations.Get("myfriend", "missing"); err != ErrConversationNotFound {
+	page, err := conversations.Get("myfriend", "conv-1", 1, 1)
+	if err != nil {
+		t.Fatalf("Get page: %v", err)
+	}
+	if page.TotalMessages != 3 || len(page.Messages) != 1 || !page.HasMore {
+		t.Fatalf("page = %+v", page)
+	}
+	if page.Messages[0].Content != "hello" {
+		t.Fatalf("page messages = %+v", page.Messages)
+	}
+
+	if _, err := conversations.Get("myfriend", "missing", 0, 0); err != ErrConversationNotFound {
 		t.Fatalf("err = %v, want ErrConversationNotFound", err)
 	}
 }
@@ -117,14 +166,14 @@ func TestConversationServiceGet(t *testing.T) {
 func TestConversationServiceWithoutDatabase(t *testing.T) {
 	setupConfigAgent(t, nil)
 
-	items, err := NewConversationService().List("myfriend", 0, 10)
+	page, err := NewConversationService().List("myfriend", 0, 10, 0)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(items) != 0 {
-		t.Fatalf("items = %+v", items)
+	if page.Total != 0 || len(page.Conversations) != 0 {
+		t.Fatalf("page = %+v", page)
 	}
-	if _, err := NewConversationService().Get("myfriend", "missing"); err != ErrConversationNotFound {
+	if _, err := NewConversationService().Get("myfriend", "missing", 0, 0); err != ErrConversationNotFound {
 		t.Fatalf("err = %v, want ErrConversationNotFound", err)
 	}
 }

@@ -142,6 +142,9 @@ definitions:
     type: object
   handler.ChatRequest:
     properties:
+      conversation_id:
+        example: conv-id or NEW
+        type: string
       images:
         items:
           type: string
@@ -155,6 +158,8 @@ definitions:
     type: object
   handler.ChatResponse:
     properties:
+      conversation_id:
+        type: string
       text:
         type: string
       timeline:
@@ -163,32 +168,6 @@ definitions:
         type: array
       usage:
         $ref: '#/definitions/handler.UsageResponse'
-    type: object
-  handler.ConversationResponse:
-    properties:
-      active:
-        type: boolean
-      created_at:
-        type: string
-      id:
-        type: string
-      messages:
-        items:
-          $ref: '#/definitions/provider.Message'
-        type: array
-      title:
-        type: string
-      updated_at:
-        type: string
-      userId:
-        type: integer
-    type: object
-  handler.ConversationsResponse:
-    properties:
-      conversations:
-        items:
-          $ref: '#/definitions/service.ConversationSummary'
-        type: array
     type: object
   handler.CreateAgentRequest:
     properties:
@@ -573,6 +552,48 @@ definitions:
         $ref: '#/definitions/service.ServiceSecretView'
       transcriber:
         $ref: '#/definitions/service.ServiceSecretView'
+    type: object
+  service.ConversationDetail:
+    properties:
+      active:
+        type: boolean
+      created_at:
+        type: string
+      has_more:
+        type: boolean
+      id:
+        type: string
+      limit:
+        type: integer
+      messages:
+        items:
+          $ref: '#/definitions/provider.Message'
+        type: array
+      offset:
+        type: integer
+      title:
+        type: string
+      total_messages:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  service.ConversationPage:
+    properties:
+      conversations:
+        items:
+          $ref: '#/definitions/service.ConversationSummary'
+        type: array
+      has_more:
+        type: boolean
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
     type: object
   service.ConversationSummary:
     properties:
@@ -1064,9 +1085,13 @@ paths:
         in: query
         name: user_id
         type: integer
-      - description: Maximum results (default 50)
+      - description: Page size (default 50, max 200)
         in: query
         name: limit
+        type: integer
+      - description: Offset (default 0)
+        in: query
+        name: offset
         type: integer
       produces:
       - application/json
@@ -1074,7 +1099,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.ConversationsResponse'
+            $ref: '#/definitions/service.ConversationPage'
         "401":
           description: Unauthorized
           schema:
@@ -1101,13 +1126,21 @@ paths:
         name: id
         required: true
         type: string
+      - description: Message page size (0 = all, max 500)
+        in: query
+        name: limit
+        type: integer
+      - description: Message offset (default 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.ConversationResponse'
+            $ref: '#/definitions/service.ConversationDetail'
         "401":
           description: Unauthorized
           schema:

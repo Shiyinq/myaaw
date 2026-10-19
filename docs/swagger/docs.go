@@ -245,6 +245,9 @@ const docTemplate = `{
         "api.ChatRequest": {
             "type": "object",
             "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
                 "images": {
                     "type": "array",
                     "items": {
@@ -328,6 +331,9 @@ const docTemplate = `{
         "myaaw_internal_services_bot_handler.ChatResponse": {
             "type": "object",
             "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
                 "text": {
                     "type": "string"
                 },

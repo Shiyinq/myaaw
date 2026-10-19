@@ -18,10 +18,11 @@ type IncomingMessage struct {
 }
 
 type OutgoingMessage struct {
-	Text    string
-	Trace   []provider.ReactStep
-	Usage   provider.Usage
-	Thought string
+	Text           string
+	Trace          []provider.ReactStep
+	Usage          provider.Usage
+	Thought        string
+	ConversationID string
 }
 
 type StreamChunk struct {
