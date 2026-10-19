@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"myaaw/internal/channel"
 	api "myaaw/internal/channel/api"
 	"myaaw/internal/utils"
 
@@ -13,14 +12,9 @@ import (
 )
 
 type ChatResponse struct {
-	Text  string         `json:"text"`
-	Trace []TraceStep    `json:"trace,omitempty"`
-	Usage *UsageResponse `json:"usage,omitempty"`
-}
-
-type TraceStep struct {
-	Action      string `json:"action"`
-	Observation string `json:"observation,omitempty"`
+	Text     string             `json:"text"`
+	Timeline []api.TimelineItem `json:"timeline,omitempty"`
+	Usage    *UsageResponse     `json:"usage,omitempty"`
 }
 
 type UsageResponse struct {
@@ -65,7 +59,9 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 
 	log.Printf("API chat request from user ID %v", msg.UserID)
 
-	out, err := s.botService.BotContext(c.Context(), msg)
+	timeline := api.NewTimeline(nil)
+
+	out, err := s.botService.BotStreamContext(c.Context(), msg, timeline.HandleChunk)
 	if err != nil {
 		log.Printf("API chat error for user ID %v: %v", msg.UserID, err)
 		formattedError := utils.FormatErrorMessage(err)
@@ -75,16 +71,8 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 	}
 
 	resp := ChatResponse{
-		Text: out.Text,
-	}
-
-	if len(out.Trace) > 0 {
-		for _, step := range out.Trace {
-			resp.Trace = append(resp.Trace, TraceStep{
-				Action:      step.Action,
-				Observation: step.Observation,
-			})
-		}
+		Text:     out.Text,
+		Timeline: timeline.Items(),
 	}
 
 	if out.Usage.TotalTokens > 0 {
@@ -151,49 +139,11 @@ func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {
 			w.Flush()
 		}
 
-		out, err := s.botService.BotStreamContext(c.Context(), msg, func(chunk channel.StreamChunk) {
-			switch chunk.Kind {
-			case "tool":
-				if len(chunk.ToolCalls) > 0 {
-					writeSSE("tool", fiber.Map{
-						"name": chunk.ToolCalls[0].Function.Name,
-						"id":   chunk.ToolCallID,
-					})
-				}
-			case "tool_result":
-				writeSSE("tool_result", fiber.Map{
-					"id":       chunk.ToolCallID,
-					"is_error": chunk.IsError,
-				})
-			case "trace":
-				// handled below
-			case "final":
-				// The final text is delivered in the "done" event; emitting it
-				// here would duplicate the streamed deltas.
-			default:
-				if len(chunk.ToolCalls) > 0 {
-					writeSSE("tool", fiber.Map{
-						"name": chunk.ToolCalls[0].Function.Name,
-					})
-				} else if chunk.Text != "" {
-					writeSSE("chunk", fiber.Map{
-						"text": chunk.Text,
-					})
-				}
-			}
-
-			if len(chunk.Trace) > 0 {
-				var traceSteps []TraceStep
-				for _, step := range chunk.Trace {
-					traceSteps = append(traceSteps, TraceStep{
-						Action:      step.Action,
-						Observation: step.Observation,
-					})
-				}
-				writeSSE("trace", traceSteps)
-			}
+		timeline := api.NewTimeline(func(event api.SSEEvent) {
+			writeSSE(event.Name, event.Data)
 		})
 
+		out, err := s.botService.BotStreamContext(c.Context(), msg, timeline.HandleChunk)
 		if err != nil {
 			log.Printf("API stream error for user ID %v: %v", msg.UserID, err)
 			writeSSE("error", fiber.Map{
@@ -203,18 +153,7 @@ func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {
 			return
 		}
 
-		doneData := fiber.Map{
-			"ok":   true,
-			"text": out.Text,
-		}
-		if out.Usage.TotalTokens > 0 {
-			doneData["usage"] = UsageResponse{
-				PromptTokens:     out.Usage.PromptTokens,
-				CompletionTokens: out.Usage.CompletionTokens,
-				TotalTokens:      out.Usage.TotalTokens,
-			}
-		}
-		writeSSE("done", doneData)
+		timeline.Done(out)
 	})
 
 	return nil
