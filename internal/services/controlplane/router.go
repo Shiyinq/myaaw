@@ -24,7 +24,8 @@ func NewApp() (*fiber.App, error) {
 	}
 	agents := service.NewAgentService()
 	proxy := service.NewProxyService(agents)
-	h := handler.New(auth, agents, proxy)
+	files := service.NewFileService()
+	h := handler.New(auth, agents, proxy, files)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api"})
 
@@ -49,6 +50,14 @@ func NewApp() (*fiber.App, error) {
 	app.Get("/agents/:name", h.GetAgent)
 	app.Post("/agents/:name/chat", h.Chat)
 	app.Post("/agents/:name/chat/stream", h.ChatStream)
+
+	app.Get("/agents/:name/fs", h.ListFiles)
+	app.Get("/agents/:name/fs/read", h.ReadFile)
+	app.Get("/agents/:name/fs/search", h.SearchFiles)
+	app.Post("/agents/:name/fs/write", h.WriteFile)
+	app.Post("/agents/:name/fs/mkdir", h.Mkdir)
+	app.Post("/agents/:name/fs/rename", h.RenameFile)
+	app.Delete("/agents/:name/fs", h.DeleteFile)
 
 	return app, nil
 }

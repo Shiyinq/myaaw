@@ -66,3 +66,26 @@ type UsageResponse struct {
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
 }
+
+type WriteFileRequest struct {
+	Path    string `json:"path" example:"/home/AGENTS.md"`
+	Content string `json:"content" example:"# Instructions"`
+}
+
+type MkdirRequest struct {
+	Path string `json:"path" example:"/home/notes"`
+}
+
+type RenameRequest struct {
+	From string `json:"from" example:"/home/AGENTS.md"`
+	To   string `json:"to" example:"/home/AGENTS.old.md"`
+}
+
+type FileListResponse struct {
+	Path    string              `json:"path"`
+	Entries []service.FileEntry `json:"entries"`
+}
+
+type SearchResponse struct {
+	Matches []service.SearchMatch `json:"matches"`
+}

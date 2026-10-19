@@ -155,6 +155,50 @@ func TestRouterServesControlPlaneSwagger(t *testing.T) {
 	}
 }
 
+func TestRouterFilesystem(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var roots struct {
+		Path    string `json:"path"`
+		Entries []struct {
+			Name  string `json:"name"`
+			Path  string `json:"path"`
+			IsDir bool   `json:"is_dir"`
+		} `json:"entries"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/fs", token, "", fiber.StatusOK, &roots)
+	if len(roots.Entries) != 3 || roots.Entries[0].Path != "/home" {
+		t.Fatalf("roots = %+v", roots)
+	}
+
+	doJSON(t, app, "POST", "/agents/myfriend/fs/write", token,
+		`{"path":"/home/AGENTS.md","content":"# Updated"}`, fiber.StatusOK, nil)
+
+	var read struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/fs/read?path=/home/AGENTS.md", token, "", fiber.StatusOK, &read)
+	if read.Content != "# Updated" {
+		t.Fatalf("content = %q", read.Content)
+	}
+
+	var list struct {
+		Entries []struct {
+			Name string `json:"name"`
+		} `json:"entries"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/fs?path=/home", token, "", fiber.StatusOK, &list)
+	if len(list.Entries) != 1 || list.Entries[0].Name != "AGENTS.md" {
+		t.Fatalf("entries = %+v", list.Entries)
+	}
+
+	doJSON(t, app, "GET", "/agents/myfriend/fs/read?path=/etc/passwd", token, "", fiber.StatusBadRequest, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/fs?path=/home", token, "", fiber.StatusBadRequest, nil)
+}
+
 func TestRouterRejectsUnknownAgent(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	app := mustNewApp(t)

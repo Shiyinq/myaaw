@@ -10,13 +10,15 @@ type Handler struct {
 	auth   *service.AuthService
 	agents *service.AgentService
 	proxy  *service.ProxyService
+	files  *service.FileService
 }
 
-func New(auth *service.AuthService, agents *service.AgentService, proxy *service.ProxyService) *Handler {
+func New(auth *service.AuthService, agents *service.AgentService, proxy *service.ProxyService, files *service.FileService) *Handler {
 	return &Handler{
 		auth:   auth,
 		agents: agents,
 		proxy:  proxy,
+		files:  files,
 	}
 }
 
