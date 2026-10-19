@@ -188,6 +188,8 @@ Telegram and Discord payloads always pass through a queue first: **channel adapt
 
 Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, and `home/`. `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
 
+Solid arrows are the main request/data path. Dotted arrows are auxiliary relationships: agent selection, registry and PID lookups, and the event side-channel to the timeline.
+
 ### Key Components
 
 1. **Channels (`internal/channel`)**: The entry point for interactions. It provides an `Adapter` interface to normalize messages from Telegram, Discord, REST APIs, or Terminal CLI into a standard format.
