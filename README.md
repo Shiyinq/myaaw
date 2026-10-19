@@ -53,6 +53,7 @@ Myaaw can be integrated with various platforms:
   - [Generate Swagger Documentation](#generate-swagger-documentation)
   - [Build from Source](#build-from-source-optional)
 - [💻 Myaaw CLI Reference](#-myaaw-cli-reference)
+- [📚 Documentation](#-documentation)
 
 
 ## 🏗 Architecture
@@ -220,61 +221,6 @@ The selection node resolves the active agent from `~/.myaaw/agents.json`. Telegr
        - `workspace/`: All agent-created output. Coding projects live in `workspace/projects/` and downloads in `workspace/downloads/`; the home root stays reserved for identity and memory files.
 9. **Multi-Agent Runtime (`internal/agentdir`)**: Resolves the active agent from `--agent`, `MYAAW_AGENT`, or `agents.json`. Each agent process gets an isolated config, `.env`, SQLite database, home, workspace, skills, jobs, logs, cron, tools, channels, and server port.
 
-### CLI Project Context
-
-When `myaaw chat` or `myaaw voice-classic` starts, Myaaw treats the directory it was launched from as the active project and injects it as `## Current Directory` in the system prompt. The filesystem tool also registers that directory as an allowed project root, even when it has no marker files, so the agent can work on it in place without copying it into `workspace/`.
-
-Telegram and Discord sessions do not receive the server's working directory. New projects and downloads always go to `~/.myaaw/<agent>/home/workspace/`.
-
-### Multiple Agents
-
-Myaaw can run several isolated agents on one machine:
-
-```bash
-myaaw chat                       # agent picker (arrow keys) when multiple agents exist
-myaaw chat --agent myfriend
-myaaw agent create myfriend
-myaaw agent list
-myaaw agent use                 # interactive picker
-myaaw agent use default
-myaaw agent delete              # interactive picker + confirmation
-myaaw --agent myfriend onboard
-myaaw server --agent myfriend start
-myaaw server --agent myfriend status
-```
-
-Configure a provider or channel for one agent:
-
-```bash
-myaaw --agent myfriend provider create
-myaaw --agent myfriend provider list
-myaaw --agent myfriend provider default deepseek
-
-myaaw --agent myfriend channel create
-myaaw --agent myfriend channel list
-myaaw --agent myfriend channel edit
-```
-
-Every command that uses agent configuration respects `--agent`. This includes `provider`, `channel`, `config`, `cron`, `logs`, `status`, `server`, `webhook`, `voice`, `voice-classic`, and `consumer`. Without `--agent`, the registry default is used.
-
-Each agent lives under `~/.myaaw/<agent>/` with its own config, `.env`, database, memory, workspace, skills, logs, and channels:
-
-```text
-~/.myaaw/myfriend/config/config.json
-~/.myaaw/myfriend/.env
-~/.myaaw/myfriend/database/myaaw.db
-```
-
-Restart the agent server after changing channel tokens:
-
-```bash
-myaaw server --agent myfriend restart
-```
-
-The default agent is `~/.myaaw/default/`. Agent names use only letters, numbers, `_`, and `-`.
-
-For the complete guide, see [docs/multi-agent.md](docs/multi-agent.md).
-
 ## 🚀 Quick Start (Non-Technical)
 
 If you just want to use Myaaw without worrying about code, use our interactive installer script!
@@ -433,7 +379,61 @@ The `myaaw` CLI is your control center for managing the AI assistant, infrastruc
 | `voice` | Start a real-time voice conversation (Gemini Live). Use `--video=screen,camera` to stream vision. |
 | `voice-classic` | Voice chat using STT → Agent → TTS pipeline. Supports tools. Use `--video=screen,camera` to stream vision.|
 | `status` | Check the health of SQLite and channel configs. |
-| `logs` | Interactive TUI to select and stream logs from `~/.myaaw/logs/`. |
+| `logs` | Interactive TUI to select and stream logs from `~/.myaaw/<agent>/logs/`. |
+
+### CLI Project Context
+When `myaaw chat` or `myaaw voice-classic` starts, Myaaw treats the directory it was launched from as the active project and injects it as `## Current Directory` in the system prompt. The filesystem tool also registers that directory as an allowed project root, even when it has no marker files, so the agent can work on it in place without copying it into `workspace/`.
+
+Telegram and Discord sessions do not receive the server's working directory. New projects and downloads always go to `~/.myaaw/<agent>/home/workspace/`.
+
+Agent data lives under `~/.myaaw/<agent>/`, for example:
+
+```text
+~/.myaaw/myfriend/config/config.json
+~/.myaaw/myfriend/.env
+~/.myaaw/myfriend/database/myaaw.db
+```
+
+For the complete guide, see [docs/multi-agent.md](docs/multi-agent.md).
+
+### 🧩 Multiple Agents
+Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/<agent>/`. The default agent is `default/`; names may contain letters, numbers, `_`, and `-`.
+
+| Command | Subcommands / Flags | Description |
+| :--- | :--- | :--- |
+| **`agent`** | `list`, `create <name>`, `use [name]`, `delete [name]` | Manage agents. `use` and `delete` open an arrow-key picker when no name is passed; `delete` asks for confirmation. |
+| **`--agent <name>`** | global flag | Target a specific agent for `chat`, `status`, `logs`, `server`, `provider`, `channel`, `config`, `cron`, `webhook`, `voice`, `voice-classic`, and `consumer`. Without it, the registry default is used. |
+| **`chat`** | `--agent <name>`, `-m "text"` | Interactive chat shows an agent picker when more than one initialized agent exists. |
+| **`onboard`** | `--agent <name>` | Configure providers and channels for a specific agent. |
+| **`server`** | `start`, `stop`, `restart`, `status` | Each agent runs its own daemon (`myaaw-server-<agent>`) on its own `PORT`. |
+| **`provider`** | `create`, `list`, `default <name>`, `delete` | Providers are stored in `~/.myaaw/<agent>/config/config.json`. |
+| **`channel`** | `create`, `list`, `edit`, `delete` | Channel tokens are per agent; use a different Telegram/Discord token for each running agent. |
+
+**Examples:**
+```bash
+myaaw agent create myfriend
+myaaw agent list
+myaaw agent use myfriend
+myaaw --agent myfriend onboard
+
+myaaw --agent myfriend provider create
+myaaw --agent myfriend provider list
+myaaw --agent myfriend provider default deepseek
+
+myaaw --agent myfriend channel create
+myaaw --agent myfriend channel list
+myaaw --agent myfriend channel edit
+
+myaaw server --agent myfriend start
+myaaw server --agent myfriend status
+myaaw agent delete myfriend --yes
+```
+
+Restart the server after changing channel tokens:
+
+```bash
+myaaw server --agent myfriend restart
+```
 
 ### 🚀 Service Management
 Myaaw runs as a unified background service daemon.
@@ -477,3 +477,12 @@ myaaw cron add --name "Meeting Remind" --at "30m" --message "Meeting in 30 mins"
 | **`help`** | `[command]` | Display help information for Myaaw or any specific command. |
 | **`update`** | - | Automatically check for and install the latest version via GitHub Releases. |
 | **`version`** | - | Show build version, commit hash, and system info. |
+
+## 📚 Documentation
+
+| Document | Description |
+| :--- | :--- |
+| [Agent Loop v2](docs/agent-loop-v2.md) | Event-driven `RunEvents` engine, transcript v2, compaction, tool execution, retries, and configuration. |
+| [Agent Skills](docs/agent_skills.md) | `SKILL.md`-based skills: discovery, prompt injection, execution, and per-agent data isolation. |
+| [MCP & Custom Tools](docs/mcp_and_custom_tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
+| [Multi-Agent Guide](docs/multi-agent.md) | Isolated agents: registry, per-agent config, channels, ports, servers, and commands. |
