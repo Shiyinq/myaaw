@@ -120,8 +120,8 @@ graph TD
         LOOP_A <--> TOOL_A
         LOOP_A <--> PROV_A
         BOT_A <--> DB_A
-        BOT_A -- "reads identity / memory" --> HOME_A
-        TOOL_A -- "read/write workspace" --> HOME_A
+        BOT_A -- "reads identity / persona" --> HOME_A
+        TOOL_A -- "read/write workspace + memory" --> HOME_A
         LOOP_A -- "events" --> UI_A
     end
 
@@ -154,8 +154,8 @@ graph TD
         LOOP_B <--> TOOL_B
         LOOP_B <--> PROV_B
         BOT_B <--> DB_B
-        BOT_B -- "reads identity / memory" --> HOME_B
-        TOOL_B -- "read/write workspace" --> HOME_B
+        BOT_B -- "reads identity / persona" --> HOME_B
+        TOOL_B -- "read/write workspace + memory" --> HOME_B
         LOOP_B -- "events" --> UI_B
     end
 
@@ -187,7 +187,7 @@ graph TD
 
 Telegram and Discord payloads always pass through a queue first: **channel adapter → in-memory queue → queue consumer → that agent's own `POST /webhook/bot`**. The queue is an in-process Go channel, so each agent process has its own queue; messages can never move between agents. Cron and heartbeat are the exception: they call `POST /heartbeat` directly on their own server.
 
-`Agent Core` marks the components that belong to the agent itself (event loop, transcript, tools, provider). `Bot Service` reads identity and memory files from `home/` (`AGENTS.md`, `SOUL.md`, `MEMORY.md`, `USER.md`, `skills/`) to build the system prompt, while the tools read and write the actual `home/workspace/` during a run.
+`Agent Core` marks the components that belong to the agent itself (event loop, transcript, tools, provider). `Bot Service` builds the system prompt from identity files in `home/` (`BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) and `skills/`. `MEMORY.md` and `memory/` are not auto-injected: the agent reads and writes them through tools during a run, following the rules in `AGENTS.md`.
 
 Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, and `home/`. `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
 
