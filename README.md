@@ -83,7 +83,7 @@ graph TD
         REG ~~~ PIDS
     end
 
-    SEL[Agent Selection<br/>--agent / picker / MYAAW_AGENT]
+    SEL[Agent Selection<br/>--agent / picker / MYAAW_AGENT<br/>reads agents.json]
     CLI --> SEL
     Voice --> SEL
     SEL -- "chat → default" --> BOT_A
@@ -170,7 +170,6 @@ graph TD
     API --> SRV_A
     API --> SRV_B
 
-    SEL -- "reads" --> REG
     PIDS -- "pid files" --> SRV_A
     PIDS -- "pid files" --> SRV_B
 
