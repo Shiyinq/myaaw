@@ -486,3 +486,4 @@ myaaw cron add --name "Meeting Remind" --at "30m" --message "Meeting in 30 mins"
 | [Agent Skills](docs/agent_skills.md) | `SKILL.md`-based skills: discovery, prompt injection, execution, and per-agent data isolation. |
 | [MCP & Custom Tools](docs/mcp_and_custom_tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
 | [Multi-Agent Guide](docs/multi-agent.md) | Isolated agents: registry, per-agent config, channels, ports, servers, and commands. |
+| [REST API](docs/rest-api.md) | `/api/chat` and `/api/chat/stream`: requests, timeline items, SSE events, and response handling. |

@@ -259,6 +259,32 @@ const docTemplate = `{
                 }
             }
         },
+        "api.TimelineItem": {
+            "type": "object",
+            "properties": {
+                "arguments": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_error": {
+                    "type": "boolean"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "result": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
         "channel.QueueEnvelope": {
             "type": "object",
             "properties": {
@@ -288,10 +314,10 @@ const docTemplate = `{
                 "text": {
                     "type": "string"
                 },
-                "trace": {
+                "timeline": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/handler.TraceStep"
+                        "$ref": "#/definitions/api.TimelineItem"
                     }
                 },
                 "usage": {
@@ -312,17 +338,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trigger": {
-                    "type": "string"
-                }
-            }
-        },
-        "handler.TraceStep": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string"
-                },
-                "observation": {
                     "type": "string"
                 }
             }
