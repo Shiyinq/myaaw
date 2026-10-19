@@ -312,6 +312,91 @@ func TestRouterReadOnlyManagement(t *testing.T) {
 	}
 }
 
+func TestRouterWriteManagement(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var provider struct {
+		Name         string `json:"name"`
+		DefaultModel string `json:"default_model"`
+		APIKey       struct {
+			Configured bool `json:"configured"`
+		} `json:"api_key"`
+	}
+	doJSON(t, app, "POST", "/agents/myfriend/providers", token,
+		`{"name":"openai","type":"openai","api_key":"sk-secret","default_model":"gpt-4o"}`,
+		fiber.StatusCreated, &provider)
+	if provider.Name != "openai" || !provider.APIKey.Configured {
+		t.Fatalf("provider = %+v", provider)
+	}
+
+	doJSON(t, app, "PUT", "/agents/myfriend/providers/openai", token,
+		`{"default_model":"gpt-4o-mini"}`, fiber.StatusOK, &provider)
+	if provider.DefaultModel != "gpt-4o-mini" {
+		t.Fatalf("provider = %+v", provider)
+	}
+	doJSON(t, app, "POST", "/agents/myfriend/providers/default", token,
+		`{"name":"openai"}`, fiber.StatusOK, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/providers/openai", token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/providers/missing", token, "", fiber.StatusNotFound, nil)
+
+	var channel struct {
+		Name  string `json:"name"`
+		Token struct {
+			Configured bool `json:"configured"`
+		} `json:"token"`
+	}
+	doJSON(t, app, "PUT", "/agents/myfriend/channels/telegram", token,
+		`{"active":true,"token":"tok","mode":"polling"}`, fiber.StatusOK, &channel)
+	if channel.Name != "telegram" || !channel.Token.Configured {
+		t.Fatalf("channel = %+v", channel)
+	}
+	doJSON(t, app, "DELETE", "/agents/myfriend/channels/telegram", token, "", fiber.StatusOK, nil)
+
+	var created struct {
+		Name string `json:"name"`
+	}
+	doJSON(t, app, "POST", "/agents", token, `{"name":"second"}`, fiber.StatusCreated, &created)
+	if created.Name != "second" {
+		t.Fatalf("created = %+v", created)
+	}
+	doJSON(t, app, "DELETE", "/agents/second", token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend", token, "", fiber.StatusBadRequest, nil)
+
+	doJSON(t, app, "POST", "/agents/myfriend/default", token, "", fiber.StatusOK, nil)
+
+	var status struct {
+		Running bool `json:"running"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/server/status", token, "", fiber.StatusOK, &status)
+	if status.Running {
+		t.Fatalf("server should not be running: %+v", status)
+	}
+
+	var job struct {
+		ID string `json:"id"`
+	}
+	doJSON(t, app, "POST", "/agents/myfriend/cron", token,
+		`{"name":"Reminder","schedule_kind":"every","expr":"1h","message":"hello","channel":"telegram","to":"123"}`,
+		fiber.StatusCreated, &job)
+	if job.ID == "" {
+		t.Fatal("cron job has no id")
+	}
+
+	var jobs struct {
+		Jobs []struct {
+			ID string `json:"id"`
+		} `json:"jobs"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/cron", token, "", fiber.StatusOK, &jobs)
+	if len(jobs.Jobs) != 1 || jobs.Jobs[0].ID != job.ID {
+		t.Fatalf("jobs = %+v", jobs)
+	}
+	doJSON(t, app, "DELETE", "/agents/myfriend/cron/"+job.ID, token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/cron/missing", token, "", fiber.StatusNotFound, nil)
+}
+
 func TestRouterRejectsUnknownAgent(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	app := mustNewApp(t)

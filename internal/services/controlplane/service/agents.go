@@ -6,16 +6,23 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	myaaw "myaaw"
 	"myaaw/internal/agentdir"
+	"myaaw/internal/daemon"
 )
 
 var (
 	ErrAgentNotFound    = errors.New("agent not found")
 	ErrAgentUnavailable = errors.New("agent server is not reachable")
+	ErrAgentExists      = errors.New("agent already exists")
+	ErrInvalidAgentName = errors.New("invalid agent name")
+	ErrDefaultAgent     = errors.New("default agent cannot be deleted")
 )
 
 // AgentInfo is the public shape returned by GET /agents.
@@ -36,7 +43,133 @@ func NewAgentService() *AgentService {
 	return &AgentService{reachTimeout: 150 * time.Millisecond}
 }
 
-// List returns all initialized agents with their default flag and status.
+// Create provisions a new isolated agent from the embedded template.
+func (s *AgentService) Create(name string) (AgentInfo, error) {
+	if err := agentdir.ValidateName(name); err != nil {
+		return AgentInfo{}, fmt.Errorf("%w: %v", ErrInvalidAgentName, err)
+	}
+	if err := agentdir.EnsureLayout(); err != nil {
+		return AgentInfo{}, err
+	}
+	if agentdir.AgentInitialized(name) {
+		return AgentInfo{}, ErrAgentExists
+	}
+
+	root, err := agentdir.AgentRoot(name)
+	if err != nil {
+		return AgentInfo{}, err
+	}
+	if err := extractEmbedDir(".myaaw", root); err != nil {
+		return AgentInfo{}, err
+	}
+	for _, dir := range []string{
+		filepath.Join(root, "home", "workspace", "projects"),
+		filepath.Join(root, "home", "workspace", "downloads"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return AgentInfo{}, err
+		}
+	}
+
+	envPath, err := agentdir.EnvPath(name)
+	if err != nil {
+		return AgentInfo{}, err
+	}
+	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+		if err := os.WriteFile(envPath, []byte(myaaw.DefaultEnvExample), 0o644); err != nil {
+			return AgentInfo{}, err
+		}
+	}
+
+	port := agentdir.SuggestedPort(name)
+	if err := agentdir.UpsertEnvValue(envPath, "PORT", strconv.Itoa(port)); err != nil {
+		return AgentInfo{}, err
+	}
+	if err := agentdir.UpsertEnvValue(envPath, "MYAAW_BASE_URL", fmt.Sprintf("http://localhost:%d", port)); err != nil {
+		return AgentInfo{}, err
+	}
+
+	_ = agentdir.RewriteLegacyPaths(root, name)
+	if err := agentdir.RegisterAgent(name); err != nil {
+		return AgentInfo{}, err
+	}
+
+	return s.Get(name)
+}
+
+// Delete removes an agent directory and unregisters it. The default agent is
+// protected. A running server is stopped first on a best-effort basis.
+func (s *AgentService) Delete(name string) error {
+	if err := agentdir.ValidateName(name); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidAgentName, err)
+	}
+	if name == agentdir.DefaultAgentName {
+		return ErrDefaultAgent
+	}
+
+	registry, err := agentdir.LoadRegistry()
+	if err != nil {
+		return err
+	}
+	if registry.Default == name {
+		return ErrDefaultAgent
+	}
+
+	root, err := agentdir.AgentRoot(name)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		return ErrAgentNotFound
+	}
+
+	if manager, err := daemon.NewAgentManager(name); err == nil {
+		if _, running, _ := manager.Status(); running {
+			_ = manager.Stop()
+		}
+	}
+
+	if err := os.RemoveAll(root); err != nil {
+		return err
+	}
+	return agentdir.UnregisterAgent(name)
+}
+
+// SetDefault marks an initialized agent as the registry default.
+func (s *AgentService) SetDefault(name string) error {
+	if err := agentdirValidateAgent(name); err != nil {
+		return err
+	}
+	return agentdir.SetDefault(name)
+}
+
+func extractEmbedDir(src, dest string) error {
+	entries, err := myaaw.DefaultMyaawDir.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		srcPath := path.Join(src, entry.Name())
+		destPath := filepath.Join(dest, entry.Name())
+		if entry.IsDir() {
+			if err := os.MkdirAll(destPath, 0o755); err != nil {
+				return err
+			}
+			if err := extractEmbedDir(srcPath, destPath); err != nil {
+				return err
+			}
+			continue
+		}
+		data, err := myaaw.DefaultMyaawDir.ReadFile(srcPath)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(destPath, data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 func (s *AgentService) List() ([]AgentInfo, error) {
 	names, err := agentdir.ListAgents()
 	if err != nil {

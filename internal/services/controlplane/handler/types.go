@@ -2,6 +2,7 @@ package handler
 
 import (
 	api "myaaw/internal/channel/api"
+	"myaaw/internal/cron"
 	"myaaw/internal/services/bot/model"
 	"myaaw/internal/services/controlplane/service"
 )
@@ -100,3 +101,44 @@ type ConversationResponse = model.Conversation
 type LogsResponse struct {
 	Files []service.LogFile `json:"files"`
 }
+
+type CreateAgentRequest struct {
+	Name string `json:"name" example:"myfriend"`
+}
+
+type CreateProviderRequest struct {
+	Name         string `json:"name" example:"openai"`
+	Type         string `json:"type" example:"openai"`
+	BaseURL      string `json:"base_url,omitempty" example:"https://api.openai.com"`
+	APIKey       string `json:"api_key,omitempty"`
+	DefaultModel string `json:"default_model,omitempty" example:"gpt-4o"`
+}
+
+type UpdateProviderRequest struct {
+	Type         *string `json:"type,omitempty"`
+	BaseURL      *string `json:"base_url,omitempty"`
+	APIKey       *string `json:"api_key,omitempty"`
+	DefaultModel *string `json:"default_model,omitempty"`
+}
+
+type SetDefaultProviderRequest struct {
+	Name string `json:"name" example:"openai"`
+}
+
+type ChannelRequest struct {
+	Active         *bool  `json:"active,omitempty"`
+	Token          string `json:"token,omitempty"`
+	Mode           string `json:"mode,omitempty" example:"polling"`
+	NgrokActive    *bool  `json:"ngrok_active,omitempty"`
+	NgrokAuthToken string `json:"ngrok_auth_token,omitempty"`
+}
+
+type CronJobsResponse struct {
+	Jobs []cron.Job `json:"jobs"`
+}
+
+type CronHistoryResponse struct {
+	History []cron.ExecutionResult `json:"history"`
+}
+
+type CronJobResponse = cron.Job

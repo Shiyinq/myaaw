@@ -50,6 +50,60 @@ const docTemplatecontrolplane = `{
                         }
                     }
                 }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Create agent",
+                "parameters": [
+                    {
+                        "description": "Agent name",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateAgentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/service.AgentInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/agents/{name}": {
@@ -95,6 +149,55 @@ const docTemplatecontrolplane = `{
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Delete agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/agents/{name}/channels": {
@@ -125,6 +228,132 @@ const docTemplatecontrolplane = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/service.ChannelsView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/channels/{channel}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Channels"
+                ],
+                "summary": "Create or update channel",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "telegram or discord",
+                        "name": "channel",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Channel settings",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ChannelRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChannelView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Channels"
+                ],
+                "summary": "Disable channel",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "telegram or discord",
+                        "name": "channel",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "401": {
@@ -418,6 +647,331 @@ const docTemplatecontrolplane = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.ConversationResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/cron": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cron"
+                ],
+                "summary": "List cron jobs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CronJobsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cron"
+                ],
+                "summary": "Create cron job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Job definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.CronJobInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CronJobResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/cron/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cron"
+                ],
+                "summary": "Delete cron job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Job ID or prefix",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/cron/{id}/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cron"
+                ],
+                "summary": "Cron job history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Job ID or prefix",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum entries (default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.CronHistoryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/cron/{id}/run": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cron"
+                ],
+                "summary": "Run cron job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Job ID or prefix",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/default": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Set default agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "401": {
@@ -1035,6 +1589,436 @@ const docTemplatecontrolplane = `{
                         }
                     }
                 }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Create provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Provider",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateProviderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/service.ProviderView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/providers/default": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Set default provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Provider name",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.SetDefaultProviderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/providers/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Update provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Provider name",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateProviderRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ProviderView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Delete provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Provider name",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/server/restart": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Restart server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/server/start": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Start server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/server/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Server status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ServerStatus"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/server/stop": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Stop server",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/auth/change-password": {
@@ -1377,6 +2361,51 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "cron.Delivery": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "description": "telegram, discord",
+                    "type": "string"
+                },
+                "mode": {
+                    "description": "announce",
+                    "type": "string"
+                },
+                "to": {
+                    "description": "chat_id",
+                    "type": "string"
+                }
+            }
+        },
+        "cron.ExecutionResult": {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "success, failed",
+                    "type": "string"
+                },
+                "ts": {
+                    "type": "string"
+                }
+            }
+        },
+        "cron.Payload": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "description": "prompt",
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "agentTurn",
+                    "type": "string"
+                }
+            }
+        },
         "handler.AgentsResponse": {
             "type": "object",
             "properties": {
@@ -1406,6 +2435,27 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.ChannelRequest": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "mode": {
+                    "type": "string",
+                    "example": "polling"
+                },
+                "ngrok_active": {
+                    "type": "boolean"
+                },
+                "ngrok_auth_token": {
+                    "type": "string"
+                },
+                "token": {
                     "type": "string"
                 }
             }
@@ -1482,6 +2532,93 @@ const docTemplatecontrolplane = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/service.ConversationSummary"
+                    }
+                }
+            }
+        },
+        "handler.CreateAgentRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "myfriend"
+                }
+            }
+        },
+        "handler.CreateProviderRequest": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "base_url": {
+                    "type": "string",
+                    "example": "https://api.openai.com"
+                },
+                "default_model": {
+                    "type": "string",
+                    "example": "gpt-4o"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "openai"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "openai"
+                }
+            }
+        },
+        "handler.CronHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "history": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/cron.ExecutionResult"
+                    }
+                }
+            }
+        },
+        "handler.CronJobResponse": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "delivery": {
+                    "$ref": "#/definitions/cron.Delivery"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "payload": {
+                    "$ref": "#/definitions/cron.Payload"
+                },
+                "schedule": {
+                    "$ref": "#/definitions/myaaw_internal_cron.Schedule"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.CronJobsResponse": {
+            "type": "object",
+            "properties": {
+                "jobs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/myaaw_internal_cron.Job"
                     }
                 }
             }
@@ -1601,6 +2738,32 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "handler.SetDefaultProviderRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "openai"
+                }
+            }
+        },
+        "handler.UpdateProviderRequest": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "base_url": {
+                    "type": "string"
+                },
+                "default_model": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.UsageResponse": {
             "type": "object",
             "properties": {
@@ -1634,6 +2797,55 @@ const docTemplatecontrolplane = `{
                 "path": {
                     "type": "string",
                     "example": "/home/AGENTS.md"
+                }
+            }
+        },
+        "myaaw_internal_cron.Job": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "delivery": {
+                    "$ref": "#/definitions/cron.Delivery"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "payload": {
+                    "$ref": "#/definitions/cron.Payload"
+                },
+                "schedule": {
+                    "$ref": "#/definitions/myaaw_internal_cron.Schedule"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "myaaw_internal_cron.Schedule": {
+            "type": "object",
+            "properties": {
+                "expr": {
+                    "description": "* * * * * or 30m",
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "cron, every, at",
+                    "type": "string"
+                },
+                "tz": {
+                    "description": "Asia/Jakarta",
+                    "type": "string"
                 }
             }
         },
@@ -1926,6 +3138,36 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.CronJobInput": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "expr": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "schedule_kind": {
+                    "description": "cron, every, at",
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "tz": {
+                    "type": "string"
+                }
+            }
+        },
         "service.FileContent": {
             "type": "object",
             "properties": {
@@ -2033,6 +3275,23 @@ const docTemplatecontrolplane = `{
                 },
                 "masked": {
                     "type": "string"
+                }
+            }
+        },
+        "service.ServerStatus": {
+            "type": "object",
+            "properties": {
+                "base_url": {
+                    "type": "string"
+                },
+                "pid": {
+                    "type": "integer"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "running": {
+                    "type": "boolean"
                 }
             }
         },

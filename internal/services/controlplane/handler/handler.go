@@ -14,6 +14,8 @@ type Handler struct {
 	config        *service.ConfigService
 	conversations *service.ConversationService
 	logs          *service.LogsService
+	server        *service.ServerService
+	cron          *service.CronService
 }
 
 func New(
@@ -24,6 +26,8 @@ func New(
 	configSvc *service.ConfigService,
 	conversations *service.ConversationService,
 	logs *service.LogsService,
+	server *service.ServerService,
+	cronSvc *service.CronService,
 ) *Handler {
 	return &Handler{
 		auth:          auth,
@@ -33,6 +37,8 @@ func New(
 		config:        configSvc,
 		conversations: conversations,
 		logs:          logs,
+		server:        server,
+		cron:          cronSvc,
 	}
 }
 

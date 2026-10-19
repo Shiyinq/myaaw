@@ -28,7 +28,9 @@ func NewApp() (*fiber.App, error) {
 	configSvc := service.NewConfigService()
 	conversations := service.NewConversationService()
 	logs := service.NewLogsService()
-	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs)
+	serverSvc := service.NewServerService(agents)
+	cronSvc := service.NewCronService(agents)
+	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api"})
 
@@ -50,7 +52,10 @@ func NewApp() (*fiber.App, error) {
 	app.Put("/auth/username", h.ChangeUsername)
 
 	app.Get("/agents", h.ListAgents)
+	app.Post("/agents", h.CreateAgent)
 	app.Get("/agents/:name", h.GetAgent)
+	app.Delete("/agents/:name", h.DeleteAgent)
+	app.Post("/agents/:name/default", h.SetDefaultAgent)
 	app.Post("/agents/:name/chat", h.Chat)
 	app.Post("/agents/:name/chat/stream", h.ChatStream)
 
@@ -63,12 +68,27 @@ func NewApp() (*fiber.App, error) {
 	app.Delete("/agents/:name/fs", h.DeleteFile)
 
 	app.Get("/agents/:name/providers", h.ListProviders)
+	app.Post("/agents/:name/providers", h.CreateProvider)
+	app.Put("/agents/:name/providers/:id", h.UpdateProvider)
+	app.Delete("/agents/:name/providers/:id", h.DeleteProvider)
+	app.Post("/agents/:name/providers/default", h.SetDefaultProvider)
 	app.Get("/agents/:name/channels", h.ListChannels)
+	app.Put("/agents/:name/channels/:channel", h.UpsertChannel)
+	app.Delete("/agents/:name/channels/:channel", h.DeleteChannel)
 	app.Get("/agents/:name/config", h.GetConfig)
 	app.Get("/agents/:name/conversations", h.ListConversations)
 	app.Get("/agents/:name/conversations/:id", h.GetConversation)
 	app.Get("/agents/:name/logs", h.ListLogs)
 	app.Get("/agents/:name/logs/stream", h.StreamLogs)
+	app.Get("/agents/:name/server/status", h.GetServerStatus)
+	app.Post("/agents/:name/server/start", h.StartServer)
+	app.Post("/agents/:name/server/stop", h.StopServer)
+	app.Post("/agents/:name/server/restart", h.RestartServer)
+	app.Get("/agents/:name/cron", h.ListCron)
+	app.Post("/agents/:name/cron", h.AddCron)
+	app.Delete("/agents/:name/cron/:id", h.RemoveCron)
+	app.Post("/agents/:name/cron/:id/run", h.RunCron)
+	app.Get("/agents/:name/cron/:id/history", h.CronHistory)
 
 	return app, nil
 }
