@@ -281,6 +281,145 @@ func TestRouterContext(t *testing.T) {
 		`{"path":"NOTES.md","content":"x"}`, fiber.StatusBadRequest, nil)
 }
 
+func TestRouterSkillsAndTools(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	skillsDir := filepath.Join(agentRoot, "skills")
+	if err := os.MkdirAll(filepath.Join(skillsDir, "weather"), 0o755); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "weather", "SKILL.md"), []byte("---\nname: Weather\ndescription: Fetch weather\n---\n"), 0o644); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
+
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	type skillItem struct {
+		Name    string `json:"name"`
+		Enabled bool   `json:"enabled"`
+		Source  string `json:"source"`
+	}
+	var skills struct {
+		Skills []skillItem `json:"skills"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/skills", token, "", fiber.StatusOK, &skills)
+	if len(skills.Skills) != 1 || skills.Skills[0].Name != "weather" || !skills.Skills[0].Enabled || skills.Skills[0].Source != "default" {
+		t.Fatalf("skills = %+v", skills)
+	}
+
+	doJSON(t, app, "PATCH", "/agents/myfriend/skills/weather", token, `{"enabled":false}`, fiber.StatusOK, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/skills", token, "", fiber.StatusOK, &skills)
+	if skills.Skills[0].Enabled || skills.Skills[0].Source != "config" {
+		t.Fatalf("skills after toggle = %+v", skills)
+	}
+
+	var skillDetail struct {
+		Name    string `json:"name"`
+		Content string `json:"content"`
+		Files   []struct {
+			Path string `json:"path"`
+			Size int64  `json:"size"`
+		} `json:"files"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/skills/weather", token, "", fiber.StatusOK, &skillDetail)
+	if skillDetail.Name != "weather" || len(skillDetail.Files) != 1 || skillDetail.Files[0].Path != "SKILL.md" {
+		t.Fatalf("skill detail = %+v", skillDetail)
+	}
+	if !strings.Contains(skillDetail.Content, "Fetch weather") {
+		t.Fatalf("skill content = %q", skillDetail.Content)
+	}
+	doJSON(t, app, "PATCH", "/agents/myfriend/skills/missing", token, `{"enabled":true}`, fiber.StatusNotFound, nil)
+
+	// Simulate a terminal deletion: the list must update without any cache.
+	if err := os.RemoveAll(filepath.Join(skillsDir, "weather")); err != nil {
+		t.Fatalf("remove skill dir: %v", err)
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/skills", token, "", fiber.StatusOK, &skills)
+	if len(skills.Skills) != 0 {
+		t.Fatalf("skills after terminal delete = %+v", skills)
+	}
+	// The detail GET cleans the stale skills.json key and still returns 404.
+	doJSON(t, app, "GET", "/agents/myfriend/skills/weather", token, "", fiber.StatusNotFound, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/skills/weather", token, "", fiber.StatusNotFound, nil)
+
+	type toolsView struct {
+		Builtin []struct {
+			Name    string `json:"name"`
+			Enabled bool   `json:"enabled"`
+		} `json:"builtin"`
+		Custom []struct {
+			Name    string          `json:"name"`
+			Command string          `json:"command"`
+			Enabled bool            `json:"enabled"`
+			Schema  json.RawMessage `json:"schema,omitempty"`
+		} `json:"custom"`
+		MCPServers []struct {
+			Name    string `json:"name"`
+			Enabled bool   `json:"enabled"`
+			Env     struct {
+				Configured bool   `json:"configured"`
+				Masked     string `json:"masked"`
+			} `json:"env"`
+		} `json:"mcp_servers"`
+	}
+	var tools toolsView
+	doJSON(t, app, "GET", "/agents/myfriend/tools", token, "", fiber.StatusOK, &tools)
+	if len(tools.Builtin) != 6 {
+		t.Fatalf("builtin = %+v", tools.Builtin)
+	}
+
+	doJSON(t, app, "POST", "/agents/myfriend/tools/custom", token,
+		`{"name":"hello","command":"node","args":["x.js"],"schema":{"type":"function"}}`, fiber.StatusOK, nil)
+	doJSON(t, app, "POST", "/agents/myfriend/tools/custom", token,
+		`{"name":"HELLO","command":"node"}`, fiber.StatusConflict, nil)
+	doJSON(t, app, "PATCH", "/agents/myfriend/tools/custom/hello", token,
+		`{"command":"python3","enabled":false}`, fiber.StatusOK, nil)
+	doJSON(t, app, "PATCH", "/agents/myfriend/tools/custom/hello", token, `{}`, fiber.StatusBadRequest, nil)
+	doJSON(t, app, "POST", "/agents/myfriend/tools/mcp", token,
+		`{"name":"playwright","command":"npx","env":{"TOKEN":"secret"}}`, fiber.StatusOK, nil)
+	doJSON(t, app, "PATCH", "/agents/myfriend/tools/mcp/playwright", token, `{}`, fiber.StatusBadRequest, nil)
+
+	doJSON(t, app, "GET", "/agents/myfriend/tools", token, "", fiber.StatusOK, &tools)
+	if len(tools.Custom) != 1 || tools.Custom[0].Command != "python3" || tools.Custom[0].Enabled {
+		t.Fatalf("custom = %+v", tools.Custom)
+	}
+	if len(tools.Custom[0].Schema) == 0 {
+		t.Fatalf("schema should be returned when present: %+v", tools.Custom[0])
+	}
+	if len(tools.MCPServers) != 1 || !tools.MCPServers[0].Env.Configured || tools.MCPServers[0].Env.Masked != "********" {
+		t.Fatalf("mcp = %+v", tools.MCPServers)
+	}
+
+	doJSON(t, app, "PATCH", "/agents/myfriend/tools/builtin/bash", token, `{"enabled":false}`, fiber.StatusOK, nil)
+	doJSON(t, app, "PATCH", "/agents/myfriend/tools/builtin/nope", token, `{"enabled":false}`, fiber.StatusBadRequest, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/tools", token, "", fiber.StatusOK, &tools)
+	for _, tool := range tools.Builtin {
+		if tool.Name == "bash" && tool.Enabled {
+			t.Fatalf("bash should be disabled: %+v", tools.Builtin)
+		}
+	}
+
+	doJSON(t, app, "DELETE", "/agents/myfriend/tools/mcp/playwright", token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/tools/mcp/playwright", token, "", fiber.StatusNotFound, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/tools/custom/hello", token, "", fiber.StatusOK, nil)
+
+	// Simulate a terminal edit of tools.json: the next list reads it fresh.
+	toolsDir := filepath.Join(agentRoot, "tools")
+	if err := os.WriteFile(filepath.Join(toolsDir, "tools.json"),
+		[]byte(`{"builtin_tools":{"bash":false},"custom_tools":[{"name":"terminal-tool","command":"echo"}],"mcp_servers":[]}`), 0o644); err != nil {
+		t.Fatalf("rewrite tools.json: %v", err)
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/tools", token, "", fiber.StatusOK, &tools)
+	if len(tools.Custom) != 1 || tools.Custom[0].Name != "terminal-tool" {
+		t.Fatalf("custom after terminal edit = %+v", tools.Custom)
+	}
+}
+
 func TestRouterReadOnlyManagement(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	home, err := os.UserHomeDir()

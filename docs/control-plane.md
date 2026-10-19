@@ -312,7 +312,135 @@ Path rules:
 
 The same 2 MiB limit applies. Reads still reject binary content with `415`.
 
-## 7. Providers
+## 7. Skills
+
+Skills live in `~/.myaaw/<agent>/skills/<skill>/SKILL.md`. The enabled state follows `skills.json`, then the `SKILL.md` frontmatter, then defaults to enabled. The list is read fresh from disk on every request, so skills added or removed through the terminal appear immediately.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/agents/:name/skills` | list every skill directory with its state |
+| `GET` | `/agents/:name/skills/:skill` | skill detail: `SKILL.md` content + file listing |
+| `PATCH` | `/agents/:name/skills/:skill` | `{enabled}` → writes `skills.json` |
+| `DELETE` | `/agents/:name/skills/:skill` | remove the skill folder and its `skills.json` key (idempotent) |
+
+```bash
+curl "http://localhost:9000/agents/myfriend/skills" \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -X PATCH "http://localhost:9000/agents/myfriend/skills/weather" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled": false}'
+
+curl -X DELETE "http://localhost:9000/agents/myfriend/skills/weather" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+List response:
+
+```json
+{
+  "skills": [
+    {"name": "weather", "display_name": "Weather", "description": "Fetch weather", "enabled": false, "source": "config", "parse_ok": true}
+  ]
+}
+```
+
+- `source` is `config` (skills.json), `frontmatter`, or `default`.
+- A directory without a parseable `SKILL.md` still appears with `parse_ok: false` so it can be deleted.
+- There is no create endpoint: the agent creates skills itself; the list picks them up automatically.
+- Empty or missing directories return an empty list. A missing or invalid `skills.json` behaves like the agent loader: everything defaults to enabled, and the next write replaces the file.
+- A stale `skills.json` key left behind by a manual folder deletion is ignored by the list (no ghost skills) and can be cleaned with `DELETE`, which succeeds as long as the folder or the key exists.
+
+Skill detail:
+
+```bash
+curl "http://localhost:9000/agents/myfriend/skills/weather" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "name": "weather",
+  "display_name": "Weather",
+  "description": "Fetch weather",
+  "enabled": true,
+  "source": "default",
+  "parse_ok": true,
+  "content": "---\nname: Weather\n...\n---\n",
+  "files": [
+    {"path": "SKILL.md", "size": 123, "mod_time": "..."},
+    {"path": "assets/icon.png", "size": 456, "mod_time": "..."},
+    {"path": "scripts/weather.py", "size": 789, "mod_time": "..."}
+  ]
+}
+```
+
+- `content` is the raw `SKILL.md` text (capped at 2 MiB, `413` when larger).
+- `files` lists every file in the skill directory recursively — scripts, images, and nested folders — sorted by path, capped at 1000 entries. Symlinks are skipped.
+- Requesting a deleted skill cleans its stale `skills.json` key automatically and returns `404`.
+
+## 8. Tools
+
+Tools are configured in `~/.myaaw/<agent>/tools/tools.json` with three sections: `builtin_tools`, `custom_tools`, and `mcp_servers`. Files inside the tools folder are storage only — they are not active tools until registered in `tools.json`, and their command may point anywhere on disk. The agent server hot-reloads `tools.json` via a file watcher.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/agents/:name/tools` | built-in + custom + MCP tools |
+| `POST` | `/agents/:name/tools/custom` | register a custom tool |
+| `POST` | `/agents/:name/tools/mcp` | register an MCP server |
+| `PATCH` | `/agents/:name/tools/builtin/:tool` | `{enabled}` only |
+| `PATCH` | `/agents/:name/tools/custom/:tool` | `{enabled?, command?, args?, schema?}` |
+| `PATCH` | `/agents/:name/tools/mcp/:tool` | `{enabled?, command?, args?, env?}` |
+| `DELETE` | `/agents/:name/tools/custom/:tool` | remove the config entry |
+| `DELETE` | `/agents/:name/tools/mcp/:tool` | remove the config entry |
+
+Create a custom tool:
+
+```bash
+curl -X POST "http://localhost:9000/agents/myfriend/tools/custom" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"hello_helper","command":"node","args":["/path/script.js"],"enabled":true}'
+```
+
+Create an MCP server:
+
+```bash
+curl -X POST "http://localhost:9000/agents/myfriend/tools/mcp" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"playwright","command":"npx","args":["-y","@playwright/mcp"],"env":{"TOKEN":"secret"}}'
+```
+
+List response:
+
+```json
+{
+  "builtin": [
+    {"name": "bash", "description": "Execute system shell commands", "enabled": true}
+  ],
+  "custom": [
+    {"name": "hello_helper", "command": "node", "args": ["/path/script.js"], "enabled": true}
+  ],
+  "mcp_servers": [
+    {"name": "playwright", "command": "npx", "args": ["-y", "@playwright/mcp"], "enabled": true, "env": {"configured": true, "masked": "********"}}
+  ]
+}
+```
+
+Rules:
+
+- Built-in tools (`bash`, `filesystem`, `cron`, `execute_python` with alias `python`, `provider`, `subagent`) can only be enabled or disabled.
+- Custom tool `name` and MCP server `name` must be unique; duplicates return `409`.
+- `schema` is optional for custom tools; omit it to let the loader discover it via `--schema`. Sending `"schema": null` on `PATCH` removes an inline schema. A present inline schema is returned in list/create/patch responses.
+- Duplicate names are rejected case-insensitively (`409`), and a custom tool name may not start with a registered MCP server name plus `_` (and vice versa) because the loader prefixes MCP tools as `<server>_<tool>`.
+- `PATCH` requires at least one field; an empty body `{}` returns `400`. Deletion has its own endpoints.
+- MCP `env` values are accepted on input and always masked on output.
+- `DELETE` removes the `tools.json` entry only; it never touches files in the tools folder, and it does not stop a running MCP process (the agent server closes it on reload or restart).
+- Missing or invalid `tools.json` behaves like the agent loader: all built-ins enabled and no custom tools or MCP servers. Writes create the file automatically.
+
+## 9. Providers
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -338,7 +466,7 @@ Rules:
 - An empty `api_key` on update keeps the existing key.
 - Deleting the default provider moves the default to another provider when one remains.
 
-## 8. Channels
+## 10. Channels
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -361,11 +489,11 @@ Rules:
 - `DELETE` disables the channel and keeps its token, matching the CLI.
 - Restart the agent server after changing tokens.
 
-## 9. Config
+## 11. Config
 
 `GET /agents/:name/config` returns providers, channels, bot settings, heartbeat, cron, transcriber, and synthesizer with all secrets masked.
 
-## 10. Conversations
+## 12. Conversations
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -436,7 +564,7 @@ curl -X DELETE http://localhost:9000/agents/myfriend/conversations/conv-id \
 
 Conversations come from the agent's own SQLite database. Legacy traces are migrated on read. If the database does not exist yet, the list is empty.
 
-## 11. Logs
+## 13. Logs
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -457,7 +585,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 `EventSource` cannot set the `Authorization` header. Use the `fetch` streaming pattern from the chat section, or proxy the request through a same-origin endpoint that injects the header.
 
-## 12. Server control
+## 14. Server control
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -468,7 +596,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 `start` returns `409` when the server is already running. Each daemon uses its own PID file and log directory.
 
-## 13. Cron
+## 15. Cron
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -493,7 +621,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 `schedule_kind` is `cron`, `every`, or `at`. Running a job requires the agent server to be up; results are written to the job history.
 
-## 14. Endpoint reference
+## 16. Endpoint reference
 
 | Group | Endpoints |
 |---|---|
@@ -502,6 +630,8 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 | Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream` |
 | Files | `GET/DELETE /agents/:name/fs`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
+| Skills | `GET /agents/:name/skills`, `GET /skills/:skill`, `PATCH /skills/:skill`, `DELETE /skills/:skill` |
+| Tools | `GET /agents/:name/tools`, `POST /tools/custom`, `POST /tools/mcp`, `PATCH /tools/builtin/:tool`, `PATCH /tools/custom/:tool`, `PATCH /tools/mcp/:tool`, `DELETE /tools/custom/:tool`, `DELETE /tools/mcp/:tool` |
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config` |
@@ -513,7 +643,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 All `/agents/...` paths are prefixed with `/agents/:name`.
 
-## 15. Errors
+## 17. Errors
 
 | Status | Meaning |
 |---|---|
@@ -526,7 +656,7 @@ All `/agents/...` paths are prefixed with `/agents/:name`.
 | `415` | binary file |
 | `502` | agent server is not reachable |
 
-## 16. Security notes
+## 18. Security notes
 
 - There is no rate limiting in the first version.
 - `/api/*` on the agent servers still has no auth; only the control plane protects access. Do not expose agent ports directly.

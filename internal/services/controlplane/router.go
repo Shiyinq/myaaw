@@ -34,7 +34,9 @@ func NewApp() (*fiber.App, error) {
 	logs := service.NewLogsService()
 	serverSvc := service.NewServerService(agents)
 	cronSvc := service.NewCronService(agents)
-	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc)
+	skillsSvc := service.NewSkillService()
+	toolsSvc := service.NewToolsService()
+	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api"})
 	app.Use(cors.New(cors.Config{
@@ -74,6 +76,20 @@ func NewApp() (*fiber.App, error) {
 	app.Get("/agents/:name/context", h.ListContextFiles)
 	app.Get("/agents/:name/context/file", h.ReadContextFile)
 	app.Put("/agents/:name/context/file", h.WriteContextFile)
+
+	app.Get("/agents/:name/skills", h.ListSkills)
+	app.Get("/agents/:name/skills/:skill", h.GetSkill)
+	app.Patch("/agents/:name/skills/:skill", h.ToggleSkill)
+	app.Delete("/agents/:name/skills/:skill", h.DeleteSkill)
+
+	app.Get("/agents/:name/tools", h.ListTools)
+	app.Post("/agents/:name/tools/custom", h.CreateCustomTool)
+	app.Patch("/agents/:name/tools/custom/:tool", h.PatchCustomTool)
+	app.Delete("/agents/:name/tools/custom/:tool", h.DeleteCustomTool)
+	app.Post("/agents/:name/tools/mcp", h.CreateMCPServer)
+	app.Patch("/agents/:name/tools/mcp/:tool", h.PatchMCPServer)
+	app.Delete("/agents/:name/tools/mcp/:tool", h.DeleteMCPServer)
+	app.Patch("/agents/:name/tools/builtin/:tool", h.ToggleBuiltinTool)
 	app.Post("/agents/:name/fs/write", h.WriteFile)
 	app.Post("/agents/:name/fs/mkdir", h.Mkdir)
 	app.Post("/agents/:name/fs/rename", h.RenameFile)

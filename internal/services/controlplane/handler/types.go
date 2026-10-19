@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"myaaw/internal/agent/skills"
 	api "myaaw/internal/channel/api"
 	"myaaw/internal/cron"
 	"myaaw/internal/services/controlplane/service"
@@ -47,6 +49,57 @@ type AgentsResponse struct {
 
 type HealthResponse struct {
 	Status string `json:"status" example:"ok"`
+}
+
+// SkillView mirrors skills.Skill for documentation purposes.
+type SkillView = skills.Skill
+
+type SkillsResponse struct {
+	Skills []skills.Skill `json:"skills"`
+}
+
+type SkillToggleRequest struct {
+	Enabled *bool `json:"enabled" example:"true"`
+}
+
+type SkillToggleResponse struct {
+	OK      bool   `json:"ok" example:"true"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+}
+
+type BuiltinToggleRequest struct {
+	Enabled *bool `json:"enabled" example:"true"`
+}
+
+type CreateCustomToolRequest struct {
+	Name    string          `json:"name" example:"hello_helper"`
+	Command string          `json:"command" example:"node"`
+	Args    []string        `json:"args,omitempty"`
+	Schema  json.RawMessage `json:"schema,omitempty"`
+	Enabled *bool           `json:"enabled,omitempty" example:"true"`
+}
+
+type PatchCustomToolRequest struct {
+	Enabled *bool            `json:"enabled,omitempty"`
+	Command *string          `json:"command,omitempty"`
+	Args    *[]string        `json:"args,omitempty"`
+	Schema  *json.RawMessage `json:"schema,omitempty"`
+}
+
+type CreateMCPRequest struct {
+	Name    string            `json:"name" example:"playwright"`
+	Command string            `json:"command" example:"npx"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	Enabled *bool             `json:"enabled,omitempty" example:"true"`
+}
+
+type PatchMCPRequest struct {
+	Enabled *bool              `json:"enabled,omitempty"`
+	Command *string            `json:"command,omitempty"`
+	Args    *[]string          `json:"args,omitempty"`
+	Env     *map[string]string `json:"env,omitempty"`
 }
 
 // ChatRequest mirrors the agent chat request for documentation purposes.
