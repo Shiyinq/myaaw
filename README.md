@@ -83,10 +83,10 @@ graph TD
     SEL[Agent Selection<br/>--agent / picker / MYAAW_AGENT]
     CLI --> SEL
     Voice --> SEL
-    SEL -. "chat (own process)" .-> BOT_A
-    SEL -. "chat (own process)" .-> BOT_B
-    SEL -. "voice (own process)" .-> PROV_A
-    SEL -. "voice (own process)" .-> PROV_B
+    SEL -. "chat → default" .-> BOT_A
+    SEL -. "chat → myfriend" .-> BOT_B
+    SEL -. "voice → default" .-> PROV_A
+    SEL -. "voice → myfriend" .-> PROV_B
 
     subgraph "Agent Process A - default (port 8080)"
         CH_A[Telegram / Discord<br/>token A]
@@ -188,7 +188,7 @@ Telegram and Discord payloads always pass through a queue first: **channel adapt
 
 Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, and `home/`. `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
 
-Solid arrows are the main request/data path. Dotted arrows are auxiliary relationships: agent selection, registry and PID lookups, and the event side-channel to the timeline.
+Solid arrows are the main request/data path. Dotted arrows are auxiliary relationships: agent selection, registry and PID lookups, and the event side-channel to the timeline. Telegram and Discord do not use the selection node: each bot token already binds messages to one agent process (solid arrows). Only CLI sessions resolve `--agent` / picker / `MYAAW_AGENT` (dotted arrows).
 
 ### Key Components
 
