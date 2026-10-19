@@ -163,7 +163,7 @@ graph TD
     API --> SRV_A
     API --> SRV_B
 
-    SEL -. "reads" .-> REG
+    SEL -- "reads" --> REG
     PIDS -- "pid files" --> SRV_A
     PIDS -- "pid files" --> SRV_B
 
@@ -188,7 +188,7 @@ Telegram and Discord payloads always pass through a queue first: **channel adapt
 
 Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, and `home/`. `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
 
-Dotted arrows are used only for the `agents.json` registry read during agent selection; every other arrow shows a real request/data path. Telegram and Discord do not use the selection node: each bot token already binds messages to one agent process. Only CLI sessions resolve `--agent` / picker / `MYAAW_AGENT`, and they use the selected agent's config, SQLite, and `home/`: `myaaw chat` drives the Bot Service and loop in its own process, `myaaw voice` goes straight to the provider, and `myaaw voice-classic` drives the loop with tools.
+The selection node resolves the active agent from `~/.myaaw/agents.json`. Telegram and Discord do not use it: each bot token already binds messages to one agent process. Only CLI sessions resolve `--agent` / picker / `MYAAW_AGENT`, and they use the selected agent's config, SQLite, and `home/`: `myaaw chat` drives the Bot Service and loop in its own process, `myaaw voice` goes straight to the provider, and `myaaw voice-classic` drives the loop with tools.
 
 ### Key Components
 
