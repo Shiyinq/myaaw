@@ -83,10 +83,10 @@ graph TD
     SEL[Agent Selection<br/>--agent / picker / MYAAW_AGENT]
     CLI --> SEL
     Voice --> SEL
-    SEL -. "chat: selected agent" .-> BOT_A
-    SEL -. "chat: selected agent" .-> BOT_B
-    SEL -. "voice: selected agent" .-> PROV_A
-    SEL -. "voice: selected agent" .-> PROV_B
+    SEL -. "chat (own process)" .-> BOT_A
+    SEL -. "chat (own process)" .-> BOT_B
+    SEL -. "voice (own process)" .-> PROV_A
+    SEL -. "voice (own process)" .-> PROV_B
 
     subgraph "Agent Process A - default (port 8080)"
         CH_A[Telegram / Discord<br/>token A]
@@ -185,6 +185,8 @@ graph TD
 Telegram and Discord payloads always pass through a queue first: **channel adapter → in-memory queue → queue consumer → that agent's own `POST /webhook/bot`**. The queue is an in-process Go channel, so each agent process has its own queue; messages can never move between agents. Cron and heartbeat are the exception: they call `POST /heartbeat` directly on their own server.
 
 `Agent Core` marks the components that belong to the agent itself (event loop, transcript, tools, provider). `Bot Service` reads identity and memory files from `home/` (`AGENTS.md`, `SOUL.md`, `MEMORY.md`, `USER.md`, `skills/`) to build the system prompt, while the tools read and write the actual `home/workspace/` during a run.
+
+Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, and `home/`. `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
 
 ### Key Components
 
