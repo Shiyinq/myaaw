@@ -57,6 +57,7 @@ func (h *Handler) GetAgent(c fiber.Ctx) error {
 // @Success      200 {object} ChatResponse
 // @Failure      400 {object} common.ErrorResponse
 // @Failure      401 {object} common.ErrorResponse
+// @Failure      403 {object} common.ErrorResponse
 // @Failure      404 {object} common.ErrorResponse
 // @Failure      502 {object} common.ErrorResponse
 // @Router       /agents/{name}/chat [post]
@@ -79,6 +80,7 @@ func (h *Handler) Chat(c fiber.Ctx) error {
 // @Success      200 {string} string "SSE stream"
 // @Failure      400 {object} common.ErrorResponse
 // @Failure      401 {object} common.ErrorResponse
+// @Failure      403 {object} common.ErrorResponse
 // @Failure      404 {object} common.ErrorResponse
 // @Failure      502 {object} common.ErrorResponse
 // @Router       /agents/{name}/chat/stream [post]

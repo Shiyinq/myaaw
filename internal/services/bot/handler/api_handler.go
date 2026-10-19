@@ -3,9 +3,11 @@ package handler
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	api "myaaw/internal/channel/api"
+	"myaaw/internal/services/bot/service"
 	"myaaw/internal/utils"
 
 	"github.com/gofiber/fiber/v3"
@@ -32,7 +34,9 @@ type UsageResponse struct {
 // @Accept		json
 // @Param		request	body		api.ChatRequest	true	"Chat request with user_id and text"
 // @Success		200		{object}	ChatResponse
-// @Failure     400    	{object}   	common.ErrorResponse
+// @Failure     400     {object}    common.ErrorResponse
+// @Failure     403     {object}    common.ErrorResponse
+// @Failure     404     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/api/chat [post]
 func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
@@ -66,7 +70,14 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 	if err != nil {
 		log.Printf("API chat error for user ID %v: %v", msg.UserID, err)
 		formattedError := utils.FormatErrorMessage(err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		status := fiber.StatusInternalServerError
+		switch {
+		case errors.Is(err, service.ErrConversationNotFound):
+			status = fiber.StatusNotFound
+		case errors.Is(err, service.ErrConversationForbidden):
+			status = fiber.StatusForbidden
+		}
+		return c.Status(status).JSON(fiber.Map{
 			"error": formattedError,
 		})
 	}
@@ -96,7 +107,9 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 // @Accept		json
 // @Param		request	body		api.ChatRequest	true	"Chat request with user_id and text"
 // @Success		200
-// @Failure     400    	{object}   	common.ErrorResponse
+// @Failure     400     {object}    common.ErrorResponse
+// @Failure     403     {object}    common.ErrorResponse
+// @Failure     404     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/api/chat/stream [post]
 func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {

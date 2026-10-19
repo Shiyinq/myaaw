@@ -23,6 +23,7 @@ type fakeBotService struct {
 	service.BotService
 	out    *channel.OutgoingMessage
 	chunks []channel.StreamChunk
+	err    error
 }
 
 func (f *fakeBotService) BotStreamContext(
@@ -33,7 +34,7 @@ func (f *fakeBotService) BotStreamContext(
 	for _, chunk := range f.chunks {
 		onChunk(chunk)
 	}
-	return f.out, nil
+	return f.out, f.err
 }
 
 func newAPIApp(t *testing.T, fake *fakeBotService) *fiber.App {
@@ -157,6 +158,32 @@ func TestAPIChatStreamEmitsTimelineEvents(t *testing.T) {
 	} {
 		if !strings.Contains(stream, want) {
 			t.Errorf("stream missing %q:\n%s", want, stream)
+		}
+	}
+}
+
+func TestAPIChatInvalidConversation(t *testing.T) {
+	cases := []struct {
+		err    error
+		status int
+	}{
+		{service.ErrConversationNotFound, fiber.StatusNotFound},
+		{service.ErrConversationForbidden, fiber.StatusForbidden},
+	}
+
+	for _, tc := range cases {
+		app := newAPIApp(t, &fakeBotService{err: tc.err})
+
+		req := httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"user_id":7,"text":"hi","conversation_id":"missing"}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("app.Test: %v", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != tc.status {
+			t.Fatalf("err %v: status = %d, want %d", tc.err, resp.StatusCode, tc.status)
 		}
 	}
 }

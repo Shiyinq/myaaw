@@ -55,7 +55,7 @@ Anyone who can reach the port can run the agent and its tools. Keep the server o
 | `images` | string[] | no | base64 image data; only the Gemini provider consumes them |
 | `conversation_id` | string | no | continue a specific conversation, or `"NEW"` to force a new one |
 
-`user_id` maps to a row in the agent's SQLite database. Omit `conversation_id` to continue the user's active conversation. If the ID does not exist, the agent falls back to the active conversation.
+`user_id` maps to a row in the agent's SQLite database. Omit `conversation_id` to continue the user's active conversation. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
 
 ## 4. Non-streaming: `POST /api/chat`
 
@@ -241,6 +241,8 @@ There is no separate trace field. Tool lifecycle events already carry the action
 | Status | Body | Cause |
 |---|---|---|
 | `400` | `{"error":"..."}` | invalid JSON, missing `user_id`, or empty `text` |
+| `403` | `{"error":"..."}` | `conversation_id` belongs to another user |
+| `404` | `{"error":"..."}` | `conversation_id` not found |
 | `500` | `{"error":"..."}` | provider or agent failure |
 
 ### Streaming
@@ -252,6 +254,8 @@ data: {"error":"..."}
 event: done
 data: {"ok":false}
 ```
+
+For streaming requests, an invalid `conversation_id` is reported as an `error` event because the HTTP status is already `200` once the stream starts.
 
 ## 8. Limitations
 

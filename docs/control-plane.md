@@ -101,7 +101,7 @@ curl -X POST http://localhost:9000/agents/myfriend/chat \
   -d '{"user_id":12345,"text":"Check my workspace"}'
 ```
 
-To continue an existing conversation, pass its `conversation_id`. Use `"NEW"` to force a new conversation. Omit it to continue the user's active conversation.
+To continue an existing conversation, pass its `conversation_id`. Use `"NEW"` to force a new conversation. Omit it to continue the user's active conversation. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
 
 ```json
 {
@@ -149,6 +149,8 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | `error` | `{"error":"..."}` followed by `done {"ok":false}` |
 
 Merge consecutive deltas per kind. On `done`, use `done.text` as the authoritative final answer; it can differ from the accumulated deltas when the run stops without normal output.
+
+For streaming requests, an invalid `conversation_id` is reported as an `error` event because the HTTP status is already `200` once the stream starts.
 
 `EventSource` cannot send a POST body, so use `fetch` with `ReadableStream`:
 
@@ -378,6 +380,7 @@ All `/agents/...` paths are prefixed with `/agents/:name`.
 |---|---|
 | `400` | invalid JSON, invalid path, or invalid config |
 | `401` | missing, invalid, or expired token |
+| `403` | conversation belongs to another user |
 | `404` | agent, provider, channel, job, conversation, or log file not found |
 | `409` | agent already exists, or server already running |
 | `413` | file too large |
