@@ -14,7 +14,7 @@ GET  /agents/myfriend/logs/stream     → tail that agent's logs
 ```text
 myaaw server --agent default     → agent server :8080
 myaaw server --agent myfriend    → agent server :8081
-myaaw api --port 9000            → control plane :9000
+myaaw api start --port 9000     → control plane :9000 (daemon)
 ```
 
 - Agent servers keep running chat, tools, SQLite, channels, and the agent loop.
@@ -28,14 +28,27 @@ myaaw api --port 9000            → control plane :9000
 myaaw server --agent default start
 myaaw server --agent myfriend start
 
-# Start the unified API
-myaaw api --port 9000
+# Start the unified API in the background
+myaaw api start --port 9000
+myaaw api status
+
+# Or run it in the foreground
+myaaw api run --port 9000
 
 # Login (first run seeds these credentials)
 curl -X POST http://localhost:9000/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"myaaw","password":"myaawadmin"}'
 ```
+
+The API daemon uses:
+
+```text
+PID:  ~/.myaaw/pids/myaaw-api.pid
+Log:  ~/.myaaw/logs/myaaw-api.log
+```
+
+Management commands: `myaaw api start`, `myaaw api stop`, `myaaw api restart`, `myaaw api status`.
 
 Store the returned `token` and send it on every other request:
 

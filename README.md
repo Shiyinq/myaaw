@@ -441,7 +441,7 @@ Myaaw runs as a unified background service daemon.
 | Command | Subcommands | Description |
 | :--- | :--- | :--- |
 | **`server`** | `run`, `start`, `stop`, `status` | Manage the Myaaw Server (API + Background Workers) daemon. |
-| **`api`** | `--port` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000). |
+| **`api`** | `run`, `start`, `stop`, `status`, `restart` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000). |
 | **`webhook`** | `set`, `info`, `delete` | Manage Telegram bot webhook configuration easily. |
 
 > [!TIP]

@@ -43,6 +43,15 @@ func isAgentCommand(cmd *cobra.Command) bool {
 	return false
 }
 
+func isAPISubcommand(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if current.Name() == "api" {
+			return true
+		}
+	}
+	return false
+}
+
 func startAgentBackgroundLoaders() {
 	tools.ConfigureLogging()
 	skills.ConfigureLogging()
@@ -90,7 +99,7 @@ func init() {
 			"api":     true,
 		}
 
-		if metaCommands[cmd.Name()] || isAgentCommand(cmd) {
+		if metaCommands[cmd.Name()] || isAgentCommand(cmd) || isAPISubcommand(cmd) {
 			return nil
 		}
 
