@@ -77,8 +77,11 @@ graph TD
     User --> Voice
     User --> API
 
-    REG[(~/.myaaw/agents.json)]
-    PIDS[(~/.myaaw/pids)]
+    subgraph SHARED["~/.myaaw (shared state)"]
+        REG[(agents.json)]
+        PIDS[(pids/)]
+        REG ~~~ PIDS
+    end
 
     SEL[Agent Selection<br/>--agent / picker / MYAAW_AGENT]
     CLI --> SEL
