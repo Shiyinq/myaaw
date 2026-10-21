@@ -1,11 +1,13 @@
 package service
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -44,6 +46,16 @@ type SkillDetail struct {
 	ParseOK     bool        `json:"parse_ok"`
 	Content     string      `json:"content"`
 	Files       []SkillFile `json:"files"`
+}
+
+// SkillFileContent is one file inside a skill. Binary files are returned as
+// base64 with Binary set.
+type SkillFileContent struct {
+	Path    string `json:"path"`
+	Size    int64  `json:"size"`
+	ModTime string `json:"mod_time,omitempty"`
+	Binary  bool   `json:"binary"`
+	Content string `json:"content"`
 }
 
 // maxSkillFiles caps the number of files reported in a skill detail so one
@@ -122,6 +134,116 @@ func (s *SkillService) Get(agentName, name string) (SkillDetail, error) {
 	}
 	detail.Files = files
 	return detail, nil
+}
+
+// ReadFile returns one file inside a skill. Text files come back as plain
+// text; binary files (images, compiled scripts) as base64 with Binary set.
+func (s *SkillService) ReadFile(agentName, skillName, relPath string) (SkillFileContent, error) {
+	if err := validateSkillName(skillName); err != nil {
+		return SkillFileContent{}, err
+	}
+	if err := agentdirValidateAgent(agentName); err != nil {
+		return SkillFileContent{}, err
+	}
+	dir, err := agentdir.SkillsDir(agentName)
+	if err != nil {
+		return SkillFileContent{}, err
+	}
+	skillDir := filepath.Join(dir, skillName)
+	if err := requireSkillDir(dir, skillName); err != nil {
+		return SkillFileContent{}, err
+	}
+
+	cleaned, err := normalizeSkillFilePath(relPath)
+	if err != nil {
+		return SkillFileContent{}, err
+	}
+	abs := filepath.Join(skillDir, filepath.FromSlash(cleaned))
+	if err := ensureSymlinksInside(skillDir, abs); err != nil {
+		return SkillFileContent{}, err
+	}
+
+	info, err := os.Stat(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return SkillFileContent{}, ErrPathNotFound
+		}
+		return SkillFileContent{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return SkillFileContent{}, fmt.Errorf("%w: %s is not a file", ErrInvalidPath, cleaned)
+	}
+	if info.Size() > maxReadSize {
+		return SkillFileContent{}, ErrPathTooLarge
+	}
+
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return SkillFileContent{}, err
+	}
+
+	content := SkillFileContent{
+		Path:    cleaned,
+		Size:    info.Size(),
+		ModTime: info.ModTime().UTC().Format(time.RFC3339),
+	}
+	if looksBinary(data) {
+		content.Binary = true
+		content.Content = base64.StdEncoding.EncodeToString(data)
+	} else {
+		content.Content = string(data)
+	}
+	return content, nil
+}
+
+// normalizeSkillFilePath limits a relative path to the skill directory.
+func normalizeSkillFilePath(rel string) (string, error) {
+	rel = strings.TrimSpace(rel)
+	rel = strings.TrimPrefix(rel, "/")
+	if rel == "" {
+		return "", fmt.Errorf("%w: path is required", ErrInvalidPath)
+	}
+	if strings.ContainsAny(rel, "\\:\x00") {
+		return "", fmt.Errorf("%w: path contains unsupported characters", ErrInvalidPath)
+	}
+	cleaned := path.Clean(rel)
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("%w: path escapes the skill directory", ErrInvalidPath)
+	}
+	return cleaned, nil
+}
+
+// RemoveConfig removes the skills.json override for a skill without touching
+// the skill folder, so its enabled state falls back to the SKILL.md
+// frontmatter or the default. The folder must exist; a missing key is not an
+// error.
+func (s *SkillService) RemoveConfig(agentName, name string) error {
+	if err := validateSkillName(name); err != nil {
+		return err
+	}
+	if err := agentdirValidateAgent(agentName); err != nil {
+		return err
+	}
+	dir, err := agentdir.SkillsDir(agentName)
+	if err != nil {
+		return err
+	}
+	if err := requireSkillDir(dir, name); err != nil {
+		return err
+	}
+
+	filter, err := readSkillsFilter(dir)
+	if err != nil {
+		return err
+	}
+	if filter == nil {
+		return nil
+	}
+	if _, exists := filter[name]; !exists {
+		return nil
+	}
+	delete(filter, name)
+	return writeSkillsFilter(dir, filter)
 }
 
 // removeStaleKey deletes a skills.json key without touching the filesystem.

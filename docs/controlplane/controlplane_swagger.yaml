@@ -957,6 +957,19 @@ definitions:
       size:
         type: integer
     type: object
+  service.SkillFileContent:
+    properties:
+      binary:
+        type: boolean
+      content:
+        type: string
+      mod_time:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+    type: object
   service.ToolsView:
     properties:
       builtin:
@@ -2683,6 +2696,96 @@ paths:
       security:
       - BearerAuth: []
       summary: Enable or disable a skill
+      tags:
+      - Skills
+  /agents/{name}/skills/{skill}/config:
+    delete:
+      description: Removes the skill's skills.json key so the enabled state falls
+        back to the SKILL.md frontmatter or the default. The skill folder is untouched;
+        a missing key is not an error.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Skill directory name
+        in: path
+        name: skill
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reset a skill to its default state
+      tags:
+      - Skills
+  /agents/{name}/skills/{skill}/file:
+    get:
+      description: Text files return as plain text; binary files (images, compiled
+        scripts) return base64 with binary:true. Paths are relative to the skill directory
+        and cannot escape it.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Skill directory name
+        in: path
+        name: skill
+        required: true
+        type: string
+      - description: File path relative to the skill
+        example: scripts/weather.py
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.SkillFileContent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Read a skill file
       tags:
       - Skills
   /agents/{name}/tools:

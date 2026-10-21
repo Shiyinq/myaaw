@@ -320,8 +320,10 @@ Skills live in `~/.myaaw/<agent>/skills/<skill>/SKILL.md`. The enabled state fol
 |---|---|---|
 | `GET` | `/agents/:name/skills` | list every skill directory with its state |
 | `GET` | `/agents/:name/skills/:skill` | skill detail: `SKILL.md` content + file listing |
+| `GET` | `/agents/:name/skills/:skill/file?path=scripts/weather.py` | read one file in the skill (base64 for binary) |
 | `PATCH` | `/agents/:name/skills/:skill` | `{enabled}` → writes `skills.json` |
 | `DELETE` | `/agents/:name/skills/:skill` | remove the skill folder and its `skills.json` key (idempotent) |
+| `DELETE` | `/agents/:name/skills/:skill/config` | remove only the `skills.json` override (folder untouched, idempotent) |
 
 ```bash
 curl "http://localhost:9000/agents/myfriend/skills" \
@@ -351,6 +353,7 @@ List response:
 - There is no create endpoint: the agent creates skills itself; the list picks them up automatically.
 - Empty or missing directories return an empty list. A missing or invalid `skills.json` behaves like the agent loader: everything defaults to enabled, and the next write replaces the file.
 - A stale `skills.json` key left behind by a manual folder deletion is ignored by the list (no ghost skills) and can be cleaned with `DELETE`, which succeeds as long as the folder or the key exists.
+- `DELETE /skills/:skill/config` clears a toggle written by `PATCH` without deleting the skill. After that, the enabled state falls back to the `SKILL.md` frontmatter `enabled` field, or to the default (enabled) when the frontmatter does not specify one. The skill folder must exist; a missing key still returns `200`.
 
 Skill detail:
 
@@ -380,9 +383,28 @@ curl "http://localhost:9000/agents/myfriend/skills/weather" \
 - `files` lists every file in the skill directory recursively — scripts, images, and nested folders — sorted by path, capped at 1000 entries. Symlinks are skipped.
 - Requesting a deleted skill cleans its stale `skills.json` key automatically and returns `404`.
 
+Reading a file inside a skill:
+
+```bash
+curl "http://localhost:9000/agents/myfriend/skills/weather/file?path=scripts/weather.py" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "path": "scripts/weather.py",
+  "size": 789,
+  "mod_time": "...",
+  "binary": false,
+  "content": "print('hi')"
+}
+```
+
+Text files return as plain text. Binary files (images, compiled scripts) return `"binary": true` with base64 content. Paths are relative to the skill directory, capped at 2 MiB (`413`), and cannot escape the skill (`400`).
+
 ## 8. Tools
 
-Tools are configured in `~/.myaaw/<agent>/tools/tools.json` with three sections: `builtin_tools`, `custom_tools`, and `mcp_servers`. Files inside the tools folder are storage only — they are not active tools until registered in `tools.json`, and their command may point anywhere on disk. The agent server hot-reloads `tools.json` via a file watcher.
+Tools are configured in `~/.myaaw/<agent>/tools/tools.json` with three sections: `builtin_tools`, `custom_tools`, and `mcp_servers`. This API manages only the `tools.json` entries, and their command may point anywhere on disk. Note: the agent server also has a zero-config loader that auto-registers executable files placed directly in the tools folder; those files are not listed or managed by this API. The agent server hot-reloads `tools.json` via a file watcher.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -434,6 +456,7 @@ Rules:
 - Built-in tools (`bash`, `filesystem`, `cron`, `execute_python` with alias `python`, `provider`, `subagent`) can only be enabled or disabled.
 - Custom tool `name` and MCP server `name` must be unique; duplicates return `409`.
 - `schema` is optional for custom tools; omit it to let the loader discover it via `--schema`. Sending `"schema": null` on `PATCH` removes an inline schema. A present inline schema is returned in list/create/patch responses.
+- A provided schema must follow the OpenAI function format from the tools docs: valid JSON, `"type": "function"`, and a `function.name` matching the tool name.
 - Duplicate names are rejected case-insensitively (`409`), and a custom tool name may not start with a registered MCP server name plus `_` (and vice versa) because the loader prefixes MCP tools as `<server>_<tool>`.
 - `PATCH` requires at least one field; an empty body `{}` returns `400`. Deletion has its own endpoints.
 - MCP `env` values are accepted on input and always masked on output.
@@ -630,7 +653,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 | Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream` |
 | Files | `GET/DELETE /agents/:name/fs`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
-| Skills | `GET /agents/:name/skills`, `GET /skills/:skill`, `PATCH /skills/:skill`, `DELETE /skills/:skill` |
+| Skills | `GET /agents/:name/skills`, `GET /skills/:skill`, `GET /skills/:skill/file?path=`, `PATCH /skills/:skill`, `DELETE /skills/:skill`, `DELETE /skills/:skill/config` |
 | Tools | `GET /agents/:name/tools`, `POST /tools/custom`, `POST /tools/mcp`, `PATCH /tools/builtin/:tool`, `PATCH /tools/custom/:tool`, `PATCH /tools/mcp/:tool`, `DELETE /tools/custom/:tool`, `DELETE /tools/mcp/:tool` |
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |

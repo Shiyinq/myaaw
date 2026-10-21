@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"os"
@@ -213,7 +214,8 @@ func TestSkillServiceGet(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillsDir, "weather", "scripts", "weather.py"), []byte("print('hi')"), 0o644); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "weather", "assets", "icon.png"), []byte("png"), 0o644); err != nil {
+	pngBytes := []byte{0x89, 'P', 'N', 'G', 0x00, 0x01, 0x02}
+	if err := os.WriteFile(filepath.Join(skillsDir, "weather", "assets", "icon.png"), pngBytes, 0o644); err != nil {
 		t.Fatalf("write image: %v", err)
 	}
 
@@ -242,6 +244,40 @@ func TestSkillServiceGet(t *testing.T) {
 		}
 	}
 
+	// File reading: text comes back as-is, binary as base64.
+	script, err := svc.ReadFile("myfriend", "weather", "scripts/weather.py")
+	if err != nil {
+		t.Fatalf("ReadFile script: %v", err)
+	}
+	if script.Binary || script.Content != "print('hi')" || script.Path != "scripts/weather.py" {
+		t.Fatalf("script = %+v", script)
+	}
+
+	icon, err := svc.ReadFile("myfriend", "weather", "/assets/icon.png")
+	if err != nil {
+		t.Fatalf("ReadFile icon: %v", err)
+	}
+	if !icon.Binary {
+		t.Fatalf("icon should be binary: %+v", icon)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(icon.Content)
+	if err != nil {
+		t.Fatalf("decode icon: %v", err)
+	}
+	if string(decoded) != string(pngBytes) {
+		t.Fatalf("decoded icon = %q", decoded)
+	}
+
+	if _, err := svc.ReadFile("myfriend", "weather", "missing.txt"); !errors.Is(err, ErrPathNotFound) {
+		t.Fatalf("err = %v, want ErrPathNotFound", err)
+	}
+	if _, err := svc.ReadFile("myfriend", "weather", "../secret"); !errors.Is(err, ErrInvalidPath) {
+		t.Fatalf("err = %v, want ErrInvalidPath", err)
+	}
+	if _, err := svc.ReadFile("myfriend", "nope", "SKILL.md"); !errors.Is(err, ErrSkillNotFound) {
+		t.Fatalf("err = %v, want ErrSkillNotFound", err)
+	}
+
 	// Missing folder with a stale skills.json key: the key is cleaned up and
 	// ErrSkillNotFound is returned.
 	if err := os.RemoveAll(filepath.Join(skillsDir, "weather")); err != nil {
@@ -267,6 +303,46 @@ func TestSkillServiceGet(t *testing.T) {
 
 	if _, err := svc.Get("myfriend", "../evil"); !errors.Is(err, ErrInvalidSkillName) {
 		t.Fatalf("err = %v, want ErrInvalidSkillName", err)
+	}
+}
+
+func TestSkillServiceRemoveConfig(t *testing.T) {
+	agentRoot := setupSkillAgent(t)
+	skillsDir := filepath.Join(agentRoot, "skills")
+	if err := os.WriteFile(filepath.Join(skillsDir, "skills.json"), []byte(`{"weather":false,"calendar":true}`), 0o644); err != nil {
+		t.Fatalf("write skills.json: %v", err)
+	}
+
+	svc := NewSkillService()
+	if err := svc.RemoveConfig("myfriend", "weather"); err != nil {
+		t.Fatalf("RemoveConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(skillsDir, "skills.json"))
+	if err != nil {
+		t.Fatalf("read skills.json: %v", err)
+	}
+	var filter map[string]bool
+	if err := json.Unmarshal(data, &filter); err != nil {
+		t.Fatalf("unmarshal skills.json: %v", err)
+	}
+	if _, exists := filter["weather"]; exists {
+		t.Fatalf("weather key should be removed: %+v", filter)
+	}
+	if filter["calendar"] != true {
+		t.Fatalf("calendar key should be preserved: %+v", filter)
+	}
+	if _, err := os.Stat(filepath.Join(skillsDir, "weather")); err != nil {
+		t.Fatalf("skill folder must remain: %v", err)
+	}
+
+	// Idempotent when the key is already gone.
+	if err := svc.RemoveConfig("myfriend", "weather"); err != nil {
+		t.Fatalf("RemoveConfig again: %v", err)
+	}
+
+	if err := svc.RemoveConfig("myfriend", "missing"); !errors.Is(err, ErrSkillNotFound) {
+		t.Fatalf("err = %v, want ErrSkillNotFound", err)
 	}
 }
 

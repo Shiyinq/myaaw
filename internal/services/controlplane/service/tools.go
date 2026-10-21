@@ -205,6 +205,9 @@ func (s *ToolsService) CreateCustom(agentName string, in CustomToolInput) (Custo
 		Schema:  normalizeSchema(in.Schema),
 		Enabled: in.Enabled,
 	}
+	if err := validateCustomSchema(entry.Name, entry.Schema); err != nil {
+		return CustomToolView{}, err
+	}
 	cfg.CustomTools = append(cfg.CustomTools, entry)
 	if err := saveToolsConfig(agentName, cfg); err != nil {
 		return CustomToolView{}, err
@@ -233,6 +236,9 @@ func (s *ToolsService) PatchCustom(agentName, name string, patch CustomToolPatch
 	}
 	if patch.Schema != nil {
 		entry.Schema = normalizeSchema(*patch.Schema)
+		if err := validateCustomSchema(entry.Name, entry.Schema); err != nil {
+			return CustomToolView{}, err
+		}
 	}
 	if patch.Enabled != nil {
 		entry.Enabled = patch.Enabled
@@ -416,6 +422,34 @@ func validateManagedToolName(name, command string) error {
 	}
 	if strings.TrimSpace(command) == "" {
 		return fmt.Errorf("%w: command is required", ErrInvalidToolConfig)
+	}
+	return nil
+}
+
+// validateCustomSchema enforces the OpenAI function schema format documented
+// for custom tools: valid JSON with type "function" and a function.name that
+// matches the tool name.
+func validateCustomSchema(name string, raw json.RawMessage) error {
+	if raw == nil {
+		return nil
+	}
+	var schema struct {
+		Type     string `json:"type"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		return fmt.Errorf("%w: schema must be valid JSON", ErrInvalidToolConfig)
+	}
+	if schema.Type != "function" {
+		return fmt.Errorf("%w: schema type must be \"function\"", ErrInvalidToolConfig)
+	}
+	if schema.Function.Name == "" {
+		return fmt.Errorf("%w: schema function.name is required", ErrInvalidToolConfig)
+	}
+	if schema.Function.Name != name {
+		return fmt.Errorf("%w: schema function.name %q must match tool name %q", ErrInvalidToolConfig, schema.Function.Name, name)
 	}
 	return nil
 }

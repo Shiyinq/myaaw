@@ -106,7 +106,7 @@ func TestToolsServiceCustomLifecycle(t *testing.T) {
 		Name:    "hello_helper",
 		Command: "node",
 		Args:    []string{"/path/script.js"},
-		Schema:  json.RawMessage(`{"type":"function"}`),
+		Schema:  json.RawMessage(`{"type":"function","function":{"name":"hello_helper"}}`),
 	})
 	if err != nil {
 		t.Fatalf("CreateCustom: %v", err)
@@ -129,6 +129,22 @@ func TestToolsServiceCustomLifecycle(t *testing.T) {
 	}
 	if _, err := svc.CreateCustom("myfriend", CustomToolInput{Name: "tool", Command: " "}); !errors.Is(err, ErrInvalidToolConfig) {
 		t.Fatalf("err = %v, want ErrInvalidToolConfig", err)
+	}
+
+	// Schema validation follows the OpenAI function format from the docs.
+	for _, bad := range []json.RawMessage{
+		json.RawMessage(`not json`),
+		json.RawMessage(`{"type":"object"}`),
+		json.RawMessage(`{"type":"function","function":{}}`),
+		json.RawMessage(`{"type":"function","function":{"name":"other"}}`),
+	} {
+		if _, err := svc.CreateCustom("myfriend", CustomToolInput{Name: "schema_test", Command: "node", Schema: bad}); !errors.Is(err, ErrInvalidToolConfig) {
+			t.Errorf("schema %s err = %v, want ErrInvalidToolConfig", bad, err)
+		}
+	}
+	validSchema := json.RawMessage(`{"type":"function","function":{"name":"hello_helper"}}`)
+	if _, err := svc.PatchCustom("myfriend", "hello_helper", CustomToolPatch{Schema: &validSchema}); err != nil {
+		t.Fatalf("PatchCustom valid schema: %v", err)
 	}
 
 	// A custom tool name colliding with an MCP server prefix is rejected, and

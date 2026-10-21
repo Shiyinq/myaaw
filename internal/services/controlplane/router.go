@@ -79,8 +79,10 @@ func NewApp() (*fiber.App, error) {
 
 	app.Get("/agents/:name/skills", h.ListSkills)
 	app.Get("/agents/:name/skills/:skill", h.GetSkill)
+	app.Get("/agents/:name/skills/:skill/file", h.GetSkillFile)
 	app.Patch("/agents/:name/skills/:skill", h.ToggleSkill)
 	app.Delete("/agents/:name/skills/:skill", h.DeleteSkill)
+	app.Delete("/agents/:name/skills/:skill/config", h.RemoveSkillConfig)
 
 	app.Get("/agents/:name/tools", h.ListTools)
 	app.Post("/agents/:name/tools/custom", h.CreateCustomTool)

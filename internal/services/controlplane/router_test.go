@@ -318,6 +318,14 @@ func TestRouterSkillsAndTools(t *testing.T) {
 		t.Fatalf("skills after toggle = %+v", skills)
 	}
 
+	// Removing the config override falls back to the frontmatter/default.
+	doJSON(t, app, "DELETE", "/agents/myfriend/skills/weather/config", token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/skills", token, "", fiber.StatusOK, &skills)
+	if !skills.Skills[0].Enabled || skills.Skills[0].Source != "default" {
+		t.Fatalf("skills after config reset = %+v", skills)
+	}
+	doJSON(t, app, "DELETE", "/agents/myfriend/skills/weather/config", token, "", fiber.StatusOK, nil)
+
 	var skillDetail struct {
 		Name    string `json:"name"`
 		Content string `json:"content"`
@@ -333,6 +341,18 @@ func TestRouterSkillsAndTools(t *testing.T) {
 	if !strings.Contains(skillDetail.Content, "Fetch weather") {
 		t.Fatalf("skill content = %q", skillDetail.Content)
 	}
+
+	var skillFile struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+		Binary  bool   `json:"binary"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/skills/weather/file?path=SKILL.md", token, "", fiber.StatusOK, &skillFile)
+	if skillFile.Binary || !strings.Contains(skillFile.Content, "Fetch weather") {
+		t.Fatalf("skill file = %+v", skillFile)
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/skills/weather/file?path=../secret", token, "", fiber.StatusBadRequest, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/skills/weather/file?path=missing.md", token, "", fiber.StatusNotFound, nil)
 	doJSON(t, app, "PATCH", "/agents/myfriend/skills/missing", token, `{"enabled":true}`, fiber.StatusNotFound, nil)
 
 	// Simulate a terminal deletion: the list must update without any cache.
@@ -374,9 +394,11 @@ func TestRouterSkillsAndTools(t *testing.T) {
 	}
 
 	doJSON(t, app, "POST", "/agents/myfriend/tools/custom", token,
-		`{"name":"hello","command":"node","args":["x.js"],"schema":{"type":"function"}}`, fiber.StatusOK, nil)
+		`{"name":"hello","command":"node","args":["x.js"],"schema":{"type":"function","function":{"name":"hello"}}}`, fiber.StatusOK, nil)
 	doJSON(t, app, "POST", "/agents/myfriend/tools/custom", token,
 		`{"name":"HELLO","command":"node"}`, fiber.StatusConflict, nil)
+	doJSON(t, app, "POST", "/agents/myfriend/tools/custom", token,
+		`{"name":"broken","command":"node","schema":{"type":"object"}}`, fiber.StatusBadRequest, nil)
 	doJSON(t, app, "PATCH", "/agents/myfriend/tools/custom/hello", token,
 		`{"command":"python3","enabled":false}`, fiber.StatusOK, nil)
 	doJSON(t, app, "PATCH", "/agents/myfriend/tools/custom/hello", token, `{}`, fiber.StatusBadRequest, nil)
