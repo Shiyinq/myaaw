@@ -123,7 +123,7 @@ graph TD
     subgraph "Local Workspace"
         direction TB
         Skills[~/.myaaw/skills/ <br> Additional Agent Skills]
-        Home[~/.myaaw/home/ <br> AGENTS.md, BOOTSTRAP.md, HEARTBEAT.md, <br> MEMORY.md, SOUL.md, TOOLS.md, USER.md, <br> memory/]
+        Home[~/.myaaw/home/ <br> AGENTS.md, BOOTSTRAP.md, HEARTBEAT.md, <br> MEMORY.md, SOUL.md, TOOLS.md, USER.md, <br> memory/, workspace/]
     end
 
     BotSvc <--> Agent
@@ -155,7 +155,7 @@ graph TD
 1. **Channels (`internal/channel`)**: The entry point for interactions. It provides an `Adapter` interface to normalize messages from Telegram, Discord, REST APIs, or Terminal CLI into a standard format.
 2. **Server & Workers (`cmd/myaaw`)**: Uses Cobra CLI to manage the application. The `server` command boots the Fiber v3 Web Server while simultaneously spinning up background goroutines for Queue Consumers, Cron, and Heartbeat. It also provides pure CLI modalities like `myaaw chat` and `myaaw voice`.
 3. **Bot Service (`internal/services/bot`)**: The core brain of the application. It processes normalized messages from external channels and Terminal CLI, retrieves chat history from **SQLite**, and invokes the AI Agent. Voice CLIs (`myaaw voice`/`voice-classic`) bypass this to connect directly to the Agent/Providers for lower latency.
-4. **Agentic Layer (`internal/agent`)**: Implements the ReAct (Reasoning and Action) loop. It intelligently decides when to interact with the LLM or when to execute tools (Bash, Python, FileSystem) to accomplish the user's objective.
+4. **Agentic Layer (`internal/agent`)**: Implements an event-driven ReAct (Reasoning and Action) loop. It streams lifecycle events (turns, message deltas, tool execution), executes tool calls with validation and parallel scheduling, and manages transcript compaction and usage aggregation. Legacy trace-based conversations are migrated on read.
 5. **Providers (`internal/provider`)**: A factory-based abstraction layer for various LLMs (Gemini, OpenAI, Groq, Ollama), Transcribers (STT), and Synthesizers (TTS). Currently, Gemini is the main provider for Myaaw's intelligence and live-voice functionality.
 6. **Message Queue (`internal/services/queue`)**: Handles asynchronous messaging using fast, native **Go Channels**. Polled or webhook payloads are pushed to the in-memory queue and processed by the Consumer worker to reliably deliver messages.
 7. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
@@ -169,6 +169,13 @@ graph TD
      - `USER.md`: Facts and details learned about the user.
      - `HEARTBEAT.md`: Ongoing active background jobs and tasks.
      - `MEMORY.md` & `memory/`: Historical conversation summarizations and logs.
+     - `workspace/`: All agent-created output. Coding projects live in `workspace/projects/` and downloads in `workspace/downloads/`; the home root stays reserved for identity and memory files.
+
+### CLI Project Context
+
+When `myaaw chat` or `myaaw voice-classic` starts, Myaaw treats the directory it was launched from as the active project and injects it as `## Current Directory` in the system prompt. The filesystem tool also registers that directory as an allowed project root, even when it has no marker files, so the agent can work on it in place without copying it into `workspace/`.
+
+Telegram and Discord sessions do not receive the server's working directory. New projects and downloads always go to `~/.myaaw/home/workspace/`.
 
 ## 🚀 Quick Start (Non-Technical)
 

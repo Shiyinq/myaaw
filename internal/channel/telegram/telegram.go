@@ -92,19 +92,27 @@ type TelegramIncommingChat struct {
 	UpdateId int64       `json:"update_id"`
 }
 
+type TelegramLinkPreviewOptions struct {
+	IsDisabled bool `json:"is_disabled,omitempty"`
+}
+
 type TelegramSendMessage struct {
-	Text             string `json:"text"`
-	ParseMode        string `json:"parse_mode,omitempty"`
-	ReplyToMessageID int    `json:"reply_to_message_id"`
-	ChatID           int    `json:"chat_id"`
+	Text                  string                      `json:"text"`
+	ParseMode             string                      `json:"parse_mode,omitempty"`
+	ReplyToMessageID      int                         `json:"reply_to_message_id"`
+	ChatID                int                         `json:"chat_id"`
+	DisableWebPagePreview bool                        `json:"disable_web_page_preview,omitempty"`
+	LinkPreviewOptions    *TelegramLinkPreviewOptions `json:"link_preview_options,omitempty"`
 }
 
 type TelegramEditMessage struct {
-	Text             string `json:"text"`
-	ParseMode        string `json:"parse_mode,omitempty"`
-	MessageID        int    `json:"message_id"`
-	ReplyToMessageID int    `json:"reply_to_message_id"`
-	ChatID           int    `json:"chat_id"`
+	Text                  string                      `json:"text"`
+	ParseMode             string                      `json:"parse_mode,omitempty"`
+	MessageID             int                         `json:"message_id"`
+	ReplyToMessageID      int                         `json:"reply_to_message_id"`
+	ChatID                int                         `json:"chat_id"`
+	DisableWebPagePreview bool                        `json:"disable_web_page_preview,omitempty"`
+	LinkPreviewOptions    *TelegramLinkPreviewOptions `json:"link_preview_options,omitempty"`
 }
 
 type TelegramSendMessageStatus struct {
@@ -141,36 +149,43 @@ func sendTelegramTypingAction(chatId int) {
 	}
 }
 
-func SendTelegramMessage(chatId int, replyId int, text string, parseMode string) (*TelegramSendMessageStatus, error) {
+func telegramSendBody(chatID, replyID int, text, parseMode string) *TelegramSendMessage {
 	body := &TelegramSendMessage{
-		Text:   text,
-		ChatID: chatId,
+		Text:                  text,
+		ChatID:                chatID,
+		DisableWebPagePreview: true,
+		LinkPreviewOptions:    &TelegramLinkPreviewOptions{IsDisabled: true},
 	}
-
-	if replyId != 0 {
-		body.ReplyToMessageID = replyId
+	if replyID != 0 {
+		body.ReplyToMessageID = replyID
 	}
-
 	if parseMode != "" {
 		body.ParseMode = parseMode
 	}
+	return body
+}
 
-	return SendTelegramRequest("sendMessage", body, chatId)
+func telegramEditBody(chatID, replyID, messageID int, text, parseMode string) *TelegramEditMessage {
+	body := &TelegramEditMessage{
+		Text:                  text,
+		MessageID:             messageID,
+		ReplyToMessageID:      replyID,
+		ChatID:                chatID,
+		DisableWebPagePreview: true,
+		LinkPreviewOptions:    &TelegramLinkPreviewOptions{IsDisabled: true},
+	}
+	if parseMode != "" {
+		body.ParseMode = parseMode
+	}
+	return body
+}
+
+func SendTelegramMessage(chatId int, replyId int, text string, parseMode string) (*TelegramSendMessageStatus, error) {
+	return SendTelegramRequest("sendMessage", telegramSendBody(chatId, replyId, text, parseMode), chatId)
 }
 
 func EditTelegramMessage(chatId int, replyId int, editMessageId int, text string, parseMode string) (*TelegramSendMessageStatus, error) {
-	body := &TelegramEditMessage{
-		Text:             text,
-		MessageID:        editMessageId,
-		ReplyToMessageID: replyId,
-		ChatID:           chatId,
-	}
-
-	if parseMode != "" {
-		body.ParseMode = parseMode
-	}
-
-	return SendTelegramRequest("editMessageText", body, chatId)
+	return SendTelegramRequest("editMessageText", telegramEditBody(chatId, replyId, editMessageId, text, parseMode), chatId)
 }
 
 func SendTelegramRequest(method string, message interface{}, chatId int) (*TelegramSendMessageStatus, error) {

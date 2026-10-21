@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"log"
 	"myaaw/internal/channel"
-	"myaaw/internal/config"
 	"myaaw/internal/services/queue/repository"
 	"myaaw/internal/utils"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -21,7 +19,8 @@ type DiscordMeta struct {
 }
 
 type DiscordAdapter struct {
-	session *discordgo.Session
+	session   *discordgo.Session
+	transport discordTransport
 }
 
 func NewDiscordAdapter(token string) (*DiscordAdapter, error) {
@@ -30,8 +29,19 @@ func NewDiscordAdapter(token string) (*DiscordAdapter, error) {
 		return nil, fmt.Errorf("error creating Discord session: %w", err)
 	}
 	return &DiscordAdapter{
-		session: session,
+		session:   session,
+		transport: discordAPI{session: session},
 	}, nil
+}
+
+func (d *DiscordAdapter) transportOrAPI() discordTransport {
+	if d.transport != nil {
+		return d.transport
+	}
+	if d.session != nil {
+		return discordAPI{session: d.session}
+	}
+	return nil
 }
 
 func (d *DiscordAdapter) Name() string {
@@ -138,208 +148,53 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 
 func (d *DiscordAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMessage) error {
 	meta := msg.RawMeta.(DiscordMeta)
+	items := buildDiscordTimeline(out.Trace, out.Text, out.Thought)
+	if len(items) == 0 {
+		return nil
+	}
 
-	// 1. Send thoughts if present
-	if out.Thought != "" {
-		thought := strings.TrimSpace(utils.StripMarkdown(out.Thought))
-		quotedThought := "> ||" + strings.ReplaceAll(thought, "\n", "\n> ") + "||"
-		displayThought := fmt.Sprintf("**💭 Reasoning...**\n%s", quotedThought)
-		_, err := d.session.ChannelMessageSend(meta.ChannelID, displayThought)
-		if err != nil {
-			log.Printf("Error sending Discord thoughts: %v", err)
+	timeline := &discordTimeline{
+		transport: d.transportOrAPI(),
+		channelID: meta.ChannelID,
+		replyTo:   meta.MessageID,
+		tools:     map[string]*discordTimelineItem{},
+		now:       time.Now,
+	}
+
+	for i, item := range items {
+		if item.Kind == "text" {
+			timeline.writeText(item, item.Text, i == len(items)-1)
+			continue
 		}
+		item.MessageID = timeline.sendRaw(timeline.render(item))
 	}
-
-	// 2. Send main content
-	content := out.Text
-	if config.WatermarkModel {
-		content = utils.Watermark(content, "", true)
-	}
-
-	if len(content) > 2000 {
-		content = content[:1990] + "..." // Truncate for safety for now
-	}
-
-	_, err := d.session.ChannelMessageSend(meta.ChannelID, content)
-	return err
+	return timeline.err
 }
 
 func (d *DiscordAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onChunk func(chunk channel.StreamChunk)) error) (*channel.OutgoingMessage, error) {
 	meta := msg.RawMeta.(DiscordMeta)
-	maxLen := 2000
-	updateInterval := 1500 * time.Millisecond // Slightly more conservative for Discord
-
-	// 1. Send initial message
-	initialMsg, err := d.session.ChannelMessageSend(meta.ChannelID, "✨ Typing...")
-	if err != nil {
-		return nil, err
+	transport := d.transportOrAPI()
+	if transport == nil {
+		return nil, fmt.Errorf("discord transport is not configured")
 	}
-	firstMessageID := initialMsg.ID
 
-	streamingContent := ""
-	streamingThought := ""
-	contentOffset := 0
-	thoughtOffset := 0
-	lastTraceLen := 0
-	lastUpdate := time.Now()
-	lastLoading := ""
-
-	thoughtMessageID := ""
-	mainMessageID := ""
-
-	err = streamFn(func(chunk channel.StreamChunk) {
-		loading := "✨ Typing..."
-
-		if len(chunk.ToolCalls) > 0 {
-			loading = fmt.Sprintf("🛠️ Using %s...", chunk.ToolCalls[0].Function.Name)
-		}
-
-		if chunk.Thought != "" {
-			streamingThought += chunk.Thought
-			loading = "💭 Reasoning..."
-		}
-
-		if chunk.Text != "" {
-			streamingContent += chunk.Text
-		}
-
-		if len(chunk.Trace) > 0 {
-			for i := lastTraceLen; i < len(chunk.Trace); i++ {
-				step := chunk.Trace[i]
-				if step.Observation != "" {
-					streamingThought += fmt.Sprintf("\n\n🛠️ %s\n\n", step.Action)
-					loading = "✨ Typing..."
-				}
-			}
-			lastTraceLen = len(chunk.Trace)
-		}
-
-		now := time.Now()
-		isThoughtUpdate := streamingThought != "" && (now.Sub(lastUpdate) > updateInterval || lastLoading != loading)
-		isMainUpdate := streamingContent != "" && (now.Sub(lastUpdate) > updateInterval || lastLoading != loading)
-
-		if streamingThought != "" {
-			if thoughtMessageID == "" {
-				if mainMessageID == "" {
-					thoughtMessageID = firstMessageID
-				} else {
-					// Main message already took the first bubble. Spin up a new one for thoughts.
-					newSend, err := d.session.ChannelMessageSend(meta.ChannelID, loading)
-					if err != nil {
-						log.Printf("Error creating Discord thought bubble: %v", err)
-						thoughtMessageID = mainMessageID // Fallback
-					} else {
-						thoughtMessageID = newSend.ID
-						thoughtOffset = len(streamingThought)
-					}
-				}
-			}
-
-			// Handle splitting if thought message is too long
-			if len(streamingThought)-thoughtOffset >= maxLen-100 {
-				displayThought := fmt.Sprintf("**💭 Reasoning...**\n> %s", utils.StripMarkdown(streamingThought[thoughtOffset:]))
-				d.session.ChannelMessageEdit(meta.ChannelID, thoughtMessageID, displayThought) // Finalize current part
-
-				newSend, err := d.session.ChannelMessageSend(meta.ChannelID, loading)
-				if err == nil {
-					thoughtMessageID = newSend.ID
-					thoughtOffset = len(streamingThought)
-				}
-			}
-
-			if isThoughtUpdate {
-				thought := strings.TrimSpace(utils.StripMarkdown(streamingThought[thoughtOffset:]))
-				quotedThought := "> ||" + strings.ReplaceAll(thought, "\n", "\n> ") + "||"
-				displayThought := fmt.Sprintf("**💭 Reasoning...**\n%s", quotedThought)
-				if len(displayThought) > maxLen-50 {
-					displayThought = displayThought[:maxLen-50] + "..."
-				}
-				d.session.ChannelMessageEdit(meta.ChannelID, thoughtMessageID, displayThought+"\n\n"+loading)
-				lastUpdate = now
-			}
-		}
-
-		if streamingContent != "" {
-			if mainMessageID == "" {
-				if thoughtMessageID == "" {
-					mainMessageID = firstMessageID
-				} else {
-					// Finalize thought message
-					thought := strings.TrimSpace(utils.StripMarkdown(streamingThought[thoughtOffset:]))
-					quotedThought := "> ||" + strings.ReplaceAll(thought, "\n", "\n> ") + "||"
-					displayThought := fmt.Sprintf("**💭 Reasoning...**\n%s", quotedThought)
-					if len(displayThought) > maxLen {
-						displayThought = displayThought[:maxLen-3] + "..."
-					}
-					d.session.ChannelMessageEdit(meta.ChannelID, thoughtMessageID, displayThought)
-
-					newSend, err := d.session.ChannelMessageSend(meta.ChannelID, loading)
-					if err != nil {
-						log.Printf("Error creating Discord main bubble: %v", err)
-						mainMessageID = thoughtMessageID // Fallback
-					} else {
-						mainMessageID = newSend.ID
-						contentOffset = len(streamingContent)
-					}
-				}
-			}
-
-			// Handle splitting if main message is too long
-			if len(streamingContent)-contentOffset >= maxLen-100 {
-				displayContent := streamingContent[contentOffset:]
-				d.session.ChannelMessageEdit(meta.ChannelID, mainMessageID, displayContent) // Finalize current part
-
-				newSend, err := d.session.ChannelMessageSend(meta.ChannelID, loading)
-				if err == nil {
-					mainMessageID = newSend.ID
-					contentOffset = len(streamingContent)
-				}
-			}
-
-			if isMainUpdate {
-				displayContent := streamingContent[contentOffset:]
-				if len(displayContent) > maxLen-50 {
-					displayContent = displayContent[:maxLen-50] + "..."
-				}
-				d.session.ChannelMessageEdit(meta.ChannelID, mainMessageID, displayContent+"\n\n"+loading)
-				lastUpdate = now
-			}
-		}
-
-		lastLoading = loading
-	})
-
+	initialID, err := transport.SendReply(meta.ChannelID, meta.MessageID, "✨ Typing...")
 	if err != nil {
 		return nil, err
 	}
 
-	// Make sure the thought bubble has the indicator removed in all scenarios
-	if thoughtMessageID != "" {
-		thought := strings.TrimSpace(utils.StripMarkdown(streamingThought[thoughtOffset:]))
-		quotedThought := "> ||" + strings.ReplaceAll(thought, "\n", "\n> ") + "||"
-		displayThought := fmt.Sprintf("**💭 Reasoning...**\n%s", quotedThought)
-		if len(displayThought) > maxLen {
-			displayThought = displayThought[:maxLen-3] + "..."
-		}
-		d.session.ChannelMessageEdit(meta.ChannelID, thoughtMessageID, displayThought)
+	timeline := newDiscordTimeline(transport, meta.ChannelID, meta.MessageID, initialID)
+	err = streamFn(timeline.handleChunk)
+	timeline.finish()
+	if err != nil {
+		return nil, err
 	}
 
-	// Finalize main message
-	if mainMessageID != "" {
-		contentToSend := streamingContent[contentOffset:]
-		if config.WatermarkModel {
-			contentToSend = utils.Watermark(contentToSend, "", true)
-		}
-		if len(contentToSend) > maxLen {
-			contentToSend = contentToSend[:maxLen-3] + "..."
-		}
-		d.session.ChannelMessageEdit(meta.ChannelID, mainMessageID, contentToSend)
-	} else if mainMessageID == "" && thoughtMessageID == "" {
-		// Fallback for first message if no content/thought ever came
-		d.session.ChannelMessageEdit(meta.ChannelID, firstMessageID, utils.Watermark(streamingContent, "", true))
-	}
-
-	return &channel.OutgoingMessage{Text: streamingContent}, nil
+	return &channel.OutgoingMessage{
+		Text:  timeline.finalText,
+		Trace: timeline.finalTrace,
+		Usage: timeline.finalUsage,
+	}, nil
 }
 
 func (d *DiscordAdapter) SendError(msg *channel.IncomingMessage, errText string) error {

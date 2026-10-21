@@ -65,7 +65,7 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 
 	log.Printf("API chat request from user ID %v", msg.UserID)
 
-	out, err := s.botService.Bot(msg)
+	out, err := s.botService.BotContext(c.Context(), msg)
 	if err != nil {
 		log.Printf("API chat error for user ID %v: %v", msg.UserID, err)
 		formattedError := utils.FormatErrorMessage(err)
@@ -151,15 +151,35 @@ func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {
 			w.Flush()
 		}
 
-		out, err := s.botService.BotStream(msg, func(chunk channel.StreamChunk) {
-			if len(chunk.ToolCalls) > 0 {
-				writeSSE("tool", fiber.Map{
-					"name": chunk.ToolCalls[0].Function.Name,
+		out, err := s.botService.BotStreamContext(c.Context(), msg, func(chunk channel.StreamChunk) {
+			switch chunk.Kind {
+			case "tool":
+				if len(chunk.ToolCalls) > 0 {
+					writeSSE("tool", fiber.Map{
+						"name": chunk.ToolCalls[0].Function.Name,
+						"id":   chunk.ToolCallID,
+					})
+				}
+			case "tool_result":
+				writeSSE("tool_result", fiber.Map{
+					"id":       chunk.ToolCallID,
+					"is_error": chunk.IsError,
 				})
-			} else if chunk.Text != "" {
-				writeSSE("chunk", fiber.Map{
-					"text": chunk.Text,
-				})
+			case "trace":
+				// handled below
+			case "final":
+				// The final text is delivered in the "done" event; emitting it
+				// here would duplicate the streamed deltas.
+			default:
+				if len(chunk.ToolCalls) > 0 {
+					writeSSE("tool", fiber.Map{
+						"name": chunk.ToolCalls[0].Function.Name,
+					})
+				} else if chunk.Text != "" {
+					writeSSE("chunk", fiber.Map{
+						"text": chunk.Text,
+					})
+				}
 			}
 
 			if len(chunk.Trace) > 0 {

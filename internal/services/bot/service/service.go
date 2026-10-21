@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"myaaw/internal/agent"
@@ -17,20 +18,22 @@ type BotService interface {
 	IsAllowed(userID int) bool
 	checkUser(msg *channel.IncomingMessage) (*model.User, error)
 	Bot(msg *channel.IncomingMessage) (*channel.OutgoingMessage, error)
+	BotContext(ctx context.Context, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error)
 	BotStream(msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error)
+	BotStreamContext(ctx context.Context, msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error)
 	command(user *model.User, msg *channel.IncomingMessage) (bool, string, error)
 	conversation(user *model.User, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error)
 	ProcessHeartbeat(prompt, to, channelName, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error)
 }
 
 type BotServiceImpl struct {
-	userRepo         repository.UserRepository
-	conversationRepo repository.ConversationRepository
-	llmProvider      provider.LLMProvider
-	transcriber      provider.Transcriber
-	agent            agent.AgentProvider
+	userRepo          repository.UserRepository
+	conversationRepo  repository.ConversationRepository
+	llmProvider       provider.LLMProvider
+	transcriber       provider.Transcriber
+	agent             agent.AgentProvider
 	currentProviderID string
-	currentModel     string
+	currentModel      string
 }
 
 func NewBotService(userRepo repository.UserRepository, conversationRepo repository.ConversationRepository) BotService {
@@ -47,13 +50,13 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 	ag := agent.NewAgent(llmProvider)
 
 	return &BotServiceImpl{
-		userRepo:         userRepo,
-		conversationRepo: conversationRepo,
-		llmProvider:      llmProvider,
-		transcriber:      transcriber,
-		agent:            ag,
+		userRepo:          userRepo,
+		conversationRepo:  conversationRepo,
+		llmProvider:       llmProvider,
+		transcriber:       transcriber,
+		agent:             ag,
 		currentProviderID: config.CurrentProviderID,
-		currentModel:     config.LLMDefaultModel,
+		currentModel:      config.LLMDefaultModel,
 	}
 }
 
@@ -130,6 +133,10 @@ func (r *BotServiceImpl) changeProviderAndModel(user *model.User) (*model.User, 
 }
 
 func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
+	return r.BotContext(context.Background(), msg)
+}
+
+func (r *BotServiceImpl) BotContext(ctx context.Context, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
 	r.checkAndReloadProvider()
 
 	user, err := r.checkUser(msg)
@@ -153,10 +160,14 @@ func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMes
 		return &channel.OutgoingMessage{Text: response}, nil
 	}
 
-	return r.conversation(user, msg)
+	return r.conversationContext(ctx, user, msg)
 }
 
 func (r *BotServiceImpl) BotStream(msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
+	return r.BotStreamContext(context.Background(), msg, onChunk)
+}
+
+func (r *BotServiceImpl) BotStreamContext(ctx context.Context, msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
 	r.checkAndReloadProvider()
 
 	user, err := r.checkUser(msg)
@@ -178,11 +189,13 @@ func (r *BotServiceImpl) BotStream(msg *channel.IncomingMessage, onChunk func(ch
 
 	if isCommand {
 		out := &channel.OutgoingMessage{Text: response}
-		onChunk(channel.StreamChunk{Text: response})
+		if onChunk != nil {
+			onChunk(channel.StreamChunk{Kind: "text", Text: response})
+		}
 		return out, nil
 	}
 
-	return r.conversationStream(user, msg, onChunk)
+	return r.conversationStreamContext(ctx, user, msg, onChunk)
 }
 
 func (r *BotServiceImpl) ProcessHeartbeat(prompt, to, channelName, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error) {

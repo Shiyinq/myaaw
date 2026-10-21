@@ -25,11 +25,20 @@ type OutgoingMessage struct {
 }
 
 type StreamChunk struct {
-	Text      string
-	ToolCalls []provider.ToolCall
-	Trace     []provider.ReactStep
-	Usage     provider.Usage
-	Thought   string
+	// Kind distinguishes progress events: "text", "thought", "tool",
+	// "tool_result", "trace", or "usage". Empty means plain text for
+	// backwards compatibility.
+	Kind           string
+	Text           string
+	ToolCalls      []provider.ToolCall
+	ToolCallID     string
+	ToolName       string
+	ToolArguments  string
+	ToolResultText string
+	IsError        bool
+	Trace          []provider.ReactStep
+	Usage          provider.Usage
+	Thought        string
 }
 
 type QueueEnvelope struct {

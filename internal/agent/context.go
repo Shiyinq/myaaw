@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -26,26 +27,55 @@ func EnsureMyaawConfig() (string, error) {
 	return targetDir, nil
 }
 
+// workspaceDirName is the directory inside the agent home where all generated
+// projects, cloned repositories, downloads, and build artifacts must be stored.
+const workspaceDirName = "workspace"
+
 type SystemPromptBuilder struct {
-	userID      int64
-	channelName string
-	homeDir     string
+	userID       int64
+	channelName  string
+	homeDir      string
+	workspaceDir string
+	currentDir   string
 }
 
 func NewSystemPromptBuilder(userID int64, channelName string) *SystemPromptBuilder {
-	// Ensure .myaaw exists in home directory
-	myaawPath, err := EnsureMyaawConfig()
+	return newSystemPromptBuilder(userID, channelName, os.Getwd, EnsureMyaawConfig)
+}
+
+func newSystemPromptBuilder(userID int64, channelName string, getwd func() (string, error), ensureConfig func() (string, error)) *SystemPromptBuilder {
+	myaawPath, err := ensureConfig()
 	homeDir := ""
+	workspaceDir := ""
 	if err == nil {
 		homeDir = filepath.Join(myaawPath, "home")
+		var workspaceErr error
+		workspaceDir, workspaceErr = ensureWorkspace(homeDir)
+		if workspaceErr != nil {
+			log.Printf("Error creating agent workspace: %v", workspaceErr)
+		}
 	} else {
-		fmt.Printf("Error ensuring .myaaw config: %v\n", err)
+		log.Printf("Error ensuring .myaaw config: %v", err)
+	}
+
+	// Local sessions run inside the user's project directory. Remote channels
+	// (Telegram/Discord) use the server process directory, which is not useful
+	// project context, so it is intentionally omitted for them.
+	currentDir := ""
+	if isLocalChannel(channelName) {
+		if wd, err := getwd(); err == nil {
+			currentDir = wd
+		} else {
+			log.Printf("Error getting current directory: %v", err)
+		}
 	}
 
 	return &SystemPromptBuilder{
-		userID:      userID,
-		channelName: channelName,
-		homeDir:     homeDir,
+		userID:       userID,
+		channelName:  channelName,
+		homeDir:      homeDir,
+		workspaceDir: workspaceDir,
+		currentDir:   currentDir,
 	}
 }
 
@@ -95,7 +125,27 @@ func (b *SystemPromptBuilder) Build() string {
 	fmt.Fprintf(&sb, "Arch: %s\n", runtime.GOARCH)
 	sb.WriteString("\n")
 
-	// 5. Workspace / Context Injection
+	// 5. Workspace (Dynamic)
+	// Expose absolute paths so the agent never has to guess where the workspace
+	// is. The behavioral rules live in AGENTS.md.
+	if b.workspaceDir != "" {
+		projectsDir := filepath.Join(b.workspaceDir, "projects")
+		downloadsDir := filepath.Join(b.workspaceDir, "downloads")
+
+		sb.WriteString("## Workspace\n")
+		fmt.Fprintf(&sb, "Workspace root: %s\n", b.workspaceDir)
+		fmt.Fprintf(&sb, "- Projects: %s/<project-name>/\n", projectsDir)
+		fmt.Fprintf(&sb, "- Downloads: %s/\n\n", downloadsDir)
+	}
+
+	// 6. Current Directory (Dynamic)
+	// Only local CLI sessions have a meaningful project directory.
+	if b.currentDir != "" {
+		sb.WriteString("## Current Directory\n")
+		fmt.Fprintf(&sb, "Myaaw launch directory: %s\n\n", b.currentDir)
+	}
+
+	// 7. Workspace / Context Injection
 	// Order: SOUL, TOOLS, USER
 	files := []string{"SOUL.md", "TOOLS.md", "USER.md"}
 
@@ -109,6 +159,52 @@ func (b *SystemPromptBuilder) Build() string {
 	}
 
 	return strings.TrimSpace(sb.String())
+}
+
+// isLocalChannel reports whether the channel runs in the user's local working
+// directory and should therefore receive current-directory context.
+func isLocalChannel(channelName string) bool {
+	switch strings.ToLower(channelName) {
+	case "cli", "voice-classic":
+		return true
+	default:
+		return false
+	}
+}
+
+// EnsureWorkspace prepares the agent workspace under ~/.myaaw/home and returns
+// its absolute path. It is safe to call repeatedly, so onboarding and command
+// startup can use it to make the workspace visible before the first request.
+func EnsureWorkspace() (string, error) {
+	myaawPath, err := EnsureMyaawConfig()
+	if err != nil {
+		return "", err
+	}
+	return ensureWorkspace(filepath.Join(myaawPath, "home"))
+}
+
+// ensureWorkspace creates the workspace directory tree and returns its path.
+// The workspace is the only location where the agent should create generated
+// projects and downloads. It lives inside the allowed filesystem root.
+func ensureWorkspace(homeDir string) (string, error) {
+	if homeDir == "" {
+		return "", fmt.Errorf("agent home directory is empty")
+	}
+
+	workspaceDir := filepath.Join(homeDir, workspaceDirName)
+	dirs := []string{
+		workspaceDir,
+		filepath.Join(workspaceDir, "projects"),
+		filepath.Join(workspaceDir, "downloads"),
+	}
+
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return workspaceDir, fmt.Errorf("create workspace directory %s: %w", dir, err)
+		}
+	}
+
+	return workspaceDir, nil
 }
 
 func (b *SystemPromptBuilder) readContent(fileName string) string {

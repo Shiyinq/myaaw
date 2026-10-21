@@ -95,7 +95,15 @@ func isCommandSafe(cmd string) bool {
 	return true
 }
 
-func (b *BashTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
+func (b *BashTool) CallTool(arguments string, tctx *tools.ToolsContext) string {
+	return b.CallToolContext(context.Background(), arguments, tctx)
+}
+
+func (b *BashTool) ExecutionMode() tools.ExecutionMode {
+	return tools.ExecutionSequential
+}
+
+func (b *BashTool) CallToolContext(ctx context.Context, arguments string, tctx *tools.ToolsContext) string {
 	var args BashArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return fmt.Sprintf("Error parsing arguments: %v", err)
@@ -119,16 +127,17 @@ func (b *BashTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 		if err != nil {
 			return fmt.Sprintf("Error getting home dir: %v", err)
 		}
-		
+
 		resultsDir := filepath.Join(homeDir, ".myaaw", "jobs")
 		if err := os.MkdirAll(resultsDir, 0755); err != nil {
 			return fmt.Sprintf("Error creating jobs dir: %v", err)
 		}
-		
+
 		outputPath := filepath.Join(resultsDir, jobID+".log")
 
 		go func() {
-			outStr := b.executeCommand(args)
+			// Background jobs intentionally outlive the request.
+			outStr := b.executeCommand(context.Background(), args)
 			err := os.WriteFile(outputPath, []byte(outStr), 0644)
 			if err != nil {
 				log.Printf("Error writing async output to file %s: %v", outputPath, err)
@@ -142,10 +151,10 @@ func (b *BashTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 		return baseInstruction + " Estimate a reasonable wait time based on the task."
 	}
 
-	return b.executeCommand(args)
+	return b.executeCommand(ctx, args)
 }
 
-func (b *BashTool) executeCommand(args BashArgs) string {
+func (b *BashTool) executeCommand(parent context.Context, args BashArgs) string {
 	// Default timeout to 60 seconds if not specified
 	timeout := 60 * time.Second
 	if args.Timeout > 0 {
@@ -153,7 +162,7 @@ func (b *BashTool) executeCommand(args BashArgs) string {
 	}
 
 	// Create command execution context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	// Using "bash -c" to allow complex commands (pipes, redirects, etc)

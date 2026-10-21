@@ -8,6 +8,17 @@ import (
 	"myaaw/internal/config"
 )
 
+// StopReason describes why an assistant turn ended.
+type StopReason string
+
+const (
+	StopNormal        StopReason = "normal"
+	StopMaxIterations StopReason = "max_iterations"
+	StopLength        StopReason = "length"
+	StopError         StopReason = "error"
+	StopAborted       StopReason = "aborted"
+)
+
 type Message struct {
 	Role       string      `json:"role" bson:"role"`
 	Name       string      `json:"name,omitempty" bson:"name,omitempty"`
@@ -15,7 +26,7 @@ type Message struct {
 	Images     []string    `json:"images,omitempty" bson:"images,omitempty"`
 	ToolCalls  []ToolCall  `json:"tool_calls,omitempty" bson:"tool_calls,omitempty"`
 	ToolCallID string      `json:"tool_call_id,omitempty" bson:"tool_call_id,omitempty"`
-	// ReAct Trace Fields
+	// ReAct Trace Fields (UI metadata; not sent to providers)
 	Thought     string `json:"thought,omitempty" bson:"thought,omitempty"`
 	Action      string `json:"action,omitempty" bson:"action,omitempty"`
 	ActionInput string `json:"action_input,omitempty" bson:"action_input,omitempty"`
@@ -24,6 +35,12 @@ type Message struct {
 	Trace []ReactStep `json:"trace,omitempty" bson:"trace,omitempty"`
 	// Token Usage
 	Usage Usage `json:"usage,omitempty" bson:"usage,omitempty"`
+	// Transcript metadata (agent loop v2)
+	IsError      bool       `json:"is_error,omitempty" bson:"is_error,omitempty"`
+	ErrorMessage string     `json:"error_message,omitempty" bson:"error_message,omitempty"`
+	DurationMs   int64      `json:"duration_ms,omitempty" bson:"duration_ms,omitempty"`
+	StopReason   StopReason `json:"stop_reason,omitempty" bson:"stop_reason,omitempty"`
+	Version      int        `json:"v,omitempty" bson:"v,omitempty"`
 }
 
 type UsageDetail struct {
@@ -75,7 +92,10 @@ type ImageInfo struct {
 type LLMProvider interface {
 	ProviderName() string
 	Chat(modelName string, messages []Message, tools []map[string]interface{}) (Message, error)
+	// ChatStream is the legacy streaming API. New code should prefer
+	// ChatStreamEvents, which exposes deltas and an explicit stop reason.
 	ChatStream(modelName string, messages []Message, callback func(Message) error, tools []map[string]interface{}) error
+	ChatStreamEvents(ctx context.Context, modelName string, messages []Message, tools []map[string]interface{}, onEvent func(StreamEvent) error) error
 	Models() ([]string, error)
 	DefaultModel(modelName string) string
 }
@@ -168,4 +188,3 @@ func argsToString(i interface{}) string {
 
 	return string(jsonData)
 }
-

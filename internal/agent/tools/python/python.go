@@ -72,7 +72,15 @@ func (p *PythonTool) ToolDefinition() []byte {
 	return []byte(toolSchema)
 }
 
-func (p *PythonTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
+func (p *PythonTool) CallTool(arguments string, tctx *tools.ToolsContext) string {
+	return p.CallToolContext(context.Background(), arguments, tctx)
+}
+
+func (p *PythonTool) ExecutionMode() tools.ExecutionMode {
+	return tools.ExecutionSequential
+}
+
+func (p *PythonTool) CallToolContext(ctx context.Context, arguments string, tctx *tools.ToolsContext) string {
 	var args PythonArgs
 	err := json.Unmarshal([]byte(arguments), &args)
 	if err != nil {
@@ -89,16 +97,17 @@ func (p *PythonTool) CallTool(arguments string, ctx *tools.ToolsContext) string 
 		if err != nil {
 			return fmt.Sprintf("Error getting home dir: %v", err)
 		}
-		
+
 		resultsDir := filepath.Join(homeDir, ".myaaw", "jobs")
 		if err := os.MkdirAll(resultsDir, 0755); err != nil {
 			return fmt.Sprintf("Error creating jobs dir: %v", err)
 		}
-		
+
 		outputPath := filepath.Join(resultsDir, jobID+".log")
 
 		go func() {
-			outStr := p.executePython(args)
+			// Background jobs intentionally outlive the request.
+			outStr := p.executePython(context.Background(), args)
 			err := os.WriteFile(outputPath, []byte(outStr), 0644)
 			if err != nil {
 				log.Printf("Error writing async output to file %s: %v", outputPath, err)
@@ -112,10 +121,10 @@ func (p *PythonTool) CallTool(arguments string, ctx *tools.ToolsContext) string 
 		return baseInstruction + " Estimate a reasonable wait time based on the task."
 	}
 
-	return p.executePython(args)
+	return p.executePython(ctx, args)
 }
 
-func (p *PythonTool) executePython(args PythonArgs) string {
+func (p *PythonTool) executePython(parent context.Context, args PythonArgs) string {
 	// Create temporary directory for Python code
 	tempDir, err := os.MkdirTemp("", "python-exec-*")
 	if err != nil {
@@ -147,7 +156,7 @@ func (p *PythonTool) executePython(args PythonArgs) string {
 	// Create venv if it doesn't exist
 	if _, err := os.Stat(pythonBin); os.IsNotExist(err) {
 		log.Println("Creating Python virtual environment...")
-		cmd := exec.Command("python3", "-m", "venv", venvDir)
+		cmd := exec.CommandContext(parent, "python3", "-m", "venv", venvDir)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Sprintf("Error creating virtual environment: %v\nOutput: %s", err, string(output))
 		}
@@ -164,7 +173,7 @@ func (p *PythonTool) executePython(args PythonArgs) string {
 			log.Printf("Installing Python packages: %v", packages)
 			// Using pip install from venv
 			pipArgs := append([]string{"install"}, packages...)
-			cmd := exec.Command(pipBin, pipArgs...)
+			cmd := exec.CommandContext(parent, pipBin, pipArgs...)
 			if output, err := cmd.CombinedOutput(); err != nil {
 				return fmt.Sprintf("Error installing packages: %v\nOutput: %s", err, string(output))
 			}
@@ -177,7 +186,7 @@ func (p *PythonTool) executePython(args PythonArgs) string {
 		timeout = time.Duration(args.Timeout) * time.Second
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, pythonBin, scriptPath)
@@ -212,6 +221,9 @@ func (p *PythonTool) executePython(args PythonArgs) string {
 
 	if ctx.Err() == context.DeadlineExceeded {
 		return fmt.Sprintf("Error: Script execution timed out after %v.\nPartial Output:\n%s", timeout, outStr)
+	}
+	if parent.Err() != nil {
+		return fmt.Sprintf("Error: Script execution canceled: %v\nPartial Output:\n%s", parent.Err(), outStr)
 	}
 
 	if err != nil {
