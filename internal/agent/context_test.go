@@ -63,6 +63,8 @@ func TestSystemPromptIncludesWorkspacePaths(t *testing.T) {
 	prompt := builder.Build()
 
 	required := []string{
+		"## Agent Home",
+		"Agent home: " + homeDir,
 		"## Workspace",
 		"Workspace root: " + workspaceDir,
 		filepath.Join(workspaceDir, "projects"),

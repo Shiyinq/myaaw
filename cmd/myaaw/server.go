@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	routes "myaaw/internal"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/channel/discord"
 	"myaaw/internal/channel/telegram"
 	"myaaw/internal/cli/theme"
@@ -40,12 +41,12 @@ var serverStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the bot as a persistent background service",
 	Run: func(cmd *cobra.Command, args []string) {
-		dm, err := daemon.NewManager("myaaw-server")
+		dm, err := daemon.NewManager(serverDaemonName())
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		runArgs := []string{"server", "run"}
+		runArgs := serverRunArgs()
 		if err := dm.Start(runArgs); err != nil {
 			log.Fatalf("Failed to start server: %v", err)
 		}
@@ -56,7 +57,7 @@ var serverStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop and unregister the background service",
 	Run: func(cmd *cobra.Command, args []string) {
-		dm, err := daemon.NewManager("myaaw-server")
+		dm, err := daemon.NewManager(serverDaemonName())
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
@@ -71,7 +72,7 @@ var serverRestartCmd = &cobra.Command{
 	Use:   "restart",
 	Short: "Restart the background service",
 	Run: func(cmd *cobra.Command, args []string) {
-		dm, err := daemon.NewManager("myaaw-server")
+		dm, err := daemon.NewManager(serverDaemonName())
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
@@ -84,7 +85,7 @@ var serverRestartCmd = &cobra.Command{
 		time.Sleep(1 * time.Second)
 
 		fmt.Println(theme.RenderPrimary("🚀 Starting server..."))
-		runArgs := []string{"server", "run"}
+		runArgs := serverRunArgs()
 		if err := dm.Start(runArgs); err != nil {
 			log.Fatalf("Failed to start server: %v", err)
 		}
@@ -95,7 +96,7 @@ var serverStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check server status",
 	Run: func(cmd *cobra.Command, args []string) {
-		dm, err := daemon.NewManager("myaaw-server")
+		dm, err := daemon.NewManager(serverDaemonName())
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
@@ -119,6 +120,14 @@ func init() {
 	serverCmd.AddCommand(serverStopCmd)
 	serverCmd.AddCommand(serverRestartCmd)
 	serverCmd.AddCommand(serverStatusCmd)
+}
+
+func serverDaemonName() string {
+	return "myaaw-server-" + agentdir.Active()
+}
+
+func serverRunArgs() []string {
+	return []string{"--agent", agentdir.Active(), "server", "run"}
 }
 
 func startServer(ctx context.Context) {

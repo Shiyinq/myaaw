@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/daemon"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -20,8 +20,9 @@ var statusCmd = &cobra.Command{
 
 		fmt.Println(theme.RenderPrimary("🔍 Myaaw Service Status"))
 		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
+		fmt.Println(theme.RenderMuted(fmt.Sprintf("Agent: %s", agentdir.Active())))
 
-		srv, srvRunning, _ := checkService("myaaw-server")
+		srv, srvRunning, _ := checkService("myaaw-server-" + agentdir.Active())
 
 		if srvRunning {
 			fmt.Printf("%-14s %s\n", "Gateway", theme.RenderSuccess("✅ OPERATIONAL"))
@@ -39,8 +40,11 @@ var statusCmd = &cobra.Command{
 
 		dbPath := os.Getenv("DB_PATH")
 		if dbPath == "" {
-			homeDir, _ := os.UserHomeDir()
-			dbPath = filepath.Join(homeDir, ".myaaw", "database", "myaaw.db")
+			if path, err := agentdir.ActiveDatabasePath(); err == nil {
+				dbPath = path
+			} else {
+				dbPath = "myaaw.db"
+			}
 		}
 
 		if err := config.PingSQLite(); err != nil {

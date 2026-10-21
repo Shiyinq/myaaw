@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/cron"
@@ -356,13 +357,18 @@ func init() {
 }
 
 func getStore() *cron.Store {
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, ".myaaw", "cron", "jobs.json")
+	cronDir, err := agentdir.ActiveCronDir()
+	if err != nil {
+		cronDir = ".myaaw-cron"
+	}
+	path := filepath.Join(cronDir, "jobs.json")
 	return cron.NewStore(path)
 }
 
 func getHistoryLogger() *cron.HistoryLogger {
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, ".myaaw", "cron")
-	return cron.NewHistoryLogger(path)
+	cronDir, err := agentdir.ActiveCronDir()
+	if err != nil {
+		cronDir = ".myaaw-cron"
+	}
+	return cron.NewHistoryLogger(cronDir)
 }

@@ -6,29 +6,31 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"myaaw/internal/agentdir"
 )
 
 func TestConfigureAllowedDirectoriesIncludesMyaawDirs(t *testing.T) {
-	homeDir := t.TempDir()
+	agentRoot := t.TempDir()
 	cwd := t.TempDir()
 
 	restore := saveAllowedConfig()
 	t.Cleanup(restore)
 
-	projectRoot := configureAllowedDirectories(homeDir, cwd)
+	projectRoot := configureAllowedDirectories(agentRoot, cwd)
 	if projectRoot != "" {
 		t.Fatalf("projectRoot = %q, want empty", projectRoot)
 	}
 
-	wantBase := filepath.Join(homeDir, ".myaaw", "home")
+	wantBase := filepath.Join(agentRoot, "home")
 	if defaultBaseDir != wantBase {
 		t.Errorf("defaultBaseDir = %q, want %q", defaultBaseDir, wantBase)
 	}
 
 	for _, want := range []string{
-		filepath.Join(homeDir, ".myaaw", "home"),
-		filepath.Join(homeDir, ".myaaw", "skills"),
-		filepath.Join(homeDir, ".myaaw", "jobs"),
+		filepath.Join(agentRoot, "home"),
+		filepath.Join(agentRoot, "skills"),
+		filepath.Join(agentRoot, "jobs"),
 	} {
 		if !containsPath(allowedDirectories, want) {
 			t.Errorf("allowedDirectories missing %q: %v", want, allowedDirectories)
@@ -37,7 +39,7 @@ func TestConfigureAllowedDirectoriesIncludesMyaawDirs(t *testing.T) {
 }
 
 func TestConfigureAllowedDirectoriesAddsProjectRoot(t *testing.T) {
-	homeDir := t.TempDir()
+	agentRoot := t.TempDir()
 	projectRoot := t.TempDir()
 	if err := os.WriteFile(filepath.Join(projectRoot, "package.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
@@ -50,7 +52,7 @@ func TestConfigureAllowedDirectoriesAddsProjectRoot(t *testing.T) {
 	restore := saveAllowedConfig()
 	t.Cleanup(restore)
 
-	gotRoot := configureAllowedDirectories(homeDir, nested)
+	gotRoot := configureAllowedDirectories(agentRoot, nested)
 	if gotRoot != projectRoot {
 		t.Fatalf("projectRoot = %q, want %q", gotRoot, projectRoot)
 	}
@@ -68,11 +70,14 @@ func TestConfigureAllowedDirectoriesAddsProjectRoot(t *testing.T) {
 }
 
 func TestConfigureAllowedDirectoriesDoesNotUseHomeAsProject(t *testing.T) {
-	homeDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(homeDir, ".git"), 0o755); err != nil {
+	agentRoot := t.TempDir()
+	userHome := t.TempDir()
+	t.Setenv("HOME", userHome)
+	t.Setenv("USERPROFILE", userHome)
+	if err := os.Mkdir(filepath.Join(userHome, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	nested := filepath.Join(homeDir, "random", "folder")
+	nested := filepath.Join(userHome, "random", "folder")
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -80,14 +85,14 @@ func TestConfigureAllowedDirectoriesDoesNotUseHomeAsProject(t *testing.T) {
 	restore := saveAllowedConfig()
 	t.Cleanup(restore)
 
-	projectRoot := configureAllowedDirectories(homeDir, nested)
+	projectRoot := configureAllowedDirectories(agentRoot, nested)
 	if projectRoot != "" {
 		t.Fatalf("projectRoot = %q, want empty for home directory", projectRoot)
 	}
-	if defaultBaseDir != filepath.Join(homeDir, ".myaaw", "home") {
+	if defaultBaseDir != filepath.Join(agentRoot, "home") {
 		t.Errorf("defaultBaseDir = %q, want agent home", defaultBaseDir)
 	}
-	if containsPath(allowedDirectories, homeDir) {
+	if containsPath(allowedDirectories, userHome) {
 		t.Error("home directory must not be added as a project root")
 	}
 }
@@ -169,10 +174,39 @@ func TestSetProjectDirectoryRejectsHome(t *testing.T) {
 	}
 }
 
-func TestConfigureAllowedDirectoriesKeepsJobsAccessible(t *testing.T) {
+func TestSetProjectDirectoryRejectsAnotherAgent(t *testing.T) {
 	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	alphaRoot := filepath.Join(homeDir, ".myaaw", "alpha")
+	betaRoot := filepath.Join(homeDir, ".myaaw", "beta")
+	if err := os.MkdirAll(alphaRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(betaRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	oldActive := agentdir.Active()
+	if err := agentdir.SetActive("beta"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = agentdir.SetActive(oldActive) })
+
+	restore := saveAllowedConfig()
+	t.Cleanup(restore)
+	configureAllowedDirectories(betaRoot, t.TempDir())
+
+	if err := SetProjectDirectory(alphaRoot); err == nil {
+		t.Fatal("expected another agent's directory to be rejected")
+	}
+}
+
+func TestConfigureAllowedDirectoriesKeepsJobsAccessible(t *testing.T) {
+	agentRoot := t.TempDir()
 	cwd := t.TempDir()
-	jobsDir := filepath.Join(homeDir, ".myaaw", "jobs")
+	jobsDir := filepath.Join(agentRoot, "jobs")
 	if err := os.MkdirAll(jobsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +214,7 @@ func TestConfigureAllowedDirectoriesKeepsJobsAccessible(t *testing.T) {
 	restore := saveAllowedConfig()
 	t.Cleanup(restore)
 
-	configureAllowedDirectories(homeDir, cwd)
+	configureAllowedDirectories(agentRoot, cwd)
 
 	jobLog := filepath.Join(jobsDir, "job_123.log")
 	if _, err := isPathAllowed(jobLog, allowedDirectories); err != nil {

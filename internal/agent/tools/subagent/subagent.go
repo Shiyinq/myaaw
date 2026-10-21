@@ -13,6 +13,7 @@ import (
 	"myaaw/internal/agent"
 	"myaaw/internal/agent/skills"
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
 
@@ -190,8 +191,12 @@ CRITICAL INSTRUCTIONS:
 	}
 
 	// Save to log file
-	homeDir, _ := os.UserHomeDir()
-	logPath := filepath.Join(homeDir, ".myaaw", "jobs", fmt.Sprintf("subagent_%s_%d.log", batchID, taskNum))
+	jobsDir, err := agentdir.ActiveJobsDir()
+	if err != nil {
+		log.Printf("[SubAgent %s] Failed to resolve jobs dir: %v", task.Name, err)
+		jobsDir = os.TempDir()
+	}
+	logPath := filepath.Join(jobsDir, fmt.Sprintf("subagent_%s_%d.log", batchID, taskNum))
 	os.MkdirAll(filepath.Dir(logPath), 0755)
 	os.WriteFile(logPath, []byte(report), 0644)
 
@@ -231,12 +236,10 @@ func validateSkills(skillsStr string) error {
 		return nil
 	}
 
-	homeDir, err := os.UserHomeDir()
+	skillsDir, err := agentdir.ActiveSkillsDir()
 	if err != nil {
 		return err
 	}
-
-	skillsDir := filepath.Join(homeDir, ".myaaw", "skills")
 
 	for s := range strings.SplitSeq(skillsStr, ",") {
 		s = strings.TrimSpace(s)
@@ -245,10 +248,10 @@ func validateSkills(skillsStr string) error {
 		}
 		skillPath := filepath.Join(skillsDir, s)
 		if _, err := os.Stat(skillPath); os.IsNotExist(err) {
-			return fmt.Errorf("Skill '%s' not found. Please ensure it is installed in ~/.myaaw/skills/", s)
+			return fmt.Errorf("Skill '%s' not found. Please ensure it is installed in the active agent's skills directory (%s)", s, skillsDir)
 		}
 		if !skills.IsSkillEnabled(s) {
-			return fmt.Errorf("Skill '%s' is disabled. Enable it in ~/.myaaw/skills/skills.json", s)
+			return fmt.Errorf("Skill '%s' is disabled. Enable it in %s", s, filepath.Join(skillsDir, "skills.json"))
 		}
 	}
 

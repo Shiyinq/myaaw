@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 
@@ -26,8 +27,8 @@ var channelListCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println(theme.RenderPrimary("--- Configured Channels ---"))
-		
+		fmt.Println(theme.RenderPrimary(fmt.Sprintf("--- Configured Channels for agent %q ---", agentdir.Active())))
+
 		if cfg.Channels.Telegram != nil && cfg.Channels.Telegram.Active {
 			fmt.Printf("Telegram : %s (Mode: %s)\n", theme.RenderSuccess("Active"), cfg.Channels.Telegram.Mode)
 		} else {
@@ -254,7 +255,7 @@ var channelEditCmd = &cobra.Command{
 			if telegramMode == "" {
 				telegramMode = "polling"
 			}
-			
+
 			err = huh.NewForm(
 				huh.NewGroup(
 					huh.NewConfirm().
@@ -298,7 +299,7 @@ var channelEditCmd = &cobra.Command{
 		}
 
 		token = strings.TrimSpace(token)
-		
+
 		if selectedChannel == "telegram" {
 			if cfg.Channels.Telegram == nil {
 				cfg.Channels.Telegram = &config.ChannelConfig{}

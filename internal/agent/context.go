@@ -8,20 +8,20 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"myaaw/internal/agentdir"
 )
 
-// EnsureMyaawConfig checks if the .myaaw configuration directory exists in the user's home directory.
-// Returns the path to the home .myaaw directory if it exists, otherwise returns an error.
+// EnsureMyaawConfig checks that the active agent directory exists and returns
+// its root path.
 func EnsureMyaawConfig() (string, error) {
-	homeDir, err := os.UserHomeDir()
+	targetDir, err := agentdir.ActiveRoot()
 	if err != nil {
-		return "", fmt.Errorf("failed to get user home directory: %w", err)
+		return "", err
 	}
 
-	targetDir := filepath.Join(homeDir, ".myaaw")
-
 	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
-		return "", fmt.Errorf("configuration directory %s not found. Please run 'myaaw onboard' first", targetDir)
+		return "", fmt.Errorf("agent directory %s not found. Please run 'myaaw onboard' or create the agent first", targetDir)
 	}
 
 	return targetDir, nil
@@ -55,7 +55,7 @@ func newSystemPromptBuilder(userID int64, channelName string, getwd func() (stri
 			log.Printf("Error creating agent workspace: %v", workspaceErr)
 		}
 	} else {
-		log.Printf("Error ensuring .myaaw config: %v", err)
+		log.Printf("Error resolving agent config: %v", err)
 	}
 
 	// Local sessions run inside the user's project directory. Remote channels
@@ -109,23 +109,28 @@ func (b *SystemPromptBuilder) Build() string {
 	if b.channelName != "" {
 		fmt.Fprintf(&sb, "Channel Platform: %s\n", b.channelName)
 	}
-	// We can add more dynamic user info here if needed (e.g. from DB)
 	sb.WriteString("\n")
 
-	// 3. Date & Time
+	// 3. Agent Home (Dynamic)
+	if b.homeDir != "" {
+		sb.WriteString("## Agent Home\n")
+		fmt.Fprintf(&sb, "Agent home: %s\n\n", b.homeDir)
+	}
+
+	// 4. Date & Time
 	now := time.Now()
 	sb.WriteString("## Date & Time\n")
 	fmt.Fprintf(&sb, "Current Date: %s\n", now.Format("Monday, January 02, 2006"))
 	fmt.Fprintf(&sb, "Current Time: %s\n", now.Format("15:04:05 MST"))
 	sb.WriteString("\n")
 
-	// 4. Runtime
+	// 5. Runtime
 	sb.WriteString("## Runtime\n")
 	fmt.Fprintf(&sb, "OS: %s\n", runtime.GOOS)
 	fmt.Fprintf(&sb, "Arch: %s\n", runtime.GOARCH)
 	sb.WriteString("\n")
 
-	// 5. Workspace (Dynamic)
+	// 6. Workspace (Dynamic)
 	// Expose absolute paths so the agent never has to guess where the workspace
 	// is. The behavioral rules live in AGENTS.md.
 	if b.workspaceDir != "" {

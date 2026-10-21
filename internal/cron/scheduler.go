@@ -3,6 +3,7 @@ package cron
 import (
 	"fmt"
 	"log"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/config"
 	"os"
 	"path/filepath"
@@ -37,14 +38,12 @@ func NewScheduler(store *Store, history *HistoryLogger) *Scheduler {
 	}
 }
 
-// NewDefaultScheduler creates a scheduler with default paths (~/.myaaw/cron)
+// NewDefaultScheduler creates a scheduler with the active agent's cron paths.
 func NewDefaultScheduler() (*Scheduler, error) {
-	home, err := os.UserHomeDir()
+	cronDir, err := agentdir.ActiveCronDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user home dir: %w", err)
+		return nil, fmt.Errorf("failed to resolve agent cron dir: %w", err)
 	}
-
-	cronDir := filepath.Join(home, ".myaaw", "cron")
 	if err := os.MkdirAll(cronDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create cron directory: %w", err)
 	}

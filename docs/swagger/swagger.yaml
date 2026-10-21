@@ -11,6 +11,23 @@ definitions:
       user_id:
         type: integer
     type: object
+  api.TimelineItem:
+    properties:
+      arguments:
+        type: string
+      id:
+        type: string
+      is_error:
+        type: boolean
+      kind:
+        type: string
+      name:
+        type: string
+      result:
+        type: string
+      text:
+        type: string
+    type: object
   channel.QueueEnvelope:
     properties:
       channel:
@@ -30,9 +47,9 @@ definitions:
     properties:
       text:
         type: string
-      trace:
+      timeline:
         items:
-          $ref: '#/definitions/handler.TraceStep'
+          $ref: '#/definitions/api.TimelineItem'
         type: array
       usage:
         $ref: '#/definitions/handler.UsageResponse'
@@ -46,13 +63,6 @@ definitions:
       to:
         type: string
       trigger:
-        type: string
-    type: object
-  handler.TraceStep:
-    properties:
-      action:
-        type: string
-      observation:
         type: string
     type: object
   handler.UsageResponse:

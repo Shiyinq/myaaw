@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"myaaw/internal/agentdir"
+
 	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
 	_ "github.com/mattn/go-sqlite3"
@@ -125,24 +127,22 @@ type HeartbeatConfig struct {
 var CronActive bool
 
 func loadJSONConfig() (*Config, error) {
-	// 1. Check Current Directory
+	// 1. Check the active agent configuration.
+	if configPath, err := agentdir.ActiveConfigPath(); err == nil {
+		if _, err := os.Stat(configPath); err == nil {
+			if Verbose {
+				log.Println("Reading config from agent directory:", configPath)
+			}
+			return parseJSONFile(configPath)
+		}
+	}
+
+	// 2. Check current directory for development overrides.
 	if _, err := os.Stat("config.json"); err == nil {
 		if Verbose {
 			log.Println("Reading config from current directory: config.json")
 		}
 		return parseJSONFile("config.json")
-	}
-
-	// 2. Check Home Directory
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		configPath := filepath.Join(homeDir, ".myaaw", "config", "config.json")
-		if _, err := os.Stat(configPath); err == nil {
-			if Verbose {
-				log.Println("Reading config from home directory:", configPath)
-			}
-			return parseJSONFile(configPath)
-		}
 	}
 
 	return nil, nil // No config file found
@@ -161,14 +161,8 @@ func parseJSONFile(path string) (*Config, error) {
 }
 
 func GetConfigPath() string {
-	// Try current directory
-	if _, err := os.Stat("config.json"); err == nil {
-		return "config.json"
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		return filepath.Join(homeDir, ".myaaw", "config", "config.json")
+	if path, err := agentdir.ActiveConfigPath(); err == nil {
+		return path
 	}
 	return "config.json"
 }
@@ -194,19 +188,17 @@ func LoadJSONConfigOnly() (*Config, error) {
 }
 
 func envPath() string {
-	// 1. Check Current Directory
-	if abs, err := filepath.Abs(".env"); err == nil {
-		if _, err := os.Stat(abs); err == nil {
-			return abs
+	// 1. Check the active agent environment.
+	if path, err := agentdir.ActiveEnvPath(); err == nil {
+		if _, err := os.Stat(path); err == nil {
+			return path
 		}
 	}
 
-	// 2. Check Home Directory
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		path := filepath.Join(homeDir, ".myaaw", ".env")
-		if _, err := os.Stat(path); err == nil {
-			return path
+	// 2. Check current directory for development overrides.
+	if abs, err := filepath.Abs(".env"); err == nil {
+		if _, err := os.Stat(abs); err == nil {
+			return abs
 		}
 	}
 
@@ -233,11 +225,15 @@ func LoadBaseConfig() {
 		}
 	} else {
 		if Verbose {
-			log.Println("ℹ️  No .env file found in current directory, ~/.myaaw/, or dev fallback. Using system environment variables.")
+			log.Println("ℹ️  No .env file found in the agent directory, current directory, or dev fallback. Using system environment variables.")
 		}
 	}
 
-	PORT = ":" + os.Getenv("PORT")
+	portValue := strings.TrimSpace(os.Getenv("PORT"))
+	if portValue == "" {
+		portValue = strconv.Itoa(agentdir.SuggestedPort(agentdir.Active()))
+	}
+	PORT = ":" + portValue
 	HOST = os.Getenv("HOST")
 	MYAAWBaseURL = os.Getenv("MYAAW_BASE_URL")
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
@@ -445,9 +441,8 @@ func validateAgentConfig() {
 func ConnectDatabases() {
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			dbPath = filepath.Join(homeDir, ".myaaw", "database", "myaaw.db")
+		if path, err := agentdir.ActiveDatabasePath(); err == nil {
+			dbPath = path
 		} else {
 			dbPath = "myaaw.db"
 		}
@@ -515,12 +510,11 @@ func LoadConfig() {
 // WatchConfig watches for changes in config.json and reloads the config
 func WatchConfig(onChange func()) {
 	// Identify config path
-	homeDir, err := os.UserHomeDir()
+	configPath, err := agentdir.ActiveConfigPath()
 	if err != nil {
-		log.Printf("Failed to get home dir for watcher: %v", err)
+		log.Printf("Failed to resolve agent config path: %v", err)
 		return
 	}
-	configPath := filepath.Join(homeDir, ".myaaw", "config", "config.json")
 
 	// Create watcher
 	watcher, err := fsnotify.NewWatcher()
