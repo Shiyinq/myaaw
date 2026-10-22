@@ -197,6 +197,49 @@ A2A_TRUSTED_KEYS=<remote-name>:<remote-public-key>
 
 `get` then reports `Card signature: verified` (or `unverified`). Request authentication uses the bearer token from the contact entry; there is no per-request signing in A2A v1.0.
 
+## Protocol coverage
+
+This tool is a delegation client, not a complete A2A client. The myaaw server implements the full v1.0 protocol in all three bindings; the tool exposes the subset that fits an LLM tool call.
+
+| A2A v1.0 capability | myaaw server | `contact` tool |
+| :--- | :---: | :--- |
+| Agent Card (public) | yes | yes (`get`) |
+| Extended Agent Card | yes | no |
+| `SendMessage` | yes | yes (`send`) |
+| `SendStreamingMessage` | yes | no |
+| `GetTask` | yes | yes (`status`) |
+| `ListTasks` | yes | no |
+| `CancelTask` | yes | no |
+| `SubscribeToTask` | yes | no |
+| Push notification configs (create/get/list/delete) | yes | no |
+| File artifacts (`raw` and `url`) | yes | yes (auto-download) |
+
+The gap is deliberate, not unsupported protocol surface:
+
+- Tool calls are one-shot request/response. `SendStreamingMessage` and `SubscribeToTask` need a long-lived connection, and a `watch` action would block the agent turn for the whole task instead of letting it poll between other work.
+- Push notification configs need an HTTP receiver in the calling agent plus a mapping from webhook to agent and chat session. That is new infrastructure, not just a new action.
+- `CancelTask` and `ListTasks` had no consumer in the delegation flow: the caller already keeps the `taskId` returned by `send`. Both are the cheapest to add when a task needs to be aborted.
+
+A remote agent can still use these capabilities; they are reachable over JSON-RPC, REST, and gRPC directly. From this host that looks like:
+
+```bash
+# Cancel a task
+curl -s http://localhost:8081/a2a \
+  -H 'A2A-Version: 1.0' \
+  -H 'Authorization: Bearer <remote-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":"1","method":"CancelTask","params":{"id":"<taskId>"}}'
+
+# Stream a task
+curl -N http://localhost:8081/message:stream \
+  -H 'A2A-Version: 1.0' \
+  -H 'Authorization: Bearer <remote-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"message":{"messageId":"m-1","role":"ROLE_USER","parts":[{"text":"hello"}]}}'
+```
+
+Planned order if the tool is extended: `cancel` and `tasks` first (cheap, unblocks stuck tasks), then a standalone progress endpoint rather than a `watch` action, and push only as a separate feature with session correlation.
+
 ## Security notes
 
 - Contacts are a trust boundary. Only add agents you control or trust.

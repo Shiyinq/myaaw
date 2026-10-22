@@ -3,6 +3,8 @@
 This document validates Myaaw's implementation against the [Agent2Agent (A2A) Protocol Specification v1.0](https://a2a-protocol.org/latest/specification/). It replaces the earlier phased plan; the migration is complete. Each spec section is checked with a status and the evidence (code + tests) that proves it.
 
 > **Scope:** Myaaw implements the three standard bindings — **JSON-RPC** (`POST /a2a`), **HTTP+JSON/REST**, and **gRPC** (`lf.a2a.v1.A2AService`) — over one shared service. The legacy surface (lowercase states, `tasks/*` methods, `kind`-discriminated parts, `X-A2A-Signature`, `/.well-known/agent.json`) was removed, not aliased.
+>
+> This document validates the **server**. The built-in `contact` tool is a client that covers `send`, `status`, artifact download, and contact management only; cancel, task listing, streaming, subscribe, extended card, and push configs are reachable over the protocol but not exposed to the agent. See the coverage table in the [A2A guide](a2a.md#scope-of-the-contact-tool).
 
 **How to verify:** `go build ./... && go vet ./... && go test ./...` — all green. A2A-specific tests live in `internal/services/a2a/*_test.go`, `internal/services/a2a/grpc/*_test.go`, and `internal/agent/tools/contact/*_test.go`.
 

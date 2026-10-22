@@ -477,6 +477,31 @@ Without `taskId`, each `send` starts a new task. A `taskId` that is no longer wa
 
 `get` fetches the remote `/.well-known/agent-card.json` (5 second timeout) and reports its skills and signature status; when the remote agent is offline it falls back to the local contact metadata. `add` validates the name and URL the same way as the control-plane API, writes `contacts.json` atomically with mode `0600`, and never echoes the token back. Calls without `action` that include `contact` and `message` are still treated as `send` for backwards compatibility.
 
+### Scope of the `contact` tool
+
+The server implements the full A2A v1.0 surface; the tool is a delegation client and exposes only the part that fits an LLM tool call.
+
+| A2A v1.0 capability | Server | `contact` tool |
+| --- | :---: | --- |
+| Agent Card (public) | yes | yes (`get`) |
+| Extended Agent Card | yes | no |
+| `SendMessage` | yes | yes (`send`) |
+| `SendStreamingMessage` | yes | no |
+| `GetTask` | yes | yes (`status`) |
+| `ListTasks` | yes | no |
+| `CancelTask` | yes | no |
+| `SubscribeToTask` | yes | no |
+| Push notification configs | yes | no |
+| File artifacts (`raw` / `url`) | yes | yes (auto-download) |
+
+This gap is by design rather than a protocol limitation:
+
+- Streaming and subscribe need a long-lived connection, while a tool call is one-shot request/response. A `watch` action would block the agent turn for the entire task; polling `status` lets the agent interleave other work.
+- Push configs require an HTTP receiver in the calling agent plus a mapping from webhook to agent and chat session. That is new infrastructure, not just another action.
+- `CancelTask` and `ListTasks` have no consumer in the delegation flow yet: the caller keeps the `taskId` returned by `send`, so enumeration is rarely needed. Cancel is the cheapest next addition when a task must be aborted.
+
+All of them remain available over JSON-RPC, REST, and gRPC, so interop with other A2A implementations is unaffected. The planned order for extending the tool is `cancel` and `tasks`, then a standalone progress endpoint (not a blocking `watch` action), and push last as a separate feature.
+
 ## 6. Security notes
 
 - `A2A_TOKEN`, `A2A_TOKENS`, `A2A_CALLERS`, and `contacts.json` contain secrets. Use file permissions `0600`; never commit them.
@@ -496,5 +521,7 @@ Without `taskId`, each `send` starts a new task. A `taskId` that is no longer wa
 - Async retries happen on restart only, capped at three attempts.
 - `SubscribeToTask` buffers live in memory and expire after 10 minutes.
 - DNS names for webhooks are validated by name only; resolution is left to the delivery client (a documented SSRF limitation).
+- The `contact` tool covers `send`, `status`, artifact download, and contact management only; cancel, task listing, streaming, subscribe, extended card, and push configs are server-only for now. See the coverage table in [section 5](#scope-of-the-contact-tool).
+- Contact HTTP calls use a 10 minute timeout, including artifact downloads. A very large artifact over a slow link may exceed it.
 
 All three protocol bindings (JSON-RPC, HTTP+JSON/REST, and gRPC) are implemented.
