@@ -2,7 +2,6 @@ package a2a
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -14,31 +13,39 @@ import (
 
 	"myaaw/internal/agentdir"
 	"myaaw/internal/channel"
+	"myaaw/internal/config"
 )
 
-func TestSendTaskAsyncPushNotification(t *testing.T) {
+func TestSendMessageAsyncPushNotification(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	previous := config.A2AAllowPrivateWebhooks
+	config.A2AAllowPrivateWebhooks = true
+	t.Cleanup(func() { config.A2AAllowPrivateWebhooks = previous })
 	runner := &fakeRunner{out: &channel.OutgoingMessage{Text: "async done", ConversationID: "conv-9"}}
 	service := NewService(newTestStore(t), runner)
 
-	notifications := make(chan Task, 1)
+	notifications := make(chan StreamResponse, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var task Task
-		_ = json.NewDecoder(r.Body).Decode(&task)
-		notifications <- task
+		var response StreamResponse
+		_ = json.NewDecoder(r.Body).Decode(&response)
+		notifications <- response
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	task, err := service.SendTask(context.Background(), SendTaskParams{
-		Async:               true,
-		PushNotificationURL: server.URL,
-		Message:             Message{Role: "user", Parts: []Part{{Kind: "text", Text: "hello"}}},
+	task, err := service.SendMessage(context.Background(), SendMessageRequest{
+		Configuration: &SendMessageConfiguration{
+			ReturnImmediately: true,
+			TaskPushNotificationConfig: &PushNotificationConfig{
+				URL: server.URL,
+			},
+		},
+		Message: Message{Role: "user", Parts: []Part{{Text: "hello"}}},
 	})
 	if err != nil {
-		t.Fatalf("SendTask async: %v", err)
+		t.Fatalf("SendMessage async: %v", err)
 	}
 	if task.Status.State != StateSubmitted {
 		t.Fatalf("initial state = %q, want submitted", task.Status.State)
@@ -46,14 +53,11 @@ func TestSendTaskAsyncPushNotification(t *testing.T) {
 
 	select {
 	case got := <-notifications:
-		if got.Status.State != StateCompleted {
-			t.Fatalf("notification state = %q", got.Status.State)
-		}
-		if len(got.Artifacts) != 1 || got.Artifacts[0].Parts[0].Text != "async done" {
+		if got.StatusUpdate == nil || got.StatusUpdate.Status.State != StateCompleted {
 			t.Fatalf("notification = %+v", got)
 		}
-		if got.ContextID != "conv-9" {
-			t.Fatalf("contextId = %q", got.ContextID)
+		if got.StatusUpdate.TaskID != task.ID {
+			t.Fatalf("notification task id = %q, want %q", got.StatusUpdate.TaskID, task.ID)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for push notification")
@@ -66,9 +70,12 @@ func TestSendTaskAsyncPushNotification(t *testing.T) {
 	if stored.Status.State != StateCompleted {
 		t.Fatalf("stored state = %q", stored.Status.State)
 	}
+	if stored.ContextID != "conv-9" {
+		t.Fatalf("contextId = %q", stored.ContextID)
+	}
 }
 
-func TestSendTaskAcceptsFileParts(t *testing.T) {
+func TestSendMessageAcceptsFileParts(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -79,17 +86,15 @@ func TestSendTaskAcceptsFileParts(t *testing.T) {
 	runner := &fakeRunner{out: &channel.OutgoingMessage{Text: "ok"}}
 	service := NewService(newTestStore(t), runner)
 
-	imageBytes := base64.StdEncoding.EncodeToString([]byte{0xff, 0xd8, 0xff, 0x00})
-	fileBytes := base64.StdEncoding.EncodeToString([]byte("hello file"))
-	task, err := service.SendTask(context.Background(), SendTaskParams{
+	task, err := service.SendMessage(context.Background(), SendMessageRequest{
 		Message: Message{Role: "user", Parts: []Part{
-			{Kind: "text", Text: "analyze these"},
-			{Kind: "file", File: &FilePart{Name: "photo.jpg", MimeType: "image/jpeg", Bytes: imageBytes}},
-			{Kind: "file", File: &FilePart{Name: "notes.txt", MimeType: "text/plain", Bytes: fileBytes}},
+			{Text: "analyze these"},
+			{Raw: []byte{0xff, 0xd8, 0xff, 0x00}, Filename: "photo.jpg", MediaType: "image/jpeg"},
+			{Raw: []byte("hello file"), Filename: "notes.txt", MediaType: "text/plain"},
 		}},
 	})
 	if err != nil {
-		t.Fatalf("SendTask: %v", err)
+		t.Fatalf("SendMessage: %v", err)
 	}
 	if runner.input == nil {
 		t.Fatal("runner was not called")
@@ -117,7 +122,7 @@ func TestSendTaskAcceptsFileParts(t *testing.T) {
 	}
 }
 
-func TestSendTaskInputRequiredAndResume(t *testing.T) {
+func TestSendMessageInputRequiredAndResume(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -141,22 +146,21 @@ func TestSendTaskInputRequiredAndResume(t *testing.T) {
 	}
 
 	service := NewService(newTestStore(t), runner)
-	task, err := service.SendTask(context.Background(), SendTaskParams{
-		Message: Message{Role: "user", Parts: []Part{{Kind: "text", Text: "weather?"}}},
+	task, err := service.SendMessage(context.Background(), SendMessageRequest{
+		Message: Message{Role: "user", Parts: []Part{{Text: "weather?"}}},
 	})
 	if err != nil {
-		t.Fatalf("SendTask: %v", err)
+		t.Fatalf("SendMessage: %v", err)
 	}
 	if task.Status.State != StateInputRequired {
 		t.Fatalf("state = %q, want input-required", task.Status.State)
 	}
-	if task.Status.Message == nil || !strings.Contains(messageText(*task.Status.Message), "Which city?") {
+	if task.Status.Message == nil || !strings.Contains(encodeMessageText(task.Status.Message), "Which city?") {
 		t.Fatalf("status message = %+v", task.Status.Message)
 	}
 
-	resumed, err := service.SendTask(context.Background(), SendTaskParams{
-		ID:      task.ID,
-		Message: Message{Role: "user", Parts: []Part{{Kind: "text", Text: "Jakarta"}}},
+	resumed, err := service.SendMessage(context.Background(), SendMessageRequest{
+		Message: Message{Role: "user", TaskID: task.ID, Parts: []Part{{Text: "Jakarta"}}},
 	})
 	if err != nil {
 		t.Fatalf("resume: %v", err)
@@ -169,7 +173,7 @@ func TestSendTaskInputRequiredAndResume(t *testing.T) {
 	}
 }
 
-func TestSendTaskCollectsOutputFiles(t *testing.T) {
+func TestSendMessageCollectsOutputFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -185,11 +189,11 @@ func TestSendTaskCollectsOutputFiles(t *testing.T) {
 	}
 
 	service := NewService(newTestStore(t), runner)
-	task, err := service.SendTask(context.Background(), SendTaskParams{
-		Message: Message{Role: "user", Parts: []Part{{Kind: "text", Text: "make a report"}}},
+	task, err := service.SendMessage(context.Background(), SendMessageRequest{
+		Message: Message{Role: "user", Parts: []Part{{Text: "make a report"}}},
 	})
 	if err != nil {
-		t.Fatalf("SendTask: %v", err)
+		t.Fatalf("SendMessage: %v", err)
 	}
 
 	var found *Artifact
@@ -202,24 +206,25 @@ func TestSendTaskCollectsOutputFiles(t *testing.T) {
 	if found == nil {
 		t.Fatalf("artifacts = %+v", task.Artifacts)
 	}
-	if len(found.Parts) != 1 || found.Parts[0].File == nil {
+	if len(found.Parts) != 1 || len(found.Parts[0].Raw) == 0 {
 		t.Fatalf("artifact = %+v", found)
 	}
-	if found.Parts[0].File.MimeType != "text/plain; charset=utf-8" {
-		t.Fatalf("mime = %q", found.Parts[0].File.MimeType)
+	if found.Parts[0].MediaType != "text/plain; charset=utf-8" {
+		t.Fatalf("mediaType = %q", found.Parts[0].MediaType)
 	}
-	decoded, err := base64.StdEncoding.DecodeString(found.Parts[0].File.Bytes)
-	if err != nil || string(decoded) != "hello report" {
-		t.Fatalf("bytes = %q, err = %v", decoded, err)
+	if string(found.Parts[0].Raw) != "hello report" {
+		t.Fatalf("raw = %q", found.Parts[0].Raw)
 	}
 }
 
-func TestSendTaskRejectsInvalidPushURL(t *testing.T) {
+func TestSendMessageRejectsInvalidPushURL(t *testing.T) {
 	service := NewService(newTestStore(t), &fakeRunner{})
-	_, err := service.SendTask(context.Background(), SendTaskParams{
-		Async:               true,
-		PushNotificationURL: "not-a-url",
-		Message:             Message{Role: "user", Parts: []Part{{Kind: "text", Text: "hi"}}},
+	_, err := service.SendMessage(context.Background(), SendMessageRequest{
+		Configuration: &SendMessageConfiguration{
+			ReturnImmediately:          true,
+			TaskPushNotificationConfig: &PushNotificationConfig{URL: "not-a-url"},
+		},
+		Message: Message{Role: "user", Parts: []Part{{Text: "hi"}}},
 	})
 	if err == nil {
 		t.Fatal("expected invalid push URL error")
@@ -254,8 +259,8 @@ func TestCancelTaskStopsRunningRun(t *testing.T) {
 
 	done := make(chan Task, 1)
 	go func() {
-		task, _ := service.SendTask(context.Background(), SendTaskParams{
-			Message: Message{Role: "user", Parts: []Part{{Kind: "text", Text: "long task"}}},
+		task, _ := service.SendMessage(context.Background(), SendMessageRequest{
+			Message: Message{Role: "user", Parts: []Part{{Text: "long task"}}},
 		})
 		done <- task
 	}()
@@ -299,11 +304,11 @@ func TestResumePendingTask(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	notifications := make(chan Task, 1)
+	notifications := make(chan StreamResponse, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var task Task
-		_ = json.NewDecoder(r.Body).Decode(&task)
-		notifications <- task
+		var response StreamResponse
+		_ = json.NewDecoder(r.Body).Decode(&response)
+		notifications <- response
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -315,7 +320,7 @@ func TestResumePendingTask(t *testing.T) {
 		ID:        "resume-1",
 		ContextID: "ctx-1",
 		Status:    TaskStatus{State: StateWorking},
-		Messages:  []Message{{Role: "user", Parts: []Part{{Kind: "text", Text: "hello"}}}},
+		Messages:  []Message{{Role: "user", Parts: []Part{{Text: "hello"}}}},
 		Attempts:  1,
 		PushURL:   server.URL,
 	}
@@ -330,7 +335,7 @@ func TestResumePendingTask(t *testing.T) {
 
 	select {
 	case got := <-notifications:
-		if got.Status.State != StateCompleted || got.ContextID != "conv-r" {
+		if got.StatusUpdate == nil || got.StatusUpdate.Status.State != StateCompleted || got.StatusUpdate.ContextID != "conv-r" {
 			t.Fatalf("notification = %+v", got)
 		}
 	case <-time.After(3 * time.Second):
@@ -357,7 +362,7 @@ func TestResumePendingFailsExhaustedTask(t *testing.T) {
 	task := Task{
 		ID:       "resume-2",
 		Status:   TaskStatus{State: StateWorking},
-		Messages: []Message{{Role: "user", Parts: []Part{{Kind: "text", Text: "hello"}}}},
+		Messages: []Message{{Role: "user", Parts: []Part{{Text: "hello"}}}},
 		Attempts: maxTaskAttempts,
 	}
 	if err := store.Create(context.Background(), task); err != nil {
@@ -381,7 +386,7 @@ func TestResumePendingFailsExhaustedTask(t *testing.T) {
 	}
 }
 
-func TestSendTaskUsesPerCallerUserIDs(t *testing.T) {
+func TestSendMessageUsesPerCallerUserIDs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -391,11 +396,11 @@ func TestSendTaskUsesPerCallerUserIDs(t *testing.T) {
 
 	send := func(caller string) *channel.IncomingMessage {
 		t.Helper()
-		if _, err := service.SendTask(context.Background(), SendTaskParams{
+		if _, err := service.SendMessage(context.Background(), SendMessageRequest{
 			Caller:  caller,
-			Message: Message{Role: "user", Parts: []Part{{Kind: "text", Text: "hi"}}},
+			Message: Message{Role: "user", Parts: []Part{{Text: "hi"}}},
 		}); err != nil {
-			t.Fatalf("SendTask(%s): %v", caller, err)
+			t.Fatalf("SendMessage(%s): %v", caller, err)
 		}
 		return runner.input
 	}

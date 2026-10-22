@@ -1,11 +1,11 @@
 package a2a
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 )
 
@@ -14,26 +14,22 @@ var (
 	ErrCardSignature = errors.New("invalid agent card signature")
 )
 
-// SignCard returns a copy of the card with a compact JWS over its canonical
-// JSON form. Signatures are excluded from the signed payload.
-//
-// The canonical form sorts object keys and removes insignificant whitespace,
-// which matches JCS for the data types used by the Agent Card (strings,
-// booleans, arrays, and objects).
+// SignCard returns a copy of the card with a compact JWS over its RFC 8785
+// (JCS) canonical form, per spec §8.4. The signatures field is excluded from
+// the signed payload.
 func SignCard(card AgentCard, key ed25519.PrivateKey) (AgentCard, error) {
 	if len(key) == 0 {
 		return AgentCard{}, errors.New("signing key is required")
 	}
 
-	unsigned := card
-	unsigned.Signatures = nil
-	payload, err := canonicalCard(unsigned)
+	payload, err := canonicalCard(card)
 	if err != nil {
 		return AgentCard{}, err
 	}
 
 	header, err := json.Marshal(map[string]string{
 		"alg": "EdDSA",
+		"typ": "JOSE",
 		"kid": KeyID(key.Public().(ed25519.PublicKey)),
 	})
 	if err != nil {
@@ -51,15 +47,14 @@ func SignCard(card AgentCard, key ed25519.PrivateKey) (AgentCard, error) {
 }
 
 // VerifyCard checks the card signatures against trusted keys and returns the
-// key ID of the first signature that verifies.
+// key ID of the first signature that verifies. The protected JWS header must
+// carry alg "EdDSA" and a kid that resolves to a trusted key.
 func VerifyCard(card AgentCard, trusted map[string]ed25519.PublicKey) (string, error) {
 	if len(card.Signatures) == 0 {
 		return "", ErrUnsignedCard
 	}
 
-	unsigned := card
-	unsigned.Signatures = nil
-	payload, err := canonicalCard(unsigned)
+	payload, err := canonicalCard(card)
 	if err != nil {
 		return "", err
 	}
@@ -72,6 +67,7 @@ func VerifyCard(card AgentCard, trusted map[string]ed25519.PublicKey) (string, e
 		}
 		var header struct {
 			Alg string `json:"alg"`
+			Typ string `json:"typ"`
 			Kid string `json:"kid"`
 		}
 		if err := json.Unmarshal(headerBytes, &header); err != nil || header.Alg != "EdDSA" || header.Kid == "" {
@@ -93,28 +89,25 @@ func VerifyCard(card AgentCard, trusted map[string]ed25519.PublicKey) (string, e
 	return "", ErrCardSignature
 }
 
-// ParseTrustedCardKeys is a convenience wrapper over ParseTrustedKeys.
-func ParseTrustedCardKeys(spec string) map[string]ed25519.PublicKey {
-	keys, _ := ParseTrustedKeys(spec)
-	return keys
-}
-
+// canonicalCard returns the RFC 8785 canonical form of the card without its
+// signatures field. Unset optional fields are omitted from the JSON before
+// canonicalization, matching protobuf field-presence semantics per §8.4.1.
 func canonicalCard(card AgentCard) ([]byte, error) {
-	raw, err := json.Marshal(card)
+	unsigned := card
+	unsigned.Signatures = nil
+	raw, err := json.Marshal(unsigned)
 	if err != nil {
 		return nil, err
 	}
-	var generic any
-	if err := json.Unmarshal(raw, &generic); err != nil {
+	generic, err := jcsFromJSON(raw)
+	if err != nil {
 		return nil, err
 	}
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(generic); err != nil {
-		return nil, err
+	payload, err := jcsCanonicalize(generic)
+	if err != nil {
+		return nil, fmt.Errorf("cannot canonicalize agent card: %w", err)
 	}
-	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+	return payload, nil
 }
 
 func (s *Service) signCard(card AgentCard) AgentCard {

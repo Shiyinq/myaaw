@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -166,21 +165,21 @@ func (t *ContactTool) send(args contactArgs) string {
 	task, err := t.sendTask(target, message, taskID)
 	if err != nil {
 		var callErr *rpcCallError
-		if errors.As(err, &callErr) && callErr.Code == -32002 {
+		if errors.As(err, &callErr) && callErr.Code == -32004 {
 			return fmt.Sprintf("Error: task %q is not waiting for input. Send without taskId to start a new task.", taskID)
 		}
 		return fmt.Sprintf("Error contacting %s: %v", target.Name, err)
 	}
 
-	switch task.Status.State {
-	case "failed":
+	switch a2a.StateFromWire(task.Status.State) {
+	case a2a.StateFailed:
 		if msg := messageText(task.Status.Message); msg != "" {
 			return fmt.Sprintf("Contact %s failed: %s", target.Name, msg)
 		}
 		return fmt.Sprintf("Contact %s failed", target.Name)
-	case "canceled":
+	case a2a.StateCanceled:
 		return fmt.Sprintf("Contact %s canceled the task", target.Name)
-	case "input-required":
+	case a2a.StateInputRequired, a2a.StateAuthRequired:
 		question := messageText(task.Status.Message)
 		if question == "" {
 			question = "The agent needs more information to continue."
@@ -341,26 +340,8 @@ func normalizeAction(action string) string {
 	}
 }
 
-// signRequest attaches a JWS over the request body when this agent has a
-// signing key configured. Receivers verify it with their trusted key list.
-func signRequest(req *http.Request, body []byte) {
-	path := strings.TrimSpace(config.A2ASigningKeyPath)
-	if path == "" {
-		return
-	}
-	key, err := a2a.LoadPrivateKey(path)
-	if err != nil {
-		log.Printf("contact: cannot load signing key: %v", err)
-		return
-	}
-	signature, err := a2a.SignBody(key, body)
-	if err != nil {
-		log.Printf("contact: cannot sign request: %v", err)
-		return
-	}
-	req.Header.Set(a2a.SignatureHeader, signature)
-}
-
+// signRequest was removed with the legacy request-signing extension. The
+// v1.0 client authenticates with a bearer token only.
 func findContact(contacts []contactEntry, name string) *contactEntry {
 	for i := range contacts {
 		if strings.EqualFold(contacts[i].Name, name) {
@@ -445,7 +426,7 @@ func agentCardURL(raw string) (string, error) {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return "", fmt.Errorf("invalid contact URL")
 	}
-	parsed.Path = "/.well-known/agent.json"
+	parsed.Path = "/.well-known/agent-card.json"
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String(), nil
@@ -457,7 +438,6 @@ type rpcTask struct {
 		State   string      `json:"state"`
 		Message *rpcMessage `json:"message,omitempty"`
 	} `json:"status"`
-	Messages  []rpcMessage  `json:"messages"`
 	History   []rpcMessage  `json:"history"`
 	Artifacts []rpcArtifact `json:"artifacts"`
 }
@@ -476,53 +456,34 @@ func (e *rpcCallError) Error() string {
 type rpcMessage struct {
 	Role  string `json:"role"`
 	Parts []struct {
-		Kind string `json:"kind"`
 		Text string `json:"text"`
 	} `json:"parts"`
 }
 
 type rpcArtifact struct {
 	Parts []struct {
-		Kind string `json:"kind"`
 		Text string `json:"text"`
 	} `json:"parts"`
 }
 
 func (t *ContactTool) sendTask(contact *contactEntry, message, taskID string) (rpcTask, error) {
-	task, err := t.callRPC(contact, buildSendPayload("message/send", message, taskID))
-	if err == nil {
-		return task, nil
-	}
-
-	// Older A2A servers only expose tasks/send. Fall back only when the peer
-	// explicitly reports an unknown method, never on network or validation
-	// errors, so a task is never submitted twice.
-	var callErr *rpcCallError
-	if !errors.As(err, &callErr) || callErr.Code != -32601 {
-		return rpcTask{}, err
-	}
-	return t.callRPC(contact, buildSendPayload("tasks/send", message, taskID))
+	return t.callRPC(contact, buildSendPayload(message, taskID))
 }
 
-func buildSendPayload(method, message, taskID string) map[string]any {
+func buildSendPayload(message, taskID string) map[string]any {
 	msg := map[string]any{
-		"kind":      "message",
 		"messageId": uuid.NewString(),
-		"role":      "user",
-		"parts":     []map[string]any{{"kind": "text", "text": message}},
+		"role":      "ROLE_USER",
+		"parts":     []map[string]any{{"text": message}},
 	}
-	params := map[string]any{"message": msg}
 	if taskID != "" {
-		// Early A2A servers read the top-level id; newer revisions read
-		// message.taskId. Sending both keeps resume working on either side.
-		params["id"] = taskID
 		msg["taskId"] = taskID
 	}
 	return map[string]any{
 		"jsonrpc": "2.0",
 		"id":      uuid.NewString(),
-		"method":  method,
-		"params":  params,
+		"method":  "SendMessage",
+		"params":  map[string]any{"message": msg},
 	}
 }
 
@@ -537,10 +498,10 @@ func (t *ContactTool) callRPC(contact *contactEntry, payload map[string]any) (rp
 		return rpcTask{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("A2A-Version", "1.0")
 	if contact.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+contact.Token)
 	}
-	signRequest(req, body)
 
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -557,8 +518,11 @@ func (t *ContactTool) callRPC(contact *contactEntry, payload map[string]any) (rp
 	}
 
 	var rpc struct {
-		Result *rpcTask `json:"result"`
-		Error  *struct {
+		Result *struct {
+			Task    *rpcTask    `json:"task"`
+			Message *rpcMessage `json:"message"`
+		} `json:"result"`
+		Error *struct {
 			Code    int    `json:"code"`
 			Message string `json:"message"`
 		} `json:"error"`
@@ -569,16 +533,13 @@ func (t *ContactTool) callRPC(contact *contactEntry, payload map[string]any) (rp
 	if rpc.Error != nil {
 		return rpcTask{}, &rpcCallError{Code: rpc.Error.Code, Message: rpc.Error.Message}
 	}
-	if rpc.Result == nil {
+	if rpc.Result == nil || rpc.Result.Task == nil {
 		return rpcTask{}, fmt.Errorf("response is missing a task")
 	}
-	return *rpc.Result, nil
+	return *rpc.Result.Task, nil
 }
 
 func agentText(task rpcTask) string {
-	if text := messagesText(task.Messages); text != "" {
-		return text
-	}
 	return messagesText(task.History)
 }
 
@@ -605,7 +566,7 @@ func artifactText(artifacts []rpcArtifact) string {
 	parts := make([]string, 0)
 	for _, artifact := range artifacts {
 		for _, part := range artifact.Parts {
-			if part.Kind == "text" && strings.TrimSpace(part.Text) != "" {
+			if strings.TrimSpace(part.Text) != "" {
 				parts = append(parts, part.Text)
 			}
 		}
@@ -616,11 +577,11 @@ func artifactText(artifacts []rpcArtifact) string {
 func messagesText(messages []rpcMessage) string {
 	parts := make([]string, 0)
 	for _, message := range messages {
-		if message.Role != "agent" {
+		if !strings.EqualFold(message.Role, "agent") && !strings.EqualFold(message.Role, "ROLE_AGENT") {
 			continue
 		}
 		for _, part := range message.Parts {
-			if part.Kind == "text" && strings.TrimSpace(part.Text) != "" {
+			if strings.TrimSpace(part.Text) != "" {
 				parts = append(parts, part.Text)
 			}
 		}
@@ -634,7 +595,7 @@ func messageText(message *rpcMessage) string {
 	}
 	parts := make([]string, 0, len(message.Parts))
 	for _, part := range message.Parts {
-		if part.Kind == "text" && strings.TrimSpace(part.Text) != "" {
+		if strings.TrimSpace(part.Text) != "" {
 			parts = append(parts, part.Text)
 		}
 	}

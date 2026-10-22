@@ -39,7 +39,18 @@ var A2ATokens []string
 var A2ACallers []string
 var A2ASigningKeyPath string
 var A2ATrustedKeys string
-var A2ARequireSignature bool
+var A2AProviderURL string
+var A2AProviderOrganization string
+var A2ADocumentationURL string
+var A2AIconURL string
+var A2AExtendedCardPath string
+var A2AAllowPrivateWebhooks bool
+var A2ARateLimit float64
+var A2ARateBurst int
+var A2AGRPCPort string
+var A2AGRPCAddr string
+var A2AGRPCTLSCert string
+var A2AGRPCTLSKey string
 var TranscriberProviderName string
 var TranscriberAPIKey string
 var SynthesizerProviderName string
@@ -247,7 +258,18 @@ func LoadBaseConfig() {
 	A2ACallers = splitCSV(os.Getenv("A2A_CALLERS"))
 	A2ASigningKeyPath = strings.TrimSpace(os.Getenv("A2A_SIGNING_KEY"))
 	A2ATrustedKeys = strings.TrimSpace(os.Getenv("A2A_TRUSTED_KEYS"))
-	A2ARequireSignature = envBool("A2A_REQUIRE_SIGNATURE", false)
+	A2AProviderURL = strings.TrimSpace(os.Getenv("A2A_PROVIDER_URL"))
+	A2AProviderOrganization = strings.TrimSpace(os.Getenv("A2A_PROVIDER_ORGANIZATION"))
+	A2ADocumentationURL = strings.TrimSpace(os.Getenv("A2A_DOCUMENTATION_URL"))
+	A2AIconURL = strings.TrimSpace(os.Getenv("A2A_ICON_URL"))
+	A2AExtendedCardPath = strings.TrimSpace(os.Getenv("A2A_EXTENDED_CARD"))
+	A2AAllowPrivateWebhooks = envBool("A2A_ALLOW_PRIVATE_WEBHOOKS", false)
+	A2ARateLimit = envFloat("A2A_RATE_LIMIT", 0)
+	A2ARateBurst = envInt("A2A_RATE_BURST", 0)
+	A2AGRPCPort = strings.TrimSpace(os.Getenv("A2A_GRPC_PORT"))
+	A2AGRPCAddr = strings.TrimSpace(os.Getenv("A2A_GRPC_ADDR"))
+	A2AGRPCTLSCert = strings.TrimSpace(os.Getenv("A2A_GRPC_TLS_CERT"))
+	A2AGRPCTLSKey = strings.TrimSpace(os.Getenv("A2A_GRPC_TLS_KEY"))
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
@@ -427,6 +449,19 @@ func envInt(name string, fallback int) int {
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
 		log.Printf("Warning: invalid %s=%q, using %d", name, value, fallback)
+		return fallback
+	}
+	return parsed
+}
+
+func envFloat(name string, fallback float64) float64 {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		log.Printf("Warning: invalid %s=%q, using %g", name, value, fallback)
 		return fallback
 	}
 	return parsed

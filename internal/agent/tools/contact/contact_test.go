@@ -3,10 +3,7 @@ package contact
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -37,16 +34,17 @@ func setupContactAgent(t *testing.T, entries string) {
 }
 
 func TestContactToolDelegatesTask(t *testing.T) {
-	var gotAuth, gotMethod string
+	var gotAuth, gotMethod, gotVersion string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
+		gotVersion = r.Header.Get("A2A-Version")
 		var req struct {
 			Method string `json:"method"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		gotMethod = req.Method
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"id":"t1","status":{"state":"completed"},"artifacts":[{"name":"response","parts":[{"kind":"text","text":"remote answer"}]}]}}`))
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"task":{"id":"t1","status":{"state":"TASK_STATE_COMPLETED"},"artifacts":[{"name":"response","parts":[{"text":"remote answer"}]}]}}}`))
 	}))
 	defer server.Close()
 
@@ -59,58 +57,51 @@ func TestContactToolDelegatesTask(t *testing.T) {
 	if gotAuth != "Bearer tok" {
 		t.Fatalf("authorization = %q", gotAuth)
 	}
-	if gotMethod != "message/send" {
+	if gotMethod != "SendMessage" {
 		t.Fatalf("method = %q", gotMethod)
+	}
+	if gotVersion != "1.0" {
+		t.Fatalf("A2A-Version = %q", gotVersion)
 	}
 }
 
-func TestContactToolFallsBackToTasksSend(t *testing.T) {
-	var methods []string
+func TestContactToolSendsTaskIDOnResume(t *testing.T) {
+	var gotMethod, gotTaskID string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Method string `json:"method"`
 			Params struct {
 				Message struct {
-					Kind      string `json:"kind"`
-					MessageID string `json:"messageId"`
-					TaskID    string `json:"taskId"`
+					TaskID string `json:"taskId"`
 				} `json:"message"`
-				ID string `json:"id"`
 			} `json:"params"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		methods = append(methods, req.Method)
-		if req.Method == "message/send" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"method not found"}}`))
-			return
-		}
-		if req.Params.Message.Kind != "message" || req.Params.Message.MessageID == "" {
-			t.Errorf("message = %+v", req.Params.Message)
-		}
-		if req.Params.Message.TaskID != "task-1" || req.Params.ID != "task-1" {
-			t.Errorf("task ids = %q / %q", req.Params.Message.TaskID, req.Params.ID)
-		}
+		gotMethod = req.Method
+		gotTaskID = req.Params.Message.TaskID
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"id":"task-1","status":{"state":"completed"},"artifacts":[{"name":"response","parts":[{"kind":"text","text":"legacy answer"}]}]}}`))
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"task":{"id":"task-1","status":{"state":"TASK_STATE_COMPLETED"},"artifacts":[{"name":"response","parts":[{"text":"v1 answer"}]}]}}}`))
 	}))
 	defer server.Close()
 
 	setupContactAgent(t, `[{"name":"remote","url":"`+server.URL+`"}]`)
 
 	out := NewContactTool().CallTool(`{"action":"send","contact":"remote","taskId":"task-1","message":"hi"}`, nil)
-	if out != "legacy answer" {
+	if out != "v1 answer" {
 		t.Fatalf("output = %q", out)
 	}
-	if len(methods) != 2 || methods[0] != "message/send" || methods[1] != "tasks/send" {
-		t.Fatalf("methods = %v", methods)
+	if gotMethod != "SendMessage" {
+		t.Fatalf("method = %q", gotMethod)
+	}
+	if gotTaskID != "task-1" {
+		t.Fatalf("taskId = %q", gotTaskID)
 	}
 }
 
 func TestContactToolReadsHistory(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"id":"t1","status":{"state":"completed"},"history":[{"role":"agent","parts":[{"kind":"text","text":"answer from history"}]}]}}`))
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"task":{"id":"t1","status":{"state":"TASK_STATE_COMPLETED"},"history":[{"role":"ROLE_AGENT","parts":[{"text":"answer from history"}]}]}}}`))
 	}))
 	defer server.Close()
 
@@ -125,7 +116,7 @@ func TestContactToolReadsHistory(t *testing.T) {
 func TestContactToolErrors(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"id":"t1","status":{"state":"failed","message":{"role":"agent","parts":[{"kind":"text","text":"boom"}]}}}}`))
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"task":{"id":"t1","status":{"state":"TASK_STATE_FAILED","message":{"role":"agent","parts":[{"text":"boom"}]}}}}}`))
 	}))
 	defer server.Close()
 
@@ -145,7 +136,7 @@ func TestContactToolErrors(t *testing.T) {
 
 func TestContactToolListAndGet(t *testing.T) {
 	card := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/.well-known/agent.json" {
+		if r.URL.Path != "/.well-known/agent-card.json" {
 			http.NotFound(w, r)
 			return
 		}
@@ -247,61 +238,25 @@ func TestContactToolUnknownAction(t *testing.T) {
 	}
 }
 
-func TestContactToolSignsRequests(t *testing.T) {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
-	der, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		t.Fatalf("marshal key: %v", err)
-	}
-	keyPath := filepath.Join(t.TempDir(), "a2a_key.pem")
-	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600); err != nil {
-		t.Fatalf("write key: %v", err)
-	}
-	previous := config.A2ASigningKeyPath
-	config.A2ASigningKeyPath = keyPath
-	t.Cleanup(func() { config.A2ASigningKeyPath = previous })
-
-	verified := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		_, err := a2a.VerifyBody(r.Header.Get(a2a.SignatureHeader), body, map[string]ed25519.PublicKey{a2a.KeyID(pub): pub})
-		verified = err == nil
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"id":"t1","status":{"state":"completed"},"artifacts":[{"name":"response","parts":[{"kind":"text","text":"ok"}]}]}}`))
-	}))
-	defer server.Close()
-
-	setupContactAgent(t, `[{"name":"remote","url":"`+server.URL+`"}]`)
-
-	out := NewContactTool().CallTool(`{"action":"send","contact":"remote","message":"hi"}`, nil)
-	if out != "ok" {
-		t.Fatalf("output = %q", out)
-	}
-	if !verified {
-		t.Fatal("request signature was not valid")
-	}
-}
-
 func TestContactToolInputRequiredResume(t *testing.T) {
 	var gotTaskID string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Params struct {
-				ID string `json:"id"`
+				Message struct {
+					TaskID string `json:"taskId"`
+				} `json:"message"`
 			} `json:"params"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		gotTaskID = req.Params.ID
+		gotTaskID = req.Params.Message.TaskID
 
 		w.Header().Set("Content-Type", "application/json")
-		if req.Params.ID == "" {
-			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"id":"task-9","status":{"state":"input-required","message":{"role":"agent","parts":[{"kind":"text","text":"Tanggal berapa?"}]}},"messages":[]}}`))
+		if gotTaskID == "" {
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"task":{"id":"task-9","status":{"state":"TASK_STATE_INPUT_REQUIRED","message":{"role":"agent","parts":[{"text":"Tanggal berapa?"}]}},"history":[]}}}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"id":"task-9","status":{"state":"completed"},"artifacts":[{"name":"response","parts":[{"kind":"text","text":"laporan selesai"}]}]}}`))
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"task":{"id":"task-9","status":{"state":"TASK_STATE_COMPLETED"},"artifacts":[{"name":"response","parts":[{"text":"laporan selesai"}]}]}}}`))
 	}))
 	defer server.Close()
 
@@ -328,7 +283,7 @@ func TestContactToolInputRequiredResume(t *testing.T) {
 func TestContactToolRejectsStaleTaskID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32002,"message":"task already exists"}}`))
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32004,"message":"task is not resumable"}}`))
 	}))
 	defer server.Close()
 
@@ -346,15 +301,13 @@ func TestContactToolReportsCardSignature(t *testing.T) {
 		t.Fatalf("generate key: %v", err)
 	}
 	card := a2a.BuildCard("remote", "http://localhost:9999", nil, false)
-	card.PublicKey = a2a.EncodePublicKey(pub)
-	card.KeyID = a2a.KeyID(pub)
 	signed, err := a2a.SignCard(card, priv)
 	if err != nil {
 		t.Fatalf("SignCard: %v", err)
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/.well-known/agent.json" {
+		if r.URL.Path != "/.well-known/agent-card.json" {
 			http.NotFound(w, r)
 			return
 		}

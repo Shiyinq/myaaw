@@ -5,17 +5,9 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-
-	"myaaw/internal/channel"
-	"myaaw/internal/config"
-
-	"github.com/gofiber/fiber/v3"
 )
 
 func writeSigningKey(t *testing.T) (string, ed25519.PublicKey) {
@@ -36,98 +28,58 @@ func writeSigningKey(t *testing.T) (string, ed25519.PublicKey) {
 	return path, pub
 }
 
-func TestSignVerifyBody(t *testing.T) {
+func mustSigningKey(t *testing.T) ed25519.PrivateKey {
+	t.Helper()
+	path, _ := writeSigningKey(t)
+	priv, err := LoadPrivateKey(path)
+	if err != nil {
+		t.Fatalf("LoadPrivateKey: %v", err)
+	}
+	return priv
+}
+
+func TestKeyUtilities(t *testing.T) {
 	path, pub := writeSigningKey(t)
 	priv, err := LoadPrivateKey(path)
 	if err != nil {
 		t.Fatalf("LoadPrivateKey: %v", err)
 	}
+	if len(priv) == 0 {
+		t.Fatal("loaded key is empty")
+	}
 
-	body := []byte(`{"jsonrpc":"2.0","id":1}`)
-	jws, err := SignBody(priv, body)
+	encoded := EncodePublicKey(pub)
+	decoded, err := DecodePublicKey(encoded)
 	if err != nil {
-		t.Fatalf("SignBody: %v", err)
+		t.Fatalf("DecodePublicKey: %v", err)
+	}
+	if !pub.Equal(decoded) {
+		t.Fatalf("roundtrip mismatch: %x != %x", pub, decoded)
 	}
 
-	kid, err := VerifyBody(jws, body, map[string]ed25519.PublicKey{KeyID(pub): pub})
-	if err != nil {
-		t.Fatalf("VerifyBody: %v", err)
-	}
-	if kid != KeyID(pub) {
-		t.Fatalf("kid = %q, want %q", kid, KeyID(pub))
+	if kid := KeyID(pub); kid == "" {
+		t.Fatal("KeyID is empty")
 	}
 
-	if _, err := VerifyBody(jws, []byte(`{"jsonrpc":"2.0","id":2}`), map[string]ed25519.PublicKey{KeyID(pub): pub}); !errors.Is(err, ErrInvalidSignature) {
-		t.Fatalf("tampered body err = %v", err)
+	trusted, names := ParseTrustedKeys("peer:" + encoded)
+	if len(trusted) != 1 || names[KeyID(pub)] != "peer" {
+		t.Fatalf("trusted = %+v, names = %+v", trusted, names)
 	}
-	if _, err := VerifyBody(jws, body, map[string]ed25519.PublicKey{}); !errors.Is(err, ErrUnknownKey) {
-		t.Fatalf("unknown key err = %v", err)
-	}
-	if _, err := VerifyBody("not-a-jws", body, map[string]ed25519.PublicKey{}); !errors.Is(err, ErrMalformedSignature) {
-		t.Fatalf("malformed err = %v", err)
+
+	if _, err := DecodePublicKey("not-base64!!"); err == nil {
+		t.Fatal("invalid key should fail to decode")
 	}
 }
 
-func TestRPCSignatureRequired(t *testing.T) {
-	path, pub := writeSigningKey(t)
-	previousPath := config.A2ASigningKeyPath
-	previousTrusted := config.A2ATrustedKeys
-	previousRequire := config.A2ARequireSignature
-	previousToken := config.A2AToken
-	previousTokens := config.A2ATokens
-	previousCallers := config.A2ACallers
-	config.A2ASigningKeyPath = path
-	config.A2ATrustedKeys = "peer:" + EncodePublicKey(pub)
-	config.A2ARequireSignature = true
-	config.A2AToken = ""
-	config.A2ATokens = nil
-	config.A2ACallers = nil
-	t.Cleanup(func() {
-		config.A2ASigningKeyPath = previousPath
-		config.A2ATrustedKeys = previousTrusted
-		config.A2ARequireSignature = previousRequire
-		config.A2AToken = previousToken
-		config.A2ATokens = previousTokens
-		config.A2ACallers = previousCallers
-	})
-
-	app := newTestApp(t, &fakeRunner{out: &channel.OutgoingMessage{Text: "ok"}})
-	body := `{"jsonrpc":"2.0","id":1,"method":"tasks/send","params":{"message":{"role":"user","parts":[{"kind":"text","text":"hi"}]}}}`
-
-	if status, _ := doRPC(t, app, "", body); status != fiber.StatusUnauthorized {
-		t.Fatalf("unsigned status = %d, want 401", status)
+func TestLoadPrivateKeyErrors(t *testing.T) {
+	if _, err := LoadPrivateKey(filepath.Join(t.TempDir(), "missing.pem")); err == nil {
+		t.Fatal("missing key file should fail")
 	}
-
-	priv, err := LoadPrivateKey(path)
-	if err != nil {
-		t.Fatalf("LoadPrivateKey: %v", err)
+	path := filepath.Join(t.TempDir(), "bad.pem")
+	if err := os.WriteFile(path, []byte("not pem"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
 	}
-	signature, err := SignBody(priv, []byte(body))
-	if err != nil {
-		t.Fatalf("SignBody: %v", err)
-	}
-
-	req := httptest.NewRequest("POST", "/a2a", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(SignatureHeader, signature)
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("app.Test: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("signed status = %d, want 200", resp.StatusCode)
-	}
-
-	req = httptest.NewRequest("POST", "/a2a", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(SignatureHeader, signature+"x")
-	resp, err = app.Test(req)
-	if err != nil {
-		t.Fatalf("app.Test: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != fiber.StatusUnauthorized {
-		t.Fatalf("tampered status = %d, want 401", resp.StatusCode)
+	if _, err := LoadPrivateKey(path); err == nil {
+		t.Fatal("non-PEM file should fail")
 	}
 }

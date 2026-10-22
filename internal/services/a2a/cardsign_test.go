@@ -2,6 +2,7 @@ package a2a
 
 import (
 	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
@@ -18,8 +19,6 @@ func TestSignAndVerifyCard(t *testing.T) {
 	}
 
 	card := BuildCard("alice", "http://localhost:8081", nil, true)
-	card.PublicKey = EncodePublicKey(pub)
-	card.KeyID = KeyID(pub)
 
 	signed, err := SignCard(card, priv)
 	if err != nil {
@@ -27,6 +26,22 @@ func TestSignAndVerifyCard(t *testing.T) {
 	}
 	if len(signed.Signatures) != 1 {
 		t.Fatalf("signatures = %+v", signed.Signatures)
+	}
+
+	protected, err := base64.RawURLEncoding.DecodeString(signed.Signatures[0].Protected)
+	if err != nil {
+		t.Fatalf("decode protected header: %v", err)
+	}
+	var header struct {
+		Alg string `json:"alg"`
+		Typ string `json:"typ"`
+		Kid string `json:"kid"`
+	}
+	if err := json.Unmarshal(protected, &header); err != nil {
+		t.Fatalf("parse protected header: %v", err)
+	}
+	if header.Alg != "EdDSA" || header.Typ != "JOSE" || header.Kid != KeyID(pub) {
+		t.Fatalf("protected header = %+v", header)
 	}
 
 	trusted := map[string]ed25519.PublicKey{KeyID(pub): pub}
@@ -61,7 +76,7 @@ func TestCardEndpointSignsCard(t *testing.T) {
 	})
 
 	app := newTestApp(t, &fakeRunner{})
-	req := httptest.NewRequest("GET", "/.well-known/agent.json", nil)
+	req := httptest.NewRequest("GET", "/.well-known/agent-card.json", nil)
 	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
@@ -91,7 +106,7 @@ func TestCardEndpointUnsignedWithoutKey(t *testing.T) {
 	t.Cleanup(func() { config.A2ASigningKeyPath = previousPath })
 
 	app := newTestApp(t, &fakeRunner{})
-	req := httptest.NewRequest("GET", "/.well-known/agent.json", nil)
+	req := httptest.NewRequest("GET", "/.well-known/agent-card.json", nil)
 	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)

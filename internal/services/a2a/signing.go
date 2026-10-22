@@ -1,12 +1,10 @@
 package a2a
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -15,15 +13,6 @@ import (
 	"strings"
 
 	"myaaw/internal/config"
-)
-
-// SignatureHeader carries the compact JWS over the raw request body.
-const SignatureHeader = "X-A2A-Signature"
-
-var (
-	ErrMalformedSignature = errors.New("malformed signature")
-	ErrUnknownKey         = errors.New("unknown signing key")
-	ErrInvalidSignature   = errors.New("invalid signature")
 )
 
 // EncodePublicKey renders a raw Ed25519 public key as unpadded base64url.
@@ -71,54 +60,6 @@ func LoadPrivateKey(path string) (ed25519.PrivateKey, error) {
 	return key, nil
 }
 
-// SignBody returns a compact JWS (EdDSA) over the raw request body.
-func SignBody(key ed25519.PrivateKey, body []byte) (string, error) {
-	pub := key.Public().(ed25519.PublicKey)
-	header, err := json.Marshal(map[string]string{"alg": "EdDSA", "kid": KeyID(pub)})
-	if err != nil {
-		return "", err
-	}
-	signingInput := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(body)
-	signature := ed25519.Sign(key, []byte(signingInput))
-	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature), nil
-}
-
-// VerifyBody validates a compact JWS over body and returns its key ID.
-func VerifyBody(jws string, body []byte, trusted map[string]ed25519.PublicKey) (string, error) {
-	parts := strings.Split(strings.TrimSpace(jws), ".")
-	if len(parts) != 3 {
-		return "", ErrMalformedSignature
-	}
-	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return "", ErrMalformedSignature
-	}
-	var header struct {
-		Alg string `json:"alg"`
-		Kid string `json:"kid"`
-	}
-	if err := json.Unmarshal(headerBytes, &header); err != nil || header.Alg != "EdDSA" || header.Kid == "" {
-		return "", ErrMalformedSignature
-	}
-	pub, ok := trusted[header.Kid]
-	if !ok {
-		return "", ErrUnknownKey
-	}
-	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil {
-		return "", ErrMalformedSignature
-	}
-	signingInput := parts[0] + "." + parts[1]
-	if !ed25519.Verify(pub, []byte(signingInput), signature) {
-		return "", ErrInvalidSignature
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil || !bytes.Equal(payload, body) {
-		return "", ErrInvalidSignature
-	}
-	return header.Kid, nil
-}
-
 // ParseTrustedKeys parses "name:base64key,name2:base64key" and returns maps
 // keyed by key ID.
 func ParseTrustedKeys(spec string) (map[string]ed25519.PublicKey, map[string]string) {
@@ -147,9 +88,14 @@ func ParseTrustedKeys(spec string) (map[string]ed25519.PublicKey, map[string]str
 	return keys, names
 }
 
+// ParseTrustedCardKeys is a convenience wrapper over ParseTrustedKeys.
+func ParseTrustedCardKeys(spec string) map[string]ed25519.PublicKey {
+	keys, _ := ParseTrustedKeys(spec)
+	return keys
+}
+
 func (s *Service) loadSigning() {
 	s.trustedKeys, s.trustedNames = ParseTrustedKeys(config.A2ATrustedKeys)
-	s.requireSignature = config.A2ARequireSignature
 
 	path := strings.TrimSpace(config.A2ASigningKeyPath)
 	if path == "" {
@@ -161,14 +107,4 @@ func (s *Service) loadSigning() {
 		return
 	}
 	s.signingKey = key
-}
-
-// VerifySignature validates an incoming request signature and returns the
-// trusted caller name when the key is known.
-func (s *Service) VerifySignature(jws string, body []byte) (string, error) {
-	kid, err := VerifyBody(jws, body, s.trustedKeys)
-	if err != nil {
-		return "", err
-	}
-	return s.trustedNames[kid], nil
 }

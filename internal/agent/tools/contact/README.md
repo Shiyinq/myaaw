@@ -105,21 +105,20 @@ Answer with the same task ID:
 ## How `send` works
 
 1. Looks up the contact in `~/.myaaw/<agent>/contacts.json`.
-2. Sends `message/send` with `kind`, `messageId`, and text parts.
-3. If the peer answers JSON-RPC `-32601` (unknown method), retries once with `tasks/send`. It never retries on timeouts, HTTP errors, or validation failures.
-4. Waits up to 10 minutes for the task to finish.
-5. Returns, in order: artifact text, `messages` text, then `history` text.
+2. Sends `SendMessage` with the `A2A-Version: 1.0` header, a `ROLE_USER` message, and text parts.
+3. Waits up to 10 minutes for the task to finish.
+4. Returns, in order: artifact text, then `history` agent text.
 
 State handling:
 
 | State | Tool result |
 | :--- | :--- |
-| `completed` | Final text |
-| `failed` | `Contact <name> failed: <reason>` |
-| `canceled` | `Contact <name> canceled the task` |
-| `input-required` | `[input-required taskId=<id>]` + question |
+| `TASK_STATE_COMPLETED` | Final text |
+| `TASK_STATE_FAILED` | `Contact <name> failed: <reason>` |
+| `TASK_STATE_CANCELED` | `Contact <name> canceled the task` |
+| `TASK_STATE_INPUT_REQUIRED` / `TASK_STATE_AUTH_REQUIRED` | `[input-required taskId=<id>]` + question |
 
-Resuming sends both `params.id` and `message.taskId`, so it works with early-style and newer A2A servers. A `taskId` that is no longer resumable (`-32002`) produces a readable error instead of creating a duplicate task.
+Resuming sends `message.taskId`, matching the A2A v1.0 `SendMessage` shape. A `taskId` that is no longer resumable (`-32004`) produces a readable error instead of creating a duplicate task.
 
 ## Contact file
 
@@ -162,18 +161,18 @@ A2A_TOKEN=<shared-token>
 A2A_CALLERS=alice:<token-alice>:delegate,bob:<token-bob>:read
 ```
 
-If the remote agent requires signed requests, this agent also needs:
+If the remote agent's Agent Card is signed, this agent can verify it with:
 
 ```env
-A2A_SIGNING_KEY=/Users/you/.myaaw/<agent>/a2a_key.pem
+A2A_TRUSTED_KEYS=<remote-name>:<remote-public-key>
 ```
 
-`X-A2A-Signature` is a Myaaw extension; peers outside Myaaw will ignore it.
+`get` then reports `Card signature: verified` (or `unverified`). Request authentication uses the bearer token from the contact entry; there is no per-request signing in A2A v1.0.
 
 ## Security notes
 
 - Contacts are a trust boundary. Only add agents you control or trust.
-- Signed Agent Cards are verified against `A2A_TRUSTED_KEYS`; pin the peer's `publicKey` to trust it.
+- Signed Agent Cards are verified against `A2A_TRUSTED_KEYS`; pin the peer's public key to trust it.
 - `list`/`get` mask tokens; `add` never echoes them.
 - Use HTTPS for contacts across hosts.
 - `add` lets the model register an endpoint. A prompt-injected model could point it at an attacker-controlled URL and send data there. If an agent must not manage contacts, block the tool with `AGENT_BLOCKED_TOOLS=contact` or make `contacts.json` read-only.

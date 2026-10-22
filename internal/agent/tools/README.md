@@ -52,7 +52,14 @@ The Myaaw Tools package contains a set of specialized tools that can be used wit
 
 **Function**: `a2a_input`
 
-- Ask an A2A caller for missing information and pause the task in `input-required` state
+- Ask an A2A caller for missing information and pause the task in `TASK_STATE_INPUT_REQUIRED` state
+- Only available while handling an A2A task
+
+### 7. [A2A Auth Request Tool](./a2aauth/README.md)
+
+**Function**: `a2a_auth_request`
+
+- Ask an A2A caller to authenticate/authorize and pause the task in `TASK_STATE_AUTH_REQUIRED` state
 - Only available while handling an A2A task
 
 ## Tool Integration

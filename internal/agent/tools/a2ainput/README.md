@@ -46,17 +46,17 @@ The agent should stop after this call. The task will be marked `input-required`,
 ```json
 {
   "status": {
-    "state": "input-required",
+    "state": "TASK_STATE_INPUT_REQUIRED",
     "message": {
-      "role": "agent",
-      "parts": [{"kind": "text", "text": "Tanggal berapa laporan yang harus dibuat?"}]
+      "role": "ROLE_AGENT",
+      "parts": [{"text": "Tanggal berapa laporan yang harus dibuat?"}]
     }
   }
 }
 ```
 
 4. The caller resumes with the **same task ID**:
-   - direct A2A: `tasks/send` with `"id": "<task-id>"`
+   - direct A2A: `SendMessage` with `message.taskId` set to the task id
    - Myaaw caller: `contact` with `"taskId": "<task-id>"`
 
 ## Availability

@@ -3,6 +3,7 @@ package a2a
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 
 var (
 	ErrTaskNotFound       = errors.New("task not found")
-	ErrTaskExists         = errors.New("task already exists")
 	ErrPushConfigNotFound = errors.New("push notification config not found")
 )
 
@@ -70,7 +70,11 @@ func (s *TaskStore) EnsureSchema() error {
 		created_at DATETIME,
 		PRIMARY KEY (task_id, id)
 	);`)
-	return err
+	if err != nil {
+		return err
+	}
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_a2a_tasks_updated ON a2a_tasks (updated_at DESC, id)`)
+	return nil
 }
 
 // EnsureCaller returns the synthetic local user ID assigned to a caller name,
@@ -158,7 +162,7 @@ func (s *TaskStore) Update(ctx context.Context, task Task) error {
 // RecoverStale marks tasks that were still running when the process stopped
 // as failed, so clients do not wait forever after a restart.
 func (s *TaskStore) RecoverStale(ctx context.Context) (int64, error) {
-	msg := Message{Role: "agent", Parts: []Part{{Kind: "text", Text: "server restarted before the task completed"}}}
+	msg := Message{Role: "agent", Parts: []Part{{Text: "server restarted before the task completed"}}}
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE a2a_tasks SET status = ?, status_message = ?, updated_at = ? WHERE status IN (?, ?)`,
 		StateFailed, encodeMessage(&msg), time.Now().UTC(), StateSubmitted, StateWorking,
@@ -237,12 +241,6 @@ func scanTask(scanner rowScanner) (Task, error) {
 	if err := json.Unmarshal([]byte(messages), &task.Messages); err != nil {
 		return Task{}, err
 	}
-	task.Kind = "task"
-	for i := range task.Messages {
-		if task.Messages[i].Kind == "" {
-			task.Messages[i].Kind = "message"
-		}
-	}
 	if err := json.Unmarshal([]byte(artifacts), &task.Artifacts); err != nil {
 		return Task{}, err
 	}
@@ -252,7 +250,7 @@ func scanTask(scanner rowScanner) (Task, error) {
 	if caller.Valid {
 		task.Caller = caller.String
 	}
-	task.Status.Timestamp = updatedAt.UTC().Format(time.RFC3339)
+	task.Status.Timestamp = updatedAt.UTC().Format(time.RFC3339Nano)
 	return task, nil
 }
 
@@ -337,6 +335,119 @@ func (s *TaskStore) DeletePushConfig(ctx context.Context, taskID, id string) err
 		return ErrPushConfigNotFound
 	}
 	return nil
+}
+
+// ListTasks returns tasks visible to the caller with the given filters,
+// ordered by status timestamp descending, using cursor pagination.
+func (s *TaskStore) ListTasks(ctx context.Context, req ListTasksRequest, caller string) (ListTasksResponse, error) {
+	pageSize := 50
+	if req.PageSize != nil {
+		if *req.PageSize < 1 || *req.PageSize > 100 {
+			return ListTasksResponse{}, fmt.Errorf("pageSize must be between 1 and 100")
+		}
+		pageSize = *req.PageSize
+	}
+
+	where := "WHERE (caller = ? OR caller IS NULL OR caller = '')"
+	args := []any{caller}
+	if req.ContextID != "" {
+		where += " AND context_id = ?"
+		args = append(args, req.ContextID)
+	}
+	if req.Status != "" {
+		internal := StateFromWire(req.Status)
+		allowed := map[string]bool{
+			StateSubmitted: true, StateWorking: true, StateInputRequired: true, StateAuthRequired: true,
+			StateCompleted: true, StateFailed: true, StateCanceled: true, StateRejected: true,
+		}
+		if !allowed[internal] {
+			return ListTasksResponse{}, fmt.Errorf("invalid status %q", req.Status)
+		}
+		where += " AND status = ?"
+		args = append(args, internal)
+	}
+	if req.StatusTimestampAfter != "" {
+		timestamp, err := parseTimestamp(req.StatusTimestampAfter)
+		if err != nil {
+			return ListTasksResponse{}, fmt.Errorf("statusTimestampAfter must be an ISO 8601 timestamp")
+		}
+		where += " AND updated_at >= ?"
+		args = append(args, timestamp)
+	}
+	if req.PageToken != "" {
+		updatedStr, id, err := decodePageToken(req.PageToken)
+		if err != nil {
+			return ListTasksResponse{}, fmt.Errorf("invalid pageToken")
+		}
+		updatedAt, err := parseTimestamp(updatedStr)
+		if err != nil {
+			return ListTasksResponse{}, fmt.Errorf("invalid pageToken")
+		}
+		where += " AND (updated_at < ? OR (updated_at = ? AND id < ?))"
+		args = append(args, updatedAt, updatedAt, id)
+	}
+
+	var total int
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM a2a_tasks "+where, args...).Scan(&total); err != nil {
+		return ListTasksResponse{}, err
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, context_id, status, status_message, messages, artifacts, attempts, push_url, caller, created_at, updated_at
+		 FROM a2a_tasks `+where+` ORDER BY updated_at DESC, id DESC LIMIT ?`,
+		append(args, pageSize+1)...,
+	)
+	if err != nil {
+		return ListTasksResponse{}, err
+	}
+	defer rows.Close()
+
+	tasks := make([]Task, 0, pageSize)
+	for rows.Next() {
+		task, err := scanTask(rows)
+		if err != nil {
+			return ListTasksResponse{}, err
+		}
+		if !req.IncludeArtifacts {
+			task.Artifacts = nil
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return ListTasksResponse{}, err
+	}
+
+	response := ListTasksResponse{Tasks: tasks, PageSize: pageSize, TotalSize: total}
+	if len(tasks) > pageSize {
+		last := tasks[pageSize-1]
+		response.Tasks = tasks[:pageSize]
+		response.NextPageToken = encodePageToken(last)
+	}
+	return response, nil
+}
+
+func parseTimestamp(value string) (time.Time, error) {
+	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return parsed, nil
+	}
+	return time.Parse(time.RFC3339, value)
+}
+
+func encodePageToken(task Task) string {
+	raw := task.Status.Timestamp + "|" + task.ID
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+func decodePageToken(token string) (string, string, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", "", err
+	}
+	parts := strings.SplitN(string(raw), "|", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", errors.New("malformed page token")
+	}
+	return parts[0], parts[1], nil
 }
 
 func nullString(value string) any {

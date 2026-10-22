@@ -9,7 +9,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-const scopeTestSendBody = `{"jsonrpc":"2.0","id":1,"method":"tasks/send","params":{"message":{"role":"user","parts":[{"kind":"text","text":"hi"}]}}}`
+const scopeTestSendBody = `{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"role":"user","parts":[{"text":"hi"}]}}}`
 
 func setTestCallers(t *testing.T, entries []string) {
 	t.Helper()
@@ -34,35 +34,32 @@ func TestRPCReadOnlyScope(t *testing.T) {
 	if status != fiber.StatusForbidden {
 		t.Fatalf("send status = %d, payload = %+v", status, payload)
 	}
-	errObj, _ := payload["error"].(map[string]any)
-	if errObj == nil || errObj["code"] != float64(CodeForbidden) {
+	if payload["error"] != "insufficient scope" {
 		t.Fatalf("send error = %+v", payload)
 	}
 
-	status, payload = doRPC(t, app, "tok-read", `{"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"id":"missing"}}`)
+	status, payload = doRPC(t, app, "tok-read", `{"jsonrpc":"2.0","id":2,"method":"GetTask","params":{"id":"missing"}}`)
 	if status != fiber.StatusOK {
 		t.Fatalf("get status = %d, payload = %+v", status, payload)
 	}
-	errObj, _ = payload["error"].(map[string]any)
+	errObj, _ := payload["error"].(map[string]any)
 	if errObj == nil || errObj["code"] != float64(CodeTaskNotFound) {
 		t.Fatalf("get error = %+v", payload)
 	}
 }
 
-func TestRPCMethodAliases(t *testing.T) {
+func TestRPCLegacyMethodsRejected(t *testing.T) {
 	app := newTestApp(t, &fakeRunner{out: &channel.OutgoingMessage{Text: "aliased"}})
 
-	status, payload := doRPC(t, app, "", `{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"role":"user","parts":[{"kind":"text","text":"hi"}]}}}`)
-	if status != fiber.StatusOK || payload["error"] != nil {
-		t.Fatalf("status = %d, payload = %+v", status, payload)
-	}
-	result, _ := payload["result"].(map[string]any)
-	if result == nil {
-		t.Fatalf("missing result: %+v", payload)
-	}
-	statusObj, _ := result["status"].(map[string]any)
-	if statusObj["state"] != StateCompleted {
-		t.Fatalf("status = %+v", statusObj)
+	for _, method := range []string{"tasks/send", "message/send", "tasks/get", "tasks/sendSubscribe", "tasks/resubscribe", "tasks/pushNotificationConfig/set"} {
+		status, payload := doRPC(t, app, "", `{"jsonrpc":"2.0","id":1,"method":"`+method+`","params":{}}`)
+		if status != fiber.StatusOK {
+			t.Fatalf("%s status = %d, payload = %+v", method, status, payload)
+		}
+		errObj, _ := payload["error"].(map[string]any)
+		if errObj == nil || errObj["code"] != float64(CodeMethodNotFound) {
+			t.Fatalf("%s error = %+v", method, payload)
+		}
 	}
 }
 
@@ -74,13 +71,13 @@ func TestRPCTaskOwnership(t *testing.T) {
 	if status != fiber.StatusOK || payload["error"] != nil {
 		t.Fatalf("send status = %d, payload = %+v", status, payload)
 	}
-	result, _ := payload["result"].(map[string]any)
-	taskID, _ := result["id"].(string)
+	task := resultTask(t, payload)
+	taskID, _ := task["id"].(string)
 	if taskID == "" {
 		t.Fatalf("missing task id: %+v", payload)
 	}
 
-	body := `{"jsonrpc":"2.0","id":2,"method":"tasks/get","params":{"id":"` + taskID + `"}}`
+	body := `{"jsonrpc":"2.0","id":2,"method":"GetTask","params":{"id":"` + taskID + `"}}`
 	status, payload = doRPC(t, app, "tok-alice", body)
 	if status != fiber.StatusOK || payload["error"] != nil {
 		t.Fatalf("owner get status = %d, payload = %+v", status, payload)
