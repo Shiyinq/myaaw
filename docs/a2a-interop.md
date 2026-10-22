@@ -492,7 +492,7 @@ Input file parts use a `raw` part (base64) with `filename` and `mediaType`:
 - `image/*` is passed to the model as an image.
 - Other files are written to the task directory and referenced by path.
 
-Files the agent writes under the task's `output/` directory are returned as `raw` artifacts (base64, up to 10 files, 5 MiB each).
+Files the agent writes under the task's `output/` directory are returned as artifacts (up to 10 files, 1 GiB each): files ≤ 1 MiB as `raw` (base64), larger files as `url` parts pointing to `GET /tasks/{id}/artifacts?path=<name>` (streamed, authenticated as the task owner).
 
 ### 5.10 Get, list, and cancel
 

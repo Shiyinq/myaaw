@@ -2,6 +2,7 @@ package contact
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,13 +24,17 @@ import (
 )
 
 const (
-	maxResponseBytes = 2 << 20
+	maxResponseBytes = 16 << 20
 	maxCardSkills    = 20
 
-	actionSend = "send"
-	actionList = "list"
-	actionGet  = "get"
-	actionAdd  = "add"
+	// maxArtifactDownloadBytes bounds downloading a `url` file artifact.
+	maxArtifactDownloadBytes = 1 << 30
+
+	actionSend   = "send"
+	actionStatus = "status"
+	actionList   = "list"
+	actionGet    = "get"
+	actionAdd    = "add"
 )
 
 type contactEntry struct {
@@ -61,14 +66,18 @@ func (t *ContactTool) ToolDefinition() []byte {
 		"type": "function",
 		"function": {
 			"name": "contact",
-			"description": "Work with trusted contact agents over the A2A protocol. action=send delegates a task and returns the answer; pass taskId to answer a task that returned [input-required taskId=...]. action=list lists contacts; action=get shows one contact and its capabilities; action=add registers a new contact (only when the user explicitly provides the URL). Aliases accepted: send_message, list_contacts, get_contact, add_contact.",
+			"description": "Work with trusted contact agents over the A2A protocol. action=send delegates a task and returns the answer; set async=true to return immediately with a taskId, then use action=status to poll it. Pass taskId to action=send to answer a task that returned [input-required taskId=...]. action=list lists contacts; action=get shows one contact and its capabilities; action=add registers a new contact (only when the user explicitly provides the URL). Aliases accepted: send_message, list_contacts, get_contact, add_contact, poll.",
 			"parameters": {
 				"type": "object",
 				"properties": {
 					"action": {
 						"type": "string",
-						"enum": ["send", "list", "get", "add"],
+						"enum": ["send", "status", "list", "get", "add"],
 						"description": "Operation to perform"
+					},
+					"async": {
+						"type": "boolean",
+						"description": "For send: return immediately with a taskId instead of waiting for completion. Use action=status to poll it later"
 					},
 					"contact": {
 						"type": "string",
@@ -80,7 +89,7 @@ func (t *ContactTool) ToolDefinition() []byte {
 					},
 					"taskId": {
 						"type": "string",
-						"description": "Task ID from a previous [input-required taskId=...] result, used to answer the agent's question"
+						"description": "Task ID from a previous [input-required taskId=...] or [async taskId=...] result"
 					},
 					"url": {
 						"type": "string",
@@ -109,6 +118,7 @@ type contactArgs struct {
 	URL         string `json:"url"`
 	Token       string `json:"token"`
 	Description string `json:"description"`
+	Async       bool   `json:"async"`
 }
 
 func (t *ContactTool) CallTool(arguments string, _ *tools.ToolsContext) string {
@@ -121,19 +131,21 @@ func (t *ContactTool) CallTool(arguments string, _ *tools.ToolsContext) string {
 	action := normalizeAction(rawAction)
 	if action == "" {
 		if rawAction != "" {
-			return fmt.Sprintf("Error: unknown contact action %q. Available actions: send, list, get, add", rawAction)
+			return fmt.Sprintf("Error: unknown contact action %q. Available actions: send, status, list, get, add", rawAction)
 		}
 		// Backwards compatible with calls made before the action field existed.
 		if strings.TrimSpace(args.Contact) != "" && strings.TrimSpace(args.Message) != "" {
 			action = actionSend
 		} else {
-			return "Error: action is required. Available actions: send, list, get, add"
+			return "Error: action is required. Available actions: send, status, list, get, add"
 		}
 	}
 
 	switch action {
 	case actionSend:
 		return t.send(args)
+	case actionStatus:
+		return t.status(args)
 	case actionList:
 		return t.list()
 	case actionGet:
@@ -141,7 +153,7 @@ func (t *ContactTool) CallTool(arguments string, _ *tools.ToolsContext) string {
 	case actionAdd:
 		return t.add(args)
 	default:
-		return "Error: action is required. Available actions: send, list, get, add"
+		return "Error: action is required. Available actions: send, status, list, get, add"
 	}
 }
 
@@ -162,7 +174,7 @@ func (t *ContactTool) send(args contactArgs) string {
 		return notFoundMessage(contactName, contacts)
 	}
 
-	task, err := t.sendTask(target, message, taskID)
+	task, err := t.sendTask(target, message, taskID, args.Async)
 	if err != nil {
 		var callErr *rpcCallError
 		if errors.As(err, &callErr) && callErr.Code == -32004 {
@@ -171,14 +183,57 @@ func (t *ContactTool) send(args contactArgs) string {
 		return fmt.Sprintf("Error contacting %s: %v", target.Name, err)
 	}
 
+	if args.Async {
+		switch a2a.StateFromWire(task.Status.State) {
+		case a2a.StateSubmitted, a2a.StateWorking:
+			return asyncMessage(task)
+		}
+	}
+	return t.renderTask(target, task, taskID)
+}
+
+func asyncMessage(task rpcTask) string {
+	return fmt.Sprintf("[async taskId=%s] state=%s\nTask accepted. Use contact action \"status\" with this taskId to check progress.", task.ID, a2a.WireState(task.Status.State))
+}
+
+// status polls a previously started task and renders its result once it is done.
+func (t *ContactTool) status(args contactArgs) string {
+	contactName := strings.TrimSpace(args.Contact)
+	taskID := strings.TrimSpace(args.TaskID)
+	if contactName == "" || taskID == "" {
+		return "Error: contact and taskId are required for action status"
+	}
+
+	contacts, err := loadContacts()
+	if err != nil {
+		return fmt.Sprintf("Error loading contacts: %v", err)
+	}
+	target := findContact(contacts, contactName)
+	if target == nil {
+		return notFoundMessage(contactName, contacts)
+	}
+
+	task, err := t.getTask(target, taskID)
+	if err != nil {
+		return fmt.Sprintf("Error contacting %s: %v", target.Name, err)
+	}
+	switch a2a.StateFromWire(task.Status.State) {
+	case a2a.StateSubmitted, a2a.StateWorking:
+		return fmt.Sprintf("[async taskId=%s] state=%s\nTask is still running. Poll again with action \"status\".", taskID, a2a.WireState(task.Status.State))
+	}
+	return t.renderTask(target, task, taskID)
+}
+
+// renderTask renders a terminal or interrupted task as the tool result.
+func (t *ContactTool) renderTask(contact *contactEntry, task rpcTask, fallbackID string) string {
 	switch a2a.StateFromWire(task.Status.State) {
 	case a2a.StateFailed:
 		if msg := messageText(task.Status.Message); msg != "" {
-			return fmt.Sprintf("Contact %s failed: %s", target.Name, msg)
+			return fmt.Sprintf("Contact %s failed: %s", contact.Name, msg)
 		}
-		return fmt.Sprintf("Contact %s failed", target.Name)
+		return fmt.Sprintf("Contact %s failed", contact.Name)
 	case a2a.StateCanceled:
-		return fmt.Sprintf("Contact %s canceled the task", target.Name)
+		return fmt.Sprintf("Contact %s canceled the task", contact.Name)
 	case a2a.StateInputRequired, a2a.StateAuthRequired:
 		question := messageText(task.Status.Message)
 		if question == "" {
@@ -186,18 +241,27 @@ func (t *ContactTool) send(args contactArgs) string {
 		}
 		id := task.ID
 		if id == "" {
-			id = taskID
+			id = fallbackID
 		}
 		return fmt.Sprintf("[input-required taskId=%s]\n%s", id, question)
 	}
 
+	parts := make([]string, 0)
 	if text := artifactText(task.Artifacts); text != "" {
-		return text
+		parts = append(parts, text)
 	}
-	if text := agentText(task); text != "" {
-		return text
+	if files := t.saveArtifacts(contact, task); files != "" {
+		parts = append(parts, files)
 	}
-	return "Contact completed without output"
+	if len(parts) == 0 {
+		if text := agentText(task); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	if len(parts) == 0 {
+		return "Contact completed without output"
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func (t *ContactTool) list() string {
@@ -329,6 +393,8 @@ func normalizeAction(action string) string {
 	switch strings.ToLower(strings.TrimSpace(action)) {
 	case actionSend, "send_message", "delegate", "call":
 		return actionSend
+	case actionStatus, "poll", "task_status", "get_task", "check":
+		return actionStatus
 	case actionList, "list_contacts", "contacts", "ls":
 		return actionList
 	case actionGet, "get_contact", "inspect", "show":
@@ -453,24 +519,172 @@ func (e *rpcCallError) Error() string {
 	return fmt.Sprintf("%s (code %d)", e.Message, e.Code)
 }
 
+type rpcPart struct {
+	Text      string `json:"text"`
+	Raw       string `json:"raw"`
+	URL       string `json:"url"`
+	Filename  string `json:"filename"`
+	MediaType string `json:"mediaType"`
+}
+
 type rpcMessage struct {
-	Role  string `json:"role"`
-	Parts []struct {
-		Text string `json:"text"`
-	} `json:"parts"`
+	Role  string    `json:"role"`
+	Parts []rpcPart `json:"parts"`
 }
 
 type rpcArtifact struct {
-	Parts []struct {
-		Text string `json:"text"`
-	} `json:"parts"`
+	Name  string    `json:"name"`
+	Parts []rpcPart `json:"parts"`
 }
 
-func (t *ContactTool) sendTask(contact *contactEntry, message, taskID string) (rpcTask, error) {
-	return t.callRPC(contact, buildSendPayload(message, taskID))
+// saveArtifacts persists file artifacts to the caller's downloads directory and
+// returns a human-readable summary. `raw` parts are decoded inline; `url` parts
+// are downloaded with the contact's bearer token.
+func (t *ContactTool) saveArtifacts(contact *contactEntry, task rpcTask) string {
+	home, err := agentdir.ActiveHome()
+	if err != nil {
+		return ""
+	}
+	destDir := filepath.Join(home, "workspace", "downloads", sanitizeDownloadName(task.ID))
+	lines := make([]string, 0)
+	for _, artifact := range task.Artifacts {
+		for _, part := range artifact.Parts {
+			name := sanitizeDownloadName(part.Filename)
+			if name == "" {
+				name = sanitizeDownloadName(filepath.Base(artifact.Name))
+			}
+			if name == "" {
+				name = "file"
+			}
+			switch {
+			case part.Raw != "":
+				data, err := base64.StdEncoding.DecodeString(part.Raw)
+				if err != nil {
+					lines = append(lines, fmt.Sprintf("- %s: invalid base64 artifact", name))
+					continue
+				}
+				if err := os.MkdirAll(destDir, 0o755); err != nil {
+					lines = append(lines, fmt.Sprintf("- %s: %v", name, err))
+					continue
+				}
+				saved := filepath.Join(destDir, name)
+				if err := os.WriteFile(saved, data, 0o644); err != nil {
+					lines = append(lines, fmt.Sprintf("- %s: %v", name, err))
+					continue
+				}
+				lines = append(lines, fmt.Sprintf("- %s (%s, %s) saved at %s", name, humanSize(int64(len(data))), part.MediaType, saved))
+			case part.URL != "":
+				saved, size, err := t.downloadArtifact(contact, part.URL, destDir, name)
+				if err != nil {
+					lines = append(lines, fmt.Sprintf("- %s: download failed: %v", name, err))
+					continue
+				}
+				lines = append(lines, fmt.Sprintf("- %s (%s, %s) saved at %s", name, humanSize(size), part.MediaType, saved))
+			}
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "Files:\n" + strings.Join(lines, "\n")
 }
 
-func buildSendPayload(message, taskID string) map[string]any {
+func (t *ContactTool) downloadArtifact(contact *contactEntry, rawURL, destDir, name string) (string, int64, error) {
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", 0, err
+	}
+	if contact.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+contact.Token)
+	}
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return "", 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", 0, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return "", 0, err
+	}
+	tmp := filepath.Join(destDir, name+".part")
+	file, err := os.Create(tmp)
+	if err != nil {
+		return "", 0, err
+	}
+	written, copyErr := io.Copy(file, io.LimitReader(resp.Body, maxArtifactDownloadBytes))
+	closeErr := file.Close()
+	if copyErr != nil {
+		_ = os.Remove(tmp)
+		return "", 0, copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmp)
+		return "", 0, closeErr
+	}
+	final := filepath.Join(destDir, name)
+	if err := os.Rename(tmp, final); err != nil {
+		_ = os.Remove(tmp)
+		return "", 0, err
+	}
+	return final, written, nil
+}
+
+func sanitizeDownloadName(name string) string {
+	name = filepath.Base(strings.TrimSpace(name))
+	if name == "." || name == "/" || name == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer("..", "_", "/", "_", "\\", "_", "\x00", "_")
+	return replacer.Replace(name)
+}
+
+func humanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
+func (t *ContactTool) sendTask(contact *contactEntry, message, taskID string, async bool) (rpcTask, error) {
+	result, err := t.rpc(contact, buildSendPayload(message, taskID, async))
+	if err != nil {
+		return rpcTask{}, err
+	}
+	var envelope struct {
+		Task    *rpcTask    `json:"task"`
+		Message *rpcMessage `json:"message"`
+	}
+	if err := json.Unmarshal(result, &envelope); err != nil {
+		return rpcTask{}, fmt.Errorf("invalid task response: %w", err)
+	}
+	if envelope.Task == nil {
+		return rpcTask{}, fmt.Errorf("response is missing a task")
+	}
+	return *envelope.Task, nil
+}
+
+// getTask polls a task with GetTask; unlike SendMessage its result is the task itself.
+func (t *ContactTool) getTask(contact *contactEntry, taskID string) (rpcTask, error) {
+	result, err := t.rpc(contact, buildGetTaskPayload(taskID))
+	if err != nil {
+		return rpcTask{}, err
+	}
+	var task rpcTask
+	if err := json.Unmarshal(result, &task); err != nil {
+		return rpcTask{}, fmt.Errorf("invalid task response: %w", err)
+	}
+	return task, nil
+}
+
+func buildSendPayload(message, taskID string, async bool) map[string]any {
 	msg := map[string]any{
 		"messageId": uuid.NewString(),
 		"role":      "ROLE_USER",
@@ -479,23 +693,37 @@ func buildSendPayload(message, taskID string) map[string]any {
 	if taskID != "" {
 		msg["taskId"] = taskID
 	}
+	params := map[string]any{"message": msg}
+	if async {
+		params["configuration"] = map[string]any{"returnImmediately": true}
+	}
 	return map[string]any{
 		"jsonrpc": "2.0",
 		"id":      uuid.NewString(),
 		"method":  "SendMessage",
-		"params":  map[string]any{"message": msg},
+		"params":  params,
 	}
 }
 
-func (t *ContactTool) callRPC(contact *contactEntry, payload map[string]any) (rpcTask, error) {
+func buildGetTaskPayload(taskID string) map[string]any {
+	return map[string]any{
+		"jsonrpc": "2.0",
+		"id":      uuid.NewString(),
+		"method":  "GetTask",
+		"params":  map[string]any{"id": taskID},
+	}
+}
+
+// rpc performs a JSON-RPC call and returns the raw result payload.
+func (t *ContactTool) rpc(contact *contactEntry, payload map[string]any) (json.RawMessage, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return rpcTask{}, err
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, contact.URL, bytes.NewReader(body))
 	if err != nil {
-		return rpcTask{}, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("A2A-Version", "1.0")
@@ -505,38 +733,41 @@ func (t *ContactTool) callRPC(contact *contactEntry, payload map[string]any) (rp
 
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return rpcTask{}, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
-		return rpcTask{}, err
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return rpcTask{}, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty response from %s (HTTP %d)", contact.URL, resp.StatusCode)
+	}
+	if len(data) > maxResponseBytes {
+		return nil, fmt.Errorf("response from %s exceeded %d bytes; the remote task probably returned a large file artifact", contact.URL, maxResponseBytes)
 	}
 
 	var rpc struct {
-		Result *struct {
-			Task    *rpcTask    `json:"task"`
-			Message *rpcMessage `json:"message"`
-		} `json:"result"`
-		Error *struct {
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
 			Code    int    `json:"code"`
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(data, &rpc); err != nil {
-		return rpcTask{}, fmt.Errorf("invalid response: %w", err)
+		return nil, fmt.Errorf("invalid response from %s (HTTP %d, %d bytes): %w", contact.URL, resp.StatusCode, len(data), err)
 	}
 	if rpc.Error != nil {
-		return rpcTask{}, &rpcCallError{Code: rpc.Error.Code, Message: rpc.Error.Message}
+		return nil, &rpcCallError{Code: rpc.Error.Code, Message: rpc.Error.Message}
 	}
-	if rpc.Result == nil || rpc.Result.Task == nil {
-		return rpcTask{}, fmt.Errorf("response is missing a task")
+	if len(rpc.Result) == 0 {
+		return nil, fmt.Errorf("response is missing a result")
 	}
-	return *rpc.Result.Task, nil
+	return rpc.Result, nil
 }
 
 func agentText(task rpcTask) string {

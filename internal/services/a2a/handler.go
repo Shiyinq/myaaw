@@ -51,6 +51,30 @@ func etagMatches(header, etag string) bool {
 	return false
 }
 
+// Artifact streams a task artifact file. Large file artifacts are exposed as
+// `url` parts pointing here instead of being inlined as base64.
+func (h *Handler) Artifact(c fiber.Ctx) error {
+	caller, ok := h.authenticate(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "unauthorized"})
+	}
+	task, err := h.service.GetTask(c.Context(), c.Params("id"))
+	if err != nil {
+		writeRestServiceError(c, err)
+		return nil
+	}
+	if !h.service.OwnsTask(task, caller.Name) {
+		writeRestStatus(c, fiber.StatusNotFound, "NOT_FOUND", "TASK_NOT_FOUND", "task not found", nil)
+		return nil
+	}
+	full, err := resolveArtifactPath(task.ID, c.Query("path"))
+	if err != nil {
+		writeRestStatus(c, fiber.StatusNotFound, "NOT_FOUND", "", err.Error(), nil)
+		return nil
+	}
+	return c.SendFile(full)
+}
+
 // RPC handles JSON-RPC 2.0 method calls.
 func (h *Handler) RPC(c fiber.Ctx) error {
 	if err := checkVersion(c); err != nil {
@@ -318,7 +342,7 @@ func checkVersion(c fiber.Ctx) error {
 		version = strings.TrimSpace(c.Query("A2A-Version"))
 	}
 	if version == "" {
-		version = "0.3"
+		return fmt.Errorf("missing A2A-Version header (supported: %s)", SupportedProtocolVersion)
 	}
 	if version != SupportedProtocolVersion {
 		return fmt.Errorf("protocol version %s is not supported (supported: %s)", version, SupportedProtocolVersion)

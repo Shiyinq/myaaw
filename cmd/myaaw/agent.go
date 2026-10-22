@@ -112,6 +112,11 @@ var agentCreateCmd = &cobra.Command{
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to register agent: %v", err)))
 			return
 		}
+		if err := agentdir.SeedA2AContacts(name); err != nil {
+			fmt.Printf("⚠️  Could not seed A2A contacts: %v\n", err)
+		} else {
+			fmt.Println(theme.RenderMuted("🔗 A2A contacts seeded across agents"))
+		}
 
 		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✅ Agent %q created at %s", name, root)))
 		fmt.Println(theme.RenderMuted(fmt.Sprintf("Configure it with: myaaw --agent %s onboard", name)))

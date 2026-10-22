@@ -33,10 +33,15 @@ import (
 const (
 	maxFilesPerMessage = 10
 	maxFileBytes       = 5 << 20
-	defaultRunTimeout  = 15 * time.Minute
-	maxTaskAttempts    = 3
-	maxStreamEvents    = 2000
-	streamRetention    = 10 * time.Minute
+	// Files at or below inlineFileBytes are returned as base64 `raw` parts;
+	// larger files are returned as `url` parts and streamed on demand.
+	inlineFileBytes = 1 << 20
+	// maxArtifactBytes bounds the size of an outgoing file artifact.
+	maxArtifactBytes  = 1 << 30
+	defaultRunTimeout = 15 * time.Minute
+	maxTaskAttempts   = 3
+	maxStreamEvents   = 2000
+	streamRetention   = 10 * time.Minute
 
 	notifyRetryAttempts  = 3
 	notifyRetryBaseDelay = 500 * time.Millisecond
@@ -1237,7 +1242,9 @@ func readMarker(dir, name string) (string, bool) {
 }
 
 // collectFileArtifacts returns files the agent saved under output/ as A2A
-// artifacts (base64). Files are capped per artifact and per task.
+// artifacts. Small files are inlined as base64 `raw` parts; larger files are
+// exposed as `url` parts and streamed by the artifact endpoint so large files
+// (for example video) do not have to fit in one JSON response.
 func collectFileArtifacts(taskID string) []Artifact {
 	dir, err := taskDir(taskID)
 	if err != nil {
@@ -1256,11 +1263,7 @@ func collectFileArtifacts(taskID string) []Artifact {
 			return fs.SkipAll
 		}
 		info, err := entry.Info()
-		if err != nil || info.Size() > maxFileBytes {
-			return nil
-		}
-		data, err := os.ReadFile(filePath)
-		if err != nil {
+		if err != nil || info.Size() > maxArtifactBytes {
 			return nil
 		}
 		rel, err := filepath.Rel(outputDir, filePath)
@@ -1268,14 +1271,35 @@ func collectFileArtifacts(taskID string) []Artifact {
 			return nil
 		}
 		mimeType := mime.TypeByExtension(filepath.Ext(filePath))
+
+		if info.Size() <= inlineFileBytes {
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				return nil
+			}
+			if mimeType == "" {
+				mimeType = http.DetectContentType(data)
+			}
+			artifacts = append(artifacts, Artifact{
+				ArtifactID: uuid.NewString(),
+				Name:       filepath.ToSlash(rel),
+				Parts: []Part{{
+					Raw:       data,
+					Filename:  filepath.Base(rel),
+					MediaType: mimeType,
+				}},
+			})
+			return nil
+		}
+
 		if mimeType == "" {
-			mimeType = http.DetectContentType(data)
+			mimeType = "application/octet-stream"
 		}
 		artifacts = append(artifacts, Artifact{
 			ArtifactID: uuid.NewString(),
 			Name:       filepath.ToSlash(rel),
 			Parts: []Part{{
-				Raw:       data,
+				URL:       artifactURL(taskID, filepath.ToSlash(rel)),
 				Filename:  filepath.Base(rel),
 				MediaType: mimeType,
 			}},
@@ -1283,6 +1307,42 @@ func collectFileArtifacts(taskID string) []Artifact {
 		return nil
 	})
 	return artifacts
+}
+
+// artifactURL builds the absolute download URL for a task artifact.
+func artifactURL(taskID, rel string) string {
+	return baseURL() + "/tasks/" + url.PathEscape(taskID) + "/artifacts?path=" + url.QueryEscape(rel)
+}
+
+// resolveArtifactPath validates a relative artifact path and resolves it under
+// the task's output directory, rejecting traversal outside it.
+func resolveArtifactPath(taskID, rel string) (string, error) {
+	rel = strings.TrimSpace(rel)
+	if rel == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	rel = filepath.ToSlash(rel)
+	if strings.HasPrefix(rel, "/") {
+		return "", fmt.Errorf("path must be relative")
+	}
+	dir, err := taskDir(taskID)
+	if err != nil {
+		return "", err
+	}
+	outputDir := filepath.Join(dir, "output")
+	full := filepath.Join(outputDir, filepath.FromSlash(rel))
+	within, err := filepath.Rel(outputDir, full)
+	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("path escapes the output directory")
+	}
+	info, err := os.Stat(full)
+	if err != nil {
+		return "", fmt.Errorf("artifact not found")
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("artifact not found")
+	}
+	return full, nil
 }
 
 func sanitizeFileName(name string) string {

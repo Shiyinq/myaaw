@@ -3,6 +3,7 @@ package contact
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -220,6 +221,151 @@ func TestContactToolAdd(t *testing.T) {
 	out = tool.CallTool(`{"action":"list"}`, nil)
 	if !strings.Contains(out, "newagent") {
 		t.Fatalf("list output = %q", out)
+	}
+}
+
+func TestContactToolDownloadsURLAritfact(t *testing.T) {
+	content := []byte("video-bytes-here")
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		_, _ = w.Write(content)
+	}))
+	defer fileServer.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"task":{"id":"t1","status":{"state":"TASK_STATE_COMPLETED"},"artifacts":[{"name":"video.mp4","parts":[{"url":"` + fileServer.URL + `/video.mp4","filename":"video.mp4","mediaType":"video/mp4"}]}]}}}`))
+	}))
+	defer server.Close()
+
+	setupContactAgent(t, `[{"name":"remote","url":"`+server.URL+`"}]`)
+
+	out := NewContactTool().CallTool(`{"action":"send","contact":"remote","message":"hi"}`, nil)
+	if !strings.Contains(out, "Files:") || !strings.Contains(out, "video.mp4") || !strings.Contains(out, "saved at") {
+		t.Fatalf("output = %q", out)
+	}
+
+	home := os.Getenv("HOME")
+	saved := filepath.Join(home, ".myaaw", "myfriend", "home", "workspace", "downloads", "t1", "video.mp4")
+	data, err := os.ReadFile(saved)
+	if err != nil {
+		t.Fatalf("read saved artifact: %v", err)
+	}
+	if string(data) != string(content) {
+		t.Fatalf("saved content = %q", data)
+	}
+}
+
+func TestContactToolSavesRawArtifact(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString([]byte("hello file"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"task":{"id":"t2","status":{"state":"TASK_STATE_COMPLETED"},"artifacts":[{"name":"notes.txt","parts":[{"raw":"` + encoded + `","filename":"notes.txt","mediaType":"text/plain"}]}]}}}`))
+	}))
+	defer server.Close()
+
+	setupContactAgent(t, `[{"name":"remote","url":"`+server.URL+`"}]`)
+
+	out := NewContactTool().CallTool(`{"action":"send","contact":"remote","message":"hi"}`, nil)
+	if !strings.Contains(out, "Files:") || !strings.Contains(out, "notes.txt") {
+		t.Fatalf("output = %q", out)
+	}
+
+	home := os.Getenv("HOME")
+	saved := filepath.Join(home, ".myaaw", "myfriend", "home", "workspace", "downloads", "t2", "notes.txt")
+	data, err := os.ReadFile(saved)
+	if err != nil {
+		t.Fatalf("read saved artifact: %v", err)
+	}
+	if string(data) != "hello file" {
+		t.Fatalf("saved content = %q", data)
+	}
+}
+
+func TestContactToolAsyncSend(t *testing.T) {
+	var returnImmediately bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method string `json:"method"`
+			Params struct {
+				Configuration struct {
+					ReturnImmediately bool `json:"returnImmediately"`
+				} `json:"configuration"`
+			} `json:"params"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		returnImmediately = req.Params.Configuration.ReturnImmediately
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"task":{"id":"async-1","status":{"state":"TASK_STATE_SUBMITTED"}}}}`))
+	}))
+	defer server.Close()
+
+	setupContactAgent(t, `[{"name":"remote","url":"`+server.URL+`"}]`)
+
+	out := NewContactTool().CallTool(`{"action":"send","contact":"remote","message":"long job","async":true}`, nil)
+	if !strings.Contains(out, "[async taskId=async-1]") {
+		t.Fatalf("output = %q", out)
+	}
+	if !returnImmediately {
+		t.Fatal("SendMessage must set configuration.returnImmediately=true")
+	}
+}
+
+func TestContactToolStatusCompleted(t *testing.T) {
+	var method, taskID string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method string `json:"method"`
+			Params struct {
+				ID string `json:"id"`
+			} `json:"params"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		method = req.Method
+		taskID = req.Params.ID
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"id":"async-1","status":{"state":"TASK_STATE_COMPLETED"},"artifacts":[{"name":"response","parts":[{"text":"done"}]}]}}`))
+	}))
+	defer server.Close()
+
+	setupContactAgent(t, `[{"name":"remote","url":"`+server.URL+`"}]`)
+
+	out := NewContactTool().CallTool(`{"action":"status","contact":"remote","taskId":"async-1"}`, nil)
+	if out != "done" {
+		t.Fatalf("output = %q", out)
+	}
+	if method != "GetTask" || taskID != "async-1" {
+		t.Fatalf("method = %q, taskID = %q", method, taskID)
+	}
+}
+
+func TestContactToolStatusRunning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"id":"async-1","status":{"state":"TASK_STATE_WORKING"}}}`))
+	}))
+	defer server.Close()
+
+	setupContactAgent(t, `[{"name":"remote","url":"`+server.URL+`"}]`)
+
+	out := NewContactTool().CallTool(`{"action":"status","contact":"remote","taskId":"async-1"}`, nil)
+	if !strings.Contains(out, "[async taskId=async-1]") || !strings.Contains(out, "still running") {
+		t.Fatalf("output = %q", out)
+	}
+}
+
+func TestContactToolEmptyResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	setupContactAgent(t, `[{"name":"remote","url":"`+server.URL+`"}]`)
+
+	out := NewContactTool().CallTool(`{"action":"send","contact":"remote","message":"hi"}`, nil)
+	if !strings.Contains(out, "empty response") {
+		t.Fatalf("output = %q", out)
 	}
 }
 

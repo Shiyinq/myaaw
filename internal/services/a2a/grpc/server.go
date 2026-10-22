@@ -38,7 +38,7 @@ func (s *Server) caller(ctx context.Context, scope string) (a2a.Caller, error) {
 
 	version := firstValue(md, "a2a-version")
 	if version == "" {
-		version = "0.3"
+		return a2a.Caller{}, versionError(fmt.Errorf("missing a2a-version metadata (supported: %s)", a2a.SupportedProtocolVersion))
 	}
 	if version != a2a.SupportedProtocolVersion {
 		return a2a.Caller{}, versionError(fmt.Errorf("protocol version %s is not supported (supported: %s)", version, a2a.SupportedProtocolVersion))

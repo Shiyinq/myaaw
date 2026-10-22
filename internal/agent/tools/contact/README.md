@@ -13,6 +13,7 @@ For setup recipes, see [A2A Interop Guide](../../../../docs/a2a-interop.md). For
 | Action | Purpose | Required parameters |
 | :--- | :--- | :--- |
 | `send` | Delegate a task and return the final answer | `contact`, `message` |
+| `status` | Poll a task started with `async: true` (or check any task by id) | `contact`, `taskId` |
 | `list` | Show configured contacts (tokens masked) | - |
 | `get` | Show one contact plus its remote Agent Card skills | `contact` |
 | `add` | Register a new contact | `contact`, `url` |
@@ -21,13 +22,33 @@ Optional parameters:
 
 | Parameter | Used by | Description |
 | :--- | :--- | :--- |
-| `taskId` | `send` | Resume a task that returned `[input-required taskId=...]` |
+| `taskId` | `send`, `status` | Resume an interrupted task, or poll a task started with `async: true` |
+| `async` | `send` | Return immediately with a task ID instead of waiting for completion |
 | `token` | `add` | Bearer token for the remote agent |
 | `description` | `add` | Human-readable label |
 
-Aliases are accepted: `send_message`, `list_contacts`, `get_contact`, `add_contact`. A call without `action` that contains `contact` and `message` is treated as `send` for backwards compatibility.
+Aliases are accepted: `send_message`, `poll`/`task_status` (for `status`), `list_contacts`, `get_contact`, `add_contact`. A call without `action` that contains `contact` and `message` is treated as `send` for backwards compatibility.
 
 ## Usage Examples
+
+### Delegate a task asynchronously
+
+For long jobs (downloads, research, builds), return immediately and poll later:
+
+```json
+{"action": "send", "contact": "research", "message": "Riset panjang...", "async": true}
+```
+
+```text
+[async taskId=7f2c...] state=TASK_STATE_SUBMITTED
+Task accepted. Use contact action "status" with this taskId to check progress.
+```
+
+```json
+{"action": "status", "contact": "research", "taskId": "7f2c..."}
+```
+
+While the task is `TASK_STATE_SUBMITTED`/`TASK_STATE_WORKING` the result is another `[async taskId=...]` line. Once it reaches a terminal state, `status` returns the same result as a blocking `send` (answer text, downloaded files, or an `[input-required taskId=...]` prompt).
 
 ### Delegate a task
 
@@ -107,7 +128,14 @@ Answer with the same task ID:
 1. Looks up the contact in `~/.myaaw/<agent>/contacts.json`.
 2. Sends `SendMessage` with the `A2A-Version: 1.0` header, a `ROLE_USER` message, and text parts.
 3. Waits up to 10 minutes for the task to finish.
-4. Returns, in order: artifact text, then `history` agent text.
+4. Returns, in order: artifact text, file artifacts, then `history` agent text.
+
+File artifacts (`raw` base64 or `url` parts for large files) are downloaded into `~/.myaaw/<agent>/home/workspace/downloads/<taskId>/` and reported as:
+
+```text
+Files:
+- video.mp4 (52.4 MB, video/mp4) saved at /Users/you/.myaaw/myfriend/home/workspace/downloads/<taskId>/video.mp4
+```
 
 State handling:
 

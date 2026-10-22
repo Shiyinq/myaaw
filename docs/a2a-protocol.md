@@ -191,7 +191,7 @@ Service parameters are carried in gRPC metadata: `a2a-version` (required, `1.0`)
 
 ### 4.4 Agent-to-agent through the contact tool
 
-`contact send` → load `contacts.json` → `SendMessage` on the remote URL with the bearer token and `A2A-Version: 1.0` → parse `SendMessageResponse{task}` → return artifact text (or an `[input-required taskId=…]` header).
+`contact send` → load `contacts.json` → `SendMessage` on the remote URL with the bearer token and `A2A-Version: 1.0` → parse `SendMessageResponse{task}` → return artifact text (or an `[input-required taskId=…]` header). File artifacts (`raw` and `url` parts) are downloaded into the caller's `home/workspace/downloads/<taskId>/` and reported with their paths and sizes.
 
 ### 4.5 Resuming an interrupted task
 

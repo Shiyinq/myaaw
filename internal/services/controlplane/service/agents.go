@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/url"
 	"os"
@@ -92,6 +93,9 @@ func (s *AgentService) Create(name string) (AgentInfo, error) {
 	_ = agentdir.RewriteLegacyPaths(root, name)
 	if err := agentdir.RegisterAgent(name); err != nil {
 		return AgentInfo{}, err
+	}
+	if err := agentdir.SeedA2AContacts(name); err != nil {
+		log.Printf("controlplane: seed A2A contacts for %q: %v", name, err)
 	}
 
 	return s.Get(name)

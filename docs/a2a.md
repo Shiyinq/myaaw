@@ -220,7 +220,9 @@ Before each run, the message receives a note with the task output directory:
 [A2A] Save files for the caller under ~/.myaaw/<agent>/jobs/a2a/<taskId>/output; they will be returned as artifacts.
 ```
 
-Files written there are returned as `raw` artifacts (base64 + MIME type), together with the text artifact. Limits: 10 files per task, 5 MiB per file. Symlinks are skipped.
+Files written there are returned as artifacts, together with the text artifact. Small files (≤ 1 MiB) are inlined as `raw` parts (base64); larger files are returned as `url` parts pointing to `GET /tasks/{id}/artifacts?path=<name>` and streamed on demand, so a large file (for example a video) does not have to fit in a single JSON response. Limits: 10 files per task, up to 1 GiB per file. Symlinks are skipped.
+
+The `contact` tool downloads file artifacts (both `raw` and `url` parts) into the caller's `~/.myaaw/<agent>/home/workspace/downloads/<taskId>/` and reports each saved path and size.
 
 ### File parts
 
@@ -404,7 +406,8 @@ The built-in `contact` tool manages the contact book and delegates tasks:
 
 | Action | Purpose | Parameters |
 | --- | --- | --- |
-| `send` | Delegate a task and return the final answer | `contact`, `message`, optional `taskId` |
+| `send` | Delegate a task and return the final answer | `contact`, `message`, optional `taskId`, `async` |
+| `status` | Poll a task started with `async: true` | `contact`, `taskId` |
 | `list` | Show configured contacts (tokens are masked) | - |
 | `get` | Show one contact plus its Agent Card capabilities and signature status | `contact` |
 | `add` | Register a new contact | `contact`, `url`, optional `token`, `description` |
@@ -441,7 +444,9 @@ Register a contact from chat (only when the user explicitly provides the URL):
 }
 ```
 
-Aliases are accepted for convenience: `send_message`, `list_contacts`, `get_contact`, `add_contact`.
+Aliases are accepted for convenience: `send_message`, `poll` (for `status`), `list_contacts`, `get_contact`, `add_contact`.
+
+For long tasks, set `async: true` on `send`: it returns `[async taskId=…]` immediately (the remote receives `configuration.returnImmediately`), and `status` polls it with `GetTask` until it completes.
 
 On `send` the tool:
 

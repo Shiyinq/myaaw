@@ -37,6 +37,7 @@ func MountRouter(router fiber.Router, service *Service) {
 	handler := NewHandler(service)
 	router.Get("/.well-known/agent-card.json", handler.Card)
 	router.Post("/a2a", handler.RPC)
+	router.Get("/tasks/:id/artifacts", handler.Artifact)
 	mountRest(router, handler)
 }
 
