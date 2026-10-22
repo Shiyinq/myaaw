@@ -36,7 +36,8 @@ func NewApp() (*fiber.App, error) {
 	cronSvc := service.NewCronService(agents)
 	skillsSvc := service.NewSkillService()
 	toolsSvc := service.NewToolsService()
-	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc)
+	contactsSvc := service.NewContactService()
+	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api"})
 	app.Use(cors.New(cors.Config{
@@ -92,6 +93,10 @@ func NewApp() (*fiber.App, error) {
 	app.Patch("/agents/:name/tools/mcp/:tool", h.PatchMCPServer)
 	app.Delete("/agents/:name/tools/mcp/:tool", h.DeleteMCPServer)
 	app.Patch("/agents/:name/tools/builtin/:tool", h.ToggleBuiltinTool)
+
+	app.Get("/agents/:name/contacts", h.ListContacts)
+	app.Post("/agents/:name/contacts", h.CreateContact)
+	app.Delete("/agents/:name/contacts/:contact", h.DeleteContact)
 	app.Post("/agents/:name/fs/write", h.WriteFile)
 	app.Post("/agents/:name/fs/mkdir", h.Mkdir)
 	app.Post("/agents/:name/fs/rename", h.RenameFile)

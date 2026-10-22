@@ -28,10 +28,12 @@ var builtinToolDescriptions = map[string]string{
 	"execute_python": "Dynamic Python code execution in isolated venv",
 	"provider":       "Change or switch LLM providers dynamically",
 	"subagent":       "Spawn autonomous subagents for task delegation",
+	"contact":        "Delegate tasks to another agent via A2A",
+	"a2a_input":      "Ask the A2A caller for more information",
 }
 
 // builtinToolOrder is the canonical listing order for built-in tools.
-var builtinToolOrder = []string{"bash", "filesystem", "cron", "execute_python", "provider", "subagent"}
+var builtinToolOrder = []string{"bash", "filesystem", "cron", "execute_python", "provider", "subagent", "contact", "a2a_input"}
 
 type toolsConfig struct {
 	BuiltinTools map[string]bool   `json:"builtin_tools,omitempty"`

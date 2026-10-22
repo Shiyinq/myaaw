@@ -140,6 +140,18 @@ type ContextFilesResponse struct {
 	Files []service.ContextFile `json:"files"`
 }
 
+// CreateContactRequest registers another agent as a contact.
+type CreateContactRequest struct {
+	Name        string `json:"name" example:"research"`
+	URL         string `json:"url" example:"https://other-host/a2a"`
+	Token       string `json:"token,omitempty"`
+	Description string `json:"description,omitempty" example:"Research agent"`
+}
+
+type ContactsResponse struct {
+	Contacts []service.ContactView `json:"contacts"`
+}
+
 type MkdirRequest struct {
 	Path string `json:"path" example:"/home/notes"`
 }

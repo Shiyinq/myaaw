@@ -147,13 +147,14 @@ func ConfigDir(name string) (string, error) { return agentPath(name, "config") }
 func ConfigPath(name string) (string, error) {
 	return agentPath(name, filepath.Join("config", "config.json"))
 }
-func EnvPath(name string) (string, error)     { return agentPath(name, ".env") }
-func SkillsDir(name string) (string, error)   { return agentPath(name, "skills") }
-func JobsDir(name string) (string, error)     { return agentPath(name, "jobs") }
-func LogsDir(name string) (string, error)     { return agentPath(name, "logs") }
-func CronDir(name string) (string, error)     { return agentPath(name, "cron") }
-func ToolsDir(name string) (string, error)    { return agentPath(name, "tools") }
-func DatabaseDir(name string) (string, error) { return agentPath(name, "database") }
+func EnvPath(name string) (string, error)      { return agentPath(name, ".env") }
+func SkillsDir(name string) (string, error)    { return agentPath(name, "skills") }
+func JobsDir(name string) (string, error)      { return agentPath(name, "jobs") }
+func LogsDir(name string) (string, error)      { return agentPath(name, "logs") }
+func CronDir(name string) (string, error)      { return agentPath(name, "cron") }
+func ToolsDir(name string) (string, error)     { return agentPath(name, "tools") }
+func ContactsPath(name string) (string, error) { return agentPath(name, "contacts.json") }
+func DatabaseDir(name string) (string, error)  { return agentPath(name, "database") }
 func DatabasePath(name string) (string, error) {
 	return agentPath(name, filepath.Join("database", "myaaw.db"))
 }
@@ -166,6 +167,7 @@ func ActiveJobsDir() (string, error)      { return activePath("jobs") }
 func ActiveLogsDir() (string, error)      { return activePath("logs") }
 func ActiveCronDir() (string, error)      { return activePath("cron") }
 func ActiveToolsDir() (string, error)     { return activePath("tools") }
+func ActiveContactsPath() (string, error) { return activePath("contacts.json") }
 func ActiveDatabaseDir() (string, error)  { return activePath("database") }
 func ActiveDatabasePath() (string, error) { return activePath(filepath.Join("database", "myaaw.db")) }
 

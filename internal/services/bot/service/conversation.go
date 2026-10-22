@@ -171,13 +171,23 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		if err != nil {
 			return nil, err
 		}
-		if found == nil {
+		switch {
+		case found == nil && msg.Channel == "a2a":
+			// An A2A contextId is caller-defined, so the first task that
+			// uses one may not have a transcript yet. Create it under that
+			// ID so later tasks continue the same conversation.
+			created, err := r.conversationRepo.CreateConversationWithId(user.UserId, msg.ConversationID, "")
+			if err != nil {
+				return nil, err
+			}
+			conv = created
+		case found == nil:
 			return nil, ErrConversationNotFound
-		}
-		if found.UserId != user.UserId {
+		case found.UserId != user.UserId:
 			return nil, ErrConversationForbidden
+		default:
+			conv = found
 		}
-		conv = found
 	default:
 		active, err := r.conversationRepo.GetActiveConversationByUserId(user.UserId)
 		if err != nil {

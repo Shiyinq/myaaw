@@ -17,7 +17,9 @@ import (
 	"myaaw/internal/agent/tools/filesystem"
 	"myaaw/internal/agentdir"
 
+	_ "myaaw/internal/agent/tools/a2ainput"
 	_ "myaaw/internal/agent/tools/bash"
+	_ "myaaw/internal/agent/tools/contact"
 	_ "myaaw/internal/agent/tools/cron"
 	_ "myaaw/internal/agent/tools/provider"
 	_ "myaaw/internal/agent/tools/python"

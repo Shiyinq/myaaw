@@ -389,7 +389,7 @@ func TestRouterSkillsAndTools(t *testing.T) {
 	}
 	var tools toolsView
 	doJSON(t, app, "GET", "/agents/myfriend/tools", token, "", fiber.StatusOK, &tools)
-	if len(tools.Builtin) != 6 {
+	if len(tools.Builtin) != 8 {
 		t.Fatalf("builtin = %+v", tools.Builtin)
 	}
 
@@ -440,6 +440,47 @@ func TestRouterSkillsAndTools(t *testing.T) {
 	if len(tools.Custom) != 1 || tools.Custom[0].Name != "terminal-tool" {
 		t.Fatalf("custom after terminal edit = %+v", tools.Custom)
 	}
+}
+
+func TestRouterContacts(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	type contactsView struct {
+		Contacts []struct {
+			Name  string `json:"name"`
+			URL   string `json:"url"`
+			Token struct {
+				Configured bool   `json:"configured"`
+				Masked     string `json:"masked"`
+			} `json:"token"`
+		} `json:"contacts"`
+	}
+	var list contactsView
+	doJSON(t, app, "GET", "/agents/myfriend/contacts", token, "", fiber.StatusOK, &list)
+	if len(list.Contacts) != 0 {
+		t.Fatalf("contacts = %+v", list.Contacts)
+	}
+
+	doJSON(t, app, "POST", "/agents/myfriend/contacts", token,
+		`{"name":"remote","url":"https://example.com/a2a","token":"tok","description":"Remote agent"}`,
+		fiber.StatusOK, nil)
+	doJSON(t, app, "POST", "/agents/myfriend/contacts", token,
+		`{"name":"REMOTE","url":"https://other.example/a2a"}`, fiber.StatusConflict, nil)
+	doJSON(t, app, "POST", "/agents/myfriend/contacts", token,
+		`{"name":"bad","url":"not-a-url"}`, fiber.StatusBadRequest, nil)
+
+	doJSON(t, app, "GET", "/agents/myfriend/contacts", token, "", fiber.StatusOK, &list)
+	if len(list.Contacts) != 1 || list.Contacts[0].Name != "remote" || list.Contacts[0].URL != "https://example.com/a2a" {
+		t.Fatalf("contacts = %+v", list.Contacts)
+	}
+	if !list.Contacts[0].Token.Configured || list.Contacts[0].Token.Masked != "********" {
+		t.Fatalf("token should be masked: %+v", list.Contacts[0].Token)
+	}
+
+	doJSON(t, app, "DELETE", "/agents/myfriend/contacts/remote", token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/contacts/remote", token, "", fiber.StatusNotFound, nil)
 }
 
 func TestRouterReadOnlyManagement(t *testing.T) {

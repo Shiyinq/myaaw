@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"myaaw/internal/provider"
 	"time"
@@ -16,6 +17,7 @@ type ConversationRepository interface {
 	GetConversationByUserId(userId int) ([]*model.Conversation, error)
 	GetConversationById(id string) (*model.Conversation, error)
 	CreateConversation(userId int, title string) (*model.Conversation, error)
+	CreateConversationWithId(userId int, id, title string) (*model.Conversation, error)
 	UpdateConversationById(id string, messages []provider.Message, title string) error
 	UpdateConversationTitle(id string, title string) error
 	DeleteConversationById(id string) error
@@ -116,6 +118,39 @@ func (r *ConversationRepositoryImpl) CreateConversation(userId int, title string
 	)
 
 	if err != nil {
+		return nil, err
+	}
+
+	return conversation, nil
+}
+
+// CreateConversationWithId inserts a conversation with a caller-supplied ID.
+// A2A uses this to map an opaque contextId to a chat transcript.
+func (r *ConversationRepositoryImpl) CreateConversationWithId(userId int, id, title string) (*model.Conversation, error) {
+	if id == "" {
+		return nil, errors.New("conversation id is required")
+	}
+	if title == "" {
+		title = "New Chat"
+	}
+
+	conversation := &model.Conversation{
+		Id:        id,
+		UserId:    userId,
+		Title:     title,
+		Messages:  []provider.Message{},
+		Active:    true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	messagesJSON, _ := json.Marshal(conversation.Messages)
+	insertQuery := `INSERT INTO conversations (id, user_id, title, messages, active, created_at, updated_at)
+	                VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	if _, err := r.db.Exec(insertQuery,
+		conversation.Id, conversation.UserId, conversation.Title, messagesJSON, conversation.Active, conversation.CreatedAt, conversation.UpdatedAt,
+	); err != nil {
 		return nil, err
 	}
 

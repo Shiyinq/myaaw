@@ -453,7 +453,7 @@ List response:
 
 Rules:
 
-- Built-in tools (`bash`, `filesystem`, `cron`, `execute_python` with alias `python`, `provider`, `subagent`) can only be enabled or disabled.
+- Built-in tools (`bash`, `filesystem`, `cron`, `execute_python` with alias `python`, `provider`, `subagent`, `contact`, `a2a_input`) can only be enabled or disabled.
 - Custom tool `name` and MCP server `name` must be unique; duplicates return `409`.
 - `schema` is optional for custom tools; omit it to let the loader discover it via `--schema`. Sending `"schema": null` on `PATCH` removes an inline schema. A present inline schema is returned in list/create/patch responses.
 - A provided schema must follow the OpenAI function format from the tools docs: valid JSON, `"type": "function"`, and a `function.name` matching the tool name.
@@ -463,7 +463,29 @@ Rules:
 - `DELETE` removes the `tools.json` entry only; it never touches files in the tools folder, and it does not stop a running MCP process (the agent server closes it on reload or restart).
 - Missing or invalid `tools.json` behaves like the agent loader: all built-ins enabled and no custom tools or MCP servers. Writes create the file automatically.
 
-## 9. Providers
+## 9. Contacts (A2A)
+
+Contacts are other A2A agents this agent may delegate tasks to. They live in `~/.myaaw/<agent>/contacts.json`; tokens are masked in responses. See [A2A Guide](a2a.md) for the protocol details.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/agents/:name/contacts` | list contacts (tokens masked) |
+| `POST` | `/agents/:name/contacts` | add `{name, url, token?, description?}` |
+| `DELETE` | `/agents/:name/contacts/:contact` | remove a contact |
+
+```bash
+curl -X POST http://localhost:9000/agents/myfriend/contacts \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"research","url":"https://other-host/a2a","token":"remote-token"}'
+```
+
+- `name` must be unique (case-insensitive) and free of path separators.
+- `url` must be an absolute `http(s)` URL.
+- `token` is the remote agent's `A2A_TOKEN`; an empty token means the remote agent is open.
+- Contacts are read fresh from disk, so manual edits appear immediately.
+
+## 10. Providers
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -489,7 +511,7 @@ Rules:
 - An empty `api_key` on update keeps the existing key.
 - Deleting the default provider moves the default to another provider when one remains.
 
-## 10. Channels
+## 11. Channels
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -512,11 +534,11 @@ Rules:
 - `DELETE` disables the channel and keeps its token, matching the CLI.
 - Restart the agent server after changing tokens.
 
-## 11. Config
+## 12. Config
 
 `GET /agents/:name/config` returns providers, channels, bot settings, heartbeat, cron, transcriber, and synthesizer with all secrets masked.
 
-## 12. Conversations
+## 13. Conversations
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -587,7 +609,7 @@ curl -X DELETE http://localhost:9000/agents/myfriend/conversations/conv-id \
 
 Conversations come from the agent's own SQLite database. Legacy traces are migrated on read. If the database does not exist yet, the list is empty.
 
-## 13. Logs
+## 14. Logs
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -608,7 +630,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 `EventSource` cannot set the `Authorization` header. Use the `fetch` streaming pattern from the chat section, or proxy the request through a same-origin endpoint that injects the header.
 
-## 14. Server control
+## 15. Server control
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -619,7 +641,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 `start` returns `409` when the server is already running. Each daemon uses its own PID file and log directory.
 
-## 15. Cron
+## 16. Cron
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -644,7 +666,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 `schedule_kind` is `cron`, `every`, or `at`. Running a job requires the agent server to be up; results are written to the job history.
 
-## 16. Endpoint reference
+## 17. Endpoint reference
 
 | Group | Endpoints |
 |---|---|
@@ -655,6 +677,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
 | Skills | `GET /agents/:name/skills`, `GET /skills/:skill`, `GET /skills/:skill/file?path=`, `PATCH /skills/:skill`, `DELETE /skills/:skill`, `DELETE /skills/:skill/config` |
 | Tools | `GET /agents/:name/tools`, `POST /tools/custom`, `POST /tools/mcp`, `PATCH /tools/builtin/:tool`, `PATCH /tools/custom/:tool`, `PATCH /tools/mcp/:tool`, `DELETE /tools/custom/:tool`, `DELETE /tools/mcp/:tool` |
+| Contacts | `GET/POST /agents/:name/contacts`, `DELETE /contacts/:contact` |
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config` |
@@ -666,7 +689,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 All `/agents/...` paths are prefixed with `/agents/:name`.
 
-## 17. Errors
+## 18. Errors
 
 | Status | Meaning |
 |---|---|
@@ -679,7 +702,7 @@ All `/agents/...` paths are prefixed with `/agents/:name`.
 | `415` | binary file |
 | `502` | agent server is not reachable |
 
-## 18. Security notes
+## 19. Security notes
 
 - There is no rate limiting in the first version.
 - `/api/*` on the agent servers still has no auth; only the control plane protects access. Do not expose agent ports directly.

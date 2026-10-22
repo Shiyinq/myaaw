@@ -40,6 +40,21 @@ The Myaaw Tools package contains a set of specialized tools that can be used wit
 - Supports Cron, Interval, and One-Time schedules
 - Integration with messaging channels (Telegram, Discord)
 
+### 5. [Contact Tool](./contact/README.md)
+
+**Function**: `contact`
+
+- Manage the contact book and delegate tasks over the Agent2Agent (A2A) protocol
+- Actions: `send` (delegate), `list`, `get` (contact + remote Agent Card capabilities), `add` (register a contact)
+- Contacts live in `~/.myaaw/<agent>/contacts.json`; see [A2A Guide](../../../docs/a2a.md) and [A2A Interop Guide](../../../docs/a2a-interop.md)
+
+### 6. [A2A Input Tool](./a2ainput/README.md)
+
+**Function**: `a2a_input`
+
+- Ask an A2A caller for missing information and pause the task in `input-required` state
+- Only available while handling an A2A task
+
 ## Tool Integration
 
 ### Factory Pattern

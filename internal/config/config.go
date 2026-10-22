@@ -34,6 +34,12 @@ var LLMProviderName string
 var LLMProviderAPIKey string
 var LLMDefaultModel string
 var StreamResponse bool
+var A2AToken string
+var A2ATokens []string
+var A2ACallers []string
+var A2ASigningKeyPath string
+var A2ATrustedKeys string
+var A2ARequireSignature bool
 var TranscriberProviderName string
 var TranscriberAPIKey string
 var SynthesizerProviderName string
@@ -236,6 +242,12 @@ func LoadBaseConfig() {
 	PORT = ":" + portValue
 	HOST = os.Getenv("HOST")
 	MYAAWBaseURL = os.Getenv("MYAAW_BASE_URL")
+	A2AToken = strings.TrimSpace(os.Getenv("A2A_TOKEN"))
+	A2ATokens = splitCSV(os.Getenv("A2A_TOKENS"))
+	A2ACallers = splitCSV(os.Getenv("A2A_CALLERS"))
+	A2ASigningKeyPath = strings.TrimSpace(os.Getenv("A2A_SIGNING_KEY"))
+	A2ATrustedKeys = strings.TrimSpace(os.Getenv("A2A_TRUSTED_KEYS"))
+	A2ARequireSignature = envBool("A2A_REQUIRE_SIGNATURE", false)
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
@@ -390,6 +402,21 @@ func splitCSV(value string) []string {
 		}
 	}
 	return result
+}
+
+func envBool(name string, fallback bool) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
+	if value == "" {
+		return fallback
+	}
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	}
+	log.Printf("Warning: invalid %s=%q, using %t", name, value, fallback)
+	return fallback
 }
 
 func envInt(name string, fallback int) int {

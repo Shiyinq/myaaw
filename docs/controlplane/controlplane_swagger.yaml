@@ -175,6 +175,13 @@ definitions:
       usage:
         $ref: '#/definitions/handler.UsageResponse'
     type: object
+  handler.ContactsResponse:
+    properties:
+      contacts:
+        items:
+          $ref: '#/definitions/service.ContactView'
+        type: array
+    type: object
   handler.ContextFilesResponse:
     properties:
       files:
@@ -186,6 +193,20 @@ definitions:
     properties:
       name:
         example: myfriend
+        type: string
+    type: object
+  handler.CreateContactRequest:
+    properties:
+      description:
+        example: Research agent
+        type: string
+      name:
+        example: research
+        type: string
+      token:
+        type: string
+      url:
+        example: https://other-host/a2a
         type: string
     type: object
   handler.CreateCustomToolRequest:
@@ -698,6 +719,17 @@ definitions:
         $ref: '#/definitions/service.ServiceSecretView'
       transcriber:
         $ref: '#/definitions/service.ServiceSecretView'
+    type: object
+  service.ContactView:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      token:
+        $ref: '#/definitions/service.SecretState'
+      url:
+        type: string
     type: object
   service.ContextContent:
     properties:
@@ -1363,6 +1395,118 @@ paths:
       summary: Get agent config
       tags:
       - Config
+  /agents/{name}/contacts:
+    get:
+      description: Contacts live in ~/.myaaw/<agent>/contacts.json and reference other
+        A2A agents.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ContactsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List contacts
+      tags:
+      - Contacts
+    post:
+      consumes:
+      - application/json
+      description: The token is the bearer token issued by the remote agent. It is
+        stored in contacts.json and masked on output.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Contact definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ContactView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a contact
+      tags:
+      - Contacts
+  /agents/{name}/contacts/{contact}:
+    delete:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Contact name
+        in: path
+        name: contact
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a contact
+      tags:
+      - Contacts
   /agents/{name}/context:
     get:
       description: Returns the allowed core Markdown files and every .md file under
