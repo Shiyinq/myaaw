@@ -54,6 +54,10 @@ Myaaw can be integrated with various platforms:
   - [Build from Source](#build-from-source-optional)
 - [💻 Myaaw CLI Reference](#-myaaw-cli-reference)
 - [📚 Documentation](#-documentation)
+  - [Agents](#-agents)
+  - [CLI](#-cli)
+  - [API](#-api)
+  - [Generated references](#-generated-references)
 
 
 ## 🏗 Architecture
@@ -394,7 +398,7 @@ Agent data lives under `~/.myaaw/<agent>/`, for example:
 ~/.myaaw/myfriend/database/myaaw.db
 ```
 
-For the complete guide, see [docs/multi-agent.md](docs/multi-agent.md).
+For the complete guide, see [docs/agents/multi-agent.md](docs/agents/multi-agent.md).
 
 ### 🧩 Multiple Agents
 Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/<agent>/`. The default agent is `default/`; names may contain letters, numbers, `_`, and `-`.
@@ -454,7 +458,7 @@ Included by default: `.env`, `config/`, `contacts.json`, `database/` (SQLite sna
 
 Skipped unless requested: `workspace/` (`--include-workspace`), logs (`--include-logs`), `home/.venv` (`--include-venv`), and browser/tmp caches (`--include-caches`). Each archive contains `manifest.json` with SHA-256 checksums and, when a venv exists, a `pip freeze` recipe.
 
-See [docs/backup.md](docs/backup.md) for the archive layout, manual restore, and limitations.
+See [docs/cli/backup.md](docs/cli/backup.md) for the archive layout, manual restore, and limitations.
 
 ### 🚀 Service Management
 Myaaw runs as a unified background service daemon.
@@ -502,16 +506,49 @@ myaaw cron add --name "Meeting Remind" --at "30m" --message "Meeting in 30 mins"
 
 ## 📚 Documentation
 
+All guides are grouped by topic. Start with the [Documentation Index](docs/README.md).
+
+### 🤖 Agents
+
 | Document | Description |
 | :--- | :--- |
-| [Agent Loop v2](docs/agent-loop-v2.md) | Event-driven `RunEvents` engine, transcript v2, compaction, tool execution, retries, and configuration. |
-| [Agent Skills](docs/agent_skills.md) | `SKILL.md`-based skills: discovery, prompt injection, execution, and per-agent data isolation. |
-| [MCP & Custom Tools](docs/mcp_and_custom_tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
-| [Multi-Agent Guide](docs/multi-agent.md) | Isolated agents: registry, per-agent config, channels, ports, servers, and commands. |
-| [Backup Guide](docs/backup.md) | Per-agent `tar.gz` backups and verified restore: scope, database snapshots, venv recipes, flags, and safety. |
-| [A2A Protocol](docs/a2a-protocol.md) | Agent Card discovery, task lifecycle, JSON-RPC methods, streaming, contact registry, and the implementation map. |
-| [A2A Guide](docs/a2a.md) | Enable the endpoint, call another agent, and manage contacts with the `contact` tool. |
-| [A2A Interop Guide](docs/a2a-interop.md) | Connect Myaaw agents locally and across servers, and interoperate with non-Myaaw A2A agents. |
-| [A2A Spec Compliance](docs/a2a-spec-compliance.md) | Validation of the A2A v1.0 implementation against all 14 spec sections, with evidence. |
-| [REST API](docs/rest-api.md) | `/api/chat` and `/api/chat/stream`: requests, timeline items, SSE events, and response handling. |
-| [Control Plane API](docs/control-plane.md) | `myaaw api`: auth, agent switching, chat proxy, files, providers, channels, logs, and cron. |
+| [Multi-Agent Guide](docs/agents/multi-agent.md) | Registry, agent commands, per-agent config, channels, ports, and servers. |
+| [Agent Loop](docs/agents/agent-loop.md) | Event-driven `RunEvents` engine, transcript v2, compaction, and retries. |
+| [Agent Skills](docs/agents/skills.md) | `SKILL.md` skills: discovery, prompt injection, execution, and data isolation. |
+| [MCP & Custom Tools](docs/agents/mcp-and-custom-tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
+| [A2A Guide](docs/agents/protocol/a2a.md) | Enable the endpoint, call another agent, and manage contacts. |
+| [A2A Protocol](docs/agents/protocol/a2a-protocol.md) | Agent Card discovery, task lifecycle, methods, streaming, and storage. |
+| [A2A Interop](docs/agents/protocol/a2a-interop.md) | Local, cross-server, and non-Myaaw peer connections. |
+| [A2A Spec Compliance](docs/agents/protocol/a2a-spec-compliance.md) | Validation against the A2A v1.0 specification. |
+
+### 🖥 CLI
+
+| Document | Description |
+| :--- | :--- |
+| [CLI Reference](docs/cli/README.md) | Every command, flag, global option, and convention. |
+| [Onboarding](docs/cli/onboard.md) | First-run setup for providers, channels, and heartbeat. |
+| [Chat](docs/cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
+| [Voice](docs/cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |
+| [Service Management](docs/cli/service.md) | `server` daemon lifecycle, status, logs, and ports. |
+| [Cron](docs/cli/cron.md) | Scheduled jobs: cron expressions, intervals, one-time runs, and history. |
+| [Backup & Restore](docs/cli/backup.md) | Per-agent archives, database snapshots, venv recipes, and verified restore. |
+| [Providers](docs/cli/provider.md) | LLM provider integrations and default models. |
+| [Channels](docs/cli/channel.md) | Telegram and Discord setup, edit, and removal. |
+| [Webhook](docs/cli/webhook.md) | Telegram webhook info, set, and delete. |
+| [Logs](docs/cli/logs.md) | Interactive log viewer, filtering, and tailing. |
+| [Config](docs/cli/config.md) | `config check` and `config dump`. |
+| [Utilities](docs/cli/utilities.md) | `status`, `version`, `update`, and shell completion. |
+
+### 🔌 API
+
+| Document | Description |
+| :--- | :--- |
+| [API](docs/api/api.md) | Per-agent `/api/chat` and `/api/chat/stream`, timeline items, and SSE events. |
+| [Control Plane API](docs/api/control-plane.md) | `myaaw api`: auth, agent switching, chat proxy, files, providers, channels, logs, and cron. |
+
+### 📚 Generated references
+
+| Document | Description |
+| :--- | :--- |
+| [Control Plane Swagger](docs/controlplane/) | Generated specification for the unified API. |
+| [Server Swagger](docs/swagger/) | Generated specification for the per-agent server. |

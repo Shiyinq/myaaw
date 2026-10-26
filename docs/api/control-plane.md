@@ -48,7 +48,7 @@ PID:  ~/.myaaw/pids/myaaw-api.pid
 Log:  ~/.myaaw/logs/myaaw-api.log
 ```
 
-Management commands: `myaaw api start`, `myaaw api stop`, `myaaw api restart`, `myaaw api status`.
+Management commands: `myaaw api start`, `myaaw api stop`, `myaaw api restart`, `myaaw api status`. Running `myaaw api` without a subcommand is equivalent to `myaaw api run` and starts the API in the foreground.
 
 Store the returned `token` and send it on every other request:
 
@@ -465,7 +465,7 @@ Rules:
 
 ## 9. Contacts (A2A)
 
-Contacts are other A2A agents this agent may delegate tasks to. They live in `~/.myaaw/<agent>/contacts.json`; tokens are masked in responses. See [A2A Guide](a2a.md) for the protocol details.
+Contacts are other A2A agents this agent may delegate tasks to. They live in `~/.myaaw/<agent>/contacts.json`; tokens are masked in responses. See [A2A Guide](../agents/protocol/a2a.md) for the protocol details.
 
 | Method | Path | Purpose |
 |---|---|---|

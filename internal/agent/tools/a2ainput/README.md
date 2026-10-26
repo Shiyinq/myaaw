@@ -82,7 +82,7 @@ This is why it is a separate built-in tool instead of an action inside `contact`
 
 ## Related
 
-- [A2A Guide](../../../../docs/a2a.md)
-- [A2A Protocol](../../../../docs/a2a-protocol.md)
-- [A2A Interop Guide](../../../../docs/a2a-interop.md)
+- [A2A Guide](../../../../docs/agents/protocol/a2a.md)
+- [A2A Protocol](../../../../docs/agents/protocol/a2a-protocol.md)
+- [A2A Interop Guide](../../../../docs/agents/protocol/a2a-interop.md)
 - [Contact Tool](../contact/README.md)

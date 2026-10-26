@@ -222,7 +222,7 @@ This copies the embedded template into `~/.myaaw/myfriend/`, assigns the next fr
 
 It also **auto-wires A2A contacts**: the new agent gets a generated `A2A_TOKEN`, its `contacts.json` is populated with every other initialized agent (name, URL, and that agent's `A2A_TOKEN`), and the new agent is added to each other agent's `contacts.json` with the new token. Agents can therefore delegate to each other immediately after restart — no manual `contacts.json` edits. Agents without an `A2A_TOKEN` (open mode) are added as contacts without a token.
 
-Delegation from chat goes through the `contact` tool, which covers `send`, `status` (async polling), artifact download, and contact management. Other A2A v1.0 operations (cancel, task listing, streaming, subscribe, extended card, push configs) are available on the server but not exposed to the agent; see the coverage table in the [A2A guide](a2a.md#scope-of-the-contact-tool).
+Delegation from chat goes through the `contact` tool, which covers `send`, `status` (async polling), artifact download, and contact management. Other A2A v1.0 operations (cancel, task listing, streaming, subscribe, extended card, push configs) are available on the server but not exposed to the agent; see the coverage table in the [A2A guide](protocol/a2a.md#scope-of-the-contact-tool).
 
 The new agent is not automatically configured with real API keys or bot tokens.
 
@@ -423,7 +423,7 @@ Server logs:
 | PID files | `~/.myaaw/pids/` (shared directory, per-agent files) |
 | Registry | `~/.myaaw/agents.json` (shared) |
 
-Back up an agent with `myaaw backup --agent <name>`; the archive includes `config/*` and `database/*` generically, so data from any skill is covered. Restore it with `myaaw restore <archive>`. See the [Backup Guide](backup.md).
+Back up an agent with `myaaw backup --agent <name>`; the archive includes `config/*` and `database/*` generically, so data from any skill is covered. Restore it with `myaaw restore <archive>`. See the [Backup Guide](../cli/backup.md).
 
 ## 11. Filesystem isolation
 

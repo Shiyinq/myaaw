@@ -234,7 +234,7 @@ Now on A, `contact get` reports `Card signature: verified` when B's key is pinne
 
 Myaaw's outbound path is the `contact` tool. It sends **`SendMessage`** with a `ROLE_USER` message and text parts, and expects a `SendMessageResponse{task}` result.
 
-> **Binding note:** the `contact` tool speaks the **JSON-RPC** binding only. If the external peer exposes only the REST (`/message:send`) or gRPC (`A2AService.SendMessage`) binding, `contact` cannot call it directly — use a [custom tool](mcp_and_custom_tools.md) or a direct call instead (see §4.5).
+> **Binding note:** the `contact` tool speaks the **JSON-RPC** binding only. If the external peer exposes only the REST (`/message:send`) or gRPC (`A2AService.SendMessage`) binding, `contact` cannot call it directly — use a [custom tool](../mcp-and-custom-tools.md) or a direct call instead (see §4.5).
 
 ### 4.1 What the external peer must provide
 
@@ -312,7 +312,7 @@ curl -s -X POST https://peer.example.com/message:send \
 
 If the peer only speaks gRPC, use its generated `A2AService` client (the `lf.a2a.v1` service), setting the `a2a-version: 1.0` metadata and a bearer `authorization`.
 
-You can wrap any of these in a custom tool (see [mcp_and_custom_tools.md](mcp_and_custom_tools.md)) if the integration is long-lived.
+You can wrap any of these in a custom tool (see [mcp-and-custom-tools.md](../mcp-and-custom-tools.md)) if the integration is long-lived.
 
 ## 5. A non-Myaaw agent calling a Myaaw agent
 

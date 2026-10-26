@@ -2,7 +2,7 @@
 
 The Contact tool manages the agent's contact book and delegates work to other agents over the [Agent2Agent (A2A)](https://a2a-protocol.org/) protocol. Contacts are other agents, not sub-agents: they run in their own process, with their own tools, memory, and identity.
 
-For setup recipes, see [A2A Interop Guide](../../../../docs/a2a-interop.md). For protocol internals, see [A2A Protocol](../../../../docs/a2a-protocol.md).
+For setup recipes, see [A2A Interop Guide](../../../../docs/agents/protocol/a2a-interop.md). For protocol internals, see [A2A Protocol](../../../../docs/agents/protocol/a2a-protocol.md).
 
 ## Function Name
 
@@ -251,7 +251,7 @@ Planned order if the tool is extended: `cancel` and `tasks` first (cheap, unbloc
 
 ## Related
 
-- [A2A Guide](../../../../docs/a2a.md)
-- [A2A Protocol](../../../../docs/a2a-protocol.md)
-- [A2A Interop Guide](../../../../docs/a2a-interop.md)
+- [A2A Guide](../../../../docs/agents/protocol/a2a.md)
+- [A2A Protocol](../../../../docs/agents/protocol/a2a-protocol.md)
+- [A2A Interop Guide](../../../../docs/agents/protocol/a2a-interop.md)
 - [A2A Input Tool](../a2ainput/README.md)

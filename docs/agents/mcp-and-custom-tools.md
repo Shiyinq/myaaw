@@ -4,7 +4,7 @@ Myaaw provides an extensible, modular tooling system that empowers AI agents wit
 
 > Paths such as `~/.myaaw/tools/` in this guide refer to the active agent's directory: `~/.myaaw/<agent>/tools/`. The default agent uses `~/.myaaw/default/tools/`.
 
-> **Looking for on-demand agent skills?** Check out the [Agent Skills Guide](agent_skills.md) for dynamic `SKILL.md` workflows.
+> **Looking for on-demand agent skills?** Check out the [Agent Skills Guide](skills.md) for dynamic `SKILL.md` workflows.
 
 ---
 
@@ -17,7 +17,7 @@ Myaaw provides an extensible, modular tooling system that empowers AI agents wit
   - [Example: Playwright Browser Automation](#example-playwright-browser-automation)
   - [Example: Filesystem MCP Server](#example-filesystem-mcp-server)
 - [Custom CLI Tools](#custom-cli-tools)
-  - [CLI Tool Contract (`--schema` & `--execute`)](#cli-tool-contract---schema----execute)
+  - [CLI Execution Contract (`--execute '<json_arguments>'`)](#cli-execution-contract---execute-json_arguments)
   - [Method 1: Configured via `tools.json`](#method-1-configured-via-toolsjson)
   - [Method 2: Zero-Config Directory Tools](#method-2-zero-config-directory-tools)
   - [Custom Tool Examples](#custom-tool-examples)
