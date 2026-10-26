@@ -403,6 +403,8 @@ For the complete guide, see [docs/agents/multi-agent.md](docs/agents/multi-agent
 ### 🧩 Multiple Agents
 Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/<agent>/`. The default agent is `default/`; names may contain letters, numbers, `_`, and `-`.
 
+Full guide: [agent management commands](docs/agents/multi-agent.md#6-managing-agents).
+
 | Command | Subcommands / Flags | Description |
 | :--- | :--- | :--- |
 | **`agent`** | `list`, `create <name>`, `use [name]`, `delete [name]` | Manage agents. `use` and `delete` open an arrow-key picker when no name is passed; `delete` asks for confirmation. |
@@ -471,6 +473,8 @@ Myaaw runs as a unified background service daemon.
 
 > [!TIP]
 > Use `myaaw server run` for foreground execution (useful for debugging) and `myaaw server start` for background daemon execution.
+
+The `api` command is documented in the [Control Plane API guide](docs/api/control-plane.md).
 
 ### ⏰ Cron Scheduler & Tasks
 Myaaw includes a built-in scheduler to automate tasks (like sending recurring messages or reminders).

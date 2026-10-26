@@ -22,6 +22,11 @@ Start with the [main README](../README.md) for installation and a feature overvi
 
 ## CLI
 
+Some commands live in another topic instead of this group:
+
+- `myaaw agent ...` → [Multi-Agent Guide](agents/multi-agent.md#6-managing-agents)
+- `myaaw api ...` → [Control Plane API](api/control-plane.md)
+
 | Document | Description |
 | :--- | :--- |
 | [CLI Reference](cli/README.md) | Global flags, command groups, and conventions. |
