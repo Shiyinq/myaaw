@@ -2,11 +2,13 @@ package contact
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -29,6 +31,12 @@ const (
 
 	// maxArtifactDownloadBytes bounds downloading a `url` file artifact.
 	maxArtifactDownloadBytes = 1 << 30
+
+	// maxRPCAttempts bounds retries of one JSON-RPC call. Retries reuse the
+	// same request body, so the remote side sees the same messageId and can
+	// deduplicate instead of running the task twice.
+	maxRPCAttempts = 3
+	rpcRetryDelay  = 300 * time.Millisecond
 
 	actionSend   = "send"
 	actionStatus = "status"
@@ -56,9 +64,22 @@ func init() {
 
 func NewContactTool() *ContactTool {
 	return &ContactTool{
-		client:     &http.Client{Timeout: 10 * time.Minute},
+		// No client timeout: per-request contexts carry the configured budget,
+		// which is read at call time because the tool is built during init.
+		client:     &http.Client{},
 		cardClient: &http.Client{Timeout: 5 * time.Second},
 	}
+}
+
+// requestTimeout bounds one call to a contact. The default (16 minutes) is
+// deliberately longer than the remote agent's default run timeout (15
+// minutes) so the caller does not abandon a task that is still running.
+func requestTimeout() time.Duration {
+	seconds := config.A2AContactTimeoutSeconds
+	if seconds <= 0 {
+		seconds = 960
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (t *ContactTool) ToolDefinition() []byte {
@@ -234,6 +255,12 @@ func (t *ContactTool) renderTask(contact *contactEntry, task rpcTask, fallbackID
 		return fmt.Sprintf("Contact %s failed", contact.Name)
 	case a2a.StateCanceled:
 		return fmt.Sprintf("Contact %s canceled the task", contact.Name)
+	case a2a.StateSubmitted, a2a.StateWorking:
+		id := task.ID
+		if id == "" {
+			id = fallbackID
+		}
+		return fmt.Sprintf("[async taskId=%s] state=%s\nTask is still running. Poll again with action \"status\".", id, a2a.WireState(task.Status.State))
 	case a2a.StateInputRequired, a2a.StateAuthRequired:
 		question := messageText(task.Status.Message)
 		if question == "" {
@@ -590,7 +617,9 @@ func (t *ContactTool) saveArtifacts(contact *contactEntry, task rpcTask) string 
 }
 
 func (t *ContactTool) downloadArtifact(contact *contactEntry, rawURL, destDir, name string) (string, int64, error) {
-	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return "", 0, err
 	}
@@ -654,7 +683,18 @@ func humanSize(n int64) string {
 }
 
 func (t *ContactTool) sendTask(contact *contactEntry, message, taskID string, async bool) (rpcTask, error) {
-	result, err := t.rpc(contact, buildSendPayload(message, taskID, async))
+	payload := buildSendPayload(message, taskID, async)
+	result, err := t.rpc(contact, payload)
+	if err != nil && !async && isTimeout(err) {
+		// The blocking call outlived this client's budget while the remote task
+		// kept running. Re-send the same messageId with returnImmediately so the
+		// remote deduplicates and hands back the existing task instead of
+		// starting a second run.
+		withReturnImmediately(payload)
+		if recovered, recoverErr := t.rpc(contact, payload); recoverErr == nil {
+			result, err = recovered, nil
+		}
+	}
 	if err != nil {
 		return rpcTask{}, err
 	}
@@ -669,6 +709,16 @@ func (t *ContactTool) sendTask(contact *contactEntry, message, taskID string, as
 		return rpcTask{}, fmt.Errorf("response is missing a task")
 	}
 	return *envelope.Task, nil
+}
+
+// withReturnImmediately switches an existing SendMessage payload to async mode
+// without touching its messageId.
+func withReturnImmediately(payload map[string]any) {
+	params, ok := payload["params"].(map[string]any)
+	if !ok {
+		return
+	}
+	params["configuration"] = map[string]any{"returnImmediately": true}
 }
 
 // getTask polls a task with GetTask; unlike SendMessage its result is the task itself.
@@ -714,16 +764,39 @@ func buildGetTaskPayload(taskID string) map[string]any {
 	}
 }
 
-// rpc performs a JSON-RPC call and returns the raw result payload.
+// rpc performs a JSON-RPC call and returns the raw result payload. Transient
+// failures (connection errors, 429, 5xx) are retried with the same body so an
+// idempotent messageId reaches the remote side again. Timeouts are not retried
+// here: sendTask recovers the running task instead of waiting another budget.
 func (t *ContactTool) rpc(contact *contactEntry, payload map[string]any) (json.RawMessage, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, contact.URL, bytes.NewReader(body))
+	var lastErr error
+	for attempt := 1; attempt <= maxRPCAttempts; attempt++ {
+		if attempt > 1 {
+			time.Sleep(rpcRetryDelay * time.Duration(attempt-1))
+		}
+		result, retryable, err := t.rpcOnce(contact, body)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if !retryable {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+func (t *ContactTool) rpcOnce(contact *contactEntry, body []byte) (json.RawMessage, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, contact.URL, bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("A2A-Version", "1.0")
@@ -733,22 +806,26 @@ func (t *ContactTool) rpc(contact *contactEntry, payload map[string]any) (json.R
 
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return nil, err
+		if isTimeout(err) {
+			return nil, false, err
+		}
+		return nil, true, err
 	}
 	defer resp.Body.Close()
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+		callErr := fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+		return nil, retryableStatus(resp.StatusCode), callErr
 	}
 	if len(data) == 0 {
-		return nil, fmt.Errorf("empty response from %s (HTTP %d)", contact.URL, resp.StatusCode)
+		return nil, false, fmt.Errorf("empty response from %s (HTTP %d)", contact.URL, resp.StatusCode)
 	}
 	if len(data) > maxResponseBytes {
-		return nil, fmt.Errorf("response from %s exceeded %d bytes; the remote task probably returned a large file artifact", contact.URL, maxResponseBytes)
+		return nil, false, fmt.Errorf("response from %s exceeded %d bytes; the remote task probably returned a large file artifact", contact.URL, maxResponseBytes)
 	}
 
 	var rpc struct {
@@ -759,15 +836,38 @@ func (t *ContactTool) rpc(contact *contactEntry, payload map[string]any) (json.R
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(data, &rpc); err != nil {
-		return nil, fmt.Errorf("invalid response from %s (HTTP %d, %d bytes): %w", contact.URL, resp.StatusCode, len(data), err)
+		return nil, false, fmt.Errorf("invalid response from %s (HTTP %d, %d bytes): %w", contact.URL, resp.StatusCode, len(data), err)
 	}
 	if rpc.Error != nil {
-		return nil, &rpcCallError{Code: rpc.Error.Code, Message: rpc.Error.Message}
+		return nil, false, &rpcCallError{Code: rpc.Error.Code, Message: rpc.Error.Message}
 	}
 	if len(rpc.Result) == 0 {
-		return nil, fmt.Errorf("response is missing a result")
+		return nil, false, fmt.Errorf("response is missing a result")
 	}
-	return rpc.Result, nil
+	return rpc.Result, false, nil
+}
+
+// isTimeout reports whether err is a client-side deadline or network timeout.
+func isTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+// retryableStatus reports whether an HTTP status is worth retrying with the
+// same request body.
+func retryableStatus(status int) bool {
+	switch status {
+	case http.StatusTooManyRequests, http.StatusInternalServerError,
+		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
 }
 
 func agentText(task rpcTask) string {

@@ -134,7 +134,10 @@ func startServer(ctx context.Context) {
 	config.LoadBaseConfig()
 	config.ConnectDatabases()
 
-	app := fiber.New(fiber.Config{})
+	// A2A carries inline file parts (base64) in the request body, so the
+	// default 4 MiB Fiber limit would reject valid messages before the A2A
+	// handler ever sees them.
+	app := fiber.New(fiber.Config{BodyLimit: config.A2AMaxRequestBytes})
 
 	app.Use(middleware.SetupCORS())
 	app.Use(middleware.NewLogger())

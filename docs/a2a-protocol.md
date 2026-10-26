@@ -67,7 +67,7 @@ On the wire the task transcript is the `history` field (never `messages`). Roles
 
 | Method | Purpose |
 | :--- | :--- |
-| `SendMessage` | Create and run a task (blocking until terminal or interrupted, or return immediately with `configuration.returnImmediately`). |
+| `SendMessage` | Create and run a task (blocking until terminal or interrupted, or return immediately with `configuration.returnImmediately`). Idempotent per `(caller, messageId)`: retrying the same message returns its existing task. |
 | `SendStreamingMessage` | Like `SendMessage` but emits `StreamResponse` events as `data:` lines. |
 | `GetTask` | Fetch one task (`id`, optional `historyLength`). |
 | `ListTasks` | Cursor-paginated list with filters. |
@@ -181,6 +181,8 @@ Service parameters are carried in gRPC metadata: `a2a-version` (required, `1.0`)
 
 `SendMessage` → `prepareTask` (validates parts, allocates/loads a task, stores it) → `runBot` (sets `MYAAW_A2A_TASK_DIR`, calls the agent loop) → `completeTask` / `inputRequired` / `authRequired` / `failTask` → response with `SendMessageResponse{task}`.
 
+`prepareTask` first reserves `(caller, messageId)` in `a2a_message_ids`. If the message was already accepted, it returns that task without running the agent again, so a client retry (timeout, dropped connection) cannot duplicate side effects.
+
 ### 4.2 Streaming task
 
 `SendStreamingMessage` → `prepareTask` → `startStream` → emit the task → run with a streaming callback that emits `artifactUpdate` deltas → on completion emit the final artifacts and a `statusUpdate` with `final: true`.
@@ -191,7 +193,7 @@ Service parameters are carried in gRPC metadata: `a2a-version` (required, `1.0`)
 
 ### 4.4 Agent-to-agent through the contact tool
 
-`contact send` → load `contacts.json` → `SendMessage` on the remote URL with the bearer token and `A2A-Version: 1.0` → parse `SendMessageResponse{task}` → return artifact text (or an `[input-required taskId=…]` header). File artifacts (`raw` and `url` parts) are downloaded into the caller's `home/workspace/downloads/<taskId>/` and reported with their paths and sizes.
+`contact send` → load `contacts.json` → `SendMessage` on the remote URL with the bearer token and `A2A-Version: 1.0` → parse `SendMessageResponse{task}` → return artifact text (or an `[input-required taskId=…]` header). Each send carries one `messageId` that is reused across transient retries, so the remote deduplicates them; a timeout is recovered with a `returnImmediately` retry of the same message. File artifacts (`raw` and `url` parts) are downloaded into the caller's `home/workspace/downloads/<taskId>/` and reported with their paths and sizes.
 
 ### 4.5 Resuming an interrupted task
 
@@ -204,6 +206,7 @@ Service parameters are carried in gRPC metadata: `a2a-version` (required, `1.0`)
 | `a2a_tasks` | `id`, `context_id`, `status` (lowercase), `status_message`, `messages` (JSON), `artifacts` (JSON), `attempts`, `push_url`, `caller`, `created_at`, `updated_at` | Task persistence. |
 | `a2a_callers` | `name`, `user_id` (negative), `created_at` | Per-caller synthetic local users. |
 | `a2a_push_configs` | `task_id`, `id`, `url`, `token`, `created_at` | Webhook configs. |
+| `a2a_message_ids` | `caller`, `message_id`, `task_id`, `created_at` | `SendMessage` idempotency; rows older than 30 days are pruned on startup. |
 
 - `ListTasks` uses cursor pagination over `(updated_at DESC, id DESC)` backed by `idx_a2a_tasks_updated`.
 - On startup, `ResumePending` re-runs `submitted`/`working` tasks (up to three attempts); exhausted tasks are failed. Stale tasks not resumable are failed by `RecoverStale`.

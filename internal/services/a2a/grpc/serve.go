@@ -25,6 +25,11 @@ func GRPCAddr() string {
 	return ""
 }
 
+// maxMessageBytes covers a task response with the maximum number of inline
+// artifacts (10 × 1 MiB raw → ~13.4 MiB base64) plus envelope overhead, which
+// exceeds the gRPC default of 4 MiB.
+const maxMessageBytes = 32 << 20
+
 // Serve starts the A2A gRPC server on the configured address, reusing the
 // shared service. It returns immediately; the listener runs in a goroutine.
 func Serve(service *a2a.Service) {
@@ -38,7 +43,10 @@ func Serve(service *a2a.Service) {
 		return
 	}
 
-	options := make([]grpc.ServerOption, 0)
+	options := []grpc.ServerOption{
+		grpc.MaxRecvMsgSize(maxMessageBytes),
+		grpc.MaxSendMsgSize(maxMessageBytes),
+	}
 	if cert, key := config.A2AGRPCTLSCert, config.A2AGRPCTLSKey; cert != "" && key != "" {
 		creds, err := credentials.NewServerTLSFromFile(cert, key)
 		if err != nil {

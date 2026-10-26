@@ -33,6 +33,10 @@ import (
 const (
 	maxFilesPerMessage = 10
 	maxFileBytes       = 5 << 20
+	// maxInlineBytes bounds the total raw bytes of file parts in one message.
+	// Larger payloads must use url parts: the HTTP body limit is sized to carry
+	// this much base64 content with room for the JSON envelope.
+	maxInlineBytes = 8 << 20
 	// Files at or below inlineFileBytes are returned as base64 `raw` parts;
 	// larger files are returned as `url` parts and streamed on demand.
 	inlineFileBytes = 1 << 20
@@ -351,6 +355,10 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (Task
 	if err != nil {
 		return Task{}, err
 	}
+	if msg == nil {
+		// A retry of a message that was already accepted.
+		return task, nil
+	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -380,6 +388,9 @@ func (s *Service) SendMessageAsync(ctx context.Context, req SendMessageRequest) 
 	if err != nil {
 		return Task{}, err
 	}
+	if msg == nil {
+		return task, nil
+	}
 	go s.runTask(task, msg)
 	return task, nil
 }
@@ -390,6 +401,18 @@ func (s *Service) SendMessageStream(ctx context.Context, req SendMessageRequest,
 	task, msg, err := s.prepareTask(ctx, req, StateWorking)
 	if err != nil {
 		return Task{}, err
+	}
+	if msg == nil {
+		if send != nil {
+			send(StreamResponse{Task: taskPtr(task)})
+			send(StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{
+				TaskID:    task.ID,
+				ContextID: task.ContextID,
+				Status:    task.Status,
+				Metadata:  map[string]bool{"final": TerminalStates[task.Status.State]},
+			}})
+		}
+		return task, nil
 	}
 	s.startStream(task.ID)
 	defer s.finishStream(task.ID)
@@ -748,6 +771,10 @@ func (s *Service) prepareTask(ctx context.Context, req SendMessageRequest, state
 	if callerName == "" {
 		callerName = "anonymous"
 	}
+	messageID := strings.TrimSpace(msg.MessageID)
+	if messageID == "" {
+		messageID = uuid.NewString()
+	}
 
 	id := strings.TrimSpace(msg.TaskID)
 	var existing *Task
@@ -776,6 +803,23 @@ func (s *Service) prepareTask(ctx context.Context, req SendMessageRequest, state
 		id = uuid.NewString()
 	}
 
+	// Idempotency: a retried message must resolve to the task it already
+	// produced instead of creating a duplicate with the same side effects.
+	reservedID, err := s.store.ReserveMessage(ctx, callerName, messageID, id)
+	if err != nil {
+		return Task{}, nil, err
+	}
+	if reservedID != "" {
+		got, err := s.store.Get(ctx, reservedID)
+		if err != nil {
+			return Task{}, nil, err
+		}
+		if got.Caller != "" && !strings.EqualFold(got.Caller, callerName) {
+			return Task{}, nil, ErrTaskNotFound
+		}
+		return got, nil, nil
+	}
+
 	contextID := strings.TrimSpace(msg.ContextID)
 	if existing != nil {
 		if contextID != "" && existing.ContextID != "" && contextID != existing.ContextID {
@@ -791,14 +835,13 @@ func (s *Service) prepareTask(ctx context.Context, req SendMessageRequest, state
 
 	userID, err := s.store.EnsureCaller(ctx, callerName)
 	if err != nil {
+		_ = s.store.ReleaseMessage(ctx, callerName, messageID)
 		return Task{}, nil, err
 	}
 
 	userMessage := msg
 	userMessage.Role = "user"
-	if userMessage.MessageID == "" {
-		userMessage.MessageID = uuid.NewString()
-	}
+	userMessage.MessageID = messageID
 	userMessage.ContextID = contextID
 	userMessage.TaskID = id
 
@@ -810,6 +853,7 @@ func (s *Service) prepareTask(ctx context.Context, req SendMessageRequest, state
 		task.Messages = append(task.Messages, userMessage)
 		task.Status = TaskStatus{State: state, Timestamp: nowTimestamp()}
 		if err := s.store.Update(ctx, task); err != nil {
+			_ = s.store.ReleaseMessage(ctx, callerName, messageID)
 			return Task{}, nil, err
 		}
 	} else {
@@ -825,14 +869,17 @@ func (s *Service) prepareTask(ctx context.Context, req SendMessageRequest, state
 		if config := req.Configuration; config != nil && config.TaskPushNotificationConfig != nil {
 			pushURL := strings.TrimSpace(config.TaskPushNotificationConfig.URL)
 			if pushURL == "" {
+				_ = s.store.ReleaseMessage(ctx, callerName, messageID)
 				return Task{}, nil, fmt.Errorf("taskPushNotificationConfig.url is required")
 			}
 			if _, err := validateWebhookURL(pushURL); err != nil {
+				_ = s.store.ReleaseMessage(ctx, callerName, messageID)
 				return Task{}, nil, err
 			}
 			task.PushURL = pushURL
 		}
 		if err := s.store.Create(ctx, task); err != nil {
+			_ = s.store.ReleaseMessage(ctx, callerName, messageID)
 			return Task{}, nil, err
 		}
 		if config := req.Configuration; config != nil && config.TaskPushNotificationConfig != nil {
@@ -1121,6 +1168,7 @@ func buildIncomingMessage(taskID, contextID string, userID int, callerName strin
 	notes := make([]string, 0, len(message.Parts))
 	images := make([]string, 0)
 	fileCount := 0
+	inlineBytes := 0
 
 	for _, part := range message.Parts {
 		switch {
@@ -1134,11 +1182,15 @@ func buildIncomingMessage(taskID, contextID string, userID int, callerName strin
 			notes = append(notes, "[File reference: "+part.URL+"]")
 		case len(part.Raw) > 0:
 			fileCount++
+			inlineBytes += len(part.Raw)
 			if fileCount > maxFilesPerMessage {
 				return nil, fmt.Errorf("too many file parts (max %d)", maxFilesPerMessage)
 			}
 			if len(part.Raw) > maxFileBytes {
 				return nil, fmt.Errorf("file %q is too large (max %d bytes)", part.Filename, maxFileBytes)
+			}
+			if inlineBytes > maxInlineBytes {
+				return nil, fmt.Errorf("inline file parts exceed %d bytes; send large files as url parts", maxInlineBytes)
 			}
 			name := sanitizeFileName(part.Filename)
 			if strings.HasPrefix(strings.ToLower(part.MediaType), "image/") {

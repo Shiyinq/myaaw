@@ -51,6 +51,16 @@ var A2AGRPCPort string
 var A2AGRPCAddr string
 var A2AGRPCTLSCert string
 var A2AGRPCTLSKey string
+
+// A2AMaxRequestBytes is the server-wide HTTP request body limit. It must be
+// large enough to carry the maximum inline file payload (base64 inflates raw
+// bytes by roughly 4/3).
+var A2AMaxRequestBytes int = 16 << 20
+
+// A2AContactTimeoutSeconds bounds a contact tool call. It must exceed the
+// remote agent's run timeout, otherwise the caller gives up while the task is
+// still running and a retry creates a duplicate task.
+var A2AContactTimeoutSeconds int = 960
 var TranscriberProviderName string
 var TranscriberAPIKey string
 var SynthesizerProviderName string
@@ -270,6 +280,8 @@ func LoadBaseConfig() {
 	A2AGRPCAddr = strings.TrimSpace(os.Getenv("A2A_GRPC_ADDR"))
 	A2AGRPCTLSCert = strings.TrimSpace(os.Getenv("A2A_GRPC_TLS_CERT"))
 	A2AGRPCTLSKey = strings.TrimSpace(os.Getenv("A2A_GRPC_TLS_KEY"))
+	A2AMaxRequestBytes = envInt("A2A_MAX_REQUEST_BYTES", A2AMaxRequestBytes)
+	A2AContactTimeoutSeconds = envInt("A2A_CONTACT_TIMEOUT_SECONDS", A2AContactTimeoutSeconds)
 	AllowedOrigins = os.Getenv("ALLOWED_ORIGINS")
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
@@ -497,6 +509,12 @@ func validateAgentConfig() {
 	}
 	if AgentRunTimeoutSeconds <= 0 {
 		AgentRunTimeoutSeconds = 900
+	}
+	if A2AMaxRequestBytes <= 0 {
+		A2AMaxRequestBytes = 16 << 20
+	}
+	if A2AContactTimeoutSeconds <= 0 {
+		A2AContactTimeoutSeconds = 960
 	}
 }
 

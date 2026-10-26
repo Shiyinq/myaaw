@@ -77,7 +77,7 @@ Evidence: `TestRPCSendAndGet`, `TestRPCStreaming`, `TestRPCListTasks`, `TestRPCC
 
 ### 3.3 Operation Semantics
 
-- **3.3.1 Idempotency:** `DeleteTaskPushNotificationConfig` is idempotent (returns success for a missing config).
+- **3.3.1 Idempotency:** `DeleteTaskPushNotificationConfig` is idempotent (returns success for a missing config). `SendMessage` is idempotent per `(caller, messageId)`: `prepareTask` reserves the key in `a2a_message_ids` and returns the task the message already produced, so a retry cannot run the agent twice. Evidence: `TestSendMessageIsIdempotentByMessageID`.
 - **3.3.2 Error Handling:** §5.4 codes plus a `google.rpc.ErrorInfo` detail (`reason`, `domain: a2a-protocol.org`) — `handler.go`/`grpc/errors.go`. Evidence: `TestRPCFailedTaskAndMissingTask`, `TestRestErrorShape`, `TestGRPCErrorMapping`.
 - **3.3.3 Asynchronous Processing:** `configuration.returnImmediately` returns a `submitted` task and runs in the background. Evidence: `TestSendMessageAsyncPushNotification`.
 - **3.3.4 Capability Validation:** `GetExtendedAgentCard` returns `UnsupportedOperationError` when the capability is absent. Evidence: `TestRPCExtendedCardNotSupported`.

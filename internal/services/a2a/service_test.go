@@ -1,6 +1,7 @@
 package a2a
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -426,5 +427,68 @@ func TestSendMessageUsesPerCallerUserIDs(t *testing.T) {
 	}
 	if bob.UserID == 0 {
 		t.Fatal("A2A must not share user 0 with terminal or control-plane chats")
+	}
+}
+
+func TestSendMessageIsIdempotentByMessageID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	runs := 0
+	runner := &fakeRunner{out: &channel.OutgoingMessage{Text: "done"}}
+	runner.onRun = func() { runs++ }
+	service := NewService(newTestStore(t), runner)
+
+	req := SendMessageRequest{Message: Message{
+		MessageID: "msg-1",
+		Role:      "user",
+		Parts:     []Part{{Text: "hello"}},
+	}}
+	first, err := service.SendMessage(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first SendMessage: %v", err)
+	}
+	second, err := service.SendMessage(context.Background(), req)
+	if err != nil {
+		t.Fatalf("retry SendMessage: %v", err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("retry created a new task: %q -> %q", first.ID, second.ID)
+	}
+	if runs != 1 {
+		t.Fatalf("agent ran %d times for one message, want 1", runs)
+	}
+
+	other := req
+	other.Caller = "other"
+	third, err := service.SendMessage(context.Background(), other)
+	if err != nil {
+		t.Fatalf("other caller SendMessage: %v", err)
+	}
+	if third.ID == first.ID {
+		t.Fatalf("different callers shared task %q", third.ID)
+	}
+	if runs != 2 {
+		t.Fatalf("agent ran %d times, want 2", runs)
+	}
+}
+
+func TestSendMessageRejectsOversizedInlinePayload(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	runner := &fakeRunner{out: &channel.OutgoingMessage{Text: "ok"}}
+	service := NewService(newTestStore(t), runner)
+
+	_, err := service.SendMessage(context.Background(), SendMessageRequest{
+		Message: Message{Role: "user", Parts: []Part{
+			{Raw: bytes.Repeat([]byte("a"), 5<<20), Filename: "a.bin"},
+			{Raw: bytes.Repeat([]byte("b"), 4<<20), Filename: "b.bin"},
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "inline file parts exceed") {
+		t.Fatalf("err = %v, want inline payload error", err)
 	}
 }

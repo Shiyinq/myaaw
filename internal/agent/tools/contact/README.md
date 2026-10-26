@@ -127,8 +127,9 @@ Answer with the same task ID:
 
 1. Looks up the contact in `~/.myaaw/<agent>/contacts.json`.
 2. Sends `SendMessage` with the `A2A-Version: 1.0` header, a `ROLE_USER` message, and text parts.
-3. Waits up to 10 minutes for the task to finish.
+3. Waits for the task to finish (default 16 minutes; set `A2A_CONTACT_TIMEOUT_SECONDS` on this agent to change it — it should stay above the remote agent's run timeout).
 4. Returns, in order: artifact text, file artifacts, then `history` agent text.
+5. Retries transient failures (connection errors, `429`, `5xx`) with the same `messageId`, so the remote cannot run the task twice. If the blocking wait hits the timeout, it re-sends the same message with `returnImmediately: true` to recover the running task's ID and returns `[async taskId=…]` for polling. A new `send` call generates a new `messageId`, which is a deliberate new task.
 
 File artifacts (`raw` base64 or `url` parts for large files) are downloaded into `~/.myaaw/<agent>/home/workspace/downloads/<taskId>/` and reported as:
 

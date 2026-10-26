@@ -73,8 +73,63 @@ func (s *TaskStore) EnsureSchema() error {
 	if err != nil {
 		return err
 	}
+	_, err = s.db.Exec(`CREATE TABLE IF NOT EXISTS a2a_message_ids (
+		caller TEXT NOT NULL,
+		message_id TEXT NOT NULL,
+		task_id TEXT NOT NULL,
+		created_at DATETIME NOT NULL,
+		PRIMARY KEY (caller, message_id)
+	);`)
+	if err != nil {
+		return err
+	}
+	// Idempotency records only need to survive retry windows; prune old rows
+	// so the table does not grow with every message ever sent.
+	_, _ = s.db.Exec(`DELETE FROM a2a_message_ids WHERE created_at < datetime('now', '-30 days')`)
 	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_a2a_tasks_updated ON a2a_tasks (updated_at DESC, id)`)
 	return nil
+}
+
+// ReserveMessage associates a message ID with the task it produced so retries
+// of the same message are idempotent. It returns the existing task ID when the
+// message was already seen; an empty string means the caller now owns the
+// reservation and should create the task.
+func (s *TaskStore) ReserveMessage(ctx context.Context, caller, messageID, taskID string) (string, error) {
+	if s == nil || s.db == nil {
+		return "", errors.New("a2a: database is not available")
+	}
+	res, err := s.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO a2a_message_ids (caller, message_id, task_id, created_at) VALUES (?, ?, ?, ?)`,
+		caller, messageID, taskID, time.Now().UTC())
+	if err != nil {
+		return "", err
+	}
+	if affected, err := res.RowsAffected(); err == nil && affected == 1 {
+		return "", nil
+	}
+	var existing string
+	err = s.db.QueryRowContext(ctx,
+		`SELECT task_id FROM a2a_message_ids WHERE caller = ? AND message_id = ?`,
+		caller, messageID).Scan(&existing)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// The conflicting row vanished (pruned): let the retry proceed.
+			return "", nil
+		}
+		return "", err
+	}
+	return existing, nil
+}
+
+// ReleaseMessage drops an idempotency record after task creation failed, so a
+// retry is allowed to run instead of resolving to a task that does not exist.
+func (s *TaskStore) ReleaseMessage(ctx context.Context, caller, messageID string) error {
+	if s == nil || s.db == nil {
+		return errors.New("a2a: database is not available")
+	}
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM a2a_message_ids WHERE caller = ? AND message_id = ?`, caller, messageID)
+	return err
 }
 
 // EnsureCaller returns the synthetic local user ID assigned to a caller name,

@@ -166,6 +166,7 @@ Response:
 ```
 
 - `contextId` is the agent's conversation ID. Pass it back in `message.contextId` to continue the same conversation.
+- `message.messageId` is idempotent per caller: re-sending the *same* ID returns the task it already produced, so transport retries are safe. A new request should use a new ID.
 - A failed run returns `TASK_STATE_FAILED` with an explanation in `status.message`.
 - Tasks are stored in the agent's SQLite database (`a2a_tasks`), so `GetTask` works after the call or after a reconnect.
 - `historyLength` in `configuration` controls how much history is returned: omitted keeps everything, `0` omits history, and `n` keeps the last `n` messages.
@@ -237,7 +238,8 @@ The `contact` tool downloads file artifacts (both `raw` and `url` parts) into th
 - `mediaType: image/*` parts are passed to the model as images.
 - Other `raw` parts are written to `~/.myaaw/<agent>/jobs/a2a/<taskId>/` and their absolute path is appended to the message text, so the agent can read them with its filesystem tool.
 - `url` parts are passed through as file references; `data` parts are encoded as JSON.
-- Limits: 10 files per message, 5 MiB per file.
+- Limits: 10 files per message, 5 MiB per file, and 8 MiB of inline file bytes per message (base64 inflates the raw bytes by about 4/3). Larger payloads must use `url` parts.
+- The HTTP request body limit defaults to 16 MiB (`A2A_MAX_REQUEST_BYTES`) and is sized to carry the inline budget plus the JSON envelope.
 
 ### Streaming (`SendStreamingMessage`)
 
@@ -359,7 +361,7 @@ A2A_GRPC_PORT=8082
 # A2A_GRPC_TLS_KEY=/path/to/server.key
 ```
 
-Clients send the `a2a-version: 1.0` metadata header and, when auth is configured, an `authorization` bearer token. Errors use gRPC `codes` plus a `google.rpc.ErrorInfo` detail. When enabled, the Agent Card advertises a `GRPC` entry in `supportedInterfaces`.
+Clients send the `a2a-version: 1.0` metadata header and, when auth is configured, an `authorization` bearer token. Errors use gRPC `codes` plus a `google.rpc.ErrorInfo` detail. When enabled, the Agent Card advertises a `GRPC` entry in `supportedInterfaces`. The server raises the gRPC message limit to 32 MiB so task responses with several inline artifacts do not hit the 4 MiB default.
 
 ## 4. Contacts
 
@@ -446,7 +448,7 @@ Register a contact from chat (only when the user explicitly provides the URL):
 
 Aliases are accepted for convenience: `send_message`, `poll` (for `status`), `list_contacts`, `get_contact`, `add_contact`.
 
-For long tasks, set `async: true` on `send`: it returns `[async taskId=…]` immediately (the remote receives `configuration.returnImmediately`), and `status` polls it with `GetTask` until it completes.
+For long tasks, set `async: true` on `send`: it returns `[async taskId=…]` immediately (the remote receives `configuration.returnImmediately`), and `status` polls it with `GetTask` until it completes. On a transient failure the tool retries with the same `messageId`; if the blocking wait times out, it retries once with `returnImmediately: true` and the same ID to recover the running task's ID instead of starting a duplicate.
 
 On `send` the tool:
 
@@ -522,6 +524,6 @@ All of them remain available over JSON-RPC, REST, and gRPC, so interop with othe
 - `SubscribeToTask` buffers live in memory and expire after 10 minutes.
 - DNS names for webhooks are validated by name only; resolution is left to the delivery client (a documented SSRF limitation).
 - The `contact` tool covers `send`, `status`, artifact download, and contact management only; cancel, task listing, streaming, subscribe, extended card, and push configs are server-only for now. See the coverage table in [section 5](#scope-of-the-contact-tool).
-- Contact HTTP calls use a 10 minute timeout, including artifact downloads. A very large artifact over a slow link may exceed it.
+- Contact HTTP calls use a configurable timeout (`A2A_CONTACT_TIMEOUT_SECONDS`, default 16 minutes) for both RPC calls and artifact downloads. Keep it above the remote agent's run timeout so the caller does not abandon a task that is still running.
 
 All three protocol bindings (JSON-RPC, HTTP+JSON/REST, and gRPC) are implemented.

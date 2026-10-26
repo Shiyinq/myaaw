@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"myaaw/internal/agentdir"
 	"myaaw/internal/config"
@@ -471,5 +473,107 @@ func TestContactToolReportsCardSignature(t *testing.T) {
 	out := NewContactTool().CallTool(`{"action":"get","contact":"remote"}`, nil)
 	if !strings.Contains(out, "Card signature: verified") {
 		t.Fatalf("output = %q", out)
+	}
+}
+
+func TestContactToolRetriesWithSameMessageID(t *testing.T) {
+	var mu sync.Mutex
+	var messageIDs []string
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Params struct {
+				Message struct {
+					MessageID string `json:"messageId"`
+				} `json:"message"`
+			} `json:"params"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		mu.Lock()
+		calls++
+		call := calls
+		messageIDs = append(messageIDs, req.Params.Message.MessageID)
+		mu.Unlock()
+		if call == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("temporary failure"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"task":{"id":"t1","status":{"state":"TASK_STATE_COMPLETED"},"artifacts":[{"name":"response","parts":[{"text":"second try"}]}]}}}`))
+	}))
+	defer server.Close()
+
+	setupContactAgent(t, `[{"name":"remote","url":"`+server.URL+`"}]`)
+
+	out := NewContactTool().CallTool(`{"contact":"remote","message":"hi"}`, nil)
+	if out != "second try" {
+		t.Fatalf("output = %q", out)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(messageIDs) != 2 {
+		t.Fatalf("requests = %d, want 2", len(messageIDs))
+	}
+	if messageIDs[0] == "" || messageIDs[0] != messageIDs[1] {
+		t.Fatalf("messageIds = %q, want the same non-empty id", messageIDs)
+	}
+}
+
+func TestContactToolRecoversTaskAfterTimeout(t *testing.T) {
+	previousTimeout := config.A2AContactTimeoutSeconds
+	config.A2AContactTimeoutSeconds = 1
+	t.Cleanup(func() { config.A2AContactTimeoutSeconds = previousTimeout })
+
+	var mu sync.Mutex
+	var messageIDs []string
+	var immediate []bool
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Params struct {
+				Message struct {
+					MessageID string `json:"messageId"`
+				} `json:"message"`
+				Configuration struct {
+					ReturnImmediately bool `json:"returnImmediately"`
+				} `json:"configuration"`
+			} `json:"params"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		mu.Lock()
+		calls++
+		call := calls
+		messageIDs = append(messageIDs, req.Params.Message.MessageID)
+		immediate = append(immediate, req.Params.Configuration.ReturnImmediately)
+		mu.Unlock()
+		if call == 1 {
+			// Outlive the caller's 1s budget so the client times out.
+			time.Sleep(1500 * time.Millisecond)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"task":{"id":"t-run","status":{"state":"TASK_STATE_WORKING"}}}}`))
+	}))
+	defer server.Close()
+
+	setupContactAgent(t, `[{"name":"remote","url":"`+server.URL+`"}]`)
+
+	out := NewContactTool().CallTool(`{"contact":"remote","message":"hi"}`, nil)
+	if !strings.Contains(out, "[async taskId=t-run]") {
+		t.Fatalf("output = %q, want async task recovery", out)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(messageIDs) != 2 {
+		t.Fatalf("requests = %d, want 2", len(messageIDs))
+	}
+	if messageIDs[0] == "" || messageIDs[0] != messageIDs[1] {
+		t.Fatalf("messageIds = %q, want the same non-empty id", messageIDs)
+	}
+	if immediate[0] || !immediate[1] {
+		t.Fatalf("returnImmediately = %v, want [false true]", immediate)
 	}
 }

@@ -488,7 +488,7 @@ Input file parts use a `raw` part (base64) with `filename` and `mediaType`:
 ```
 
 - Maximum 10 file parts per message.
-- Maximum 5 MiB per decoded file.
+- Maximum 5 MiB per decoded file, and 8 MiB of inline file bytes per message. Base64 inflates raw bytes by about 4/3, so the server body limit defaults to 16 MiB (`A2A_MAX_REQUEST_BYTES`). Use `url` parts for larger payloads.
 - `image/*` is passed to the model as an image.
 - Other files are written to the task directory and referenced by path.
 
