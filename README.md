@@ -531,11 +531,11 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | :--- | :--- |
 | [CLI Reference](docs/cli/README.md) | Every command, flag, global option, and convention. |
 | [Onboarding](docs/cli/onboard.md) | First-run setup for providers, channels, and heartbeat. |
-| [Agent Command](docs/cli/agent.md) | `agent list/create/use/delete`, name rules, ports, and what create writes. |
+| [Agent](docs/cli/agent.md) | `agent list/create/use/delete`, name rules, ports, and what create writes. |
 | [Chat](docs/cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
 | [Voice](docs/cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |
 | [Service Management](docs/cli/service.md) | `server` daemon lifecycle, status, logs, and ports. |
-| [API Command](docs/cli/api.md) | `api run/start/stop/restart/status`, daemon name, and port handling. |
+| [API](docs/cli/api.md) | `api run/start/stop/restart/status`, daemon name, and port handling. |
 | [Cron](docs/cli/cron.md) | Scheduled jobs: cron expressions, intervals, one-time runs, and history. |
 | [Backup & Restore](docs/cli/backup.md) | Per-agent archives, database snapshots, venv recipes, and verified restore. |
 | [Providers](docs/cli/provider.md) | LLM provider integrations and default models. |
