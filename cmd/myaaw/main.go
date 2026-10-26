@@ -33,6 +33,9 @@ var rootCmd = &cobra.Command{
 	Use:   "myaaw",
 	Short: "Personal AI Assistant",
 	Long:  "😼 A Cat who becomes your personal AI assistant.",
+	// Errors are printed once by main; commands suppress usage for logical
+	// failures so the output stays readable.
+	SilenceErrors: true,
 }
 
 var agentFlag string
@@ -89,8 +92,11 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&agentFlag, "agent", "", "agent name to use (defaults to the registry default)")
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		// Add global spacing
-		fmt.Println()
+		// Add global spacing, except for commands that may stream data to
+		// stdout (backup -o -).
+		if cmd.Name() != "backup" {
+			fmt.Println()
+		}
 
 		// Commands that don't require .myaaw configuration
 		metaCommands := map[string]bool{
@@ -100,6 +106,8 @@ func init() {
 			"update":  true,
 			"agent":   true,
 			"api":     true,
+			"backup":  true,
+			"restore": true,
 		}
 
 		if metaCommands[cmd.Name()] || isAgentCommand(cmd) || isAPISubcommand(cmd) {
@@ -186,6 +194,7 @@ func init() {
 					{name: "Core Commands", cmdNames: []string{"chat", "voice", "voice-classic", "status"}},
 					{name: "Agents & API", cmdNames: []string{"agent", "api"}},
 					{name: "Automation", cmdNames: []string{"cron"}},
+					{name: "Backup & Restore", cmdNames: []string{"backup", "restore"}},
 					{name: "Service Management", cmdNames: []string{"server", "start", "stop", "restart", "webhook"}},
 					{name: "Integrations", cmdNames: []string{"provider", "channel"}},
 					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},
@@ -238,7 +247,7 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }

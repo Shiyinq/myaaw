@@ -143,7 +143,12 @@ var (
 
 func init() {
 	ToolsLogger = log.New(io.Discard, "", 0)
-	ConfigureLogging()
+	// Package init runs before CLI flags resolve the agent. Open the log file
+	// only when the agent actually exists, so meta commands (backup, restore)
+	// do not create an empty agent directory on a fresh install.
+	if agentdir.AgentInitialized(agentdir.Active()) {
+		ConfigureLogging()
+	}
 }
 
 // ConfigureLogging reopens tools.log for the active agent. It is called after
