@@ -366,20 +366,38 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (Task
 	defer s.unregisterRun(task.ID)
 
 	s.runMu.Lock()
+	defer s.runMu.Unlock()
+
+	// The run timeout starts when the task actually gets the agent loop, not
+	// while it waits in the queue. State updates use a background context so a
+	// timeout or client disconnect cannot leave the task stuck in working.
+	stateCtx := context.Background()
+	runCtx, cancelRun := context.WithTimeout(runCtx, runTimeout())
+	defer cancelRun()
+
+	started, ok, err := s.startRun(stateCtx, task)
+	if err != nil {
+		return Task{}, err
+	}
+	if !ok {
+		// Canceled or otherwise finished while waiting for the slot.
+		return started, nil
+	}
+	task = started
+
 	out, question, authRequest, err := s.runBot(task.ID, func() (*channel.OutgoingMessage, error) {
 		return s.runner.BotContext(runCtx, msg)
 	})
-	s.runMu.Unlock()
 	if err != nil {
-		return s.failTask(ctx, task, err), nil
+		return s.failTask(stateCtx, task, err), nil
 	}
 	if question != "" {
-		return s.inputRequired(ctx, task, question), nil
+		return s.inputRequired(stateCtx, task, question), nil
 	}
 	if authRequest != "" {
-		return s.authRequired(ctx, task, authRequest), nil
+		return s.authRequired(stateCtx, task, authRequest), nil
 	}
-	return s.completeTask(ctx, task, out)
+	return s.completeTask(stateCtx, task, out)
 }
 
 // SendMessageAsync creates the task and schedules it in the background.
@@ -439,10 +457,33 @@ func (s *Service) SendMessageStream(ctx context.Context, req SendMessageRequest,
 	s.registerRun(task.ID, cancel)
 	defer s.unregisterRun(task.ID)
 
-	out, question, authRequest, err := func() (*channel.OutgoingMessage, string, string, error) {
+	var (
+		out         *channel.OutgoingMessage
+		question    string
+		authRequest string
+		runErr      error
+		skipped     bool
+	)
+	func() {
 		s.runMu.Lock()
 		defer s.runMu.Unlock()
-		return s.runBot(task.ID, func() (*channel.OutgoingMessage, error) {
+
+		stateCtx := context.Background()
+		runCtx, cancelRun := context.WithTimeout(runCtx, runTimeout())
+		defer cancelRun()
+
+		started, ok, err := s.startRun(stateCtx, task)
+		if err != nil {
+			runErr = err
+			return
+		}
+		task = started
+		if !ok {
+			skipped = true
+			return
+		}
+
+		out, question, authRequest, runErr = s.runBot(task.ID, func() (*channel.OutgoingMessage, error) {
 			return s.runner.BotStreamContext(runCtx, msg, func(chunk channel.StreamChunk) {
 				if chunk.Kind != "text" || chunk.Text == "" {
 					return
@@ -460,23 +501,28 @@ func (s *Service) SendMessageStream(ctx context.Context, req SendMessageRequest,
 			})
 		})
 	}()
-	if err != nil {
-		task = s.failTask(ctx, task, err)
+	stateCtx := context.Background()
+	if skipped {
+		status(true)
+		return task, nil
+	}
+	if runErr != nil {
+		task = s.failTask(stateCtx, task, runErr)
 		status(true)
 		return task, nil
 	}
 	if question != "" {
-		task = s.inputRequired(ctx, task, question)
+		task = s.inputRequired(stateCtx, task, question)
 		status(true)
 		return task, nil
 	}
 	if authRequest != "" {
-		task = s.authRequired(ctx, task, authRequest)
+		task = s.authRequired(stateCtx, task, authRequest)
 		status(true)
 		return task, nil
 	}
 
-	task, err = s.completeTask(ctx, task, out)
+	task, err = s.completeTask(stateCtx, task, out)
 	if err != nil {
 		return Task{}, err
 	}
@@ -583,7 +629,8 @@ func (s *Service) ResumePending(ctx context.Context) (int, error) {
 			s.failTask(ctx, task, err)
 			continue
 		}
-		task.Attempts++
+		// Attempts are counted when the run actually starts, not when it is
+		// re-queued, so restarts do not exhaust the retry budget.
 		task.Status = TaskStatus{State: StateSubmitted, Timestamp: nowTimestamp()}
 		if err := s.store.Update(ctx, task); err != nil {
 			log.Printf("a2a: resume task %s: %v", task.ID, err)
@@ -862,7 +909,7 @@ func (s *Service) prepareTask(ctx context.Context, req SendMessageRequest, state
 			ContextID: contextID,
 			Status:    TaskStatus{State: state, Timestamp: nowTimestamp()},
 			Messages:  []Message{userMessage},
-			Attempts:  1,
+			Attempts:  0,
 			Caller:    callerName,
 			Metadata:  req.Metadata,
 		}
@@ -963,37 +1010,73 @@ func (s *Service) failTask(ctx context.Context, task Task, runErr error) Task {
 	return task
 }
 
-func (s *Service) runTask(task Task, msg *channel.IncomingMessage) {
+// runTimeout returns the deadline for one agent run. Queue waiting time is
+// excluded: the timeout starts when the run acquires the agent loop.
+func runTimeout() time.Duration {
 	timeout := time.Duration(config.AgentRunTimeoutSeconds) * time.Second
 	if timeout <= 0 {
-		timeout = defaultRunTimeout
+		return defaultRunTimeout
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	s.registerRun(task.ID, cancel)
+	return timeout
+}
+
+// startRun marks a queued task as running and counts the attempt. It returns
+// ok=false when the task already reached a terminal state while waiting (for
+// example, it was canceled), so the caller must not run the agent again.
+func (s *Service) startRun(ctx context.Context, task Task) (Task, bool, error) {
+	current, err := s.store.Get(ctx, task.ID)
+	if err != nil {
+		return Task{}, false, err
+	}
+	if TerminalStates[current.Status.State] {
+		return current, false, nil
+	}
+	current.Attempts++
+	current.Status = TaskStatus{State: StateWorking, Timestamp: nowTimestamp()}
+	if err := s.store.Update(ctx, current); err != nil {
+		return Task{}, false, err
+	}
+	return current, true, nil
+}
+
+func (s *Service) runTask(task Task, msg *channel.IncomingMessage) {
+	// cancelWait is registered before the queue wait so CancelTask can stop a
+	// task that has not started yet.
+	waitCtx, cancelWait := context.WithCancel(context.Background())
+	defer cancelWait()
+	s.registerRun(task.ID, cancelWait)
 	defer s.unregisterRun(task.ID)
 
-	// The agent loop is not safe for concurrent runs in one process.
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 
-	task.Status = TaskStatus{State: StateWorking, Timestamp: nowTimestamp()}
-	if err := s.store.Update(ctx, task); err != nil {
-		log.Printf("a2a: update task %s: %v", task.ID, err)
+	stateCtx := context.Background()
+	started, ok, err := s.startRun(stateCtx, task)
+	if err != nil {
+		log.Printf("a2a: start task %s: %v", task.ID, err)
+		return
 	}
+	if !ok {
+		// Canceled or finished while queued; keep the stored state.
+		return
+	}
+	task = started
+
+	runCtx, cancelRun := context.WithTimeout(waitCtx, runTimeout())
+	defer cancelRun()
 
 	out, question, authRequest, err := s.runBot(task.ID, func() (*channel.OutgoingMessage, error) {
-		return s.runner.BotContext(ctx, msg)
+		return s.runner.BotContext(runCtx, msg)
 	})
 	if err != nil {
-		task = s.failTask(ctx, task, err)
+		task = s.failTask(stateCtx, task, err)
 	} else if question != "" {
-		task = s.inputRequired(ctx, task, question)
+		task = s.inputRequired(stateCtx, task, question)
 	} else if authRequest != "" {
-		task = s.authRequired(ctx, task, authRequest)
+		task = s.authRequired(stateCtx, task, authRequest)
 	} else {
 		var completeErr error
-		task, completeErr = s.completeTask(ctx, task, out)
+		task, completeErr = s.completeTask(stateCtx, task, out)
 		if completeErr != nil {
 			log.Printf("a2a: complete task %s: %v", task.ID, completeErr)
 		}

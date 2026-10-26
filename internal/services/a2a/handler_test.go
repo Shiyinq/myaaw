@@ -25,10 +25,19 @@ type fakeRunner struct {
 	input        *channel.IncomingMessage
 	streamChunks []channel.StreamChunk
 	onRun        func()
+	// runDelay simulates a long run and honors context cancellation.
+	runDelay time.Duration
 }
 
-func (f *fakeRunner) BotContext(_ context.Context, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
+func (f *fakeRunner) BotContext(ctx context.Context, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
 	f.input = msg
+	if f.runDelay > 0 {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(f.runDelay):
+		}
+	}
 	if f.onRun != nil {
 		f.onRun()
 	}

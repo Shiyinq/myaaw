@@ -209,7 +209,8 @@ Service parameters are carried in gRPC metadata: `a2a-version` (required, `1.0`)
 | `a2a_message_ids` | `caller`, `message_id`, `task_id`, `created_at` | `SendMessage` idempotency; rows older than 30 days are pruned on startup. |
 
 - `ListTasks` uses cursor pagination over `(updated_at DESC, id DESC)` backed by `idx_a2a_tasks_updated`.
-- On startup, `ResumePending` re-runs `submitted`/`working` tasks (up to three attempts); exhausted tasks are failed. Stale tasks not resumable are failed by `RecoverStale`.
+- On startup, `ResumePending` re-runs `submitted`/`working` tasks. `attempts` is incremented when a run actually starts (not when it is re-queued), and tasks that already started three times are failed. Re-queued tasks keep their attempt count, so restarts do not consume the retry budget.
+- Runs are serialized per process: a queued task waits for the current run to finish, and its run timeout starts only after it is admitted.
 - Timestamps are UTC with millisecond precision on the wire.
 
 ## 6. Contact registry and the `contact` tool

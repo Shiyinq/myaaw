@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -490,5 +491,197 @@ func TestSendMessageRejectsOversizedInlinePayload(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "inline file parts exceed") {
 		t.Fatalf("err = %v, want inline payload error", err)
+	}
+}
+
+func TestQueuedTaskCancelIsHonored(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	var runs atomic.Int32
+	runner := &fakeRunner{out: &channel.OutgoingMessage{Text: "should not run"}}
+	runner.onRun = func() { runs.Add(1) }
+	service := NewService(newTestStore(t), runner)
+
+	// Hold the agent loop so the task stays queued.
+	service.runMu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			service.runMu.Unlock()
+		}
+	}()
+
+	task, err := service.SendMessageAsync(context.Background(), SendMessageRequest{
+		Message: Message{MessageID: "cancel-queued", Role: "user", Parts: []Part{{Text: "hello"}}},
+	})
+	if err != nil {
+		t.Fatalf("SendMessageAsync: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	if _, err := service.CancelTask(context.Background(), task.ID); err != nil {
+		t.Fatalf("CancelTask: %v", err)
+	}
+
+	service.runMu.Unlock()
+	locked = false
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		stored, err := service.GetTask(context.Background(), task.ID)
+		if err != nil {
+			t.Fatalf("GetTask: %v", err)
+		}
+		if stored.Status.State != StateCanceled {
+			t.Fatalf("state = %q, want canceled", stored.Status.State)
+		}
+		if runs.Load() != 0 {
+			t.Fatal("agent ran a task that was canceled while queued")
+		}
+		if stored.Attempts != 0 {
+			t.Fatalf("attempts = %d, want 0 (never started)", stored.Attempts)
+		}
+		if time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestRunTimeoutStartsAfterQueue(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	previous := config.AgentRunTimeoutSeconds
+	config.AgentRunTimeoutSeconds = 1
+	t.Cleanup(func() { config.AgentRunTimeoutSeconds = previous })
+
+	runner := &fakeRunner{out: &channel.OutgoingMessage{Text: "done"}, runDelay: 300 * time.Millisecond}
+	service := NewService(newTestStore(t), runner)
+
+	service.runMu.Lock()
+	task, err := service.SendMessageAsync(context.Background(), SendMessageRequest{
+		Message: Message{Role: "user", Parts: []Part{{Text: "hello"}}},
+	})
+	if err != nil {
+		t.Fatalf("SendMessageAsync: %v", err)
+	}
+	// Wait longer than the run timeout while the task is still queued.
+	time.Sleep(1500 * time.Millisecond)
+	service.runMu.Unlock()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		stored, err := service.GetTask(context.Background(), task.ID)
+		if err != nil {
+			t.Fatalf("GetTask: %v", err)
+		}
+		if stored.Status.State == StateCompleted {
+			return
+		}
+		if stored.Status.State == StateFailed {
+			t.Fatalf("queued task failed: %v", stored.Status.Message)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("state = %q, want completed", stored.Status.State)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestRunTimeoutPersistsFailure(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	previous := config.AgentRunTimeoutSeconds
+	config.AgentRunTimeoutSeconds = 1
+	t.Cleanup(func() { config.AgentRunTimeoutSeconds = previous })
+
+	runner := &fakeRunner{out: &channel.OutgoingMessage{Text: "late"}, runDelay: 5 * time.Second}
+	service := NewService(newTestStore(t), runner)
+
+	task, err := service.SendMessageAsync(context.Background(), SendMessageRequest{
+		Message: Message{Role: "user", Parts: []Part{{Text: "hello"}}},
+	})
+	if err != nil {
+		t.Fatalf("SendMessageAsync: %v", err)
+	}
+
+	deadline := time.Now().Add(4 * time.Second)
+	for {
+		stored, err := service.GetTask(context.Background(), task.ID)
+		if err != nil {
+			t.Fatalf("GetTask: %v", err)
+		}
+		if stored.Status.State == StateFailed {
+			if stored.Attempts != 1 {
+				t.Fatalf("attempts = %d, want 1", stored.Attempts)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("state = %q, want failed (timeout must be persisted)", stored.Status.State)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestResumePendingDoesNotCountRestarts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	store := newTestStore(t)
+	service := NewService(store, &fakeRunner{out: &channel.OutgoingMessage{Text: "resumed"}})
+
+	if err := store.Create(context.Background(), Task{
+		ID:        "resume-attempts",
+		ContextID: "ctx-1",
+		Status:    TaskStatus{State: StateWorking},
+		Messages:  []Message{{Role: "user", Parts: []Part{{Text: "hello"}}}},
+		Attempts:  1,
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	service.runMu.Lock()
+	resumed, err := service.ResumePending(context.Background())
+	if err != nil || resumed != 1 {
+		service.runMu.Unlock()
+		t.Fatalf("resumed = %d, err = %v", resumed, err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	queued, err := store.Get(context.Background(), "resume-attempts")
+	if err != nil {
+		service.runMu.Unlock()
+		t.Fatalf("Get: %v", err)
+	}
+	if queued.Attempts != 1 {
+		service.runMu.Unlock()
+		t.Fatalf("attempts while queued = %d, want 1 (restart must not count)", queued.Attempts)
+	}
+
+	service.runMu.Unlock()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		stored, err := store.Get(context.Background(), "resume-attempts")
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if stored.Status.State == StateCompleted {
+			if stored.Attempts != 2 {
+				t.Fatalf("attempts after start = %d, want 2", stored.Attempts)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("state = %q, want completed", stored.Status.State)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

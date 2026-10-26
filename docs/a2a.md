@@ -19,7 +19,8 @@ Implemented:
 - An authenticated extended Agent Card via `A2A_EXTENDED_CARD` and `GetExtendedAgentCard`.
 - Webhook SSRF guard, per-caller rate limiting, and an audit log.
 - Cancellation that stops the running agent loop.
-- Async tasks resume after a restart (up to three attempts).
+- Async tasks resume after a restart (up to three started attempts; queue time and restarts are not counted).
+- Runs are serialized per agent process.
 
 ## 1. Enable the endpoint
 
@@ -520,7 +521,10 @@ All of them remain available over JSON-RPC, REST, and gRPC, so interop with othe
 
 ## 7. Limitations / next phase
 
-- Async retries happen on restart only, capped at three attempts.
+- A2A runs are serialized per agent process (one task at a time, shared by every caller). Queue waiting is unbounded and one long task delays all callers.
+- Queue waiting time is **not** counted against the run timeout, and canceling a queued task prevents it from starting.
+- Attempts are counted when a run starts, not when a task is re-queued, so restarting the server does not exhaust the retry budget.
+- Async retries happen on restart only, capped at three started attempts.
 - `SubscribeToTask` buffers live in memory and expire after 10 minutes.
 - DNS names for webhooks are validated by name only; resolution is left to the delivery client (a documented SSRF limitation).
 - The `contact` tool covers `send`, `status`, artifact download, and contact management only; cancel, task listing, streaming, subscribe, extended card, and push configs are server-only for now. See the coverage table in [section 5](#scope-of-the-contact-tool).
