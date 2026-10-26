@@ -40,10 +40,10 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 
 | Command | Description | Document |
 | :--- | :--- | :--- |
-| `agent list` | List initialized agents | [Multi-Agent](../agents/multi-agent.md#6-managing-agents) |
-| `agent create <name>` | Create an isolated agent | [Multi-Agent](../agents/multi-agent.md#create) |
-| `agent use [name]` | Set the default agent | [Multi-Agent](../agents/multi-agent.md#set-default) |
-| `agent delete [name]` | Stop the daemon and delete all data | [Multi-Agent](../agents/multi-agent.md#delete) |
+| `agent list` | List initialized agents | [Agent Command](agent.md#agent-list) |
+| `agent create <name>` | Create an isolated agent | [Agent Command](agent.md#agent-create-name) |
+| `agent use [name]` | Set the default agent | [Agent Command](agent.md#agent-use-name) |
+| `agent delete [name]` | Stop the daemon and delete all data | [Agent Command](agent.md#agent-delete-name---yes) |
 
 ### Backup and restore
 
@@ -71,7 +71,7 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 | `server stop` | Stop and unregister the daemon | [Service](service.md) |
 | `server restart` | Restart the daemon | [Service](service.md) |
 | `server status` | Check daemon status | [Service](service.md) |
-| `api` | Unified control plane API | [Control Plane](../api/control-plane.md) |
+| `api` | Unified control plane API | [API Command](api.md) |
 | `webhook` | Telegram webhook management | [Webhook](webhook.md) |
 
 `start`, `stop`, and `restart` are aliases for `server start`, `server stop`, and `server restart`.

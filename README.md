@@ -403,7 +403,7 @@ For the complete guide, see [docs/agents/multi-agent.md](docs/agents/multi-agent
 ### 🧩 Multiple Agents
 Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/<agent>/`. The default agent is `default/`; names may contain letters, numbers, `_`, and `-`.
 
-Full guide: [agent management commands](docs/agents/multi-agent.md#6-managing-agents).
+Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent guide](docs/agents/multi-agent.md#6-managing-agents).
 
 | Command | Subcommands / Flags | Description |
 | :--- | :--- | :--- |
@@ -474,7 +474,7 @@ Myaaw runs as a unified background service daemon.
 > [!TIP]
 > Use `myaaw server run` for foreground execution (useful for debugging) and `myaaw server start` for background daemon execution.
 
-The `api` command is documented in the [Control Plane API guide](docs/api/control-plane.md).
+The `api` command is documented in the [api command reference](docs/cli/api.md) and the [Control Plane API guide](docs/api/control-plane.md).
 
 ### ⏰ Cron Scheduler & Tasks
 Myaaw includes a built-in scheduler to automate tasks (like sending recurring messages or reminders).
@@ -531,9 +531,11 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | :--- | :--- |
 | [CLI Reference](docs/cli/README.md) | Every command, flag, global option, and convention. |
 | [Onboarding](docs/cli/onboard.md) | First-run setup for providers, channels, and heartbeat. |
+| [Agent Command](docs/cli/agent.md) | `agent list/create/use/delete`, name rules, ports, and what create writes. |
 | [Chat](docs/cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
 | [Voice](docs/cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |
 | [Service Management](docs/cli/service.md) | `server` daemon lifecycle, status, logs, and ports. |
+| [API Command](docs/cli/api.md) | `api run/start/stop/restart/status`, daemon name, and port handling. |
 | [Cron](docs/cli/cron.md) | Scheduled jobs: cron expressions, intervals, one-time runs, and history. |
 | [Backup & Restore](docs/cli/backup.md) | Per-agent archives, database snapshots, venv recipes, and verified restore. |
 | [Providers](docs/cli/provider.md) | LLM provider integrations and default models. |

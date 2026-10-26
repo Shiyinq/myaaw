@@ -22,18 +22,15 @@ Start with the [main README](../README.md) for installation and a feature overvi
 
 ## CLI
 
-Some commands live in another topic instead of this group:
-
-- `myaaw agent ...` → [Multi-Agent Guide](agents/multi-agent.md#6-managing-agents)
-- `myaaw api ...` → [Control Plane API](api/control-plane.md)
-
 | Document | Description |
 | :--- | :--- |
 | [CLI Reference](cli/README.md) | Global flags, command groups, and conventions. |
 | [Onboarding](cli/onboard.md) | First-run setup. |
+| [Agent Command](cli/agent.md) | `agent list/create/use/delete`, name rules, and what create writes. |
 | [Chat](cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
 | [Voice](cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |
 | [Service Management](cli/service.md) | Server daemon lifecycle, status, logs, and ports. |
+| [API Command](cli/api.md) | `api run/start/stop/restart/status`, daemon name, and ports. |
 | [Cron](cli/cron.md) | Scheduled jobs: cron expressions, intervals, one-time runs, and history. |
 | [Backup & Restore](cli/backup.md) | Per-agent archives, database snapshots, and verified restore. |
 | [Providers](cli/provider.md) | LLM provider integrations and models. |
