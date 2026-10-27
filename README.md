@@ -541,7 +541,7 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | Document | Description |
 | :--- | :--- |
 | [CLI Reference](docs/cli/README.md) | Every command, flag, global option, and convention. |
-| [Onboarding](docs/cli/onboard.md) | First-run setup for providers, channels, and heartbeat. |
+| [Onboarding](docs/cli/onboard.md) | First-run or per-agent setup: agent name, provider, channels, webhook, heartbeat; runs interactively or headless. |
 | [Agent](docs/cli/agent.md) | `agent list/create/use/delete`, name rules, ports, and what create writes. |
 | [Chat](docs/cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
 | [Voice](docs/cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |

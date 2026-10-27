@@ -14,7 +14,7 @@ Without `--agent`:
 
 - **No agent yet** → the wizard asks for a name, validates it, and creates the agent.
 - **Agents already exist** → a picker lists them, plus `+ Create a new agent`.
-- **Only the legacy `default` agent exists** → it is used as is, so existing installs keep working.
+- **Only the legacy `default` agent exists** → it is listed in the picker and can be reconfigured, so existing installs keep working.
 
 ## Agent name
 
@@ -42,7 +42,7 @@ default                  ⚠️  allowed, but keeps the generic folder name
 | :--- | :--- |
 | Welcome | Intro screen. |
 | Agent | Name prompt (first run) or picker (agents exist). |
-| Initialize | Creates `~/.myaaw/<agent>/`, registers the agent, assigns a port, seeds A2A contacts. |
+| Initialize | Creates `~/.myaaw/<agent>/`, registers the agent in `agents.json`, assigns a unique port, creates `.env`, and wires A2A. |
 | Provider | Type (OpenAI-compatible or Gemini), config name, base URL, API key, then a model picked from the live model list. |
 | Channels | Telegram, Discord, both, or skip. |
 | Telegram mode | `polling` or `webhook`. Choosing webhook asks for the public URL next. |
@@ -55,7 +55,7 @@ default                  ⚠️  allowed, but keeps the generic folder name
 | Install | Optional copy of the binary to `~/.local/bin/myaaw`. |
 | Restart | Offered only when this agent's daemon is already running, so the new config is loaded immediately. |
 
-Keys and tokens are masked while typing. `Esc` goes back one step so answers are kept; `Ctrl+C` cancels and nothing is written until the **Review** step is saved.
+Keys and tokens are masked while typing. `Esc` goes back one step so answers are kept; `Ctrl+C` cancels. The layout, `.env`, registry entry, and A2A contacts are created at the **Initialize** step; `config.json` is only written when you save from **Review**.
 
 ## Provider defaults
 
@@ -99,6 +99,7 @@ myaaw onboard --yes \
 | Flag | Wizard step |
 | :--- | :--- |
 | `--agent <name>` | Agent name (required in headless mode) |
+| `--yes` | Skip every prompt (implied when stdin is not a TTY) |
 | `--provider openai\|gemini` | Provider type (required) |
 | `--provider-name` | Provider name stored in `config.json` |
 | `--base-url` | Provider base URL |
@@ -129,16 +130,16 @@ Rules:
 ```bash
 # Docker / CI
 MYAAW_API_KEY="$KEY" myaaw onboard --yes --agent ci \
-  --provider gemini --model gemini-2.5-flash --json
+  --provider gemini --model models/gemini-2.5-flash --json
 ```
 
 ## Files written
 
 ```text
 ~/.myaaw/<agent>/
-  .env                    # PORT, MYAAW_BASE_URL, ALLOWED_ORIGINS, tuning keys
+  .env                    # PORT, MYAAW_BASE_URL, ALLOWED_ORIGINS, A2A_TOKEN, tuning keys
   config/config.json      # providers (base_url + default_model), channels, heartbeat, bot.owner_ids
-  contacts.json           # A2A contacts seeded from the registry
+  contacts.json           # A2A contacts for the other agents (never the agent itself)
   home/                   # AGENTS.md, SOUL.md, MEMORY.md, workspace
   skills/                 # built-in skill templates
   database/myaaw.db       # created on first use
@@ -165,6 +166,8 @@ If any of this fails, onboarding still completes and shows a warning (`A2A conta
 - Provider and model are replaced with the values you enter.
 - Channels and heartbeat are only rewritten when you configure them; choosing **Skip** leaves existing settings untouched, so a working Telegram bot is not disabled by accident.
 - Values left over from older templates (`YOUR_*` placeholders) are removed before saving.
+- If the agent daemon is running, the wizard offers to restart it at the end; `--restart` does the same in headless mode.
+- A2A contacts are refreshed, so a newly added agent appears in the other agents' contact lists.
 
 ## After onboarding
 
@@ -190,7 +193,7 @@ myaaw --agent agent-b chat
 - `myaaw voice` (real-time) requires a Gemini provider; `voice-classic` works with any provider.
 - Each agent needs its own bot token if you run several agents.
 - The install step copies the binary to `~/.local/bin`; if that directory is not in `PATH`, the wizard prints the line to add to your shell profile.
-- On Windows the install step is skipped; add the binary to `PATH` manually.
+- The interactive wizard does not install automatically on Windows; copy the binary to a directory on `PATH` yourself. Headless `--install` attempts the copy and reports failures as a warning.
 
 ## Related
 
