@@ -49,18 +49,19 @@ default                  ⚠️  allowed, but keeps the generic folder name
 | Provider | Type (OpenAI-compatible or Gemini), config name, base URL, API key, then a model picked from the live model list. |
 | Skills | Multi-select built-in skills with a short description after each name. **Nothing is selected by default**, so no skill folder is created unless you choose it. |
 | Built-in tools | Multi-select built-in tools with a short description after each name. **All are enabled by default**; press `Space` on a tool to disable it. |
-| Channels | Telegram, Discord, both, or skip. |
+| Channels | **Keep current** first, then Telegram, Discord, or Both. On an update, the next screen can also disable a saved channel. |
 | Telegram mode | `polling` or `webhook`. Choosing webhook asks for the public URL next. |
 | Telegram token | Bot token, masked while typing. |
 | Webhook URL | Only for webhook mode: the public `https://` base URL. Telegram receives updates at `<url>/webhook/telegram`, and Myaaw registers it right after saving. |
 | Discord | Bot token, if Discord is enabled. |
-| Heartbeat | Channel, destination ID, and interval (`15m`, `30m`, `1h`, ...). |
+| Access | **Private** (only owner IDs can chat on Telegram/Discord) or **Public** (anyone can chat), or **Keep current access** on an update. Terminal, REST API, and A2A are never filtered. |
+| Heartbeat | Channel, destination ID, and interval (`15m`, `30m`, `1h`, ...). On an update, **Disable heartbeat** turns it off. |
 | Owner | Asked once per configured channel: **Telegram owner ID** and/or **Discord owner ID**. Both are optional and can be left empty. |
 | Review | Summary of everything that will be written, plus warnings. |
 | Install | Offered only when this is the **first agent** on the machine. Later agents skip it. |
 | Restart | Offered only when this agent's daemon is already running, so the new config is loaded immediately. |
 
-Keys and tokens are masked while typing. `Esc` goes back one step so answers are kept; `Ctrl+C` cancels. **Nothing is written until you save from Review** — layout, `.env`, port, registry entry, A2A wiring, and `config.json` are all created at that point. Cancelling at any step (or **Cancel** on Review) leaves no agent behind.
+Keys and tokens are masked while typing. `Esc` goes back one step so answers are kept; `Ctrl+C` cancels. The key hints at the bottom of every screen show this, so back navigation is always visible. **Nothing is written until you save from Review** — layout, `.env`, port, registry entry, A2A wiring, and `config.json` are all created at that point. Cancelling at any step (or **Cancel** on Review) leaves no agent behind.
 
 ## Provider defaults
 
@@ -105,17 +106,20 @@ myaaw onboard --yes \
 | :--- | :--- |
 | `--agent <name>` | Agent name (required in headless mode; `agent create <name>` supplies it) |
 | `--yes` | Skip every prompt (implied when stdin is not a TTY) |
-| `--provider openai\|gemini` | Provider type (required) |
+| `--provider openai\|gemini` | Provider type (required for a new agent; omit it, or pass `--keep-provider`, to leave the provider alone on an update) |
+| `--keep-provider` | Keep the current provider, model, and API key (update only) |
 | `--provider-name` | Provider name stored in `config.json` |
 | `--base-url` | Provider base URL |
 | `--api-key` | API key (prefer `MYAAW_API_KEY`) |
 | `--model` | Default model |
 | `--channel telegram\|discord\|both\|skip` | Channel choice |
+| `--disable-channel telegram\|discord\|both` | Turn saved channels off (the token is kept so they can be re-enabled) |
 | `--telegram-mode polling\|webhook` | Telegram mode |
 | `--telegram-token` | Telegram bot token (prefer `TELEGRAM_BOT_TOKEN`) |
 | `--webhook-url` | Public `https://` URL (webhook mode) |
 | `--discord-token` | Discord bot token (prefer `DISCORD_BOT_TOKEN`) |
-| `--heartbeat-channel`, `--heartbeat-to`, `--heartbeat-every` | Heartbeat |
+| `--heartbeat-channel`, `--heartbeat-to`, `--heartbeat-every` | Heartbeat (`--heartbeat-channel off` disables it) |
+| `--bot-type private\|public` | Bot access type (default: `private`) |
 | `--owner` | Owner IDs for any channel, comma separated (optional) |
 | `--telegram-owner` | Telegram owner user IDs, comma separated (optional) |
 | `--discord-owner` | Discord owner user IDs, comma separated (optional) |
@@ -125,6 +129,7 @@ myaaw onboard --yes \
 | `--install` | Copy the binary to `~/.local/bin` (off by default in headless mode) |
 | `--restart` | Restart the agent daemon after writing, if it is running |
 | `--force` | Allow reconfiguring an existing agent |
+| `--list-capabilities` | Print the built-in skill and tool names with descriptions, then exit (add `--json` for machine-readable output) |
 | `--json` | Print a machine-readable summary (implies `--yes`) |
 
 Rules:
@@ -152,9 +157,20 @@ Owner IDs are only enforced when `bot.type` is `private`, and only for the chann
 
 Both prompts are **optional**. Leave them empty if you have not looked the ID up yet. Owner IDs are only enforced for messages that arrive through Telegram and Discord (the `/webhook/bot` path): `myaaw chat` in the terminal, the REST API (`/api/chat`), and A2A calls keep working with an empty list. When `bot.type` is `private` and a channel is configured but the list is empty, the review screen shows this reminder. Fill the IDs in later with `myaaw --agent <name> onboard`, or by editing `bot.owner_ids` in `config/config.json`.
 
-On a reconfigure the prompts still appear even when you pick **Skip** in the Channels section, as long as that channel is already configured; the saved IDs are pre-filled and clearing the field removes them from `bot.owner_ids`.
+On a reconfigure the prompts still appear even when you keep the current channels, as long as that channel is already configured; the saved IDs are pre-filled and clearing the field removes them from `bot.owner_ids`.
 
 The headless flags merge into the same list: `--owner` for any channel, plus `--telegram-owner` and `--discord-owner`.
+
+## Bot access
+
+The **Access** step writes `bot.type`:
+
+- **Private** (default) — only the IDs in `bot.owner_ids` can chat, and only on Telegram and Discord.
+- **Public** — anyone can chat on those channels. Owner IDs are still saved and still mark those users as `owner` internally, but they no longer gate access.
+
+On an update, **Keep current access** is selected by default, so pressing Enter never flips the mode.
+
+Neither setting filters `myaaw chat`, the REST API, or A2A. Headless equivalent: `--bot-type private|public`.
 
 ## Install step
 
@@ -182,8 +198,17 @@ Both flags accept a comma-separated list in any order; the list is normalised to
 
 | Flag | Valid names |
 | :--- | :--- |
-| `--skills` | `calendar`, `cashflow`, `converter`, `notes`, `scraping`, `tavily`, `time`, `weather` |
+| `--skills` | `calendar`, `cashflow`, `converter`, `notes`, `scraping`, `skill-creator`, `tavily`, `time`, `weather` |
 | `--disable-tools` | `a2a_auth_request`, `a2a_input`, `bash`, `contact`, `cron`, `execute_python`, `filesystem`, `provider`, `subagent` |
+
+### Discovering the names
+
+`--list-capabilities` prints the same lists with their descriptions, so no trial-and-error is needed:
+
+```bash
+myaaw onboard --list-capabilities          # human readable
+myaaw onboard --list-capabilities --json   # {"skills": [...], "tools": [...]}
+```
 
 ```bash
 # new agent: install three skills, keep every tool enabled
@@ -270,23 +295,28 @@ If any of this fails, onboarding still completes and shows a warning (`A2A conta
 
 ## Re-running onboarding
 
-Every section has a way to keep what is already configured:
+Every section has a way to keep what is already configured. On an update the label is always **Keep current …**; **Skip** is only used when creating a new agent, where there is nothing to keep.
 
 | Section | Keep the current value |
 | :--- | :--- |
-| Provider | Pick **Keep current provider** on the provider step |
-| Skills | Enter on **Skip (keep current)** at the top of the list |
-| Built-in tools | Enter on **Skip (keep current)**; `tools/tools.json` is not rewritten |
-| Channels | Choose **Skip**; the existing channel settings stay |
-| Heartbeat | Choose **Skip**; the existing heartbeat stays |
+| Provider | **Keep current provider** (the first option on the provider step) |
+| Provider key/model | Re-enter the same provider name, press Enter on the API key prompt to keep the saved key, and the model list starts on the current model |
+| Skills | **Keep current skills** at the top of the list |
+| Built-in tools | **Keep current tools** at the top of the list; `tools/tools.json` is not rewritten |
+| Channels | **Keep current** on the channel step, then **Keep current** again on the existing-channels screen (which also offers Disable Telegram / Disable Discord) |
+| Heartbeat | **Keep current heartbeat**; **Disable heartbeat** turns it off instead |
+| Access | **Keep current access** (pre-selected) |
 | Owner | IDs are pre-filled; press Enter unchanged. Clearing the field removes the saved IDs |
 
 Details:
 
 - Nothing is written until you save **Review**, so cancelling a reconfigure leaves `config.json` and `.env` untouched.
 - Provider and model are only replaced when you pick a provider type instead of **Keep current provider**.
-- Skills are never deleted. Skipping only means no new folder is installed.
-- Skipped tools keep the current `builtin_tools` map; selecting the list rewrites it from your selection.
+- The API key prompt accepts an empty answer while a key is saved for that provider, so changing only the model does not mean retyping (or re-pasting) the key.
+- Skills are never deleted. Keeping the current selection only means no new folder is installed.
+- Keeping the current tools leaves the `builtin_tools` map untouched; selecting the list rewrites it from your selection.
+- Disabling a channel writes `active: false` but keeps its token, so answering the channel prompt again re-enables it without another trip to BotFather.
+- **Disable heartbeat** sets `heartbeat.active` to `false` and keeps the saved destination and interval.
 - Owner IDs are merged from the Telegram and Discord prompts and de-duplicated.
 - In headless mode `bot.owner_ids` is only rewritten when an owner flag carries an ID, so a run without `--owner` keeps the saved list.
 - Values left over from older templates (`YOUR_*` placeholders) are removed before saving.

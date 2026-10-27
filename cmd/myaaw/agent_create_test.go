@@ -73,6 +73,10 @@ func TestOnboardCancelLeavesNothing(t *testing.T) {
 	m = enter(m) // tools (all) -> channels
 	m.cursor = len(m.choices) - 1
 	m = enter(m) // skip channels
+	if m.step != stepBotType {
+		t.Fatalf("step = %d, want stepBotType", m.step)
+	}
+	m = enter(m) // keep private access
 	m.cursor = len(m.choices) - 1
 	m = enter(m) // skip heartbeat -> review (no owner prompt without a channel)
 	if m.step != stepSummary {
@@ -147,8 +151,15 @@ func TestUpdateCancelKeepsExistingConfig(t *testing.T) {
 	m = enter(m) // model -> skills
 	m = enter(m) // skills -> tools
 	m = enter(m) // tools -> channels
-	m.cursor = len(m.choices) - 1
-	m = enter(m) // skip channels
+	m.cursor = 0
+	if m.choices[m.cursor] != keepChannelsOption {
+		t.Fatalf("choices = %v, want Keep current first on an update", m.choices)
+	}
+	m = enter(m) // keep current channels
+	if m.step != stepBotType {
+		t.Fatalf("step = %d, want stepBotType", m.step)
+	}
+	m = enter(m) // keep private access
 	m.cursor = len(m.choices) - 1
 	m = enter(m) // skip heartbeat -> review (no owner prompt without a channel)
 	if m.step != stepSummary {

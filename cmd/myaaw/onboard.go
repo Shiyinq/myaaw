@@ -37,30 +37,34 @@ var onboardCmd = &cobra.Command{
 // onboardOptions mirrors every question the interactive wizard asks, so the
 // same setup can run headless in scripts and CI.
 type onboardOptions struct {
-	yes       bool
-	json      bool
-	force     bool
-	install   bool
-	provider  string
-	provName  string
-	baseURL   string
-	apiKey    string
-	model     string
-	channel   string
-	tgMode    string
-	tgToken   string
-	webhook   string
-	dcToken   string
-	hbChannel string
-	hbTo      string
-	hbEvery   string
-	owner     string
-	tgOwner   string
-	dcOwner   string
-	port      int
-	restart   bool
-	skills    string
-	noTools   string
+	yes             bool
+	json            bool
+	force           bool
+	install         bool
+	provider        string
+	provName        string
+	baseURL         string
+	apiKey          string
+	model           string
+	channel         string
+	tgMode          string
+	tgToken         string
+	webhook         string
+	dcToken         string
+	hbChannel       string
+	hbTo            string
+	hbEvery         string
+	owner           string
+	tgOwner         string
+	dcOwner         string
+	port            int
+	restart         bool
+	skills          string
+	noTools         string
+	keepProvider    bool
+	botType         string
+	disableChannels string
+	listCaps        bool
 	// disableToolsSet reports whether --disable-tools was passed, so an
 	// update without the flag can preserve the current disabled set.
 	disableToolsSet bool
@@ -91,7 +95,7 @@ func registerOnboardFlags(cmd *cobra.Command) {
 	f.StringVar(&onboardOpts.tgToken, "telegram-token", "", "telegram bot token (prefer TELEGRAM_BOT_TOKEN)")
 	f.StringVar(&onboardOpts.webhook, "webhook-url", "", "public https URL for telegram webhook mode")
 	f.StringVar(&onboardOpts.dcToken, "discord-token", "", "discord bot token (prefer DISCORD_BOT_TOKEN)")
-	f.StringVar(&onboardOpts.hbChannel, "heartbeat-channel", "", "heartbeat channel: telegram, discord, or skip")
+	f.StringVar(&onboardOpts.hbChannel, "heartbeat-channel", "", "heartbeat channel: telegram, discord, off, or skip")
 	f.StringVar(&onboardOpts.hbTo, "heartbeat-to", "", "heartbeat destination chat/channel ID")
 	f.StringVar(&onboardOpts.hbEvery, "heartbeat-every", "", "heartbeat interval, e.g. 30m or 1h")
 	f.StringVar(&onboardOpts.owner, "owner", "", "owner IDs for any channel, comma separated")
@@ -101,6 +105,10 @@ func registerOnboardFlags(cmd *cobra.Command) {
 	f.BoolVar(&onboardOpts.restart, "restart", false, "restart the agent daemon after writing the config")
 	f.StringVar(&onboardOpts.skills, "skills", "", "skills to install, comma separated (default: none, or 'all')")
 	f.StringVar(&onboardOpts.noTools, "disable-tools", "", "built-in tools to disable, comma separated")
+	f.BoolVar(&onboardOpts.keepProvider, "keep-provider", false, "keep the current provider and model (update only)")
+	f.StringVar(&onboardOpts.botType, "bot-type", "", "access type: private or public (default: private)")
+	f.BoolVar(&onboardOpts.listCaps, "list-capabilities", false, "list built-in skills and tools, then exit")
+	f.StringVar(&onboardOpts.disableChannels, "disable-channel", "", "channels to turn off: telegram, discord, or both")
 }
 
 func runOnboard(cmd *cobra.Command, args []string) {
@@ -112,6 +120,10 @@ func runOnboard(cmd *cobra.Command, args []string) {
 // `myaaw agent create`. When createNow is true the agent layout is created
 // before the TUI starts and the wizard jumps straight to the provider step.
 func runOnboarding(agentName string, createNow bool) {
+	if onboardOpts.listCaps {
+		printCapabilities(onboardOpts.json)
+		return
+	}
 	if agentName != "" {
 		if err := agentdir.ValidateName(agentName); err != nil {
 			fmt.Printf("Invalid agent name: %v\n", err)
@@ -162,6 +174,8 @@ const (
 	stepSkills
 	stepTools
 	stepChannelChoice
+	stepChannelExisting
+	stepBotType
 	stepTelegramMode
 	stepTelegramToken
 	stepTelegramWebhookURL
@@ -181,8 +195,20 @@ const (
 	newAgentOption     = "+ Create a new agent"
 	manualModelOption  = "Enter model manually"
 	defaultHeartbeatEV = "30m"
-	skipSectionOption  = "Skip (keep current)"
-	skipProviderOption = "Keep current provider"
+	defaultBotType     = "private"
+
+	// Update mode: every section offers an explicit "keep" answer, worded the
+	// same way. "Skip" is reserved for a brand new agent, where there is no
+	// previous value to keep.
+	keepProviderOption  = "Keep current provider"
+	keepSkillsOption    = "Keep current skills"
+	keepToolsOption     = "Keep current tools"
+	keepChannelsOption  = "Keep current"
+	keepHeartbeatOption = "Keep current heartbeat"
+	keepAccessOption    = "Keep current access"
+	skipOption          = "Skip"
+
+	heartbeatOffOption = "Disable heartbeat"
 )
 
 type onboardModel struct {
@@ -200,8 +226,11 @@ type onboardModel struct {
 	homeDir             string
 	agentName           string
 	agentExistedAtStart bool
+	agentFromPicker     bool
 	existingTelegram    bool
 	existingDiscord     bool
+	disableTelegram     bool
+	disableDiscord      bool
 	myaawHome           string
 	envFile             string
 	configFile          string
@@ -223,10 +252,16 @@ type onboardModel struct {
 	telegramWebhookURL string
 	discordToken       string
 
-	heartbeat        bool
-	heartbeatChannel string
-	heartbeatTo      string
-	heartbeatEvery   string
+	heartbeat                bool
+	heartbeatSet             bool
+	heartbeatChannel         string
+	heartbeatTo              string
+	heartbeatEvery           string
+	existingHeartbeat        bool
+	existingHeartbeatChannel string
+	existingHeartbeatTo      string
+	existingHeartbeatEvery   string
+	botType                  string
 
 	telegramOwnerIDs []string
 	discordOwnerIDs  []string
@@ -278,6 +313,7 @@ func initialOnboardModel(agentName string) onboardModel {
 		tools:             builtinToolNames(),
 		toolsSelected:     map[string]bool{},
 		toolDescriptions:  builtinToolDescriptions(),
+		botType:           defaultBotType,
 	}
 	for _, name := range m.skills {
 		m.skillsSelected[name] = false
@@ -319,6 +355,18 @@ func (m *onboardModel) loadExistingCapabilities() {
 	m.discordOwnerIDs = nil
 	m.existingTelegram = false
 	m.existingDiscord = false
+	m.disableTelegram = false
+	m.disableDiscord = false
+	m.existingHeartbeat = false
+	m.existingHeartbeatChannel = ""
+	m.existingHeartbeatTo = ""
+	m.existingHeartbeatEvery = ""
+	m.heartbeat = false
+	m.heartbeatSet = false
+	m.heartbeatChannel = ""
+	m.heartbeatTo = ""
+	m.heartbeatEvery = ""
+	m.botType = defaultBotType
 
 	if dir, err := agentdir.SkillsDir(m.agentName); err == nil {
 		if entries, readErr := os.ReadDir(dir); readErr == nil {
@@ -361,6 +409,23 @@ func (m *onboardModel) loadExistingCapabilities() {
 		m.telegramOwnerIDs = append([]string{}, cfg.Bot.OwnerIDs...)
 		m.discordOwnerIDs = append([]string{}, cfg.Bot.OwnerIDs...)
 	}
+	// Only an explicit "private" locks the channels down; an empty or unknown
+	// type behaves like public, so show that instead of silently switching the
+	// agent to private on the next save.
+	if strings.EqualFold(strings.TrimSpace(cfg.Bot.Type), "private") {
+		m.botType = "private"
+	} else {
+		m.botType = "public"
+	}
+
+	// Remember the heartbeat so the review can say "unchanged" and the prompts
+	// start from the current destination and interval.
+	if cfg.Heartbeat.Active {
+		m.existingHeartbeat = true
+		m.existingHeartbeatChannel = cfg.Heartbeat.Channel
+		m.existingHeartbeatTo = cfg.Heartbeat.To
+		m.existingHeartbeatEvery = cfg.Heartbeat.Every
+	}
 }
 
 // channelInUse reports whether a saved channel is enabled or has a token.
@@ -376,11 +441,78 @@ func channelInUse(channel *config.ChannelConfig) bool {
 func (m onboardModel) channelConfigured(channel string) bool {
 	switch channel {
 	case "telegram":
-		return m.telegramToken != "" || m.existingTelegram
+		return m.telegramToken != "" || (m.existingTelegram && !m.disableTelegram)
 	case "discord":
-		return m.discordToken != "" || m.existingDiscord
+		return m.discordToken != "" || (m.existingDiscord && !m.disableDiscord)
 	}
 	return false
+}
+
+// channelDisabled reports whether the user asked to turn a saved channel off.
+func (m onboardModel) channelDisabled(channel string) bool {
+	switch channel {
+	case "telegram":
+		return m.disableTelegram
+	case "discord":
+		return m.disableDiscord
+	}
+	return false
+}
+
+// preferredProviderName returns the name to suggest when the user re-enters the
+// provider flow.
+func (m onboardModel) preferredProviderName(providerType string) string {
+	return preferredProviderNameFromConfig(loadAgentConfig(m.agentName), providerType)
+}
+
+// preferredProviderNameFromConfig picks the saved provider that should be edited
+// for a type. It reads the type field of every entry instead of trusting the
+// key, so a provider stored as "deepseek" with type "openai" is updated rather
+// than duplicated as a new "openai" entry. The default provider wins when its
+// type matches, otherwise the first matching name in sorted order.
+func preferredProviderNameFromConfig(cfg *config.Config, providerType string) string {
+	if cfg == nil {
+		return providerType
+	}
+	if cfg.DefaultProvider != "" {
+		if saved, ok := cfg.Providers[cfg.DefaultProvider]; ok && saved.Type == providerType {
+			return cfg.DefaultProvider
+		}
+	}
+	names := make([]string, 0, len(cfg.Providers))
+	for name := range cfg.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if cfg.Providers[name].Type == providerType {
+			return name
+		}
+	}
+	return providerType
+}
+
+// existingAPIKey returns the saved key for a provider, ignoring placeholders
+// left over from the old template.
+func (m onboardModel) existingAPIKey(name string) string {
+	saved, ok := m.existingProvider(name)
+	if !ok || isTemplateValue(saved.APIKey) {
+		return ""
+	}
+	return saved.APIKey
+}
+
+// existingProvider returns the saved definition for a provider name, if any.
+func (m onboardModel) existingProvider(name string) (config.ProviderConfig, bool) {
+	if name == "" {
+		return config.ProviderConfig{}, false
+	}
+	cfg := loadAgentConfig(m.agentName)
+	if cfg == nil {
+		return config.ProviderConfig{}, false
+	}
+	saved, ok := cfg.Providers[name]
+	return saved, ok
 }
 
 // setAgent pins the agent name and recomputes every derived path.
@@ -477,7 +609,31 @@ func (m onboardModel) View() string {
 	}
 
 	mainStyle := lipgloss.NewStyle().Margin(1, 1)
-	return mainStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, timeline, content))
+	body := mainStyle.Render(lipgloss.JoinHorizontal(lipgloss.Top, timeline, content))
+	helpStyle := lipgloss.NewStyle().Margin(0, 1, 1, 2)
+	return lipgloss.JoinVertical(lipgloss.Left, body, helpStyle.Render(m.helpLine()))
+}
+
+// helpLine keeps the key hints visible on every screen, so going back with Esc
+// is discoverable instead of being a hidden shortcut.
+func (m onboardModel) helpLine() string {
+	parts := make([]string, 0, 4)
+	switch {
+	case m.step == stepDone:
+		parts = append(parts, "Enter · finish")
+	case m.step == stepWelcome:
+		parts = append(parts, "Enter · start", "Esc · cancel")
+	case m.isTextInputStep():
+		parts = append(parts, "Enter · next", "Esc · back")
+	case m.isMultiSelectStep():
+		parts = append(parts, "Space · toggle", "Enter · next", "Esc · back")
+	default:
+		parts = append(parts, "↑/↓ · move", "Enter · next", "Esc · back")
+	}
+	if m.step != stepDone && m.step != stepWelcome {
+		parts = append(parts, "Ctrl+C · cancel")
+	}
+	return theme.MutedStyle.Render(strings.Join(parts, "   "))
 }
 
 // --- Logic ---
@@ -504,7 +660,7 @@ func (m *onboardModel) toggleCurrent() {
 		return
 	}
 	name := m.choices[m.cursor]
-	if name == skipSectionOption {
+	if name == keepSkillsOption || name == keepToolsOption {
 		return
 	}
 	switch m.step {
@@ -620,6 +776,64 @@ func truncateOneLine(text string, limit int) string {
 	return string(runes[:limit-1]) + "…"
 }
 
+// capabilityEntry describes one built-in skill or tool. It backs both the
+// --list-capabilities output and the --json variant.
+type capabilityEntry struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+type capabilitiesSummary struct {
+	Skills []capabilityEntry `json:"skills"`
+	Tools  []capabilityEntry `json:"tools"`
+}
+
+// builtinCapabilities lists the embedded skills and the built-in tools with
+// their descriptions, in registry order.
+func builtinCapabilities() capabilitiesSummary {
+	skills := builtinSkillNames()
+	skillDescriptions := builtinSkillDescriptions()
+	tools := builtinToolNames()
+	toolDescriptions := builtinToolDescriptions()
+
+	summary := capabilitiesSummary{
+		Skills: make([]capabilityEntry, 0, len(skills)),
+		Tools:  make([]capabilityEntry, 0, len(tools)),
+	}
+	for _, name := range skills {
+		summary.Skills = append(summary.Skills, capabilityEntry{Name: name, Description: skillDescriptions[name]})
+	}
+	for _, name := range tools {
+		summary.Tools = append(summary.Tools, capabilityEntry{Name: name, Description: toolDescriptions[name]})
+	}
+	return summary
+}
+
+// printCapabilities writes the built-in skill and tool names so headless users
+// can discover valid values for --skills and --disable-tools.
+func printCapabilities(asJSON bool) {
+	summary := builtinCapabilities()
+	if asJSON {
+		data, err := json.MarshalIndent(summary, "", "  ")
+		if err != nil {
+			fmt.Printf("Could not encode capabilities: %v\n", err)
+			return
+		}
+		fmt.Println(string(data))
+		return
+	}
+
+	fmt.Println("Skills:")
+	for _, entry := range summary.Skills {
+		fmt.Printf("  %-14s %s\n", entry.Name, truncateOneLine(entry.Description, 100))
+	}
+	fmt.Println("\nBuilt-in tools:")
+	for _, entry := range summary.Tools {
+		fmt.Printf("  %-18s %s\n", entry.Name, truncateOneLine(entry.Description, 100))
+	}
+	fmt.Println("\nUse these names with --skills and --disable-tools.")
+}
+
 // canonicalToolName maps the alias accepted by the runtime filter to the name
 // used by the registry.
 func canonicalToolName(name string) string {
@@ -681,11 +895,13 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stepAgentChoice:
 		choice := m.choices[m.cursor]
 		if choice == newAgentOption {
+			m.agentFromPicker = false
 			m.step = stepAgentName
 			m.resetInput("myagent", false)
 			return m, nil
 		}
 		m.setAgent(choice)
+		m.agentFromPicker = true
 		m.agentExistedAtStart = true
 		m.loadExistingCapabilities()
 		m.step = stepInitHome
@@ -697,6 +913,7 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setAgent(name)
+		m.agentFromPicker = false
 		m.agentExistedAtStart = false
 		m.step = stepInitHome
 
@@ -711,7 +928,7 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stepProviderType:
 		choice := m.choices[m.cursor]
-		if m.agentExistedAtStart && choice == skipProviderOption {
+		if m.agentExistedAtStart && choice == keepProviderOption {
 			m.skipProvider = true
 			m.enterSkillsStep()
 			return m, nil
@@ -725,9 +942,13 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.providerType = strings.ToLower(choice)
 		}
 		m.skipProvider = false
-		m.providerName = m.providerType
+		// Prefill the saved provider name when it matches the chosen type, so
+		// changing only the model edits that provider instead of creating a
+		// second entry named after the type.
+		m.providerName = m.preferredProviderName(m.providerType)
 		m.step = stepProviderName
-		m.resetInput(m.providerType, false)
+		m.resetInput(m.providerName, false)
+		m.textInput.SetValue(m.providerName)
 
 	case stepProviderName:
 		name := strings.TrimSpace(m.textInput.Value())
@@ -740,8 +961,18 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.providerName = name
 		m.providerBaseURL = provider.DefaultBaseURL(m.providerType)
+		m.providerModel = ""
+		// Reconfiguring an existing provider keeps its endpoint and model, so
+		// changing only the model does not require retyping everything.
+		if saved, ok := m.existingProvider(name); ok && saved.Type == m.providerType {
+			if saved.BaseURL != "" {
+				m.providerBaseURL = saved.BaseURL
+			}
+			m.providerModel = saved.DefaultModel
+		}
 		m.step = stepProviderBaseURL
 		m.resetInput(m.providerBaseURL, false)
+		m.textInput.SetValue(m.providerBaseURL)
 
 	case stepProviderBaseURL:
 		value := strings.TrimRight(strings.TrimSpace(m.textInput.Value()), "/")
@@ -754,10 +985,18 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.providerBaseURL = value
 		m.step = stepProviderKey
-		m.resetInput("API key", true)
+		placeholder := "API key"
+		if m.existingAPIKey(m.providerName) != "" {
+			placeholder = "Press Enter to keep the saved key"
+		}
+		m.resetInput(placeholder, true)
 
 	case stepProviderKey:
 		key := strings.TrimSpace(m.textInput.Value())
+		if key == "" {
+			// An empty answer keeps the stored key for this provider.
+			key = m.existingAPIKey(m.providerName)
+		}
 		if key == "" {
 			m.err = fmt.Errorf("API key is required")
 			return m, nil
@@ -799,7 +1038,7 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.enterSkillsStep()
 
 	case stepSkills:
-		if m.agentExistedAtStart && m.choices[m.cursor] == skipSectionOption {
+		if m.agentExistedAtStart && m.choices[m.cursor] == keepSkillsOption {
 			m.skipSkills = true
 			m.enterToolsStep()
 			return m, nil
@@ -811,7 +1050,7 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case stepTools:
-		if m.agentExistedAtStart && m.choices[m.cursor] == skipSectionOption {
+		if m.agentExistedAtStart && m.choices[m.cursor] == keepToolsOption {
 			m.skipTools = true
 			m.enterChannelStep()
 			return m, nil
@@ -820,14 +1059,17 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.enterChannelStep()
 
 	case stepChannelChoice:
-		m.channelChoice = strings.ToLower(m.choices[m.cursor])
-		switch m.channelChoice {
-		case "skip":
-			m.setupHeartbeatChannel()
-		case "discord":
+		choice := m.choices[m.cursor]
+		switch {
+		case choice == skipOption || choice == keepChannelsOption:
+			m.channelChoice = "skip"
+			m.enterChannelExistingStep()
+		case choice == "Discord":
+			m.channelChoice = "discord"
 			m.step = stepDiscordToken
 			m.resetInput("Discord Bot Token", true)
 		default: // Telegram or Both
+			m.channelChoice = strings.ToLower(choice)
 			m.step = stepTelegramMode
 			m.cursor = 0
 			m.choices = []string{"Polling (Recommended)", "Webhook"}
@@ -849,6 +1091,7 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.telegramToken = token
+		m.disableTelegram = false
 		if m.telegramMode == "webhook" {
 			m.step = stepTelegramWebhookURL
 			m.resetInput("https://agent-b.example.com", false)
@@ -860,7 +1103,7 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resetInput("Discord Bot Token", true)
 			return m, nil
 		}
-		m.setupHeartbeatChannel()
+		m.enterChannelExistingStep()
 
 	case stepTelegramWebhookURL:
 		publicURL := strings.TrimRight(strings.TrimSpace(m.textInput.Value()), "/")
@@ -874,7 +1117,7 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resetInput("Discord Bot Token", true)
 			return m, nil
 		}
-		m.setupHeartbeatChannel()
+		m.enterChannelExistingStep()
 
 	case stepDiscordToken:
 		token := strings.TrimSpace(m.textInput.Value())
@@ -883,19 +1126,59 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.discordToken = token
+		m.disableDiscord = false
+		m.enterChannelExistingStep()
+
+	case stepChannelExisting:
+		switch m.choices[m.cursor] {
+		case "Disable Telegram":
+			m.disableTelegram = true
+		case "Disable Discord":
+			m.disableDiscord = true
+		case "Disable both":
+			m.disableTelegram = true
+			m.disableDiscord = true
+		default: // keep current channels
+			m.disableTelegram = false
+			m.disableDiscord = false
+		}
+		m.enterBotTypeStep()
+
+	case stepBotType:
+		switch m.choices[m.cursor] {
+		case keepAccessOption:
+			// Leave the saved bot.type untouched.
+		case "Public (anyone can chat)":
+			m.botType = "public"
+		default:
+			m.botType = "private"
+		}
 		m.setupHeartbeatChannel()
 
 	case stepHeartbeatChannel:
-		choice := strings.ToLower(m.choices[m.cursor])
-		if choice == "skip" {
+		choice := m.choices[m.cursor]
+		switch {
+		case choice == heartbeatOffOption:
+			m.heartbeat = false
+			m.heartbeatSet = true
+			m.setupOwnerInputs()
+			return m, nil
+		case choice == skipOption || choice == keepHeartbeatOption:
+			// Keeping the current heartbeat on update, or leaving it off.
+			m.heartbeatSet = false
 			m.heartbeat = false
 			m.setupOwnerInputs()
 			return m, nil
 		}
 		m.heartbeat = true
-		m.heartbeatChannel = choice
+		m.heartbeatSet = true
+		m.heartbeatChannel = strings.ToLower(choice)
 		m.step = stepHeartbeatID
-		m.resetInput(heartbeatPlaceholder(choice), false)
+		m.resetInput(heartbeatPlaceholder(m.heartbeatChannel), false)
+		if m.existingHeartbeatChannel == m.heartbeatChannel && m.existingHeartbeatTo != "" {
+			m.heartbeatTo = m.existingHeartbeatTo
+			m.textInput.SetValue(m.heartbeatTo)
+		}
 
 	case stepHeartbeatID:
 		to := strings.TrimSpace(m.textInput.Value())
@@ -907,6 +1190,9 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.step = stepHeartbeatEvery
 		if m.heartbeatEvery == "" {
 			m.heartbeatEvery = defaultHeartbeatEV
+		}
+		if m.existingHeartbeatChannel == m.heartbeatChannel && m.existingHeartbeatEvery != "" {
+			m.heartbeatEvery = m.existingHeartbeatEvery
 		}
 		m.resetInput(defaultHeartbeatEV, false)
 		m.textInput.SetValue(m.heartbeatEvery)
@@ -1169,7 +1455,11 @@ func (m onboardModel) input() onboardInput {
 		TelegramMode:       m.telegramMode,
 		TelegramWebhookURL: m.telegramWebhookURL,
 		DiscordToken:       m.discordToken,
+		DisableTelegram:    m.disableTelegram && m.telegramToken == "",
+		DisableDiscord:     m.disableDiscord && m.discordToken == "",
+		BotType:            m.botType,
 		Heartbeat:          m.heartbeat,
+		HeartbeatSet:       m.heartbeatSet,
 		HeartbeatChannel:   m.heartbeatChannel,
 		HeartbeatTo:        m.heartbeatTo,
 		HeartbeatEvery:     m.heartbeatEvery,
@@ -1203,7 +1493,7 @@ func (m *onboardModel) setupOwnerInputs() {
 // providerTypeChoices adds an explicit keep-current option when updating.
 func (m onboardModel) providerTypeChoices() []string {
 	if m.agentExistedAtStart {
-		return []string{skipProviderOption, "OpenAI (or compatible)", "Gemini"}
+		return []string{keepProviderOption, "OpenAI (or compatible)", "Gemini"}
 	}
 	return []string{"OpenAI (or compatible)", "Gemini"}
 }
@@ -1228,7 +1518,7 @@ func (m onboardModel) providerTypeCursor() int {
 func (m onboardModel) skillChoices() []string {
 	choices := append([]string{}, m.skills...)
 	if m.agentExistedAtStart {
-		choices = append([]string{skipSectionOption}, choices...)
+		choices = append([]string{keepSkillsOption}, choices...)
 	}
 	return choices
 }
@@ -1236,7 +1526,7 @@ func (m onboardModel) skillChoices() []string {
 func (m onboardModel) toolChoices() []string {
 	choices := append([]string{}, m.tools...)
 	if m.agentExistedAtStart {
-		choices = append([]string{skipSectionOption}, choices...)
+		choices = append([]string{keepToolsOption}, choices...)
 	}
 	return choices
 }
@@ -1256,7 +1546,95 @@ func (m *onboardModel) enterToolsStep() {
 func (m *onboardModel) enterChannelStep() {
 	m.step = stepChannelChoice
 	m.cursor = 0
-	m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
+	m.choices = m.channelChoices()
+}
+
+// channelChoices puts the "do nothing" answer first on an update, matching the
+// provider, skills, and tools steps. "Skip" is used for a new agent.
+func (m onboardModel) channelChoices() []string {
+	if m.agentExistedAtStart {
+		return []string{keepChannelsOption, "Telegram", "Discord", "Both"}
+	}
+	return []string{"Telegram", "Discord", "Both", skipOption}
+}
+
+// enterChannelExistingStep offers to turn saved channels off, which the plain
+// "Keep current" answer cannot express. It is skipped when no channel is saved
+// yet or when the user just configured one.
+func (m *onboardModel) enterChannelExistingStep() {
+	if m.agentExistedAtStart && len(m.channelExistingChoices()) > 1 {
+		m.step = stepChannelExisting
+		m.cursor = 0
+		m.choices = m.channelExistingChoices()
+		return
+	}
+	m.enterBotTypeStep()
+}
+
+// channelExistingChoices lists the keep/disable options for saved channels. A
+// channel that was configured in this run is not offered for disabling.
+func (m onboardModel) channelExistingChoices() []string {
+	choices := []string{keepChannelsOption}
+	telegram := m.existingTelegram && m.telegramToken == ""
+	discord := m.existingDiscord && m.discordToken == ""
+	if telegram {
+		choices = append(choices, "Disable Telegram")
+	}
+	if discord {
+		choices = append(choices, "Disable Discord")
+	}
+	if telegram && discord {
+		choices = append(choices, "Disable both")
+	}
+	return choices
+}
+
+func (m *onboardModel) enterBotTypeStep() {
+	m.step = stepBotType
+	m.choices = m.botTypeChoices()
+	m.cursor = m.botTypeCursor()
+}
+
+func (m onboardModel) botTypeChoices() []string {
+	choices := []string{"Private (only owner IDs can chat)", "Public (anyone can chat)"}
+	if m.agentExistedAtStart {
+		choices = append([]string{keepAccessOption}, choices...)
+	}
+	return choices
+}
+
+// botTypeCursor starts on "Keep current access" during an update, so pressing
+// Enter through the wizard never changes the access mode by accident.
+func (m onboardModel) botTypeCursor() int {
+	if m.agentExistedAtStart {
+		return 0
+	}
+	if m.botType == "public" {
+		return 1
+	}
+	return 0
+}
+
+// heartbeatChoices keeps the current heartbeat as an explicit option on update
+// and adds an off switch, so a running heartbeat can be stopped without editing
+// config.json.
+func (m onboardModel) heartbeatChoices() []string {
+	choices := make([]string, 0, 4)
+	if m.channelConfigured("telegram") {
+		choices = append(choices, "Telegram")
+	}
+	if m.channelConfigured("discord") {
+		choices = append(choices, "Discord")
+	}
+	if m.agentExistedAtStart && m.existingHeartbeat {
+		choices = append(choices, heartbeatOffOption)
+	}
+	if m.agentExistedAtStart {
+		choices = append(choices, keepHeartbeatOption)
+	} else {
+		choices = append(choices, skipOption)
+	}
+	return choices
 }
 
 // ownerIDsAll merges the per-channel IDs into the single bot.owner_ids list.
@@ -1303,15 +1681,16 @@ func (m onboardModel) ownerBackStep() int {
 
 func (m *onboardModel) setupHeartbeatChannel() {
 	m.step = stepHeartbeatChannel
+	m.choices = m.heartbeatChoices()
 	m.cursor = 0
-	m.choices = nil
-	if m.channelConfigured("telegram") {
-		m.choices = append(m.choices, "Telegram")
+	if m.existingHeartbeat {
+		for i, choice := range m.choices {
+			if strings.EqualFold(choice, m.existingHeartbeatChannel) {
+				m.cursor = i
+				break
+			}
+		}
 	}
-	if m.channelConfigured("discord") {
-		m.choices = append(m.choices, "Discord")
-	}
-	m.choices = append(m.choices, "Skip")
 }
 
 func (m *onboardModel) resetInput(placeholder string, password bool) {
@@ -1401,11 +1780,22 @@ func (m onboardModel) handleModels(msg modelsFetchedMsg) onboardModel {
 		m.modelManual = true
 		m.choices = nil
 		m.resetInput("e.g. gpt-4o", false)
+		if m.providerModel != "" {
+			m.textInput.SetValue(m.providerModel)
+		}
 		return m
 	}
 	m.modelManual = false
 	m.choices = append(append([]string{}, msg.models...), manualModelOption)
 	m.cursor = 0
+	// Start on the model that is already configured, if the provider still
+	// offers it.
+	for i, choice := range m.choices {
+		if choice == m.providerModel {
+			m.cursor = i
+			break
+		}
+	}
 	return m
 }
 
@@ -1421,7 +1811,11 @@ type onboardInput struct {
 	TelegramMode       string
 	TelegramWebhookURL string
 	DiscordToken       string
+	DisableTelegram    bool
+	DisableDiscord     bool
+	BotType            string
 	Heartbeat          bool
+	HeartbeatSet       bool
 	HeartbeatChannel   string
 	HeartbeatTo        string
 	HeartbeatEvery     string
@@ -1484,13 +1878,28 @@ func mergeOnboardConfig(base *config.Config, in onboardInput) *config.Config {
 		dc.Token = in.DiscordToken
 		cfg.Channels.Discord = dc
 	}
+	// Turning a channel off keeps its token so it can be re-enabled later; the
+	// adapters only start when active is true.
+	if in.DisableTelegram && cfg.Channels.Telegram != nil {
+		cfg.Channels.Telegram.Active = false
+	}
+	if in.DisableDiscord && cfg.Channels.Discord != nil {
+		cfg.Channels.Discord.Active = false
+	}
+	if in.BotType != "" {
+		cfg.Bot.Type = in.BotType
+	}
 
-	if in.Heartbeat {
-		cfg.Heartbeat = config.HeartbeatConfig{
-			Active:  true,
-			Channel: in.HeartbeatChannel,
-			To:      in.HeartbeatTo,
-			Every:   in.HeartbeatEvery,
+	if in.HeartbeatSet {
+		if in.Heartbeat {
+			cfg.Heartbeat = config.HeartbeatConfig{
+				Active:  true,
+				Channel: in.HeartbeatChannel,
+				To:      in.HeartbeatTo,
+				Every:   in.HeartbeatEvery,
+			}
+		} else {
+			cfg.Heartbeat.Active = false
 		}
 	}
 
@@ -1650,11 +2059,23 @@ func (m onboardModel) previousStep() onboardModel {
 		}
 
 	case stepInitHome:
-		if agentFlag != "" {
+		switch {
+		case agentFlag != "":
 			m.step = stepWelcome
-		} else {
+		case m.agentFromPicker:
+			m.step = stepAgentChoice
+			m.choices = append(m.initializedAgents(), newAgentOption)
+			m.cursor = 0
+			for i, choice := range m.choices {
+				if choice == m.agentName {
+					m.cursor = i
+					break
+				}
+			}
+		default:
 			m.step = stepAgentName
 			m.resetInput("myagent", false)
+			m.textInput.SetValue(m.agentName)
 		}
 
 	case stepProviderType:
@@ -1672,7 +2093,7 @@ func (m onboardModel) previousStep() onboardModel {
 
 	case stepProviderKey:
 		m.step = stepProviderBaseURL
-		m.resetInput(provider.DefaultBaseURL(m.providerType), false)
+		m.resetInput(m.providerBaseURL, false)
 		m.textInput.SetValue(m.providerBaseURL)
 
 	case stepProviderModel:
@@ -1718,7 +2139,7 @@ func (m onboardModel) previousStep() onboardModel {
 	case stepTelegramMode:
 		m.step = stepChannelChoice
 		m.cursor = 0
-		m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
+		m.choices = m.channelChoices()
 
 	case stepTelegramToken:
 		m.step = stepTelegramMode
@@ -1736,24 +2157,39 @@ func (m onboardModel) previousStep() onboardModel {
 	case stepDiscordToken:
 		m.step = stepChannelChoice
 		m.cursor = 0
-		m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
+		m.choices = m.channelChoices()
 
 	case stepHeartbeatChannel:
+		m.step = stepBotType
+		m.choices = m.botTypeChoices()
+		m.cursor = m.botTypeCursor()
+
+	case stepBotType:
+		if m.agentExistedAtStart && len(m.channelExistingChoices()) > 1 {
+			m.step = stepChannelExisting
+			m.choices = m.channelExistingChoices()
+			m.cursor = 0
+			break
+		}
 		m.step = stepChannelChoice
 		m.cursor = 0
-		m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
+		m.choices = m.channelChoices()
+
+	case stepChannelExisting:
+		m.step = stepChannelChoice
+		m.cursor = 0
+		m.choices = m.channelChoices()
 
 	case stepHeartbeatID:
 		m.step = stepHeartbeatChannel
+		m.choices = m.heartbeatChoices()
 		m.cursor = 0
-		m.choices = nil
-		if m.channelConfigured("telegram") {
-			m.choices = append(m.choices, "Telegram")
+		for i, choice := range m.choices {
+			if strings.EqualFold(choice, m.heartbeatChannel) {
+				m.cursor = i
+				break
+			}
 		}
-		if m.channelConfigured("discord") {
-			m.choices = append(m.choices, "Discord")
-		}
-		m.choices = append(m.choices, "Skip")
 
 	case stepHeartbeatEvery:
 		m.step = stepHeartbeatID
@@ -1903,7 +2339,11 @@ func (m onboardModel) renderContent() string {
 
 	case stepProviderKey:
 		b.WriteString(titleStyle.Render(strings.Title(m.providerName) + " API Key"))
-		b.WriteString("\n\nStored in config/config.json and masked by `myaaw config dump`.\n\n")
+		b.WriteString("\n\nStored in config/config.json and masked by `myaaw config dump`.\n")
+		if m.existingAPIKey(m.providerName) != "" {
+			b.WriteString(theme.SecondaryStyle.Render("A key is already saved for this provider; press Enter to keep it.") + "\n")
+		}
+		b.WriteString("\n")
 		b.WriteString(m.textInput.View())
 
 	case stepProviderModel:
@@ -1926,7 +2366,7 @@ func (m onboardModel) renderContent() string {
 	case stepSkills:
 		b.WriteString(titleStyle.Render("Skills"))
 		if m.agentExistedAtStart {
-			b.WriteString("\n\nInstalled skills are pre-selected. Enter on 'Skip (keep current)' to change nothing.\n")
+			b.WriteString(fmt.Sprintf("\n\nInstalled skills are pre-selected. Enter on '%s' to change nothing.\n", keepSkillsOption))
 		} else {
 			b.WriteString("\n\nNo skill is selected by default. Space to toggle, Enter to continue.\n")
 		}
@@ -1936,7 +2376,7 @@ func (m onboardModel) renderContent() string {
 	case stepTools:
 		b.WriteString(titleStyle.Render("Built-in Tools"))
 		if m.agentExistedAtStart {
-			b.WriteString("\n\nCurrent settings are pre-selected. Enter on 'Skip (keep current)' to change nothing.\n")
+			b.WriteString(fmt.Sprintf("\n\nCurrent settings are pre-selected. Enter on '%s' to change nothing.\n", keepToolsOption))
 		} else {
 			b.WriteString("\n\nEvery built-in tool is enabled by default. Space to disable, Enter to continue.\n")
 		}
@@ -1947,9 +2387,25 @@ func (m onboardModel) renderContent() string {
 		b.WriteString(titleStyle.Render("Select Channels"))
 		b.WriteString("\n\nWhere should your bot live?\n")
 		if m.agentExistedAtStart {
-			b.WriteString(theme.SecondaryStyle.Render("Skip keeps the current channel settings.") + "\n")
+			b.WriteString(theme.SecondaryStyle.Render("'Keep current' leaves the channel settings exactly as they are.") + "\n")
 		}
 		b.WriteString("\n")
+		b.WriteString(m.renderChoices())
+
+	case stepChannelExisting:
+		b.WriteString(titleStyle.Render("Existing Channels"))
+		b.WriteString("\n\nTurn a saved channel off, or keep them all as they are?\n")
+		b.WriteString(theme.SecondaryStyle.Render("Disabling keeps the token so you can turn it back on later.") + "\n\n")
+		b.WriteString(m.renderChoices())
+
+	case stepBotType:
+		b.WriteString(titleStyle.Render("Bot Access"))
+		b.WriteString("\n\nWho is allowed to chat with this bot?\n")
+		if m.agentExistedAtStart {
+			b.WriteString(theme.SecondaryStyle.Render(fmt.Sprintf("Currently %s. '%s' leaves it unchanged.", m.botType, keepAccessOption)) + "\n")
+		}
+		b.WriteString(theme.SecondaryStyle.Render("Private relies on owner IDs for Telegram and Discord. Public lets anyone chat.") + "\n")
+		b.WriteString(theme.SecondaryStyle.Render("Terminal, REST API, and A2A are never filtered by owner IDs.") + "\n\n")
 		b.WriteString(m.renderChoices())
 
 	case stepTelegramMode:
@@ -1976,8 +2432,11 @@ func (m onboardModel) renderContent() string {
 	case stepHeartbeatChannel:
 		b.WriteString(titleStyle.Render("Heartbeat Channel"))
 		b.WriteString("\n\nShould the agent send a periodic self-check?\n")
+		if m.existingHeartbeat {
+			b.WriteString(theme.SecondaryStyle.Render(fmt.Sprintf("Currently %s → %s every %s.", m.existingHeartbeatChannel, m.existingHeartbeatTo, m.existingHeartbeatEvery)) + "\n")
+		}
 		if m.agentExistedAtStart {
-			b.WriteString(theme.SecondaryStyle.Render("Skip keeps the current heartbeat settings.") + "\n")
+			b.WriteString(theme.SecondaryStyle.Render(fmt.Sprintf("'%s' keeps it as it is; '%s' turns it off.", keepHeartbeatOption, heartbeatOffOption)) + "\n")
 		}
 		b.WriteString("\n")
 		b.WriteString(m.renderChoices())
@@ -2098,9 +2557,15 @@ func (m onboardModel) renderSummary() string {
 		row("Webhook", m.telegramWebhookURL+"/webhook/telegram")
 	}
 	row("Discord", m.channelSummary("discord", m.discordToken, ""))
-	if m.heartbeat {
+	row("Bot type", m.botType)
+	switch {
+	case m.heartbeat:
 		row("Heartbeat", fmt.Sprintf("%s → %s every %s", m.heartbeatChannel, m.heartbeatTo, m.heartbeatEvery))
-	} else {
+	case m.heartbeatSet:
+		row("Heartbeat", "disabled")
+	case m.existingHeartbeat:
+		row("Heartbeat", "unchanged (current)")
+	default:
 		row("Heartbeat", "disabled")
 	}
 	if m.channelConfigured("telegram") {
@@ -2110,10 +2575,10 @@ func (m onboardModel) renderSummary() string {
 		row("Discord owner", joinOwnerIDs(m.discordOwnerIDs))
 	}
 	if !m.channelConfigured("telegram") && !m.channelConfigured("discord") {
-		row("Owner IDs", "none")
+		row("Owner IDs", joinOwnerIDs(m.ownerIDsAll()))
 	}
 
-	if len(m.ownerIDsAll()) == 0 && (m.channelConfigured("telegram") || m.channelConfigured("discord")) {
+	if len(m.ownerIDsAll()) == 0 && m.botType == "private" && (m.channelConfigured("telegram") || m.channelConfigured("discord")) {
 		b.WriteString("\n" + theme.WarningStyle.Render("⚠  No owner IDs: with bot.type \"private\", Telegram and Discord ignore every message.") +
 			"\n" + theme.MutedStyle.Render("   Terminal (`myaaw chat`), the REST API, and A2A are not filtered by owner IDs."))
 	}
@@ -2150,6 +2615,9 @@ func (m onboardModel) renderWarnings() string {
 }
 
 func (m onboardModel) channelSummary(channel, token, mode string) string {
+	if m.channelDisabled(channel) {
+		return "disabled"
+	}
 	if token == "" {
 		if m.agentExistedAtStart && m.channelConfigured(channel) {
 			return "unchanged (current)"
@@ -2179,7 +2647,7 @@ func (m onboardModel) renderMultiSelect(selected map[string]bool) string {
 			style = theme.HighlightStyle
 		}
 		box := "[ ]"
-		if choice == skipSectionOption {
+		if choice == keepSkillsOption || choice == keepToolsOption {
 			box = "[–]"
 		} else if selected[choice] {
 			box = "[x]"
@@ -2226,8 +2694,10 @@ func (m onboardModel) timelineLabel() string {
 		return "Provider"
 	case stepSkills, stepTools:
 		return "Skills & Tools"
-	case stepChannelChoice, stepTelegramMode, stepTelegramToken, stepTelegramWebhookURL, stepDiscordToken:
+	case stepChannelChoice, stepChannelExisting, stepTelegramMode, stepTelegramToken, stepTelegramWebhookURL, stepDiscordToken:
 		return "Channels"
+	case stepBotType:
+		return "Access"
 	case stepHeartbeatChannel, stepHeartbeatID, stepHeartbeatEvery:
 		return "Heartbeat"
 	case stepOwnerTelegram, stepOwnerDiscord:
@@ -2250,6 +2720,7 @@ func (m onboardModel) renderTimeline() string {
 		"Provider",
 		"Skills & Tools",
 		"Channels",
+		"Access",
 		"Heartbeat",
 		"Owner",
 		"Review",
@@ -2312,6 +2783,7 @@ type onboardSummary struct {
 	ProviderType  string            `json:"provider_type"`
 	BaseURL       string            `json:"base_url,omitempty"`
 	Model         string            `json:"model"`
+	BotType       string            `json:"bot_type,omitempty"`
 	Channels      map[string]string `json:"channels,omitempty"`
 	Heartbeat     string            `json:"heartbeat,omitempty"`
 	Owners        []string          `json:"owners,omitempty"`
@@ -2420,6 +2892,9 @@ func runOnboardHeadless(agentName string) int {
 	if summary.Heartbeat != "" {
 		fmt.Printf("Heartbeat: %s\n", summary.Heartbeat)
 	}
+	if summary.BotType != "" {
+		fmt.Printf("Bot type: %s\n", summary.BotType)
+	}
 	if len(summary.Owners) > 0 {
 		fmt.Printf("Owners:   %s\n", strings.Join(summary.Owners, ", "))
 	}
@@ -2467,6 +2942,7 @@ func buildOnboardSummary(agentName string, cfg *config.Config, in onboardInput, 
 		summary.Heartbeat = fmt.Sprintf("%s %s every %s", cfg.Heartbeat.Channel, cfg.Heartbeat.To, cfg.Heartbeat.Every)
 	}
 	summary.Owners = cfg.Bot.OwnerIDs
+	summary.BotType = cfg.Bot.Type
 	if summary.Channels["telegram"] == "webhook" {
 		if base := readEnvValue(envPath, "MYAAW_BASE_URL"); strings.HasPrefix(base, "https://") {
 			summary.Webhook = base + "/webhook/telegram"
@@ -2486,54 +2962,69 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 	var in onboardInput
 	existing := loadAgentConfig(agentName)
 
-	providerType := strings.ToLower(strings.TrimSpace(opts.provider))
-	if providerType == "" {
-		return in, fmt.Errorf("--provider is required (openai or gemini)")
-	}
-	if providerType != "openai" && providerType != "gemini" {
-		return in, fmt.Errorf("--provider must be openai or gemini")
-	}
+	// An update usually only touches part of the config, so the provider can be
+	// left alone explicitly (--keep-provider) or by omitting --provider.
+	keepProvider := opts.keepProvider || (strings.TrimSpace(opts.provider) == "" && existing != nil)
+	if keepProvider {
+		if existing == nil {
+			return in, fmt.Errorf("--provider is required for a new agent (openai or gemini)")
+		}
+	} else {
+		providerType := strings.ToLower(strings.TrimSpace(opts.provider))
+		if providerType != "openai" && providerType != "gemini" {
+			return in, fmt.Errorf("--provider must be openai or gemini")
+		}
 
-	providerName := strings.TrimSpace(opts.provName)
-	if providerName == "" {
-		providerName = providerType
-	}
-	if strings.ContainsAny(providerName, " \t") {
-		return in, fmt.Errorf("--provider-name cannot contain spaces")
-	}
+		providerName := strings.TrimSpace(opts.provName)
+		if providerName == "" {
+			// Reuse an existing provider with the same type, even when its name
+			// differs from the type (for example "deepseek" of type openai).
+			providerName = preferredProviderNameFromConfig(existing, providerType)
+		}
+		if strings.ContainsAny(providerName, " \t") {
+			return in, fmt.Errorf("--provider-name cannot contain spaces")
+		}
 
-	baseURL := strings.TrimRight(strings.TrimSpace(opts.baseURL), "/")
-	if baseURL == "" {
-		baseURL = provider.DefaultBaseURL(providerType)
-	}
-	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-		return in, fmt.Errorf("--base-url must start with http:// or https://")
-	}
+		baseURL := strings.TrimRight(strings.TrimSpace(opts.baseURL), "/")
+		if baseURL == "" && existing != nil {
+			// Keep the saved endpoint of the provider being updated.
+			baseURL = strings.TrimRight(existing.Providers[providerName].BaseURL, "/")
+		}
+		if baseURL == "" {
+			baseURL = provider.DefaultBaseURL(providerType)
+		}
+		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+			return in, fmt.Errorf("--base-url must start with http:// or https://")
+		}
 
-	apiKey := firstNonEmpty(opts.apiKey, os.Getenv("MYAAW_API_KEY"))
-	if apiKey == "" && existing != nil {
-		apiKey = existing.Providers[providerName].APIKey
-	}
-	if apiKey == "" {
-		return in, fmt.Errorf("--api-key or MYAAW_API_KEY is required")
-	}
+		apiKey := firstNonEmpty(opts.apiKey, os.Getenv("MYAAW_API_KEY"))
+		if apiKey == "" && existing != nil {
+			apiKey = existing.Providers[providerName].APIKey
+		}
+		if isTemplateValue(apiKey) {
+			apiKey = ""
+		}
+		if apiKey == "" {
+			return in, fmt.Errorf("--api-key or MYAAW_API_KEY is required")
+		}
 
-	model := strings.TrimSpace(opts.model)
-	if model == "" && existing != nil {
-		model = existing.Providers[providerName].DefaultModel
-	}
-	if model == "" {
-		model = provider.DefaultModel(providerType)
-	}
-	if model == "" {
-		return in, fmt.Errorf("--model is required")
-	}
+		model := strings.TrimSpace(opts.model)
+		if model == "" && existing != nil {
+			model = existing.Providers[providerName].DefaultModel
+		}
+		if model == "" {
+			model = provider.DefaultModel(providerType)
+		}
+		if model == "" {
+			return in, fmt.Errorf("--model is required")
+		}
 
-	in.ProviderName = providerName
-	in.ProviderType = providerType
-	in.ProviderBaseURL = baseURL
-	in.ProviderAPIKey = apiKey
-	in.ProviderModel = model
+		in.ProviderName = providerName
+		in.ProviderType = providerType
+		in.ProviderBaseURL = baseURL
+		in.ProviderAPIKey = apiKey
+		in.ProviderModel = model
+	}
 
 	channel := strings.ToLower(strings.TrimSpace(opts.channel))
 	if channel == "" {
@@ -2587,12 +3078,38 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 		in.DiscordToken = dcToken
 	}
 
+	botType := strings.ToLower(strings.TrimSpace(opts.botType))
+	switch botType {
+	case "", "private", "public":
+	default:
+		return in, fmt.Errorf("--bot-type must be private or public")
+	}
+	in.BotType = botType
+
+	for _, name := range strings.Split(opts.disableChannels, ",") {
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "":
+		case "telegram":
+			in.DisableTelegram = true
+		case "discord":
+			in.DisableDiscord = true
+		case "both":
+			in.DisableTelegram = true
+			in.DisableDiscord = true
+		default:
+			return in, fmt.Errorf("--disable-channel must be telegram, discord, or both")
+		}
+	}
+
 	hbChannel := strings.ToLower(strings.TrimSpace(opts.hbChannel))
 	switch hbChannel {
 	case "":
 		// Leave heartbeat untouched.
 	case "skip":
 		// Nothing to write; keep existing heartbeat as is.
+	case "off", "disable", "disabled":
+		in.HeartbeatSet = true
+		in.Heartbeat = false
 	case "telegram":
 		if tgToken == "" {
 			return in, fmt.Errorf("--heartbeat-channel telegram needs a telegram token")
@@ -2617,6 +3134,7 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 			return in, fmt.Errorf("--heartbeat-every must be a positive duration such as 30m or 1h")
 		}
 		in.Heartbeat = true
+		in.HeartbeatSet = true
 		in.HeartbeatChannel = hbChannel
 		in.HeartbeatTo = strings.TrimSpace(opts.hbTo)
 		in.HeartbeatEvery = every

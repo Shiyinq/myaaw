@@ -88,11 +88,11 @@ func TestSkillsAndToolsPrefilledWhenAgentPickedInWizard(t *testing.T) {
 	if !m.toolsSelected["filesystem"] {
 		t.Fatalf("enabled tools must stay selected: %v", m.toolsSelected)
 	}
-	if len(m.skillChoices()) == 0 || m.skillChoices()[0] != skipSectionOption {
-		t.Fatalf("skill choices = %v, want a skip option first", m.skillChoices())
+	if len(m.skillChoices()) == 0 || m.skillChoices()[0] != keepSkillsOption {
+		t.Fatalf("skill choices = %v, want a keep-current option first", m.skillChoices())
 	}
-	if len(m.toolChoices()) == 0 || m.toolChoices()[0] != skipSectionOption {
-		t.Fatalf("tool choices = %v, want a skip option first", m.toolChoices())
+	if len(m.toolChoices()) == 0 || m.toolChoices()[0] != keepToolsOption {
+		t.Fatalf("tool choices = %v, want a keep-current option first", m.toolChoices())
 	}
 }
 

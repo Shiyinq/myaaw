@@ -60,7 +60,7 @@ func TestSkipOptionsKeepExistingData(t *testing.T) {
 	m.step = stepProviderType
 	m.choices = m.providerTypeChoices()
 	m.cursor = 0
-	if m.choices[0] != skipProviderOption {
+	if m.choices[0] != keepProviderOption {
 		t.Fatalf("provider choices = %v, want a keep-current option first", m.choices)
 	}
 	next, _ := m.nextStep(tea.KeyMsg{Type: tea.KeyEnter})
@@ -69,8 +69,8 @@ func TestSkipOptionsKeepExistingData(t *testing.T) {
 		t.Fatalf("step = %d skipProvider = %v, want skills with provider skipped", m.step, m.skipProvider)
 	}
 
-	if len(m.choices) == 0 || m.choices[0] != skipSectionOption {
-		t.Fatalf("skill choices = %v, want a skip option first", m.choices)
+	if len(m.choices) == 0 || m.choices[0] != keepSkillsOption {
+		t.Fatalf("skill choices = %v, want a keep-current option first", m.choices)
 	}
 	next, _ = m.nextStep(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(onboardModel)
@@ -78,8 +78,8 @@ func TestSkipOptionsKeepExistingData(t *testing.T) {
 		t.Fatalf("step = %d skipSkills = %v, want tools with skills skipped", m.step, m.skipSkills)
 	}
 
-	if len(m.choices) == 0 || m.choices[0] != skipSectionOption {
-		t.Fatalf("tool choices = %v, want a skip option first", m.choices)
+	if len(m.choices) == 0 || m.choices[0] != keepToolsOption {
+		t.Fatalf("tool choices = %v, want a keep-current option first", m.choices)
 	}
 	next, _ = m.nextStep(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(onboardModel)

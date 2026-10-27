@@ -105,8 +105,12 @@ func TestOnboardFlow(t *testing.T) {
 		t.Fatalf("step = %d, want stepChannelChoice", m.step)
 	}
 
-	// Skip channels -> skip heartbeat -> no owner prompt -> review.
+	// Skip channels -> access -> skip heartbeat -> no owner prompt -> review.
 	m.cursor = len(m.choices) - 1
+	m = enter(m)
+	if m.step != stepBotType {
+		t.Fatalf("step = %d, want stepBotType", m.step)
+	}
 	m = enter(m)
 	if m.step != stepHeartbeatChannel {
 		t.Fatalf("step = %d, want stepHeartbeatChannel", m.step)

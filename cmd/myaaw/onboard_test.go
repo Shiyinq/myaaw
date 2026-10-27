@@ -48,6 +48,7 @@ func TestMergeOnboardConfigHonorsHeartbeatChannel(t *testing.T) {
 		TelegramMode:     "polling",
 		DiscordToken:     "discord-token",
 		Heartbeat:        true,
+		HeartbeatSet:     true,
 		HeartbeatChannel: "discord",
 		HeartbeatTo:      "999",
 		HeartbeatEvery:   "1h",
