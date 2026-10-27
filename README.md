@@ -215,7 +215,7 @@ The selection node resolves the active agent from `~/.myaaw/agents.json`. Telegr
 7. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
 8. **Local Workspace (`~/.myaaw`)**: The operational directory for the Agent.
    - `agents.json`: Registry of isolated agents and the default agent.
-   - `<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The default agent is `default/`.
+   - `<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The first agent is named during onboarding; only legacy upgrades use `default/`.
      - `home/`: Long-term file storage containing the agent's core definitions:
        - `AGENTS.md` / `SOUL.md`: Persona and behavior instructions.
        - `BOOTSTRAP.md` / `TOOLS.md`: Initialization steps and tool usage rules.
@@ -238,6 +238,7 @@ If you just want to use Myaaw without worrying about code, use our interactive i
     ```bash
     myaaw onboard
     ```
+    On a fresh install the wizard asks for an **agent name** first — that name becomes the folder `~/.myaaw/<agent>/`, so you are not stuck with a generic `default/` agent. You can add more agents later with `myaaw agent create <name>` or `myaaw onboard` again.
 3.  **Launch the Server**:
     ```bash
     myaaw server start
@@ -299,6 +300,10 @@ Building with CGo on Windows requires a C compiler environment like MSYS2/MinGW:
    Since you have the source code, you can run the onboarding flow directly:
    ```bash
    go run ./cmd/myaaw onboard
+   ```
+   The wizard asks for the agent name on a fresh install, then for the provider (base URL and model included), channels, and heartbeat. To configure another agent later:
+   ```bash
+   go run ./cmd/myaaw --agent agent-b onboard
    ```
 
 ### Start Development
@@ -401,7 +406,7 @@ Agent data lives under `~/.myaaw/<agent>/`, for example:
 For the complete guide, see [docs/agents/multi-agent.md](docs/agents/multi-agent.md).
 
 ### 🧩 Multiple Agents
-Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/<agent>/`. The default agent is `default/`; names may contain letters, numbers, `_`, and `-`.
+Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/<agent>/`. The first agent is named during `myaaw onboard`; names may contain letters, numbers, `_`, and `-`.
 
 Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent guide](docs/agents/multi-agent.md#6-managing-agents).
 

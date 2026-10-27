@@ -8,7 +8,6 @@ import (
 	"myaaw/internal/daemon"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -93,18 +92,9 @@ var agentCreateCmd = &cobra.Command{
 			}
 		}
 
-		envPath, err := agentdir.EnvPath(name)
-		if err != nil {
-			fmt.Println(theme.RenderError(err.Error()))
+		if err := prepareAgentEnv(name); err != nil {
+			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to prepare environment: %v", err)))
 			return
-		}
-		ensureEnvFile(envPath)
-		port := agentdir.SuggestedPort(name)
-		if err := agentdir.UpsertEnvValue(envPath, "PORT", strconv.Itoa(port)); err != nil {
-			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to set port: %v", err)))
-		}
-		if err := agentdir.UpsertEnvValue(envPath, "MYAAW_BASE_URL", fmt.Sprintf("http://localhost:%d", port)); err != nil {
-			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to set base URL: %v", err)))
 		}
 
 		if err := agentdir.RewriteLegacyPaths(root, name); err != nil {

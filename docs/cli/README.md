@@ -45,6 +45,8 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 | `agent use [name]` | Set the default agent | [Agent Command](agent.md#agent-use-name) |
 | `agent delete [name]` | Stop the daemon and delete all data | [Agent Command](agent.md#agent-delete-name---yes) |
 
+`agent create` only scaffolds the directory. Configure the new agent with `myaaw --agent <name> onboard`, or run `myaaw onboard` without a name to create and configure in one flow.
+
 ### Backup and restore
 
 | Command | Description | Document |

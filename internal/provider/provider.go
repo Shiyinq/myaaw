@@ -126,6 +126,24 @@ var defaultLLMModels = map[string]string{
 	"groq":   "llama-3.2-1b-preview",
 }
 
+// DefaultBaseURL returns the public endpoint used when a provider config omits
+// base_url. Providers build request URLs by appending their own path, so the
+// value must not include a trailing slash.
+func DefaultBaseURL(providerName string) string {
+	switch providerName {
+	case "openai":
+		return "https://api.openai.com"
+	case "gemini":
+		return "https://generativelanguage.googleapis.com"
+	case "groq":
+		return "https://api.groq.com/openai"
+	case "ollama":
+		return "http://localhost:11434"
+	default:
+		return ""
+	}
+}
+
 var TranscriberFactories = map[string]factoryTranscriber{
 	"groq":   NewGroqTranscriber,
 	"gemini": NewGeminiTranscriber,

@@ -113,13 +113,15 @@ invalid: my friend, ../admin, my.friend, my/friend, -agent, _agent, pids
 myaaw onboard
 ```
 
-This creates the default agent:
+On a fresh install the wizard asks for an agent name first, so the data lands under the name you choose:
 
 ```text
-~/.myaaw/default/
+~/.myaaw/<name>/
 ```
 
-To initialize a specific agent directly:
+That agent becomes the registry default. Only legacy upgrades keep the name `default`.
+
+To initialize a specific agent directly (no name prompt):
 
 ```bash
 myaaw --agent myfriend onboard

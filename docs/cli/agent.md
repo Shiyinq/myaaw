@@ -57,11 +57,13 @@ myaaw agent create agent-b
 # Configure it with: myaaw --agent agent-b onboard
 ```
 
-The command stops here: no provider, channel, or identity is configured yet. Run onboarding next:
+The command stops here: no provider, channel, or identity is configured yet. It does write `.env` with `PORT` (the next free port, starting at `8081`) and `MYAAW_BASE_URL`, and it seeds an A2A token plus contacts. Run onboarding next:
 
 ```bash
 myaaw --agent agent-b onboard
 ```
+
+If you would rather create and configure in one flow, run `myaaw onboard` without `--agent`: on a fresh install it asks for the agent name first, and when agents already exist it offers them in a picker together with `+ Create a new agent`.
 
 ## `agent use [name]`
 
