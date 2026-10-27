@@ -18,7 +18,15 @@ Without `--agent`:
 
 ## Agent name
 
-The name becomes the folder `~/.myaaw/<name>/` and must match `[A-Za-z0-9][A-Za-z0-9_-]*`, start with a letter or number, and be at most 64 characters. `pids` is reserved, and an existing agent cannot be reused from the name prompt (use `--agent <name> onboard` to reconfigure it).
+The name becomes the folder `~/.myaaw/<name>/` and must match `[A-Za-z0-9][A-Za-z0-9_-]*`, start with a letter or number, and be at most 64 characters. `pids` is reserved.
+
+A name is rejected when it is already taken. “Taken” means:
+
+- the agent is already initialized,
+- the directory `~/.myaaw/<name>/` exists (even a leftover from an interrupted run),
+- another agent differs only by case (`agent-b` vs `Agent-B`), because the filesystem on macOS/Windows is case-insensitive and A2A contacts are matched case-insensitively.
+
+Use `--agent <name> onboard` to reconfigure an existing agent instead of creating a new one.
 
 ```text
 personal                 ✅
@@ -116,6 +124,7 @@ Rules:
 - `--port` is rejected if another agent already uses it or another process is listening on it.
 - Missing required values exit non-zero with a message that names the flag, instead of hanging on a prompt.
 - Re-running without `--force` on an initialized agent is refused.
+- A leftover `~/.myaaw/<name>/` directory also requires `--force`, so a failed run cannot silently overwrite data.
 
 ```bash
 # Docker / CI

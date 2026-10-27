@@ -1017,18 +1017,12 @@ func validateAgentNameInput(name string) error {
 	if name == "" {
 		return fmt.Errorf("agent name is required")
 	}
-	if err := agentdir.ValidateName(name); err != nil {
-		return err
-	}
-	if agentdir.AgentInitialized(name) {
-		return fmt.Errorf("agent %q is already initialized; use --agent %s onboard to reconfigure it", name, name)
-	}
-	root, err := agentdir.AgentRoot(name)
+	taken, err := agentdir.AgentNameTaken(name)
 	if err != nil {
 		return err
 	}
-	if _, statErr := os.Stat(root); statErr == nil {
-		return fmt.Errorf("%s already exists; choose another name or use --agent %s onboard", root, name)
+	if taken {
+		return fmt.Errorf("agent %q already exists; use --agent %s onboard to reconfigure it", name, name)
 	}
 	return nil
 }
@@ -1619,7 +1613,11 @@ func runOnboardHeadless(agentName string) int {
 	if err := agentdir.ValidateName(agentName); err != nil {
 		return headlessError(err.Error())
 	}
-	if agentdir.AgentInitialized(agentName) && !onboardOpts.force {
+	taken, err := agentdir.AgentNameTaken(agentName)
+	if err != nil {
+		return headlessError(err.Error())
+	}
+	if taken && !onboardOpts.force {
 		return headlessError(fmt.Sprintf("agent %q already exists; pass --force to reconfigure it", agentName))
 	}
 

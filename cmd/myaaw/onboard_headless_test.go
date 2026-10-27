@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -113,6 +114,33 @@ func TestHeadlessRunsEndToEnd(t *testing.T) {
 	onboardOpts.force = true
 	if code := runOnboardHeadless("agent-ci"); code != 0 {
 		t.Fatal("expected --force to allow reconfiguration")
+	}
+}
+
+func TestHeadlessRefusesLeftoverDirectory(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("MYAAW_API_KEY", "sk-from-env")
+	if err := agentdir.EnsureLayout(); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := agentdir.AgentRoot("leftover")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { onboardOpts = onboardOptions{} }()
+	onboardOpts = onboardOptions{yes: true, provider: "openai", model: "gpt-4o", channel: "skip"}
+
+	if code := runOnboardHeadless("leftover"); code == 0 {
+		t.Fatal("a leftover directory should require --force")
+	}
+	onboardOpts.force = true
+	if code := runOnboardHeadless("leftover"); code != 0 {
+		t.Fatal("expected --force to reuse the leftover directory")
 	}
 }
 

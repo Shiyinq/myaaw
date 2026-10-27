@@ -200,6 +200,18 @@ func TestValidateAgentNameInput(t *testing.T) {
 	if err := validateAgentNameInput("agent-b"); err == nil {
 		t.Fatal("already initialized agent should be rejected")
 	}
+
+	// A leftover directory from an interrupted run also blocks the name.
+	leftoverRoot, err := agentdir.AgentRoot("leftover")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(leftoverRoot, "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateAgentNameInput("leftover"); err == nil {
+		t.Fatal("leftover directory should be rejected")
+	}
 }
 
 func TestInitialOnboardModelAgentName(t *testing.T) {

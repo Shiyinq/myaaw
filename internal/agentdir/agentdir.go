@@ -249,6 +249,48 @@ func SaveRegistry(registry *Registry) error {
 	return os.Rename(tempPath, path)
 }
 
+// AgentNameTaken reports whether a name already belongs to an agent. A name is
+// taken when the agent is initialized, when its directory exists (even a
+// leftover from a failed run), or when another registry entry differs only by
+// case. Case-insensitive matches keep the registry consistent with how A2A
+// contacts are compared.
+func AgentNameTaken(name string) (bool, error) {
+	if err := ValidateName(name); err != nil {
+		return false, err
+	}
+	if AgentInitialized(name) {
+		return true, nil
+	}
+
+	root, err := AgentRoot(name)
+	if err != nil {
+		return false, err
+	}
+	if _, statErr := os.Stat(root); statErr == nil {
+		return true, nil
+	} else if !os.IsNotExist(statErr) {
+		return false, statErr
+	}
+
+	registry, err := LoadRegistry()
+	if err != nil {
+		return false, err
+	}
+	for existing := range registry.Agents {
+		if existing == name || !strings.EqualFold(existing, name) {
+			continue
+		}
+		existingRoot, err := AgentRoot(existing)
+		if err != nil {
+			continue
+		}
+		if _, statErr := os.Stat(existingRoot); statErr == nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // RegisterAgent adds an agent to the registry if missing.
 func RegisterAgent(name string) error {
 	if err := ValidateName(name); err != nil {
