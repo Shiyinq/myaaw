@@ -117,8 +117,8 @@ myaaw onboard --yes \
 | `--discord-token` | Discord bot token (prefer `DISCORD_BOT_TOKEN`) |
 | `--heartbeat-channel`, `--heartbeat-to`, `--heartbeat-every` | Heartbeat |
 | `--owner` | Owner IDs, comma separated |
-| `--skills time,notes` | Skills to install (`all` selects every built-in skill). Default: none |
-| `--disable-tools bash,cron` | Built-in tools to disable (`all` disables every one). Default: none |
+| `--skills time,notes` | Skills to install, comma separated (`all` selects every built-in skill). Default: none |
+| `--disable-tools bash,cron` | Built-in tools to disable, comma separated (`all` disables every one). Default: none |
 | `--port` | Explicit server port instead of the first free one |
 | `--install` | Copy the binary to `~/.local/bin` (off by default in headless mode) |
 | `--restart` | Restart the agent daemon after writing, if it is running |
@@ -129,6 +129,7 @@ Rules:
 
 - Secrets should come from the environment: `MYAAW_API_KEY`, `TELEGRAM_BOT_TOKEN`, `DISCORD_BOT_TOKEN`, `MYAAW_WEBHOOK_URL`.
 - `--channel` defaults to `skip`, which leaves existing channel settings untouched.
+- `--skills` and `--disable-tools` take one or more names separated by commas; spaces after commas are fine. Invalid names exit non-zero and print the valid list.
 - `--port` is rejected if another agent already uses it or another process is listening on it.
 - Missing required values exit non-zero with a message that names the flag, instead of hanging on a prompt.
 - Re-running without `--force` on an initialized agent is refused.
@@ -155,6 +156,60 @@ Both lists come from the binary, so there is nothing to download.
 myaaw onboard --yes --agent agent-b --provider openai --model gpt-4o \
   --skills time --disable-tools bash
 ```
+
+### Multiple skills or tools
+
+Both flags accept a comma-separated list in any order; the list is normalised to the canonical order.
+
+| Flag | Valid names |
+| :--- | :--- |
+| `--skills` | `calendar`, `cashflow`, `converter`, `notes`, `scraping`, `tavily`, `time`, `weather` |
+| `--disable-tools` | `a2a_auth_request`, `a2a_input`, `bash`, `contact`, `cron`, `execute_python`, `filesystem`, `provider`, `subagent` |
+
+```bash
+# new agent: install three skills, keep every tool enabled
+myaaw onboard --yes --agent agent-b \
+  --provider gemini --model models/gemini-2.5-flash \
+  --skills time,notes,calendar
+
+# new agent: install all skills, disable three tools
+myaaw onboard --yes --agent agent-c \
+  --provider openai --model gpt-4o \
+  --skills all \
+  --disable-tools bash,cron,provider
+
+# update an existing agent: add two skills, disable four tools
+myaaw onboard --yes --agent agent-b --force \
+  --provider gemini --model models/gemini-2.5-flash \
+  --skills weather,tavily \
+  --disable-tools bash,cron,provider,subagent
+```
+
+`--skills` and `--disable-tools` can be used independently, but headless mode always needs `--provider`:
+
+```bash
+# update an existing agent: only change the disabled tools
+myaaw onboard --yes --agent agent-b --force \
+  --provider gemini --model models/gemini-2.5-flash \
+  --disable-tools bash
+
+# re-enable every tool (explicit empty value)
+myaaw onboard --yes --agent agent-b --force \
+  --provider gemini --model models/gemini-2.5-flash \
+  --disable-tools ""
+
+# add the missing skill without touching the disabled tools
+myaaw onboard --yes --agent agent-b --force \
+  --provider gemini --model models/gemini-2.5-flash \
+  --skills converter
+```
+
+Notes:
+
+- Headless mode always requires `--provider`, and it rewrites the default provider entry with the values you pass. To keep the provider exactly as it is, use the interactive wizard and press Enter through the provider steps; there, skills and tools can be changed on their own.
+- Adding a skill that is already installed is a no-op; existing folders are never overwritten.
+- There is no flag to remove a skill. Delete `~/.myaaw/<agent>/skills/<name>/` manually, because onboarding will not delete user data.
+- Names are validated before anything is written, so a typo won't leave a partial config.
 
 ## Files written
 
