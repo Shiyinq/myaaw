@@ -389,7 +389,7 @@ func TestRouterSkillsAndTools(t *testing.T) {
 	}
 	var tools toolsView
 	doJSON(t, app, "GET", "/agents/myfriend/tools", token, "", fiber.StatusOK, &tools)
-	if len(tools.Builtin) != 8 {
+	if len(tools.Builtin) != 9 {
 		t.Fatalf("builtin = %+v", tools.Builtin)
 	}
 

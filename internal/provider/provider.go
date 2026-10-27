@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"myaaw/internal/config"
+	"strings"
 )
 
 // StopReason describes why an assistant turn ended.
@@ -130,6 +131,34 @@ var defaultLLMModels = map[string]string{
 // default_model.
 func DefaultModel(providerName string) string {
 	return defaultLLMModels[providerName]
+}
+
+// IsKnownLLMProvider reports whether a provider factory is registered.
+func IsKnownLLMProvider(providerName string) bool {
+	_, ok := LLMproviderFactories[providerName]
+	return ok
+}
+
+// ModelsFor fetches the model list for a provider using an explicit base URL.
+// Unlike CreateLLMProvider it never touches the process-wide
+// config.LLMProviderBaseURL, so concurrent callers (CLI wizard, control-plane
+// API) cannot race on that global.
+func ModelsFor(providerType, baseURL, apiKey string) ([]string, error) {
+	providerType = strings.ToLower(strings.TrimSpace(providerType))
+	factory, exists := LLMproviderFactories[providerType]
+	if !exists {
+		return nil, fmt.Errorf("unknown llm provider %q", providerType)
+	}
+
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		baseURL = DefaultBaseURL(providerType)
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("no base URL configured for provider %q", providerType)
+	}
+
+	return factory(baseURL, strings.TrimSpace(apiKey), defaultLLMModels[providerType]).Models()
 }
 
 // DefaultBaseURL returns the public endpoint used when a provider config omits

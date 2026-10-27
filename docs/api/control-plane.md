@@ -100,6 +100,7 @@ Chat and conversation endpoints use this ID automatically. Clients do not need t
 | `GET` | `/agents` | list agents with `default`, `running`, `port`, `base_url` |
 | `GET` | `/agents/:name` | one agent |
 | `POST` | `/agents` | create `{name}` from the embedded template |
+| `POST` | `/agents/:name/onboard` | create or reconfigure an agent with the full setup in one call |
 | `DELETE` | `/agents/:name` | delete agent data (default agent is protected) |
 | `POST` | `/agents/:name/default` | set registry default |
 
@@ -109,7 +110,24 @@ A frontend keeps one `selectedAgent` value and prefixes every request:
 const api = (path) => `http://localhost:9000/agents/${selectedAgent}${path}`;
 ```
 
-Creating an agent assigns the next free port, writes `.env`, creates the workspace, and registers it. The new agent still needs provider and channel configuration.
+Creating an agent assigns the next free port, writes `.env`, creates the workspace, and registers it.
+
+`POST /agents/:name/onboard` is the dashboard-friendly path: it **creates the agent when the name is free and reconfigures it otherwise**, using the same core as `myaaw onboard` (layout, port, A2A contacts, config, skills, tools, webhook). Omitting a section keeps its current value; on a new agent the omitted parts fall back to the template defaults. Omitted `disable_tools` leaves `tools/tools.json` untouched, and skills are only ever installed, never deleted.
+
+```bash
+curl -X POST http://localhost:9000/agents/myfriend/onboard \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{
+    "provider": {"type":"openai","name":"deepseek","base_url":"https://api.deepseek.com","api_key":"sk-...","model":"deepseek-chat"},
+    "skills": ["time", "notes"],
+    "disable_tools": ["bash"],
+    "channels": {"telegram_token":"123:abc","telegram_mode":"polling"},
+    "heartbeat": {"active":true,"channel":"telegram","to":"123456789","every":"30m"},
+    "bot": {"type":"private","owner_ids":["123456789"]}
+  }'
+```
+
+`201` means the agent was created, `200` means it was reconfigured. The body is `{created, config, warnings}`; `warnings` carries non-fatal issues such as a failed Telegram webhook registration.
 
 ## 5. Chat
 
@@ -494,6 +512,8 @@ curl -X POST http://localhost:9000/agents/myfriend/contacts \
 | `PUT` | `/agents/:name/providers/:id` | update fields |
 | `DELETE` | `/agents/:name/providers/:id` | delete |
 | `POST` | `/agents/:name/providers/default` | set default `{name}` |
+| `POST` | `/providers/models` | list models for a provider that is not saved yet |
+| `GET` | `/agents/:name/providers/:id/models` | list models for a saved provider (uses its stored key) |
 
 ```json
 {
@@ -510,6 +530,23 @@ Rules:
 - API keys are write-only. Responses contain `{"configured": true, "masked": "********"}`.
 - An empty `api_key` on update keeps the existing key.
 - Deleting the default provider moves the default to another provider when one remains.
+
+### Discovering models
+
+There is no agent yet while the create wizard runs, so the model lookup is not scoped to an agent:
+
+```bash
+# before the agent exists
+curl -X POST http://localhost:9000/providers/models \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"type":"openai","base_url":"https://api.deepseek.com","api_key":"sk-..."}'
+
+# for a provider that is already saved (key stays server-side)
+curl http://localhost:9000/agents/myfriend/providers/openai/models \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Both return `{"models": [...], "source": "live"|"default", "warning": "..."}`. If the live call fails or times out, `source` is `default`, `models` contains the built-in default model, and `warning` explains why — so the wizard can always continue.
 
 ## 11. Channels
 
@@ -537,6 +574,23 @@ Rules:
 ## 12. Config
 
 `GET /agents/:name/config` returns providers, channels, bot settings, heartbeat, cron, transcriber, and synthesizer with all secrets masked.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/agents/:name/config` | read the full config (secrets masked) |
+| `PATCH` | `/agents/:name/config` | partial update: only the fields sent change, no key is removed |
+| `POST` | `/agents/:name/config/reset` | restore the whole `config.json` to the template (resets providers and channels too) |
+| `PATCH` | `/agents/:name/config/reset` | reset only the named bot fields and sections |
+
+`PATCH /config` covers `bot` (`type`, `owner_ids`, and every tuning field), `heartbeat`, `cron.active`, `transcriber`, and `synthesizer`. Omitted fields are left untouched, so a key is never deleted:
+
+```bash
+curl -X PATCH http://localhost:9000/agents/myfriend/config \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"bot":{"type":"public","max_iterations":50},"heartbeat":{"active":false}}'
+```
+
+`PATCH /config/reset` takes the same section names and restores them from the template; `{"bot": []}` resets the whole bot section, while `{"bot": ["type"]}` resets just one field. Providers and channels are not touched by this variant.
 
 ## 13. Conversations
 
@@ -678,9 +732,9 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 | Skills | `GET /agents/:name/skills`, `GET /skills/:skill`, `GET /skills/:skill/file?path=`, `PATCH /skills/:skill`, `DELETE /skills/:skill`, `DELETE /skills/:skill/config` |
 | Tools | `GET /agents/:name/tools`, `POST /tools/custom`, `POST /tools/mcp`, `PATCH /tools/builtin/:tool`, `PATCH /tools/custom/:tool`, `PATCH /tools/mcp/:tool`, `DELETE /tools/custom/:tool`, `DELETE /tools/mcp/:tool` |
 | Contacts | `GET/POST /agents/:name/contacts`, `DELETE /contacts/:contact` |
-| Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default` |
+| Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
-| Config | `GET /config` |
+| Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
 | Conversations | `GET /conversations?search=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id` |
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |

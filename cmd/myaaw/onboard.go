@@ -1,11 +1,9 @@
 package main
 
 import (
-	"embed"
 	"encoding/json"
 	"fmt"
 	"myaaw"
-	"myaaw/internal/agent"
 	"myaaw/internal/agent/tools"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
@@ -694,25 +692,6 @@ func (m onboardModel) disabledTools() []string {
 }
 
 // builtinSkillNames lists the skill templates embedded in the binary.
-func builtinSkillNames() []string {
-	entries, err := myaaw.DefaultMyaawDir.ReadDir(".myaaw/skills")
-	if err != nil {
-		return nil
-	}
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			names = append(names, entry.Name())
-		}
-	}
-	sort.Strings(names)
-	return names
-}
-
-func builtinToolNames() []string {
-	return tools.GetBuiltinToolNames()
-}
-
 // builtinSkillDescriptions reads the description from each bundled SKILL.md.
 func builtinSkillDescriptions() map[string]string {
 	descriptions := make(map[string]string)
@@ -836,45 +815,8 @@ func printCapabilities(asJSON bool) {
 
 // canonicalToolName maps the alias accepted by the runtime filter to the name
 // used by the registry.
-func canonicalToolName(name string) string {
-	if name == "python" {
-		return "execute_python"
-	}
-	return name
-}
-
 // existingDisabledTools reads tools/tools.json and returns the built-in tools
 // that are currently disabled, in registry order.
-func existingDisabledTools(agentName string) []string {
-	dir, err := agentdir.ToolsDir(agentName)
-	if err != nil {
-		return nil
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "tools.json"))
-	if err != nil {
-		return nil
-	}
-	var cfg struct {
-		BuiltinTools map[string]bool `json:"builtin_tools"`
-	}
-	if json.Unmarshal(data, &cfg) != nil {
-		return nil
-	}
-
-	enabled := make(map[string]bool, len(cfg.BuiltinTools))
-	for name, value := range cfg.BuiltinTools {
-		enabled[canonicalToolName(name)] = value
-	}
-
-	disabled := make([]string, 0, len(cfg.BuiltinTools))
-	for _, tool := range builtinToolNames() {
-		if value, ok := enabled[tool]; ok && !value {
-			disabled = append(disabled, tool)
-		}
-	}
-	return disabled
-}
-
 func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.err = nil
 
@@ -1314,41 +1256,6 @@ func (m onboardModel) ensureNameStillFree() error {
 // initializeAgent creates the layout, registers the agent, assigns a port, and
 // wires A2A. It is only called when the user saves the review step, so an
 // interrupted wizard leaves nothing behind.
-func initializeAgent(name string) (a2aWarning error, err error) {
-	root, err := agentdir.AgentRoot(name)
-	if err != nil {
-		return nil, err
-	}
-	if err := setupMyaawHome(root); err != nil {
-		return nil, fmt.Errorf("create agent layout: %w", err)
-	}
-	if err := agentdir.RewriteLegacyPaths(root, name); err != nil {
-		return nil, fmt.Errorf("rewrite legacy paths: %w", err)
-	}
-	if err := agentdir.RegisterAgent(name); err != nil {
-		return nil, fmt.Errorf("register agent: %w", err)
-	}
-	if err := agentdir.SetActive(name); err != nil {
-		return nil, err
-	}
-	if err := ensureDefaultAgent(name); err != nil {
-		return nil, fmt.Errorf("set default agent: %w", err)
-	}
-	if err := prepareAgentEnv(name, 0); err != nil {
-		return nil, err
-	}
-
-	// Ensures the A2A token exists and every agent appears in the others'
-	// contacts. Existing tokens are preserved, so re-running is safe.
-	if contactErr := agentdir.EnsureA2AContacts(name); contactErr != nil {
-		a2aWarning = contactErr
-	}
-	if _, err := agent.EnsureWorkspace(); err != nil {
-		return nil, fmt.Errorf("prepare workspace: %w", err)
-	}
-	return a2aWarning, nil
-}
-
 // persist writes the whole agent: layout, .env, config.json, registry, and A2A
 // wiring. Nothing is written before this runs, so cancelling the wizard never
 // leaves partial data behind.
@@ -1382,60 +1289,6 @@ func (m *onboardModel) persist() error {
 
 // applyOnboarding merges the answers into config.json and returns the written
 // config plus non-fatal warnings (for example a failed webhook registration).
-func applyOnboarding(name string, in onboardInput, port int) (*config.Config, []string, error) {
-	if err := prepareAgentEnv(name, port); err != nil {
-		return nil, nil, err
-	}
-	root, err := agentdir.AgentRoot(name)
-	if err != nil {
-		return nil, nil, err
-	}
-	configPath := filepath.Join(root, "config", "config.json")
-
-	cfg, err := loadConfigFromFile(configPath)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, nil, fmt.Errorf("read config.json: %w", err)
-	}
-	if cfg == nil {
-		cfg = &config.Config{}
-	}
-	sanitizeOnboardConfig(cfg)
-
-	merged := mergeOnboardConfig(cfg, in)
-	if err := saveConfigToFile(configPath, merged); err != nil {
-		return nil, nil, fmt.Errorf("write config.json: %w", err)
-	}
-
-	if err := installSelectedSkills(name, in.Skills); err != nil {
-		return nil, nil, err
-	}
-	if in.UpdateTools {
-		if err := saveBuiltinToolSelection(name, in.DisabledTools); err != nil {
-			return nil, nil, err
-		}
-	}
-
-	var warnings []string
-	if in.TelegramToken != "" && in.TelegramMode == "webhook" {
-		publicURL := strings.TrimRight(strings.TrimSpace(in.TelegramWebhookURL), "/")
-		if publicURL == "" {
-			warnings = append(warnings, fmt.Sprintf("webhook mode is enabled but no public URL was set; run `myaaw --agent %s webhook set <domain>`", name))
-		} else {
-			if envPath, envErr := agentdir.EnvPath(name); envErr == nil {
-				_ = agentdir.UpsertEnvValue(envPath, "MYAAW_BASE_URL", publicURL)
-				// Contacts advertise MYAAW_BASE_URL, so refresh them after the change.
-				if contactErr := agentdir.EnsureA2AContacts(name); contactErr != nil {
-					warnings = append(warnings, "A2A contacts were not refreshed for the public URL: "+contactErr.Error())
-				}
-			}
-			if regErr := registerTelegramWebhook(in.TelegramToken, publicURL); regErr != nil {
-				warnings = append(warnings, "Telegram webhook was not registered: "+regErr.Error())
-			}
-		}
-	}
-	return merged, warnings, nil
-}
-
 func (m onboardModel) input() onboardInput {
 	providerName := m.providerName
 	if m.skipProvider {
@@ -1755,15 +1608,7 @@ type modelsFetchedMsg struct {
 // a real model instead of relying on a hardcoded default.
 func fetchProviderModels(providerType, baseURL, apiKey string) tea.Cmd {
 	return func() tea.Msg {
-		previous := config.LLMProviderBaseURL
-		config.LLMProviderBaseURL = baseURL
-		defer func() { config.LLMProviderBaseURL = previous }()
-
-		llm, err := provider.CreateLLMProvider(providerType, apiKey)
-		if err != nil {
-			return modelsFetchedMsg{err: err}
-		}
-		models, err := llm.Models()
+		models, err := provider.ModelsFor(providerType, baseURL, apiKey)
 		return modelsFetchedMsg{models: models, err: err}
 	}
 }
@@ -1801,173 +1646,11 @@ func (m onboardModel) handleModels(msg modelsFetchedMsg) onboardModel {
 
 // --- Config merge ---
 
-type onboardInput struct {
-	ProviderName       string
-	ProviderType       string
-	ProviderBaseURL    string
-	ProviderAPIKey     string
-	ProviderModel      string
-	TelegramToken      string
-	TelegramMode       string
-	TelegramWebhookURL string
-	DiscordToken       string
-	DisableTelegram    bool
-	DisableDiscord     bool
-	BotType            string
-	Heartbeat          bool
-	HeartbeatSet       bool
-	HeartbeatChannel   string
-	HeartbeatTo        string
-	HeartbeatEvery     string
-	OwnerIDs           []string
-	OwnersSet          bool
-	Skills             []string
-	DisabledTools      []string
-	UpdateTools        bool
-}
-
 // mergeOnboardConfig applies wizard answers to an existing config. Channels and
 // heartbeat are only touched when the user actually configured them, so
 // re-running onboarding never silently drops working settings.
-func mergeOnboardConfig(base *config.Config, in onboardInput) *config.Config {
-	cfg := &config.Config{}
-	if base != nil {
-		*cfg = *base
-	}
-
-	// Copy the mutable parts so merging never mutates the caller's config.
-	providers := make(map[string]config.ProviderConfig, len(cfg.Providers))
-	for name, p := range cfg.Providers {
-		providers[name] = p
-	}
-	cfg.Providers = providers
-	if cfg.Channels.Telegram != nil {
-		tg := *cfg.Channels.Telegram
-		cfg.Channels.Telegram = &tg
-	}
-	if cfg.Channels.Discord != nil {
-		dc := *cfg.Channels.Discord
-		cfg.Channels.Discord = &dc
-	}
-	if in.ProviderName != "" {
-		cfg.Providers[in.ProviderName] = config.ProviderConfig{
-			Type:         in.ProviderType,
-			BaseURL:      in.ProviderBaseURL,
-			APIKey:       in.ProviderAPIKey,
-			DefaultModel: in.ProviderModel,
-		}
-		cfg.DefaultProvider = in.ProviderName
-	}
-
-	if in.TelegramToken != "" {
-		tg := cfg.Channels.Telegram
-		if tg == nil {
-			tg = &config.ChannelConfig{}
-		}
-		tg.Active = true
-		tg.Token = in.TelegramToken
-		tg.Mode = in.TelegramMode
-		cfg.Channels.Telegram = tg
-	}
-	if in.DiscordToken != "" {
-		dc := cfg.Channels.Discord
-		if dc == nil {
-			dc = &config.ChannelConfig{}
-		}
-		dc.Active = true
-		dc.Token = in.DiscordToken
-		cfg.Channels.Discord = dc
-	}
-	// Turning a channel off keeps its token so it can be re-enabled later; the
-	// adapters only start when active is true.
-	if in.DisableTelegram && cfg.Channels.Telegram != nil {
-		cfg.Channels.Telegram.Active = false
-	}
-	if in.DisableDiscord && cfg.Channels.Discord != nil {
-		cfg.Channels.Discord.Active = false
-	}
-	if in.BotType != "" {
-		cfg.Bot.Type = in.BotType
-	}
-
-	if in.HeartbeatSet {
-		if in.Heartbeat {
-			cfg.Heartbeat = config.HeartbeatConfig{
-				Active:  true,
-				Channel: in.HeartbeatChannel,
-				To:      in.HeartbeatTo,
-				Every:   in.HeartbeatEvery,
-			}
-		} else {
-			cfg.Heartbeat.Active = false
-		}
-	}
-
-	// OwnersSet records that the owner step was answered, so clearing every ID
-	// removes the saved list instead of silently keeping it.
-	if in.OwnersSet {
-		cfg.Bot.OwnerIDs = append([]string{}, in.OwnerIDs...)
-	}
-
-	return cfg
-}
-
-const templateHeartbeatTo = "123456789"
-
 // sanitizeOnboardConfig strips values that shipped with the old template so a
 // fresh install never starts a bot with a fake token or blocks every real user.
-func sanitizeOnboardConfig(cfg *config.Config) {
-	if cfg == nil {
-		return
-	}
-	for name, p := range cfg.Providers {
-		if isTemplateValue(p.APIKey) {
-			delete(cfg.Providers, name)
-			if cfg.DefaultProvider == name {
-				cfg.DefaultProvider = ""
-			}
-		}
-	}
-	if cfg.Channels.Telegram != nil && isTemplateValue(cfg.Channels.Telegram.Token) {
-		cfg.Channels.Telegram.Token = ""
-		cfg.Channels.Telegram.Active = false
-	}
-	if cfg.Channels.Discord != nil && isTemplateValue(cfg.Channels.Discord.Token) {
-		cfg.Channels.Discord.Token = ""
-		cfg.Channels.Discord.Active = false
-	}
-	// Drop empty, unused channel blocks so new agents start with a clean file.
-	if cfg.Channels.Telegram != nil && !cfg.Channels.Telegram.Active && strings.TrimSpace(cfg.Channels.Telegram.Token) == "" {
-		cfg.Channels.Telegram = nil
-	}
-	if cfg.Channels.Discord != nil && !cfg.Channels.Discord.Active && strings.TrimSpace(cfg.Channels.Discord.Token) == "" {
-		cfg.Channels.Discord = nil
-	}
-	if isTemplateValue(cfg.Heartbeat.To) || cfg.Heartbeat.To == templateHeartbeatTo {
-		cfg.Heartbeat.Active = false
-		cfg.Heartbeat.To = ""
-	}
-	if isTemplateValue(cfg.Transcriber.APIKey) {
-		cfg.Transcriber = config.TranscriberConfig{}
-	}
-	if isTemplateValue(cfg.Synthesizer.APIKey) {
-		cfg.Synthesizer = config.SynthesizerConfig{}
-	}
-
-	owners := cfg.Bot.OwnerIDs[:0]
-	for _, id := range cfg.Bot.OwnerIDs {
-		if isTemplateValue(id) {
-			continue
-		}
-		owners = append(owners, id)
-	}
-	cfg.Bot.OwnerIDs = owners
-}
-
-func isTemplateValue(value string) bool {
-	return strings.HasPrefix(strings.TrimSpace(value), "YOUR_")
-}
-
 func ensureDefaultAgent(name string) error {
 	registry, err := agentdir.LoadRegistry()
 	if err != nil {
@@ -1991,29 +1674,6 @@ func validateAgentNameInput(name string) error {
 	}
 	if taken {
 		return fmt.Errorf("agent %q already exists; use --agent %s onboard to reconfigure it", name, name)
-	}
-	return nil
-}
-
-func validateTelegramToken(token string) error {
-	if token == "" {
-		return fmt.Errorf("Telegram bot token is required")
-	}
-	if !strings.Contains(token, ":") {
-		return fmt.Errorf("Telegram bot token looks invalid (expected <bot-id>:<secret>)")
-	}
-	return nil
-}
-
-func validateWebhookURL(value string) error {
-	if value == "" {
-		return fmt.Errorf("a public https:// URL is required for webhook mode")
-	}
-	if !strings.HasPrefix(value, "https://") {
-		return fmt.Errorf("Telegram requires an https:// URL, got %q", value)
-	}
-	if strings.HasSuffix(value, "/webhook/telegram") {
-		return fmt.Errorf("enter only the base URL, without the /webhook/telegram path")
 	}
 	return nil
 }
@@ -2238,46 +1898,6 @@ func (m onboardModel) previousStep() onboardModel {
 		m.step = stepWelcome
 	}
 	return m
-}
-
-func validateChatID(value string) error {
-	if value == "" {
-		return fmt.Errorf("chat ID is required")
-	}
-	digits := strings.TrimPrefix(value, "-")
-	if digits == "" {
-		return fmt.Errorf("chat ID must be numeric")
-	}
-	for _, r := range digits {
-		if r < '0' || r > '9' {
-			return fmt.Errorf("chat ID %q must be numeric", value)
-		}
-	}
-	return nil
-}
-
-func parseOwnerIDs(raw string) ([]string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, nil
-	}
-	seen := make(map[string]bool)
-	var ids []string
-	for _, part := range strings.Split(raw, ",") {
-		id := strings.TrimSpace(part)
-		if id == "" {
-			continue
-		}
-		if err := validateChatID(id); err != nil {
-			return nil, err
-		}
-		if seen[id] {
-			continue
-		}
-		seen[id] = true
-		ids = append(ids, id)
-	}
-	return ids, nil
 }
 
 func heartbeatPlaceholder(channel string) string {
@@ -3187,62 +2807,7 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 
 // parseOnboardSelection validates a comma-separated list (or "all") against
 // the known built-in names and returns them in the canonical order.
-func parseOnboardSelection(raw string, known []string, flag string) ([]string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, nil
-	}
-	if strings.EqualFold(raw, "all") {
-		return append([]string{}, known...), nil
-	}
-
-	// Match case-insensitively and accept the runtime alias for the Python
-	// tool, so `python` works wherever `execute_python` does.
-	lookup := make(map[string]string, len(known)+1)
-	for _, name := range known {
-		lookup[strings.ToLower(name)] = name
-	}
-	if _, ok := lookup["execute_python"]; ok {
-		lookup["python"] = "execute_python"
-	}
-
-	chosen := make(map[string]bool)
-	for _, part := range strings.Split(raw, ",") {
-		name := strings.TrimSpace(part)
-		if name == "" {
-			continue
-		}
-		canonical, ok := lookup[strings.ToLower(name)]
-		if !ok {
-			return nil, fmt.Errorf("%s: unknown name %q (valid: %s)", flag, name, strings.Join(known, ", "))
-		}
-		chosen[canonical] = true
-	}
-
-	selected := make([]string, 0, len(chosen))
-	for _, name := range known {
-		if chosen[name] {
-			selected = append(selected, name)
-		}
-	}
-	return selected, nil
-}
-
 // mergeOwnerIDs concatenates owner ID groups, dropping duplicates.
-func mergeOwnerIDs(groups ...[]string) []string {
-	seen := make(map[string]bool)
-	var merged []string
-	for _, group := range groups {
-		for _, id := range group {
-			if !seen[id] {
-				seen[id] = true
-				merged = append(merged, id)
-			}
-		}
-	}
-	return merged
-}
-
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
@@ -3268,219 +2833,13 @@ func loadAgentConfig(name string) *config.Config {
 
 // installSelectedSkills copies only the chosen skill templates. Existing
 // folders are never overwritten, and unselected skills are not created.
-func installSelectedSkills(name string, selected []string) error {
-	skillsDir, err := agentdir.SkillsDir(name)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-		return err
-	}
-
-	known := make(map[string]bool)
-	for _, skill := range builtinSkillNames() {
-		known[skill] = true
-	}
-
-	for _, skill := range selected {
-		if !known[skill] {
-			return fmt.Errorf("unknown skill %q", skill)
-		}
-		dest := filepath.Join(skillsDir, skill)
-		if _, statErr := os.Stat(dest); statErr == nil {
-			continue
-		}
-		if err := os.MkdirAll(dest, 0o755); err != nil {
-			return err
-		}
-		src := path.Join(".myaaw", "skills", skill)
-		if err := extractEmbedDir(myaaw.DefaultMyaawDir, src, dest); err != nil {
-			return fmt.Errorf("install skill %q: %w", skill, err)
-		}
-	}
-	return nil
-}
-
 // saveBuiltinToolSelection writes builtin_tools to tools/tools.json while
 // preserving custom_tools and mcp_servers. Every built-in is listed, so a
 // reconfigure re-enables tools that are no longer disabled.
-func saveBuiltinToolSelection(name string, disabled []string) error {
-	names := builtinToolNames()
-	known := make(map[string]bool, len(names))
-	builtin := make(map[string]bool, len(names))
-	for _, tool := range names {
-		known[tool] = true
-		builtin[tool] = true
-	}
-	for _, tool := range disabled {
-		if !known[tool] {
-			return fmt.Errorf("unknown built-in tool %q", tool)
-		}
-		builtin[tool] = false
-	}
-
-	toolsDir, err := agentdir.ToolsDir(name)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(toolsDir, 0o755); err != nil {
-		return err
-	}
-	configPath := filepath.Join(toolsDir, "tools.json")
-
-	raw := map[string]any{}
-	if data, readErr := os.ReadFile(configPath); readErr == nil {
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return fmt.Errorf("read tools.json: %w", err)
-		}
-	}
-	raw["builtin_tools"] = builtin
-
-	data, err := json.MarshalIndent(raw, "", "    ")
-	if err != nil {
-		return err
-	}
-	return writeFileAtomic(configPath, append(data, '\n'))
-}
-
-func setupMyaawHome(targetDir string) error {
-	homeReady := false
-	configReady := false
-	if _, err := os.Stat(filepath.Join(targetDir, "home", "AGENTS.md")); err == nil {
-		homeReady = true
-	}
-	if _, err := os.Stat(filepath.Join(targetDir, "config", "config.json")); err == nil {
-		configReady = true
-	}
-	if homeReady && configReady {
-		return nil
-	}
-	// Skills are opt-in: the template copy skips them and onboarding installs
-	// only the selected ones.
-	if err := extractEmbedDirExcept(myaaw.DefaultMyaawDir, ".myaaw", targetDir, "skills"); err != nil {
-		return err
-	}
-	return os.MkdirAll(filepath.Join(targetDir, "skills"), 0o755)
-}
-
 // ensureEnvFile writes the embedded .env template when the file does not
 // exist. The bool reports whether the file was created.
-func ensureEnvFile(path string) (bool, error) {
-	if _, err := os.Stat(path); err == nil {
-		return false, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, err
-	}
-	if err := os.WriteFile(path, []byte(myaaw.DefaultEnvExample), 0o644); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func loadConfigFromFile(path string) (*config.Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var cfg config.Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
-}
-
 // saveConfigToFile writes config.json through a temp file so a crash mid-write
 // cannot leave a truncated config behind.
-func saveConfigToFile(path string, cfg *config.Config) error {
-	data, err := json.MarshalIndent(cfg, "", "    ")
-	if err != nil {
-		return err
-	}
-	return writeFileAtomic(path, append(data, '\n'))
-}
-
 // writeFileAtomic writes data through a temp file in the same directory.
-func writeFileAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-
-	tmp, err := os.CreateTemp(dir, ".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	cleanup := func() {
-		tmp.Close()
-		os.Remove(tmpPath)
-	}
-
-	if _, err := tmp.Write(data); err != nil {
-		cleanup()
-		return err
-	}
-	if err := tmp.Chmod(0o644); err != nil {
-		cleanup()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return err
-	}
-
-	if err := os.Rename(tmpPath, path); err != nil {
-		// Windows cannot reliably replace an existing file with Rename.
-		_ = os.Remove(path)
-		if retryErr := os.Rename(tmpPath, path); retryErr != nil {
-			os.Remove(tmpPath)
-			return retryErr
-		}
-	}
-	return nil
-}
-
-func extractEmbedDir(embeddedFS embed.FS, src string, dest string) error {
-	return extractEmbedDirExcept(embeddedFS, src, dest)
-}
-
 // extractEmbedDirExcept copies an embedded directory while skipping the given
 // top-level entries.
-func extractEmbedDirExcept(embeddedFS embed.FS, src string, dest string, skip ...string) error {
-	skipSet := make(map[string]bool, len(skip))
-	for _, name := range skip {
-		skipSet[name] = true
-	}
-
-	entries, err := embeddedFS.ReadDir(src)
-	if err != nil {
-		return err
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() && skipSet[entry.Name()] {
-			continue
-		}
-		srcPath := filepath.Join(src, entry.Name())
-		destPath := filepath.Join(dest, entry.Name())
-
-		if entry.IsDir() {
-			if err := os.MkdirAll(destPath, 0o755); err != nil {
-				return err
-			}
-			if err := extractEmbedDir(embeddedFS, srcPath, destPath); err != nil {
-				return err
-			}
-			continue
-		}
-		data, err := embeddedFS.ReadFile(srcPath)
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(destPath, data, 0o644); err != nil {
-			return err
-		}
-	}
-	return nil
-}

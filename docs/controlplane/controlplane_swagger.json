@@ -2259,6 +2259,69 @@
                 }
             }
         },
+        "/agents/{name}/onboard": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Create or reconfigure an agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Agent configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.OnboardRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.OnboardResult"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/service.OnboardResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/providers": {
             "get": {
                 "security": [
@@ -2531,6 +2594,58 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/providers/{id}/models": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "List models for a saved provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Provider name",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ModelListView"
                         }
                     },
                     "401": {
@@ -3825,6 +3940,56 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/providers/models": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "List models for a provider",
+                "parameters": [
+                    {
+                        "description": "Provider credentials",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.ModelLookupInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ModelListView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     }
                 }
@@ -5312,6 +5477,170 @@
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "service.ModelListView": {
+            "type": "object",
+            "properties": {
+                "models": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "source": {
+                    "description": "\"live\" or \"default\"",
+                    "type": "string",
+                    "example": "live"
+                },
+                "warning": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ModelLookupInput": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "base_url": {
+                    "type": "string",
+                    "example": "https://api.deepseek.com"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "openai"
+                }
+            }
+        },
+        "service.OnboardBotInput": {
+            "type": "object",
+            "properties": {
+                "owner_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "type": {
+                    "type": "string",
+                    "example": "private"
+                }
+            }
+        },
+        "service.OnboardChannelsInput": {
+            "type": "object",
+            "properties": {
+                "disable_discord": {
+                    "type": "boolean"
+                },
+                "disable_telegram": {
+                    "type": "boolean"
+                },
+                "discord_token": {
+                    "type": "string"
+                },
+                "telegram_mode": {
+                    "type": "string",
+                    "example": "polling"
+                },
+                "telegram_token": {
+                    "type": "string"
+                },
+                "telegram_webhook_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.OnboardHeartbeatInput": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "channel": {
+                    "type": "string",
+                    "example": "telegram"
+                },
+                "every": {
+                    "type": "string",
+                    "example": "30m"
+                },
+                "to": {
+                    "type": "string",
+                    "example": "123456789"
+                }
+            }
+        },
+        "service.OnboardProviderInput": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "base_url": {
+                    "type": "string",
+                    "example": "https://api.deepseek.com"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "deepseek-chat"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "deepseek"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "openai"
+                }
+            }
+        },
+        "service.OnboardRequest": {
+            "type": "object",
+            "properties": {
+                "bot": {
+                    "$ref": "#/definitions/service.OnboardBotInput"
+                },
+                "channels": {
+                    "$ref": "#/definitions/service.OnboardChannelsInput"
+                },
+                "disable_tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "heartbeat": {
+                    "$ref": "#/definitions/service.OnboardHeartbeatInput"
+                },
+                "provider": {
+                    "$ref": "#/definitions/service.OnboardProviderInput"
+                },
+                "skills": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "service.OnboardResult": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/service.ConfigView"
+                },
+                "created": {
+                    "type": "boolean"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

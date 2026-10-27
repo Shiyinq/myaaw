@@ -65,6 +65,7 @@ func NewApp() (*fiber.App, error) {
 
 	app.Get("/agents", h.ListAgents)
 	app.Post("/agents", h.CreateAgent)
+	app.Post("/agents/:name/onboard", h.OnboardAgent)
 	app.Get("/agents/:name", h.GetAgent)
 	app.Delete("/agents/:name", h.DeleteAgent)
 	app.Post("/agents/:name/default", h.SetDefaultAgent)
@@ -104,6 +105,8 @@ func NewApp() (*fiber.App, error) {
 
 	app.Get("/agents/:name/providers", h.ListProviders)
 	app.Post("/agents/:name/providers", h.CreateProvider)
+	app.Post("/providers/models", h.ListModels)
+	app.Get("/agents/:name/providers/:id/models", h.GetProviderModels)
 	app.Put("/agents/:name/providers/:id", h.UpdateProvider)
 	app.Delete("/agents/:name/providers/:id", h.DeleteProvider)
 	app.Post("/agents/:name/providers/default", h.SetDefaultProvider)

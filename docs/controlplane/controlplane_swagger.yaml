@@ -984,6 +984,117 @@ definitions:
       name:
         type: string
     type: object
+  service.ModelListView:
+    properties:
+      models:
+        items:
+          type: string
+        type: array
+      source:
+        description: '"live" or "default"'
+        example: live
+        type: string
+      warning:
+        type: string
+    type: object
+  service.ModelLookupInput:
+    properties:
+      api_key:
+        type: string
+      base_url:
+        example: https://api.deepseek.com
+        type: string
+      type:
+        example: openai
+        type: string
+    type: object
+  service.OnboardBotInput:
+    properties:
+      owner_ids:
+        items:
+          type: string
+        type: array
+      type:
+        example: private
+        type: string
+    type: object
+  service.OnboardChannelsInput:
+    properties:
+      disable_discord:
+        type: boolean
+      disable_telegram:
+        type: boolean
+      discord_token:
+        type: string
+      telegram_mode:
+        example: polling
+        type: string
+      telegram_token:
+        type: string
+      telegram_webhook_url:
+        type: string
+    type: object
+  service.OnboardHeartbeatInput:
+    properties:
+      active:
+        type: boolean
+      channel:
+        example: telegram
+        type: string
+      every:
+        example: 30m
+        type: string
+      to:
+        example: "123456789"
+        type: string
+    type: object
+  service.OnboardProviderInput:
+    properties:
+      api_key:
+        type: string
+      base_url:
+        example: https://api.deepseek.com
+        type: string
+      model:
+        example: deepseek-chat
+        type: string
+      name:
+        example: deepseek
+        type: string
+      type:
+        example: openai
+        type: string
+    type: object
+  service.OnboardRequest:
+    properties:
+      bot:
+        $ref: '#/definitions/service.OnboardBotInput'
+      channels:
+        $ref: '#/definitions/service.OnboardChannelsInput'
+      disable_tools:
+        items:
+          type: string
+        type: array
+      heartbeat:
+        $ref: '#/definitions/service.OnboardHeartbeatInput'
+      provider:
+        $ref: '#/definitions/service.OnboardProviderInput'
+      skills:
+        items:
+          type: string
+        type: array
+    type: object
+  service.OnboardResult:
+    properties:
+      config:
+        $ref: '#/definitions/service.ConfigView'
+      created:
+        type: boolean
+      warnings:
+        items:
+          type: string
+        type: array
+    type: object
   service.ProviderView:
     properties:
       api_key:
@@ -2578,6 +2689,46 @@ paths:
       summary: Tail a log file
       tags:
       - Logs
+  /agents/{name}/onboard:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Agent configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.OnboardRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.OnboardResult'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/service.OnboardResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create or reconfigure an agent
+      tags:
+      - Agents
   /agents/{name}/providers:
     get:
       parameters:
@@ -2720,6 +2871,39 @@ paths:
       security:
       - BearerAuth: []
       summary: Update provider
+      tags:
+      - Providers
+  /agents/{name}/providers/{id}/models:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Provider name
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ModelListView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List models for a saved provider
       tags:
       - Providers
   /agents/{name}/providers/default:
@@ -3600,6 +3784,37 @@ paths:
       summary: Health check
       tags:
       - System
+  /providers/models:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Provider credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.ModelLookupInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ModelListView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List models for a provider
+      tags:
+      - Providers
 securityDefinitions:
   BearerAuth:
     description: Token returned by POST /auth/login. Paste it with or without the

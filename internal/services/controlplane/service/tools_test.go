@@ -35,13 +35,27 @@ func TestToolsServiceListDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(view.Builtin) != 8 {
+	if len(view.Builtin) != 9 {
 		t.Fatalf("builtin = %+v", view.Builtin)
 	}
 	for _, tool := range view.Builtin {
 		if !tool.Enabled {
 			t.Fatalf("builtin %s should default to enabled", tool.Name)
 		}
+	}
+	// The list must come from the registry, so every registered tool is present
+	// (a2a_auth_request used to be missing from a hardcoded copy).
+	registered := false
+	for _, tool := range view.Builtin {
+		if tool.Name == "a2a_auth_request" {
+			registered = true
+			if tool.Description == "" {
+				t.Fatal("a2a_auth_request has no description")
+			}
+		}
+	}
+	if !registered {
+		t.Fatal("a2a_auth_request missing from the builtin list")
 	}
 	if len(view.Custom) != 0 || len(view.MCPServers) != 0 {
 		t.Fatalf("view = %+v", view)
@@ -294,7 +308,7 @@ func TestToolsServiceInvalidJSONDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(view.Builtin) != 8 || len(view.Custom) != 0 {
+	if len(view.Builtin) != 9 || len(view.Custom) != 0 {
 		t.Fatalf("view = %+v", view)
 	}
 
