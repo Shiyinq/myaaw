@@ -537,11 +537,20 @@ func (f *FileSystemTool) readFile(path string, startLine, endLine int) string {
 	startIndex := startLine - 1
 	endIndex := endLine - 1
 
-	if startIndex < 0 || startIndex >= len(lines) || endIndex < startIndex || endIndex >= len(lines) {
+	if startIndex < 0 || startIndex >= len(lines) || endIndex < startIndex {
 		return fmt.Sprintf("Error: Line range [%d, %d] is invalid or out of bounds for file with %d lines.", startLine, endLine, len(lines))
 	}
 
-	return strings.Join(lines[startIndex:endIndex+1], "\n")
+	// An end_line past the end of the file is a common guess; clamp it and warn
+	// instead of hiding the content behind an error.
+	warning := ""
+	if endIndex >= len(lines) {
+		endIndex = len(lines) - 1
+		warning = fmt.Sprintf("Warning: end_line %d is past the end of the file; returning lines %d-%d of %d.\n\n",
+			endLine, startLine, endIndex+1, len(lines))
+	}
+
+	return warning + strings.Join(lines[startIndex:endIndex+1], "\n")
 }
 
 func (f *FileSystemTool) readMultipleFiles(paths []string) string {

@@ -386,6 +386,60 @@ func TestIsPathAllowedAllowsNewFileInBase(t *testing.T) {
 	}
 }
 
+func setupReadFileTool(t *testing.T, name, content string) (*FileSystemTool, string) {
+	t.Helper()
+
+	agentRoot := t.TempDir()
+	restore := saveAllowedConfig()
+	t.Cleanup(restore)
+	configureAllowedDirectories(agentRoot, agentRoot)
+
+	path := filepath.Join(agentRoot, "home", name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	return NewFileSystemTool(), path
+}
+
+func TestReadFileClampsEndLinePastEOF(t *testing.T) {
+	tool, path := setupReadFileTool(t, "notes.txt", "one\ntwo\nthree\n")
+
+	got := tool.readFile(path, 1, 130)
+	if !strings.Contains(got, "Warning: end_line 130 is past the end of the file") {
+		t.Fatalf("missing warning:\n%s", got)
+	}
+	if !strings.Contains(got, "returning lines 1-4 of 4") {
+		t.Fatalf("warning should report the clamped range:\n%s", got)
+	}
+	if !strings.HasSuffix(got, "one\ntwo\nthree\n") {
+		t.Fatalf("content not returned:\n%s", got)
+	}
+}
+
+func TestReadFileKeepsRangeWithinFile(t *testing.T) {
+	tool, path := setupReadFileTool(t, "notes.txt", "one\ntwo\nthree\n")
+
+	got := tool.readFile(path, 2, 3)
+	if strings.Contains(got, "Warning") {
+		t.Fatalf("unexpected warning:\n%s", got)
+	}
+	if got != "two\nthree" {
+		t.Fatalf("got %q, want %q", got, "two\nthree")
+	}
+}
+
+func TestReadFileRejectsStartLinePastEOF(t *testing.T) {
+	tool, path := setupReadFileTool(t, "notes.txt", "one\ntwo\nthree\n")
+
+	got := tool.readFile(path, 50, 130)
+	if !strings.HasPrefix(got, "Error: Line range") {
+		t.Fatalf("got %q, want an error", got)
+	}
+}
+
 func saveAllowedConfig() func() {
 	oldAllowed := allowedDirectories
 	oldBase := defaultBaseDir
