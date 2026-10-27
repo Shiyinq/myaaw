@@ -105,7 +105,7 @@ func TestOnboardFlow(t *testing.T) {
 		t.Fatalf("step = %d, want stepChannelChoice", m.step)
 	}
 
-	// Skip channels -> skip heartbeat -> owner.
+	// Skip channels -> skip heartbeat -> no owner prompt -> review.
 	m.cursor = len(m.choices) - 1
 	m = enter(m)
 	if m.step != stepHeartbeatChannel {
@@ -113,13 +113,8 @@ func TestOnboardFlow(t *testing.T) {
 	}
 	m.cursor = len(m.choices) - 1
 	m = enter(m)
-	if m.step != stepOwner {
-		t.Fatalf("step = %d, want stepOwner", m.step)
-	}
-	m.textInput.SetValue("42, -100200")
-	m = enter(m)
 	if m.step != stepSummary {
-		t.Fatalf("step = %d, want stepSummary", m.step)
+		t.Fatalf("step = %d, want stepSummary (no owner prompt without a channel)", m.step)
 	}
 
 	// Save.
@@ -149,8 +144,8 @@ func TestOnboardFlow(t *testing.T) {
 	if cfg.Heartbeat.Active {
 		t.Fatal("skipped heartbeat should stay disabled")
 	}
-	if len(cfg.Bot.OwnerIDs) != 2 || cfg.Bot.OwnerIDs[0] != "42" || cfg.Bot.OwnerIDs[1] != "-100200" {
-		t.Fatalf("owner IDs = %v", cfg.Bot.OwnerIDs)
+	if len(cfg.Bot.OwnerIDs) != 0 {
+		t.Fatalf("owner IDs = %v, want none when no channel was configured", cfg.Bot.OwnerIDs)
 	}
 
 	if port := readEnvValue(m.envFile, "PORT"); port != "8080" {

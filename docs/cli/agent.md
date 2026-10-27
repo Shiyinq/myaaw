@@ -55,6 +55,8 @@ What happens:
 3. Asks for provider, model, skills, built-in tools, channels, heartbeat, and owner.
 3. When you save the **Review** step, it creates `~/.myaaw/<name>/` from the embedded template, assigns a unique port, writes `.env`, registers the agent in `agents.json`, wires A2A (`A2A_TOKEN`, contacts in both directions, self excluded), and writes `config.json`.
 
+The global install question is only shown for the **first agent** on the machine; later agents skip it.
+
 Cancelling with `Ctrl+C` before Review leaves nothing behind; no directory, registry entry, or contacts are created.
 
 It accepts the same flags as [`myaaw onboard`](onboard.md#headless-mode-ci-scripts), so it can also run headless:

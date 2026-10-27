@@ -89,7 +89,7 @@ func TestMergeOnboardConfigKeepsSkippedChannels(t *testing.T) {
 
 func TestMergeOnboardConfigReplacesOwners(t *testing.T) {
 	base := &config.Config{Bot: config.GlobalBotConfig{OwnerIDs: []string{"1"}}}
-	cfg := mergeOnboardConfig(base, onboardInput{OwnerIDs: []string{"2", "3"}})
+	cfg := mergeOnboardConfig(base, onboardInput{OwnerIDs: []string{"2", "3"}, OwnersSet: true})
 
 	if got := strings.Join(cfg.Bot.OwnerIDs, ","); got != "2,3" {
 		t.Fatalf("owner IDs = %q, want 2,3", got)

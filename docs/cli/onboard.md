@@ -47,17 +47,17 @@ default                  ⚠️  allowed, but keeps the generic folder name
 | Agent | Name prompt (first run) or picker (agents exist). |
 | Initialize | Shows the target directory. Nothing is written yet. |
 | Provider | Type (OpenAI-compatible or Gemini), config name, base URL, API key, then a model picked from the live model list. |
-| Skills | Multi-select built-in skills. **Nothing is selected by default**, so no skill folder is created unless you choose it. |
-| Built-in tools | Multi-select built-in tools. **All are enabled by default**; press `Space` on a tool to disable it. |
+| Skills | Multi-select built-in skills with a short description after each name. **Nothing is selected by default**, so no skill folder is created unless you choose it. |
+| Built-in tools | Multi-select built-in tools with a short description after each name. **All are enabled by default**; press `Space` on a tool to disable it. |
 | Channels | Telegram, Discord, both, or skip. |
 | Telegram mode | `polling` or `webhook`. Choosing webhook asks for the public URL next. |
 | Telegram token | Bot token, masked while typing. |
 | Webhook URL | Only for webhook mode: the public `https://` base URL. Telegram receives updates at `<url>/webhook/telegram`, and Myaaw registers it right after saving. |
 | Discord | Bot token, if Discord is enabled. |
 | Heartbeat | Channel, destination ID, and interval (`15m`, `30m`, `1h`, ...). |
-| Owner | One or more owner IDs (comma separated) used by `bot.type: private`. |
+| Owner | Asked once per configured channel: **Telegram owner ID** and/or **Discord owner ID**. Both are optional and can be left empty. |
 | Review | Summary of everything that will be written, plus warnings. |
-| Install | Optional copy of the binary to `~/.local/bin/myaaw`. |
+| Install | Offered only when this is the **first agent** on the machine. Later agents skip it. |
 | Restart | Offered only when this agent's daemon is already running, so the new config is loaded immediately. |
 
 Keys and tokens are masked while typing. `Esc` goes back one step so answers are kept; `Ctrl+C` cancels. **Nothing is written until you save from Review** — layout, `.env`, port, registry entry, A2A wiring, and `config.json` are all created at that point. Cancelling at any step (or **Cancel** on Review) leaves no agent behind.
@@ -116,7 +116,9 @@ myaaw onboard --yes \
 | `--webhook-url` | Public `https://` URL (webhook mode) |
 | `--discord-token` | Discord bot token (prefer `DISCORD_BOT_TOKEN`) |
 | `--heartbeat-channel`, `--heartbeat-to`, `--heartbeat-every` | Heartbeat |
-| `--owner` | Owner IDs, comma separated |
+| `--owner` | Owner IDs for any channel, comma separated (optional) |
+| `--telegram-owner` | Telegram owner user IDs, comma separated (optional) |
+| `--discord-owner` | Discord owner user IDs, comma separated (optional) |
 | `--skills time,notes` | Skills to install, comma separated (`all` selects every built-in skill). Default: none |
 | `--disable-tools bash,cron` | Built-in tools to disable, comma separated (`all` disables every one). Default: none |
 | `--port` | Explicit server port instead of the first free one |
@@ -141,13 +143,30 @@ MYAAW_API_KEY="$KEY" myaaw onboard --yes --agent ci \
   --provider gemini --model models/gemini-2.5-flash --json
 ```
 
+## Owner IDs
+
+Owner IDs are only enforced when `bot.type` is `private`, and only for the channels that go through the agent's webhook (Telegram and Discord). The wizard asks **per configured channel**:
+
+- **Telegram owner ID**: from `@userinfobot`.
+- **Discord owner ID**: enable Developer Mode, right-click your profile, → Copy User ID.
+
+Both prompts are **optional**. Leave them empty if you have not looked the ID up yet. Owner IDs are only enforced for messages that arrive through Telegram and Discord (the `/webhook/bot` path): `myaaw chat` in the terminal, the REST API (`/api/chat`), and A2A calls keep working with an empty list. When `bot.type` is `private` and a channel is configured but the list is empty, the review screen shows this reminder. Fill the IDs in later with `myaaw --agent <name> onboard`, or by editing `bot.owner_ids` in `config/config.json`.
+
+On a reconfigure the prompts still appear even when you pick **Skip** in the Channels section, as long as that channel is already configured; the saved IDs are pre-filled and clearing the field removes them from `bot.owner_ids`.
+
+The headless flags merge into the same list: `--owner` for any channel, plus `--telegram-owner` and `--discord-owner`.
+
+## Install step
+
+The global install question only appears for the **first agent** on the machine. Once an agent exists, `myaaw onboard` and `myaaw agent create` skip it and go straight to Review → Done (or the restart question), because the binary is already available.
+
 ## Skills and built-in tools
 
-Both lists come from the binary, so there is nothing to download.
+Both lists come from the binary, so there is nothing to download. Each entry shows the skill or tool name followed by a short description, taken from the `SKILL.md` frontmatter or the tool schema.
 
 - **Skills default to none.** Only the ones you select are copied to `~/.myaaw/<agent>/skills/<name>/`, and an unselected skill is not created at all. The folder is what enables a skill, so you can also add or remove skills later by copying a folder.
 - **Tools default to all enabled.** Deselecting one writes `false` for it in `tools/tools.json` (`builtin_tools`); the rest stay `true`. Custom tools and MCP servers in the same file are preserved.
-- On a reconfigure, the wizard pre-selects the skills already installed and the tools currently enabled, so pressing Enter through those steps keeps the current state.
+- On a reconfigure, the wizard pre-selects the skills already installed and the tools currently enabled, so pressing Enter through those steps keeps the current state. This also applies when you start `myaaw onboard` without `--agent` and pick the existing agent from the welcome list.
 - Headless updates behave the same way: omitting `--disable-tools` keeps the tools that are already disabled, while passing it explicitly (even empty) rewrites the set. Omitting `--skills` installs nothing and never removes an installed skill.
 - Skills are never deleted by onboarding; removing a folder is still a manual action.
 
@@ -251,12 +270,29 @@ If any of this fails, onboarding still completes and shows a warning (`A2A conta
 
 ## Re-running onboarding
 
-- Provider and model are replaced with the values you enter.
-- Nothing is written until you save **Review**, so cancelling a reconfigure leaves the existing `config.json` and `.env` untouched.
-- Channels and heartbeat are only rewritten when you configure them; choosing **Skip** leaves existing settings untouched, so a working Telegram bot is not disabled by accident.
+Every section has a way to keep what is already configured:
+
+| Section | Keep the current value |
+| :--- | :--- |
+| Provider | Pick **Keep current provider** on the provider step |
+| Skills | Enter on **Skip (keep current)** at the top of the list |
+| Built-in tools | Enter on **Skip (keep current)**; `tools/tools.json` is not rewritten |
+| Channels | Choose **Skip**; the existing channel settings stay |
+| Heartbeat | Choose **Skip**; the existing heartbeat stays |
+| Owner | IDs are pre-filled; press Enter unchanged. Clearing the field removes the saved IDs |
+
+Details:
+
+- Nothing is written until you save **Review**, so cancelling a reconfigure leaves `config.json` and `.env` untouched.
+- Provider and model are only replaced when you pick a provider type instead of **Keep current provider**.
+- Skills are never deleted. Skipping only means no new folder is installed.
+- Skipped tools keep the current `builtin_tools` map; selecting the list rewrites it from your selection.
+- Owner IDs are merged from the Telegram and Discord prompts and de-duplicated.
+- In headless mode `bot.owner_ids` is only rewritten when an owner flag carries an ID, so a run without `--owner` keeps the saved list.
 - Values left over from older templates (`YOUR_*` placeholders) are removed before saving.
 - If the agent daemon is running, the wizard offers to restart it at the end; `--restart` does the same in headless mode.
 - A2A contacts are refreshed, so a newly added agent appears in the other agents' contact lists.
+- The global install question only appears when this is the first agent on the machine.
 
 ## After onboarding
 

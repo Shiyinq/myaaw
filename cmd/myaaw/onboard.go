@@ -24,6 +24,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var onboardCmd = &cobra.Command{
@@ -54,6 +55,8 @@ type onboardOptions struct {
 	hbTo      string
 	hbEvery   string
 	owner     string
+	tgOwner   string
+	dcOwner   string
 	port      int
 	restart   bool
 	skills    string
@@ -91,7 +94,9 @@ func registerOnboardFlags(cmd *cobra.Command) {
 	f.StringVar(&onboardOpts.hbChannel, "heartbeat-channel", "", "heartbeat channel: telegram, discord, or skip")
 	f.StringVar(&onboardOpts.hbTo, "heartbeat-to", "", "heartbeat destination chat/channel ID")
 	f.StringVar(&onboardOpts.hbEvery, "heartbeat-every", "", "heartbeat interval, e.g. 30m or 1h")
-	f.StringVar(&onboardOpts.owner, "owner", "", "owner IDs, comma separated")
+	f.StringVar(&onboardOpts.owner, "owner", "", "owner IDs for any channel, comma separated")
+	f.StringVar(&onboardOpts.tgOwner, "telegram-owner", "", "Telegram owner user IDs, comma separated (optional)")
+	f.StringVar(&onboardOpts.dcOwner, "discord-owner", "", "Discord owner user IDs, comma separated (optional)")
 	f.IntVar(&onboardOpts.port, "port", 0, "agent server port (default: first free port)")
 	f.BoolVar(&onboardOpts.restart, "restart", false, "restart the agent daemon after writing the config")
 	f.StringVar(&onboardOpts.skills, "skills", "", "skills to install, comma separated (default: none, or 'all')")
@@ -164,7 +169,8 @@ const (
 	stepHeartbeatChannel
 	stepHeartbeatID
 	stepHeartbeatEvery
-	stepOwner
+	stepOwnerTelegram
+	stepOwnerDiscord
 	stepSummary
 	stepInstallGlobal
 	stepRestart
@@ -175,6 +181,8 @@ const (
 	newAgentOption     = "+ Create a new agent"
 	manualModelOption  = "Enter model manually"
 	defaultHeartbeatEV = "30m"
+	skipSectionOption  = "Skip (keep current)"
+	skipProviderOption = "Keep current provider"
 )
 
 type onboardModel struct {
@@ -192,6 +200,8 @@ type onboardModel struct {
 	homeDir             string
 	agentName           string
 	agentExistedAtStart bool
+	existingTelegram    bool
+	existingDiscord     bool
 	myaawHome           string
 	envFile             string
 	configFile          string
@@ -218,12 +228,21 @@ type onboardModel struct {
 	heartbeatTo      string
 	heartbeatEvery   string
 
-	ownerIDs []string
+	telegramOwnerIDs []string
+	discordOwnerIDs  []string
+	ownersAsked      bool
+	firstAgent       bool
 
-	skills         []string
-	skillsSelected map[string]bool
-	tools          []string
-	toolsSelected  map[string]bool
+	skipProvider bool
+	skipSkills   bool
+	skipTools    bool
+
+	skills            []string
+	skillsSelected    map[string]bool
+	skillDescriptions map[string]string
+	tools             []string
+	toolsSelected     map[string]bool
+	toolDescriptions  map[string]string
 
 	warnings       []string
 	a2aWarning     error
@@ -248,21 +267,30 @@ func initialOnboardModel(agentName string) onboardModel {
 
 	home, _ := os.UserHomeDir()
 	m := onboardModel{
-		step:           stepWelcome,
-		textInput:      ti,
-		homeDir:        home,
-		choices:        []string{"Yes", "No"},
-		outputChan:     make(chan tea.Msg, 10),
-		skills:         builtinSkillNames(),
-		tools:          builtinToolNames(),
-		skillsSelected: map[string]bool{},
-		toolsSelected:  map[string]bool{},
+		step:              stepWelcome,
+		textInput:         ti,
+		homeDir:           home,
+		choices:           []string{"Yes", "No"},
+		outputChan:        make(chan tea.Msg, 10),
+		skills:            builtinSkillNames(),
+		skillsSelected:    map[string]bool{},
+		skillDescriptions: builtinSkillDescriptions(),
+		tools:             builtinToolNames(),
+		toolsSelected:     map[string]bool{},
+		toolDescriptions:  builtinToolDescriptions(),
 	}
 	for _, name := range m.skills {
 		m.skillsSelected[name] = false
 	}
 	for _, name := range m.tools {
 		m.toolsSelected[name] = true
+	}
+	// The global install only makes sense on the very first agent; later agents
+	// reuse the binary that is already on PATH.
+	if agents, err := agentdir.ListAgents(); err == nil {
+		m.firstAgent = len(agents) == 0
+	} else {
+		m.firstAgent = false
 	}
 	if agentName != "" {
 		m.setAgent(agentName)
@@ -278,8 +306,20 @@ func initialOnboardModel(agentName string) onboardModel {
 
 // loadExistingCapabilities pre-selects the skills already installed and the
 // tools that are not disabled in tools.json, so re-running onboarding shows the
-// current state instead of resetting it.
+// current state instead of resetting it. It starts from the defaults so picking
+// another agent later in the wizard cannot leak the previous answers.
 func (m *onboardModel) loadExistingCapabilities() {
+	for _, name := range m.skills {
+		m.skillsSelected[name] = false
+	}
+	for _, name := range m.tools {
+		m.toolsSelected[name] = true
+	}
+	m.telegramOwnerIDs = nil
+	m.discordOwnerIDs = nil
+	m.existingTelegram = false
+	m.existingDiscord = false
+
 	if dir, err := agentdir.SkillsDir(m.agentName); err == nil {
 		if entries, readErr := os.ReadDir(dir); readErr == nil {
 			for _, entry := range entries {
@@ -305,6 +345,42 @@ func (m *onboardModel) loadExistingCapabilities() {
 			}
 		}
 	}
+
+	cfg := loadAgentConfig(m.agentName)
+	if cfg == nil {
+		return
+	}
+	// Remember which channels are already wired so the owner and heartbeat
+	// steps still apply when the user skips the channel section.
+	m.existingTelegram = channelInUse(cfg.Channels.Telegram)
+	m.existingDiscord = channelInUse(cfg.Channels.Discord)
+
+	// Pre-fill the owner prompts with the current IDs so pressing Enter keeps
+	// them instead of replacing the list with whoever is asked first.
+	if len(cfg.Bot.OwnerIDs) > 0 {
+		m.telegramOwnerIDs = append([]string{}, cfg.Bot.OwnerIDs...)
+		m.discordOwnerIDs = append([]string{}, cfg.Bot.OwnerIDs...)
+	}
+}
+
+// channelInUse reports whether a saved channel is enabled or has a token.
+func channelInUse(channel *config.ChannelConfig) bool {
+	if channel == nil {
+		return false
+	}
+	return channel.Active || strings.TrimSpace(channel.Token) != ""
+}
+
+// channelConfigured reports whether a channel is in use, either because the
+// user answered the channel steps in this run or because it was already saved.
+func (m onboardModel) channelConfigured(channel string) bool {
+	switch channel {
+	case "telegram":
+		return m.telegramToken != "" || m.existingTelegram
+	case "discord":
+		return m.discordToken != "" || m.existingDiscord
+	}
+	return false
 }
 
 // setAgent pins the agent name and recomputes every derived path.
@@ -362,21 +438,26 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m_next, cmd_next := m.nextStep(msg)
 			m = m_next.(onboardModel)
 			return m, cmd_next
-		case "up", "k":
-			if !m.isTextInputStep() && m.cursor > 0 {
-				m.cursor--
-			}
-		case "down", "j":
-			if !m.isTextInputStep() && m.cursor < len(m.choices)-1 {
-				m.cursor++
-			}
-		case " ":
-			if m.isMultiSelectStep() {
-				m.toggleCurrent()
-			}
 		default:
+			// Text inputs must receive every key, including j, k, and space; only
+			// single-choice and multi-select steps use those for navigation.
 			if m.isTextInputStep() {
 				m.textInput, cmd = m.textInput.Update(msg)
+				break
+			}
+			switch msg.String() {
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "down", "j":
+				if m.cursor < len(m.choices)-1 {
+					m.cursor++
+				}
+			case " ":
+				if m.isMultiSelectStep() {
+					m.toggleCurrent()
+				}
 			}
 		}
 
@@ -404,7 +485,8 @@ func (m onboardModel) View() string {
 func (m onboardModel) isTextInputStep() bool {
 	switch m.step {
 	case stepAgentName, stepProviderName, stepProviderBaseURL, stepProviderKey,
-		stepTelegramToken, stepTelegramWebhookURL, stepDiscordToken, stepHeartbeatID, stepHeartbeatEvery, stepOwner:
+		stepTelegramToken, stepTelegramWebhookURL, stepDiscordToken, stepHeartbeatID, stepHeartbeatEvery,
+		stepOwnerTelegram, stepOwnerDiscord:
 		return true
 	case stepProviderModel:
 		return m.modelManual && !m.modelsLoading
@@ -422,6 +504,9 @@ func (m *onboardModel) toggleCurrent() {
 		return
 	}
 	name := m.choices[m.cursor]
+	if name == skipSectionOption {
+		return
+	}
 	switch m.step {
 	case stepSkills:
 		m.skillsSelected[name] = !m.skillsSelected[name]
@@ -470,6 +555,69 @@ func builtinSkillNames() []string {
 
 func builtinToolNames() []string {
 	return tools.GetBuiltinToolNames()
+}
+
+// builtinSkillDescriptions reads the description from each bundled SKILL.md.
+func builtinSkillDescriptions() map[string]string {
+	descriptions := make(map[string]string)
+	for _, name := range builtinSkillNames() {
+		data, err := myaaw.DefaultMyaawDir.ReadFile(path.Join(".myaaw", "skills", name, "SKILL.md"))
+		if err != nil {
+			continue
+		}
+		if description := frontmatterDescription(string(data)); description != "" {
+			descriptions[name] = description
+		}
+	}
+	return descriptions
+}
+
+func builtinToolDescriptions() map[string]string {
+	descriptions := make(map[string]string)
+	for _, info := range tools.GetBuiltinTools() {
+		if info.Description != "" {
+			descriptions[info.Name] = info.Description
+		}
+	}
+	return descriptions
+}
+
+// frontmatterDescription extracts a single-line description from a SKILL.md
+// frontmatter block.
+func frontmatterDescription(content string) string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	if !strings.HasPrefix(content, "---") {
+		return ""
+	}
+	rest := strings.TrimPrefix(content, "---")
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return ""
+	}
+	var meta struct {
+		Description string `yaml:"description"`
+	}
+	if err := yaml.Unmarshal([]byte(rest[:end]), &meta); err != nil {
+		return ""
+	}
+	return strings.Join(strings.Fields(meta.Description), " ")
+}
+
+// truncateOneLine shortens a description so it fits next to a skill or tool
+// name without wrapping the whole list.
+func truncateOneLine(text string, limit int) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if limit <= 0 {
+		return text
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	if limit == 1 {
+		return "…"
+	}
+	return string(runes[:limit-1]) + "…"
 }
 
 // canonicalToolName maps the alias accepted by the runtime filter to the name
@@ -539,6 +687,7 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setAgent(choice)
 		m.agentExistedAtStart = true
+		m.loadExistingCapabilities()
 		m.step = stepInitHome
 
 	case stepAgentName:
@@ -558,14 +707,24 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.step = stepProviderType
 		m.cursor = 0
-		m.choices = []string{"OpenAI (or compatible)", "Gemini"}
+		m.choices = m.providerTypeChoices()
 
 	case stepProviderType:
-		if m.cursor == 1 {
-			m.providerType = "gemini"
-		} else {
-			m.providerType = "openai"
+		choice := m.choices[m.cursor]
+		if m.agentExistedAtStart && choice == skipProviderOption {
+			m.skipProvider = true
+			m.enterSkillsStep()
+			return m, nil
 		}
+		switch choice {
+		case "Gemini":
+			m.providerType = "gemini"
+		case "OpenAI (or compatible)":
+			m.providerType = "openai"
+		default:
+			m.providerType = strings.ToLower(choice)
+		}
+		m.skipProvider = false
 		m.providerName = m.providerType
 		m.step = stepProviderName
 		m.resetInput(m.providerType, false)
@@ -637,31 +796,28 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.providerModel = choice
 		}
-		m.step = stepSkills
-		m.cursor = 0
-		m.choices = append([]string{}, m.skills...)
-		if len(m.skills) == 0 {
-			m.step = stepTools
-			m.choices = append([]string{}, m.tools...)
-		}
-		if len(m.choices) == 0 {
-			m.step = stepChannelChoice
-			m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
-		}
+		m.enterSkillsStep()
 
 	case stepSkills:
-		m.step = stepTools
-		m.cursor = 0
-		m.choices = append([]string{}, m.tools...)
+		if m.agentExistedAtStart && m.choices[m.cursor] == skipSectionOption {
+			m.skipSkills = true
+			m.enterToolsStep()
+			return m, nil
+		}
+		m.skipSkills = false
+		m.enterToolsStep()
 		if len(m.tools) == 0 {
-			m.step = stepChannelChoice
-			m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
+			m.enterChannelStep()
 		}
 
 	case stepTools:
-		m.step = stepChannelChoice
-		m.cursor = 0
-		m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
+		if m.agentExistedAtStart && m.choices[m.cursor] == skipSectionOption {
+			m.skipTools = true
+			m.enterChannelStep()
+			return m, nil
+		}
+		m.skipTools = false
+		m.enterChannelStep()
 
 	case stepChannelChoice:
 		m.channelChoice = strings.ToLower(m.choices[m.cursor])
@@ -733,8 +889,7 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		choice := strings.ToLower(m.choices[m.cursor])
 		if choice == "skip" {
 			m.heartbeat = false
-			m.step = stepOwner
-			m.resetInput("123456789, 987654321 (optional, comma separated)", false)
+			m.setupOwnerInputs()
 			return m, nil
 		}
 		m.heartbeat = true
@@ -764,16 +919,32 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.heartbeatEvery = every
-		m.step = stepOwner
-		m.resetInput("123456789, 987654321 (optional, comma separated)", false)
+		m.setupOwnerInputs()
 
-	case stepOwner:
+	case stepOwnerTelegram:
 		owners, err := parseOwnerIDs(m.textInput.Value())
 		if err != nil {
 			m.err = err
 			return m, nil
 		}
-		m.ownerIDs = owners
+		m.telegramOwnerIDs = owners
+		if m.channelConfigured("discord") {
+			m.step = stepOwnerDiscord
+			m.resetInput("Discord user ID (optional)", false)
+			m.textInput.SetValue(strings.Join(m.discordOwnerIDs, ", "))
+			return m, nil
+		}
+		m.step = stepSummary
+		m.cursor = 0
+		m.choices = []string{"Save configuration", "Cancel"}
+
+	case stepOwnerDiscord:
+		owners, err := parseOwnerIDs(m.textInput.Value())
+		if err != nil {
+			m.err = err
+			return m, nil
+		}
+		m.discordOwnerIDs = owners
 		m.step = stepSummary
 		m.cursor = 0
 		m.choices = []string{"Save configuration", "Cancel"}
@@ -786,7 +957,7 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = err
 			return m, nil
 		}
-		m.step = stepInstallGlobal
+		m.step = m.afterSaveStep()
 		m.cursor = 0
 		m.choices = []string{"Yes, install globally", "No"}
 
@@ -849,7 +1020,7 @@ func (m onboardModel) ensureNameStillFree() error {
 		return err
 	}
 	if taken {
-		return fmt.Errorf("agent %q was created while you were onboarding; choose another name", m.agentName)
+		return fmt.Errorf("agent %q is already taken; pick another name, or run `myaaw --agent %s onboard` to update it", m.agentName, m.agentName)
 	}
 	return nil
 }
@@ -952,8 +1123,10 @@ func applyOnboarding(name string, in onboardInput, port int) (*config.Config, []
 	if err := installSelectedSkills(name, in.Skills); err != nil {
 		return nil, nil, err
 	}
-	if err := saveBuiltinToolSelection(name, in.DisabledTools); err != nil {
-		return nil, nil, err
+	if in.UpdateTools {
+		if err := saveBuiltinToolSelection(name, in.DisabledTools); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	var warnings []string
@@ -978,8 +1151,16 @@ func applyOnboarding(name string, in onboardInput, port int) (*config.Config, []
 }
 
 func (m onboardModel) input() onboardInput {
+	providerName := m.providerName
+	if m.skipProvider {
+		providerName = ""
+	}
+	skills := m.selectedSkills()
+	if m.skipSkills {
+		skills = nil
+	}
 	return onboardInput{
-		ProviderName:       m.providerName,
+		ProviderName:       providerName,
 		ProviderType:       m.providerType,
 		ProviderBaseURL:    m.providerBaseURL,
 		ProviderAPIKey:     m.llmKey,
@@ -992,20 +1173,142 @@ func (m onboardModel) input() onboardInput {
 		HeartbeatChannel:   m.heartbeatChannel,
 		HeartbeatTo:        m.heartbeatTo,
 		HeartbeatEvery:     m.heartbeatEvery,
-		OwnerIDs:           m.ownerIDs,
-		Skills:             m.selectedSkills(),
+		OwnerIDs:           m.ownerIDsAll(),
+		OwnersSet:          m.ownersAsked,
+		Skills:             skills,
 		DisabledTools:      m.disabledTools(),
+		UpdateTools:        !m.skipTools,
 	}
+}
+
+func (m *onboardModel) setupOwnerInputs() {
+	switch {
+	case m.channelConfigured("telegram"):
+		m.ownersAsked = true
+		m.step = stepOwnerTelegram
+		m.resetInput("Telegram user ID (optional)", false)
+		m.textInput.SetValue(strings.Join(m.telegramOwnerIDs, ", "))
+	case m.channelConfigured("discord"):
+		m.ownersAsked = true
+		m.step = stepOwnerDiscord
+		m.resetInput("Discord user ID (optional)", false)
+		m.textInput.SetValue(strings.Join(m.discordOwnerIDs, ", "))
+	default:
+		m.step = stepSummary
+		m.cursor = 0
+		m.choices = []string{"Save configuration", "Cancel"}
+	}
+}
+
+// providerTypeChoices adds an explicit keep-current option when updating.
+func (m onboardModel) providerTypeChoices() []string {
+	if m.agentExistedAtStart {
+		return []string{skipProviderOption, "OpenAI (or compatible)", "Gemini"}
+	}
+	return []string{"OpenAI (or compatible)", "Gemini"}
+}
+
+func (m onboardModel) providerTypeCursor() int {
+	if m.agentExistedAtStart {
+		switch m.providerType {
+		case "gemini":
+			return 2
+		case "openai":
+			return 1
+		default:
+			return 0
+		}
+	}
+	if m.providerType == "gemini" {
+		return 1
+	}
+	return 0
+}
+
+func (m onboardModel) skillChoices() []string {
+	choices := append([]string{}, m.skills...)
+	if m.agentExistedAtStart {
+		choices = append([]string{skipSectionOption}, choices...)
+	}
+	return choices
+}
+
+func (m onboardModel) toolChoices() []string {
+	choices := append([]string{}, m.tools...)
+	if m.agentExistedAtStart {
+		choices = append([]string{skipSectionOption}, choices...)
+	}
+	return choices
+}
+
+func (m *onboardModel) enterSkillsStep() {
+	m.step = stepSkills
+	m.cursor = 0
+	m.choices = m.skillChoices()
+}
+
+func (m *onboardModel) enterToolsStep() {
+	m.step = stepTools
+	m.cursor = 0
+	m.choices = m.toolChoices()
+}
+
+func (m *onboardModel) enterChannelStep() {
+	m.step = stepChannelChoice
+	m.cursor = 0
+	m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
+}
+
+// ownerIDsAll merges the per-channel IDs into the single bot.owner_ids list.
+func (m onboardModel) ownerIDsAll() []string {
+	seen := make(map[string]bool)
+	owners := make([]string, 0, len(m.telegramOwnerIDs)+len(m.discordOwnerIDs))
+	for _, id := range append(append([]string{}, m.telegramOwnerIDs...), m.discordOwnerIDs...) {
+		if !seen[id] {
+			seen[id] = true
+			owners = append(owners, id)
+		}
+	}
+	return owners
+}
+
+// afterSaveStep skips the global install question unless this is the first
+// agent on the machine.
+func (m onboardModel) afterSaveStep() int {
+	if m.firstAgent {
+		return stepInstallGlobal
+	}
+	if m.restartPending {
+		return stepRestart
+	}
+	return stepDone
+}
+
+func (m onboardModel) heartbeatBackStep() int {
+	if m.heartbeat {
+		return stepHeartbeatEvery
+	}
+	return stepHeartbeatChannel
+}
+
+func (m onboardModel) ownerBackStep() int {
+	if m.channelConfigured("discord") {
+		return stepOwnerDiscord
+	}
+	if m.channelConfigured("telegram") {
+		return stepOwnerTelegram
+	}
+	return m.heartbeatBackStep()
 }
 
 func (m *onboardModel) setupHeartbeatChannel() {
 	m.step = stepHeartbeatChannel
 	m.cursor = 0
 	m.choices = nil
-	if m.telegramToken != "" {
+	if m.channelConfigured("telegram") {
 		m.choices = append(m.choices, "Telegram")
 	}
-	if m.discordToken != "" {
+	if m.channelConfigured("discord") {
 		m.choices = append(m.choices, "Discord")
 	}
 	m.choices = append(m.choices, "Skip")
@@ -1123,8 +1426,10 @@ type onboardInput struct {
 	HeartbeatTo        string
 	HeartbeatEvery     string
 	OwnerIDs           []string
+	OwnersSet          bool
 	Skills             []string
 	DisabledTools      []string
+	UpdateTools        bool
 }
 
 // mergeOnboardConfig applies wizard answers to an existing config. Channels and
@@ -1189,7 +1494,9 @@ func mergeOnboardConfig(base *config.Config, in onboardInput) *config.Config {
 		}
 	}
 
-	if len(in.OwnerIDs) > 0 {
+	// OwnersSet records that the owner step was answered, so clearing every ID
+	// removes the saved list instead of silently keeping it.
+	if in.OwnersSet {
 		cfg.Bot.OwnerIDs = append([]string{}, in.OwnerIDs...)
 	}
 
@@ -1355,11 +1662,8 @@ func (m onboardModel) previousStep() onboardModel {
 
 	case stepProviderName:
 		m.step = stepProviderType
-		m.cursor = 0
-		if m.providerType == "gemini" {
-			m.cursor = 1
-		}
-		m.choices = []string{"OpenAI (or compatible)", "Gemini"}
+		m.choices = m.providerTypeChoices()
+		m.cursor = m.providerTypeCursor()
 
 	case stepProviderBaseURL:
 		m.step = stepProviderName
@@ -1380,9 +1684,15 @@ func (m onboardModel) previousStep() onboardModel {
 	case stepTools:
 		m.step = stepSkills
 		m.cursor = 0
-		m.choices = append([]string{}, m.skills...)
+		m.choices = m.skillChoices()
 
 	case stepSkills:
+		if m.skipProvider {
+			m.step = stepProviderType
+			m.cursor = 0
+			m.choices = m.providerTypeChoices()
+			break
+		}
 		m.step = stepProviderModel
 		if m.modelManual || len(m.models) == 0 {
 			m.modelManual = true
@@ -1403,7 +1713,7 @@ func (m onboardModel) previousStep() onboardModel {
 	case stepChannelChoice:
 		m.step = stepTools
 		m.cursor = 0
-		m.choices = append([]string{}, m.tools...)
+		m.choices = m.toolChoices()
 
 	case stepTelegramMode:
 		m.step = stepChannelChoice
@@ -1437,10 +1747,10 @@ func (m onboardModel) previousStep() onboardModel {
 		m.step = stepHeartbeatChannel
 		m.cursor = 0
 		m.choices = nil
-		if m.telegramToken != "" {
+		if m.channelConfigured("telegram") {
 			m.choices = append(m.choices, "Telegram")
 		}
-		if m.discordToken != "" {
+		if m.channelConfigured("discord") {
 			m.choices = append(m.choices, "Discord")
 		}
 		m.choices = append(m.choices, "Skip")
@@ -1450,20 +1760,33 @@ func (m onboardModel) previousStep() onboardModel {
 		m.resetInput(heartbeatPlaceholder(m.heartbeatChannel), false)
 		m.textInput.SetValue(m.heartbeatTo)
 
-	case stepOwner:
-		if m.heartbeat {
-			m.step = stepHeartbeatEvery
-			m.resetInput(defaultHeartbeatEV, false)
-			m.textInput.SetValue(m.heartbeatEvery)
+	case stepOwnerDiscord:
+		if m.channelConfigured("telegram") {
+			m.step = stepOwnerTelegram
+			m.resetInput("Telegram user ID (optional)", false)
+			m.textInput.SetValue(strings.Join(m.telegramOwnerIDs, ", "))
 			break
 		}
-		m.step = stepHeartbeatChannel
-		m.cursor = 0
+		m.step = m.heartbeatBackStep()
+
+	case stepOwnerTelegram:
+		m.step = m.heartbeatBackStep()
 
 	case stepSummary:
-		m.step = stepOwner
-		m.resetInput("123456789, 987654321 (optional, comma separated)", false)
-		m.textInput.SetValue(strings.Join(m.ownerIDs, ", "))
+		m.step = m.ownerBackStep()
+		switch m.step {
+		case stepOwnerTelegram:
+			m.resetInput("Telegram user ID (optional)", false)
+			m.textInput.SetValue(strings.Join(m.telegramOwnerIDs, ", "))
+		case stepOwnerDiscord:
+			m.resetInput("Discord user ID (optional)", false)
+			m.textInput.SetValue(strings.Join(m.discordOwnerIDs, ", "))
+		case stepHeartbeatEvery:
+			m.resetInput(defaultHeartbeatEV, false)
+			m.textInput.SetValue(m.heartbeatEvery)
+		case stepHeartbeatChannel:
+			m.cursor = 0
+		}
 
 	case stepInstallGlobal:
 		m.step = stepSummary
@@ -1560,7 +1883,11 @@ func (m onboardModel) renderContent() string {
 
 	case stepProviderType:
 		b.WriteString(titleStyle.Render("LLM Provider"))
-		b.WriteString("\n\nChoose the AI engine for this agent:\n\n")
+		b.WriteString("\n\nChoose the AI engine for this agent:\n")
+		if m.agentExistedAtStart {
+			b.WriteString(theme.SecondaryStyle.Render("Pick 'Keep current provider' to leave the provider and model unchanged.") + "\n")
+		}
+		b.WriteString("\n")
 		b.WriteString(m.renderChoices())
 
 	case stepProviderName:
@@ -1599,7 +1926,7 @@ func (m onboardModel) renderContent() string {
 	case stepSkills:
 		b.WriteString(titleStyle.Render("Skills"))
 		if m.agentExistedAtStart {
-			b.WriteString("\n\nInstalled skills are pre-selected. Unchecking does not delete an existing folder.\n")
+			b.WriteString("\n\nInstalled skills are pre-selected. Enter on 'Skip (keep current)' to change nothing.\n")
 		} else {
 			b.WriteString("\n\nNo skill is selected by default. Space to toggle, Enter to continue.\n")
 		}
@@ -1608,13 +1935,21 @@ func (m onboardModel) renderContent() string {
 
 	case stepTools:
 		b.WriteString(titleStyle.Render("Built-in Tools"))
-		b.WriteString("\n\nEvery built-in tool is enabled by default. Space to disable, Enter to continue.\n")
+		if m.agentExistedAtStart {
+			b.WriteString("\n\nCurrent settings are pre-selected. Enter on 'Skip (keep current)' to change nothing.\n")
+		} else {
+			b.WriteString("\n\nEvery built-in tool is enabled by default. Space to disable, Enter to continue.\n")
+		}
 		b.WriteString(theme.SecondaryStyle.Render("Disabled tools are written to tools/tools.json as false.") + "\n\n")
 		b.WriteString(m.renderMultiSelect(m.toolsSelected))
 
 	case stepChannelChoice:
 		b.WriteString(titleStyle.Render("Select Channels"))
-		b.WriteString("\n\nWhere should your bot live?\n\n")
+		b.WriteString("\n\nWhere should your bot live?\n")
+		if m.agentExistedAtStart {
+			b.WriteString(theme.SecondaryStyle.Render("Skip keeps the current channel settings.") + "\n")
+		}
+		b.WriteString("\n")
 		b.WriteString(m.renderChoices())
 
 	case stepTelegramMode:
@@ -1640,7 +1975,11 @@ func (m onboardModel) renderContent() string {
 
 	case stepHeartbeatChannel:
 		b.WriteString(titleStyle.Render("Heartbeat Channel"))
-		b.WriteString("\n\nShould the agent send a periodic self-check?\n\n")
+		b.WriteString("\n\nShould the agent send a periodic self-check?\n")
+		if m.agentExistedAtStart {
+			b.WriteString(theme.SecondaryStyle.Render("Skip keeps the current heartbeat settings.") + "\n")
+		}
+		b.WriteString("\n")
 		b.WriteString(m.renderChoices())
 
 	case stepHeartbeatID:
@@ -1654,10 +1993,22 @@ func (m onboardModel) renderContent() string {
 		b.WriteString(theme.SecondaryStyle.Render("Use a Go duration: 15m, 30m, 1h, 6h.") + "\n\n")
 		b.WriteString(m.textInput.View())
 
-	case stepOwner:
-		b.WriteString(titleStyle.Render("Bot Owner"))
-		b.WriteString("\n\nIDs allowed to talk to the bot when bot.type is private.\n")
-		b.WriteString(theme.SecondaryStyle.Render("Comma separated. Leave empty only if you plan to allow everyone.") + "\n\n")
+	case stepOwnerTelegram:
+		b.WriteString(titleStyle.Render("Telegram Owner ID"))
+		b.WriteString("\n\nOptional. Leave it empty and add it later when you know your ID.\n")
+		if m.agentExistedAtStart {
+			b.WriteString(theme.SecondaryStyle.Render("Existing IDs are pre-filled; delete them only if you want to remove them.") + "\n")
+		}
+		b.WriteString(theme.SecondaryStyle.Render("You can get it from @userinfobot. Comma separated for several IDs.") + "\n\n")
+		b.WriteString(m.textInput.View())
+
+	case stepOwnerDiscord:
+		b.WriteString(titleStyle.Render("Discord Owner ID"))
+		b.WriteString("\n\nOptional. Leave it empty and add it later when you know your ID.\n")
+		if m.agentExistedAtStart {
+			b.WriteString(theme.SecondaryStyle.Render("Existing IDs are pre-filled; delete them only if you want to remove them.") + "\n")
+		}
+		b.WriteString(theme.SecondaryStyle.Render("Enable Developer Mode, right-click your profile, then Copy User ID.") + "\n\n")
 		b.WriteString(m.textInput.View())
 
 	case stepSummary:
@@ -1717,18 +2068,30 @@ func (m onboardModel) renderSummary() string {
 
 	row("Agent", fmt.Sprintf("%s  (%s)", m.agentName, m.myaawHome))
 	row("Port", m.port())
-	row("Provider", fmt.Sprintf("%s [%s]", m.providerName, m.providerType))
-	row("Base URL", m.providerBaseURL)
-	row("Model", m.providerModel)
-	skills := "none"
-	if selected := m.selectedSkills(); len(selected) > 0 {
-		skills = strings.Join(selected, ", ")
+	if m.skipProvider {
+		row("Provider", "unchanged (current)")
+	} else {
+		row("Provider", fmt.Sprintf("%s [%s]", m.providerName, m.providerType))
+		row("Base URL", m.providerBaseURL)
+		row("Model", m.providerModel)
 	}
-	row("Skills", skills)
+	if m.skipSkills {
+		row("Skills", "unchanged (current)")
+	} else {
+		skills := "none"
+		if selected := m.selectedSkills(); len(selected) > 0 {
+			skills = strings.Join(selected, ", ")
+		}
+		row("Skills", skills)
+	}
 	disabled := m.disabledTools()
-	row("Tools", fmt.Sprintf("%d enabled, %d disabled", len(m.tools)-len(disabled), len(disabled)))
-	if len(disabled) > 0 {
-		row("Disabled", strings.Join(disabled, ", "))
+	if m.skipTools {
+		row("Tools", "unchanged (current)")
+	} else {
+		row("Tools", fmt.Sprintf("%d enabled, %d disabled", len(m.tools)-len(disabled), len(disabled)))
+		if len(disabled) > 0 {
+			row("Disabled", strings.Join(disabled, ", "))
+		}
 	}
 	row("Telegram", m.channelSummary("telegram", m.telegramToken, m.telegramMode))
 	if m.telegramMode == "webhook" && m.telegramWebhookURL != "" {
@@ -1740,14 +2103,19 @@ func (m onboardModel) renderSummary() string {
 	} else {
 		row("Heartbeat", "disabled")
 	}
-	if len(m.ownerIDs) > 0 {
-		row("Owner IDs", strings.Join(m.ownerIDs, ", "))
-	} else {
+	if m.channelConfigured("telegram") {
+		row("Telegram owner", joinOwnerIDs(m.telegramOwnerIDs))
+	}
+	if m.channelConfigured("discord") {
+		row("Discord owner", joinOwnerIDs(m.discordOwnerIDs))
+	}
+	if !m.channelConfigured("telegram") && !m.channelConfigured("discord") {
 		row("Owner IDs", "none")
 	}
 
-	if len(m.ownerIDs) == 0 {
-		b.WriteString("\n" + theme.WarningStyle.Render("⚠  No owner IDs: with bot.type \"private\" nobody can chat with this bot."))
+	if len(m.ownerIDsAll()) == 0 && (m.channelConfigured("telegram") || m.channelConfigured("discord")) {
+		b.WriteString("\n" + theme.WarningStyle.Render("⚠  No owner IDs: with bot.type \"private\", Telegram and Discord ignore every message.") +
+			"\n" + theme.MutedStyle.Render("   Terminal (`myaaw chat`), the REST API, and A2A are not filtered by owner IDs."))
 	}
 	if m.providerType != "gemini" {
 		b.WriteString("\n" + theme.MutedStyle.Render("ℹ  `myaaw voice` (real-time) needs Gemini; `voice-classic` works with any provider."))
@@ -1756,6 +2124,13 @@ func (m onboardModel) renderSummary() string {
 		b.WriteString("\n" + theme.WarningStyle.Render("⚠  A2A contacts were not seeded: "+m.a2aWarning.Error()))
 	}
 	return b.String()
+}
+
+func joinOwnerIDs(ids []string) string {
+	if len(ids) == 0 {
+		return "none (optional)"
+	}
+	return strings.Join(ids, ", ")
 }
 
 func (m onboardModel) renderWarnings() string {
@@ -1776,6 +2151,9 @@ func (m onboardModel) renderWarnings() string {
 
 func (m onboardModel) channelSummary(channel, token, mode string) string {
 	if token == "" {
+		if m.agentExistedAtStart && m.channelConfigured(channel) {
+			return "unchanged (current)"
+		}
 		return "not configured"
 	}
 	if mode != "" {
@@ -1801,12 +2179,25 @@ func (m onboardModel) renderMultiSelect(selected map[string]bool) string {
 			style = theme.HighlightStyle
 		}
 		box := "[ ]"
-		if selected[choice] {
+		if choice == skipSectionOption {
+			box = "[–]"
+		} else if selected[choice] {
 			box = "[x]"
 		}
-		s.WriteString(fmt.Sprintf("%s %s %s\n", cursor, box, style.Render(choice)))
+		line := fmt.Sprintf("%s %s %s", cursor, box, style.Render(choice))
+		if description := m.descriptionFor(choice); description != "" {
+			line += theme.MutedStyle.Render(" — " + truncateOneLine(description, 64))
+		}
+		s.WriteString(line + "\n")
 	}
 	return s.String()
+}
+
+func (m onboardModel) descriptionFor(name string) string {
+	if m.step == stepSkills {
+		return m.skillDescriptions[name]
+	}
+	return m.toolDescriptions[name]
 }
 
 func (m onboardModel) renderChoices() string {
@@ -1823,6 +2214,34 @@ func (m onboardModel) renderChoices() string {
 	return s
 }
 
+func (m onboardModel) timelineLabel() string {
+	switch m.step {
+	case stepWelcome:
+		return "Welcome"
+	case stepAgentChoice, stepAgentName:
+		return "Agent"
+	case stepInitHome:
+		return "Initialize"
+	case stepProviderType, stepProviderName, stepProviderBaseURL, stepProviderKey, stepProviderModel:
+		return "Provider"
+	case stepSkills, stepTools:
+		return "Skills & Tools"
+	case stepChannelChoice, stepTelegramMode, stepTelegramToken, stepTelegramWebhookURL, stepDiscordToken:
+		return "Channels"
+	case stepHeartbeatChannel, stepHeartbeatID, stepHeartbeatEvery:
+		return "Heartbeat"
+	case stepOwnerTelegram, stepOwnerDiscord:
+		return "Owner"
+	case stepSummary:
+		return "Review"
+	case stepInstallGlobal, stepRestart:
+		return "Install"
+	case stepDone:
+		return "Done"
+	}
+	return "Welcome"
+}
+
 func (m onboardModel) renderTimeline() string {
 	steps := []string{
 		"Welcome",
@@ -1834,34 +2253,22 @@ func (m onboardModel) renderTimeline() string {
 		"Heartbeat",
 		"Owner",
 		"Review",
-		"Install",
-		"Done",
 	}
+	if m.firstAgent {
+		steps = append(steps, "Install")
+	}
+	steps = append(steps, "Done")
 
+	current := m.timelineLabel()
+	if current == "Install" && !m.firstAgent {
+		current = "Done"
+	}
 	timelineIdx := 0
-	switch m.step {
-	case stepWelcome:
-		timelineIdx = 0
-	case stepAgentChoice, stepAgentName:
-		timelineIdx = 1
-	case stepInitHome:
-		timelineIdx = 2
-	case stepProviderType, stepProviderName, stepProviderBaseURL, stepProviderKey, stepProviderModel:
-		timelineIdx = 3
-	case stepSkills, stepTools:
-		timelineIdx = 4
-	case stepChannelChoice, stepTelegramMode, stepTelegramToken, stepTelegramWebhookURL, stepDiscordToken:
-		timelineIdx = 5
-	case stepHeartbeatChannel, stepHeartbeatID, stepHeartbeatEvery:
-		timelineIdx = 6
-	case stepOwner:
-		timelineIdx = 7
-	case stepSummary:
-		timelineIdx = 8
-	case stepInstallGlobal, stepRestart:
-		timelineIdx = 9
-	case stepDone:
-		timelineIdx = 10
+	for i, label := range steps {
+		if label == current {
+			timelineIdx = i
+			break
+		}
 	}
 
 	var b strings.Builder
@@ -2219,7 +2626,18 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 	if err != nil {
 		return in, fmt.Errorf("--owner: %v", err)
 	}
-	in.OwnerIDs = owners
+	tgOwners, err := parseOwnerIDs(opts.tgOwner)
+	if err != nil {
+		return in, fmt.Errorf("--telegram-owner: %v", err)
+	}
+	dcOwners, err := parseOwnerIDs(opts.dcOwner)
+	if err != nil {
+		return in, fmt.Errorf("--discord-owner: %v", err)
+	}
+	in.OwnerIDs = mergeOwnerIDs(owners, tgOwners, dcOwners)
+	// Headless only rewrites the owner list when a flag actually carries an ID,
+	// so a run without --owner keeps whatever is saved.
+	in.OwnersSet = len(in.OwnerIDs) > 0
 
 	skills, err := parseOnboardSelection(opts.skills, builtinSkillNames(), "--skills")
 	if err != nil {
@@ -2234,9 +2652,13 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 	switch {
 	case opts.disableToolsSet || strings.TrimSpace(opts.noTools) != "":
 		in.DisabledTools = disabledTools
+		in.UpdateTools = true
 	case existing != nil:
 		// Updating without --disable-tools keeps the tools that are already off.
 		in.DisabledTools = existingDisabledTools(agentName)
+		in.UpdateTools = false
+	default:
+		in.UpdateTools = true
 	}
 
 	if opts.port < 0 || opts.port > 65535 {
@@ -2286,6 +2708,21 @@ func parseOnboardSelection(raw string, known []string, flag string) ([]string, e
 		}
 	}
 	return selected, nil
+}
+
+// mergeOwnerIDs concatenates owner ID groups, dropping duplicates.
+func mergeOwnerIDs(groups ...[]string) []string {
+	seen := make(map[string]bool)
+	var merged []string
+	for _, group := range groups {
+		for _, id := range group {
+			if !seen[id] {
+				seen[id] = true
+				merged = append(merged, id)
+			}
+		}
+	}
+	return merged
 }
 
 func firstNonEmpty(values ...string) string {

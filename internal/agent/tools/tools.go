@@ -244,6 +244,35 @@ func ClearRegistryKey(name string) {
 	delete(registry, name)
 }
 
+// BuiltinToolInfo describes a built-in tool for UIs that list them.
+type BuiltinToolInfo struct {
+	Name        string
+	Description string
+}
+
+// GetBuiltinTools returns every built-in tool with its schema description,
+// independent of the enabled/disabled filter.
+func GetBuiltinTools() []BuiltinToolInfo {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
+	infos := make([]BuiltinToolInfo, 0, len(builtinRegistry))
+	for name, factory := range builtinRegistry {
+		info := BuiltinToolInfo{Name: name}
+		var def struct {
+			Function struct {
+				Description string `json:"description"`
+			} `json:"function"`
+		}
+		if err := json.Unmarshal(factory.ToolDefinition(), &def); err == nil {
+			info.Description = def.Function.Description
+		}
+		infos = append(infos, info)
+	}
+	sort.Slice(infos, func(i, j int) bool { return infos[i].Name < infos[j].Name })
+	return infos
+}
+
 func GetRegisteredToolNames() []string {
 	registryMu.RLock()
 	defer registryMu.RUnlock()

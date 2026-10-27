@@ -74,8 +74,7 @@ func TestOnboardCancelLeavesNothing(t *testing.T) {
 	m.cursor = len(m.choices) - 1
 	m = enter(m) // skip channels
 	m.cursor = len(m.choices) - 1
-	m = enter(m) // skip heartbeat
-	m = enter(m) // owner (empty) -> review
+	m = enter(m) // skip heartbeat -> review (no owner prompt without a channel)
 	if m.step != stepSummary {
 		t.Fatalf("step = %d, want stepSummary", m.step)
 	}
@@ -151,9 +150,7 @@ func TestUpdateCancelKeepsExistingConfig(t *testing.T) {
 	m.cursor = len(m.choices) - 1
 	m = enter(m) // skip channels
 	m.cursor = len(m.choices) - 1
-	m = enter(m) // skip heartbeat
-	m.textInput.SetValue("99")
-	m = enter(m) // owner -> review
+	m = enter(m) // skip heartbeat -> review (no owner prompt without a channel)
 	if m.step != stepSummary {
 		t.Fatalf("step = %d, want stepSummary", m.step)
 	}
