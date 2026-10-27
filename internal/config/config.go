@@ -296,6 +296,8 @@ func LoadBaseConfig() {
 
 	AgentContextMaxTokens = envInt("AGENT_CONTEXT_MAX_TOKENS", AgentContextMaxTokens)
 	AgentMaxToolOutputBytes = envInt("AGENT_MAX_TOOL_OUTPUT_BYTES", AgentMaxToolOutputBytes)
+	AgentMaxIterations = envInt("AGENT_MAX_ITERATIONS", AgentMaxIterations)
+	AgentWarningIterations = envInt("AGENT_WARNING_ITERATIONS", AgentWarningIterations)
 	AgentRepeatToolCallLimit = envInt("AGENT_REPEAT_TOOL_CALL_LIMIT", AgentRepeatToolCallLimit)
 	AgentToolTimeoutSeconds = envInt("AGENT_TOOL_TIMEOUT_SECONDS", AgentToolTimeoutSeconds)
 	AgentBlockedTools = splitCSV(os.Getenv("AGENT_BLOCKED_TOOLS"))
