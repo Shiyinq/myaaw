@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -1255,12 +1256,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) updateAutocomplete() {
 	val := m.textInput.Value()
-	cursor := m.textInput.Position()
+	cursor := cursorByteOffset(val, m.textInput.Position())
 
 	wasAutocompleting := m.isAutocompleting
 
-	// Check for slash command autocomplete (only at the start of input)
-	if strings.HasPrefix(val, "/") && !strings.Contains(val[:cursor], " ") {
+	// Check for slash command autocomplete (only at the start of input). A cursor
+	// at position 0 means the user moved to the very beginning of a path like
+	// "/Users/...", so there is nothing after the slash to complete.
+	if cursor > 0 && strings.HasPrefix(val, "/") && !strings.Contains(val[:cursor], " ") {
 		m.isAutocompleting = true
 		if !wasAutocompleting {
 			m.suggestionIndex = 0
@@ -1290,6 +1293,34 @@ func (m *model) updateAutocomplete() {
 	}
 	prefix := val[lastAt+1 : cursor]
 	m.updateSuggestions(prefix)
+}
+
+// cursorByteOffset converts textInput's rune-based cursor position into a byte
+// offset in val, clamped to the string bounds so slicing can never panic.
+func cursorByteOffset(val string, pos int) int {
+	if pos <= 0 {
+		return 0
+	}
+	count := 0
+	for i := range val {
+		if count == pos {
+			return i
+		}
+		count++
+	}
+	return len(val)
+}
+
+// runeIndex is the inverse of cursorByteOffset: the rune index of a byte offset,
+// as expected by textInput.SetCursor.
+func runeIndex(val string, offset int) int {
+	if offset <= 0 {
+		return 0
+	}
+	if offset > len(val) {
+		offset = len(val)
+	}
+	return utf8.RuneCountInString(val[:offset])
 }
 
 var slashCommands = []struct {
@@ -1408,7 +1439,7 @@ func (m *model) applySuggestion() bool {
 
 	// Handle file suggestions
 	val := m.textInput.Value()
-	cursor := m.textInput.Position()
+	cursor := cursorByteOffset(val, m.textInput.Position())
 	lastAt := strings.LastIndex(val[:cursor], "@")
 	if lastAt == -1 {
 		return false
@@ -1429,7 +1460,7 @@ func (m *model) applySuggestion() bool {
 
 	newVal := val[:lastAt+1] + applied + val[cursor:]
 	m.textInput.SetValue(newVal)
-	m.textInput.SetCursor(lastAt + 1 + len(applied))
+	m.textInput.SetCursor(runeIndex(newVal, lastAt+1+len(applied)))
 
 	return isDir
 }
