@@ -60,10 +60,13 @@ func (s *AgentService) Create(name string) (AgentInfo, error) {
 	if err != nil {
 		return AgentInfo{}, err
 	}
-	if err := extractEmbedDir(".myaaw", root); err != nil {
+	// Skills are opt-in: the template copy skips them, matching `myaaw onboard`
+	// and `agent create`, where an agent starts with no skill enabled.
+	if err := extractEmbedDir(".myaaw", root, "skills"); err != nil {
 		return AgentInfo{}, err
 	}
 	for _, dir := range []string{
+		filepath.Join(root, "skills"),
 		filepath.Join(root, "home", "workspace", "projects"),
 		filepath.Join(root, "home", "workspace", "downloads"),
 	} {
@@ -94,8 +97,8 @@ func (s *AgentService) Create(name string) (AgentInfo, error) {
 	if err := agentdir.RegisterAgent(name); err != nil {
 		return AgentInfo{}, err
 	}
-	if err := agentdir.SeedA2AContacts(name); err != nil {
-		log.Printf("controlplane: seed A2A contacts for %q: %v", name, err)
+	if err := agentdir.EnsureA2AContacts(name); err != nil {
+		log.Printf("controlplane: wire A2A contacts for %q: %v", name, err)
 	}
 
 	return s.Get(name)
@@ -147,12 +150,19 @@ func (s *AgentService) SetDefault(name string) error {
 	return agentdir.SetDefault(name)
 }
 
-func extractEmbedDir(src, dest string) error {
+func extractEmbedDir(src, dest string, skip ...string) error {
+	skipSet := make(map[string]bool, len(skip))
+	for _, name := range skip {
+		skipSet[name] = true
+	}
 	entries, err := myaaw.DefaultMyaawDir.ReadDir(src)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
+		if entry.IsDir() && skipSet[entry.Name()] {
+			continue
+		}
 		srcPath := path.Join(src, entry.Name())
 		destPath := filepath.Join(dest, entry.Name())
 		if entry.IsDir() {

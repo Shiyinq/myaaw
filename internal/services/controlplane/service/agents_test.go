@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"myaaw/internal/agentdir"
@@ -18,6 +19,25 @@ func setupAgentService(t *testing.T) *AgentService {
 		t.Fatalf("EnsureLayout: %v", err)
 	}
 	return NewAgentService()
+}
+
+func TestAgentServiceCreateDoesNotInstallSkills(t *testing.T) {
+	agents := setupAgentService(t)
+
+	if _, err := agents.Create("agent-noskill"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	skillsDir, err := agentdir.SkillsDir("agent-noskill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("agent created by the control plane should start with no skills, found %d", len(entries))
+	}
 }
 
 func TestAgentServiceCreateAndDelete(t *testing.T) {
