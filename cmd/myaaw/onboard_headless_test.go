@@ -179,6 +179,63 @@ func TestHeadlessRefusesLeftoverDirectory(t *testing.T) {
 	}
 }
 
+func TestHeadlessUpdatePreservesDisabledTools(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("MYAAW_API_KEY", "sk-from-env")
+	if err := agentdir.EnsureLayout(); err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { onboardOpts = onboardOptions{} }()
+	onboardOpts = onboardOptions{
+		yes:      true,
+		provider: "openai",
+		model:    "gpt-4o",
+		channel:  "skip",
+		noTools:  "bash",
+	}
+	if code := runOnboardHeadless("agent-keep"); code != 0 {
+		t.Fatalf("first run exit code = %d", code)
+	}
+
+	assertBashDisabled := func(want bool) {
+		t.Helper()
+		toolsDir, err := agentdir.ToolsDir("agent-keep")
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(filepath.Join(toolsDir, "tools.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg struct {
+			BuiltinTools map[string]bool `json:"builtin_tools"`
+		}
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		if cfg.BuiltinTools["bash"] != want {
+			t.Fatalf("bash enabled = %v, want %v", cfg.BuiltinTools["bash"], want)
+		}
+	}
+
+	// Update without --disable-tools keeps the current disabled set.
+	onboardOpts.force = true
+	onboardOpts.noTools = ""
+	onboardOpts.disableToolsSet = false
+	if code := runOnboardHeadless("agent-keep"); code != 0 {
+		t.Fatalf("update exit code = %d", code)
+	}
+	assertBashDisabled(false)
+
+	// Passing --disable-tools explicitly (even empty) resets the selection.
+	onboardOpts.disableToolsSet = true
+	if code := runOnboardHeadless("agent-keep"); code != 0 {
+		t.Fatalf("reset exit code = %d", code)
+	}
+	assertBashDisabled(true)
+}
+
 func TestPreviousStep(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 

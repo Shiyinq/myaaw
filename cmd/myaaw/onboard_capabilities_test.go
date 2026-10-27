@@ -137,6 +137,28 @@ func TestSaveBuiltinToolSelection(t *testing.T) {
 	}
 }
 
+func TestExistingDisabledToolsAlias(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	toolsDir, err := agentdir.ToolsDir("agent-z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(toolsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(toolsDir, "tools.json")
+	data := `{"builtin_tools":{"python":false,"bash":true}}`
+	if err := os.WriteFile(configPath, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := existingDisabledTools("agent-z")
+	if len(got) != 1 || got[0] != "execute_python" {
+		t.Fatalf("disabled tools = %v, want [execute_python]", got)
+	}
+}
+
 func TestExistingCapabilitiesArePreselected(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	if err := agentdir.EnsureLayout(); err != nil {

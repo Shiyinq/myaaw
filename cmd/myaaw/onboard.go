@@ -58,6 +58,9 @@ type onboardOptions struct {
 	restart   bool
 	skills    string
 	noTools   string
+	// disableToolsSet reports whether --disable-tools was passed, so an
+	// update without the flag can preserve the current disabled set.
+	disableToolsSet bool
 }
 
 var onboardOpts onboardOptions
@@ -96,6 +99,7 @@ func registerOnboardFlags(cmd *cobra.Command) {
 }
 
 func runOnboard(cmd *cobra.Command, args []string) {
+	onboardOpts.disableToolsSet = cmd.Flags().Changed("disable-tools")
 	runOnboarding(strings.TrimSpace(agentFlag), false)
 }
 
@@ -293,8 +297,9 @@ func (m *onboardModel) loadExistingCapabilities() {
 			}
 			if json.Unmarshal(data, &cfg) == nil {
 				for name, enabled := range cfg.BuiltinTools {
-					if _, known := m.toolsSelected[name]; known {
-						m.toolsSelected[name] = enabled
+					canonical := canonicalToolName(name)
+					if _, known := m.toolsSelected[canonical]; known {
+						m.toolsSelected[canonical] = enabled
 					}
 				}
 			}
@@ -465,6 +470,47 @@ func builtinSkillNames() []string {
 
 func builtinToolNames() []string {
 	return tools.GetBuiltinToolNames()
+}
+
+// canonicalToolName maps the alias accepted by the runtime filter to the name
+// used by the registry.
+func canonicalToolName(name string) string {
+	if name == "python" {
+		return "execute_python"
+	}
+	return name
+}
+
+// existingDisabledTools reads tools/tools.json and returns the built-in tools
+// that are currently disabled, in registry order.
+func existingDisabledTools(agentName string) []string {
+	dir, err := agentdir.ToolsDir(agentName)
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "tools.json"))
+	if err != nil {
+		return nil
+	}
+	var cfg struct {
+		BuiltinTools map[string]bool `json:"builtin_tools"`
+	}
+	if json.Unmarshal(data, &cfg) != nil {
+		return nil
+	}
+
+	enabled := make(map[string]bool, len(cfg.BuiltinTools))
+	for name, value := range cfg.BuiltinTools {
+		enabled[canonicalToolName(name)] = value
+	}
+
+	disabled := make([]string, 0, len(cfg.BuiltinTools))
+	for _, tool := range builtinToolNames() {
+		if value, ok := enabled[tool]; ok && !value {
+			disabled = append(disabled, tool)
+		}
+	}
+	return disabled
 }
 
 func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -1552,7 +1598,11 @@ func (m onboardModel) renderContent() string {
 
 	case stepSkills:
 		b.WriteString(titleStyle.Render("Skills"))
-		b.WriteString("\n\nNo skill is selected by default. Space to toggle, Enter to continue.\n")
+		if m.agentExistedAtStart {
+			b.WriteString("\n\nInstalled skills are pre-selected. Unchecking does not delete an existing folder.\n")
+		} else {
+			b.WriteString("\n\nNo skill is selected by default. Space to toggle, Enter to continue.\n")
+		}
 		b.WriteString(theme.SecondaryStyle.Render("Only the skills you select get a folder under skills/<name>/.") + "\n\n")
 		b.WriteString(m.renderMultiSelect(m.skillsSelected))
 
@@ -2181,7 +2231,13 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 	if err != nil {
 		return in, err
 	}
-	in.DisabledTools = disabledTools
+	switch {
+	case opts.disableToolsSet || strings.TrimSpace(opts.noTools) != "":
+		in.DisabledTools = disabledTools
+	case existing != nil:
+		// Updating without --disable-tools keeps the tools that are already off.
+		in.DisabledTools = existingDisabledTools(agentName)
+	}
 
 	if opts.port < 0 || opts.port > 65535 {
 		return in, fmt.Errorf("--port must be between 1 and 65535")

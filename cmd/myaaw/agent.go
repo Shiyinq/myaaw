@@ -56,7 +56,7 @@ var agentListCmd = &cobra.Command{
 var agentCreateCmd = &cobra.Command{
 	Use:   "create <name>",
 	Short: "Create an agent with the onboarding wizard",
-	Long:  "Same as `myaaw onboard` for a new agent: the layout is created first, then the wizard asks for provider, channels, and heartbeat.",
+	Long:  "Same as `myaaw onboard` for a new agent: choose the provider, skills, tools, channels, and heartbeat, then save.",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		name := strings.TrimSpace(args[0])
@@ -78,6 +78,7 @@ var agentCreateCmd = &cobra.Command{
 			return
 		}
 
+		onboardOpts.disableToolsSet = cmd.Flags().Changed("disable-tools")
 		runOnboarding(name, true)
 	},
 }
