@@ -2022,15 +2022,50 @@ func loadConfigFromFile(path string) (*config.Config, error) {
 	return &cfg, nil
 }
 
+// saveConfigToFile writes config.json through a temp file so a crash mid-write
+// cannot leave a truncated config behind.
 func saveConfigToFile(path string, cfg *config.Config) error {
 	data, err := json.MarshalIndent(cfg, "", "    ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+
+	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() {
+		tmp.Close()
+		os.Remove(tmpPath)
+	}
+
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		// Windows cannot reliably replace an existing file with Rename.
+		_ = os.Remove(path)
+		if retryErr := os.Rename(tmpPath, path); retryErr != nil {
+			os.Remove(tmpPath)
+			return retryErr
+		}
+	}
+	return nil
 }
 
 func extractEmbedDir(embeddedFS embed.FS, src string, dest string) error {

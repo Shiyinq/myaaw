@@ -167,6 +167,7 @@ If any of this fails, onboarding still completes and shows a warning (`A2A conta
 ## Re-running onboarding
 
 - Provider and model are replaced with the values you enter.
+- Nothing is written until you save **Review**, so cancelling a reconfigure leaves the existing `config.json` and `.env` untouched.
 - Channels and heartbeat are only rewritten when you configure them; choosing **Skip** leaves existing settings untouched, so a working Telegram bot is not disabled by accident.
 - Values left over from older templates (`YOUR_*` placeholders) are removed before saving.
 - If the agent daemon is running, the wizard offers to restart it at the end; `--restart` does the same in headless mode.
