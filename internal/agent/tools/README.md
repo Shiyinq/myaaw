@@ -46,7 +46,7 @@ The Myaaw Tools package contains a set of specialized tools that can be used wit
 
 - Manage the contact book and delegate tasks over the Agent2Agent (A2A) protocol
 - Actions: `send` (delegate), `list`, `get` (contact + remote Agent Card capabilities), `add` (register a contact)
-- Contacts live in `~/.myaaw/<agent>/contacts.json`; see [A2A Guide](../../../docs/a2a.md) and [A2A Interop Guide](../../../docs/a2a-interop.md)
+- Contacts live in `~/.myaaw/<agent>/contacts.json`; see [A2A Guide](../../../docs/agents/protocol/a2a.md) and [A2A Interop Guide](../../../docs/agents/protocol/a2a-interop.md)
 
 ### 6. [A2A Input Tool](./a2ainput/README.md)
 

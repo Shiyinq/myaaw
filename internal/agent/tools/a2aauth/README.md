@@ -76,8 +76,8 @@ Error: a2a_auth_request is only available while handling an A2A task
 
 ## Related
 
-- [A2A Guide](../../../../docs/a2a.md)
-- [A2A Protocol](../../../../docs/a2a-protocol.md)
-- [A2A Interop Guide](../../../../docs/a2a-interop.md)
+- [A2A Guide](../../../../docs/agents/protocol/a2a.md)
+- [A2A Protocol](../../../../docs/agents/protocol/a2a-protocol.md)
+- [A2A Interop Guide](../../../../docs/agents/protocol/a2a-interop.md)
 - [A2A Input Tool](../a2ainput/README.md)
 - [Contact Tool](../contact/README.md)
