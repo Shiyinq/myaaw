@@ -24,7 +24,7 @@ Interactive setup:
 
 1. Provider type: **OpenAI / OpenAI-compatible** or **Gemini**.
 2. Custom name, for example `deepseek`, `local-ollama`, or `gemini-personal`.
-3. Base URL (leave empty for the default endpoint).
+3. Base URL (leave empty for the default endpoint: `https://api.openai.com` or `https://generativelanguage.googleapis.com`).
 4. API key (input is hidden).
 5. Myaaw fetches the available models and asks for the default model.
 

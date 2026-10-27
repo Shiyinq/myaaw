@@ -92,7 +92,7 @@ var agentCreateCmd = &cobra.Command{
 			}
 		}
 
-		if err := prepareAgentEnv(name); err != nil {
+		if err := prepareAgentEnv(name, 0); err != nil {
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to prepare environment: %v", err)))
 			return
 		}

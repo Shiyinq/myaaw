@@ -37,14 +37,17 @@ default                  ⚠️  allowed, but keeps the generic folder name
 | Initialize | Creates `~/.myaaw/<agent>/`, registers the agent, assigns a port, seeds A2A contacts. |
 | Provider | Type (OpenAI-compatible or Gemini), config name, base URL, API key, then a model picked from the live model list. |
 | Channels | Telegram, Discord, both, or skip. |
-| Telegram mode | `polling` or `webhook`, then the bot token. |
+| Telegram mode | `polling` or `webhook`. Choosing webhook asks for the public URL next. |
+| Telegram token | Bot token, masked while typing. |
+| Webhook URL | Only for webhook mode: the public `https://` base URL. Telegram receives updates at `<url>/webhook/telegram`, and Myaaw registers it right after saving. |
 | Discord | Bot token, if Discord is enabled. |
 | Heartbeat | Channel, destination ID, and interval (`15m`, `30m`, `1h`, ...). |
 | Owner | One or more owner IDs (comma separated) used by `bot.type: private`. |
 | Review | Summary of everything that will be written, plus warnings. |
 | Install | Optional copy of the binary to `~/.local/bin/myaaw`. |
+| Restart | Offered only when this agent's daemon is already running, so the new config is loaded immediately. |
 
-Keys and tokens are masked while typing. `Esc`/`Ctrl+C` cancels; nothing is written until the **Review** step is saved.
+Keys and tokens are masked while typing. `Esc` goes back one step so answers are kept; `Ctrl+C` cancels and nothing is written until the **Review** step is saved.
 
 ## Provider defaults
 
@@ -55,7 +58,69 @@ The base URL prompt is prefilled with the public endpoint for the chosen type:
 | OpenAI (or compatible) | `https://api.openai.com` |
 | Gemini | `https://generativelanguage.googleapis.com` |
 
-Override it for OpenAI-compatible gateways (`https://api.deepseek.com`, `https://openrouter.ai/api/v1`) or a local Ollama (`http://localhost:11434`). The model list is fetched from that endpoint; if the request fails you can type the model name manually.
+Override it for OpenAI-compatible gateways (`https://api.deepseek.com`, `https://openrouter.ai/api/v1`) or a local Ollama (`http://localhost:11434`). The model list is fetched from that endpoint; if the request fails you can type the model name manually. When no model is chosen, the built-in default for that provider type is stored instead.
+
+## Webhook mode
+
+Telegram webhook mode needs a public **HTTPS** URL (an ngrok URL works). After the wizard saves, Myaaw calls Telegram's `setWebhook` so updates start flowing to:
+
+```text
+https://<your-domain>/webhook/telegram
+```
+
+- The URL is stored as `MYAAW_BASE_URL` in `.env`.
+- If the call fails (DNS, certificate, Telegram error), onboarding still completes and prints a warning; fix the URL and run `myaaw --agent <name> webhook set <domain>`.
+- If you leave the URL empty, nothing is registered and the wizard prints the command to run later.
+- Polling mode ignores this entirely and needs no public URL.
+
+## Headless mode (CI, scripts)
+
+Every wizard question has a flag. Passing `--yes` (or running without a TTY) skips the TUI:
+
+```bash
+myaaw onboard --yes \
+  --agent agent-b \
+  --provider openai --provider-name deepseek \
+  --base-url https://api.deepseek.com \
+  --model deepseek-chat \
+  --channel telegram --telegram-token "$TG_TOKEN" --telegram-mode polling \
+  --owner 123456789 \
+  --heartbeat-channel telegram --heartbeat-to 123456789 --heartbeat-every 30m
+```
+
+| Flag | Wizard step |
+| :--- | :--- |
+| `--agent <name>` | Agent name (required in headless mode) |
+| `--provider openai\|gemini` | Provider type (required) |
+| `--provider-name` | Provider name stored in `config.json` |
+| `--base-url` | Provider base URL |
+| `--api-key` | API key (prefer `MYAAW_API_KEY`) |
+| `--model` | Default model |
+| `--channel telegram\|discord\|both\|skip` | Channel choice |
+| `--telegram-mode polling\|webhook` | Telegram mode |
+| `--telegram-token` | Telegram bot token (prefer `TELEGRAM_BOT_TOKEN`) |
+| `--webhook-url` | Public `https://` URL (webhook mode) |
+| `--discord-token` | Discord bot token (prefer `DISCORD_BOT_TOKEN`) |
+| `--heartbeat-channel`, `--heartbeat-to`, `--heartbeat-every` | Heartbeat |
+| `--owner` | Owner IDs, comma separated |
+| `--port` | Explicit server port instead of the first free one |
+| `--install` | Copy the binary to `~/.local/bin` (off by default in headless mode) |
+| `--restart` | Restart the agent daemon after writing, if it is running |
+| `--force` | Allow reconfiguring an existing agent |
+| `--json` | Print a machine-readable summary (implies `--yes`) |
+
+Rules:
+
+- Secrets should come from the environment: `MYAAW_API_KEY`, `TELEGRAM_BOT_TOKEN`, `DISCORD_BOT_TOKEN`, `MYAAW_WEBHOOK_URL`.
+- `--channel` defaults to `skip`, which leaves existing channel settings untouched.
+- Missing required values exit non-zero with a message that names the flag, instead of hanging on a prompt.
+- Re-running without `--force` on an initialized agent is refused.
+
+```bash
+# Docker / CI
+MYAAW_API_KEY="$KEY" myaaw onboard --yes --agent ci \
+  --provider gemini --model gemini-2.5-flash --json
+```
 
 ## Files written
 
@@ -98,7 +163,7 @@ myaaw --agent agent-b chat
   - [Channels](channel.md)
   - [Webhook](webhook.md)
   - [Config](config.md)
-- A Telegram **polling** setup needs no public URL. **Webhook** mode does; register it with `myaaw --agent <name> webhook set <domain>` after onboarding.
+- A Telegram **polling** setup needs no public URL. **Webhook** mode asks for one during onboarding and registers it automatically; see [Webhook](webhook.md) to change it later.
 - `myaaw voice` (real-time) requires a Gemini provider; `voice-classic` works with any provider.
 - Each agent needs its own bot token if you run several agents.
 - The install step copies the binary to `~/.local/bin`; if that directory is not in `PATH`, the wizard prints the line to add to your shell profile.

@@ -126,6 +126,12 @@ var defaultLLMModels = map[string]string{
 	"groq":   "llama-3.2-1b-preview",
 }
 
+// DefaultModel returns the built-in model used when a provider config omits
+// default_model.
+func DefaultModel(providerName string) string {
+	return defaultLLMModels[providerName]
+}
+
 // DefaultBaseURL returns the public endpoint used when a provider config omits
 // base_url. Providers build request URLs by appending their own path, so the
 // value must not include a trailing slash.

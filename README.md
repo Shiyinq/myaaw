@@ -239,6 +239,12 @@ If you just want to use Myaaw without worrying about code, use our interactive i
     myaaw onboard
     ```
     On a fresh install the wizard asks for an **agent name** first — that name becomes the folder `~/.myaaw/<agent>/`, so you are not stuck with a generic `default/` agent. You can add more agents later with `myaaw agent create <name>` or `myaaw onboard` again.
+
+    For servers and CI, every wizard question has a flag, so the same setup can run headless:
+    ```bash
+    MYAAW_API_KEY="$KEY" myaaw onboard --yes --agent agent-b \
+      --provider gemini --model models/gemini-2.5-flash --json
+    ```
 3.  **Launch the Server**:
     ```bash
     myaaw server start

@@ -65,6 +65,9 @@ var providerCreateCmd = &cobra.Command{
 		pName = strings.TrimSpace(pName)
 		pBaseURL = strings.TrimSpace(pBaseURL)
 		pAPIKey = strings.TrimSpace(pAPIKey)
+		if pBaseURL == "" {
+			pBaseURL = provider.DefaultBaseURL(pType)
+		}
 
 		fmt.Println(theme.RenderSecondary("\nFetching available models..."))
 
@@ -318,6 +321,9 @@ var providerSetModelCmd = &cobra.Command{
 
 		// Temporarily override config to initialize provider
 		config.LLMProviderBaseURL = pConfig.BaseURL
+		if config.LLMProviderBaseURL == "" {
+			config.LLMProviderBaseURL = provider.DefaultBaseURL(pConfig.Type)
+		}
 		llm, err := provider.CreateLLMProvider(pConfig.Type, pConfig.APIKey)
 		if err != nil {
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to create provider: %v", err)))

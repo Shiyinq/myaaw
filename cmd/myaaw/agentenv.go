@@ -15,7 +15,7 @@ import (
 // is assigned from the first free port, and the base URL/allowed origins match
 // that port. An existing PORT is preserved so re-running onboarding never moves
 // a running agent to a different port.
-func prepareAgentEnv(name string) error {
+func prepareAgentEnv(name string, desiredPort int) error {
 	envPath, err := agentdir.EnvPath(name)
 	if err != nil {
 		return err
@@ -25,15 +25,15 @@ func prepareAgentEnv(name string) error {
 		return fmt.Errorf("create .env: %w", err)
 	}
 
-	port := 0
-	if !created {
+	port := desiredPort
+	if port <= 0 && !created {
 		port, _ = strconv.Atoi(readEnvValue(envPath, "PORT"))
 	}
 	if port <= 0 {
 		port = agentdir.SuggestedPort(name)
-		if err := agentdir.UpsertEnvValue(envPath, "PORT", strconv.Itoa(port)); err != nil {
-			return fmt.Errorf("set PORT: %w", err)
-		}
+	}
+	if err := agentdir.UpsertEnvValue(envPath, "PORT", strconv.Itoa(port)); err != nil {
+		return fmt.Errorf("set PORT: %w", err)
 	}
 
 	baseURL := fmt.Sprintf("http://localhost:%d", port)
