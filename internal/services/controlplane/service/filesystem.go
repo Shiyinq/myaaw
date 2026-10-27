@@ -570,24 +570,44 @@ func looksBinary(data []byte) bool {
 }
 
 // ensureSymlinksInside rejects symlinks that resolve outside the root. For
-// paths that do not exist yet, the nearest existing ancestor is checked.
+// paths that do not exist yet, the nearest existing ancestor is checked. Both
+// sides are canonicalized first so macOS roots like /var/folders/... (which
+// resolve to /private/var/folders/...) compare consistently.
 func ensureSymlinksInside(root, abs string) error {
+	if !isWithin(canonicalPath(root), canonicalPath(abs)) {
+		return fmt.Errorf("%w: symlink escapes the agent root", ErrInvalidPath)
+	}
+	return nil
+}
+
+// canonicalPath resolves symlinks in the longest existing prefix of path and
+// re-appends the missing components, so paths that do not exist yet still
+// compare against existing ones correctly.
+func canonicalPath(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	abs = filepath.Clean(abs)
+
 	current := abs
+	missing := make([]string, 0, 4)
 	for {
 		resolved, err := filepath.EvalSymlinks(current)
 		if err == nil {
-			if !isWithin(root, resolved) {
-				return fmt.Errorf("%w: symlink escapes the agent root", ErrInvalidPath)
+			if len(missing) == 0 {
+				return resolved
 			}
-			return nil
+			return filepath.Join(append([]string{resolved}, missing...)...)
 		}
 		if !os.IsNotExist(err) {
-			return err
+			return abs
 		}
 		parent := filepath.Dir(current)
 		if parent == current {
-			return nil
+			return abs
 		}
+		missing = append([]string{filepath.Base(current)}, missing...)
 		current = parent
 	}
 }

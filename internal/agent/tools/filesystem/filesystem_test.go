@@ -369,14 +369,20 @@ func TestIsPathAllowedRejectsBrokenSymlink(t *testing.T) {
 
 func TestIsPathAllowedAllowsNewFileInBase(t *testing.T) {
 	base := t.TempDir()
+	// Resolve the base so the assertion matches what isPathAllowed returns on
+	// platforms where temp roots are symlinked (macOS /var -> /private/var).
+	resolvedBase, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%q): %v", base, err)
+	}
 
 	newFile := filepath.Join(base, "new", "file.txt")
 	got, err := isPathAllowed(newFile, []string{base})
 	if err != nil {
 		t.Fatalf("expected new file %q to be allowed: %v", newFile, err)
 	}
-	if !isWithinBase(base, got) {
-		t.Errorf("resolved path %q is not within %q", got, base)
+	if !isWithinBase(resolvedBase, got) {
+		t.Errorf("resolved path %q is not within %q", got, resolvedBase)
 	}
 }
 
