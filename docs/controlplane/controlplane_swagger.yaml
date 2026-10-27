@@ -1,0 +1,3416 @@
+basePath: /
+definitions:
+  api.TimelineItem:
+    properties:
+      arguments:
+        type: string
+      id:
+        type: string
+      is_error:
+        type: boolean
+      kind:
+        type: string
+      name:
+        type: string
+      result:
+        type: string
+      text:
+        type: string
+    type: object
+  common.ErrorResponse:
+    properties:
+      error:
+        example: error message
+        type: string
+    type: object
+  config.CronConfig:
+    properties:
+      active:
+        type: boolean
+    type: object
+  config.GlobalBotConfig:
+    properties:
+      blocked_tools:
+        items:
+          type: string
+        type: array
+      context_max_tokens:
+        type: integer
+      max_iterations:
+        type: integer
+      max_tool_output_bytes:
+        type: integer
+      owner_ids:
+        items:
+          type: string
+        type: array
+      repeat_tool_call_limit:
+        type: integer
+      request_retries:
+        type: integer
+      run_timeout_seconds:
+        type: integer
+      stream:
+        type: boolean
+      stream_timeout_seconds:
+        type: integer
+      tool_timeout_seconds:
+        type: integer
+      type:
+        type: string
+      warning_iterations:
+        type: integer
+      watermark:
+        type: boolean
+    type: object
+  config.HeartbeatConfig:
+    properties:
+      active:
+        type: boolean
+      channel:
+        type: string
+      every:
+        type: string
+      to:
+        type: string
+    type: object
+  cron.Delivery:
+    properties:
+      channel:
+        description: telegram, discord
+        type: string
+      mode:
+        description: announce
+        type: string
+      to:
+        description: chat_id
+        type: string
+    type: object
+  cron.ExecutionResult:
+    properties:
+      result:
+        type: string
+      status:
+        description: success, failed
+        type: string
+      ts:
+        type: string
+    type: object
+  cron.Payload:
+    properties:
+      content:
+        description: prompt
+        type: string
+      kind:
+        description: agentTurn
+        type: string
+    type: object
+  handler.AgentsResponse:
+    properties:
+      agents:
+        items:
+          $ref: '#/definitions/service.AgentInfo'
+        type: array
+    type: object
+  handler.BuiltinToggleRequest:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+    type: object
+  handler.ChangePasswordRequest:
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+    type: object
+  handler.ChangeUsernameRequest:
+    properties:
+      new_username:
+        type: string
+      password:
+        type: string
+    type: object
+  handler.ChannelRequest:
+    properties:
+      active:
+        type: boolean
+      mode:
+        example: polling
+        type: string
+      ngrok_active:
+        type: boolean
+      ngrok_auth_token:
+        type: string
+      token:
+        type: string
+    type: object
+  handler.ChatRequest:
+    properties:
+      conversation_id:
+        example: conv-id or NEW
+        type: string
+      images:
+        items:
+          type: string
+        type: array
+      text:
+        example: Check my workspace
+        type: string
+      user_id:
+        example: 0
+        type: integer
+    type: object
+  handler.ChatResponse:
+    properties:
+      conversation_id:
+        type: string
+      text:
+        type: string
+      timeline:
+        items:
+          $ref: '#/definitions/api.TimelineItem'
+        type: array
+      usage:
+        $ref: '#/definitions/handler.UsageResponse'
+    type: object
+  handler.ContactsResponse:
+    properties:
+      contacts:
+        items:
+          $ref: '#/definitions/service.ContactView'
+        type: array
+    type: object
+  handler.ContextFilesResponse:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/service.ContextFile'
+        type: array
+    type: object
+  handler.CreateAgentRequest:
+    properties:
+      name:
+        example: myfriend
+        type: string
+    type: object
+  handler.CreateContactRequest:
+    properties:
+      description:
+        example: Research agent
+        type: string
+      name:
+        example: research
+        type: string
+      token:
+        type: string
+      url:
+        example: https://other-host/a2a
+        type: string
+    type: object
+  handler.CreateCustomToolRequest:
+    properties:
+      args:
+        items:
+          type: string
+        type: array
+      command:
+        example: node
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      name:
+        example: hello_helper
+        type: string
+      schema:
+        items:
+          type: integer
+        type: array
+    type: object
+  handler.CreateMCPRequest:
+    properties:
+      args:
+        items:
+          type: string
+        type: array
+      command:
+        example: npx
+        type: string
+      enabled:
+        example: true
+        type: boolean
+      env:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        example: playwright
+        type: string
+    type: object
+  handler.CreateProviderRequest:
+    properties:
+      api_key:
+        type: string
+      base_url:
+        example: https://api.openai.com
+        type: string
+      default_model:
+        example: gpt-4o
+        type: string
+      name:
+        example: openai
+        type: string
+      type:
+        example: openai
+        type: string
+    type: object
+  handler.CronHistoryResponse:
+    properties:
+      history:
+        items:
+          $ref: '#/definitions/cron.ExecutionResult'
+        type: array
+    type: object
+  handler.CronJobResponse:
+    properties:
+      agent_id:
+        type: string
+      created_at:
+        type: string
+      delivery:
+        $ref: '#/definitions/cron.Delivery'
+      enabled:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      payload:
+        $ref: '#/definitions/cron.Payload'
+      schedule:
+        $ref: '#/definitions/myaaw_internal_cron.Schedule'
+      updated_at:
+        type: string
+    type: object
+  handler.CronJobsResponse:
+    properties:
+      jobs:
+        items:
+          $ref: '#/definitions/myaaw_internal_cron.Job'
+        type: array
+    type: object
+  handler.FileListResponse:
+    properties:
+      entries:
+        items:
+          $ref: '#/definitions/service.FileEntry'
+        type: array
+      path:
+        type: string
+    type: object
+  handler.HealthResponse:
+    properties:
+      status:
+        example: ok
+        type: string
+    type: object
+  handler.LoginOKResponse:
+    properties:
+      ok:
+        example: true
+        type: boolean
+      username:
+        example: myaaw
+        type: string
+    type: object
+  handler.LoginRequest:
+    properties:
+      password:
+        example: myaawadmin
+        type: string
+      username:
+        example: myaaw
+        type: string
+    type: object
+  handler.LoginResponse:
+    properties:
+      expires_at:
+        example: "2026-10-20T20:00:00Z"
+        type: string
+      token:
+        example: a1b2c3
+        type: string
+      user_id:
+        example: 0
+        type: integer
+    type: object
+  handler.LogsResponse:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/service.LogFile'
+        type: array
+    type: object
+  handler.MkdirRequest:
+    properties:
+      path:
+        example: /home/notes
+        type: string
+    type: object
+  handler.OKResponse:
+    properties:
+      ok:
+        example: true
+        type: boolean
+    type: object
+  handler.PatchCustomToolRequest:
+    properties:
+      args:
+        items:
+          type: string
+        type: array
+      command:
+        type: string
+      enabled:
+        type: boolean
+      schema:
+        items:
+          type: integer
+        type: array
+    type: object
+  handler.PatchMCPRequest:
+    properties:
+      args:
+        items:
+          type: string
+        type: array
+      command:
+        type: string
+      enabled:
+        type: boolean
+      env:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  handler.RenameConversationRequest:
+    properties:
+      title:
+        example: Workspace cleanup
+        type: string
+    type: object
+  handler.RenameConversationResponse:
+    properties:
+      id:
+        type: string
+      ok:
+        example: true
+        type: boolean
+      title:
+        type: string
+    type: object
+  handler.RenameRequest:
+    properties:
+      from:
+        example: /home/AGENTS.md
+        type: string
+      to:
+        example: /home/AGENTS.old.md
+        type: string
+    type: object
+  handler.SearchResponse:
+    properties:
+      matches:
+        items:
+          $ref: '#/definitions/service.SearchMatch'
+        type: array
+    type: object
+  handler.SetDefaultProviderRequest:
+    properties:
+      name:
+        example: openai
+        type: string
+    type: object
+  handler.SkillToggleRequest:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+    type: object
+  handler.SkillToggleResponse:
+    properties:
+      enabled:
+        type: boolean
+      name:
+        type: string
+      ok:
+        example: true
+        type: boolean
+    type: object
+  handler.SkillsResponse:
+    properties:
+      skills:
+        items:
+          $ref: '#/definitions/skills.Skill'
+        type: array
+    type: object
+  handler.UpdateProviderRequest:
+    properties:
+      api_key:
+        type: string
+      base_url:
+        type: string
+      default_model:
+        type: string
+      type:
+        type: string
+    type: object
+  handler.UsageResponse:
+    properties:
+      completion_tokens:
+        type: integer
+      prompt_tokens:
+        type: integer
+      total_tokens:
+        type: integer
+    type: object
+  handler.UsernameResponse:
+    properties:
+      user_id:
+        example: 0
+        type: integer
+      username:
+        example: myaaw
+        type: string
+    type: object
+  handler.WriteContextRequest:
+    properties:
+      content:
+        example: '# Daily rules'
+        type: string
+      path:
+        example: memory/RULES.md
+        type: string
+    type: object
+  handler.WriteFileRequest:
+    properties:
+      content:
+        example: '# Instructions'
+        type: string
+      path:
+        example: /home/AGENTS.md
+        type: string
+    type: object
+  myaaw_internal_cron.Job:
+    properties:
+      agent_id:
+        type: string
+      created_at:
+        type: string
+      delivery:
+        $ref: '#/definitions/cron.Delivery'
+      enabled:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      payload:
+        $ref: '#/definitions/cron.Payload'
+      schedule:
+        $ref: '#/definitions/myaaw_internal_cron.Schedule'
+      updated_at:
+        type: string
+    type: object
+  myaaw_internal_cron.Schedule:
+    properties:
+      expr:
+        description: '* * * * * or 30m'
+        type: string
+      kind:
+        description: cron, every, at
+        type: string
+      tz:
+        description: Asia/Jakarta
+        type: string
+    type: object
+  provider.FunctionCall:
+    properties:
+      arguments: {}
+      name:
+        type: string
+      thought_signature:
+        type: string
+    type: object
+  provider.Message:
+    properties:
+      action:
+        type: string
+      action_input:
+        type: string
+      content: {}
+      duration_ms:
+        type: integer
+      error_message:
+        type: string
+      images:
+        items:
+          type: string
+        type: array
+      is_error:
+        description: Transcript metadata (agent loop v2)
+        type: boolean
+      name:
+        type: string
+      observation:
+        type: string
+      role:
+        type: string
+      stop_reason:
+        $ref: '#/definitions/provider.StopReason'
+      thought:
+        description: ReAct Trace Fields (UI metadata; not sent to providers)
+        type: string
+      tool_call_id:
+        type: string
+      tool_calls:
+        items:
+          $ref: '#/definitions/provider.ToolCall'
+        type: array
+      trace:
+        description: Trace stores all ReAct steps as JSON array for final response
+        items:
+          $ref: '#/definitions/provider.ReactStep'
+        type: array
+      usage:
+        allOf:
+        - $ref: '#/definitions/provider.Usage'
+        description: Token Usage
+      v:
+        type: integer
+    type: object
+  provider.ReactStep:
+    properties:
+      action:
+        type: string
+      action_input:
+        type: string
+      observation:
+        type: string
+      step_group:
+        type: integer
+      thought:
+        type: string
+      thought_signature:
+        type: string
+    type: object
+  provider.StopReason:
+    enum:
+    - normal
+    - max_iterations
+    - length
+    - error
+    - aborted
+    type: string
+    x-enum-varnames:
+    - StopNormal
+    - StopMaxIterations
+    - StopLength
+    - StopError
+    - StopAborted
+  provider.ToolCall:
+    properties:
+      function:
+        $ref: '#/definitions/provider.FunctionCall'
+      id:
+        type: string
+      index:
+        type: integer
+      type:
+        type: string
+    type: object
+  provider.Usage:
+    properties:
+      completion_tokens:
+        type: integer
+      details:
+        items:
+          $ref: '#/definitions/provider.UsageDetail'
+        type: array
+      prompt_tokens:
+        type: integer
+      thoughts_tokens:
+        type: integer
+      total_tokens:
+        type: integer
+    type: object
+  provider.UsageDetail:
+    properties:
+      modality:
+        type: string
+      token_count:
+        type: integer
+    type: object
+  service.AgentInfo:
+    properties:
+      base_url:
+        type: string
+      default:
+        type: boolean
+      name:
+        type: string
+      port:
+        type: integer
+      running:
+        type: boolean
+    type: object
+  service.BuiltinToolView:
+    properties:
+      description:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+    type: object
+  service.ChannelView:
+    properties:
+      active:
+        type: boolean
+      mode:
+        type: string
+      name:
+        type: string
+      ngrok_active:
+        type: boolean
+      ngrok_auth_token:
+        $ref: '#/definitions/service.SecretState'
+      token:
+        $ref: '#/definitions/service.SecretState'
+    type: object
+  service.ChannelsView:
+    properties:
+      channels:
+        items:
+          $ref: '#/definitions/service.ChannelView'
+        type: array
+    type: object
+  service.ConfigView:
+    properties:
+      bot:
+        $ref: '#/definitions/config.GlobalBotConfig'
+      channels:
+        items:
+          $ref: '#/definitions/service.ChannelView'
+        type: array
+      cron:
+        $ref: '#/definitions/config.CronConfig'
+      default_provider:
+        type: string
+      heartbeat:
+        $ref: '#/definitions/config.HeartbeatConfig'
+      providers:
+        items:
+          $ref: '#/definitions/service.ProviderView'
+        type: array
+      synthesizer:
+        $ref: '#/definitions/service.ServiceSecretView'
+      transcriber:
+        $ref: '#/definitions/service.ServiceSecretView'
+    type: object
+  service.ContactView:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      token:
+        $ref: '#/definitions/service.SecretState'
+      url:
+        type: string
+    type: object
+  service.ContextContent:
+    properties:
+      content:
+        type: string
+      folder:
+        type: string
+      mod_time:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+    type: object
+  service.ContextFile:
+    properties:
+      folder:
+        type: string
+      mod_time:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+    type: object
+  service.ConversationDetail:
+    properties:
+      active:
+        type: boolean
+      created_at:
+        type: string
+      has_more:
+        type: boolean
+      id:
+        type: string
+      limit:
+        type: integer
+      messages:
+        items:
+          $ref: '#/definitions/provider.Message'
+        type: array
+      offset:
+        type: integer
+      title:
+        type: string
+      total_messages:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  service.ConversationPage:
+    properties:
+      conversations:
+        items:
+          $ref: '#/definitions/service.ConversationSummary'
+        type: array
+      has_more:
+        type: boolean
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  service.ConversationSummary:
+    properties:
+      active:
+        type: boolean
+      created_at:
+        type: string
+      id:
+        type: string
+      message_count:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  service.CronJobInput:
+    properties:
+      channel:
+        type: string
+      enabled:
+        type: boolean
+      expr:
+        type: string
+      message:
+        type: string
+      name:
+        type: string
+      schedule_kind:
+        description: cron, every, at
+        type: string
+      to:
+        type: string
+      tz:
+        type: string
+    type: object
+  service.CustomToolView:
+    properties:
+      args:
+        items:
+          type: string
+        type: array
+      command:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      schema:
+        items:
+          type: integer
+        type: array
+    type: object
+  service.FileContent:
+    properties:
+      content:
+        type: string
+      mod_time:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+    type: object
+  service.FileEntry:
+    properties:
+      is_dir:
+        type: boolean
+      mod_time:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+    type: object
+  service.LogFile:
+    properties:
+      mod_time:
+        type: string
+      name:
+        type: string
+      size:
+        type: integer
+    type: object
+  service.MCPServerView:
+    properties:
+      args:
+        items:
+          type: string
+        type: array
+      command:
+        type: string
+      enabled:
+        type: boolean
+      env:
+        $ref: '#/definitions/service.SecretState'
+      name:
+        type: string
+    type: object
+  service.ProviderView:
+    properties:
+      api_key:
+        $ref: '#/definitions/service.SecretState'
+      base_url:
+        type: string
+      default_model:
+        type: string
+      name:
+        type: string
+      type:
+        type: string
+    type: object
+  service.ProvidersView:
+    properties:
+      default_provider:
+        type: string
+      providers:
+        items:
+          $ref: '#/definitions/service.ProviderView'
+        type: array
+    type: object
+  service.SearchMatch:
+    properties:
+      line:
+        type: integer
+      path:
+        type: string
+      text:
+        type: string
+    type: object
+  service.SecretState:
+    properties:
+      configured:
+        type: boolean
+      masked:
+        type: string
+    type: object
+  service.ServerStatus:
+    properties:
+      base_url:
+        type: string
+      pid:
+        type: integer
+      port:
+        type: integer
+      running:
+        type: boolean
+    type: object
+  service.ServiceSecretView:
+    properties:
+      api_key:
+        $ref: '#/definitions/service.SecretState'
+      provider:
+        type: string
+    type: object
+  service.SkillDetail:
+    properties:
+      content:
+        type: string
+      description:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      files:
+        items:
+          $ref: '#/definitions/service.SkillFile'
+        type: array
+      name:
+        type: string
+      parse_ok:
+        type: boolean
+      source:
+        type: string
+    type: object
+  service.SkillFile:
+    properties:
+      mod_time:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+    type: object
+  service.SkillFileContent:
+    properties:
+      binary:
+        type: boolean
+      content:
+        type: string
+      mod_time:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+    type: object
+  service.ToolsView:
+    properties:
+      builtin:
+        items:
+          $ref: '#/definitions/service.BuiltinToolView'
+        type: array
+      custom:
+        items:
+          $ref: '#/definitions/service.CustomToolView'
+        type: array
+      mcp_servers:
+        items:
+          $ref: '#/definitions/service.MCPServerView'
+        type: array
+    type: object
+  skills.Skill:
+    properties:
+      description:
+        type: string
+      display_name:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      parse_ok:
+        type: boolean
+      source:
+        type: string
+    type: object
+host: localhost:9000
+info:
+  contact: {}
+  description: Unified API for agents, chat, logs, and files. Authenticate with POST
+    /auth/login, then send the token in the Authorization header.
+  title: Myaaw Control Plane API
+  version: 0.1.0
+paths:
+  /agents:
+    get:
+      description: Returns every initialized agent with its default flag, running
+        state, port, and base URL.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.AgentsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List agents
+      tags:
+      - Agents
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateAgentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/service.AgentInfo'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create agent
+      tags:
+      - Agents
+  /agents/{name}:
+    delete:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete agent
+      tags:
+      - Agents
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.AgentInfo'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get agent
+      tags:
+      - Agents
+  /agents/{name}/channels:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ChannelsView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List channels
+      tags:
+      - Channels
+  /agents/{name}/channels/{channel}:
+    delete:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: telegram or discord
+        in: path
+        name: channel
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Disable channel
+      tags:
+      - Channels
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: telegram or discord
+        in: path
+        name: channel
+        required: true
+        type: string
+      - description: Channel settings
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ChannelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ChannelView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create or update channel
+      tags:
+      - Channels
+  /agents/{name}/chat:
+    post:
+      consumes:
+      - application/json
+      description: Proxies to the agent server. user_id defaults to the authenticated
+        control-plane user when omitted or 0.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Chat request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ChatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ChatResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Chat with an agent
+      tags:
+      - Chat
+  /agents/{name}/chat/stream:
+    post:
+      consumes:
+      - application/json
+      description: Relays the agent's Server-Sent Events (thought, chunk, tool, tool_result,
+        done, error). user_id defaults to the authenticated control-plane user when
+        omitted or 0.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Chat request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ChatRequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stream chat with an agent
+      tags:
+      - Chat
+  /agents/{name}/config:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ConfigView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get agent config
+      tags:
+      - Config
+  /agents/{name}/contacts:
+    get:
+      description: Contacts live in ~/.myaaw/<agent>/contacts.json and reference other
+        A2A agents.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ContactsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List contacts
+      tags:
+      - Contacts
+    post:
+      consumes:
+      - application/json
+      description: The token is the bearer token issued by the remote agent. It is
+        stored in contacts.json and masked on output.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Contact definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateContactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ContactView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a contact
+      tags:
+      - Contacts
+  /agents/{name}/contacts/{contact}:
+    delete:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Contact name
+        in: path
+        name: contact
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a contact
+      tags:
+      - Contacts
+  /agents/{name}/context:
+    get:
+      description: Returns the allowed core Markdown files and every .md file under
+        memory/. Other .md files are never listed.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.ContextFilesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List context files
+      tags:
+      - Context
+  /agents/{name}/context/file:
+    get:
+      description: Reads an allowed core Markdown file or any .md file under memory/.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Home-relative path
+        example: AGENTS.md
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ContextContent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Read a context file
+      tags:
+      - Context
+    put:
+      consumes:
+      - application/json
+      description: Writes an allowed core Markdown file or any .md file under memory/.
+        Parent directories under memory/ are created automatically.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Path and content
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.WriteContextRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ContextContent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a context file
+      tags:
+      - Context
+  /agents/{name}/conversations:
+    get:
+      description: Conversations are scoped to the authenticated user unless user_id
+        is provided. search matches the title only.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: User ID (defaults to the authenticated user)
+        in: query
+        name: user_id
+        type: integer
+      - description: Case-insensitive title search
+        in: query
+        name: search
+        type: string
+      - description: Page size (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ConversationPage'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List conversations
+      tags:
+      - Conversations
+  /agents/{name}/conversations/{id}:
+    delete:
+      description: Only the owner can delete a conversation.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User ID (defaults to the authenticated user)
+        in: query
+        name: user_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete conversation
+      tags:
+      - Conversations
+    get:
+      description: Returns 403 when the conversation belongs to another user.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User ID (defaults to the authenticated user)
+        in: query
+        name: user_id
+        type: integer
+      - description: Message page size (0 = all, max 500)
+        in: query
+        name: limit
+        type: integer
+      - description: Message offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ConversationDetail'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get conversation
+      tags:
+      - Conversations
+    patch:
+      consumes:
+      - application/json
+      description: Only the owner can rename a conversation. Titles are trimmed and
+        must not be empty.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User ID (defaults to the authenticated user)
+        in: query
+        name: user_id
+        type: integer
+      - description: New title
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RenameConversationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.RenameConversationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Rename conversation
+      tags:
+      - Conversations
+  /agents/{name}/cron:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.CronJobsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List cron jobs
+      tags:
+      - Cron
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Job definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CronJobInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.CronJobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create cron job
+      tags:
+      - Cron
+  /agents/{name}/cron/{id}:
+    delete:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Job ID or prefix
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete cron job
+      tags:
+      - Cron
+  /agents/{name}/cron/{id}/history:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Job ID or prefix
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Maximum entries (default 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.CronHistoryResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Cron job history
+      tags:
+      - Cron
+  /agents/{name}/cron/{id}/run:
+    post:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Job ID or prefix
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Run cron job
+      tags:
+      - Cron
+  /agents/{name}/default:
+    post:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set default agent
+      tags:
+      - Agents
+  /agents/{name}/fs:
+    delete:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Virtual path
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: Delete directories recursively
+        in: query
+        name: recursive
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete an agent path
+      tags:
+      - Files
+    get:
+      description: Lists the virtual roots (/home, /skills, /jobs) or the entries
+        of one directory.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - default: /
+        description: Virtual path
+        in: query
+        name: path
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.FileListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Browse agent files
+      tags:
+      - Files
+  /agents/{name}/fs/mkdir:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Directory path
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.MkdirRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create an agent directory
+      tags:
+      - Files
+  /agents/{name}/fs/read:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - default: /home/AGENTS.md
+        description: Virtual path
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.FileContent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "415":
+          description: Unsupported Media Type
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Read an agent file
+      tags:
+      - Files
+  /agents/{name}/fs/rename:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Source and destination
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RenameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Rename or move an agent path
+      tags:
+      - Files
+  /agents/{name}/fs/search:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Search text
+        in: query
+        name: q
+        required: true
+        type: string
+      - default: /home
+        description: Virtual path
+        in: query
+        name: path
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SearchResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Search agent files
+      tags:
+      - Files
+  /agents/{name}/fs/write:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Path and content
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.WriteFileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.FileContent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Write an agent file
+      tags:
+      - Files
+  /agents/{name}/logs:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.LogsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List log files
+      tags:
+      - Logs
+  /agents/{name}/logs/stream:
+    get:
+      description: 'Sends existing lines, then new lines as they are written. Events:
+        ready, line.'
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Log file name
+        in: query
+        name: file
+        required: true
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Tail a log file
+      tags:
+      - Logs
+  /agents/{name}/providers:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ProvidersView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List providers
+      tags:
+      - Providers
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Provider
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateProviderRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/service.ProviderView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create provider
+      tags:
+      - Providers
+  /agents/{name}/providers/{id}:
+    delete:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Provider name
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete provider
+      tags:
+      - Providers
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Provider name
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateProviderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ProviderView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update provider
+      tags:
+      - Providers
+  /agents/{name}/providers/default:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Provider name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.SetDefaultProviderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Set default provider
+      tags:
+      - Providers
+  /agents/{name}/server/restart:
+    post:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Restart server
+      tags:
+      - Server
+  /agents/{name}/server/start:
+    post:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Start server
+      tags:
+      - Server
+  /agents/{name}/server/status:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ServerStatus'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Server status
+      tags:
+      - Server
+  /agents/{name}/server/stop:
+    post:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stop server
+      tags:
+      - Server
+  /agents/{name}/skills:
+    get:
+      description: Reads the skills directory fresh from disk. Enabled state follows
+        skills.json, then the SKILL.md frontmatter, then defaults to enabled.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SkillsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List skills
+      tags:
+      - Skills
+  /agents/{name}/skills/{skill}:
+    delete:
+      description: Removes the skill folder recursively. Changes made through the
+        terminal are reflected automatically.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Skill directory name
+        in: path
+        name: skill
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a skill
+      tags:
+      - Skills
+    get:
+      description: Includes the SKILL.md content and every file in the skill directory
+        (scripts, images, nested folders). A stale skills.json key for a deleted folder
+        is removed automatically.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Skill directory name
+        in: path
+        name: skill
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.SkillDetail'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get skill detail
+      tags:
+      - Skills
+    patch:
+      consumes:
+      - application/json
+      description: Writes the skill's flag to skills.json. The agent picks up the
+        change on the next conversation without a restart.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Skill directory name
+        in: path
+        name: skill
+        required: true
+        type: string
+      - description: Enabled flag
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.SkillToggleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SkillToggleResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Enable or disable a skill
+      tags:
+      - Skills
+  /agents/{name}/skills/{skill}/config:
+    delete:
+      description: Removes the skill's skills.json key so the enabled state falls
+        back to the SKILL.md frontmatter or the default. The skill folder is untouched;
+        a missing key is not an error.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Skill directory name
+        in: path
+        name: skill
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reset a skill to its default state
+      tags:
+      - Skills
+  /agents/{name}/skills/{skill}/file:
+    get:
+      description: Text files return as plain text; binary files (images, compiled
+        scripts) return base64 with binary:true. Paths are relative to the skill directory
+        and cannot escape it.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Skill directory name
+        in: path
+        name: skill
+        required: true
+        type: string
+      - description: File path relative to the skill
+        example: scripts/weather.py
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.SkillFileContent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Read a skill file
+      tags:
+      - Skills
+  /agents/{name}/tools:
+    get:
+      description: Built-in tools are the canonical set. Custom tools and MCP servers
+        come only from tools.json; files inside the tools directory are storage, not
+        active tools.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ToolsView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List tools
+      tags:
+      - Tools
+  /agents/{name}/tools/builtin/{tool}:
+    patch:
+      consumes:
+      - application/json
+      description: 'Built-in tools can only be toggled, never deleted. Accepted names:
+        bash, filesystem, cron, execute_python (alias python), provider, subagent.'
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Built-in tool name
+        in: path
+        name: tool
+        required: true
+        type: string
+      - description: Enabled flag
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.BuiltinToggleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Enable or disable a built-in tool
+      tags:
+      - Tools
+  /agents/{name}/tools/custom:
+    post:
+      consumes:
+      - application/json
+      description: Registers a command as a custom tool. The command may live anywhere;
+        storing it under the tools folder does not activate it until it is added here.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Tool definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateCustomToolRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.CustomToolView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a custom tool
+      tags:
+      - Tools
+  /agents/{name}/tools/custom/{tool}:
+    delete:
+      description: Removes the tools.json entry only; files in the tools directory
+        are never touched.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Custom tool name
+        in: path
+        name: tool
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a custom tool
+      tags:
+      - Tools
+    patch:
+      consumes:
+      - application/json
+      description: Updates enabled, command, args, or schema. Only provided fields
+        change; schema null removes an inline schema.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Custom tool name
+        in: path
+        name: tool
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.PatchCustomToolRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.CustomToolView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a custom tool
+      tags:
+      - Tools
+  /agents/{name}/tools/mcp:
+    post:
+      consumes:
+      - application/json
+      description: Registers an stdio MCP server. Env values are accepted on input
+        and masked on output.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Server definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateMCPRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.MCPServerView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create an MCP server
+      tags:
+      - Tools
+  /agents/{name}/tools/mcp/{tool}:
+    delete:
+      description: Removes the tools.json entry only; a running server process stops
+        on the next agent server reload or restart.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: MCP server name
+        in: path
+        name: tool
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete an MCP server
+      tags:
+      - Tools
+    patch:
+      consumes:
+      - application/json
+      description: Updates enabled, command, args, or env. A provided env map replaces
+        the previous one entirely.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: MCP server name
+        in: path
+        name: tool
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.PatchMCPRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.MCPServerView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update an MCP server
+      tags:
+      - Tools
+  /auth/change-password:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Passwords
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Change password
+      tags:
+      - Auth
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate with username and password and receive a bearer token.
+      parameters:
+      - description: Credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.LoginResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      summary: Login
+      tags:
+      - Auth
+  /auth/logout:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Logout
+      tags:
+      - Auth
+  /auth/me:
+    get:
+      description: Returns the control-plane username and the agent user ID that conversation
+        and chat requests default to.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.UsernameResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Current user
+      tags:
+      - Auth
+  /auth/username:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Password and new username
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ChangeUsernameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.LoginOKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Change username
+      tags:
+      - Auth
+  /health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.HealthResponse'
+      summary: Health check
+      tags:
+      - System
+securityDefinitions:
+  BearerAuth:
+    description: Token returned by POST /auth/login. Paste it with or without the
+      "Bearer " prefix.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

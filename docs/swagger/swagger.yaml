@@ -2,6 +2,8 @@ basePath: /
 definitions:
   api.ChatRequest:
     properties:
+      conversation_id:
+        type: string
       images:
         items:
           type: string
@@ -43,17 +45,6 @@ definitions:
         example: error message
         type: string
     type: object
-  handler.ChatResponse:
-    properties:
-      text:
-        type: string
-      timeline:
-        items:
-          $ref: '#/definitions/api.TimelineItem'
-        type: array
-      usage:
-        $ref: '#/definitions/handler.UsageResponse'
-    type: object
   handler.HeartbeatRequest:
     properties:
       channel:
@@ -65,7 +56,20 @@ definitions:
       trigger:
         type: string
     type: object
-  handler.UsageResponse:
+  myaaw_internal_services_bot_handler.ChatResponse:
+    properties:
+      conversation_id:
+        type: string
+      text:
+        type: string
+      timeline:
+        items:
+          $ref: '#/definitions/api.TimelineItem'
+        type: array
+      usage:
+        $ref: '#/definitions/myaaw_internal_services_bot_handler.UsageResponse'
+    type: object
+  myaaw_internal_services_bot_handler.UsageResponse:
     properties:
       completion_tokens:
         type: integer
@@ -88,7 +92,7 @@ paths:
       - application/json
       description: Direct REST API chat endpoint (non-streaming)
       parameters:
-      - description: Chat request with user_id and text
+      - description: Chat request; user_id is optional and defaults to 0
         in: body
         name: request
         required: true
@@ -100,9 +104,17 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.ChatResponse'
+            $ref: '#/definitions/myaaw_internal_services_bot_handler.ChatResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/common.ErrorResponse'
         "500":
@@ -118,7 +130,7 @@ paths:
       - application/json
       description: Direct REST API chat endpoint with Server-Sent Events streaming
       parameters:
-      - description: Chat request with user_id and text
+      - description: Chat request; user_id is optional and defaults to 0
         in: body
         name: request
         required: true
@@ -131,6 +143,14 @@ paths:
           description: OK
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/common.ErrorResponse'
         "500":

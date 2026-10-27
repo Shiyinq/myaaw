@@ -12,6 +12,7 @@ import (
 	"myaaw/internal/services/bot/repository"
 	"slices"
 	"strconv"
+	"strings"
 )
 
 type BotService interface {
@@ -91,9 +92,13 @@ func (r *BotServiceImpl) checkUser(msg *channel.IncomingMessage) (*model.User, e
 	}
 
 	if user == nil {
+		name := fmt.Sprintf("user-%d", msg.UserID)
+		if sender := strings.TrimSpace(msg.SenderName); sender != "" {
+			name = sender
+		}
 		newUser := model.User{
 			UserId:   msg.UserID,
-			Name:     fmt.Sprintf("user-%d", msg.UserID),
+			Name:     name,
 			Provider: r.llmProvider.ProviderName(),
 			Model:    r.llmProvider.DefaultModel(""),
 		}

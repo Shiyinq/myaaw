@@ -7,6 +7,7 @@ import (
 
 type IncomingMessage struct {
 	UserID         int      // unified user identifier
+	SenderName     string   // optional display name for new users (e.g. "a2a:alice")
 	Text           string   // text content (or transcribed voice)
 	Images         []string // base64 encoded images
 	Voice          []byte   // raw audio bytes
@@ -18,10 +19,11 @@ type IncomingMessage struct {
 }
 
 type OutgoingMessage struct {
-	Text    string
-	Trace   []provider.ReactStep
-	Usage   provider.Usage
-	Thought string
+	Text           string
+	Trace          []provider.ReactStep
+	Usage          provider.Usage
+	Thought        string
+	ConversationID string
 }
 
 type StreamChunk struct {

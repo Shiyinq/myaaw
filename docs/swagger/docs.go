@@ -30,7 +30,7 @@ const docTemplate = `{
                 "summary": "API Chat",
                 "parameters": [
                     {
-                        "description": "Chat request with user_id and text",
+                        "description": "Chat request; user_id is optional and defaults to 0",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -43,11 +43,23 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.ChatResponse"
+                            "$ref": "#/definitions/myaaw_internal_services_bot_handler.ChatResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -76,7 +88,7 @@ const docTemplate = `{
                 "summary": "API Chat Stream",
                 "parameters": [
                     {
-                        "description": "Chat request with user_id and text",
+                        "description": "Chat request; user_id is optional and defaults to 0",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -91,6 +103,18 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -245,6 +269,9 @@ const docTemplate = `{
         "api.ChatRequest": {
             "type": "object",
             "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
                 "images": {
                     "type": "array",
                     "items": {
@@ -308,23 +335,6 @@ const docTemplate = `{
                 }
             }
         },
-        "handler.ChatResponse": {
-            "type": "object",
-            "properties": {
-                "text": {
-                    "type": "string"
-                },
-                "timeline": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/api.TimelineItem"
-                    }
-                },
-                "usage": {
-                    "$ref": "#/definitions/handler.UsageResponse"
-                }
-            }
-        },
         "handler.HeartbeatRequest": {
             "type": "object",
             "properties": {
@@ -342,7 +352,27 @@ const docTemplate = `{
                 }
             }
         },
-        "handler.UsageResponse": {
+        "myaaw_internal_services_bot_handler.ChatResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "timeline": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.TimelineItem"
+                    }
+                },
+                "usage": {
+                    "$ref": "#/definitions/myaaw_internal_services_bot_handler.UsageResponse"
+                }
+            }
+        },
+        "myaaw_internal_services_bot_handler.UsageResponse": {
             "type": "object",
             "properties": {
                 "completion_tokens": {

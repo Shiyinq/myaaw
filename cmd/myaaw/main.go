@@ -17,7 +17,10 @@ import (
 	"myaaw/internal/agent/tools/filesystem"
 	"myaaw/internal/agentdir"
 
+	_ "myaaw/internal/agent/tools/a2aauth"
+	_ "myaaw/internal/agent/tools/a2ainput"
 	_ "myaaw/internal/agent/tools/bash"
+	_ "myaaw/internal/agent/tools/contact"
 	_ "myaaw/internal/agent/tools/cron"
 	_ "myaaw/internal/agent/tools/provider"
 	_ "myaaw/internal/agent/tools/python"
@@ -37,6 +40,15 @@ var agentFlag string
 func isAgentCommand(cmd *cobra.Command) bool {
 	for current := cmd; current != nil; current = current.Parent() {
 		if current.Name() == "agent" {
+			return true
+		}
+	}
+	return false
+}
+
+func isAPISubcommand(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if current.Name() == "api" {
 			return true
 		}
 	}
@@ -87,9 +99,10 @@ func init() {
 			"help":    true,
 			"update":  true,
 			"agent":   true,
+			"api":     true,
 		}
 
-		if metaCommands[cmd.Name()] || isAgentCommand(cmd) {
+		if metaCommands[cmd.Name()] || isAgentCommand(cmd) || isAPISubcommand(cmd) {
 			return nil
 		}
 
@@ -171,8 +184,9 @@ func init() {
 
 				groups := []cmdGroup{
 					{name: "Core Commands", cmdNames: []string{"chat", "voice", "voice-classic", "status"}},
+					{name: "Agents & API", cmdNames: []string{"agent", "api"}},
 					{name: "Automation", cmdNames: []string{"cron"}},
-					{name: "Service Management", cmdNames: []string{"start", "stop", "restart", "webhook"}},
+					{name: "Service Management", cmdNames: []string{"server", "start", "stop", "restart", "webhook"}},
 					{name: "Integrations", cmdNames: []string{"provider", "channel"}},
 					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},
 				}

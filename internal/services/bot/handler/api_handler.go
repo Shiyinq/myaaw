@@ -3,18 +3,21 @@ package handler
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	api "myaaw/internal/channel/api"
+	"myaaw/internal/services/bot/service"
 	"myaaw/internal/utils"
 
 	"github.com/gofiber/fiber/v3"
 )
 
 type ChatResponse struct {
-	Text     string             `json:"text"`
-	Timeline []api.TimelineItem `json:"timeline,omitempty"`
-	Usage    *UsageResponse     `json:"usage,omitempty"`
+	Text           string             `json:"text"`
+	ConversationID string             `json:"conversation_id,omitempty"`
+	Timeline       []api.TimelineItem `json:"timeline,omitempty"`
+	Usage          *UsageResponse     `json:"usage,omitempty"`
 }
 
 type UsageResponse struct {
@@ -29,9 +32,11 @@ type UsageResponse struct {
 // @Tags		API
 // @Produce		json
 // @Accept		json
-// @Param		request	body		api.ChatRequest	true	"Chat request with user_id and text"
+// @Param		request	body		api.ChatRequest	true	"Chat request; user_id is optional and defaults to 0"
 // @Success		200		{object}	ChatResponse
-// @Failure     400    	{object}   	common.ErrorResponse
+// @Failure     400     {object}    common.ErrorResponse
+// @Failure     403     {object}    common.ErrorResponse
+// @Failure     404     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/api/chat [post]
 func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
@@ -65,14 +70,22 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 	if err != nil {
 		log.Printf("API chat error for user ID %v: %v", msg.UserID, err)
 		formattedError := utils.FormatErrorMessage(err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+		status := fiber.StatusInternalServerError
+		switch {
+		case errors.Is(err, service.ErrConversationNotFound):
+			status = fiber.StatusNotFound
+		case errors.Is(err, service.ErrConversationForbidden):
+			status = fiber.StatusForbidden
+		}
+		return c.Status(status).JSON(fiber.Map{
 			"error": formattedError,
 		})
 	}
 
 	resp := ChatResponse{
-		Text:     out.Text,
-		Timeline: timeline.Items(),
+		Text:           out.Text,
+		ConversationID: out.ConversationID,
+		Timeline:       timeline.Items(),
 	}
 
 	if out.Usage.TotalTokens > 0 {
@@ -92,9 +105,11 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 // @Tags		API
 // @Produce		text/event-stream
 // @Accept		json
-// @Param		request	body		api.ChatRequest	true	"Chat request with user_id and text"
+// @Param		request	body		api.ChatRequest	true	"Chat request; user_id is optional and defaults to 0"
 // @Success		200
-// @Failure     400    	{object}   	common.ErrorResponse
+// @Failure     400     {object}    common.ErrorResponse
+// @Failure     403     {object}    common.ErrorResponse
+// @Failure     404     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/api/chat/stream [post]
 func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {

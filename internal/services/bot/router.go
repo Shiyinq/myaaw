@@ -9,6 +9,8 @@ import (
 	"myaaw/internal/channel/telegram"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
+	"myaaw/internal/services/a2a"
+	a2agrpc "myaaw/internal/services/a2a/grpc"
 	"myaaw/internal/services/bot/handler"
 	"myaaw/internal/services/bot/repository"
 	"myaaw/internal/services/bot/service"
@@ -52,4 +54,9 @@ func BotRouter(router fiber.Router) {
 	api := router.Group("/api")
 	api.Post("/chat", hand.APIChat)
 	api.Post("/chat/stream", hand.APIChatStream)
+
+	if service := a2a.SetupService(serv); service != nil {
+		a2a.MountRouter(router, service)
+		a2agrpc.Serve(service)
+	}
 }

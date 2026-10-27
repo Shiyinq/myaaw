@@ -105,6 +105,8 @@ You can enable or disable built-in tools by setting their boolean flag in `built
 | **Python** | `"python"` or `"execute_python"` | Dynamic Python code execution in isolated venv |
 | **Provider** | `"provider"` | Change or switch LLM providers dynamically |
 | **Subagent** | `"subagent"` | Spawn autonomous subagents for task delegation |
+| **Contact** | `"contact"` | Manage contacts and delegate tasks to another agent via the A2A protocol (`send`, `list`, `get`, `add`) |
+| **A2A Input** | `"a2a_input"` | Ask an A2A caller for missing information (`input-required`) |
 
 > **Note**: If a built-in tool is omitted from `builtin_tools`, it defaults to `true` (enabled).
 

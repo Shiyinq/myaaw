@@ -42,6 +42,62 @@ func NewManager(name string) (*Manager, error) {
 	}, nil
 }
 
+// NewGlobalManager builds a manager for a process that is not tied to an
+// agent, such as the control plane API. Logs go to ~/.myaaw/logs.
+func NewGlobalManager(name string) (*Manager, error) {
+	pidDir, err := agentdir.PIDDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve pid dir: %w", err)
+	}
+	root, err := agentdir.MyaawRoot()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve myaaw root: %w", err)
+	}
+	logDir := filepath.Join(root, "logs")
+
+	if err := os.MkdirAll(pidDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create pid dir: %w", err)
+	}
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create log dir: %w", err)
+	}
+
+	return &Manager{
+		Name:    name,
+		PIDFile: filepath.Join(pidDir, name+".pid"),
+		LogFile: filepath.Join(logDir, name+".log"),
+	}, nil
+}
+
+// NewAgentManager builds a manager for one agent's server daemon, using that
+// agent's own log directory. It is used by the control plane, which manages
+// several agents from one process.
+func NewAgentManager(agentName string) (*Manager, error) {
+	daemonName := "myaaw-server-" + agentName
+
+	pidDir, err := agentdir.PIDDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve pid dir: %w", err)
+	}
+	logDir, err := agentdir.LogsDir(agentName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve log dir: %w", err)
+	}
+
+	if err := os.MkdirAll(pidDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create pid dir: %w", err)
+	}
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create log dir: %w", err)
+	}
+
+	return &Manager{
+		Name:    daemonName,
+		PIDFile: filepath.Join(pidDir, daemonName+".pid"),
+		LogFile: filepath.Join(logDir, daemonName+".log"),
+	}, nil
+}
+
 func (m *Manager) Start(args []string) error {
 	if pid, running, _ := m.Status(); running {
 		return fmt.Errorf("%s is already running with PID %d", m.Name, pid)

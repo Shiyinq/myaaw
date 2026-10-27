@@ -23,6 +23,7 @@ type fakeBotService struct {
 	service.BotService
 	out    *channel.OutgoingMessage
 	chunks []channel.StreamChunk
+	err    error
 }
 
 func (f *fakeBotService) BotStreamContext(
@@ -33,7 +34,7 @@ func (f *fakeBotService) BotStreamContext(
 	for _, chunk := range f.chunks {
 		onChunk(chunk)
 	}
-	return f.out, nil
+	return f.out, f.err
 }
 
 func newAPIApp(t *testing.T, fake *fakeBotService) *fiber.App {
@@ -68,7 +69,8 @@ func newFakeBotService() *fakeBotService {
 			{Kind: "text", Text: "done"},
 		},
 		out: &channel.OutgoingMessage{
-			Text: "done",
+			Text:           "done",
+			ConversationID: "conv-1",
 			Usage: provider.Usage{
 				PromptTokens:     10,
 				CompletionTokens: 4,
@@ -103,8 +105,8 @@ func TestAPIChatReturnsTimeline(t *testing.T) {
 		t.Fatalf("unmarshal: %v, body = %s", err, body)
 	}
 
-	if got.Text != "done" {
-		t.Errorf("text = %q", got.Text)
+	if got.Text != "done" || got.ConversationID != "conv-1" {
+		t.Errorf("text/conversation = %q/%q", got.Text, got.ConversationID)
 	}
 	if got.Usage == nil || got.Usage.TotalTokens != 14 {
 		t.Errorf("usage = %+v", got.Usage)
@@ -152,6 +154,7 @@ func TestAPIChatStreamEmitsTimelineEvents(t *testing.T) {
 		"event: done",
 		`"arguments":"{\"command\":\"ls\"}"`,
 		`"result":"file1.txt"`,
+		`"conversation_id":"conv-1"`,
 	} {
 		if !strings.Contains(stream, want) {
 			t.Errorf("stream missing %q:\n%s", want, stream)
@@ -159,7 +162,33 @@ func TestAPIChatStreamEmitsTimelineEvents(t *testing.T) {
 	}
 }
 
-func TestAPIChatRejectsMissingUserID(t *testing.T) {
+func TestAPIChatInvalidConversation(t *testing.T) {
+	cases := []struct {
+		err    error
+		status int
+	}{
+		{service.ErrConversationNotFound, fiber.StatusNotFound},
+		{service.ErrConversationForbidden, fiber.StatusForbidden},
+	}
+
+	for _, tc := range cases {
+		app := newAPIApp(t, &fakeBotService{err: tc.err})
+
+		req := httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"user_id":7,"text":"hi","conversation_id":"missing"}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("app.Test: %v", err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != tc.status {
+			t.Fatalf("err %v: status = %d, want %d", tc.err, resp.StatusCode, tc.status)
+		}
+	}
+}
+
+func TestAPIChatAllowsMissingUserID(t *testing.T) {
 	app := newAPIApp(t, newFakeBotService())
 
 	req := httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"text":"hi"}`))
@@ -171,7 +200,7 @@ func TestAPIChatRejectsMissingUserID(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != fiber.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 }

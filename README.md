@@ -441,6 +441,7 @@ Myaaw runs as a unified background service daemon.
 | Command | Subcommands | Description |
 | :--- | :--- | :--- |
 | **`server`** | `run`, `start`, `stop`, `status` | Manage the Myaaw Server (API + Background Workers) daemon. |
+| **`api`** | `run`, `start`, `stop`, `status`, `restart` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000). |
 | **`webhook`** | `set`, `info`, `delete` | Manage Telegram bot webhook configuration easily. |
 
 > [!TIP]
@@ -486,4 +487,9 @@ myaaw cron add --name "Meeting Remind" --at "30m" --message "Meeting in 30 mins"
 | [Agent Skills](docs/agent_skills.md) | `SKILL.md`-based skills: discovery, prompt injection, execution, and per-agent data isolation. |
 | [MCP & Custom Tools](docs/mcp_and_custom_tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
 | [Multi-Agent Guide](docs/multi-agent.md) | Isolated agents: registry, per-agent config, channels, ports, servers, and commands. |
+| [A2A Protocol](docs/a2a-protocol.md) | Agent Card discovery, task lifecycle, JSON-RPC methods, streaming, contact registry, and the implementation map. |
+| [A2A Guide](docs/a2a.md) | Enable the endpoint, call another agent, and manage contacts with the `contact` tool. |
+| [A2A Interop Guide](docs/a2a-interop.md) | Connect Myaaw agents locally and across servers, and interoperate with non-Myaaw A2A agents. |
+| [A2A Spec Compliance](docs/a2a-spec-compliance.md) | Validation of the A2A v1.0 implementation against all 14 spec sections, with evidence. |
 | [REST API](docs/rest-api.md) | `/api/chat` and `/api/chat/stream`: requests, timeline items, SSE events, and response handling. |
+| [Control Plane API](docs/control-plane.md) | `myaaw api`: auth, agent switching, chat proxy, files, providers, channels, logs, and cron. |

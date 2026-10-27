@@ -14,6 +14,11 @@ import (
 	"myaaw/internal/services/bot/model"
 )
 
+var (
+	ErrConversationNotFound  = errors.New("conversation not found")
+	ErrConversationForbidden = errors.New("conversation belongs to another user")
+)
+
 func (r *BotServiceImpl) conversation(user *model.User, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
 	return r.runConversation(context.Background(), user, msg, nil)
 }
@@ -36,7 +41,10 @@ func (r *BotServiceImpl) runConversation(
 	msg *channel.IncomingMessage,
 	onChunk func(channel.StreamChunk),
 ) (*channel.OutgoingMessage, error) {
-	messages := r.buildConversationMessages(user, msg)
+	messages, err := r.buildConversationMessages(user, msg)
+	if err != nil {
+		return nil, err
+	}
 
 	cfg := agent.DefaultRunConfig(user.Model)
 	cfg.ContextMaxTokens = config.AgentContextMaxTokens
@@ -98,10 +106,11 @@ func (r *BotServiceImpl) runConversation(
 	}
 
 	out := &channel.OutgoingMessage{
-		Text:    finalText,
-		Trace:   result.Final.Trace,
-		Usage:   result.Usage,
-		Thought: result.Final.Thought,
+		Text:           finalText,
+		Trace:          result.Final.Trace,
+		Usage:          result.Usage,
+		Thought:        result.Final.Thought,
+		ConversationID: msg.ConversationID,
 	}
 
 	// Tell streaming consumers which text is the final answer. Intermediate
@@ -142,7 +151,7 @@ func (r *BotServiceImpl) runConversation(
 	return out, nil
 }
 
-func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channel.IncomingMessage) []provider.Message {
+func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channel.IncomingMessage) ([]provider.Message, error) {
 	userSystem := agent.NewSystemPromptBuilder(int64(user.UserId), msg.Channel).Build()
 	userSystem += skills.GetSkillsInstruction()
 	messages := []provider.Message{
@@ -154,35 +163,55 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 	}
 
 	var conv *model.Conversation
-	var err error
-	if msg.ConversationID == "NEW" {
-		conv = nil
-		err = errors.New("force new")
-	} else if msg.ConversationID != "" {
-		conv, err = r.conversationRepo.GetConversationById(msg.ConversationID)
-	}
-
-	if conv == nil && msg.ConversationID != "NEW" {
-		conv, err = r.conversationRepo.GetActiveConversationByUserId(user.UserId)
+	switch {
+	case msg.ConversationID == "NEW":
+		// Force a new conversation below.
+	case msg.ConversationID != "":
+		found, err := r.conversationRepo.GetConversationById(msg.ConversationID)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case found == nil && msg.Channel == "a2a":
+			// An A2A contextId is caller-defined, so the first task that
+			// uses one may not have a transcript yet. Create it under that
+			// ID so later tasks continue the same conversation.
+			created, err := r.conversationRepo.CreateConversationWithId(user.UserId, msg.ConversationID, "")
+			if err != nil {
+				return nil, err
+			}
+			conv = created
+		case found == nil:
+			return nil, ErrConversationNotFound
+		case found.UserId != user.UserId:
+			return nil, ErrConversationForbidden
+		default:
+			conv = found
+		}
+	default:
+		active, err := r.conversationRepo.GetActiveConversationByUserId(user.UserId)
+		if err != nil {
+			return nil, err
+		}
+		conv = active
 	}
 
 	var convMessages []provider.Message
-	if err == nil && conv != nil {
+	if conv != nil {
 		convMessages = agent.MigrateLegacyTranscript(conv.Messages)
 		msg.ConversationID = conv.Id
 	} else {
-		conv, err := r.conversationRepo.CreateConversation(user.UserId, "New Chat")
-		if err == nil {
-			convMessages = agent.MigrateLegacyTranscript(conv.Messages)
-			msg.ConversationID = conv.Id
-		} else {
-			convMessages = []provider.Message{}
+		created, err := r.conversationRepo.CreateConversation(user.UserId, "New Chat")
+		if err != nil {
+			return nil, err
 		}
+		convMessages = agent.MigrateLegacyTranscript(created.Messages)
+		msg.ConversationID = created.Id
 	}
 
 	messages = append(messages, convMessages...)
 	messages = append(messages, r.buildUserMessage(msg))
-	return messages
+	return messages, nil
 }
 
 // buildUserMessage converts a generic IncomingMessage to a provider.Message.
