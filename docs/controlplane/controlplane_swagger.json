@@ -560,6 +560,173 @@
                         }
                     }
                 }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Update agent config",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.ConfigPatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ConfigView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/config/reset": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Reset agent config to defaults",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ConfigView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Reset specific config fields to defaults",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to reset",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.ConfigResetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ConfigView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/agents/{name}/contacts": {
@@ -4662,6 +4829,59 @@
                 }
             }
         },
+        "service.BotPatch": {
+            "type": "object",
+            "properties": {
+                "blocked_tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "context_max_tokens": {
+                    "type": "integer"
+                },
+                "max_iterations": {
+                    "type": "integer"
+                },
+                "max_tool_output_bytes": {
+                    "type": "integer"
+                },
+                "owner_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "repeat_tool_call_limit": {
+                    "type": "integer"
+                },
+                "request_retries": {
+                    "type": "integer"
+                },
+                "run_timeout_seconds": {
+                    "type": "integer"
+                },
+                "stream": {
+                    "type": "boolean"
+                },
+                "stream_timeout_seconds": {
+                    "type": "integer"
+                },
+                "tool_timeout_seconds": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "warning_iterations": {
+                    "type": "integer"
+                },
+                "watermark": {
+                    "type": "boolean"
+                }
+            }
+        },
         "service.BuiltinToolView": {
             "type": "object",
             "properties": {
@@ -4707,6 +4927,51 @@
                     "items": {
                         "$ref": "#/definitions/service.ChannelView"
                     }
+                }
+            }
+        },
+        "service.ConfigPatch": {
+            "type": "object",
+            "properties": {
+                "bot": {
+                    "$ref": "#/definitions/service.BotPatch"
+                },
+                "cron": {
+                    "$ref": "#/definitions/service.CronPatch"
+                },
+                "heartbeat": {
+                    "$ref": "#/definitions/service.HeartbeatPatch"
+                },
+                "synthesizer": {
+                    "$ref": "#/definitions/service.SecretPatch"
+                },
+                "transcriber": {
+                    "$ref": "#/definitions/service.SecretPatch"
+                }
+            }
+        },
+        "service.ConfigResetRequest": {
+            "type": "object",
+            "properties": {
+                "bot": {
+                    "description": "bot field names; an empty list resets the whole bot section",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "cron": {
+                    "type": "boolean"
+                },
+                "heartbeat": {
+                    "description": "true resets the whole section",
+                    "type": "boolean"
+                },
+                "synthesizer": {
+                    "type": "boolean"
+                },
+                "transcriber": {
+                    "type": "boolean"
                 }
             }
         },
@@ -4925,6 +5190,14 @@
                 }
             }
         },
+        "service.CronPatch": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                }
+            }
+        },
         "service.CustomToolView": {
             "type": "object",
             "properties": {
@@ -4985,6 +5258,23 @@
                 },
                 "size": {
                     "type": "integer"
+                }
+            }
+        },
+        "service.HeartbeatPatch": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "channel": {
+                    "type": "string"
+                },
+                "every": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
                 }
             }
         },
@@ -5069,6 +5359,17 @@
                     "type": "string"
                 },
                 "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.SecretPatch": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "provider": {
                     "type": "string"
                 }
             }

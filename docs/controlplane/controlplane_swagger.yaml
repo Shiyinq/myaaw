@@ -666,6 +666,41 @@ definitions:
       running:
         type: boolean
     type: object
+  service.BotPatch:
+    properties:
+      blocked_tools:
+        items:
+          type: string
+        type: array
+      context_max_tokens:
+        type: integer
+      max_iterations:
+        type: integer
+      max_tool_output_bytes:
+        type: integer
+      owner_ids:
+        items:
+          type: string
+        type: array
+      repeat_tool_call_limit:
+        type: integer
+      request_retries:
+        type: integer
+      run_timeout_seconds:
+        type: integer
+      stream:
+        type: boolean
+      stream_timeout_seconds:
+        type: integer
+      tool_timeout_seconds:
+        type: integer
+      type:
+        type: string
+      warning_iterations:
+        type: integer
+      watermark:
+        type: boolean
+    type: object
   service.BuiltinToolView:
     properties:
       description:
@@ -696,6 +731,36 @@ definitions:
         items:
           $ref: '#/definitions/service.ChannelView'
         type: array
+    type: object
+  service.ConfigPatch:
+    properties:
+      bot:
+        $ref: '#/definitions/service.BotPatch'
+      cron:
+        $ref: '#/definitions/service.CronPatch'
+      heartbeat:
+        $ref: '#/definitions/service.HeartbeatPatch'
+      synthesizer:
+        $ref: '#/definitions/service.SecretPatch'
+      transcriber:
+        $ref: '#/definitions/service.SecretPatch'
+    type: object
+  service.ConfigResetRequest:
+    properties:
+      bot:
+        description: bot field names; an empty list resets the whole bot section
+        items:
+          type: string
+        type: array
+      cron:
+        type: boolean
+      heartbeat:
+        description: true resets the whole section
+        type: boolean
+      synthesizer:
+        type: boolean
+      transcriber:
+        type: boolean
     type: object
   service.ConfigView:
     properties:
@@ -838,6 +903,11 @@ definitions:
       tz:
         type: string
     type: object
+  service.CronPatch:
+    properties:
+      active:
+        type: boolean
+    type: object
   service.CustomToolView:
     properties:
       args:
@@ -878,6 +948,17 @@ definitions:
         type: string
       size:
         type: integer
+    type: object
+  service.HeartbeatPatch:
+    properties:
+      active:
+        type: boolean
+      channel:
+        type: string
+      every:
+        type: string
+      to:
+        type: string
     type: object
   service.LogFile:
     properties:
@@ -932,6 +1013,13 @@ definitions:
       path:
         type: string
       text:
+        type: string
+    type: object
+  service.SecretPatch:
+    properties:
+      api_key:
+        type: string
+      provider:
         type: string
     type: object
   service.SecretState:
@@ -1393,6 +1481,112 @@ paths:
       security:
       - BearerAuth: []
       summary: Get agent config
+      tags:
+      - Config
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.ConfigPatch'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ConfigView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update agent config
+      tags:
+      - Config
+  /agents/{name}/config/reset:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Fields to reset
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.ConfigResetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ConfigView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reset specific config fields to defaults
+      tags:
+      - Config
+    post:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ConfigView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Reset agent config to defaults
       tags:
       - Config
   /agents/{name}/contacts:
