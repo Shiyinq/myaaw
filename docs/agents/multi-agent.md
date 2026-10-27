@@ -220,7 +220,7 @@ myaaw agent list
 myaaw agent create myfriend
 ```
 
-This is the onboarding wizard for a new agent, starting at the provider step. Nothing is written until you save the **Review** step; at that point Myaaw creates `~/.myaaw/myfriend/` from the embedded template, assigns a unique port, writes `.env`, rewrites legacy paths, registers the agent, and wires A2A. Cancelling with `Ctrl+C` before Review leaves nothing behind.
+This is the onboarding wizard for a new agent, starting at the provider step. It asks for the provider and model, then the skills to install (**none by default**), the built-in tools to keep (**all by default**), channels, heartbeat, and owner. Nothing is written until you save the **Review** step; at that point Myaaw creates `~/.myaaw/myfriend/` from the embedded template, assigns a unique port, writes `.env`, installs only the selected skills under `skills/<name>/`, writes `tools/tools.json`, rewrites legacy paths, registers the agent, and wires A2A. Cancelling with `Ctrl+C` before Review leaves nothing behind.
 
 It also **auto-wires A2A contacts**: the new agent gets a generated `A2A_TOKEN`, its `contacts.json` is populated with every other initialized agent (name, URL, and that agent's `A2A_TOKEN`), and the new agent is added to each other agent's `contacts.json` with the new token. The agent is never added to its own contacts. Agents can therefore delegate to each other immediately after restart — no manual `contacts.json` edits. Agents without an `A2A_TOKEN` (open mode) are added as contacts without a token.
 

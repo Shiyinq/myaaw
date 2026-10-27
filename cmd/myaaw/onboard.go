@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"myaaw"
 	"myaaw/internal/agent"
+	"myaaw/internal/agent/tools"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/daemon"
 	"myaaw/internal/provider"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -53,6 +56,8 @@ type onboardOptions struct {
 	owner     string
 	port      int
 	restart   bool
+	skills    string
+	noTools   string
 }
 
 var onboardOpts onboardOptions
@@ -86,6 +91,8 @@ func registerOnboardFlags(cmd *cobra.Command) {
 	f.StringVar(&onboardOpts.owner, "owner", "", "owner IDs, comma separated")
 	f.IntVar(&onboardOpts.port, "port", 0, "agent server port (default: first free port)")
 	f.BoolVar(&onboardOpts.restart, "restart", false, "restart the agent daemon after writing the config")
+	f.StringVar(&onboardOpts.skills, "skills", "", "skills to install, comma separated (default: none, or 'all')")
+	f.StringVar(&onboardOpts.noTools, "disable-tools", "", "built-in tools to disable, comma separated")
 }
 
 func runOnboard(cmd *cobra.Command, args []string) {
@@ -143,6 +150,8 @@ const (
 	stepProviderBaseURL
 	stepProviderKey
 	stepProviderModel
+	stepSkills
+	stepTools
 	stepChannelChoice
 	stepTelegramMode
 	stepTelegramToken
@@ -207,6 +216,11 @@ type onboardModel struct {
 
 	ownerIDs []string
 
+	skills         []string
+	skillsSelected map[string]bool
+	tools          []string
+	toolsSelected  map[string]bool
+
 	warnings       []string
 	a2aWarning     error
 	restartPending bool
@@ -230,19 +244,62 @@ func initialOnboardModel(agentName string) onboardModel {
 
 	home, _ := os.UserHomeDir()
 	m := onboardModel{
-		step:       stepWelcome,
-		textInput:  ti,
-		homeDir:    home,
-		choices:    []string{"Yes", "No"},
-		outputChan: make(chan tea.Msg, 10),
+		step:           stepWelcome,
+		textInput:      ti,
+		homeDir:        home,
+		choices:        []string{"Yes", "No"},
+		outputChan:     make(chan tea.Msg, 10),
+		skills:         builtinSkillNames(),
+		tools:          builtinToolNames(),
+		skillsSelected: map[string]bool{},
+		toolsSelected:  map[string]bool{},
+	}
+	for _, name := range m.skills {
+		m.skillsSelected[name] = false
+	}
+	for _, name := range m.tools {
+		m.toolsSelected[name] = true
 	}
 	if agentName != "" {
 		m.setAgent(agentName)
 		if taken, err := agentdir.AgentNameTaken(agentName); err == nil {
 			m.agentExistedAtStart = taken
 		}
+		if m.agentExistedAtStart {
+			m.loadExistingCapabilities()
+		}
 	}
 	return m
+}
+
+// loadExistingCapabilities pre-selects the skills already installed and the
+// tools that are not disabled in tools.json, so re-running onboarding shows the
+// current state instead of resetting it.
+func (m *onboardModel) loadExistingCapabilities() {
+	if dir, err := agentdir.SkillsDir(m.agentName); err == nil {
+		if entries, readErr := os.ReadDir(dir); readErr == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					m.skillsSelected[entry.Name()] = true
+				}
+			}
+		}
+	}
+
+	if dir, err := agentdir.ToolsDir(m.agentName); err == nil {
+		if data, readErr := os.ReadFile(filepath.Join(dir, "tools.json")); readErr == nil {
+			var cfg struct {
+				BuiltinTools map[string]bool `json:"builtin_tools"`
+			}
+			if json.Unmarshal(data, &cfg) == nil {
+				for name, enabled := range cfg.BuiltinTools {
+					if _, known := m.toolsSelected[name]; known {
+						m.toolsSelected[name] = enabled
+					}
+				}
+			}
+		}
+	}
 }
 
 // setAgent pins the agent name and recomputes every derived path.
@@ -308,6 +365,10 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.isTextInputStep() && m.cursor < len(m.choices)-1 {
 				m.cursor++
 			}
+		case " ":
+			if m.isMultiSelectStep() {
+				m.toggleCurrent()
+			}
 		default:
 			if m.isTextInputStep() {
 				m.textInput, cmd = m.textInput.Update(msg)
@@ -345,6 +406,65 @@ func (m onboardModel) isTextInputStep() bool {
 	default:
 		return false
 	}
+}
+
+func (m onboardModel) isMultiSelectStep() bool {
+	return m.step == stepSkills || m.step == stepTools
+}
+
+func (m *onboardModel) toggleCurrent() {
+	if m.cursor < 0 || m.cursor >= len(m.choices) {
+		return
+	}
+	name := m.choices[m.cursor]
+	switch m.step {
+	case stepSkills:
+		m.skillsSelected[name] = !m.skillsSelected[name]
+	case stepTools:
+		m.toolsSelected[name] = !m.toolsSelected[name]
+	}
+}
+
+// selectedSkills returns the chosen skills in builtin order.
+func (m onboardModel) selectedSkills() []string {
+	selected := make([]string, 0, len(m.skills))
+	for _, name := range m.skills {
+		if m.skillsSelected[name] {
+			selected = append(selected, name)
+		}
+	}
+	return selected
+}
+
+// disabledTools returns the deselected tools in builtin order.
+func (m onboardModel) disabledTools() []string {
+	disabled := make([]string, 0, len(m.tools))
+	for _, name := range m.tools {
+		if !m.toolsSelected[name] {
+			disabled = append(disabled, name)
+		}
+	}
+	return disabled
+}
+
+// builtinSkillNames lists the skill templates embedded in the binary.
+func builtinSkillNames() []string {
+	entries, err := myaaw.DefaultMyaawDir.ReadDir(".myaaw/skills")
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func builtinToolNames() []string {
+	return tools.GetBuiltinToolNames()
 }
 
 func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -471,6 +591,28 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.providerModel = choice
 		}
+		m.step = stepSkills
+		m.cursor = 0
+		m.choices = append([]string{}, m.skills...)
+		if len(m.skills) == 0 {
+			m.step = stepTools
+			m.choices = append([]string{}, m.tools...)
+		}
+		if len(m.choices) == 0 {
+			m.step = stepChannelChoice
+			m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
+		}
+
+	case stepSkills:
+		m.step = stepTools
+		m.cursor = 0
+		m.choices = append([]string{}, m.tools...)
+		if len(m.tools) == 0 {
+			m.step = stepChannelChoice
+			m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
+		}
+
+	case stepTools:
 		m.step = stepChannelChoice
 		m.cursor = 0
 		m.choices = []string{"Telegram", "Discord", "Both", "Skip"}
@@ -761,6 +903,13 @@ func applyOnboarding(name string, in onboardInput, port int) (*config.Config, []
 		return nil, nil, fmt.Errorf("write config.json: %w", err)
 	}
 
+	if err := installSelectedSkills(name, in.Skills); err != nil {
+		return nil, nil, err
+	}
+	if err := saveBuiltinToolSelection(name, in.DisabledTools); err != nil {
+		return nil, nil, err
+	}
+
 	var warnings []string
 	if in.TelegramToken != "" && in.TelegramMode == "webhook" {
 		publicURL := strings.TrimRight(strings.TrimSpace(in.TelegramWebhookURL), "/")
@@ -798,6 +947,8 @@ func (m onboardModel) input() onboardInput {
 		HeartbeatTo:        m.heartbeatTo,
 		HeartbeatEvery:     m.heartbeatEvery,
 		OwnerIDs:           m.ownerIDs,
+		Skills:             m.selectedSkills(),
+		DisabledTools:      m.disabledTools(),
 	}
 }
 
@@ -926,6 +1077,8 @@ type onboardInput struct {
 	HeartbeatTo        string
 	HeartbeatEvery     string
 	OwnerIDs           []string
+	Skills             []string
+	DisabledTools      []string
 }
 
 // mergeOnboardConfig applies wizard answers to an existing config. Channels and
@@ -1178,7 +1331,12 @@ func (m onboardModel) previousStep() onboardModel {
 		m.textInput.SetValue(m.llmKey)
 		m.modelsLoading = false
 
-	case stepChannelChoice:
+	case stepTools:
+		m.step = stepSkills
+		m.cursor = 0
+		m.choices = append([]string{}, m.skills...)
+
+	case stepSkills:
 		m.step = stepProviderModel
 		if m.modelManual || len(m.models) == 0 {
 			m.modelManual = true
@@ -1195,6 +1353,11 @@ func (m onboardModel) previousStep() onboardModel {
 				break
 			}
 		}
+
+	case stepChannelChoice:
+		m.step = stepTools
+		m.cursor = 0
+		m.choices = append([]string{}, m.tools...)
 
 	case stepTelegramMode:
 		m.step = stepChannelChoice
@@ -1387,6 +1550,18 @@ func (m onboardModel) renderContent() string {
 			b.WriteString(m.renderChoices())
 		}
 
+	case stepSkills:
+		b.WriteString(titleStyle.Render("Skills"))
+		b.WriteString("\n\nNo skill is selected by default. Space to toggle, Enter to continue.\n")
+		b.WriteString(theme.SecondaryStyle.Render("Only the skills you select get a folder under skills/<name>/.") + "\n\n")
+		b.WriteString(m.renderMultiSelect(m.skillsSelected))
+
+	case stepTools:
+		b.WriteString(titleStyle.Render("Built-in Tools"))
+		b.WriteString("\n\nEvery built-in tool is enabled by default. Space to disable, Enter to continue.\n")
+		b.WriteString(theme.SecondaryStyle.Render("Disabled tools are written to tools/tools.json as false.") + "\n\n")
+		b.WriteString(m.renderMultiSelect(m.toolsSelected))
+
 	case stepChannelChoice:
 		b.WriteString(titleStyle.Render("Select Channels"))
 		b.WriteString("\n\nWhere should your bot live?\n\n")
@@ -1495,6 +1670,16 @@ func (m onboardModel) renderSummary() string {
 	row("Provider", fmt.Sprintf("%s [%s]", m.providerName, m.providerType))
 	row("Base URL", m.providerBaseURL)
 	row("Model", m.providerModel)
+	skills := "none"
+	if selected := m.selectedSkills(); len(selected) > 0 {
+		skills = strings.Join(selected, ", ")
+	}
+	row("Skills", skills)
+	disabled := m.disabledTools()
+	row("Tools", fmt.Sprintf("%d enabled, %d disabled", len(m.tools)-len(disabled), len(disabled)))
+	if len(disabled) > 0 {
+		row("Disabled", strings.Join(disabled, ", "))
+	}
 	row("Telegram", m.channelSummary("telegram", m.telegramToken, m.telegramMode))
 	if m.telegramMode == "webhook" && m.telegramWebhookURL != "" {
 		row("Webhook", m.telegramWebhookURL+"/webhook/telegram")
@@ -1556,6 +1741,24 @@ func (m onboardModel) port() string {
 	return "auto"
 }
 
+func (m onboardModel) renderMultiSelect(selected map[string]bool) string {
+	var s strings.Builder
+	for i, choice := range m.choices {
+		cursor := "  "
+		style := theme.BaseStyle
+		if m.cursor == i {
+			cursor = "👉"
+			style = theme.HighlightStyle
+		}
+		box := "[ ]"
+		if selected[choice] {
+			box = "[x]"
+		}
+		s.WriteString(fmt.Sprintf("%s %s %s\n", cursor, box, style.Render(choice)))
+	}
+	return s.String()
+}
+
 func (m onboardModel) renderChoices() string {
 	s := ""
 	for i, choice := range m.choices {
@@ -1576,6 +1779,7 @@ func (m onboardModel) renderTimeline() string {
 		"Agent",
 		"Initialize",
 		"Provider",
+		"Skills & Tools",
 		"Channels",
 		"Heartbeat",
 		"Owner",
@@ -1594,18 +1798,20 @@ func (m onboardModel) renderTimeline() string {
 		timelineIdx = 2
 	case stepProviderType, stepProviderName, stepProviderBaseURL, stepProviderKey, stepProviderModel:
 		timelineIdx = 3
-	case stepChannelChoice, stepTelegramMode, stepTelegramToken, stepTelegramWebhookURL, stepDiscordToken:
+	case stepSkills, stepTools:
 		timelineIdx = 4
-	case stepHeartbeatChannel, stepHeartbeatID, stepHeartbeatEvery:
+	case stepChannelChoice, stepTelegramMode, stepTelegramToken, stepTelegramWebhookURL, stepDiscordToken:
 		timelineIdx = 5
-	case stepOwner:
+	case stepHeartbeatChannel, stepHeartbeatID, stepHeartbeatEvery:
 		timelineIdx = 6
-	case stepSummary:
+	case stepOwner:
 		timelineIdx = 7
-	case stepInstallGlobal, stepRestart:
+	case stepSummary:
 		timelineIdx = 8
-	case stepDone:
+	case stepInstallGlobal, stepRestart:
 		timelineIdx = 9
+	case stepDone:
+		timelineIdx = 10
 	}
 
 	var b strings.Builder
@@ -1641,20 +1847,22 @@ func (m onboardModel) renderTimeline() string {
 // --- Headless mode ---
 
 type onboardSummary struct {
-	Agent        string            `json:"agent"`
-	Config       string            `json:"config"`
-	Env          string            `json:"env"`
-	Port         string            `json:"port"`
-	Provider     string            `json:"provider"`
-	ProviderType string            `json:"provider_type"`
-	BaseURL      string            `json:"base_url,omitempty"`
-	Model        string            `json:"model"`
-	Channels     map[string]string `json:"channels,omitempty"`
-	Heartbeat    string            `json:"heartbeat,omitempty"`
-	Owners       []string          `json:"owners,omitempty"`
-	Webhook      string            `json:"webhook,omitempty"`
-	Installed    string            `json:"installed,omitempty"`
-	Warnings     []string          `json:"warnings,omitempty"`
+	Agent         string            `json:"agent"`
+	Config        string            `json:"config"`
+	Env           string            `json:"env"`
+	Port          string            `json:"port"`
+	Provider      string            `json:"provider"`
+	ProviderType  string            `json:"provider_type"`
+	BaseURL       string            `json:"base_url,omitempty"`
+	Model         string            `json:"model"`
+	Channels      map[string]string `json:"channels,omitempty"`
+	Heartbeat     string            `json:"heartbeat,omitempty"`
+	Owners        []string          `json:"owners,omitempty"`
+	Skills        []string          `json:"skills,omitempty"`
+	DisabledTools []string          `json:"disabled_tools,omitempty"`
+	Webhook       string            `json:"webhook,omitempty"`
+	Installed     string            `json:"installed,omitempty"`
+	Warnings      []string          `json:"warnings,omitempty"`
 }
 
 // runOnboardHeadless applies the same configuration as the wizard, driven by
@@ -1713,7 +1921,7 @@ func runOnboardHeadless(agentName string) int {
 		}
 	}
 
-	summary := buildOnboardSummary(agentName, cfg, warnings, installed)
+	summary := buildOnboardSummary(agentName, cfg, in, warnings, installed)
 	if onboardOpts.json {
 		data, err := json.MarshalIndent(summary, "", "  ")
 		if err != nil {
@@ -1732,6 +1940,16 @@ func runOnboardHeadless(agentName string) int {
 		fmt.Printf("Base URL: %s\n", summary.BaseURL)
 	}
 	fmt.Printf("Model:    %s\n", summary.Model)
+	if len(summary.Skills) > 0 {
+		fmt.Printf("Skills:   %s\n", strings.Join(summary.Skills, ", "))
+	} else {
+		fmt.Printf("Skills:   none\n")
+	}
+	toolCount := len(builtinToolNames())
+	fmt.Printf("Tools:    %d enabled, %d disabled\n", toolCount-len(summary.DisabledTools), len(summary.DisabledTools))
+	if len(summary.DisabledTools) > 0 {
+		fmt.Printf("Disabled: %s\n", strings.Join(summary.DisabledTools, ", "))
+	}
 	for _, name := range []string{"telegram", "discord"} {
 		state := summary.Channels[name]
 		if state == "" {
@@ -1757,18 +1975,20 @@ func runOnboardHeadless(agentName string) int {
 	return 0
 }
 
-func buildOnboardSummary(agentName string, cfg *config.Config, warnings []string, installed string) onboardSummary {
+func buildOnboardSummary(agentName string, cfg *config.Config, in onboardInput, warnings []string, installed string) onboardSummary {
 	root, _ := agentdir.AgentRoot(agentName)
 	envPath, _ := agentdir.EnvPath(agentName)
 
 	summary := onboardSummary{
-		Agent:     agentName,
-		Config:    filepath.Join(root, "config", "config.json"),
-		Env:       envPath,
-		Port:      readEnvValue(envPath, "PORT"),
-		Channels:  map[string]string{},
-		Warnings:  warnings,
-		Installed: installed,
+		Agent:         agentName,
+		Config:        filepath.Join(root, "config", "config.json"),
+		Env:           envPath,
+		Port:          readEnvValue(envPath, "PORT"),
+		Channels:      map[string]string{},
+		Skills:        in.Skills,
+		DisabledTools: in.DisabledTools,
+		Warnings:      warnings,
+		Installed:     installed,
 	}
 	if cfg == nil {
 		return summary
@@ -1951,10 +2171,59 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 	}
 	in.OwnerIDs = owners
 
+	skills, err := parseOnboardSelection(opts.skills, builtinSkillNames(), "--skills")
+	if err != nil {
+		return in, err
+	}
+	in.Skills = skills
+
+	disabledTools, err := parseOnboardSelection(opts.noTools, builtinToolNames(), "--disable-tools")
+	if err != nil {
+		return in, err
+	}
+	in.DisabledTools = disabledTools
+
 	if opts.port < 0 || opts.port > 65535 {
 		return in, fmt.Errorf("--port must be between 1 and 65535")
 	}
 	return in, nil
+}
+
+// parseOnboardSelection validates a comma-separated list (or "all") against
+// the known built-in names and returns them in the canonical order.
+func parseOnboardSelection(raw string, known []string, flag string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if strings.EqualFold(raw, "all") {
+		return append([]string{}, known...), nil
+	}
+
+	valid := make(map[string]bool, len(known))
+	for _, name := range known {
+		valid[name] = true
+	}
+
+	chosen := make(map[string]bool)
+	for _, part := range strings.Split(raw, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			continue
+		}
+		if !valid[name] {
+			return nil, fmt.Errorf("%s: unknown name %q (valid: %s)", flag, name, strings.Join(known, ", "))
+		}
+		chosen[name] = true
+	}
+
+	selected := make([]string, 0, len(chosen))
+	for _, name := range known {
+		if chosen[name] {
+			selected = append(selected, name)
+		}
+	}
+	return selected, nil
 }
 
 func firstNonEmpty(values ...string) string {
@@ -1980,6 +2249,83 @@ func loadAgentConfig(name string) *config.Config {
 
 // --- Filesystem helpers ---
 
+// installSelectedSkills copies only the chosen skill templates. Existing
+// folders are never overwritten, and unselected skills are not created.
+func installSelectedSkills(name string, selected []string) error {
+	skillsDir, err := agentdir.SkillsDir(name)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		return err
+	}
+
+	known := make(map[string]bool)
+	for _, skill := range builtinSkillNames() {
+		known[skill] = true
+	}
+
+	for _, skill := range selected {
+		if !known[skill] {
+			return fmt.Errorf("unknown skill %q", skill)
+		}
+		dest := filepath.Join(skillsDir, skill)
+		if _, statErr := os.Stat(dest); statErr == nil {
+			continue
+		}
+		if err := os.MkdirAll(dest, 0o755); err != nil {
+			return err
+		}
+		src := path.Join(".myaaw", "skills", skill)
+		if err := extractEmbedDir(myaaw.DefaultMyaawDir, src, dest); err != nil {
+			return fmt.Errorf("install skill %q: %w", skill, err)
+		}
+	}
+	return nil
+}
+
+// saveBuiltinToolSelection writes builtin_tools to tools/tools.json while
+// preserving custom_tools and mcp_servers. Every built-in is listed, so a
+// reconfigure re-enables tools that are no longer disabled.
+func saveBuiltinToolSelection(name string, disabled []string) error {
+	names := builtinToolNames()
+	known := make(map[string]bool, len(names))
+	builtin := make(map[string]bool, len(names))
+	for _, tool := range names {
+		known[tool] = true
+		builtin[tool] = true
+	}
+	for _, tool := range disabled {
+		if !known[tool] {
+			return fmt.Errorf("unknown built-in tool %q", tool)
+		}
+		builtin[tool] = false
+	}
+
+	toolsDir, err := agentdir.ToolsDir(name)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(toolsDir, 0o755); err != nil {
+		return err
+	}
+	configPath := filepath.Join(toolsDir, "tools.json")
+
+	raw := map[string]any{}
+	if data, readErr := os.ReadFile(configPath); readErr == nil {
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return fmt.Errorf("read tools.json: %w", err)
+		}
+	}
+	raw["builtin_tools"] = builtin
+
+	data, err := json.MarshalIndent(raw, "", "    ")
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(configPath, append(data, '\n'))
+}
+
 func setupMyaawHome(targetDir string) error {
 	homeReady := false
 	configReady := false
@@ -1992,7 +2338,12 @@ func setupMyaawHome(targetDir string) error {
 	if homeReady && configReady {
 		return nil
 	}
-	return extractEmbedDir(myaaw.DefaultMyaawDir, ".myaaw", targetDir)
+	// Skills are opt-in: the template copy skips them and onboarding installs
+	// only the selected ones.
+	if err := extractEmbedDirExcept(myaaw.DefaultMyaawDir, ".myaaw", targetDir, "skills"); err != nil {
+		return err
+	}
+	return os.MkdirAll(filepath.Join(targetDir, "skills"), 0o755)
 }
 
 // ensureEnvFile writes the embedded .env template when the file does not
@@ -2029,12 +2380,17 @@ func saveConfigToFile(path string, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	return writeFileAtomic(path, append(data, '\n'))
+}
+
+// writeFileAtomic writes data through a temp file in the same directory.
+func writeFileAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 
-	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
 	if err != nil {
 		return err
 	}
@@ -2044,7 +2400,7 @@ func saveConfigToFile(path string, cfg *config.Config) error {
 		os.Remove(tmpPath)
 	}
 
-	if _, err := tmp.Write(append(data, '\n')); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		cleanup()
 		return err
 	}
@@ -2069,12 +2425,26 @@ func saveConfigToFile(path string, cfg *config.Config) error {
 }
 
 func extractEmbedDir(embeddedFS embed.FS, src string, dest string) error {
+	return extractEmbedDirExcept(embeddedFS, src, dest)
+}
+
+// extractEmbedDirExcept copies an embedded directory while skipping the given
+// top-level entries.
+func extractEmbedDirExcept(embeddedFS embed.FS, src string, dest string, skip ...string) error {
+	skipSet := make(map[string]bool, len(skip))
+	for _, name := range skip {
+		skipSet[name] = true
+	}
+
 	entries, err := embeddedFS.ReadDir(src)
 	if err != nil {
 		return err
 	}
 
 	for _, entry := range entries {
+		if entry.IsDir() && skipSet[entry.Name()] {
+			continue
+		}
 		srcPath := filepath.Join(src, entry.Name())
 		destPath := filepath.Join(dest, entry.Name())
 

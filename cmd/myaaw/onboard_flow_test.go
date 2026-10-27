@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"myaaw/internal/agentdir"
@@ -76,6 +78,29 @@ func TestOnboardFlow(t *testing.T) {
 	}
 	m.textInput.SetValue("deepseek-chat")
 	m = enter(m)
+	if m.step != stepSkills {
+		t.Fatalf("step = %d, want stepSkills", m.step)
+	}
+	if len(m.skillsSelected) == 0 {
+		t.Fatal("skill list is empty")
+	}
+	for name, selected := range m.skillsSelected {
+		if selected {
+			t.Fatalf("skill %q should not be selected by default", name)
+		}
+	}
+
+	// No skills selected, every tool enabled by default.
+	m = enter(m)
+	if m.step != stepTools {
+		t.Fatalf("step = %d, want stepTools", m.step)
+	}
+	for name, enabled := range m.toolsSelected {
+		if !enabled {
+			t.Fatalf("tool %q should be enabled by default", name)
+		}
+	}
+	m = enter(m)
 	if m.step != stepChannelChoice {
 		t.Fatalf("step = %d, want stepChannelChoice", m.step)
 	}
@@ -143,6 +168,37 @@ func TestOnboardFlow(t *testing.T) {
 	}
 	if _, err := os.Stat(contactsPath); err != nil {
 		t.Fatalf("contacts.json was not created: %v", err)
+	}
+
+	// No skills selected means no skill folders; all tools keep their default.
+	skillsDir, err := agentdir.SkillsDir("agent-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entries, readErr := os.ReadDir(skillsDir); readErr != nil {
+		t.Fatalf("read skills dir: %v", readErr)
+	} else if len(entries) != 0 {
+		t.Fatalf("unselected skills were created: %v", entries)
+	}
+
+	toolsDir, err := agentdir.ToolsDir("agent-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolsData, err := os.ReadFile(filepath.Join(toolsDir, "tools.json"))
+	if err != nil {
+		t.Fatalf("tools.json was not written: %v", err)
+	}
+	var toolsCfg struct {
+		BuiltinTools map[string]bool `json:"builtin_tools"`
+	}
+	if err := json.Unmarshal(toolsData, &toolsCfg); err != nil {
+		t.Fatalf("parse tools.json: %v", err)
+	}
+	for name, enabled := range toolsCfg.BuiltinTools {
+		if !enabled {
+			t.Fatalf("tool %q should be enabled by default", name)
+		}
 	}
 
 	registry, err := agentdir.LoadRegistry()

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -76,6 +77,8 @@ func TestHeadlessRunsEndToEnd(t *testing.T) {
 		channel:  "skip",
 		owner:    "42, -100200",
 		port:     8123,
+		skills:   "time",
+		noTools:  "bash",
 	}
 
 	if code := runOnboardHeadless("agent-ci"); code != 0 {
@@ -105,6 +108,38 @@ func TestHeadlessRunsEndToEnd(t *testing.T) {
 	}
 	if base := readEnvValue(filepath.Join(root, ".env"), "MYAAW_BASE_URL"); base != "http://localhost:8123" {
 		t.Fatalf("MYAAW_BASE_URL = %q", base)
+	}
+
+	skillsDir, err := agentdir.SkillsDir("agent-ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(filepath.Join(skillsDir, "time", "SKILL.md")); statErr != nil {
+		t.Fatalf("selected skill was not installed: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(skillsDir, "weather")); !os.IsNotExist(statErr) {
+		t.Fatalf("unselected skill was created: %v", statErr)
+	}
+
+	toolsDir, err := agentdir.ToolsDir("agent-ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolsData, err := os.ReadFile(filepath.Join(toolsDir, "tools.json"))
+	if err != nil {
+		t.Fatalf("tools.json missing: %v", err)
+	}
+	var toolsCfg struct {
+		BuiltinTools map[string]bool `json:"builtin_tools"`
+	}
+	if err := json.Unmarshal(toolsData, &toolsCfg); err != nil {
+		t.Fatal(err)
+	}
+	if toolsCfg.BuiltinTools["bash"] {
+		t.Fatal("bash should be disabled")
+	}
+	if !toolsCfg.BuiltinTools["filesystem"] {
+		t.Fatal("filesystem should be enabled")
 	}
 
 	// Re-running without --force must refuse to overwrite.
@@ -157,6 +192,14 @@ func TestPreviousStep(t *testing.T) {
 
 	m.step = stepChannelChoice
 	back := m.previousStep()
+	if back.step != stepTools {
+		t.Fatalf("step = %d, want stepTools", back.step)
+	}
+	back = back.previousStep()
+	if back.step != stepSkills {
+		t.Fatalf("step = %d, want stepSkills", back.step)
+	}
+	back = back.previousStep()
 	if back.step != stepProviderModel || !back.modelManual {
 		t.Fatalf("step = %d manual=%v, want manual model step", back.step, back.modelManual)
 	}

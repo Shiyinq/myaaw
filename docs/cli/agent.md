@@ -52,6 +52,7 @@ What happens:
 
 1. Validates the name and refuses names that are already taken (existing agent, leftover directory, or case-only duplicate).
 2. Opens the onboarding wizard **starting at the provider step** — no name prompt, no picker.
+3. Asks for provider, model, skills, built-in tools, channels, heartbeat, and owner.
 3. When you save the **Review** step, it creates `~/.myaaw/<name>/` from the embedded template, assigns a unique port, writes `.env`, registers the agent in `agents.json`, wires A2A (`A2A_TOKEN`, contacts in both directions, self excluded), and writes `config.json`.
 
 Cancelling with `Ctrl+C` before Review leaves nothing behind; no directory, registry entry, or contacts are created.

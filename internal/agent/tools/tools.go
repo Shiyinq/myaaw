@@ -224,6 +224,20 @@ func ApplyBuiltinToolsFilter(filter map[string]bool) {
 	}
 }
 
+// GetBuiltinToolNames returns the sorted names of the built-in tools. It is
+// independent of the enabled/disabled filter so onboarding can list every tool.
+func GetBuiltinToolNames() []string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
+	names := make([]string, 0, len(builtinRegistry))
+	for name := range builtinRegistry {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func ClearRegistryKey(name string) {
 	registryMu.Lock()
 	defer registryMu.Unlock()

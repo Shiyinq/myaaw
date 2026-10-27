@@ -68,7 +68,9 @@ func TestOnboardCancelLeavesNothing(t *testing.T) {
 	m = next.(onboardModel)
 	m = m.handleModels(modelsFetchedMsg{err: errors.New("offline")})
 	m.textInput.SetValue("gpt-4o")
-	m = enter(m) // model -> channels
+	m = enter(m) // model -> skills
+	m = enter(m) // skills (none) -> tools
+	m = enter(m) // tools (all) -> channels
 	m.cursor = len(m.choices) - 1
 	m = enter(m) // skip channels
 	m.cursor = len(m.choices) - 1
@@ -143,7 +145,9 @@ func TestUpdateCancelKeepsExistingConfig(t *testing.T) {
 	m = next.(onboardModel)
 	m = m.handleModels(modelsFetchedMsg{err: errors.New("offline")})
 	m.textInput.SetValue("gemini-2.5-flash")
-	m = enter(m) // model -> channels
+	m = enter(m) // model -> skills
+	m = enter(m) // skills -> tools
+	m = enter(m) // tools -> channels
 	m.cursor = len(m.choices) - 1
 	m = enter(m) // skip channels
 	m.cursor = len(m.choices) - 1

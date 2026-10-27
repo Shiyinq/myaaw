@@ -47,6 +47,8 @@ default                  ⚠️  allowed, but keeps the generic folder name
 | Agent | Name prompt (first run) or picker (agents exist). |
 | Initialize | Shows the target directory. Nothing is written yet. |
 | Provider | Type (OpenAI-compatible or Gemini), config name, base URL, API key, then a model picked from the live model list. |
+| Skills | Multi-select built-in skills. **Nothing is selected by default**, so no skill folder is created unless you choose it. |
+| Built-in tools | Multi-select built-in tools. **All are enabled by default**; press `Space` on a tool to disable it. |
 | Channels | Telegram, Discord, both, or skip. |
 | Telegram mode | `polling` or `webhook`. Choosing webhook asks for the public URL next. |
 | Telegram token | Bot token, masked while typing. |
@@ -115,6 +117,8 @@ myaaw onboard --yes \
 | `--discord-token` | Discord bot token (prefer `DISCORD_BOT_TOKEN`) |
 | `--heartbeat-channel`, `--heartbeat-to`, `--heartbeat-every` | Heartbeat |
 | `--owner` | Owner IDs, comma separated |
+| `--skills time,notes` | Skills to install (`all` selects every built-in skill). Default: none |
+| `--disable-tools bash,cron` | Built-in tools to disable (`all` disables every one). Default: none |
 | `--port` | Explicit server port instead of the first free one |
 | `--install` | Copy the binary to `~/.local/bin` (off by default in headless mode) |
 | `--restart` | Restart the agent daemon after writing, if it is running |
@@ -136,6 +140,21 @@ MYAAW_API_KEY="$KEY" myaaw onboard --yes --agent ci \
   --provider gemini --model models/gemini-2.5-flash --json
 ```
 
+## Skills and built-in tools
+
+Both lists come from the binary, so there is nothing to download.
+
+- **Skills default to none.** Only the ones you select are copied to `~/.myaaw/<agent>/skills/<name>/`, and an unselected skill is not created at all. The folder is what enables a skill, so you can also add or remove skills later by copying a folder.
+- **Tools default to all enabled.** Deselecting one writes `false` for it in `tools/tools.json` (`builtin_tools`); the rest stay `true`. Custom tools and MCP servers in the same file are preserved.
+- On a reconfigure, the wizard pre-selects the skills already installed and the tools currently enabled, so pressing Enter through those steps keeps the current state.
+- Skills are never deleted by onboarding; removing a folder is still a manual action.
+
+```bash
+# headless: install one skill and disable bash
+myaaw onboard --yes --agent agent-b --provider openai --model gpt-4o \
+  --skills time --disable-tools bash
+```
+
 ## Files written
 
 ```text
@@ -144,7 +163,8 @@ MYAAW_API_KEY="$KEY" myaaw onboard --yes --agent ci \
   config/config.json      # providers (base_url + default_model), channels, heartbeat, bot.owner_ids
   contacts.json           # A2A contacts for the other agents (never the agent itself)
   home/                   # AGENTS.md, SOUL.md, MEMORY.md, workspace
-  skills/                 # built-in skill templates
+  skills/<name>/          # only the skills selected during onboarding
+  tools/tools.json        # builtin_tools map (false = disabled)
   database/myaaw.db       # created on first use
   logs/
 ```
