@@ -389,7 +389,7 @@ func TestRouterSkillsAndTools(t *testing.T) {
 	}
 	var tools toolsView
 	doJSON(t, app, "GET", "/agents/myfriend/tools", token, "", fiber.StatusOK, &tools)
-	if len(tools.Builtin) != 8 {
+	if len(tools.Builtin) != 9 {
 		t.Fatalf("builtin = %+v", tools.Builtin)
 	}
 
@@ -847,10 +847,15 @@ func TestRouterWriteManagement(t *testing.T) {
 	doJSON(t, app, "DELETE", "/agents/myfriend/channels/telegram", token, "", fiber.StatusOK, nil)
 
 	var created struct {
-		Name string `json:"name"`
+		Created bool `json:"created"`
+		Config  struct {
+			Bot struct {
+				Type string `json:"type"`
+			} `json:"bot"`
+		} `json:"config"`
 	}
-	doJSON(t, app, "POST", "/agents", token, `{"name":"second"}`, fiber.StatusCreated, &created)
-	if created.Name != "second" {
+	doJSON(t, app, "POST", "/agents/second/onboard", token, `{}`, fiber.StatusCreated, &created)
+	if !created.Created {
 		t.Fatalf("created = %+v", created)
 	}
 	doJSON(t, app, "DELETE", "/agents/second", token, "", fiber.StatusOK, nil)
@@ -887,6 +892,101 @@ func TestRouterWriteManagement(t *testing.T) {
 	}
 	doJSON(t, app, "DELETE", "/agents/myfriend/cron/"+job.ID, token, "", fiber.StatusOK, nil)
 	doJSON(t, app, "DELETE", "/agents/myfriend/cron/missing", token, "", fiber.StatusNotFound, nil)
+}
+
+func TestRouterOnboardConfigAndModels(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	type configView struct {
+		DefaultProvider string `json:"default_provider"`
+		Providers       []struct {
+			Name         string `json:"name"`
+			DefaultModel string `json:"default_model"`
+		} `json:"providers"`
+		Bot struct {
+			Type          string   `json:"type"`
+			OwnerIDs      []string `json:"owner_ids"`
+			MaxIterations int      `json:"max_iterations"`
+		} `json:"bot"`
+		Heartbeat struct {
+			Every string `json:"every"`
+		} `json:"heartbeat"`
+		Cron struct {
+			Active bool `json:"active"`
+		} `json:"cron"`
+	}
+
+	var onboard struct {
+		Created bool       `json:"created"`
+		Config  configView `json:"config"`
+	}
+	doJSON(t, app, "POST", "/agents/second/onboard", token, `{}`, fiber.StatusCreated, &onboard)
+	if !onboard.Created {
+		t.Fatalf("onboard = %+v", onboard)
+	}
+	if onboard.Config.Bot.MaxIterations == 0 || !onboard.Config.Cron.Active {
+		t.Fatalf("onboard should apply the template defaults: %+v", onboard.Config)
+	}
+
+	// A provider section configures the agent without touching the world.
+	doJSON(t, app, "POST", "/agents/second/onboard", token,
+		`{"provider":{"type":"openai","name":"deepseek","base_url":"http://127.0.0.1:1","api_key":"sk-test","model":"deepseek-chat"}}`,
+		fiber.StatusOK, &onboard)
+	if onboard.Created {
+		t.Fatal("second onboarding should reconfigure, not create")
+	}
+	if onboard.Config.DefaultProvider != "deepseek" || len(onboard.Config.Providers) != 1 {
+		t.Fatalf("provider not applied: %+v", onboard.Config)
+	}
+
+	// Model discovery falls back to the default model when the provider is
+	// unreachable, so the dashboard wizard can always continue.
+	var models struct {
+		Models []string `json:"models"`
+		Source string   `json:"source"`
+	}
+	doJSON(t, app, "POST", "/providers/models", token,
+		`{"type":"openai","base_url":"http://127.0.0.1:1","api_key":"sk-test"}`,
+		fiber.StatusOK, &models)
+	if models.Source != "default" || len(models.Models) == 0 {
+		t.Fatalf("models = %+v", models)
+	}
+	doJSON(t, app, "GET", "/agents/second/providers/deepseek/models", token, "", fiber.StatusOK, &models)
+	if models.Source != "default" || len(models.Models) == 0 {
+		t.Fatalf("saved provider models = %+v", models)
+	}
+	doJSON(t, app, "GET", "/agents/second/providers/missing/models", token, "", fiber.StatusNotFound, nil)
+	doJSON(t, app, "POST", "/providers/models", token, `{"type":"nope"}`, fiber.StatusBadRequest, nil)
+
+	// PATCH only changes the fields it receives; no key is ever removed.
+	doJSON(t, app, "PATCH", "/agents/second/config", token,
+		`{"bot":{"max_iterations":120,"owner_ids":["7"]}}`, fiber.StatusOK, &onboard.Config)
+	if onboard.Config.Bot.MaxIterations != 120 || len(onboard.Config.Bot.OwnerIDs) != 1 {
+		t.Fatalf("patch not applied: %+v", onboard.Config.Bot)
+	}
+	if onboard.Config.Bot.Type != "private" || !onboard.Config.Cron.Active || onboard.Config.Heartbeat.Every == "" {
+		t.Fatalf("patch removed untouched keys: %+v", onboard.Config)
+	}
+
+	// PATCH reset restores only the named bot fields.
+	doJSON(t, app, "PATCH", "/agents/second/config/reset", token,
+		`{"bot":["max_iterations"]}`, fiber.StatusOK, &onboard.Config)
+	if onboard.Config.Bot.MaxIterations == 120 {
+		t.Fatalf("max_iterations was not reset: %+v", onboard.Config.Bot)
+	}
+	if len(onboard.Config.Bot.OwnerIDs) != 1 {
+		t.Fatalf("reset touched owner_ids: %+v", onboard.Config.Bot)
+	}
+
+	// A full reset restores the template, providers included.
+	doJSON(t, app, "POST", "/agents/second/config/reset", token, "", fiber.StatusOK, &onboard.Config)
+	if onboard.Config.DefaultProvider != "" || len(onboard.Config.Providers) != 0 {
+		t.Fatalf("full reset kept providers: %+v", onboard.Config)
+	}
+
+	doJSON(t, app, "DELETE", "/agents/second", token, "", fiber.StatusOK, nil)
 }
 
 func TestRouterAcceptsRawAuthorizationToken(t *testing.T) {

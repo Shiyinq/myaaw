@@ -1,29 +1,22 @@
 {
-    "default_provider": "gemini",
-    "providers": {
-        "gemini": {
-            "type": "gemini",
-            "api_key": "YOUR_GEMINI_API_KEY"
-        }
-    },
+    "default_provider": "",
+    "providers": {},
     "transcriber": {
-        "provider": "groq",
-        "api_key": "YOUR_GROQ_API_KEY"
+        "provider": "",
+        "api_key": ""
     },
     "synthesizer": {
-        "provider": "gemini",
-        "api_key": "YOUR_GEMINI_API_KEY"
+        "provider": "",
+        "api_key": ""
     },
     "heartbeat": {
-        "active": true,
+        "active": false,
         "every": "30m",
-        "to": "123456789",
-        "channel": "telegram"
+        "to": "",
+        "channel": ""
     },
     "bot": {
-        "owner_ids": [
-            "YOUR_OWNER_ID_1"
-        ],
+        "owner_ids": [],
         "type": "private",
         "watermark": false,
         "stream": true,
@@ -40,15 +33,15 @@
     },
     "channels": {
         "telegram": {
-            "active": true,
-            "token": "YOUR_TELEGRAM_BOT_TOKEN",
+            "active": false,
+            "token": "",
             "mode": "polling",
             "ngrok_active": false,
             "ngrok_auth_token": ""
         },
         "discord": {
             "active": false,
-            "token": "YOUR_DISCORD_BOT_TOKEN"
+            "token": ""
         }
     },
     "cron": {

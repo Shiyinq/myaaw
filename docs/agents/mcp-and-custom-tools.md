@@ -95,6 +95,20 @@ All tools are configured in `~/.myaaw/tools/tools.json`.
 
 ## Managing Built-in Tools
 
+Every built-in tool is enabled unless `builtin_tools` says otherwise. `myaaw onboard` lists all of them with everything selected, and only the ones you deselect are written as `false`:
+
+```json
+{
+  "builtin_tools": {
+    "bash": false,
+    "filesystem": true,
+    "cron": true
+  }
+}
+```
+
+You can also edit `builtin_tools` by hand or through the control-plane tools API. Onboarding rewrites this map from the current selection, so a tool you re-enable is written back as `true`; `custom_tools` and `mcp_servers` are left untouched.
+
 You can enable or disable built-in tools by setting their boolean flag in `builtin_tools`:
 
 | Tool Name | Key / Alias | Description |

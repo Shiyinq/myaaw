@@ -42,26 +42,32 @@ If nothing is initialized it prints `No agents registered. Run 'myaaw onboard' t
 
 ## `agent create <name>`
 
-Creates a fully isolated agent:
-
-1. Validates the name and refuses duplicates.
-2. Copies the embedded default layout into `~/.myaaw/<name>/` (config, `.env`, `home/`, `skills/`, `tools/`, `cron/`, `jobs/`, `database/`, `logs/`).
-3. Creates `home/workspace/projects` and `home/workspace/downloads`.
-4. Writes `PORT` and `MYAAW_BASE_URL` into `.env`. `default` always gets `8080`; other agents get the first free port from `8081` upward.
-5. Registers the name in `~/.myaaw/agents.json`.
-6. Seeds A2A contacts and generates an `A2A_TOKEN` so the new agent can talk to the others.
+Alias for onboarding that pre-fills the agent name. It runs the same implementation as `myaaw onboard`, so there is no second setup path:
 
 ```bash
 myaaw agent create agent-b
-# ✅ Agent "agent-b" created at ~/.myaaw/agent-b
-# Configure it with: myaaw --agent agent-b onboard
 ```
 
-The command stops here: no provider, channel, or identity is configured yet. Run onboarding next:
+What happens:
+
+1. Validates the name and refuses names that are already taken (existing agent, leftover directory, or case-only duplicate).
+2. Opens the onboarding wizard **starting at the provider step** — no name prompt, no picker.
+3. Asks for provider, model, skills, built-in tools, channels, access type, heartbeat, and owner.
+3. When you save the **Review** step, it creates `~/.myaaw/<name>/` from the embedded template, assigns a unique port, writes `.env`, registers the agent in `agents.json`, wires A2A (`A2A_TOKEN`, contacts in both directions, self excluded), and writes `config.json`.
+
+The global install question is only shown for the **first agent** on the machine; later agents skip it.
+
+Cancelling with `Ctrl+C` before Review leaves nothing behind; no directory, registry entry, or contacts are created.
+
+It accepts the same flags as [`myaaw onboard`](onboard.md#headless-mode-ci-scripts), so it can also run headless:
 
 ```bash
-myaaw --agent agent-b onboard
+myaaw agent create agent-b --yes \
+  --provider gemini --model models/gemini-2.5-flash \
+  --channel telegram --telegram-token "$TG_TOKEN" --owner 123456789
 ```
+
+To reconfigure an existing agent, use `myaaw --agent <name> onboard` instead; `agent create` never overwrites an existing agent.
 
 ## `agent use [name]`
 

@@ -493,6 +493,10 @@ func TestRPCInboundMessageContext(t *testing.T) {
 }
 
 func TestRPCInboundMessageTaskIDResume(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
 	store := newTestStore(t)
 	service := NewService(store, &fakeRunner{out: &channel.OutgoingMessage{Text: "resumed"}})
 	handler := NewHandler(service)

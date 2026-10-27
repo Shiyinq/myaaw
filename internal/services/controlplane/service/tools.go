@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	agenttools "myaaw/internal/agent/tools"
 	"myaaw/internal/agentdir"
 )
 
@@ -19,21 +20,6 @@ var (
 	ErrUnknownBuiltin    = errors.New("unknown builtin tool")
 	ErrInvalidToolConfig = errors.New("invalid tool config")
 )
-
-// builtinToolDescriptions mirrors the built-in tool table in the tools docs.
-var builtinToolDescriptions = map[string]string{
-	"bash":           "Execute system shell commands",
-	"filesystem":     "Read, write, search, and manage local files",
-	"cron":           "Schedule one-time or recurring tasks and reminders",
-	"execute_python": "Dynamic Python code execution in isolated venv",
-	"provider":       "Change or switch LLM providers dynamically",
-	"subagent":       "Spawn autonomous subagents for task delegation",
-	"contact":        "Delegate tasks to another agent via A2A",
-	"a2a_input":      "Ask the A2A caller for more information",
-}
-
-// builtinToolOrder is the canonical listing order for built-in tools.
-var builtinToolOrder = []string{"bash", "filesystem", "cron", "execute_python", "provider", "subagent", "contact", "a2a_input"}
 
 type toolsConfig struct {
 	BuiltinTools map[string]bool   `json:"builtin_tools,omitempty"`
@@ -143,15 +129,15 @@ func (s *ToolsService) List(agentName string) (ToolsView, error) {
 	}
 
 	view := ToolsView{
-		Builtin:    make([]BuiltinToolView, 0, len(builtinToolOrder)),
+		Builtin:    make([]BuiltinToolView, 0, len(agenttools.GetBuiltinTools())),
 		Custom:     make([]CustomToolView, 0, len(cfg.CustomTools)),
 		MCPServers: make([]MCPServerView, 0, len(cfg.MCPServers)),
 	}
-	for _, name := range builtinToolOrder {
+	for _, info := range agenttools.GetBuiltinTools() {
 		view.Builtin = append(view.Builtin, BuiltinToolView{
-			Name:        name,
-			Description: builtinToolDescriptions[name],
-			Enabled:     builtinEnabled(name, cfg.BuiltinTools),
+			Name:        info.Name,
+			Description: info.Description,
+			Enabled:     builtinEnabled(info.Name, cfg.BuiltinTools),
 		})
 	}
 	for _, entry := range cfg.CustomTools {
@@ -390,8 +376,10 @@ func findMCPServer(cfg *toolsConfig, name string) (int, mcpServerEntry, error) {
 }
 
 func validateBuiltinName(name string) error {
-	if _, ok := builtinToolDescriptions[name]; ok {
-		return nil
+	for _, builtin := range agenttools.GetBuiltinToolNames() {
+		if builtin == name {
+			return nil
+		}
 	}
 	if name == "python" { // alias handled by the loader
 		return nil
@@ -414,7 +402,7 @@ func validateManagedToolName(name, command string) error {
 	if strings.ContainsAny(name, "/\\\x00") {
 		return fmt.Errorf("%w: %s", ErrInvalidToolName, name)
 	}
-	for _, reserved := range builtinToolOrder {
+	for _, reserved := range agenttools.GetBuiltinToolNames() {
 		if strings.EqualFold(reserved, name) {
 			return fmt.Errorf("%w: %s is a built-in tool name", ErrInvalidToolName, name)
 		}

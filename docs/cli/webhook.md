@@ -36,6 +36,9 @@ https://<domain>/webhook/telegram
 
 - Without an argument, Myaaw prompts for the domain or ngrok URL.
 - Trailing slashes are trimmed before `/webhook/telegram` is appended.
+- The URL must use `https://`; Telegram rejects plain HTTP and raw IPs.
+
+You usually do not need this by hand: `myaaw onboard` asks for the public URL when Telegram mode is `webhook` and registers it right after saving. Use `webhook set` to change it later.
 
 Telegram requires a public **HTTPS** URL with a valid certificate. A raw IP or plain HTTP URL will be rejected by Telegram.
 
@@ -47,7 +50,8 @@ Removes the webhook from Telegram. Useful before switching the agent back to pol
 
 - `channel create` or `channel edit` selects `polling` or `webhook`.
 - In **polling** mode, the server clears any existing webhook on startup so polling can work.
-- In **webhook** mode, the server expects incoming POSTs at `/webhook/telegram`, and you must run `webhook set` (or configure the URL during onboarding).
+- In **webhook** mode, the server expects incoming POSTs at `/webhook/telegram`. Onboarding registers the URL for you when you provide one; otherwise run `webhook set`.
+- On startup the server itself only calls `setWebhook` when `NGROK_ACTIVE=true` and `NGROK_AUTH_TOKEN` are set, because it needs a public URL to advertise.
 - Do not use both modes for the same bot token at once.
 
 ## Examples

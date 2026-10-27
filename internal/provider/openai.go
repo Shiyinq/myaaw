@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -175,7 +174,7 @@ func (o *OpenAIProvider) Models() ([]string, error) {
 }
 
 func (o *OpenAIProvider) openAIModels() (*OpenAIModels, error) {
-	client := resty.New().SetTimeout(30 * time.Second)
+	client := resty.New().SetTimeout(modelListTimeout)
 
 	var response OpenAIModels
 	res, err := client.R().

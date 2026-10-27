@@ -215,7 +215,7 @@ The selection node resolves the active agent from `~/.myaaw/agents.json`. Telegr
 7. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
 8. **Local Workspace (`~/.myaaw`)**: The operational directory for the Agent.
    - `agents.json`: Registry of isolated agents and the default agent.
-   - `<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The default agent is `default/`.
+   - `<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The first agent is named during onboarding; only legacy upgrades use `default/`.
      - `home/`: Long-term file storage containing the agent's core definitions:
        - `AGENTS.md` / `SOUL.md`: Persona and behavior instructions.
        - `BOOTSTRAP.md` / `TOOLS.md`: Initialization steps and tool usage rules.
@@ -237,6 +237,13 @@ If you just want to use Myaaw without worrying about code, use our interactive i
 2.  **Onboard**: If you skipped the installation script, you can trigger onboarding anytime:
     ```bash
     myaaw onboard
+    ```
+    On a fresh install the wizard asks for an **agent name** first — that name becomes the folder `~/.myaaw/<agent>/`, so you are not stuck with a generic `default/` agent. You can add more agents later with `myaaw agent create <name>` or `myaaw onboard` again.
+
+    For servers and CI, every wizard question has a flag, so the same setup can run headless:
+    ```bash
+    MYAAW_API_KEY="$KEY" myaaw onboard --yes --agent agent-b \
+      --provider gemini --model models/gemini-2.5-flash --json
     ```
 3.  **Launch the Server**:
     ```bash
@@ -299,6 +306,10 @@ Building with CGo on Windows requires a C compiler environment like MSYS2/MinGW:
    Since you have the source code, you can run the onboarding flow directly:
    ```bash
    go run ./cmd/myaaw onboard
+   ```
+   The wizard asks for the agent name on a fresh install, then for the provider (base URL and model included), channels, and heartbeat. To configure another agent later:
+   ```bash
+   go run ./cmd/myaaw --agent agent-b onboard
    ```
 
 ### Start Development
@@ -401,13 +412,13 @@ Agent data lives under `~/.myaaw/<agent>/`, for example:
 For the complete guide, see [docs/agents/multi-agent.md](docs/agents/multi-agent.md).
 
 ### 🧩 Multiple Agents
-Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/<agent>/`. The default agent is `default/`; names may contain letters, numbers, `_`, and `-`.
+Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/<agent>/`. The first agent is named during `myaaw onboard`; names may contain letters, numbers, `_`, and `-`.
 
 Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent guide](docs/agents/multi-agent.md#6-managing-agents).
 
 | Command | Subcommands / Flags | Description |
 | :--- | :--- | :--- |
-| **`agent`** | `list`, `create <name>`, `use [name]`, `delete [name]` | Manage agents. `use` and `delete` open an arrow-key picker when no name is passed; `delete` asks for confirmation. |
+| **`agent`** | `list`, `create <name>`, `use [name]`, `delete [name]` | Manage agents. `create` runs the onboarding wizard for a new agent. `use` and `delete` open an arrow-key picker when no name is passed; `delete` asks for confirmation. |
 | **`--agent <name>`** | global flag | Target a specific agent for `chat`, `status`, `logs`, `server`, `provider`, `channel`, `config`, `cron`, `webhook`, `voice`, `voice-classic`, and `consumer`. Without it, the registry default is used. |
 | **`chat`** | `--agent <name>`, `-m "text"` | Interactive chat shows an agent picker when more than one initialized agent exists. |
 | **`onboard`** | `--agent <name>` | Configure providers and channels for a specific agent. |
@@ -417,10 +428,9 @@ Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent gu
 
 **Examples:**
 ```bash
-myaaw agent create myfriend
+myaaw agent create myfriend      # create + configure in one flow
 myaaw agent list
 myaaw agent use myfriend
-myaaw --agent myfriend onboard
 
 myaaw --agent myfriend provider create
 myaaw --agent myfriend provider list
@@ -530,7 +540,7 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | Document | Description |
 | :--- | :--- |
 | [CLI Reference](docs/cli/README.md) | Every command, flag, global option, and convention. |
-| [Onboarding](docs/cli/onboard.md) | First-run setup for providers, channels, and heartbeat. |
+| [Onboarding](docs/cli/onboard.md) | First-run or per-agent setup: agent name, provider, channels, webhook, heartbeat; runs interactively or headless. |
 | [Agent](docs/cli/agent.md) | `agent list/create/use/delete`, name rules, ports, and what create writes. |
 | [Chat](docs/cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
 | [Voice](docs/cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |

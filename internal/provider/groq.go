@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -88,7 +87,7 @@ func (g *GroqProvider) Models() ([]string, error) {
 }
 
 func (g *GroqProvider) groqModels() (*GroqModels, error) {
-	client := resty.New().SetTimeout(30 * time.Second)
+	client := resty.New().SetTimeout(modelListTimeout)
 
 	var response GroqModels
 	res, err := client.R().

@@ -50,60 +50,6 @@ const docTemplatecontrolplane = `{
                         }
                     }
                 }
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Agents"
-                ],
-                "summary": "Create agent",
-                "parameters": [
-                    {
-                        "description": "Agent name",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handler.CreateAgentRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/service.AgentInfo"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/common.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.ErrorResponse"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/common.ErrorResponse"
-                        }
-                    }
-                }
             }
         },
         "/agents/{name}": {
@@ -551,6 +497,173 @@ const docTemplatecontrolplane = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/service.ConfigView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Update agent config",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.ConfigPatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ConfigView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/config/reset": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Reset agent config to defaults",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ConfigView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Reset specific config fields to defaults",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to reset",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.ConfigResetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ConfigView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "401": {
@@ -2098,6 +2211,69 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/onboard": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Create or reconfigure an agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Agent configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.OnboardRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.OnboardResult"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/service.OnboardResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/providers": {
             "get": {
                 "security": [
@@ -2370,6 +2546,58 @@ const docTemplatecontrolplane = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/providers/{id}/models": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "List models for a saved provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Provider name",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ModelListView"
                         }
                     },
                     "401": {
@@ -3668,6 +3896,56 @@ const docTemplatecontrolplane = `{
                     }
                 }
             }
+        },
+        "/providers/models": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "List models for a provider",
+                "parameters": [
+                    {
+                        "description": "Provider credentials",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.ModelLookupInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ModelListView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -3954,15 +4232,6 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.ContextFile"
                     }
-                }
-            }
-        },
-        "handler.CreateAgentRequest": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "example": "myfriend"
                 }
             }
         },
@@ -4668,6 +4937,59 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.BotPatch": {
+            "type": "object",
+            "properties": {
+                "blocked_tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "context_max_tokens": {
+                    "type": "integer"
+                },
+                "max_iterations": {
+                    "type": "integer"
+                },
+                "max_tool_output_bytes": {
+                    "type": "integer"
+                },
+                "owner_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "repeat_tool_call_limit": {
+                    "type": "integer"
+                },
+                "request_retries": {
+                    "type": "integer"
+                },
+                "run_timeout_seconds": {
+                    "type": "integer"
+                },
+                "stream": {
+                    "type": "boolean"
+                },
+                "stream_timeout_seconds": {
+                    "type": "integer"
+                },
+                "tool_timeout_seconds": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "warning_iterations": {
+                    "type": "integer"
+                },
+                "watermark": {
+                    "type": "boolean"
+                }
+            }
+        },
         "service.BuiltinToolView": {
             "type": "object",
             "properties": {
@@ -4713,6 +5035,51 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.ChannelView"
                     }
+                }
+            }
+        },
+        "service.ConfigPatch": {
+            "type": "object",
+            "properties": {
+                "bot": {
+                    "$ref": "#/definitions/service.BotPatch"
+                },
+                "cron": {
+                    "$ref": "#/definitions/service.CronPatch"
+                },
+                "heartbeat": {
+                    "$ref": "#/definitions/service.HeartbeatPatch"
+                },
+                "synthesizer": {
+                    "$ref": "#/definitions/service.SecretPatch"
+                },
+                "transcriber": {
+                    "$ref": "#/definitions/service.SecretPatch"
+                }
+            }
+        },
+        "service.ConfigResetRequest": {
+            "type": "object",
+            "properties": {
+                "bot": {
+                    "description": "bot field names; an empty list resets the whole bot section",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "cron": {
+                    "type": "boolean"
+                },
+                "heartbeat": {
+                    "description": "true resets the whole section",
+                    "type": "boolean"
+                },
+                "synthesizer": {
+                    "type": "boolean"
+                },
+                "transcriber": {
+                    "type": "boolean"
                 }
             }
         },
@@ -4931,6 +5298,14 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.CronPatch": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                }
+            }
+        },
         "service.CustomToolView": {
             "type": "object",
             "properties": {
@@ -4994,6 +5369,23 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.HeartbeatPatch": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "channel": {
+                    "type": "string"
+                },
+                "every": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
         "service.LogFile": {
             "type": "object",
             "properties": {
@@ -5028,6 +5420,170 @@ const docTemplatecontrolplane = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "service.ModelListView": {
+            "type": "object",
+            "properties": {
+                "models": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "source": {
+                    "description": "\"live\" or \"default\"",
+                    "type": "string",
+                    "example": "live"
+                },
+                "warning": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ModelLookupInput": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "base_url": {
+                    "type": "string",
+                    "example": "https://api.deepseek.com"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "openai"
+                }
+            }
+        },
+        "service.OnboardBotInput": {
+            "type": "object",
+            "properties": {
+                "owner_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "type": {
+                    "type": "string",
+                    "example": "private"
+                }
+            }
+        },
+        "service.OnboardChannelsInput": {
+            "type": "object",
+            "properties": {
+                "disable_discord": {
+                    "type": "boolean"
+                },
+                "disable_telegram": {
+                    "type": "boolean"
+                },
+                "discord_token": {
+                    "type": "string"
+                },
+                "telegram_mode": {
+                    "type": "string",
+                    "example": "polling"
+                },
+                "telegram_token": {
+                    "type": "string"
+                },
+                "telegram_webhook_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.OnboardHeartbeatInput": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "channel": {
+                    "type": "string",
+                    "example": "telegram"
+                },
+                "every": {
+                    "type": "string",
+                    "example": "30m"
+                },
+                "to": {
+                    "type": "string",
+                    "example": "123456789"
+                }
+            }
+        },
+        "service.OnboardProviderInput": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "base_url": {
+                    "type": "string",
+                    "example": "https://api.deepseek.com"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "deepseek-chat"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "deepseek"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "openai"
+                }
+            }
+        },
+        "service.OnboardRequest": {
+            "type": "object",
+            "properties": {
+                "bot": {
+                    "$ref": "#/definitions/service.OnboardBotInput"
+                },
+                "channels": {
+                    "$ref": "#/definitions/service.OnboardChannelsInput"
+                },
+                "disable_tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "heartbeat": {
+                    "$ref": "#/definitions/service.OnboardHeartbeatInput"
+                },
+                "provider": {
+                    "$ref": "#/definitions/service.OnboardProviderInput"
+                },
+                "skills": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "service.OnboardResult": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/service.ConfigView"
+                },
+                "created": {
+                    "type": "boolean"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -5075,6 +5631,17 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.SecretPatch": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "provider": {
                     "type": "string"
                 }
             }

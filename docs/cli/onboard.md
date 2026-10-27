@@ -1,42 +1,328 @@
 # Onboarding
 
-`myaaw onboard` is the interactive first-run setup. It creates the agent layout, writes `.env` and `config/config.json`, and optionally installs the binary on your `PATH`.
+`myaaw onboard` is the interactive setup for one agent. On a fresh install it also asks for the agent name, so the data lands in `~/.myaaw/<name>/` instead of a generic `default/` folder.
 
 ## Usage
 
 ```bash
-myaaw onboard
-myaaw --agent agent-b onboard
+myaaw onboard                      # first run: asks for the agent name
+myaaw --agent agent-b onboard      # configure or reconfigure a specific agent
+myaaw agent create agent-b         # create agent-b, then run this same wizard
+myaaw onboard                      # with agents present: picker, or create a new one
 ```
 
-Without `--agent`, the default agent (`default`) is configured.
+Without `--agent`:
+
+- **No agent yet** → the wizard asks for a name, validates it, and creates the agent.
+- **Agents already exist** → a picker lists them, plus `+ Create a new agent`.
+- **Only the legacy `default` agent exists** → it is listed in the picker and can be reconfigured, so existing installs keep working.
+
+`myaaw agent create <name>` runs this same flow with the agent name already chosen (no prompt, no picker, starts at the provider step) and accepts every flag below. It still writes nothing until Review is saved.
+
+## Agent name
+
+The name becomes the folder `~/.myaaw/<name>/` and must match `[A-Za-z0-9][A-Za-z0-9_-]*`, start with a letter or number, and be at most 64 characters. `pids` is reserved.
+
+A name is rejected when it is already taken. “Taken” means:
+
+- the agent is already initialized,
+- the directory `~/.myaaw/<name>/` exists (even a leftover from an interrupted run),
+- another agent differs only by case (`agent-b` vs `Agent-B`), because the filesystem on macOS/Windows is case-insensitive and A2A contacts are matched case-insensitively.
+
+Use `--agent <name> onboard` to reconfigure an existing agent instead of creating a new one.
+
+```text
+personal                 ✅
+agent-b                  ✅
+agent_working            ✅
+agent-personal-working   ✅
+default                  ⚠️  allowed, but keeps the generic folder name
+```
 
 ## What it asks
 
 | Step | Purpose |
 | :--- | :--- |
-| Welcome / home | Confirms `~/.myaaw/<agent>` and creates the directory layout. |
-| Provider | Choose the LLM provider type and enter name, base URL, API key, and model. |
-| Channels | Telegram and/or Discord. |
-| Telegram mode | `polling` or `webhook`, then the bot token. |
-| Discord token | Bot token, if Discord is enabled. |
-| Heartbeat | Optional scheduled self-check: channel, target ID, interval. |
-| Owner | Owner/chat ID used for notifications. |
-| Install | Optionally install the `myaaw` binary globally. |
+| Welcome | Intro screen. |
+| Agent | Name prompt (first run) or picker (agents exist). |
+| Initialize | Shows the target directory. Nothing is written yet. |
+| Provider | Type (OpenAI-compatible or Gemini), config name, base URL, API key, then a model picked from the live model list. |
+| Skills | Multi-select built-in skills with a short description after each name. **Nothing is selected by default**, so no skill folder is created unless you choose it. |
+| Built-in tools | Multi-select built-in tools with a short description after each name. **All are enabled by default**; press `Space` on a tool to disable it. |
+| Channels | **Keep current** first, then Telegram, Discord, or Both. On an update, the next screen can also disable a saved channel. |
+| Telegram mode | `polling` or `webhook`. Choosing webhook asks for the public URL next. |
+| Telegram token | Bot token, masked while typing. |
+| Webhook URL | Only for webhook mode: the public `https://` base URL. Telegram receives updates at `<url>/webhook/telegram`, and Myaaw registers it right after saving. |
+| Discord | Bot token, if Discord is enabled. |
+| Access | **Private** (only owner IDs can chat on Telegram/Discord) or **Public** (anyone can chat), or **Keep current access** on an update. Terminal, REST API, and A2A are never filtered. |
+| Heartbeat | Channel, destination ID, and interval (`15m`, `30m`, `1h`, ...). On an update, **Disable heartbeat** turns it off. |
+| Owner | Asked once per configured channel: **Telegram owner ID** and/or **Discord owner ID**. Both are optional and can be left empty. |
+| Review | Summary of everything that will be written, plus warnings. |
+| Install | Offered only when this is the **first agent** on the machine. Later agents skip it. |
+| Restart | Offered only when this agent's daemon is already running, so the new config is loaded immediately. |
 
-The wizard is a full-screen terminal UI. Use `↑`/`↓` to choose, `Enter` to confirm, and `Esc`/`Ctrl+C` to leave.
+Keys and tokens are masked while typing. `Esc` goes back one step so answers are kept; `Ctrl+C` cancels. The key hints at the bottom of every screen show this, so back navigation is always visible. **Nothing is written until you save from Review** — layout, `.env`, port, registry entry, A2A wiring, and `config.json` are all created at that point. Cancelling at any step (or **Cancel** on Review) leaves no agent behind.
+
+## Provider defaults
+
+The base URL prompt is prefilled with the public endpoint for the chosen type:
+
+| Type | Default base URL |
+| :--- | :--- |
+| OpenAI (or compatible) | `https://api.openai.com` |
+| Gemini | `https://generativelanguage.googleapis.com` |
+
+Override it for OpenAI-compatible gateways (`https://api.deepseek.com`, `https://openrouter.ai/api/v1`) or a local Ollama (`http://localhost:11434`). The model list is fetched from that endpoint; if the request fails you can type the model name manually. When no model is chosen, the built-in default for that provider type is stored instead.
+
+## Webhook mode
+
+Telegram webhook mode needs a public **HTTPS** URL (an ngrok URL works). After the wizard saves, Myaaw calls Telegram's `setWebhook` so updates start flowing to:
+
+```text
+https://<your-domain>/webhook/telegram
+```
+
+- The URL is stored as `MYAAW_BASE_URL` in `.env`.
+- If the call fails (DNS, certificate, Telegram error), onboarding still completes and prints a warning; fix the URL and run `myaaw --agent <name> webhook set <domain>`.
+- If you leave the URL empty, nothing is registered and the wizard prints the command to run later.
+- Polling mode ignores this entirely and needs no public URL.
+
+## Headless mode (CI, scripts)
+
+Every wizard question has a flag. Passing `--yes` (or running without a TTY) skips the TUI:
+
+```bash
+myaaw onboard --yes \
+  --agent agent-b \
+  --provider openai --provider-name deepseek \
+  --base-url https://api.deepseek.com \
+  --model deepseek-chat \
+  --channel telegram --telegram-token "$TG_TOKEN" --telegram-mode polling \
+  --owner 123456789 \
+  --heartbeat-channel telegram --heartbeat-to 123456789 --heartbeat-every 30m
+```
+
+| Flag | Wizard step |
+| :--- | :--- |
+| `--agent <name>` | Agent name (required in headless mode; `agent create <name>` supplies it) |
+| `--yes` | Skip every prompt (implied when stdin is not a TTY) |
+| `--provider openai\|gemini` | Provider type (required for a new agent; omit it, or pass `--keep-provider`, to leave the provider alone on an update) |
+| `--keep-provider` | Keep the current provider, model, and API key (update only) |
+| `--provider-name` | Provider name stored in `config.json` |
+| `--base-url` | Provider base URL |
+| `--api-key` | API key (prefer `MYAAW_API_KEY`) |
+| `--model` | Default model |
+| `--channel telegram\|discord\|both\|skip` | Channel choice |
+| `--disable-channel telegram\|discord\|both` | Turn saved channels off (the token is kept so they can be re-enabled) |
+| `--telegram-mode polling\|webhook` | Telegram mode |
+| `--telegram-token` | Telegram bot token (prefer `TELEGRAM_BOT_TOKEN`) |
+| `--webhook-url` | Public `https://` URL (webhook mode) |
+| `--discord-token` | Discord bot token (prefer `DISCORD_BOT_TOKEN`) |
+| `--heartbeat-channel`, `--heartbeat-to`, `--heartbeat-every` | Heartbeat (`--heartbeat-channel off` disables it) |
+| `--bot-type private\|public` | Bot access type (default: `private`) |
+| `--owner` | Owner IDs for any channel, comma separated (optional) |
+| `--telegram-owner` | Telegram owner user IDs, comma separated (optional) |
+| `--discord-owner` | Discord owner user IDs, comma separated (optional) |
+| `--skills time,notes` | Skills to install, comma separated (`all` selects every built-in skill). Default: none |
+| `--disable-tools bash,cron` | Built-in tools to disable, comma separated (`all` disables every one). Default: none |
+| `--port` | Explicit server port instead of the first free one |
+| `--install` | Copy the binary to `~/.local/bin` (off by default in headless mode) |
+| `--restart` | Restart the agent daemon after writing, if it is running |
+| `--force` | Allow reconfiguring an existing agent |
+| `--list-capabilities` | Print the built-in skill and tool names with descriptions, then exit (add `--json` for machine-readable output) |
+| `--json` | Print a machine-readable summary (implies `--yes`) |
+
+Rules:
+
+- Secrets should come from the environment: `MYAAW_API_KEY`, `TELEGRAM_BOT_TOKEN`, `DISCORD_BOT_TOKEN`, `MYAAW_WEBHOOK_URL`.
+- `--channel` defaults to `skip`, which leaves existing channel settings untouched.
+- `--skills` and `--disable-tools` take one or more names separated by commas; spaces after commas are fine. Invalid names exit non-zero and print the valid list.
+- `--port` is rejected if another agent already uses it or another process is listening on it.
+- Missing required values exit non-zero with a message that names the flag, instead of hanging on a prompt.
+- Re-running without `--force` on an initialized agent is refused.
+- A leftover `~/.myaaw/<name>/` directory also requires `--force`, so a failed run cannot silently overwrite data.
+
+```bash
+# Docker / CI
+MYAAW_API_KEY="$KEY" myaaw onboard --yes --agent ci \
+  --provider gemini --model models/gemini-2.5-flash --json
+```
+
+## Owner IDs
+
+Owner IDs are only enforced when `bot.type` is `private`, and only for the channels that go through the agent's webhook (Telegram and Discord). The wizard asks **per configured channel**:
+
+- **Telegram owner ID**: from `@userinfobot`.
+- **Discord owner ID**: enable Developer Mode, right-click your profile, → Copy User ID.
+
+Both prompts are **optional**. Leave them empty if you have not looked the ID up yet. Owner IDs are only enforced for messages that arrive through Telegram and Discord (the `/webhook/bot` path): `myaaw chat` in the terminal, the REST API (`/api/chat`), and A2A calls keep working with an empty list. When `bot.type` is `private` and a channel is configured but the list is empty, the review screen shows this reminder. Fill the IDs in later with `myaaw --agent <name> onboard`, or by editing `bot.owner_ids` in `config/config.json`.
+
+On a reconfigure the prompts still appear even when you keep the current channels, as long as that channel is already configured; the saved IDs are pre-filled and clearing the field removes them from `bot.owner_ids`.
+
+The headless flags merge into the same list: `--owner` for any channel, plus `--telegram-owner` and `--discord-owner`.
+
+## Bot access
+
+The **Access** step writes `bot.type`:
+
+- **Private** (default) — only the IDs in `bot.owner_ids` can chat, and only on Telegram and Discord.
+- **Public** — anyone can chat on those channels. Owner IDs are still saved and still mark those users as `owner` internally, but they no longer gate access.
+
+On an update, **Keep current access** is selected by default, so pressing Enter never flips the mode.
+
+Neither setting filters `myaaw chat`, the REST API, or A2A. Headless equivalent: `--bot-type private|public`.
+
+## Install step
+
+The global install question only appears for the **first agent** on the machine. Once an agent exists, `myaaw onboard` and `myaaw agent create` skip it and go straight to Review → Done (or the restart question), because the binary is already available.
+
+## Skills and built-in tools
+
+Both lists come from the binary, so there is nothing to download. Each entry shows the skill or tool name followed by a short description, taken from the `SKILL.md` frontmatter or the tool schema.
+
+- **Skills default to none.** Only the ones you select are copied to `~/.myaaw/<agent>/skills/<name>/`, and an unselected skill is not created at all. The folder is what enables a skill, so you can also add or remove skills later by copying a folder.
+- **Tools default to all enabled.** Deselecting one writes `false` for it in `tools/tools.json` (`builtin_tools`); the rest stay `true`. Custom tools and MCP servers in the same file are preserved.
+- On a reconfigure, the wizard pre-selects the skills already installed and the tools currently enabled, so pressing Enter through those steps keeps the current state. This also applies when you start `myaaw onboard` without `--agent` and pick the existing agent from the welcome list.
+- Headless updates behave the same way: omitting `--disable-tools` keeps the tools that are already disabled, while passing it explicitly (even empty) rewrites the set. Omitting `--skills` installs nothing and never removes an installed skill.
+- Skills are never deleted by onboarding; removing a folder is still a manual action.
+
+```bash
+# headless: install one skill and disable bash
+myaaw onboard --yes --agent agent-b --provider openai --model gpt-4o \
+  --skills time --disable-tools bash
+```
+
+### Multiple skills or tools
+
+Both flags accept a comma-separated list in any order; the list is normalised to the canonical order.
+
+| Flag | Valid names |
+| :--- | :--- |
+| `--skills` | `calendar`, `cashflow`, `converter`, `notes`, `scraping`, `skill-creator`, `tavily`, `time`, `weather` |
+| `--disable-tools` | `a2a_auth_request`, `a2a_input`, `bash`, `contact`, `cron`, `execute_python`, `filesystem`, `provider`, `subagent` |
+
+### Discovering the names
+
+`--list-capabilities` prints the same lists with their descriptions, so no trial-and-error is needed:
+
+```bash
+myaaw onboard --list-capabilities          # human readable
+myaaw onboard --list-capabilities --json   # {"skills": [...], "tools": [...]}
+```
+
+```bash
+# new agent: install three skills, keep every tool enabled
+myaaw onboard --yes --agent agent-b \
+  --provider gemini --model models/gemini-2.5-flash \
+  --skills time,notes,calendar
+
+# new agent: install all skills, disable three tools
+myaaw onboard --yes --agent agent-c \
+  --provider openai --model gpt-4o \
+  --skills all \
+  --disable-tools bash,cron,provider
+
+# update an existing agent: add two skills, disable four tools
+myaaw onboard --yes --agent agent-b --force \
+  --provider gemini --model models/gemini-2.5-flash \
+  --skills weather,tavily \
+  --disable-tools bash,cron,provider,subagent
+```
+
+`--skills` and `--disable-tools` can be used independently, but headless mode always needs `--provider`:
+
+```bash
+# update an existing agent: only change the disabled tools
+myaaw onboard --yes --agent agent-b --force \
+  --provider gemini --model models/gemini-2.5-flash \
+  --disable-tools bash
+
+# re-enable every tool (explicit empty value)
+myaaw onboard --yes --agent agent-b --force \
+  --provider gemini --model models/gemini-2.5-flash \
+  --disable-tools ""
+
+# add the missing skill without touching the disabled tools
+myaaw onboard --yes --agent agent-b --force \
+  --provider gemini --model models/gemini-2.5-flash \
+  --skills converter
+```
+
+Notes:
+
+- Names are matched **case-insensitively**, and `python` is accepted as an alias for `execute_python`.
+- Anything unknown is rejected before the agent is created or touched:
+
+  ```text
+  $ myaaw onboard --yes --agent agent-b --provider openai --skills skil-time
+  Error: --skills: unknown name "skil-time" (valid: calendar, cashflow, converter, notes, scraping, tavily, time, weather)
+  ```
+
+  The command exits with status 1 and creates no directory, registry entry, or contacts. The same applies to `--disable-tools`.
+- The interactive wizard cannot produce this error: skills and tools are toggled from the built-in list, not typed.
+- Headless mode always requires `--provider`, and it rewrites the default provider entry with the values you pass. To keep the provider exactly as it is, use the interactive wizard and press Enter through the provider steps; there, skills and tools can be changed on their own.
+- Adding a skill that is already installed is a no-op; existing folders are never overwritten.
+- There is no flag to remove a skill. Delete `~/.myaaw/<agent>/skills/<name>/` manually, because onboarding will not delete user data.
 
 ## Files written
 
 ```text
 ~/.myaaw/<agent>/
-  .env                    # PORT, base URL, API keys, bot tokens
-  config/config.json      # providers, channels, heartbeat, bot settings
+  .env                    # PORT, MYAAW_BASE_URL, ALLOWED_ORIGINS, A2A_TOKEN, tuning keys
+  config/config.json      # providers (base_url + default_model), channels, heartbeat, bot.owner_ids
+  contacts.json           # A2A contacts for the other agents (never the agent itself)
   home/                   # AGENTS.md, SOUL.md, MEMORY.md, workspace
-  skills/                 # built-in skill templates
+  skills/<name>/          # only the skills selected during onboarding
+  tools/tools.json        # builtin_tools map (false = disabled)
   database/myaaw.db       # created on first use
   logs/
 ```
+
+`PORT` is assigned once: the first agent (whatever its name) gets `8080`, the next ones get the lowest free port. Re-running onboarding keeps the existing port, so a running daemon is not moved. An explicit `--port` is rejected when another agent already owns it or something else is listening on it, and port assignment is serialized through `~/.myaaw/.ports.lock` so two onboarding runs cannot pick the same number.
+
+## A2A wiring
+
+Onboarding also joins the agent to the local A2A mesh, the same way `myaaw agent create` does:
+
+- registers the agent in `agents.json` (and fixes the default when it pointed at a non-initialized folder),
+- generates `A2A_TOKEN` in `.env` if it is missing, and never rotates an existing token,
+- adds every other agent to this agent's `contacts.json`,
+- adds this agent to every other agent's `contacts.json`,
+- creates `contacts.json` even when this is the first agent,
+- never writes the agent itself as a contact: self entries are skipped, and a stale self entry is pruned on the next run (`agent-b` and `Agent-B` count as the same agent).
+
+If any of this fails, onboarding still completes and shows a warning (`A2A contacts were not seeded: ...`).
+
+## Re-running onboarding
+
+Every section has a way to keep what is already configured. On an update the label is always **Keep current …**; **Skip** is only used when creating a new agent, where there is nothing to keep.
+
+| Section | Keep the current value |
+| :--- | :--- |
+| Provider | **Keep current provider** (the first option on the provider step) |
+| Provider key/model | Re-enter the same provider name, press Enter on the API key prompt to keep the saved key, and the model list starts on the current model |
+| Skills | **Keep current skills** at the top of the list |
+| Built-in tools | **Keep current tools** at the top of the list; `tools/tools.json` is not rewritten |
+| Channels | **Keep current** on the channel step, then **Keep current** again on the existing-channels screen (which also offers Disable Telegram / Disable Discord) |
+| Heartbeat | **Keep current heartbeat**; **Disable heartbeat** turns it off instead |
+| Access | **Keep current access** (pre-selected) |
+| Owner | IDs are pre-filled; press Enter unchanged. Clearing the field removes the saved IDs |
+
+Details:
+
+- Nothing is written until you save **Review**, so cancelling a reconfigure leaves `config.json` and `.env` untouched.
+- Provider and model are only replaced when you pick a provider type instead of **Keep current provider**.
+- The API key prompt accepts an empty answer while a key is saved for that provider, so changing only the model does not mean retyping (or re-pasting) the key.
+- Skills are never deleted. Keeping the current selection only means no new folder is installed.
+- Keeping the current tools leaves the `builtin_tools` map untouched; selecting the list rewrites it from your selection.
+- Disabling a channel writes `active: false` but keeps its token, so answering the channel prompt again re-enables it without another trip to BotFather.
+- **Disable heartbeat** sets `heartbeat.active` to `false` and keeps the saved destination and interval.
+- Owner IDs are merged from the Telegram and Discord prompts and de-duplicated.
+- In headless mode `bot.owner_ids` is only rewritten when an owner flag carries an ID, so a run without `--owner` keeps the saved list.
+- Values left over from older templates (`YOUR_*` placeholders) are removed before saving.
+- If the agent daemon is running, the wizard offers to restart it at the end; `--restart` does the same in headless mode.
+- A2A contacts are refreshed, so a newly added agent appears in the other agents' contact lists.
+- The global install question only appears when this is the first agent on the machine.
 
 ## After onboarding
 
@@ -53,17 +339,20 @@ myaaw --agent agent-b chat
 
 ## Notes
 
-- Onboarding is intended for initial setup. For later changes, prefer the focused commands:
+- For later changes, prefer the focused commands:
   - [Providers](provider.md)
   - [Channels](channel.md)
   - [Webhook](webhook.md)
   - [Config](config.md)
-- A Telegram **polling** setup does not need a public URL. A **webhook** setup does; see [Webhook](webhook.md).
+- A Telegram **polling** setup needs no public URL. **Webhook** mode asks for one during onboarding and registers it automatically; see [Webhook](webhook.md) to change it later.
+- `myaaw voice` (real-time) requires a Gemini provider; `voice-classic` works with any provider.
 - Each agent needs its own bot token if you run several agents.
-- If you skip global install, run commands with `go run ./cmd/myaaw` or install the binary manually.
+- The install step copies the binary to `~/.local/bin`; if that directory is not in `PATH`, the wizard prints the line to add to your shell profile.
+- The interactive wizard does not install automatically on Windows; copy the binary to a directory on `PATH` yourself. Headless `--install` attempts the copy and reports failures as a warning.
 
 ## Related
 
+- [Agent Command](agent.md)
 - [Multi-Agent Guide](../agents/multi-agent.md)
 - [Service Management](service.md)
 - [Providers](provider.md)

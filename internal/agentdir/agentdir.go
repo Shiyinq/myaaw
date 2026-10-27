@@ -249,6 +249,48 @@ func SaveRegistry(registry *Registry) error {
 	return os.Rename(tempPath, path)
 }
 
+// AgentNameTaken reports whether a name already belongs to an agent. A name is
+// taken when the agent is initialized, when its directory exists (even a
+// leftover from a failed run), or when another registry entry differs only by
+// case. Case-insensitive matches keep the registry consistent with how A2A
+// contacts are compared.
+func AgentNameTaken(name string) (bool, error) {
+	if err := ValidateName(name); err != nil {
+		return false, err
+	}
+	if AgentInitialized(name) {
+		return true, nil
+	}
+
+	root, err := AgentRoot(name)
+	if err != nil {
+		return false, err
+	}
+	if _, statErr := os.Stat(root); statErr == nil {
+		return true, nil
+	} else if !os.IsNotExist(statErr) {
+		return false, statErr
+	}
+
+	registry, err := LoadRegistry()
+	if err != nil {
+		return false, err
+	}
+	for existing := range registry.Agents {
+		if existing == name || !strings.EqualFold(existing, name) {
+			continue
+		}
+		existingRoot, err := AgentRoot(existing)
+		if err != nil {
+			continue
+		}
+		if _, statErr := os.Stat(existingRoot); statErr == nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // RegisterAgent adds an agent to the registry if missing.
 func RegisterAgent(name string) error {
 	if err := ValidateName(name); err != nil {
@@ -522,27 +564,28 @@ func RewriteLegacyPaths(agentRoot, name string) error {
 
 // SuggestedPort returns a port that is not used by any registered agent.
 // The default agent keeps 8080; new agents get the next free port.
+// SuggestedPort returns the lowest port that is not used by another registered
+// agent. The caller's own assignment is ignored so reusing a value does not look
+// like a conflict.
 func SuggestedPort(name string) int {
-	if name == DefaultAgentName {
-		return 8080
-	}
-
-	used := map[int]bool{8080: true}
-	registry, err := LoadRegistry()
-	if err == nil {
+	used := map[int]bool{}
+	if registry, err := LoadRegistry(); err == nil {
 		for agentName := range registry.Agents {
-			port := readPort(agentName)
-			if port > 0 {
+			if agentName == name {
+				continue
+			}
+			if port := readPort(agentName); port > 0 {
 				used[port] = true
 			}
 		}
 	}
 
-	for port := 8081; ; port++ {
+	for port := 8080; port <= 65535; port++ {
 		if !used[port] {
 			return port
 		}
 	}
+	return 8080
 }
 
 func readPort(name string) int {

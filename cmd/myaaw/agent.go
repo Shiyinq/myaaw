@@ -2,13 +2,11 @@ package main
 
 import (
 	"fmt"
-	"myaaw"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/daemon"
 	"os"
-	"path/filepath"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -57,71 +55,31 @@ var agentListCmd = &cobra.Command{
 
 var agentCreateCmd = &cobra.Command{
 	Use:   "create <name>",
-	Short: "Create a new isolated agent",
+	Short: "Create an agent with the onboarding wizard",
+	Long:  "Same as `myaaw onboard` for a new agent: choose the provider, skills, tools, channels, and heartbeat, then save.",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		name := args[0]
+		name := strings.TrimSpace(args[0])
+		if agentFlag != "" && agentFlag != name {
+			fmt.Println(theme.RenderError("--agent and `agent create <name>` point at different agents"))
+			return
+		}
 		if err := agentdir.ValidateName(name); err != nil {
 			fmt.Println(theme.RenderError(err.Error()))
 			return
 		}
-		if err := agentdir.EnsureLayout(); err != nil {
-			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to prepare layout: %v", err)))
-			return
-		}
-		if agentdir.AgentInitialized(name) {
-			fmt.Println(theme.RenderError(fmt.Sprintf("Agent %q already exists.", name)))
-			return
-		}
-
-		root, err := agentdir.AgentRoot(name)
+		taken, err := agentdir.AgentNameTaken(name)
 		if err != nil {
 			fmt.Println(theme.RenderError(err.Error()))
 			return
 		}
-		if err := extractEmbedDir(myaaw.DefaultMyaawDir, ".myaaw", root); err != nil {
-			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to create agent: %v", err)))
+		if taken {
+			fmt.Println(theme.RenderError(fmt.Sprintf("Agent %q already exists. Reconfigure it with: myaaw --agent %s onboard", name, name)))
 			return
 		}
-		for _, dir := range []string{
-			filepath.Join(root, "home", "workspace", "projects"),
-			filepath.Join(root, "home", "workspace", "downloads"),
-		} {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				fmt.Println(theme.RenderError(fmt.Sprintf("Failed to create workspace: %v", err)))
-				return
-			}
-		}
 
-		envPath, err := agentdir.EnvPath(name)
-		if err != nil {
-			fmt.Println(theme.RenderError(err.Error()))
-			return
-		}
-		ensureEnvFile(envPath)
-		port := agentdir.SuggestedPort(name)
-		if err := agentdir.UpsertEnvValue(envPath, "PORT", strconv.Itoa(port)); err != nil {
-			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to set port: %v", err)))
-		}
-		if err := agentdir.UpsertEnvValue(envPath, "MYAAW_BASE_URL", fmt.Sprintf("http://localhost:%d", port)); err != nil {
-			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to set base URL: %v", err)))
-		}
-
-		if err := agentdir.RewriteLegacyPaths(root, name); err != nil {
-			fmt.Printf("⚠️  Could not rewrite legacy paths: %v\n", err)
-		}
-		if err := agentdir.RegisterAgent(name); err != nil {
-			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to register agent: %v", err)))
-			return
-		}
-		if err := agentdir.SeedA2AContacts(name); err != nil {
-			fmt.Printf("⚠️  Could not seed A2A contacts: %v\n", err)
-		} else {
-			fmt.Println(theme.RenderMuted("🔗 A2A contacts seeded across agents"))
-		}
-
-		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✅ Agent %q created at %s", name, root)))
-		fmt.Println(theme.RenderMuted(fmt.Sprintf("Configure it with: myaaw --agent %s onboard", name)))
+		onboardOpts.disableToolsSet = cmd.Flags().Changed("disable-tools")
+		runOnboarding(name, true)
 	},
 }
 
@@ -308,6 +266,7 @@ func selectAgent(title string, names []string, current string) (string, error) {
 
 func init() {
 	agentDeleteCmd.Flags().BoolVar(&agentDeleteYes, "yes", false, "confirm agent deletion")
+	registerOnboardFlags(agentCreateCmd)
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentCreateCmd)
 	agentCmd.AddCommand(agentUseCmd)

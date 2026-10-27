@@ -25,7 +25,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | Document | Description |
 | :--- | :--- |
 | [CLI Reference](cli/README.md) | Global flags, command groups, and conventions. |
-| [Onboarding](cli/onboard.md) | First-run setup. |
+| [Onboarding](cli/onboard.md) | Agent name, provider, channels, webhook, heartbeat; interactive or headless. |
 | [Agent](cli/agent.md) | `agent list/create/use/delete`, name rules, and what create writes. |
 | [Chat](cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
 | [Voice](cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |

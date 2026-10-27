@@ -385,6 +385,8 @@ A contact is another agent this agent may call. Contacts live in:
 
 `token` is the remote agent's `A2A_TOKEN`. It is stored only in this file and is masked by the control-plane API.
 
+An agent never lists itself: `contacts.json` contains only other agents. Onboarding and `agent create` skip self entries (case-insensitive), and onboarding removes a stale self entry if one exists.
+
 Manage contacts through the control plane:
 
 ```bash

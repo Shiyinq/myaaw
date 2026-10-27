@@ -287,7 +287,7 @@ func (o *OllamaProvider) Models() ([]string, error) {
 }
 
 func (o *OllamaProvider) ollamaTags() (*OllamaTagsResponse, error) {
-	client := resty.New().SetTimeout(30 * time.Second)
+	client := resty.New().SetTimeout(modelListTimeout)
 
 	var response OllamaTagsResponse
 	res, err := client.R().

@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"myaaw/internal/agentdir"
@@ -20,24 +21,56 @@ func setupAgentService(t *testing.T) *AgentService {
 	return NewAgentService()
 }
 
-func TestAgentServiceCreateAndDelete(t *testing.T) {
+func TestAgentServiceOnboardDoesNotInstallSkills(t *testing.T) {
 	agents := setupAgentService(t)
 
-	info, err := agents.Create("myfriend")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
+	if _, err := agents.Onboard("agent-noskill", OnboardRequest{}); err != nil {
+		t.Fatalf("Onboard: %v", err)
 	}
-	if info.Name != "myfriend" || info.Port == 0 || info.BaseURL == "" {
-		t.Fatalf("agent = %+v", info)
+	skillsDir, err := agentdir.SkillsDir("agent-noskill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("agent created by the control plane should start with no skills, found %d", len(entries))
+	}
+}
+
+func TestAgentServiceOnboardAndDelete(t *testing.T) {
+	agents := setupAgentService(t)
+
+	result, err := agents.Onboard("myfriend", OnboardRequest{})
+	if err != nil {
+		t.Fatalf("Onboard: %v", err)
+	}
+	if !result.Created {
+		t.Fatal("first onboarding should report created")
 	}
 	if !agentdir.AgentInitialized("myfriend") {
 		t.Fatal("agent should be initialized")
 	}
 
-	if _, err := agents.Create("myfriend"); !errors.Is(err, ErrAgentExists) {
-		t.Fatalf("duplicate create err = %v, want ErrAgentExists", err)
+	info, err := agents.Get("myfriend")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
 	}
-	if _, err := agents.Create("../bad"); !errors.Is(err, ErrInvalidAgentName) {
+	if info.Name != "myfriend" || info.Port == 0 || info.BaseURL == "" {
+		t.Fatalf("agent = %+v", info)
+	}
+
+	// Re-onboarding an existing agent reconfigures it instead of failing.
+	again, err := agents.Onboard("myfriend", OnboardRequest{})
+	if err != nil {
+		t.Fatalf("second Onboard: %v", err)
+	}
+	if again.Created {
+		t.Fatal("second onboarding should report reconfigured, not created")
+	}
+	if _, err := agents.Onboard("../bad", OnboardRequest{}); !errors.Is(err, ErrInvalidAgentName) {
 		t.Fatalf("invalid name err = %v, want ErrInvalidAgentName", err)
 	}
 
@@ -56,8 +89,8 @@ func TestAgentServiceCreateAndDelete(t *testing.T) {
 		t.Fatalf("delete default err = %v, want ErrDefaultAgent", err)
 	}
 
-	if _, err := agents.Create("default"); err != nil {
-		t.Fatalf("Create default: %v", err)
+	if _, err := agents.Onboard("default", OnboardRequest{}); err != nil {
+		t.Fatalf("Onboard default: %v", err)
 	}
 	if err := agents.SetDefault("default"); err != nil {
 		t.Fatalf("SetDefault default: %v", err)

@@ -6,7 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"myaaw/internal/config"
+	"strings"
+	"time"
 )
+
+// modelListTimeout bounds model discovery. The onboarding wizard and the
+// dashboard call it interactively, so a slow or unreachable provider must fail
+// fast instead of waiting for the chat timeout.
+const modelListTimeout = 15 * time.Second
 
 // StopReason describes why an assistant turn ended.
 type StopReason string
@@ -124,6 +131,58 @@ var defaultLLMModels = map[string]string{
 	"openai": "gpt-4o",
 	"gemini": "models/gemini-3-flash-preview",
 	"groq":   "llama-3.2-1b-preview",
+}
+
+// DefaultModel returns the built-in model used when a provider config omits
+// default_model.
+func DefaultModel(providerName string) string {
+	return defaultLLMModels[providerName]
+}
+
+// IsKnownLLMProvider reports whether a provider factory is registered.
+func IsKnownLLMProvider(providerName string) bool {
+	_, ok := LLMproviderFactories[providerName]
+	return ok
+}
+
+// ModelsFor fetches the model list for a provider using an explicit base URL.
+// Unlike CreateLLMProvider it never touches the process-wide
+// config.LLMProviderBaseURL, so concurrent callers (CLI wizard, control-plane
+// API) cannot race on that global.
+func ModelsFor(providerType, baseURL, apiKey string) ([]string, error) {
+	providerType = strings.ToLower(strings.TrimSpace(providerType))
+	factory, exists := LLMproviderFactories[providerType]
+	if !exists {
+		return nil, fmt.Errorf("unknown llm provider %q", providerType)
+	}
+
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		baseURL = DefaultBaseURL(providerType)
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("no base URL configured for provider %q", providerType)
+	}
+
+	return factory(baseURL, strings.TrimSpace(apiKey), defaultLLMModels[providerType]).Models()
+}
+
+// DefaultBaseURL returns the public endpoint used when a provider config omits
+// base_url. Providers build request URLs by appending their own path, so the
+// value must not include a trailing slash.
+func DefaultBaseURL(providerName string) string {
+	switch providerName {
+	case "openai":
+		return "https://api.openai.com"
+	case "gemini":
+		return "https://generativelanguage.googleapis.com"
+	case "groq":
+		return "https://api.groq.com/openai"
+	case "ollama":
+		return "http://localhost:11434"
+	default:
+		return ""
+	}
 }
 
 var TranscriberFactories = map[string]factoryTranscriber{

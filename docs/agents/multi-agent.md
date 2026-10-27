@@ -113,13 +113,15 @@ invalid: my friend, ../admin, my.friend, my/friend, -agent, _agent, pids
 myaaw onboard
 ```
 
-This creates the default agent:
+On a fresh install the wizard asks for an agent name first, so the data lands under the name you choose:
 
 ```text
-~/.myaaw/default/
+~/.myaaw/<name>/
 ```
 
-To initialize a specific agent directly:
+That agent becomes the registry default. Only legacy upgrades keep the name `default`.
+
+To initialize a specific agent directly (no name prompt):
 
 ```bash
 myaaw --agent myfriend onboard
@@ -218,13 +220,13 @@ myaaw agent list
 myaaw agent create myfriend
 ```
 
-This copies the embedded template into `~/.myaaw/myfriend/`, assigns the next free port, creates `.env`, rewrites legacy paths, and registers the agent.
+This is the onboarding wizard for a new agent, starting at the provider step. It asks for the provider and model, then the skills to install (**none by default**), the built-in tools to keep (**all by default**), channels, heartbeat, and owner. Nothing is written until you save the **Review** step; at that point Myaaw creates `~/.myaaw/myfriend/` from the embedded template, assigns a unique port, writes `.env`, installs only the selected skills under `skills/<name>/`, writes `tools/tools.json`, rewrites legacy paths, registers the agent, and wires A2A. Cancelling with `Ctrl+C` before Review leaves nothing behind.
 
-It also **auto-wires A2A contacts**: the new agent gets a generated `A2A_TOKEN`, its `contacts.json` is populated with every other initialized agent (name, URL, and that agent's `A2A_TOKEN`), and the new agent is added to each other agent's `contacts.json` with the new token. Agents can therefore delegate to each other immediately after restart — no manual `contacts.json` edits. Agents without an `A2A_TOKEN` (open mode) are added as contacts without a token.
+It also **auto-wires A2A contacts**: the new agent gets a generated `A2A_TOKEN`, its `contacts.json` is populated with every other initialized agent (name, URL, and that agent's `A2A_TOKEN`), and the new agent is added to each other agent's `contacts.json` with the new token. The agent is never added to its own contacts. Agents can therefore delegate to each other immediately after restart — no manual `contacts.json` edits. Agents without an `A2A_TOKEN` (open mode) are added as contacts without a token.
 
 Delegation from chat goes through the `contact` tool, which covers `send`, `status` (async polling), artifact download, and contact management. Other A2A v1.0 operations (cancel, task listing, streaming, subscribe, extended card, push configs) are available on the server but not exposed to the agent; see the coverage table in the [A2A guide](protocol/a2a.md#scope-of-the-contact-tool).
 
-The new agent is not automatically configured with real API keys or bot tokens.
+Use `myaaw agent create <name> --yes ...` for a headless run; the flags are the same as [onboarding](../cli/onboard.md#headless-mode-ci-scripts).
 
 ### Set default
 
@@ -369,12 +371,15 @@ Ports are read from `PORT` in:
 ~/.myaaw/<agent>/.env
 ```
 
-New agents created with `myaaw agent create` receive the next free port, for example:
+New agents receive the lowest port that is not used by another registered agent. The first agent gets `8080` whatever it is called:
 
 ```text
-default  → 8080
-myfriend → 8081
+first agent  → 8080
+second agent → 8081
+third agent  → 8082
 ```
+
+The port is written once and preserved on later onboarding runs. `myaaw onboard --port N` (headless) is rejected when `N` is already assigned to another agent or something else is listening on it. Port selection is serialized with a lock in `~/.myaaw/.ports.lock`, so two onboarding runs at the same time cannot pick the same port.
 
 `MYAAW_BASE_URL` is also set for the agent, for example:
 
