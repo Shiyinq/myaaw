@@ -118,17 +118,12 @@ func runOnboarding(agentName string, createNow bool) {
 	}
 }
 
-// newOnboardingModel builds the wizard state. With createNow the agent is
-// created up front and the wizard starts at the provider step, which is what
-// `myaaw agent create <name>` needs.
+// newOnboardingModel builds the wizard state. With createNow the wizard starts
+// at the provider step because `myaaw agent create <name>` already knows the
+// agent name. Nothing is written to disk until the review step is saved.
 func newOnboardingModel(agentName string, createNow bool) onboardModel {
 	m := initialOnboardModel(agentName)
 	if !createNow || agentName == "" {
-		return m
-	}
-	if err := m.initAgent(); err != nil {
-		m.err = err
-		m.step = stepInitHome
 		return m
 	}
 	m.step = stepProviderType
@@ -181,11 +176,12 @@ type onboardModel struct {
 	choices []string
 
 	// Config Data
-	homeDir    string
-	agentName  string
-	myaawHome  string
-	envFile    string
-	configFile string
+	homeDir             string
+	agentName           string
+	agentExistedAtStart bool
+	myaawHome           string
+	envFile             string
+	configFile          string
 
 	// Collected Data
 	providerType    string // "openai", "gemini"
@@ -242,6 +238,9 @@ func initialOnboardModel(agentName string) onboardModel {
 	}
 	if agentName != "" {
 		m.setAgent(agentName)
+		if taken, err := agentdir.AgentNameTaken(agentName); err == nil {
+			m.agentExistedAtStart = taken
+		}
 	}
 	return m
 }
@@ -373,6 +372,7 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setAgent(choice)
+		m.agentExistedAtStart = true
 		m.step = stepInitHome
 
 	case stepAgentName:
@@ -382,10 +382,11 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setAgent(name)
+		m.agentExistedAtStart = false
 		m.step = stepInitHome
 
 	case stepInitHome:
-		if err := m.initAgent(); err != nil {
+		if err := m.ensureNameStillFree(); err != nil {
 			m.err = err
 			return m, nil
 		}
@@ -649,17 +650,25 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// initAgent creates the agent layout, registers it, assigns a port, and seeds
-// A2A contacts so onboarding ends in the same state as `myaaw agent create`.
-func (m *onboardModel) initAgent() error {
-	a2aWarning, err := initializeAgent(m.agentName)
+// ensureNameStillFree guards against another process creating the same agent
+// while the wizard is open. Existing agents are allowed (reconfiguration).
+func (m onboardModel) ensureNameStillFree() error {
+	if m.agentExistedAtStart {
+		return nil
+	}
+	taken, err := agentdir.AgentNameTaken(m.agentName)
 	if err != nil {
 		return err
 	}
-	m.a2aWarning = a2aWarning
+	if taken {
+		return fmt.Errorf("agent %q was created while you were onboarding; choose another name", m.agentName)
+	}
 	return nil
 }
 
+// initializeAgent creates the layout, registers the agent, assigns a port, and
+// wires A2A. It is only called when the user saves the review step, so an
+// interrupted wizard leaves nothing behind.
 func initializeAgent(name string) (a2aWarning error, err error) {
 	root, err := agentdir.AgentRoot(name)
 	if err != nil {
@@ -695,9 +704,23 @@ func initializeAgent(name string) (a2aWarning error, err error) {
 	return a2aWarning, nil
 }
 
-// persist writes .env and config.json, registers the Telegram webhook when
-// requested, and records whether a running daemon should be restarted.
+// persist writes the whole agent: layout, .env, config.json, registry, and A2A
+// wiring. Nothing is written before this runs, so cancelling the wizard never
+// leaves partial data behind.
 func (m *onboardModel) persist() error {
+	if m.agentName == "" {
+		return fmt.Errorf("agent name is missing")
+	}
+	if err := m.ensureNameStillFree(); err != nil {
+		return err
+	}
+
+	a2aWarning, err := initializeAgent(m.agentName)
+	if err != nil {
+		return err
+	}
+	m.a2aWarning = a2aWarning
+
 	_, warnings, err := applyOnboarding(m.agentName, m.input(), 0)
 	if err != nil {
 		return err
@@ -1322,9 +1345,9 @@ func (m onboardModel) renderContent() string {
 		b.WriteString(m.textInput.View())
 
 	case stepInitHome:
-		b.WriteString(titleStyle.Render("Initialize Agent"))
+		b.WriteString(titleStyle.Render("Agent Directory"))
 		b.WriteString(fmt.Sprintf("\n\nAgent: %s\nDirectory: %s\n\n", m.agentName, m.myaawHome))
-		b.WriteString(theme.SecondaryStyle.Render("Press Enter to create the layout."))
+		b.WriteString(theme.SecondaryStyle.Render("Nothing is written yet; the agent is created when you save the review."))
 
 	case stepProviderType:
 		b.WriteString(titleStyle.Render("LLM Provider"))

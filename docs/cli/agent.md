@@ -42,7 +42,7 @@ If nothing is initialized it prints `No agents registered. Run 'myaaw onboard' t
 
 ## `agent create <name>`
 
-Alias for onboarding that creates the agent first. It runs the same implementation as `myaaw onboard`, so there is no second setup path:
+Alias for onboarding that pre-fills the agent name. It runs the same implementation as `myaaw onboard`, so there is no second setup path:
 
 ```bash
 myaaw agent create agent-b
@@ -51,8 +51,10 @@ myaaw agent create agent-b
 What happens:
 
 1. Validates the name and refuses names that are already taken (existing agent, leftover directory, or case-only duplicate).
-2. Creates `~/.myaaw/<name>/` from the embedded template, writes `.env` with a unique `PORT` and `MYAAW_BASE_URL`, registers the agent in `agents.json`, and wires A2A (`A2A_TOKEN`, contacts in both directions, self excluded).
-3. Opens the onboarding wizard **starting at the provider step** — no name prompt, no picker.
+2. Opens the onboarding wizard **starting at the provider step** — no name prompt, no picker.
+3. When you save the **Review** step, it creates `~/.myaaw/<name>/` from the embedded template, assigns a unique port, writes `.env`, registers the agent in `agents.json`, wires A2A (`A2A_TOKEN`, contacts in both directions, self excluded), and writes `config.json`.
+
+Cancelling with `Ctrl+C` before Review leaves nothing behind; no directory, registry entry, or contacts are created.
 
 It accepts the same flags as [`myaaw onboard`](onboard.md#headless-mode-ci-scripts), so it can also run headless:
 

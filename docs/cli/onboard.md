@@ -17,7 +17,7 @@ Without `--agent`:
 - **Agents already exist** → a picker lists them, plus `+ Create a new agent`.
 - **Only the legacy `default` agent exists** → it is listed in the picker and can be reconfigured, so existing installs keep working.
 
-`myaaw agent create <name>` runs this same flow with the agent created up front (no name prompt, no picker, starts at the provider step) and accepts every flag below.
+`myaaw agent create <name>` runs this same flow with the agent name already chosen (no prompt, no picker, starts at the provider step) and accepts every flag below. It still writes nothing until Review is saved.
 
 ## Agent name
 
@@ -45,7 +45,7 @@ default                  ⚠️  allowed, but keeps the generic folder name
 | :--- | :--- |
 | Welcome | Intro screen. |
 | Agent | Name prompt (first run) or picker (agents exist). |
-| Initialize | Creates `~/.myaaw/<agent>/`, registers the agent in `agents.json`, assigns a unique port, creates `.env`, and wires A2A. |
+| Initialize | Shows the target directory. Nothing is written yet. |
 | Provider | Type (OpenAI-compatible or Gemini), config name, base URL, API key, then a model picked from the live model list. |
 | Channels | Telegram, Discord, both, or skip. |
 | Telegram mode | `polling` or `webhook`. Choosing webhook asks for the public URL next. |
@@ -58,7 +58,7 @@ default                  ⚠️  allowed, but keeps the generic folder name
 | Install | Optional copy of the binary to `~/.local/bin/myaaw`. |
 | Restart | Offered only when this agent's daemon is already running, so the new config is loaded immediately. |
 
-Keys and tokens are masked while typing. `Esc` goes back one step so answers are kept; `Ctrl+C` cancels. The layout, `.env`, registry entry, and A2A contacts are created at the **Initialize** step; `config.json` is only written when you save from **Review**.
+Keys and tokens are masked while typing. `Esc` goes back one step so answers are kept; `Ctrl+C` cancels. **Nothing is written until you save from Review** — layout, `.env`, port, registry entry, A2A wiring, and `config.json` are all created at that point. Cancelling at any step (or **Cancel** on Review) leaves no agent behind.
 
 ## Provider defaults
 
