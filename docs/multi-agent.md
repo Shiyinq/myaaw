@@ -419,11 +419,11 @@ Server logs:
 | Cron | `~/.myaaw/<agent>/cron` |
 | Tools | `~/.myaaw/<agent>/tools` |
 | SQLite | `~/.myaaw/<agent>/database/myaaw.db` |
-| Calendar data | `~/.myaaw/<agent>/database/calendar` |
-| Cashflow data | `~/.myaaw/<agent>/database/cashflow` |
-| Notes data | `~/.myaaw/<agent>/database/notes` |
+| Skill data | `~/.myaaw/<agent>/database/<skill>/` (skills may also write under `config/`) |
 | PID files | `~/.myaaw/pids/` (shared directory, per-agent files) |
 | Registry | `~/.myaaw/agents.json` (shared) |
+
+Back up an agent with `myaaw backup --agent <name>`; the archive includes `config/*` and `database/*` generically, so data from any skill is covered. Restore it with `myaaw restore <archive>`. See the [Backup Guide](backup.md).
 
 ## 11. Filesystem isolation
 

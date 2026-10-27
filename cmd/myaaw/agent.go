@@ -5,9 +5,11 @@ import (
 	"myaaw"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
+	"myaaw/internal/daemon"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -241,7 +243,18 @@ var agentDeleteCmd = &cobra.Command{
 			}
 		}
 
-		if err := os.RemoveAll(root); err != nil {
+		// Stop the daemon before deleting files; otherwise it keeps running and
+		// recreates directories such as tools/ and logs/ after the delete.
+		if manager, err := daemon.NewAgentManager(name); err == nil {
+			if pid, running, _ := manager.Status(); running {
+				if err := manager.Stop(); err != nil {
+					fmt.Println(theme.RenderError(fmt.Sprintf("Failed to stop agent server (PID %d): %v", pid, err)))
+					return
+				}
+			}
+		}
+
+		if err := removeAgentDir(root); err != nil {
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to delete agent: %v", err)))
 			return
 		}
@@ -251,6 +264,24 @@ var agentDeleteCmd = &cobra.Command{
 		}
 		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✅ Agent %q deleted.", name)))
 	},
+}
+
+// removeAgentDir deletes an agent directory and retries briefly in case a
+// just-stopped daemon still recreates a runtime subdirectory.
+func removeAgentDir(root string) error {
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		if err := os.RemoveAll(root); err != nil {
+			lastErr = err
+		} else if _, err := os.Stat(root); os.IsNotExist(err) {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return fmt.Errorf("agent directory still exists after deletion; is the daemon still running?")
 }
 
 func selectAgent(title string, names []string, current string) (string, error) {

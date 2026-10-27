@@ -24,7 +24,11 @@ var (
 
 func init() {
 	SkillsLogger = log.New(io.Discard, "", 0)
-	ConfigureLogging()
+	// See the tools package: do not create the agent directory during init for
+	// commands that do not target an initialized agent (for example restore).
+	if agentdir.AgentInitialized(agentdir.Active()) {
+		ConfigureLogging()
+	}
 }
 
 // ConfigureLogging reopens skills.log for the active agent.

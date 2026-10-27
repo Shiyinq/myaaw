@@ -435,6 +435,27 @@ Restart the server after changing channel tokens:
 myaaw server --agent myfriend restart
 ```
 
+### 💾 Backup
+Back up agent data into portable `tar.gz` archives. Archives are written to `~/.myaaw-backups`, outside `~/.myaaw`, because folders under `~/.myaaw/` are reserved for agents.
+
+| Command | Description |
+| :--- | :--- |
+| `myaaw backup` | Back up every initialized agent plus `agents.json` and `controlplane.json`. |
+| `myaaw backup --agent agent-b` | Back up one agent. |
+| `myaaw backup --agent agent-b,agent-c -o ~/Backups` | Back up several agents to a custom directory. |
+| `myaaw backup --include-workspace --include-logs` | Include workspace and log files. |
+| `myaaw backup --no-secrets` | Exclude `.env` and blank API keys and A2A tokens. |
+| `myaaw restore <archive>` | Verify and restore an archive; add `--force` to replace an existing agent. |
+| `myaaw restore` | Choose a backup interactively (arrow keys + enter) from `~/.myaaw-backups`; use `--dir` for another directory. |
+
+Restores verify every file against `manifest.json` before writing. With `--force`, the running daemon is stopped, a pre-restore backup is written to `~/.myaaw-backups`, and the daemon is started again unless `--no-start` is used. `--restore-packages` rebuilds the Python venv from the archived `pip freeze`.
+
+Included by default: `.env`, `config/`, `contacts.json`, `database/` (SQLite snapshotted with `VACUUM INTO`), `home/` (without `workspace` and `.venv`), `skills/`, `tools/`, `cron/` (without `runs/`), and `jobs/` (without `*.log`).
+
+Skipped unless requested: `workspace/` (`--include-workspace`), logs (`--include-logs`), `home/.venv` (`--include-venv`), and browser/tmp caches (`--include-caches`). Each archive contains `manifest.json` with SHA-256 checksums and, when a venv exists, a `pip freeze` recipe.
+
+See [docs/backup.md](docs/backup.md) for the archive layout, manual restore, and limitations.
+
 ### 🚀 Service Management
 Myaaw runs as a unified background service daemon.
 
@@ -487,6 +508,7 @@ myaaw cron add --name "Meeting Remind" --at "30m" --message "Meeting in 30 mins"
 | [Agent Skills](docs/agent_skills.md) | `SKILL.md`-based skills: discovery, prompt injection, execution, and per-agent data isolation. |
 | [MCP & Custom Tools](docs/mcp_and_custom_tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
 | [Multi-Agent Guide](docs/multi-agent.md) | Isolated agents: registry, per-agent config, channels, ports, servers, and commands. |
+| [Backup Guide](docs/backup.md) | Per-agent `tar.gz` backups and verified restore: scope, database snapshots, venv recipes, flags, and safety. |
 | [A2A Protocol](docs/a2a-protocol.md) | Agent Card discovery, task lifecycle, JSON-RPC methods, streaming, contact registry, and the implementation map. |
 | [A2A Guide](docs/a2a.md) | Enable the endpoint, call another agent, and manage contacts with the `contact` tool. |
 | [A2A Interop Guide](docs/a2a-interop.md) | Connect Myaaw agents locally and across servers, and interoperate with non-Myaaw A2A agents. |
