@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"myaaw/internal/agentdir"
@@ -134,6 +135,40 @@ func TestSaveBuiltinToolSelection(t *testing.T) {
 
 	if err := saveBuiltinToolSelection("agent-x", []string{"nope"}); err == nil {
 		t.Fatal("expected an error for an unknown tool")
+	}
+}
+
+func TestParseOnboardSelection(t *testing.T) {
+	skills := builtinSkillNames()
+	tools := builtinToolNames()
+
+	got, err := parseOnboardSelection("Time, NOTES", skills, "--skills")
+	if err != nil {
+		t.Fatalf("case-insensitive selection failed: %v", err)
+	}
+	if strings.Join(got, ",") != "notes,time" {
+		t.Fatalf("selected = %v, want canonical order [notes time]", got)
+	}
+
+	got, err = parseOnboardSelection("python", tools, "--disable-tools")
+	if err != nil {
+		t.Fatalf("python alias rejected: %v", err)
+	}
+	if len(got) != 1 || got[0] != "execute_python" {
+		t.Fatalf("python alias = %v, want [execute_python]", got)
+	}
+
+	got, err = parseOnboardSelection("all", skills, "--skills")
+	if err != nil || len(got) != len(skills) {
+		t.Fatalf("all = %v (%v), want %d skills", got, err, len(skills))
+	}
+
+	_, err = parseOnboardSelection("nope", skills, "--skills")
+	if err == nil {
+		t.Fatal("expected an error for an unknown skill")
+	}
+	if !strings.Contains(err.Error(), "unknown name") || !strings.Contains(err.Error(), "valid:") {
+		t.Fatalf("error should name the problem and list valid values: %v", err)
 	}
 }
 

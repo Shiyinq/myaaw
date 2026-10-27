@@ -206,10 +206,19 @@ myaaw onboard --yes --agent agent-b --force \
 
 Notes:
 
+- Names are matched **case-insensitively**, and `python` is accepted as an alias for `execute_python`.
+- Anything unknown is rejected before the agent is created or touched:
+
+  ```text
+  $ myaaw onboard --yes --agent agent-b --provider openai --skills skil-time
+  Error: --skills: unknown name "skil-time" (valid: calendar, cashflow, converter, notes, scraping, tavily, time, weather)
+  ```
+
+  The command exits with status 1 and creates no directory, registry entry, or contacts. The same applies to `--disable-tools`.
+- The interactive wizard cannot produce this error: skills and tools are toggled from the built-in list, not typed.
 - Headless mode always requires `--provider`, and it rewrites the default provider entry with the values you pass. To keep the provider exactly as it is, use the interactive wizard and press Enter through the provider steps; there, skills and tools can be changed on their own.
 - Adding a skill that is already installed is a no-op; existing folders are never overwritten.
 - There is no flag to remove a skill. Delete `~/.myaaw/<agent>/skills/<name>/` manually, because onboarding will not delete user data.
-- Names are validated before anything is written, so a typo won't leave a partial config.
 
 ## Files written
 

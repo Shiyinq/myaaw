@@ -236,6 +236,35 @@ func TestHeadlessUpdatePreservesDisabledTools(t *testing.T) {
 	assertBashDisabled(true)
 }
 
+func TestHeadlessRejectsUnknownCapabilities(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("MYAAW_API_KEY", "sk-from-env")
+	if err := agentdir.EnsureLayout(); err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { onboardOpts = onboardOptions{} }()
+	onboardOpts = onboardOptions{yes: true, provider: "openai", model: "gpt-4o", skills: "nope"}
+
+	if code := runOnboardHeadless("agent-bad"); code == 0 {
+		t.Fatal("expected a non-zero exit code for an unknown skill")
+	}
+	root, err := agentdir.AgentRoot("agent-bad")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, statErr := os.Stat(root); !os.IsNotExist(statErr) {
+		t.Fatalf("agent directory was created despite the validation error: %v", statErr)
+	}
+	registry, err := agentdir.LoadRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := registry.Agents["agent-bad"]; ok {
+		t.Fatal("agent was registered despite the validation error")
+	}
+}
+
 func TestPreviousStep(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 

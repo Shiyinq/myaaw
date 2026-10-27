@@ -2256,9 +2256,14 @@ func parseOnboardSelection(raw string, known []string, flag string) ([]string, e
 		return append([]string{}, known...), nil
 	}
 
-	valid := make(map[string]bool, len(known))
+	// Match case-insensitively and accept the runtime alias for the Python
+	// tool, so `python` works wherever `execute_python` does.
+	lookup := make(map[string]string, len(known)+1)
 	for _, name := range known {
-		valid[name] = true
+		lookup[strings.ToLower(name)] = name
+	}
+	if _, ok := lookup["execute_python"]; ok {
+		lookup["python"] = "execute_python"
 	}
 
 	chosen := make(map[string]bool)
@@ -2267,10 +2272,11 @@ func parseOnboardSelection(raw string, known []string, flag string) ([]string, e
 		if name == "" {
 			continue
 		}
-		if !valid[name] {
+		canonical, ok := lookup[strings.ToLower(name)]
+		if !ok {
 			return nil, fmt.Errorf("%s: unknown name %q (valid: %s)", flag, name, strings.Join(known, ", "))
 		}
-		chosen[name] = true
+		chosen[canonical] = true
 	}
 
 	selected := make([]string, 0, len(chosen))
