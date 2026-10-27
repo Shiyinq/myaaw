@@ -95,7 +95,7 @@ func SeedA2AContacts(newAgent string) error {
 
 	newContacts := make([]contactEntry, 0, len(names))
 	for _, other := range names {
-		if other == newAgent {
+		if sameAgentName(other, newAgent) {
 			continue
 		}
 		base := agentBaseURL(other)
@@ -114,7 +114,7 @@ func SeedA2AContacts(newAgent string) error {
 	}
 
 	for _, other := range names {
-		if other == newAgent {
+		if sameAgentName(other, newAgent) {
 			continue
 		}
 		if agentBaseURL(other) == "" {
@@ -135,7 +135,7 @@ func SeedA2AContacts(newAgent string) error {
 // EnsureA2AContacts wires an agent into the A2A mesh without rotating an
 // existing token: it creates A2A_TOKEN when missing, adds every other
 // initialized agent to this agent's contacts, and adds this agent to theirs.
-// Safe to call repeatedly.
+// The agent itself is never written as its own contact. Safe to call repeatedly.
 func EnsureA2AContacts(name string) error {
 	envPath, err := EnvPath(name)
 	if err != nil {
@@ -163,13 +163,17 @@ func EnsureA2AContacts(name string) error {
 		return err
 	}
 
-	// Make sure contacts.json exists even when this is the only agent.
+	// Make sure contacts.json exists even when this is the only agent, and drop
+	// any self entry left by an older version or a manual edit.
 	if err := ensureContactsFile(name); err != nil {
+		return err
+	}
+	if err := removeSelfContact(name); err != nil {
 		return err
 	}
 
 	for _, other := range names {
-		if other == name {
+		if sameAgentName(other, name) {
 			continue
 		}
 		otherBase := agentBaseURL(other)
@@ -194,6 +198,53 @@ func EnsureA2AContacts(name string) error {
 		}
 	}
 	return nil
+}
+
+// sameAgentName reports whether two names refer to the same agent. Comparison
+// is case-insensitive because macOS and Windows filesystems are, and because
+// contact entries are already matched with strings.EqualFold.
+func sameAgentName(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+// removeSelfContact drops entries whose name matches the agent itself.
+func removeSelfContact(name string) error {
+	path, err := ContactsPath(name)
+	if err != nil {
+		return err
+	}
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return nil
+		}
+		return readErr
+	}
+
+	var entries []map[string]any
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return err
+	}
+
+	kept := make([]map[string]any, 0, len(entries))
+	removed := false
+	for _, entry := range entries {
+		entryName, _ := entry["name"].(string)
+		if sameAgentName(entryName, name) {
+			removed = true
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	if !removed {
+		return nil
+	}
+
+	out, err := json.MarshalIndent(kept, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(path, append(out, '\n'))
 }
 
 func ensureContactsFile(name string) error {
@@ -227,6 +278,11 @@ func writeContacts(name string, entries []contactEntry) error {
 // upsertContact adds or replaces a contact entry by name, preserving existing
 // entries and any unknown fields they carry.
 func upsertContact(name string, entry contactEntry) error {
+	// Never store the agent itself as a contact.
+	if sameAgentName(entry.Name, name) {
+		return nil
+	}
+
 	path, err := ContactsPath(name)
 	if err != nil {
 		return err

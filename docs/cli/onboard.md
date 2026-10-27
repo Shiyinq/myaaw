@@ -146,7 +146,8 @@ Onboarding also joins the agent to the local A2A mesh, the same way `myaaw agent
 - generates `A2A_TOKEN` in `.env` if it is missing, and never rotates an existing token,
 - adds every other agent to this agent's `contacts.json`,
 - adds this agent to every other agent's `contacts.json`,
-- creates `contacts.json` even when this is the first agent.
+- creates `contacts.json` even when this is the first agent,
+- never writes the agent itself as a contact: self entries are skipped, and a stale self entry is pruned on the next run (`agent-b` and `Agent-B` count as the same agent).
 
 If any of this fails, onboarding still completes and shows a warning (`A2A contacts were not seeded: ...`).
 

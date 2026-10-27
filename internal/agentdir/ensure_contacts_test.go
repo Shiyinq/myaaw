@@ -51,6 +51,8 @@ func TestEnsureA2AContacts(t *testing.T) {
 	if got := len(readContacts(t, "alice")); got != 1 {
 		t.Fatalf("alice has %d contacts after re-run, want 1", got)
 	}
+	assertNoSelfContact(t, "bob")
+	assertNoSelfContact(t, "alice")
 
 	// A second agent can join later and both directions are filled in.
 	if err := EnsureA2AContacts("alice"); err != nil {
