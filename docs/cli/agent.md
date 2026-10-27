@@ -47,7 +47,7 @@ Creates a fully isolated agent:
 1. Validates the name and refuses duplicates.
 2. Copies the embedded default layout into `~/.myaaw/<name>/` (config, `.env`, `home/`, `skills/`, `tools/`, `cron/`, `jobs/`, `database/`, `logs/`).
 3. Creates `home/workspace/projects` and `home/workspace/downloads`.
-4. Writes `PORT` and `MYAAW_BASE_URL` into `.env`. `default` always gets `8080`; other agents get the first free port from `8081` upward.
+4. Writes `PORT` and `MYAAW_BASE_URL` into `.env`. The first agent gets `8080`; later agents get the lowest free port.
 5. Registers the name in `~/.myaaw/agents.json`.
 6. Seeds A2A contacts and generates an `A2A_TOKEN` so the new agent can talk to the others.
 
@@ -57,7 +57,7 @@ myaaw agent create agent-b
 # Configure it with: myaaw --agent agent-b onboard
 ```
 
-The command stops here: no provider, channel, or identity is configured yet. It does write `.env` with `PORT` (the next free port, starting at `8081`) and `MYAAW_BASE_URL`, and it seeds an A2A token plus contacts. Run onboarding next:
+The command stops here: no provider, channel, or identity is configured yet. It does write `.env` with `PORT` (the lowest free port, `8080` for the first agent) and `MYAAW_BASE_URL`, and it seeds an A2A token plus contacts. Run onboarding next:
 
 ```bash
 myaaw --agent agent-b onboard

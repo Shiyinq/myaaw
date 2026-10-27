@@ -371,12 +371,15 @@ Ports are read from `PORT` in:
 ~/.myaaw/<agent>/.env
 ```
 
-New agents created with `myaaw agent create` receive the next free port, for example:
+New agents receive the lowest port that is not used by another registered agent. The first agent gets `8080` whatever it is called:
 
 ```text
-default  → 8080
-myfriend → 8081
+first agent  → 8080
+second agent → 8081
+third agent  → 8082
 ```
+
+The port is written once and preserved on later onboarding runs. `myaaw onboard --port N` (headless) is rejected when `N` is already assigned to another agent or something else is listening on it. Port selection is serialized with a lock in `~/.myaaw/.ports.lock`, so two onboarding runs at the same time cannot pick the same port.
 
 `MYAAW_BASE_URL` is also set for the agent, for example:
 

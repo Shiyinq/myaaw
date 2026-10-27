@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"myaaw/internal/agentdir"
@@ -127,11 +128,21 @@ func TestOnboardFlow(t *testing.T) {
 		t.Fatalf("owner IDs = %v", cfg.Bot.OwnerIDs)
 	}
 
-	if port := readEnvValue(m.envFile, "PORT"); port != "8081" {
-		t.Fatalf("PORT = %q, want 8081", port)
+	if port := readEnvValue(m.envFile, "PORT"); port != "8080" {
+		t.Fatalf("PORT = %q, want 8080", port)
 	}
-	if base := readEnvValue(m.envFile, "MYAAW_BASE_URL"); base != "http://localhost:8081" {
+	if base := readEnvValue(m.envFile, "MYAAW_BASE_URL"); base != "http://localhost:8080" {
 		t.Fatalf("MYAAW_BASE_URL = %q", base)
+	}
+	if token := readEnvValue(m.envFile, "A2A_TOKEN"); token == "" {
+		t.Fatal("A2A token was not generated")
+	}
+	contactsPath, err := agentdir.ContactsPath("agent-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(contactsPath); err != nil {
+		t.Fatalf("contacts.json was not created: %v", err)
 	}
 
 	registry, err := agentdir.LoadRegistry()

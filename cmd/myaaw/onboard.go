@@ -654,15 +654,10 @@ func initializeAgent(name string) (a2aWarning error, err error) {
 		return nil, err
 	}
 
-	// Seeding rotates the A2A token, so only do it for a brand-new agent.
-	envPath, err := agentdir.EnvPath(name)
-	if err != nil {
-		return nil, err
-	}
-	if readEnvValue(envPath, "A2A_TOKEN") == "" {
-		if seedErr := agentdir.SeedA2AContacts(name); seedErr != nil {
-			a2aWarning = seedErr
-		}
+	// Ensures the A2A token exists and every agent appears in the others'
+	// contacts. Existing tokens are preserved, so re-running is safe.
+	if contactErr := agentdir.EnsureA2AContacts(name); contactErr != nil {
+		a2aWarning = contactErr
 	}
 	if _, err := agent.EnsureWorkspace(); err != nil {
 		return nil, fmt.Errorf("prepare workspace: %w", err)
@@ -721,6 +716,10 @@ func applyOnboarding(name string, in onboardInput, port int) (*config.Config, []
 		} else {
 			if envPath, envErr := agentdir.EnvPath(name); envErr == nil {
 				_ = agentdir.UpsertEnvValue(envPath, "MYAAW_BASE_URL", publicURL)
+				// Contacts advertise MYAAW_BASE_URL, so refresh them after the change.
+				if contactErr := agentdir.EnsureA2AContacts(name); contactErr != nil {
+					warnings = append(warnings, "A2A contacts were not refreshed for the public URL: "+contactErr.Error())
+				}
 			}
 			if regErr := registerTelegramWebhook(in.TelegramToken, publicURL); regErr != nil {
 				warnings = append(warnings, "Telegram webhook was not registered: "+regErr.Error())

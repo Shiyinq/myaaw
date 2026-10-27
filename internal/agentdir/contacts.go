@@ -132,6 +132,83 @@ func SeedA2AContacts(newAgent string) error {
 	return nil
 }
 
+// EnsureA2AContacts wires an agent into the A2A mesh without rotating an
+// existing token: it creates A2A_TOKEN when missing, adds every other
+// initialized agent to this agent's contacts, and adds this agent to theirs.
+// Safe to call repeatedly.
+func EnsureA2AContacts(name string) error {
+	envPath, err := EnvPath(name)
+	if err != nil {
+		return err
+	}
+
+	token := readEnvValue(name, "A2A_TOKEN")
+	if token == "" {
+		token, err = NewA2AToken()
+		if err != nil {
+			return fmt.Errorf("generate A2A token: %w", err)
+		}
+		if err := UpsertEnvValue(envPath, "A2A_TOKEN", token); err != nil {
+			return fmt.Errorf("write A2A_TOKEN: %w", err)
+		}
+	}
+
+	base := agentBaseURL(name)
+	if base == "" {
+		return fmt.Errorf("cannot resolve base URL for agent %q", name)
+	}
+
+	names, err := ListAgents()
+	if err != nil {
+		return err
+	}
+
+	// Make sure contacts.json exists even when this is the only agent.
+	if err := ensureContactsFile(name); err != nil {
+		return err
+	}
+
+	for _, other := range names {
+		if other == name {
+			continue
+		}
+		otherBase := agentBaseURL(other)
+		if otherBase == "" {
+			continue
+		}
+		if err := upsertContact(name, contactEntry{
+			Name:        other,
+			URL:         otherBase + "/a2a",
+			Token:       readEnvValue(other, "A2A_TOKEN"),
+			Description: "Myaaw agent " + other,
+		}); err != nil {
+			return err
+		}
+		if err := upsertContact(other, contactEntry{
+			Name:        name,
+			URL:         base + "/a2a",
+			Token:       token,
+			Description: "Myaaw agent " + name,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureContactsFile(name string) error {
+	path, err := ContactsPath(name)
+	if err != nil {
+		return err
+	}
+	if _, statErr := os.Stat(path); statErr == nil {
+		return nil
+	} else if !os.IsNotExist(statErr) {
+		return statErr
+	}
+	return writeContacts(name, nil)
+}
+
 func writeContacts(name string, entries []contactEntry) error {
 	if entries == nil {
 		entries = []contactEntry{}

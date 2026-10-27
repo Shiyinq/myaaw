@@ -522,27 +522,28 @@ func RewriteLegacyPaths(agentRoot, name string) error {
 
 // SuggestedPort returns a port that is not used by any registered agent.
 // The default agent keeps 8080; new agents get the next free port.
+// SuggestedPort returns the lowest port that is not used by another registered
+// agent. The caller's own assignment is ignored so reusing a value does not look
+// like a conflict.
 func SuggestedPort(name string) int {
-	if name == DefaultAgentName {
-		return 8080
-	}
-
-	used := map[int]bool{8080: true}
-	registry, err := LoadRegistry()
-	if err == nil {
+	used := map[int]bool{}
+	if registry, err := LoadRegistry(); err == nil {
 		for agentName := range registry.Agents {
-			port := readPort(agentName)
-			if port > 0 {
+			if agentName == name {
+				continue
+			}
+			if port := readPort(agentName); port > 0 {
 				used[port] = true
 			}
 		}
 	}
 
-	for port := 8081; ; port++ {
+	for port := 8080; port <= 65535; port++ {
 		if !used[port] {
 			return port
 		}
 	}
+	return 8080
 }
 
 func readPort(name string) int {

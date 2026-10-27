@@ -113,6 +113,7 @@ Rules:
 
 - Secrets should come from the environment: `MYAAW_API_KEY`, `TELEGRAM_BOT_TOKEN`, `DISCORD_BOT_TOKEN`, `MYAAW_WEBHOOK_URL`.
 - `--channel` defaults to `skip`, which leaves existing channel settings untouched.
+- `--port` is rejected if another agent already uses it or another process is listening on it.
 - Missing required values exit non-zero with a message that names the flag, instead of hanging on a prompt.
 - Re-running without `--force` on an initialized agent is refused.
 
@@ -135,7 +136,19 @@ MYAAW_API_KEY="$KEY" myaaw onboard --yes --agent ci \
   logs/
 ```
 
-`PORT` is assigned once: `8080` for the first agent, then the next free port. Re-running onboarding keeps the existing port, so a running daemon is not moved.
+`PORT` is assigned once: the first agent (whatever its name) gets `8080`, the next ones get the lowest free port. Re-running onboarding keeps the existing port, so a running daemon is not moved. An explicit `--port` is rejected when another agent already owns it or something else is listening on it, and port assignment is serialized through `~/.myaaw/.ports.lock` so two onboarding runs cannot pick the same number.
+
+## A2A wiring
+
+Onboarding also joins the agent to the local A2A mesh, the same way `myaaw agent create` does:
+
+- registers the agent in `agents.json` (and fixes the default when it pointed at a non-initialized folder),
+- generates `A2A_TOKEN` in `.env` if it is missing, and never rotates an existing token,
+- adds every other agent to this agent's `contacts.json`,
+- adds this agent to every other agent's `contacts.json`,
+- creates `contacts.json` even when this is the first agent.
+
+If any of this fails, onboarding still completes and shows a warning (`A2A contacts were not seeded: ...`).
 
 ## Re-running onboarding
 
