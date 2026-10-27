@@ -7,6 +7,7 @@
 ```bash
 myaaw onboard                      # first run: asks for the agent name
 myaaw --agent agent-b onboard      # configure or reconfigure a specific agent
+myaaw agent create agent-b         # create agent-b, then run this same wizard
 myaaw onboard                      # with agents present: picker, or create a new one
 ```
 
@@ -15,6 +16,8 @@ Without `--agent`:
 - **No agent yet** → the wizard asks for a name, validates it, and creates the agent.
 - **Agents already exist** → a picker lists them, plus `+ Create a new agent`.
 - **Only the legacy `default` agent exists** → it is listed in the picker and can be reconfigured, so existing installs keep working.
+
+`myaaw agent create <name>` runs this same flow with the agent created up front (no name prompt, no picker, starts at the provider step) and accepts every flag below.
 
 ## Agent name
 
@@ -98,7 +101,7 @@ myaaw onboard --yes \
 
 | Flag | Wizard step |
 | :--- | :--- |
-| `--agent <name>` | Agent name (required in headless mode) |
+| `--agent <name>` | Agent name (required in headless mode; `agent create <name>` supplies it) |
 | `--yes` | Skip every prompt (implied when stdin is not a TTY) |
 | `--provider openai\|gemini` | Provider type (required) |
 | `--provider-name` | Provider name stored in `config.json` |

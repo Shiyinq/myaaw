@@ -41,7 +41,7 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 | Command | Description | Document |
 | :--- | :--- | :--- |
 | `agent list` | List initialized agents | [Agent Command](agent.md#agent-list) |
-| `agent create <name>` | Create an isolated agent | [Agent Command](agent.md#agent-create-name) |
+| `agent create <name>` | Create an agent and run the onboarding wizard | [Agent Command](agent.md#agent-create-name) |
 | `agent use [name]` | Set the default agent | [Agent Command](agent.md#agent-use-name) |
 | `agent delete [name]` | Stop the daemon and delete all data | [Agent Command](agent.md#agent-delete-name---yes) |
 

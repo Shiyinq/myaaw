@@ -59,8 +59,13 @@ var onboardOpts onboardOptions
 
 func init() {
 	rootCmd.AddCommand(onboardCmd)
+	registerOnboardFlags(onboardCmd)
+}
 
-	f := onboardCmd.Flags()
+// registerOnboardFlags binds the shared options to a command. Both `onboard`
+// and `agent create` use it so the two commands stay in sync.
+func registerOnboardFlags(cmd *cobra.Command) {
+	f := cmd.Flags()
 	f.BoolVar(&onboardOpts.yes, "yes", false, "run without prompts (requires --agent)")
 	f.BoolVar(&onboardOpts.json, "json", false, "print a machine-readable summary (implies --yes)")
 	f.BoolVar(&onboardOpts.force, "force", false, "reconfigure an agent that already exists")
@@ -84,7 +89,13 @@ func init() {
 }
 
 func runOnboard(cmd *cobra.Command, args []string) {
-	agentName := strings.TrimSpace(agentFlag)
+	runOnboarding(strings.TrimSpace(agentFlag), false)
+}
+
+// runOnboarding is the single implementation behind `myaaw onboard` and
+// `myaaw agent create`. When createNow is true the agent layout is created
+// before the TUI starts and the wizard jumps straight to the provider step.
+func runOnboarding(agentName string, createNow bool) {
 	if agentName != "" {
 		if err := agentdir.ValidateName(agentName); err != nil {
 			fmt.Printf("Invalid agent name: %v\n", err)
@@ -100,11 +111,30 @@ func runOnboard(cmd *cobra.Command, args []string) {
 		os.Exit(runOnboardHeadless(agentName))
 	}
 
-	p := tea.NewProgram(initialOnboardModel(agentName), tea.WithAltScreen())
+	p := tea.NewProgram(newOnboardingModel(agentName, createNow), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
 	}
+}
+
+// newOnboardingModel builds the wizard state. With createNow the agent is
+// created up front and the wizard starts at the provider step, which is what
+// `myaaw agent create <name>` needs.
+func newOnboardingModel(agentName string, createNow bool) onboardModel {
+	m := initialOnboardModel(agentName)
+	if !createNow || agentName == "" {
+		return m
+	}
+	if err := m.initAgent(); err != nil {
+		m.err = err
+		m.step = stepInitHome
+		return m
+	}
+	m.step = stepProviderType
+	m.cursor = 0
+	m.choices = []string{"OpenAI (or compatible)", "Gemini"}
+	return m
 }
 
 // Steps

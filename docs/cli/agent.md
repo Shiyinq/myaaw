@@ -42,28 +42,27 @@ If nothing is initialized it prints `No agents registered. Run 'myaaw onboard' t
 
 ## `agent create <name>`
 
-Creates a fully isolated agent:
-
-1. Validates the name and refuses duplicates.
-2. Copies the embedded default layout into `~/.myaaw/<name>/` (config, `.env`, `home/`, `skills/`, `tools/`, `cron/`, `jobs/`, `database/`, `logs/`).
-3. Creates `home/workspace/projects` and `home/workspace/downloads`.
-4. Writes `PORT` and `MYAAW_BASE_URL` into `.env`. The first agent gets `8080`; later agents get the lowest free port.
-5. Registers the name in `~/.myaaw/agents.json`.
-6. Seeds A2A contacts and generates an `A2A_TOKEN` so the new agent can talk to the others.
+Alias for onboarding that creates the agent first. It runs the same implementation as `myaaw onboard`, so there is no second setup path:
 
 ```bash
 myaaw agent create agent-b
-# ✅ Agent "agent-b" created at ~/.myaaw/agent-b
-# Configure it with: myaaw --agent agent-b onboard
 ```
 
-The command stops here: no provider, channel, or identity is configured yet. It does write `.env` with `PORT` (the lowest free port, `8080` for the first agent) and `MYAAW_BASE_URL`, and it seeds an A2A token plus contacts. Run onboarding next:
+What happens:
+
+1. Validates the name and refuses names that are already taken (existing agent, leftover directory, or case-only duplicate).
+2. Creates `~/.myaaw/<name>/` from the embedded template, writes `.env` with a unique `PORT` and `MYAAW_BASE_URL`, registers the agent in `agents.json`, and wires A2A (`A2A_TOKEN`, contacts in both directions, self excluded).
+3. Opens the onboarding wizard **starting at the provider step** — no name prompt, no picker.
+
+It accepts the same flags as [`myaaw onboard`](onboard.md#headless-mode-ci-scripts), so it can also run headless:
 
 ```bash
-myaaw --agent agent-b onboard
+myaaw agent create agent-b --yes \
+  --provider gemini --model models/gemini-2.5-flash \
+  --channel telegram --telegram-token "$TG_TOKEN" --owner 123456789
 ```
 
-If you would rather create and configure in one flow, run `myaaw onboard` without `--agent`: on a fresh install it asks for the agent name first, and when agents already exist it offers them in a picker together with `+ Create a new agent`.
+To reconfigure an existing agent, use `myaaw --agent <name> onboard` instead; `agent create` never overwrites an existing agent.
 
 ## `agent use [name]`
 

@@ -418,7 +418,7 @@ Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent gu
 
 | Command | Subcommands / Flags | Description |
 | :--- | :--- | :--- |
-| **`agent`** | `list`, `create <name>`, `use [name]`, `delete [name]` | Manage agents. `use` and `delete` open an arrow-key picker when no name is passed; `delete` asks for confirmation. |
+| **`agent`** | `list`, `create <name>`, `use [name]`, `delete [name]` | Manage agents. `create` runs the onboarding wizard for a new agent. `use` and `delete` open an arrow-key picker when no name is passed; `delete` asks for confirmation. |
 | **`--agent <name>`** | global flag | Target a specific agent for `chat`, `status`, `logs`, `server`, `provider`, `channel`, `config`, `cron`, `webhook`, `voice`, `voice-classic`, and `consumer`. Without it, the registry default is used. |
 | **`chat`** | `--agent <name>`, `-m "text"` | Interactive chat shows an agent picker when more than one initialized agent exists. |
 | **`onboard`** | `--agent <name>` | Configure providers and channels for a specific agent. |
@@ -428,10 +428,9 @@ Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent gu
 
 **Examples:**
 ```bash
-myaaw agent create myfriend
+myaaw agent create myfriend      # create + configure in one flow
 myaaw agent list
 myaaw agent use myfriend
-myaaw --agent myfriend onboard
 
 myaaw --agent myfriend provider create
 myaaw --agent myfriend provider list
