@@ -92,8 +92,13 @@ func Initialize(name string, setActive bool) (a2aWarning error, err error) {
 // Apply merges the input into config.json and returns the written config plus
 // non-fatal warnings (for example a failed webhook registration).
 func Apply(name string, in Input, port int) (*config.Config, []string, error) {
-	if err := PrepareEnv(name, port); err != nil {
-		return nil, nil, err
+	// Initialize already assigned a port. Only re-run PrepareEnv when the caller
+	// explicitly wants a different one, so a normal run does not take the port
+	// lock twice.
+	if port > 0 {
+		if err := PrepareEnv(name, port); err != nil {
+			return nil, nil, err
+		}
 	}
 	root, err := agentdir.AgentRoot(name)
 	if err != nil {

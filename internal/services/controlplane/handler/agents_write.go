@@ -8,31 +8,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// CreateAgent creates an isolated agent.
-// @Summary      Create agent
-// @Tags         Agents
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        request body CreateAgentRequest true "Agent name"
-// @Success      201 {object} service.AgentInfo
-// @Failure      400 {object} common.ErrorResponse
-// @Failure      401 {object} common.ErrorResponse
-// @Failure      409 {object} common.ErrorResponse
-// @Router       /agents [post]
-func (h *Handler) CreateAgent(c fiber.Ctx) error {
-	var req CreateAgentRequest
-	if err := c.Bind().JSON(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON request body"})
-	}
-
-	agent, err := h.agents.Create(req.Name)
-	if err != nil {
-		return agentWriteError(c, err)
-	}
-	return c.Status(fiber.StatusCreated).JSON(agent)
-}
-
 // DeleteAgent deletes an agent and all its data.
 // @Summary      Delete agent
 // @Tags         Agents
@@ -71,8 +46,6 @@ func (h *Handler) SetDefaultAgent(c fiber.Ctx) error {
 
 func agentWriteError(c fiber.Ctx, err error) error {
 	switch {
-	case errors.Is(err, service.ErrAgentExists):
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 	case errors.Is(err, service.ErrAgentNotFound):
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "agent not found"})
 	case errors.Is(err, service.ErrInvalidAgentName), errors.Is(err, service.ErrDefaultAgent):

@@ -64,7 +64,6 @@ func NewApp() (*fiber.App, error) {
 	app.Put("/auth/username", h.ChangeUsername)
 
 	app.Get("/agents", h.ListAgents)
-	app.Post("/agents", h.CreateAgent)
 	app.Post("/agents/:name/onboard", h.OnboardAgent)
 	app.Get("/agents/:name", h.GetAgent)
 	app.Delete("/agents/:name", h.DeleteAgent)

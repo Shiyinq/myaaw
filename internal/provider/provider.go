@@ -7,7 +7,13 @@ import (
 	"fmt"
 	"myaaw/internal/config"
 	"strings"
+	"time"
 )
+
+// modelListTimeout bounds model discovery. The onboarding wizard and the
+// dashboard call it interactively, so a slow or unreachable provider must fail
+// fast instead of waiting for the chat timeout.
+const modelListTimeout = 15 * time.Second
 
 // StopReason describes why an assistant turn ended.
 type StopReason string

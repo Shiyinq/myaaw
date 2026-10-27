@@ -184,10 +184,6 @@ type LogsResponse struct {
 	Files []service.LogFile `json:"files"`
 }
 
-type CreateAgentRequest struct {
-	Name string `json:"name" example:"myfriend"`
-}
-
 type CreateProviderRequest struct {
 	Name         string `json:"name" example:"openai"`
 	Type         string `json:"type" example:"openai"`

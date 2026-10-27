@@ -189,12 +189,6 @@ definitions:
           $ref: '#/definitions/service.ContextFile'
         type: array
     type: object
-  handler.CreateAgentRequest:
-    properties:
-      name:
-        example: myfriend
-        type: string
-    type: object
   handler.CreateContactRequest:
     properties:
       description:
@@ -1261,40 +1255,6 @@ paths:
       security:
       - BearerAuth: []
       summary: List agents
-      tags:
-      - Agents
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: Agent name
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/handler.CreateAgentRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/service.AgentInfo'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/common.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/common.ErrorResponse'
-        "409":
-          description: Conflict
-          schema:
-            $ref: '#/definitions/common.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Create agent
       tags:
       - Agents
   /agents/{name}:

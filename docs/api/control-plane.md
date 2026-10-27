@@ -99,7 +99,6 @@ Chat and conversation endpoints use this ID automatically. Clients do not need t
 |---|---|---|
 | `GET` | `/agents` | list agents with `default`, `running`, `port`, `base_url` |
 | `GET` | `/agents/:name` | one agent |
-| `POST` | `/agents` | create `{name}` from the embedded template |
 | `POST` | `/agents/:name/onboard` | create or reconfigure an agent with the full setup in one call |
 | `DELETE` | `/agents/:name` | delete agent data (default agent is protected) |
 | `POST` | `/agents/:name/default` | set registry default |
@@ -110,7 +109,7 @@ A frontend keeps one `selectedAgent` value and prefixes every request:
 const api = (path) => `http://localhost:9000/agents/${selectedAgent}${path}`;
 ```
 
-Creating an agent assigns the next free port, writes `.env`, creates the workspace, and registers it.
+Creating an agent assigns the next free port, writes `.env`, creates the workspace, and registers it. The control plane has no separate create call: `POST /agents/:name/onboard` is the only way to add an agent, so a dashboard never has to chain create + configure.
 
 `POST /agents/:name/onboard` is the dashboard-friendly path: it **creates the agent when the name is free and reconfigures it otherwise**, using the same core as `myaaw onboard` (layout, port, A2A contacts, config, skills, tools, webhook). Omitting a section keeps its current value; on a new agent the omitted parts fall back to the template defaults. Omitted `disable_tools` leaves `tools/tools.json` untouched, and skills are only ever installed, never deleted.
 
@@ -725,7 +724,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 | Group | Endpoints |
 |---|---|
 | Auth | `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, `POST /auth/change-password`, `PUT /auth/username` |
-| Agents | `GET/POST /agents`, `GET/DELETE /agents/:name`, `POST /agents/:name/default` |
+| Agents | `GET /agents`, `GET/DELETE /agents/:name`, `POST /agents/:name/onboard`, `POST /agents/:name/default` |
 | Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream` |
 | Files | `GET/DELETE /agents/:name/fs`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
@@ -741,7 +740,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 | Cron | `GET/POST /cron`, `DELETE /cron/:id`, `POST /cron/:id/run`, `GET /cron/:id/history` |
 | System | `GET /health`, `GET /docs/*` |
 
-All `/agents/...` paths are prefixed with `/agents/:name`.
+All `/agents/...` paths are prefixed with `/agents/:name`. `POST /providers/models` is the only provider route outside an agent: it takes explicit credentials so a dashboard can fill the model picker before onboarding.
 
 ## 18. Errors
 

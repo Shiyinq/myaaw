@@ -3,17 +3,13 @@ package service
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/url"
 	"os"
-	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	myaaw "myaaw"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/daemon"
 )
@@ -21,7 +17,6 @@ import (
 var (
 	ErrAgentNotFound    = errors.New("agent not found")
 	ErrAgentUnavailable = errors.New("agent server is not reachable")
-	ErrAgentExists      = errors.New("agent already exists")
 	ErrInvalidAgentName = errors.New("invalid agent name")
 	ErrDefaultAgent     = errors.New("default agent cannot be deleted")
 )
@@ -42,66 +37,6 @@ type AgentService struct {
 
 func NewAgentService() *AgentService {
 	return &AgentService{reachTimeout: 150 * time.Millisecond}
-}
-
-// Create provisions a new isolated agent from the embedded template.
-func (s *AgentService) Create(name string) (AgentInfo, error) {
-	if err := agentdir.ValidateName(name); err != nil {
-		return AgentInfo{}, fmt.Errorf("%w: %v", ErrInvalidAgentName, err)
-	}
-	if err := agentdir.EnsureLayout(); err != nil {
-		return AgentInfo{}, err
-	}
-	if agentdir.AgentInitialized(name) {
-		return AgentInfo{}, ErrAgentExists
-	}
-
-	root, err := agentdir.AgentRoot(name)
-	if err != nil {
-		return AgentInfo{}, err
-	}
-	// Skills are opt-in: the template copy skips them, matching `myaaw onboard`
-	// and `agent create`, where an agent starts with no skill enabled.
-	if err := extractEmbedDir(".myaaw", root, "skills"); err != nil {
-		return AgentInfo{}, err
-	}
-	for _, dir := range []string{
-		filepath.Join(root, "skills"),
-		filepath.Join(root, "home", "workspace", "projects"),
-		filepath.Join(root, "home", "workspace", "downloads"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return AgentInfo{}, err
-		}
-	}
-
-	envPath, err := agentdir.EnvPath(name)
-	if err != nil {
-		return AgentInfo{}, err
-	}
-	if _, err := os.Stat(envPath); os.IsNotExist(err) {
-		if err := os.WriteFile(envPath, []byte(myaaw.DefaultEnvExample), 0o644); err != nil {
-			return AgentInfo{}, err
-		}
-	}
-
-	port := agentdir.SuggestedPort(name)
-	if err := agentdir.UpsertEnvValue(envPath, "PORT", strconv.Itoa(port)); err != nil {
-		return AgentInfo{}, err
-	}
-	if err := agentdir.UpsertEnvValue(envPath, "MYAAW_BASE_URL", fmt.Sprintf("http://localhost:%d", port)); err != nil {
-		return AgentInfo{}, err
-	}
-
-	_ = agentdir.RewriteLegacyPaths(root, name)
-	if err := agentdir.RegisterAgent(name); err != nil {
-		return AgentInfo{}, err
-	}
-	if err := agentdir.EnsureA2AContacts(name); err != nil {
-		log.Printf("controlplane: wire A2A contacts for %q: %v", name, err)
-	}
-
-	return s.Get(name)
 }
 
 // Delete removes an agent directory and unregisters it. The default agent is
@@ -150,40 +85,6 @@ func (s *AgentService) SetDefault(name string) error {
 	return agentdir.SetDefault(name)
 }
 
-func extractEmbedDir(src, dest string, skip ...string) error {
-	skipSet := make(map[string]bool, len(skip))
-	for _, name := range skip {
-		skipSet[name] = true
-	}
-	entries, err := myaaw.DefaultMyaawDir.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() && skipSet[entry.Name()] {
-			continue
-		}
-		srcPath := path.Join(src, entry.Name())
-		destPath := filepath.Join(dest, entry.Name())
-		if entry.IsDir() {
-			if err := os.MkdirAll(destPath, 0o755); err != nil {
-				return err
-			}
-			if err := extractEmbedDir(srcPath, destPath); err != nil {
-				return err
-			}
-			continue
-		}
-		data, err := myaaw.DefaultMyaawDir.ReadFile(srcPath)
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(destPath, data, 0o644); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 func (s *AgentService) List() ([]AgentInfo, error) {
 	names, err := agentdir.ListAgents()
 	if err != nil {
