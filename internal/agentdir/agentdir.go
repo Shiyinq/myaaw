@@ -153,9 +153,8 @@ func JobsDir(name string) (string, error)   { return agentPath(name, "jobs") }
 func LogsDir(name string) (string, error)   { return agentPath(name, "logs") }
 func CronDir(name string) (string, error)   { return agentPath(name, "cron") }
 func ToolsDir(name string) (string, error)  { return agentPath(name, "tools") }
-func StateDir(name string) (string, error)  { return agentPath(name, "state") }
 func TelegramOffsetPath(name string) (string, error) {
-	return agentPath(name, filepath.Join("state", "telegram_offset"))
+	return agentPath(name, filepath.Join("database", "telegram_offset"))
 }
 func ContactsPath(name string) (string, error) { return agentPath(name, "contacts.json") }
 func DatabaseDir(name string) (string, error)  { return agentPath(name, "database") }

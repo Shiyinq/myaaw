@@ -123,7 +123,6 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
     cron/
     jobs/
     logs/
-    state/                  # persisted runtime state (e.g. Telegram polling offset)
 ```
 
 See [Multi-Agent](../agents/multi-agent.md) for the full directory reference.

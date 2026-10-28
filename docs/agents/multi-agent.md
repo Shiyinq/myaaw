@@ -80,7 +80,6 @@ invalid: my friend, ../admin, my.friend, my/friend, -agent, _agent, pids
 │   ├── jobs/
 │   ├── cron/
 │   ├── tools/
-│   ├── state/          # persisted runtime state (e.g. Telegram polling offset)
 │   └── database/
 │       ├── myaaw.db
 │       ├── calendar/
