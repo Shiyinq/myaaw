@@ -4010,6 +4010,9 @@
                         "type": "string"
                     }
                 },
+                "queue_workers": {
+                    "type": "integer"
+                },
                 "repeat_tool_call_limit": {
                     "type": "integer"
                 },
@@ -4954,6 +4957,9 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "queue_workers": {
+                    "type": "integer"
                 },
                 "repeat_tool_call_limit": {
                     "type": "integer"

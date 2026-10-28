@@ -36,6 +36,37 @@ func loadTestConfig(t *testing.T) *config.Config {
 	return cfg
 }
 
+func TestConfigPatchQueueWorkers(t *testing.T) {
+	setupConfigAgent(t, testConfig())
+	svc := NewConfigService()
+
+	workers := 6
+	if _, err := svc.Patch("myfriend", ConfigPatch{Bot: &BotPatch{QueueWorkers: &workers}}); err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+	if cfg := loadTestConfig(t); cfg.Bot.QueueWorkers == nil || *cfg.Bot.QueueWorkers != 6 {
+		t.Fatalf("queue_workers = %v, want 6", cfg.Bot.QueueWorkers)
+	}
+
+	tooLow := 0
+	if _, err := svc.Patch("myfriend", ConfigPatch{Bot: &BotPatch{QueueWorkers: &tooLow}}); err == nil {
+		t.Fatal("expected queue_workers=0 to be rejected")
+	}
+
+	tooHigh := config.MaxQueueWorkers + 1
+	if _, err := svc.Patch("myfriend", ConfigPatch{Bot: &BotPatch{QueueWorkers: &tooHigh}}); err == nil {
+		t.Fatal("expected queue_workers above the cap to be rejected")
+	}
+
+	view, err := svc.ResetFields("myfriend", ConfigResetRequest{Bot: []string{"queue_workers"}})
+	if err != nil {
+		t.Fatalf("ResetFields: %v", err)
+	}
+	if view.Bot.QueueWorkers == nil || *view.Bot.QueueWorkers != 4 {
+		t.Fatalf("reset queue_workers = %v, want the template default 4", view.Bot.QueueWorkers)
+	}
+}
+
 func TestConfigPatchUpdatesOnlyGivenFields(t *testing.T) {
 	setupConfigAgent(t, testConfig())
 	svc := NewConfigService()

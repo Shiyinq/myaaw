@@ -489,6 +489,7 @@ type BotPatch struct {
 	RunTimeoutSeconds    *int      `json:"run_timeout_seconds,omitempty"`
 	StreamTimeoutSeconds *int      `json:"stream_timeout_seconds,omitempty"`
 	RequestRetries       *int      `json:"request_retries,omitempty"`
+	QueueWorkers         *int      `json:"queue_workers,omitempty"`
 	BlockedTools         *[]string `json:"blocked_tools,omitempty"`
 }
 
@@ -648,6 +649,12 @@ func applyBotPatch(bot *config.GlobalBotConfig, patch BotPatch) error {
 	if patch.RequestRetries != nil {
 		bot.RequestRetries = cpIntPtr(*patch.RequestRetries)
 	}
+	if patch.QueueWorkers != nil {
+		if *patch.QueueWorkers < 1 || *patch.QueueWorkers > config.MaxQueueWorkers {
+			return ErrInvalidConfig
+		}
+		bot.QueueWorkers = cpIntPtr(*patch.QueueWorkers)
+	}
 	if patch.BlockedTools != nil {
 		bot.BlockedTools = append([]string{}, (*patch.BlockedTools)...)
 	}
@@ -725,6 +732,8 @@ func resetBotFields(cfg, tmpl *config.Config, fields []string) {
 			cfg.Bot.StreamTimeoutSeconds = tmpl.Bot.StreamTimeoutSeconds
 		case "request_retries":
 			cfg.Bot.RequestRetries = tmpl.Bot.RequestRetries
+		case "queue_workers":
+			cfg.Bot.QueueWorkers = tmpl.Bot.QueueWorkers
 		case "blocked_tools":
 			cfg.Bot.BlockedTools = append([]string{}, tmpl.Bot.BlockedTools...)
 		}

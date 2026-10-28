@@ -4016,6 +4016,9 @@ const docTemplatecontrolplane = `{
                         "type": "string"
                     }
                 },
+                "queue_workers": {
+                    "type": "integer"
+                },
                 "repeat_tool_call_limit": {
                     "type": "integer"
                 },
@@ -4960,6 +4963,9 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "queue_workers": {
+                    "type": "integer"
                 },
                 "repeat_tool_call_limit": {
                     "type": "integer"

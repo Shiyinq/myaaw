@@ -29,6 +29,7 @@
         "run_timeout_seconds": 900,
         "stream_timeout_seconds": 180,
         "request_retries": 1,
+        "queue_workers": 4,
         "blocked_tools": []
     },
     "channels": {

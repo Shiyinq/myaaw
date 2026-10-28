@@ -44,6 +44,8 @@ definitions:
         items:
           type: string
         type: array
+      queue_workers:
+        type: integer
       repeat_tool_call_limit:
         type: integer
       request_retries:
@@ -676,6 +678,8 @@ definitions:
         items:
           type: string
         type: array
+      queue_workers:
+        type: integer
       repeat_tool_call_limit:
         type: integer
       request_retries:

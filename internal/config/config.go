@@ -82,6 +82,14 @@ var LLMRequestRetries int = 1
 var LLMStreamTimeoutSeconds int = 180
 var AgentRunTimeoutSeconds int = 900
 
+// QueueWorkers bounds how many inbound channel messages are processed at the
+// same time. Messages from the same user stay serialized.
+var QueueWorkers int = 4
+
+// MaxQueueWorkers caps the configured concurrency so a typo cannot spawn an
+// unbounded number of concurrent LLM runs.
+const MaxQueueWorkers = 16
+
 type Config struct {
 	DefaultProvider string                    `json:"default_provider,omitempty"`
 	Providers       map[string]ProviderConfig `json:"providers,omitempty"`
@@ -128,6 +136,7 @@ type GlobalBotConfig struct {
 	RunTimeoutSeconds    *int     `json:"run_timeout_seconds,omitempty"`
 	StreamTimeoutSeconds *int     `json:"stream_timeout_seconds,omitempty"`
 	RequestRetries       *int     `json:"request_retries,omitempty"`
+	QueueWorkers         *int     `json:"queue_workers,omitempty"`
 	BlockedTools         []string `json:"blocked_tools,omitempty"`
 }
 
@@ -302,6 +311,7 @@ func LoadBaseConfig() {
 	AgentToolTimeoutSeconds = envInt("AGENT_TOOL_TIMEOUT_SECONDS", AgentToolTimeoutSeconds)
 	AgentBlockedTools = splitCSV(os.Getenv("AGENT_BLOCKED_TOOLS"))
 	LLMRequestRetries = envInt("LLM_REQUEST_RETRIES", LLMRequestRetries)
+	QueueWorkers = envInt("QUEUE_WORKERS", QueueWorkers)
 	LLMStreamTimeoutSeconds = envInt("LLM_STREAM_TIMEOUT_SECONDS", LLMStreamTimeoutSeconds)
 	AgentRunTimeoutSeconds = envInt("AGENT_RUN_TIMEOUT_SECONDS", AgentRunTimeoutSeconds)
 
@@ -357,6 +367,9 @@ func LoadBaseConfig() {
 		}
 		if jsonConfig.Bot.RequestRetries != nil {
 			LLMRequestRetries = *jsonConfig.Bot.RequestRetries
+		}
+		if jsonConfig.Bot.QueueWorkers != nil {
+			QueueWorkers = *jsonConfig.Bot.QueueWorkers
 		}
 		if len(jsonConfig.Bot.BlockedTools) > 0 {
 			AgentBlockedTools = jsonConfig.Bot.BlockedTools
@@ -505,6 +518,12 @@ func validateAgentConfig() {
 	}
 	if LLMRequestRetries < 0 {
 		LLMRequestRetries = 0
+	}
+	if QueueWorkers < 1 {
+		QueueWorkers = 1
+	}
+	if QueueWorkers > MaxQueueWorkers {
+		QueueWorkers = MaxQueueWorkers
 	}
 	if LLMStreamTimeoutSeconds <= 0 {
 		LLMStreamTimeoutSeconds = 180
