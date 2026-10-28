@@ -11,6 +11,7 @@ import (
 	"myaaw/internal/agent/skills"
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
+	"myaaw/internal/obs/agenttrace"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
 )
@@ -74,11 +75,22 @@ func (r *BotServiceImpl) runConversation(
 		}
 	}
 
+	recorder := r.traceRun(msg, user, messages)
+	if recorder != nil {
+		// One identifier for the engine events and the stored trace.
+		cfg.RunID = recorder.RunID()
+		// Tools read this from ctx, so a subagent records itself as a child run.
+		ctx = agenttrace.WithTrace(ctx, recorder)
+	}
+
 	result, runErr := r.agent.RunEvents(ctx, cfg, messages, func(event agent.AgentEvent) error {
+		recorder.Event(event)
 		if onChunk == nil {
 			return nil
 		}
 		switch event.Type {
+		case agent.EventStepStart:
+			onChunk(channel.StreamChunk{Kind: "step", StepIndex: event.StepIndex})
 		case agent.EventMessageUpdate:
 			if event.Delta != "" {
 				onChunk(channel.StreamChunk{Kind: "text", Text: event.Delta})
@@ -121,6 +133,13 @@ func (r *BotServiceImpl) runConversation(
 		}
 		return nil
 	})
+
+	if recorder != nil {
+		recorder.End(result)
+		if err := recorder.Close(); err != nil {
+			log.Printf("⚠️  Failed to write trace: %v", err)
+		}
+	}
 
 	finalText := provider.MessageText(result.Final)
 	if finalText == "" && result.StopReason == provider.StopMaxIterations {

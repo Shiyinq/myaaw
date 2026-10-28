@@ -162,6 +162,12 @@ func DatabasePath(name string) (string, error) {
 	return agentPath(name, filepath.Join("database", "myaaw.db"))
 }
 
+// ObservabilityPath is the SQLite file that stores traces, token usage, and
+// model cost for one agent.
+func ObservabilityPath(name string) (string, error) {
+	return agentPath(name, filepath.Join("database", "observability.db"))
+}
+
 func ActiveHome() (string, error)         { return activePath("home") }
 func ActiveConfigPath() (string, error)   { return activePath(filepath.Join("config", "config.json")) }
 func ActiveEnvPath() (string, error)      { return activePath(".env") }
@@ -173,6 +179,9 @@ func ActiveToolsDir() (string, error)     { return activePath("tools") }
 func ActiveContactsPath() (string, error) { return activePath("contacts.json") }
 func ActiveDatabaseDir() (string, error)  { return activePath("database") }
 func ActiveDatabasePath() (string, error) { return activePath(filepath.Join("database", "myaaw.db")) }
+func ActiveObservabilityPath() (string, error) {
+	return activePath(filepath.Join("database", "observability.db"))
+}
 
 // PIDDir is shared by all agents so daemon files cannot collide by accident.
 func PIDDir() (string, error) {

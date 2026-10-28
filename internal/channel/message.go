@@ -27,10 +27,12 @@ type OutgoingMessage struct {
 }
 
 type StreamChunk struct {
-	// Kind distinguishes progress events: "text", "thought", "tool",
+	// Kind distinguishes progress events: "step", "text", "thought", "tool",
 	// "tool_result", "trace", or "usage". Empty means plain text for
 	// backwards compatibility.
-	Kind           string
+	Kind string
+	// StepIndex is the 1-based loop iteration for Kind "step".
+	StepIndex      int
 	Text           string
 	ToolCalls      []provider.ToolCall
 	ToolCallID     string

@@ -125,10 +125,11 @@ func consumeOpenAISSE(r io.Reader, onEvent func(StreamEvent) error) error {
 
 		if chunk.Usage.TotalTokens > 0 {
 			usage = Usage{
-				PromptTokens:     chunk.Usage.PromptTokens,
-				CompletionTokens: chunk.Usage.CompletionTokens,
-				TotalTokens:      chunk.Usage.TotalTokens,
-				ThoughtsTokens:   chunk.Usage.CompletionTokensDetails.ReasoningTokens,
+				PromptTokens:      chunk.Usage.PromptTokens,
+				CompletionTokens:  chunk.Usage.CompletionTokens,
+				TotalTokens:       chunk.Usage.TotalTokens,
+				ThoughtsTokens:    chunk.Usage.CompletionTokensDetails.ReasoningTokens,
+				CachedInputTokens: chunk.Usage.cachedTokens(),
 			}
 			if err := onEvent(StreamEvent{Type: StreamUsage, Usage: usage}); err != nil {
 				return err
@@ -312,10 +313,11 @@ func chatOpenAICompatible(
 	msg.StopReason = mapFinishReason(response.Choices[0].FinishReason)
 	if response.Usage.TotalTokens > 0 {
 		msg.Usage = Usage{
-			PromptTokens:     response.Usage.PromptTokens,
-			CompletionTokens: response.Usage.CompletionTokens,
-			TotalTokens:      response.Usage.TotalTokens,
-			ThoughtsTokens:   response.Usage.CompletionTokensDetails.ReasoningTokens,
+			PromptTokens:      response.Usage.PromptTokens,
+			CompletionTokens:  response.Usage.CompletionTokens,
+			TotalTokens:       response.Usage.TotalTokens,
+			ThoughtsTokens:    response.Usage.CompletionTokensDetails.ReasoningTokens,
+			CachedInputTokens: response.Usage.cachedTokens(),
 		}
 	}
 	if msg.StopReason == StopError {

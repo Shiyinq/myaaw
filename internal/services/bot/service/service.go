@@ -8,12 +8,14 @@ import (
 	"myaaw/internal/agent"
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
+	"myaaw/internal/obs"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
 	"myaaw/internal/services/bot/repository"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type BotService interface {
@@ -36,6 +38,14 @@ type BotServiceImpl struct {
 	agent             agent.AgentProvider
 	currentProviderID string
 	currentModel      string
+
+	// Trace recording. The store is opened lazily on the first run so commands
+	// and tests that never execute the agent do not create a database.
+	obsOnce     sync.Once
+	obsStore    *obs.Store
+	obsExporter *obs.Exporter
+	obsPricer   *obs.Pricer
+	obsConfig   obs.Config
 }
 
 func NewBotService(userRepo repository.UserRepository, conversationRepo repository.ConversationRepository) BotService {

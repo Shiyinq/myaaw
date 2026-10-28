@@ -535,3 +535,83 @@ func TestValidateToolArguments(t *testing.T) {
 		t.Fatal("invalid JSON was accepted")
 	}
 }
+
+func TestRunEventsCarriesRunIdentityAndRequestTranscript(t *testing.T) {
+	prov := &scriptedProvider{turns: []provider.Message{
+		{
+			Role:    "assistant",
+			Content: "hello back",
+			Usage:   provider.Usage{PromptTokens: 10, CompletionTokens: 2, TotalTokens: 12},
+		},
+	}}
+	agentUnderTest := NewAgent(prov)
+
+	var (
+		events   []AgentEvent
+		requests []AgentEvent
+	)
+	result, err := agentUnderTest.RunEvents(
+		context.Background(),
+		RunConfig{Model: "test-model", MaxIterations: 3},
+		[]provider.Message{
+			{Role: "system", Content: "be nice"},
+			{Role: "user", Content: "hello"},
+		},
+		func(event AgentEvent) error {
+			events = append(events, event)
+			if event.Type == EventLLMRequestStart {
+				requests = append(requests, event)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if result.RunID == "" {
+		t.Fatal("RunResult.RunID is empty")
+	}
+	if result.StartedAt.IsZero() || result.EndedAt.IsZero() {
+		t.Fatalf("run timestamps = %v / %v", result.StartedAt, result.EndedAt)
+	}
+	for _, event := range events {
+		if event.RunID != result.RunID {
+			t.Fatalf("event %d has run id %q, want %q", event.Type, event.RunID, result.RunID)
+		}
+		if event.Time.IsZero() {
+			t.Fatalf("event %d has no timestamp", event.Type)
+		}
+	}
+
+	if len(requests) != 1 {
+		t.Fatalf("LLM request start events = %d, want 1", len(requests))
+	}
+	request := requests[0]
+	if request.Model != "test-model" {
+		t.Fatalf("request model = %q", request.Model)
+	}
+	if request.StepIndex != 1 {
+		t.Fatalf("request turn index = %d, want 1", request.StepIndex)
+	}
+	if len(request.Messages) < 2 {
+		t.Fatalf("request messages = %d, want system and user", len(request.Messages))
+	}
+	last := request.Messages[len(request.Messages)-1]
+	if last.Role != "user" || provider.MessageText(last) != "hello" {
+		t.Fatalf("last request message = %+v", last)
+	}
+}
+
+func TestAddUsageAggregatesCachedInputTokens(t *testing.T) {
+	var total provider.Usage
+	addUsage(&total, provider.Usage{PromptTokens: 10, CachedInputTokens: 8, CompletionTokens: 2, TotalTokens: 12})
+	addUsage(&total, provider.Usage{PromptTokens: 5, CachedInputTokens: 4, CompletionTokens: 1, TotalTokens: 6})
+
+	if total.CachedInputTokens != 12 {
+		t.Fatalf("cached input tokens = %d, want 12", total.CachedInputTokens)
+	}
+	if total.PromptTokens != 15 || total.CompletionTokens != 3 {
+		t.Fatalf("usage = %+v", total)
+	}
+}

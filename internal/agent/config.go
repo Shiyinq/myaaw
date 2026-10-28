@@ -11,12 +11,12 @@ import (
 	"myaaw/internal/provider"
 )
 
-// TurnDecision lets a FinishTurn hook stop or continue the loop.
-type TurnDecision string
+// StepDecision lets a FinishStep hook stop or continue the loop.
+type StepDecision string
 
 const (
-	TurnContinue TurnDecision = "continue"
-	TurnEnd      TurnDecision = "end"
+	StepContinue StepDecision = "continue"
+	StepEnd      StepDecision = "end"
 )
 
 // ToolBlock is returned by BeforeToolCall to prevent a tool from executing.
@@ -26,9 +26,9 @@ type ToolBlock struct {
 	Terminate bool
 }
 
-// TurnContext is passed to FinishTurn after a turn's tool results have been
+// StepContext is passed to FinishStep after a step's tool results have been
 // appended to the transcript.
-type TurnContext struct {
+type StepContext struct {
 	Message     provider.Message
 	ToolResults []provider.Message
 	Transcript  []provider.Message
@@ -38,6 +38,10 @@ type TurnContext struct {
 // RunConfig controls one agent run. Zero values fall back to the agent's
 // defaults and global config.
 type RunConfig struct {
+	// RunID labels this run. When empty the engine generates one; callers that
+	// also record a trace pass the same id so logs and traces correlate.
+	RunID string
+
 	Model            string
 	MaxIterations    int
 	WarningThreshold int
@@ -67,10 +71,10 @@ type RunConfig struct {
 	BeforeToolCall func(ctx context.Context, call ToolCallInput, args json.RawMessage) *ToolBlock
 	// AfterToolCall may override or redact a tool result.
 	AfterToolCall func(ctx context.Context, call ToolCallInput, result *ToolResult) *ToolResult
-	// FinishTurn may end the run after a completed turn.
-	FinishTurn func(ctx context.Context, turn TurnContext) TurnDecision
+	// FinishStep may end the run after a completed step.
+	FinishStep func(ctx context.Context, step StepContext) StepDecision
 	// OnCheckpoint receives the in-progress transcript at the start of the run,
-	// after each tool round, and at every turn end. It runs on the run goroutine,
+	// after each tool round, and at every step end. It runs on the run goroutine,
 	// so implementations must be quick and must not mutate the slice. Panics are
 	// recovered so a failing persistence hook cannot break the run.
 	OnCheckpoint func(ctx context.Context, transcript []provider.Message)

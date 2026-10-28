@@ -419,7 +419,7 @@ func runPreparedToolCall(
 				resultCh <- errorToolResult(fmt.Sprintf("Error: tool %q panicked: %v", prepared.call.Name, recovered))
 			}
 		}()
-		resultCh <- prepared.tool.Execute(ctx, prepared.call, onUpdate)
+		resultCh <- prepared.tool.Execute(withToolCallID(ctx, prepared.call.ID), prepared.call, onUpdate)
 	}()
 
 	select {

@@ -33,16 +33,35 @@ func (a *Agent) RunEvents(
 	ctx context.Context,
 	cfg RunConfig,
 	history []provider.Message,
-	emit func(AgentEvent) error,
+	emitRaw func(AgentEvent) error,
 ) (RunResult, error) {
-	if emit == nil {
-		emit = func(AgentEvent) error { return nil }
+	if emitRaw == nil {
+		emitRaw = func(AgentEvent) error { return nil }
 	}
 	cfg = a.applyDefaults(cfg)
 	if cfg.RunTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, cfg.RunTimeout)
 		defer cancel()
+	}
+
+	runID := cfg.RunID
+	if runID == "" {
+		runID = newRunID()
+	}
+	startedAt := time.Now()
+	var stepIndex int
+	// Every event carries the run identity, its timestamp, and the step it
+	// belongs to, so consumers never have to reconstruct that context.
+	emit := func(event AgentEvent) error {
+		event.RunID = runID
+		if event.Time.IsZero() {
+			event.Time = time.Now()
+		}
+		if event.StepIndex == 0 {
+			event.StepIndex = stepIndex
+		}
+		return emitRaw(event)
 	}
 
 	transcript := MigrateLegacyTranscript(history)
@@ -78,7 +97,7 @@ func (a *Agent) RunEvents(
 		stopReason = provider.StopNormal
 		runErr     error
 		iteration  int
-		runID      = time.Now().UnixNano()
+		runSeq     = time.Now().UnixNano()
 		repeatSeen = map[string]int{}
 		nextWarn   string
 	)
@@ -109,8 +128,9 @@ func (a *Agent) RunEvents(
 
 		requestIndex := iteration
 		iteration++
+		stepIndex = iteration
 
-		_ = emit(AgentEvent{Type: EventTurnStart})
+		_ = emit(AgentEvent{Type: EventStepStart})
 
 		requestMessages := transcript
 		warning := stepAwarenessWarning(requestIndex, cfg)
@@ -129,6 +149,13 @@ func (a *Agent) RunEvents(
 		if cfg.ContextMaxTokens > 0 {
 			requestMessages = CompactTranscript(requestMessages, cfg.ContextMaxTokens)
 		}
+
+		// Hand the exact request transcript to observers before it is sent.
+		_ = emit(AgentEvent{
+			Type:     EventLLMRequestStart,
+			Model:    cfg.Model,
+			Messages: append([]provider.Message(nil), requestMessages...),
+		})
 
 		var (
 			streamedText    strings.Builder
@@ -236,7 +263,7 @@ func (a *Agent) RunEvents(
 		// Normalize tool call IDs before the message enters the transcript.
 		for i := range final.ToolCalls {
 			if final.ToolCalls[i].ID == "" {
-				final.ToolCalls[i].ID = fmt.Sprintf("call_%d_%d_%d", runID, iteration, i)
+				final.ToolCalls[i].ID = fmt.Sprintf("call_%d_%d_%d", runSeq, iteration, i)
 			}
 		}
 
@@ -260,14 +287,14 @@ func (a *Agent) RunEvents(
 		if streamStop == provider.StopError || streamStop == provider.StopAborted {
 			stopReason = streamStop
 			runErr = streamErr
-			_ = emit(AgentEvent{Type: EventTurnEnd, Message: &final})
+			_ = emit(AgentEvent{Type: EventStepEnd, Message: &final})
 			break
 		}
 
 		if streamStop == provider.StopLength {
 			stopReason = provider.StopLength
 			if len(final.ToolCalls) == 0 {
-				_ = emit(AgentEvent{Type: EventTurnEnd, Message: &final})
+				_ = emit(AgentEvent{Type: EventStepEnd, Message: &final})
 				break
 			}
 			// The output was truncated, so tool arguments may be incomplete.
@@ -279,13 +306,13 @@ func (a *Agent) RunEvents(
 				newMessages = append(newMessages, message)
 			}
 			_ = emit(AgentEvent{Type: EventTraceUpdate, Trace: trace})
-			_ = emit(AgentEvent{Type: EventTurnEnd, Message: &final, Trace: trace})
+			_ = emit(AgentEvent{Type: EventStepEnd, Message: &final, Trace: trace})
 			continue
 		}
 
 		if len(final.ToolCalls) == 0 {
 			stopReason = provider.StopNormal
-			_ = emit(AgentEvent{Type: EventTurnEnd, Message: &final, Trace: trace})
+			_ = emit(AgentEvent{Type: EventStepEnd, Message: &final, Trace: trace})
 			break
 		}
 
@@ -298,7 +325,7 @@ func (a *Agent) RunEvents(
 			})
 		}
 
-		log.Printf("[Agent] turn %d: executing %d tool call(s)", iteration, len(calls))
+		log.Printf("[Agent] step %d: executing %d tool call(s)", iteration, len(calls))
 		results, terminate := executeToolCalls(ctx, calls, registry, cfg, emit)
 
 		toolMessages := make([]provider.Message, 0, len(results))
@@ -339,19 +366,19 @@ func (a *Agent) RunEvents(
 
 		_ = emit(AgentEvent{Type: EventTraceUpdate, Trace: trace})
 
-		// Tool results belong to the turn even if the run dies mid-stream.
+		// Tool results belong to the step even if the run dies mid-stream.
 		checkpoint()
 
-		decision := TurnContinue
-		if cfg.FinishTurn != nil {
-			decision = cfg.FinishTurn(ctx, TurnContext{
+		decision := StepContinue
+		if cfg.FinishStep != nil {
+			decision = cfg.FinishStep(ctx, StepContext{
 				Message:     final,
 				ToolResults: toolMessages,
 				Transcript:  transcript,
 				NewMessages: newMessages,
 			})
 		}
-		_ = emit(AgentEvent{Type: EventTurnEnd, Message: &final, ToolResult: nil, Trace: trace})
+		_ = emit(AgentEvent{Type: EventStepEnd, Message: &final, ToolResult: nil, Trace: trace})
 		checkpoint()
 
 		if ctx.Err() != nil {
@@ -359,7 +386,7 @@ func (a *Agent) RunEvents(
 			runErr = ctx.Err()
 			break
 		}
-		if terminate || decision == TurnEnd {
+		if terminate || decision == StepEnd {
 			stopReason = provider.StopNormal
 			break
 		}
@@ -389,6 +416,9 @@ func (a *Agent) RunEvents(
 	})
 
 	return RunResult{
+		RunID:       runID,
+		StartedAt:   startedAt,
+		EndedAt:     time.Now(),
 		Transcript:  transcript,
 		NewMessages: newMessages,
 		Final:       final,
@@ -402,7 +432,7 @@ func emitAssistantMessage(emit func(AgentEvent) error, message provider.Message)
 	partial := message
 	_ = emit(AgentEvent{Type: EventMessageStart, Message: &partial})
 	_ = emit(AgentEvent{Type: EventMessageEnd, Message: &partial})
-	_ = emit(AgentEvent{Type: EventTurnEnd, Message: &partial})
+	_ = emit(AgentEvent{Type: EventStepEnd, Message: &partial})
 }
 
 // safeCheckpoint isolates persistence hooks from the agent loop.
@@ -522,6 +552,7 @@ func addUsage(dst *provider.Usage, src provider.Usage) {
 	dst.CompletionTokens += src.CompletionTokens
 	dst.TotalTokens += src.TotalTokens
 	dst.ThoughtsTokens += src.ThoughtsTokens
+	dst.CachedInputTokens += src.CachedInputTokens
 	if len(src.Details) > 0 {
 		dst.Details = append(dst.Details, src.Details...)
 	}

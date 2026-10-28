@@ -3,6 +3,7 @@ package subagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -15,6 +16,8 @@ import (
 	"myaaw/internal/agent/tools"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/config"
+	"myaaw/internal/obs"
+	"myaaw/internal/obs/agenttrace"
 	"myaaw/internal/provider"
 
 	"github.com/go-resty/resty/v2"
@@ -127,6 +130,70 @@ func (t *SubAgentTool) CallToolContext(ctx context.Context, arguments string, tc
 	return fmt.Sprintf("Successfully started %d sub-agents in background (Batch ID: %s). You will receive notifications as they complete. You do not need to wait or set a cron job.", totalTasks, batchID)
 }
 
+// startTrace opens a child trace for this sub-agent task, nested under the tool
+// call that spawned it. It returns nil when the parent run is not traced.
+func (t *SubAgentTool) startTrace(ctx context.Context, task SubAgentTask, systemPrompt string) *agenttrace.Trace {
+	parent := agenttrace.FromContext(ctx)
+	if parent == nil {
+		return nil
+	}
+
+	parentSpan := parent.ToolSpanID(agent.ToolCallIDFromContext(ctx))
+	if parentSpan == "" {
+		parentSpan = parent.CurrentSpanID()
+	}
+
+	return parent.StartChild(obs.RunStart{
+		Channel:      "subagent",
+		Agent:        task.Name,
+		Provider:     config.LLMProviderName,
+		Model:        config.LLMDefaultModel,
+		UserMessage:  task.Instruction,
+		SystemPrompt: systemPrompt,
+		ParentSpanID: parentSpan,
+	})
+}
+
+// runTraced runs the sub-agent while recording a child trace. It mirrors
+// RunContext's error handling so callers see the same result.
+func (t *SubAgentTool) runTraced(
+	ctx context.Context,
+	subAgent agent.AgentProvider,
+	task SubAgentTask,
+	systemPrompt string,
+	messages []provider.Message,
+) (provider.Message, error) {
+	child := t.startTrace(ctx, task, systemPrompt)
+
+	cfg := agent.DefaultRunConfig(config.LLMDefaultModel)
+	if child != nil {
+		cfg.RunID = child.RunID()
+	}
+
+	result, runErr := subAgent.RunEvents(ctx, cfg, messages, func(event agent.AgentEvent) error {
+		child.Event(event)
+		return nil
+	})
+
+	if child != nil {
+		child.End(result)
+		if err := child.Close(); err != nil {
+			log.Printf("[SubAgent %s] Failed to write trace: %v", task.Name, err)
+		}
+	}
+
+	if runErr != nil {
+		return result.Final, runErr
+	}
+	if result.StopReason == provider.StopError || result.StopReason == provider.StopAborted {
+		if result.Final.ErrorMessage != "" {
+			return result.Final, errors.New(result.Final.ErrorMessage)
+		}
+		return result.Final, fmt.Errorf("agent stopped: %s", result.StopReason)
+	}
+	return result.Final, nil
+}
+
 func (t *SubAgentTool) runSubAgent(ctx context.Context, task SubAgentTask, channelName, userID, baseURL, batchID string, taskNum, totalTasks int) {
 	select {
 	case subAgentSlots <- struct{}{}:
@@ -177,7 +244,7 @@ CRITICAL INSTRUCTIONS:
 		},
 	}
 
-	res, err := subAgent.RunContext(ctx, config.LLMDefaultModel, messages)
+	res, err := t.runTraced(ctx, subAgent, task, systemPrompt, messages)
 	report := provider.MessageText(res)
 	if err != nil {
 		if strings.TrimSpace(report) != "" {

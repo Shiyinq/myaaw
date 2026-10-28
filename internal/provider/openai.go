@@ -28,11 +28,26 @@ type OpenAICompletionTokensDetails struct {
 	ReasoningTokens int `json:"reasoning_tokens"`
 }
 
+type OpenAIPromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
 type OpenAIUsage struct {
 	PromptTokens            int                           `json:"prompt_tokens"`
 	CompletionTokens        int                           `json:"completion_tokens"`
 	TotalTokens             int                           `json:"total_tokens"`
 	CompletionTokensDetails OpenAICompletionTokensDetails `json:"completion_tokens_details"`
+	PromptTokensDetails     *OpenAIPromptTokensDetails    `json:"prompt_tokens_details,omitempty"`
+	// PromptCacheHitTokens is DeepSeek's spelling of the cache-hit count.
+	PromptCacheHitTokens int `json:"prompt_cache_hit_tokens,omitempty"`
+}
+
+// cachedTokens returns the reported prompt-cache hit count, if any.
+func (u OpenAIUsage) cachedTokens() int {
+	if u.PromptTokensDetails != nil && u.PromptTokensDetails.CachedTokens > 0 {
+		return u.PromptTokensDetails.CachedTokens
+	}
+	return u.PromptCacheHitTokens
 }
 
 type OpenAIGroqUsage struct {

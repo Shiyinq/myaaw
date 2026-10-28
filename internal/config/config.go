@@ -86,6 +86,16 @@ var AgentRunTimeoutSeconds int = 900
 // same time. Messages from the same user stay serialized.
 var QueueWorkers int = 4
 
+// Observability defaults. Recording is on by default; OBS_ENABLED=false (or
+// observability.enabled in config.json) turns it off entirely.
+var (
+	ObsEnabled         = true
+	ObsRetentionDays   = 30
+	ObsMaxContentChars = 8192
+	ObsStoreContent    = true
+	ObsModelPrices     map[string]ModelPriceConfig
+)
+
 // MaxQueueWorkers caps the configured concurrency so a typo cannot spawn an
 // unbounded number of concurrent LLM runs.
 const MaxQueueWorkers = 16
@@ -99,6 +109,43 @@ type Config struct {
 	Cron            CronConfig                `json:"cron"`
 	Transcriber     TranscriberConfig         `json:"transcriber,omitempty"`
 	Synthesizer     SynthesizerConfig         `json:"synthesizer,omitempty"`
+	Observability   *ObservabilityConfig      `json:"observability,omitempty"`
+}
+
+// ObservabilityConfig controls local trace recording and model pricing.
+type ObservabilityConfig struct {
+	Enabled         *bool                       `json:"enabled,omitempty"`
+	RetentionDays   int                         `json:"retention_days,omitempty"`
+	MaxContentChars int                         `json:"max_content_chars,omitempty"`
+	StoreContent    *bool                       `json:"store_content,omitempty"`
+	ModelPrices     map[string]ModelPriceConfig `json:"model_prices,omitempty"`
+}
+
+// ModelPriceConfig is a model price in USD per one million tokens.
+//
+// Input is the cache-miss price and CacheHit the discounted price for prompt
+// tokens served from the provider cache. OffPeak replaces the triplet outside
+// every PeakWindows entry; only models that declare both get peak pricing.
+type ModelPriceConfig struct {
+	Input       float64           `json:"input"`
+	CacheHit    float64           `json:"cache_hit,omitempty"`
+	Output      float64           `json:"output"`
+	OffPeak     *ModelPriceConfig `json:"off_peak,omitempty"`
+	PeakWindows []string          `json:"peak_windows,omitempty"`
+}
+
+// EffectiveObservability resolves observability settings from .env and
+// config.json, applying defaults for anything unset.
+func EffectiveObservability() ObservabilityConfig {
+	enabled := ObsEnabled
+	storeContent := ObsStoreContent
+	return ObservabilityConfig{
+		Enabled:         &enabled,
+		RetentionDays:   ObsRetentionDays,
+		MaxContentChars: ObsMaxContentChars,
+		StoreContent:    &storeContent,
+		ModelPrices:     ObsModelPrices,
+	}
 }
 
 type ProviderConfig struct {
@@ -312,6 +359,11 @@ func LoadBaseConfig() {
 	AgentBlockedTools = splitCSV(os.Getenv("AGENT_BLOCKED_TOOLS"))
 	LLMRequestRetries = envInt("LLM_REQUEST_RETRIES", LLMRequestRetries)
 	QueueWorkers = envInt("QUEUE_WORKERS", QueueWorkers)
+
+	ObsEnabled = envBool("OBS_ENABLED", ObsEnabled)
+	ObsRetentionDays = envInt("OBS_RETENTION_DAYS", ObsRetentionDays)
+	ObsMaxContentChars = envInt("OBS_MAX_CONTENT_CHARS", ObsMaxContentChars)
+	ObsStoreContent = envBool("OBS_STORE_CONTENT", ObsStoreContent)
 	LLMStreamTimeoutSeconds = envInt("LLM_STREAM_TIMEOUT_SECONDS", LLMStreamTimeoutSeconds)
 	AgentRunTimeoutSeconds = envInt("AGENT_RUN_TIMEOUT_SECONDS", AgentRunTimeoutSeconds)
 
@@ -433,6 +485,23 @@ func LoadBaseConfig() {
 				SynthesizerAPIKey = jsonConfig.Synthesizer.APIKey
 			}
 		}
+
+		// Priority: config.json observability > .env OBS_*
+		if obs := jsonConfig.Observability; obs != nil {
+			if obs.Enabled != nil {
+				ObsEnabled = *obs.Enabled
+			}
+			if obs.RetentionDays > 0 {
+				ObsRetentionDays = obs.RetentionDays
+			}
+			if obs.MaxContentChars > 0 {
+				ObsMaxContentChars = obs.MaxContentChars
+			}
+			if obs.StoreContent != nil {
+				ObsStoreContent = *obs.StoreContent
+			}
+			ObsModelPrices = obs.ModelPrices
+		}
 	}
 
 	validateAgentConfig()
@@ -524,6 +593,12 @@ func validateAgentConfig() {
 	}
 	if QueueWorkers > MaxQueueWorkers {
 		QueueWorkers = MaxQueueWorkers
+	}
+	if ObsRetentionDays < 0 {
+		ObsRetentionDays = 0
+	}
+	if ObsMaxContentChars <= 0 {
+		ObsMaxContentChars = 8192
 	}
 	if LLMStreamTimeoutSeconds <= 0 {
 		LLMStreamTimeoutSeconds = 180

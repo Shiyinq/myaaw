@@ -1,6 +1,13 @@
 package agent
 
-import "myaaw/internal/provider"
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"time"
+
+	"myaaw/internal/provider"
+)
 
 // EventType identifies an agent lifecycle event.
 type EventType int
@@ -8,8 +15,8 @@ type EventType int
 const (
 	EventAgentStart EventType = iota
 	EventAgentEnd
-	EventTurnStart
-	EventTurnEnd
+	EventStepStart
+	EventStepEnd
 	EventMessageStart
 	EventMessageUpdate
 	EventMessageEnd
@@ -18,12 +25,21 @@ const (
 	EventToolExecutionEnd
 	EventTraceUpdate
 	EventUsage
+	// EventLLMRequestStart fires immediately before a provider request and
+	// carries the exact transcript that request sends.
+	EventLLMRequestStart
 )
 
 // AgentEvent is emitted by the agent loop. Consumers should treat it as a
 // discriminated union keyed by Type.
 type AgentEvent struct {
 	Type EventType
+
+	// RunID identifies the RunEvents invocation that emitted the event, and
+	// Time is when it was emitted. Both are filled by the engine.
+	RunID     string
+	Time      time.Time
+	StepIndex int
 
 	Message *provider.Message // message lifecycle
 
@@ -35,6 +51,10 @@ type AgentEvent struct {
 	ToolArguments string      // raw JSON arguments (tool execution start)
 	ToolResult    *ToolResult // tool execution lifecycle
 
+	// Model and Messages are set on EventLLMRequestStart.
+	Model    string
+	Messages []provider.Message
+
 	Trace []provider.ReactStep // EventTraceUpdate / tool execution
 
 	Usage      provider.Usage      // EventUsage / EventAgentEnd (aggregated)
@@ -44,6 +64,11 @@ type AgentEvent struct {
 
 // RunResult is the final state of one agent run.
 type RunResult struct {
+	// RunID identifies this run across its events and traces.
+	RunID string
+	// StartedAt and EndedAt bracket the run.
+	StartedAt time.Time
+	EndedAt   time.Time
 	// Transcript is the full context after the run, including the leading
 	// system message. It is safe to persist after dropping the system message.
 	Transcript []provider.Message
@@ -58,4 +83,13 @@ type RunResult struct {
 	StopReason provider.StopReason
 	// Err is set for provider errors and cancellations.
 	Err error
+}
+
+// newRunID returns a short random identifier for one agent run.
+func newRunID() string {
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return fmt.Sprintf("run_%d", time.Now().UnixNano())
+	}
+	return "run_" + hex.EncodeToString(raw[:])
 }

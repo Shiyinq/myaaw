@@ -62,6 +62,7 @@ type GeminiUsageMetadata struct {
 	CandidatesTokenCount    int                  `json:"candidatesTokenCount"`
 	TotalTokenCount         int                  `json:"totalTokenCount"`
 	ThoughtsTokenCount      int                  `json:"thoughtsTokenCount"`
+	CachedContentTokenCount int                  `json:"cachedContentTokenCount"`
 	PromptTokensDetails     []GeminiTokensDetail `json:"promptTokensDetails"`
 	CandidatesTokensDetails []GeminiTokensDetail `json:"candidatesTokensDetails"`
 }
@@ -613,10 +614,11 @@ func mapGeminiFinishReason(reason string) StopReason {
 
 func (g *GeminiProvider) extractUsage(usage GeminiUsageMetadata) Usage {
 	finalUsage := Usage{
-		PromptTokens:     usage.PromptTokenCount,
-		CompletionTokens: usage.CandidatesTokenCount,
-		TotalTokens:      usage.TotalTokenCount,
-		ThoughtsTokens:   usage.ThoughtsTokenCount,
+		PromptTokens:      usage.PromptTokenCount,
+		CompletionTokens:  usage.CandidatesTokenCount,
+		TotalTokens:       usage.TotalTokenCount,
+		ThoughtsTokens:    usage.ThoughtsTokenCount,
+		CachedInputTokens: usage.CachedContentTokenCount,
 	}
 
 	for _, detail := range usage.PromptTokensDetails {

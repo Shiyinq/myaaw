@@ -56,11 +56,14 @@ type UsageDetail struct {
 }
 
 type Usage struct {
-	PromptTokens     int           `json:"prompt_tokens,omitempty" bson:"prompt_tokens,omitempty"`
-	CompletionTokens int           `json:"completion_tokens,omitempty" bson:"completion_tokens,omitempty"`
-	TotalTokens      int           `json:"total_tokens,omitempty" bson:"total_tokens,omitempty"`
-	ThoughtsTokens   int           `json:"thoughts_tokens,omitempty" bson:"thoughts_tokens,omitempty"`
-	Details          []UsageDetail `json:"details,omitempty" bson:"details,omitempty"`
+	PromptTokens     int `json:"prompt_tokens,omitempty" bson:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty" bson:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty" bson:"total_tokens,omitempty"`
+	ThoughtsTokens   int `json:"thoughts_tokens,omitempty" bson:"thoughts_tokens,omitempty"`
+	// CachedInputTokens is the share of PromptTokens served from the provider
+	// prompt cache. Providers that do not report it leave it at zero.
+	CachedInputTokens int           `json:"cached_input_tokens,omitempty" bson:"cached_input_tokens,omitempty"`
+	Details           []UsageDetail `json:"details,omitempty" bson:"details,omitempty"`
 }
 
 // ReactStep represents a single step in the ReAct loop
