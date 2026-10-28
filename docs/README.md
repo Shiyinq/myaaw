@@ -10,6 +10,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | [Agent Loop](agents/agent-loop.md) | `RunEvents` engine, transcript v2, compaction, tools, and retries. |
 | [Agent Skills](agents/skills.md) | `SKILL.md` skills, discovery, prompt injection, and data isolation. |
 | [MCP & Custom Tools](agents/mcp-and-custom-tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
+| [Observability](agents/observability.md) | Traces, token usage, model cost, retention, and OTLP export. |
 
 ### Agent protocol (A2A)
 

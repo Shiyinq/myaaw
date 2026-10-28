@@ -721,7 +721,128 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 `schedule_kind` is `cron`, `every`, or `at`. Running a job requires the agent server to be up; results are written to the job history.
 
-## 17. Endpoint reference
+## 17. Observability
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/agents/:name/observability/summary?days=7` | run totals, error rate, p50/p95 latency, per-step/model/tool breakdowns, most expensive and slowest run |
+| `GET` | `/agents/:name/observability/sessions?limit` | conversations with their turn count, tokens, and cost |
+| `GET` | `/agents/:name/observability/sessions/:id` | one session with **all turns, oldest first**, plus per-turn step counts |
+| `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&from&to` | recorded runs, newest first |
+| `GET` | `/agents/:name/observability/runs/:id` | one run with flat `spans` and a nested `tree` |
+| `DELETE` | `/agents/:name/observability/runs?before=<unix ms>` | delete runs; without `before` deletes all |
+
+```json
+{
+  "run": { "id": "run_1a2b", "status": "completed", "model": "deepseek-flash", "total_ms": 3200, "model_cost_usd": 0.00042 },
+  "spans": [
+    { "id": "sp_1", "kind": "step", "name": "Step 1", "step_index": 1, "duration_ms": 1200, "parent_id": null },
+    { "id": "sp_2", "kind": "llm", "parent_id": "sp_1", "step_index": 1, "request_index": 1,
+      "first_token_ms": 780, "generation_ms": 420, "input_tokens": 2100, "output_tokens": 340,
+      "cost_usd": 0.00042, "input_json": "…", "output_json": "…" }
+  ],
+  "tree": { "id": "run_1a2b", "children": [ { "id": "sp_1", "children": [] } ] }
+}
+```
+
+Session detail returns every turn of one conversation in chronological order —
+`runs[0]` is the first message, `runs[n-1]` the last. Each turn carries every run
+field, its `steps`, and its full `spans`, so a trajectory UI renders a whole
+session in one request:
+
+```json
+{
+  "conversation_id": "4e7371da-c190-434e-90d3-e1902f309c82",
+  "channel": "cli",
+  "turns": 2,
+  "started_at": 1761674469000,
+  "last_active_at": 1761674512000,
+  "input_tokens": 19300,
+  "output_tokens": 224,
+  "cost_usd": 0.002803,
+  "error_count": 0,
+  "runs": [
+    {
+      "id": "run_old",
+      "started_at": 1761674469000,
+      "ended_at": 1761674471040,
+      "channel": "cli",
+      "user_id": "1c043f52-…",
+      "conversation_id": "4e7371da-…",
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "agent": "default",
+      "status": "completed",
+      "input_tokens": 9600,
+      "output_tokens": 143,
+      "cache_hit_tokens": 0,
+      "model_cost_usd": 0.001409,
+      "total_ms": 2040,
+      "first_token_ms": 1660,
+      "steps": 1,
+      "spans": [
+        {
+          "id": "sp_user", "run_id": "run_old", "kind": "user", "name": "user",
+          "started_at": 1761674469000, "ended_at": 1761674469000, "status": "completed",
+          "input_json": "{\"messages\":[{\"role\":\"user\",\"content\":\"halo\"}]}"
+        },
+        {
+          "id": "sp_step_1", "run_id": "run_old", "kind": "step", "name": "Step 1",
+          "step_index": 1, "started_at": 1761674469010, "ended_at": 1761674470000,
+          "duration_ms": 990, "status": "completed"
+        },
+        {
+          "id": "sp_llm", "run_id": "run_old", "parent_id": "sp_step_1", "kind": "llm",
+          "name": "deepseek-v4-flash", "step_index": 1, "request_index": 1,
+          "started_at": 1761674469010, "ended_at": 1761674469980, "duration_ms": 970,
+          "first_token_ms": 800, "generation_ms": 170,
+          "input_tokens": 9600, "output_tokens": 143, "cost_usd": 0.001409,
+          "status": "completed",
+          "input_json": "{\"messages\":[{\"role\":\"system\",\"content\":\"…\"},{\"role\":\"user\",\"content\":\"halo\"}]}",
+          "output_json": "{\"role\":\"assistant\",\"content\":\"Hai!\",\"thought\":\"…\"}"
+        },
+        {
+          "id": "sp_tool", "run_id": "run_old", "parent_id": "sp_step_1", "kind": "tool",
+          "name": "bash", "step_index": 1, "started_at": 1761674469985, "ended_at": 1761674470020,
+          "duration_ms": 35, "status": "completed",
+          "input_json": "{\"command\":\"pwd\"}",
+          "output_json": "/Users/me"
+        }
+      ]
+    },
+    { "id": "run_new", "started_at": 1761674512000, "steps": 5, "spans": [ "…" ] }
+  ]
+}
+```
+
+Add `?spans=false` when a client only needs the turn list (faster and much
+smaller). Without it, a session with many long turns can be a few megabytes,
+because every prompt and tool payload is included.
+
+### Mapping the response to a trajectory UI
+
+`runs[]` in order is Turn 1 … Turn N. Inside a turn, order `spans` by
+`started_at` and nest by `parent_id` to build the rows:
+
+| Span | Row |
+| :--- | :--- |
+| `kind: "system"` | SYSTEM — `input_json` is the assembled prompt |
+| `kind: "user"` | USER — `input_json.messages` ends with the inbound message |
+| `kind: "context"` | CONTEXT — injected skills or runtime context |
+| `kind: "step"` | Step header for `step_index` |
+| `kind: "llm"` | ASSISTANT — `output_json.content` is the answer, `output_json.thought` the reasoning; `input_json` is the exact request; timings from `first_token_ms` / `generation_ms` |
+| `kind: "tool"` | TOOL — `input_json` are the arguments, `output_json` the result, `status` `error` when it failed |
+| `kind: "run"` with a distinct `run_id` | A subagent run; its spans share that `run_id` and point at the tool span via `parent_id` |
+
+For a duration timeline, offset each span by `span.started_at - run.started_at`
+and use `span.ended_at` for its width. `steps` is the number of iteration bars;
+`null` `ended_at` means the span is still running.
+
+`404` means the conversation has no recorded runs.
+
+An agent that has never recorded a run returns an empty summary (`runs: 0`) instead of `404`, so a dashboard can render before the first message. See [Observability](../agents/observability.md) for span semantics, pricing, and privacy.
+
+## 18. Endpoint reference
 
 | Group | Endpoints |
 |---|---|
@@ -740,11 +861,12 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |
 | Cron | `GET/POST /cron`, `DELETE /cron/:id`, `POST /cron/:id/run`, `GET /cron/:id/history` |
+| Observability | `GET /observability/summary`, `GET /observability/sessions`, `GET /observability/sessions/:id`, `GET /observability/runs`, `GET /observability/runs/:id`, `DELETE /observability/runs` |
 | System | `GET /health`, `GET /docs/*` |
 
 All `/agents/...` paths are prefixed with `/agents/:name`. `POST /providers/models` is the only provider route outside an agent: it takes explicit credentials so a dashboard can fill the model picker before onboarding.
 
-## 18. Errors
+## 19. Errors
 
 | Status | Meaning |
 |---|---|
@@ -757,7 +879,7 @@ All `/agents/...` paths are prefixed with `/agents/:name`. `POST /providers/mode
 | `415` | binary file |
 | `502` | agent server is not reachable |
 
-## 19. Security notes
+## 20. Security notes
 
 - There is no rate limiting in the first version.
 - `/api/*` on the agent servers still has no auth; only the control plane protects access. Do not expose agent ports directly.

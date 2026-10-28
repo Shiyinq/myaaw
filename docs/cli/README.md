@@ -90,6 +90,7 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 | Command | Description | Document |
 | :--- | :--- | :--- |
 | `logs` | Interactive log viewer or filtered stream | [Logs](logs.md) |
+| `observability` | Inspect traces, token usage, and cost | [Observability](../agents/observability.md#6-cli) |
 | `config check` | Validate `.env` and `config.json` | [Config](config.md) |
 | `config dump` | Print configuration with secrets masked | [Config](config.md) |
 | `completion` | Generate shell completion | [Utilities](utilities.md) |
@@ -117,6 +118,7 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
     config/config.json
     contacts.json
     database/myaaw.db
+    database/observability.db
     home/
     skills/
     tools/

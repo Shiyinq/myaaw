@@ -34,7 +34,7 @@ Core principles:
 | Agent facade | `internal/agent/agent.go` | `Run`, `RunContext`, `RunStream`, `RunEvents`, `WithExcludedTools` |
 | Engine loop | `internal/agent/engine.go` | Iteration, provider streaming, tool calls, stop reasons, usage, trace |
 | Event model | `internal/agent/events.go` | `AgentEvent`, `EventType`, `RunResult` |
-| Run config and hooks | `internal/agent/config.go` | `RunConfig`, `DefaultRunConfig`, `BeforeToolCall`, `AfterToolCall`, `FinishTurn` |
+| Run config and hooks | `internal/agent/config.go` | `RunConfig`, `DefaultRunConfig`, `BeforeToolCall`, `AfterToolCall`, `FinishStep` |
 | Tool executor | `internal/agent/tool.go` | Validation, policy, timeouts, panic recovery, parallel/sequential execution, truncation |
 | Transcript | `internal/agent/transcript.go` | v2 migration, token estimation, compaction |
 | Provider events | `internal/provider/events.go` | `StreamEvent`, `StreamDone`, `MessageText` helpers |
@@ -76,7 +76,7 @@ flowchart TD
     S -- no --> T[StopNormal + break]
     S -- yes --> U[executeToolCalls]
     U --> V[Append tool messages + trace]
-    V --> W[Repeat warning + FinishTurn]
+    V --> W[Repeat warning + FinishStep]
     W --> X{ctx error / terminate / TurnEnd?}
     X -- yes --> P
     X -- no --> G
@@ -105,7 +105,7 @@ flowchart TD
 5. **Loop**
    - Check cancellation at the start of the iteration.
    - Check the `MaxIterations` limit.
-   - Emit `EventTurnStart`.
+   - Emit `EventStepStart`.
    - Build `requestMessages`:
      - remaining-step warning,
      - repeated-tool warning from the previous iteration,
@@ -118,12 +118,12 @@ flowchart TD
    - Append the assistant message to the transcript and `NewMessages`.
 
 6. **Turn decision**
-   - `StopError` / `StopAborted`: record the error, emit `EventTurnEnd`, stop.
+   - `StopError` / `StopAborted`: record the error, emit `EventStepEnd`, stop.
    - `StopLength`:
      - no tool calls: finish with stop reason `length`;
      - tool calls present: fail every call because arguments may be truncated, then ask the model to re-issue them.
    - No tool calls: `StopNormal`, finish.
-   - Tool calls present: execute tools, append tool messages, emit trace, run `FinishTurn`, then continue.
+   - Tool calls present: execute tools, append tool messages, emit trace, run `FinishStep`, then continue.
 
 7. **Finalization**
    - `final.Trace` is populated with the full trace.
@@ -160,8 +160,8 @@ AgentEnd
 |---|---|---|
 | `EventAgentStart` | — | Run started |
 | `EventAgentEnd` | `Message`, `Trace`, `Usage`, `StopReason`, `Err` | Run finished with aggregate results |
-| `EventTurnStart` | — | Iteration started |
-| `EventTurnEnd` | `Message`, `Trace`, `ToolResult` | Iteration finished |
+| `EventStepStart` | — | Iteration started |
+| `EventStepEnd` | `Message`, `Trace`, `ToolResult` | Iteration finished |
 | `EventMessageStart` | `Message` | Assistant message started |
 | `EventMessageUpdate` | `Delta`, `ThinkingDelta` | Text/thinking delta |
 | `EventMessageEnd` | `Message` | Final assistant message for the turn |
@@ -170,6 +170,11 @@ AgentEnd
 | `EventToolExecutionEnd` | `ToolResult` | Tool finished/errored/timed out |
 | `EventTraceUpdate` | `Trace` | Latest ReAct trace |
 | `EventUsage` | `Usage` | Per-request usage |
+| `EventLLMRequestStart` | `Model`, `Messages` | About to call the provider; carries the exact transcript being sent |
+
+Every event also carries `RunID`, `Time`, and `StepIndex`, filled by the engine, so a consumer can group events without reconstructing run state. `RunResult` exposes the same `RunID` plus `StartedAt` / `EndedAt`. Set `RunConfig.RunID` when the caller already owns an identifier (for example a trace recorder), and the engine will reuse it instead of generating one.
+
+`EventLLMRequestStart` is what trace recording uses to capture the prompt that was actually sent, after context injection and compaction. See [Observability](observability.md).
 
 All other fields in `AgentEvent` are only valid for the matching event type. Consumers must treat events as a discriminated union keyed by `Type`.
 
@@ -177,6 +182,8 @@ All other fields in `AgentEvent` are only valid for the matching event type. Con
 
 | Field | Contents |
 |---|---|
+| `RunID` | Identifier shared by every event of this run |
+| `StartedAt`, `EndedAt` | Run boundaries |
 | `Transcript` | Full transcript after the run, including the system message |
 | `NewMessages` | Messages produced by this run |
 | `Final` | Last assistant message |
@@ -366,7 +373,7 @@ Providers must:
 
 | StopReason | Cause |
 |---|---|
-| `normal` | Model finished without tool calls, or `FinishTurn` ended the run |
+| `normal` | Model finished without tool calls, or `FinishStep` ended the run |
 | `max_iterations` | Iteration count reached `MaxIterations` |
 | `length` | Model output was truncated by the token limit |
 | `error` | Provider/stream error |
