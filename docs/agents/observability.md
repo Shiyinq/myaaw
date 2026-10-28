@@ -284,9 +284,16 @@ those tokens are already paid for.
 
 By default every span stores what it saw: the request transcript, the thinking
 block, the answer, and each tool's arguments and result. The raw JSON is capped
-at `max_content_chars` (8192 by default) per blob. The transcript keeps the
-newest messages when the cap is hit, because the last user message is what drove
-the request.
+at `max_content_chars` (8192 by default) per blob.
+
+When a transcript is longer than the cap, the oldest messages are dropped and
+`dropped_messages` records how many, but the leading `system` message is always
+kept — the provider received it first, and cutting it would make the stored
+transcript look like a different request. The newest messages are kept too,
+because the last user message is what drove the request.
+
+The system prompt is also captured on its own `system` span, so it stays readable
+even when the transcript inside `llm.input_json` is trimmed.
 
 Set `store_content: false` to keep only metadata and token counts. That is the
 privacy opt-out: prompts, answers, and tool payloads are not written at all.

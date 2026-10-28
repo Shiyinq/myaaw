@@ -339,6 +339,13 @@ func TestRecorderTruncatesContent(t *testing.T) {
 	if !strings.Contains(llm.InputJSON, "truncated") {
 		t.Fatalf("input_json is not marked truncated: %q", llm.InputJSON)
 	}
+	var stored decodedEnvelope
+	if err := json.Unmarshal([]byte(llm.InputJSON), &stored); err != nil {
+		t.Fatalf("input_json is not a message envelope: %v", err)
+	}
+	if len(stored.Messages) == 0 || stored.Messages[0].Role != "system" {
+		t.Fatalf("trimming dropped the system message: %q", llm.InputJSON)
+	}
 	if !json.Valid([]byte(llm.InputJSON)) {
 		t.Fatalf("input_json is not valid json: %q", llm.InputJSON)
 	}
@@ -457,5 +464,85 @@ func TestRecorderReportsLiveTotalsWhileRunning(t *testing.T) {
 	grouped := spansByKind(spans)
 	if grouped[KindStep][0].Status != StatusRunning {
 		t.Fatalf("turn should still be running, got %q", grouped[KindStep][0].Status)
+	}
+}
+
+type decodedEnvelope struct {
+	Dropped  int `json:"dropped_messages"`
+	Messages []struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	} `json:"messages"`
+}
+
+func TestEncodeMessagesKeepsTheSystemMessage(t *testing.T) {
+	big := strings.Repeat("x", 4000)
+	messages := []provider.Message{
+		{Role: "system", Content: big},
+		{Role: "user", Content: "first question"},
+		{Role: "assistant", Content: "first answer"},
+		{Role: "user", Content: "second question"},
+		{Role: "assistant", Content: "second answer"},
+		{Role: "user", Content: "latest question"},
+	}
+
+	encoded := encodeMessages(messages, 512, true)
+	if !json.Valid([]byte(encoded)) {
+		t.Fatalf("not valid json: %q", encoded)
+	}
+	if len(encoded) > 512 {
+		t.Fatalf("length = %d, want <= 512", len(encoded))
+	}
+
+	var envelope decodedEnvelope
+	if err := json.Unmarshal([]byte(encoded), &envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(envelope.Messages) == 0 {
+		t.Fatal("no messages kept")
+	}
+	if envelope.Messages[0].Role != "system" {
+		t.Fatalf("first kept message = %q, want system", envelope.Messages[0].Role)
+	}
+	if envelope.Dropped == 0 {
+		t.Fatal("dropped_messages should report the trimmed history")
+	}
+	last := envelope.Messages[len(envelope.Messages)-1]
+	if last.Role != "user" || last.Content != "latest question" {
+		t.Fatalf("last kept message = %+v, want the newest question", last)
+	}
+}
+
+func TestEncodeMessagesTrimsFromTheFrontWithoutASystemMessage(t *testing.T) {
+	messages := []provider.Message{
+		{Role: "user", Content: "old question"},
+		{Role: "assistant", Content: "old answer"},
+		{Role: "user", Content: "new question"},
+	}
+	encoded := encodeMessages(messages, 120, true)
+
+	var envelope decodedEnvelope
+	if err := json.Unmarshal([]byte(encoded), &envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(envelope.Messages) == 0 {
+		t.Fatal("no messages kept")
+	}
+	if envelope.Messages[0].Role == "system" {
+		t.Fatal("there was no system message to protect")
+	}
+	last := envelope.Messages[len(envelope.Messages)-1]
+	if last.Content != "new question" {
+		t.Fatalf("last kept message = %+v", last)
+	}
+	if envelope.Dropped != 1 {
+		t.Fatalf("dropped = %d, want 1", envelope.Dropped)
+	}
+}
+
+func TestEncodeMessagesRespectsStoreContent(t *testing.T) {
+	messages := []provider.Message{{Role: "system", Content: "prompt"}}
+	if got := encodeMessages(messages, 512, false); got != "" {
+		t.Fatalf("store_content=false returned %q", got)
 	}
 }

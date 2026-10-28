@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -714,8 +715,10 @@ type messageEnvelope struct {
 }
 
 // encodeMessages renders the request transcript, dropping the oldest messages
-// until the JSON fits the content cap. The newest messages (the prompt that
-// actually drove the request) are always kept.
+// until the JSON fits the content cap. Two things are always kept: the leading
+// system message (it is what the provider receives first, and dropping it would
+// make the stored transcript look like a different request) and the newest
+// messages that drove the request.
 func encodeMessages(messages []provider.Message, max int, storeContent bool) string {
 	if !storeContent || max <= 0 || len(messages) == 0 {
 		return ""
@@ -748,13 +751,25 @@ func encodeMessages(messages []provider.Message, max int, storeContent bool) str
 		total += size
 	}
 
-	start := 0
+	// The system message sits at position 0 in every request; trimming starts
+	// after it so the snapshot keeps the same shape as what was sent.
+	protected := 0
+	if len(views) > 0 && strings.EqualFold(views[0].Role, "system") {
+		protected = 1
+	}
+
+	start := protected
 	for total > max && start < len(views)-1 {
 		total -= sizes[start]
 		start++
 	}
 
-	envelope := messageEnvelope{Dropped: start, Messages: views[start:]}
+	kept := make([]messageView, 0, protected+len(views)-start)
+	kept = append(kept, views[:protected]...)
+	kept = append(kept, views[start:]...)
+	dropped := start - protected
+
+	envelope := messageEnvelope{Dropped: dropped, Messages: kept}
 	encoded, err := json.Marshal(envelope)
 	if err != nil {
 		return ""
@@ -765,16 +780,30 @@ func encodeMessages(messages []provider.Message, max int, storeContent bool) str
 
 	// Only reachable for a tiny cap: shrink the surviving content once more and
 	// keep the JSON valid, because raw panels parse these blobs.
-	for i := start; i < len(views); i++ {
-		views[i].Content = TruncateContent(views[i].Content, max/8)
-		views[i].Thought = ""
+	for i := range kept {
+		kept[i].Content = TruncateContent(kept[i].Content, max/8)
+		kept[i].Thought = ""
 	}
-	envelope = messageEnvelope{Dropped: start, Messages: views[start:]}
+	envelope = messageEnvelope{Dropped: dropped, Messages: kept}
 	encoded, err = json.Marshal(envelope)
-	if err != nil || len(encoded) > max {
-		return `{"messages":[]}`
+	if err != nil {
+		return ""
 	}
-	return string(encoded)
+	if len(encoded) <= max {
+		return string(encoded)
+	}
+
+	// Still too big: keep only the system message, further shrunk.
+	if protected == 1 {
+		system := kept[:1]
+		system[0].Content = TruncateContent(system[0].Content, max/4)
+		envelope = messageEnvelope{Dropped: len(views) - 1, Messages: system}
+		if encoded, err = json.Marshal(envelope); err == nil {
+			return string(encoded)
+		}
+		return ""
+	}
+	return `{"messages":[]}`
 }
 
 func encodeAssistant(output, thought string, max int) string {
