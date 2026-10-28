@@ -37,9 +37,15 @@ const (
 	// DefaultDirName is created next to ~/.myaaw, never inside it: folders
 	// under ~/.myaaw are reserved for agents.
 	DefaultDirName = ".myaaw-backups"
-
-	databaseRelPath = "database/myaaw.db"
 )
+
+// snapshotRelPaths are the SQLite databases copied with VACUUM INTO instead of
+// being read file-by-file. A WAL database cannot be copied consistently by
+// reading its files, so every database the agent keeps lives here.
+var snapshotRelPaths = []string{
+	"database/myaaw.db",
+	"database/observability.db",
+}
 
 // Options controls what Create includes in the archives.
 type Options struct {
@@ -230,7 +236,7 @@ func createAgent(root, outDir string, toStdout bool, name string, opts Options, 
 	}
 	defer os.RemoveAll(tempDir)
 
-	snapshotPath, err := snapshotDatabase(agentRoot, tempDir)
+	snapshots, err := snapshotDatabases(agentRoot, tempDir)
 	if err != nil {
 		return Result{}, err
 	}
@@ -247,7 +253,7 @@ func createAgent(root, outDir string, toStdout bool, name string, opts Options, 
 		Excludes:         excludes(opts),
 		DatabaseSnapshot: "VACUUM INTO",
 	}
-	if snapshotPath == "" {
+	if len(snapshots) == 0 {
 		manifest.DatabaseSnapshot = ""
 	}
 
@@ -285,7 +291,7 @@ func createAgent(root, outDir string, toStdout bool, name string, opts Options, 
 				manifest.Skipped = append(manifest.Skipped, rel)
 				return nil
 			}
-			if rel == databaseRelPath {
+			if isSnapshotPath(rel) {
 				return nil // replaced by the snapshot below
 			}
 
@@ -320,8 +326,8 @@ func createAgent(root, outDir string, toStdout bool, name string, opts Options, 
 			return Manifest{}, err
 		}
 
-		if snapshotPath != "" {
-			entry, err := addFile(tw, filepath.ToSlash(filepath.Join(name, databaseRelPath)), snapshotPath)
+		for _, snapshot := range snapshots {
+			entry, err := addFile(tw, filepath.ToSlash(filepath.Join(name, snapshot.rel)), snapshot.path)
 			if err != nil {
 				return Manifest{}, err
 			}
@@ -474,15 +480,36 @@ func (c *countWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func snapshotDatabase(agentRoot, tempDir string) (string, error) {
-	src := filepath.Join(agentRoot, filepath.FromSlash(databaseRelPath))
+// databaseSnapshot is one database copied into the archive from a temporary
+// consistent copy.
+type databaseSnapshot struct {
+	rel  string
+	path string
+}
+
+func snapshotDatabases(agentRoot, tempDir string) ([]databaseSnapshot, error) {
+	snapshots := make([]databaseSnapshot, 0, len(snapshotRelPaths))
+	for _, rel := range snapshotRelPaths {
+		path, err := snapshotDatabase(agentRoot, tempDir, rel)
+		if err != nil {
+			return nil, err
+		}
+		if path != "" {
+			snapshots = append(snapshots, databaseSnapshot{rel: rel, path: path})
+		}
+	}
+	return snapshots, nil
+}
+
+func snapshotDatabase(agentRoot, tempDir, rel string) (string, error) {
+	src := filepath.Join(agentRoot, filepath.FromSlash(rel))
 	if _, err := os.Stat(src); err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
 		}
 		return "", err
 	}
-	dst := filepath.Join(tempDir, "myaaw.db")
+	dst := filepath.Join(tempDir, snapshotBase(rel))
 	db, err := sql.Open("sqlite3", src)
 	if err != nil {
 		return "", fmt.Errorf("open database: %w", err)
@@ -633,6 +660,24 @@ func skipDir(rel, base string, opts Options) bool {
 	return false
 }
 
+// snapshotBase returns the file name of a snapshot path expressed with forward
+// slashes, independent of the host separator.
+func snapshotBase(rel string) string {
+	if idx := strings.LastIndex(rel, "/"); idx >= 0 {
+		return rel[idx+1:]
+	}
+	return rel
+}
+
+func isSnapshotPath(rel string) bool {
+	for _, snapshot := range snapshotRelPaths {
+		if rel == snapshot {
+			return true
+		}
+	}
+	return false
+}
+
 func skipFile(rel, base string, opts Options) bool {
 	if base == ".DS_Store" {
 		return true
@@ -642,10 +687,14 @@ func skipFile(rel, base string, opts Options) bool {
 		strings.HasSuffix(base, ".part"):
 		return true
 	}
-	// Only the snapshotted database has its WAL side files replaced. Other
-	// SQLite files must keep their -wal/-shm so no committed data is lost.
-	if base == "myaaw.db-wal" || base == "myaaw.db-shm" {
-		return true
+	// A snapshotted database is replaced by a consistent copy, so its side files
+	// must not be archived. Other SQLite files keep their -wal/-shm so no
+	// committed data is lost.
+	for _, snapshot := range snapshotRelPaths {
+		name := snapshotBase(snapshot)
+		if base == name+"-wal" || base == name+"-shm" {
+			return true
+		}
 	}
 	if !opts.IncludeLogs && strings.HasSuffix(base, ".log") && filepath.ToSlash(filepath.Dir(rel)) == "jobs" {
 		return true

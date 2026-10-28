@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"myaaw/internal/agentdir"
+	"myaaw/internal/obs"
 )
 
 func setupHome(t *testing.T, agents ...string) string {
@@ -130,6 +131,64 @@ func readArchive(t *testing.T, path string) (map[string][]byte, map[string]*tar.
 		files[header.Name] = data
 	}
 	return files, headers
+}
+
+func TestCreateSnapshotsObservabilityDatabase(t *testing.T) {
+	root := setupHome(t, "default")
+	createAgentFixture(t, root, "default")
+
+	dbPath := filepath.Join(root, "default", "database", "observability.db")
+	store, err := obs.Open(dbPath, obs.Options{})
+	if err != nil {
+		t.Fatalf("open observability db: %v", err)
+	}
+	if err := store.UpsertRun(obs.Run{
+		ID: "run_traced", StartedAt: 1_700_000_000_000, Status: obs.StatusCompleted,
+		Model: "deepseek-flash", ConversationID: "conv-1", InputTokens: 10,
+	}); err != nil {
+		t.Fatalf("upsert run: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+	// Side files of a live WAL database: they must never be archived raw.
+	writeFile(t, dbPath+"-wal", "stale wal", 0o600)
+	writeFile(t, dbPath+"-shm", "stale shm", 0o600)
+
+	results, err := Create(Options{Agents: []string{"default"}, OutputDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	files, _ := readArchive(t, results[0].Path)
+
+	if _, ok := files["default/database/observability.db"]; !ok {
+		t.Fatal("archive is missing the observability snapshot")
+	}
+	for _, unwanted := range []string{
+		"default/database/observability.db-wal",
+		"default/database/observability.db-shm",
+	} {
+		if _, ok := files[unwanted]; ok {
+			t.Errorf("archive should not contain %s", unwanted)
+		}
+	}
+
+	snapshotPath := filepath.Join(t.TempDir(), "observability.db")
+	if err := os.WriteFile(snapshotPath, files["default/database/observability.db"], 0o600); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+	snapshot, err := sql.Open("sqlite3", snapshotPath)
+	if err != nil {
+		t.Fatalf("open snapshot: %v", err)
+	}
+	defer snapshot.Close()
+	var count int
+	if err := snapshot.QueryRow(`SELECT COUNT(*) FROM runs`).Scan(&count); err != nil {
+		t.Fatalf("query snapshot: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("snapshot rows = %d, want 1", count)
+	}
 }
 
 func TestCreateAgentCoreAndExcludes(t *testing.T) {
