@@ -395,6 +395,9 @@ a missing entry cannot break a run.
 
 `enabled: false` means no database is opened and no span is built.
 
+`retention_days: 0` keeps everything; omit the field to use the default 30. The
+same values are writable through the control plane (`PATCH /agents/:name/config`).
+
 The control plane exposes the same section through `GET/PATCH
 /agents/:name/config`, and `PATCH /agents/:name/config/reset` with
 `{"observability": true}` restores the shipped defaults.
@@ -537,6 +540,10 @@ and every turn carries its spans (`system`, `user`, `step`, `compaction`, `llm`,
 
 An agent that has never recorded a run returns an empty summary rather than an
 error, so a dashboard can render before the first message.
+
+Every chat response points at its trace: non-streaming chats return `run_id`,
+and streaming chats carry the same field on the closing `done` event. It is
+absent when observability is disabled.
 
 ---
 

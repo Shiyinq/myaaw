@@ -162,6 +162,7 @@ Response:
 {
   "text": "There are 3 files.",
   "conversation_id": "conv-id",
+  "run_id": "run_2240477b6447ff48",
   "timeline": [
     {"kind": "thought", "text": "I should list the workspace first."},
     {"kind": "tool", "id": "call_1", "name": "bash", "arguments": "{\"command\":\"ls\"}", "result": "a.txt\nb.txt\nc.txt"},
@@ -174,6 +175,7 @@ Response:
 - `text` is the authoritative final answer.
 - `timeline` is the ordered thought/tool/text sequence; the last `text` item equals `text`.
 - `tool_result` results are attached to their `tool` item.
+- `run_id` is the recorded trace; `GET /agents/:name/observability/runs/:id` reads it. It is absent when observability is disabled, and the streaming `done` event carries the same field.
 
 ### Streaming (SSE)
 
@@ -190,7 +192,7 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | `chunk` | `{"text":"..."}` (answer delta) |
 | `tool` | `{"id","name","arguments"}` |
 | `tool_result` | `{"id","name","result","is_error"}` |
-| `done` | `{"ok":true,"text","conversation_id"?,"usage"?}` |
+| `done` | `{"ok":true,"text","conversation_id"?,"run_id"?,"usage"?}` |
 | `error` | `{"error":"..."}` followed by `done {"ok":false}` |
 
 Merge consecutive deltas per kind. On `done`, use `done.text` as the authoritative final answer; it can differ from the accumulated deltas when the run stops without normal output.
@@ -607,7 +609,7 @@ plane and are not reflected.
 | Field | Meaning |
 |---|---|
 | `enabled` | Record traces at all. |
-| `retention_days` | Delete traces older than this when the database opens. Must be positive; a `0` in `config.json` is treated as unset. To keep everything, set `OBS_RETENTION_DAYS=0` in the agent's `.env`. |
+| `retention_days` | Delete traces older than this when the database opens. `0` keeps everything; omit the field to use the default 30. |
 | `max_content_chars` | Byte cap for every stored content blob (default 16384). |
 | `store_content` | Store prompts, answers, and tool payloads. `false` keeps metadata and token counts only. |
 | `model_prices` | Per-model prices that override the built-in table. |
