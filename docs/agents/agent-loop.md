@@ -171,10 +171,12 @@ AgentEnd
 | `EventTraceUpdate` | `Trace` | Latest ReAct trace |
 | `EventUsage` | `Usage` | Per-request usage |
 | `EventLLMRequestStart` | `Model`, `Messages` | About to call the provider; carries the exact transcript being sent |
+| `EventLLMRetry` | `Attempt`, `Err` | The previous attempt failed and the request is retried; `Attempt` is 1-based |
+| `EventContextCompacted` | `Compact` | The transcript was trimmed to fit `ContextMaxTokens`, with tokens before/after and how many messages were dropped |
 
 Every event also carries `RunID`, `Time`, and `StepIndex`, filled by the engine, so a consumer can group events without reconstructing run state. `RunResult` exposes the same `RunID` plus `StartedAt` / `EndedAt`. Set `RunConfig.RunID` when the caller already owns an identifier (for example a trace recorder), and the engine will reuse it instead of generating one.
 
-`EventLLMRequestStart` is what trace recording uses to capture the prompt that was actually sent, after context injection and compaction. See [Observability](observability.md).
+`EventLLMRequestStart` is what trace recording uses to capture the prompt that was actually sent, after context injection and compaction. `EventContextCompacted` fires just before it whenever compaction actually removed messages, so a trace can show why the model stopped seeing older turns. See [Observability](observability.md).
 
 All other fields in `AgentEvent` are only valid for the matching event type. Consumers must treat events as a discriminated union keyed by `Type`.
 

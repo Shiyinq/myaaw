@@ -132,6 +132,10 @@ curl -X POST http://localhost:9000/agents/myfriend/onboard \
 
 Chat is proxied to the selected agent server, so it uses that agent's config, SQLite, tools, and `home/`.
 
+Both endpoints record one trace run per message (channel `api`) when
+[observability](../agents/observability.md) is enabled on the agent. Read the
+traces through `/agents/:name/observability/runs`.
+
 ### Non-streaming
 
 ```bash
@@ -572,7 +576,7 @@ Both return `{"models": [...], "source": "live"|"default", "warning": "..."}`. I
 
 ## 12. Config
 
-`GET /agents/:name/config` returns providers, channels, bot settings, heartbeat, cron, transcriber, and synthesizer with all secrets masked.
+`GET /agents/:name/config` returns providers, channels, bot settings, heartbeat, cron, transcriber, synthesizer, and observability with all secrets masked.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -581,7 +585,7 @@ Both return `{"models": [...], "source": "live"|"default", "warning": "..."}`. I
 | `POST` | `/agents/:name/config/reset` | restore the whole `config.json` to the template (resets providers and channels too) |
 | `PATCH` | `/agents/:name/config/reset` | reset only the named bot fields and sections |
 
-`PATCH /config` covers `bot` (`type`, `owner_ids`, and every tuning field), `heartbeat`, `cron.active`, `transcriber`, and `synthesizer`. Omitted fields are left untouched, so a key is never deleted:
+`PATCH /config` covers `bot` (`type`, `owner_ids`, and every tuning field), `heartbeat`, `cron.active`, `transcriber`, `synthesizer`, and `observability`. Omitted fields are left untouched, so a key is never deleted:
 
 ```bash
 curl -X PATCH http://localhost:9000/agents/myfriend/config \
@@ -592,6 +596,36 @@ curl -X PATCH http://localhost:9000/agents/myfriend/config \
 `PATCH /config/reset` takes the same section names and restores them from the template; `{"bot": []}` resets the whole bot section, while `{"bot": ["type"]}` resets just one field. Providers and channels are not touched by this variant.
 
 `bot.queue_workers` (1–16) sets how many inbound chats the agent processes at once; messages from the same user stay in order. It takes effect after `POST /agents/:name/server/restart`.
+
+### Observability settings
+
+`GET /config` fills in the shipped defaults for any `observability` field the
+agent's `config.json` omits, so the response shows what the agent actually runs
+with. Overrides in the agent's `.env` (`OBS_*`) are not visible to the control
+plane and are not reflected.
+
+| Field | Meaning |
+|---|---|
+| `enabled` | Record traces at all. |
+| `retention_days` | Delete traces older than this when the database opens. Must be positive; a `0` in `config.json` is treated as unset. To keep everything, set `OBS_RETENTION_DAYS=0` in the agent's `.env`. |
+| `max_content_chars` | Byte cap for every stored content blob (default 16384). |
+| `store_content` | Store prompts, answers, and tool payloads. `false` keeps metadata and token counts only. |
+| `model_prices` | Per-model prices that override the built-in table. |
+
+```bash
+curl -X PATCH http://localhost:9000/agents/myfriend/config \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{
+    "observability": {
+      "max_content_chars": 16384,
+      "model_prices": {"gemini-3.1-pro-preview": {"input": 1.25, "output": 10}}
+    }
+  }'
+```
+
+The agent reads observability settings when its process starts, so restart it
+(`POST /agents/:name/server/restart`) after changing them. This matters most when
+turning recording on: the trace database is opened once per process.
 
 ## 13. Conversations
 
@@ -725,7 +759,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents/:name/observability/summary?days=7` | run totals, error rate, p50/p95 latency, per-step/model/tool breakdowns, most expensive and slowest run |
+| `GET` | `/agents/:name/observability/summary?days=7` | run totals, error rate, p50/p95 latency, per-step/model/tool breakdowns, most expensive and slowest run, plus `cost_complete` and `unpriced_*` flags |
 | `GET` | `/agents/:name/observability/sessions?limit` | conversations with their turn count, tokens, and cost |
 | `GET` | `/agents/:name/observability/sessions/:id` | one session with **all turns, oldest first**, plus per-turn step counts |
 | `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&from&to` | recorded runs, newest first |
@@ -826,12 +860,12 @@ because every prompt and tool payload is included.
 
 | Span | Row |
 | :--- | :--- |
-| `kind: "system"` | SYSTEM — `input_json` is the assembled prompt |
+| `kind: "system"` | SYSTEM — `input_json` is the assembled prompt, including skills and workspace |
 | `kind: "user"` | USER — `input_json.messages` ends with the inbound message |
-| `kind: "context"` | CONTEXT — injected skills or runtime context |
+| `kind: "compaction"` | COMPACTION — `input_json` has `tokens_before`, `tokens_after`, `budget`, and `messages_dropped` |
 | `kind: "step"` | Step header for `step_index` |
-| `kind: "llm"` | ASSISTANT — `output_json.content` is the answer, `output_json.thought` the reasoning; `input_json` is the exact request; timings from `first_token_ms` / `generation_ms` |
-| `kind: "tool"` | TOOL — `input_json` are the arguments, `output_json` the result, `status` `error` when it failed |
+| `kind: "llm"` | ASSISTANT — `output_json.content` is the answer, `output_json.thought` the reasoning; `input_json` is the exact request; timings from `first_token_ms` / `generation_ms`. A second `llm` span in the same step is a retry; the first is `status: "retried"` |
+| `kind: "tool"` | TOOL — `input_json` are the arguments, `output_json` the result, `status` `error` when it failed (including a tool blocked by policy) |
 | `kind: "run"` with a distinct `run_id` | A subagent run; its spans share that `run_id` and point at the tool span via `parent_id` |
 
 For a duration timeline, offset each span by `span.started_at - run.started_at`

@@ -40,21 +40,30 @@ A trace looks like this:
 
 ```text
 run                     telegram · deepseek-flash · completed · 3.2s · $0.0004
-├── system              the assembled system prompt
+├── system              the assembled system prompt (identity, skills, workspace)
 ├── user                the inbound message
-├── context             injected context (skills, retrieval), when present
 ├── step 1              loop iteration 1
 │   ├── llm             deepseek-flash · ttft 780ms · 291 tok/s
 │   ├── tool            bash · 42ms
 │   └── tool            filesystem · 8ms
 ├── step 2              loop iteration 2
+│   ├── compaction      transcript trimmed before the request
 │   └── llm             deepseek-flash
-└── gate                a tool blocked by policy, when it happens
+└── step 3              loop iteration 3
+    ├── llm             deepseek-flash · request 2
+    └── tool            bash · 12ms
 ```
+
+The system message contains every injected piece — identity files, skills, and
+workspace paths are assembled into it before the request. There is no separate
+`context` span: nothing is sent as a second system message, and a trace records
+what the provider actually received. A tool blocked by policy appears as a
+`tool` span with `status: error`, not as a separate `gate` span.
 
 `request_index` counts model requests across the run. A retried request stays in
 the same step but takes the next request index, so a retry is visible instead of
-being folded into one number.
+being folded into one number. The failed attempt is marked `retried`, which does
+not fail the step: the retry can still complete the turn normally.
 
 ### Sessions, turns, and runs
 
@@ -215,10 +224,11 @@ Tree lines:
 
 | Column | Meaning |
 | :--- | :--- |
-| `system` / `user` / `context` | The prompt, the inbound message, and any injected context. Markers, not timed work. |
+| `system` / `user` | The exact system prompt and inbound message. Markers, not timed work. |
+| `compaction` | The transcript was trimmed before this request. The stored numbers say by how much. |
 | `Step N` | One loop iteration. Its duration covers the request plus its tools. |
-| `llm · <model>` | One model request. |
-| `tool · <name>` | One tool call. |
+| `llm · <model>` | One model request. A retry adds another line with `request N`. |
+| `tool · <name>` | One tool call. A blocked tool is shown with `[error]`. |
 | duration | Time spent in that span. Empty for markers. |
 | `ttft …` | Time to first streamed token for that request. Absent when the provider returned the answer without streaming deltas. |
 | `9.6k/104 tok` | Input / output tokens of that request. Input grows every step because the transcript is resent. |
@@ -233,6 +243,8 @@ Tree lines:
 | **turn** | One user message and everything the agent did for it. Stored as one run. |
 | **step** | One loop iteration: a model request plus the tool calls it requested. |
 | **request** | One call to the provider. A retried request stays in the same step and takes the next `request_index`. |
+| **retried** | Status of an attempt that failed before any output and was retried. The step and the run can still complete. |
+| **compaction** | Trimming of old turns to fit the context budget. Recorded as its own span with token counts before and after. |
 | **TTFT** | Time to first token: from sending the request until the first streamed delta. Includes queueing and prompt processing. |
 | **generation** | Time from the first token to the end of the stream. Stored in `generation_ms`; not printed in the tree. |
 | **throughput** | `output_tokens ÷ (generation_ms ÷ 1000)`, in tokens per second. Derived, not stored. |
@@ -242,7 +254,7 @@ Tree lines:
 | **cost** | `(miss × input + cached × cache_hit + output × output) ÷ 1,000,000`, using the price in force at request time. |
 | **p50 / p95** | Median and 95th percentile. Half the runs are faster than p50; 95% are faster than p95. Computed over finished runs only. |
 | **error rate** | Finished runs whose status is `error` or `interrupted`, divided by finished runs. |
-| **unpriced** | The model has no entry in the price table, so cost is recorded as `0`. Add it under `model_prices`. |
+| **unpriced** | A call spent tokens but recorded no cost, because its model had no price entry at request time. Cost is frozen when the request runs, so a call recorded before an entry was added also stays unpriced. |
 | **`request_index`** | Position of a provider request inside a turn, counting retries. |
 | **turn reference** | `<session prefix>.<type>.<turn>`, for example `4e7371da.cli.1`. Accepted by `obs run`. |
 
@@ -284,13 +296,15 @@ those tokens are already paid for.
 
 By default every span stores what it saw: the request transcript, the thinking
 block, the answer, and each tool's arguments and result. The raw JSON is capped
-at `max_content_chars` (8192 by default) per blob.
+at `max_content_chars` (16384 by default) per blob.
 
-When a transcript is longer than the cap, the oldest messages are dropped and
-`dropped_messages` records how many, but the leading `system` message is always
-kept — the provider received it first, and cutting it would make the stored
-transcript look like a different request. The newest messages are kept too,
-because the last user message is what drove the request.
+The cap is applied by role. The `system` and `user` messages are stored whole,
+assistant text is capped at half the budget, and tool results at an eighth —
+tool output is the first thing sacrificed. When the transcript still does not
+fit, the oldest messages are dropped and `dropped_messages` records how many.
+The leading `system` message is never dropped and is shortened last: cutting it
+would make the stored transcript look like a different request, while the newest
+messages are kept because the last message is what drove it.
 
 The system prompt is also captured on its own `system` span, so it stays readable
 even when the transcript inside `llm.input_json` is trimmed.
@@ -334,9 +348,19 @@ is treated as peak, so an estimate can only be too high. Chinese public holidays
 are not modelled; a holiday is billed as peak.
 
 The built-in table covers `deepseek-flash`, `deepseek-chat`,
-`deepseek-v4-flash` (same rates as the flash tier), and `deepseek-v4-pro`. A
-model without an entry is reported as `unpriced` in the CLI and costs `0`; add
-its numbers under `model_prices` to start collecting cost.
+`deepseek-v4-flash` (same rates as the flash tier), and `deepseek-v4-pro`, plus
+a few `gpt-*` and `gemini-*-flash` models. Anything else — preview Gemini ids
+and Groq models, for example — has no entry. A model without an entry is
+reported as `unpriced` in the CLI and costs `0`; add its numbers under
+`model_prices` to start collecting cost.
+
+Because `0` would otherwise read as "free", the summary marks how much could
+not be priced: `cost_complete`, `unpriced_runs`, `unpriced_input_tokens`,
+`unpriced_output_tokens`, and `unpriced_models`. When `cost_complete` is false,
+`cost_usd` is a lower bound, and both the CLI summary and the session view say
+so instead of printing a total that looks complete. Cost is computed when the
+request runs, so a run recorded before a price entry existed stays at `0` even
+after the entry is added; the flags describe recorded cost, not today's table.
 
 ### Overriding prices
 
@@ -354,7 +378,7 @@ a missing entry cannot break a run.
 "observability": {
   "enabled": true,
   "retention_days": 30,
-  "max_content_chars": 8192,
+  "max_content_chars": 16384,
   "store_content": true,
   "model_prices": { }
 }
@@ -366,7 +390,7 @@ a missing entry cannot break a run.
 | :--- | :--- | :--- |
 | `OBS_ENABLED` | `true` | Record traces at all. |
 | `OBS_RETENTION_DAYS` | `30` | Delete older traces on open. `0` keeps everything. |
-| `OBS_MAX_CONTENT_CHARS` | `8192` | Cap for every stored content blob. |
+| `OBS_MAX_CONTENT_CHARS` | `16384` | Cap for every stored content blob. |
 | `OBS_STORE_CONTENT` | `true` | Store prompts, answers, and tool payloads. |
 
 `enabled: false` means no database is opened and no span is built.
@@ -499,7 +523,7 @@ All endpoints require the control plane bearer token.
 
 | Method | Path | Purpose |
 | :--- | :--- | :--- |
-| `GET` | `/agents/:name/observability/summary?days=7` | Totals, percentiles, breakdowns, badges. |
+| `GET` | `/agents/:name/observability/summary?days=7` | Totals, percentiles, breakdowns, badges, and cost-completeness flags. |
 | `GET` | `/agents/:name/observability/sessions?limit` | Sessions with turn count, tokens, and cost. |
 | `GET` | `/agents/:name/observability/sessions/:id` | One session with every turn, **oldest first**, its step count, and its full spans (prompts, thinking, answers, tool payloads). Add `?spans=false` for metadata only. |
 | `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&from&to` | List runs, newest first. |
@@ -507,7 +531,7 @@ All endpoints require the control plane bearer token.
 | `DELETE` | `/agents/:name/observability/runs?before=<unix ms>` | Delete runs; without `before` deletes everything. |
 
 The session endpoint is what a trajectory UI needs: one request returns Turn 1..N,
-and every turn carries its spans (`system`, `user`, `context`, `step`, `llm`,
+and every turn carries its spans (`system`, `user`, `step`, `compaction`, `llm`,
 `tool`, and nested subagent runs). See the mapping table in the
 [control plane guide](../api/control-plane.md#mapping-the-response-to-a-trajectory-ui).
 
