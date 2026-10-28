@@ -165,7 +165,7 @@ func startServer(ctx context.Context) {
 			log.Printf("Failed to create Discord adapter: %v", err)
 		} else {
 			go func() {
-				if err := adapter.StartListener(queueRepo); err != nil {
+				if err := adapter.StartListener(ctx, queueRepo); err != nil {
 					log.Printf("Discord listener error: %v", err)
 				}
 			}()
