@@ -11,6 +11,12 @@ import (
 
 type fakeConversationRepo struct {
 	conversations map[string]*model.Conversation
+	updates       []conversationUpdate
+}
+
+type conversationUpdate struct {
+	id       string
+	messages []provider.Message
 }
 
 func newFakeConversationRepo() *fakeConversationRepo {
@@ -47,7 +53,8 @@ func (f *fakeConversationRepo) CreateConversationWithId(userId int, id, title st
 	return conversation, nil
 }
 
-func (f *fakeConversationRepo) UpdateConversationById(string, []provider.Message, string) error {
+func (f *fakeConversationRepo) UpdateConversationById(id string, messages []provider.Message, _ string) error {
+	f.updates = append(f.updates, conversationUpdate{id: id, messages: messages})
 	return nil
 }
 

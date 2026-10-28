@@ -69,6 +69,11 @@ type RunConfig struct {
 	AfterToolCall func(ctx context.Context, call ToolCallInput, result *ToolResult) *ToolResult
 	// FinishTurn may end the run after a completed turn.
 	FinishTurn func(ctx context.Context, turn TurnContext) TurnDecision
+	// OnCheckpoint receives the in-progress transcript at the start of the run,
+	// after each tool round, and at every turn end. It runs on the run goroutine,
+	// so implementations must be quick and must not mutate the slice. Panics are
+	// recovered so a failing persistence hook cannot break the run.
+	OnCheckpoint func(ctx context.Context, transcript []provider.Message)
 }
 
 // DefaultRunConfig builds a run config from global configuration.

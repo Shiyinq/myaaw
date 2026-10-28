@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"strings"
+	"time"
 
 	"myaaw/internal/agent"
 	"myaaw/internal/agent/skills"
@@ -41,6 +42,10 @@ func (r *BotServiceImpl) runConversation(
 	msg *channel.IncomingMessage,
 	onChunk func(channel.StreamChunk),
 ) (*channel.OutgoingMessage, error) {
+	if err := r.requireProvider(); err != nil {
+		return nil, err
+	}
+
 	messages, err := r.buildConversationMessages(user, msg)
 	if err != nil {
 		return nil, err
@@ -48,6 +53,26 @@ func (r *BotServiceImpl) runConversation(
 
 	cfg := agent.DefaultRunConfig(user.Model)
 	cfg.ContextMaxTokens = config.AgentContextMaxTokens
+
+	// Persist the transcript while the turn runs so a crash, restart, or kill
+	// cannot lose the user message and the tool results already produced. The
+	// heartbeat trigger is excluded because HEARTBEAT_OK turns must not enter the
+	// transcript at all.
+	if msg.TriggerType != "heartbeat" {
+		var (
+			lastCheckpoint  time.Time
+			firstCheckpoint = true
+		)
+		cfg.OnCheckpoint = func(ctx context.Context, transcript []provider.Message) {
+			now := time.Now()
+			if !firstCheckpoint && now.Sub(lastCheckpoint) < conversationCheckpointInterval {
+				return
+			}
+			firstCheckpoint = false
+			lastCheckpoint = now
+			r.checkpointConversation(msg, transcript)
+		}
+	}
 
 	result, runErr := r.agent.RunEvents(ctx, cfg, messages, func(event agent.AgentEvent) error {
 		if onChunk == nil {
@@ -254,16 +279,12 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 	return provider.Message{Role: role, Content: text, Version: 2}
 }
 
+// conversationCheckpointInterval throttles transcript checkpoints so a long
+// turn does not rewrite the whole conversation document on every iteration.
+const conversationCheckpointInterval = 2 * time.Second
+
 func (r *BotServiceImpl) saveConversation(user *model.User, msg *channel.IncomingMessage, transcript []provider.Message) error {
-	start := 0
-	for start < len(transcript) && transcript[start].Role == "system" {
-		start++
-	}
-	messages := make([]provider.Message, len(transcript)-start)
-	copy(messages, transcript[start:])
-	for i := range messages {
-		messages[i].Version = 2
-	}
+	messages := stripTranscript(transcript)
 	if len(messages) == 0 {
 		return nil
 	}
@@ -295,6 +316,39 @@ func (r *BotServiceImpl) saveConversation(user *model.User, msg *channel.Incomin
 		go r.updateConversationTitle(user, conv.Id, messagesCopy)
 	}
 	return nil
+}
+
+// checkpointConversation persists the in-progress transcript. It is
+// best-effort: a failed checkpoint must never break an otherwise healthy turn.
+func (r *BotServiceImpl) checkpointConversation(msg *channel.IncomingMessage, transcript []provider.Message) {
+	if msg.ConversationID == "" || msg.ConversationID == "NEW" {
+		return
+	}
+	messages := stripTranscript(transcript)
+	if len(messages) == 0 {
+		return
+	}
+	if err := r.conversationRepo.UpdateConversationById(msg.ConversationID, messages, ""); err != nil {
+		log.Printf("Failed to checkpoint conversation %s: %v", msg.ConversationID, err)
+	}
+}
+
+// stripTranscript drops the leading system prompt and normalizes the version of
+// the messages that are safe to persist.
+func stripTranscript(transcript []provider.Message) []provider.Message {
+	start := 0
+	for start < len(transcript) && transcript[start].Role == "system" {
+		start++
+	}
+	if start >= len(transcript) {
+		return nil
+	}
+	messages := make([]provider.Message, len(transcript)-start)
+	copy(messages, transcript[start:])
+	for i := range messages {
+		messages[i].Version = 2
+	}
+	return messages
 }
 
 func (r *BotServiceImpl) updateConversationTitle(user *model.User, conversationID string, messages []provider.Message) {

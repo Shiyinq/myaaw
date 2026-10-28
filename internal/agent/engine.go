@@ -61,6 +61,18 @@ func (a *Agent) RunEvents(
 
 	_ = emit(AgentEvent{Type: EventAgentStart})
 
+	checkpoint := func() {
+		if cfg.OnCheckpoint == nil {
+			return
+		}
+		snapshot := make([]provider.Message, len(transcript))
+		copy(snapshot, transcript)
+		safeCheckpoint(ctx, cfg.OnCheckpoint, snapshot)
+	}
+
+	// Persist the user prompt before the first provider call.
+	checkpoint()
+
 	var (
 		final      provider.Message
 		stopReason = provider.StopNormal
@@ -327,6 +339,9 @@ func (a *Agent) RunEvents(
 
 		_ = emit(AgentEvent{Type: EventTraceUpdate, Trace: trace})
 
+		// Tool results belong to the turn even if the run dies mid-stream.
+		checkpoint()
+
 		decision := TurnContinue
 		if cfg.FinishTurn != nil {
 			decision = cfg.FinishTurn(ctx, TurnContext{
@@ -337,6 +352,7 @@ func (a *Agent) RunEvents(
 			})
 		}
 		_ = emit(AgentEvent{Type: EventTurnEnd, Message: &final, ToolResult: nil, Trace: trace})
+		checkpoint()
 
 		if ctx.Err() != nil {
 			stopReason = provider.StopAborted
@@ -348,6 +364,9 @@ func (a *Agent) RunEvents(
 			break
 		}
 	}
+
+	// Capture terminal messages (abort, max iterations, provider error).
+	checkpoint()
 
 	if final.Role == "" {
 		final = provider.Message{Role: "assistant", Version: transcriptVersion}
@@ -384,6 +403,16 @@ func emitAssistantMessage(emit func(AgentEvent) error, message provider.Message)
 	_ = emit(AgentEvent{Type: EventMessageStart, Message: &partial})
 	_ = emit(AgentEvent{Type: EventMessageEnd, Message: &partial})
 	_ = emit(AgentEvent{Type: EventTurnEnd, Message: &partial})
+}
+
+// safeCheckpoint isolates persistence hooks from the agent loop.
+func safeCheckpoint(ctx context.Context, hook func(context.Context, []provider.Message), transcript []provider.Message) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[Agent] checkpoint failed: %v", r)
+		}
+	}()
+	hook(ctx, transcript)
 }
 
 func terminalMessage(text string, reason provider.StopReason, err error) provider.Message {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"myaaw/internal/agent"
@@ -40,7 +41,11 @@ type BotServiceImpl struct {
 func NewBotService(userRepo repository.UserRepository, conversationRepo repository.ConversationRepository) BotService {
 	llmProvider, err := provider.CreateLLMProvider(config.LLMProviderName, config.LLMProviderAPIKey)
 	if err != nil {
-		log.Fatalf("Error create LLM provider - %s: %v", config.LLMProviderName, err)
+		// Not fatal: the supervisor would otherwise crash-loop the agent when a
+		// provider key is missing or a provider name is mistyped. Requests fail
+		// with a clear message instead, and a config fix is picked up by
+		// checkAndReloadProvider on the next message.
+		log.Printf("⚠️  Failed to create LLM provider %s: %v. Chat requests will fail until the provider is fixed.", config.LLMProviderName, err)
 	}
 
 	transcriber, err := provider.CreateTranscriber(config.TranscriberProviderName, config.TranscriberAPIKey)
@@ -48,17 +53,28 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 		log.Printf("Warning: Error creating Transcriber provider %s: %v. Transcriber functionality might be affected or disabled depending on message handling logic.", config.TranscriberProviderName, err)
 	}
 
-	ag := agent.NewAgent(llmProvider)
-
-	return &BotServiceImpl{
-		userRepo:          userRepo,
-		conversationRepo:  conversationRepo,
-		llmProvider:       llmProvider,
-		transcriber:       transcriber,
-		agent:             ag,
-		currentProviderID: config.CurrentProviderID,
-		currentModel:      config.LLMDefaultModel,
+	svc := &BotServiceImpl{
+		userRepo:         userRepo,
+		conversationRepo: conversationRepo,
+		llmProvider:      llmProvider,
+		transcriber:      transcriber,
 	}
+	if llmProvider != nil {
+		svc.agent = agent.NewAgent(llmProvider)
+		// Leaving these empty when creation failed lets checkAndReloadProvider
+		// retry as soon as the configuration changes.
+		svc.currentProviderID = config.CurrentProviderID
+		svc.currentModel = config.LLMDefaultModel
+	}
+	return svc
+}
+
+// requireProvider reports whether chat requests can reach an LLM.
+func (r *BotServiceImpl) requireProvider() error {
+	if r.llmProvider == nil || r.agent == nil {
+		return errors.New("LLM provider is not configured: check the provider type and API key in config.json")
+	}
+	return nil
 }
 
 func (r *BotServiceImpl) checkAndReloadProvider() {
