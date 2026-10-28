@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"myaaw/internal/agentdir"
+	"myaaw/internal/obs"
 
 	"github.com/gofiber/fiber/v3"
 	"golang.org/x/crypto/bcrypt"
@@ -1133,6 +1134,106 @@ func doJSON(t *testing.T, app *fiber.App, method, path, token, body string, want
 	}
 }
 
+func TestRouterObservabilityEndpoints(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	// Nothing recorded yet: an empty window, not an error.
+	var summary struct {
+		Runs    int     `json:"runs"`
+		CostUSD float64 `json:"cost_usd"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/observability/summary?days=7", token, "", fiber.StatusOK, &summary)
+	if summary.Runs != 0 {
+		t.Fatalf("runs = %d, want 0", summary.Runs)
+	}
+
+	path, err := agentdir.ObservabilityPath("myfriend")
+	if err != nil {
+		t.Fatalf("observability path: %v", err)
+	}
+	store, err := obs.Open(path, obs.Options{})
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	startedAt := time.Now().Add(-time.Hour).UnixMilli()
+	run := obs.Run{
+		ID: "run_test", StartedAt: startedAt, EndedAt: startedAt + 1200,
+		Channel: "telegram", UserID: "42", ConversationID: "conv-1",
+		Provider: "deepseek", Model: "deepseek-flash", Agent: "myfriend",
+		Status: obs.StatusCompleted, InputTokens: 1000, OutputTokens: 100,
+		CacheHitTokens: 800, ModelCostUSD: 0.001, TotalMs: 1200, FirstTokenMs: 400,
+	}
+	if err := store.UpsertRun(run); err != nil {
+		t.Fatalf("upsert run: %v", err)
+	}
+	spans := []obs.Span{
+		{ID: "sp_turn", RunID: run.ID, ParentID: run.ID, Kind: obs.KindStep, Name: "Step 1", StepIndex: 1, StartedAt: startedAt, EndedAt: startedAt + 1100, DurationMs: 1100, Status: obs.StatusCompleted},
+		{ID: "sp_llm", RunID: run.ID, ParentID: "sp_turn", Kind: obs.KindLLM, Name: "deepseek-flash", StepIndex: 1, RequestIndex: 1, StartedAt: startedAt, EndedAt: startedAt + 1000, DurationMs: 1000, FirstTokenMs: 400, GenerationMs: 600, InputTokens: 1000, OutputTokens: 100, CacheHitTokens: 800, CostUSD: 0.001, Status: obs.StatusCompleted},
+	}
+	if err := store.UpsertSpans(spans); err != nil {
+		t.Fatalf("upsert spans: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	doJSON(t, app, "GET", "/agents/myfriend/observability/summary?days=7", token, "", fiber.StatusOK, &summary)
+	if summary.Runs != 1 {
+		t.Fatalf("runs = %d, want 1", summary.Runs)
+	}
+	if summary.CostUSD != 0.001 {
+		t.Fatalf("cost = %v, want 0.001", summary.CostUSD)
+	}
+
+	var list struct {
+		Runs  []obs.Run `json:"runs"`
+		Total int       `json:"total"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/observability/runs?limit=10", token, "", fiber.StatusOK, &list)
+	if list.Total != 1 || len(list.Runs) != 1 || list.Runs[0].ID != run.ID {
+		t.Fatalf("list = %+v", list)
+	}
+
+	var detail struct {
+		Run   obs.Run    `json:"run"`
+		Spans []obs.Span `json:"spans"`
+		Tree  *struct {
+			ID       string `json:"id"`
+			Children []struct {
+				ID string `json:"id"`
+			} `json:"children"`
+		} `json:"tree"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/observability/runs/run_test", token, "", fiber.StatusOK, &detail)
+	if detail.Run.ID != run.ID || len(detail.Spans) != 2 {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Tree == nil || len(detail.Tree.Children) != 1 || detail.Tree.Children[0].ID != "sp_turn" {
+		t.Fatalf("tree = %+v", detail.Tree)
+	}
+
+	doJSON(t, app, "GET", "/agents/myfriend/observability/runs/missing", token, "", fiber.StatusNotFound, nil)
+
+	var deleted struct {
+		Removed int64 `json:"removed"`
+	}
+	doJSON(t, app, "DELETE", fmt.Sprintf("/agents/myfriend/observability/runs?before=%d", time.Now().UnixMilli()), token, "", fiber.StatusOK, &deleted)
+	if deleted.Removed != 1 {
+		t.Fatalf("removed = %d, want 1", deleted.Removed)
+	}
+}
+
+func TestRouterObservabilityRejectsInvalidParams(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	doJSON(t, app, "GET", "/agents/myfriend/observability/summary?days=zero", token, "", fiber.StatusBadRequest, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/observability/runs?limit=many", token, "", fiber.StatusBadRequest, nil)
+}
+
 func setupTestAgent(t *testing.T, baseURL string) {
 	t.Helper()
 
@@ -1195,4 +1296,131 @@ func newUpstream(t *testing.T) *httptest.Server {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return server
+}
+
+func TestRouterObservabilitySessionDetail(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	path, err := agentdir.ObservabilityPath("myfriend")
+	if err != nil {
+		t.Fatalf("observability path: %v", err)
+	}
+	store, err := obs.Open(path, obs.Options{})
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+
+	base := time.Now().Add(-time.Hour).UnixMilli()
+	// Insert newest first: the endpoint must still answer oldest first.
+	turns := []struct {
+		id        string
+		startedAt int64
+		steps     int
+	}{
+		{"run_new", base + 1000, 3},
+		{"run_old", base, 1},
+	}
+	for _, turn := range turns {
+		run := obs.Run{
+			ID: turn.id, StartedAt: turn.startedAt, ConversationID: "conv-session",
+			Channel: "cli", Model: "deepseek-flash", Status: obs.StatusCompleted,
+			TotalMs: 1200, InputTokens: 1000, OutputTokens: 100, ModelCostUSD: 0.001,
+		}
+		if err := store.UpsertRun(run); err != nil {
+			t.Fatalf("upsert run: %v", err)
+		}
+		for step := 1; step <= turn.steps; step++ {
+			if err := store.UpsertSpans([]obs.Span{{
+				ID: fmt.Sprintf("%s_step_%d", turn.id, step), RunID: turn.id,
+				Kind: obs.KindStep, StepIndex: step,
+				StartedAt: turn.startedAt, Status: obs.StatusCompleted,
+			}}); err != nil {
+				t.Fatalf("upsert step: %v", err)
+			}
+		}
+		// The trajectory UI needs the prompt and the tool payloads.
+		if err := store.UpsertSpans([]obs.Span{
+			{
+				ID: turn.id + "_user", RunID: turn.id, Kind: obs.KindUser, Name: "user",
+				StartedAt: turn.startedAt, Status: obs.StatusCompleted,
+				InputJSON: `{"messages":[{"role":"user","content":"hi"}]}`,
+			},
+			{
+				ID: turn.id + "_llm", RunID: turn.id, Kind: obs.KindLLM, Name: "deepseek-flash",
+				StepIndex: 1, RequestIndex: 1, StartedAt: turn.startedAt, Status: obs.StatusCompleted,
+				InputJSON:  `{"messages":[{"role":"user","content":"hi"}]}`,
+				OutputJSON: `{"role":"assistant","content":"hello"}`,
+			},
+		}); err != nil {
+			t.Fatalf("upsert content spans: %v", err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	var detail struct {
+		ConversationID string  `json:"conversation_id"`
+		Channel        string  `json:"channel"`
+		Turns          int     `json:"turns"`
+		StartedAt      int64   `json:"started_at"`
+		LastActiveAt   int64   `json:"last_active_at"`
+		CostUSD        float64 `json:"cost_usd"`
+		Runs           []struct {
+			ID    string     `json:"id"`
+			Steps int        `json:"steps"`
+			Spans []obs.Span `json:"spans"`
+		} `json:"runs"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/conv-session", token, "", fiber.StatusOK, &detail)
+
+	if detail.Turns != 2 || len(detail.Runs) != 2 {
+		t.Fatalf("detail = %+v", detail)
+	}
+	if detail.Runs[0].ID != "run_old" || detail.Runs[1].ID != "run_new" {
+		t.Fatalf("turns are not oldest first: %+v", detail.Runs)
+	}
+	if detail.Runs[0].Steps != 1 || detail.Runs[1].Steps != 3 {
+		t.Fatalf("step counts = %+v", detail.Runs)
+	}
+
+	// Each turn ships its spans, including the captured content.
+	if len(detail.Runs[0].Spans) == 0 {
+		t.Fatal("session detail must include spans by default")
+	}
+	var sawLLM bool
+	for _, span := range detail.Runs[0].Spans {
+		if span.Kind == obs.KindLLM && span.InputJSON != "" && span.OutputJSON != "" {
+			sawLLM = true
+		}
+	}
+	if !sawLLM {
+		t.Fatalf("llm span content is missing: %+v", detail.Runs[0].Spans)
+	}
+
+	var metadataOnly struct {
+		Runs []struct {
+			ID    string     `json:"id"`
+			Spans []obs.Span `json:"spans"`
+		} `json:"runs"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/conv-session?spans=false", token, "", fiber.StatusOK, &metadataOnly)
+	if len(metadataOnly.Runs) != 2 {
+		t.Fatalf("metadata runs = %d", len(metadataOnly.Runs))
+	}
+	for _, run := range metadataOnly.Runs {
+		if len(run.Spans) != 0 {
+			t.Fatalf("spans=false returned %d spans for %s", len(run.Spans), run.ID)
+		}
+	}
+	if detail.StartedAt != base || detail.LastActiveAt != base+1000 {
+		t.Fatalf("window = %d..%d", detail.StartedAt, detail.LastActiveAt)
+	}
+	if detail.CostUSD != 0.002 {
+		t.Fatalf("cost = %v", detail.CostUSD)
+	}
+
+	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/missing", token, "", fiber.StatusNotFound, nil)
 }

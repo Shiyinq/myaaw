@@ -81,14 +81,15 @@ type ServiceSecretView struct {
 }
 
 type ConfigView struct {
-	DefaultProvider string                 `json:"default_provider"`
-	Providers       []ProviderView         `json:"providers"`
-	Channels        []ChannelView          `json:"channels"`
-	Bot             config.GlobalBotConfig `json:"bot"`
-	Heartbeat       config.HeartbeatConfig `json:"heartbeat"`
-	Cron            config.CronConfig      `json:"cron"`
-	Transcriber     ServiceSecretView      `json:"transcriber"`
-	Synthesizer     ServiceSecretView      `json:"synthesizer"`
+	DefaultProvider string                      `json:"default_provider"`
+	Providers       []ProviderView              `json:"providers"`
+	Channels        []ChannelView               `json:"channels"`
+	Bot             config.GlobalBotConfig      `json:"bot"`
+	Heartbeat       config.HeartbeatConfig      `json:"heartbeat"`
+	Cron            config.CronConfig           `json:"cron"`
+	Transcriber     ServiceSecretView           `json:"transcriber"`
+	Synthesizer     ServiceSecretView           `json:"synthesizer"`
+	Observability   *config.ObservabilityConfig `json:"observability,omitempty"`
 }
 
 // ConfigService reads per-agent configuration with secrets masked.
@@ -142,6 +143,7 @@ func configView(cfg *config.Config) ConfigView {
 			Provider: cfg.Synthesizer.Provider,
 			APIKey:   secretState(cfg.Synthesizer.APIKey),
 		},
+		Observability: cfg.Observability,
 	}
 }
 
@@ -468,11 +470,22 @@ func writeFileAtomic(path string, data []byte) error {
 // Keys are never removed; a field can only be set to a new value (including an
 // empty one).
 type ConfigPatch struct {
-	Bot         *BotPatch       `json:"bot,omitempty"`
-	Heartbeat   *HeartbeatPatch `json:"heartbeat,omitempty"`
-	Cron        *CronPatch      `json:"cron,omitempty"`
-	Transcriber *SecretPatch    `json:"transcriber,omitempty"`
-	Synthesizer *SecretPatch    `json:"synthesizer,omitempty"`
+	Bot           *BotPatch           `json:"bot,omitempty"`
+	Heartbeat     *HeartbeatPatch     `json:"heartbeat,omitempty"`
+	Cron          *CronPatch          `json:"cron,omitempty"`
+	Transcriber   *SecretPatch        `json:"transcriber,omitempty"`
+	Synthesizer   *SecretPatch        `json:"synthesizer,omitempty"`
+	Observability *ObservabilityPatch `json:"observability,omitempty"`
+}
+
+// ObservabilityPatch updates the observability section. Only present fields
+// change; absent fields keep their current value.
+type ObservabilityPatch struct {
+	Enabled         *bool                              `json:"enabled,omitempty"`
+	RetentionDays   *int                               `json:"retention_days,omitempty"`
+	MaxContentChars *int                               `json:"max_content_chars,omitempty"`
+	StoreContent    *bool                              `json:"store_content,omitempty"`
+	ModelPrices     map[string]config.ModelPriceConfig `json:"model_prices,omitempty"`
 }
 
 type BotPatch struct {
@@ -512,11 +525,12 @@ type SecretPatch struct {
 // ConfigResetRequest names the sections and bot fields to restore to their
 // template defaults. It is used by PATCH /config/reset.
 type ConfigResetRequest struct {
-	Bot         []string `json:"bot,omitempty"`       // bot field names; an empty list resets the whole bot section
-	Heartbeat   *bool    `json:"heartbeat,omitempty"` // true resets the whole section
-	Cron        *bool    `json:"cron,omitempty"`
-	Transcriber *bool    `json:"transcriber,omitempty"`
-	Synthesizer *bool    `json:"synthesizer,omitempty"`
+	Bot           []string `json:"bot,omitempty"`       // bot field names; an empty list resets the whole bot section
+	Heartbeat     *bool    `json:"heartbeat,omitempty"` // true resets the whole section
+	Cron          *bool    `json:"cron,omitempty"`
+	Transcriber   *bool    `json:"transcriber,omitempty"`
+	Synthesizer   *bool    `json:"synthesizer,omitempty"`
+	Observability *bool    `json:"observability,omitempty"`
 }
 
 // Patch applies a partial update and returns the resulting config view.
@@ -560,6 +574,9 @@ func (s *ConfigService) ResetFields(agentName string, req ConfigResetRequest) (C
 	if req.Synthesizer != nil && *req.Synthesizer {
 		cfg.Synthesizer = tmpl.Synthesizer
 	}
+	if req.Observability != nil && *req.Observability {
+		cfg.Observability = tmpl.Observability
+	}
 
 	if err := saveAgentConfig(agentName, cfg); err != nil {
 		return ConfigView{}, err
@@ -598,6 +615,46 @@ func applyConfigPatch(cfg *config.Config, patch ConfigPatch) error {
 	}
 	if patch.Synthesizer != nil {
 		applySecretPatch(&cfg.Synthesizer.Provider, &cfg.Synthesizer.APIKey, *patch.Synthesizer)
+	}
+	if patch.Observability != nil {
+		if err := applyObservabilityPatch(&cfg.Observability, *patch.Observability); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applyObservabilityPatch(obs **config.ObservabilityConfig, patch ObservabilityPatch) error {
+	if *obs == nil {
+		*obs = &config.ObservabilityConfig{}
+	}
+	current := *obs
+
+	if patch.Enabled != nil {
+		current.Enabled = cpBoolPtr(*patch.Enabled)
+	}
+	if patch.RetentionDays != nil {
+		if *patch.RetentionDays < 0 {
+			return ErrInvalidConfig
+		}
+		current.RetentionDays = *patch.RetentionDays
+	}
+	if patch.MaxContentChars != nil {
+		if *patch.MaxContentChars < 0 {
+			return ErrInvalidConfig
+		}
+		current.MaxContentChars = *patch.MaxContentChars
+	}
+	if patch.StoreContent != nil {
+		current.StoreContent = cpBoolPtr(*patch.StoreContent)
+	}
+	if patch.ModelPrices != nil {
+		for model, price := range patch.ModelPrices {
+			if strings.TrimSpace(model) == "" || price.Input < 0 || price.CacheHit < 0 || price.Output < 0 {
+				return ErrInvalidConfig
+			}
+		}
+		current.ModelPrices = patch.ModelPrices
 	}
 	return nil
 }

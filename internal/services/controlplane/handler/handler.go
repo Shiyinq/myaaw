@@ -19,6 +19,7 @@ type Handler struct {
 	skills        *service.SkillService
 	tools         *service.ToolsService
 	contacts      *service.ContactService
+	observability *service.ObservabilityService
 }
 
 func New(
@@ -34,6 +35,7 @@ func New(
 	skillsSvc *service.SkillService,
 	toolsSvc *service.ToolsService,
 	contactsSvc *service.ContactService,
+	observabilitySvc *service.ObservabilityService,
 ) *Handler {
 	return &Handler{
 		auth:          auth,
@@ -48,6 +50,7 @@ func New(
 		skills:        skillsSvc,
 		tools:         toolsSvc,
 		contacts:      contactsSvc,
+		observability: observabilitySvc,
 	}
 }
 

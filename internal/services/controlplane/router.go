@@ -37,7 +37,8 @@ func NewApp() (*fiber.App, error) {
 	skillsSvc := service.NewSkillService()
 	toolsSvc := service.NewToolsService()
 	contactsSvc := service.NewContactService()
-	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc)
+	observabilitySvc := service.NewObservabilityService()
+	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api"})
 	app.Use(cors.New(cors.Config{
@@ -131,6 +132,13 @@ func NewApp() (*fiber.App, error) {
 	app.Delete("/agents/:name/cron/:id", h.RemoveCron)
 	app.Post("/agents/:name/cron/:id/run", h.RunCron)
 	app.Get("/agents/:name/cron/:id/history", h.CronHistory)
+
+	app.Get("/agents/:name/observability/summary", h.ObservabilitySummary)
+	app.Get("/agents/:name/observability/sessions", h.ObservabilitySessions)
+	app.Get("/agents/:name/observability/sessions/:id", h.ObservabilitySession)
+	app.Get("/agents/:name/observability/runs", h.ObservabilityRuns)
+	app.Get("/agents/:name/observability/runs/:id", h.ObservabilityRun)
+	app.Delete("/agents/:name/observability/runs", h.DeleteObservabilityRuns)
 
 	return app, nil
 }

@@ -2211,6 +2211,382 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/observability/runs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Observability"
+                ],
+                "summary": "List runs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by channel",
+                        "name": "channel",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by conversation id (one session)",
+                        "name": "conversation",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Start of the window (unix ms)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "End of the window (unix ms)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.RunList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Observability"
+                ],
+                "summary": "Delete runs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Delete runs started before this unix ms",
+                        "name": "before",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer",
+                                "format": "int64"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/observability/runs/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Observability"
+                ],
+                "summary": "Get run trace",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Run id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.RunDetail"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/observability/sessions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Observability"
+                ],
+                "summary": "List sessions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "How many sessions (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.SessionList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/observability/sessions/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Observability"
+                ],
+                "summary": "Get session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Include each turn's spans (default true)",
+                        "name": "spans",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.SessionDetail"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/observability/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Observability"
+                ],
+                "summary": "Observability summary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window in days (default 7)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/obs.Summary"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/onboard": {
             "post": {
                 "security": [
@@ -4065,6 +4441,52 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "config.ModelPriceConfig": {
+            "type": "object",
+            "properties": {
+                "cache_hit": {
+                    "type": "number"
+                },
+                "input": {
+                    "type": "number"
+                },
+                "off_peak": {
+                    "$ref": "#/definitions/config.ModelPriceConfig"
+                },
+                "output": {
+                    "type": "number"
+                },
+                "peak_windows": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "config.ObservabilityConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "max_content_chars": {
+                    "type": "integer"
+                },
+                "model_prices": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.ModelPriceConfig"
+                    }
+                },
+                "retention_days": {
+                    "type": "integer"
+                },
+                "store_content": {
+                    "type": "boolean"
+                }
+            }
+        },
         "cron.Delivery": {
             "type": "object",
             "properties": {
@@ -4746,6 +5168,337 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "obs.ModelStat": {
+            "type": "object",
+            "properties": {
+                "cache_hit_tokens": {
+                    "type": "integer"
+                },
+                "calls": {
+                    "type": "integer"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                }
+            }
+        },
+        "obs.Run": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string"
+                },
+                "cache_hit_tokens": {
+                    "type": "integer"
+                },
+                "channel": {
+                    "type": "string"
+                },
+                "conversation_id": {
+                    "type": "string"
+                },
+                "ended_at": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "first_token_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "model_cost_usd": {
+                    "type": "number"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "parent_run_id": {
+                    "description": "ParentRunID and ParentSpanID link a nested run (a subagent) into the\ntrace that started it.",
+                    "type": "string"
+                },
+                "parent_span_id": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/obs.Status"
+                },
+                "total_ms": {
+                    "type": "integer"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "obs.Session": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "conversation_id": {
+                    "type": "string"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "error_count": {
+                    "type": "integer"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "last_active_at": {
+                    "type": "integer"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "integer"
+                },
+                "turns": {
+                    "type": "integer"
+                }
+            }
+        },
+        "obs.Span": {
+            "type": "object",
+            "properties": {
+                "cache_hit_tokens": {
+                    "type": "integer"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "ended_at": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "first_token_ms": {
+                    "type": "integer"
+                },
+                "generation_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "input_json": {
+                    "type": "string"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "$ref": "#/definitions/obs.SpanKind"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "output_json": {
+                    "type": "string"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "request_index": {
+                    "type": "integer"
+                },
+                "run_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/obs.Status"
+                },
+                "step_index": {
+                    "type": "integer"
+                }
+            }
+        },
+        "obs.SpanKind": {
+            "type": "string",
+            "enum": [
+                "run",
+                "user",
+                "system",
+                "context",
+                "compaction",
+                "step",
+                "llm",
+                "tool",
+                "gate"
+            ],
+            "x-enum-varnames": [
+                "KindRun",
+                "KindUser",
+                "KindSystem",
+                "KindContext",
+                "KindCompaction",
+                "KindStep",
+                "KindLLM",
+                "KindTool",
+                "KindGate"
+            ]
+        },
+        "obs.Status": {
+            "type": "string",
+            "enum": [
+                "running",
+                "completed",
+                "error",
+                "cancelled",
+                "truncated",
+                "max_iterations",
+                "interrupted"
+            ],
+            "x-enum-varnames": [
+                "StatusRunning",
+                "StatusCompleted",
+                "StatusError",
+                "StatusCancelled",
+                "StatusTruncated",
+                "StatusMaxIters",
+                "StatusInterrupted"
+            ]
+        },
+        "obs.StepStat": {
+            "type": "object",
+            "properties": {
+                "avg_ms": {
+                    "type": "integer"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "p95_ms": {
+                    "type": "integer"
+                },
+                "step_index": {
+                    "type": "integer"
+                }
+            }
+        },
+        "obs.Summary": {
+            "type": "object",
+            "properties": {
+                "by_model": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/obs.ModelStat"
+                    }
+                },
+                "cache_hit_tokens": {
+                    "type": "integer"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "duration_ms_p50": {
+                    "type": "integer"
+                },
+                "duration_ms_p95": {
+                    "type": "integer"
+                },
+                "error_rate": {
+                    "type": "number"
+                },
+                "errors": {
+                    "type": "integer"
+                },
+                "first_token_ms_p50": {
+                    "type": "integer"
+                },
+                "from": {
+                    "type": "integer"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "most_expensive_run_id": {
+                    "type": "string"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "per_step": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/obs.StepStat"
+                    }
+                },
+                "per_tool": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/obs.ToolStat"
+                    }
+                },
+                "runs": {
+                    "type": "integer"
+                },
+                "slowest_run_id": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "integer"
+                }
+            }
+        },
+        "obs.ToolStat": {
+            "type": "object",
+            "properties": {
+                "avg_ms": {
+                    "type": "integer"
+                },
+                "calls": {
+                    "type": "integer"
+                },
+                "errors": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "provider.FunctionCall": {
             "type": "object",
             "properties": {
@@ -4889,6 +5642,10 @@ const docTemplatecontrolplane = `{
         "provider.Usage": {
             "type": "object",
             "properties": {
+                "cached_input_tokens": {
+                    "description": "CachedInputTokens is the share of PromptTokens served from the provider\nprompt cache. Providers that do not report it leave it at zero.",
+                    "type": "integer"
+                },
                 "completion_tokens": {
                     "type": "integer"
                 },
@@ -5056,6 +5813,9 @@ const docTemplatecontrolplane = `{
                 "heartbeat": {
                     "$ref": "#/definitions/service.HeartbeatPatch"
                 },
+                "observability": {
+                    "$ref": "#/definitions/service.ObservabilityPatch"
+                },
                 "synthesizer": {
                     "$ref": "#/definitions/service.SecretPatch"
                 },
@@ -5079,6 +5839,9 @@ const docTemplatecontrolplane = `{
                 },
                 "heartbeat": {
                     "description": "true resets the whole section",
+                    "type": "boolean"
+                },
+                "observability": {
                     "type": "boolean"
                 },
                 "synthesizer": {
@@ -5109,6 +5872,9 @@ const docTemplatecontrolplane = `{
                 },
                 "heartbeat": {
                     "$ref": "#/definitions/config.HeartbeatConfig"
+                },
+                "observability": {
+                    "$ref": "#/definitions/config.ObservabilityConfig"
                 },
                 "providers": {
                     "type": "array",
@@ -5464,6 +6230,29 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ObservabilityPatch": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "max_content_chars": {
+                    "type": "integer"
+                },
+                "model_prices": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.ModelPriceConfig"
+                    }
+                },
+                "retention_days": {
+                    "type": "integer"
+                },
+                "store_content": {
+                    "type": "boolean"
+                }
+            }
+        },
         "service.OnboardBotInput": {
             "type": "object",
             "properties": {
@@ -5627,6 +6416,43 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.RunDetail": {
+            "type": "object",
+            "properties": {
+                "run": {
+                    "$ref": "#/definitions/obs.Run"
+                },
+                "spans": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/obs.Span"
+                    }
+                },
+                "tree": {
+                    "$ref": "#/definitions/service.SpanNode"
+                }
+            }
+        },
+        "service.RunList": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/obs.Run"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "service.SearchMatch": {
             "type": "object",
             "properties": {
@@ -5687,6 +6513,127 @@ const docTemplatecontrolplane = `{
                     "$ref": "#/definitions/service.SecretState"
                 },
                 "provider": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.SessionDetail": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "conversation_id": {
+                    "type": "string"
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "error_count": {
+                    "type": "integer"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "last_active_at": {
+                    "type": "integer"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SessionTurn"
+                    }
+                },
+                "started_at": {
+                    "type": "integer"
+                },
+                "turns": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.SessionList": {
+            "type": "object",
+            "properties": {
+                "sessions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/obs.Session"
+                    }
+                }
+            }
+        },
+        "service.SessionTurn": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string"
+                },
+                "cache_hit_tokens": {
+                    "type": "integer"
+                },
+                "channel": {
+                    "type": "string"
+                },
+                "conversation_id": {
+                    "type": "string"
+                },
+                "ended_at": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "first_token_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "model_cost_usd": {
+                    "type": "number"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "parent_run_id": {
+                    "description": "ParentRunID and ParentSpanID link a nested run (a subagent) into the\ntrace that started it.",
+                    "type": "string"
+                },
+                "parent_span_id": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "spans": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/obs.Span"
+                    }
+                },
+                "started_at": {
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/obs.Status"
+                },
+                "steps": {
+                    "type": "integer"
+                },
+                "total_ms": {
+                    "type": "integer"
+                },
+                "user_id": {
                     "type": "string"
                 }
             }
@@ -5753,6 +6700,77 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "size": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.SpanNode": {
+            "type": "object",
+            "properties": {
+                "cache_hit_tokens": {
+                    "type": "integer"
+                },
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SpanNode"
+                    }
+                },
+                "cost_usd": {
+                    "type": "number"
+                },
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "ended_at": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "first_token_ms": {
+                    "type": "integer"
+                },
+                "generation_ms": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "input_json": {
+                    "type": "string"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "$ref": "#/definitions/obs.SpanKind"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "output_json": {
+                    "type": "string"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "parent_id": {
+                    "type": "string"
+                },
+                "request_index": {
+                    "type": "integer"
+                },
+                "run_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/obs.Status"
+                },
+                "step_index": {
                     "type": "integer"
                 }
             }

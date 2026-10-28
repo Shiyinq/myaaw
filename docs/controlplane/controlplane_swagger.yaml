@@ -76,6 +76,36 @@ definitions:
       to:
         type: string
     type: object
+  config.ModelPriceConfig:
+    properties:
+      cache_hit:
+        type: number
+      input:
+        type: number
+      off_peak:
+        $ref: '#/definitions/config.ModelPriceConfig'
+      output:
+        type: number
+      peak_windows:
+        items:
+          type: string
+        type: array
+    type: object
+  config.ObservabilityConfig:
+    properties:
+      enabled:
+        type: boolean
+      max_content_chars:
+        type: integer
+      model_prices:
+        additionalProperties:
+          $ref: '#/definitions/config.ModelPriceConfig'
+        type: object
+      retention_days:
+        type: integer
+      store_content:
+        type: boolean
+    type: object
   cron.Delivery:
     properties:
       channel:
@@ -532,6 +562,236 @@ definitions:
         description: Asia/Jakarta
         type: string
     type: object
+  obs.ModelStat:
+    properties:
+      cache_hit_tokens:
+        type: integer
+      calls:
+        type: integer
+      cost_usd:
+        type: number
+      input_tokens:
+        type: integer
+      model:
+        type: string
+      output_tokens:
+        type: integer
+    type: object
+  obs.Run:
+    properties:
+      agent:
+        type: string
+      cache_hit_tokens:
+        type: integer
+      channel:
+        type: string
+      conversation_id:
+        type: string
+      ended_at:
+        type: integer
+      error:
+        type: string
+      first_token_ms:
+        type: integer
+      id:
+        type: string
+      input_tokens:
+        type: integer
+      model:
+        type: string
+      model_cost_usd:
+        type: number
+      output_tokens:
+        type: integer
+      parent_run_id:
+        description: |-
+          ParentRunID and ParentSpanID link a nested run (a subagent) into the
+          trace that started it.
+        type: string
+      parent_span_id:
+        type: string
+      provider:
+        type: string
+      started_at:
+        type: integer
+      status:
+        $ref: '#/definitions/obs.Status'
+      total_ms:
+        type: integer
+      user_id:
+        type: string
+    type: object
+  obs.Session:
+    properties:
+      channel:
+        type: string
+      conversation_id:
+        type: string
+      cost_usd:
+        type: number
+      error_count:
+        type: integer
+      input_tokens:
+        type: integer
+      last_active_at:
+        type: integer
+      output_tokens:
+        type: integer
+      started_at:
+        type: integer
+      turns:
+        type: integer
+    type: object
+  obs.Span:
+    properties:
+      cache_hit_tokens:
+        type: integer
+      cost_usd:
+        type: number
+      duration_ms:
+        type: integer
+      ended_at:
+        type: integer
+      error:
+        type: string
+      first_token_ms:
+        type: integer
+      generation_ms:
+        type: integer
+      id:
+        type: string
+      input_json:
+        type: string
+      input_tokens:
+        type: integer
+      kind:
+        $ref: '#/definitions/obs.SpanKind'
+      name:
+        type: string
+      output_json:
+        type: string
+      output_tokens:
+        type: integer
+      parent_id:
+        type: string
+      request_index:
+        type: integer
+      run_id:
+        type: string
+      started_at:
+        type: integer
+      status:
+        $ref: '#/definitions/obs.Status'
+      step_index:
+        type: integer
+    type: object
+  obs.SpanKind:
+    enum:
+    - run
+    - user
+    - system
+    - context
+    - compaction
+    - step
+    - llm
+    - tool
+    - gate
+    type: string
+    x-enum-varnames:
+    - KindRun
+    - KindUser
+    - KindSystem
+    - KindContext
+    - KindCompaction
+    - KindStep
+    - KindLLM
+    - KindTool
+    - KindGate
+  obs.Status:
+    enum:
+    - running
+    - completed
+    - error
+    - cancelled
+    - truncated
+    - max_iterations
+    - interrupted
+    type: string
+    x-enum-varnames:
+    - StatusRunning
+    - StatusCompleted
+    - StatusError
+    - StatusCancelled
+    - StatusTruncated
+    - StatusMaxIters
+    - StatusInterrupted
+  obs.StepStat:
+    properties:
+      avg_ms:
+        type: integer
+      cost_usd:
+        type: number
+      count:
+        type: integer
+      p95_ms:
+        type: integer
+      step_index:
+        type: integer
+    type: object
+  obs.Summary:
+    properties:
+      by_model:
+        items:
+          $ref: '#/definitions/obs.ModelStat'
+        type: array
+      cache_hit_tokens:
+        type: integer
+      cost_usd:
+        type: number
+      duration_ms_p50:
+        type: integer
+      duration_ms_p95:
+        type: integer
+      error_rate:
+        type: number
+      errors:
+        type: integer
+      first_token_ms_p50:
+        type: integer
+      from:
+        type: integer
+      input_tokens:
+        type: integer
+      most_expensive_run_id:
+        type: string
+      output_tokens:
+        type: integer
+      per_step:
+        items:
+          $ref: '#/definitions/obs.StepStat'
+        type: array
+      per_tool:
+        items:
+          $ref: '#/definitions/obs.ToolStat'
+        type: array
+      runs:
+        type: integer
+      slowest_run_id:
+        type: string
+      to:
+        type: integer
+    type: object
+  obs.ToolStat:
+    properties:
+      avg_ms:
+        type: integer
+      calls:
+        type: integer
+      errors:
+        type: integer
+      name:
+        type: string
+    type: object
   provider.FunctionCall:
     properties:
       arguments: {}
@@ -629,6 +889,11 @@ definitions:
     type: object
   provider.Usage:
     properties:
+      cached_input_tokens:
+        description: |-
+          CachedInputTokens is the share of PromptTokens served from the provider
+          prompt cache. Providers that do not report it leave it at zero.
+        type: integer
       completion_tokens:
         type: integer
       details:
@@ -738,6 +1003,8 @@ definitions:
         $ref: '#/definitions/service.CronPatch'
       heartbeat:
         $ref: '#/definitions/service.HeartbeatPatch'
+      observability:
+        $ref: '#/definitions/service.ObservabilityPatch'
       synthesizer:
         $ref: '#/definitions/service.SecretPatch'
       transcriber:
@@ -754,6 +1021,8 @@ definitions:
         type: boolean
       heartbeat:
         description: true resets the whole section
+        type: boolean
+      observability:
         type: boolean
       synthesizer:
         type: boolean
@@ -774,6 +1043,8 @@ definitions:
         type: string
       heartbeat:
         $ref: '#/definitions/config.HeartbeatConfig'
+      observability:
+        $ref: '#/definitions/config.ObservabilityConfig'
       providers:
         items:
           $ref: '#/definitions/service.ProviderView'
@@ -1006,6 +1277,21 @@ definitions:
         example: openai
         type: string
     type: object
+  service.ObservabilityPatch:
+    properties:
+      enabled:
+        type: boolean
+      max_content_chars:
+        type: integer
+      model_prices:
+        additionalProperties:
+          $ref: '#/definitions/config.ModelPriceConfig'
+        type: object
+      retention_days:
+        type: integer
+      store_content:
+        type: boolean
+    type: object
   service.OnboardBotInput:
     properties:
       owner_ids:
@@ -1115,6 +1401,30 @@ definitions:
           $ref: '#/definitions/service.ProviderView'
         type: array
     type: object
+  service.RunDetail:
+    properties:
+      run:
+        $ref: '#/definitions/obs.Run'
+      spans:
+        items:
+          $ref: '#/definitions/obs.Span'
+        type: array
+      tree:
+        $ref: '#/definitions/service.SpanNode'
+    type: object
+  service.RunList:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      runs:
+        items:
+          $ref: '#/definitions/obs.Run'
+        type: array
+      total:
+        type: integer
+    type: object
   service.SearchMatch:
     properties:
       line:
@@ -1154,6 +1464,88 @@ definitions:
       api_key:
         $ref: '#/definitions/service.SecretState'
       provider:
+        type: string
+    type: object
+  service.SessionDetail:
+    properties:
+      channel:
+        type: string
+      conversation_id:
+        type: string
+      cost_usd:
+        type: number
+      error_count:
+        type: integer
+      input_tokens:
+        type: integer
+      last_active_at:
+        type: integer
+      output_tokens:
+        type: integer
+      runs:
+        items:
+          $ref: '#/definitions/service.SessionTurn'
+        type: array
+      started_at:
+        type: integer
+      turns:
+        type: integer
+    type: object
+  service.SessionList:
+    properties:
+      sessions:
+        items:
+          $ref: '#/definitions/obs.Session'
+        type: array
+    type: object
+  service.SessionTurn:
+    properties:
+      agent:
+        type: string
+      cache_hit_tokens:
+        type: integer
+      channel:
+        type: string
+      conversation_id:
+        type: string
+      ended_at:
+        type: integer
+      error:
+        type: string
+      first_token_ms:
+        type: integer
+      id:
+        type: string
+      input_tokens:
+        type: integer
+      model:
+        type: string
+      model_cost_usd:
+        type: number
+      output_tokens:
+        type: integer
+      parent_run_id:
+        description: |-
+          ParentRunID and ParentSpanID link a nested run (a subagent) into the
+          trace that started it.
+        type: string
+      parent_span_id:
+        type: string
+      provider:
+        type: string
+      spans:
+        items:
+          $ref: '#/definitions/obs.Span'
+        type: array
+      started_at:
+        type: integer
+      status:
+        $ref: '#/definitions/obs.Status'
+      steps:
+        type: integer
+      total_ms:
+        type: integer
+      user_id:
         type: string
     type: object
   service.SkillDetail:
@@ -1197,6 +1589,53 @@ definitions:
       path:
         type: string
       size:
+        type: integer
+    type: object
+  service.SpanNode:
+    properties:
+      cache_hit_tokens:
+        type: integer
+      children:
+        items:
+          $ref: '#/definitions/service.SpanNode'
+        type: array
+      cost_usd:
+        type: number
+      duration_ms:
+        type: integer
+      ended_at:
+        type: integer
+      error:
+        type: string
+      first_token_ms:
+        type: integer
+      generation_ms:
+        type: integer
+      id:
+        type: string
+      input_json:
+        type: string
+      input_tokens:
+        type: integer
+      kind:
+        $ref: '#/definitions/obs.SpanKind'
+      name:
+        type: string
+      output_json:
+        type: string
+      output_tokens:
+        type: integer
+      parent_id:
+        type: string
+      request_index:
+        type: integer
+      run_id:
+        type: string
+      started_at:
+        type: integer
+      status:
+        $ref: '#/definitions/obs.Status'
+      step_index:
         type: integer
     type: object
   service.ToolsView:
@@ -2653,6 +3092,246 @@ paths:
       summary: Tail a log file
       tags:
       - Logs
+  /agents/{name}/observability/runs:
+    delete:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Delete runs started before this unix ms
+        in: query
+        name: before
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              format: int64
+              type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete runs
+      tags:
+      - Observability
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Page size (default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset
+        in: query
+        name: offset
+        type: integer
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Filter by channel
+        in: query
+        name: channel
+        type: string
+      - description: Filter by conversation id (one session)
+        in: query
+        name: conversation
+        type: string
+      - description: Start of the window (unix ms)
+        in: query
+        name: from
+        type: integer
+      - description: End of the window (unix ms)
+        in: query
+        name: to
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.RunList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List runs
+      tags:
+      - Observability
+  /agents/{name}/observability/runs/{id}:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Run id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.RunDetail'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get run trace
+      tags:
+      - Observability
+  /agents/{name}/observability/sessions:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: How many sessions (default 50)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.SessionList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List sessions
+      tags:
+      - Observability
+  /agents/{name}/observability/sessions/{id}:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Conversation id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Include each turn's spans (default true)
+        in: query
+        name: spans
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.SessionDetail'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get session
+      tags:
+      - Observability
+  /agents/{name}/observability/summary:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Window in days (default 7)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/obs.Summary'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Observability summary
+      tags:
+      - Observability
   /agents/{name}/onboard:
     post:
       consumes:
