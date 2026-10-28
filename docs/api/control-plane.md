@@ -591,6 +591,8 @@ curl -X PATCH http://localhost:9000/agents/myfriend/config \
 
 `PATCH /config/reset` takes the same section names and restores them from the template; `{"bot": []}` resets the whole bot section, while `{"bot": ["type"]}` resets just one field. Providers and channels are not touched by this variant.
 
+`bot.queue_workers` (1–16) sets how many inbound chats the agent processes at once; messages from the same user stay in order. It takes effect after `POST /agents/:name/server/restart`.
+
 ## 13. Conversations
 
 | Method | Path | Purpose |

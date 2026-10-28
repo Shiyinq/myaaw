@@ -79,6 +79,20 @@ myaaw --agent agent-b channel delete
 - In webhook mode, the server registers `https://<your-domain>/webhook/telegram`. Use `myaaw webhook set <domain>` or configure it in onboarding.
 - Discord runs through a gateway listener and does not need a public URL.
 - `myaaw status` shows whether each channel is configured.
+- **Telegram reconnects without replaying old messages.** In polling mode the last update offset is stored in `~/.myaaw/<agent>/state/telegram_offset`, so a restart resumes where it stopped instead of reprocessing the backlog.
+- **Discord does not replay messages sent while the agent was down.** The gateway session can only be resumed while the process is alive; after a restart, messages sent during the downtime are gone and have to be re-sent by the user. The transcript of a turn that was already running is still saved, so the conversation keeps its context.
+
+## Message processing
+
+Inbound Telegram and Discord messages go through an in-memory queue before the agent sees them:
+
+- **Concurrency:** `bot.queue_workers` in `config.json` (or `QUEUE_WORKERS` in `.env`) sets how many chats run at the same time. Default `4`, range `1–16`.
+- **Ordering:** messages from the same user are always processed in order, one at a time. Different users run in parallel, so one long answer no longer blocks everybody else.
+- **Restart required:** the worker pool is created at startup. After changing the value, run `myaaw server restart`.
+- **Heartbeat and cron** do not use this queue; they run independently.
+- **The queue is in memory** (buffer of 1000). Messages still waiting when the process dies are lost, and Telegram's polling offset is already advanced by then, so they are not re-delivered. The transcript of a turn that already started is still checkpointed to the conversation.
+
+Setting `queue_workers` to `1` restores the old serial behavior: every user waits for the previous message, in arrival order.
 
 ## Related
 
