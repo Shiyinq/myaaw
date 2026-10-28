@@ -24,6 +24,9 @@ type OutgoingMessage struct {
 	Usage          provider.Usage
 	Thought        string
 	ConversationID string
+	// RunID identifies the recorded trace for this message. It is empty when
+	// observability is disabled.
+	RunID string
 }
 
 type StreamChunk struct {

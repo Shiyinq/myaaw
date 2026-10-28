@@ -16,6 +16,7 @@ import (
 type ChatResponse struct {
 	Text           string             `json:"text"`
 	ConversationID string             `json:"conversation_id,omitempty"`
+	RunID          string             `json:"run_id,omitempty"`
 	Timeline       []api.TimelineItem `json:"timeline,omitempty"`
 	Usage          *UsageResponse     `json:"usage,omitempty"`
 }
@@ -85,6 +86,7 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 	resp := ChatResponse{
 		Text:           out.Text,
 		ConversationID: out.ConversationID,
+		RunID:          out.RunID,
 		Timeline:       timeline.Items(),
 	}
 

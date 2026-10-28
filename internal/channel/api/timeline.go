@@ -87,6 +87,9 @@ func (t *Timeline) Done(out *channel.OutgoingMessage) {
 	if out.ConversationID != "" {
 		data["conversation_id"] = out.ConversationID
 	}
+	if out.RunID != "" {
+		data["run_id"] = out.RunID
+	}
 	if out.Usage.TotalTokens > 0 {
 		data["usage"] = map[string]int{
 			"prompt_tokens":     out.Usage.PromptTokens,

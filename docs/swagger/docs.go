@@ -358,6 +358,9 @@ const docTemplate = `{
                 "conversation_id": {
                     "type": "string"
                 },
+                "run_id": {
+                    "type": "string"
+                },
                 "text": {
                     "type": "string"
                 },

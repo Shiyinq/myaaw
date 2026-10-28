@@ -75,10 +75,12 @@ func (r *BotServiceImpl) runConversation(
 		}
 	}
 
+	runID := ""
 	recorder := r.traceRun(msg, user, messages)
 	if recorder != nil {
 		// One identifier for the engine events and the stored trace.
-		cfg.RunID = recorder.RunID()
+		runID = recorder.RunID()
+		cfg.RunID = runID
 		// Tools read this from ctx, so a subagent records itself as a child run.
 		ctx = agenttrace.WithTrace(ctx, recorder)
 	}
@@ -155,6 +157,7 @@ func (r *BotServiceImpl) runConversation(
 		Usage:          result.Usage,
 		Thought:        result.Final.Thought,
 		ConversationID: msg.ConversationID,
+		RunID:          runID,
 	}
 
 	// Tell streaming consumers which text is the final answer. Intermediate
