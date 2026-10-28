@@ -612,6 +612,7 @@ plane and are not reflected.
 | `retention_days` | Delete traces older than this when the database opens. `0` keeps everything; omit the field to use the default 30. |
 | `max_content_chars` | Byte cap for every stored content blob (default 16384). |
 | `store_content` | Store prompts, answers, and tool payloads. `false` keeps metadata and token counts only. |
+| `redact_patterns` | Regular expressions masked as `[redacted]` before content is stored or exported. An empty list disables redaction. |
 | `model_prices` | Per-model prices that override the built-in table. |
 
 ```bash
@@ -761,10 +762,10 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents/:name/observability/summary?days=7` | run totals, error rate, p50/p95 latency, per-step/model/tool breakdowns, most expensive and slowest run, plus `cost_complete` and `unpriced_*` flags |
+| `GET` | `/agents/:name/observability/summary?days=7` | run totals, error rate, p50/p95 latency, per-step/model/tool breakdowns, most expensive and slowest run, `cost_complete` and `unpriced_*` flags, and `database_bytes` |
 | `GET` | `/agents/:name/observability/sessions?limit` | conversations with their turn count, tokens, and cost |
 | `GET` | `/agents/:name/observability/sessions/:id` | one session with **all turns, oldest first**, plus per-turn step counts |
-| `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&from&to` | recorded runs, newest first |
+| `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&model&trigger&from&to` | recorded runs, newest first |
 | `GET` | `/agents/:name/observability/runs/:id` | one run with flat `spans` and a nested `tree` |
 | `DELETE` | `/agents/:name/observability/runs?before=<unix ms>` | delete runs; without `before` deletes all |
 

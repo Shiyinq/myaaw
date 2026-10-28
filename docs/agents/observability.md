@@ -114,7 +114,7 @@ conversations. Tables:
 
 | Table | Contents |
 | :--- | :--- |
-| `runs` | One row per agent run: channel, user, conversation, model, status, totals, and the parent run for a subagent. |
+| `runs` | One row per agent run: channel, user, conversation, model, trigger, status, totals, and the parent run for a subagent. |
 | `spans` | The trace tree: kind, parent, timing, tokens, cost, and the captured content. |
 | `checks` | Reserved for eval checks. |
 
@@ -159,7 +159,10 @@ Retention runs when the database opens and deletes runs older than
 
 The schema carries a `PRAGMA user_version`. A newer build upgrades an older
 database in place on open; version 2 added `parent_run_id` / `parent_span_id` for
-nested subagent runs and version 3 renamed `turn_index` to `step_index`.
+nested subagent runs, version 3 renamed `turn_index` to `step_index`, and version
+5 added `trigger_type`. Runs recorded before version 5 keep an empty trigger and
+are shown as `-`; the upgrade labels nested runs as `subagent` but does not guess
+between `user` and `cron` for the rest.
 
 Opening also reconciles the actual shape rather than trusting the version alone.
 If a database was opened by a build whose vocabulary differed — for example one
@@ -312,6 +315,22 @@ even when the transcript inside `llm.input_json` is trimmed.
 Set `store_content: false` to keep only metadata and token counts. That is the
 privacy opt-out: prompts, answers, and tool payloads are not written at all.
 
+### Redaction
+
+Even with content capture on, secrets are masked before the blob is stored or
+exported. The built-in patterns cover bearer tokens, `sk-` keys, GitHub tokens,
+and Slack tokens; a match becomes `[redacted]`. Redaction runs before
+truncation, so a cut cannot leave half a credential behind.
+
+Override the list with `observability.redact_patterns` (JSON) or
+`OBS_REDACT_PATTERNS` (semicolon-separated, because commas are common inside a
+regular expression). An explicit empty list disables redaction. An invalid
+pattern is skipped with a log line instead of disabling recording.
+
+The shipped `config.json` template lists the four built-in patterns explicitly,
+so a fresh agent and a reset both show what is active. Deleting the key falls
+back to the same built-in list.
+
 ---
 
 ## 4. Cost
@@ -380,6 +399,7 @@ a missing entry cannot break a run.
   "retention_days": 30,
   "max_content_chars": 16384,
   "store_content": true,
+  "redact_patterns": ["(?i)bearer\\s+[a-z0-9._~+/=-]{16,}"],
   "model_prices": { }
 }
 ```
@@ -392,6 +412,7 @@ a missing entry cannot break a run.
 | `OBS_RETENTION_DAYS` | `30` | Delete older traces on open. `0` keeps everything. |
 | `OBS_MAX_CONTENT_CHARS` | `16384` | Cap for every stored content blob. |
 | `OBS_STORE_CONTENT` | `true` | Store prompts, answers, and tool payloads. |
+| `OBS_REDACT_PATTERNS` | built-in list | Semicolon-separated regular expressions masked as `[redacted]`. Empty uses the built-in patterns. |
 
 `enabled: false` means no database is opened and no span is built.
 
@@ -424,6 +445,7 @@ myaaw observability run run_1a2b3c4d5e6f7a8b
 
 myaaw observability prune --days 90
 myaaw observability prune --before 2026-01-01
+myaaw observability prune --days 90 --vacuum    # compact the file too
 ```
 
 ### `summary`
@@ -433,6 +455,7 @@ Observability · last 7 day(s)
 Runs 24 · errors 0 (0.0%)
 Tokens input 1.7M · cached 678.0k · output 13.2k
 Cost $0.0418 · latency p50 11.66s · p95 64.78s · TTFT p50 1.64s
+Database 12.4 MB
 
 Per step
   STEP   COUNT      AVG      P95       COST
@@ -455,7 +478,7 @@ Highlights
 
 | Block | Columns |
 | :--- | :--- |
-| Header | finished runs, runs that ended in `error`/`interrupted` and their share, summed tokens (input includes cached), summed cost, p50/p95 turn duration, p50 TTFT |
+| Header | finished runs, runs that ended in `error`/`interrupted` and their share, summed tokens (input includes cached), summed cost, p50/p95 turn duration, p50 TTFT, and the on-disk database size |
 | `Per step` | step number, how many steps reached that depth, average and p95 step duration, total cost of requests in steps of that depth |
 | `Per model` | model id (`…` when the column is full), number of requests, prompt and completion tokens, cost |
 | `Per tool` | tool name, calls, failed calls, average duration |
@@ -468,11 +491,14 @@ Long names are truncated with `…` so columns never drift; the full name is in
 
 ```text
 Runs (12 total)
-  RUN                    STARTED             CHANNEL    STATUS    DURATION  COST
-  run_20d0cdbfc59102e7   2026-10-28 22:52:20 cli        completed 4.63s     $0.002067
+  RUN                    STARTED             CHANNEL    TRIGGER    STATUS    DURATION  COST
+  run_20d0cdbfc59102e7   2026-10-28 22:52:20 cli        user       completed 4.63s     $0.002067
 ```
 
-Columns are the run id, start time, channel, status, duration, and cost. On a
+Columns are the run id, start time, channel, trigger (`user`, `cron`, or
+`subagent`), status, duration, and cost. `--model`, `--trigger`, `--from`, and
+`--to` narrow the list; the time flags accept `YYYY-MM-DD`, RFC3339, or unix
+milliseconds, and a date-only `--to` covers the whole day. On a
 terminal this becomes a picker instead. Each picker row shows the same identity
 plus model, tokens, cost, and duration; arrow keys move, Enter opens, `q` or `Esc`
 leaves, and typing filters. When stdout is not a terminal (a pipe or a script),
@@ -526,10 +552,10 @@ All endpoints require the control plane bearer token.
 
 | Method | Path | Purpose |
 | :--- | :--- | :--- |
-| `GET` | `/agents/:name/observability/summary?days=7` | Totals, percentiles, breakdowns, badges, and cost-completeness flags. |
+| `GET` | `/agents/:name/observability/summary?days=7` | Totals, percentiles, breakdowns, badges, cost-completeness flags, and `database_bytes`. |
 | `GET` | `/agents/:name/observability/sessions?limit` | Sessions with turn count, tokens, and cost. |
 | `GET` | `/agents/:name/observability/sessions/:id` | One session with every turn, **oldest first**, its step count, and its full spans (prompts, thinking, answers, tool payloads). Add `?spans=false` for metadata only. |
-| `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&from&to` | List runs, newest first. |
+| `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&model&trigger&from&to` | List runs, newest first. `trigger` is `user`, `cron`, or `subagent`. |
 | `GET` | `/agents/:name/observability/runs/:id` | One run with flat `spans` and a nested `tree`. |
 | `DELETE` | `/agents/:name/observability/runs?before=<unix ms>` | Delete runs; without `before` deletes everything. |
 
