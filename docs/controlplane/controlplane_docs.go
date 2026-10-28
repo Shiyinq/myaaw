@@ -5188,6 +5188,13 @@ const docTemplatecontrolplane = `{
                 },
                 "output_tokens": {
                     "type": "integer"
+                },
+                "priced": {
+                    "description": "Priced is false when at least one call spent tokens without recording a\ncost — usually a missing price entry, sometimes a call recorded before the\nentry existed.",
+                    "type": "boolean"
+                },
+                "unpriced_calls": {
+                    "type": "integer"
                 }
             }
         },
@@ -5263,6 +5270,10 @@ const docTemplatecontrolplane = `{
                 "conversation_id": {
                     "type": "string"
                 },
+                "cost_complete": {
+                    "description": "CostComplete is false when a turn in the session used an unpriced model.",
+                    "type": "boolean"
+                },
                 "cost_usd": {
                     "type": "number"
                 },
@@ -5282,6 +5293,9 @@ const docTemplatecontrolplane = `{
                     "type": "integer"
                 },
                 "turns": {
+                    "type": "integer"
+                },
+                "unpriced_turns": {
                     "type": "integer"
                 }
             }
@@ -5357,23 +5371,19 @@ const docTemplatecontrolplane = `{
                 "run",
                 "user",
                 "system",
-                "context",
                 "compaction",
                 "step",
                 "llm",
-                "tool",
-                "gate"
+                "tool"
             ],
             "x-enum-varnames": [
                 "KindRun",
                 "KindUser",
                 "KindSystem",
-                "KindContext",
                 "KindCompaction",
                 "KindStep",
                 "KindLLM",
-                "KindTool",
-                "KindGate"
+                "KindTool"
             ]
         },
         "obs.Status": {
@@ -5385,7 +5395,8 @@ const docTemplatecontrolplane = `{
                 "cancelled",
                 "truncated",
                 "max_iterations",
-                "interrupted"
+                "interrupted",
+                "retried"
             ],
             "x-enum-varnames": [
                 "StatusRunning",
@@ -5394,7 +5405,8 @@ const docTemplatecontrolplane = `{
                 "StatusCancelled",
                 "StatusTruncated",
                 "StatusMaxIters",
-                "StatusInterrupted"
+                "StatusInterrupted",
+                "StatusRetried"
             ]
         },
         "obs.StepStat": {
@@ -5428,6 +5440,10 @@ const docTemplatecontrolplane = `{
                 },
                 "cache_hit_tokens": {
                     "type": "integer"
+                },
+                "cost_complete": {
+                    "description": "CostComplete is false when at least one run used a model with no price,\nso CostUSD is a lower bound rather than the full spend.",
+                    "type": "boolean"
                 },
                 "cost_usd": {
                     "type": "number"
@@ -5478,6 +5494,21 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "to": {
+                    "type": "integer"
+                },
+                "unpriced_input_tokens": {
+                    "type": "integer"
+                },
+                "unpriced_models": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "unpriced_output_tokens": {
+                    "type": "integer"
+                },
+                "unpriced_runs": {
                     "type": "integer"
                 }
             }

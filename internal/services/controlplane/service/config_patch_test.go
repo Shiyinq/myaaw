@@ -162,6 +162,78 @@ func TestConfigPatchWarningBelowMax(t *testing.T) {
 	}
 }
 
+func TestConfigViewShowsEffectiveObservability(t *testing.T) {
+	setupConfigAgent(t, testConfig())
+
+	view, err := NewConfigService().Config("myfriend")
+	if err != nil {
+		t.Fatalf("Config: %v", err)
+	}
+	if view.Observability == nil {
+		t.Fatal("config without an observability section must still report the effective values")
+	}
+	if view.Observability.Enabled == nil || !*view.Observability.Enabled {
+		t.Fatalf("enabled = %v", view.Observability.Enabled)
+	}
+	if view.Observability.RetentionDays != config.DefaultObsRetentionDays {
+		t.Fatalf("retention days = %d", view.Observability.RetentionDays)
+	}
+	if view.Observability.MaxContentChars != config.DefaultObsMaxContentChars {
+		t.Fatalf("max content chars = %d", view.Observability.MaxContentChars)
+	}
+	if view.Observability.StoreContent == nil || !*view.Observability.StoreContent {
+		t.Fatalf("store content = %v", view.Observability.StoreContent)
+	}
+}
+
+func TestConfigPatchObservabilityWritesOnlyGivenFields(t *testing.T) {
+	setupConfigAgent(t, testConfig())
+	svc := NewConfigService()
+
+	value := 4096
+	view, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{MaxContentChars: &value},
+	})
+	if err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+	if view.Observability == nil || view.Observability.MaxContentChars != 4096 {
+		t.Fatalf("patched view = %+v", view.Observability)
+	}
+	// The rest of the section still reads as the effective defaults.
+	if view.Observability.RetentionDays != config.DefaultObsRetentionDays {
+		t.Fatalf("retention days = %d", view.Observability.RetentionDays)
+	}
+
+	cfg := loadTestConfig(t)
+	if cfg.Observability == nil || cfg.Observability.MaxContentChars != 4096 {
+		t.Fatalf("stored config = %+v", cfg.Observability)
+	}
+	if cfg.Observability.RetentionDays != 0 {
+		t.Fatalf("patch wrote retention_days = %d, want it untouched", cfg.Observability.RetentionDays)
+	}
+}
+
+func TestConfigResetObservabilityRestoresTheTemplate(t *testing.T) {
+	setupConfigAgent(t, testConfig())
+	svc := NewConfigService()
+
+	value := 2048
+	if _, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{MaxContentChars: &value},
+	}); err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+
+	view, err := svc.ResetFields("myfriend", ConfigResetRequest{Observability: cpBoolPtr(true)})
+	if err != nil {
+		t.Fatalf("ResetFields: %v", err)
+	}
+	if view.Observability == nil || view.Observability.MaxContentChars != config.DefaultObsMaxContentChars {
+		t.Fatalf("reset view = %+v", view.Observability)
+	}
+}
+
 func TestConfigResetFields(t *testing.T) {
 	setupConfigAgent(t, testConfig())
 	svc := NewConfigService()

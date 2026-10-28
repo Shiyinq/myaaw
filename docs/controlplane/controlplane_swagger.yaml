@@ -576,6 +576,14 @@ definitions:
         type: string
       output_tokens:
         type: integer
+      priced:
+        description: |-
+          Priced is false when at least one call spent tokens without recording a
+          cost — usually a missing price entry, sometimes a call recorded before the
+          entry existed.
+        type: boolean
+      unpriced_calls:
+        type: integer
     type: object
   obs.Run:
     properties:
@@ -627,6 +635,10 @@ definitions:
         type: string
       conversation_id:
         type: string
+      cost_complete:
+        description: CostComplete is false when a turn in the session used an unpriced
+          model.
+        type: boolean
       cost_usd:
         type: number
       error_count:
@@ -640,6 +652,8 @@ definitions:
       started_at:
         type: integer
       turns:
+        type: integer
+      unpriced_turns:
         type: integer
     type: object
   obs.Span:
@@ -690,23 +704,19 @@ definitions:
     - run
     - user
     - system
-    - context
     - compaction
     - step
     - llm
     - tool
-    - gate
     type: string
     x-enum-varnames:
     - KindRun
     - KindUser
     - KindSystem
-    - KindContext
     - KindCompaction
     - KindStep
     - KindLLM
     - KindTool
-    - KindGate
   obs.Status:
     enum:
     - running
@@ -716,6 +726,7 @@ definitions:
     - truncated
     - max_iterations
     - interrupted
+    - retried
     type: string
     x-enum-varnames:
     - StatusRunning
@@ -725,6 +736,7 @@ definitions:
     - StatusTruncated
     - StatusMaxIters
     - StatusInterrupted
+    - StatusRetried
   obs.StepStat:
     properties:
       avg_ms:
@@ -746,6 +758,11 @@ definitions:
         type: array
       cache_hit_tokens:
         type: integer
+      cost_complete:
+        description: |-
+          CostComplete is false when at least one run used a model with no price,
+          so CostUSD is a lower bound rather than the full spend.
+        type: boolean
       cost_usd:
         type: number
       duration_ms_p50:
@@ -779,6 +796,16 @@ definitions:
       slowest_run_id:
         type: string
       to:
+        type: integer
+      unpriced_input_tokens:
+        type: integer
+      unpriced_models:
+        items:
+          type: string
+        type: array
+      unpriced_output_tokens:
+        type: integer
+      unpriced_runs:
         type: integer
     type: object
   obs.ToolStat:

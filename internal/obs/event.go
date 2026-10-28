@@ -15,6 +15,8 @@ const (
 	EventRunStart EventType = iota
 	EventStepStart
 	EventLLMRequestStart
+	EventLLMRetry
+	EventCompaction
 	EventFirstToken
 	EventLLMEnd
 	EventToolStart
@@ -32,6 +34,14 @@ type Event struct {
 	Model     string
 	// Messages is the exact request sent to the provider.
 	Messages []provider.Message
+	// Attempt is the 1-based request number carried by EventLLMRetry.
+	Attempt int
+	// Compaction numbers carried by EventCompaction.
+	TokensBefore    int
+	TokensAfter     int
+	Budget          int
+	DroppedMessages int
+	DroppedTokens   int
 
 	Usage      provider.Usage
 	StopReason provider.StopReason

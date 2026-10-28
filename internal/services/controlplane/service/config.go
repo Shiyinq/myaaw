@@ -143,8 +143,35 @@ func configView(cfg *config.Config) ConfigView {
 			Provider: cfg.Synthesizer.Provider,
 			APIKey:   secretState(cfg.Synthesizer.APIKey),
 		},
-		Observability: cfg.Observability,
+		Observability: mergedObservability(cfg.Observability),
 	}
+}
+
+// mergedObservability fills the fields the agent config leaves unset with the
+// shipped defaults, because those are what the agent runs with. Zero values
+// are treated as unset, matching config.LoadBaseConfig. Overrides that live in
+// the agent's .env are not visible to the control plane and are not reflected.
+func mergedObservability(raw *config.ObservabilityConfig) *config.ObservabilityConfig {
+	merged := config.DefaultObservability()
+	if raw == nil {
+		return &merged
+	}
+	if raw.Enabled != nil {
+		merged.Enabled = raw.Enabled
+	}
+	if raw.RetentionDays > 0 {
+		merged.RetentionDays = raw.RetentionDays
+	}
+	if raw.MaxContentChars > 0 {
+		merged.MaxContentChars = raw.MaxContentChars
+	}
+	if raw.StoreContent != nil {
+		merged.StoreContent = raw.StoreContent
+	}
+	if len(raw.ModelPrices) > 0 {
+		merged.ModelPrices = raw.ModelPrices
+	}
+	return &merged
 }
 
 func loadAgentConfig(agentName string) (*config.Config, error) {

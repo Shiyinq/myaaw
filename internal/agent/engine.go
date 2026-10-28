@@ -147,7 +147,11 @@ func (a *Agent) RunEvents(
 			requestMessages = cfg.TransformContext(ctx, requestMessages)
 		}
 		if cfg.ContextMaxTokens > 0 {
-			requestMessages = CompactTranscript(requestMessages, cfg.ContextMaxTokens)
+			var compactStats CompactStats
+			requestMessages, compactStats = CompactTranscriptWithStats(requestMessages, cfg.ContextMaxTokens)
+			if compactStats.Changed {
+				_ = emit(AgentEvent{Type: EventContextCompacted, Compact: compactStats})
+			}
 		}
 
 		// Hand the exact request transcript to observers before it is sent.
@@ -196,6 +200,12 @@ func (a *Agent) RunEvents(
 				startMessage()
 				streamedThought.WriteString(event.Thought)
 				return emit(AgentEvent{Type: EventMessageUpdate, ThinkingDelta: event.Thought})
+			case provider.StreamAttempt:
+				return emit(AgentEvent{
+					Type:    EventLLMRetry,
+					Attempt: event.Attempt,
+					Err:     event.Err,
+				})
 			case provider.StreamUsage:
 				turnUsage = event.Usage
 				return emit(AgentEvent{Type: EventUsage, Usage: event.Usage})

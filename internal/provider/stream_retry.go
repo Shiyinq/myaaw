@@ -50,6 +50,12 @@ func streamWithRetry(
 				return ctx.Err()
 			case <-time.After(time.Duration(attempt) * 500 * time.Millisecond):
 			}
+			// Tell observers that this is a second (or later) request. The
+			// engine turns it into a visible trace span; a failed attempt is
+			// otherwise indistinguishable from a slow model.
+			if err := onEvent(StreamEvent{Type: StreamAttempt, Attempt: attempt + 1, Err: lastErr}); err != nil {
+				return err
+			}
 		}
 
 		result := runStreamAttempt(ctx, do, consume, onEvent)

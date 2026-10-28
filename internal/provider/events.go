@@ -19,6 +19,9 @@ const (
 	// StreamDone is always the final event. It carries the fully assembled
 	// assistant message and the stop reason for the turn.
 	StreamDone
+	// StreamAttempt is emitted before a retry, after the previous attempt failed
+	// without delivering any output. It lets observers record each request.
+	StreamAttempt
 )
 
 // StreamEvent is the provider-level event consumed by the agent loop.
@@ -32,6 +35,10 @@ type StreamEvent struct {
 
 	Text    string // StreamTextDelta
 	Thought string // StreamThinkingDelta
+
+	// Attempt is the 1-based request number on StreamAttempt (1 is the first
+	// try, 2 the first retry). Err carries why the previous attempt failed.
+	Attempt int
 
 	Usage Usage // StreamUsage / StreamDone
 

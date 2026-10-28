@@ -51,6 +51,41 @@ func collectStreamText(t *testing.T, p LLMProvider) (string, error) {
 	return text.String(), err
 }
 
+// A retried request is announced so observers can record each attempt.
+func TestStreamReportsTheRetriedAttempt(t *testing.T) {
+	withStreamRetries(t, 1, 5*time.Second)
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		if calls.Add(1) == 1 {
+			return
+		}
+		writeSSEText(w, "ok")
+	}))
+	defer server.Close()
+
+	var attempts []int
+	err := NewOpenAIProvider(server.URL, "sk-test", "test-model").ChatStreamEvents(
+		context.Background(), "test-model", []Message{{Role: "user", Content: "hi"}}, nil,
+		func(event StreamEvent) error {
+			if event.Type != StreamAttempt {
+				return nil
+			}
+			if event.Err == nil {
+				t.Error("attempt event did not carry the previous error")
+			}
+			attempts = append(attempts, event.Attempt)
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("stream error: %v", err)
+	}
+	if len(attempts) != 1 || attempts[0] != 2 {
+		t.Fatalf("attempts = %+v, want one retry numbered 2", attempts)
+	}
+}
+
 // A connection that dies before any token reached the user is retried.
 func TestStreamRetriesWhenNothingDelivered(t *testing.T) {
 	withStreamRetries(t, 1, 5*time.Second)

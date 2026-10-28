@@ -30,12 +30,10 @@ const (
 	KindRun        SpanKind = "run"
 	KindUser       SpanKind = "user"
 	KindSystem     SpanKind = "system"
-	KindContext    SpanKind = "context"
 	KindCompaction SpanKind = "compaction"
 	KindStep       SpanKind = "step"
 	KindLLM        SpanKind = "llm"
 	KindTool       SpanKind = "tool"
-	KindGate       SpanKind = "gate"
 )
 
 // Status is the outcome of a run, step, or span.
@@ -49,6 +47,9 @@ const (
 	StatusTruncated   Status = "truncated"
 	StatusMaxIters    Status = "max_iterations"
 	StatusInterrupted Status = "interrupted"
+	// StatusRetried marks an attempt that failed and was retried. It is not an
+	// error: the step and the run can still complete normally.
+	StatusRetried Status = "retried"
 )
 
 // StatusFromStopReason maps an engine stop reason to a trace status.
@@ -143,7 +144,6 @@ type RunStart struct {
 	Agent          string
 	UserMessage    string
 	SystemPrompt   string
-	ContextNote    string
 	// ParentRunID and ParentSpanID nest this run under another trace, which is
 	// how a subagent appears inside the run that invoked it.
 	ParentRunID  string
@@ -161,7 +161,7 @@ type Config struct {
 	Now func() time.Time
 }
 
-const defaultMaxContentChars = 8192
+const defaultMaxContentChars = 16384
 
 // NewID returns a short random identifier for a run or span.
 func NewID(prefix string) string {

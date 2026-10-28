@@ -37,7 +37,6 @@ func startRun(t *testing.T, fixture recorderFixture) string {
 		Agent:          "default",
 		UserMessage:    "halo",
 		SystemPrompt:   "kamu kucing",
-		ContextNote:    "skills: notes",
 	})
 	if runID == "" {
 		t.Fatal("Start returned an empty run id")
@@ -122,7 +121,7 @@ func TestRecorderBuildsTraceTree(t *testing.T) {
 
 	grouped := spansByKind(spans)
 	if len(grouped[KindRun]) != 1 || len(grouped[KindSystem]) != 1 ||
-		len(grouped[KindUser]) != 1 || len(grouped[KindContext]) != 1 ||
+		len(grouped[KindUser]) != 1 ||
 		len(grouped[KindStep]) != 1 || len(grouped[KindLLM]) != 1 || len(grouped[KindTool]) != 1 {
 		t.Fatalf("span kinds = %v", grouped)
 	}
@@ -351,6 +350,161 @@ func TestRecorderTruncatesContent(t *testing.T) {
 	}
 	if !json.Valid([]byte(llm.OutputJSON)) {
 		t.Fatalf("output_json is not valid json: %q", llm.OutputJSON)
+	}
+}
+
+func TestEncodeMessagesKeepsTheSystemPromptWhole(t *testing.T) {
+	system := strings.Repeat("s", 12000)
+	encoded := encodeMessages([]provider.Message{
+		{Role: "system", Content: system},
+		{Role: "user", Content: "halo"},
+		{Role: "assistant", Content: strings.Repeat("a", 2000)},
+		{Role: "tool", Content: strings.Repeat("t", 40000)},
+	}, 16384, true)
+
+	if !json.Valid([]byte(encoded)) {
+		t.Fatalf("encoded transcript is not valid json: %q", encoded)
+	}
+	var stored decodedEnvelope
+	if err := json.Unmarshal([]byte(encoded), &stored); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(stored.Messages) == 0 || stored.Messages[0].Role != "system" {
+		t.Fatalf("system message was dropped: %s", encoded)
+	}
+	if stored.Messages[0].Content != system {
+		t.Fatalf("system prompt was shortened (len %d, want %d)",
+			len(stored.Messages[0].Content), len(system))
+	}
+	if !strings.Contains(encoded, "truncated") {
+		t.Fatal("the oversized tool result should have been truncated instead")
+	}
+}
+
+func TestEncodeMessagesShortensTheSystemPromptLast(t *testing.T) {
+	system := strings.Repeat("s", 5000)
+	encoded := encodeMessages([]provider.Message{
+		{Role: "system", Content: system},
+		{Role: "user", Content: strings.Repeat("u", 3000)},
+	}, 500, true)
+
+	if !json.Valid([]byte(encoded)) {
+		t.Fatalf("encoded transcript is not valid json: %q", encoded)
+	}
+	if len(encoded) > 500 {
+		t.Fatalf("encoded length = %d, want <= 500", len(encoded))
+	}
+	var stored decodedEnvelope
+	if err := json.Unmarshal([]byte(encoded), &stored); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(stored.Messages) == 0 || stored.Messages[0].Role != "system" {
+		t.Fatalf("system message was dropped: %s", encoded)
+	}
+	if !strings.Contains(stored.Messages[0].Content, "truncated") {
+		t.Fatalf("system prompt should be the last thing shortened: %q", stored.Messages[0].Content)
+	}
+}
+
+func TestRecorderSplitsRetriedRequest(t *testing.T) {
+	fixture := newRecorderFixture(t, Config{StoreContent: true})
+	base := fixture.base
+	runID := startRun(t, fixture)
+
+	messages := []provider.Message{
+		{Role: "system", Content: "kamu kucing"},
+		{Role: "user", Content: "halo"},
+	}
+	fixture.rec.OnEvent(Event{Type: EventStepStart, Time: base, StepIndex: 1})
+	fixture.rec.OnEvent(Event{
+		Type: EventLLMRequestStart, Time: base.Add(10 * time.Millisecond),
+		StepIndex: 1, Model: "deepseek-flash", Messages: messages,
+	})
+	fixture.rec.OnEvent(Event{
+		Type: EventLLMRetry, Time: base.Add(510 * time.Millisecond),
+		StepIndex: 1, Attempt: 2, ErrorText: "stream request failed (500)",
+	})
+	fixture.rec.OnEvent(Event{Type: EventFirstToken, Time: base.Add(600 * time.Millisecond), StepIndex: 1})
+	fixture.rec.OnEvent(Event{
+		Type: EventLLMEnd, Time: base.Add(time.Second), StepIndex: 1,
+		Usage: provider.Usage{PromptTokens: 10, CompletionTokens: 5}, StopReason: provider.StopNormal,
+		Output: "ok",
+	})
+	fixture.rec.OnEvent(Event{Type: EventStepEnd, Time: base.Add(1100 * time.Millisecond)})
+	fixture.rec.OnEvent(Event{
+		Type: EventRunEnd, Time: base.Add(1200 * time.Millisecond),
+		Usage: provider.Usage{PromptTokens: 10, CompletionTokens: 5}, StopReason: provider.StopNormal,
+	})
+	if err := fixture.rec.Flush(context.Background()); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	_, spans, err := fixture.store.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	grouped := spansByKind(spans)
+	if len(grouped[KindLLM]) != 2 {
+		t.Fatalf("llm spans = %d, want one per attempt", len(grouped[KindLLM]))
+	}
+
+	first, second := grouped[KindLLM][0], grouped[KindLLM][1]
+	if first.RequestIndex != 1 || second.RequestIndex != 2 {
+		t.Fatalf("request indexes = %d/%d", first.RequestIndex, second.RequestIndex)
+	}
+	if first.Status != StatusRetried || first.Error == "" {
+		t.Fatalf("failed attempt = %+v", first)
+	}
+	if second.Status != StatusCompleted {
+		t.Fatalf("retried attempt status = %q", second.Status)
+	}
+	if second.FirstTokenMs == 0 {
+		t.Fatalf("retried attempt lost its TTFT: %+v", second)
+	}
+	if second.InputJSON != first.InputJSON {
+		t.Fatal("the retried attempt should reuse the stored transcript")
+	}
+	if step := grouped[KindStep][0]; step.Status != StatusCompleted {
+		t.Fatalf("step status = %q, a retry must not fail the step", step.Status)
+	}
+}
+
+func TestRecorderRecordsCompactionWithoutContent(t *testing.T) {
+	fixture := newRecorderFixture(t, Config{StoreContent: false})
+	base := fixture.base
+	runID := startRun(t, fixture)
+
+	fixture.rec.OnEvent(Event{Type: EventStepStart, Time: base, StepIndex: 3})
+	fixture.rec.OnEvent(Event{
+		Type: EventCompaction, Time: base.Add(time.Millisecond), StepIndex: 3,
+		TokensBefore: 60000, TokensAfter: 38000, Budget: 64000,
+		DroppedMessages: 14, DroppedTokens: 22000,
+	})
+	fixture.rec.OnEvent(Event{Type: EventStepEnd, Time: base.Add(2 * time.Millisecond)})
+	fixture.rec.OnEvent(Event{
+		Type: EventRunEnd, Time: base.Add(3 * time.Millisecond), StopReason: provider.StopNormal,
+	})
+	if err := fixture.rec.Flush(context.Background()); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	_, spans, err := fixture.store.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	grouped := spansByKind(spans)
+	if len(grouped[KindCompaction]) != 1 {
+		t.Fatalf("compaction spans = %d, want 1", len(grouped[KindCompaction]))
+	}
+	compaction := grouped[KindCompaction][0]
+	if compaction.ParentID != grouped[KindStep][0].ID {
+		t.Fatal("compaction span is not nested under the step")
+	}
+	if !strings.Contains(compaction.InputJSON, `"tokens_before":60000`) {
+		t.Fatalf("compaction metadata = %q", compaction.InputJSON)
+	}
+	if !strings.Contains(compaction.InputJSON, `"messages_dropped":14`) {
+		t.Fatalf("compaction metadata = %q", compaction.InputJSON)
 	}
 }
 

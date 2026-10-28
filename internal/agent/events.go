@@ -28,6 +28,11 @@ const (
 	// EventLLMRequestStart fires immediately before a provider request and
 	// carries the exact transcript that request sends.
 	EventLLMRequestStart
+	// EventLLMRetry fires before a retried provider request. Attempt is 1-based.
+	EventLLMRetry
+	// EventContextCompacted fires when the transcript was trimmed to fit the
+	// context budget, before the request that used the shortened transcript.
+	EventContextCompacted
 )
 
 // AgentEvent is emitted by the agent loop. Consumers should treat it as a
@@ -54,6 +59,10 @@ type AgentEvent struct {
 	// Model and Messages are set on EventLLMRequestStart.
 	Model    string
 	Messages []provider.Message
+	// Attempt is set on EventLLMRetry.
+	Attempt int
+	// Compact is set on EventContextCompacted.
+	Compact CompactStats
 
 	Trace []provider.ReactStep // EventTraceUpdate / tool execution
 

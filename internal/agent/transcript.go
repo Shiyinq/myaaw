@@ -174,15 +174,50 @@ func estimateText(s string) int {
 	return (len(s) + 3) / 4
 }
 
+// CompactStats describes what CompactTranscript removed from a transcript.
+type CompactStats struct {
+	Changed         bool
+	TokensBefore    int
+	TokensAfter     int
+	Budget          int
+	DroppedMessages int
+	DroppedTokens   int
+}
+
 // CompactTranscript trims old turns until the transcript fits the token
 // budget. The system prefix and the most recent turn (which contains the
 // newest user prompt) are always kept. Turns are never split, so assistant
 // tool-call messages and their tool results stay together.
 func CompactTranscript(messages []provider.Message, maxTokens int) []provider.Message {
-	if maxTokens <= 0 || EstimateTokens(messages) <= maxTokens {
-		return messages
+	compacted, _ := CompactTranscriptWithStats(messages, maxTokens)
+	return compacted
+}
+
+// CompactTranscriptWithStats is CompactTranscript plus the numbers a trace
+// needs to show that the transcript was silently shortened.
+func CompactTranscriptWithStats(messages []provider.Message, maxTokens int) ([]provider.Message, CompactStats) {
+	before := EstimateTokens(messages)
+	stats := CompactStats{TokensBefore: before, TokensAfter: before, Budget: maxTokens}
+	if maxTokens <= 0 || before <= maxTokens {
+		return messages, stats
 	}
 
+	compacted := compactMessages(messages, maxTokens)
+	if len(compacted) >= len(messages) {
+		return messages, stats
+	}
+
+	stats.TokensAfter = EstimateTokens(compacted)
+	stats.DroppedMessages = len(messages) - len(compacted)
+	stats.DroppedTokens = before - stats.TokensAfter
+	if stats.DroppedTokens < 0 {
+		stats.DroppedTokens = 0
+	}
+	stats.Changed = stats.DroppedMessages > 0 || stats.DroppedTokens > 0
+	return compacted, stats
+}
+
+func compactMessages(messages []provider.Message, maxTokens int) []provider.Message {
 	prefixEnd := 0
 	for prefixEnd < len(messages) && messages[prefixEnd].Role == "system" {
 		prefixEnd++

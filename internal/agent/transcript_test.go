@@ -81,6 +81,51 @@ func TestCompactTranscriptKeepsSystemAndLatestTurn(t *testing.T) {
 	}
 }
 
+func TestCompactTranscriptWithStatsReportsWhatWasDropped(t *testing.T) {
+	big := strings.Repeat("x", 2000)
+	messages := []provider.Message{
+		{Role: "system", Content: "system prompt"},
+		{Role: "user", Content: "old question " + big},
+		{Role: "assistant", Content: "old answer " + big},
+		{Role: "user", Content: "new question"},
+	}
+
+	compacted, stats := CompactTranscriptWithStats(messages, 50)
+	if !stats.Changed {
+		t.Fatalf("stats did not report a change: %+v", stats)
+	}
+	if stats.Budget != 50 {
+		t.Fatalf("budget = %d", stats.Budget)
+	}
+	if stats.TokensBefore <= stats.Budget {
+		t.Fatalf("tokens before = %d, want over budget", stats.TokensBefore)
+	}
+	if stats.TokensAfter > stats.TokensBefore {
+		t.Fatalf("tokens after = %d, before = %d", stats.TokensAfter, stats.TokensBefore)
+	}
+	if stats.DroppedMessages != len(messages)-len(compacted) {
+		t.Fatalf("dropped messages = %d, want %d", stats.DroppedMessages, len(messages)-len(compacted))
+	}
+	if stats.DroppedTokens != stats.TokensBefore-stats.TokensAfter {
+		t.Fatalf("dropped tokens = %d", stats.DroppedTokens)
+	}
+}
+
+func TestCompactTranscriptWithStatsIsQuietWithinBudget(t *testing.T) {
+	messages := []provider.Message{
+		{Role: "system", Content: "system prompt"},
+		{Role: "user", Content: "hello"},
+	}
+
+	compacted, stats := CompactTranscriptWithStats(messages, 100000)
+	if stats.Changed || stats.DroppedMessages != 0 || stats.DroppedTokens != 0 {
+		t.Fatalf("stats = %+v", stats)
+	}
+	if len(compacted) != len(messages) {
+		t.Fatalf("compacted length = %d", len(compacted))
+	}
+}
+
 func TestCompactTranscriptNeverSplitsToolPairs(t *testing.T) {
 	big := strings.Repeat("x", 200)
 	messages := []provider.Message{

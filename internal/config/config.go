@@ -88,10 +88,15 @@ var QueueWorkers int = 4
 
 // Observability defaults. Recording is on by default; OBS_ENABLED=false (or
 // observability.enabled in config.json) turns it off entirely.
+const (
+	DefaultObsRetentionDays   = 30
+	DefaultObsMaxContentChars = 16384
+)
+
 var (
 	ObsEnabled         = true
-	ObsRetentionDays   = 30
-	ObsMaxContentChars = 8192
+	ObsRetentionDays   = DefaultObsRetentionDays
+	ObsMaxContentChars = DefaultObsMaxContentChars
 	ObsStoreContent    = true
 	ObsModelPrices     map[string]ModelPriceConfig
 )
@@ -136,6 +141,21 @@ type ModelPriceConfig struct {
 
 // EffectiveObservability resolves observability settings from .env and
 // config.json, applying defaults for anything unset.
+// DefaultObservability returns the shipped defaults, independent of this
+// process's environment or loaded config. Control-plane reads use it so an
+// agent whose config.json omits the section still shows the values the agent
+// will actually run with.
+func DefaultObservability() ObservabilityConfig {
+	enabled := true
+	storeContent := true
+	return ObservabilityConfig{
+		Enabled:         &enabled,
+		RetentionDays:   DefaultObsRetentionDays,
+		MaxContentChars: DefaultObsMaxContentChars,
+		StoreContent:    &storeContent,
+	}
+}
+
 func EffectiveObservability() ObservabilityConfig {
 	enabled := ObsEnabled
 	storeContent := ObsStoreContent
@@ -598,7 +618,7 @@ func validateAgentConfig() {
 		ObsRetentionDays = 0
 	}
 	if ObsMaxContentChars <= 0 {
-		ObsMaxContentChars = 8192
+		ObsMaxContentChars = DefaultObsMaxContentChars
 	}
 	if LLMStreamTimeoutSeconds <= 0 {
 		LLMStreamTimeoutSeconds = 180

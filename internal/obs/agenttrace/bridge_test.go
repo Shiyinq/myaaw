@@ -2,6 +2,7 @@ package agenttrace
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -89,6 +90,44 @@ func TestFromEventMapsEngineEvents(t *testing.T) {
 		}
 		if _, ok := FromEvent(agent.AgentEvent{Type: agent.EventMessageUpdate}); ok {
 			t.Fatal("an empty update must not count as a token")
+		}
+	})
+
+	t.Run("llm retry keeps the attempt number and reason", func(t *testing.T) {
+		event, ok := FromEvent(agent.AgentEvent{
+			Type:      agent.EventLLMRetry,
+			StepIndex: 1,
+			Attempt:   2,
+			Err:       errors.New("stream request failed (500)"),
+		})
+		if !ok {
+			t.Fatal("event was dropped")
+		}
+		if event.Type != obs.EventLLMRetry || event.Attempt != 2 {
+			t.Fatalf("event = %+v", event)
+		}
+		if event.ErrorText == "" {
+			t.Fatal("retry event lost the failure reason")
+		}
+	})
+
+	t.Run("compaction carries the numbers even without content", func(t *testing.T) {
+		event, ok := FromEvent(agent.AgentEvent{
+			Type:      agent.EventContextCompacted,
+			StepIndex: 3,
+			Compact: agent.CompactStats{
+				Changed: true, TokensBefore: 60000, TokensAfter: 38000,
+				Budget: 64000, DroppedMessages: 14, DroppedTokens: 22000,
+			},
+		})
+		if !ok {
+			t.Fatal("event was dropped")
+		}
+		if event.Type != obs.EventCompaction || event.TokensBefore != 60000 || event.TokensAfter != 38000 {
+			t.Fatalf("event = %+v", event)
+		}
+		if event.DroppedMessages != 14 || event.DroppedTokens != 22000 {
+			t.Fatalf("dropped = %d messages / %d tokens", event.DroppedMessages, event.DroppedTokens)
 		}
 	})
 

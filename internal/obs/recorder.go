@@ -163,8 +163,8 @@ func (r *Recorder) Store() *Store {
 	return r.store
 }
 
-// Start opens a run and records the system prompt, context note, and user
-// message it began with. It returns the run identifier.
+// Start opens a run and records the system prompt and user message it began
+// with. It returns the run identifier.
 func (r *Recorder) Start(start RunStart) string {
 	if r == nil || r.store == nil {
 		return ""
@@ -212,9 +212,6 @@ func (r *Recorder) Start(start RunStart) string {
 	if message := start.UserMessage; message != "" {
 		r.markSpanMarkerLocked(KindUser, "user", message, id, startedAt)
 	}
-	if note := start.ContextNote; note != "" {
-		r.markSpanMarkerLocked(KindContext, "context", note, id, startedAt)
-	}
 
 	r.enqueueLocked()
 	return id
@@ -242,6 +239,10 @@ func (r *Recorder) OnEvent(ev Event) {
 		r.startStepLocked(ev.StepIndex, at)
 	case EventLLMRequestStart:
 		r.startLLMLocked(ev, at)
+	case EventLLMRetry:
+		r.retryLLMLocked(ev, at)
+	case EventCompaction:
+		r.startCompactionLocked(ev, at)
 	case EventFirstToken:
 		if r.llm != nil && r.firstToken.IsZero() {
 			r.firstToken = at
@@ -355,6 +356,43 @@ func (r *Recorder) startLLMLocked(ev Event, at time.Time) {
 	}
 }
 
+func (r *Recorder) retryLLMLocked(ev Event, at time.Time) {
+	llm := r.llm
+	if llm == nil {
+		return
+	}
+
+	llm.EndedAt = at.UnixMilli()
+	llm.DurationMs = at.Sub(r.llmStarted).Milliseconds()
+	if !r.firstToken.IsZero() {
+		llm.FirstTokenMs = r.firstToken.Sub(r.llmStarted).Milliseconds()
+		llm.GenerationMs = at.Sub(r.firstToken).Milliseconds()
+	}
+	llm.Status = StatusRetried
+	llm.Error = ev.ErrorText
+	r.markDirtyLocked(llm.ID)
+
+	// Reuse the stored transcript: the retried request sends the same body, and
+	// encoding it again would duplicate a large blob for every attempt.
+	r.requestIndex++
+	retry := &Span{
+		ID:           NewID("sp"),
+		RunID:        r.run.ID,
+		ParentID:     llm.ParentID,
+		Kind:         KindLLM,
+		Name:         llm.Name,
+		StepIndex:    llm.StepIndex,
+		RequestIndex: r.requestIndex,
+		StartedAt:    at.UnixMilli(),
+		Status:       StatusRunning,
+		InputJSON:    llm.InputJSON,
+	}
+	r.addSpanLocked(retry)
+	r.llm = retry
+	r.llmStarted = at
+	r.firstToken = time.Time{}
+}
+
 func (r *Recorder) endLLMLocked(ev Event, at time.Time) {
 	llm := r.llm
 	if llm == nil {
@@ -410,6 +448,25 @@ func (r *Recorder) endLLMLocked(ev Event, at time.Time) {
 	r.markDirtyLocked(llm.ID)
 	r.llm = nil
 	r.firstToken = time.Time{}
+}
+
+func (r *Recorder) startCompactionLocked(ev Event, at time.Time) {
+	if r.step == nil {
+		r.startStepLocked(ev.StepIndex, at)
+	}
+	span := &Span{
+		ID:        NewID("sp"),
+		RunID:     r.run.ID,
+		ParentID:  r.step.ID,
+		Kind:      KindCompaction,
+		Name:      "compaction",
+		StepIndex: r.step.StepIndex,
+		StartedAt: at.UnixMilli(),
+		EndedAt:   at.UnixMilli(),
+		Status:    StatusCompleted,
+		InputJSON: encodeCompaction(ev),
+	}
+	r.addSpanLocked(span)
 }
 
 func (r *Recorder) startToolLocked(ev Event, at time.Time) {
@@ -714,16 +771,46 @@ type messageEnvelope struct {
 	Messages []messageView `json:"messages"`
 }
 
+// capturePolicy is one attempt at fitting the transcript into the content cap.
+// Divisors are relative to the cap; zero keeps that value whole. Escalation
+// sacrifices tool output first, then older turns, and only then the system
+// prompt, which is the piece most traces are read for.
+type capturePolicy struct {
+	system         int
+	user           int
+	assistant      int
+	thought        int
+	tool           int
+	dropThought    bool
+	dropToolOutput bool
+}
+
+var capturePolicies = []capturePolicy{
+	{assistant: 2, thought: 2, tool: 8},
+	{user: 2, assistant: 4, thought: 2, tool: 16},
+	{user: 4, assistant: 8, dropThought: true, dropToolOutput: true},
+	{system: 2, user: 8, assistant: 8, dropThought: true, dropToolOutput: true},
+	{system: 4, user: 8, assistant: 16, dropThought: true, dropToolOutput: true},
+}
+
 // encodeMessages renders the request transcript, dropping the oldest messages
-// until the JSON fits the content cap. Two things are always kept: the leading
-// system message (it is what the provider receives first, and dropping it would
-// make the stored transcript look like a different request) and the newest
-// messages that drove the request.
+// until the JSON fits the content cap. The leading system message is never
+// dropped, and it is the last thing shortened: a reader has to be able to see
+// the prompt that was actually sent.
 func encodeMessages(messages []provider.Message, max int, storeContent bool) string {
 	if !storeContent || max <= 0 || len(messages) == 0 {
 		return ""
 	}
 
+	for _, policy := range capturePolicies {
+		if encoded, ok := fitMessages(messages, policy, max); ok {
+			return encoded
+		}
+	}
+	return `{"messages":[]}`
+}
+
+func fitMessages(messages []provider.Message, policy capturePolicy, max int) (string, bool) {
 	views := make([]messageView, 0, len(messages))
 	sizes := make([]int, 0, len(messages))
 	for _, message := range messages {
@@ -731,8 +818,22 @@ func encodeMessages(messages []provider.Message, max int, storeContent bool) str
 			Role:       message.Role,
 			Name:       message.Name,
 			ToolCallID: message.ToolCallID,
-			Content:    TruncateContent(provider.MessageText(message), max/2),
-			Thought:    TruncateContent(message.Thought, max/2),
+		}
+		text := provider.MessageText(message)
+		switch strings.ToLower(message.Role) {
+		case "system":
+			view.Content = TruncateContent(text, captureLimit(max, policy.system))
+		case "tool":
+			if !policy.dropToolOutput {
+				view.Content = TruncateContent(text, captureLimit(max, policy.tool))
+			}
+		case "assistant":
+			view.Content = TruncateContent(text, captureLimit(max, policy.assistant))
+			if !policy.dropThought {
+				view.Thought = TruncateContent(message.Thought, captureLimit(max, policy.thought))
+			}
+		default:
+			view.Content = TruncateContent(text, captureLimit(max, policy.user))
 		}
 		for _, call := range message.ToolCalls {
 			view.ToolCalls = append(view.ToolCalls,
@@ -767,43 +868,51 @@ func encodeMessages(messages []provider.Message, max int, storeContent bool) str
 	kept := make([]messageView, 0, protected+len(views)-start)
 	kept = append(kept, views[:protected]...)
 	kept = append(kept, views[start:]...)
-	dropped := start - protected
 
-	envelope := messageEnvelope{Dropped: dropped, Messages: kept}
+	envelope := messageEnvelope{Dropped: start - protected, Messages: kept}
 	encoded, err := json.Marshal(envelope)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	if len(encoded) <= max {
-		return string(encoded)
+		return string(encoded), true
 	}
+	return "", false
+}
 
-	// Only reachable for a tiny cap: shrink the surviving content once more and
-	// keep the JSON valid, because raw panels parse these blobs.
-	for i := range kept {
-		kept[i].Content = TruncateContent(kept[i].Content, max/8)
-		kept[i].Thought = ""
+// captureLimit turns a policy divisor into a byte cap. Zero keeps the value
+// whole, which is how the system prompt survives the first policies.
+func captureLimit(max, divisor int) int {
+	if divisor <= 0 {
+		return 0
 	}
-	envelope = messageEnvelope{Dropped: dropped, Messages: kept}
-	encoded, err = json.Marshal(envelope)
+	if limit := max / divisor; limit > 0 {
+		return limit
+	}
+	return 1
+}
+
+func encodeCompaction(ev Event) string {
+	// The numbers are not content, so they are kept even when capture is off:
+	// they explain why the model stopped seeing older turns.
+	view := struct {
+		TokensBefore    int `json:"tokens_before"`
+		TokensAfter     int `json:"tokens_after"`
+		Budget          int `json:"budget,omitempty"`
+		DroppedMessages int `json:"messages_dropped"`
+		DroppedTokens   int `json:"tokens_dropped"`
+	}{
+		TokensBefore:    ev.TokensBefore,
+		TokensAfter:     ev.TokensAfter,
+		Budget:          ev.Budget,
+		DroppedMessages: ev.DroppedMessages,
+		DroppedTokens:   ev.DroppedTokens,
+	}
+	encoded, err := json.Marshal(view)
 	if err != nil {
 		return ""
 	}
-	if len(encoded) <= max {
-		return string(encoded)
-	}
-
-	// Still too big: keep only the system message, further shrunk.
-	if protected == 1 {
-		system := kept[:1]
-		system[0].Content = TruncateContent(system[0].Content, max/4)
-		envelope = messageEnvelope{Dropped: len(views) - 1, Messages: system}
-		if encoded, err = json.Marshal(envelope); err == nil {
-			return string(encoded)
-		}
-		return ""
-	}
-	return `{"messages":[]}`
+	return string(encoded)
 }
 
 func encodeAssistant(output, thought string, max int) string {

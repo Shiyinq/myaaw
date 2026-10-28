@@ -132,6 +132,31 @@ func FromEvent(event agent.AgentEvent) (obs.Event, bool) {
 			Messages:  event.Messages,
 		}, true
 
+	case agent.EventLLMRetry:
+		errorText := ""
+		if event.Err != nil {
+			errorText = event.Err.Error()
+		}
+		return obs.Event{
+			Type:      obs.EventLLMRetry,
+			Time:      event.Time,
+			StepIndex: event.StepIndex,
+			Attempt:   event.Attempt,
+			ErrorText: errorText,
+		}, true
+
+	case agent.EventContextCompacted:
+		return obs.Event{
+			Type:            obs.EventCompaction,
+			Time:            event.Time,
+			StepIndex:       event.StepIndex,
+			TokensBefore:    event.Compact.TokensBefore,
+			TokensAfter:     event.Compact.TokensAfter,
+			Budget:          event.Compact.Budget,
+			DroppedMessages: event.Compact.DroppedMessages,
+			DroppedTokens:   event.Compact.DroppedTokens,
+		}, true
+
 	case agent.EventMessageUpdate:
 		if event.Delta == "" && event.ThinkingDelta == "" {
 			return obs.Event{}, false

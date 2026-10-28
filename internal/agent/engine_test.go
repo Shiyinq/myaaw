@@ -112,6 +112,30 @@ func (p *scriptedProvider) ChatStreamEvents(
 	})
 }
 
+// retryProvider announces a retry before handing the request to the scripted
+// turns, so the engine sees the same events a real provider emits.
+type retryProvider struct {
+	scriptedProvider
+	attempts []int
+}
+
+func (p *retryProvider) ChatStreamEvents(
+	ctx context.Context,
+	modelName string,
+	messages []provider.Message,
+	toolsList []map[string]interface{},
+	onEvent func(provider.StreamEvent) error,
+) error {
+	for _, attempt := range p.attempts {
+		if err := onEvent(provider.StreamEvent{
+			Type: provider.StreamAttempt, Attempt: attempt, Err: errors.New("transient failure"),
+		}); err != nil {
+			return err
+		}
+	}
+	return p.scriptedProvider.ChatStreamEvents(ctx, modelName, messages, toolsList, onEvent)
+}
+
 type fakeTool struct {
 	name          string
 	mode          tools.ExecutionMode
@@ -516,6 +540,108 @@ func TestAgentLoopWarnsOnRepeatedToolCalls(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("repeat warning was never injected into a request")
+	}
+}
+
+func TestRunEventsReportsProviderRetries(t *testing.T) {
+	prov := &retryProvider{
+		scriptedProvider: scriptedProvider{turns: []provider.Message{
+			{Role: "assistant", Content: "ok"},
+		}},
+		attempts: []int{2, 3},
+	}
+
+	var retries []AgentEvent
+	_, err := NewAgent(prov).RunEvents(
+		context.Background(),
+		RunConfig{Model: "test-model", MaxIterations: 1},
+		[]provider.Message{{Role: "user", Content: "hi"}},
+		func(event AgentEvent) error {
+			if event.Type == EventLLMRetry {
+				retries = append(retries, event)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(retries) != 2 {
+		t.Fatalf("retry events = %d, want 2", len(retries))
+	}
+	if retries[0].Attempt != 2 || retries[1].Attempt != 3 {
+		t.Fatalf("attempts = %d/%d", retries[0].Attempt, retries[1].Attempt)
+	}
+	for _, retry := range retries {
+		if retry.Err == nil {
+			t.Fatal("retry event lost the failure reason")
+		}
+		if retry.StepIndex != 1 {
+			t.Fatalf("retry step = %d, want 1", retry.StepIndex)
+		}
+	}
+}
+
+func TestRunEventsReportsCompaction(t *testing.T) {
+	big := strings.Repeat("x", 2000)
+	prov := &scriptedProvider{turns: []provider.Message{
+		{Role: "assistant", Content: "ok"},
+	}}
+
+	var compactions []AgentEvent
+	_, err := NewAgent(prov).RunEvents(
+		context.Background(),
+		RunConfig{Model: "test-model", MaxIterations: 1, ContextMaxTokens: 100},
+		[]provider.Message{
+			{Role: "system", Content: "be brief"},
+			{Role: "user", Content: big},
+			{Role: "assistant", Content: big},
+			{Role: "user", Content: "latest question"},
+		},
+		func(event AgentEvent) error {
+			if event.Type == EventContextCompacted {
+				compactions = append(compactions, event)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(compactions) != 1 {
+		t.Fatalf("compaction events = %d, want 1", len(compactions))
+	}
+	stats := compactions[0].Compact
+	if !stats.Changed || stats.DroppedMessages == 0 {
+		t.Fatalf("compaction stats = %+v", stats)
+	}
+	if stats.Budget != 100 {
+		t.Fatalf("budget = %d", stats.Budget)
+	}
+}
+
+func TestRunEventsIsQuietWithoutCompaction(t *testing.T) {
+	prov := &scriptedProvider{turns: []provider.Message{
+		{Role: "assistant", Content: "ok"},
+	}}
+
+	var sawCompaction bool
+	_, err := NewAgent(prov).RunEvents(
+		context.Background(),
+		RunConfig{Model: "test-model", MaxIterations: 1, ContextMaxTokens: 100000},
+		[]provider.Message{{Role: "user", Content: "hi"}},
+		func(event AgentEvent) error {
+			if event.Type == EventContextCompacted {
+				sawCompaction = true
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if sawCompaction {
+		t.Fatal("a transcript that fits the budget must not report compaction")
 	}
 }
 

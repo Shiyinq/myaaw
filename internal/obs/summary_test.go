@@ -166,6 +166,75 @@ func TestSummaryExcludesRunningRunsFromCountsButNotSpend(t *testing.T) {
 	}
 }
 
+func TestSummaryReportsUnpricedRuns(t *testing.T) {
+	store := newTestStore(t, Options{})
+	base := int64(1_700_000_000_000)
+
+	priced := sampleRun("run_priced", base)
+	priced.Status = StatusCompleted
+	priced.Model = "deepseek-flash"
+	priced.InputTokens = 1000
+	priced.OutputTokens = 100
+	priced.ModelCostUSD = 0.001
+
+	unpriced := sampleRun("run_unpriced", base+1000)
+	unpriced.Status = StatusCompleted
+	unpriced.Model = "models/gemini-3.1-pro-preview"
+	unpriced.InputTokens = 5000
+	unpriced.OutputTokens = 500
+	unpriced.ModelCostUSD = 0
+
+	for _, run := range []Run{priced, unpriced} {
+		if err := store.UpsertRun(run); err != nil {
+			t.Fatalf("upsert run: %v", err)
+		}
+	}
+
+	summary, err := store.Summary(base, base+5000)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+
+	if summary.CostComplete {
+		t.Fatal("cost_complete = true, want false while a model has no price")
+	}
+	if summary.UnpricedRuns != 1 || summary.UnpricedInputTokens != 5000 || summary.UnpricedOutputTokens != 500 {
+		t.Fatalf("unpriced = %d runs, %d/%d tokens", summary.UnpricedRuns,
+			summary.UnpricedInputTokens, summary.UnpricedOutputTokens)
+	}
+	if len(summary.UnpricedModels) != 1 || summary.UnpricedModels[0] != "models/gemini-3.1-pro-preview" {
+		t.Fatalf("unpriced models = %+v", summary.UnpricedModels)
+	}
+
+	// The total still reports only the priced run, so the flags are the only
+	// signal that the number is a lower bound.
+	if math.Abs(summary.CostUSD-0.001) > 1e-9 {
+		t.Fatalf("cost = %v", summary.CostUSD)
+	}
+}
+
+func TestSummaryIsCostCompleteWhenEveryModelIsPriced(t *testing.T) {
+	store := newTestStore(t, Options{})
+	base := int64(1_700_000_000_000)
+
+	run := sampleRun("run_priced", base)
+	run.Status = StatusCompleted
+	run.Model = "deepseek-flash"
+	run.InputTokens = 1000
+	run.ModelCostUSD = 0.001
+	if err := store.UpsertRun(run); err != nil {
+		t.Fatalf("upsert run: %v", err)
+	}
+
+	summary, err := store.Summary(base, base+5000)
+	if err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	if !summary.CostComplete || summary.UnpricedRuns != 0 {
+		t.Fatalf("cost_complete = %v, unpriced = %d", summary.CostComplete, summary.UnpricedRuns)
+	}
+}
+
 func TestListSessionsGroupsTurnsByConversation(t *testing.T) {
 	store := newTestStore(t, Options{})
 	base := int64(1_700_000_000_000)
@@ -210,5 +279,8 @@ func TestListSessionsGroupsTurnsByConversation(t *testing.T) {
 	}
 	if sessions[0].StartedAt != base || sessions[0].LastActiveAt != base+2000 {
 		t.Fatalf("session-a window = %d..%d", sessions[0].StartedAt, sessions[0].LastActiveAt)
+	}
+	if !sessions[0].CostComplete || sessions[0].UnpricedTurns != 0 {
+		t.Fatalf("session-a pricing = %+v", sessions[0])
 	}
 }

@@ -23,6 +23,11 @@ type ModelStat struct {
 	OutputTokens   int     `json:"output_tokens"`
 	CacheHitTokens int     `json:"cache_hit_tokens"`
 	CostUSD        float64 `json:"cost_usd"`
+	// Priced is false when at least one call spent tokens without recording a
+	// cost — usually a missing price entry, sometimes a call recorded before the
+	// entry existed.
+	Priced        bool `json:"priced"`
+	UnpricedCalls int  `json:"unpriced_calls,omitempty"`
 }
 
 // ToolStat aggregates tool executions.
@@ -46,6 +51,14 @@ type Summary struct {
 	OutputTokens   int     `json:"output_tokens"`
 	CacheHitTokens int     `json:"cache_hit_tokens"`
 	CostUSD        float64 `json:"cost_usd"`
+
+	// CostComplete is false when at least one run used a model with no price,
+	// so CostUSD is a lower bound rather than the full spend.
+	CostComplete         bool     `json:"cost_complete"`
+	UnpricedRuns         int      `json:"unpriced_runs"`
+	UnpricedInputTokens  int      `json:"unpriced_input_tokens"`
+	UnpricedOutputTokens int      `json:"unpriced_output_tokens"`
+	UnpricedModels       []string `json:"unpriced_models,omitempty"`
 
 	DurationP50   int64 `json:"duration_ms_p50"`
 	DurationP95   int64 `json:"duration_ms_p95"`
@@ -88,6 +101,10 @@ func (s *Store) Summary(from, to int64) (Summary, error) {
 		return Summary{}, fmt.Errorf("summarise usage: %w", err)
 	}
 
+	if err := s.fillUnpriced(&summary, from, to); err != nil {
+		return Summary{}, err
+	}
+
 	durations, err := s.columnInt64(
 		`SELECT total_ms FROM runs WHERE started_at BETWEEN ? AND ? AND total_ms > 0 AND status <> 'running'`,
 		from, to)
@@ -123,6 +140,43 @@ func (s *Store) Summary(from, to int64) (Summary, error) {
 		from, to)
 
 	return summary, nil
+}
+
+// unpricedFilter matches a run that spent tokens but recorded no cost. The
+// heuristic mirrors the CLI cost label: a priced model always produces a
+// positive cost once it has tokens, so cost 0 with tokens means no price entry.
+const unpricedFilter = `COALESCE(model_cost_usd, 0) = 0 AND (COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) > 0`
+
+// fillUnpriced reports how much of the window could not be priced, so a reader
+// never mistakes CostUSD for the complete spend.
+func (s *Store) fillUnpriced(summary *Summary, from, to int64) error {
+	err := s.db.QueryRow(`SELECT COUNT(*),
+			COALESCE(SUM(input_tokens), 0),
+			COALESCE(SUM(output_tokens), 0)
+		FROM runs WHERE started_at BETWEEN ? AND ? AND `+unpricedFilter, from, to).
+		Scan(&summary.UnpricedRuns, &summary.UnpricedInputTokens, &summary.UnpricedOutputTokens)
+	if err != nil {
+		return fmt.Errorf("summarise unpriced runs: %w", err)
+	}
+	summary.CostComplete = summary.UnpricedRuns == 0
+
+	rows, err := s.db.Query(`SELECT DISTINCT COALESCE(model, '')
+		FROM runs WHERE started_at BETWEEN ? AND ? AND `+unpricedFilter, from, to)
+	if err != nil {
+		return fmt.Errorf("summarise unpriced models: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var model string
+		if err := rows.Scan(&model); err != nil {
+			return fmt.Errorf("scan unpriced model: %w", err)
+		}
+		if model != "" {
+			summary.UnpricedModels = append(summary.UnpricedModels, model)
+		}
+	}
+	return rows.Err()
 }
 
 func (s *Store) fillStepStats(summary *Summary, from, to int64) error {
@@ -206,7 +260,8 @@ func (s *Store) fillStepStats(summary *Summary, from, to int64) error {
 func (s *Store) fillModelStats(summary *Summary, from, to int64) error {
 	rows, err := s.db.Query(`SELECT COALESCE(s.name, ''), COUNT(*),
 			COALESCE(SUM(s.input_tokens), 0), COALESCE(SUM(s.output_tokens), 0),
-			COALESCE(SUM(s.cache_hit_tokens), 0), COALESCE(SUM(s.cost_usd), 0)
+			COALESCE(SUM(s.cache_hit_tokens), 0), COALESCE(SUM(s.cost_usd), 0),
+			COALESCE(SUM(CASE WHEN COALESCE(s.cost_usd, 0) = 0 AND (COALESCE(s.input_tokens, 0) + COALESCE(s.output_tokens, 0)) > 0 THEN 1 ELSE 0 END), 0)
 		FROM spans s JOIN runs r ON r.id = s.run_id
 		WHERE s.kind = 'llm' AND r.started_at BETWEEN ? AND ?
 		GROUP BY s.name ORDER BY SUM(s.cost_usd) DESC`, from, to)
@@ -218,9 +273,11 @@ func (s *Store) fillModelStats(summary *Summary, from, to int64) error {
 	for rows.Next() {
 		var stat ModelStat
 		if err := rows.Scan(&stat.Model, &stat.Calls, &stat.InputTokens,
-			&stat.OutputTokens, &stat.CacheHitTokens, &stat.CostUSD); err != nil {
+			&stat.OutputTokens, &stat.CacheHitTokens, &stat.CostUSD,
+			&stat.UnpricedCalls); err != nil {
 			return fmt.Errorf("scan model stat: %w", err)
 		}
+		stat.Priced = stat.UnpricedCalls == 0
 		summary.ByModel = append(summary.ByModel, stat)
 	}
 	return rows.Err()
@@ -308,6 +365,9 @@ type Session struct {
 	OutputTokens   int     `json:"output_tokens"`
 	CostUSD        float64 `json:"cost_usd"`
 	ErrorCount     int     `json:"error_count"`
+	// CostComplete is false when a turn in the session used an unpriced model.
+	CostComplete  bool `json:"cost_complete"`
+	UnpricedTurns int  `json:"unpriced_turns"`
 }
 
 // ListSessions groups runs by conversation, newest activity first.
@@ -320,7 +380,8 @@ func (s *Store) ListSessions(limit int) ([]Session, error) {
 			COUNT(*), MIN(started_at), MAX(started_at),
 			COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
 			COALESCE(SUM(model_cost_usd), 0),
-			COALESCE(SUM(CASE WHEN status IN ('error', 'interrupted') THEN 1 ELSE 0 END), 0)
+			COALESCE(SUM(CASE WHEN status IN ('error', 'interrupted') THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN `+unpricedFilter+` THEN 1 ELSE 0 END), 0)
 		FROM runs
 		WHERE COALESCE(conversation_id, '') <> ''
 		GROUP BY conversation_id
@@ -336,9 +397,11 @@ func (s *Store) ListSessions(limit int) ([]Session, error) {
 		var session Session
 		if err := rows.Scan(&session.ConversationID, &session.Channel, &session.Turns,
 			&session.StartedAt, &session.LastActiveAt, &session.InputTokens,
-			&session.OutputTokens, &session.CostUSD, &session.ErrorCount); err != nil {
+			&session.OutputTokens, &session.CostUSD, &session.ErrorCount,
+			&session.UnpricedTurns); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
+		session.CostComplete = session.UnpricedTurns == 0
 		sessions = append(sessions, session)
 	}
 	return sessions, rows.Err()

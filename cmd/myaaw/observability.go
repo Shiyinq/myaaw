@@ -156,6 +156,12 @@ func runObservabilitySummary(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Cost %s · latency p50 %s · p95 %s · TTFT p50 %s\n",
 		formatUSD(summary.CostUSD), formatMillis(summary.DurationP50),
 		formatMillis(summary.DurationP95), formatMillis(summary.FirstTokenP50))
+	if !summary.CostComplete {
+		fmt.Printf("%s\n", theme.RenderMuted(fmt.Sprintf(
+			"⚠ %d run(s) have tokens but no recorded cost (%s in / %s out) — add missing models to observability.model_prices",
+			summary.UnpricedRuns, formatTokens(summary.UnpricedInputTokens),
+			formatTokens(summary.UnpricedOutputTokens))))
+	}
 
 	if len(summary.PerStep) > 0 {
 		fmt.Printf("\n%s\n", theme.RenderPrimary("Per step"))
@@ -170,9 +176,16 @@ func runObservabilitySummary(cmd *cobra.Command, args []string) error {
 		fmt.Printf("\n%s\n", theme.RenderPrimary("Per model"))
 		fmt.Printf("  %-28s %7s %9s %9s %11s\n", "MODEL", "CALLS", "INPUT", "OUTPUT", "COST")
 		for _, model := range summary.ByModel {
+			name := truncateValue(model.Model, 28)
+			if model.UnpricedCalls > 0 {
+				name += "*"
+			}
 			fmt.Printf("  %-28s %7d %9s %9s %11s\n",
-				truncateValue(model.Model, 28), model.Calls,
+				name, model.Calls,
 				formatTokens(model.InputTokens), formatTokens(model.OutputTokens), formatUSD(model.CostUSD))
+		}
+		if !summary.CostComplete {
+			fmt.Printf("  %s\n", theme.RenderMuted("* some calls have no recorded cost and are excluded from the total"))
 		}
 	}
 
@@ -408,8 +421,12 @@ func runObservabilitySession(cmd *cobra.Command, args []string) error {
 		"TURN", "TYPE", "STARTED", "RUN", "MODEL", "STEPS", "DUR", "TTFT", "TOKENS", "COST", "STATUS")
 
 	totalCost := 0.0
+	unpriced := 0
 	for i, run := range runs {
 		totalCost += run.ModelCostUSD
+		if run.ModelCostUSD == 0 && (run.InputTokens > 0 || run.OutputTokens > 0) {
+			unpriced++
+		}
 		fmt.Printf("  %-4d %-8s %-10s %-22s %-22s %-5d %-8s %-8s %-13s %-10s %s\n",
 			i+1,
 			firstNonEmptyString(run.Channel, "agent"),
@@ -427,6 +444,10 @@ func runObservabilitySession(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\n%d turn(s) · %s total\n", len(runs), formatUSD(totalCost))
+	if unpriced > 0 {
+		fmt.Printf("%s\n", theme.RenderMuted(fmt.Sprintf(
+			"⚠ %d of %d turn(s) have no recorded cost — the total is not the full spend", unpriced, len(runs))))
+	}
 	example := formatTurnRef(conversationID, runs[0].Channel, 1)
 	fmt.Printf("Open a turn:  %s  or  %s\n",
 		theme.RenderSecondary("myaaw obs run <run-id>"),
@@ -731,9 +752,35 @@ func spanCounts(run obs.Run, spans []obs.Span) (steps, requests, tools int) {
 // spanLabel avoids "step · Step 1" when the span name already reads as a label.
 // A step is always named by its index, which also normalises traces recorded
 // before the turn-to-step rename.
+// compactionLabel turns the stored numbers into the one line a reader needs:
+// how much context was dropped before the request was sent.
+func compactionLabel(span obs.Span) string {
+	var view struct {
+		TokensBefore    int `json:"tokens_before"`
+		TokensAfter     int `json:"tokens_after"`
+		DroppedMessages int `json:"messages_dropped"`
+	}
+	if err := json.Unmarshal([]byte(span.InputJSON), &view); err != nil || view.TokensBefore == 0 {
+		return "compaction"
+	}
+	label := fmt.Sprintf("compaction · %s → %s tok",
+		formatTokens(view.TokensBefore), formatTokens(view.TokensAfter))
+	if view.DroppedMessages > 0 {
+		label += fmt.Sprintf(" · %d dropped", view.DroppedMessages)
+	}
+	return label
+}
+
 func spanLabel(span obs.Span) string {
 	if span.Kind == obs.KindStep && span.StepIndex > 0 {
 		return fmt.Sprintf("Step %d", span.StepIndex)
+	}
+	if span.Kind == obs.KindCompaction {
+		return compactionLabel(span)
+	}
+	if span.Kind == obs.KindLLM && span.RequestIndex > 1 {
+		return fmt.Sprintf("llm · %s · request %d",
+			firstNonEmptyString(span.Name, "model"), span.RequestIndex)
 	}
 	if span.Name == "" {
 		return string(span.Kind)

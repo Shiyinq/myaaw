@@ -15,8 +15,8 @@ func TestValidateAgentConfigClampsObservability(t *testing.T) {
 	if ObsRetentionDays != 0 {
 		t.Fatalf("retention days = %d, want 0", ObsRetentionDays)
 	}
-	if ObsMaxContentChars != 8192 {
-		t.Fatalf("max content chars = %d, want the default 8192", ObsMaxContentChars)
+	if ObsMaxContentChars != 16384 {
+		t.Fatalf("max content chars = %d, want the default 16384", ObsMaxContentChars)
 	}
 
 	ObsRetentionDays = 7
@@ -38,7 +38,7 @@ func TestEffectiveObservabilityDefaults(t *testing.T) {
 	ObsEnabled = true
 	ObsStoreContent = false
 	ObsRetentionDays = 30
-	ObsMaxContentChars = 8192
+	ObsMaxContentChars = 16384
 
 	settings := EffectiveObservability()
 	if settings.Enabled == nil || !*settings.Enabled {
@@ -47,7 +47,7 @@ func TestEffectiveObservabilityDefaults(t *testing.T) {
 	if settings.StoreContent == nil || *settings.StoreContent {
 		t.Fatal("store_content should be false")
 	}
-	if settings.RetentionDays != 30 || settings.MaxContentChars != 8192 {
+	if settings.RetentionDays != 30 || settings.MaxContentChars != 16384 {
 		t.Fatalf("settings = %+v", settings)
 	}
 }
