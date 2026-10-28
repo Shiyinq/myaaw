@@ -82,6 +82,7 @@ func init() {
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(logsCmd)
+	rootCmd.AddCommand(observabilityCmd)
 
 	// Aliases for convenience so users can type `myaaw start` instead of `myaaw server start`
 	rootCmd.AddCommand(serverStartCmd)
@@ -197,7 +198,7 @@ func init() {
 					{name: "Backup & Restore", cmdNames: []string{"backup", "restore"}},
 					{name: "Service Management", cmdNames: []string{"server", "start", "stop", "restart", "webhook"}},
 					{name: "Integrations", cmdNames: []string{"provider", "channel"}},
-					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},
+					{name: "System & Config", cmdNames: []string{"logs", "observability", "config", "completion", "update", "version"}},
 				}
 
 				findCmd := func(name string) *cobra.Command {
