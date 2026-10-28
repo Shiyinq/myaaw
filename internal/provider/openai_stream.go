@@ -68,29 +68,21 @@ func streamOpenAICompatible(
 	defer cancel()
 
 	client := resty.New().SetTimeout(timeout)
-	res, err := doWithRetry(func() (*resty.Response, error) {
-		return client.R().
-			SetContext(ctx).
-			SetHeader("Content-Type", "application/json").
-			SetHeader("Authorization", "Bearer "+cfg.apiKey).
-			SetBody(req).
-			SetDoNotParseResponse(true).
-			Post(cfg.endpoint())
-	})
-	if err != nil {
-		return fmt.Errorf("stream request failed: %w", err)
-	}
-	if res == nil {
-		return errors.New("stream request returned a nil response")
-	}
-	defer res.RawBody().Close()
-
-	if res.StatusCode() != 200 {
-		body, _ := io.ReadAll(io.LimitReader(res.RawBody(), 64*1024))
-		return fmt.Errorf("stream request failed (%d): %s", res.StatusCode(), strings.TrimSpace(string(body)))
-	}
-
-	return consumeOpenAISSE(res.RawBody(), onEvent)
+	// Retry only while nothing reached the caller: a retry after partial output
+	// would duplicate text in the transcript.
+	return streamWithRetry(ctx,
+		func(reqCtx context.Context) (*resty.Response, error) {
+			return client.R().
+				SetContext(reqCtx).
+				SetHeader("Content-Type", "application/json").
+				SetHeader("Authorization", "Bearer "+cfg.apiKey).
+				SetBody(req).
+				SetDoNotParseResponse(true).
+				Post(cfg.endpoint())
+		},
+		consumeOpenAISSE,
+		onEvent,
+	)
 }
 
 // consumeOpenAISSE parses an OpenAI-compatible SSE stream.

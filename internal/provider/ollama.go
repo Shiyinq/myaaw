@@ -139,28 +139,18 @@ func (o *OllamaProvider) ChatStreamEvents(
 	client := resty.New().SetTimeout(timeout)
 	request := o.buildRequest(modelName, messages, true, toolsList)
 
-	res, err := doWithRetry(func() (*resty.Response, error) {
-		return client.R().
-			SetContext(ctx).
-			SetHeader("Content-Type", "application/json").
-			SetBody(request).
-			SetDoNotParseResponse(true).
-			Post(o.baseURL + "/api/chat")
-	})
-	if err != nil {
-		return fmt.Errorf("stream request failed: %w", err)
-	}
-	if res == nil {
-		return errors.New("stream request returned a nil response")
-	}
-	defer res.RawBody().Close()
-
-	if res.StatusCode() != 200 {
-		body, _ := io.ReadAll(io.LimitReader(res.RawBody(), 64*1024))
-		return fmt.Errorf("stream request failed (%d): %s", res.StatusCode(), strings.TrimSpace(string(body)))
-	}
-
-	return o.consumeOllamaStream(res.RawBody(), onEvent)
+	return streamWithRetry(ctx,
+		func(reqCtx context.Context) (*resty.Response, error) {
+			return client.R().
+				SetContext(reqCtx).
+				SetHeader("Content-Type", "application/json").
+				SetBody(request).
+				SetDoNotParseResponse(true).
+				Post(o.baseURL + "/api/chat")
+		},
+		o.consumeOllamaStream,
+		onEvent,
+	)
 }
 
 // consumeOllamaStream parses Ollama's NDJSON stream.

@@ -474,28 +474,18 @@ func (g *GeminiProvider) ChatStreamEvents(
 
 	request := g.buildRequest(modelName, messages, toolsList)
 
-	res, err := doWithRetry(func() (*resty.Response, error) {
-		return client.R().
-			SetContext(ctx).
-			SetHeader("Content-Type", "application/json").
-			SetBody(request).
-			SetDoNotParseResponse(true).
-			Post(g.baseURL + fmt.Sprintf("/v1beta/%s:streamGenerateContent?key=%s", g.DefaultModel(modelName), g.apiKey))
-	})
-	if err != nil {
-		return fmt.Errorf("error in stream request: %w", err)
-	}
-	if res == nil {
-		return fmt.Errorf("empty response")
-	}
-	defer res.RawBody().Close()
-
-	if res.StatusCode() != 200 {
-		body, _ := io.ReadAll(io.LimitReader(res.RawBody(), 64*1024))
-		return fmt.Errorf("error fetching stream response (%d): %s", res.StatusCode(), strings.TrimSpace(string(body)))
-	}
-
-	return g.consumeGeminiStream(res.RawBody(), onEvent)
+	return streamWithRetry(ctx,
+		func(reqCtx context.Context) (*resty.Response, error) {
+			return client.R().
+				SetContext(reqCtx).
+				SetHeader("Content-Type", "application/json").
+				SetBody(request).
+				SetDoNotParseResponse(true).
+				Post(g.baseURL + fmt.Sprintf("/v1beta/%s:streamGenerateContent?key=%s", g.DefaultModel(modelName), g.apiKey))
+		},
+		g.consumeGeminiStream,
+		onEvent,
+	)
 }
 
 // consumeGeminiStream parses the JSON array returned by streamGenerateContent.
