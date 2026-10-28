@@ -28,7 +28,9 @@ var (
 // timelineItem is one chronological step in an agent turn:
 // thinking, assistant text, or a tool call/result.
 type timelineItem struct {
-	Kind       string // "thinking" | "text" | "tool"
+	Kind string // "thinking" | "text" | "tool"
+	// Step is the loop iteration this item belongs to, 0 when unknown.
+	Step       int
 	Text       string
 	ToolCallID string
 	ToolName   string
@@ -37,6 +39,20 @@ type timelineItem struct {
 	IsError    bool
 	Running    bool
 	Expanded   bool
+}
+
+// tagSteps assigns the current step to items that do not carry one yet. Items
+// already tagged (created in an earlier step) keep their step.
+func tagSteps(items []timelineItem, step int) {
+	if step <= 0 {
+		return
+	}
+	for i := len(items) - 1; i >= 0; i-- {
+		if items[i].Step != 0 {
+			return
+		}
+		items[i].Step = step
+	}
 }
 
 func appendThinkingItem(items []timelineItem, text string) []timelineItem {
@@ -170,6 +186,9 @@ type timelineRenderOptions struct {
 	GroupExpanded bool
 	Duration      time.Duration
 	Interrupted   bool
+	// Steps is the number of loop iterations. Zero falls back to the number of
+	// visible activity items, which is all history can offer for old traces.
+	Steps int
 }
 
 func (m *model) timelineWidth() int {
@@ -199,7 +218,15 @@ func (m *model) renderTimeline(items []timelineItem, streaming bool) (string, []
 	var b strings.Builder
 	spans := make([]timelineLineSpan, len(items))
 	line := 0
+	lastStep := 0
 	for i, item := range items {
+		if item.Step != 0 && item.Step != lastStep {
+			separator := dimStyle.Render(fmt.Sprintf("  ── step %d ──", item.Step))
+			b.WriteString(separator)
+			b.WriteString("\n")
+			line++
+			lastStep = item.Step
+		}
 		spans[i].Start = line
 		var rendered string
 		switch item.Kind {
@@ -248,7 +275,11 @@ func (m *model) renderAgentTimeline(items []timelineItem, opts timelineRenderOpt
 	wrapWidth := m.timelineWrapWidth()
 	groupSpan := timelineLineSpan{}
 	if groupEnd > 0 {
-		header := renderActivityHeader(groupEnd, opts.GroupExpanded)
+		steps := opts.Steps
+		if steps <= 0 {
+			steps = groupEnd
+		}
+		header := renderActivityHeader(steps, opts.GroupExpanded)
 		b.WriteString(header)
 		b.WriteString("\n")
 		line += timelineDisplayRows(header, wrapWidth)
@@ -272,6 +303,23 @@ func (m *model) renderAgentTimeline(items []timelineItem, opts timelineRenderOpt
 
 	if finalIndex >= 0 {
 		if line > 0 {
+			b.WriteString("\n")
+			line++
+		}
+		// The final answer belongs to the last loop iteration. Label it only when
+		// it is a step of its own, so a single-step reply does not repeat the
+		// label printed above its reasoning.
+		lastBodyStep := 0
+		if groupEnd > 0 {
+			lastBodyStep = items[groupEnd-1].Step
+		}
+		finalStep := items[finalIndex].Step
+		if finalStep == 0 {
+			finalStep = opts.Steps
+		}
+		if opts.GroupExpanded && lastBodyStep != 0 && finalStep != lastBodyStep {
+			separator := dimStyle.Render(fmt.Sprintf("  ── step %d ──", finalStep))
+			b.WriteString(separator)
 			b.WriteString("\n")
 			line++
 		}

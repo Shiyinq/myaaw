@@ -309,6 +309,8 @@ type model struct {
 	messages        []chatMessage_
 	state           tuiState
 	streamingItems  []timelineItem
+	streamingSteps  int
+	streamingStep   int
 	clickTargets    []timelineClickTarget
 	err             error
 	thoughtExpanded bool
@@ -385,6 +387,7 @@ type chatMessage_ struct {
 	text            string
 	thought         string
 	items           []timelineItem
+	steps           int
 	groupExpanded   bool
 	duration        time.Duration
 	interrupted     bool
@@ -411,6 +414,7 @@ func convertProviderMessages(providerMsgs []provider.Message) []chatMessage_ {
 
 	var chatMsgs []chatMessage_
 	var current *chatMessage_
+	currentStep := 0
 	toolIndex := map[string]int{}
 
 	flush := func() {
@@ -435,6 +439,9 @@ func convertProviderMessages(providerMsgs []provider.Message) []chatMessage_ {
 			if current == nil {
 				current = &chatMessage_{role: "bot"}
 			}
+			// Transcript v2 stores one assistant message per loop iteration.
+			current.steps++
+			currentStep = current.steps
 			if msg.Thought != "" {
 				current.items = appendThinkingItem(current.items, msg.Thought)
 			}
@@ -455,6 +462,7 @@ func convertProviderMessages(providerMsgs []provider.Message) []chatMessage_ {
 				})
 				toolIndex[id] = len(current.items) - 1
 			}
+			tagSteps(current.items, currentStep)
 
 		case "tool":
 			if current == nil {
@@ -910,17 +918,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.streamingItems) > 0 {
 					items := append([]timelineItem(nil), m.streamingItems...)
 					items = append(items, timelineItem{Kind: "text", Text: "🛑 *(interrupted)*"})
-					m.messages = append(m.messages, chatMessage_{role: "bot", items: items, duration: duration, interrupted: true})
+					m.messages = append(m.messages, chatMessage_{role: "bot", items: items, steps: m.streamingSteps, duration: duration, interrupted: true})
 				} else {
 					m.messages = append(m.messages, chatMessage_{
 						role:        "bot",
 						text:        "🛑 *(response interrupted)*",
+						steps:       m.streamingSteps,
 						duration:    duration,
 						interrupted: true,
 					})
 				}
 				m.interruptedIndex = len(m.messages) - 1
 				m.streamingItems = nil
+				m.streamingSteps = 0
+				m.streamingStep = 0
 				m.streamingGroupExpanded = false
 				m.state = stateStopping
 				m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
@@ -1072,6 +1083,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.Reset()
 			m.state = stateWaiting
 			m.streamingItems = nil
+			m.streamingSteps = 0
+			m.streamingStep = 0
 			m.streamingGroupExpanded = true
 			m.streamStartedAt = time.Now()
 			m.thoughtExpanded = false
@@ -1141,6 +1154,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						role:     "bot",
 						text:     msg.finalText,
 						items:    items,
+						steps:    m.streamingSteps,
 						duration: duration,
 					})
 				}
@@ -1173,16 +1187,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.chunk.Kind {
 		case "thinking", "thought":
 			m.streamingItems = appendThinkingItem(m.streamingItems, msg.chunk.Thought)
+			tagSteps(m.streamingItems, m.streamingStep)
 		case "text":
 			m.streamingItems = appendTextItem(m.streamingItems, msg.chunk.Text)
+			tagSteps(m.streamingItems, m.streamingStep)
 		case "tool":
 			name := msg.chunk.ToolName
 			if name == "" && len(msg.chunk.ToolCalls) > 0 {
 				name = msg.chunk.ToolCalls[0].Function.Name
 			}
 			m.streamingItems = startToolItem(m.streamingItems, msg.chunk.ToolCallID, name, msg.chunk.ToolArguments)
+			tagSteps(m.streamingItems, m.streamingStep)
 		case "tool_result":
 			m.streamingItems = finishToolItem(m.streamingItems, msg.chunk.ToolCallID, msg.chunk.ToolResultText, msg.chunk.IsError)
+		case "step":
+			if msg.chunk.StepIndex > m.streamingSteps {
+				m.streamingSteps = msg.chunk.StepIndex
+			}
+			m.streamingStep = msg.chunk.StepIndex
 		case "trace", "usage":
 			// Tool lifecycle events already carry the descriptive data.
 		default:
@@ -1692,6 +1714,7 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 					GroupExpanded: msg.groupExpanded,
 					Duration:      msg.duration,
 					Interrupted:   msg.interrupted,
+					Steps:         msg.steps,
 				})
 			} else {
 				// Legacy fallback for plain messages (commands, errors) and
@@ -1794,6 +1817,7 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 			inner, spans, groupSpan := m.renderAgentTimeline(m.streamingItems, timelineRenderOptions{
 				Streaming:     true,
 				GroupExpanded: m.streamingGroupExpanded,
+				Steps:         m.streamingSteps,
 			})
 			content := title + "\n\n" + inner
 			msgView := botBoxStyle.Width(m.viewport.Width-4).Render(content) + "\n"

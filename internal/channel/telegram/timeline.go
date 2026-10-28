@@ -153,8 +153,8 @@ func (tl *telegramTimeline) handleChunk(chunk channel.StreamChunk) {
 		tl.startTool(chunk.ToolCallID, name, chunk.ToolArguments)
 	case "tool_result":
 		tl.finishTool(chunk.ToolCallID, chunk.ToolName, chunk.ToolResultText, chunk.IsError)
-	case "trace", "usage":
-		// Trace steps are represented by the tool lifecycle events.
+	case "step", "trace", "usage":
+		// Step markers and traces are represented by their own items.
 	default:
 		// Backwards compatible with providers that only set the fields.
 		if chunk.Thought != "" {

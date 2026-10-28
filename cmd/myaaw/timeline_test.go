@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -686,5 +687,117 @@ func TestConvertProviderMessagesMigratesLegacyTrace(t *testing.T) {
 	}
 	if bot.items[3].Kind != "text" || bot.items[3].Text != "final answer" {
 		t.Fatalf("final answer missing: %+v", bot.items[3])
+	}
+}
+
+func TestRenderAgentTimelineCountsLoopIterations(t *testing.T) {
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	items := []timelineItem{
+		{Kind: "thinking", Text: "inspect"},
+		{Kind: "tool", ToolName: "bash", ToolArgs: `{"command":"ls"}`, ToolResult: "file1"},
+		{Kind: "thinking", Text: "look again"},
+		{Kind: "tool", ToolName: "bash", ToolArgs: `{"command":"pwd"}`, ToolResult: "/tmp"},
+		{Kind: "thinking", Text: "answer"},
+		{Kind: "tool", ToolName: "bash", ToolArgs: `{"command":"date"}`, ToolResult: "now"},
+		{Kind: "text", Text: "final answer"},
+	}
+
+	// Six activity items inside the group, but four loop iterations.
+	collapsed, _, _ := m.renderAgentTimeline(items, timelineRenderOptions{Steps: 4})
+	if !strings.Contains(collapsed, "4 steps") {
+		t.Fatalf("header should count steps, got %q", collapsed)
+	}
+	if strings.Contains(collapsed, "6 steps") {
+		t.Fatalf("header counted activity items instead of steps: %q", collapsed)
+	}
+
+	// History without a step count falls back to the visible item count.
+	fallback, _, _ := m.renderAgentTimeline(items, timelineRenderOptions{})
+	if !strings.Contains(fallback, "6 steps") {
+		t.Fatalf("fallback header = %q", fallback)
+	}
+}
+
+func TestRenderTimelineSeparatesSteps(t *testing.T) {
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	items := []timelineItem{
+		{Kind: "thinking", Text: "first thought", Step: 1},
+		{Kind: "tool", ToolName: "bash", ToolArgs: `{"command":"ls"}`, ToolResult: "a", Step: 1},
+		{Kind: "thinking", Text: "second thought", Step: 2},
+		{Kind: "tool", ToolName: "bash", ToolArgs: `{"command":"pwd"}`, ToolResult: "/tmp", Step: 2},
+		{Kind: "thinking", Text: "third thought", Step: 3},
+		{Kind: "text", Text: "final answer", Step: 3},
+	}
+
+	expanded, _, _ := m.renderAgentTimeline(items, timelineRenderOptions{GroupExpanded: true, Steps: 3})
+	for step := 1; step <= 3; step++ {
+		if !strings.Contains(expanded, fmt.Sprintf("── step %d ──", step)) {
+			t.Fatalf("missing label for step %d:\n%s", step, expanded)
+		}
+	}
+
+	collapsed, _, _ := m.renderAgentTimeline(items, timelineRenderOptions{Steps: 3})
+	if strings.Contains(collapsed, "── step") {
+		t.Fatalf("collapsed timeline hides the body:\n%s", collapsed)
+	}
+
+	// Items without step information render without separators.
+	legacy := []timelineItem{
+		{Kind: "thinking", Text: "a"},
+		{Kind: "tool", ToolName: "bash", ToolArgs: `{}`, ToolResult: "b"},
+	}
+	out, _ := m.renderTimeline(legacy, false)
+	if strings.Contains(out, "── step") {
+		t.Fatalf("legacy items must not get separators:\n%s", out)
+	}
+}
+
+func TestRenderAgentTimelineLabelsTheFinalStep(t *testing.T) {
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	items := []timelineItem{
+		{Kind: "thinking", Text: "first", Step: 1},
+		{Kind: "tool", ToolName: "bash", ToolArgs: `{"command":"ls"}`, ToolResult: "a", Step: 1},
+		{Kind: "thinking", Text: "second", Step: 2},
+		{Kind: "tool", ToolName: "bash", ToolArgs: `{"command":"pwd"}`, ToolResult: "/tmp", Step: 2},
+		{Kind: "thinking", Text: "third", Step: 3},
+		{Kind: "tool", ToolName: "bash", ToolArgs: `{"command":"date"}`, ToolResult: "now", Step: 3},
+		{Kind: "thinking", Text: "final thought", Step: 4},
+		{Kind: "text", Text: "final answer", Step: 4},
+	}
+
+	expanded, _, _ := m.renderAgentTimeline(items, timelineRenderOptions{GroupExpanded: true, Steps: 4})
+	for step := 1; step <= 4; step++ {
+		if !strings.Contains(expanded, fmt.Sprintf("── step %d ──", step)) {
+			t.Fatalf("missing label for step %d:\n%s", step, expanded)
+		}
+	}
+	if strings.Count(expanded, "── step 1 ──") != 1 {
+		t.Fatalf("step 1 must be labelled exactly once:\n%s", expanded)
+	}
+
+	collapsed, _, _ := m.renderAgentTimeline(items, timelineRenderOptions{Steps: 4})
+	if strings.Contains(collapsed, "── step 4 ──") {
+		t.Fatalf("collapsed view must not draw the final separator:\n%s", collapsed)
+	}
+}
+
+func TestRenderAgentTimelineLabelsASingleStepOnce(t *testing.T) {
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	// Thinking and the answer both belong to step 1.
+	items := []timelineItem{
+		{Kind: "thinking", Text: "simple factual answer", Step: 1},
+		{Kind: "text", Text: "Indonesia merdeka 17 Agustus 1945", Step: 1},
+	}
+
+	expanded, _, _ := m.renderAgentTimeline(items, timelineRenderOptions{GroupExpanded: true, Steps: 1})
+	if got := strings.Count(expanded, "── step 1 ──"); got != 1 {
+		t.Fatalf("step 1 label appears %d times, want 1:\n%s", got, expanded)
+	}
+	if strings.Contains(expanded, "── step 2 ──") {
+		t.Fatalf("there is no step 2:\n%s", expanded)
 	}
 }

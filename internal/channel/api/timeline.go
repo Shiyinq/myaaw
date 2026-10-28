@@ -52,8 +52,8 @@ func (t *Timeline) HandleChunk(chunk channel.StreamChunk) {
 		t.finishTool(chunk)
 	case "final", "usage":
 		// Delivered by Done.
-	case "trace":
-		// The timeline already exposes thought and tool lifecycle events.
+	case "step", "trace":
+		// Step markers and traces are represented by their own items.
 	default:
 		// Backwards compatible with providers that only populate fields.
 		if chunk.Thought != "" {
