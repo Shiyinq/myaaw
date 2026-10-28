@@ -1,6 +1,30 @@
 package config
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestObservabilityConfigKeepsAnExplicitZeroRetention(t *testing.T) {
+	var withZero Config
+	if err := json.Unmarshal([]byte(`{"observability":{"retention_days":0}}`), &withZero); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if withZero.Observability == nil || withZero.Observability.RetentionDays == nil {
+		t.Fatalf("observability = %+v", withZero.Observability)
+	}
+	if *withZero.Observability.RetentionDays != 0 {
+		t.Fatalf("retention days = %d, want an explicit 0", *withZero.Observability.RetentionDays)
+	}
+
+	var omitted Config
+	if err := json.Unmarshal([]byte(`{"observability":{}}`), &omitted); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if omitted.Observability == nil || omitted.Observability.RetentionDays != nil {
+		t.Fatalf("an omitted retention must stay nil, got %+v", omitted.Observability)
+	}
+}
 
 func TestValidateAgentConfigClampsObservability(t *testing.T) {
 	originalRetention, originalChars := ObsRetentionDays, ObsMaxContentChars
@@ -47,7 +71,7 @@ func TestEffectiveObservabilityDefaults(t *testing.T) {
 	if settings.StoreContent == nil || *settings.StoreContent {
 		t.Fatal("store_content should be false")
 	}
-	if settings.RetentionDays != 30 || settings.MaxContentChars != 16384 {
+	if settings.RetentionDays == nil || *settings.RetentionDays != 30 || settings.MaxContentChars != 16384 {
 		t.Fatalf("settings = %+v", settings)
 	}
 }

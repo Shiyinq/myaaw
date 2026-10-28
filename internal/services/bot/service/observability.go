@@ -28,7 +28,11 @@ func (r *BotServiceImpl) observability() (*obs.Store, *obs.Pricer, obs.Config) {
 			return
 		}
 
-		store, err := obs.Open(path, obs.Options{RetentionDays: settings.RetentionDays})
+		retentionDays := 0
+		if settings.RetentionDays != nil {
+			retentionDays = *settings.RetentionDays
+		}
+		store, err := obs.Open(path, obs.Options{RetentionDays: retentionDays})
 		if err != nil {
 			log.Printf("⚠️  Observability disabled: %v", err)
 			return

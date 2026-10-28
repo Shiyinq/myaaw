@@ -119,8 +119,10 @@ type Config struct {
 
 // ObservabilityConfig controls local trace recording and model pricing.
 type ObservabilityConfig struct {
-	Enabled         *bool                       `json:"enabled,omitempty"`
-	RetentionDays   int                         `json:"retention_days,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
+	// RetentionDays drops runs older than this when the database opens. Nil
+	// keeps the default; an explicit 0 keeps everything.
+	RetentionDays   *int                        `json:"retention_days,omitempty"`
 	MaxContentChars int                         `json:"max_content_chars,omitempty"`
 	StoreContent    *bool                       `json:"store_content,omitempty"`
 	ModelPrices     map[string]ModelPriceConfig `json:"model_prices,omitempty"`
@@ -148,9 +150,10 @@ type ModelPriceConfig struct {
 func DefaultObservability() ObservabilityConfig {
 	enabled := true
 	storeContent := true
+	retentionDays := DefaultObsRetentionDays
 	return ObservabilityConfig{
 		Enabled:         &enabled,
-		RetentionDays:   DefaultObsRetentionDays,
+		RetentionDays:   &retentionDays,
 		MaxContentChars: DefaultObsMaxContentChars,
 		StoreContent:    &storeContent,
 	}
@@ -159,9 +162,10 @@ func DefaultObservability() ObservabilityConfig {
 func EffectiveObservability() ObservabilityConfig {
 	enabled := ObsEnabled
 	storeContent := ObsStoreContent
+	retentionDays := ObsRetentionDays
 	return ObservabilityConfig{
 		Enabled:         &enabled,
-		RetentionDays:   ObsRetentionDays,
+		RetentionDays:   &retentionDays,
 		MaxContentChars: ObsMaxContentChars,
 		StoreContent:    &storeContent,
 		ModelPrices:     ObsModelPrices,
@@ -511,8 +515,8 @@ func LoadBaseConfig() {
 			if obs.Enabled != nil {
 				ObsEnabled = *obs.Enabled
 			}
-			if obs.RetentionDays > 0 {
-				ObsRetentionDays = obs.RetentionDays
+			if obs.RetentionDays != nil {
+				ObsRetentionDays = *obs.RetentionDays
 			}
 			if obs.MaxContentChars > 0 {
 				ObsMaxContentChars = obs.MaxContentChars

@@ -4480,6 +4480,7 @@ const docTemplatecontrolplane = `{
                     }
                 },
                 "retention_days": {
+                    "description": "RetentionDays drops runs older than this when the database opens. Nil\nkeeps the default; an explicit 0 keeps everything.",
                     "type": "integer"
                 },
                 "store_content": {

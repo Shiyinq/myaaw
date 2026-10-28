@@ -159,7 +159,7 @@ func mergedObservability(raw *config.ObservabilityConfig) *config.ObservabilityC
 	if raw.Enabled != nil {
 		merged.Enabled = raw.Enabled
 	}
-	if raw.RetentionDays > 0 {
+	if raw.RetentionDays != nil {
 		merged.RetentionDays = raw.RetentionDays
 	}
 	if raw.MaxContentChars > 0 {
@@ -664,7 +664,7 @@ func applyObservabilityPatch(obs **config.ObservabilityConfig, patch Observabili
 		if *patch.RetentionDays < 0 {
 			return ErrInvalidConfig
 		}
-		current.RetentionDays = *patch.RetentionDays
+		current.RetentionDays = cpIntPtr(*patch.RetentionDays)
 	}
 	if patch.MaxContentChars != nil {
 		if *patch.MaxContentChars < 0 {

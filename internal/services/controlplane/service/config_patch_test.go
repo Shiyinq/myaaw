@@ -175,8 +175,8 @@ func TestConfigViewShowsEffectiveObservability(t *testing.T) {
 	if view.Observability.Enabled == nil || !*view.Observability.Enabled {
 		t.Fatalf("enabled = %v", view.Observability.Enabled)
 	}
-	if view.Observability.RetentionDays != config.DefaultObsRetentionDays {
-		t.Fatalf("retention days = %d", view.Observability.RetentionDays)
+	if view.Observability.RetentionDays == nil || *view.Observability.RetentionDays != config.DefaultObsRetentionDays {
+		t.Fatalf("retention days = %v", view.Observability.RetentionDays)
 	}
 	if view.Observability.MaxContentChars != config.DefaultObsMaxContentChars {
 		t.Fatalf("max content chars = %d", view.Observability.MaxContentChars)
@@ -201,16 +201,37 @@ func TestConfigPatchObservabilityWritesOnlyGivenFields(t *testing.T) {
 		t.Fatalf("patched view = %+v", view.Observability)
 	}
 	// The rest of the section still reads as the effective defaults.
-	if view.Observability.RetentionDays != config.DefaultObsRetentionDays {
-		t.Fatalf("retention days = %d", view.Observability.RetentionDays)
+	if view.Observability.RetentionDays == nil || *view.Observability.RetentionDays != config.DefaultObsRetentionDays {
+		t.Fatalf("retention days = %v", view.Observability.RetentionDays)
 	}
 
 	cfg := loadTestConfig(t)
 	if cfg.Observability == nil || cfg.Observability.MaxContentChars != 4096 {
 		t.Fatalf("stored config = %+v", cfg.Observability)
 	}
-	if cfg.Observability.RetentionDays != 0 {
-		t.Fatalf("patch wrote retention_days = %d, want it untouched", cfg.Observability.RetentionDays)
+	if cfg.Observability.RetentionDays != nil {
+		t.Fatalf("patch wrote retention_days = %v, want it untouched", cfg.Observability.RetentionDays)
+	}
+}
+
+func TestConfigPatchObservabilityKeepsEverything(t *testing.T) {
+	setupConfigAgent(t, testConfig())
+	svc := NewConfigService()
+
+	zero := 0
+	view, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{RetentionDays: &zero},
+	})
+	if err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+	if view.Observability == nil || view.Observability.RetentionDays == nil || *view.Observability.RetentionDays != 0 {
+		t.Fatalf("view retention days = %+v, want an explicit 0", view.Observability)
+	}
+
+	cfg := loadTestConfig(t)
+	if cfg.Observability == nil || cfg.Observability.RetentionDays == nil || *cfg.Observability.RetentionDays != 0 {
+		t.Fatalf("stored config = %+v, want an explicit 0", cfg.Observability)
 	}
 }
 
