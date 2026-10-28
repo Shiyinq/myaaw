@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ type Recorder struct {
 
 	maxChars     int
 	storeContent bool
+	redact       []*regexp.Regexp
 
 	mu           sync.Mutex
 	run          Run
@@ -98,6 +100,10 @@ func New(store *Store, pricer *Pricer, cfg Config) *Recorder {
 	if now == nil {
 		now = time.Now
 	}
+	patterns := cfg.RedactPatterns
+	if patterns == nil {
+		patterns = DefaultRedactPatterns()
+	}
 
 	recorder := &Recorder{
 		store:        store,
@@ -105,6 +111,7 @@ func New(store *Store, pricer *Pricer, cfg Config) *Recorder {
 		now:          now,
 		maxChars:     maxChars,
 		storeContent: cfg.StoreContent,
+		redact:       compileRedactPatterns(patterns),
 		byID:         map[string]*Span{},
 		toolSpans:    map[string]*Span{},
 		dirty:        map[string]bool{},
@@ -189,6 +196,7 @@ func (r *Recorder) Start(start RunStart) string {
 		Provider:       start.Provider,
 		Model:          start.Model,
 		Agent:          start.Agent,
+		Trigger:        start.Trigger,
 		ParentRunID:    start.ParentRunID,
 		ParentSpanID:   start.ParentSpanID,
 		Status:         StatusRunning,
@@ -343,7 +351,7 @@ func (r *Recorder) startLLMLocked(ev Event, at time.Time) {
 		RequestIndex: r.requestIndex,
 		StartedAt:    at.UnixMilli(),
 		Status:       StatusRunning,
-		InputJSON:    encodeMessages(ev.Messages, r.maxChars, r.storeContent),
+		InputJSON:    encodeMessages(ev.Messages, r.maxChars, r.storeContent, r.redactContent),
 	}
 	r.addSpanLocked(llm)
 	r.llm = llm
@@ -421,16 +429,16 @@ func (r *Recorder) endLLMLocked(ev Event, at time.Time) {
 	llm.Status = StatusCompleted
 	if ev.IsError || ev.StopReason == provider.StopError {
 		llm.Status = StatusError
-		llm.Error = ev.ErrorText
+		llm.Error = r.redactContent(ev.ErrorText)
 	} else if ev.StopReason == provider.StopAborted {
 		llm.Status = StatusCancelled
-		llm.Error = ev.ErrorText
+		llm.Error = r.redactContent(ev.ErrorText)
 	} else if ev.StopReason == provider.StopLength {
 		llm.Status = StatusTruncated
 	}
 
 	if r.storeContent {
-		llm.OutputJSON = encodeAssistant(ev.Output, ev.Thought, r.maxChars)
+		llm.OutputJSON = encodeAssistant(ev.Output, ev.Thought, r.maxChars, r.redactContent)
 	}
 
 	// Keep the run row useful while it is still open: a client that reads the
@@ -486,7 +494,7 @@ func (r *Recorder) startToolLocked(ev Event, at time.Time) {
 		Status:       StatusRunning,
 	}
 	if r.storeContent {
-		span.InputJSON = TruncateContent(ev.ToolArguments, r.maxChars)
+		span.InputJSON = r.captureN(ev.ToolArguments, r.maxChars)
 	}
 	r.addSpanLocked(span)
 
@@ -515,10 +523,10 @@ func (r *Recorder) endToolLocked(ev Event, at time.Time) {
 	span.Status = StatusCompleted
 	if ev.IsError {
 		span.Status = StatusError
-		span.Error = ev.ErrorText
+		span.Error = r.redactContent(ev.ErrorText)
 	}
 	if r.storeContent {
-		span.OutputJSON = TruncateContent(ev.ToolOutput, r.maxChars)
+		span.OutputJSON = r.captureN(ev.ToolOutput, r.maxChars)
 	}
 	r.markDirtyLocked(span.ID)
 }
@@ -583,7 +591,7 @@ func (r *Recorder) endRunLocked(ev Event, at time.Time) {
 	}
 	r.run.ModelCostUSD = r.llmCost
 	r.run.Status = status
-	r.run.Error = ev.Err
+	r.run.Error = r.redactContent(ev.Err)
 	r.run.FirstTokenMs = r.runFirstTokenLocked()
 	r.runDirty = true
 
@@ -620,6 +628,23 @@ func (r *Recorder) runFirstTokenLocked() int64 {
 	return 0
 }
 
+// redactContent applies the configured masks. Redaction runs before truncation
+// so a cut cannot leave half a credential behind.
+func (r *Recorder) redactContent(value string) string {
+	for _, expression := range r.redact {
+		value = expression.ReplaceAllString(value, "[redacted]")
+	}
+	return value
+}
+
+func (r *Recorder) capture(value string) string {
+	return TruncateContent(r.redactContent(value), r.maxChars)
+}
+
+func (r *Recorder) captureN(value string, max int) string {
+	return TruncateContent(r.redactContent(value), max)
+}
+
 func (r *Recorder) markSpanMarkerLocked(kind SpanKind, name, content, parentID string, at int64) {
 	span := &Span{
 		ID:        NewID("sp"),
@@ -632,7 +657,7 @@ func (r *Recorder) markSpanMarkerLocked(kind SpanKind, name, content, parentID s
 		Status:    StatusCompleted,
 	}
 	if r.storeContent {
-		span.InputJSON = TruncateContent(content, r.maxChars)
+		span.InputJSON = r.capture(content)
 	}
 	r.addSpanLocked(span)
 }
@@ -797,20 +822,27 @@ var capturePolicies = []capturePolicy{
 // until the JSON fits the content cap. The leading system message is never
 // dropped, and it is the last thing shortened: a reader has to be able to see
 // the prompt that was actually sent.
-func encodeMessages(messages []provider.Message, max int, storeContent bool) string {
+func encodeMessages(messages []provider.Message, max int, storeContent bool, redact func(string) string) string {
 	if !storeContent || max <= 0 || len(messages) == 0 {
 		return ""
 	}
 
 	for _, policy := range capturePolicies {
-		if encoded, ok := fitMessages(messages, policy, max); ok {
+		if encoded, ok := fitMessages(messages, policy, max, redact); ok {
 			return encoded
 		}
 	}
 	return `{"messages":[]}`
 }
 
-func fitMessages(messages []provider.Message, policy capturePolicy, max int) (string, bool) {
+func fitMessages(messages []provider.Message, policy capturePolicy, max int, redact func(string) string) (string, bool) {
+	mask := func(value string) string {
+		if redact == nil {
+			return value
+		}
+		return redact(value)
+	}
+
 	views := make([]messageView, 0, len(messages))
 	sizes := make([]int, 0, len(messages))
 	for _, message := range messages {
@@ -822,22 +854,22 @@ func fitMessages(messages []provider.Message, policy capturePolicy, max int) (st
 		text := provider.MessageText(message)
 		switch strings.ToLower(message.Role) {
 		case "system":
-			view.Content = TruncateContent(text, captureLimit(max, policy.system))
+			view.Content = TruncateContent(mask(text), captureLimit(max, policy.system))
 		case "tool":
 			if !policy.dropToolOutput {
-				view.Content = TruncateContent(text, captureLimit(max, policy.tool))
+				view.Content = TruncateContent(mask(text), captureLimit(max, policy.tool))
 			}
 		case "assistant":
-			view.Content = TruncateContent(text, captureLimit(max, policy.assistant))
+			view.Content = TruncateContent(mask(text), captureLimit(max, policy.assistant))
 			if !policy.dropThought {
-				view.Thought = TruncateContent(message.Thought, captureLimit(max, policy.thought))
+				view.Thought = TruncateContent(mask(message.Thought), captureLimit(max, policy.thought))
 			}
 		default:
-			view.Content = TruncateContent(text, captureLimit(max, policy.user))
+			view.Content = TruncateContent(mask(text), captureLimit(max, policy.user))
 		}
 		for _, call := range message.ToolCalls {
 			view.ToolCalls = append(view.ToolCalls,
-				fmt.Sprintf("%s(%s)", call.Function.Name, argsText(call.Function.Arguments)))
+				fmt.Sprintf("%s(%s)", call.Function.Name, mask(argsText(call.Function.Arguments))))
 		}
 		encoded, err := json.Marshal(view)
 		if err != nil {
@@ -915,9 +947,13 @@ func encodeCompaction(ev Event) string {
 	return string(encoded)
 }
 
-func encodeAssistant(output, thought string, max int) string {
+func encodeAssistant(output, thought string, max int, redact func(string) string) string {
 	if max <= 0 {
 		return ""
+	}
+	if redact != nil {
+		output = redact(output)
+		thought = redact(thought)
 	}
 	view := messageView{
 		Role:    "assistant",

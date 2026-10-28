@@ -8,6 +8,7 @@ package agenttrace
 
 import (
 	"context"
+	"strings"
 
 	"myaaw/internal/agent"
 	"myaaw/internal/obs"
@@ -204,7 +205,7 @@ func FromEvent(event agent.AgentEvent) (obs.Event, bool) {
 			IsError:        event.ToolResult.IsError,
 		}
 		if event.ToolResult.IsError {
-			trace.ErrorText = "tool returned an error"
+			trace.ErrorText = toolErrorText(agent.ToolResultText(*event.ToolResult))
 		}
 		return trace, true
 
@@ -227,6 +228,20 @@ func EndEvent(result agent.RunResult) obs.Event {
 		event.Err = result.Err.Error()
 	}
 	return event
+}
+
+// toolErrorText keeps the first line of a failed tool's output. The full text
+// is still stored in output_json; this is the value a reader sees first, so
+// "permission denied" is more useful than "tool returned an error".
+func toolErrorText(output string) string {
+	output = strings.TrimSpace(output)
+	if idx := strings.IndexByte(output, '\n'); idx >= 0 {
+		output = strings.TrimSpace(output[:idx])
+	}
+	if output == "" {
+		return "tool returned an error"
+	}
+	return obs.TruncateContent(output, 200)
 }
 
 // SystemPrompt returns the first system message's text, or "".

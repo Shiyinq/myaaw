@@ -26,9 +26,10 @@ var (
 )
 
 // timelineItem is one chronological step in an agent turn:
-// thinking, assistant text, or a tool call/result.
+// thinking, assistant text, a tool call/result, or a short note such as a retry
+// or a compaction.
 type timelineItem struct {
-	Kind string // "thinking" | "text" | "tool"
+	Kind string // "thinking" | "text" | "tool" | "note"
 	// Step is the loop iteration this item belongs to, 0 when unknown.
 	Step       int
 	Text       string
@@ -236,6 +237,8 @@ func (m *model) renderTimeline(items []timelineItem, streaming bool) (string, []
 			rendered = renderTextItem(item.Text, m.renderer, streaming)
 		case "tool":
 			rendered = renderToolItem(item, item.Expanded, width)
+		case "note":
+			rendered = dimStyle.Render("  " + item.Text)
 		}
 		b.WriteString(rendered)
 		b.WriteString("\n")

@@ -83,6 +83,25 @@ func TestFromEventMapsEngineEvents(t *testing.T) {
 		}
 	})
 
+	t.Run("tool error keeps the first line of the output", func(t *testing.T) {
+		result := agent.ToolResult{
+			Content: []provider.ContentItem{{Type: "text", Text: "permission denied\nsecond line"}},
+			IsError: true,
+		}
+		event, ok := FromEvent(agent.AgentEvent{
+			Type:       agent.EventToolExecutionEnd,
+			ToolCallID: "call_1",
+			ToolName:   "bash",
+			ToolResult: &result,
+		})
+		if !ok {
+			t.Fatal("event was dropped")
+		}
+		if event.ErrorText != "permission denied" {
+			t.Fatalf("error text = %q, want the first line", event.ErrorText)
+		}
+	})
+
 	t.Run("first delta marks the first token", func(t *testing.T) {
 		event, ok := FromEvent(agent.AgentEvent{Type: agent.EventMessageUpdate, Delta: "h"})
 		if !ok || event.Type != obs.EventFirstToken {

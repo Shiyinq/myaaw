@@ -184,6 +184,9 @@ func TestConfigViewShowsEffectiveObservability(t *testing.T) {
 	if view.Observability.StoreContent == nil || !*view.Observability.StoreContent {
 		t.Fatalf("store content = %v", view.Observability.StoreContent)
 	}
+	if len(view.Observability.RedactPatterns) == 0 {
+		t.Fatal("the effective view must show the built-in redact patterns")
+	}
 }
 
 func TestConfigPatchObservabilityWritesOnlyGivenFields(t *testing.T) {
@@ -235,6 +238,29 @@ func TestConfigPatchObservabilityKeepsEverything(t *testing.T) {
 	}
 }
 
+func TestConfigPatchRedactPatterns(t *testing.T) {
+	setupConfigAgent(t, testConfig())
+	svc := NewConfigService()
+
+	patterns := []string{`token-[0-9]{6}`}
+	view, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{RedactPatterns: patterns},
+	})
+	if err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+	if len(view.Observability.RedactPatterns) != 1 || view.Observability.RedactPatterns[0] != patterns[0] {
+		t.Fatalf("redact patterns = %+v", view.Observability.RedactPatterns)
+	}
+
+	invalid := []string{`token-(`}
+	if _, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{RedactPatterns: invalid},
+	}); err == nil {
+		t.Fatal("an invalid regular expression must be rejected")
+	}
+}
+
 func TestConfigResetObservabilityRestoresTheTemplate(t *testing.T) {
 	setupConfigAgent(t, testConfig())
 	svc := NewConfigService()
@@ -252,6 +278,13 @@ func TestConfigResetObservabilityRestoresTheTemplate(t *testing.T) {
 	}
 	if view.Observability == nil || view.Observability.MaxContentChars != config.DefaultObsMaxContentChars {
 		t.Fatalf("reset view = %+v", view.Observability)
+	}
+
+	// The template is the source of truth for a fresh agent, so it must carry
+	// the redaction patterns, not only rely on the recorder defaults.
+	cfg := loadTestConfig(t)
+	if cfg.Observability == nil || len(cfg.Observability.RedactPatterns) != 4 {
+		t.Fatalf("template redact patterns = %+v", cfg.Observability)
 	}
 }
 

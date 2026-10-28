@@ -2264,6 +2264,18 @@ const docTemplatecontrolplane = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "Filter by model (exact match)",
+                        "name": "model",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by trigger: user, cron, or subagent",
+                        "name": "trigger",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "Start of the window (unix ms)",
                         "name": "from",
@@ -4479,6 +4491,13 @@ const docTemplatecontrolplane = `{
                         "$ref": "#/definitions/config.ModelPriceConfig"
                     }
                 },
+                "redact_patterns": {
+                    "description": "RedactPatterns masks secrets in stored content. Nil keeps the built-in\npatterns; an explicit empty list disables redaction.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "retention_days": {
                     "description": "RetentionDays drops runs older than this when the database opens. Nil\nkeeps the default; an explicit 0 keeps everything.",
                     "type": "integer"
@@ -5257,6 +5276,10 @@ const docTemplatecontrolplane = `{
                 "total_ms": {
                     "type": "integer"
                 },
+                "trigger": {
+                    "description": "Trigger says what started the run: a user message (\"user\"), a cron job\n(\"cron\"), or a subagent (\"subagent\"). Heartbeats are not recorded.",
+                    "type": "string"
+                },
                 "user_id": {
                     "type": "string"
                 }
@@ -5448,6 +5471,10 @@ const docTemplatecontrolplane = `{
                 },
                 "cost_usd": {
                     "type": "number"
+                },
+                "database_bytes": {
+                    "description": "DatabaseBytes is the size of the trace database on disk, including its\nwrite-ahead log. It makes growth visible without shelling out to du.",
+                    "type": "integer"
                 },
                 "duration_ms_p50": {
                     "type": "integer"
@@ -6277,6 +6304,12 @@ const docTemplatecontrolplane = `{
                         "$ref": "#/definitions/config.ModelPriceConfig"
                     }
                 },
+                "redact_patterns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "retention_days": {
                     "type": "integer"
                 },
@@ -6664,6 +6697,10 @@ const docTemplatecontrolplane = `{
                 },
                 "total_ms": {
                     "type": "integer"
+                },
+                "trigger": {
+                    "description": "Trigger says what started the run: a user message (\"user\"), a cron job\n(\"cron\"), or a subagent (\"subagent\"). Heartbeats are not recorded.",
+                    "type": "string"
                 },
                 "user_id": {
                     "type": "string"

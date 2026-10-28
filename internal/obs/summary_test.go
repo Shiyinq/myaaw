@@ -66,6 +66,9 @@ func TestSummaryAggregatesRuns(t *testing.T) {
 	if summary.DurationP50 != 1000 || summary.DurationP95 != 3000 {
 		t.Fatalf("durations = p50 %d p95 %d", summary.DurationP50, summary.DurationP95)
 	}
+	if summary.DatabaseBytes <= 0 {
+		t.Fatalf("database bytes = %d, want the on-disk size", summary.DatabaseBytes)
+	}
 	if summary.FirstTokenP50 != 400 {
 		t.Fatalf("first token p50 = %d", summary.FirstTokenP50)
 	}

@@ -1205,6 +1205,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.streamingSteps = msg.chunk.StepIndex
 			}
 			m.streamingStep = msg.chunk.StepIndex
+		case "retry":
+			m.streamingItems = append(m.streamingItems, timelineItem{
+				Kind: "note",
+				Text: fmt.Sprintf("↻ retry request %d", msg.chunk.Attempt),
+				Step: m.streamingStep,
+			})
+		case "compaction":
+			m.streamingItems = append(m.streamingItems, timelineItem{
+				Kind: "note",
+				Text: fmt.Sprintf("✂ compaction %s → %s tok · %d dropped",
+					formatTokens(msg.chunk.TokensBefore), formatTokens(msg.chunk.TokensAfter),
+					msg.chunk.DroppedMessages),
+				Step: m.streamingStep,
+			})
 		case "trace", "usage":
 			// Tool lifecycle events already carry the descriptive data.
 		default:

@@ -189,6 +189,24 @@ func TestToggleTimelineGroup(t *testing.T) {
 	}
 }
 
+func TestRenderAgentTimelineShowsRetryAndCompactionNotes(t *testing.T) {
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	items := []timelineItem{
+		{Kind: "note", Text: "↻ retry request 2", Step: 1},
+		{Kind: "tool", ToolName: "bash", ToolArgs: `{"command":"ls"}`, ToolResult: "a", Step: 1},
+		{Kind: "note", Text: "✂ compaction 62.4k → 38.1k tok · 14 dropped", Step: 2},
+		{Kind: "text", Text: "done", Step: 2},
+	}
+
+	out, _, _ := m.renderAgentTimeline(items, timelineRenderOptions{GroupExpanded: true, Steps: 2})
+	for _, want := range []string{"↻ retry request 2", "✂ compaction 62.4k → 38.1k tok · 14 dropped", "── step 2 ──"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("timeline is missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestRenderAgentTimelineGroupsIntermediateItems(t *testing.T) {
 	m := &model{}
 	m.viewport = viewport.New(80, 100)

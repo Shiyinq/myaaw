@@ -3,6 +3,7 @@ package main
 import (
 	"path/filepath"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"myaaw/internal/obs"
@@ -10,6 +11,38 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+func TestParseTimeFlag(t *testing.T) {
+	start, err := parseTimeFlag("2026-10-28", false)
+	if err != nil {
+		t.Fatalf("parse date: %v", err)
+	}
+	wantStart := time.Date(2026, 10, 28, 0, 0, 0, 0, time.Local).UnixMilli()
+	if start != wantStart {
+		t.Fatalf("start = %d, want %d", start, wantStart)
+	}
+
+	end, err := parseTimeFlag("2026-10-28", true)
+	if err != nil {
+		t.Fatalf("parse end: %v", err)
+	}
+	wantEnd := time.Date(2026, 10, 28, 23, 59, 59, int(999*time.Millisecond), time.Local).UnixMilli()
+	if end != wantEnd {
+		t.Fatalf("end = %d, want the last millisecond of the day (%d)", end, wantEnd)
+	}
+
+	millis, err := parseTimeFlag("1700000000000", false)
+	if err != nil || millis != 1_700_000_000_000 {
+		t.Fatalf("unix millis = %d, err = %v", millis, err)
+	}
+
+	if zero, err := parseTimeFlag("", false); err != nil || zero != 0 {
+		t.Fatalf("empty = %d, err = %v", zero, err)
+	}
+	if _, err := parseTimeFlag("28-10-2026", false); err == nil {
+		t.Fatal("an ambiguous date must be rejected")
+	}
+}
 
 func testPicker(runs []obs.Run) runPickerModel {
 	items := make([]list.Item, 0, len(runs))

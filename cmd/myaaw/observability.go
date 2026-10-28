@@ -22,12 +22,17 @@ import (
 var (
 	obsSummaryDays   int
 	obsPruneDays     int
+	obsPruneVacuum   bool
 	obsJSON          bool
 	obsRunsLimit     int
 	obsSessionsLimit int
 	obsBefore        string
 	obsChannel       string
 	obsStatus        string
+	obsModel         string
+	obsTrigger       string
+	obsFrom          string
+	obsTo            string
 
 	obsConversation string
 )
@@ -105,6 +110,10 @@ func init() {
 	observabilityRunsCmd.Flags().StringVar(&obsChannel, "channel", "", "filter by channel")
 	observabilityRunsCmd.Flags().StringVar(&obsStatus, "status", "", "filter by status")
 	observabilityRunsCmd.Flags().StringVar(&obsConversation, "conversation", "", "filter by conversation id (one session)")
+	observabilityRunsCmd.Flags().StringVar(&obsModel, "model", "", "filter by model (exact match)")
+	observabilityRunsCmd.Flags().StringVar(&obsTrigger, "trigger", "", "filter by trigger: user, cron, or subagent")
+	observabilityRunsCmd.Flags().StringVar(&obsFrom, "from", "", "only runs at or after this date (YYYY-MM-DD or unix ms)")
+	observabilityRunsCmd.Flags().StringVar(&obsTo, "to", "", "only runs at or before this date (YYYY-MM-DD or unix ms)")
 	observabilityRunsCmd.Flags().BoolVar(&obsJSON, "json", false, "print raw JSON")
 
 	observabilitySessionsCmd.Flags().IntVar(&obsSessionsLimit, "limit", 50, "how many sessions to list")
@@ -112,6 +121,7 @@ func init() {
 
 	observabilityPruneCmd.Flags().IntVar(&obsPruneDays, "days", 0, "delete traces older than this many days")
 	observabilityPruneCmd.Flags().StringVar(&obsBefore, "before", "", "delete traces older than this date (YYYY-MM-DD)")
+	observabilityPruneCmd.Flags().BoolVar(&obsPruneVacuum, "vacuum", false, "compact the database file after pruning (stop the agent first)")
 
 	observabilityCmd.AddCommand(observabilitySummaryCmd)
 	observabilityCmd.AddCommand(observabilityRunsCmd)
@@ -162,6 +172,7 @@ func runObservabilitySummary(cmd *cobra.Command, args []string) error {
 			summary.UnpricedRuns, formatTokens(summary.UnpricedInputTokens),
 			formatTokens(summary.UnpricedOutputTokens))))
 	}
+	fmt.Printf("Database %s\n", formatBytes(summary.DatabaseBytes))
 
 	if len(summary.PerStep) > 0 {
 		fmt.Printf("\n%s\n", theme.RenderPrimary("Per step"))
@@ -217,11 +228,24 @@ func runObservabilityRuns(cmd *cobra.Command, args []string) error {
 	}
 	defer store.Close()
 
+	from, err := parseTimeFlag(obsFrom, false)
+	if err != nil {
+		return err
+	}
+	to, err := parseTimeFlag(obsTo, true)
+	if err != nil {
+		return err
+	}
+
 	runs, total, err := store.ListRuns(obs.RunFilter{
 		Limit:          obsRunsLimit,
 		Status:         obsStatus,
 		Channel:        obsChannel,
 		ConversationID: obsConversation,
+		Model:          obsModel,
+		Trigger:        obsTrigger,
+		From:           from,
+		To:             to,
 	})
 	if err != nil {
 		return err
@@ -246,13 +270,36 @@ func runObservabilityRuns(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("%s (%d total)\n", theme.RenderPrimary("Runs"), total)
-	fmt.Printf("  %-22s %-19s %-10s %-9s %-9s %s\n", "RUN", "STARTED", "CHANNEL", "STATUS", "DURATION", "COST")
+	fmt.Printf("  %-22s %-19s %-9s %-9s %-9s %-9s %s\n", "RUN", "STARTED", "CHANNEL", "TRIGGER", "STATUS", "DURATION", "COST")
 	for _, run := range runs {
-		fmt.Printf("  %-22s %-19s %-10s %-9s %-9s %s\n",
+		fmt.Printf("  %-22s %-19s %-9s %-9s %-9s %-9s %s\n",
 			run.ID, time.UnixMilli(run.StartedAt).Format("2006-01-02 15:04:05"),
-			run.Channel, run.Status, formatMillis(run.TotalMs), formatUSD(run.ModelCostUSD))
+			run.Channel, firstNonEmptyString(run.Trigger, "-"), run.Status,
+			formatMillis(run.TotalMs), formatUSD(run.ModelCostUSD))
 	}
 	return nil
+}
+
+// parseTimeFlag accepts unix milliseconds, YYYY-MM-DD, or RFC3339. A date-only
+// end bound covers the whole day instead of stopping at midnight.
+func parseTimeFlag(value string, endOfDay bool) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	if millis, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return millis, nil
+	}
+	if parsed, err := time.ParseInLocation("2006-01-02", value, time.Local); err == nil {
+		if endOfDay {
+			parsed = parsed.Add(24*time.Hour - time.Millisecond)
+		}
+		return parsed.UnixMilli(), nil
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed.UnixMilli(), nil
+	}
+	return 0, fmt.Errorf("invalid time %q: use YYYY-MM-DD, RFC3339, or unix milliseconds", value)
 }
 
 func runObservabilityRun(cmd *cobra.Command, args []string) error {
@@ -565,11 +612,20 @@ func runObservabilityPrune(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("pass --days N or --before YYYY-MM-DD")
 	}
 
+	sizeBefore := store.Size()
 	removed, err := store.DeleteBefore(before.UnixMilli())
 	if err != nil {
 		return err
 	}
 	fmt.Printf("Removed %d run(s) started before %s.\n", removed, before.Format("2006-01-02 15:04"))
+	if obsPruneVacuum {
+		if err := store.Vacuum(); err != nil {
+			return fmt.Errorf("compact database: %w (stop the agent and retry)", err)
+		}
+		fmt.Printf("Compacted %s → %s.\n", formatBytes(sizeBefore), formatBytes(store.Size()))
+		return nil
+	}
+	fmt.Printf("Database %s (pass --vacuum to release the space).\n", formatBytes(store.Size()))
 	return nil
 }
 

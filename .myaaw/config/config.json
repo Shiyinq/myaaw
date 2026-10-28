@@ -53,6 +53,12 @@
         "retention_days": 30,
         "max_content_chars": 16384,
         "store_content": true,
+        "redact_patterns": [
+            "(?i)bearer\\s+[a-z0-9._~+/=-]{16,}",
+            "\\bsk-[A-Za-z0-9_-]{16,}",
+            "\\bgh[pousr]_[A-Za-z0-9]{20,}",
+            "\\bxox[abprs]-[A-Za-z0-9-]{10,}"
+        ],
         "model_prices": {
             "deepseek-chat": {
                 "input": 0.3,

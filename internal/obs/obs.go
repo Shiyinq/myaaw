@@ -85,6 +85,9 @@ type Run struct {
 	Provider       string `json:"provider,omitempty"`
 	Model          string `json:"model,omitempty"`
 	Agent          string `json:"agent,omitempty"`
+	// Trigger says what started the run: a user message ("user"), a cron job
+	// ("cron"), or a subagent ("subagent"). Heartbeats are not recorded.
+	Trigger string `json:"trigger,omitempty"`
 	// ParentRunID and ParentSpanID link a nested run (a subagent) into the
 	// trace that started it.
 	ParentRunID    string  `json:"parent_run_id,omitempty"`
@@ -144,6 +147,8 @@ type RunStart struct {
 	Agent          string
 	UserMessage    string
 	SystemPrompt   string
+	// Trigger labels what started the run; empty is recorded as "user".
+	Trigger string
 	// ParentRunID and ParentSpanID nest this run under another trace, which is
 	// how a subagent appears inside the run that invoked it.
 	ParentRunID  string
@@ -157,6 +162,9 @@ type Config struct {
 	// StoreContent keeps prompts, thinking, responses, and tool arguments. When
 	// false only metadata and token counts are recorded.
 	StoreContent bool
+	// RedactPatterns masks secrets in stored content. Nil uses the built-in
+	// patterns; an explicit empty slice disables redaction.
+	RedactPatterns []string
 	// Now overrides the clock in tests.
 	Now func() time.Time
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log"
+	"strings"
 
 	"myaaw/internal/agentdir"
 	"myaaw/internal/channel"
@@ -51,6 +52,7 @@ func (r *BotServiceImpl) observability() (*obs.Store, *obs.Pricer, obs.Config) {
 		r.obsConfig = obs.Config{
 			MaxContentChars: settings.MaxContentChars,
 			StoreContent:    settings.StoreContent == nil || *settings.StoreContent,
+			RedactPatterns:  settings.RedactPatterns,
 		}
 	})
 	return r.obsStore, r.obsPricer, r.obsConfig
@@ -82,11 +84,21 @@ func (r *BotServiceImpl) traceRun(
 		Provider:       config.LLMProviderName,
 		Model:          user.Model,
 		Agent:          activeAgentName(),
+		Trigger:        runTrigger(msg.TriggerType),
 		UserMessage:    msg.Text,
 		SystemPrompt:   agenttrace.SystemPrompt(messages),
 	})
 	trace.SetExporter(r.obsExporter)
 	return trace
+}
+
+// runTrigger labels what started a run. An untagged inbound message is a user
+// message; heartbeats never reach the recorder.
+func runTrigger(triggerType string) string {
+	if trigger := strings.TrimSpace(triggerType); trigger != "" {
+		return trigger
+	}
+	return "user"
 }
 
 // obsPrices converts configured prices into the pricing table type.

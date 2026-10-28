@@ -360,7 +360,7 @@ func TestEncodeMessagesKeepsTheSystemPromptWhole(t *testing.T) {
 		{Role: "user", Content: "halo"},
 		{Role: "assistant", Content: strings.Repeat("a", 2000)},
 		{Role: "tool", Content: strings.Repeat("t", 40000)},
-	}, 16384, true)
+	}, 16384, true, nil)
 
 	if !json.Valid([]byte(encoded)) {
 		t.Fatalf("encoded transcript is not valid json: %q", encoded)
@@ -386,7 +386,7 @@ func TestEncodeMessagesShortensTheSystemPromptLast(t *testing.T) {
 	encoded := encodeMessages([]provider.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: strings.Repeat("u", 3000)},
-	}, 500, true)
+	}, 500, true, nil)
 
 	if !json.Valid([]byte(encoded)) {
 		t.Fatalf("encoded transcript is not valid json: %q", encoded)
@@ -505,6 +505,115 @@ func TestRecorderRecordsCompactionWithoutContent(t *testing.T) {
 	}
 	if !strings.Contains(compaction.InputJSON, `"messages_dropped":14`) {
 		t.Fatalf("compaction metadata = %q", compaction.InputJSON)
+	}
+}
+
+func TestRecorderRedactsSecrets(t *testing.T) {
+	fixture := newRecorderFixture(t, Config{StoreContent: true})
+	base := fixture.base
+
+	const secret = "sk-abcdefghijklmnop1234"
+	const bearer = "Bearer abcdefghijklmnopqrstuvwx"
+
+	runID := fixture.rec.Start(RunStart{
+		Channel:      "telegram",
+		UserMessage:  "halo",
+		SystemPrompt: "call the API with " + secret,
+	})
+
+	fixture.rec.OnEvent(Event{Type: EventStepStart, Time: base, StepIndex: 1})
+	fixture.rec.OnEvent(Event{
+		Type: EventLLMRequestStart, Time: base.Add(10 * time.Millisecond), StepIndex: 1,
+		Model: "deepseek-flash",
+		Messages: []provider.Message{
+			{Role: "system", Content: "call the API with " + secret},
+			{Role: "user", Content: "halo"},
+		},
+	})
+	fixture.rec.OnEvent(Event{
+		Type: EventToolStart, Time: base.Add(20 * time.Millisecond), StepIndex: 1,
+		ToolCallID: "call_1", ToolName: "bash", ToolArguments: `{"header":"Authorization: ` + bearer + `"}`,
+	})
+	fixture.rec.OnEvent(Event{
+		Type: EventToolEnd, Time: base.Add(30 * time.Millisecond), StepIndex: 1,
+		ToolCallID: "call_1", ToolName: "bash", ToolOutput: "ok " + secret,
+		IsError: true, ErrorText: "denied " + secret,
+	})
+	fixture.rec.OnEvent(Event{
+		Type: EventLLMEnd, Time: base.Add(40 * time.Millisecond), StepIndex: 1,
+		Usage: provider.Usage{PromptTokens: 10, CompletionTokens: 5}, StopReason: provider.StopNormal,
+		Output: "done " + bearer,
+	})
+	fixture.rec.OnEvent(Event{Type: EventStepEnd, Time: base.Add(50 * time.Millisecond)})
+	fixture.rec.OnEvent(Event{Type: EventRunEnd, Time: base.Add(60 * time.Millisecond), StopReason: provider.StopNormal})
+	if err := fixture.rec.Flush(context.Background()); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	_, spans, err := fixture.store.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	grouped := spansByKind(spans)
+	for _, kind := range []SpanKind{KindSystem, KindLLM, KindTool} {
+		if len(grouped[kind]) == 0 {
+			t.Fatalf("missing %s span", kind)
+		}
+		for _, span := range grouped[kind] {
+			if strings.Contains(span.InputJSON, secret) || strings.Contains(span.InputJSON, bearer) {
+				t.Fatalf("%s input still contains a secret: %q", kind, span.InputJSON)
+			}
+			if !strings.Contains(span.InputJSON, "[redacted]") {
+				t.Fatalf("%s input was not redacted: %q", kind, span.InputJSON)
+			}
+		}
+	}
+	for _, span := range grouped[KindTool] {
+		if strings.Contains(span.OutputJSON, secret) || !strings.Contains(span.OutputJSON, "[redacted]") {
+			t.Fatalf("tool output was not redacted: %q", span.OutputJSON)
+		}
+		if strings.Contains(span.Error, secret) || !strings.Contains(span.Error, "[redacted]") {
+			t.Fatalf("tool error was not redacted: %q", span.Error)
+		}
+	}
+	for _, span := range grouped[KindLLM] {
+		if strings.Contains(span.OutputJSON, bearer) || !strings.Contains(span.OutputJSON, "[redacted]") {
+			t.Fatalf("llm output was not redacted: %q", span.OutputJSON)
+		}
+	}
+}
+
+func TestRecorderRedactionCanBeDisabled(t *testing.T) {
+	fixture := newRecorderFixture(t, Config{StoreContent: true, RedactPatterns: []string{}})
+	base := fixture.base
+
+	const secret = "sk-abcdefghijklmnop1234"
+	runID := fixture.rec.Start(RunStart{
+		Channel:      "telegram",
+		UserMessage:  "halo",
+		SystemPrompt: "call with " + secret,
+	})
+	fixture.rec.OnEvent(Event{Type: EventStepStart, Time: base, StepIndex: 1})
+	fixture.rec.OnEvent(Event{
+		Type: EventLLMRequestStart, Time: base.Add(10 * time.Millisecond), StepIndex: 1,
+		Model: "deepseek-flash",
+		Messages: []provider.Message{
+			{Role: "system", Content: "call with " + secret},
+			{Role: "user", Content: "hi"},
+		},
+	})
+	fixture.rec.OnEvent(Event{Type: EventStepEnd, Time: base.Add(20 * time.Millisecond)})
+	fixture.rec.OnEvent(Event{Type: EventRunEnd, Time: base.Add(30 * time.Millisecond), StopReason: provider.StopNormal})
+	if err := fixture.rec.Flush(context.Background()); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	_, spans, err := fixture.store.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if !strings.Contains(spansByKind(spans)[KindSystem][0].InputJSON, secret) {
+		t.Fatal("an empty pattern list must disable redaction")
 	}
 }
 
@@ -640,7 +749,7 @@ func TestEncodeMessagesKeepsTheSystemMessage(t *testing.T) {
 		{Role: "user", Content: "latest question"},
 	}
 
-	encoded := encodeMessages(messages, 512, true)
+	encoded := encodeMessages(messages, 512, true, nil)
 	if !json.Valid([]byte(encoded)) {
 		t.Fatalf("not valid json: %q", encoded)
 	}
@@ -673,7 +782,7 @@ func TestEncodeMessagesTrimsFromTheFrontWithoutASystemMessage(t *testing.T) {
 		{Role: "assistant", Content: "old answer"},
 		{Role: "user", Content: "new question"},
 	}
-	encoded := encodeMessages(messages, 120, true)
+	encoded := encodeMessages(messages, 120, true, nil)
 
 	var envelope decodedEnvelope
 	if err := json.Unmarshal([]byte(encoded), &envelope); err != nil {
@@ -696,7 +805,7 @@ func TestEncodeMessagesTrimsFromTheFrontWithoutASystemMessage(t *testing.T) {
 
 func TestEncodeMessagesRespectsStoreContent(t *testing.T) {
 	messages := []provider.Message{{Role: "system", Content: "prompt"}}
-	if got := encodeMessages(messages, 512, false); got != "" {
+	if got := encodeMessages(messages, 512, false, nil); got != "" {
 		t.Fatalf("store_content=false returned %q", got)
 	}
 }

@@ -11,7 +11,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const schemaVersion = 4
+const schemaVersion = 5
 
 // schemaMigrations upgrades an existing database one version at a time. Version
 // 1 is the initial schema, so its statements live in schemaStatements only.
@@ -30,6 +30,13 @@ var schemaMigrations = map[int][]string{
 	// Version 4 only marks that the shape is reconciled by alignSchema; it adds
 	// no columns of its own.
 	4: {},
+	// Version 5 records what started a run: user, cron, or subagent.
+	5: {
+		`ALTER TABLE runs ADD COLUMN trigger_type TEXT`,
+		// A parent link is proof of a subagent; roots stay unknown rather than
+		// guessing that every historical run was a user message.
+		`UPDATE runs SET trigger_type = 'subagent' WHERE COALESCE(trigger_type, '') = '' AND COALESCE(parent_run_id, '') <> ''`,
+	},
 }
 
 var schemaStatements = []string{
@@ -43,6 +50,7 @@ var schemaStatements = []string{
 		provider         TEXT,
 		model            TEXT,
 		agent            TEXT,
+		trigger_type     TEXT,
 		parent_run_id    TEXT,
 		parent_span_id   TEXT,
 		status           TEXT,
@@ -238,7 +246,7 @@ func (s *Store) alignSchema() error {
 	if err != nil {
 		return err
 	}
-	for _, column := range []string{"parent_run_id", "parent_span_id"} {
+	for _, column := range []string{"parent_run_id", "parent_span_id", "trigger_type"} {
 		if runColumns[column] {
 			continue
 		}
@@ -276,10 +284,10 @@ func (s *Store) tableColumns(table string) (map[string]bool, error) {
 
 const upsertRunSQL = `INSERT INTO runs (
 		id, started_at, ended_at, channel, user_id, conversation_id, provider,
-		model, agent, parent_run_id, parent_span_id, status, error,
+		model, agent, trigger_type, parent_run_id, parent_span_id, status, error,
 		input_tokens, output_tokens, cache_hit_tokens, model_cost_usd, total_ms,
 		first_token_ms
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(id) DO UPDATE SET
 		ended_at = excluded.ended_at,
 		channel = excluded.channel,
@@ -288,6 +296,7 @@ const upsertRunSQL = `INSERT INTO runs (
 		provider = excluded.provider,
 		model = excluded.model,
 		agent = excluded.agent,
+		trigger_type = excluded.trigger_type,
 		parent_run_id = excluded.parent_run_id,
 		parent_span_id = excluded.parent_span_id,
 		status = excluded.status,
@@ -303,7 +312,7 @@ const upsertRunSQL = `INSERT INTO runs (
 func (s *Store) UpsertRun(run Run) error {
 	_, err := s.db.Exec(upsertRunSQL,
 		run.ID, run.StartedAt, run.EndedAt, run.Channel, run.UserID,
-		run.ConversationID, run.Provider, run.Model, run.Agent,
+		run.ConversationID, run.Provider, run.Model, run.Agent, run.Trigger,
 		run.ParentRunID, run.ParentSpanID, string(run.Status),
 		run.Error, run.InputTokens, run.OutputTokens, run.CacheHitTokens,
 		run.ModelCostUSD, run.TotalMs, run.FirstTokenMs,
@@ -373,7 +382,8 @@ func (s *Store) UpsertSpans(spans []Span) error {
 // an older build (or hand-edited) still scans.
 const runColumns = `id, started_at, COALESCE(ended_at, 0), COALESCE(channel, ''),
 	COALESCE(user_id, ''), COALESCE(conversation_id, ''), COALESCE(provider, ''),
-	COALESCE(model, ''), COALESCE(agent, ''), COALESCE(parent_run_id, ''),
+	COALESCE(model, ''), COALESCE(agent, ''), COALESCE(trigger_type, ''),
+	COALESCE(parent_run_id, ''),
 	COALESCE(parent_span_id, ''), COALESCE(status, ''), COALESCE(error, ''),
 	COALESCE(input_tokens, 0), COALESCE(output_tokens, 0),
 	COALESCE(cache_hit_tokens, 0), COALESCE(model_cost_usd, 0),
@@ -396,7 +406,7 @@ func scanRun(row scanner) (Run, error) {
 	var status string
 	err := row.Scan(
 		&run.ID, &run.StartedAt, &run.EndedAt, &run.Channel, &run.UserID,
-		&run.ConversationID, &run.Provider, &run.Model, &run.Agent,
+		&run.ConversationID, &run.Provider, &run.Model, &run.Agent, &run.Trigger,
 		&run.ParentRunID, &run.ParentSpanID, &status,
 		&run.Error, &run.InputTokens, &run.OutputTokens, &run.CacheHitTokens,
 		&run.ModelCostUSD, &run.TotalMs, &run.FirstTokenMs,
@@ -464,6 +474,8 @@ type RunFilter struct {
 	Status         string
 	Channel        string
 	ConversationID string
+	Model          string
+	Trigger        string
 	From           int64
 	To             int64
 }
@@ -523,6 +535,14 @@ func runWhere(filter RunFilter) (string, []any) {
 	if filter.ConversationID != "" {
 		clauses = append(clauses, "conversation_id = ?")
 		args = append(args, filter.ConversationID)
+	}
+	if filter.Model != "" {
+		clauses = append(clauses, "model = ?")
+		args = append(args, filter.Model)
+	}
+	if filter.Trigger != "" {
+		clauses = append(clauses, "trigger_type = ?")
+		args = append(args, filter.Trigger)
 	}
 	if filter.From > 0 {
 		clauses = append(clauses, "started_at >= ?")
@@ -686,6 +706,33 @@ func (s *Store) MarkStaleRunning(now time.Time) (int64, error) {
 }
 
 // Prune applies the configured retention window.
+// Size returns the on-disk size of the database and its write-ahead log. A
+// missing file counts as zero, so a call before the first write is harmless.
+func (s *Store) Size() int64 {
+	total := int64(0)
+	for _, path := range []string{s.path, s.path + "-wal"} {
+		if info, err := os.Stat(path); err == nil {
+			total += info.Size()
+		}
+	}
+	return total
+}
+
+// Vacuum rewrites the database file, releasing the space left by deleted runs.
+// It needs exclusive access, so it fails while an agent is writing; callers
+// should stop the agent first.
+func (s *Store) Vacuum() error {
+	if _, err := s.db.Exec(`VACUUM`); err != nil {
+		return fmt.Errorf("vacuum observability database: %w", err)
+	}
+	// VACUUM in WAL mode leaves the rewritten pages in the write-ahead log, so
+	// the file only shrinks after a truncating checkpoint.
+	if _, err := s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		return fmt.Errorf("checkpoint after vacuum: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) Prune() (int64, error) {
 	if s.retentionDays <= 0 {
 		return 0, nil

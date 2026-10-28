@@ -132,6 +132,16 @@ func (r *BotServiceImpl) runConversation(
 			if event.Usage.TotalTokens > 0 {
 				onChunk(channel.StreamChunk{Kind: "usage", Usage: event.Usage})
 			}
+		case agent.EventLLMRetry:
+			onChunk(channel.StreamChunk{Kind: "retry", StepIndex: event.StepIndex, Attempt: event.Attempt})
+		case agent.EventContextCompacted:
+			onChunk(channel.StreamChunk{
+				Kind:            "compaction",
+				StepIndex:       event.StepIndex,
+				TokensBefore:    event.Compact.TokensBefore,
+				TokensAfter:     event.Compact.TokensAfter,
+				DroppedMessages: event.Compact.DroppedMessages,
+			})
 		}
 		return nil
 	})

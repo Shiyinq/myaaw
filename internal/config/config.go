@@ -98,6 +98,7 @@ var (
 	ObsRetentionDays   = DefaultObsRetentionDays
 	ObsMaxContentChars = DefaultObsMaxContentChars
 	ObsStoreContent    = true
+	ObsRedactPatterns  []string
 	ObsModelPrices     map[string]ModelPriceConfig
 )
 
@@ -122,10 +123,13 @@ type ObservabilityConfig struct {
 	Enabled *bool `json:"enabled,omitempty"`
 	// RetentionDays drops runs older than this when the database opens. Nil
 	// keeps the default; an explicit 0 keeps everything.
-	RetentionDays   *int                        `json:"retention_days,omitempty"`
-	MaxContentChars int                         `json:"max_content_chars,omitempty"`
-	StoreContent    *bool                       `json:"store_content,omitempty"`
-	ModelPrices     map[string]ModelPriceConfig `json:"model_prices,omitempty"`
+	RetentionDays   *int  `json:"retention_days,omitempty"`
+	MaxContentChars int   `json:"max_content_chars,omitempty"`
+	StoreContent    *bool `json:"store_content,omitempty"`
+	// RedactPatterns masks secrets in stored content. Nil keeps the built-in
+	// patterns; an explicit empty list disables redaction.
+	RedactPatterns []string                    `json:"redact_patterns,omitempty"`
+	ModelPrices    map[string]ModelPriceConfig `json:"model_prices,omitempty"`
 }
 
 // ModelPriceConfig is a model price in USD per one million tokens.
@@ -141,8 +145,6 @@ type ModelPriceConfig struct {
 	PeakWindows []string          `json:"peak_windows,omitempty"`
 }
 
-// EffectiveObservability resolves observability settings from .env and
-// config.json, applying defaults for anything unset.
 // DefaultObservability returns the shipped defaults, independent of this
 // process's environment or loaded config. Control-plane reads use it so an
 // agent whose config.json omits the section still shows the values the agent
@@ -159,6 +161,21 @@ func DefaultObservability() ObservabilityConfig {
 	}
 }
 
+// splitPatternList reads OBS_REDACT_PATTERNS. Semicolons separate patterns
+// because commas are common inside a regular expression.
+func splitPatternList(raw string) []string {
+	parts := strings.Split(raw, ";")
+	patterns := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if pattern := strings.TrimSpace(part); pattern != "" {
+			patterns = append(patterns, pattern)
+		}
+	}
+	return patterns
+}
+
+// EffectiveObservability resolves observability settings from .env and
+// config.json, applying defaults for anything unset.
 func EffectiveObservability() ObservabilityConfig {
 	enabled := ObsEnabled
 	storeContent := ObsStoreContent
@@ -168,6 +185,7 @@ func EffectiveObservability() ObservabilityConfig {
 		RetentionDays:   &retentionDays,
 		MaxContentChars: ObsMaxContentChars,
 		StoreContent:    &storeContent,
+		RedactPatterns:  ObsRedactPatterns,
 		ModelPrices:     ObsModelPrices,
 	}
 }
@@ -388,6 +406,9 @@ func LoadBaseConfig() {
 	ObsRetentionDays = envInt("OBS_RETENTION_DAYS", ObsRetentionDays)
 	ObsMaxContentChars = envInt("OBS_MAX_CONTENT_CHARS", ObsMaxContentChars)
 	ObsStoreContent = envBool("OBS_STORE_CONTENT", ObsStoreContent)
+	if raw := strings.TrimSpace(os.Getenv("OBS_REDACT_PATTERNS")); raw != "" {
+		ObsRedactPatterns = splitPatternList(raw)
+	}
 	LLMStreamTimeoutSeconds = envInt("LLM_STREAM_TIMEOUT_SECONDS", LLMStreamTimeoutSeconds)
 	AgentRunTimeoutSeconds = envInt("AGENT_RUN_TIMEOUT_SECONDS", AgentRunTimeoutSeconds)
 
@@ -523,6 +544,9 @@ func LoadBaseConfig() {
 			}
 			if obs.StoreContent != nil {
 				ObsStoreContent = *obs.StoreContent
+			}
+			if obs.RedactPatterns != nil {
+				ObsRedactPatterns = append([]string(nil), obs.RedactPatterns...)
 			}
 			ObsModelPrices = obs.ModelPrices
 		}

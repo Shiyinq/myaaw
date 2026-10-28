@@ -148,6 +148,7 @@ func (t *SubAgentTool) startTrace(ctx context.Context, task SubAgentTask, system
 		Agent:        task.Name,
 		Provider:     config.LLMProviderName,
 		Model:        config.LLMDefaultModel,
+		Trigger:      "subagent",
 		UserMessage:  task.Instruction,
 		SystemPrompt: systemPrompt,
 		ParentSpanID: parentSpan,

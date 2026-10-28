@@ -47,6 +47,10 @@ type Summary struct {
 	Errors    int     `json:"errors"`
 	ErrorRate float64 `json:"error_rate"`
 
+	// DatabaseBytes is the size of the trace database on disk, including its
+	// write-ahead log. It makes growth visible without shelling out to du.
+	DatabaseBytes int64 `json:"database_bytes"`
+
 	InputTokens    int     `json:"input_tokens"`
 	OutputTokens   int     `json:"output_tokens"`
 	CacheHitTokens int     `json:"cache_hit_tokens"`
@@ -74,7 +78,7 @@ type Summary struct {
 
 // Summary aggregates runs that started inside [from, to].
 func (s *Store) Summary(from, to int64) (Summary, error) {
-	summary := Summary{From: from, To: to, PerStep: []StepStat{}, ByModel: []ModelStat{}, PerTool: []ToolStat{}}
+	summary := Summary{From: from, To: to, PerStep: []StepStat{}, ByModel: []ModelStat{}, PerTool: []ToolStat{}, DatabaseBytes: s.Size()}
 
 	err := s.db.QueryRow(`SELECT
 			COUNT(*),

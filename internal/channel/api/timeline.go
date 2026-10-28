@@ -52,8 +52,8 @@ func (t *Timeline) HandleChunk(chunk channel.StreamChunk) {
 		t.finishTool(chunk)
 	case "final", "usage":
 		// Delivered by Done.
-	case "step", "trace":
-		// Step markers and traces are represented by their own items.
+	case "step", "trace", "retry", "compaction":
+		// Progress markers; traces and retries are not timeline content.
 	default:
 		// Backwards compatible with providers that only populate fields.
 		if chunk.Thought != "" {

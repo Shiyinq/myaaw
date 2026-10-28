@@ -46,6 +46,12 @@ type StreamChunk struct {
 	Trace          []provider.ReactStep
 	Usage          provider.Usage
 	Thought        string
+	// Attempt is set on Kind "retry".
+	Attempt int
+	// Compaction numbers are set on Kind "compaction".
+	TokensBefore    int
+	TokensAfter     int
+	DroppedMessages int
 }
 
 type QueueEnvelope struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	myaaw "myaaw"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/config"
+	"myaaw/internal/obs"
 )
 
 var (
@@ -153,6 +155,7 @@ func configView(cfg *config.Config) ConfigView {
 // the agent's .env are not visible to the control plane and are not reflected.
 func mergedObservability(raw *config.ObservabilityConfig) *config.ObservabilityConfig {
 	merged := config.DefaultObservability()
+	merged.RedactPatterns = obs.DefaultRedactPatterns()
 	if raw == nil {
 		return &merged
 	}
@@ -167,6 +170,9 @@ func mergedObservability(raw *config.ObservabilityConfig) *config.ObservabilityC
 	}
 	if raw.StoreContent != nil {
 		merged.StoreContent = raw.StoreContent
+	}
+	if raw.RedactPatterns != nil {
+		merged.RedactPatterns = raw.RedactPatterns
 	}
 	if len(raw.ModelPrices) > 0 {
 		merged.ModelPrices = raw.ModelPrices
@@ -512,6 +518,7 @@ type ObservabilityPatch struct {
 	RetentionDays   *int                               `json:"retention_days,omitempty"`
 	MaxContentChars *int                               `json:"max_content_chars,omitempty"`
 	StoreContent    *bool                              `json:"store_content,omitempty"`
+	RedactPatterns  []string                           `json:"redact_patterns,omitempty"`
 	ModelPrices     map[string]config.ModelPriceConfig `json:"model_prices,omitempty"`
 }
 
@@ -674,6 +681,14 @@ func applyObservabilityPatch(obs **config.ObservabilityConfig, patch Observabili
 	}
 	if patch.StoreContent != nil {
 		current.StoreContent = cpBoolPtr(*patch.StoreContent)
+	}
+	if patch.RedactPatterns != nil {
+		for _, pattern := range patch.RedactPatterns {
+			if _, err := regexp.Compile(pattern); err != nil {
+				return ErrInvalidConfig
+			}
+		}
+		current.RedactPatterns = append([]string(nil), patch.RedactPatterns...)
 	}
 	if patch.ModelPrices != nil {
 		for model, price := range patch.ModelPrices {

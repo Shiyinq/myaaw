@@ -101,6 +101,143 @@ func TestUpsertRunUpdatesExistingRow(t *testing.T) {
 	}
 }
 
+func TestListRunsFiltersByModelAndTrigger(t *testing.T) {
+	store := newTestStore(t, Options{})
+	base := int64(1_700_000_000_000)
+
+	user := sampleRun("run_user", base)
+	user.Trigger = "user"
+	cron := sampleRun("run_cron", base+1000)
+	cron.Trigger = "cron"
+	cron.Model = "gemini-3.1-pro-preview"
+	child := sampleRun("run_child", base+2000)
+	child.Trigger = "subagent"
+	child.Model = "gemini-3.1-pro-preview"
+
+	for _, run := range []Run{user, cron, child} {
+		if err := store.UpsertRun(run); err != nil {
+			t.Fatalf("upsert run: %v", err)
+		}
+	}
+
+	byTrigger, _, err := store.ListRuns(RunFilter{Trigger: "cron"})
+	if err != nil {
+		t.Fatalf("filter by trigger: %v", err)
+	}
+	if len(byTrigger) != 1 || byTrigger[0].ID != "run_cron" {
+		t.Fatalf("cron runs = %+v", byTrigger)
+	}
+
+	byModel, _, err := store.ListRuns(RunFilter{Model: "gemini-3.1-pro-preview"})
+	if err != nil {
+		t.Fatalf("filter by model: %v", err)
+	}
+	if len(byModel) != 2 {
+		t.Fatalf("model runs = %+v", byModel)
+	}
+
+	combined, _, err := store.ListRuns(RunFilter{Model: "gemini-3.1-pro-preview", Trigger: "subagent"})
+	if err != nil {
+		t.Fatalf("combined filter: %v", err)
+	}
+	if len(combined) != 1 || combined[0].ID != "run_child" {
+		t.Fatalf("combined = %+v", combined)
+	}
+
+	read, _, err := store.GetRun("run_cron")
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if read.Trigger != "cron" {
+		t.Fatalf("trigger = %q, want it to round-trip", read.Trigger)
+	}
+}
+
+// A database from before the trigger column must gain it on open.
+func TestOpenAddsTriggerColumnToOlderDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "observability.db")
+
+	raw, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	for _, statement := range schemaStatements {
+		if _, err := raw.Exec(statement); err != nil {
+			t.Fatalf("apply schema: %v", err)
+		}
+	}
+	if _, err := raw.Exec(`ALTER TABLE runs DROP COLUMN trigger_type`); err != nil {
+		t.Fatalf("drop trigger_type: %v", err)
+	}
+	if _, err := raw.Exec(`PRAGMA user_version = 4`); err != nil {
+		t.Fatalf("set version: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO runs (id, started_at, status, parent_run_id) VALUES ('run_root', 1700000000000, 'completed', '')`); err != nil {
+		t.Fatalf("seed root: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO runs (id, started_at, status, parent_run_id) VALUES ('run_child', 1700000000000, 'completed', 'run_root')`); err != nil {
+		t.Fatalf("seed child: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw db: %v", err)
+	}
+
+	store, err := Open(path, Options{})
+	if err != nil {
+		t.Fatalf("open upgraded store: %v", err)
+	}
+	defer store.Close()
+
+	columns, err := store.tableColumns("runs")
+	if err != nil {
+		t.Fatalf("read columns: %v", err)
+	}
+	if !columns["trigger_type"] {
+		t.Fatalf("trigger_type was not added: %v", columns)
+	}
+
+	root, _, err := store.GetRun("run_root")
+	if err != nil {
+		t.Fatalf("get root: %v", err)
+	}
+	if root.Trigger != "" {
+		t.Fatalf("root trigger = %q, want it left unknown", root.Trigger)
+	}
+	child, _, err := store.GetRun("run_child")
+	if err != nil {
+		t.Fatalf("get child: %v", err)
+	}
+	if child.Trigger != "subagent" {
+		t.Fatalf("child trigger = %q, want subagent from the parent link", child.Trigger)
+	}
+
+	run := sampleRun("run_cron", 1_700_000_000_000)
+	run.Trigger = "cron"
+	if err := store.UpsertRun(run); err != nil {
+		t.Fatalf("upsert run: %v", err)
+	}
+	read, _, err := store.GetRun(run.ID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if read.Trigger != "cron" {
+		t.Fatalf("trigger = %q", read.Trigger)
+	}
+}
+
+func TestSizeAndVacuum(t *testing.T) {
+	store := newTestStore(t, Options{})
+	if err := store.UpsertRun(sampleRun("run_1", 1_700_000_000_000)); err != nil {
+		t.Fatalf("upsert run: %v", err)
+	}
+	if size := store.Size(); size <= 0 {
+		t.Fatalf("size = %d, want a positive file size", size)
+	}
+	if err := store.Vacuum(); err != nil {
+		t.Fatalf("vacuum: %v", err)
+	}
+}
+
 func TestListRunsFiltersAndPaginates(t *testing.T) {
 	store := newTestStore(t, Options{})
 	base := int64(1_700_000_000_000)
