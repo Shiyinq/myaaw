@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.ngrok.com/ngrok"
 	cfNgrok "golang.ngrok.com/ngrok/config"
@@ -33,34 +34,49 @@ func ngrokForwarder(ctx context.Context) (ngrok.Forwarder, error) {
 	)
 }
 
+// SetTelegramWebhook configures the Telegram webhook through ngrok when it is
+// enabled. A failure is logged, not fatal: an outage at boot must not crash-loop
+// the agent through its supervisor.
 func SetTelegramWebhook() {
-	if ngrok, err := strconv.ParseBool(config.NgrokActive); err != nil {
-		log.Fatalf("Error parsing boolean: %v", err)
-	} else if !ngrok {
-		return
+	if err := configureTelegramWebhook(context.Background()); err != nil {
+		log.Printf("⚠️  Telegram webhook was not configured: %v", err)
+	}
+}
+
+func configureTelegramWebhook(ctx context.Context) error {
+	enabled, err := strconv.ParseBool(config.NgrokActive)
+	if err != nil {
+		return fmt.Errorf("invalid NGROK_ACTIVE value %q: %w", config.NgrokActive, err)
+	}
+	if !enabled {
+		return nil
+	}
+	if config.TelegramBotToken == "" {
+		return errors.New("telegram bot token is required when ngrok is active")
 	}
 
-	ngrok, err := ngrokForwarder(context.Background())
+	forwarder, err := ngrokForwarder(ctx)
 	if err != nil {
-		log.Fatalf("Failed to set Ngrok Forwarder: %v", err)
+		return fmt.Errorf("start ngrok forwarder: %w", err)
 	}
-	url := ngrok.URL()
-	if config.TelegramBotToken == "" {
-		log.Fatal("Failed to set Telegram webhook: bot token required")
-	}
+	url := forwarder.URL()
 
 	trimmedUrl := strings.TrimFunc(url, func(r rune) bool { return r == '/' })
-	webhookUrl := fmt.Sprintf("https://api.telegram.org/bot%s/setWebhook?url=%s/webhook/telegram", config.TelegramBotToken, trimmedUrl)
-	resp, err := http.Get(webhookUrl)
+	webhookUrl := fmt.Sprintf("%s/bot%s/setWebhook?url=%s/webhook/telegram",
+		"https://api.telegram.org", config.TelegramBotToken, trimmedUrl)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(webhookUrl)
 	if err != nil {
-		log.Fatalf("Error setting Telegram webhook: %v", err)
+		return fmt.Errorf("set telegram webhook: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == 200 {
-		log.Printf("Connected to Telegram!")
-		log.Printf("Ngrok URL: %s\n", url)
-	} else {
-		log.Printf("Failed to set Telegram webhook: %s\n", resp.Status)
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("set telegram webhook: %s", resp.Status)
 	}
+
+	log.Printf("Connected to Telegram!")
+	log.Printf("Ngrok URL: %s\n", url)
+	return nil
 }
