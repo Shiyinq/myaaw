@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"myaaw/internal/agent/approvals"
 	"myaaw/internal/provider"
 )
 
@@ -327,6 +328,40 @@ func TestClickTargetsMatchRenderedItemLines(t *testing.T) {
 	m.updateViewportContent(false)
 	if len(m.clickTargets) != 3 || !m.clickTargets[0].Group {
 		t.Fatalf("cached click targets = %+v, want 3 with a group target", m.clickTargets)
+	}
+}
+
+func TestIdleSubAgentApprovalDoesNotShowThinking(t *testing.T) {
+	// A sub-agent prompt may arrive after the parent turn finished. There is no
+	// active run then, so painting "Myaaw is thinking... 0s" is misleading.
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	m.state = stateApproval
+	m.stateBeforeApproval = stateInput
+	m.pendingApproval = &approvals.Request{ID: "a1", ToolName: "bash", SubAgent: "download-x-post-media"}
+	m.messages = []chatMessage_{{role: "bot", text: "Completed in 11.1s"}}
+
+	m.updateViewportContent(false)
+	view := sanitizeForTUI(m.viewport.View())
+	if strings.Contains(view, "Myaaw is thinking") {
+		t.Fatalf("idle sub-agent approval painted a fake thinking block:\n%s", view)
+	}
+}
+
+func TestActiveRunSubAgentApprovalShowsWorking(t *testing.T) {
+	m := &model{}
+	m.viewport = viewport.New(80, 100)
+	m.state = stateApproval
+	m.stateBeforeApproval = stateWaiting
+	m.pendingApproval = &approvals.Request{ID: "a1", ToolName: "bash", SubAgent: "child"}
+	m.streamStartedAt = time.Now().Add(-2 * time.Second)
+	m.streamingItems = []timelineItem{{Kind: "text", Text: "working on it"}}
+	m.messages = []chatMessage_{{role: "user", text: "hi"}}
+
+	m.updateViewportContent(false)
+	view := sanitizeForTUI(m.viewport.View())
+	if !strings.Contains(view, "sub-agent child needs approval") {
+		t.Fatalf("active run should keep its live block while a sub-agent asks:\n%s", view)
 	}
 }
 

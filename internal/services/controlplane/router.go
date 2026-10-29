@@ -38,7 +38,8 @@ func NewApp() (*fiber.App, error) {
 	toolsSvc := service.NewToolsService()
 	contactsSvc := service.NewContactService()
 	observabilitySvc := service.NewObservabilityService()
-	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc)
+	approvalsSvc := service.NewApprovalsService()
+	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api"})
 	app.Use(cors.New(cors.Config{
@@ -71,6 +72,11 @@ func NewApp() (*fiber.App, error) {
 	app.Post("/agents/:name/default", h.SetDefaultAgent)
 	app.Post("/agents/:name/chat", h.Chat)
 	app.Post("/agents/:name/chat/stream", h.ChatStream)
+	app.Post("/agents/:name/approvals/:id/decision", h.ApprovalDecision)
+	app.Get("/agents/:name/approvals", h.GetApprovals)
+	app.Delete("/agents/:name/approvals/grants/:key", h.RevokeApprovalGrant)
+	app.Delete("/agents/:name/approvals/grants/:key/sessions/:conversation", h.RevokeApprovalGrantSession)
+	app.Delete("/agents/:name/approvals/grants", h.ClearApprovalGrants)
 
 	app.Get("/agents/:name/fs", h.ListFiles)
 	app.Get("/agents/:name/fs/read", h.ReadFile)

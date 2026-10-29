@@ -81,6 +81,11 @@ func (d *DiscordAdapter) registerHandler(queueRepo repository.QueueRepository) {
 			handleDiscordMessage(s, m, queueRepo)
 		})
 	})
+	d.session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		protect("approval interaction", func() {
+			handleApprovalInteraction(s, i)
+		})
+	})
 }
 
 func handleDiscordMessage(s *discordgo.Session, m *discordgo.MessageCreate, queueRepo repository.QueueRepository) {

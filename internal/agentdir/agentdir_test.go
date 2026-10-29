@@ -187,3 +187,47 @@ func TestSuggestedPort(t *testing.T) {
 		t.Fatalf("SuggestedPort(beta) = %d, want 8082", got)
 	}
 }
+
+func TestApprovalsPathMigratesLegacyFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	if err := os.MkdirAll(agentRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(agentRoot, "approvals.json")
+	content := []byte(`{"bash":{"always":true}}`)
+	if err := os.WriteFile(legacy, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := ApprovalsPath("myfriend")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(agentRoot, "config", "approvals.json")
+	if path != want {
+		t.Fatalf("path = %q, want %q", path, want)
+	}
+
+	data, err := os.ReadFile(want)
+	if err != nil {
+		t.Fatalf("migrated file missing: %v", err)
+	}
+	if string(data) != string(content) {
+		t.Fatalf("migrated content = %q, want %q", data, content)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatal("legacy approvals.json should have been moved")
+	}
+
+	// Idempotent: resolving again keeps the migrated file untouched.
+	if _, err := ApprovalsPath("myfriend"); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(want); err != nil || string(data) != string(content) {
+		t.Fatalf("second resolve changed the file: %q, err=%v", data, err)
+	}
+}

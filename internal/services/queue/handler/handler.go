@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"myaaw/internal/channel"
+	telegram "myaaw/internal/channel/telegram"
 	_ "myaaw/internal/common"
 	"myaaw/internal/services/queue/service"
 	"myaaw/internal/utils"
@@ -37,6 +38,12 @@ func NewQueueHandler(queueService service.QueueService) QueueHandler {
 func (h *QueueHandlerImpl) HandleTelegramChat(c fiber.Ctx) error {
 	// Wrap raw Telegram payload in a QueueEnvelope
 	rawPayload := json.RawMessage(c.Body())
+
+	// Approval button presses are resolved inline and never enqueued.
+	if telegram.HandleApprovalCallback(rawPayload) {
+		return c.Status(fiber.StatusOK).JSON(bson.M{"ok": true})
+	}
+
 	envelope := &channel.QueueEnvelope{
 		Channel: "telegram",
 		Payload: rawPayload,

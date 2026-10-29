@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -31,6 +32,38 @@ func (p *ProxyService) Chat(c fiber.Ctx, agentName string, userID int) error {
 
 func (p *ProxyService) ChatStream(c fiber.Ctx, agentName string, userID int) error {
 	return p.forward(c, agentName, "/api/chat/stream", userID)
+}
+
+// ApprovalDecision forwards a tool approval decision to the agent that owns the
+// pending run.
+func (p *ProxyService) ApprovalDecision(c fiber.Ctx, agentName, approvalID string) error {
+	baseURL, _, err := p.agents.BaseURL(agentName)
+	if err != nil {
+		return err
+	}
+
+	target := baseURL + "/api/approvals/" + url.PathEscape(approvalID)
+	req, err := http.NewRequestWithContext(c.Context(), http.MethodPost, target, bytes.NewReader(c.Body()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrAgentUnavailable, err)
+	}
+	defer resp.Body.Close()
+
+	c.Status(resp.StatusCode)
+	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
+		c.Set("Content-Type", contentType)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	return c.Send(body)
 }
 
 func (p *ProxyService) forward(c fiber.Ctx, agentName, path string, userID int) error {

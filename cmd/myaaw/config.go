@@ -176,6 +176,21 @@ var dumpCmd = &cobra.Command{
 				fmt.Printf("  Discord.Token:   ******** (Masked)\n")
 			}
 		}
+
+		if cfg.Approvals != nil {
+			effective := config.MergeApprovals(cfg.Approvals)
+			timeout := 60
+			if effective.TimeoutSeconds != nil {
+				timeout = *effective.TimeoutSeconds
+			}
+			fmt.Println("\n[Approvals]")
+			fmt.Printf("  Mode:           %s\n", effective.Mode)
+			fmt.Printf("  TimeoutSeconds: %d\n", timeout)
+			fmt.Printf("  Unattended:     %s\n", effective.Unattended)
+			fmt.Printf("  Subagents:      %s\n", effective.Subagents)
+			fmt.Printf("  Allow:          %s\n", strings.Join(effective.Allow, ", "))
+			fmt.Printf("  Deny:           %s\n", strings.Join(effective.Deny, ", "))
+		}
 	},
 }
 

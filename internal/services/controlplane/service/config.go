@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -92,6 +93,7 @@ type ConfigView struct {
 	Transcriber     ServiceSecretView           `json:"transcriber"`
 	Synthesizer     ServiceSecretView           `json:"synthesizer"`
 	Observability   *config.ObservabilityConfig `json:"observability,omitempty"`
+	Approvals       *config.ApprovalsConfig     `json:"approvals,omitempty"`
 }
 
 // ConfigService reads per-agent configuration with secrets masked.
@@ -146,7 +148,15 @@ func configView(cfg *config.Config) ConfigView {
 			APIKey:   secretState(cfg.Synthesizer.APIKey),
 		},
 		Observability: mergedObservability(cfg.Observability),
+		Approvals:     mergedApprovals(cfg.Approvals),
 	}
+}
+
+// mergedApprovals fills unset approval fields with the shipped defaults, which
+// are what the agent runs with.
+func mergedApprovals(raw *config.ApprovalsConfig) *config.ApprovalsConfig {
+	merged := config.MergeApprovals(raw)
+	return &merged
 }
 
 // mergedObservability fills the fields the agent config leaves unset with the
@@ -513,6 +523,18 @@ type ConfigPatch struct {
 	Transcriber   *SecretPatch        `json:"transcriber,omitempty"`
 	Synthesizer   *SecretPatch        `json:"synthesizer,omitempty"`
 	Observability *ObservabilityPatch `json:"observability,omitempty"`
+	Approvals     *ApprovalsPatch     `json:"approvals,omitempty"`
+}
+
+// ApprovalsPatch updates the approvals section. Only present fields change;
+// absent fields keep their current value. Pointing a list at [] clears it.
+type ApprovalsPatch struct {
+	Mode           *string   `json:"mode,omitempty"`
+	TimeoutSeconds *int      `json:"timeout_seconds,omitempty"`
+	Allow          *[]string `json:"allow,omitempty"`
+	Deny           *[]string `json:"deny,omitempty"`
+	Unattended     *string   `json:"unattended,omitempty"`
+	Subagents      *string   `json:"subagents,omitempty"`
 }
 
 // ObservabilityPatch updates the observability section. Only present fields
@@ -570,6 +592,7 @@ type ConfigResetRequest struct {
 	Transcriber   *bool    `json:"transcriber,omitempty"`
 	Synthesizer   *bool    `json:"synthesizer,omitempty"`
 	Observability *bool    `json:"observability,omitempty"`
+	Approvals     *bool    `json:"approvals,omitempty"`
 }
 
 // Patch applies a partial update and returns the resulting config view.
@@ -616,6 +639,9 @@ func (s *ConfigService) ResetFields(agentName string, req ConfigResetRequest) (C
 	if req.Observability != nil && *req.Observability {
 		cfg.Observability = tmpl.Observability
 	}
+	if req.Approvals != nil && *req.Approvals {
+		cfg.Approvals = tmpl.Approvals
+	}
 
 	if err := saveAgentConfig(agentName, cfg); err != nil {
 		return ConfigView{}, err
@@ -660,6 +686,42 @@ func applyConfigPatch(cfg *config.Config, patch ConfigPatch) error {
 			return err
 		}
 	}
+	if patch.Approvals != nil {
+		if err := applyApprovalsPatch(&cfg.Approvals, *patch.Approvals); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applyApprovalsPatch(target **config.ApprovalsConfig, patch ApprovalsPatch) error {
+	next := config.DefaultApprovals()
+	if *target != nil {
+		next = *(*target)
+	}
+	if patch.Mode != nil {
+		next.Mode = *patch.Mode
+	}
+	if patch.TimeoutSeconds != nil {
+		next.TimeoutSeconds = patch.TimeoutSeconds
+	}
+	if patch.Allow != nil {
+		next.Allow = append([]string{}, (*patch.Allow)...)
+	}
+	if patch.Deny != nil {
+		next.Deny = append([]string{}, (*patch.Deny)...)
+	}
+	if patch.Unattended != nil {
+		next.Unattended = *patch.Unattended
+	}
+	if patch.Subagents != nil {
+		next.Subagents = *patch.Subagents
+	}
+	next = config.NormalizeApprovals(next)
+	if err := config.ValidateApprovals(&next); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+	}
+	*target = &next
 	return nil
 }
 

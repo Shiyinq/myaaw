@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"myaaw/internal/agent/approvals"
 	"myaaw/internal/agent/tools"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
@@ -39,6 +40,27 @@ func (a *Agent) RunEvents(
 		emitRaw = func(AgentEvent) error { return nil }
 	}
 	cfg = a.applyDefaults(cfg)
+
+	// Chain the approval gate in front of any existing blocked-tools policy.
+	if cfg.ApprovalGate != nil {
+		gate := cfg.ApprovalGate
+		existing := cfg.BeforeToolCall
+		cfg.BeforeToolCall = func(ctx context.Context, call ToolCallInput, args json.RawMessage) *ToolBlock {
+			if existing != nil {
+				if block := existing(ctx, call, args); block != nil && block.Block {
+					return block
+				}
+			}
+			outcome := gate.Check(ctx, call.Name, args)
+			if !outcome.Allowed {
+				return &ToolBlock{Block: true, Reason: outcome.Reason}
+			}
+			return nil
+		}
+		// Nested runs (sub-agents) read the gate from the context.
+		ctx = approvals.WithGate(ctx, gate)
+	}
+
 	if cfg.RunTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, cfg.RunTimeout)

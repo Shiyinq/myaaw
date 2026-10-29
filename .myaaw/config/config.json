@@ -32,6 +32,26 @@
         "queue_workers": 4,
         "blocked_tools": []
     },
+    "approvals": {
+        "mode": "manual",
+        "timeout_seconds": 60,
+        "allow": [
+            "filesystem:list_directory",
+            "filesystem:list_allowed_directories",
+            "filesystem:read_file",
+            "filesystem:read_multiple_files",
+            "filesystem:directory_tree",
+            "filesystem:search_files",
+            "filesystem:grep_search",
+            "filesystem:get_file_info",
+            "computer:screenshot",
+            "computer:wait",
+            "computer:list_windows"
+        ],
+        "deny": [],
+        "unattended": "allow",
+        "subagents": "inherit"
+    },
     "channels": {
         "telegram": {
             "active": false,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"myaaw/internal/agent/approvals"
 	"myaaw/internal/agent/tools"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
@@ -69,6 +70,10 @@ type RunConfig struct {
 	TransformContext func(ctx context.Context, messages []provider.Message) []provider.Message
 	// BeforeToolCall may block a tool call (approval policy).
 	BeforeToolCall func(ctx context.Context, call ToolCallInput, args json.RawMessage) *ToolBlock
+	// ApprovalGate evaluates tool calls before execution. The run owner attaches
+	// it (channel entry points, sub-agent spawning); runs without a gate execute
+	// tools unchanged.
+	ApprovalGate *approvals.Gate
 	// AfterToolCall may override or redact a tool result.
 	AfterToolCall func(ctx context.Context, call ToolCallInput, result *ToolResult) *ToolResult
 	// FinishStep may end the run after a completed step.

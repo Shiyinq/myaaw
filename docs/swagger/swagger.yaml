@@ -32,6 +32,10 @@ definitions:
         type: string
       result:
         type: string
+      subagent:
+        description: SubAgent names the sub-agent that raised an approval item, if
+          any.
+        type: string
       text:
         type: string
       tokens_after:
@@ -97,6 +101,39 @@ info:
   title: Myaaw API Gateway
   version: 0.0.1
 paths:
+  /api/approvals/{id}:
+    post:
+      consumes:
+      - application/json
+      description: Answers a pending approval request created by /api/chat or /api/chat/stream.
+      parameters:
+      - description: Approval ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Decision: allow_once | allow_session | allow_always | deny'
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      summary: Resolve a tool approval
+      tags:
+      - Chat
   /api/chat:
     post:
       consumes:

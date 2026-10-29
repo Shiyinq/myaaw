@@ -227,3 +227,30 @@ func TestTimelineWithoutEmitterKeepsItems(t *testing.T) {
 		t.Fatalf("items = %+v", items)
 	}
 }
+
+func TestTimelineEmitsApprovalEvents(t *testing.T) {
+	timeline, events := collectTimeline()
+
+	timeline.HandleChunk(channel.StreamChunk{
+		Kind:        "approval_required",
+		ApprovalID:  "appr-1",
+		ToolName:    "bash",
+		ToolAction:  "",
+		ArgsSummary: `{"command":"ls"}`,
+	})
+	timeline.HandleChunk(channel.StreamChunk{
+		Kind:       "approval_resolved",
+		ApprovalID: "appr-1",
+		Decision:   "allow_once",
+	})
+
+	names := eventNames(*events)
+	if len(names) != 2 || names[0] != "approval_required" || names[1] != "approval_resolved" {
+		t.Fatalf("events = %v", names)
+	}
+
+	items := timeline.Items()
+	if len(items) != 1 || items[0].Kind != "approval" || items[0].ID != "appr-1" {
+		t.Fatalf("items = %+v", items)
+	}
+}

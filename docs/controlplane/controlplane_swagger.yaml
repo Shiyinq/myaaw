@@ -19,6 +19,10 @@ definitions:
         type: string
       result:
         type: string
+      subagent:
+        description: SubAgent names the sub-agent that raised an approval item, if
+          any.
+        type: string
       text:
         type: string
       tokens_after:
@@ -30,6 +34,30 @@ definitions:
     properties:
       error:
         example: error message
+        type: string
+    type: object
+  config.ApprovalsConfig:
+    properties:
+      allow:
+        description: 'whitelist: never prompts'
+        items:
+          type: string
+        type: array
+      deny:
+        description: hard refusal
+        items:
+          type: string
+        type: array
+      mode:
+        description: manual | off
+        type: string
+      subagents:
+        description: inherit | allow | deny
+        type: string
+      timeout_seconds:
+        type: integer
+      unattended:
+        description: allow | deny
         type: string
     type: object
   config.CronConfig:
@@ -1024,6 +1052,34 @@ definitions:
       running:
         type: boolean
     type: object
+  service.ApprovalsPatch:
+    properties:
+      allow:
+        items:
+          type: string
+        type: array
+      deny:
+        items:
+          type: string
+        type: array
+      mode:
+        type: string
+      subagents:
+        type: string
+      timeout_seconds:
+        type: integer
+      unattended:
+        type: string
+    type: object
+  service.ApprovalsView:
+    properties:
+      config:
+        $ref: '#/definitions/config.ApprovalsConfig'
+      grants:
+        items:
+          $ref: '#/definitions/service.GrantView'
+        type: array
+    type: object
   service.BotPatch:
     properties:
       blocked_tools:
@@ -1094,6 +1150,8 @@ definitions:
     type: object
   service.ConfigPatch:
     properties:
+      approvals:
+        $ref: '#/definitions/service.ApprovalsPatch'
       bot:
         $ref: '#/definitions/service.BotPatch'
       cron:
@@ -1109,6 +1167,8 @@ definitions:
     type: object
   service.ConfigResetRequest:
     properties:
+      approvals:
+        type: boolean
       bot:
         description: bot field names; an empty list resets the whole bot section
         items:
@@ -1128,6 +1188,8 @@ definitions:
     type: object
   service.ConfigView:
     properties:
+      approvals:
+        $ref: '#/definitions/config.ApprovalsConfig'
       bot:
         $ref: '#/definitions/config.GlobalBotConfig'
       channels:
@@ -1314,6 +1376,17 @@ definitions:
         type: string
       size:
         type: integer
+    type: object
+  service.GrantView:
+    properties:
+      always:
+        type: boolean
+      key:
+        type: string
+      sessions:
+        items:
+          $ref: '#/definitions/service.SessionGrantView'
+        type: array
     type: object
   service.HeartbeatPatch:
     properties:
@@ -1596,6 +1669,13 @@ definitions:
       turns:
         type: integer
     type: object
+  service.SessionGrantView:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+    type: object
   service.SessionList:
     properties:
       sessions:
@@ -1874,6 +1954,178 @@ paths:
       summary: Get agent
       tags:
       - Agents
+  /agents/{name}/approvals:
+    get:
+      description: Effective policy (config.json merged with defaults) plus the runtime
+        grants from config/approvals.json. Read-only.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ApprovalsView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get approvals
+      tags:
+      - Approvals
+  /agents/{name}/approvals/{id}/decision:
+    post:
+      consumes:
+      - application/json
+      description: Forwards the decision to the agent that owns the pending run.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Approval ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Decision: allow_once | allow_session | allow_always | deny'
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Resolve a tool approval
+      tags:
+      - Chat
+  /agents/{name}/approvals/grants:
+    delete:
+      description: Empties config/approvals.json. The policy in config.json is untouched.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Clear approval grants
+      tags:
+      - Approvals
+  /agents/{name}/approvals/grants/{key}:
+    delete:
+      description: Removes the key from config/approvals.json (always and every session).
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Approval key (tool or tool:action)
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke an approval grant
+      tags:
+      - Approvals
+  /agents/{name}/approvals/grants/{key}/sessions/{conversation}:
+    delete:
+      description: Removes only the given conversation from the key's session grants.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Approval key
+        in: path
+        name: key
+        required: true
+        type: string
+      - description: Conversation id
+        in: path
+        name: conversation
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke a session grant
+      tags:
+      - Approvals
   /agents/{name}/channels:
     get:
       parameters:

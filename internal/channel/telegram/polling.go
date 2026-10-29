@@ -201,6 +201,11 @@ func deleteWebhook(client *resty.Client) error {
 }
 
 func processUpdate(payload json.RawMessage, q service.QueueService) {
+	// Approval button presses are resolved inline; they are not chat messages.
+	if HandleApprovalCallback(payload) {
+		return
+	}
+
 	// Send the FULL update object to mirror Webhook behavior
 	envelope := channel.QueueEnvelope{
 		Channel: "telegram",

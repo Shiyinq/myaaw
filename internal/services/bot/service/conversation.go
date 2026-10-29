@@ -85,6 +85,12 @@ func (r *BotServiceImpl) runConversation(
 		ctx = agenttrace.WithTrace(ctx, recorder)
 	}
 
+	// Attach the approval gate after the run id is known.
+	if gate := r.approvalGate(ctx, msg); gate != nil {
+		gate.Session.RunID = runID
+		cfg.ApprovalGate = gate
+	}
+
 	result, runErr := r.agent.RunEvents(ctx, cfg, messages, func(event agent.AgentEvent) error {
 		recorder.Event(event)
 		if onChunk == nil {

@@ -2,10 +2,12 @@ package handler
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"myaaw/internal/agent/approvals"
 	api "myaaw/internal/channel/api"
 	"myaaw/internal/services/bot/service"
 	"myaaw/internal/utils"
@@ -66,16 +68,39 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 	log.Printf("API chat request from user ID %v", msg.UserID)
 
 	timeline := api.NewTimeline(nil)
+	run := &apiRun{
+		timeline: timeline,
+		done:     make(chan apiRunResult, 1),
+		first:    make(chan approvals.Request, 1),
+	}
+	// The run must survive the HTTP request returning an approval prompt.
+	runCtx := approvals.WithRequester(context.WithoutCancel(c.Context()), &blockingApprovalRequester{run: run})
 
-	out, err := s.botService.BotStreamContext(c.Context(), msg, timeline.HandleChunk)
-	if err != nil {
-		log.Printf("API chat error for user ID %v: %v", msg.UserID, err)
-		formattedError := utils.FormatErrorMessage(err)
+	go func() {
+		out, runErr := s.botService.BotStreamContext(runCtx, msg, timeline.HandleChunk)
+		run.done <- apiRunResult{out: out, err: runErr}
+		untrackRun(run)
+	}()
+
+	select {
+	case res := <-run.done:
+		return s.writeChatResult(c, run, res)
+	case req := <-run.first:
+		trackRun(req.ID, run)
+		return c.JSON(approvalRequestPayload(req))
+	}
+}
+
+// writeChatResult serializes a completed (or failed) non-streaming chat run.
+func (s *BotHandlerImpl) writeChatResult(c fiber.Ctx, run *apiRun, res apiRunResult) error {
+	if res.err != nil {
+		log.Printf("API chat error: %v", res.err)
+		formattedError := utils.FormatErrorMessage(res.err)
 		status := fiber.StatusInternalServerError
 		switch {
-		case errors.Is(err, service.ErrConversationNotFound):
+		case errors.Is(res.err, service.ErrConversationNotFound):
 			status = fiber.StatusNotFound
-		case errors.Is(err, service.ErrConversationForbidden):
+		case errors.Is(res.err, service.ErrConversationForbidden):
 			status = fiber.StatusForbidden
 		}
 		return c.Status(status).JSON(fiber.Map{
@@ -83,13 +108,13 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 		})
 	}
 
+	out := res.out
 	resp := ChatResponse{
 		Text:           out.Text,
 		ConversationID: out.ConversationID,
 		RunID:          out.RunID,
-		Timeline:       timeline.Items(),
+		Timeline:       run.timeline.Items(),
 	}
-
 	if out.Usage.TotalTokens > 0 {
 		resp.Usage = &UsageResponse{
 			PromptTokens:     out.Usage.PromptTokens,
@@ -97,7 +122,6 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 			TotalTokens:      out.Usage.TotalTokens,
 		}
 	}
-
 	return c.Status(fiber.StatusOK).JSON(resp)
 }
 
@@ -160,7 +184,9 @@ func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {
 			writeSSE(event.Name, event.Data)
 		})
 
-		out, err := s.botService.BotStreamContext(c.Context(), msg, timeline.HandleChunk)
+		requester := &sseApprovalRequester{emit: timeline.HandleChunk}
+		runCtx := approvals.WithRequester(c.Context(), requester)
+		out, err := s.botService.BotStreamContext(runCtx, msg, timeline.HandleChunk)
 		if err != nil {
 			log.Printf("API stream error for user ID %v: %v", msg.UserID, err)
 			writeSSE("error", fiber.Map{

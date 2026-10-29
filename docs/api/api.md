@@ -19,6 +19,7 @@ The port comes from `PORT` in `~/.myaaw/<agent>/.env`. There is no `agent` field
 |---|---|---|
 | `/api/chat` | `POST` | Chat, single JSON response |
 | `/api/chat/stream` | `POST` | Chat, Server-Sent Events |
+| `/api/approvals/:id` | `POST` | Answer a pending tool approval |
 | `/docs/index.html` | `GET` | Swagger UI |
 | `/webhook/telegram` | `POST` | Internal: Telegram webhook mode |
 | `/webhook/bot` | `POST` | Internal: queue consumer |
@@ -138,6 +139,8 @@ data: <json>
 | `chunk` | `{"text": "..."}` | answer text delta |
 | `tool` | `{"id","name","arguments"}` | tool execution started |
 | `tool_result` | `{"id","name","result","is_error"}` | tool execution finished |
+| `approval_required` | `{"approval_id","tool_name","action","args_summary","subagent"?}` | a gated tool is waiting for a decision; `subagent` names the child task when relevant |
+| `approval_resolved` | `{"approval_id","decision","reason"}` | the decision was applied (or the request timed out) |
 | `done` | `{"ok":true,"text":"...","conversation_id":"...","usage":{...}}` | run finished; `conversation_id` and `usage` are optional |
 | `error` | `{"error":"..."}` | run failed; followed by `done` with `ok:false` |
 
@@ -220,6 +223,47 @@ while (true) {
 buffer += decoder.decode();
 if (buffer.trim() !== "") handleEvent(buffer);
 ```
+
+### Tool approvals
+
+When the active policy gates a tool, the run pauses and asks the caller.
+
+**Streaming:** handle `approval_required`, show the prompt, then POST a decision:
+
+```bash
+curl -X POST http://localhost:8080/api/approvals/<approval_id> \
+  -H 'Content-Type: application/json' \
+  -d '{"decision":"allow_once"}'
+```
+
+**Non-streaming:** the endpoint returns HTTP 200 with
+
+```json
+{
+  "status": "approval_required",
+  "approval": {
+    "id": "...",
+    "run_id": "...",
+    "tool_name": "bash",
+    "action": "",
+    "args_summary": "{\"command\":\"ls\"}",
+    "subagent": "download-x-photo"
+  }
+}
+```
+
+`subagent` is present only when a background sub-agent raised the request.
+
+The same decision call then blocks until the resumed run completes and returns
+the final chat response (or the next `approval_required`). Decisions:
+`allow_once`, `allow_session`, `allow_always`, `deny`. Without an answer the
+call is denied after `approvals.timeout_seconds`.
+
+`POST /api/approvals/:id` returns `404` for an unknown or already-expired ID.
+Paused non-streaming runs live in memory, so a daemon restart drops them and the
+run is denied.
+
+See [Tool Approvals](../agents/approvals.md) for policy fields and grant scopes.
 
 ## 6. Mapping to the terminal and Telegram timelines
 

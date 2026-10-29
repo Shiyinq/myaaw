@@ -124,6 +124,7 @@ type TelegramSendMessage struct {
 	ChatID                int                         `json:"chat_id"`
 	DisableWebPagePreview bool                        `json:"disable_web_page_preview,omitempty"`
 	LinkPreviewOptions    *TelegramLinkPreviewOptions `json:"link_preview_options,omitempty"`
+	ReplyMarkup           interface{}                 `json:"reply_markup,omitempty"`
 }
 
 type TelegramEditMessage struct {

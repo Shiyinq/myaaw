@@ -48,6 +48,16 @@ type StreamChunk struct {
 	Thought        string
 	// Attempt is set on Kind "retry".
 	Attempt int
+	// Approval fields are set on Kind "approval_required" and
+	// "approval_resolved".
+	ApprovalID  string
+	ToolAction  string
+	ArgsSummary string
+	Decision    string
+	Reason      string
+	// SubAgent names the sub-agent that raised the approval request, empty for
+	// calls made by the main agent.
+	SubAgent string
 	// Compaction numbers are set on Kind "compaction".
 	TokensBefore    int
 	TokensAfter     int

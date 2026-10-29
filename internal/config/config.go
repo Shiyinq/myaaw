@@ -82,6 +82,17 @@ var LLMRequestRetries int = 1
 var LLMStreamTimeoutSeconds int = 180
 var AgentRunTimeoutSeconds int = 900
 
+// Approvals control the interactive approval gate for tool calls. Mode
+// "manual" asks the channel requester (or the unattended policy when no
+// interactive channel is attached); "off" allows every tool call except the
+// deny list and tool-level hard blocks.
+var ApprovalsMode = "manual"
+var ApprovalsTimeoutSeconds = 60
+var ApprovalsAllow []string
+var ApprovalsDeny []string
+var ApprovalsUnattended = "allow"  // allow | deny
+var ApprovalsSubagents = "inherit" // inherit | allow | deny
+
 // QueueWorkers bounds how many inbound channel messages are processed at the
 // same time. Messages from the same user stay serialized.
 var QueueWorkers int = 4
@@ -114,9 +125,170 @@ type Config struct {
 	Bot             GlobalBotConfig           `json:"bot,omitempty"`
 	Channels        ChannelsConfig            `json:"channels"`
 	Cron            CronConfig                `json:"cron"`
+	Approvals       *ApprovalsConfig          `json:"approvals,omitempty"`
 	Transcriber     TranscriberConfig         `json:"transcriber,omitempty"`
 	Synthesizer     SynthesizerConfig         `json:"synthesizer,omitempty"`
 	Observability   *ObservabilityConfig      `json:"observability,omitempty"`
+}
+
+// ApprovalsConfig configures the tool-call approval gate. In manual mode every
+// tool requires approval unless it is listed in Allow.
+type ApprovalsConfig struct {
+	Mode           string   `json:"mode,omitempty"` // manual | off
+	TimeoutSeconds *int     `json:"timeout_seconds,omitempty"`
+	Allow          []string `json:"allow,omitempty"`      // whitelist: never prompts
+	Deny           []string `json:"deny,omitempty"`       // hard refusal
+	Unattended     string   `json:"unattended,omitempty"` // allow | deny
+	Subagents      string   `json:"subagents,omitempty"`  // inherit | allow | deny
+}
+
+// defaultApprovalsAllow is the shipped safe list: read-only filesystem
+// operations and desktop observation. Keep it in sync with
+// .myaaw/config/config.json.
+var defaultApprovalsAllow = []string{
+	"filesystem:list_directory",
+	"filesystem:list_allowed_directories",
+	"filesystem:read_file",
+	"filesystem:read_multiple_files",
+	"filesystem:directory_tree",
+	"filesystem:search_files",
+	"filesystem:grep_search",
+	"filesystem:get_file_info",
+	"computer:screenshot",
+	"computer:wait",
+	"computer:list_windows",
+}
+
+// DefaultApprovals returns the shipped approval policy.
+func DefaultApprovals() ApprovalsConfig {
+	timeout := 60
+	return ApprovalsConfig{
+		Mode:           "manual",
+		TimeoutSeconds: &timeout,
+		Allow:          append([]string(nil), defaultApprovalsAllow...),
+		Deny:           []string{},
+		Unattended:     "allow",
+		Subagents:      "inherit",
+	}
+}
+
+// MergeApprovals fills unset fields with the shipped defaults.
+func MergeApprovals(raw *ApprovalsConfig) ApprovalsConfig {
+	merged := DefaultApprovals()
+	if raw == nil {
+		return merged
+	}
+	if strings.TrimSpace(raw.Mode) != "" {
+		merged.Mode = raw.Mode
+	}
+	if raw.TimeoutSeconds != nil {
+		merged.TimeoutSeconds = raw.TimeoutSeconds
+	}
+	if raw.Allow != nil {
+		merged.Allow = append([]string{}, raw.Allow...)
+	}
+	if raw.Deny != nil {
+		merged.Deny = append([]string{}, raw.Deny...)
+	}
+	if strings.TrimSpace(raw.Unattended) != "" {
+		merged.Unattended = raw.Unattended
+	}
+	if strings.TrimSpace(raw.Subagents) != "" {
+		merged.Subagents = raw.Subagents
+	}
+	return merged
+}
+
+// NormalizeApprovals lowercases enum fields, trims keys, drops empty entries,
+// and removes duplicates while preserving order.
+func NormalizeApprovals(in ApprovalsConfig) ApprovalsConfig {
+	out := in
+	out.Mode = strings.ToLower(strings.TrimSpace(out.Mode))
+	out.Unattended = strings.ToLower(strings.TrimSpace(out.Unattended))
+	out.Subagents = strings.ToLower(strings.TrimSpace(out.Subagents))
+	out.Allow = normalizeApprovalKeys(out.Allow)
+	out.Deny = normalizeApprovalKeys(out.Deny)
+	return out
+}
+
+func normalizeApprovalKeys(keys []string) []string {
+	seen := make(map[string]struct{}, len(keys))
+	out := make([]string, 0, len(keys))
+	for _, raw := range keys {
+		key := strings.TrimSpace(raw)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	return out
+}
+
+// ValidateApprovals checks enum values, limits, and list entries.
+func ValidateApprovals(a *ApprovalsConfig) error {
+	if a == nil {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(a.Mode)) {
+	case "", "manual", "off":
+	default:
+		return fmt.Errorf("approvals.mode must be \"manual\" or \"off\"")
+	}
+	if a.TimeoutSeconds != nil && (*a.TimeoutSeconds < 1 || *a.TimeoutSeconds > 3600) {
+		return fmt.Errorf("approvals.timeout_seconds must be between 1 and 3600")
+	}
+	switch strings.ToLower(strings.TrimSpace(a.Unattended)) {
+	case "", "allow", "deny":
+	default:
+		return fmt.Errorf("approvals.unattended must be \"allow\" or \"deny\"")
+	}
+	switch strings.ToLower(strings.TrimSpace(a.Subagents)) {
+	case "", "inherit", "allow", "deny":
+	default:
+		return fmt.Errorf("approvals.subagents must be \"inherit\", \"allow\", or \"deny\"")
+	}
+
+	seen := make(map[string]string, len(a.Allow)+len(a.Deny))
+	for _, list := range []struct {
+		name    string
+		entries []string
+	}{{"allow", a.Allow}, {"deny", a.Deny}} {
+		for _, raw := range list.entries {
+			key := strings.TrimSpace(raw)
+			if key == "" {
+				return fmt.Errorf("approvals.%s contains an empty key", list.name)
+			}
+			if !validApprovalKey(key) {
+				return fmt.Errorf("approvals.%s: invalid key %q", list.name, key)
+			}
+			if previous, ok := seen[key]; ok {
+				if previous != list.name {
+					return fmt.Errorf("approvals: key %q is listed in both allow and deny", key)
+				}
+				continue
+			}
+			seen[key] = list.name
+		}
+	}
+	return nil
+}
+
+func validApprovalKey(key string) bool {
+	if key == "*" {
+		return true
+	}
+	for _, r := range key {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == ':', r == '-':
+		default:
+			return false
+		}
+	}
+	return key != ""
 }
 
 // ObservabilityConfig controls local trace recording and model pricing.
@@ -438,6 +610,23 @@ func LoadBaseConfig() {
 	LLMRequestRetries = envInt("LLM_REQUEST_RETRIES", LLMRequestRetries)
 	QueueWorkers = envInt("QUEUE_WORKERS", QueueWorkers)
 
+	if raw := strings.TrimSpace(os.Getenv("APPROVALS_MODE")); raw != "" {
+		ApprovalsMode = strings.ToLower(raw)
+	}
+	ApprovalsTimeoutSeconds = envInt("APPROVALS_TIMEOUT_SECONDS", ApprovalsTimeoutSeconds)
+	if raw := strings.TrimSpace(os.Getenv("APPROVALS_ALLOW")); raw != "" {
+		ApprovalsAllow = splitCSV(raw)
+	}
+	if raw := strings.TrimSpace(os.Getenv("APPROVALS_DENY")); raw != "" {
+		ApprovalsDeny = splitCSV(raw)
+	}
+	if raw := strings.TrimSpace(os.Getenv("APPROVALS_UNATTENDED")); raw != "" {
+		ApprovalsUnattended = strings.ToLower(raw)
+	}
+	if raw := strings.TrimSpace(os.Getenv("APPROVALS_SUBAGENTS")); raw != "" {
+		ApprovalsSubagents = strings.ToLower(raw)
+	}
+
 	ObsEnabled = envBool("OBS_ENABLED", ObsEnabled)
 	ObsRetentionDays = envInt("OBS_RETENTION_DAYS", ObsRetentionDays)
 	ObsMaxContentChars = envInt("OBS_MAX_CONTENT_CHARS", ObsMaxContentChars)
@@ -514,6 +703,27 @@ func LoadBaseConfig() {
 		}
 		if len(jsonConfig.Bot.BlockedTools) > 0 {
 			AgentBlockedTools = jsonConfig.Bot.BlockedTools
+		}
+		if jsonConfig.Approvals != nil {
+			a := jsonConfig.Approvals
+			if a.Mode != "" {
+				ApprovalsMode = strings.ToLower(a.Mode)
+			}
+			if a.TimeoutSeconds != nil {
+				ApprovalsTimeoutSeconds = *a.TimeoutSeconds
+			}
+			if len(a.Allow) > 0 {
+				ApprovalsAllow = a.Allow
+			}
+			if len(a.Deny) > 0 {
+				ApprovalsDeny = a.Deny
+			}
+			if a.Unattended != "" {
+				ApprovalsUnattended = strings.ToLower(a.Unattended)
+			}
+			if a.Subagents != "" {
+				ApprovalsSubagents = strings.ToLower(a.Subagents)
+			}
 		}
 
 		if jsonConfig.Channels.Telegram != nil {
@@ -597,6 +807,11 @@ func LoadBaseConfig() {
 				ObsToolPrices = obs.ToolPrices
 			}
 		}
+	}
+
+	// YOLO is an explicit runtime opt-out and wins over config.json.
+	if envBool("MYAAW_YOLO", false) {
+		ApprovalsMode = "off"
 	}
 
 	validateAgentConfig()

@@ -169,3 +169,57 @@ func TestValidateAgentConfigClampsQueueWorkers(t *testing.T) {
 		t.Fatalf("queue workers = %d, want 3 left untouched", QueueWorkers)
 	}
 }
+
+func approvalsIntPtr(v int) *int { return &v }
+
+func TestValidateApprovals(t *testing.T) {
+	valid := ApprovalsConfig{
+		Mode:           "manual",
+		TimeoutSeconds: approvalsIntPtr(60),
+		Allow:          []string{"filesystem:read_file", "*"},
+		Deny:           []string{"python", "bash"},
+		Unattended:     "allow",
+		Subagents:      "inherit",
+	}
+	if err := ValidateApprovals(&valid); err != nil {
+		t.Fatalf("valid config rejected: %v", err)
+	}
+
+	cases := []ApprovalsConfig{
+		{Mode: "maybe"},
+		{TimeoutSeconds: approvalsIntPtr(0)},
+		{TimeoutSeconds: approvalsIntPtr(3601)},
+		{Unattended: "maybe"},
+		{Subagents: "maybe"},
+		{Allow: []string{"has space"}},
+		{Allow: []string{"bash"}, Deny: []string{"bash"}},
+	}
+	for i, cfg := range cases {
+		if err := ValidateApprovals(&cfg); err == nil {
+			t.Errorf("case %d should be rejected: %+v", i, cfg)
+		}
+	}
+}
+
+func TestMergeAndNormalizeApprovals(t *testing.T) {
+	merged := MergeApprovals(nil)
+	if merged.Mode != "manual" || merged.Unattended != "allow" || merged.Subagents != "inherit" {
+		t.Fatalf("defaults = %+v", merged)
+	}
+	if len(merged.Allow) == 0 {
+		t.Fatal("default allow list should not be empty")
+	}
+
+	raw := &ApprovalsConfig{Mode: " OFF ", Allow: []string{" bash ", "", "bash", "filesystem:read_file"}}
+	merged = MergeApprovals(raw)
+	if merged.Mode != " OFF " {
+		t.Fatalf("merge should not normalize: %q", merged.Mode)
+	}
+	norm := NormalizeApprovals(merged)
+	if norm.Mode != "off" {
+		t.Fatalf("mode = %q", norm.Mode)
+	}
+	if len(norm.Allow) != 2 || norm.Allow[0] != "bash" || norm.Allow[1] != "filesystem:read_file" {
+		t.Fatalf("allow = %v", norm.Allow)
+	}
+}

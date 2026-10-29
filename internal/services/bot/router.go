@@ -54,6 +54,7 @@ func BotRouter(router fiber.Router) {
 	api := router.Group("/api")
 	api.Post("/chat", hand.APIChat)
 	api.Post("/chat/stream", hand.APIChatStream)
+	api.Post("/approvals/:id", hand.ApprovalDecision)
 
 	if service := a2a.SetupService(serv); service != nil {
 		a2a.MountRouter(router, service)

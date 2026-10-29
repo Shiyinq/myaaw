@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"myaaw/internal/agent"
+	"myaaw/internal/agent/approvals"
 	"myaaw/internal/agent/skills"
 	"myaaw/internal/agent/tools"
 	"myaaw/internal/agentdir"
@@ -130,6 +131,22 @@ func (t *SubAgentTool) CallToolContext(ctx context.Context, arguments string, tc
 	return fmt.Sprintf("Successfully started %d sub-agents in background (Batch ID: %s). You will receive notifications as they complete. You do not need to wait or set a cron job.", totalTasks, batchID)
 }
 
+// subagentApprovalGate applies the approvals.subagents policy:
+//   - inherit (default): reuse the parent run's gate so the user answers in the
+//     parent channel;
+//   - allow: run without a gate (gated tools execute);
+//   - deny: refuse every gated tool.
+func subagentApprovalGate(ctx context.Context) *approvals.Gate {
+	switch strings.ToLower(strings.TrimSpace(config.ApprovalsSubagents)) {
+	case "allow":
+		return nil
+	case "deny":
+		return approvals.DenyAll()
+	default:
+		return approvals.GateFromContext(ctx)
+	}
+}
+
 // startTrace opens a child trace for this sub-agent task, nested under the tool
 // call that spawned it. It returns nil when the parent run is not traced.
 func (t *SubAgentTool) startTrace(ctx context.Context, task SubAgentTask, systemPrompt string) *agenttrace.Trace {
@@ -167,6 +184,7 @@ func (t *SubAgentTool) runTraced(
 	child := t.startTrace(ctx, task, systemPrompt)
 
 	cfg := agent.DefaultRunConfig(config.LLMDefaultModel)
+	cfg.ApprovalGate = subagentApprovalGate(ctx)
 	if child != nil {
 		cfg.RunID = child.RunID()
 	}
@@ -196,6 +214,7 @@ func (t *SubAgentTool) runTraced(
 }
 
 func (t *SubAgentTool) runSubAgent(ctx context.Context, task SubAgentTask, channelName, userID, baseURL, batchID string, taskNum, totalTasks int) {
+	ctx = approvals.WithSubagentNamed(ctx, task.Name)
 	select {
 	case subAgentSlots <- struct{}{}:
 		defer func() { <-subAgentSlots }()

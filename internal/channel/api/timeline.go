@@ -26,6 +26,8 @@ type TimelineItem struct {
 	TokensBefore    int `json:"tokens_before,omitempty"`
 	TokensAfter     int `json:"tokens_after,omitempty"`
 	DroppedMessages int `json:"dropped_messages,omitempty"`
+	// SubAgent names the sub-agent that raised an approval item, if any.
+	SubAgent string `json:"subagent,omitempty"`
 }
 
 // Timeline converts agent stream chunks into timeline items and, when emit is
@@ -55,6 +57,30 @@ func (t *Timeline) HandleChunk(chunk channel.StreamChunk) {
 		t.startTool(chunk)
 	case "tool_result":
 		t.finishTool(chunk)
+	case "approval_required":
+		t.items = append(t.items, TimelineItem{
+			Kind:      "approval",
+			ID:        chunk.ApprovalID,
+			Name:      chunk.ToolName,
+			Arguments: chunk.ArgsSummary,
+			SubAgent:  chunk.SubAgent,
+		})
+		payload := map[string]any{
+			"approval_id":  chunk.ApprovalID,
+			"tool_name":    chunk.ToolName,
+			"action":       chunk.ToolAction,
+			"args_summary": chunk.ArgsSummary,
+		}
+		if chunk.SubAgent != "" {
+			payload["subagent"] = chunk.SubAgent
+		}
+		t.emitEvent("approval_required", payload)
+	case "approval_resolved":
+		t.emitEvent("approval_resolved", map[string]any{
+			"approval_id": chunk.ApprovalID,
+			"decision":    chunk.Decision,
+			"reason":      chunk.Reason,
+		})
 	case "final", "usage":
 		// Delivered by Done.
 	case "step", "trace":

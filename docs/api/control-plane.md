@@ -194,6 +194,8 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | `tool` | `{"id","name","arguments"}` |
 | `tool_result` | `{"id","name","result","is_error"}` |
 | `retry` | `{"attempt":2}` — a provider request was retried |
+| `approval_required` | `{"approval_id","tool_name","action","args_summary","subagent"?}` — a gated tool is waiting; `subagent` names the child task when relevant |
+| `approval_resolved` | `{"approval_id","decision","reason"}` |
 | `compaction` | `{"tokens_before","tokens_after","dropped_messages"}` — the transcript was trimmed |
 | `done` | `{"ok":true,"text","conversation_id"?,"run_id"?,"usage"?}` |
 | `error` | `{"error":"..."}` followed by `done {"ok":false}` |
@@ -241,6 +243,31 @@ while (true) {
 buffer += decoder.decode();
 if (buffer.trim() !== "") handleEvent(buffer);
 ```
+
+### Tool approvals
+
+Approval prompts ride the same run. Streaming chat emits `approval_required`
+and `approval_resolved`; non-streaming chat returns
+`{"status":"approval_required","approval":{...}}`. Answer with:
+
+```bash
+curl -X POST http://localhost:9000/agents/myfriend/approvals/<id>/decision \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"decision":"allow_once"}'
+```
+
+Management endpoints:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/agents/:name/approvals` | effective policy + grants |
+| `PATCH` | `/agents/:name/config` | update the `approvals` policy (validated) |
+| `DELETE` | `/agents/:name/approvals/grants/:key` | revoke every grant for a key |
+| `DELETE` | `/agents/:name/approvals/grants/:key/sessions/:conversation` | revoke one session grant |
+| `DELETE` | `/agents/:name/approvals/grants` | clear all grants |
+
+See [Tool Approvals](../agents/approvals.md) for fields, grant scopes, and per-channel behaviour.
 
 ## 6. Filesystem
 

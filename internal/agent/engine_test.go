@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"myaaw/internal/agent/approvals"
 	"myaaw/internal/agent/tools"
 	"myaaw/internal/provider"
 )
@@ -739,5 +740,221 @@ func TestAddUsageAggregatesCachedInputTokens(t *testing.T) {
 	}
 	if total.PromptTokens != 15 || total.CompletionTokens != 3 {
 		t.Fatalf("usage = %+v", total)
+	}
+}
+
+type gateRequester struct {
+	decision approvals.Decision
+	calls    int
+}
+
+func (r *gateRequester) Request(_ context.Context, _ approvals.Request) (approvals.Decision, error) {
+	r.calls++
+	return r.decision, nil
+}
+
+type gateCtxTool struct {
+	seen *approvals.Gate
+}
+
+func (t *gateCtxTool) ToolDefinition() []byte {
+	return []byte(`{"type":"function","function":{"name":"test_gate_ctx","parameters":{"type":"object"}}}`)
+}
+
+func (t *gateCtxTool) CallTool(args string, _ *tools.ToolsContext) string {
+	return t.CallToolContext(context.Background(), args, nil)
+}
+
+func (t *gateCtxTool) CallToolContext(ctx context.Context, _ string, _ *tools.ToolsContext) string {
+	t.seen = approvals.GateFromContext(ctx)
+	return "ok"
+}
+
+func transcriptToolMessage(t *testing.T, transcript []provider.Message, toolName string) provider.Message {
+	t.Helper()
+	for _, msg := range transcript {
+		if msg.Role == "tool" && msg.Name == toolName {
+			return msg
+		}
+	}
+	t.Fatalf("tool message %q not found", toolName)
+	return provider.Message{}
+}
+
+func TestApprovalGateBlocksToolWithoutRequester(t *testing.T) {
+	var executed bool
+	registerFakeTool(t, "test_gated", &fakeTool{run: func(string) string {
+		executed = true
+		return "should not run"
+	}})
+
+	prov := &scriptedProvider{turns: []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{toolCall("c1", "test_gated", `{"x":"1"}`)}},
+		{Role: "assistant", Content: "done"},
+	}}
+	gate := &approvals.Gate{
+		Policy: approvals.Policy{Mode: "manual"},
+		Auto:   approvals.Deny,
+	}
+
+	result, err := NewAgent(prov).RunEvents(context.Background(), RunConfig{
+		Model: "test-model", MaxIterations: 3, ApprovalGate: gate,
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if executed {
+		t.Fatal("gated tool executed without approval")
+	}
+	msg := transcriptToolMessage(t, result.Transcript, "test_gated")
+	if !msg.IsError || !strings.Contains(provider.MessageText(msg), "requires approval") {
+		t.Fatalf("tool message = %+v", msg)
+	}
+}
+
+func TestApprovalGateAutoAllowsUnattended(t *testing.T) {
+	var executed bool
+	registerFakeTool(t, "test_unattended", &fakeTool{run: func(string) string {
+		executed = true
+		return "ok"
+	}})
+
+	prov := &scriptedProvider{turns: []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{toolCall("c1", "test_unattended", `{"x":"1"}`)}},
+		{Role: "assistant", Content: "done"},
+	}}
+	gate := &approvals.Gate{
+		Policy: approvals.Policy{Mode: "manual"},
+		Auto:   approvals.AllowOnce,
+	}
+
+	if _, err := NewAgent(prov).RunEvents(context.Background(), RunConfig{
+		Model: "test-model", MaxIterations: 3, ApprovalGate: gate,
+	}, nil, nil); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !executed {
+		t.Fatal("unattended allow did not execute the tool")
+	}
+}
+
+func TestApprovalGateAsksRequester(t *testing.T) {
+	var executed bool
+	registerFakeTool(t, "test_ask", &fakeTool{run: func(string) string {
+		executed = true
+		return "ok"
+	}})
+
+	prov := &scriptedProvider{turns: []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{toolCall("c1", "test_ask", `{"x":"1"}`)}},
+		{Role: "assistant", Content: "done"},
+	}}
+	requester := &gateRequester{decision: approvals.AllowOnce}
+	gate := &approvals.Gate{
+		Policy:    approvals.Policy{Mode: "manual", Timeout: time.Second},
+		Requester: requester,
+	}
+
+	if _, err := NewAgent(prov).RunEvents(context.Background(), RunConfig{
+		Model: "test-model", MaxIterations: 3, ApprovalGate: gate,
+	}, nil, nil); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !executed || requester.calls != 1 {
+		t.Fatalf("executed=%v requests=%d", executed, requester.calls)
+	}
+}
+
+func TestApprovalGateActionKeys(t *testing.T) {
+	var clicked, captured bool
+	registerFakeTool(t, "test_computer", &fakeTool{run: func(args string) string {
+		if strings.Contains(args, "click") {
+			clicked = true
+		}
+		if strings.Contains(args, "screenshot") {
+			captured = true
+		}
+		return "ok"
+	}})
+
+	prov := &scriptedProvider{turns: []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{
+			toolCall("c1", "test_computer", `{"action":"click","x":"1"}`),
+			toolCall("c2", "test_computer", `{"action":"screenshot","x":"1"}`),
+		}},
+		{Role: "assistant", Content: "done"},
+	}}
+	gate := &approvals.Gate{
+		Policy: approvals.Policy{Mode: "manual", Allow: []string{"test_computer:screenshot"}},
+		Auto:   approvals.Deny,
+	}
+
+	if _, err := NewAgent(prov).RunEvents(context.Background(), RunConfig{
+		Model: "test-model", MaxIterations: 3, ApprovalGate: gate,
+	}, nil, nil); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if clicked {
+		t.Fatal("click should have been blocked")
+	}
+	if !captured {
+		t.Fatal("screenshot should have been allowed")
+	}
+}
+
+func TestApprovalGateChainsBlockedTools(t *testing.T) {
+	var executed bool
+	registerFakeTool(t, "test_blocked_chain", &fakeTool{run: func(string) string {
+		executed = true
+		return "ok"
+	}})
+
+	prov := &scriptedProvider{turns: []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{toolCall("c1", "test_blocked_chain", `{"x":"1"}`)}},
+		{Role: "assistant", Content: "done"},
+	}}
+	requester := &gateRequester{decision: approvals.AllowOnce}
+	gate := &approvals.Gate{
+		Policy:    approvals.Policy{Mode: "manual", Timeout: time.Second},
+		Requester: requester,
+	}
+
+	_, err := NewAgent(prov).RunEvents(context.Background(), RunConfig{
+		Model:         "test-model",
+		MaxIterations: 3,
+		ApprovalGate:  gate,
+		BeforeToolCall: func(context.Context, ToolCallInput, json.RawMessage) *ToolBlock {
+			return &ToolBlock{Block: true, Reason: "blocked earlier"}
+		},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if executed {
+		t.Fatal("blocked tool executed")
+	}
+	if requester.calls != 0 {
+		t.Fatal("approval should not be requested for a blocked tool")
+	}
+}
+
+func TestApprovalGateExposedToTools(t *testing.T) {
+	probe := &gateCtxTool{}
+	tools.Register("test_gate_ctx", probe)
+	t.Cleanup(func() { tools.ClearRegistryKey("test_gate_ctx") })
+
+	prov := &scriptedProvider{turns: []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{toolCall("c1", "test_gate_ctx", `{}`)}},
+		{Role: "assistant", Content: "done"},
+	}}
+	gate := &approvals.Gate{Policy: approvals.Policy{Mode: "off"}}
+
+	if _, err := NewAgent(prov).RunEvents(context.Background(), RunConfig{
+		Model: "test-model", MaxIterations: 3, ApprovalGate: gate,
+	}, nil, nil); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if probe.seen != gate {
+		t.Fatal("tool did not see the approval gate in its context")
 	}
 }

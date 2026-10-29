@@ -92,6 +92,27 @@ func (h *Handler) ChatStream(c fiber.Ctx) error {
 	return nil
 }
 
+// ApprovalDecision proxies a tool approval decision to the selected agent.
+// @Summary      Resolve a tool approval
+// @Description  Forwards the decision to the agent that owns the pending run.
+// @Tags         Chat
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        id   path string true "Approval ID"
+// @Param        request body object true "Decision: allow_once | allow_session | allow_always | deny"
+// @Success      200
+// @Failure      404 {object} common.ErrorResponse
+// @Failure      502 {object} common.ErrorResponse
+// @Router       /agents/{name}/approvals/{id}/decision [post]
+func (h *Handler) ApprovalDecision(c fiber.Ctx) error {
+	if err := h.proxy.ApprovalDecision(c, c.Params("name"), c.Params("id")); err != nil {
+		return proxyError(c, err)
+	}
+	return nil
+}
+
 func proxyError(c fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, service.ErrAgentNotFound):

@@ -177,8 +177,31 @@ func ActiveLogsDir() (string, error)      { return activePath("logs") }
 func ActiveCronDir() (string, error)      { return activePath("cron") }
 func ActiveToolsDir() (string, error)     { return activePath("tools") }
 func ActiveContactsPath() (string, error) { return activePath("contacts.json") }
-func ActiveDatabaseDir() (string, error)  { return activePath("database") }
-func ActiveDatabasePath() (string, error) { return activePath(filepath.Join("database", "myaaw.db")) }
+
+// ApprovalsPath returns the approval grant store path. Grants live under
+// config/ next to config.json; a legacy root-level approvals.json is migrated
+// lazily so existing grants are preserved.
+func ApprovalsPath(name string) (string, error) {
+	target, err := agentPath(name, filepath.Join("config", "approvals.json"))
+	if err != nil {
+		return "", err
+	}
+	legacy, legacyErr := agentPath(name, "approvals.json")
+	if legacyErr == nil {
+		if _, statErr := os.Stat(target); os.IsNotExist(statErr) {
+			if _, err := os.Stat(legacy); err == nil {
+				if mkErr := os.MkdirAll(filepath.Dir(target), 0o755); mkErr == nil {
+					_ = os.Rename(legacy, target)
+				}
+			}
+		}
+	}
+	return target, nil
+}
+
+func ActiveApprovalsPath() (string, error) { return ApprovalsPath(Active()) }
+func ActiveDatabaseDir() (string, error)   { return activePath("database") }
+func ActiveDatabasePath() (string, error)  { return activePath(filepath.Join("database", "myaaw.db")) }
 func ActiveObservabilityPath() (string, error) {
 	return activePath(filepath.Join("database", "observability.db"))
 }

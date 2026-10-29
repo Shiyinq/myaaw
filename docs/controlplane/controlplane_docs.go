@@ -146,6 +146,273 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/approvals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Effective policy (config.json merged with defaults) plus the runtime grants from config/approvals.json. Read-only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Approvals"
+                ],
+                "summary": "Get approvals",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ApprovalsView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/approvals/grants": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Empties config/approvals.json. The policy in config.json is untouched.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Approvals"
+                ],
+                "summary": "Clear approval grants",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/approvals/grants/{key}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the key from config/approvals.json (always and every session).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Approvals"
+                ],
+                "summary": "Revoke an approval grant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Approval key (tool or tool:action)",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/approvals/grants/{key}/sessions/{conversation}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes only the given conversation from the key's session grants.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Approvals"
+                ],
+                "summary": "Revoke a session grant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Approval key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation id",
+                        "name": "conversation",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/approvals/{id}/decision": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Forwards the decision to the agent that owns the pending run.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Resolve a tool approval",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Approval ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Decision: allow_once | allow_session | allow_always | deny",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/channels": {
             "get": {
                 "security": [
@@ -4365,6 +4632,10 @@ const docTemplatecontrolplane = `{
                 "result": {
                     "type": "string"
                 },
+                "subagent": {
+                    "description": "SubAgent names the sub-agent that raised an approval item, if any.",
+                    "type": "string"
+                },
                 "text": {
                     "type": "string"
                 },
@@ -4382,6 +4653,40 @@ const docTemplatecontrolplane = `{
                 "error": {
                     "type": "string",
                     "example": "error message"
+                }
+            }
+        },
+        "config.ApprovalsConfig": {
+            "type": "object",
+            "properties": {
+                "allow": {
+                    "description": "whitelist: never prompts",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "deny": {
+                    "description": "hard refusal",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "mode": {
+                    "description": "manual | off",
+                    "type": "string"
+                },
+                "subagents": {
+                    "description": "inherit | allow | deny",
+                    "type": "string"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "unattended": {
+                    "description": "allow | deny",
+                    "type": "string"
                 }
             }
         },
@@ -5826,6 +6131,49 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ApprovalsPatch": {
+            "type": "object",
+            "properties": {
+                "allow": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "deny": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "subagents": {
+                    "type": "string"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "unattended": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ApprovalsView": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/config.ApprovalsConfig"
+                },
+                "grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.GrantView"
+                    }
+                }
+            }
+        },
         "service.BotPatch": {
             "type": "object",
             "properties": {
@@ -5933,6 +6281,9 @@ const docTemplatecontrolplane = `{
         "service.ConfigPatch": {
             "type": "object",
             "properties": {
+                "approvals": {
+                    "$ref": "#/definitions/service.ApprovalsPatch"
+                },
                 "bot": {
                     "$ref": "#/definitions/service.BotPatch"
                 },
@@ -5956,6 +6307,9 @@ const docTemplatecontrolplane = `{
         "service.ConfigResetRequest": {
             "type": "object",
             "properties": {
+                "approvals": {
+                    "type": "boolean"
+                },
                 "bot": {
                     "description": "bot field names; an empty list resets the whole bot section",
                     "type": "array",
@@ -5984,6 +6338,9 @@ const docTemplatecontrolplane = `{
         "service.ConfigView": {
             "type": "object",
             "properties": {
+                "approvals": {
+                    "$ref": "#/definitions/config.ApprovalsConfig"
+                },
                 "bot": {
                     "$ref": "#/definitions/config.GlobalBotConfig"
                 },
@@ -6267,6 +6624,23 @@ const docTemplatecontrolplane = `{
                 },
                 "size": {
                     "type": "integer"
+                }
+            }
+        },
+        "service.GrantView": {
+            "type": "object",
+            "properties": {
+                "always": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "sessions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.SessionGrantView"
+                    }
                 }
             }
         },
@@ -6693,6 +7067,17 @@ const docTemplatecontrolplane = `{
                 },
                 "turns": {
                     "type": "integer"
+                }
+            }
+        },
+        "service.SessionGrantView": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
                 }
             }
         },

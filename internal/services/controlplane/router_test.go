@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"myaaw/internal/agent/approvals"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/obs"
 
@@ -1424,4 +1425,53 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 	}
 
 	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/missing", token, "", fiber.StatusNotFound, nil)
+}
+
+func TestRouterApprovalsManagement(t *testing.T) {
+	upstream := newUpstream(t)
+	setupTestAgent(t, upstream.URL)
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var patched struct {
+		Approvals struct {
+			Mode  string   `json:"mode"`
+			Allow []string `json:"allow"`
+		} `json:"approvals"`
+	}
+	doJSON(t, app, "PATCH", "/agents/myfriend/config", token,
+		`{"approvals":{"mode":"manual","allow":["filesystem:read_file"]}}`,
+		fiber.StatusOK, &patched)
+	if patched.Approvals.Mode != "manual" || len(patched.Approvals.Allow) != 1 || patched.Approvals.Allow[0] != "filesystem:read_file" {
+		t.Fatalf("patched approvals = %+v", patched.Approvals)
+	}
+
+	path, err := agentdir.ApprovalsPath("myfriend")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := approvals.NewStore(path)
+	if err := store.GrantAlways("bash"); err != nil {
+		t.Fatal(err)
+	}
+
+	var view struct {
+		Config struct {
+			Mode string `json:"mode"`
+		} `json:"config"`
+		Grants []struct {
+			Key    string `json:"key"`
+			Always bool   `json:"always"`
+		} `json:"grants"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/approvals", token, "", fiber.StatusOK, &view)
+	if view.Config.Mode != "manual" || len(view.Grants) != 1 || view.Grants[0].Key != "bash" || !view.Grants[0].Always {
+		t.Fatalf("approvals view = %+v", view)
+	}
+
+	doJSON(t, app, "DELETE", "/agents/myfriend/approvals/grants/bash", token, "", fiber.StatusOK, nil)
+	if grants := approvals.NewStore(path).Snapshot(); len(grants) != 0 {
+		t.Fatalf("grants after revoke = %v", grants)
+	}
+	doJSON(t, app, "DELETE", "/agents/myfriend/approvals/grants/bash", token, "", fiber.StatusNotFound, nil)
 }

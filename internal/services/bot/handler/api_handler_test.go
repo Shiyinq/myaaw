@@ -38,15 +38,20 @@ func (f *fakeBotService) BotStreamContext(
 }
 
 func newAPIApp(t *testing.T, fake *fakeBotService) *fiber.App {
+	return newAPIAppWith(t, fake)
+}
+
+func newAPIAppWith(t *testing.T, svc service.BotService) *fiber.App {
 	t.Helper()
 
 	registry := channel.NewRegistry()
 	registry.Register(apiAdapter.NewAPIAdapter())
 
-	h := NewBotHandler(fake, registry)
+	h := NewBotHandler(svc, registry)
 	app := fiber.New()
 	app.Post("/api/chat", h.APIChat)
 	app.Post("/api/chat/stream", h.APIChatStream)
+	app.Post("/api/approvals/:id", h.ApprovalDecision)
 	return app
 }
 

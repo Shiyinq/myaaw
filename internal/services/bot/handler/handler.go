@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"myaaw/internal/agent/approvals"
 	"myaaw/internal/channel"
 	"myaaw/internal/channel/discord"
 	telegram "myaaw/internal/channel/telegram"
@@ -28,6 +30,7 @@ type BotHandler interface {
 	Heartbeat(c fiber.Ctx) error
 	APIChat(c fiber.Ctx) error
 	APIChatStream(c fiber.Ctx) error
+	ApprovalDecision(c fiber.Ctx) error
 }
 
 type BotHandlerImpl struct {
@@ -90,9 +93,11 @@ func (s *BotHandlerImpl) Webhook(c fiber.Ctx) error {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{"ok": true})
 	}
 
+	runCtx := s.approvalContext(c.Context(), adapter, msg)
+
 	if config.StreamResponse {
 		out, err := adapter.SendStream(msg, func(onChunk func(chunk channel.StreamChunk)) error {
-			_, err := s.botService.BotStreamContext(c.Context(), msg, onChunk)
+			_, err := s.botService.BotStreamContext(runCtx, msg, onChunk)
 			return err
 		})
 		if err != nil {
@@ -103,7 +108,7 @@ func (s *BotHandlerImpl) Webhook(c fiber.Ctx) error {
 		}
 		_ = out
 	} else {
-		out, err := s.botService.BotContext(c.Context(), msg)
+		out, err := s.botService.BotContext(runCtx, msg)
 		if err != nil {
 			log.Printf("Failed to process incoming chat from user ID %v: %v", msg.UserID, err.Error())
 			formattedError := utils.FormatErrorMessage(err)
@@ -125,6 +130,24 @@ func (s *BotHandlerImpl) Webhook(c fiber.Ctx) error {
 }
 
 var heartbeatLocks sync.Map
+
+// approvalContext attaches the channel-specific approval requester so gated
+// tool calls can prompt the user in the same conversation.
+func (s *BotHandlerImpl) approvalContext(ctx context.Context, adapter channel.Adapter, msg *channel.IncomingMessage) context.Context {
+	switch msg.Channel {
+	case "telegram":
+		if meta, ok := msg.RawMeta.(telegram.TelegramMeta); ok {
+			return approvals.WithRequester(ctx, telegram.NewApprovalRequester(meta.ChatID, meta.MessageID))
+		}
+	case "discord":
+		if meta, ok := msg.RawMeta.(discord.DiscordMeta); ok {
+			if d, ok := adapter.(*discord.DiscordAdapter); ok {
+				return approvals.WithRequester(ctx, d.NewApprovalRequester(meta.ChannelID))
+			}
+		}
+	}
+	return ctx
+}
 
 func getUserLock(userID string) *sync.Mutex {
 	val, _ := heartbeatLocks.LoadOrStore(userID, &sync.Mutex{})

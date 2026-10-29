@@ -15,6 +15,56 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/approvals/{id}": {
+            "post": {
+                "description": "Answers a pending approval request created by /api/chat or /api/chat/stream.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Resolve a tool approval",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Approval ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Decision: allow_once | allow_session | allow_always | deny",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/chat": {
             "post": {
                 "description": "Direct REST API chat endpoint (non-streaming)",
@@ -312,6 +362,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "result": {
+                    "type": "string"
+                },
+                "subagent": {
+                    "description": "SubAgent names the sub-agent that raised an approval item, if any.",
                     "type": "string"
                 },
                 "text": {

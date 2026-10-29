@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"myaaw/internal/agent"
+	"myaaw/internal/agent/approvals"
 	"myaaw/internal/agent/tools/filesystem"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/channel"
@@ -158,9 +159,14 @@ func createIncomingMessage(text string, images []string, convID string) *channel
 func runOneShot(botService service.BotService, adapter *cliAdapter.CLIAdapter, message string, images []string) {
 	msg := createIncomingMessage(message, images, "")
 
+	// One-shot runs have no interactive prompt; follow the unattended policy.
+	ctx := approvals.WithRequester(context.Background(), autoApprovalRequester{
+		decision: approvals.PolicyFromConfig().Unattended,
+	})
+
 	if config.StreamResponse {
 		_, err := adapter.SendStream(msg, func(onChunk func(chunk channel.StreamChunk)) error {
-			_, err := botService.BotStream(msg, onChunk)
+			_, err := botService.BotStreamContext(ctx, msg, onChunk)
 			return err
 		})
 		if err != nil {
@@ -168,7 +174,7 @@ func runOneShot(botService service.BotService, adapter *cliAdapter.CLIAdapter, m
 			os.Exit(1)
 		}
 	} else {
-		out, err := botService.Bot(msg)
+		out, err := botService.BotContext(ctx, msg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
 			os.Exit(1)
@@ -186,6 +192,7 @@ const (
 	stateSessionSelect
 	stateModelSelect
 	stateModelLoading
+	stateApproval
 )
 
 type nextChunkMsg struct {
@@ -195,6 +202,146 @@ type nextChunkMsg struct {
 	newConvID string
 	finalText string
 	trace     []provider.ReactStep
+}
+
+// approvalRequestMsg carries one tool approval request into the TUI.
+type approvalRequestMsg struct {
+	req approvals.Request
+}
+
+// approvalDecision is one answer from the user. The ID is checked by the
+// requester so a decision left over from an expired prompt can never approve a
+// later, unrelated tool call.
+type approvalDecision struct {
+	ID       string
+	Decision approvals.Decision
+}
+
+// approvalCancelledMsg reports that an approval stopped waiting (timeout or
+// cancellation) so the TUI can drop its now-stale prompt.
+type approvalCancelledMsg struct {
+	id string
+}
+
+// tuiApprovalRequester bridges the approval gate to the bubbletea model.
+type tuiApprovalRequester struct {
+	requests  chan<- approvals.Request
+	decisions <-chan approvalDecision
+	cancelled chan<- string
+}
+
+func (r *tuiApprovalRequester) Request(ctx context.Context, req approvals.Request) (approvals.Decision, error) {
+	select {
+	case r.requests <- req:
+	case <-ctx.Done():
+		return approvals.Deny, ctx.Err()
+	}
+	for {
+		select {
+		case answer := <-r.decisions:
+			if answer.ID != req.ID {
+				continue // stale answer for a prompt that already expired
+			}
+			return answer.Decision, nil
+		case <-ctx.Done():
+			select {
+			case r.cancelled <- req.ID:
+			default:
+			}
+			return approvals.Deny, ctx.Err()
+		}
+	}
+}
+
+func waitForApproval(ch <-chan approvals.Request) tea.Cmd {
+	return func() tea.Msg {
+		req, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return approvalRequestMsg{req: req}
+	}
+}
+
+func waitForApprovalCancelled(ch <-chan string) tea.Cmd {
+	return func() tea.Msg {
+		id, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return approvalCancelledMsg{id: id}
+	}
+}
+
+// autoApprovalRequester resolves gated calls with a fixed decision (one-shot
+// and non-interactive CLI runs).
+type autoApprovalRequester struct {
+	decision approvals.Decision
+}
+
+func (r autoApprovalRequester) Request(context.Context, approvals.Request) (approvals.Decision, error) {
+	return r.decision, nil
+}
+
+func approvalKey(key string) (approvals.Decision, bool) {
+	switch key {
+	case "y", "Y":
+		return approvals.AllowOnce, true
+	case "s", "S":
+		return approvals.AllowSession, true
+	case "a", "A":
+		return approvals.AllowAlways, true
+	case "n", "N", "esc":
+		return approvals.Deny, true
+	}
+	return "", false
+}
+
+var approvalOptions = []struct {
+	label    string
+	decision approvals.Decision
+}{
+	{"Allow once", approvals.AllowOnce},
+	{"Allow session", approvals.AllowSession},
+	{"Always", approvals.AllowAlways},
+	{"Deny", approvals.Deny},
+}
+
+func approvalTarget(req approvals.Request) string {
+	target := req.ToolName
+	if req.Action != "" {
+		target += ":" + req.Action
+	}
+	return target
+}
+
+func renderApprovalPrompt(req approvals.Request, width, choice int) string {
+	lines := []string{theme.WarningStyle.Render("🔐 Approval required: " + approvalTarget(req))}
+	if req.SubAgent != "" {
+		lines = append(lines, theme.MutedStyle.Render("   ↳ from sub-agent "+req.SubAgent))
+	}
+	if req.ArgsSummary != "" {
+		summary := req.ArgsSummary
+		maxLen := width - 8
+		if maxLen < 20 {
+			maxLen = 20
+		}
+		if runes := []rune(summary); len(runes) > maxLen {
+			summary = string(runes[:maxLen]) + "…"
+		}
+		lines = append(lines, theme.MutedStyle.Render("   "+summary))
+	}
+
+	options := make([]string, 0, len(approvalOptions))
+	for i, option := range approvalOptions {
+		if i == choice {
+			options = append(options, theme.HighlightStyle.Bold(true).Render("▶ ["+option.label+"]"))
+		} else {
+			options = append(options, theme.MutedStyle.Render("  ["+option.label+"]"))
+		}
+	}
+	lines = append(lines, strings.Join(options, "  "))
+	return strings.Join(lines, "\n")
 }
 
 type stopAckMsg struct {
@@ -344,6 +491,15 @@ type model struct {
 	userScrolledUp    bool
 	lastHistoryScroll time.Time
 	totalTokens       int
+
+	approvalRequests    chan approvals.Request
+	approvalDecisions   chan approvalDecision
+	approvalCancelled   chan string
+	pendingApproval     *approvals.Request
+	approvalQueue       []approvals.Request
+	approvalListening   bool
+	approvalChoice      int
+	stateBeforeApproval tuiState
 
 	availableModels []string
 	modelCursor     int
@@ -629,6 +785,10 @@ func initialModel(botService service.BotService, convRepo repository.Conversatio
 		queueFileSize: initialSize,
 		width:         80,
 		height:        24,
+
+		approvalRequests:  make(chan approvals.Request, 8),
+		approvalDecisions: make(chan approvalDecision, 8),
+		approvalCancelled: make(chan string, 8),
 	}
 }
 
@@ -723,6 +883,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// raw escape sequence instead of letting it leak into the text input.
 		if looksLikeMouseEscape(msg.String()) {
 			return m, nil
+		}
+
+		// The approval prompt takes over the keyboard.
+		if m.state == stateApproval {
+			var decision approvals.Decision
+			decided := false
+			switch msg.String() {
+			case "left", "h", "shift+tab":
+				m.approvalChoice = (m.approvalChoice - 1 + len(approvalOptions)) % len(approvalOptions)
+				m.updateViewportContent(false)
+				return m, nil
+			case "right", "l", "tab":
+				m.approvalChoice = (m.approvalChoice + 1) % len(approvalOptions)
+				m.updateViewportContent(false)
+				return m, nil
+			case "enter":
+				decision = approvalOptions[m.approvalChoice].decision
+				decided = true
+			default:
+				decision, decided = approvalKey(msg.String())
+			}
+			if !decided {
+				return m, nil
+			}
+			id := ""
+			if m.pendingApproval != nil {
+				id = m.pendingApproval.ID
+			}
+			m.pendingApproval = nil
+			m.state = m.stateBeforeApproval
+			m.textInput.Focus()
+			select {
+			case m.approvalDecisions <- approvalDecision{ID: id, Decision: decision}:
+			default:
+			}
+			m.presentNextApproval()
+			m.updateViewportContent(true)
+			return m, waitForApproval(m.approvalRequests)
 		}
 
 		// 1. Session Picker State Handling
@@ -1116,9 +1314,50 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.Prompt = userStyle.Render(pawFrames[m.pawFrame])
 			// Throttle viewport updates to ~5.5fps during streaming to prevent CPU exhaustion on huge chat histories
 			m.updateViewportContent(true)
+		} else if m.pendingSubAgentApproval() {
+			// The parent run keeps streaming while a sub-agent prompt is up, so the
+			// timeline still needs its throttled refresh.
+			m.updateViewportContent(true)
+		}
+		// Keep the tick loop alive while an approval is pending, otherwise answering
+		// the prompt leaves stateWaiting with no scheduled tick and the paw freezes
+		// for the rest of the run.
+		if m.state == stateWaiting || m.state == stateApproval {
 			return m, pawTickCmd()
 		}
 		return m, nil
+
+	case approvalCancelledMsg:
+		if m.state == stateApproval && m.pendingApproval != nil && m.pendingApproval.ID == msg.id {
+			target := approvalTarget(*m.pendingApproval)
+			m.clearApprovalPrompt()
+			m.presentNextApproval()
+			m.messages = append(m.messages, chatMessage_{
+				role: "bot",
+				text: fmt.Sprintf("⏱ Approval for `%s` timed out — the tool call was denied.", target),
+			})
+			m.updateViewportContent(true)
+		} else {
+			// The request expired while another prompt was on screen.
+			m.dropQueuedApproval(msg.id)
+		}
+		return m, waitForApprovalCancelled(m.approvalCancelled)
+
+	case approvalRequestMsg:
+		req := msg.req
+		if m.state == stateApproval && m.pendingApproval != nil {
+			// Concurrent sub-agents can ask at once. Queue the new request so the
+			// visible prompt keeps owning the keys.
+			m.approvalQueue = append(m.approvalQueue, req)
+			return m, waitForApproval(m.approvalRequests)
+		}
+		m.pendingApproval = &req
+		m.approvalChoice = 0
+		m.stateBeforeApproval = m.state
+		m.state = stateApproval
+		m.textInput.Blur()
+		m.updateViewportContent(true)
+		return m, waitForApproval(m.approvalRequests)
 
 	case nextChunkMsg:
 		if m.state == stateStopping {
@@ -1130,17 +1369,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Output means the parent run moved past the pending decision: either the
+		// user answered or the approval timed out. A sub-agent prompt stays put —
+		// the parent is free to keep streaming while the child waits.
+		if m.state == stateApproval && m.pendingApproval != nil && m.pendingApproval.SubAgent == "" {
+			m.clearApprovalPrompt()
+			m.presentNextApproval()
+		}
+
 		if msg.err != nil {
-			if m.state == stateWaiting {
+			if m.state == stateWaiting || m.pendingSubAgentApproval() {
+				keepApproval := m.pendingSubAgentApproval()
 				m.messages = append(m.messages, chatMessage_{role: "bot", text: fmt.Sprintf("❌ Error: %v", msg.err)})
-				m.resetStreamState()
+				if keepApproval {
+					m.finalizeKeepingApproval()
+				} else {
+					m.resetStreamState()
+					m.stateBeforeApproval = stateInput
+					m.presentNextApproval()
+				}
 				m.updateViewportContent(true)
 			}
 			return m, nil
 		}
 
 		if msg.done {
-			if m.state == stateWaiting {
+			if m.state == stateWaiting || m.pendingSubAgentApproval() {
+				keepApproval := m.pendingSubAgentApproval()
 				duration := m.streamElapsed()
 				items := m.streamingItems
 				if len(msg.trace) > 0 && !hasToolItems(items) {
@@ -1158,7 +1413,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						duration: duration,
 					})
 				}
-				m.resetStreamState()
+				if keepApproval {
+					m.finalizeKeepingApproval()
+				} else {
+					m.resetStreamState()
+					m.stateBeforeApproval = stateInput
+					m.presentNextApproval()
+				}
 				if msg.newConvID != "" {
 					m.activeConvID = msg.newConvID
 				}
@@ -1174,7 +1435,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.chunk.Usage.TotalTokens > 0 {
 				m.totalTokens = msg.chunk.Usage.TotalTokens
 			}
-			if m.state == stateWaiting {
+			if m.state == stateWaiting || m.state == stateApproval {
 				return m, waitForChunk(m.sub)
 			}
 			return m, nil
@@ -1233,7 +1494,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		if m.state == stateWaiting {
+		if m.state == stateWaiting || m.state == stateApproval {
 			return m, waitForChunk(m.sub)
 		}
 		return m, nil
@@ -1520,6 +1781,62 @@ func (m *model) streamElapsed() time.Duration {
 	return time.Since(m.streamStartedAt)
 }
 
+// clearApprovalPrompt dismisses a pending prompt without answering it. It is
+// used when the decision no longer matters: the run already produced output or
+// the approval expired. The run itself keeps going.
+func (m *model) clearApprovalPrompt() {
+	if m.state != stateApproval {
+		return
+	}
+	m.pendingApproval = nil
+	m.state = m.stateBeforeApproval
+	m.textInput.Focus()
+}
+
+// pendingSubAgentApproval reports whether the prompt on screen was raised by a
+// background sub-agent. The parent run keeps streaming in that case, so its
+// chunks must not dismiss the prompt.
+func (m *model) pendingSubAgentApproval() bool {
+	return m.state == stateApproval && m.pendingApproval != nil && m.pendingApproval.SubAgent != ""
+}
+
+// presentNextApproval shows a queued prompt, if any. Concurrent sub-agents can
+// ask at the same time; only one prompt is shown so the keys stay unambiguous.
+func (m *model) presentNextApproval() {
+	if len(m.approvalQueue) == 0 {
+		return
+	}
+	req := m.approvalQueue[0]
+	m.approvalQueue = m.approvalQueue[1:]
+	m.pendingApproval = &req
+	m.approvalChoice = 0
+	m.state = stateApproval
+	m.textInput.Blur()
+}
+
+// dropQueuedApproval removes a queued request that expired while another
+// prompt was on screen.
+func (m *model) dropQueuedApproval(id string) {
+	for i, req := range m.approvalQueue {
+		if req.ID == id {
+			m.approvalQueue = append(m.approvalQueue[:i], m.approvalQueue[i+1:]...)
+			return
+		}
+	}
+}
+
+// finalizeKeepingApproval ends the parent run while a sub-agent prompt stays on
+// screen. The prompt now belongs to an idle conversation, so answering it
+// returns to the input line.
+func (m *model) finalizeKeepingApproval() {
+	req := *m.pendingApproval
+	m.resetStreamState()
+	m.pendingApproval = &req
+	m.stateBeforeApproval = stateInput
+	m.state = stateApproval
+	m.textInput.Blur()
+}
+
 // finishStopping unlocks the input after the service has finished persisting an
 // interrupted turn.
 func (m *model) finishStopping(err error) {
@@ -1580,6 +1897,7 @@ func (m *model) resetStreamState() {
 	m.streamingGroupExpanded = false
 	m.streamStartedAt = time.Time{}
 	m.state = stateInput
+	m.pendingApproval = nil
 	m.textInput.Prompt = userStyle.Render(" 🐾 ❯ ")
 	m.cancelFunc = nil
 	m.stopAck = nil
@@ -1595,6 +1913,13 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 	m.cancelFunc = cancel
 	m.pawFrame = 0
 	m.textInput.Prompt = userStyle.Render(pawFrames[0])
+
+	// Route approval requests to the TUI prompt.
+	ctx = approvals.WithRequester(ctx, &tuiApprovalRequester{
+		requests:  m.approvalRequests,
+		decisions: m.approvalDecisions,
+		cancelled: m.approvalCancelled,
+	})
 
 	go func() {
 		defer cancel()
@@ -1653,7 +1978,12 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 		m.sub <- nextChunkMsg{done: true, newConvID: msg.ConversationID, finalText: out.Text, trace: out.Trace}
 	}()
 
-	return tea.Batch(waitForChunk(m.sub), pawTickCmd())
+	cmds := []tea.Cmd{waitForChunk(m.sub), pawTickCmd()}
+	if !m.approvalListening {
+		m.approvalListening = true
+		cmds = append(cmds, waitForApproval(m.approvalRequests), waitForApprovalCancelled(m.approvalCancelled))
+	}
+	return tea.Batch(cmds...)
 }
 
 // streamStopped reports whether a run ended because its context was canceled
@@ -1822,9 +2152,20 @@ func (m *model) updateViewportContent(scrollToBottom bool) {
 		contentLine += advanceLines(msg.cachedView)
 	}
 
-	if m.state == stateWaiting {
+	// Only draw the live block while a run is actually active. A sub-agent
+	// approval can arrive after the parent turn finished; then streamStartedAt is
+	// zero and there is nothing to show (previously this painted
+	// "Myaaw is thinking... 0s" every time such a prompt appeared).
+	activeRun := m.state == stateWaiting || (m.state == stateApproval && !m.streamStartedAt.IsZero())
+	if activeRun {
 		elapsed := m.streamElapsed()
 		title := botStyle.Render("🐱 Myaaw") + dimStyle.Render(" · working "+formatElapsed(elapsed))
+		if m.state == stateApproval {
+			title = botStyle.Render("🐱 Myaaw") + dimStyle.Render(" · waiting for approval")
+			if m.pendingApproval != nil && m.pendingApproval.SubAgent != "" {
+				title = botStyle.Render("🐱 Myaaw") + dimStyle.Render(" · sub-agent "+m.pendingApproval.SubAgent+" needs approval")
+			}
+		}
 		if len(m.streamingItems) > 0 {
 			// Fast render during live stream without running the CPU-heavy
 			// glamour parser on every token.
@@ -2151,7 +2492,9 @@ func (m model) View() string {
 	header := headerStyle.Render(fmt.Sprintf(" 🐾 MYAAW CHAT · %s 🐾 ", agentdir.Active()))
 
 	footerText := "  Esc/Ctrl+C: Quit • /sessions: Pick Session • ↑/↓: Scroll Chat • @: Attach File • Ctrl+T: Thinking/Tools  "
-	if m.state == stateWaiting {
+	if m.state == stateApproval {
+		footerText = "  ←/→: Select • Enter: Confirm • y/s/a/n: Shortcut • Esc: Deny  "
+	} else if m.state == stateWaiting {
 		footerText = "  Esc: Interrupt Response • ↑/↓: Scroll Chat • Ctrl+T: Thinking/Tools  "
 	} else if m.state == stateStopping {
 		footerText = "  Saving interrupted context... • Ctrl+C: Quit  "
@@ -2230,6 +2573,21 @@ func (m model) View() string {
 	}
 
 	inputView := m.textInput.View()
+	if m.state == stateApproval && m.pendingApproval != nil {
+		inputView = renderApprovalPrompt(*m.pendingApproval, m.width, m.approvalChoice)
+	}
+
+	// The approval prompt is taller than the input line; shrink the viewport by
+	// the extra lines so the conversation above is not pushed off the screen.
+	viewportView := m.viewport.View()
+	if extra := lipgloss.Height(inputView) - 1; extra > 0 {
+		vp := m.viewport
+		vp.Height -= extra
+		if vp.Height < 3 {
+			vp.Height = 3
+		}
+		viewportView = vp.View()
+	}
 	if autocomplete != "" {
 		vp := m.viewport
 		vp.Height = m.height - 6 - acLineCount
@@ -2260,7 +2618,7 @@ func (m model) View() string {
 	return fmt.Sprintf(
 		"%s\n\n%s\n\n%s\n\n%s",
 		header,
-		m.viewport.View(),
+		viewportView,
 		inputView,
 		footer,
 	)
