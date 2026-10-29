@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/channel"
 	"myaaw/internal/provider"
 )
 
@@ -28,8 +29,10 @@ type ToolResult struct {
 	StructuredContent any
 	IsError           bool
 	Terminate         bool
-	Usage             provider.Usage
-	DurationMs        int64
+	// Attachments are files the tool wants delivered to the user's channel.
+	Attachments []channel.Attachment
+	Usage       provider.Usage
+	DurationMs  int64
 }
 
 // Tool is the agent-facing tool contract. Existing tools are wrapped into
@@ -70,6 +73,34 @@ func (t *legacyTool) Execute(ctx context.Context, call ToolCallInput, onUpdate f
 	}()
 
 	var output string
+	if structured, ok := t.factory.(tools.StructuredTool); ok {
+		sr := structured.CallToolStructured(ctx, string(call.Arguments), t.toolsCtx)
+		content := make([]provider.ContentItem, 0, len(sr.Images)+1)
+		if sr.Text != "" || len(sr.Images) == 0 {
+			content = append(content, provider.ContentItem{Type: "text", Text: sr.Text})
+		}
+		for _, img := range sr.Images {
+			if strings.TrimSpace(img.Data) == "" {
+				continue
+			}
+			mime := img.MimeType
+			if mime == "" {
+				mime = "image/png"
+			}
+			content = append(content, provider.ContentItem{
+				Type:     "image_url",
+				ImageURL: &provider.ImageInfo{URL: "data:" + mime + ";base64," + img.Data},
+			})
+		}
+		result = ToolResult{
+			Content:     content,
+			Attachments: structuredAttachments(sr.Attachments),
+			IsError:     looksLikeToolError(sr.Text),
+			DurationMs:  time.Since(started).Milliseconds(),
+		}
+		return result
+	}
+
 	if contextTool, ok := t.factory.(tools.ContextTool); ok {
 		output = contextTool.CallToolContext(ctx, string(call.Arguments), t.toolsCtx)
 	} else {
@@ -452,6 +483,26 @@ func runPreparedToolCall(
 	}
 	truncateToolResult(&result, cfg.MaxToolOutputBytes)
 	return result
+}
+
+// structuredAttachments converts tool file attachments into channel ones,
+// skipping entries without data.
+func structuredAttachments(items []tools.FileAttachment) []channel.Attachment {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]channel.Attachment, 0, len(items))
+	for _, item := range items {
+		if len(item.Data) == 0 {
+			continue
+		}
+		out = append(out, channel.Attachment{
+			FileName: item.FileName,
+			MimeType: item.MimeType,
+			Data:     item.Data,
+		})
+	}
+	return out
 }
 
 func allTerminate(results []ToolResult) bool {

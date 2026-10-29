@@ -39,6 +39,32 @@ type ToolsFactory interface {
 	ToolDefinition() []byte
 }
 
+// ImageResult is one image returned by a tool. Data is base64-encoded.
+type ImageResult struct {
+	MimeType string
+	Data     string
+}
+
+// StructuredResult lets a tool return images and files alongside text.
+type StructuredResult struct {
+	Text        string
+	Images      []ImageResult
+	Attachments []FileAttachment
+}
+
+// FileAttachment is a file a tool wants delivered to the user.
+type FileAttachment struct {
+	FileName string
+	MimeType string
+	Data     []byte
+}
+
+// StructuredTool is an optional interface for tools that return images. Tools
+// that do not implement it keep the plain-string path.
+type StructuredTool interface {
+	CallToolStructured(ctx context.Context, arguments string, tctx *ToolsContext) StructuredResult
+}
+
 // ContextTool is an optional interface for tools that support cancellation
 // and deadlines. Tools that do not implement it are executed with
 // context.Background().
