@@ -59,6 +59,15 @@ func isAPISubcommand(cmd *cobra.Command) bool {
 	return false
 }
 
+func isCodesignCommand(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if current.Name() == "codesign" {
+			return true
+		}
+	}
+	return false
+}
+
 func startAgentBackgroundLoaders() {
 	tools.ConfigureLogging()
 	skills.ConfigureLogging()
@@ -84,6 +93,8 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(logsCmd)
 	rootCmd.AddCommand(observabilityCmd)
+	rootCmd.AddCommand(doctorCmd)
+	rootCmd.AddCommand(codesignCmd)
 
 	// Aliases for convenience so users can type `myaaw start` instead of `myaaw server start`
 	rootCmd.AddCommand(serverStartCmd)
@@ -110,9 +121,10 @@ func init() {
 			"api":     true,
 			"backup":  true,
 			"restore": true,
+			"doctor":  true,
 		}
 
-		if metaCommands[cmd.Name()] || isAgentCommand(cmd) || isAPISubcommand(cmd) {
+		if metaCommands[cmd.Name()] || isAgentCommand(cmd) || isAPISubcommand(cmd) || isCodesignCommand(cmd) {
 			return nil
 		}
 
@@ -199,7 +211,7 @@ func init() {
 					{name: "Backup & Restore", cmdNames: []string{"backup", "restore"}},
 					{name: "Service Management", cmdNames: []string{"server", "start", "stop", "restart", "webhook"}},
 					{name: "Integrations", cmdNames: []string{"provider", "channel"}},
-					{name: "System & Config", cmdNames: []string{"logs", "observability", "config", "completion", "update", "version"}},
+					{name: "System & Config", cmdNames: []string{"logs", "observability", "config", "doctor", "codesign", "completion", "update", "version"}},
 				}
 
 				findCmd := func(name string) *cobra.Command {

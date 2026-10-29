@@ -41,7 +41,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | [Webhook](cli/webhook.md) | Telegram webhook management. |
 | [Logs](cli/logs.md) | Interactive log viewer and filtering. |
 | [Config](cli/config.md) | Validate and inspect configuration. |
-| [Utilities](cli/utilities.md) | `status`, `version`, `update`, and shell completion. |
+| [Utilities](cli/utilities.md) | `status`, `doctor`, `codesign`, `version`, `update`, and shell completion. |
 
 ## API
 
