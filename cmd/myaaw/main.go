@@ -95,6 +95,7 @@ func init() {
 	rootCmd.AddCommand(observabilityCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(codesignCmd)
+	rootCmd.AddCommand(computerCmd)
 
 	// Aliases for convenience so users can type `myaaw start` instead of `myaaw server start`
 	rootCmd.AddCommand(serverStartCmd)
@@ -205,13 +206,13 @@ func init() {
 				}
 
 				groups := []cmdGroup{
-					{name: "Core Commands", cmdNames: []string{"chat", "voice", "voice-classic", "status"}},
-					{name: "Agents & API", cmdNames: []string{"agent", "api"}},
-					{name: "Automation", cmdNames: []string{"cron"}},
-					{name: "Backup & Restore", cmdNames: []string{"backup", "restore"}},
-					{name: "Service Management", cmdNames: []string{"server", "start", "stop", "restart", "webhook"}},
-					{name: "Integrations", cmdNames: []string{"provider", "channel"}},
-					{name: "System & Config", cmdNames: []string{"logs", "observability", "config", "doctor", "codesign", "completion", "update", "version"}},
+					{name: "Chat & Voice", cmdNames: []string{"chat", "voice", "voice-classic"}},
+					{name: "Agents & Automation", cmdNames: []string{"agent", "cron"}},
+					{name: "Channels & Integrations", cmdNames: []string{"channel", "provider", "webhook"}},
+					{name: "Monitoring & Diagnostics", cmdNames: []string{"status", "logs", "observability", "doctor"}},
+					{name: "Settings & Desktop", cmdNames: []string{"config", "computer", "codesign"}},
+					{name: "Maintenance", cmdNames: []string{"backup", "restore", "update", "version", "completion"}},
+					{name: "Service Management", cmdNames: []string{"server", "start", "stop", "restart", "api"}},
 				}
 
 				findCmd := func(name string) *cobra.Command {

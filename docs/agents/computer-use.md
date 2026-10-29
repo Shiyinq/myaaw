@@ -27,16 +27,25 @@ iteration (see `docs/computer-use-plan.md`).
 
 ## 1. Enabling
 
-The tool only exists when computer use is on. Two ways to enable it:
+The tool only exists when computer use is on. Three ways to enable it:
 
 | Way | Setting |
 |---|---|
+| CLI | `myaaw computer enable` (and `myaaw computer status` / `disable`) |
 | Environment | `MYAAW_COMPUTER_USE=true` |
 | Config file | `config.json` → `"bot": { "computer_use": { "enabled": true } }` |
 
 The JSON value wins over the environment variable. Default is `false`, and
 while disabled the tool is not registered at all — the model cannot see or
-call it, and no schema is sent.
+call it, and no schema is sent. The built-in tool is **macOS-only**; on
+Linux/Windows use an MCP driver instead.
+
+`myaaw computer status` shows both gates (config and `tools.json`), the
+platform, and whether the tool is effectively available. `myaaw computer
+enable` also checks the local "Myaaw Agent" signing identity (running
+`codesign.Setup` when missing) and prints the macOS permission checklist
+(Screen Recording, Accessibility, Automation → System Events). Changes take
+effect after restarting `myaaw api` and the agent servers.
 
 Control plane: PATCH `/agents/<name>/config` with
 `{"bot":{"computer_use":{"enabled":true}}}`. `{"bot":["computer_use"]}` on

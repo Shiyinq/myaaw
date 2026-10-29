@@ -21,6 +21,31 @@ myaaw --agent agent-b status
 
 This is a read-only summary. For daemon control, use [Service Management](service.md).
 
+## `myaaw computer`
+
+Enable or disable the built-in desktop automation tool for an agent (macOS
+only):
+
+```bash
+myaaw computer status    # feature gate, registry gate, platform, effective state
+myaaw computer enable
+myaaw computer disable
+```
+
+The built-in tool is **macOS-only**: on Linux/Windows it returns
+`COMPUTER_UNSUPPORTED_PLATFORM` for every action, so use an MCP driver instead
+(see [Computer Use](../agents/computer-use.md)).
+
+Two gates must allow the tool: `bot.computer_use.enabled` in `config.json`
+(written by this command) and `builtin_tools.computer` in `tools.json`
+(absent means enabled). Restart `myaaw api` and the agent servers after
+changing it.
+
+`myaaw computer enable` also checks the local "Myaaw Agent" signing identity
+(creating it when missing) and prints the macOS permission checklist:
+Screen Recording, Accessibility, and Automation → System Events. Verify with
+`myaaw doctor`.
+
 ## `myaaw codesign`
 
 macOS only. The local "Myaaw Agent" certificate gives the binary a stable code

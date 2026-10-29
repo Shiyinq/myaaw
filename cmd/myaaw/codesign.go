@@ -16,9 +16,10 @@ import (
 var codesignCmd = &cobra.Command{
 	Use:   "codesign",
 	Short: "Manage the local macOS code-signing identity",
-	Long: "Create or inspect the local \"Myaaw Agent\" certificate. A stable code " +
-		"identity keeps macOS permissions (Screen Recording, Accessibility, " +
-		"Automation) valid across rebuilds and updates.",
+	Long: "macOS only. Create or inspect the local \"Myaaw Agent\" certificate. " +
+		"A stable code identity keeps macOS permissions (Screen Recording, Accessibility, " +
+		"Automation) valid across rebuilds and updates. On other platforms every " +
+		"subcommand is a no-op.",
 }
 
 var codesignSetupCmd = &cobra.Command{
