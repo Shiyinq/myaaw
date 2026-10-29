@@ -1,12 +1,15 @@
 package telegram
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
+	"myaaw/internal/channel"
 	"myaaw/internal/config"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -173,6 +176,35 @@ func sendTelegramTypingAction(chatId int) error {
 		Post(telegramAPIURL("sendChatAction"))
 	if err != nil {
 		return fmt.Errorf("send typing indicator: %w", err)
+	}
+	return nil
+}
+
+// sendTelegramPhoto uploads one attachment as a real image message. Telegram's
+// sendPhoto expects multipart/form-data.
+func sendTelegramPhoto(chatID, replyTo int, att channel.Attachment) error {
+	if len(att.Data) == 0 {
+		return nil
+	}
+	name := strings.TrimSpace(att.FileName)
+	if name == "" {
+		name = "attachment.png"
+	}
+	form := map[string]string{"chat_id": strconv.Itoa(chatID)}
+	if replyTo != 0 {
+		form["reply_to_message_id"] = strconv.Itoa(replyTo)
+	}
+
+	client := resty.New().SetTimeout(telegramFileTimeout)
+	resp, err := client.R().
+		SetFileReader("photo", name, bytes.NewReader(att.Data)).
+		SetFormData(form).
+		Post(telegramAPIURL("sendPhoto"))
+	if err != nil {
+		return fmt.Errorf("send photo: %w", err)
+	}
+	if resp.IsError() {
+		return fmt.Errorf("send photo failed: %s", resp.Status())
 	}
 	return nil
 }

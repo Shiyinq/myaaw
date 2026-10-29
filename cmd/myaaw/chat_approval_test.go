@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"myaaw/internal/agent/approvals"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/channel"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -93,6 +96,42 @@ func TestRenderApprovalPromptSanitizesArgs(t *testing.T) {
 	out := renderApprovalPrompt(req, 80, 0, true, 0, approvalArgsWindow)
 	if strings.Contains(out, "\x1b") {
 		t.Errorf("approval prompt leaked a terminal escape sequence:\n%q", out)
+	}
+}
+
+func TestChatSavesAttachmentChunk(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	m := model{
+		state:     stateWaiting,
+		viewport:  viewport.New(80, 20),
+		textInput: textinput.New(),
+		messages:  []chatMessage_{{role: "user", text: "hi"}},
+	}
+	updated, _ := m.Update(nextChunkMsg{chunk: channel.StreamChunk{
+		Kind: "attachment",
+		Attachments: []channel.Attachment{{
+			FileName: "shot.png",
+			MimeType: "image/png",
+			Data:     []byte("PNG"),
+		}},
+	}})
+	got := updated.(model)
+	if len(got.messages) != 2 || !strings.Contains(got.messages[1].text, "Attachment saved") {
+		t.Fatalf("messages = %+v", got.messages)
+	}
+	logDir, err := agentdir.ActiveLogsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(logDir, "attachments", "shot.png")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("attachment not saved: %v", err)
+	}
+	if string(data) != "PNG" {
+		t.Fatalf("data = %q", data)
 	}
 }
 

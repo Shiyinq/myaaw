@@ -3,6 +3,7 @@ package handler
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,11 +17,19 @@ import (
 )
 
 type ChatResponse struct {
-	Text           string             `json:"text"`
-	ConversationID string             `json:"conversation_id,omitempty"`
-	RunID          string             `json:"run_id,omitempty"`
-	Timeline       []api.TimelineItem `json:"timeline,omitempty"`
-	Usage          *UsageResponse     `json:"usage,omitempty"`
+	Text           string               `json:"text"`
+	ConversationID string               `json:"conversation_id,omitempty"`
+	RunID          string               `json:"run_id,omitempty"`
+	Timeline       []api.TimelineItem   `json:"timeline,omitempty"`
+	Usage          *UsageResponse       `json:"usage,omitempty"`
+	Attachments    []AttachmentResponse `json:"attachments,omitempty"`
+}
+
+// AttachmentResponse is one delivered file, base64-encoded for API clients.
+type AttachmentResponse struct {
+	FileName   string `json:"file_name"`
+	MimeType   string `json:"mime_type,omitempty"`
+	DataBase64 string `json:"data_base64"`
 }
 
 type UsageResponse struct {
@@ -114,6 +123,13 @@ func (s *BotHandlerImpl) writeChatResult(c fiber.Ctx, run *apiRun, res apiRunRes
 		ConversationID: out.ConversationID,
 		RunID:          out.RunID,
 		Timeline:       run.timeline.Items(),
+	}
+	for _, att := range out.Attachments {
+		resp.Attachments = append(resp.Attachments, AttachmentResponse{
+			FileName:   att.FileName,
+			MimeType:   att.MimeType,
+			DataBase64: base64.StdEncoding.EncodeToString(att.Data),
+		})
 	}
 	if out.Usage.TotalTokens > 0 {
 		resp.Usage = &UsageResponse{

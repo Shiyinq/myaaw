@@ -418,6 +418,20 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.AttachmentResponse": {
+            "type": "object",
+            "properties": {
+                "data_base64": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.HeartbeatRequest": {
             "type": "object",
             "properties": {
@@ -438,6 +452,12 @@ const docTemplate = `{
         "myaaw_internal_services_bot_handler.ChatResponse": {
             "type": "object",
             "properties": {
+                "attachments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.AttachmentResponse"
+                    }
+                },
                 "conversation_id": {
                     "type": "string"
                 },

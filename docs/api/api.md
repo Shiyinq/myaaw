@@ -93,7 +93,14 @@ curl -X POST http://localhost:8080/api/chat \
     "prompt_tokens": 120,
     "completion_tokens": 30,
     "total_tokens": 150
-  }
+  },
+  "attachments": [
+    {
+      "file_name": "shot.png",
+      "mime_type": "image/png",
+      "data_base64": "iVBORw0KGgo..."
+    }
+  ]
 }
 ```
 
@@ -103,6 +110,7 @@ curl -X POST http://localhost:8080/api/chat \
 | `conversation_id` | conversation used for this run; pass it to continue the session |
 | `timeline` | ordered steps: `thought`, `tool`, `text` |
 | `usage` | token usage; omitted when `total_tokens` is 0 |
+| `attachments` | files produced by the run (for example a delivered screenshot), base64-encoded; omitted when empty |
 
 ### Timeline items
 
@@ -141,7 +149,7 @@ data: <json>
 | `tool_result` | `{"id","name","result","is_error"}` | tool execution finished |
 | `approval_required` | `{"approval_id","tool_name","action","args_summary","args","subagent"?}` — a gated tool is waiting; `args` is the full JSON and `subagent` names the child task when relevant |
 | `approval_resolved` | `{"approval_id","decision","reason"}` | the decision was applied (or the request timed out) |
-| `done` | `{"ok":true,"text":"...","conversation_id":"...","usage":{...}}` | run finished; `conversation_id` and `usage` are optional |
+| `done` | `{"ok":true,"text":"...","conversation_id":"...","usage":{...},"attachments":[{...}]}` | run finished; `conversation_id`, `usage`, and `attachments` are optional |
 | `error` | `{"error":"..."}` | run failed; followed by `done` with `ok:false` |
 
 The `chunk` name is kept for compatibility. Treat it as `text`.

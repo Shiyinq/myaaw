@@ -1606,6 +1606,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					msg.chunk.DroppedMessages),
 				Step: m.streamingStep,
 			})
+		case "attachment":
+			if paths := m.saveRunAttachments(msg.chunk.Attachments); len(paths) > 0 {
+				var b strings.Builder
+				b.WriteString("📎 Attachment")
+				if len(paths) > 1 {
+					b.WriteString("s")
+				}
+				b.WriteString(" saved:")
+				for _, path := range paths {
+					b.WriteString("\n• `" + path + "`")
+				}
+				m.messages = append(m.messages, chatMessage_{role: "bot", text: b.String()})
+				m.updateViewportContent(true)
+			}
 		case "trace", "usage":
 			// Tool lifecycle events already carry the descriptive data.
 		default:
@@ -1900,6 +1914,38 @@ func waitForStopAck(ack chan error) tea.Cmd {
 	}
 }
 
+// saveRunAttachments writes delivered files under the agent's logs directory so
+// terminal users can open them from the timeline note.
+func (m *model) saveRunAttachments(attachments []channel.Attachment) []string {
+	if len(attachments) == 0 {
+		return nil
+	}
+	logDir, err := agentdir.ActiveLogsDir()
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(logDir, "attachments")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil
+	}
+	paths := make([]string, 0, len(attachments))
+	for _, att := range attachments {
+		if len(att.Data) == 0 {
+			continue
+		}
+		name := strings.TrimSpace(att.FileName)
+		if name == "" {
+			name = fmt.Sprintf("attachment-%d", time.Now().UnixNano())
+		}
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, att.Data, 0o644); err != nil {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return paths
+}
+
 func (m *model) streamElapsed() time.Duration {
 	if m.streamStartedAt.IsZero() {
 		return 0
@@ -2155,10 +2201,11 @@ func (m *model) sendMessage(text string, images []string) tea.Cmd {
 		}
 		signalStopAck(nil)
 		m.sub <- nextChunkMsg{chunk: channel.StreamChunk{
-			Text:    out.Text,
-			Thought: out.Thought,
-			Usage:   out.Usage,
-			Trace:   out.Trace,
+			Text:        out.Text,
+			Thought:     out.Thought,
+			Usage:       out.Usage,
+			Trace:       out.Trace,
+			Attachments: out.Attachments,
 		}}
 		m.sub <- nextChunkMsg{done: true, newConvID: msg.ConversationID, finalText: out.Text, trace: out.Trace}
 	}()

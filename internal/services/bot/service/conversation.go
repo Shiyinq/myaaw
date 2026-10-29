@@ -159,6 +159,10 @@ func (r *BotServiceImpl) runConversation(
 		}
 	}
 
+	if onChunk != nil && len(result.Attachments) > 0 {
+		onChunk(channel.StreamChunk{Kind: "attachment", Attachments: result.Attachments})
+	}
+
 	finalText := provider.MessageText(result.Final)
 	if finalText == "" && result.StopReason == provider.StopMaxIterations {
 		finalText = agent.MaxIterationsMessage
@@ -174,6 +178,7 @@ func (r *BotServiceImpl) runConversation(
 		Thought:        result.Final.Thought,
 		ConversationID: msg.ConversationID,
 		RunID:          runID,
+		Attachments:    result.Attachments,
 	}
 
 	// Tell streaming consumers which text is the final answer. Intermediate

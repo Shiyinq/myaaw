@@ -197,7 +197,7 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | `approval_required` | `{"approval_id","tool_name","action","args_summary","subagent"?}` — a gated tool is waiting; `subagent` names the child task when relevant |
 | `approval_resolved` | `{"approval_id","decision","reason"}` |
 | `compaction` | `{"tokens_before","tokens_after","dropped_messages"}` — the transcript was trimmed |
-| `done` | `{"ok":true,"text","conversation_id"?,"run_id"?,"usage"?}` |
+| `done` | `{"ok":true,"text","conversation_id"?,"run_id"?,"usage"?,"attachments"?}` |
 | `error` | `{"error":"..."}` followed by `done {"ok":false}` |
 
 Merge consecutive deltas per kind. On `done`, use `done.text` as the authoritative final answer; it can differ from the accumulated deltas when the run stops without normal output.

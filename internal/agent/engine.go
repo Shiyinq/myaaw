@@ -12,6 +12,7 @@ import (
 
 	"myaaw/internal/agent/approvals"
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/channel"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
 )
@@ -90,6 +91,7 @@ func (a *Agent) RunEvents(
 	newMessages := make([]provider.Message, 0, 4)
 	var trace []provider.ReactStep
 	var usage provider.Usage
+	var attachments []channel.Attachment
 
 	if cfg.ToolsContext == nil {
 		extracted := extractToolsContext(transcript)
@@ -395,6 +397,10 @@ func (a *Agent) RunEvents(
 			newMessages = append(newMessages, message)
 			toolMessages = append(toolMessages, message)
 
+			if len(result.Attachments) > 0 {
+				attachments = append(attachments, result.Attachments...)
+			}
+
 			key := toolCall.Function.Name + "\x00" + argsToString(toolCall.Function.Arguments)
 			repeatSeen[key]++
 			if cfg.RepeatToolCallLimit > 0 && repeatSeen[key] == cfg.RepeatToolCallLimit {
@@ -467,6 +473,7 @@ func (a *Agent) RunEvents(
 		Usage:       usage,
 		StopReason:  stopReason,
 		Err:         runErr,
+		Attachments: attachments,
 	}, runErr
 }
 

@@ -7,6 +7,7 @@ import (
 	"myaaw/internal/channel"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -77,7 +78,46 @@ func (a *CLIAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMes
 		fmt.Fprintln(os.Stderr, "\033[90m"+"💭 Reasoning:\n"+out.Thought+"\033[0m")
 	}
 	fmt.Fprintln(os.Stdout, out.Text)
+	a.printAttachments(out.Attachments)
 	return nil
+}
+
+// saveAttachments writes delivered files under the agent's logs directory so a
+// terminal user can open them, and returns the paths.
+func (a *CLIAdapter) saveAttachments(attachments []channel.Attachment) []string {
+	if len(attachments) == 0 {
+		return nil
+	}
+	logDir, err := agentdir.ActiveLogsDir()
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(logDir, "attachments")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil
+	}
+	paths := make([]string, 0, len(attachments))
+	for _, att := range attachments {
+		if len(att.Data) == 0 {
+			continue
+		}
+		name := strings.TrimSpace(att.FileName)
+		if name == "" {
+			name = fmt.Sprintf("attachment-%d", time.Now().UnixNano())
+		}
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, att.Data, 0o644); err != nil {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return paths
+}
+
+func (a *CLIAdapter) printAttachments(attachments []channel.Attachment) {
+	for _, path := range a.saveAttachments(attachments) {
+		fmt.Fprintln(os.Stdout, "📎 "+path)
+	}
 }
 
 func (a *CLIAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onChunk func(chunk channel.StreamChunk)) error) (*channel.OutgoingMessage, error) {
@@ -85,7 +125,12 @@ func (a *CLIAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onCh
 	printedText := false
 	lastThoughtLen := 0
 	lastTraceLen := 0
+	var attachments []channel.Attachment
 	err := streamFn(func(chunk channel.StreamChunk) {
+		if chunk.Kind == "attachment" && len(chunk.Attachments) > 0 {
+			attachments = append(attachments, chunk.Attachments...)
+			a.printAttachments(chunk.Attachments)
+		}
 		if chunk.Thought != "" {
 			if len(chunk.Thought) > lastThoughtLen {
 				delta := chunk.Thought[lastThoughtLen:]
@@ -120,7 +165,7 @@ func (a *CLIAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onCh
 		}
 	})
 	fmt.Println()
-	return &channel.OutgoingMessage{Text: fullContent}, err
+	return &channel.OutgoingMessage{Text: fullContent, Attachments: attachments}, err
 }
 
 func (a *CLIAdapter) SendError(msg *channel.IncomingMessage, errText string) error {

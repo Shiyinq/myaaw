@@ -77,27 +77,33 @@ func (t *TelegramAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incom
 func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMessage) error {
 	meta := msg.RawMeta.(TelegramMeta)
 	items := buildTelegramTimeline(out.Trace, out.Text, out.Thought)
-	if len(items) == 0 {
-		return nil
-	}
-
-	timeline := &telegramTimeline{
-		transport: t.transportOrAPI(),
-		chatID:    meta.ChatID,
-		replyTo:   meta.MessageID,
-		tools:     map[string]*telegramTimelineItem{},
-		now:       time.Now,
-	}
-
-	for i, item := range items {
-		if item.Kind == "text" {
-			timeline.writeText(item, item.Text, i == len(items)-1)
-			continue
+	var sendErr error
+	if len(items) > 0 {
+		timeline := &telegramTimeline{
+			transport: t.transportOrAPI(),
+			chatID:    meta.ChatID,
+			replyTo:   meta.MessageID,
+			tools:     map[string]*telegramTimelineItem{},
+			now:       time.Now,
 		}
-		content, mode := timeline.render(item, true)
-		item.MessageID = timeline.sendRaw(content, mode)
+
+		for i, item := range items {
+			if item.Kind == "text" {
+				timeline.writeText(item, item.Text, i == len(items)-1)
+				continue
+			}
+			content, mode := timeline.render(item, true)
+			item.MessageID = timeline.sendRaw(content, mode)
+		}
+		sendErr = timeline.err
 	}
-	return timeline.err
+
+	for _, att := range out.Attachments {
+		if err := sendTelegramPhoto(meta.ChatID, meta.MessageID, att); err != nil && sendErr == nil {
+			sendErr = err
+		}
+	}
+	return sendErr
 }
 
 func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onChunk func(chunk channel.StreamChunk)) error) (*channel.OutgoingMessage, error) {
@@ -117,11 +123,17 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 	if err != nil {
 		return nil, err
 	}
+	for _, att := range timeline.attachments {
+		if sendErr := sendTelegramPhoto(meta.ChatID, meta.MessageID, att); sendErr != nil {
+			return nil, sendErr
+		}
+	}
 
 	return &channel.OutgoingMessage{
-		Text:  timeline.finalText,
-		Trace: timeline.finalTrace,
-		Usage: timeline.finalUsage,
+		Text:        timeline.finalText,
+		Trace:       timeline.finalTrace,
+		Usage:       timeline.finalUsage,
+		Attachments: timeline.attachments,
 	}, nil
 }
 

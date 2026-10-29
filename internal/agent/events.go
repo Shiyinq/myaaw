@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"myaaw/internal/channel"
 	"myaaw/internal/provider"
 )
 
@@ -92,6 +93,8 @@ type RunResult struct {
 	StopReason provider.StopReason
 	// Err is set for provider errors and cancellations.
 	Err error
+	// Attachments are files the run wants delivered to the user.
+	Attachments []channel.Attachment
 }
 
 // newRunID returns a short random identifier for one agent run.

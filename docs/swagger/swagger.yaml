@@ -61,6 +61,15 @@ definitions:
         example: error message
         type: string
     type: object
+  handler.AttachmentResponse:
+    properties:
+      data_base64:
+        type: string
+      file_name:
+        type: string
+      mime_type:
+        type: string
+    type: object
   handler.HeartbeatRequest:
     properties:
       channel:
@@ -74,6 +83,10 @@ definitions:
     type: object
   myaaw_internal_services_bot_handler.ChatResponse:
     properties:
+      attachments:
+        items:
+          $ref: '#/definitions/handler.AttachmentResponse'
+        type: array
       conversation_id:
         type: string
       run_id:

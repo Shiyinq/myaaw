@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"myaaw/internal/channel"
 )
 
@@ -148,6 +149,17 @@ func (t *Timeline) Done(out *channel.OutgoingMessage) {
 			"completion_tokens": out.Usage.CompletionTokens,
 			"total_tokens":      out.Usage.TotalTokens,
 		}
+	}
+	if len(out.Attachments) > 0 {
+		list := make([]map[string]string, 0, len(out.Attachments))
+		for _, att := range out.Attachments {
+			list = append(list, map[string]string{
+				"file_name":   att.FileName,
+				"mime_type":   att.MimeType,
+				"data_base64": base64.StdEncoding.EncodeToString(att.Data),
+			})
+		}
+		data["attachments"] = list
 	}
 	t.emit(SSEEvent{Name: "done", Data: data})
 }

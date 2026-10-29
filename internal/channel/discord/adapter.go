@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -179,26 +180,63 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 func (d *DiscordAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMessage) error {
 	meta := msg.RawMeta.(DiscordMeta)
 	items := buildDiscordTimeline(out.Trace, out.Text, out.Thought)
-	if len(items) == 0 {
+	var sendErr error
+	if len(items) > 0 {
+		timeline := &discordTimeline{
+			transport: d.transportOrAPI(),
+			channelID: meta.ChannelID,
+			replyTo:   meta.MessageID,
+			tools:     map[string]*discordTimelineItem{},
+			now:       time.Now,
+		}
+
+		for i, item := range items {
+			if item.Kind == "text" {
+				timeline.writeText(item, item.Text, i == len(items)-1)
+				continue
+			}
+			item.MessageID = timeline.sendRaw(timeline.render(item))
+		}
+		sendErr = timeline.err
+	}
+
+	if err := d.sendAttachments(meta.ChannelID, out.Attachments); err != nil && sendErr == nil {
+		sendErr = err
+	}
+	return sendErr
+}
+
+func (d *DiscordAdapter) sendAttachments(channelID string, attachments []channel.Attachment) error {
+	if len(attachments) == 0 {
 		return nil
 	}
-
-	timeline := &discordTimeline{
-		transport: d.transportOrAPI(),
-		channelID: meta.ChannelID,
-		replyTo:   meta.MessageID,
-		tools:     map[string]*discordTimelineItem{},
-		now:       time.Now,
+	if d.session == nil {
+		return fmt.Errorf("discord session is not available")
 	}
-
-	for i, item := range items {
-		if item.Kind == "text" {
-			timeline.writeText(item, item.Text, i == len(items)-1)
+	for _, att := range attachments {
+		if len(att.Data) == 0 {
 			continue
 		}
-		item.MessageID = timeline.sendRaw(timeline.render(item))
+		name := strings.TrimSpace(att.FileName)
+		if name == "" {
+			name = "attachment.png"
+		}
+		mimeType := att.MimeType
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		_, err := d.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+			Files: []*discordgo.File{{
+				Name:        name,
+				ContentType: mimeType,
+				Reader:      bytes.NewReader(att.Data),
+			}},
+		})
+		if err != nil {
+			return err
+		}
 	}
-	return timeline.err
+	return nil
 }
 
 func (d *DiscordAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onChunk func(chunk channel.StreamChunk)) error) (*channel.OutgoingMessage, error) {
@@ -219,11 +257,15 @@ func (d *DiscordAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(
 	if err != nil {
 		return nil, err
 	}
+	if err := d.sendAttachments(meta.ChannelID, timeline.attachments); err != nil {
+		return nil, err
+	}
 
 	return &channel.OutgoingMessage{
-		Text:  timeline.finalText,
-		Trace: timeline.finalTrace,
-		Usage: timeline.finalUsage,
+		Text:        timeline.finalText,
+		Trace:       timeline.finalTrace,
+		Usage:       timeline.finalUsage,
+		Attachments: timeline.attachments,
 	}, nil
 }
 
