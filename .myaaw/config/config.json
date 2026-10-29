@@ -30,6 +30,9 @@
         "stream_timeout_seconds": 180,
         "request_retries": 1,
         "queue_workers": 4,
+        "computer_use": {
+            "enabled": false
+        },
         "blocked_tools": []
     },
     "approvals": {

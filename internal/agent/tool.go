@@ -12,6 +12,7 @@ import (
 
 	"myaaw/internal/agent/tools"
 	"myaaw/internal/channel"
+	"myaaw/internal/config"
 	"myaaw/internal/provider"
 )
 
@@ -120,6 +121,9 @@ func buildTools(excluded []string, toolsCtx *tools.ToolsContext) []Tool {
 	factories := tools.GetFactories(excluded...)
 	result := make([]Tool, 0, len(factories))
 	for _, named := range factories {
+		if named.Name == "computer" && !config.ComputerUseEnabled {
+			continue
+		}
 		schema := json.RawMessage(named.Factory.ToolDefinition())
 		mode := tools.ExecutionSequential
 		if aware, ok := named.Factory.(tools.ExecutionModeAware); ok {

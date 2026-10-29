@@ -63,6 +63,11 @@ definitions:
         description: allow | deny
         type: string
     type: object
+  config.ComputerUseConfig:
+    properties:
+      enabled:
+        type: boolean
+    type: object
   config.CronConfig:
     properties:
       active:
@@ -74,6 +79,8 @@ definitions:
         items:
           type: string
         type: array
+      computer_use:
+        $ref: '#/definitions/config.ComputerUseConfig'
       context_max_tokens:
         type: integer
       max_iterations:
@@ -1089,6 +1096,8 @@ definitions:
         items:
           type: string
         type: array
+      computer_use:
+        $ref: '#/definitions/service.ComputerUsePatch'
       context_max_tokens:
         type: integer
       max_iterations:
@@ -1150,6 +1159,11 @@ definitions:
         items:
           $ref: '#/definitions/service.ChannelView'
         type: array
+    type: object
+  service.ComputerUsePatch:
+    properties:
+      enabled:
+        type: boolean
     type: object
   service.ConfigPatch:
     properties:

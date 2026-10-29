@@ -133,7 +133,14 @@ func (s *ToolsService) List(agentName string) (ToolsView, error) {
 		Custom:     make([]CustomToolView, 0, len(cfg.CustomTools)),
 		MCPServers: make([]MCPServerView, 0, len(cfg.MCPServers)),
 	}
+	computerEnabled := false
+	if agentCfg, err := loadAgentConfig(agentName); err == nil && agentCfg.Bot.ComputerUse != nil {
+		computerEnabled = agentCfg.Bot.ComputerUse.Enabled
+	}
 	for _, info := range agenttools.GetBuiltinTools() {
+		if info.Name == "computer" && !computerEnabled {
+			continue
+		}
 		view.Builtin = append(view.Builtin, BuiltinToolView{
 			Name:        info.Name,
 			Description: info.Description,

@@ -75,12 +75,16 @@ var AgentMaxIterations int = 100
 var AgentWarningIterations int = 90
 var AgentContextMaxTokens int = 64000
 var AgentMaxToolOutputBytes int = 32 * 1024
+
 var AgentRepeatToolCallLimit int = 3
 var AgentToolTimeoutSeconds int = 300
 var AgentBlockedTools []string
 var LLMRequestRetries int = 1
 var LLMStreamTimeoutSeconds int = 180
 var AgentRunTimeoutSeconds int = 900
+
+// ComputerUseEnabled registers the computer tool. It is off by default.
+var ComputerUseEnabled bool
 
 // Approvals control the interactive approval gate for tool calls. Mode
 // "manual" asks the channel requester (or the unattended policy when no
@@ -419,22 +423,28 @@ type CronConfig struct {
 	Active bool `json:"active"`
 }
 
+// ComputerUseConfig enables the desktop automation tool for this agent.
+type ComputerUseConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
 type GlobalBotConfig struct {
-	OwnerIDs             []string `json:"owner_ids"`
-	Type                 string   `json:"type"`
-	Watermark            bool     `json:"watermark"`
-	Stream               *bool    `json:"stream,omitempty"`
-	MaxIterations        *int     `json:"max_iterations,omitempty"`
-	WarningIterations    *int     `json:"warning_iterations,omitempty"`
-	ContextMaxTokens     *int     `json:"context_max_tokens,omitempty"`
-	MaxToolOutputBytes   *int     `json:"max_tool_output_bytes,omitempty"`
-	RepeatToolCallLimit  *int     `json:"repeat_tool_call_limit,omitempty"`
-	ToolTimeoutSeconds   *int     `json:"tool_timeout_seconds,omitempty"`
-	RunTimeoutSeconds    *int     `json:"run_timeout_seconds,omitempty"`
-	StreamTimeoutSeconds *int     `json:"stream_timeout_seconds,omitempty"`
-	RequestRetries       *int     `json:"request_retries,omitempty"`
-	QueueWorkers         *int     `json:"queue_workers,omitempty"`
-	BlockedTools         []string `json:"blocked_tools,omitempty"`
+	OwnerIDs             []string           `json:"owner_ids"`
+	Type                 string             `json:"type"`
+	Watermark            bool               `json:"watermark"`
+	Stream               *bool              `json:"stream,omitempty"`
+	MaxIterations        *int               `json:"max_iterations,omitempty"`
+	WarningIterations    *int               `json:"warning_iterations,omitempty"`
+	ContextMaxTokens     *int               `json:"context_max_tokens,omitempty"`
+	MaxToolOutputBytes   *int               `json:"max_tool_output_bytes,omitempty"`
+	RepeatToolCallLimit  *int               `json:"repeat_tool_call_limit,omitempty"`
+	ToolTimeoutSeconds   *int               `json:"tool_timeout_seconds,omitempty"`
+	RunTimeoutSeconds    *int               `json:"run_timeout_seconds,omitempty"`
+	StreamTimeoutSeconds *int               `json:"stream_timeout_seconds,omitempty"`
+	RequestRetries       *int               `json:"request_retries,omitempty"`
+	QueueWorkers         *int               `json:"queue_workers,omitempty"`
+	ComputerUse          *ComputerUseConfig `json:"computer_use,omitempty"`
+	BlockedTools         []string           `json:"blocked_tools,omitempty"`
 }
 
 type ChannelsConfig struct {
@@ -607,6 +617,7 @@ func LoadBaseConfig() {
 	AgentRepeatToolCallLimit = envInt("AGENT_REPEAT_TOOL_CALL_LIMIT", AgentRepeatToolCallLimit)
 	AgentToolTimeoutSeconds = envInt("AGENT_TOOL_TIMEOUT_SECONDS", AgentToolTimeoutSeconds)
 	AgentBlockedTools = splitCSV(os.Getenv("AGENT_BLOCKED_TOOLS"))
+	ComputerUseEnabled = envBool("MYAAW_COMPUTER_USE", ComputerUseEnabled)
 	LLMRequestRetries = envInt("LLM_REQUEST_RETRIES", LLMRequestRetries)
 	QueueWorkers = envInt("QUEUE_WORKERS", QueueWorkers)
 
@@ -670,6 +681,9 @@ func LoadBaseConfig() {
 		WatermarkModel = jsonConfig.Bot.Watermark
 		if jsonConfig.Bot.Stream != nil {
 			StreamResponse = *jsonConfig.Bot.Stream
+		}
+		if jsonConfig.Bot.ComputerUse != nil {
+			ComputerUseEnabled = jsonConfig.Bot.ComputerUse.Enabled
 		}
 		if jsonConfig.Bot.MaxIterations != nil {
 			AgentMaxIterations = *jsonConfig.Bot.MaxIterations

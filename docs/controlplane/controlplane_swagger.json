@@ -4712,6 +4712,14 @@
                 }
             }
         },
+        "config.ComputerUseConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
         "config.CronConfig": {
             "type": "object",
             "properties": {
@@ -4728,6 +4736,9 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "computer_use": {
+                    "$ref": "#/definitions/config.ComputerUseConfig"
                 },
                 "context_max_tokens": {
                     "type": "integer"
@@ -6205,6 +6216,9 @@
                         "type": "string"
                     }
                 },
+                "computer_use": {
+                    "$ref": "#/definitions/service.ComputerUsePatch"
+                },
                 "context_max_tokens": {
                     "type": "integer"
                 },
@@ -6297,6 +6311,14 @@
                     "items": {
                         "$ref": "#/definitions/service.ChannelView"
                     }
+                }
+            }
+        },
+        "service.ComputerUsePatch": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
                 }
             }
         },

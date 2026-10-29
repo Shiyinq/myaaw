@@ -4718,6 +4718,14 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "config.ComputerUseConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
         "config.CronConfig": {
             "type": "object",
             "properties": {
@@ -4734,6 +4742,9 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "computer_use": {
+                    "$ref": "#/definitions/config.ComputerUseConfig"
                 },
                 "context_max_tokens": {
                     "type": "integer"
@@ -6211,6 +6222,9 @@ const docTemplatecontrolplane = `{
                         "type": "string"
                     }
                 },
+                "computer_use": {
+                    "$ref": "#/definitions/service.ComputerUsePatch"
+                },
                 "context_max_tokens": {
                     "type": "integer"
                 },
@@ -6303,6 +6317,14 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.ChannelView"
                     }
+                }
+            }
+        },
+        "service.ComputerUsePatch": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
                 }
             }
         },

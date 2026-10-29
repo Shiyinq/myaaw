@@ -550,21 +550,27 @@ type ObservabilityPatch struct {
 }
 
 type BotPatch struct {
-	Type                 *string   `json:"type,omitempty"`
-	OwnerIDs             *[]string `json:"owner_ids,omitempty"`
-	Watermark            *bool     `json:"watermark,omitempty"`
-	Stream               *bool     `json:"stream,omitempty"`
-	MaxIterations        *int      `json:"max_iterations,omitempty"`
-	WarningIterations    *int      `json:"warning_iterations,omitempty"`
-	ContextMaxTokens     *int      `json:"context_max_tokens,omitempty"`
-	MaxToolOutputBytes   *int      `json:"max_tool_output_bytes,omitempty"`
-	RepeatToolCallLimit  *int      `json:"repeat_tool_call_limit,omitempty"`
-	ToolTimeoutSeconds   *int      `json:"tool_timeout_seconds,omitempty"`
-	RunTimeoutSeconds    *int      `json:"run_timeout_seconds,omitempty"`
-	StreamTimeoutSeconds *int      `json:"stream_timeout_seconds,omitempty"`
-	RequestRetries       *int      `json:"request_retries,omitempty"`
-	QueueWorkers         *int      `json:"queue_workers,omitempty"`
-	BlockedTools         *[]string `json:"blocked_tools,omitempty"`
+	Type                 *string           `json:"type,omitempty"`
+	OwnerIDs             *[]string         `json:"owner_ids,omitempty"`
+	Watermark            *bool             `json:"watermark,omitempty"`
+	Stream               *bool             `json:"stream,omitempty"`
+	MaxIterations        *int              `json:"max_iterations,omitempty"`
+	WarningIterations    *int              `json:"warning_iterations,omitempty"`
+	ContextMaxTokens     *int              `json:"context_max_tokens,omitempty"`
+	MaxToolOutputBytes   *int              `json:"max_tool_output_bytes,omitempty"`
+	RepeatToolCallLimit  *int              `json:"repeat_tool_call_limit,omitempty"`
+	ToolTimeoutSeconds   *int              `json:"tool_timeout_seconds,omitempty"`
+	RunTimeoutSeconds    *int              `json:"run_timeout_seconds,omitempty"`
+	StreamTimeoutSeconds *int              `json:"stream_timeout_seconds,omitempty"`
+	RequestRetries       *int              `json:"request_retries,omitempty"`
+	QueueWorkers         *int              `json:"queue_workers,omitempty"`
+	ComputerUse          *ComputerUsePatch `json:"computer_use,omitempty"`
+	BlockedTools         *[]string         `json:"blocked_tools,omitempty"`
+}
+
+// ComputerUsePatch updates the desktop automation tool flag.
+type ComputerUsePatch struct {
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 type HeartbeatPatch struct {
@@ -833,6 +839,12 @@ func applyBotPatch(bot *config.GlobalBotConfig, patch BotPatch) error {
 	if patch.BlockedTools != nil {
 		bot.BlockedTools = append([]string{}, (*patch.BlockedTools)...)
 	}
+	if patch.ComputerUse != nil && patch.ComputerUse.Enabled != nil {
+		if bot.ComputerUse == nil {
+			bot.ComputerUse = &config.ComputerUseConfig{}
+		}
+		bot.ComputerUse.Enabled = *patch.ComputerUse.Enabled
+	}
 	if bot.MaxIterations != nil && bot.WarningIterations != nil && *bot.WarningIterations >= *bot.MaxIterations {
 		return ErrInvalidConfig
 	}
@@ -911,6 +923,8 @@ func resetBotFields(cfg, tmpl *config.Config, fields []string) {
 			cfg.Bot.QueueWorkers = tmpl.Bot.QueueWorkers
 		case "blocked_tools":
 			cfg.Bot.BlockedTools = append([]string{}, tmpl.Bot.BlockedTools...)
+		case "computer_use":
+			cfg.Bot.ComputerUse = tmpl.Bot.ComputerUse
 		}
 	}
 }

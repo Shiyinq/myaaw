@@ -12,6 +12,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | [MCP & Custom Tools](agents/mcp-and-custom-tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
 | [Observability](agents/observability.md) | Traces, token usage, model cost, retention, and OTLP export. |
 | [Tool Approvals](agents/approvals.md) | Approval policy, grants, channel/API flows, and CLI/control-plane management. |
+| [Computer Use](agents/computer-use.md) | macOS desktop automation: screenshots, mouse/keyboard, permissions, and safety. |
 
 ### Agent protocol (A2A)
 
