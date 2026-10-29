@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 	"time"
 
@@ -155,15 +156,37 @@ func MessagesToContents(messages []Message) []GeminiContent {
 			})
 		}
 
-		// 2. Handle Text Content
-		contentStr, isStr := message.Content.(string)
-		if isStr && contentStr != "" {
-			parts = append(parts, GeminiPart{
-				Text: contentStr,
-			})
-		} else if geminiPart, isPart := message.Content.(GeminiPart); isPart {
+		// 2. Handle Text and image content items. MessageContentItems normalizes
+		// strings, []ContentItem and persisted []interface{} values.
+		textContent := ""
+		var imageParts []GeminiPart
+		if geminiPart, isPart := message.Content.(GeminiPart); isPart {
 			// Backward compatibility or direct GeminiPart passing
 			parts = append(parts, geminiPart)
+		} else {
+			for _, item := range MessageContentItems(message) {
+				switch {
+				case item.Type == "text" && item.Text != "":
+					if textContent != "" {
+						textContent += "\n"
+					}
+					textContent += item.Text
+				case item.Type == "image_url" && item.ImageURL != nil:
+					mimeType, data, ok := parseImageDataURL(item.ImageURL.URL)
+					if !ok {
+						if strings.HasPrefix(item.ImageURL.URL, "http") {
+							log.Printf("gemini: skipping remote image URL in message content")
+						}
+						continue
+					}
+					imageParts = append(imageParts, GeminiPart{
+						InlineData: &GeminiInlineData{MimeType: mimeType, Data: data},
+					})
+				}
+			}
+			if textContent != "" {
+				parts = append(parts, GeminiPart{Text: textContent})
+			}
 		}
 
 		// 3. Handle Tool Calls (for model)
@@ -191,16 +214,23 @@ func MessagesToContents(messages []Message) []GeminiContent {
 
 		// 4. Handle Tool Responses (for tool role)
 		if message.Role == "tool" {
+			resultText := textContent
+			if resultText == "" {
+				resultText = MessageText(message)
+			}
 			// Gemini expects FunctionResponse to be matched by Name
 			parts = append(parts, GeminiPart{
 				FunctionResponse: &GeminiFunctionResponse{
 					Name: message.Name,
 					Response: map[string]interface{}{
-						"result": message.Content,
+						"result": resultText,
 					},
 				},
 			})
 		}
+
+		// 4b. Images carried by content items (tool screenshots, etc.).
+		parts = append(parts, imageParts...)
 
 		// 5. Handle Images (usually for user)
 		if len(message.Images) > 0 && role == "user" {
@@ -240,6 +270,28 @@ func MessagesToContents(messages []Message) []GeminiContent {
 	}
 
 	return contents
+}
+
+// parseImageDataURL splits a data: URL into its MIME type and base64 payload.
+func parseImageDataURL(raw string) (mimeType, data string, ok bool) {
+	const prefix = "data:"
+	if !strings.HasPrefix(raw, prefix) {
+		return "", "", false
+	}
+	rest := raw[len(prefix):]
+	comma := strings.IndexByte(rest, ',')
+	if comma < 0 {
+		return "", "", false
+	}
+	meta, payload := rest[:comma], rest[comma+1:]
+	if payload == "" || !strings.HasSuffix(meta, ";base64") {
+		return "", "", false
+	}
+	mimeType = strings.TrimSuffix(meta, ";base64")
+	if mimeType == "" {
+		mimeType = "image/png"
+	}
+	return mimeType, payload, true
 }
 
 func contentToMessage(content GeminiContent) Message {
