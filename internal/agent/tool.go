@@ -226,6 +226,17 @@ func ToolResultText(result ToolResult) string {
 	return strings.Join(parts, "\n")
 }
 
+// hasImageContent reports whether a tool result carries any image item. Text
+// results keep the plain-string transcript form for backward compatibility.
+func hasImageContent(items []provider.ContentItem) bool {
+	for _, item := range items {
+		if item.Type == "image_url" && item.ImageURL != nil && item.ImageURL.URL != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func truncateToolResult(result *ToolResult, maxBytes int) {
 	if maxBytes <= 0 {
 		return

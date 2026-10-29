@@ -372,10 +372,16 @@ func (a *Agent) RunEvents(
 				ThoughtSignature: toolCall.Function.ThoughtSignature,
 				StepGroup:        iteration,
 			})
+			// Text-only results keep the compact string form. Results carrying
+			// images must keep their content items so the vision loop survives.
+			content := any(observation)
+			if hasImageContent(result.Content) {
+				content = result.Content
+			}
 			message := provider.Message{
 				Role:       "tool",
 				Name:       toolCall.Function.Name,
-				Content:    observation,
+				Content:    content,
 				ToolCallID: toolCall.ID,
 				IsError:    result.IsError,
 				DurationMs: result.DurationMs,

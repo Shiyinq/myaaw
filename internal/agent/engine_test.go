@@ -175,6 +175,22 @@ func (f *fakeTool) ToolDefinition() []byte {
 	return []byte(`{"type":"function","function":{"name":"` + f.name + `","parameters":{"type":"object","properties":{"x":{"type":"string"}},"required":["x"]}}}`)
 }
 
+// structuredFakeTool returns an image alongside text, exercising the vision
+// loop end to end through the legacy factory adapter.
+type structuredFakeTool struct{ fakeTool }
+
+func (s *structuredFakeTool) CallToolStructured(_ context.Context, arguments string, _ *tools.ToolsContext) tools.StructuredResult {
+	return tools.StructuredResult{
+		Text:   "shot:" + arguments,
+		Images: []tools.ImageResult{{MimeType: "image/png", Data: "AAAA"}},
+		Attachments: []tools.FileAttachment{{
+			FileName: "shot.png",
+			MimeType: "image/png",
+			Data:     []byte("PNGDATA"),
+		}},
+	}
+}
+
 func (f *fakeTool) ExecutionMode() tools.ExecutionMode {
 	if f.mode == "" {
 		return tools.ExecutionSequential
@@ -261,6 +277,71 @@ func TestAgentLoopExecutesToolsAndAggregatesUsage(t *testing.T) {
 	}
 	if !foundTool {
 		t.Fatal("transcript is missing the tool result message")
+	}
+}
+
+func TestAgentLoopKeepsToolImagesInTranscript(t *testing.T) {
+	probe := &structuredFakeTool{fakeTool{name: "test_image"}}
+	tools.Register("test_image", probe)
+	t.Cleanup(func() { tools.ClearRegistryKey("test_image") })
+
+	prov := &scriptedProvider{turns: []provider.Message{
+		{Role: "assistant", ToolCalls: []provider.ToolCall{toolCall("c1", "test_image", `{"x":"1"}`)}},
+		{Role: "assistant", Content: "done"},
+	}}
+	result, err := NewAgent(prov).RunEvents(context.Background(), RunConfig{
+		Model: "test-model", MaxIterations: 3, ExcludedTools: []string{},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	var toolMessage provider.Message
+	for _, msg := range result.Transcript {
+		if msg.Role == "tool" && msg.Name == "test_image" {
+			toolMessage = msg
+		}
+	}
+	items, ok := toolMessage.Content.([]provider.ContentItem)
+	if !ok {
+		t.Fatalf("tool content type = %T; want []ContentItem", toolMessage.Content)
+	}
+	var sawText, sawImage bool
+	for _, item := range items {
+		if item.Type == "text" && item.Text != "" {
+			sawText = true
+		}
+		if item.Type == "image_url" && item.ImageURL != nil && item.ImageURL.URL == "data:image/png;base64,AAAA" {
+			sawImage = true
+		}
+	}
+	if !sawText || !sawImage {
+		t.Fatalf("tool content = %+v (text=%v image=%v)", items, sawText, sawImage)
+	}
+
+	// The trace stays text-only and the next provider request carries the image.
+	if len(result.Final.Trace) != 1 || !strings.Contains(result.Final.Trace[0].Observation, "shot:") {
+		t.Fatalf("trace = %+v", result.Final.Trace)
+	}
+	if len(prov.requests) < 2 {
+		t.Fatalf("provider requests = %d", len(prov.requests))
+	}
+	var sentImage bool
+	for _, msg := range prov.requests[1] {
+		if msg.Role != "tool" {
+			continue
+		}
+		for _, item := range provider.MessageContentItems(msg) {
+			if item.Type == "image_url" && item.ImageURL != nil {
+				sentImage = true
+			}
+		}
+	}
+	if !sentImage {
+		t.Fatal("image did not survive into the next provider request")
+	}
+	if len(result.Attachments) != 1 || result.Attachments[0].FileName != "shot.png" || string(result.Attachments[0].Data) != "PNGDATA" {
+		t.Fatalf("attachments = %+v", result.Attachments)
 	}
 }
 
