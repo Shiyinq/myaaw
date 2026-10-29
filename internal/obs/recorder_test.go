@@ -353,6 +353,36 @@ func TestRecorderTruncatesContent(t *testing.T) {
 	}
 }
 
+func TestEncodeAssistantKeepsTruncatedThought(t *testing.T) {
+	output := strings.Repeat("a", 500)
+	thought := strings.Repeat("t", 500)
+
+	encoded := encodeAssistant(output, thought, 400, nil)
+	if !json.Valid([]byte(encoded)) {
+		t.Fatalf("output_json is not valid json: %q", encoded)
+	}
+	if len(encoded) > 400 {
+		t.Fatalf("output_json length = %d, want <= 400", len(encoded))
+	}
+
+	var view struct {
+		Content string `json:"content"`
+		Thought string `json:"thought"`
+	}
+	if err := json.Unmarshal([]byte(encoded), &view); err != nil {
+		t.Fatalf("decode output_json: %v", err)
+	}
+	if view.Content == "" {
+		t.Fatal("the answer must survive truncation")
+	}
+	if view.Thought == "" {
+		t.Fatalf("a long thought must keep a prefix instead of being dropped: %q", encoded)
+	}
+	if !strings.Contains(view.Thought, "truncated") {
+		t.Fatalf("thought was shortened without a marker: %q", view.Thought)
+	}
+}
+
 func TestEncodeMessagesKeepsTheSystemPromptWhole(t *testing.T) {
 	system := strings.Repeat("s", 12000)
 	encoded := encodeMessages([]provider.Message{

@@ -417,6 +417,11 @@ The leading `system` message is never dropped and is shortened last: cutting it
 would make the stored transcript look like a different request, while the newest
 messages are kept because the last message is what drove it.
 
+For an assistant response, its `content` and `thought` share the same budget: a
+long thought is shortened first and keeps a readable prefix; it is dropped only
+when the answer alone already fills the cap. The answer itself is shortened
+last, so the visible reply survives even when the reasoning does not.
+
 The system prompt is also captured on its own `system` span, so it stays readable
 even when the transcript inside `llm.input_json` is trimmed.
 

@@ -825,7 +825,7 @@ session in one request:
         {
           "id": "sp_user", "run_id": "run_old", "kind": "user", "name": "user",
           "started_at": 1761674469000, "ended_at": 1761674469000, "status": "completed",
-          "input_json": "{\"messages\":[{\"role\":\"user\",\"content\":\"halo\"}]}"
+          "input_json": "halo"
         },
         {
           "id": "sp_step_1", "run_id": "run_old", "kind": "step", "name": "Step 1",
@@ -867,13 +867,75 @@ because every prompt and tool payload is included.
 
 | Span | Row |
 | :--- | :--- |
-| `kind: "system"` | SYSTEM — `input_json` is the assembled prompt, including skills and workspace |
-| `kind: "user"` | USER — `input_json.messages` ends with the inbound message |
-| `kind: "compaction"` | COMPACTION — `input_json` has `tokens_before`, `tokens_after`, `budget`, and `messages_dropped` |
+| `kind: "system"` | SYSTEM — `input_json` is the assembled prompt **as plain text**, not JSON |
+| `kind: "user"` | USER — `input_json` is the inbound message **as plain text** |
+| `kind: "compaction"` | COMPACTION — `input_json` is a JSON object with `tokens_before`, `tokens_after`, `budget`, and `messages_dropped` |
 | `kind: "step"` | Step header for `step_index` |
-| `kind: "llm"` | ASSISTANT — `output_json.content` is the answer, `output_json.thought` the reasoning; `input_json` is the exact request; timings from `first_token_ms` / `generation_ms`. A second `llm` span in the same step is a retry; the first is `status: "retried"` |
-| `kind: "tool"` | TOOL — `input_json` are the arguments, `output_json` the result, `status` `error` when it failed (including a tool blocked by policy) |
+| `kind: "llm"` | ASSISTANT — parse `output_json` as JSON for `content` and `thought`; parse `input_json` for the exact `messages` request. Timings come from `first_token_ms` / `generation_ms`. A second `llm` span in the same step is a retry; the first is `status: "retried"` |
+| `kind: "tool"` | TOOL — `input_json` is the raw arguments string (usually JSON, but not guaranteed) and `output_json` the raw result text; `status` is `error` when it failed, including a tool blocked by policy |
 | `kind: "run"` with a distinct `run_id` | A subagent run; its spans share that `run_id` and point at the tool span via `parent_id` |
+
+Only `llm.input_json`, `llm.output_json`, and `compaction.input_json` are written
+as JSON by the recorder. `system`, `user`, and `tool` blobs are raw text, so parse
+them only when the tool's own schema says its arguments are JSON.
+
+### Thinking and text previews
+
+The one-line `thinking:` / `text:` preview that `myaaw obs run` prints under an
+`llm` row needs no extra endpoint or field. Derive it from the span the run
+detail already returns:
+
+1. Parse `output_json` on a `kind: "llm"` span as
+   `{ "content": string, "thought": string }`.
+2. Render `thought` as `thinking:` and `content` as `text:`, in that order.
+3. Skip a field when it is empty. If both are empty, or `output_json` is absent,
+   that request produced only tool calls — or content capture was off when it was
+   recorded. The API does not distinguish those two cases.
+4. For the compact preview, take the first non-empty line, collapse whitespace,
+   and cut it at about 100 characters; append `(+N more)` for the remaining
+   lines. The expanded view can use the full value, which is capped at
+   `observability.max_content_chars` (16384 by default) per blob.
+
+A truncated `llm.output_json` still parses: the marker lives inside `content` or
+`thought`, not after the closing brace. If parsing fails, the blob is not a
+recorder-written assistant message — check the span kind (a `tool` result is
+usually plain text) instead of assuming the cap broke it.
+
+The same rule applies to every `llm` span, including a retry (`request_index >
+1`). A step with no content on any of its `llm` spans is a pure tool-call step.
+
+### Why `input_json` and `output_json` are strings
+
+Every span kind stores a different payload: an llm input is a message envelope,
+a tool input is arbitrary arguments, a tool result is often plain text, and a
+compaction payload is numbers. The recorder writes the redacted, truncated form
+into one TEXT column and the API returns that value unchanged. Keeping it a
+string keeps the API a faithful view of storage, and a new provider payload never
+forces a schema change.
+
+For `llm.output_json` the JSON is still valid after truncation: the
+`…[truncated N chars]` marker is inserted into the `content` / `thought` string
+before the recorder marshals the object, so a client can always parse it. Tool
+payloads are the exception: `input_json` and `output_json` are raw strings, may
+not be JSON at all, and their truncation marker is appended as plain text.
+
+The cap is `observability.max_content_chars` (16384 by default), applied when the
+span is written, not by the API:
+
+- `llm.input_json`: the whole message envelope is fitted under the cap. Messages
+  are shortened by role first, then the oldest ones are dropped (the leading
+  system message is never dropped) and `dropped_messages` records how many.
+- `llm.output_json`: `content` and `thought` each get half the budget. If the
+  marshaled object still exceeds the cap, `thought` is shortened further and
+  keeps a readable prefix; it is dropped only when `content` alone already fills
+  the cap. `content` is shortened last.
+- `tool` spans: arguments (`input_json`) and result (`output_json`) are each cut
+  at the cap.
+
+Truncation appends `…[truncated N chars]`, so a stored blob can sit a few bytes
+above the cap. `store_content: false` omits both fields entirely. The API adds
+no second limit; a large session response is large because it returns every
+stored blob (use `?spans=false` for the turn list).
 
 For a duration timeline, offset each span by `span.started_at - run.started_at`
 and use `span.ended_at` for its width. `steps` is the number of iteration bars;

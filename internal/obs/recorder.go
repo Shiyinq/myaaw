@@ -968,34 +968,81 @@ func encodeAssistant(output, thought string, max int, redact func(string) string
 		output = redact(output)
 		thought = redact(thought)
 	}
+
+	limit := max / 2
 	view := messageView{
 		Role:    "assistant",
-		Content: TruncateContent(output, max/2),
-		Thought: TruncateContent(thought, max/2),
+		Content: assistantPart(output, limit),
+		Thought: assistantPart(thought, limit),
 	}
+
+	encoded, ok := marshalAssistantWithin(view, max)
+	if ok {
+		return encoded
+	}
+
+	// Both halves plus the JSON envelope and truncation markers can exceed the
+	// cap by a few bytes. Keep the answer and shorten the reasoning first, so a
+	// long thought still leaves a readable prefix instead of disappearing.
+	contentOnly := view
+	contentOnly.Thought = ""
+	contentEncoded, contentOK := marshalAssistantWithin(contentOnly, max)
+	if contentOK {
+		for view.Thought != "" {
+			over := len(encoded) - max
+			limit -= over + assistantMarkerReserve
+			view.Thought = assistantPart(thought, limit)
+			if view.Thought == "" {
+				break
+			}
+			if encoded, ok = marshalAssistantWithin(view, max); ok {
+				return encoded
+			}
+		}
+		return contentEncoded
+	}
+
+	// Content alone already fills the cap: drop the thought and shrink the
+	// answer itself.
+	view.Thought = ""
+	limit = max / 2
+	encoded = contentEncoded
+	for view.Content != "" {
+		over := len(encoded) - max
+		limit -= over + assistantMarkerReserve
+		view.Content = assistantPart(output, limit)
+		if view.Content == "" {
+			break
+		}
+		if encoded, ok = marshalAssistantWithin(view, max); ok {
+			return encoded
+		}
+	}
+	encoded, _ = marshalAssistantWithin(view, max)
+	return encoded
+}
+
+// assistantMarkerReserve covers the room a truncation marker and the JSON field
+// punctuation can add when a value is shortened. The shrink loops use it to
+// converge in one or two passes; they still re-marshal and re-check.
+const assistantMarkerReserve = 32
+
+// assistantPart returns an empty string for a non-positive limit. TruncateContent
+// treats a non-positive limit as "no limit", which is never what a caller of
+// this helper wants.
+func assistantPart(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	return TruncateContent(value, limit)
+}
+
+func marshalAssistantWithin(view messageView, max int) (string, bool) {
 	encoded, err := json.Marshal(view)
 	if err != nil {
-		return ""
+		return "", false
 	}
-	if len(encoded) <= max {
-		return string(encoded)
-	}
-
-	view.Thought = ""
-	encoded, err = json.Marshal(view)
-	if err != nil {
-		return ""
-	}
-	if len(encoded) <= max {
-		return string(encoded)
-	}
-
-	view.Content = ""
-	encoded, err = json.Marshal(view)
-	if err != nil {
-		return ""
-	}
-	return string(encoded)
+	return string(encoded), len(encoded) <= max
 }
 
 func argsText(value interface{}) string {
