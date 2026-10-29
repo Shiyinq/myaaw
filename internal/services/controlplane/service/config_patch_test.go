@@ -184,7 +184,7 @@ func TestConfigViewShowsEffectiveObservability(t *testing.T) {
 	if view.Observability.StoreContent == nil || !*view.Observability.StoreContent {
 		t.Fatalf("store content = %v", view.Observability.StoreContent)
 	}
-	if len(view.Observability.RedactPatterns) == 0 {
+	if view.Observability.RedactPatterns == nil || len(*view.Observability.RedactPatterns) == 0 {
 		t.Fatal("the effective view must show the built-in redact patterns")
 	}
 }
@@ -249,7 +249,7 @@ func TestConfigPatchRedactPatterns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Patch: %v", err)
 	}
-	if len(view.Observability.RedactPatterns) != 1 || view.Observability.RedactPatterns[0] != patterns[0] {
+	if view.Observability.RedactPatterns == nil || len(*view.Observability.RedactPatterns) != 1 || (*view.Observability.RedactPatterns)[0] != patterns[0] {
 		t.Fatalf("redact patterns = %+v", view.Observability.RedactPatterns)
 	}
 
@@ -258,6 +258,55 @@ func TestConfigPatchRedactPatterns(t *testing.T) {
 		Observability: &ObservabilityPatch{RedactPatterns: invalid},
 	}); err == nil {
 		t.Fatal("an invalid regular expression must be rejected")
+	}
+}
+
+func TestConfigPatchCanDisableRedaction(t *testing.T) {
+	setupConfigAgent(t, testConfig())
+	svc := NewConfigService()
+
+	empty := []string{}
+	view, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{RedactPatterns: empty},
+	})
+	if err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+	if view.Observability.RedactPatterns == nil || len(*view.Observability.RedactPatterns) != 0 {
+		t.Fatalf("view redact patterns = %+v, want an explicit empty list", view.Observability.RedactPatterns)
+	}
+
+	cfg := loadTestConfig(t)
+	if cfg.Observability == nil || cfg.Observability.RedactPatterns == nil || len(*cfg.Observability.RedactPatterns) != 0 {
+		t.Fatalf("stored redact patterns = %+v, want an explicit empty list", cfg.Observability)
+	}
+}
+
+func TestConfigPatchToolPrices(t *testing.T) {
+	setupConfigAgent(t, testConfig())
+	svc := NewConfigService()
+
+	prices := map[string]config.ToolPriceConfig{"tavily_search": {PerCall: 0.008}}
+	view, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{ToolPrices: prices},
+	})
+	if err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+	if got := view.Observability.ToolPrices["tavily_search"].PerCall; got != 0.008 {
+		t.Fatalf("tool price = %v", got)
+	}
+	cfg := loadTestConfig(t)
+	if cfg.Observability == nil || cfg.Observability.ToolPrices["tavily_search"].PerCall != 0.008 {
+		t.Fatalf("stored tool prices = %+v", cfg.Observability)
+	}
+
+	if _, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{ToolPrices: map[string]config.ToolPriceConfig{
+			"bad": {PerCall: -1},
+		}},
+	}); err == nil {
+		t.Fatal("a negative tool price must be rejected")
 	}
 }
 
@@ -283,7 +332,7 @@ func TestConfigResetObservabilityRestoresTheTemplate(t *testing.T) {
 	// The template is the source of truth for a fresh agent, so it must carry
 	// the redaction patterns, not only rely on the recorder defaults.
 	cfg := loadTestConfig(t)
-	if cfg.Observability == nil || len(cfg.Observability.RedactPatterns) != 4 {
+	if cfg.Observability == nil || cfg.Observability.RedactPatterns == nil || len(*cfg.Observability.RedactPatterns) != 4 {
 		t.Fatalf("template redact patterns = %+v", cfg.Observability)
 	}
 }

@@ -617,6 +617,58 @@ func TestRecorderRedactionCanBeDisabled(t *testing.T) {
 	}
 }
 
+func TestRecorderChargesPricedTools(t *testing.T) {
+	fixture := newRecorderFixture(t, Config{
+		StoreContent: true,
+		ToolPrices:   map[string]float64{"search": 0.01},
+	})
+	base := fixture.base
+	runID := startRun(t, fixture)
+
+	fixture.rec.OnEvent(Event{Type: EventStepStart, Time: base, StepIndex: 1})
+	fixture.rec.OnEvent(Event{
+		Type: EventToolStart, Time: base.Add(10 * time.Millisecond), StepIndex: 1,
+		ToolCallID: "call_ok", ToolName: "search", ToolArguments: `{}`,
+	})
+	fixture.rec.OnEvent(Event{
+		Type: EventToolEnd, Time: base.Add(20 * time.Millisecond), StepIndex: 1,
+		ToolCallID: "call_ok", ToolName: "search", ToolOutput: "result",
+	})
+	fixture.rec.OnEvent(Event{
+		Type: EventToolStart, Time: base.Add(30 * time.Millisecond), StepIndex: 1,
+		ToolCallID: "call_fail", ToolName: "search", ToolArguments: `{}`,
+	})
+	fixture.rec.OnEvent(Event{
+		Type: EventToolEnd, Time: base.Add(40 * time.Millisecond), StepIndex: 1,
+		ToolCallID: "call_fail", ToolName: "search", IsError: true, ErrorText: "denied",
+	})
+	fixture.rec.OnEvent(Event{Type: EventStepEnd, Time: base.Add(50 * time.Millisecond)})
+	fixture.rec.OnEvent(Event{
+		Type: EventRunEnd, Time: base.Add(60 * time.Millisecond), StopReason: provider.StopNormal,
+	})
+	if err := fixture.rec.Flush(context.Background()); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	run, spans, err := fixture.store.GetRun(runID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if run.ToolCostUSD != 0.01 {
+		t.Fatalf("run tool cost = %v, want only the successful call", run.ToolCostUSD)
+	}
+	tools := spansByKind(spans)[KindTool]
+	if len(tools) != 2 {
+		t.Fatalf("tool spans = %d", len(tools))
+	}
+	if tools[0].CostUSD != 0.01 {
+		t.Fatalf("successful call cost = %v", tools[0].CostUSD)
+	}
+	if tools[1].CostUSD != 0 {
+		t.Fatalf("failed call cost = %v, want no charge", tools[1].CostUSD)
+	}
+}
+
 func TestRecorderCancelsOpenSpansOnAbort(t *testing.T) {
 	fixture := newRecorderFixture(t, Config{StoreContent: true})
 	base := fixture.base

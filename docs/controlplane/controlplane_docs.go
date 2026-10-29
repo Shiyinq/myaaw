@@ -2271,7 +2271,7 @@ const docTemplatecontrolplane = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by trigger: user, cron, or subagent",
+                        "description": "Filter by trigger: user, cron, subagent, or a2a",
                         "name": "trigger",
                         "in": "query"
                     },
@@ -4343,6 +4343,13 @@ const docTemplatecontrolplane = `{
                 "arguments": {
                     "type": "string"
                 },
+                "attempt": {
+                    "description": "Retry and compaction details, set on their own kinds.",
+                    "type": "integer"
+                },
+                "dropped_messages": {
+                    "type": "integer"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -4360,6 +4367,12 @@ const docTemplatecontrolplane = `{
                 },
                 "text": {
                     "type": "string"
+                },
+                "tokens_after": {
+                    "type": "integer"
+                },
+                "tokens_before": {
+                    "type": "integer"
                 }
             }
         },
@@ -4492,7 +4505,7 @@ const docTemplatecontrolplane = `{
                     }
                 },
                 "redact_patterns": {
-                    "description": "RedactPatterns masks secrets in stored content. Nil keeps the built-in\npatterns; an explicit empty list disables redaction.",
+                    "description": "RedactPatterns masks secrets in stored content. Nil keeps the built-in\npatterns; a pointer to an empty list disables redaction.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -4504,6 +4517,20 @@ const docTemplatecontrolplane = `{
                 },
                 "store_content": {
                     "type": "boolean"
+                },
+                "tool_prices": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.ToolPriceConfig"
+                    }
+                }
+            }
+        },
+        "config.ToolPriceConfig": {
+            "type": "object",
+            "properties": {
+                "per_call": {
+                    "type": "number"
                 }
             }
         },
@@ -5273,6 +5300,10 @@ const docTemplatecontrolplane = `{
                 "status": {
                     "$ref": "#/definitions/obs.Status"
                 },
+                "tool_cost_usd": {
+                    "description": "ToolCostUSD is what the tool calls of this run cost at the configured\nper-call prices. It is kept apart from ModelCostUSD on purpose.",
+                    "type": "number"
+                },
                 "total_ms": {
                     "type": "integer"
                 },
@@ -5462,6 +5493,12 @@ const docTemplatecontrolplane = `{
                         "$ref": "#/definitions/obs.ModelStat"
                     }
                 },
+                "by_trigger": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/obs.TriggerStat"
+                    }
+                },
                 "cache_hit_tokens": {
                     "type": "integer"
                 },
@@ -5524,6 +5561,10 @@ const docTemplatecontrolplane = `{
                 "to": {
                     "type": "integer"
                 },
+                "tool_cost_usd": {
+                    "description": "ToolCostUSD is spend on priced tool calls, separate from model tokens.",
+                    "type": "number"
+                },
                 "unpriced_input_tokens": {
                     "type": "integer"
                 },
@@ -5550,10 +5591,39 @@ const docTemplatecontrolplane = `{
                 "calls": {
                     "type": "integer"
                 },
+                "cost_usd": {
+                    "type": "number"
+                },
                 "errors": {
                     "type": "integer"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "obs.TriggerStat": {
+            "type": "object",
+            "properties": {
+                "cost_usd": {
+                    "type": "number"
+                },
+                "errors": {
+                    "type": "integer"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "runs": {
+                    "type": "integer"
+                },
+                "tool_cost_usd": {
+                    "type": "number"
+                },
+                "trigger": {
                     "type": "string"
                 }
             }
@@ -6315,6 +6385,12 @@ const docTemplatecontrolplane = `{
                 },
                 "store_content": {
                     "type": "boolean"
+                },
+                "tool_prices": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/config.ToolPriceConfig"
+                    }
                 }
             }
         },
@@ -6694,6 +6770,10 @@ const docTemplatecontrolplane = `{
                 },
                 "steps": {
                     "type": "integer"
+                },
+                "tool_cost_usd": {
+                    "description": "ToolCostUSD is what the tool calls of this run cost at the configured\nper-call prices. It is kept apart from ModelCostUSD on purpose.",
+                    "type": "number"
                 },
                 "total_ms": {
                     "type": "integer"

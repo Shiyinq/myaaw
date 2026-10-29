@@ -155,7 +155,8 @@ func configView(cfg *config.Config) ConfigView {
 // the agent's .env are not visible to the control plane and are not reflected.
 func mergedObservability(raw *config.ObservabilityConfig) *config.ObservabilityConfig {
 	merged := config.DefaultObservability()
-	merged.RedactPatterns = obs.DefaultRedactPatterns()
+	defaultRedact := obs.DefaultRedactPatterns()
+	merged.RedactPatterns = &defaultRedact
 	if raw == nil {
 		return &merged
 	}
@@ -176,6 +177,9 @@ func mergedObservability(raw *config.ObservabilityConfig) *config.ObservabilityC
 	}
 	if len(raw.ModelPrices) > 0 {
 		merged.ModelPrices = raw.ModelPrices
+	}
+	if len(raw.ToolPrices) > 0 {
+		merged.ToolPrices = raw.ToolPrices
 	}
 	return &merged
 }
@@ -520,6 +524,7 @@ type ObservabilityPatch struct {
 	StoreContent    *bool                              `json:"store_content,omitempty"`
 	RedactPatterns  []string                           `json:"redact_patterns,omitempty"`
 	ModelPrices     map[string]config.ModelPriceConfig `json:"model_prices,omitempty"`
+	ToolPrices      map[string]config.ToolPriceConfig  `json:"tool_prices,omitempty"`
 }
 
 type BotPatch struct {
@@ -688,7 +693,8 @@ func applyObservabilityPatch(obs **config.ObservabilityConfig, patch Observabili
 				return ErrInvalidConfig
 			}
 		}
-		current.RedactPatterns = append([]string(nil), patch.RedactPatterns...)
+		patterns := append([]string{}, patch.RedactPatterns...)
+		current.RedactPatterns = &patterns
 	}
 	if patch.ModelPrices != nil {
 		for model, price := range patch.ModelPrices {
@@ -697,6 +703,14 @@ func applyObservabilityPatch(obs **config.ObservabilityConfig, patch Observabili
 			}
 		}
 		current.ModelPrices = patch.ModelPrices
+	}
+	if patch.ToolPrices != nil {
+		for name, price := range patch.ToolPrices {
+			if strings.TrimSpace(name) == "" || price.PerCall < 0 {
+				return ErrInvalidConfig
+			}
+		}
+		current.ToolPrices = patch.ToolPrices
 	}
 	return nil
 }

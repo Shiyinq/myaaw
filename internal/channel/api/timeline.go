@@ -21,6 +21,11 @@ type TimelineItem struct {
 	Arguments string `json:"arguments,omitempty"`
 	Result    string `json:"result,omitempty"`
 	IsError   bool   `json:"is_error,omitempty"`
+	// Retry and compaction details, set on their own kinds.
+	Attempt         int `json:"attempt,omitempty"`
+	TokensBefore    int `json:"tokens_before,omitempty"`
+	TokensAfter     int `json:"tokens_after,omitempty"`
+	DroppedMessages int `json:"dropped_messages,omitempty"`
 }
 
 // Timeline converts agent stream chunks into timeline items and, when emit is
@@ -52,8 +57,23 @@ func (t *Timeline) HandleChunk(chunk channel.StreamChunk) {
 		t.finishTool(chunk)
 	case "final", "usage":
 		// Delivered by Done.
-	case "step", "trace", "retry", "compaction":
-		// Progress markers; traces and retries are not timeline content.
+	case "step", "trace":
+		// Step markers and traces are represented by their own items.
+	case "retry":
+		t.items = append(t.items, TimelineItem{Kind: "retry", Attempt: chunk.Attempt})
+		t.emitEvent("retry", map[string]any{"attempt": chunk.Attempt})
+	case "compaction":
+		t.items = append(t.items, TimelineItem{
+			Kind:            "compaction",
+			TokensBefore:    chunk.TokensBefore,
+			TokensAfter:     chunk.TokensAfter,
+			DroppedMessages: chunk.DroppedMessages,
+		})
+		t.emitEvent("compaction", map[string]any{
+			"tokens_before":    chunk.TokensBefore,
+			"tokens_after":     chunk.TokensAfter,
+			"dropped_messages": chunk.DroppedMessages,
+		})
 	default:
 		// Backwards compatible with providers that only populate fields.
 		if chunk.Thought != "" {

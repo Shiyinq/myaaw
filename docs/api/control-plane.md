@@ -175,6 +175,7 @@ Response:
 - `text` is the authoritative final answer.
 - `timeline` is the ordered thought/tool/text sequence; the last `text` item equals `text`.
 - `tool_result` results are attached to their `tool` item.
+- A retried request adds a `{"kind":"retry","attempt":2}` item; a trimmed transcript adds `{"kind":"compaction","tokens_before","tokens_after","dropped_messages"}`.
 - `run_id` is the recorded trace; `GET /agents/:name/observability/runs/:id` reads it. It is absent when observability is disabled, and the streaming `done` event carries the same field.
 
 ### Streaming (SSE)
@@ -192,6 +193,8 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | `chunk` | `{"text":"..."}` (answer delta) |
 | `tool` | `{"id","name","arguments"}` |
 | `tool_result` | `{"id","name","result","is_error"}` |
+| `retry` | `{"attempt":2}` — a provider request was retried |
+| `compaction` | `{"tokens_before","tokens_after","dropped_messages"}` — the transcript was trimmed |
 | `done` | `{"ok":true,"text","conversation_id"?,"run_id"?,"usage"?}` |
 | `error` | `{"error":"..."}` followed by `done {"ok":false}` |
 
@@ -613,6 +616,7 @@ plane and are not reflected.
 | `max_content_chars` | Byte cap for every stored content blob (default 16384). |
 | `store_content` | Store prompts, answers, and tool payloads. `false` keeps metadata and token counts only. |
 | `redact_patterns` | Regular expressions masked as `[redacted]` before content is stored or exported. An empty list disables redaction. |
+| `tool_prices` | Per-call prices for tools, as `{"<tool>": {"per_call": 0.008}}`. Failed calls are not charged. |
 | `model_prices` | Per-model prices that override the built-in table. |
 
 ```bash
@@ -762,10 +766,10 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents/:name/observability/summary?days=7` | run totals, error rate, p50/p95 latency, per-step/model/tool breakdowns, most expensive and slowest run, `cost_complete` and `unpriced_*` flags, and `database_bytes` |
+| `GET` | `/agents/:name/observability/summary?days=7` | run totals, error rate, p50/p95 latency, per-step/model/trigger/tool breakdowns, most expensive and slowest run, `cost_complete` and `unpriced_*` flags, `tool_cost_usd`, and `database_bytes` |
 | `GET` | `/agents/:name/observability/sessions?limit` | conversations with their turn count, tokens, and cost |
 | `GET` | `/agents/:name/observability/sessions/:id` | one session with **all turns, oldest first**, plus per-turn step counts |
-| `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&model&trigger&from&to` | recorded runs, newest first |
+| `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&model&trigger&from&to` | recorded runs, newest first; each run carries `trigger` (`user`, `cron`, `subagent`, or `a2a`) |
 | `GET` | `/agents/:name/observability/runs/:id` | one run with flat `spans` and a nested `tree` |
 | `DELETE` | `/agents/:name/observability/runs?before=<unix ms>` | delete runs; without `before` deletes all |
 

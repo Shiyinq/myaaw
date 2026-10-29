@@ -11,7 +11,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const schemaVersion = 5
+const schemaVersion = 6
 
 // schemaMigrations upgrades an existing database one version at a time. Version
 // 1 is the initial schema, so its statements live in schemaStatements only.
@@ -37,6 +37,10 @@ var schemaMigrations = map[int][]string{
 		// guessing that every historical run was a user message.
 		`UPDATE runs SET trigger_type = 'subagent' WHERE COALESCE(trigger_type, '') = '' AND COALESCE(parent_run_id, '') <> ''`,
 	},
+	// Version 6 separates tool spend from model spend.
+	6: {
+		`ALTER TABLE runs ADD COLUMN tool_cost_usd REAL DEFAULT 0`,
+	},
 }
 
 var schemaStatements = []string{
@@ -59,6 +63,7 @@ var schemaStatements = []string{
 		output_tokens    INTEGER DEFAULT 0,
 		cache_hit_tokens INTEGER DEFAULT 0,
 		model_cost_usd   REAL    DEFAULT 0,
+		tool_cost_usd    REAL    DEFAULT 0,
 		total_ms         INTEGER,
 		first_token_ms   INTEGER,
 		judge_score      REAL,
@@ -254,6 +259,11 @@ func (s *Store) alignSchema() error {
 			return fmt.Errorf("add runs.%s: %w", column, err)
 		}
 	}
+	if !runColumns["tool_cost_usd"] {
+		if _, err := s.db.Exec(`ALTER TABLE runs ADD COLUMN tool_cost_usd REAL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add runs.tool_cost_usd: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -285,9 +295,9 @@ func (s *Store) tableColumns(table string) (map[string]bool, error) {
 const upsertRunSQL = `INSERT INTO runs (
 		id, started_at, ended_at, channel, user_id, conversation_id, provider,
 		model, agent, trigger_type, parent_run_id, parent_span_id, status, error,
-		input_tokens, output_tokens, cache_hit_tokens, model_cost_usd, total_ms,
-		first_token_ms
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		input_tokens, output_tokens, cache_hit_tokens, model_cost_usd,
+		tool_cost_usd, total_ms, first_token_ms
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(id) DO UPDATE SET
 		ended_at = excluded.ended_at,
 		channel = excluded.channel,
@@ -305,6 +315,7 @@ const upsertRunSQL = `INSERT INTO runs (
 		output_tokens = excluded.output_tokens,
 		cache_hit_tokens = excluded.cache_hit_tokens,
 		model_cost_usd = excluded.model_cost_usd,
+		tool_cost_usd = excluded.tool_cost_usd,
 		total_ms = excluded.total_ms,
 		first_token_ms = excluded.first_token_ms`
 
@@ -315,7 +326,7 @@ func (s *Store) UpsertRun(run Run) error {
 		run.ConversationID, run.Provider, run.Model, run.Agent, run.Trigger,
 		run.ParentRunID, run.ParentSpanID, string(run.Status),
 		run.Error, run.InputTokens, run.OutputTokens, run.CacheHitTokens,
-		run.ModelCostUSD, run.TotalMs, run.FirstTokenMs,
+		run.ModelCostUSD, run.ToolCostUSD, run.TotalMs, run.FirstTokenMs,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert observability run: %w", err)
@@ -387,6 +398,7 @@ const runColumns = `id, started_at, COALESCE(ended_at, 0), COALESCE(channel, '')
 	COALESCE(parent_span_id, ''), COALESCE(status, ''), COALESCE(error, ''),
 	COALESCE(input_tokens, 0), COALESCE(output_tokens, 0),
 	COALESCE(cache_hit_tokens, 0), COALESCE(model_cost_usd, 0),
+	COALESCE(tool_cost_usd, 0),
 	COALESCE(total_ms, 0), COALESCE(first_token_ms, 0)`
 
 const spanColumns = `id, COALESCE(run_id, ''), COALESCE(parent_id, ''), COALESCE(kind, ''),
@@ -409,7 +421,7 @@ func scanRun(row scanner) (Run, error) {
 		&run.ConversationID, &run.Provider, &run.Model, &run.Agent, &run.Trigger,
 		&run.ParentRunID, &run.ParentSpanID, &status,
 		&run.Error, &run.InputTokens, &run.OutputTokens, &run.CacheHitTokens,
-		&run.ModelCostUSD, &run.TotalMs, &run.FirstTokenMs,
+		&run.ModelCostUSD, &run.ToolCostUSD, &run.TotalMs, &run.FirstTokenMs,
 	)
 	run.Status = Status(status)
 	return run, err

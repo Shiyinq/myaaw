@@ -4,6 +4,11 @@ definitions:
     properties:
       arguments:
         type: string
+      attempt:
+        description: Retry and compaction details, set on their own kinds.
+        type: integer
+      dropped_messages:
+        type: integer
       id:
         type: string
       is_error:
@@ -16,6 +21,10 @@ definitions:
         type: string
       text:
         type: string
+      tokens_after:
+        type: integer
+      tokens_before:
+        type: integer
     type: object
   common.ErrorResponse:
     properties:
@@ -104,7 +113,7 @@ definitions:
       redact_patterns:
         description: |-
           RedactPatterns masks secrets in stored content. Nil keeps the built-in
-          patterns; an explicit empty list disables redaction.
+          patterns; a pointer to an empty list disables redaction.
         items:
           type: string
         type: array
@@ -115,6 +124,15 @@ definitions:
         type: integer
       store_content:
         type: boolean
+      tool_prices:
+        additionalProperties:
+          $ref: '#/definitions/config.ToolPriceConfig'
+        type: object
+    type: object
+  config.ToolPriceConfig:
+    properties:
+      per_call:
+        type: number
     type: object
   cron.Delivery:
     properties:
@@ -634,6 +652,11 @@ definitions:
         type: integer
       status:
         $ref: '#/definitions/obs.Status'
+      tool_cost_usd:
+        description: |-
+          ToolCostUSD is what the tool calls of this run cost at the configured
+          per-call prices. It is kept apart from ModelCostUSD on purpose.
+        type: number
       total_ms:
         type: integer
       trigger:
@@ -771,6 +794,10 @@ definitions:
         items:
           $ref: '#/definitions/obs.ModelStat'
         type: array
+      by_trigger:
+        items:
+          $ref: '#/definitions/obs.TriggerStat'
+        type: array
       cache_hit_tokens:
         type: integer
       cost_complete:
@@ -817,6 +844,10 @@ definitions:
         type: string
       to:
         type: integer
+      tool_cost_usd:
+        description: ToolCostUSD is spend on priced tool calls, separate from model
+          tokens.
+        type: number
       unpriced_input_tokens:
         type: integer
       unpriced_models:
@@ -834,9 +865,28 @@ definitions:
         type: integer
       calls:
         type: integer
+      cost_usd:
+        type: number
       errors:
         type: integer
       name:
+        type: string
+    type: object
+  obs.TriggerStat:
+    properties:
+      cost_usd:
+        type: number
+      errors:
+        type: integer
+      input_tokens:
+        type: integer
+      output_tokens:
+        type: integer
+      runs:
+        type: integer
+      tool_cost_usd:
+        type: number
+      trigger:
         type: string
     type: object
   provider.FunctionCall:
@@ -1342,6 +1392,10 @@ definitions:
         type: integer
       store_content:
         type: boolean
+      tool_prices:
+        additionalProperties:
+          $ref: '#/definitions/config.ToolPriceConfig'
+        type: object
     type: object
   service.OnboardBotInput:
     properties:
@@ -1594,6 +1648,11 @@ definitions:
         $ref: '#/definitions/obs.Status'
       steps:
         type: integer
+      tool_cost_usd:
+        description: |-
+          ToolCostUSD is what the tool calls of this run cost at the configured
+          per-call prices. It is kept apart from ModelCostUSD on purpose.
+        type: number
       total_ms:
         type: integer
       trigger:
@@ -3218,7 +3277,7 @@ paths:
         in: query
         name: model
         type: string
-      - description: 'Filter by trigger: user, cron, or subagent'
+      - description: 'Filter by trigger: user, cron, subagent, or a2a'
         in: query
         name: trigger
         type: string

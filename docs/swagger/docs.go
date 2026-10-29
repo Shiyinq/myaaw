@@ -292,6 +292,13 @@ const docTemplate = `{
                 "arguments": {
                     "type": "string"
                 },
+                "attempt": {
+                    "description": "Retry and compaction details, set on their own kinds.",
+                    "type": "integer"
+                },
+                "dropped_messages": {
+                    "type": "integer"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -309,6 +316,12 @@ const docTemplate = `{
                 },
                 "text": {
                     "type": "string"
+                },
+                "tokens_after": {
+                    "type": "integer"
+                },
+                "tokens_before": {
+                    "type": "integer"
                 }
             }
         },

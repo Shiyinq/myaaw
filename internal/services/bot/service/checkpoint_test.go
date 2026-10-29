@@ -6,6 +6,7 @@ import (
 
 	"myaaw/internal/agent"
 	"myaaw/internal/channel"
+	"myaaw/internal/config"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
 )
@@ -128,6 +129,49 @@ func TestRunConversationSkipsCheckpointsForHeartbeat(t *testing.T) {
 	}
 	if len(repo.updates) != 0 {
 		t.Fatalf("heartbeat wrote %d updates, want 0", len(repo.updates))
+	}
+}
+
+func TestRunConversationSetsTheTraceRunID(t *testing.T) {
+	ag := &checkpointAgent{
+		transcript: []provider.Message{
+			{Role: "system", Content: "system prompt"},
+			{Role: "user", Content: "pertanyaan"},
+		},
+		final: provider.Message{Role: "assistant", Content: "jawaban"},
+	}
+	svc, _ := newCheckpointService(t, ag)
+
+	originalEnabled, originalStore := config.ObsEnabled, config.ObsStoreContent
+	config.ObsEnabled, config.ObsStoreContent = true, true
+	t.Cleanup(func() {
+		config.ObsEnabled, config.ObsStoreContent = originalEnabled, originalStore
+	})
+
+	msg := &channel.IncomingMessage{
+		UserID:         1,
+		Text:           "pertanyaan",
+		Channel:        "api",
+		ConversationID: "conv-1",
+	}
+	out, err := svc.runConversation(context.Background(), &model.User{UserId: 1}, msg, nil)
+	if err != nil {
+		t.Fatalf("runConversation: %v", err)
+	}
+	if out.RunID == "" {
+		t.Fatal("the reply must carry the trace run id")
+	}
+
+	store, _, _ := svc.observability()
+	if store == nil {
+		t.Fatal("observability was not enabled for the test")
+	}
+	run, _, err := store.GetRun(out.RunID)
+	if err != nil {
+		t.Fatalf("the returned run id has no trace: %v", err)
+	}
+	if run.ID != out.RunID || run.Trigger != "user" {
+		t.Fatalf("stored run = %+v", run)
 	}
 }
 

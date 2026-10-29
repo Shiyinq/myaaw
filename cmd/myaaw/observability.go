@@ -111,7 +111,7 @@ func init() {
 	observabilityRunsCmd.Flags().StringVar(&obsStatus, "status", "", "filter by status")
 	observabilityRunsCmd.Flags().StringVar(&obsConversation, "conversation", "", "filter by conversation id (one session)")
 	observabilityRunsCmd.Flags().StringVar(&obsModel, "model", "", "filter by model (exact match)")
-	observabilityRunsCmd.Flags().StringVar(&obsTrigger, "trigger", "", "filter by trigger: user, cron, or subagent")
+	observabilityRunsCmd.Flags().StringVar(&obsTrigger, "trigger", "", "filter by trigger: user, cron, subagent, or a2a")
 	observabilityRunsCmd.Flags().StringVar(&obsFrom, "from", "", "only runs at or after this date (YYYY-MM-DD or unix ms)")
 	observabilityRunsCmd.Flags().StringVar(&obsTo, "to", "", "only runs at or before this date (YYYY-MM-DD or unix ms)")
 	observabilityRunsCmd.Flags().BoolVar(&obsJSON, "json", false, "print raw JSON")
@@ -163,8 +163,9 @@ func runObservabilitySummary(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Runs %d · errors %d (%.1f%%)\n", summary.Runs, summary.Errors, summary.ErrorRate*100)
 	fmt.Printf("Tokens input %s · cached %s · output %s\n",
 		formatTokens(summary.InputTokens), formatTokens(summary.CacheHitTokens), formatTokens(summary.OutputTokens))
-	fmt.Printf("Cost %s · latency p50 %s · p95 %s · TTFT p50 %s\n",
-		formatUSD(summary.CostUSD), formatMillis(summary.DurationP50),
+	fmt.Printf("Cost %s models · %s tools · latency p50 %s · p95 %s · TTFT p50 %s\n",
+		formatUSD(summary.CostUSD), formatUSD(summary.ToolCostUSD),
+		formatMillis(summary.DurationP50),
 		formatMillis(summary.DurationP95), formatMillis(summary.FirstTokenP50))
 	if !summary.CostComplete {
 		fmt.Printf("%s\n", theme.RenderMuted(fmt.Sprintf(
@@ -200,12 +201,24 @@ func runObservabilitySummary(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if len(summary.ByTrigger) > 0 {
+		fmt.Printf("\n%s\n", theme.RenderPrimary("Per trigger"))
+		fmt.Printf("  %-10s %7s %7s %9s %9s %11s %11s\n", "TRIGGER", "RUNS", "ERRORS", "INPUT", "OUTPUT", "COST", "TOOLS")
+		for _, trigger := range summary.ByTrigger {
+			fmt.Printf("  %-10s %7d %7d %9s %9s %11s %11s\n",
+				trigger.Trigger, trigger.Runs, trigger.Errors,
+				formatTokens(trigger.InputTokens), formatTokens(trigger.OutputTokens),
+				formatUSD(trigger.CostUSD), formatUSD(trigger.ToolCostUSD))
+		}
+	}
+
 	if len(summary.PerTool) > 0 {
 		fmt.Printf("\n%s\n", theme.RenderPrimary("Per tool"))
-		fmt.Printf("  %-32s %6s %7s %9s\n", "TOOL", "CALLS", "ERRORS", "AVG")
+		fmt.Printf("  %-32s %6s %7s %9s %11s\n", "TOOL", "CALLS", "ERRORS", "AVG", "COST")
 		for _, tool := range summary.PerTool {
-			fmt.Printf("  %-32s %6d %7d %9s\n",
-				truncateValue(tool.Name, 32), tool.Calls, tool.Errors, formatMillis(tool.AvgMs))
+			fmt.Printf("  %-32s %6d %7d %9s %11s\n",
+				truncateValue(tool.Name, 32), tool.Calls, tool.Errors, formatMillis(tool.AvgMs),
+				formatUSD(tool.CostUSD))
 		}
 	}
 
@@ -332,14 +345,18 @@ func runObservabilityRun(cmd *cobra.Command, args []string) error {
 		status = "running (in progress)"
 	}
 	fmt.Printf("%s %s\n", theme.RenderPrimary("Run"), run.ID)
-	fmt.Printf("  %s · %s · %s\n", run.Channel, run.Model, status)
+	fmt.Printf("  %s · %s · %s · %s\n", run.Channel, firstNonEmptyString(run.Trigger, "unknown"), run.Model, status)
 	duration := formatMillis(run.TotalMs)
 	if run.Status == obs.StatusRunning && run.TotalMs > 0 {
 		duration += " so far"
 	}
-	fmt.Printf("  duration %s · TTFT %s · tokens %s in / %s out · cost %s\n",
+	fmt.Printf("  duration %s · TTFT %s · tokens %s in / %s out · cost %s models",
 		duration, formatMillis(run.FirstTokenMs),
 		formatTokens(run.InputTokens), formatTokens(run.OutputTokens), costLabel(run))
+	if run.ToolCostUSD > 0 {
+		fmt.Printf(" · %s tools", formatUSD(run.ToolCostUSD))
+	}
+	fmt.Printf("\n")
 	if run.ModelCostUSD == 0 && (run.InputTokens > 0 || run.OutputTokens > 0) {
 		fmt.Printf("  cost missing: %q had no price when this run was recorded\n", run.Model)
 	}
@@ -464,19 +481,22 @@ func runObservabilitySession(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("%s %s · %d turn(s)\n", theme.RenderPrimary("Session"), conversationID, len(runs))
-	fmt.Printf("  %-4s %-8s %-10s %-22s %-22s %-5s %-8s %-8s %-13s %-10s %s\n",
-		"TURN", "TYPE", "STARTED", "RUN", "MODEL", "STEPS", "DUR", "TTFT", "TOKENS", "COST", "STATUS")
+	fmt.Printf("  %-4s %-8s %-10s %-10s %-22s %-22s %-5s %-8s %-8s %-13s %-10s %s\n",
+		"TURN", "TYPE", "TRIGGER", "STARTED", "RUN", "MODEL", "STEPS", "DUR", "TTFT", "TOKENS", "COST", "STATUS")
 
 	totalCost := 0.0
+	totalToolCost := 0.0
 	unpriced := 0
 	for i, run := range runs {
 		totalCost += run.ModelCostUSD
+		totalToolCost += run.ToolCostUSD
 		if run.ModelCostUSD == 0 && (run.InputTokens > 0 || run.OutputTokens > 0) {
 			unpriced++
 		}
-		fmt.Printf("  %-4d %-8s %-10s %-22s %-22s %-5d %-8s %-8s %-13s %-10s %s\n",
+		fmt.Printf("  %-4d %-8s %-10s %-10s %-22s %-22s %-5d %-8s %-8s %-13s %-10s %s\n",
 			i+1,
 			firstNonEmptyString(run.Channel, "agent"),
+			firstNonEmptyString(run.Trigger, "-"),
 			time.UnixMilli(run.StartedAt).Format("15:04:05"),
 			run.ID,
 			truncateValue(firstNonEmptyString(run.Model, "unknown model"), 22),
@@ -490,7 +510,11 @@ func runObservabilitySession(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	fmt.Printf("\n%d turn(s) · %s total\n", len(runs), formatUSD(totalCost))
+	fmt.Printf("\n%d turn(s) · %s models", len(runs), formatUSD(totalCost))
+	if totalToolCost > 0 {
+		fmt.Printf(" + %s tools", formatUSD(totalToolCost))
+	}
+	fmt.Printf("\n")
 	if unpriced > 0 {
 		fmt.Printf("%s\n", theme.RenderMuted(fmt.Sprintf(
 			"⚠ %d of %d turn(s) have no recorded cost — the total is not the full spend", unpriced, len(runs))))
@@ -598,7 +622,7 @@ func runObservabilityPrune(cmd *cobra.Command, args []string) error {
 	var before time.Time
 	switch {
 	case obsBefore != "":
-		parsed, err := time.Parse("2006-01-02", obsBefore)
+		parsed, err := time.ParseInLocation("2006-01-02", obsBefore, time.Local)
 		if err != nil {
 			parsed, err = time.Parse(time.RFC3339, obsBefore)
 		}

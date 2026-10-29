@@ -33,6 +33,10 @@ func (r *BotServiceImpl) observability() (*obs.Store, *obs.Pricer, obs.Config) {
 		if settings.RetentionDays != nil {
 			retentionDays = *settings.RetentionDays
 		}
+		var redactPatterns []string
+		if settings.RedactPatterns != nil {
+			redactPatterns = append([]string{}, (*settings.RedactPatterns)...)
+		}
 		store, err := obs.Open(path, obs.Options{RetentionDays: retentionDays})
 		if err != nil {
 			log.Printf("⚠️  Observability disabled: %v", err)
@@ -52,7 +56,8 @@ func (r *BotServiceImpl) observability() (*obs.Store, *obs.Pricer, obs.Config) {
 		r.obsConfig = obs.Config{
 			MaxContentChars: settings.MaxContentChars,
 			StoreContent:    settings.StoreContent == nil || *settings.StoreContent,
-			RedactPatterns:  settings.RedactPatterns,
+			RedactPatterns:  redactPatterns,
+			ToolPrices:      obsToolPrices(settings.ToolPrices),
 		}
 	})
 	return r.obsStore, r.obsPricer, r.obsConfig
@@ -84,7 +89,7 @@ func (r *BotServiceImpl) traceRun(
 		Provider:       config.LLMProviderName,
 		Model:          user.Model,
 		Agent:          activeAgentName(),
-		Trigger:        runTrigger(msg.TriggerType),
+		Trigger:        runTrigger(msg.Channel, msg.TriggerType),
 		UserMessage:    msg.Text,
 		SystemPrompt:   agenttrace.SystemPrompt(messages),
 	})
@@ -93,12 +98,34 @@ func (r *BotServiceImpl) traceRun(
 }
 
 // runTrigger labels what started a run. An untagged inbound message is a user
-// message; heartbeats never reach the recorder.
-func runTrigger(triggerType string) string {
+// message, except on the A2A channel where the caller is another agent in
+// practice. Heartbeats never reach the recorder.
+func runTrigger(channelName, triggerType string) string {
 	if trigger := strings.TrimSpace(triggerType); trigger != "" {
 		return trigger
 	}
+	if strings.EqualFold(strings.TrimSpace(channelName), "a2a") {
+		return "a2a"
+	}
 	return "user"
+}
+
+// obsToolPrices keeps only the tools that declare a positive per-call price.
+func obsToolPrices(prices map[string]config.ToolPriceConfig) map[string]float64 {
+	if len(prices) == 0 {
+		return nil
+	}
+	converted := make(map[string]float64, len(prices))
+	for name, price := range prices {
+		if strings.TrimSpace(name) == "" || price.PerCall <= 0 {
+			continue
+		}
+		converted[name] = price.PerCall
+	}
+	if len(converted) == 0 {
+		return nil
+	}
+	return converted
 }
 
 // obsPrices converts configured prices into the pricing table type.

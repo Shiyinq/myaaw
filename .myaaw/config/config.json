@@ -59,6 +59,7 @@
             "\\bgh[pousr]_[A-Za-z0-9]{20,}",
             "\\bxox[abprs]-[A-Za-z0-9-]{10,}"
         ],
+        "tool_prices": {},
         "model_prices": {
             "deepseek-chat": {
                 "input": 0.3,

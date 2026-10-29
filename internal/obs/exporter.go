@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -25,6 +26,31 @@ type Exporter struct {
 	provider *sdktrace.TracerProvider
 	tracer   trace.Tracer
 	enabled  bool
+
+	mu sync.Mutex
+	// contexts remembers the OTel span context of recently exported spans so a
+	// child run can nest under the parent span that started it.
+	contexts map[string]exportedSpanContext
+	// pending holds child runs whose parent span has not been exported yet. A
+	// subagent usually finishes before the parent turn does.
+	pending map[string][]pendingExport
+}
+
+const (
+	exportedContextTTL = time.Hour
+	exportedPendingTTL = 10 * time.Minute
+	exportedContextCap = 50_000
+)
+
+type exportedSpanContext struct {
+	context trace.SpanContext
+	at      time.Time
+}
+
+type pendingExport struct {
+	run   Run
+	spans []Span
+	at    time.Time
 }
 
 // NewExporter builds an OTLP exporter from the environment. A missing endpoint
@@ -68,6 +94,8 @@ func NewExporter(ctx context.Context) (*Exporter, error) {
 		provider: provider,
 		tracer:   provider.Tracer("myaaw/obs"),
 		enabled:  true,
+		contexts: map[string]exportedSpanContext{},
+		pending:  map[string][]pendingExport{},
 	}, nil
 }
 
@@ -77,7 +105,9 @@ func (e *Exporter) Enabled() bool {
 }
 
 // Export sends one run and its spans. Spans are emitted parent-first so the
-// collector sees a connected trace.
+// collector sees a connected trace. A child run waits until the parent span
+// that started it has been exported, which keeps a subagent inside the trace of
+// the turn that invoked it.
 func (e *Exporter) Export(run Run, spans []Span) {
 	if !e.Enabled() {
 		return
@@ -88,11 +118,31 @@ func (e *Exporter) Export(run Run, spans []Span) {
 		}
 	}()
 
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.flushStaleLocked()
+
+	if run.ParentRunID != "" && run.ParentSpanID != "" {
+		if _, ok := e.contexts[run.ParentSpanID]; !ok {
+			e.pending[run.ParentRunID] = append(e.pending[run.ParentRunID], pendingExport{
+				run: run, spans: spans, at: time.Now(),
+			})
+			return
+		}
+	}
+	e.exportLocked(run, spans)
+}
+
+func (e *Exporter) exportLocked(run Run, spans []Span) {
 	contexts := make(map[string]trace.SpanContext, len(spans))
+	now := time.Now()
 	for _, span := range spans {
 		parentCtx := context.Background()
 		if parent, ok := contexts[span.ParentID]; ok {
 			parentCtx = trace.ContextWithSpanContext(parentCtx, parent)
+		} else if parent, ok := e.contexts[span.ParentID]; ok {
+			parentCtx = trace.ContextWithSpanContext(parentCtx, parent.context)
 		}
 
 		started := time.UnixMilli(span.StartedAt)
@@ -114,15 +164,70 @@ func (e *Exporter) Export(run Run, spans []Span) {
 			ended = time.UnixMilli(span.EndedAt)
 		}
 		otelSpan.End(trace.WithTimestamp(ended))
-		contexts[span.ID] = otelSpan.SpanContext()
+		spanContext := otelSpan.SpanContext()
+		contexts[span.ID] = spanContext
+		e.contexts[span.ID] = exportedSpanContext{context: spanContext, at: now}
+	}
+
+	// The parent is in the collector now, so any child that was waiting for it
+	// can be attached to the real span context.
+	children := e.pending[run.ID]
+	delete(e.pending, run.ID)
+	for _, child := range children {
+		e.exportLocked(child.run, child.spans)
 	}
 }
 
-// Shutdown flushes buffered spans and stops the provider.
+// flushStaleLocked is the safety valve for a child whose parent never exports
+// (the parent was killed, or the run ended without a trace). Such a child is
+// exported as its own root rather than being dropped.
+func (e *Exporter) flushStaleLocked() {
+	now := time.Now()
+	for parent, children := range e.pending {
+		kept := children[:0]
+		for _, child := range children {
+			if now.Sub(child.at) < exportedPendingTTL {
+				kept = append(kept, child)
+				continue
+			}
+			log.Printf("[obs] exporting run %s without its parent %s; the parent span was never exported", child.run.ID, parent)
+			e.exportLocked(child.run, child.spans)
+		}
+		if len(kept) == 0 {
+			delete(e.pending, parent)
+			continue
+		}
+		e.pending[parent] = kept
+	}
+
+	if len(e.contexts) > exportedContextCap {
+		log.Printf("[obs] dropping %d cached span contexts", len(e.contexts))
+		e.contexts = map[string]exportedSpanContext{}
+		return
+	}
+	for id, entry := range e.contexts {
+		if now.Sub(entry.at) > exportedContextTTL {
+			delete(e.contexts, id)
+		}
+	}
+}
+
+// Shutdown flushes buffered spans and stops the provider. Runs still waiting
+// for a parent are exported as roots so their data is not lost.
 func (e *Exporter) Shutdown(ctx context.Context) error {
 	if !e.Enabled() {
 		return nil
 	}
+	e.mu.Lock()
+	for parent, children := range e.pending {
+		for _, child := range children {
+			log.Printf("[obs] exporting run %s at shutdown without its parent %s", child.run.ID, parent)
+			e.exportLocked(child.run, child.spans)
+		}
+	}
+	e.pending = map[string][]pendingExport{}
+	e.mu.Unlock()
+
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	return e.provider.Shutdown(ctx)

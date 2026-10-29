@@ -169,6 +169,9 @@ func TestOpenAddsTriggerColumnToOlderDatabase(t *testing.T) {
 	if _, err := raw.Exec(`ALTER TABLE runs DROP COLUMN trigger_type`); err != nil {
 		t.Fatalf("drop trigger_type: %v", err)
 	}
+	if _, err := raw.Exec(`ALTER TABLE runs DROP COLUMN tool_cost_usd`); err != nil {
+		t.Fatalf("drop tool_cost_usd: %v", err)
+	}
 	if _, err := raw.Exec(`PRAGMA user_version = 4`); err != nil {
 		t.Fatalf("set version: %v", err)
 	}
@@ -195,6 +198,9 @@ func TestOpenAddsTriggerColumnToOlderDatabase(t *testing.T) {
 	if !columns["trigger_type"] {
 		t.Fatalf("trigger_type was not added: %v", columns)
 	}
+	if !columns["tool_cost_usd"] {
+		t.Fatalf("tool_cost_usd was not added: %v", columns)
+	}
 
 	root, _, err := store.GetRun("run_root")
 	if err != nil {
@@ -213,6 +219,7 @@ func TestOpenAddsTriggerColumnToOlderDatabase(t *testing.T) {
 
 	run := sampleRun("run_cron", 1_700_000_000_000)
 	run.Trigger = "cron"
+	run.ToolCostUSD = 0.02
 	if err := store.UpsertRun(run); err != nil {
 		t.Fatalf("upsert run: %v", err)
 	}
@@ -222,6 +229,9 @@ func TestOpenAddsTriggerColumnToOlderDatabase(t *testing.T) {
 	}
 	if read.Trigger != "cron" {
 		t.Fatalf("trigger = %q", read.Trigger)
+	}
+	if read.ToolCostUSD != 0.02 {
+		t.Fatalf("tool cost = %v", read.ToolCostUSD)
 	}
 }
 

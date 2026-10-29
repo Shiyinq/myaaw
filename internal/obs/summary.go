@@ -30,12 +30,24 @@ type ModelStat struct {
 	UnpricedCalls int  `json:"unpriced_calls,omitempty"`
 }
 
+// TriggerStat aggregates runs by what started them.
+type TriggerStat struct {
+	Trigger      string  `json:"trigger"`
+	Runs         int     `json:"runs"`
+	Errors       int     `json:"errors"`
+	InputTokens  int     `json:"input_tokens"`
+	OutputTokens int     `json:"output_tokens"`
+	CostUSD      float64 `json:"cost_usd"`
+	ToolCostUSD  float64 `json:"tool_cost_usd,omitempty"`
+}
+
 // ToolStat aggregates tool executions.
 type ToolStat struct {
-	Name   string `json:"name"`
-	Calls  int    `json:"calls"`
-	Errors int    `json:"errors"`
-	AvgMs  int64  `json:"avg_ms"`
+	Name    string  `json:"name"`
+	Calls   int     `json:"calls"`
+	Errors  int     `json:"errors"`
+	AvgMs   int64   `json:"avg_ms"`
+	CostUSD float64 `json:"cost_usd"`
 }
 
 // Summary is the control plane's headline view of a time window.
@@ -55,6 +67,8 @@ type Summary struct {
 	OutputTokens   int     `json:"output_tokens"`
 	CacheHitTokens int     `json:"cache_hit_tokens"`
 	CostUSD        float64 `json:"cost_usd"`
+	// ToolCostUSD is spend on priced tool calls, separate from model tokens.
+	ToolCostUSD float64 `json:"tool_cost_usd"`
 
 	// CostComplete is false when at least one run used a model with no price,
 	// so CostUSD is a lower bound rather than the full spend.
@@ -68,9 +82,10 @@ type Summary struct {
 	DurationP95   int64 `json:"duration_ms_p95"`
 	FirstTokenP50 int64 `json:"first_token_ms_p50"`
 
-	PerStep []StepStat  `json:"per_step"`
-	ByModel []ModelStat `json:"by_model"`
-	PerTool []ToolStat  `json:"per_tool"`
+	PerStep   []StepStat    `json:"per_step"`
+	ByModel   []ModelStat   `json:"by_model"`
+	ByTrigger []TriggerStat `json:"by_trigger"`
+	PerTool   []ToolStat    `json:"per_tool"`
 
 	MostExpensiveRunID string `json:"most_expensive_run_id,omitempty"`
 	SlowestRunID       string `json:"slowest_run_id,omitempty"`
@@ -78,7 +93,7 @@ type Summary struct {
 
 // Summary aggregates runs that started inside [from, to].
 func (s *Store) Summary(from, to int64) (Summary, error) {
-	summary := Summary{From: from, To: to, PerStep: []StepStat{}, ByModel: []ModelStat{}, PerTool: []ToolStat{}, DatabaseBytes: s.Size()}
+	summary := Summary{From: from, To: to, PerStep: []StepStat{}, ByModel: []ModelStat{}, ByTrigger: []TriggerStat{}, PerTool: []ToolStat{}, DatabaseBytes: s.Size()}
 
 	err := s.db.QueryRow(`SELECT
 			COUNT(*),
@@ -98,9 +113,11 @@ func (s *Store) Summary(from, to int64) (Summary, error) {
 			COALESCE(SUM(input_tokens), 0),
 			COALESCE(SUM(output_tokens), 0),
 			COALESCE(SUM(cache_hit_tokens), 0),
-			COALESCE(SUM(model_cost_usd), 0)
+			COALESCE(SUM(model_cost_usd), 0),
+			COALESCE(SUM(tool_cost_usd), 0)
 		FROM runs WHERE started_at BETWEEN ? AND ?`, from, to).
-		Scan(&summary.InputTokens, &summary.OutputTokens, &summary.CacheHitTokens, &summary.CostUSD)
+		Scan(&summary.InputTokens, &summary.OutputTokens, &summary.CacheHitTokens,
+			&summary.CostUSD, &summary.ToolCostUSD)
 	if err != nil {
 		return Summary{}, fmt.Errorf("summarise usage: %w", err)
 	}
@@ -130,6 +147,9 @@ func (s *Store) Summary(from, to int64) (Summary, error) {
 		return Summary{}, err
 	}
 	if err := s.fillModelStats(&summary, from, to); err != nil {
+		return Summary{}, err
+	}
+	if err := s.fillTriggerStats(&summary, from, to); err != nil {
 		return Summary{}, err
 	}
 	if err := s.fillToolStats(&summary, from, to); err != nil {
@@ -287,10 +307,37 @@ func (s *Store) fillModelStats(summary *Summary, from, to int64) error {
 	return rows.Err()
 }
 
+func (s *Store) fillTriggerStats(summary *Summary, from, to int64) error {
+	rows, err := s.db.Query(`SELECT COALESCE(trigger_type, ''),
+			COALESCE(SUM(CASE WHEN status <> 'running' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status IN ('error', 'interrupted') THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+			COALESCE(SUM(model_cost_usd), 0), COALESCE(SUM(tool_cost_usd), 0)
+		FROM runs WHERE started_at BETWEEN ? AND ?
+		GROUP BY COALESCE(trigger_type, '') ORDER BY COUNT(*) DESC`, from, to)
+	if err != nil {
+		return fmt.Errorf("summarise triggers: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var stat TriggerStat
+		if err := rows.Scan(&stat.Trigger, &stat.Runs, &stat.Errors,
+			&stat.InputTokens, &stat.OutputTokens, &stat.CostUSD, &stat.ToolCostUSD); err != nil {
+			return fmt.Errorf("scan trigger stat: %w", err)
+		}
+		if stat.Trigger == "" {
+			stat.Trigger = "unknown"
+		}
+		summary.ByTrigger = append(summary.ByTrigger, stat)
+	}
+	return rows.Err()
+}
+
 func (s *Store) fillToolStats(summary *Summary, from, to int64) error {
 	rows, err := s.db.Query(`SELECT COALESCE(s.name, ''), COUNT(*),
 			COALESCE(SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END), 0),
-			COALESCE(AVG(s.duration_ms), 0)
+			COALESCE(AVG(s.duration_ms), 0), COALESCE(SUM(s.cost_usd), 0)
 		FROM spans s JOIN runs r ON r.id = s.run_id
 		WHERE s.kind = 'tool' AND r.started_at BETWEEN ? AND ?
 		GROUP BY s.name ORDER BY COUNT(*) DESC`, from, to)
@@ -302,7 +349,7 @@ func (s *Store) fillToolStats(summary *Summary, from, to int64) error {
 	for rows.Next() {
 		var stat ToolStat
 		var avg float64
-		if err := rows.Scan(&stat.Name, &stat.Calls, &stat.Errors, &avg); err != nil {
+		if err := rows.Scan(&stat.Name, &stat.Calls, &stat.Errors, &avg, &stat.CostUSD); err != nil {
 			return fmt.Errorf("scan tool stat: %w", err)
 		}
 		stat.AvgMs = int64(avg)

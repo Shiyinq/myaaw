@@ -109,6 +109,37 @@ func TestTimelineAppendsUnmatchedToolResult(t *testing.T) {
 	}
 }
 
+func TestTimelineEmitsRetryAndCompaction(t *testing.T) {
+	timeline, events := collectTimeline()
+
+	timeline.HandleChunk(channel.StreamChunk{Kind: "retry", Attempt: 2})
+	timeline.HandleChunk(channel.StreamChunk{
+		Kind: "compaction", TokensBefore: 62400, TokensAfter: 38100, DroppedMessages: 14,
+	})
+	timeline.HandleChunk(channel.StreamChunk{Kind: "text", Text: "done"})
+
+	names := eventNames(*events)
+	if len(names) != 3 || names[0] != "retry" || names[1] != "compaction" || names[2] != "chunk" {
+		t.Fatalf("events = %v", names)
+	}
+
+	items := timeline.Items()
+	if len(items) != 3 {
+		t.Fatalf("items = %+v", items)
+	}
+	if items[0].Kind != "retry" || items[0].Attempt != 2 {
+		t.Fatalf("retry item = %+v", items[0])
+	}
+	if items[1].Kind != "compaction" || items[1].TokensBefore != 62400 || items[1].TokensAfter != 38100 || items[1].DroppedMessages != 14 {
+		t.Fatalf("compaction item = %+v", items[1])
+	}
+
+	data, ok := (*events)[1].Data.(map[string]any)
+	if !ok || data["tokens_before"] != 62400 || data["dropped_messages"] != 14 {
+		t.Fatalf("compaction event = %#v", (*events)[1].Data)
+	}
+}
+
 func TestTimelineDoneIncludesUsage(t *testing.T) {
 	timeline, events := collectTimeline()
 

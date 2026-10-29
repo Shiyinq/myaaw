@@ -11,15 +11,18 @@ func TestSummaryAggregatesRuns(t *testing.T) {
 
 	runA := sampleRun("run_a", base)
 	runA.Status = StatusCompleted
+	runA.Trigger = "user"
 	runA.TotalMs = 1000
 	runA.FirstTokenMs = 400
 	runA.InputTokens = 1000
 	runA.OutputTokens = 100
 	runA.CacheHitTokens = 800
 	runA.ModelCostUSD = 0.001
+	runA.ToolCostUSD = 0.0005
 
 	runB := sampleRun("run_b", base+1000)
 	runB.Status = StatusError
+	runB.Trigger = "cron"
 	runB.Error = "boom"
 	runB.TotalMs = 3000
 	runB.FirstTokenMs = 900
@@ -37,7 +40,7 @@ func TestSummaryAggregatesRuns(t *testing.T) {
 	spans := []Span{
 		{ID: "a_turn", RunID: runA.ID, Kind: KindStep, StepIndex: 1, StartedAt: base, DurationMs: 1000, Status: StatusCompleted},
 		{ID: "a_llm", RunID: runA.ID, Kind: KindLLM, Name: "deepseek-flash", StepIndex: 1, RequestIndex: 1, StartedAt: base, DurationMs: 1000, InputTokens: 1000, OutputTokens: 100, CacheHitTokens: 800, CostUSD: 0.001, Status: StatusCompleted},
-		{ID: "a_tool", RunID: runA.ID, Kind: KindTool, Name: "bash", StepIndex: 1, StartedAt: base, DurationMs: 50, Status: StatusCompleted},
+		{ID: "a_tool", RunID: runA.ID, Kind: KindTool, Name: "bash", StepIndex: 1, StartedAt: base, DurationMs: 50, CostUSD: 0.0005, Status: StatusCompleted},
 		{ID: "b_turn", RunID: runB.ID, Kind: KindStep, StepIndex: 1, StartedAt: base + 1000, DurationMs: 3000, Status: StatusError},
 		{ID: "b_llm", RunID: runB.ID, Kind: KindLLM, Name: "gpt-6.1-sol", StepIndex: 1, RequestIndex: 1, StartedAt: base + 1000, DurationMs: 3000, InputTokens: 2000, OutputTokens: 200, CostUSD: 0.002, Status: StatusError},
 		{ID: "b_tool", RunID: runB.ID, Kind: KindTool, Name: "bash", StepIndex: 1, StartedAt: base + 1000, DurationMs: 70, Status: StatusError},
@@ -62,6 +65,9 @@ func TestSummaryAggregatesRuns(t *testing.T) {
 	}
 	if math.Abs(summary.CostUSD-0.003) > 1e-9 {
 		t.Fatalf("cost = %v", summary.CostUSD)
+	}
+	if math.Abs(summary.ToolCostUSD-0.0005) > 1e-9 {
+		t.Fatalf("tool cost = %v", summary.ToolCostUSD)
 	}
 	if summary.DurationP50 != 1000 || summary.DurationP95 != 3000 {
 		t.Fatalf("durations = p50 %d p95 %d", summary.DurationP50, summary.DurationP95)
@@ -91,12 +97,29 @@ func TestSummaryAggregatesRuns(t *testing.T) {
 		t.Fatalf("models must be ordered by cost, got %+v", summary.ByModel)
 	}
 
+	if len(summary.ByTrigger) != 2 {
+		t.Fatalf("by trigger = %+v", summary.ByTrigger)
+	}
+	byTrigger := map[string]TriggerStat{}
+	for _, stat := range summary.ByTrigger {
+		byTrigger[stat.Trigger] = stat
+	}
+	if stat := byTrigger["user"]; stat.Runs != 1 || stat.Errors != 0 || stat.CostUSD != 0.001 || stat.ToolCostUSD != 0.0005 {
+		t.Fatalf("user trigger = %+v", stat)
+	}
+	if stat := byTrigger["cron"]; stat.Runs != 1 || stat.Errors != 1 || stat.CostUSD != 0.002 {
+		t.Fatalf("cron trigger = %+v", stat)
+	}
+
 	if len(summary.PerTool) != 1 {
 		t.Fatalf("per tool = %+v", summary.PerTool)
 	}
 	tool := summary.PerTool[0]
 	if tool.Name != "bash" || tool.Calls != 2 || tool.Errors != 1 || tool.AvgMs != 60 {
 		t.Fatalf("tool stat = %+v", tool)
+	}
+	if tool.CostUSD != 0.0005 {
+		t.Fatalf("tool cost = %v", tool.CostUSD)
 	}
 
 	if summary.MostExpensiveRunID != runB.ID {

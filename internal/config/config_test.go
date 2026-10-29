@@ -2,8 +2,79 @@ package config
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+// LoadBaseConfig must apply an explicit 0 from config.json instead of falling
+// back to the default retention.
+func TestParseToolPrices(t *testing.T) {
+	prices := parseToolPrices("tavily_search=0.008; image_gen=0.04; bad; negative=-1")
+	if len(prices) != 2 {
+		t.Fatalf("prices = %+v, want only the valid positive entries", prices)
+	}
+	if prices["tavily_search"].PerCall != 0.008 || prices["image_gen"].PerCall != 0.04 {
+		t.Fatalf("prices = %+v", prices)
+	}
+	if got := parseToolPrices(""); got != nil {
+		t.Fatalf("empty = %+v, want nil", got)
+	}
+}
+
+func TestLoadBaseConfigRedactNoneDisables(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("OBS_REDACT_PATTERNS", "none")
+
+	dir := filepath.Join(home, ".myaaw", "default", "config")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	original := ObsRedactPatterns
+	t.Cleanup(func() { ObsRedactPatterns = original })
+	ObsRedactPatterns = nil
+
+	LoadBaseConfig()
+	if ObsRedactPatterns == nil {
+		t.Fatal("OBS_REDACT_PATTERNS=none must produce an explicit empty list")
+	}
+	if len(ObsRedactPatterns) != 0 {
+		t.Fatalf("redact patterns = %+v, want none", ObsRedactPatterns)
+	}
+}
+
+func TestLoadBaseConfigHonorsZeroRetention(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	// godotenv does not override the process environment, so this pins the
+	// starting value even when the repository has a .env file.
+	t.Setenv("OBS_RETENTION_DAYS", "30")
+
+	dir := filepath.Join(home, ".myaaw", "default", "config")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"observability":{"retention_days":0}}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	original := ObsRetentionDays
+	t.Cleanup(func() { ObsRetentionDays = original })
+	ObsRetentionDays = 30
+
+	LoadBaseConfig()
+	if ObsRetentionDays != 0 {
+		t.Fatalf("retention days = %d, want an explicit 0 from config.json", ObsRetentionDays)
+	}
+}
 
 func TestObservabilityConfigKeepsAnExplicitZeroRetention(t *testing.T) {
 	var withZero Config

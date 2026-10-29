@@ -36,6 +36,10 @@ The trace uses the same words as the DeepSeek Harness trajectory view:
 In other words: `Turn 1` in the Harness trajectory view is a whole Myaaw run,
 and the rows inside it are `step` spans.
 
+Every run also records what started it: `user` (a chat message), `cron` (a
+scheduled job), `subagent` (a delegated child run), or `a2a` (a task from another
+agent). Heartbeats are not recorded.
+
 A trace looks like this:
 
 ```text
@@ -78,16 +82,16 @@ myaaw obs session 4f1c8a2e-8f3b-4c1d-9a77-2b6e5d0c1a44
 
 ```text
 Session 4e7371da-… · 1 turn(s)
-  TURN TYPE  STARTED   RUN                    MODEL              STEPS DUR     TTFT   TOKENS      COST       STATUS
-  1    cli   23:34:25  run_2240477b6447ff48   deepseek-v4-flash  5     14.35s  809ms  63.1k/732   $0.003927  completed
+  TURN TYPE  TRIGGER  STARTED   RUN                    MODEL              STEPS DUR     TTFT   TOKENS      COST       STATUS
+  1    cli   user     23:34:25  run_2240477b6447ff48   deepseek-v4-flash  5     14.35s  809ms  63.1k/732   $0.003927  completed
 
-1 turn(s) · $0.003927 total
+1 turn(s) · $0.003927 models
 Open a turn:  myaaw obs run <run-id>  or  myaaw obs run 4e7371da.cli.1
 All runs:     myaaw obs runs
 ```
 
-Every turn is one row: type, start time, run id, model, steps, duration, TTFT,
-tokens, cost, and status. A turn also has a short reference,
+Every turn is one row: type, trigger, start time, run id, model, steps, duration,
+TTFT, tokens, cost, and status. A turn also has a short reference,
 `<session prefix>.<type>.<turn>` — `4e7371da.cli.1` above — which `myaaw obs run`
 accepts in place of the run id, so a turn can be addressed from the table without
 copying a 20-character identifier. The prefix must be unambiguous; if two
@@ -155,14 +159,17 @@ it finishes. A child run is also listed on its own in `myaaw observability runs`
 which is why the summary can attribute spend to the agent that actually spent it.
 
 Retention runs when the database opens and deletes runs older than
-`retention_days` (30 by default). Spans are deleted with their run.
+`retention_days` (30 by default). Spans are deleted with their run. A daemon that
+stays up for weeks never re-opens, so it never prunes; run
+`myaaw obs prune` (optionally with `--vacuum`) on a schedule if the database must
+stay small. Periodic pruning inside the daemon is not implemented yet.
 
 The schema carries a `PRAGMA user_version`. A newer build upgrades an older
 database in place on open; version 2 added `parent_run_id` / `parent_span_id` for
-nested subagent runs, version 3 renamed `turn_index` to `step_index`, and version
-5 added `trigger_type`. Runs recorded before version 5 keep an empty trigger and
-are shown as `-`; the upgrade labels nested runs as `subagent` but does not guess
-between `user` and `cron` for the rest.
+nested subagent runs, version 3 renamed `turn_index` to `step_index`, version 5
+added `trigger_type`, and version 6 added `tool_cost_usd`. Runs recorded before
+version 5 keep an empty trigger and are shown as `-`; the upgrade labels nested
+runs as `subagent` but does not guess between `user` and `cron` for the rest.
 
 Opening also reconciles the actual shape rather than trusting the version alone.
 If a database was opened by a build whose vocabulary differed — for example one
@@ -195,8 +202,8 @@ cached.
 
 ```text
 Run run_2240477b6447ff48
-  cli · deepseek-v4-flash · completed
-  duration 14.35s · TTFT 809ms · tokens 63.1k in / 732 out · cost $0.003927
+  cli · user · deepseek-v4-flash · completed
+  duration 14.35s · TTFT 809ms · tokens 63.1k in / 732 out · cost $0.003927 models
   conversation 4e7371da-… · user 1c043f52-…
   5 step(s) · 5 model request(s) · 4 tool call(s)
 
@@ -215,11 +222,11 @@ Header lines:
 | Field | Meaning |
 | :--- | :--- |
 | `Run run_…` | Identifier of this turn, also accepted by `obs run` |
-| `cli · deepseek-v4-flash · completed` | Channel that delivered the message, model that served the last request, run status |
+| `cli · user · deepseek-v4-flash · completed` | Channel that delivered the message, trigger, model that served the last request, run status |
 | `duration` | Wall-clock time for the whole turn, including tool execution |
 | `TTFT` | First-token time of the first model request in the turn |
 | `tokens … in / … out` | Sum of prompt and completion tokens across every request in the turn |
-| `cost` | Sum of the cost of every `llm` span; see [Cost](#4-cost) |
+| `cost` | Sum of the cost of every `llm` span, plus any priced tool calls; see [Cost](#4-cost) |
 | `conversation`, `user` | Session id and the user the session belongs to |
 | `N step(s) · N request(s) · N tool call(s)` | Counts for this turn only; a step is one request plus the tools it called |
 
@@ -231,13 +238,105 @@ Tree lines:
 | `compaction` | The transcript was trimmed before this request. The stored numbers say by how much. |
 | `Step N` | One loop iteration. Its duration covers the request plus its tools. |
 | `llm · <model>` | One model request. A retry adds another line with `request N`. |
-| `tool · <name>` | One tool call. A blocked tool is shown with `[error]`. |
+| `tool · <name>` | One tool call. A blocked tool is shown with `[error]`. It has no token columns; the request above it owns the usage. |
 | duration | Time spent in that span. Empty for markers. |
-| `ttft …` | Time to first streamed token for that request. Absent when the provider returned the answer without streaming deltas. |
-| `9.6k/104 tok` | Input / output tokens of that request. Input grows every step because the transcript is resent. |
+| `ttft …` | Time to first streamed token for that request. Absent when the provider returned the answer without streaming deltas, for example a response that only contains tool calls. |
+| `9.6k/104 tok` | Input / output tokens of that request. Input grows every step because the transcript is resent. Cached input is recorded but not printed on this line. |
 | `$0.001387` | Cost of that request, priced with the model and rate in force when it ran. |
 | `[running]` | The span was still open when the trace was read; elapsed time is shown "so far". |
 | `[error]` | The request or tool failed. The run keeps the message in `error`. |
+
+### Token accounting around tool calls
+
+A step always starts with one `llm` span, and that span owns the usage of the
+request that decided what to do next. The `tool` spans below it are executions:
+they carry no tokens at all.
+
+A response that asks for a tool is still a normal model response. The provider
+bills it like any text answer and returns the same usage block — prompt tokens,
+completion tokens, cached input tokens, and the total. The only differences are
+`stop_reason: tool_calls` and the absence of a text delta. Myaaw stores that
+usage on the `llm` span; the `tool` spans only record the executions that follow.
+
+| What the provider returns | Stored on | Printed |
+| :--- | :--- | :--- |
+| `prompt_tokens` (includes cached) | `llm.input_tokens` | `9.6k` on the `llm` row, `Tokens input` in `summary` |
+| `cached_input_tokens` (part of the prompt) | `llm.cache_hit_tokens` | `cached` in `summary`, `--json`, `spans` table; not printed per row |
+| `completion_tokens` (text, thinking, tool-call JSON) | `llm.output_tokens` | `/209 tok` on the `llm` row |
+| `total_tokens` | not stored separately (`input + output`) | not printed |
+| — | `tool` span has no token fields | no token columns |
+
+Read the table as: **the request that decided to call a tool is what paid for
+it.** There is no separate "tool tokens" bucket anywhere, and nothing is
+missing from the turn total — `obs run` adds up every `llm` span in its header.
+
+```text
+Step 2                                             11.84s
+  llm · deepseek-v4-flash      1.77s  10.2k/82 tok  $0.000152
+  tool · bash                  7.20s
+```
+
+`10.2k/82 tok` belongs to the request that asked for the `bash` call. The 82
+completion tokens are the tool-call JSON the model generated; the prompt
+includes the transcript and the tool schema. The `tool` row has no token columns
+because executing a tool does not call a model. When a tool itself calls a paid
+API, that is priced separately through `tool_prices` (see
+[Tool pricing](#tool-pricing)) and lands on the `tool` span, not on the `llm`
+span.
+
+#### Why the tree makes tool calls look free
+
+The tree splits one step into a request row and execution rows. Only the request
+row has token columns; the execution rows are indented because they belong to
+that step, not because they have their own usage. That is a presentation
+boundary, not a billing boundary. In the worked example below, Step 1's 209
+output tokens were generated by the very request that chose `filesystem` and
+`bash`; the two `tool` rows that follow add no tokens of their own.
+
+Cached tokens are not a separate bucket either. They are the part of
+`prompt_tokens` that the provider served from its prompt cache, so they are
+already inside `input_tokens` and are not added on top. Pricing splits the
+prompt into `miss = prompt - cached` and `cached`, which is why two requests
+with similar input can differ several-fold in cost. The tree prints only the
+combined input, so read `cache_hit_tokens` from `--json` or the `spans` table
+when the cost looks surprising.
+
+One consequence of this layout: a **tool-call-only response has no `ttft`**.
+TTFT starts at the first streamed text or thinking delta. A model that answers
+with `tool_calls` and nothing else streams no delta, so the field is empty even
+though the request is billed.
+
+A retried request gets its own `llm` row per attempt, marked with `request N`, so
+a single step can show more than one `llm` line.
+
+#### Worked example: three steps, two tool calls
+
+```text
+Step 1                                             11.79s
+  llm · deepseek-v4-flash      2.12s  ttft 874ms  9.6k/209 tok  $0.001447
+  tool · filesystem            4.03s
+  tool · bash                  2.64s
+Step 2                                             11.84s
+  llm · deepseek-v4-flash      1.77s             10.2k/82 tok   $0.000152
+  tool · bash                  7.20s
+Step 3                                              7.82s
+  llm · deepseek-v4-flash      7.78s  ttft 1.01s 10.9k/291 tok  $0.000302
+```
+
+| Row | What was paid for |
+| :--- | :--- |
+| Step 1 `llm` | Request 1: the model read the system prompt and the user message, thought, and asked for `filesystem` + `bash`. The 209 output tokens cover the tool-call JSON (and any thinking); the 9.6k input is the prompt plus the tool schemas. |
+| Step 1 `tool` ×2 | Executions only: no tokens, no model cost. |
+| Step 2 `llm` | Request 2: it carries the two tool results, so input grows to 10.2k. The 82 output tokens are one `bash` tool call. There is no `ttft` because only tool calls were streamed, no text or thinking. |
+| Step 2 `tool` | Execution only. |
+| Step 3 `llm` | Request 3: it carries the last tool result and produces the final text/thinking — 291 output tokens, and `ttft` is present again. |
+
+Read the rows as "the request above, the executions below". A tool call never
+incurs tokens itself; the model request that decided it does, and that usage is
+always on the `llm` row. If you look only at the `tool` rows, the turn appears
+token-free; add the `llm` rows and the real bill is there. The cost difference
+between Step 1 and Step 3 despite similar input comes from prompt-cache hits,
+which are stored but not printed (see above).
 
 ### Glossary
 
@@ -248,7 +347,7 @@ Tree lines:
 | **request** | One call to the provider. A retried request stays in the same step and takes the next `request_index`. |
 | **retried** | Status of an attempt that failed before any output and was retried. The step and the run can still complete. |
 | **compaction** | Trimming of old turns to fit the context budget. Recorded as its own span with token counts before and after. |
-| **TTFT** | Time to first token: from sending the request until the first streamed delta. Includes queueing and prompt processing. |
+| **TTFT** | Time to first token: from sending the request until the first streamed delta. Includes queueing and prompt processing. Absent when no delta was streamed, for example a tool-call-only response. |
 | **generation** | Time from the first token to the end of the stream. Stored in `generation_ms`; not printed in the tree. |
 | **throughput** | `output_tokens ÷ (generation_ms ÷ 1000)`, in tokens per second. Derived, not stored. |
 | **input tokens** | Every token sent to the model: system prompt, history, tool results, and the new message. |
@@ -324,8 +423,9 @@ truncation, so a cut cannot leave half a credential behind.
 
 Override the list with `observability.redact_patterns` (JSON) or
 `OBS_REDACT_PATTERNS` (semicolon-separated, because commas are common inside a
-regular expression). An explicit empty list disables redaction. An invalid
-pattern is skipped with a log line instead of disabling recording.
+regular expression). An explicit empty list — or `OBS_REDACT_PATTERNS=none` —
+disables redaction. An invalid pattern is skipped with a log line instead of
+disabling recording.
 
 The shipped `config.json` template lists the four built-in patterns explicitly,
 so a fresh agent and a reset both show what is active. Deleting the key falls
@@ -338,6 +438,25 @@ back to the same built-in list.
 Cost is computed per model request, not per run. Switching models mid-session
 bills each request at the price of the model that served it, and a run's total is
 the sum of its `llm` spans.
+
+### Tool pricing
+
+Tools do not report token usage, so they are priced per **successful call**. A
+failed or blocked call is not charged.
+
+```json
+"observability": {
+  "tool_prices": {
+    "tavily_search": {"per_call": 0.008}
+  }
+}
+```
+
+or `OBS_TOOL_PRICES="tavily_search=0.008;image_gen=0.04"` (semicolon-separated;
+config wins when both are set). Tool spend is stored separately from model
+spend: `runs.tool_cost_usd` and the `cost_usd` of `tool` spans. The summary
+reports both totals, `Per tool` gets a COST column, and `Per trigger` gets a
+TOOLS column.
 
 ```text
 cost = (miss_tokens × input + cached_tokens × cache_hit + output_tokens × output) / 1_000_000
@@ -400,7 +519,8 @@ a missing entry cannot break a run.
   "max_content_chars": 16384,
   "store_content": true,
   "redact_patterns": ["(?i)bearer\\s+[a-z0-9._~+/=-]{16,}"],
-  "model_prices": { }
+  "model_prices": { },
+  "tool_prices": { }
 }
 ```
 
@@ -412,7 +532,8 @@ a missing entry cannot break a run.
 | `OBS_RETENTION_DAYS` | `30` | Delete older traces on open. `0` keeps everything. |
 | `OBS_MAX_CONTENT_CHARS` | `16384` | Cap for every stored content blob. |
 | `OBS_STORE_CONTENT` | `true` | Store prompts, answers, and tool payloads. |
-| `OBS_REDACT_PATTERNS` | built-in list | Semicolon-separated regular expressions masked as `[redacted]`. Empty uses the built-in patterns. |
+| `OBS_REDACT_PATTERNS` | built-in list | Semicolon-separated regular expressions masked as `[redacted]`. Empty uses the built-in patterns; `none` disables redaction. |
+| `OBS_TOOL_PRICES` | empty | Semicolon-separated `tool=price` pairs, for tools billed per successful call. |
 
 `enabled: false` means no database is opened and no span is built.
 
@@ -448,13 +569,16 @@ myaaw observability prune --before 2026-01-01
 myaaw observability prune --days 90 --vacuum    # compact the file too
 ```
 
+`--before` is interpreted in the local timezone, matching `runs --from/--to`.
+`--vacuum` needs exclusive access, so stop the agent first.
+
 ### `summary`
 
 ```text
 Observability · last 7 day(s)
 Runs 24 · errors 0 (0.0%)
 Tokens input 1.7M · cached 678.0k · output 13.2k
-Cost $0.0418 · latency p50 11.66s · p95 64.78s · TTFT p50 1.64s
+Cost $0.0418 models · $0.0080 tools · latency p50 11.66s · p95 64.78s · TTFT p50 1.64s
 Database 12.4 MB
 
 Per step
@@ -467,9 +591,15 @@ Per model
   deepseek-v4-flash                 67    953.4k     11.1k     $0.0368
   models/gemini-3.1-pro-previ…      16    534.7k       976           -
 
+Per trigger
+  TRIGGER       RUNS  ERRORS     INPUT    OUTPUT        COST       TOOLS
+  user            21       0    1.5M      12.9k     $0.0418     $0.0080
+  cron             2       0   93.2k       321           -           -
+  subagent         1       0   193.8k     1.5k           -           -
+
 Per tool
-  TOOL                              CALLS  ERRORS       AVG
-  playwright_browser_evaluate          18       0     1.37s
+  TOOL                              CALLS  ERRORS       AVG        COST
+  playwright_browser_evaluate          18       0     1.37s       $0.0080
 
 Highlights
   most expensive   run_12f3a4dcf4369022
@@ -478,10 +608,11 @@ Highlights
 
 | Block | Columns |
 | :--- | :--- |
-| Header | finished runs, runs that ended in `error`/`interrupted` and their share, summed tokens (input includes cached), summed cost, p50/p95 turn duration, p50 TTFT, and the on-disk database size |
+| Header | finished runs, runs that ended in `error`/`interrupted` and their share, summed tokens (input includes cached), summed model cost, tool cost, p50/p95 turn duration, p50 TTFT, and the on-disk database size |
 | `Per step` | step number, how many steps reached that depth, average and p95 step duration, total cost of requests in steps of that depth |
 | `Per model` | model id (`…` when the column is full), number of requests, prompt and completion tokens, cost |
-| `Per tool` | tool name, calls, failed calls, average duration |
+| `Per trigger` | trigger (`user`, `cron`, `subagent`, or `a2a`), runs, failed runs, prompt and completion tokens, model cost, tool cost |
+| `Per tool` | tool name, calls, failed calls, average duration, cost of successful calls |
 | `Highlights` | the most expensive and the slowest turn in the window |
 
 Long names are truncated with `…` so columns never drift; the full name is in
@@ -495,8 +626,9 @@ Runs (12 total)
   run_20d0cdbfc59102e7   2026-10-28 22:52:20 cli        user       completed 4.63s     $0.002067
 ```
 
-Columns are the run id, start time, channel, trigger (`user`, `cron`, or
-`subagent`), status, duration, and cost. `--model`, `--trigger`, `--from`, and
+Columns are the run id, start time, channel, trigger (`user`, `cron`,
+`subagent`, or `a2a`), status, duration, and cost. `COST` is model spend; tool
+spend is shown in `obs run` and the summary. `--model`, `--trigger`, `--from`, and
 `--to` narrow the list; the time flags accept `YYYY-MM-DD`, RFC3339, or unix
 milliseconds, and a date-only `--to` covers the whole day. On a
 terminal this becomes a picker instead. Each picker row shows the same identity
@@ -511,10 +643,10 @@ first. Picking one opens `session <conversation-id>`:
 
 ```text
 Session 4e7371da-… · 1 turn(s)
-  TURN TYPE  STARTED   RUN                    MODEL              STEPS DUR     TTFT   TOKENS      COST       STATUS
-  1    cli   23:34:25  run_2240477b6447ff48   deepseek-v4-flash  5     14.35s  809ms  63.1k/732   $0.003927  completed
+  TURN TYPE  TRIGGER  STARTED   RUN                    MODEL              STEPS DUR     TTFT   TOKENS      COST       STATUS
+  1    cli   user     23:34:25  run_2240477b6447ff48   deepseek-v4-flash  5     14.35s  809ms  63.1k/732   $0.003927  completed
 
-1 turn(s) · $0.003927 total
+1 turn(s) · $0.003927 models
 Open a turn:  myaaw obs run <run-id>  or  myaaw obs run 4e7371da.cli.1
 All runs:     myaaw obs runs
 ```
@@ -523,6 +655,7 @@ All runs:     myaaw obs runs
 | :--- | :--- |
 | `TURN` | Position inside the session, oldest first |
 | `TYPE` | Channel of that turn (`cli`, `telegram`, `discord`, `api`, `subagent`, …) |
+| `TRIGGER` | What started the turn (`user`, `cron`, `subagent`, `a2a`, or `-` for runs recorded before this field existed) |
 | `STARTED` | Start time; the session header carries the date |
 | `RUN` | Run id, usable with `obs run` |
 | `MODEL` | Model that served the turn (`…` when truncated) |
@@ -530,7 +663,7 @@ All runs:     myaaw obs runs
 | `DUR` | Turn duration |
 | `TTFT` | First-token time of the turn's first request |
 | `TOKENS` | Input / output tokens |
-| `COST` | Cost of the turn, or `unpriced` |
+| `COST` | Cost of the turn, or `unpriced`. This is model cost; tool spend is added to the footer and shown by `obs run`. |
 | `STATUS` | Run status; failed turns also print an `error:` line below |
 
 The footer's `4e7371da.cli.1` is the short turn reference: `obs run` accepts it

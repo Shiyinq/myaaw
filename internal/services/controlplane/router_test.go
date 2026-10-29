@@ -81,13 +81,14 @@ func TestRouterListsAgentsAndProxiesChat(t *testing.T) {
 
 	var chat struct {
 		Text     string `json:"text"`
+		RunID    string `json:"run_id"`
 		Timeline []struct {
 			Kind string `json:"kind"`
 			Text string `json:"text"`
 		} `json:"timeline"`
 	}
 	doJSON(t, app, "POST", "/agents/myfriend/chat", token, `{"user_id":1,"text":"hi"}`, fiber.StatusOK, &chat)
-	if chat.Text != "ok" || len(chat.Timeline) != 1 || chat.Timeline[0].Kind != "text" {
+	if chat.Text != "ok" || chat.RunID != "run_upstream" || len(chat.Timeline) != 1 || chat.Timeline[0].Kind != "text" {
 		t.Fatalf("chat response = %+v", chat)
 	}
 }
@@ -116,7 +117,7 @@ func TestRouterProxiesChatStream(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", resp.StatusCode, body)
 	}
 	stream := string(body)
-	for _, want := range []string{"event: thought", "event: done", `"text":"ok"`} {
+	for _, want := range []string{"event: thought", "event: done", `"text":"ok"`, `"run_id":"run_upstream"`} {
 		if !strings.Contains(stream, want) {
 			t.Errorf("stream missing %q:\n%s", want, stream)
 		}
@@ -1277,7 +1278,7 @@ func newUpstream(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/chat", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"text":"ok","timeline":[{"kind":"text","text":"ok"}]}`))
+		_, _ = w.Write([]byte(`{"text":"ok","run_id":"run_upstream","timeline":[{"kind":"text","text":"ok"}]}`))
 	})
 	mux.HandleFunc("/api/chat/stream", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
@@ -1287,7 +1288,7 @@ func newUpstream(t *testing.T) *httptest.Server {
 		if flusher != nil {
 			flusher.Flush()
 		}
-		_, _ = fmt.Fprint(w, "event: done\ndata: {\"ok\":true,\"text\":\"ok\"}\n\n")
+		_, _ = fmt.Fprint(w, "event: done\ndata: {\"ok\":true,\"text\":\"ok\",\"run_id\":\"run_upstream\"}\n\n")
 		if flusher != nil {
 			flusher.Flush()
 		}

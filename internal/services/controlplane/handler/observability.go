@@ -54,7 +54,7 @@ func (h *Handler) ObservabilitySummary(c fiber.Ctx) error {
 // @Param        channel query string false "Filter by channel"
 // @Param        conversation query string false "Filter by conversation id (one session)"
 // @Param        model query string false "Filter by model (exact match)"
-// @Param        trigger query string false "Filter by trigger: user, cron, or subagent"
+// @Param        trigger query string false "Filter by trigger: user, cron, subagent, or a2a"
 // @Param        from query int false "Start of the window (unix ms)"
 // @Param        to query int false "End of the window (unix ms)"
 // @Success      200 {object} service.RunList

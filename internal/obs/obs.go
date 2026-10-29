@@ -85,6 +85,9 @@ type Run struct {
 	Provider       string `json:"provider,omitempty"`
 	Model          string `json:"model,omitempty"`
 	Agent          string `json:"agent,omitempty"`
+	// ToolCostUSD is what the tool calls of this run cost at the configured
+	// per-call prices. It is kept apart from ModelCostUSD on purpose.
+	ToolCostUSD float64 `json:"tool_cost_usd,omitempty"`
 	// Trigger says what started the run: a user message ("user"), a cron job
 	// ("cron"), or a subagent ("subagent"). Heartbeats are not recorded.
 	Trigger string `json:"trigger,omitempty"`
@@ -165,6 +168,9 @@ type Config struct {
 	// RedactPatterns masks secrets in stored content. Nil uses the built-in
 	// patterns; an explicit empty slice disables redaction.
 	RedactPatterns []string
+	// ToolPrices is USD per successful call, keyed by tool name. Tools cannot
+	// report usage, so the call is the only unit that can be priced.
+	ToolPrices map[string]float64
 	// Now overrides the clock in tests.
 	Now func() time.Time
 }

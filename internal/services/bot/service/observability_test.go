@@ -160,6 +160,25 @@ func TestRunRecordsTraceEndToEnd(t *testing.T) {
 	}
 }
 
+func TestRunTrigger(t *testing.T) {
+	cases := []struct {
+		channel string
+		trigger string
+		want    string
+	}{
+		{"telegram", "", "user"},
+		{"cli", "", "user"},
+		{"a2a", "", "a2a"},
+		{"telegram", "cron", "cron"},
+		{"subagent", "subagent", "subagent"},
+	}
+	for _, tc := range cases {
+		if got := runTrigger(tc.channel, tc.trigger); got != tc.want {
+			t.Errorf("runTrigger(%q, %q) = %q, want %q", tc.channel, tc.trigger, got, tc.want)
+		}
+	}
+}
+
 func TestObsPricesConvertsOverrides(t *testing.T) {
 	converted := obsPrices(map[string]config.ModelPriceConfig{
 		"deepseek-chat": {

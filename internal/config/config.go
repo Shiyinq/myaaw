@@ -100,6 +100,7 @@ var (
 	ObsStoreContent    = true
 	ObsRedactPatterns  []string
 	ObsModelPrices     map[string]ModelPriceConfig
+	ObsToolPrices      map[string]ToolPriceConfig
 )
 
 // MaxQueueWorkers caps the configured concurrency so a typo cannot spawn an
@@ -127,9 +128,16 @@ type ObservabilityConfig struct {
 	MaxContentChars int   `json:"max_content_chars,omitempty"`
 	StoreContent    *bool `json:"store_content,omitempty"`
 	// RedactPatterns masks secrets in stored content. Nil keeps the built-in
-	// patterns; an explicit empty list disables redaction.
-	RedactPatterns []string                    `json:"redact_patterns,omitempty"`
+	// patterns; a pointer to an empty list disables redaction.
+	RedactPatterns *[]string                   `json:"redact_patterns,omitempty"`
 	ModelPrices    map[string]ModelPriceConfig `json:"model_prices,omitempty"`
+	ToolPrices     map[string]ToolPriceConfig  `json:"tool_prices,omitempty"`
+}
+
+// ToolPriceConfig prices one successful tool call. Tools do not report usage,
+// so the only unit this can charge for is the call itself.
+type ToolPriceConfig struct {
+	PerCall float64 `json:"per_call,omitempty"`
 }
 
 // ModelPriceConfig is a model price in USD per one million tokens.
@@ -174,19 +182,47 @@ func splitPatternList(raw string) []string {
 	return patterns
 }
 
+// parseToolPrices reads OBS_TOOL_PRICES as name=price pairs separated by
+// semicolons, for example "tavily_search=0.008;image_gen=0.04".
+func parseToolPrices(raw string) map[string]ToolPriceConfig {
+	prices := map[string]ToolPriceConfig{}
+	for _, entry := range strings.Split(raw, ";") {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		price, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if name == "" || err != nil || price < 0 {
+			continue
+		}
+		prices[name] = ToolPriceConfig{PerCall: price}
+	}
+	if len(prices) == 0 {
+		return nil
+	}
+	return prices
+}
+
 // EffectiveObservability resolves observability settings from .env and
 // config.json, applying defaults for anything unset.
 func EffectiveObservability() ObservabilityConfig {
 	enabled := ObsEnabled
 	storeContent := ObsStoreContent
 	retentionDays := ObsRetentionDays
+	var redactPatterns *[]string
+	if ObsRedactPatterns != nil {
+		patterns := append([]string{}, ObsRedactPatterns...)
+		redactPatterns = &patterns
+	}
 	return ObservabilityConfig{
 		Enabled:         &enabled,
 		RetentionDays:   &retentionDays,
 		MaxContentChars: ObsMaxContentChars,
 		StoreContent:    &storeContent,
-		RedactPatterns:  ObsRedactPatterns,
+		RedactPatterns:  redactPatterns,
 		ModelPrices:     ObsModelPrices,
+		ToolPrices:      ObsToolPrices,
 	}
 }
 
@@ -407,7 +443,15 @@ func LoadBaseConfig() {
 	ObsMaxContentChars = envInt("OBS_MAX_CONTENT_CHARS", ObsMaxContentChars)
 	ObsStoreContent = envBool("OBS_STORE_CONTENT", ObsStoreContent)
 	if raw := strings.TrimSpace(os.Getenv("OBS_REDACT_PATTERNS")); raw != "" {
-		ObsRedactPatterns = splitPatternList(raw)
+		if strings.EqualFold(raw, "none") {
+			// An explicit empty list disables redaction in the recorder.
+			ObsRedactPatterns = []string{}
+		} else {
+			ObsRedactPatterns = splitPatternList(raw)
+		}
+	}
+	if raw := strings.TrimSpace(os.Getenv("OBS_TOOL_PRICES")); raw != "" {
+		ObsToolPrices = parseToolPrices(raw)
 	}
 	LLMStreamTimeoutSeconds = envInt("LLM_STREAM_TIMEOUT_SECONDS", LLMStreamTimeoutSeconds)
 	AgentRunTimeoutSeconds = envInt("AGENT_RUN_TIMEOUT_SECONDS", AgentRunTimeoutSeconds)
@@ -546,9 +590,12 @@ func LoadBaseConfig() {
 				ObsStoreContent = *obs.StoreContent
 			}
 			if obs.RedactPatterns != nil {
-				ObsRedactPatterns = append([]string(nil), obs.RedactPatterns...)
+				ObsRedactPatterns = append([]string{}, (*obs.RedactPatterns)...)
 			}
 			ObsModelPrices = obs.ModelPrices
+			if len(obs.ToolPrices) > 0 {
+				ObsToolPrices = obs.ToolPrices
+			}
 		}
 	}
 

@@ -28,6 +28,7 @@ type Recorder struct {
 	maxChars     int
 	storeContent bool
 	redact       []*regexp.Regexp
+	toolPrices   map[string]float64
 
 	mu           sync.Mutex
 	run          Run
@@ -43,6 +44,7 @@ type Recorder struct {
 	firstToken   time.Time
 	requestIndex int
 	llmCost      float64
+	toolCost     float64
 	ended        bool
 
 	queueMu  sync.Mutex
@@ -112,6 +114,7 @@ func New(store *Store, pricer *Pricer, cfg Config) *Recorder {
 		maxChars:     maxChars,
 		storeContent: cfg.StoreContent,
 		redact:       compileRedactPatterns(patterns),
+		toolPrices:   cfg.ToolPrices,
 		byID:         map[string]*Span{},
 		toolSpans:    map[string]*Span{},
 		dirty:        map[string]bool{},
@@ -447,6 +450,7 @@ func (r *Recorder) endLLMLocked(ev Event, at time.Time) {
 	r.run.OutputTokens += llm.OutputTokens
 	r.run.CacheHitTokens += llm.CacheHitTokens
 	r.run.ModelCostUSD = r.llmCost
+	r.run.ToolCostUSD = r.toolCost
 	r.run.TotalMs = at.Sub(time.UnixMilli(r.run.StartedAt)).Milliseconds()
 	if r.run.FirstTokenMs == 0 && llm.FirstTokenMs > 0 {
 		r.run.FirstTokenMs = llm.FirstTokenMs
@@ -525,6 +529,14 @@ func (r *Recorder) endToolLocked(ev Event, at time.Time) {
 		span.Status = StatusError
 		span.Error = r.redactContent(ev.ErrorText)
 	}
+	if !ev.IsError {
+		if price := r.toolPrices[span.Name]; price > 0 {
+			span.CostUSD = price
+			r.toolCost += price
+			r.run.ToolCostUSD = r.toolCost
+			r.runDirty = true
+		}
+	}
 	if r.storeContent {
 		span.OutputJSON = r.captureN(ev.ToolOutput, r.maxChars)
 	}
@@ -590,6 +602,7 @@ func (r *Recorder) endRunLocked(ev Event, at time.Time) {
 		}
 	}
 	r.run.ModelCostUSD = r.llmCost
+	r.run.ToolCostUSD = r.toolCost
 	r.run.Status = status
 	r.run.Error = r.redactContent(ev.Err)
 	r.run.FirstTokenMs = r.runFirstTokenLocked()
