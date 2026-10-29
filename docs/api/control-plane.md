@@ -650,8 +650,12 @@ plane and are not reflected.
 | `max_content_chars` | Byte cap for every stored content blob (default 16384). |
 | `store_content` | Store prompts, answers, and tool payloads. `false` keeps metadata and token counts only. |
 | `redact_patterns` | Regular expressions masked as `[redacted]` before content is stored or exported. An empty list disables redaction. |
-| `tool_prices` | Per-call prices for tools, as `{"<tool>": {"per_call": 0.008}}`. Failed calls are not charged. |
-| `model_prices` | Per-model prices that override the built-in table. |
+| `tool_prices` | Per-call prices for tools, as `{"<tool>": {"per_call": 0.008}}`. Failed calls are not charged. Persisted to `config/tool_prices.json`. |
+| `model_prices` | Per-model prices that override the built-in table. Persisted to `config/model_prices.json`. |
+
+Price maps are written to those files, never back into `config.json`. `GET`
+merges the file values over any legacy inline map, so clients always see the
+effective table.
 
 ```bash
 curl -X PATCH http://localhost:9000/agents/myfriend/config \

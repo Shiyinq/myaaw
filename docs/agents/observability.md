@@ -460,28 +460,27 @@ the sum of its `llm` spans.
 Tools do not report token usage, so they are priced per **successful call**. A
 failed or blocked call is not charged.
 
+Prices live in `config/tool_prices.json` next to `config.json`:
+
 ```json
-"observability": {
-  "tool_prices": {
-    "tavily_search": {"per_call": 0.008}
-  }
+{
+  "tavily_search": {"per_call": 0.008}
 }
 ```
 
-or `OBS_TOOL_PRICES="tavily_search=0.008;image_gen=0.04"` (semicolon-separated;
-config wins when both are set). Tool spend is stored separately from model
-spend: `runs.tool_cost_usd` and the `cost_usd` of `tool` spans. The summary
-reports both totals, `Per tool` gets a COST column, and `Per trigger` gets a
-TOOLS column.
+Legacy `observability.tool_prices` in `config.json` still works, but a matching
+entry in the file wins. `OBS_TOOL_PRICES="tavily_search=0.008;image_gen=0.04"`
+(semicolon-separated) is the lowest config layer: inline config and the file
+override it. Tool spend is stored separately from model spend:
+`runs.tool_cost_usd` and the `cost_usd` of `tool` spans. The summary reports
+both totals, `Per tool` gets a COST column, and `Per trigger` gets a TOOLS
+column.
 
 ```text
 cost = (miss_tokens × input + cached_tokens × cache_hit + output_tokens × output) / 1_000_000
 ```
 
 Prices are USD per one million tokens. `input` is the cache-miss price.
-
-Tool calls are not priced. Only tokens cost money here, so there is no
-per-tool price table to maintain.
 
 ### Peak and off-peak
 
@@ -518,9 +517,69 @@ after the entry is added; the flags describe recorded cost, not today's table.
 
 ### Overriding prices
 
-Add or replace entries under `observability.model_prices` in `config.json`. The
-built-in table is only a default; unknown models cost `0` and are logged once so
-a missing entry cannot break a run.
+Add or replace entries in `config/model_prices.json` (same folder as
+`config.json`). The map is keyed by model name and an entry replaces the whole
+model price:
+
+```json
+{
+  "gemini-3.1-pro-preview": {"input": 1.25, "output": 10.0}
+}
+```
+
+Legacy `observability.model_prices` in `config.json` still works, but the file
+wins per key. Missing files are ignored; invalid JSON logs a warning and keeps
+the lower layer, so a bad price file cannot break a run. Keys starting with `_`
+are ignored, so a file can carry `"_comment"` metadata. The built-in table is
+only a default; unknown models cost `0` and are logged once.
+
+#### Price file format
+
+`config/model_prices.json` — USD per one million tokens:
+
+| Field | Required | Meaning |
+|---|---|---|
+| `input` | yes | Cache-miss prompt price |
+| `cache_hit` | no | Cached prompt price (`0` when omitted) |
+| `output` | yes | Completion price |
+| `off_peak` | no | Object with `input`/`cache_hit`/`output` used outside peak windows |
+| `peak_windows` | no | `["Mon-Fri 01:00-04:00 UTC", …]`; used together with `off_peak` |
+
+`config/tool_prices.json` — USD per successful call:
+
+| Field | Required | Meaning |
+|---|---|---|
+| `per_call` | yes | Price for one successful call; failed/blocked calls are not charged |
+
+Full examples:
+
+`config/model_prices.json`:
+
+```json
+{
+  "deepseek-chat": {
+    "input": 0.3,
+    "cache_hit": 0.006,
+    "output": 1.2,
+    "off_peak": { "input": 0.15, "cache_hit": 0.003, "output": 0.6 },
+    "peak_windows": ["Mon-Fri 01:00-04:00 UTC", "Mon-Fri 06:00-10:00 UTC"]
+  },
+  "gemini-3.1-pro-preview": { "input": 1.25, "cache_hit": 0.31, "output": 10.0 }
+}
+```
+
+`config/tool_prices.json`:
+
+```json
+{
+  "tavily_search": { "per_call": 0.008 },
+  "image_gen": { "per_call": 0.04 }
+}
+```
+
+Both files accept `"_comment"` and any other key starting with `_`; the loader
+ignores them. Invalid JSON entries and negative prices are logged and skipped,
+so a typo cannot break the agent.
 
 ---
 
@@ -534,11 +593,23 @@ a missing entry cannot break a run.
   "retention_days": 30,
   "max_content_chars": 16384,
   "store_content": true,
-  "redact_patterns": ["(?i)bearer\\s+[a-z0-9._~+/=-]{16,}"],
-  "model_prices": { },
-  "tool_prices": { }
+  "redact_patterns": ["(?i)bearer\\s+[a-z0-9._~+/=-]{16,}"]
 }
 ```
+
+Price tables live beside `config.json` and are optional:
+
+```text
+config/
+├── config.json
+├── model_prices.json
+└── tool_prices.json
+```
+
+`PATCH /agents/<name>/config` with `model_prices` or `tool_prices` writes these
+files, so `config.json` stays free of price data. New agents get both files from
+the onboarding template; existing agents get them on the next
+initialize/onboard, seeded from their inline prices when present.
 
 `.env` (takes effect when the key is not set in `config.json`):
 

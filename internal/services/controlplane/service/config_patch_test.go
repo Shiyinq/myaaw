@@ -282,6 +282,48 @@ func TestConfigPatchCanDisableRedaction(t *testing.T) {
 	}
 }
 
+func TestConfigPatchMigratesInlinePricesToFiles(t *testing.T) {
+	cfgWithPrices := testConfig()
+	cfgWithPrices.Observability = &config.ObservabilityConfig{
+		ModelPrices: map[string]config.ModelPriceConfig{"legacy": {Input: 1, Output: 2}},
+		ToolPrices:  map[string]config.ToolPriceConfig{"legacy_tool": {PerCall: 0.5}},
+	}
+	setupConfigAgent(t, cfgWithPrices)
+	svc := NewConfigService()
+
+	value := 120
+	if _, err := svc.Patch("myfriend", ConfigPatch{Bot: &BotPatch{MaxIterations: &value}}); err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+
+	dir, err := agentConfigDir("myfriend")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, config.ModelPricesFile)); err != nil {
+		t.Fatalf("model prices file missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, config.ToolPricesFile)); err != nil {
+		t.Fatalf("tool prices file missing: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "model_prices") || strings.Contains(string(raw), "tool_prices") {
+		t.Fatalf("config.json still contains price maps: %s", raw)
+	}
+
+	reloaded := loadTestConfig(t)
+	if got := reloaded.Observability.ModelPrices["legacy"].Input; got != 1 {
+		t.Fatalf("migrated model price = %v", got)
+	}
+	if got := reloaded.Observability.ToolPrices["legacy_tool"].PerCall; got != 0.5 {
+		t.Fatalf("migrated tool price = %v", got)
+	}
+}
+
 func TestConfigPatchToolPrices(t *testing.T) {
 	setupConfigAgent(t, testConfig())
 	svc := NewConfigService()

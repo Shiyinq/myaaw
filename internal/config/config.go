@@ -829,6 +829,11 @@ func LoadBaseConfig() {
 		}
 	}
 
+	// Price tables can live next to config.json; they win over inline values.
+	for _, warning := range ApplyPriceFiles() {
+		log.Printf("Warning: %s", warning)
+	}
+
 	// YOLO is an explicit runtime opt-out and wins over config.json.
 	if envBool("MYAAW_YOLO", false) {
 		ApprovalsMode = "off"

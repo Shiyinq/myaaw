@@ -81,28 +81,6 @@
             "\\bsk-[A-Za-z0-9_-]{16,}",
             "\\bgh[pousr]_[A-Za-z0-9]{20,}",
             "\\bxox[abprs]-[A-Za-z0-9-]{10,}"
-        ],
-        "tool_prices": {},
-        "model_prices": {
-            "deepseek-chat": {
-                "input": 0.3,
-                "cache_hit": 0.006,
-                "output": 1.2,
-                "off_peak": {
-                    "input": 0.15,
-                    "cache_hit": 0.003,
-                    "output": 0.6
-                },
-                "peak_windows": [
-                    "Mon-Fri 01:00-04:00 UTC",
-                    "Mon-Fri 06:00-10:00 UTC"
-                ]
-            },
-            "gpt-6.1-sol": {
-                "input": 2.0,
-                "cache_hit": 0.1,
-                "output": 10.0
-            }
-        }
+        ]
     }
 }

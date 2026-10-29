@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -213,6 +214,38 @@ func loadAgentConfig(agentName string) (*config.Config, error) {
 	var cfg config.Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
+	}
+
+	// Model and tool prices live in their own files next to config.json. Merge
+	// them over any inline values so views and patches see the effective table.
+	models, tools, warnings := config.LoadPriceFiles(filepath.Dir(path))
+	for _, warning := range warnings {
+		log.Printf("Warning: %s", warning)
+	}
+	if len(models) > 0 || len(tools) > 0 {
+		if cfg.Observability == nil {
+			cfg.Observability = &config.ObservabilityConfig{}
+		}
+		if len(models) > 0 {
+			merged := make(map[string]config.ModelPriceConfig, len(cfg.Observability.ModelPrices)+len(models))
+			for name, price := range cfg.Observability.ModelPrices {
+				merged[name] = price
+			}
+			for name, price := range models {
+				merged[name] = price
+			}
+			cfg.Observability.ModelPrices = merged
+		}
+		if len(tools) > 0 {
+			merged := make(map[string]config.ToolPriceConfig, len(cfg.Observability.ToolPrices)+len(tools))
+			for name, price := range cfg.Observability.ToolPrices {
+				merged[name] = price
+			}
+			for name, price := range tools {
+				merged[name] = price
+			}
+			cfg.Observability.ToolPrices = merged
+		}
 	}
 	return &cfg, nil
 }
@@ -467,11 +500,65 @@ func saveAgentConfig(agentName string, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(cfg, "", "    ")
+	// Price tables live in model_prices.json and tool_prices.json; never write
+	// them back into config.json. Inline values from older agents are moved to
+	// the files once, so an unrelated patch cannot drop them.
+	saved := *cfg
+	if cfg.Observability != nil {
+		dir := filepath.Dir(path)
+		if len(cfg.Observability.ModelPrices) > 0 {
+			if _, statErr := os.Stat(filepath.Join(dir, config.ModelPricesFile)); os.IsNotExist(statErr) {
+				if err := config.WriteModelPricesFile(dir, cfg.Observability.ModelPrices); err != nil {
+					log.Printf("Warning: could not migrate inline model prices: %v", err)
+				}
+			}
+		}
+		if len(cfg.Observability.ToolPrices) > 0 {
+			if _, statErr := os.Stat(filepath.Join(dir, config.ToolPricesFile)); os.IsNotExist(statErr) {
+				if err := config.WriteToolPricesFile(dir, cfg.Observability.ToolPrices); err != nil {
+					log.Printf("Warning: could not migrate inline tool prices: %v", err)
+				}
+			}
+		}
+		observability := *cfg.Observability
+		observability.ModelPrices = nil
+		observability.ToolPrices = nil
+		saved.Observability = &observability
+	}
+	data, err := json.MarshalIndent(&saved, "", "    ")
 	if err != nil {
 		return err
 	}
 	return writeFileAtomic(path, append(data, '\n'))
+}
+
+func agentConfigDir(agentName string) (string, error) {
+	path, err := agentdir.ConfigPath(agentName)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(path), nil
+}
+
+// resetPriceFiles restores the embedded price templates for one agent.
+func resetPriceFiles(agentName string) error {
+	dir, err := agentConfigDir(agentName)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for _, name := range []string{config.ModelPricesFile, config.ToolPricesFile} {
+		data, err := myaaw.DefaultMyaawDir.ReadFile(".myaaw/config/" + name)
+		if err != nil {
+			return err
+		}
+		if err := writeFileAtomic(filepath.Join(dir, name), data); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // writeFileAtomic writes data through a temp file in the same directory, so a
@@ -610,6 +697,22 @@ func (s *ConfigService) Patch(agentName string, patch ConfigPatch) (ConfigView, 
 	if err := applyConfigPatch(cfg, patch); err != nil {
 		return ConfigView{}, err
 	}
+	if patch.Observability != nil {
+		dir, err := agentConfigDir(agentName)
+		if err != nil {
+			return ConfigView{}, err
+		}
+		if patch.Observability.ModelPrices != nil {
+			if err := config.WriteModelPricesFile(dir, cfg.Observability.ModelPrices); err != nil {
+				return ConfigView{}, err
+			}
+		}
+		if patch.Observability.ToolPrices != nil {
+			if err := config.WriteToolPricesFile(dir, cfg.Observability.ToolPrices); err != nil {
+				return ConfigView{}, err
+			}
+		}
+	}
 	if err := saveAgentConfig(agentName, cfg); err != nil {
 		return ConfigView{}, err
 	}
@@ -644,6 +747,9 @@ func (s *ConfigService) ResetFields(agentName string, req ConfigResetRequest) (C
 	}
 	if req.Observability != nil && *req.Observability {
 		cfg.Observability = tmpl.Observability
+		if err := resetPriceFiles(agentName); err != nil {
+			return ConfigView{}, err
+		}
 	}
 	if req.Approvals != nil && *req.Approvals {
 		cfg.Approvals = tmpl.Approvals
@@ -662,6 +768,9 @@ func (s *ConfigService) ResetConfig(agentName string) (ConfigView, error) {
 		return ConfigView{}, err
 	}
 	if err := saveAgentConfig(agentName, tmpl); err != nil {
+		return ConfigView{}, err
+	}
+	if err := resetPriceFiles(agentName); err != nil {
 		return ConfigView{}, err
 	}
 	return configView(tmpl), nil

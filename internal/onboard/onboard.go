@@ -584,14 +584,67 @@ func setupHome(targetDir string) error {
 		configReady = true
 	}
 	if homeReady && configReady {
-		return nil
+		return ensurePriceFiles(targetDir)
 	}
 	// Skills are opt-in: the template copy skips them and onboarding installs
 	// only the selected ones.
 	if err := extractEmbedDirExcept(myaaw.DefaultMyaawDir, ".myaaw", targetDir, "skills"); err != nil {
 		return err
 	}
-	return os.MkdirAll(filepath.Join(targetDir, "skills"), 0o755)
+	if err := os.MkdirAll(filepath.Join(targetDir, "skills"), 0o755); err != nil {
+		return err
+	}
+	return ensurePriceFiles(targetDir)
+}
+
+// ensurePriceFiles adds the price tables to an agent that does not have them
+// yet. New agents are seeded from the embedded template; older agents with
+// inline prices get their own values written to the files so nothing is lost.
+// Existing files are never overwritten.
+func ensurePriceFiles(targetDir string) error {
+	dir := filepath.Join(targetDir, "config")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	var inline *config.Config
+	if data, err := os.ReadFile(filepath.Join(dir, "config.json")); err == nil {
+		var cfg config.Config
+		if json.Unmarshal(data, &cfg) == nil {
+			inline = &cfg
+		}
+	}
+
+	modelPath := filepath.Join(dir, "model_prices.json")
+	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
+		if inline != nil && inline.Observability != nil && len(inline.Observability.ModelPrices) > 0 {
+			if err := config.WriteModelPricesFile(dir, inline.Observability.ModelPrices); err != nil {
+				return err
+			}
+		} else if err := writeEmbeddedPriceFile(dir, "model_prices.json"); err != nil {
+			return err
+		}
+	}
+
+	toolPath := filepath.Join(dir, "tool_prices.json")
+	if _, err := os.Stat(toolPath); os.IsNotExist(err) {
+		if inline != nil && inline.Observability != nil && len(inline.Observability.ToolPrices) > 0 {
+			if err := config.WriteToolPricesFile(dir, inline.Observability.ToolPrices); err != nil {
+				return err
+			}
+		} else if err := writeEmbeddedPriceFile(dir, "tool_prices.json"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeEmbeddedPriceFile(dir, name string) error {
+	data, err := myaaw.DefaultMyaawDir.ReadFile(".myaaw/config/" + name)
+	if err != nil {
+		return err
+	}
+	return WriteFileAtomic(filepath.Join(dir, name), data)
 }
 
 func ensureEnvFile(path string) (bool, error) {
