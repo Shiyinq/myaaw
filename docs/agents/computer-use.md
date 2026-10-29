@@ -21,7 +21,7 @@ backends are a separate effort: Windows needs `SendInput` + UIAutomation +
 capture APIs, Linux needs X11 (XTest/XGetImage) or Wayland (portal + libei),
 each with different security models and headless CI runners. That is why
 native Windows/Linux drivers are explicitly out of scope for the first
-iteration (see `docs/computer-use-plan.md`).
+iteration.
 
 ---
 
