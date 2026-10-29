@@ -7,6 +7,103 @@ import (
 	"myaaw/internal/provider"
 )
 
+func TestEstimateTokensCountsImagesFlat(t *testing.T) {
+	msg := provider.Message{Role: "tool", Content: []provider.ContentItem{{
+		Type: "image_url", ImageURL: &provider.ImageInfo{URL: "data:image/png;base64,AAAA"},
+	}}}
+	if got := EstimateTokens([]provider.Message{msg}); got < imageTokenCost {
+		t.Fatalf("tokens = %d; want at least %d", got, imageTokenCost)
+	}
+}
+
+func imageToolMessage(dataSize int) provider.Message {
+	return provider.Message{
+		Role: "tool",
+		Name: "screenshot",
+		Content: []provider.ContentItem{
+			{Type: "text", Text: "captured"},
+			{Type: "image_url", ImageURL: &provider.ImageInfo{
+				URL: "data:image/png;base64," + strings.Repeat("A", dataSize),
+			}},
+		},
+	}
+}
+
+func imageSteps(count, dataSize int) []provider.Message {
+	messages := make([]provider.Message, 0, count*2)
+	for i := 0; i < count; i++ {
+		messages = append(messages,
+			provider.Message{Role: "assistant", Content: "thinking"},
+			imageToolMessage(dataSize),
+		)
+	}
+	return messages
+}
+
+func countImages(messages []provider.Message) int {
+	total := 0
+	for i := range messages {
+		count, _ := messageImageUsage(&messages[i])
+		total += count
+	}
+	return total
+}
+
+func TestEvictTranscriptImagesByCount(t *testing.T) {
+	messages := imageSteps(150, 16)
+	kept := EvictTranscriptImages(messages, 100, 0)
+
+	if got := countImages(kept); got != 100 {
+		t.Fatalf("images = %d, want 100", got)
+	}
+	// The newest batch is never evicted.
+	if count, _ := messageImageUsage(&kept[len(kept)-1]); count != 1 {
+		t.Fatal("newest image batch was evicted")
+	}
+	// Evicted tool messages keep their text and gain a placeholder.
+	if text := provider.MessageText(kept[1]); !strings.Contains(text, "captured") || !strings.Contains(text, imagePlaceholder) {
+		t.Fatalf("evicted message = %q", text)
+	}
+}
+
+func TestEvictTranscriptImagesByBytes(t *testing.T) {
+	messages := imageSteps(10, 1000)
+	kept := EvictTranscriptImages(messages, 0, 5000)
+
+	bytes := 0
+	for i := range kept {
+		_, b := messageImageUsage(&kept[i])
+		bytes += b
+	}
+	if bytes > 5000 {
+		t.Fatalf("image bytes = %d, want <= 5000", bytes)
+	}
+	if got := countImages(kept); got == 0 || got >= 10 {
+		t.Fatalf("images = %d, want some but not all", got)
+	}
+}
+
+func TestEvictTranscriptImagesKeepsNewestOverBudget(t *testing.T) {
+	messages := imageSteps(1, 10000)
+	kept := EvictTranscriptImages(messages, 0, 100)
+	if got := countImages(kept); got != 1 {
+		t.Fatalf("images = %d; the newest batch must survive", got)
+	}
+}
+
+func TestEvictTranscriptImagesIsIdempotent(t *testing.T) {
+	messages := imageSteps(20, 16)
+	first := EvictTranscriptImages(messages, 5, 0)
+	countAfterFirst := countImages(first)
+	second := EvictTranscriptImages(first, 5, 0)
+	if countImages(second) != countAfterFirst {
+		t.Fatalf("second eviction changed the transcript: %d -> %d", countAfterFirst, countImages(second))
+	}
+	if countAfterFirst != 5 {
+		t.Fatalf("images after eviction = %d, want 5", countAfterFirst)
+	}
+}
+
 func TestMigrateLegacyTranscriptExpandsTraceOnce(t *testing.T) {
 	legacy := []provider.Message{
 		{Role: "user", Content: "hello"},

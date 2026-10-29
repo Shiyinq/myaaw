@@ -64,6 +64,12 @@ type RunConfig struct {
 	// RepeatToolCallLimit warns the model after the same tool+arguments pair
 	// has been executed this many times. Zero uses the configured default.
 	RepeatToolCallLimit int
+	// MaxImageCount limits how many image items stay in the transcript. Older
+	// batches are replaced with a text placeholder. Zero uses the configured
+	// default; negative disables the limit.
+	MaxImageCount int
+	// MaxImageBytes limits the total data-URL bytes of images in the transcript.
+	MaxImageBytes int
 
 	// TransformContext runs immediately before compaction. Use it to inject
 	// or prune context at the transcript level.
@@ -94,6 +100,8 @@ func DefaultRunConfig(model string) RunConfig {
 		MaxToolOutputBytes:  config.AgentMaxToolOutputBytes,
 		ContextMaxTokens:    config.AgentContextMaxTokens,
 		RepeatToolCallLimit: config.AgentRepeatToolCallLimit,
+		MaxImageCount:       config.AgentMaxImageCount,
+		MaxImageBytes:       config.AgentMaxImageBytes,
 		RunTimeout:          time.Duration(config.AgentRunTimeoutSeconds) * time.Second,
 		ToolTimeout:         time.Duration(config.AgentToolTimeoutSeconds) * time.Second,
 	}
@@ -145,6 +153,12 @@ func (a *Agent) applyDefaults(cfg RunConfig) RunConfig {
 	}
 	if cfg.RepeatToolCallLimit == 0 {
 		cfg.RepeatToolCallLimit = config.AgentRepeatToolCallLimit
+	}
+	if cfg.MaxImageCount == 0 {
+		cfg.MaxImageCount = config.AgentMaxImageCount
+	}
+	if cfg.MaxImageBytes == 0 {
+		cfg.MaxImageBytes = config.AgentMaxImageBytes
 	}
 	if cfg.RunTimeout == 0 {
 		cfg.RunTimeout = time.Duration(config.AgentRunTimeoutSeconds) * time.Second

@@ -498,6 +498,8 @@ Neither channel adds new configuration. Both use:
 |---|---|---:|---|---|
 | `AGENT_CONTEXT_MAX_TOKENS` | `context_max_tokens` | `64000` | Token budget before compaction | `< 0` → `0`; `0` disables |
 | `AGENT_MAX_TOOL_OUTPUT_BYTES` | `max_tool_output_bytes` | `32768` | Tool output limit before truncation | `<= 0` → `32768` |
+| `AGENT_MAX_IMAGE_COUNT` | — | `100` | Image items kept in the transcript | `< 0` → `0` (unlimited) |
+| `AGENT_MAX_IMAGE_BYTES` | — | `25165824` (24 MB) | Total data-URL bytes of images in the transcript | `< 0` → `0` (unlimited) |
 | `MYAAW_COMPUTER_USE` | `computer_use.enabled` | `false` | Register the desktop `computer` tool (macOS) | boolean |
 | `AGENT_REPEAT_TOOL_CALL_LIMIT` | `repeat_tool_call_limit` | `3` | Warning for identical tool+args | `< 0` → `0`; `0` disables |
 | `AGENT_TOOL_TIMEOUT_SECONDS` | `tool_timeout_seconds` | `300` | Per-tool timeout | `< 0` → `0`; `0` disables |
@@ -560,6 +562,8 @@ Per-agent tool exclusion does not use global config; use `Agent.WithExcludedTool
 ```dotenv
 AGENT_CONTEXT_MAX_TOKENS=64000
 AGENT_MAX_TOOL_OUTPUT_BYTES=32768
+AGENT_MAX_IMAGE_COUNT=100
+AGENT_MAX_IMAGE_BYTES=25165824
 MYAAW_COMPUTER_USE=false
 AGENT_REPEAT_TOOL_CALL_LIMIT=3
 AGENT_TOOL_TIMEOUT_SECONDS=300

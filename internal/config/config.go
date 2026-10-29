@@ -76,6 +76,10 @@ var AgentWarningIterations int = 90
 var AgentContextMaxTokens int = 64000
 var AgentMaxToolOutputBytes int = 32 * 1024
 
+// Image budgeting keeps long computer-use sessions from exhausting the context
+// window. Zero disables the corresponding limit.
+var AgentMaxImageCount int = 100
+var AgentMaxImageBytes int = 24 * 1024 * 1024
 var AgentRepeatToolCallLimit int = 3
 var AgentToolTimeoutSeconds int = 300
 var AgentBlockedTools []string
@@ -612,6 +616,8 @@ func LoadBaseConfig() {
 
 	AgentContextMaxTokens = envInt("AGENT_CONTEXT_MAX_TOKENS", AgentContextMaxTokens)
 	AgentMaxToolOutputBytes = envInt("AGENT_MAX_TOOL_OUTPUT_BYTES", AgentMaxToolOutputBytes)
+	AgentMaxImageCount = envInt("AGENT_MAX_IMAGE_COUNT", AgentMaxImageCount)
+	AgentMaxImageBytes = envInt("AGENT_MAX_IMAGE_BYTES", AgentMaxImageBytes)
 	AgentMaxIterations = envInt("AGENT_MAX_ITERATIONS", AgentMaxIterations)
 	AgentWarningIterations = envInt("AGENT_WARNING_ITERATIONS", AgentWarningIterations)
 	AgentRepeatToolCallLimit = envInt("AGENT_REPEAT_TOOL_CALL_LIMIT", AgentRepeatToolCallLimit)
@@ -902,6 +908,12 @@ func validateAgentConfig() {
 	}
 	if AgentMaxToolOutputBytes <= 0 {
 		AgentMaxToolOutputBytes = 32 * 1024
+	}
+	if AgentMaxImageCount < 0 {
+		AgentMaxImageCount = 0
+	}
+	if AgentMaxImageBytes < 0 {
+		AgentMaxImageBytes = 0
 	}
 	if AgentRepeatToolCallLimit < 0 {
 		AgentRepeatToolCallLimit = 0

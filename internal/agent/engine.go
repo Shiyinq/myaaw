@@ -154,6 +154,9 @@ func (a *Agent) RunEvents(
 
 		_ = emit(AgentEvent{Type: EventStepStart})
 
+		// Keep the persisted transcript bounded too, so eviction stays in effect
+		// for checkpoints and later steps.
+		transcript = EvictTranscriptImages(transcript, cfg.MaxImageCount, cfg.MaxImageBytes)
 		requestMessages := transcript
 		warning := stepAwarenessWarning(requestIndex, cfg)
 		if nextWarn != "" {
@@ -168,6 +171,7 @@ func (a *Agent) RunEvents(
 		if cfg.TransformContext != nil {
 			requestMessages = cfg.TransformContext(ctx, requestMessages)
 		}
+		requestMessages = EvictTranscriptImages(requestMessages, cfg.MaxImageCount, cfg.MaxImageBytes)
 		if cfg.ContextMaxTokens > 0 {
 			var compactStats CompactStats
 			requestMessages, compactStats = CompactTranscriptWithStats(requestMessages, cfg.ContextMaxTokens)

@@ -153,10 +153,10 @@ func EstimateTokens(messages []provider.Message) int {
 		total += estimateText(provider.MessageText(msg))
 		total += estimateText(msg.Thought)
 		total += estimateText(msg.Name)
-		total += len(msg.Images) * 1000
+		total += len(msg.Images) * imageTokenCost
 		for _, item := range provider.MessageContentItems(msg) {
 			if item.ImageURL != nil {
-				total += 1000
+				total += imageTokenCost
 			}
 		}
 		for _, tc := range msg.ToolCalls {
@@ -165,6 +165,117 @@ func EstimateTokens(messages []provider.Message) int {
 		}
 	}
 	return total
+}
+
+// imageTokenCost is the flat estimate for one image, aligned with the per-image
+// accounting used by computer-use agents.
+const imageTokenCost = 1500
+
+// imagePlaceholder replaces evicted image items while keeping the message
+// structure and its text intact.
+const imagePlaceholder = "[image removed to save context]"
+
+type imageBatch struct {
+	start, end   int
+	count, bytes int
+}
+
+// EvictTranscriptImages keeps the transcript inside the image budget by
+// replacing the images of the oldest tool batches with a text placeholder. The
+// newest image-bearing batch is never evicted. A non-positive limit disables
+// that dimension.
+func EvictTranscriptImages(messages []provider.Message, maxCount, maxBytes int) []provider.Message {
+	if len(messages) == 0 || (maxCount <= 0 && maxBytes <= 0) {
+		return messages
+	}
+
+	batches := imageBatches(messages)
+	if len(batches) == 0 {
+		return messages
+	}
+
+	totalCount, totalBytes := 0, 0
+	for _, batch := range batches {
+		totalCount += batch.count
+		totalBytes += batch.bytes
+	}
+	overBudget := func() bool {
+		return (maxCount > 0 && totalCount > maxCount) || (maxBytes > 0 && totalBytes > maxBytes)
+	}
+	if !overBudget() {
+		return messages
+	}
+
+	// Never evict the newest image-bearing batch; it is the current step.
+	for i := 0; i < len(batches)-1 && overBudget(); i++ {
+		batch := batches[i]
+		for j := batch.start; j < batch.end; j++ {
+			stripMessageImages(&messages[j])
+		}
+		totalCount -= batch.count
+		totalBytes -= batch.bytes
+	}
+	return messages
+}
+
+// imageBatches groups consecutive tool messages (one tool round) as a single
+// eviction unit. Non-tool messages with images are their own batch.
+func imageBatches(messages []provider.Message) []imageBatch {
+	var batches []imageBatch
+	for i := 0; i < len(messages); {
+		if messages[i].Role == "tool" {
+			j := i
+			count, bytes := 0, 0
+			for j < len(messages) && messages[j].Role == "tool" {
+				c, b := messageImageUsage(&messages[j])
+				count += c
+				bytes += b
+				j++
+			}
+			if count > 0 {
+				batches = append(batches, imageBatch{start: i, end: j, count: count, bytes: bytes})
+			}
+			i = j
+			continue
+		}
+		if count, bytes := messageImageUsage(&messages[i]); count > 0 {
+			batches = append(batches, imageBatch{start: i, end: i + 1, count: count, bytes: bytes})
+		}
+		i++
+	}
+	return batches
+}
+
+func messageImageUsage(msg *provider.Message) (count, bytes int) {
+	for _, item := range provider.MessageContentItems(*msg) {
+		if item.Type != "image_url" || item.ImageURL == nil {
+			continue
+		}
+		count++
+		bytes += len(item.ImageURL.URL)
+	}
+	return count, bytes
+}
+
+func stripMessageImages(msg *provider.Message) (count, bytes int) {
+	items := provider.MessageContentItems(*msg)
+	kept := make([]provider.ContentItem, 0, len(items)+1)
+	for _, item := range items {
+		if item.Type == "image_url" {
+			count++
+			if item.ImageURL != nil {
+				bytes += len(item.ImageURL.URL)
+			}
+			continue
+		}
+		kept = append(kept, item)
+	}
+	if count == 0 {
+		return 0, 0
+	}
+	kept = append(kept, provider.ContentItem{Type: "text", Text: imagePlaceholder})
+	msg.Content = kept
+	return count, bytes
 }
 
 func estimateText(s string) int {
