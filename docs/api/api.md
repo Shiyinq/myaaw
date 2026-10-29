@@ -139,7 +139,7 @@ data: <json>
 | `chunk` | `{"text": "..."}` | answer text delta |
 | `tool` | `{"id","name","arguments"}` | tool execution started |
 | `tool_result` | `{"id","name","result","is_error"}` | tool execution finished |
-| `approval_required` | `{"approval_id","tool_name","action","args_summary","subagent"?}` | a gated tool is waiting for a decision; `subagent` names the child task when relevant |
+| `approval_required` | `{"approval_id","tool_name","action","args_summary","args","subagent"?}` — a gated tool is waiting; `args` is the full JSON and `subagent` names the child task when relevant |
 | `approval_resolved` | `{"approval_id","decision","reason"}` | the decision was applied (or the request timed out) |
 | `done` | `{"ok":true,"text":"...","conversation_id":"...","usage":{...}}` | run finished; `conversation_id` and `usage` are optional |
 | `error` | `{"error":"..."}` | run failed; followed by `done` with `ok:false` |
@@ -247,6 +247,7 @@ curl -X POST http://localhost:8080/api/approvals/<approval_id> \
     "tool_name": "bash",
     "action": "",
     "args_summary": "{\"command\":\"ls\"}",
+    "args": "{\"command\":\"ls\"}",
     "subagent": "download-x-photo"
   }
 }
@@ -256,8 +257,11 @@ curl -X POST http://localhost:8080/api/approvals/<approval_id> \
 
 The same decision call then blocks until the resumed run completes and returns
 the final chat response (or the next `approval_required`). Decisions:
-`allow_once`, `allow_session`, `allow_always`, `deny`. Without an answer the
-call is denied after `approvals.timeout_seconds`.
+`allow_once`, `allow_session`, `allow_always`, `deny`. The body must also carry
+the run's `user_id` (`{"decision":"allow_once","user_id":7}` or the
+`X-Myaaw-User-ID` header); a missing user id returns `400`, a different user
+`403`, and an unknown/expired id `404`. Without an answer the call is denied
+after `approvals.timeout_seconds`.
 
 `POST /api/approvals/:id` returns `404` for an unknown or already-expired ID.
 Paused non-streaming runs live in memory, so a daemon restart drops them and the

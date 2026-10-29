@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1451,7 +1452,7 @@ func TestRouterApprovalsManagement(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := approvals.NewStore(path)
-	if err := store.GrantAlways("bash"); err != nil {
+	if err := store.GrantAlways("bash", approvals.Scope{Channel: "telegram", UserID: "111"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1461,11 +1462,14 @@ func TestRouterApprovalsManagement(t *testing.T) {
 		} `json:"config"`
 		Grants []struct {
 			Key    string `json:"key"`
-			Always bool   `json:"always"`
+			Always []struct {
+				Channel string `json:"channel"`
+				UserID  string `json:"user_id"`
+			} `json:"always"`
 		} `json:"grants"`
 	}
 	doJSON(t, app, "GET", "/agents/myfriend/approvals", token, "", fiber.StatusOK, &view)
-	if view.Config.Mode != "manual" || len(view.Grants) != 1 || view.Grants[0].Key != "bash" || !view.Grants[0].Always {
+	if view.Config.Mode != "manual" || len(view.Grants) != 1 || view.Grants[0].Key != "bash" || len(view.Grants[0].Always) != 1 || view.Grants[0].Always[0].Channel != "telegram" {
 		t.Fatalf("approvals view = %+v", view)
 	}
 
@@ -1474,4 +1478,63 @@ func TestRouterApprovalsManagement(t *testing.T) {
 		t.Fatalf("grants after revoke = %v", grants)
 	}
 	doJSON(t, app, "DELETE", "/agents/myfriend/approvals/grants/bash", token, "", fiber.StatusNotFound, nil)
+}
+
+func TestRouterApprovalDecisionForwardsUserID(t *testing.T) {
+	headerCh := make(chan string, 1)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/approvals/abc", func(w http.ResponseWriter, r *http.Request) {
+		headerCh <- r.Header.Get(approvals.UserIDHeader)
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"decision":"allow_once"}`))
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	setupTestAgent(t, server.URL)
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var me struct {
+		UserID int `json:"user_id"`
+	}
+	doJSON(t, app, "GET", "/auth/me", token, "", fiber.StatusOK, &me)
+	doJSON(t, app, "POST", "/agents/myfriend/approvals/abc/decision", token, `{"decision":"allow_once"}`, fiber.StatusOK, nil)
+
+	select {
+	case got := <-headerCh:
+		if want := strconv.Itoa(me.UserID); got != want {
+			t.Fatalf("%s = %q; want %q", approvals.UserIDHeader, got, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("upstream never received the decision")
+	}
+}
+
+func TestRouterRevokeApprovalGrantScope(t *testing.T) {
+	upstream := newUpstream(t)
+	setupTestAgent(t, upstream.URL)
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	path, err := agentdir.ApprovalsPath("myfriend")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := approvals.NewStore(path)
+	if err := store.GrantAlways("bash", approvals.Scope{Channel: "telegram", UserID: "111"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.GrantAlways("bash", approvals.Scope{Channel: "discord", UserID: "222"}); err != nil {
+		t.Fatal(err)
+	}
+
+	doJSON(t, app, "DELETE", "/agents/myfriend/approvals/grants/bash?channel=telegram&user=111", token, "", fiber.StatusOK, nil)
+	grants := approvals.NewStore(path).Snapshot()
+	if len(grants["bash"].Always) != 1 || grants["bash"].Always[0].Channel != "discord" {
+		t.Fatalf("grants after scoped revoke = %+v", grants)
+	}
+
+	doJSON(t, app, "DELETE", "/agents/myfriend/approvals/grants/bash?channel=telegram&user=999", token, "", fiber.StatusNotFound, nil)
 }

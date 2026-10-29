@@ -110,28 +110,41 @@ listed under `unattended` get an automatic decision.
 
 ## 2. Grants
 
-Grants are created at runtime from the approval prompt:
+Grants are created at runtime from the approval prompt and are **scoped to the
+actor that started the run** (channel + user), so one user's "Always" never
+applies to another user or to another channel.
 
 | Choice | Scope | Persistence |
 |---|---|---|
 | **Allow once** (`y`) | only that call | not stored |
-| **Allow session** (`s`) | that key in the same conversation | stored with the conversation ID |
-| **Always** (`a`) | that key in every conversation of the agent | stored until revoked |
+| **Allow session** (`s`) | that key in the same conversation of that channel/user | stored with the conversation ID |
+| **Always** (`a`) | that key for that channel + user, in every conversation | stored until revoked |
 
 Grants live in `~/.myaaw/<agent>/config/approvals.json`:
 
 ```json
 {
   "bash": {
-    "always": true
+    "always": [
+      { "channel": "telegram", "user_id": "111" }
+    ]
   },
   "filesystem:write_file": {
-    "sessions": {
-      "09e98570-227d-4133-b6f6-eb7032cf38b5": "2026-10-29T17:03:13.548234+07:00"
-    }
+    "sessions": [
+      {
+        "channel": "telegram",
+        "user_id": "111",
+        "conversation_id": "09e98570-227d-4133-b6f6-eb7032cf38b5",
+        "created_at": "2026-10-29T17:03:13.548234+07:00"
+      }
+    ]
   }
 }
 ```
+
+A grant matches when both `channel` and `user_id` are equal; `"*"` in a stored
+entry matches anything (legacy scope only). A session additionally requires the
+same conversation ID.
 
 Notes:
 
@@ -140,6 +153,11 @@ Notes:
   other's grants.
 - A legacy root-level `~/.myaaw/<agent>/approvals.json` is renamed into
   `config/` on first use, preserving the exact contents.
+- **Legacy files**: an older grants file (global `always: true`, sessions as a
+  map) is still read. Its global `always` entries are **dropped** (the author is
+  unknown, so the tool is asked once more) and its sessions are kept with a
+  wildcard actor; the file is rewritten in the current shape on the next
+  mutation. A log line reports how many always-grants were dropped.
 - Grants are re-read on each run: revoking one takes effect on the next run,
   no restart needed.
 - Session grants are capped at 100 conversations per key (oldest pruned).
@@ -167,13 +185,19 @@ call; the streaming block title also changes to
 `🐱 Myaaw · sub-agent <name> needs approval`. That way a prompt that did not
 come from your current turn is obvious.
 
-The key hints (`←/→: Select • Enter: Confirm • y/s/a/n: Shortcut • Esc: Deny`)
+The key hints (`←/→: Select • Enter: Confirm • y/s/a/n: Shortcut • Ctrl+O: Args • Esc: Deny`)
 are shown once in the bottom status bar.
 
 - Use `←`/`→` (or `h`/`l`, `Tab`/`Shift+Tab`) to move the `▶` highlight and
   `Enter` to confirm.
 - Shortcuts work without moving the highlight: `y` = allow once, `s` = allow
   session, `a` = always, `n` or `Esc` = deny.
+- `Ctrl+O` — or clicking the `args · click or Ctrl+O to expand` line — expands
+  the **full argument JSON** (pretty-printed, up to a 12-line window that
+  shrinks on short terminals, `↑`/`↓` or `PgUp`/`PgDn` to scroll, `Ctrl+O` or a
+  click to collapse). Control and ANSI characters are stripped before
+  rendering. This is the only way to see the complete arguments; the collapsed
+  line is a 200-character summary.
 - The conversation viewport shrinks by the prompt height, so earlier messages
   are not clipped.
 - Background sub-agents can raise prompts after the parent turn; the prompt is
@@ -201,6 +225,10 @@ The bot sends a message with four inline buttons: **Allow once**,
 outcome once answered. Prompts raised by a sub-agent include a
 `↳ from sub-agent <name>` line.
 
+Only the user who started the run can press a button, and only in the chat that
+received the prompt. A press from another user/chat is ignored and answered with
+a short toast ("Only the user who started this chat can approve.").
+
 - Callback queries are handled in the long-polling loop and in the
   `/webhook/telegram` queue handler, so both Telegram modes work.
 - Callback data only carries a random 128-bit approval token; the chat ID must
@@ -212,8 +240,11 @@ outcome once answered. Prompts raised by a sub-agent include a
 ### Discord
 
 Same four buttons as a message component. The `InteractionCreate` handler
-resolves the token and updates the message. After the timeout the call is
-denied. Prompts raised by a sub-agent include a `↳ from sub-agent <name>` line.
+resolves the token and updates the message. Only the interaction's user and
+channel that match the run are accepted; anybody else gets an ephemeral
+"Only the user who started this chat can approve." reply. After the timeout the
+call is denied. Prompts raised by a sub-agent include a
+`↳ from sub-agent <name>` line.
 
 ### HTTP API (agent server)
 
@@ -221,21 +252,26 @@ denied. Prompts raised by a sub-agent include a `↳ from sub-agent <name>` line
 
 ```
 event: approval_required
-data: {"approval_id":"…","tool_name":"bash","action":"","args_summary":"{\"command\":\"ls\"}"}
+data: {"approval_id":"…","tool_name":"bash","action":"","args_summary":"{\"command\":\"ls\"}","args":"{\"command\":\"ls\"}"}
 
 event: approval_resolved
 data: {"approval_id":"…","decision":"allow_once","reason":""}
 ```
 
 When the call comes from a sub-agent the `approval_required` data also carries
-`"subagent":"<task name>"`.
+`"subagent":"<task name>"`. `args` is the full raw JSON (the summary is the
+200-character preview).
 
-Answer with:
+Answer with the approval ID **and the user id that started the run**:
 
 ```
 POST /api/approvals/:id
-{ "decision": "allow_once" | "allow_session" | "allow_always" | "deny" }
+{ "decision": "allow_once" | "allow_session" | "allow_always" | "deny", "user_id": 7 }
 ```
+
+`user_id` may also travel in the `X-Myaaw-User-ID` header. Missing user id →
+`400`; a user that does not own the pending request → `403`; an unknown or
+expired id → `404`.
 
 **Non-streaming — `POST /api/chat`:**
 
@@ -250,6 +286,7 @@ If a gated tool is reached, the run pauses and the endpoint returns:
     "tool_name": "bash",
     "action": "",
     "args_summary": "{\"command\":\"ls\"}",
+    "args": "{\"command\":\"ls\"}",
     "subagent": "download-x-photo"
   }
 }
@@ -274,7 +311,9 @@ POST /agents/:name/chat/stream     (SSE)
 POST /agents/:name/approvals/:id/decision
 ```
 
-and adds management endpoints (see §5).
+and adds management endpoints (see §5). The decision proxy injects the
+authenticated control-plane user id (`X-Myaaw-User-ID`), so the agent enforces
+"only the chat's user may approve" the same way it does for direct API callers.
 
 ### Cron, heartbeat, subagent notifications, headless, inbound A2A
 
@@ -302,11 +341,23 @@ parent conversation can move on while the child works.
 
 ### A2A / `contact`
 
+| Side | Path | Policy that applies |
+|---|---|---|
+| **Calling agent (A)** | `contact` tool | A's normal policy, like any other tool. An interactive run shows the usual prompt; there is no A2A-specific rule. |
+| **Called agent (B)** | inbound task (`Channel: "a2a"`) | B's policy only. The run has no interactive channel, so B uses its own `unattended` decision (default `allow`). |
+
 - `contact` (outbound) is an ordinary tool: gate it by leaving it out of
   `allow`, exempt it by adding `contact` to `allow`.
-- The called agent's tools are governed by **that agent's** policy (local agent)
-  or the remote server's policy. Our policy stops at the server boundary.
-- Our agent answering an inbound A2A task is unattended (`unattended` applies).
+- A's policy stops at the server boundary. It does not control what B executes,
+  and B's `unattended` setting does not affect A's tools.
+- "Unattended allow for A2A" therefore means the **inbound run on B**, not the
+  `contact` tool on the calling agent.
+- Letting B ask a human is not possible today: an inbound task has no
+  originating interactive channel, so `unattended` is the only lever. A
+  requester would have to be added explicitly (for example a Telegram prompt to
+  B's owner).
+- Treat inbound tasks as untrusted input: on agents exposed via A2A, consider
+  `unattended: deny` or a stricter `allow` list.
 
 ### MCP and custom tools
 
@@ -328,7 +379,8 @@ myaaw config approvals deny list
 myaaw config approvals deny add <key>
 myaaw config approvals deny remove <key>
 myaaw config approvals grants list [--json]
-myaaw config approvals grants revoke <key> [--session <conversation-id>]
+myaaw config approvals grants revoke <key> [--session <conversation-id>] \
+                                              [--channel <name>] [--user <id>]
 myaaw config approvals grants clear
 ```
 
@@ -338,9 +390,17 @@ myaaw config approvals grants clear
 - `set` only changes the flags you pass; validation errors are reported before
   writing.
 - `allow add` refuses a key that is in `deny` (and vice versa).
-- `grants revoke <key>` removes the key entirely; `--session` removes only one
-  conversation.
+- `grants list` prints, per key, the `always` scopes and every session with its
+  channel/user/conversation and creation time. `--json` matches the control
+  plane shape.
+- `grants revoke <key>` removes the key entirely (every scope). `--channel`
+  and/or `--user` remove only entries matching those filters; an omitted filter
+  matches every value (so `--channel telegram` removes all Telegram users for
+  that key). `--session` removes one conversation, optionally combined with the
+  scope filters.
 - `myaaw config dump` also prints an `[Approvals]` section.
+- Decisions are audited to `<logs>/approvals.jsonl` (JSONL, full arguments); read
+  it with `myaaw logs approvals`.
 
 Examples:
 
@@ -352,7 +412,8 @@ myaaw config approvals allow add filesystem:read_file
 myaaw config approvals deny add bash
 myaaw config approvals grants list
 myaaw config approvals grants revoke bash
-myaaw config approvals grants revoke bash --session 09e98570-...
+myaaw config approvals grants revoke bash --channel telegram --user 111
+myaaw config approvals grants revoke bash --session 09e98570-... --user 111
 ```
 
 ---
@@ -376,11 +437,19 @@ Returns the effective policy and every grant:
     "subagents": "inherit"
   },
   "grants": [
-    { "key": "bash", "always": true },
+    {
+      "key": "bash",
+      "always": [{ "channel": "telegram", "user_id": "111" }]
+    },
     {
       "key": "filesystem:write_file",
       "sessions": [
-        { "id": "09e98570-...", "created_at": "2026-10-29T17:03:13+07:00" }
+        {
+          "channel": "telegram",
+          "user_id": "111",
+          "conversation_id": "09e98570-...",
+          "created_at": "2026-10-29T17:03:13+07:00"
+        }
       ]
     }
   ]
@@ -423,9 +492,10 @@ DELETE /agents/:name/approvals/grants/:key/sessions/:conversation
 DELETE /agents/:name/approvals/grants
 ```
 
-The first removes every grant for a key, the second only one conversation, the
-third clears the whole file. Unknown agent/key → 404. Policy in `config.json`
-is never touched.
+The first removes every grant for a key; add `?channel=` and/or `?user=` to
+remove only that actor's always grants and sessions. The second removes one
+conversation (same optional filters). The third clears the whole file. Unknown
+agent/key → 404. Policy in `config.json` is never touched.
 
 ### Decide a live approval
 
@@ -434,7 +504,9 @@ POST /agents/:name/approvals/:id/decision
 { "decision": "allow_once" }
 ```
 
-Proxied to the agent that owns the paused run.
+The control plane adds `X-Myaaw-User-ID` from the authenticated session, so the
+agent rejects decisions from a different user (`403`). Proxied to the agent that
+owns the paused run.
 
 ---
 
@@ -445,10 +517,15 @@ Proxied to the agent that owns the paused run.
 - `deny` and tool-level hard blocks apply even under `mode: off`.
 - `MYAAW_YOLO=1` is explicit and logged; do not use it with an untrusted model or
   prompt source.
-- Approval tokens are random 128-bit values; Telegram/Discord handlers verify the
-  originating chat/user before accepting a decision.
+- Approval tokens are random 128-bit values. Telegram/Discord bind each token to
+  the run's channel + user + chat, and the API requires the owning `user_id`, so
+  a leaked token or a forwarded message cannot be used by another person.
 - Every decision is bound to its approval ID. A late answer for an expired
   prompt is discarded, so it can never approve a later tool call.
+- Every decision is written to `<logs>/approvals.jsonl` with the full tool
+  arguments, allowing an after-the-fact review. The file is `0600` and may
+  contain secrets that appear in arguments (commands, tokens); treat it as
+  sensitive.
 - The control plane management endpoints only read/write files; they never
   approve calls themselves. Decisions are forwarded only when the UI user
   submits one through the proxy endpoint.
@@ -469,6 +546,9 @@ Proxied to the agent that owns the paused run.
 | A prompt from an earlier turn is still on screen | Its run already moved on (timeout) or expired; answering is safe because decisions are ID-bound. The next run replaces it. |
 | Main agent seems idle after a sub-agent finishes | Expected: the result arrives as a separate `subagent` triggered run/message; the original turn is not resumed. Check the channel timeline/log. |
 | `Myaaw is thinking... 0s` appears with a sub-agent prompt | Old binary; upgrade and restart `myaaw chat`. |
+| A decision returns `403` | The `user_id` does not own the pending request; answer from the chat's user or send the matching `X-Myaaw-User-ID`. |
+| A button press is ignored | The press came from another user or chat; only the run's user in the original chat can approve. |
+| An `Always` grant disappeared after upgrading | Legacy v1 global `always` grants are dropped because their author is unknown; approve the tool once more (new grants are scoped). |
 
 Useful commands:
 

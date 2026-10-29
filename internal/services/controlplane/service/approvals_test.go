@@ -87,13 +87,14 @@ func TestApprovalsServiceViewAndRevoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := approvals.NewStore(path)
-	if err := store.GrantAlways("bash"); err != nil {
+	if err := store.GrantAlways("bash", approvals.Scope{Channel: "telegram", UserID: "111"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.GrantSession("filesystem:write_file", "conv-1"); err != nil {
+	scope := approvals.Scope{Channel: "telegram", UserID: "111"}
+	if err := store.GrantSession("filesystem:write_file", approvals.SessionScope{Scope: scope, ConversationID: "conv-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.GrantSession("filesystem:write_file", "conv-2"); err != nil {
+	if err := store.GrantSession("filesystem:write_file", approvals.SessionScope{Scope: scope, ConversationID: "conv-2"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -108,7 +109,7 @@ func TestApprovalsServiceViewAndRevoke(t *testing.T) {
 	if len(view.Grants) != 2 {
 		t.Fatalf("grants = %+v", view.Grants)
 	}
-	if view.Grants[0].Key != "bash" || !view.Grants[0].Always {
+	if view.Grants[0].Key != "bash" || len(view.Grants[0].Always) != 1 || view.Grants[0].Always[0].UserID != "111" {
 		t.Fatalf("grants[0] = %+v", view.Grants[0])
 	}
 	if view.Grants[1].Key != "filesystem:write_file" || len(view.Grants[1].Sessions) != 2 {
@@ -118,13 +119,13 @@ func TestApprovalsServiceViewAndRevoke(t *testing.T) {
 	if err := svc.RevokeKey("myfriend", "bash"); err != nil {
 		t.Fatalf("RevokeKey: %v", err)
 	}
-	if err := svc.RevokeSession("myfriend", "filesystem:write_file", "conv-1"); err != nil {
+	if err := svc.RevokeSession("myfriend", "filesystem:write_file", "conv-1", "telegram", "111"); err != nil {
 		t.Fatalf("RevokeSession: %v", err)
 	}
 	if err := svc.RevokeKey("myfriend", "missing"); !errors.Is(err, ErrGrantNotFound) {
 		t.Fatalf("missing key error = %v", err)
 	}
-	if err := svc.RevokeSession("myfriend", "filesystem:write_file", "nope"); !errors.Is(err, ErrGrantNotFound) {
+	if err := svc.RevokeSession("myfriend", "filesystem:write_file", "nope", "telegram", "111"); !errors.Is(err, ErrGrantNotFound) {
 		t.Fatalf("missing session error = %v", err)
 	}
 	if err := svc.Clear("myfriend"); err != nil {

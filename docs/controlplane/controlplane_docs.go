@@ -245,7 +245,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Removes the key from config/approvals.json (always and every session).",
+                "description": "Removes the key from config/approvals.json (all scopes), or only the scopes matching the optional channel/user filters.",
                 "produces": [
                     "application/json"
                 ],
@@ -267,6 +267,18 @@ const docTemplatecontrolplane = `{
                         "name": "key",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only revoke grants for this channel",
+                        "name": "channel",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only revoke grants for this user id",
+                        "name": "user",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -327,6 +339,18 @@ const docTemplatecontrolplane = `{
                         "name": "conversation",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Restrict to this channel",
+                        "name": "channel",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Restrict to this user id",
+                        "name": "user",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -4607,6 +4631,10 @@ const docTemplatecontrolplane = `{
         "api.TimelineItem": {
             "type": "object",
             "properties": {
+                "args": {
+                    "description": "Args carries the full argument JSON of an approval item.",
+                    "type": "string"
+                },
                 "arguments": {
                     "type": "string"
                 },
@@ -6631,7 +6659,10 @@ const docTemplatecontrolplane = `{
             "type": "object",
             "properties": {
                 "always": {
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ScopeView"
+                    }
                 },
                 "key": {
                     "type": "string"
@@ -6968,6 +6999,17 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ScopeView": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
         "service.SearchMatch": {
             "type": "object",
             "properties": {
@@ -7073,10 +7115,16 @@ const docTemplatecontrolplane = `{
         "service.SessionGrantView": {
             "type": "object",
             "properties": {
+                "channel": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
                 "id": {
+                    "type": "string"
+                },
+                "user_id": {
                     "type": "string"
                 }
             }

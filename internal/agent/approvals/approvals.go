@@ -10,12 +10,17 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"myaaw/internal/config"
 )
+
+// UserIDHeader carries the acting user id on HTTP approval decisions. The
+// control plane sets it from the authenticated session.
+const UserIDHeader = "X-Myaaw-User-ID"
 
 // Decision is the user's answer to an approval request.
 type Decision string
@@ -29,11 +34,14 @@ const (
 
 // Request describes one approval request shown to a user.
 type Request struct {
-	ID             string
-	RunID          string
-	ToolName       string
-	Action         string
-	ArgsSummary    string
+	ID          string
+	RunID       string
+	ToolName    string
+	Action      string
+	ArgsSummary string
+	// Args is the full raw argument JSON. Approval UIs may expand it; the
+	// summary above stays the one-line preview.
+	Args           string
 	Channel        string
 	ConversationID string
 	UserID         string
@@ -104,18 +112,53 @@ type Gate struct {
 	Requester Requester
 	// Auto is used when Requester is nil. Empty behaves like Deny.
 	Auto Decision
+	// Audit records every decision with the full arguments. Optional.
+	Audit *AuditLog
 }
 
 // Check resolves the approval policy for one tool call.
-func (g *Gate) Check(ctx context.Context, toolName string, args json.RawMessage) Outcome {
+func (g *Gate) Check(ctx context.Context, toolName string, args json.RawMessage) (out Outcome) {
 	key, action := Key(toolName, args)
-	out := Outcome{Allowed: true, Key: key, Action: action, Decision: AllowOnce}
+	out = Outcome{Allowed: true, Key: key, Action: action, Decision: AllowOnce}
 	if g == nil {
 		return out
 	}
 
+	scope := SessionScope{
+		Scope:          Scope{Channel: g.Session.Channel, UserID: g.Session.UserID},
+		ConversationID: g.Session.ConversationID,
+	}
+	source := "policy"
+	requestID := ""
+	var waited time.Duration
+	start := time.Now()
+
+	defer func() {
+		if g.Audit == nil {
+			return
+		}
+		g.Audit.Record(AuditEntry{
+			RequestID:      requestID,
+			RunID:          g.Session.RunID,
+			Channel:        g.Session.Channel,
+			UserID:         g.Session.UserID,
+			ConversationID: g.Session.ConversationID,
+			SubAgent:       SubagentName(ctx),
+			Tool:           toolName,
+			Action:         action,
+			Key:            key,
+			Args:           auditArgs(args),
+			Decision:       string(out.Decision),
+			Source:         source,
+			Allowed:        out.Allowed,
+			Reason:         out.Reason,
+			WaitedMS:       waited.Milliseconds(),
+		})
+	}()
+
 	p := g.Policy
 	if matches(p.Deny, key, toolName) {
+		source = "deny_list"
 		return Outcome{
 			Allowed:  false,
 			Reason:   fmt.Sprintf("tool %q is denied by approval policy", key),
@@ -125,14 +168,17 @@ func (g *Gate) Check(ctx context.Context, toolName string, args json.RawMessage)
 		}
 	}
 	if matches(p.Allow, key, toolName) {
+		source = "allow_list"
 		return out
 	}
 	if strings.EqualFold(p.Mode, "off") {
+		source = "mode_off"
 		return out
 	}
 
 	if g.Store != nil {
-		if decision, ok := g.Store.Grant(key, g.Session.ConversationID); ok {
+		if decision, ok := g.Store.Grant(key, scope); ok {
+			source = "grant"
 			out.Decision = decision
 			return out
 		}
@@ -144,6 +190,7 @@ func (g *Gate) Check(ctx context.Context, toolName string, args json.RawMessage)
 			decision = Deny
 		}
 		if decision == Deny {
+			source = "no_requester"
 			return Outcome{
 				Allowed:  false,
 				Reason:   fmt.Sprintf("tool %q requires approval but no interactive channel is attached", key),
@@ -152,6 +199,7 @@ func (g *Gate) Check(ctx context.Context, toolName string, args json.RawMessage)
 				Action:   action,
 			}
 		}
+		source = "unattended"
 		out.Decision = decision
 		return out
 	}
@@ -163,18 +211,25 @@ func (g *Gate) Check(ctx context.Context, toolName string, args json.RawMessage)
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	requestID = NewToken()
 	decision, err := g.Requester.Request(reqCtx, Request{
-		ID:             NewToken(),
+		ID:             requestID,
 		RunID:          g.Session.RunID,
 		ToolName:       toolName,
 		Action:         action,
 		ArgsSummary:    SummarizeArgs(args),
+		Args:           string(args),
 		Channel:        g.Session.Channel,
 		ConversationID: g.Session.ConversationID,
 		UserID:         g.Session.UserID,
 		SubAgent:       SubagentName(ctx),
 	})
+	waited = time.Since(start)
 	if err != nil {
+		source = "error"
+		if errors.Is(err, context.DeadlineExceeded) {
+			source = "timeout"
+		}
 		return Outcome{
 			Allowed:  false,
 			Reason:   fmt.Sprintf("approval for %q failed: %v", key, err),
@@ -186,15 +241,19 @@ func (g *Gate) Check(ctx context.Context, toolName string, args json.RawMessage)
 
 	switch decision {
 	case AllowOnce:
+		source = "user"
 	case AllowSession:
+		source = "user"
 		if g.Store != nil {
-			_ = g.Store.GrantSession(key, g.Session.ConversationID)
+			_ = g.Store.GrantSession(key, scope)
 		}
 	case AllowAlways:
+		source = "user"
 		if g.Store != nil {
-			_ = g.Store.GrantAlways(key)
+			_ = g.Store.GrantAlways(key, Scope{Channel: g.Session.Channel, UserID: g.Session.UserID})
 		}
 	case Deny:
+		source = "user_deny"
 		return Outcome{
 			Allowed:  false,
 			Reason:   fmt.Sprintf("approval denied for %q", key),
@@ -203,6 +262,7 @@ func (g *Gate) Check(ctx context.Context, toolName string, args json.RawMessage)
 			Action:   action,
 		}
 	default:
+		source = "user"
 		return Outcome{
 			Allowed:  false,
 			Reason:   fmt.Sprintf("unknown approval decision %q for %q", decision, key),

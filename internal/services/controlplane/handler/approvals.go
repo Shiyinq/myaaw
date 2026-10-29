@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"strings"
 
 	"myaaw/internal/services/controlplane/service"
 
@@ -27,20 +28,32 @@ func (h *Handler) GetApprovals(c fiber.Ctx) error {
 	return c.JSON(view)
 }
 
-// RevokeApprovalGrant removes every grant for one tool key.
+// RevokeApprovalGrant removes grants for one tool key. With ?channel= and/or
+// ?user= only that actor's always grants and sessions are removed.
 // @Summary      Revoke an approval grant
-// @Description  Removes the key from config/approvals.json (always and every session).
+// @Description  Removes the key from config/approvals.json (all scopes), or only the scopes matching the optional channel/user filters.
 // @Tags         Approvals
 // @Produce      json
 // @Security     BearerAuth
-// @Param        name path string true "Agent name"
-// @Param        key  path string true "Approval key (tool or tool:action)"
+// @Param        name    path string true "Agent name"
+// @Param        key     path string true "Approval key (tool or tool:action)"
+// @Param        channel query string false "Only revoke grants for this channel"
+// @Param        user    query string false "Only revoke grants for this user id"
 // @Success      200 {object} OKResponse
 // @Failure      401 {object} common.ErrorResponse
 // @Failure      404 {object} common.ErrorResponse
 // @Router       /agents/{name}/approvals/grants/{key} [delete]
 func (h *Handler) RevokeApprovalGrant(c fiber.Ctx) error {
-	if err := h.approvals.RevokeKey(c.Params("name"), c.Params("key")); err != nil {
+	name, key := c.Params("name"), c.Params("key")
+	channel := strings.TrimSpace(c.Query("channel"))
+	userID := strings.TrimSpace(c.Query("user"))
+	if channel != "" || userID != "" {
+		if err := h.approvals.RevokeScope(name, key, channel, userID); err != nil {
+			return approvalError(c, err)
+		}
+		return c.JSON(fiber.Map{"ok": true})
+	}
+	if err := h.approvals.RevokeKey(name, key); err != nil {
 		return approvalError(c, err)
 	}
 	return c.JSON(fiber.Map{"ok": true})
@@ -55,12 +68,20 @@ func (h *Handler) RevokeApprovalGrant(c fiber.Ctx) error {
 // @Param        name         path string true "Agent name"
 // @Param        key          path string true "Approval key"
 // @Param        conversation path string true "Conversation id"
+// @Param        channel      query string false "Restrict to this channel"
+// @Param        user         query string false "Restrict to this user id"
 // @Success      200 {object} OKResponse
 // @Failure      401 {object} common.ErrorResponse
 // @Failure      404 {object} common.ErrorResponse
 // @Router       /agents/{name}/approvals/grants/{key}/sessions/{conversation} [delete]
 func (h *Handler) RevokeApprovalGrantSession(c fiber.Ctx) error {
-	if err := h.approvals.RevokeSession(c.Params("name"), c.Params("key"), c.Params("conversation")); err != nil {
+	if err := h.approvals.RevokeSession(
+		c.Params("name"),
+		c.Params("key"),
+		c.Params("conversation"),
+		strings.TrimSpace(c.Query("channel")),
+		strings.TrimSpace(c.Query("user")),
+	); err != nil {
 		return approvalError(c, err)
 	}
 	return c.JSON(fiber.Map{"ok": true})

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -42,7 +43,7 @@ func TestRenderApprovalPromptHasNoHintLine(t *testing.T) {
 	out := renderApprovalPrompt(approvals.Request{
 		ToolName:    "bash",
 		ArgsSummary: `{"command":"ls"}`,
-	}, 80, 0)
+	}, 80, 0, false, 0, approvalArgsWindow)
 	if strings.Contains(out, "Enter confirm") || strings.Contains(out, "←/→ select") {
 		t.Errorf("approval prompt repeats the footer hints:\n%s", out)
 	}
@@ -55,14 +56,108 @@ func TestRenderApprovalPromptMarksSubAgent(t *testing.T) {
 	out := renderApprovalPrompt(approvals.Request{
 		ToolName: "bash",
 		SubAgent: "download-x-photo",
-	}, 80, 0)
+	}, 80, 0, false, 0, approvalArgsWindow)
 	if !strings.Contains(out, "from sub-agent download-x-photo") {
 		t.Errorf("prompt does not identify the origin sub-agent:\n%s", out)
 	}
 
-	main := renderApprovalPrompt(approvals.Request{ToolName: "bash"}, 80, 0)
+	main := renderApprovalPrompt(approvals.Request{ToolName: "bash"}, 80, 0, false, 0, approvalArgsWindow)
 	if strings.Contains(main, "from sub-agent") {
 		t.Errorf("main-agent prompt should not show a sub-agent label:\n%s", main)
+	}
+}
+
+func TestRenderApprovalPromptExpandedArgs(t *testing.T) {
+	req := approvals.Request{
+		ToolName: "bash",
+		Args:     `{"command":"rm -rf /tmp/x","timeout":60}`,
+	}
+	collapsed := renderApprovalPrompt(req, 80, 0, false, 0, approvalArgsWindow)
+	if strings.Contains(collapsed, "\"timeout\"") {
+		t.Errorf("collapsed prompt should not dump the full arguments:\n%s", collapsed)
+	}
+
+	expanded := renderApprovalPrompt(req, 80, 0, true, 0, approvalArgsWindow)
+	for _, want := range []string{"args 1-", "\"command\"", "\"timeout\"", "Ctrl+O to collapse"} {
+		if !strings.Contains(expanded, want) {
+			t.Errorf("expanded prompt missing %q:\n%s", want, expanded)
+		}
+	}
+}
+
+func TestRenderApprovalPromptSanitizesArgs(t *testing.T) {
+	req := approvals.Request{
+		ToolName: "bash",
+		Args:     "{\"command\":\"echo \x1b[2Jpwn\"}",
+	}
+	out := renderApprovalPrompt(req, 80, 0, true, 0, approvalArgsWindow)
+	if strings.Contains(out, "\x1b") {
+		t.Errorf("approval prompt leaked a terminal escape sequence:\n%q", out)
+	}
+}
+
+func TestApprovalArgsToggleByClick(t *testing.T) {
+	m := model{
+		state:           stateApproval,
+		pendingApproval: &approvals.Request{ID: "a1", ToolName: "bash", ArgsSummary: `{"command":"ls"}`},
+		textInput:       textinput.New(),
+		viewport:        viewport.New(80, 20),
+		width:           80,
+		height:          40,
+	}
+
+	y := m.approvalArgsToggleY()
+	if y < 0 {
+		t.Fatal("args toggle line not found")
+	}
+	updated, _ := m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: y})
+	got := updated.(model)
+	if !got.approvalArgsOpen {
+		t.Fatal("clicking the args line did not expand it")
+	}
+
+	y = got.approvalArgsToggleY()
+	updated, _ = got.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 2, Y: y})
+	if updated.(model).approvalArgsOpen {
+		t.Fatal("clicking the args line again did not collapse it")
+	}
+}
+
+func TestApprovalArgsToggleAndScroll(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`{"command":"ls"`)
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&b, `,"k%02d":"value"`, i)
+	}
+	b.WriteString("}")
+
+	m := model{
+		state:           stateApproval,
+		pendingApproval: &approvals.Request{ID: "a1", ToolName: "bash", Args: b.String()},
+		textInput:       textinput.New(),
+		viewport:        viewport.New(80, 20),
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	got := updated.(model)
+	if !got.approvalArgsOpen {
+		t.Fatal("Ctrl+O did not expand the arguments")
+	}
+
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyDown})
+	got = updated.(model)
+	if got.approvalArgsOffset != 1 {
+		t.Fatalf("offset = %d; want 1", got.approvalArgsOffset)
+	}
+
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyDown})
+	got = updated.(model)
+	max := approvalArgsMaxOffset(*got.pendingApproval, approvalArgsWindow)
+	if max == 0 {
+		t.Fatal("test arguments should wrap into more than one window")
+	}
+	if got.approvalArgsOffset > max {
+		t.Fatalf("offset = %d exceeds max %d", got.approvalArgsOffset, max)
 	}
 }
 

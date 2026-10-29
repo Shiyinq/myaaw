@@ -98,10 +98,13 @@ func TestApprovalsCLIGrantsJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := approvals.NewStore(path)
-	if err := store.GrantAlways("bash"); err != nil {
+	if err := store.GrantAlways("bash", approvals.Scope{Channel: "telegram", UserID: "111"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.GrantSession("filesystem:write_file", "conv-1"); err != nil {
+	if err := store.GrantSession("filesystem:write_file", approvals.SessionScope{
+		Scope:          approvals.Scope{Channel: "telegram", UserID: "111"},
+		ConversationID: "conv-1",
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -113,10 +116,10 @@ func TestApprovalsCLIGrantsJSON(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("grants json = %+v", out)
 	}
-	if out[0].Key != "bash" || !out[0].Always {
+	if out[0].Key != "bash" || len(out[0].Always) != 1 || out[0].Always[0].Channel != "telegram" || out[0].Always[0].UserID != "111" {
 		t.Fatalf("grants[0] = %+v", out[0])
 	}
-	if out[1].Key != "filesystem:write_file" || len(out[1].Sessions) != 1 || out[1].Sessions[0].ID != "conv-1" {
+	if out[1].Key != "filesystem:write_file" || len(out[1].Sessions) != 1 || out[1].Sessions[0].ID != "conv-1" || out[1].Sessions[0].UserID != "111" {
 		t.Fatalf("grants[1] = %+v", out[1])
 	}
 }

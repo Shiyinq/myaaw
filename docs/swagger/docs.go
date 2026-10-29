@@ -37,7 +37,13 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Decision: allow_once | allow_session | allow_always | deny",
+                        "type": "string",
+                        "description": "Owning user id (alternative to the body user_id)",
+                        "name": "X-Myaaw-User-ID",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Decision: allow_once | allow_session | allow_always | deny, plus the owning user_id",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -52,6 +58,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -339,6 +351,10 @@ const docTemplate = `{
         "api.TimelineItem": {
             "type": "object",
             "properties": {
+                "args": {
+                    "description": "Args carries the full argument JSON of an approval item.",
+                    "type": "string"
+                },
                 "arguments": {
                     "type": "string"
                 },

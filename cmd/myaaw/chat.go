@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -315,13 +316,38 @@ func approvalTarget(req approvals.Request) string {
 	return target
 }
 
-func renderApprovalPrompt(req approvals.Request, width, choice int) string {
+func renderApprovalPrompt(req approvals.Request, width, choice int, argsOpen bool, argsOffset, argsWindow int) string {
 	lines := []string{theme.WarningStyle.Render("🔐 Approval required: " + approvalTarget(req))}
 	if req.SubAgent != "" {
 		lines = append(lines, theme.MutedStyle.Render("   ↳ from sub-agent "+req.SubAgent))
 	}
-	if req.ArgsSummary != "" {
-		summary := req.ArgsSummary
+
+	hasArgs := strings.TrimSpace(req.Args) != "" || strings.TrimSpace(req.ArgsSummary) != ""
+	if hasArgs {
+		offset := argsOffset
+		if offset < 0 {
+			offset = 0
+		}
+		if max := approvalArgsMaxOffset(req, argsWindow); offset > max {
+			offset = max
+		}
+		if argsOpen {
+			total := len(approvalArgLines(req))
+			end := offset + argsWindow
+			if end > total {
+				end = total
+			}
+			lines = append(lines, theme.MutedStyle.Render(fmt.Sprintf(
+				"   args %d-%d of %d · click or Ctrl+O to collapse · ↑/↓ scroll", offset+1, end, total)))
+		} else {
+			lines = append(lines, theme.MutedStyle.Render("   args · click or Ctrl+O to expand"))
+		}
+	}
+
+	if argsOpen {
+		lines = append(lines, renderApprovalArgs(req, width, argsOffset, argsWindow)...)
+	} else if req.ArgsSummary != "" {
+		summary := sanitizeForTUI(req.ArgsSummary)
 		maxLen := width - 8
 		if maxLen < 20 {
 			maxLen = 20
@@ -342,6 +368,67 @@ func renderApprovalPrompt(req approvals.Request, width, choice int) string {
 	}
 	lines = append(lines, strings.Join(options, "  "))
 	return strings.Join(lines, "\n")
+}
+
+// approvalArgsWindow is how many argument lines the expanded prompt shows at
+// once; the rest is reachable with ↑/↓ or PgUp/PgDn.
+const approvalArgsWindow = 12
+
+func approvalArgLines(req approvals.Request) []string {
+	raw := req.Args
+	if raw == "" {
+		raw = req.ArgsSummary
+	}
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	pretty := raw
+	var buf bytes.Buffer
+	if json.Valid([]byte(raw)) && json.Indent(&buf, []byte(raw), "", "  ") == nil {
+		pretty = buf.String()
+	}
+	return strings.Split(sanitizeForTUI(pretty), "\n")
+}
+
+func approvalArgsMaxOffset(req approvals.Request, window int) int {
+	lines := len(approvalArgLines(req))
+	if window <= 0 || lines <= window {
+		return 0
+	}
+	return lines - window
+}
+
+func renderApprovalArgs(req approvals.Request, width, offset, window int) []string {
+	all := approvalArgLines(req)
+	if len(all) == 0 {
+		return nil
+	}
+	if window <= 0 {
+		window = approvalArgsWindow
+	}
+	maxOffset := approvalArgsMaxOffset(req, window)
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	end := offset + window
+	if end > len(all) {
+		end = len(all)
+	}
+	maxLen := width - 4
+	if maxLen < 20 {
+		maxLen = 20
+	}
+	out := make([]string, 0, end-offset)
+	for _, line := range all[offset:end] {
+		if runes := []rune(line); len(runes) > maxLen {
+			line = string(runes[:maxLen]) + "…"
+		}
+		out = append(out, theme.MutedStyle.Render("   "+line))
+	}
+	return out
 }
 
 type stopAckMsg struct {
@@ -499,6 +586,8 @@ type model struct {
 	approvalQueue       []approvals.Request
 	approvalListening   bool
 	approvalChoice      int
+	approvalArgsOpen    bool
+	approvalArgsOffset  int
 	stateBeforeApproval tuiState
 
 	availableModels []string
@@ -851,8 +940,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.MouseButtonLeft:
 			if msg.Action == tea.MouseActionPress {
+				if y := m.approvalArgsToggleY(); y >= 0 && msg.Y == y {
+					m.toggleApprovalArgs()
+					return m, nil
+				}
 				const viewportTop = 2 // header + blank line
-				if msg.Y >= viewportTop && msg.Y < viewportTop+m.viewport.Height {
+				if height := m.elidedViewportHeight(); msg.Y >= viewportTop && msg.Y < viewportTop+height {
 					contentY := msg.Y - viewportTop + m.viewport.YOffset
 					for _, target := range m.clickTargets {
 						if contentY >= target.StartLine && contentY < target.EndLine {
@@ -890,6 +983,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var decision approvals.Decision
 			decided := false
 			switch msg.String() {
+			case "ctrl+o":
+				m.toggleApprovalArgs()
+				return m, nil
+			case "up", "k":
+				if m.approvalArgsOpen && m.approvalArgsOffset > 0 {
+					m.approvalArgsOffset--
+				}
+				return m, nil
+			case "down", "j":
+				if m.approvalArgsOpen && m.pendingApproval != nil {
+					if max := approvalArgsMaxOffset(*m.pendingApproval, m.approvalArgsWindow()); m.approvalArgsOffset < max {
+						m.approvalArgsOffset++
+					}
+				}
+				return m, nil
+			case "pgup":
+				if m.approvalArgsOpen {
+					m.approvalArgsOffset -= m.approvalArgsWindow()
+					if m.approvalArgsOffset < 0 {
+						m.approvalArgsOffset = 0
+					}
+				}
+				return m, nil
+			case "pgdown":
+				if m.approvalArgsOpen && m.pendingApproval != nil {
+					m.approvalArgsOffset += m.approvalArgsWindow()
+					if max := approvalArgsMaxOffset(*m.pendingApproval, m.approvalArgsWindow()); m.approvalArgsOffset > max {
+						m.approvalArgsOffset = max
+					}
+				}
+				return m, nil
 			case "left", "h", "shift+tab":
 				m.approvalChoice = (m.approvalChoice - 1 + len(approvalOptions)) % len(approvalOptions)
 				m.updateViewportContent(false)
@@ -1353,6 +1477,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pendingApproval = &req
 		m.approvalChoice = 0
+		m.approvalArgsOpen = false
+		m.approvalArgsOffset = 0
 		m.stateBeforeApproval = m.state
 		m.state = stateApproval
 		m.textInput.Blur()
@@ -1793,6 +1919,63 @@ func (m *model) clearApprovalPrompt() {
 	m.textInput.Focus()
 }
 
+// elidedViewportHeight is the viewport height actually used by View(): it
+// shrinks when the approval prompt is taller than one line.
+func (m model) elidedViewportHeight() int {
+	height := m.viewport.Height
+	if m.state != stateApproval || m.pendingApproval == nil {
+		return height
+	}
+	prompt := renderApprovalPrompt(*m.pendingApproval, m.width, m.approvalChoice, m.approvalArgsOpen, m.approvalArgsOffset, m.approvalArgsWindow())
+	if extra := lipgloss.Height(prompt) - 1; extra > 0 {
+		height -= extra
+		if height < 3 {
+			height = 3
+		}
+	}
+	return height
+}
+
+// approvalArgsToggleY returns the screen line of the clickable args toggle, or
+// -1 when there is no prompt/arguments to toggle.
+func (m model) approvalArgsToggleY() int {
+	if m.state != stateApproval || m.pendingApproval == nil {
+		return -1
+	}
+	req := *m.pendingApproval
+	if strings.TrimSpace(req.Args) == "" && strings.TrimSpace(req.ArgsSummary) == "" {
+		return -1
+	}
+	// header, blank, viewport, blank, then prompt lines: title, optional
+	// sub-agent line, then the args toggle line.
+	y := 3 + m.elidedViewportHeight() + 1
+	if req.SubAgent != "" {
+		y++
+	}
+	return y
+}
+
+func (m *model) toggleApprovalArgs() {
+	m.approvalArgsOpen = !m.approvalArgsOpen
+	m.approvalArgsOffset = 0
+}
+
+// approvalArgsWindow caps the expanded argument view so the prompt and the
+// conversation above it still fit on a short terminal.
+func (m *model) approvalArgsWindow() int {
+	window := approvalArgsWindow
+	if m.height > 0 {
+		max := m.height - 10
+		if max < 3 {
+			max = 3
+		}
+		if window > max {
+			window = max
+		}
+	}
+	return window
+}
+
 // pendingSubAgentApproval reports whether the prompt on screen was raised by a
 // background sub-agent. The parent run keeps streaming in that case, so its
 // chunks must not dismiss the prompt.
@@ -1810,6 +1993,8 @@ func (m *model) presentNextApproval() {
 	m.approvalQueue = m.approvalQueue[1:]
 	m.pendingApproval = &req
 	m.approvalChoice = 0
+	m.approvalArgsOpen = false
+	m.approvalArgsOffset = 0
 	m.state = stateApproval
 	m.textInput.Blur()
 }
@@ -2493,7 +2678,7 @@ func (m model) View() string {
 
 	footerText := "  Esc/Ctrl+C: Quit • /sessions: Pick Session • ↑/↓: Scroll Chat • @: Attach File • Ctrl+T: Thinking/Tools  "
 	if m.state == stateApproval {
-		footerText = "  ←/→: Select • Enter: Confirm • y/s/a/n: Shortcut • Esc: Deny  "
+		footerText = "  ←/→: Select • Enter: Confirm • y/s/a/n: Shortcut • Ctrl+O: Args • Esc: Deny  "
 	} else if m.state == stateWaiting {
 		footerText = "  Esc: Interrupt Response • ↑/↓: Scroll Chat • Ctrl+T: Thinking/Tools  "
 	} else if m.state == stateStopping {
@@ -2574,7 +2759,7 @@ func (m model) View() string {
 
 	inputView := m.textInput.View()
 	if m.state == stateApproval && m.pendingApproval != nil {
-		inputView = renderApprovalPrompt(*m.pendingApproval, m.width, m.approvalChoice)
+		inputView = renderApprovalPrompt(*m.pendingApproval, m.width, m.approvalChoice, m.approvalArgsOpen, m.approvalArgsOffset, m.approvalArgsWindow())
 	}
 
 	// The approval prompt is taller than the input line; shrink the viewport by

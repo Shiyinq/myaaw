@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -187,7 +189,10 @@ func TestGateRequesterDecisions(t *testing.T) {
 		t.Fatalf("other conversation should ask again, got %d requests", len(requester.requests))
 	}
 
-	if d, ok := store.Grant("bash", "chat-1"); !ok || d != AllowSession {
+	if d, ok := store.Grant("bash", SessionScope{
+		Scope:          Scope{Channel: "telegram", UserID: "42"},
+		ConversationID: "chat-1",
+	}); !ok || d != AllowSession {
 		t.Fatalf("stored grant = %q ok=%v", d, ok)
 	}
 }
@@ -201,8 +206,20 @@ func TestGateAlwaysGrantPersists(t *testing.T) {
 	}
 
 	again := NewStore(gate.Store.path)
-	if d, ok := again.Grant("bash", "anything"); !ok || d != AllowAlways {
+	scope := SessionScope{Scope: Scope{Channel: "telegram", UserID: "42"}, ConversationID: "anything"}
+	if d, ok := again.Grant("bash", scope); !ok || d != AllowAlways {
 		t.Fatalf("always grant did not persist: %q ok=%v", d, ok)
+	}
+
+	// The grant belongs to user 42 only; another user still needs approval.
+	other := SessionScope{Scope: Scope{Channel: "telegram", UserID: "43"}, ConversationID: "chat-1"}
+	if _, ok := again.Grant("bash", other); ok {
+		t.Fatal("always grant leaked to a different user")
+	}
+	// So does another channel for the same numeric user id.
+	otherChannel := SessionScope{Scope: Scope{Channel: "discord", UserID: "42"}, ConversationID: "chat-1"}
+	if _, ok := again.Grant("bash", otherChannel); ok {
+		t.Fatal("always grant leaked to a different channel")
 	}
 }
 
@@ -243,15 +260,26 @@ func TestDenyAll(t *testing.T) {
 
 func TestRegistryResolve(t *testing.T) {
 	registry := NewRegistry()
-	ch := registry.Register("tok")
-	if !registry.Resolve("tok", AllowOnce) {
-		t.Fatal("resolve returned false")
+	actor := Actor{Channel: "telegram", UserID: "42", ConversationID: "chat-1"}
+	ch := registry.Register("tok", actor)
+
+	if resolved, found := registry.Resolve("tok", AllowOnce, Actor{Channel: "telegram", UserID: "99", ConversationID: "chat-1"}); resolved || !found {
+		t.Fatalf("wrong user: resolved=%v found=%v", resolved, found)
+	}
+	if resolved, found := registry.Resolve("tok", AllowOnce, Actor{Channel: "telegram", UserID: "42", ConversationID: "chat-2"}); resolved || !found {
+		t.Fatalf("wrong conversation: resolved=%v found=%v", resolved, found)
+	}
+	if found, allowed := registry.Check("tok", actor); !found || !allowed {
+		t.Fatalf("check: found=%v allowed=%v", found, allowed)
+	}
+	if resolved, found := registry.Resolve("tok", AllowOnce, actor); !resolved || !found {
+		t.Fatalf("resolve: resolved=%v found=%v", resolved, found)
 	}
 	if got := <-ch; got != AllowOnce {
 		t.Fatalf("decision = %q", got)
 	}
-	if registry.Resolve("tok", Deny) {
-		t.Fatal("second resolve should return false")
+	if resolved, found := registry.Resolve("tok", Deny, actor); resolved || found {
+		t.Fatalf("second resolve: resolved=%v found=%v", resolved, found)
 	}
 }
 
@@ -282,6 +310,57 @@ func TestContextHelpers(t *testing.T) {
 	}
 }
 
+func TestGateRecordsAuditWithFullArgs(t *testing.T) {
+	gate, _ := newGate(t)
+	auditPath := filepath.Join(t.TempDir(), "approvals.jsonl")
+	gate.Audit = NewAuditLog(auditPath)
+	requester := &fakeRequester{decision: AllowOnce}
+	gate.Requester = requester
+
+	args := json.RawMessage(`{"command":"rm -rf /tmp/x","timeout":60}`)
+	if out := gate.Check(context.Background(), "bash", args); !out.Allowed {
+		t.Fatalf("expected allow, got %+v", out)
+	}
+	if got := requester.requests[0].Args; got != string(args) {
+		t.Fatalf("request args = %q; want the full raw JSON", got)
+	}
+
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "rm -rf /tmp/x") || !strings.Contains(string(data), `"tool":"bash"`) {
+		t.Fatalf("audit entry is missing details:\n%s", data)
+	}
+	var entry AuditEntry
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(data))), &entry); err != nil {
+		t.Fatalf("unmarshal audit: %v", err)
+	}
+	if entry.Source != "user" || entry.Decision != string(AllowOnce) || !entry.Allowed {
+		t.Fatalf("audit entry = %+v", entry)
+	}
+	if entry.Channel != "telegram" || entry.UserID != "42" || entry.ConversationID != "chat-1" {
+		t.Fatalf("audit scope = %+v", entry)
+	}
+}
+
+func TestGateAuditRecordsDenyList(t *testing.T) {
+	gate, _ := newGate(t)
+	gate.Policy.Deny = []string{"bash"}
+	gate.Audit = NewAuditLog(filepath.Join(t.TempDir(), "approvals.jsonl"))
+
+	if out := gate.Check(context.Background(), "bash", nil); out.Allowed {
+		t.Fatalf("expected deny, got %+v", out)
+	}
+	data, err := os.ReadFile(gate.Audit.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"source":"deny_list"`) {
+		t.Fatalf("audit entry = %s", data)
+	}
+}
+
 func TestGateRequestCarriesSubagentName(t *testing.T) {
 	gate, _ := newGate(t)
 	requester := &fakeRequester{decision: AllowOnce}
@@ -307,18 +386,24 @@ func TestStoreMergesExternalWrites(t *testing.T) {
 	first := NewStore(path)
 	second := NewStore(path) // constructed before first writes
 
-	if err := first.GrantAlways("bash"); err != nil {
+	if err := first.GrantAlways("bash", Scope{Channel: "telegram", UserID: "42"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := second.GrantSession("filesystem:read_file", "conv-1"); err != nil {
+	if err := second.GrantSession("filesystem:read_file", SessionScope{
+		Scope:          Scope{Channel: "telegram", UserID: "42"},
+		ConversationID: "conv-1",
+	}); err != nil {
 		t.Fatal(err)
 	}
 
 	reloaded := NewStore(path)
-	if d, ok := reloaded.Grant("bash", ""); !ok || d != AllowAlways {
+	if d, ok := reloaded.Grant("bash", SessionScope{Scope: Scope{Channel: "telegram", UserID: "42"}}); !ok || d != AllowAlways {
 		t.Fatalf("bash grant lost: %q ok=%v", d, ok)
 	}
-	if d, ok := reloaded.Grant("filesystem:read_file", "conv-1"); !ok || d != AllowSession {
+	if d, ok := reloaded.Grant("filesystem:read_file", SessionScope{
+		Scope:          Scope{Channel: "telegram", UserID: "42"},
+		ConversationID: "conv-1",
+	}); !ok || d != AllowSession {
 		t.Fatalf("session grant lost: %q ok=%v", d, ok)
 	}
 }
@@ -326,35 +411,156 @@ func TestStoreMergesExternalWrites(t *testing.T) {
 func TestStoreRevokeSession(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "approvals.json")
 	store := NewStore(path)
-	if err := store.GrantSession("bash", "conv-1"); err != nil {
+	scope := Scope{Channel: "telegram", UserID: "42"}
+	if err := store.GrantSession("bash", SessionScope{Scope: scope, ConversationID: "conv-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.GrantSession("bash", "conv-2"); err != nil {
+	if err := store.GrantSession("bash", SessionScope{Scope: scope, ConversationID: "conv-2"}); err != nil {
 		t.Fatal(err)
 	}
 
-	removed, err := store.RevokeSession("bash", "conv-1")
+	removed, err := store.RevokeSession("bash", SessionScope{Scope: scope, ConversationID: "conv-1"})
 	if err != nil || !removed {
 		t.Fatalf("revoke session: removed=%v err=%v", removed, err)
 	}
-	if _, ok := store.Grant("bash", "conv-1"); ok {
+	if _, ok := store.Grant("bash", SessionScope{Scope: scope, ConversationID: "conv-1"}); ok {
 		t.Fatal("conv-1 grant should be gone")
 	}
-	if _, ok := store.Grant("bash", "conv-2"); !ok {
+	if _, ok := store.Grant("bash", SessionScope{Scope: scope, ConversationID: "conv-2"}); !ok {
 		t.Fatal("conv-2 grant should remain")
 	}
 
-	removed, _ = store.RevokeSession("bash", "missing")
+	removed, _ = store.RevokeSession("bash", SessionScope{Scope: scope, ConversationID: "missing"})
 	if removed {
 		t.Fatal("revoking an unknown session should report false")
+	}
+}
+
+func TestStoreRevokeScope(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "approvals.json")
+	store := NewStore(path)
+	if err := store.GrantAlways("bash", Scope{Channel: "telegram", UserID: "42"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.GrantAlways("bash", Scope{Channel: "telegram", UserID: "43"}); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := store.RevokeScope("bash", Scope{Channel: "telegram", UserID: "42"})
+	if err != nil || !removed {
+		t.Fatalf("revoke scope: removed=%v err=%v", removed, err)
+	}
+	if _, ok := store.Grant("bash", SessionScope{Scope: Scope{Channel: "telegram", UserID: "42"}}); ok {
+		t.Fatal("user 42 grant should be gone")
+	}
+	if _, ok := store.Grant("bash", SessionScope{Scope: Scope{Channel: "telegram", UserID: "43"}}); !ok {
+		t.Fatal("user 43 grant should remain")
+	}
+}
+
+func TestStoreRevokeScopeFilters(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "approvals.json")
+	store := NewStore(path)
+	for _, scope := range []Scope{
+		{Channel: "telegram", UserID: "42"},
+		{Channel: "telegram", UserID: "43"},
+		{Channel: "discord", UserID: "42"},
+	} {
+		if err := store.GrantAlways("bash", scope); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A channel-only filter removes every user on that channel.
+	removed, err := store.RevokeScope("bash", Scope{Channel: "telegram"})
+	if err != nil || !removed {
+		t.Fatalf("revoke channel: removed=%v err=%v", removed, err)
+	}
+	for _, scope := range []Scope{{Channel: "telegram", UserID: "42"}, {Channel: "telegram", UserID: "43"}} {
+		if _, ok := store.Grant("bash", SessionScope{Scope: scope}); ok {
+			t.Fatalf("grant for %+v should be gone", scope)
+		}
+	}
+	if _, ok := store.Grant("bash", SessionScope{Scope: Scope{Channel: "discord", UserID: "42"}}); !ok {
+		t.Fatal("discord grant should remain")
+	}
+
+	// A user-only filter removes that user on every channel.
+	if removed, err := store.RevokeScope("bash", Scope{UserID: "42"}); err != nil || !removed {
+		t.Fatalf("revoke user: removed=%v err=%v", removed, err)
+	}
+	if grants := store.Snapshot(); len(grants) != 0 {
+		t.Fatalf("grants after revoke = %+v", grants)
+	}
+}
+
+func TestStoreRevokeSessionWithoutScopeFilter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "approvals.json")
+	store := NewStore(path)
+	if err := store.GrantSession("bash", SessionScope{
+		Scope:          Scope{Channel: "telegram", UserID: "42"},
+		ConversationID: "conv-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// `grants revoke bash --session conv-1` passes no channel/user filter.
+	removed, err := store.RevokeSession("bash", SessionScope{ConversationID: "conv-1"})
+	if err != nil || !removed {
+		t.Fatalf("revoke session: removed=%v err=%v", removed, err)
+	}
+	if _, ok := store.Grant("bash", SessionScope{Scope: Scope{Channel: "telegram", UserID: "42"}, ConversationID: "conv-1"}); ok {
+		t.Fatal("session grant should be gone")
+	}
+}
+
+func TestStoreMigratesLegacyGrants(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "approvals.json")
+	legacy := `{
+		"bash": {"always": true},
+		"filesystem:write_file": {"sessions": {"conv-1": "2026-10-29T17:03:13Z"}}
+	}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewStore(path)
+	// The global always grant is dropped: its author is unknown.
+	if _, ok := store.Grant("bash", SessionScope{Scope: Scope{Channel: "telegram", UserID: "42"}}); ok {
+		t.Fatal("legacy global always grant should be dropped")
+	}
+	// Sessions stay, scoped by their conversation (wildcard actor).
+	if d, ok := store.Grant("filesystem:write_file", SessionScope{
+		Scope:          Scope{Channel: "telegram", UserID: "42"},
+		ConversationID: "conv-1",
+	}); !ok || d != AllowSession {
+		t.Fatalf("legacy session grant lost: %q ok=%v", d, ok)
+	}
+
+	// The first mutation rewrites the file in the current shape (no version field).
+	if err := store.GrantAlways("python", Scope{Channel: "cli", UserID: "0"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"version"`) {
+		t.Fatalf("grants file should not carry a version field:\n%s", data)
+	}
+	if !strings.Contains(string(data), `"always": [`) {
+		t.Fatalf("file was not rewritten with scope arrays:\n%s", data)
 	}
 }
 
 func TestStoreClear(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "approvals.json")
 	store := NewStore(path)
-	_ = store.GrantAlways("bash")
-	_ = store.GrantSession("filesystem:read_file", "conv-1")
+	_ = store.GrantAlways("bash", Scope{Channel: "cli", UserID: "0"})
+	_ = store.GrantSession("filesystem:read_file", SessionScope{
+		Scope:          Scope{Channel: "cli", UserID: "0"},
+		ConversationID: "conv-1",
+	})
 
 	if err := store.Clear(); err != nil {
 		t.Fatal(err)

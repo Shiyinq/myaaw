@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +13,26 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 )
+
+// decisionUserID resolves the acting user from the request body (string or
+// number) or, for proxied calls, from the control plane header.
+func decisionUserID(raw json.RawMessage, header string) string {
+	if len(raw) > 0 {
+		var asString string
+		if err := json.Unmarshal(raw, &asString); err == nil {
+			if value := strings.TrimSpace(asString); value != "" {
+				return value
+			}
+		}
+		var asNumber json.Number
+		if err := json.Unmarshal(raw, &asNumber); err == nil {
+			if value := strings.TrimSpace(asNumber.String()); value != "" {
+				return value
+			}
+		}
+	}
+	return strings.TrimSpace(header)
+}
 
 // approvalDecisionTimeout bounds how long a decision request waits for the run
 // to finish (or to ask for another approval).
@@ -69,7 +90,7 @@ type sseApprovalRequester struct {
 }
 
 func (r *sseApprovalRequester) Request(ctx context.Context, req approvals.Request) (approvals.Decision, error) {
-	decisions := apiApprovals.Register(req.ID)
+	decisions := apiApprovals.Register(req.ID, approvals.Actor{Channel: "api", UserID: req.UserID})
 	defer apiApprovals.Remove(req.ID)
 
 	r.emit(channel.StreamChunk{
@@ -78,6 +99,7 @@ func (r *sseApprovalRequester) Request(ctx context.Context, req approvals.Reques
 		ToolName:    req.ToolName,
 		ToolAction:  req.Action,
 		ArgsSummary: req.ArgsSummary,
+		Args:        req.Args,
 		SubAgent:    req.SubAgent,
 	})
 
@@ -107,7 +129,7 @@ type blockingApprovalRequester struct {
 }
 
 func (r *blockingApprovalRequester) Request(ctx context.Context, req approvals.Request) (approvals.Decision, error) {
-	decisions := apiApprovals.Register(req.ID)
+	decisions := apiApprovals.Register(req.ID, approvals.Actor{Channel: "api", UserID: req.UserID})
 	defer apiApprovals.Remove(req.ID)
 
 	select {
@@ -135,6 +157,9 @@ func approvalRequestPayload(req approvals.Request) fiber.Map {
 	if req.SubAgent != "" {
 		payload["subagent"] = req.SubAgent
 	}
+	if req.Args != "" {
+		payload["args"] = req.Args
+	}
 	return fiber.Map{
 		"status":   "approval_required",
 		"approval": payload,
@@ -150,15 +175,18 @@ func approvalRequestPayload(req approvals.Request) fiber.Map {
 // @Accept       json
 // @Produce      json
 // @Param        id   path string true "Approval ID"
-// @Param        request body object true "Decision: allow_once | allow_session | allow_always | deny"
+// @Param        X-Myaaw-User-ID header string false "Owning user id (alternative to the body user_id)"
+// @Param        request body object true "Decision: allow_once | allow_session | allow_always | deny, plus the owning user_id"
 // @Success      200
 // @Failure      400 {object} common.ErrorResponse
+// @Failure      403 {object} common.ErrorResponse
 // @Failure      404 {object} common.ErrorResponse
 // @Router       /api/approvals/{id} [post]
 func (s *BotHandlerImpl) ApprovalDecision(c fiber.Ctx) error {
 	id := strings.TrimSpace(c.Params("id"))
 	var body struct {
-		Decision string `json:"decision"`
+		Decision string          `json:"decision"`
+		UserID   json.RawMessage `json:"user_id"`
 	}
 	if err := c.Bind().JSON(&body); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -174,20 +202,39 @@ func (s *BotHandlerImpl) ApprovalDecision(c fiber.Ctx) error {
 		})
 	}
 
+	userID := decisionUserID(body.UserID, c.Get(approvals.UserIDHeader))
+	if userID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "user_id is required (body field or " + approvals.UserIDHeader + " header)",
+		})
+	}
+	actor := approvals.Actor{Channel: "api", UserID: userID}
+
+	if found, allowed := apiApprovals.Check(id, actor); !found {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "approval not found or already resolved",
+		})
+	} else if !allowed {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "approval belongs to a different user",
+		})
+	}
+
 	run := takeRun(id)
-	if run == nil {
-		if apiApprovals.Resolve(id, decision) {
-			return c.JSON(fiber.Map{"ok": true, "decision": string(decision)})
-		}
+	resolved, found := apiApprovals.Resolve(id, decision, actor)
+	if !found {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "approval not found or already resolved",
 		})
 	}
-
-	if !apiApprovals.Resolve(id, decision) {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "approval not found or already resolved",
+	if !resolved {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error": "approval belongs to a different user",
 		})
+	}
+
+	if run == nil {
+		return c.JSON(fiber.Map{"ok": true, "decision": string(decision)})
 	}
 
 	select {

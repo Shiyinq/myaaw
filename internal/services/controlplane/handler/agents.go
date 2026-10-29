@@ -107,7 +107,7 @@ func (h *Handler) ChatStream(c fiber.Ctx) error {
 // @Failure      502 {object} common.ErrorResponse
 // @Router       /agents/{name}/approvals/{id}/decision [post]
 func (h *Handler) ApprovalDecision(c fiber.Ctx) error {
-	if err := h.proxy.ApprovalDecision(c, c.Params("name"), c.Params("id")); err != nil {
+	if err := h.proxy.ApprovalDecision(c, c.Params("name"), c.Params("id"), h.auth.UserID()); err != nil {
 		return proxyError(c, err)
 	}
 	return nil

@@ -257,15 +257,22 @@ curl -X POST http://localhost:9000/agents/myfriend/approvals/<id>/decision \
   -d '{"decision":"allow_once"}'
 ```
 
+The proxy adds `X-Myaaw-User-ID` from your login, so the agent only accepts the
+decision if it belongs to the user who started the chat (`403` otherwise).
+
 Management endpoints:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents/:name/approvals` | effective policy + grants |
+| `GET` | `/agents/:name/approvals` | effective policy + scoped grants |
 | `PATCH` | `/agents/:name/config` | update the `approvals` policy (validated) |
-| `DELETE` | `/agents/:name/approvals/grants/:key` | revoke every grant for a key |
-| `DELETE` | `/agents/:name/approvals/grants/:key/sessions/:conversation` | revoke one session grant |
+| `DELETE` | `/agents/:name/approvals/grants/:key` | revoke every grant for a key (or `?channel=&user=` for one actor) |
+| `DELETE` | `/agents/:name/approvals/grants/:key/sessions/:conversation` | revoke one session grant (optional `?channel=&user=`) |
 | `DELETE` | `/agents/:name/approvals/grants` | clear all grants |
+
+`GET /agents/:name/approvals` now returns `always` as a list of
+`{channel,user_id}` scopes (it was a boolean before the hardening change),
+and session entries carry their `channel`/`user_id` too.
 
 See [Tool Approvals](../agents/approvals.md) for fields, grant scopes, and per-channel behaviour.
 

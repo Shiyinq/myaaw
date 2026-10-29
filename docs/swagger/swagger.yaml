@@ -15,6 +15,9 @@ definitions:
     type: object
   api.TimelineItem:
     properties:
+      args:
+        description: Args carries the full argument JSON of an approval item.
+        type: string
       arguments:
         type: string
       attempt:
@@ -112,7 +115,12 @@ paths:
         name: id
         required: true
         type: string
-      - description: 'Decision: allow_once | allow_session | allow_always | deny'
+      - description: Owning user id (alternative to the body user_id)
+        in: header
+        name: X-Myaaw-User-ID
+        type: string
+      - description: 'Decision: allow_once | allow_session | allow_always | deny,
+          plus the owning user_id'
         in: body
         name: request
         required: true
@@ -125,6 +133,10 @@ paths:
           description: OK
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
           schema:
             $ref: '#/definitions/common.ErrorResponse'
         "404":

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -30,6 +31,9 @@ func (r *BotServiceImpl) approvalGate(ctx context.Context, msg *channel.Incoming
 	}
 	if path, err := agentdir.ActiveApprovalsPath(); err == nil {
 		gate.Store = approvals.NewStore(path)
+	}
+	if logsDir, err := agentdir.ActiveLogsDir(); err == nil {
+		gate.Audit = approvals.NewAuditLog(filepath.Join(logsDir, "approvals.jsonl"))
 	}
 	if gate.Requester == nil {
 		if isUnattendedRun(msg) {

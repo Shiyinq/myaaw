@@ -30,7 +30,11 @@ func (r *ApprovalRequester) Request(ctx context.Context, req approvals.Request) 
 	if r.session == nil {
 		return approvals.Deny, fmt.Errorf("discord session is not available")
 	}
-	decisions := ApprovalRegistry.Register(req.ID)
+	decisions := ApprovalRegistry.Register(req.ID, approvals.Actor{
+		Channel:        "discord",
+		UserID:         req.UserID,
+		ConversationID: r.channelID,
+	})
 	defer ApprovalRegistry.Remove(req.ID)
 
 	target := req.ToolName
@@ -109,7 +113,26 @@ func handleApprovalInteraction(s *discordgo.Session, i *discordgo.InteractionCre
 	if !ok {
 		return
 	}
-	ApprovalRegistry.Resolve(id, decision)
+
+	actor := approvals.Actor{Channel: "discord", ConversationID: i.ChannelID}
+	if i.User != nil {
+		actor.UserID = i.User.ID
+	}
+	resolved, found := ApprovalRegistry.Resolve(id, decision, actor)
+	if !resolved {
+		message := "This approval already expired."
+		if found {
+			message = "Only the user who started this chat can approve."
+		}
+		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: message,
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
 
 	content := "🔐 Approval: " + decisionLabel(decision)
 	empty := []discordgo.MessageComponent{}

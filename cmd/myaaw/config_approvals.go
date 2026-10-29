@@ -112,7 +112,7 @@ var approvalsGrantsListCmd = &cobra.Command{
 
 var approvalsGrantsRevokeCmd = &cobra.Command{
 	Use:   "revoke <key>",
-	Short: "Revoke a grant (all sessions, or one with --session)",
+	Short: "Revoke a grant (all scopes, one actor, or one session)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path, err := agentdir.ActiveApprovalsPath()
@@ -125,8 +125,17 @@ var approvalsGrantsRevokeCmd = &cobra.Command{
 			return fmt.Errorf("key is required")
 		}
 		session, _ := cmd.Flags().GetString("session")
+		channel, _ := cmd.Flags().GetString("channel")
+		userID, _ := cmd.Flags().GetString("user")
+		session = strings.TrimSpace(session)
+		channel = strings.ToLower(strings.TrimSpace(channel))
+		userID = strings.TrimSpace(userID)
 		if session != "" {
-			removed, err := store.RevokeSession(key, session)
+			scope := approvals.SessionScope{
+				Scope:          approvals.Scope{Channel: channel, UserID: userID},
+				ConversationID: session,
+			}
+			removed, err := store.RevokeSession(key, scope)
 			if err != nil {
 				return err
 			}
@@ -134,6 +143,17 @@ var approvalsGrantsRevokeCmd = &cobra.Command{
 				return fmt.Errorf("grant %q for session %q not found", key, session)
 			}
 			fmt.Println(theme.RenderSuccess(fmt.Sprintf("✅ Revoked %s for session %s", key, session)))
+			return nil
+		}
+		if channel != "" || userID != "" {
+			removed, err := store.RevokeScope(key, approvals.Scope{Channel: channel, UserID: userID})
+			if err != nil {
+				return err
+			}
+			if !removed {
+				return fmt.Errorf("grant %q for %s not found", key, scopeLabel(channel, userID))
+			}
+			fmt.Println(theme.RenderSuccess(fmt.Sprintf("✅ Revoked %s for %s", key, scopeLabel(channel, userID))))
 			return nil
 		}
 
@@ -185,6 +205,8 @@ func init() {
 	)
 
 	approvalsGrantsRevokeCmd.Flags().String("session", "", "revoke only this conversation id")
+	approvalsGrantsRevokeCmd.Flags().String("channel", "", "restrict to this channel (telegram, discord, api, cli)")
+	approvalsGrantsRevokeCmd.Flags().String("user", "", "restrict to this user id")
 	approvalsGrantsCmd.AddCommand(approvalsGrantsListCmd, approvalsGrantsRevokeCmd, approvalsGrantsClearCmd)
 
 	approvalsCmd.AddCommand(approvalsShowCmd, approvalsSetCmd, approvalsAllowCmd, approvalsDenyCmd, approvalsGrantsCmd)
@@ -368,27 +390,43 @@ func printApprovalGrants(grants map[string]approvals.Grant) {
 	sort.Strings(keys)
 	for _, key := range keys {
 		grant := grants[key]
-		if grant.Always {
-			fmt.Printf("  %s: always\n", key)
-			continue
+		fmt.Printf("  %s\n", key)
+		for _, scope := range grant.Always {
+			fmt.Printf("    always:  %s\n", scopeLabel(scope.Channel, scope.UserID))
 		}
-		sessions := make([]string, 0, len(grant.Sessions))
-		for id := range grant.Sessions {
-			sessions = append(sessions, id)
+		for _, entry := range grant.Sessions {
+			fmt.Printf("    session: %s conversation=%s created=%s\n",
+				scopeLabel(entry.Channel, entry.UserID), entry.ConversationID,
+				entry.CreatedAt.Format(time.RFC3339))
 		}
-		sort.Strings(sessions)
-		fmt.Printf("  %s: sessions=%s\n", key, strings.Join(sessions, ", "))
 	}
 }
 
+func scopeLabel(channel, userID string) string {
+	if channel == "" {
+		channel = "*"
+	}
+	if userID == "" {
+		userID = "*"
+	}
+	return "channel=" + channel + " user=" + userID
+}
+
+type scopeJSON struct {
+	Channel string `json:"channel"`
+	UserID  string `json:"user_id"`
+}
+
 type sessionGrantJSON struct {
+	Channel   string    `json:"channel"`
+	UserID    string    `json:"user_id"`
 	ID        string    `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 type grantJSON struct {
 	Key      string             `json:"key"`
-	Always   bool               `json:"always"`
+	Always   []scopeJSON        `json:"always,omitempty"`
 	Sessions []sessionGrantJSON `json:"sessions,omitempty"`
 }
 
@@ -418,9 +456,17 @@ func printGrantsJSON(grants map[string]approvals.Grant) error {
 func grantsJSON(grants map[string]approvals.Grant) []grantJSON {
 	out := make([]grantJSON, 0, len(grants))
 	for key, grant := range grants {
-		item := grantJSON{Key: key, Always: grant.Always}
-		for id, created := range grant.Sessions {
-			item.Sessions = append(item.Sessions, sessionGrantJSON{ID: id, CreatedAt: created})
+		item := grantJSON{Key: key}
+		for _, scope := range grant.Always {
+			item.Always = append(item.Always, scopeJSON{Channel: scope.Channel, UserID: scope.UserID})
+		}
+		for _, entry := range grant.Sessions {
+			item.Sessions = append(item.Sessions, sessionGrantJSON{
+				Channel:   entry.Channel,
+				UserID:    entry.UserID,
+				ID:        entry.ConversationID,
+				CreatedAt: entry.CreatedAt,
+			})
 		}
 		sort.Slice(item.Sessions, func(i, j int) bool {
 			return item.Sessions[i].CreatedAt.Before(item.Sessions[j].CreatedAt)

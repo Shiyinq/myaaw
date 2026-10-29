@@ -74,7 +74,8 @@ myaaw config approvals deny list
 myaaw config approvals deny add <key>
 myaaw config approvals deny remove <key>
 myaaw config approvals grants list [--json]
-myaaw config approvals grants revoke <key> [--session <conversation-id>]
+myaaw config approvals grants revoke <key> [--session <conversation-id>] \
+                                          [--channel <name>] [--user <id>]
 myaaw config approvals grants clear
 ```
 
@@ -93,8 +94,10 @@ Approvals
   deny (0):
 
 Grants
-  bash: always
-  playwright_browser_navigate: sessions=09e98570-...
+  bash
+    always:  channel=telegram user=111
+  playwright_browser_navigate
+    session: channel=cli user=0 conversation=09e98570-... created=2026-10-29T17:03:13+07:00
 ```
 
 `--json` emits the same shape used by `GET /agents/:name/approvals`:
@@ -103,8 +106,11 @@ Grants
 {
   "config": { "mode": "manual", "timeout_seconds": 60, "allow": ["filesystem:read_file", "computer:screenshot"], "deny": [], "unattended": "allow", "subagents": "inherit" },
   "grants": [
-    { "key": "bash", "always": true },
-    { "key": "filesystem:write_file", "sessions": [{ "id": "...", "created_at": "..." }] }
+    { "key": "bash", "always": [{ "channel": "telegram", "user_id": "111" }] },
+    {
+      "key": "filesystem:write_file",
+      "sessions": [{ "channel": "cli", "user_id": "0", "id": "...", "created_at": "..." }]
+    }
   ]
 }
 ```
@@ -159,22 +165,33 @@ Deny
 ### `grants`
 
 Grants are created at runtime by the approval prompt (`s` = session,
-`a` = always). The store is read-modify-write and written atomically, so
-revoking one entry never removes the others.
+`a` = always) and are **scoped to the channel + user that started the run**, so
+an `Always` grant for one person never applies to another. The store is
+read-modify-write and written atomically, so revoking one entry never removes
+the others.
 
 ```bash
 myaaw config approvals grants list
 myaaw config approvals grants revoke bash
-myaaw config approvals grants revoke filesystem:write_file --session 09e98570-...
+myaaw config approvals grants revoke bash --channel telegram --user 111
+myaaw config approvals grants revoke filesystem:write_file --session 09e98570-... --user 111
 myaaw config approvals grants clear
 ```
 
 - `revoke <key>` removes `always` and every session grant for that key.
-- `--session` removes only that conversation's grant.
+- `--channel` and/or `--user` remove only entries matching the filter; an
+  omitted filter matches every value.
+- `--session` removes only that conversation's grant (optionally combined with
+  the scope filters).
 - `clear` empties `config/approvals.json`; the policy is untouched.
+- Legacy grants files are read once and rewritten in the current shape on the
+  next mutation; their global `always` grants are dropped (the author is
+  unknown) and sessions are kept.
 - Grants are re-read on each run, so changes apply to the next run without a
   restart. `myaaw chat` loads policy at start, so restart it after `set`,
   `allow`, or `deny`.
+- Every decision is audited to `<logs>/approvals.jsonl` with the full tool
+  arguments; view it with `myaaw logs approvals`.
 
 See [Tool Approvals](../agents/approvals.md) for the policy semantics, per-channel
 prompts, sub-agents, A2A, and API endpoints.

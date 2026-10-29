@@ -53,8 +53,10 @@ type StreamChunk struct {
 	ApprovalID  string
 	ToolAction  string
 	ArgsSummary string
-	Decision    string
-	Reason      string
+	// Args is the full raw argument JSON for approval requests.
+	Args     string
+	Decision string
+	Reason   string
 	// SubAgent names the sub-agent that raised the approval request, empty for
 	// calls made by the main agent.
 	SubAgent string

@@ -8,6 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
+
+	"myaaw/internal/agent/approvals"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -36,7 +39,7 @@ func (p *ProxyService) ChatStream(c fiber.Ctx, agentName string, userID int) err
 
 // ApprovalDecision forwards a tool approval decision to the agent that owns the
 // pending run.
-func (p *ProxyService) ApprovalDecision(c fiber.Ctx, agentName, approvalID string) error {
+func (p *ProxyService) ApprovalDecision(c fiber.Ctx, agentName, approvalID string, userID int) error {
 	baseURL, _, err := p.agents.BaseURL(agentName)
 	if err != nil {
 		return err
@@ -48,6 +51,7 @@ func (p *ProxyService) ApprovalDecision(c fiber.Ctx, agentName, approvalID strin
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(approvals.UserIDHeader, strconv.Itoa(userID))
 
 	resp, err := p.client.Do(req)
 	if err != nil {

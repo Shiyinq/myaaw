@@ -2,6 +2,7 @@ package approvals
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -9,12 +10,38 @@ import (
 	"time"
 )
 
-// maxSessionGrants bounds the per-key session grant map so a long-lived agent
+// maxSessionGrants bounds the per-key session grant list so a long-lived agent
 // cannot grow the file without bound.
 const maxSessionGrants = 100
 
+// Scope identifies who a grant belongs to. "*" matches anything (legacy scope).
+type Scope struct {
+	Channel string `json:"channel,omitempty"`
+	UserID  string `json:"user_id,omitempty"`
+}
+
+// SessionScope is a Scope plus the conversation a session grant belongs to.
+type SessionScope struct {
+	Scope
+	ConversationID string
+}
+
+// SessionGrant is one conversation-scoped grant.
+type SessionGrant struct {
+	Channel        string    `json:"channel,omitempty"`
+	UserID         string    `json:"user_id,omitempty"`
+	ConversationID string    `json:"conversation_id"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 // Grant is one persisted approval grant for a tool key.
 type Grant struct {
+	Always   []Scope        `json:"always,omitempty"`
+	Sessions []SessionGrant `json:"sessions,omitempty"`
+}
+
+// grantLegacy is the pre-scope format: key -> {always, sessions}.
+type grantLegacy struct {
 	Always   bool                 `json:"always,omitempty"`
 	Sessions map[string]time.Time `json:"sessions,omitempty"`
 }
@@ -47,19 +74,51 @@ func (s *Store) reloadLocked() {
 	if err != nil {
 		return
 	}
+
 	var grants map[string]Grant
-	if err := json.Unmarshal(data, &grants); err != nil {
-		// Keep the in-memory copy rather than wiping grants on a transient read.
+	if err := json.Unmarshal(data, &grants); err == nil {
+		if grants == nil {
+			grants = map[string]Grant{}
+		}
+		s.grants = grants
 		return
 	}
-	if grants == nil {
-		grants = map[string]Grant{}
+
+	// Legacy map: key -> {always, sessions}. Global always grants are dropped
+	// because their author is unknown; sessions are kept with a wildcard scope
+	// since a conversation ID already identifies one chat.
+	var legacy map[string]grantLegacy
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		return
+	}
+	grants = make(map[string]Grant, len(legacy))
+	dropped := 0
+	for key, old := range legacy {
+		grant := Grant{}
+		if old.Always {
+			dropped++
+		}
+		for conversation, created := range old.Sessions {
+			grant.Sessions = append(grant.Sessions, SessionGrant{
+				Channel:        "*",
+				UserID:         "*",
+				ConversationID: conversation,
+				CreatedAt:      created,
+			})
+		}
+		sortSessionGrants(grant.Sessions)
+		if len(grant.Sessions) > 0 {
+			grants[key] = grant
+		}
+	}
+	if dropped > 0 {
+		log.Printf("approvals: dropped %d legacy global always grant(s) in %s; those tools will be asked again", dropped, s.path)
 	}
 	s.grants = grants
 }
 
-// Grant returns a stored decision for key, scoped to conversationID.
-func (s *Store) Grant(key, conversationID string) (Decision, bool) {
+// Grant returns a stored decision for key scoped to the caller.
+func (s *Store) Grant(key string, scope SessionScope) (Decision, bool) {
 	if s == nil {
 		return "", false
 	}
@@ -70,34 +129,60 @@ func (s *Store) Grant(key, conversationID string) (Decision, bool) {
 	if !ok {
 		return "", false
 	}
-	if grant.Always {
-		return AllowAlways, true
+	for _, entry := range grant.Always {
+		if scope.matches(Scope{Channel: entry.Channel, UserID: entry.UserID}) {
+			return AllowAlways, true
+		}
 	}
-	if conversationID != "" {
-		if _, ok := grant.Sessions[conversationID]; ok {
+	for _, entry := range grant.Sessions {
+		if entry.ConversationID != scope.ConversationID {
+			continue
+		}
+		if scope.matches(Scope{Channel: entry.Channel, UserID: entry.UserID}) {
 			return AllowSession, true
 		}
 	}
 	return "", false
 }
 
-// GrantSession remembers key for the given conversation.
-func (s *Store) GrantSession(key, conversationID string) error {
+// GrantSession remembers key for one conversation.
+func (s *Store) GrantSession(key string, scope SessionScope) error {
 	return s.mutate(func(grants map[string]Grant) {
 		grant := grants[key]
-		if grant.Sessions == nil {
-			grant.Sessions = map[string]time.Time{}
+		for i, entry := range grant.Sessions {
+			if entry.ConversationID == scope.ConversationID &&
+				entry.Channel == scope.Channel && entry.UserID == scope.UserID {
+				grant.Sessions[i].CreatedAt = time.Now()
+				grants[key] = grant
+				return
+			}
 		}
-		grant.Sessions[conversationID] = time.Now()
-		pruneSessions(grant.Sessions)
+		grant.Sessions = append(grant.Sessions, SessionGrant{
+			Channel:        scope.Channel,
+			UserID:         scope.UserID,
+			ConversationID: scope.ConversationID,
+			CreatedAt:      time.Now(),
+		})
+		sortSessionGrants(grant.Sessions)
+		if len(grant.Sessions) > maxSessionGrants {
+			grant.Sessions = grant.Sessions[len(grant.Sessions)-maxSessionGrants:]
+		}
 		grants[key] = grant
 	})
 }
 
-// GrantAlways remembers key for every conversation.
-func (s *Store) GrantAlways(key string) error {
+// GrantAlways remembers key for every conversation of one actor.
+func (s *Store) GrantAlways(key string, scope Scope) error {
 	return s.mutate(func(grants map[string]Grant) {
-		grants[key] = Grant{Always: true}
+		grant := grants[key]
+		for _, entry := range grant.Always {
+			if entry.Channel == scope.Channel && entry.UserID == scope.UserID {
+				return
+			}
+		}
+		grant.Always = append(grant.Always, Scope{Channel: scope.Channel, UserID: scope.UserID})
+		sortAlways(grant.Always)
+		grants[key] = grant
 	})
 }
 
@@ -108,25 +193,69 @@ func (s *Store) Revoke(key string) error {
 	})
 }
 
-// RevokeSession removes one conversation grant for key. It reports false when
-// the key or session does not exist.
-func (s *Store) RevokeSession(key, conversationID string) (bool, error) {
+// RevokeScope removes the always grants and sessions that belong to the given
+// channel/user. Empty fields act as wildcards.
+func (s *Store) RevokeScope(key string, scope Scope) (bool, error) {
 	removed := false
 	err := s.mutate(func(grants map[string]Grant) {
 		grant, ok := grants[key]
-		if !ok || grant.Sessions == nil {
+		if !ok {
 			return
 		}
-		if _, ok := grant.Sessions[conversationID]; !ok {
-			return
+		keptAlways := grant.Always[:0]
+		for _, entry := range grant.Always {
+			if filterMatches(entry.Channel, scope.Channel) && filterMatches(entry.UserID, scope.UserID) {
+				removed = true
+				continue
+			}
+			keptAlways = append(keptAlways, entry)
 		}
-		delete(grant.Sessions, conversationID)
-		if len(grant.Sessions) == 0 && !grant.Always {
+		grant.Always = keptAlways
+
+		keptSessions := grant.Sessions[:0]
+		for _, entry := range grant.Sessions {
+			if filterMatches(entry.Channel, scope.Channel) && filterMatches(entry.UserID, scope.UserID) {
+				removed = true
+				continue
+			}
+			keptSessions = append(keptSessions, entry)
+		}
+		grant.Sessions = keptSessions
+
+		if len(grant.Always) == 0 && len(grant.Sessions) == 0 {
 			delete(grants, key)
-		} else {
-			grants[key] = grant
+			return
 		}
-		removed = true
+		grants[key] = grant
+	})
+	return removed, err
+}
+
+// RevokeSession removes one conversation grant for key. Empty channel/user act
+// as wildcards. It reports false when nothing matched.
+func (s *Store) RevokeSession(key string, scope SessionScope) (bool, error) {
+	removed := false
+	err := s.mutate(func(grants map[string]Grant) {
+		grant, ok := grants[key]
+		if !ok || len(grant.Sessions) == 0 {
+			return
+		}
+		kept := grant.Sessions[:0]
+		for _, entry := range grant.Sessions {
+			if entry.ConversationID == scope.ConversationID &&
+				filterMatches(entry.Channel, scope.Channel) &&
+				filterMatches(entry.UserID, scope.UserID) {
+				removed = true
+				continue
+			}
+			kept = append(kept, entry)
+		}
+		grant.Sessions = kept
+		if len(grant.Always) == 0 && len(grant.Sessions) == 0 {
+			delete(grants, key)
+			return
+		}
+		grants[key] = grant
 	})
 	return removed, err
 }
@@ -150,12 +279,11 @@ func (s *Store) Snapshot() map[string]Grant {
 	s.reloadLocked()
 	out := make(map[string]Grant, len(s.grants))
 	for key, grant := range s.grants {
-		copied := Grant{Always: grant.Always}
-		if grant.Sessions != nil {
-			copied.Sessions = make(map[string]time.Time, len(grant.Sessions))
-			for id, created := range grant.Sessions {
-				copied.Sessions[id] = created
-			}
+		copied := Grant{
+			Always: append([]Scope(nil), grant.Always...),
+		}
+		for _, entry := range grant.Sessions {
+			copied.Sessions = append(copied.Sessions, entry)
 		}
 		out[key] = copied
 	}
@@ -179,20 +307,47 @@ func (s *Store) mutate(fn func(map[string]Grant)) error {
 	return writeFileAtomic(s.path, data)
 }
 
-func pruneSessions(sessions map[string]time.Time) {
-	if len(sessions) <= maxSessionGrants {
-		return
+// matches reports whether a stored scope entry covers the caller's scope. "*"
+// (and the empty string in an entry) matches anything.
+func (scope SessionScope) matches(entry Scope) bool {
+	return scopeMatches(entry.Channel, scope.Channel) && scopeMatches(entry.UserID, scope.UserID)
+}
+
+func scopeMatches(entry, want string) bool {
+	if entry == "" || entry == "*" {
+		return true
 	}
-	names := make([]string, 0, len(sessions))
-	for name := range sessions {
-		names = append(names, name)
+	if want == "" {
+		return false
 	}
-	sort.Slice(names, func(i, j int) bool {
-		return sessions[names[i]].Before(sessions[names[j]])
+	return entry == want
+}
+
+// filterMatches is the revoke-side matcher: an empty filter means "every
+// entry", while a non-empty filter matches exactly or a stored wildcard.
+func filterMatches(entry, filter string) bool {
+	if filter == "" || filter == "*" {
+		return true
+	}
+	return entry == filter || entry == "*"
+}
+
+func sortAlways(entries []Scope) {
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Channel == entries[j].Channel {
+			return entries[i].UserID < entries[j].UserID
+		}
+		return entries[i].Channel < entries[j].Channel
 	})
-	for _, name := range names[:len(names)-maxSessionGrants] {
-		delete(sessions, name)
-	}
+}
+
+func sortSessionGrants(entries []SessionGrant) {
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].CreatedAt.Equal(entries[j].CreatedAt) {
+			return entries[i].ConversationID < entries[j].ConversationID
+		}
+		return entries[i].CreatedAt.Before(entries[j].CreatedAt)
+	})
 }
 
 func writeFileAtomic(path string, data []byte) error {

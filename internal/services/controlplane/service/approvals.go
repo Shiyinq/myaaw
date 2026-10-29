@@ -13,8 +13,16 @@ import (
 // ErrGrantNotFound is returned when revoking a grant that does not exist.
 var ErrGrantNotFound = errors.New("approval grant not found")
 
+// ScopeView identifies the actor a grant belongs to.
+type ScopeView struct {
+	Channel string `json:"channel"`
+	UserID  string `json:"user_id"`
+}
+
 // SessionGrantView is one conversation-scoped grant.
 type SessionGrantView struct {
+	Channel   string    `json:"channel"`
+	UserID    string    `json:"user_id"`
 	ID        string    `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -22,7 +30,7 @@ type SessionGrantView struct {
 // GrantView is one approval grant entry.
 type GrantView struct {
 	Key      string             `json:"key"`
-	Always   bool               `json:"always"`
+	Always   []ScopeView        `json:"always,omitempty"`
 	Sessions []SessionGrantView `json:"sessions,omitempty"`
 }
 
@@ -71,13 +79,34 @@ func (s *ApprovalsService) RevokeKey(agentName, key string) error {
 	return store.Revoke(key)
 }
 
-// RevokeSession removes one conversation grant for a tool key.
-func (s *ApprovalsService) RevokeSession(agentName, key, conversationID string) error {
+// RevokeScope removes the always grants and sessions that belong to one
+// channel/user. Empty fields act as wildcards.
+func (s *ApprovalsService) RevokeScope(agentName, key, channel, userID string) error {
 	path, err := agentdir.ApprovalsPath(agentName)
 	if err != nil {
 		return err
 	}
-	removed, err := approvals.NewStore(path).RevokeSession(key, conversationID)
+	removed, err := approvals.NewStore(path).RevokeScope(key, approvals.Scope{Channel: channel, UserID: userID})
+	if err != nil {
+		return err
+	}
+	if !removed {
+		return ErrGrantNotFound
+	}
+	return nil
+}
+
+// RevokeSession removes one conversation grant for a tool key.
+func (s *ApprovalsService) RevokeSession(agentName, key, conversationID, channel, userID string) error {
+	path, err := agentdir.ApprovalsPath(agentName)
+	if err != nil {
+		return err
+	}
+	scope := approvals.SessionScope{
+		Scope:          approvals.Scope{Channel: channel, UserID: userID},
+		ConversationID: conversationID,
+	}
+	removed, err := approvals.NewStore(path).RevokeSession(key, scope)
 	if err != nil {
 		return err
 	}
@@ -99,9 +128,17 @@ func (s *ApprovalsService) Clear(agentName string) error {
 func grantViews(grants map[string]approvals.Grant) []GrantView {
 	views := make([]GrantView, 0, len(grants))
 	for key, grant := range grants {
-		view := GrantView{Key: key, Always: grant.Always}
-		for id, created := range grant.Sessions {
-			view.Sessions = append(view.Sessions, SessionGrantView{ID: id, CreatedAt: created})
+		view := GrantView{Key: key}
+		for _, scope := range grant.Always {
+			view.Always = append(view.Always, ScopeView{Channel: scope.Channel, UserID: scope.UserID})
+		}
+		for _, entry := range grant.Sessions {
+			view.Sessions = append(view.Sessions, SessionGrantView{
+				Channel:   entry.Channel,
+				UserID:    entry.UserID,
+				ID:        entry.ConversationID,
+				CreatedAt: entry.CreatedAt,
+			})
 		}
 		sort.Slice(view.Sessions, func(i, j int) bool {
 			return view.Sessions[i].CreatedAt.Before(view.Sessions[j].CreatedAt)

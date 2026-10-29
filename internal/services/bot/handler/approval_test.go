@@ -36,6 +36,8 @@ func (f *approvalBotService) BotStreamContext(
 	decision, err := requester.Request(ctx, approvals.Request{
 		ID:          "appr-test-1",
 		RunID:       "run-1",
+		Channel:     "api",
+		UserID:      "7",
 		ToolName:    "bash",
 		ArgsSummary: `{"command":"ls"}`,
 	})
@@ -80,7 +82,7 @@ func TestAPIChatApprovalFlow(t *testing.T) {
 		t.Fatalf("first response = %+v", first)
 	}
 
-	req2 := httptest.NewRequest("POST", "/api/approvals/"+first.Approval.ID, strings.NewReader(`{"decision":"allow_once"}`))
+	req2 := httptest.NewRequest("POST", "/api/approvals/"+first.Approval.ID, strings.NewReader(`{"decision":"allow_once","user_id":7}`))
 	req2.Header.Set("Content-Type", "application/json")
 	resp2, err := app.Test(req2, fiber.TestConfig{Timeout: 5 * time.Second})
 	if err != nil {
@@ -107,7 +109,7 @@ func TestAPIChatApprovalFlow(t *testing.T) {
 func TestApprovalDecisionUnknownID(t *testing.T) {
 	app := newAPIApp(t, newFakeBotService())
 
-	req := httptest.NewRequest("POST", "/api/approvals/does-not-exist", strings.NewReader(`{"decision":"deny"}`))
+	req := httptest.NewRequest("POST", "/api/approvals/does-not-exist", strings.NewReader(`{"decision":"deny","user_id":0}`))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req)
 	if err != nil {
@@ -116,6 +118,71 @@ func TestApprovalDecisionUnknownID(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != fiber.StatusNotFound {
 		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
+func TestApprovalDecisionRequiresUser(t *testing.T) {
+	app := newAPIApp(t, newFakeBotService())
+
+	req := httptest.NewRequest("POST", "/api/approvals/whatever", strings.NewReader(`{"decision":"deny"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+}
+
+func TestApprovalDecisionHeaderUser(t *testing.T) {
+	app := newAPIApp(t, newFakeBotService())
+
+	req := httptest.NewRequest("POST", "/api/approvals/does-not-exist", strings.NewReader(`{"decision":"deny"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(approvals.UserIDHeader, "7")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("status = %d; want 404 once the user is known", resp.StatusCode)
+	}
+}
+
+func TestApprovalDecisionWrongUser(t *testing.T) {
+	svc := &approvalBotService{}
+	app := newAPIAppWith(t, svc)
+
+	req := httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"user_id":7,"text":"hi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var first struct {
+		Approval struct {
+			ID string `json:"id"`
+		} `json:"approval"`
+	}
+	if err := json.Unmarshal(body, &first); err != nil || first.Approval.ID == "" {
+		t.Fatalf("first response = %s (err=%v)", body, err)
+	}
+
+	req2 := httptest.NewRequest("POST", "/api/approvals/"+first.Approval.ID, strings.NewReader(`{"decision":"allow_once","user_id":99}`))
+	req2.Header.Set("Content-Type", "application/json")
+	resp2, err := app.Test(req2, fiber.TestConfig{Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("decision: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != fiber.StatusForbidden {
+		body2, _ := io.ReadAll(resp2.Body)
+		t.Fatalf("status = %d, body = %s; want 403", resp2.StatusCode, body2)
 	}
 }
 

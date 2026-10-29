@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,7 +30,12 @@ func NewApprovalRequester(chatID, replyTo int) *ApprovalRequester {
 }
 
 func (r *ApprovalRequester) Request(ctx context.Context, req approvals.Request) (approvals.Decision, error) {
-	decisions := ApprovalRegistry.Register(req.ID)
+	// Only the run's user, in the chat that received the prompt, may answer.
+	decisions := ApprovalRegistry.Register(req.ID, approvals.Actor{
+		Channel:        "telegram",
+		UserID:         req.UserID,
+		ConversationID: strconv.Itoa(r.ChatID),
+	})
 	defer ApprovalRegistry.Remove(req.ID)
 
 	messageID, err := r.send(req)
@@ -143,9 +149,25 @@ func HandleApprovalCallback(payload json.RawMessage) bool {
 
 	cb := update.CallbackQuery
 	if id, decision, ok := parseApprovalCallback(cb.Data); ok {
-		ApprovalRegistry.Resolve(id, decision)
+		actor := approvals.Actor{Channel: "telegram"}
+		if cb.From != nil {
+			actor.UserID = strconv.Itoa(cb.From.ID)
+		}
+		if cb.Message != nil {
+			actor.ConversationID = strconv.Itoa(cb.Message.Chat.ID)
+		}
+		resolved, found := ApprovalRegistry.Resolve(id, decision, actor)
+		switch {
+		case resolved:
+			answerCallbackQuery(cb.ID, "")
+		case found:
+			answerCallbackQuery(cb.ID, "Only the user who started this chat can approve.")
+		default:
+			answerCallbackQuery(cb.ID, "This approval already expired.")
+		}
+		return true
 	}
-	answerCallbackQuery(cb.ID)
+	answerCallbackQuery(cb.ID, "")
 	return true
 }
 
@@ -170,10 +192,14 @@ func parseApprovalCallback(data string) (string, approvals.Decision, bool) {
 	return "", "", false
 }
 
-func answerCallbackQuery(callbackID string) {
+func answerCallbackQuery(callbackID, text string) {
 	client := resty.New().SetTimeout(10 * time.Second)
+	body := map[string]string{"callback_query_id": callbackID}
+	if text != "" {
+		body["text"] = text
+		body["show_alert"] = "false"
+	}
 	_, _ = client.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(map[string]interface{}{"callback_query_id": callbackID}).
+		SetBody(body).
 		Post(telegramAPIURL("answerCallbackQuery"))
 }

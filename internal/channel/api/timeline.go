@@ -28,6 +28,8 @@ type TimelineItem struct {
 	DroppedMessages int `json:"dropped_messages,omitempty"`
 	// SubAgent names the sub-agent that raised an approval item, if any.
 	SubAgent string `json:"subagent,omitempty"`
+	// Args carries the full argument JSON of an approval item.
+	Args string `json:"args,omitempty"`
 }
 
 // Timeline converts agent stream chunks into timeline items and, when emit is
@@ -64,6 +66,7 @@ func (t *Timeline) HandleChunk(chunk channel.StreamChunk) {
 			Name:      chunk.ToolName,
 			Arguments: chunk.ArgsSummary,
 			SubAgent:  chunk.SubAgent,
+			Args:      chunk.Args,
 		})
 		payload := map[string]any{
 			"approval_id":  chunk.ApprovalID,
@@ -73,6 +76,9 @@ func (t *Timeline) HandleChunk(chunk channel.StreamChunk) {
 		}
 		if chunk.SubAgent != "" {
 			payload["subagent"] = chunk.SubAgent
+		}
+		if chunk.Args != "" {
+			payload["args"] = chunk.Args
 		}
 		t.emitEvent("approval_required", payload)
 	case "approval_resolved":

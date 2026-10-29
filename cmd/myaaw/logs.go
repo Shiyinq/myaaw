@@ -67,7 +67,7 @@ func runLogs(cmd *cobra.Command, args []string) {
 			return
 		}
 		for _, file := range files {
-			if !file.IsDir() && strings.HasSuffix(file.Name(), ".log") {
+			if !file.IsDir() && (strings.HasSuffix(file.Name(), ".log") || strings.HasSuffix(file.Name(), ".jsonl")) {
 				if filter == "" || strings.Contains(strings.ToLower(file.Name()), filter) {
 					targetFiles = append(targetFiles, filepath.Join(logDir, file.Name()))
 				}
@@ -178,7 +178,7 @@ func selectLogFilesInteractive(files []os.DirEntry, logDir string) []string {
 	allPaths := []string{}
 
 	for _, file := range files {
-		if !file.IsDir() && strings.HasSuffix(file.Name(), ".log") {
+		if !file.IsDir() && (strings.HasSuffix(file.Name(), ".log") || strings.HasSuffix(file.Name(), ".jsonl")) {
 			fullPath := filepath.Join(logDir, file.Name())
 			items = append(items, logItem{
 				title: file.Name(),

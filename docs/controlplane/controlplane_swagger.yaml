@@ -2,6 +2,9 @@ basePath: /
 definitions:
   api.TimelineItem:
     properties:
+      args:
+        description: Args carries the full argument JSON of an approval item.
+        type: string
       arguments:
         type: string
       attempt:
@@ -1380,7 +1383,9 @@ definitions:
   service.GrantView:
     properties:
       always:
-        type: boolean
+        items:
+          $ref: '#/definitions/service.ScopeView'
+        type: array
       key:
         type: string
       sessions:
@@ -1603,6 +1608,13 @@ definitions:
       total:
         type: integer
     type: object
+  service.ScopeView:
+    properties:
+      channel:
+        type: string
+      user_id:
+        type: string
+    type: object
   service.SearchMatch:
     properties:
       line:
@@ -1671,9 +1683,13 @@ definitions:
     type: object
   service.SessionGrantView:
     properties:
+      channel:
+        type: string
       created_at:
         type: string
       id:
+        type: string
+      user_id:
         type: string
     type: object
   service.SessionList:
@@ -2055,7 +2071,8 @@ paths:
       - Approvals
   /agents/{name}/approvals/grants/{key}:
     delete:
-      description: Removes the key from config/approvals.json (always and every session).
+      description: Removes the key from config/approvals.json (all scopes), or only
+        the scopes matching the optional channel/user filters.
       parameters:
       - description: Agent name
         in: path
@@ -2066,6 +2083,14 @@ paths:
         in: path
         name: key
         required: true
+        type: string
+      - description: Only revoke grants for this channel
+        in: query
+        name: channel
+        type: string
+      - description: Only revoke grants for this user id
+        in: query
+        name: user
         type: string
       produces:
       - application/json
@@ -2105,6 +2130,14 @@ paths:
         in: path
         name: conversation
         required: true
+        type: string
+      - description: Restrict to this channel
+        in: query
+        name: channel
+        type: string
+      - description: Restrict to this user id
+        in: query
+        name: user
         type: string
       produces:
       - application/json
