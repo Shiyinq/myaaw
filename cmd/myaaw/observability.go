@@ -24,6 +24,7 @@ var (
 	obsPruneDays     int
 	obsPruneVacuum   bool
 	obsJSON          bool
+	obsContent       bool
 	obsRunsLimit     int
 	obsSessionsLimit int
 	obsBefore        string
@@ -61,9 +62,13 @@ var observabilitySummaryCmd = &cobra.Command{
 var observabilityRunCmd = &cobra.Command{
 	Use:   "run <run-id | session.type.turn>",
 	Short: "Show one trace tree",
-	Args:  cobra.ExactArgs(1),
+	Long: `Prints the header and the span tree for one turn. Each llm row is followed by a
+one-line preview of the thinking and text stored for that request; pass --content
+to print them in full. A step with no preview produced only a tool call.`,
+	Args: cobra.ExactArgs(1),
 	Example: `  myaaw observability run run_1a2b3c4d5e6f7a8b
-  myaaw observability run 4e7371da.cli.2`,
+  myaaw observability run 4e7371da.cli.2
+  myaaw observability run 4e7371da.cli.2 --content`,
 	RunE: runObservabilityRun,
 }
 
@@ -105,6 +110,7 @@ func init() {
 	observabilitySummaryCmd.Flags().BoolVar(&obsJSON, "json", false, "print raw JSON")
 
 	observabilityRunCmd.Flags().BoolVar(&obsJSON, "json", false, "print raw JSON")
+	observabilityRunCmd.Flags().BoolVar(&obsContent, "content", false, "show the full stored thinking and text under each request")
 
 	observabilityRunsCmd.Flags().IntVar(&obsRunsLimit, "limit", 20, "how many runs to show")
 	observabilityRunsCmd.Flags().StringVar(&obsChannel, "channel", "", "filter by channel")
@@ -401,6 +407,9 @@ func runObservabilityRun(cmd *cobra.Command, args []string) error {
 			line += fmt.Sprintf("  [%s]", span.Status)
 		}
 		fmt.Println(line)
+		if span.Kind == obs.KindLLM && span.OutputJSON != "" {
+			printAssistantContent(span.OutputJSON, indent+"  ")
+		}
 		for _, child := range children[span.ID] {
 			printSpan(child, depth+1)
 		}
@@ -849,6 +858,47 @@ func compactionLabel(span obs.Span) string {
 		label += fmt.Sprintf(" · %d dropped", view.DroppedMessages)
 	}
 	return label
+}
+
+// printAssistantContent shows what an llm response contained. A tree row alone
+// cannot tell a pure tool call from an answer, so the stored thinking and text
+// are printed underneath: first line by default, full text with --content.
+func printAssistantContent(raw, indent string) {
+	var msg struct {
+		Content string `json:"content"`
+		Thought string `json:"thought"`
+	}
+	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+		return
+	}
+
+	for _, block := range []struct {
+		label string
+		text  string
+	}{
+		{"thinking", msg.Thought},
+		{"text", msg.Content},
+	} {
+		text := strings.TrimSpace(sanitizeForTUI(block.text))
+		if text == "" {
+			continue
+		}
+		label := fmt.Sprintf("%-9s", block.label+":")
+		if obsContent {
+			fmt.Printf("%s%s\n", indent, theme.RenderDim(label))
+			for _, line := range strings.Split(text, "\n") {
+				fmt.Printf("%s%s\n", indent, theme.RenderDim("  "+strings.TrimRight(line, " ")))
+			}
+			continue
+		}
+		lines := strings.Split(text, "\n")
+		suffix := ""
+		if extra := len(lines) - 1; extra > 0 {
+			suffix = fmt.Sprintf("  (+%d more)", extra)
+		}
+		fmt.Printf("%s%s\n", indent, theme.RenderDim(
+			fmt.Sprintf("%s %s%s", label, oneLine(lines[0], 100), suffix)))
+	}
 }
 
 func spanLabel(span obs.Span) string {

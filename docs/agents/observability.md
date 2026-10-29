@@ -211,9 +211,12 @@ Run run_2240477b6447ff48
   user
   Step 1                                        5.30s
     llm · deepseek-v4-flash                     1.28s  ttft 809ms  9.6k/104 tok  $0.001387
+      thinking: I need to open the product page first…  (+4 more)
+      text:     Opening the product page.
     tool · playwright_browser_navigate          4.01s
   Step 2                                        1.21s
     llm · deepseek-v4-flash                     1.11s  ttft 909ms  9.8k/49 tok   $0.000092
+      thinking: The page is open; I will search for the price.
     tool · playwright_browser_find              95ms
 ```
 
@@ -243,6 +246,7 @@ Tree lines:
 | `ttft …` | Time to first streamed token for that request. Absent when the provider returned the answer without streaming deltas, for example a response that only contains tool calls. |
 | `9.6k/104 tok` | Input / output tokens of that request. Input grows every step because the transcript is resent. Cached input is recorded but not printed on this line. |
 | `$0.001387` | Cost of that request, priced with the model and rate in force when it ran. |
+| `thinking:` / `text:` | Content stored on the `llm` response above: a one-line preview by default, the full text with `--content`. Absent when that request produced no thinking or text (a pure tool call) or when content capture is off. |
 | `[running]` | The span was still open when the trace was read; elapsed time is shown "so far". |
 | `[error]` | The request or tool failed. The run keeps the message in `error`. |
 
@@ -314,6 +318,7 @@ a single step can show more than one `llm` line.
 ```text
 Step 1                                             11.79s
   llm · deepseek-v4-flash      2.12s  ttft 874ms  9.6k/209 tok  $0.001447
+    thinking: Let me inspect the repository first…  (+4 more)
   tool · filesystem            4.03s
   tool · bash                  2.64s
 Step 2                                             11.84s
@@ -321,22 +326,26 @@ Step 2                                             11.84s
   tool · bash                  7.20s
 Step 3                                              7.82s
   llm · deepseek-v4-flash      7.78s  ttft 1.01s 10.9k/291 tok  $0.000302
+    thinking: I have the result now.
+    text:     The test suite passes.
 ```
 
 | Row | What was paid for |
 | :--- | :--- |
 | Step 1 `llm` | Request 1: the model read the system prompt and the user message, thought, and asked for `filesystem` + `bash`. The 209 output tokens cover the tool-call JSON (and any thinking); the 9.6k input is the prompt plus the tool schemas. |
 | Step 1 `tool` ×2 | Executions only: no tokens, no model cost. |
-| Step 2 `llm` | Request 2: it carries the two tool results, so input grows to 10.2k. The 82 output tokens are one `bash` tool call. There is no `ttft` because only tool calls were streamed, no text or thinking. |
+| Step 2 `llm` | Request 2: it carries the two tool results, so input grows to 10.2k. The 82 output tokens are one `bash` tool call. There is no `ttft` because only tool calls were streamed, no text or thinking. It also has no `thinking:`/`text:` preview, which is how the tree shows that this request produced nothing but the call. |
 | Step 2 `tool` | Execution only. |
 | Step 3 `llm` | Request 3: it carries the last tool result and produces the final text/thinking — 291 output tokens, and `ttft` is present again. |
 
 Read the rows as "the request above, the executions below". A tool call never
 incurs tokens itself; the model request that decided it does, and that usage is
 always on the `llm` row. If you look only at the `tool` rows, the turn appears
-token-free; add the `llm` rows and the real bill is there. The cost difference
-between Step 1 and Step 3 despite similar input comes from prompt-cache hits,
-which are stored but not printed (see above).
+token-free; add the `llm` rows and the real bill is there. The preview lines
+answer the other question the row alone cannot: Step 1 and Step 3 produced
+thinking/text, Step 2 produced only a tool call. The cost difference between
+Step 1 and Step 3 despite similar input comes from prompt-cache hits, which are
+stored but not printed (see above).
 
 ### Glossary
 
@@ -413,6 +422,8 @@ even when the transcript inside `llm.input_json` is trimmed.
 
 Set `store_content: false` to keep only metadata and token counts. That is the
 privacy opt-out: prompts, answers, and tool payloads are not written at all.
+Traces recorded this way have no `thinking:`/`text:` previews in `obs run`, and
+`--content` has nothing to print.
 
 ### Redaction
 
@@ -561,6 +572,7 @@ myaaw obs session <conversation-id>                 # every turn of one session
 myaaw obs runs --limit 20 --status error            # pick a run
 myaaw obs runs --conversation <conversation-id>
 myaaw obs run <run-id>
+myaaw obs run <run-id> --content                     # full thinking and text
 myaaw obs run 4e7371da.cli.1                       # turn reference
 myaaw observability run run_1a2b3c4d5e6f7a8b
 
@@ -673,9 +685,11 @@ two sessions the command says so and asks for more characters.
 ### `run`
 
 Prints the header and the span tree described in
-[Reading the tree](#reading-the-tree). `--json` returns `{run, spans}` with every
-stored field, including `generation_ms` and `cache_hit_tokens`, which the tree
-does not print.
+[Reading the tree](#reading-the-tree). Each `llm` row is followed by a one-line
+preview of the stored thinking and text, so a step that only made a tool call is
+visibly different from one that also wrote an answer; `--content` prints the
+full stored text. `--json` returns `{run, spans}` with every stored field,
+including `generation_ms` and `cache_hit_tokens`, which the tree does not print.
 
 ---
 

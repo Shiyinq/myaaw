@@ -1,7 +1,10 @@
 package main
 
 import (
+	"io"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -216,5 +219,59 @@ func TestTruncateValueKeepsColumnsAligned(t *testing.T) {
 	// A multi-byte name must not be split mid-character.
 	if got := truncateValue("pengguna_üñî", 8); !utf8.ValidString(got) {
 		t.Fatalf("truncation broke UTF-8: %q", got)
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close pipe: %v", err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+	return string(out)
+}
+
+func TestPrintAssistantContentShowsThinkingAndText(t *testing.T) {
+	raw := `{"role":"assistant","content":"Final answer.\nSecond line.","thought":"I should inspect the repo.\nThen run the tests."}`
+	got := captureStdout(t, func() { printAssistantContent(raw, "    ") })
+
+	if !strings.Contains(got, "thinking:") || !strings.Contains(got, "I should inspect the repo.") {
+		t.Fatalf("thinking preview missing:\n%s", got)
+	}
+	if !strings.Contains(got, "text:") || !strings.Contains(got, "Final answer.") {
+		t.Fatalf("text preview missing:\n%s", got)
+	}
+	if strings.Count(got, "(+1 more)") != 2 {
+		t.Fatalf("each two-line block should be marked as truncated:\n%s", got)
+	}
+}
+
+func TestPrintAssistantContentSkipsEmptyBlocks(t *testing.T) {
+	got := captureStdout(t, func() {
+		printAssistantContent(`{"role":"assistant","thought":"only thinking"}`, "  ")
+	})
+	if !strings.Contains(got, "thinking:") {
+		t.Fatalf("thinking missing:\n%s", got)
+	}
+	if strings.Contains(got, "text:") {
+		t.Fatalf("empty text block must not be printed:\n%s", got)
+	}
+}
+
+func TestPrintAssistantContentIgnoresInvalidJSON(t *testing.T) {
+	if got := captureStdout(t, func() { printAssistantContent("not json", "  ") }); got != "" {
+		t.Fatalf("invalid json printed %q", got)
 	}
 }
