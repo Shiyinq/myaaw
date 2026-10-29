@@ -114,10 +114,7 @@ func handleApprovalInteraction(s *discordgo.Session, i *discordgo.InteractionCre
 		return
 	}
 
-	actor := approvals.Actor{Channel: "discord", ConversationID: i.ChannelID}
-	if i.User != nil {
-		actor.UserID = i.User.ID
-	}
+	actor := approvalActor(i)
 	resolved, found := ApprovalRegistry.Resolve(id, decision, actor)
 	if !resolved {
 		message := "This approval already expired."
@@ -143,6 +140,19 @@ func handleApprovalInteraction(s *discordgo.Session, i *discordgo.InteractionCre
 			Components: empty,
 		},
 	})
+}
+
+// approvalActor resolves the user who clicked an approval button. In guilds
+// discordgo fills Member.User and leaves User nil; in DMs it is the reverse.
+func approvalActor(i *discordgo.InteractionCreate) approvals.Actor {
+	actor := approvals.Actor{Channel: "discord", ConversationID: i.ChannelID}
+	switch {
+	case i.User != nil:
+		actor.UserID = i.User.ID
+	case i.Member != nil && i.Member.User != nil:
+		actor.UserID = i.Member.User.ID
+	}
+	return actor
 }
 
 func parseApprovalCustomID(customID string) (string, approvals.Decision, bool) {

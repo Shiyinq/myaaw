@@ -4,7 +4,37 @@ import (
 	"testing"
 
 	"myaaw/internal/agent/approvals"
+
+	"github.com/bwmarrin/discordgo"
 )
+
+func TestApprovalActorResolvesGuildMember(t *testing.T) {
+	// Guild interaction: User is nil, Member.User carries the clicker.
+	guild := &discordgo.InteractionCreate{Interaction: &discordgo.Interaction{
+		ChannelID: "chan-1",
+		Member:    &discordgo.Member{User: &discordgo.User{ID: "42"}},
+	}}
+	actor := approvalActor(guild)
+	if actor.Channel != "discord" || actor.UserID != "42" || actor.ConversationID != "chan-1" {
+		t.Fatalf("guild actor = %+v", actor)
+	}
+
+	// DM interaction: User is set instead.
+	dm := &discordgo.InteractionCreate{Interaction: &discordgo.Interaction{
+		ChannelID: "dm-1",
+		User:      &discordgo.User{ID: "7"},
+	}}
+	actor = approvalActor(dm)
+	if actor.UserID != "7" || actor.ConversationID != "dm-1" {
+		t.Fatalf("dm actor = %+v", actor)
+	}
+
+	// No user information: the actor stays empty and cannot match a bound user.
+	empty := approvalActor(&discordgo.InteractionCreate{Interaction: &discordgo.Interaction{ChannelID: "chan-2"}})
+	if empty.UserID != "" {
+		t.Fatalf("empty actor = %+v", empty)
+	}
+}
 
 func TestParseApprovalCustomID(t *testing.T) {
 	cases := map[string]approvals.Decision{
