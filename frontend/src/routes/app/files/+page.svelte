@@ -9,11 +9,16 @@
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
+	import Markdown from '$lib/components/common/Markdown.svelte';
+	import CodePreview from '$lib/components/common/CodePreview.svelte';
+	import { detectPreview } from '$lib/utils/filePreview';
 	import {
 		ChevronLeft,
+		Eye,
 		File,
 		FilePlus2,
 		Folder,
+		Pencil,
 		RefreshCw,
 		Save,
 		Search,
@@ -23,6 +28,8 @@
 
 	const { t } = useTranslation();
 
+	const PREVIEW_LIMIT = 512 * 1024;
+
 	let path = $state('/home');
 	let entries = $state<FileEntry[]>([]);
 	let selected = $state<FileContent | null>(null);
@@ -30,6 +37,7 @@
 	let loading = $state(false);
 	let saving = $state(false);
 	let error = $state('');
+	let editing = $state(false);
 	let folderName = $state('');
 	let searchQuery = $state('');
 	let matches = $state<SearchMatch[]>([]);
@@ -37,6 +45,8 @@
 	let loadKey = '';
 
 	let agent = $derived(agentSelection.selected);
+	let preview = $derived(selected ? detectPreview(selected.path) : null);
+	let tooLargeToPreview = $derived(!!selected && selected.size > PREVIEW_LIMIT);
 
 	async function load(currentAgent: string, target: string) {
 		loading = true;
@@ -75,6 +85,7 @@
 			const file = await filesApi.read(agent, entry.path);
 			selected = file;
 			content = file.content;
+			editing = false;
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
@@ -85,6 +96,7 @@
 		const file = await filesApi.read(agent, match.path);
 		selected = file;
 		content = file.content;
+		editing = false;
 	}
 
 	async function save() {
@@ -93,6 +105,7 @@
 		try {
 			await filesApi.write(agent, selected.path, content);
 			toastStore.success(t('myaaw.files.saved'));
+			editing = false;
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -108,6 +121,7 @@
 			if (selected?.path === entry.path) {
 				selected = null;
 				content = '';
+				editing = false;
 			}
 			await load(agent, path);
 			toastStore.success(t('myaaw.files.deleted'));
@@ -281,25 +295,64 @@
 
 			<Card class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
 				<CardHeader class="flex shrink-0 flex-row items-center justify-between">
-					<CardTitle class="truncate text-sm font-medium">
-						{selected ? selected.path : t('myaaw.files.editor')}
-					</CardTitle>
+					<div class="flex min-w-0 items-center gap-1">
+						<CardTitle class="truncate text-sm font-medium">
+							{selected ? selected.path : t('myaaw.files.editor')}
+						</CardTitle>
+						{#if selected && preview && preview.kind !== 'binary'}
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								class="shrink-0 text-muted-foreground"
+								onclick={() => (editing = !editing)}
+								title={editing ? t('myaaw.files.preview') : t('myaaw.files.edit')}
+								aria-label={editing ? t('myaaw.files.preview') : t('myaaw.files.edit')}
+							>
+								{#if editing}
+									<Eye class="h-3.5 w-3.5" />
+								{:else}
+									<Pencil class="h-3.5 w-3.5" />
+								{/if}
+							</Button>
+						{/if}
+					</div>
 					{#if selected}
 						<div class="flex items-center gap-2">
+							<Badge variant="outline">
+								{editing ? t('myaaw.files.editing') : preview?.label}
+							</Badge>
 							<Badge variant="outline">{formatSize(selected.size)}</Badge>
-							<Button size="sm" onclick={save} loading={saving}>
-								<Save class="mr-2 h-4 w-4" />
-								{t('common.save')}
-							</Button>
+							{#if editing}
+								<Button size="sm" onclick={save} loading={saving}>
+									<Save class="mr-2 h-4 w-4" />
+									{t('common.save')}
+								</Button>
+							{/if}
 						</div>
 					{/if}
 				</CardHeader>
 				<CardContent class="min-h-0 flex-1">
 					{#if selected}
-						<textarea
-							bind:value={content}
-							class="h-full w-full resize-none rounded-md border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-						></textarea>
+						{#if editing}
+							<textarea
+								bind:value={content}
+								class="h-full w-full resize-none rounded-md border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+							></textarea>
+						{:else if preview?.kind === 'binary'}
+							<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
+								{t('myaaw.files.preview_unavailable')}
+							</p>
+						{:else if tooLargeToPreview}
+							<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
+								{t('myaaw.files.too_large')}
+							</p>
+						{:else if preview?.kind === 'markdown'}
+							<div class="h-full overflow-y-auto rounded-md border border-input bg-muted/20 px-4 py-3">
+								<Markdown content={content} />
+							</div>
+						{:else}
+							<CodePreview code={content} language={preview?.language ?? 'plaintext'} />
+						{/if}
 					{:else}
 						<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
 							{t('myaaw.files.select_file')}

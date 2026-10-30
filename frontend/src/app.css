@@ -1,6 +1,12 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
+/*
+ * Dark mode is driven by the `dark` class that mode-watcher puts on <html>, not
+ * by the OS colour scheme, so `dark:` utilities must follow that class too.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
@@ -151,4 +157,94 @@
 ::selection {
 	background-color: hsl(var(--primary) / 0.3);
 	color: inherit;
+}
+
+@layer base {
+	/* Token colours for the highlight.js code preview, tuned per theme. */
+	:root {
+		--code-keyword: oklch(0.5 0.19 300);
+		--code-string: oklch(0.5 0.13 155);
+		--code-number: oklch(0.55 0.16 45);
+		--code-title: oklch(0.5 0.15 250);
+		--code-attr: oklch(0.5 0.12 200);
+		--code-comment: oklch(0.55 0.02 260);
+	}
+
+	.dark {
+		--code-keyword: oklch(0.78 0.15 305);
+		--code-string: oklch(0.8 0.12 155);
+		--code-number: oklch(0.82 0.13 60);
+		--code-title: oklch(0.78 0.13 250);
+		--code-attr: oklch(0.8 0.1 200);
+		--code-comment: oklch(0.65 0.02 260);
+	}
+
+	.hljs {
+		color: var(--foreground);
+		background: transparent;
+	}
+
+	.hljs-comment,
+	.hljs-quote,
+	.hljs-meta {
+		color: var(--code-comment);
+		font-style: italic;
+	}
+
+	.hljs-keyword,
+	.hljs-selector-tag,
+	.hljs-literal,
+	.hljs-doctag,
+	.hljs-type,
+	.hljs-name,
+	.hljs-variable.language_ {
+		color: var(--code-keyword);
+	}
+
+	.hljs-string,
+	.hljs-regexp,
+	.hljs-addition,
+	.hljs-attribute,
+	.hljs-selector-attr,
+	.hljs-selector-pseudo,
+	.hljs-template-variable {
+		color: var(--code-string);
+	}
+
+	.hljs-number,
+	.hljs-symbol,
+	.hljs-bullet,
+	.hljs-link,
+	.hljs-built_in,
+	.hljs-variable {
+		color: var(--code-number);
+	}
+
+	.hljs-title,
+	.hljs-title.function_,
+	.hljs-title.class_,
+	.hljs-section,
+	.hljs-selector-id,
+	.hljs-selector-class {
+		color: var(--code-title);
+	}
+
+	.hljs-attr,
+	.hljs-property,
+	.hljs-params,
+	.hljs-tag {
+		color: var(--code-attr);
+	}
+
+	.hljs-deletion {
+		color: oklch(0.6 0.2 25);
+	}
+
+	.hljs-emphasis {
+		font-style: italic;
+	}
+
+	.hljs-strong {
+		font-weight: 600;
+	}
 }
