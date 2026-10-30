@@ -2,9 +2,12 @@
 	import { cron as cronApi } from '$lib/apis/cron';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { validate, type FieldErrors } from '$lib/utils/validation';
+	import { cronJobSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
+	import FieldError from '$lib/components/common/FieldError.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -37,6 +40,7 @@
 	let channel = $state('telegram');
 	let to = $state('');
 	let enabled = $state(true);
+	let errors = $state<FieldErrors>({});
 
 	let historyFor = $state('');
 	let history = $state<CronExecution[]>([]);
@@ -65,17 +69,31 @@
 	});
 
 	async function create() {
-		if (!agent || !name.trim() || !expr.trim() || !message.trim()) return;
+		if (!agent) return;
+		const result = validate(cronJobSchema, {
+			name,
+			schedule_kind: kind,
+			expr,
+			tz,
+			message,
+			channel,
+			to
+		});
+		if (!result.ok) {
+			errors = result.errors;
+			return;
+		}
+		errors = {};
 		saving = true;
 		try {
 			await cronApi.add(agent, {
-				name: name.trim(),
-				schedule_kind: kind,
-				expr: expr.trim(),
-				tz,
-				message: message.trim(),
-				channel: channel || undefined,
-				to: to.trim() || undefined,
+				name: result.data.name,
+				schedule_kind: result.data.schedule_kind,
+				expr: result.data.expr,
+				tz: result.data.tz,
+				message: result.data.message,
+				channel: result.data.channel || undefined,
+				to: result.data.to || undefined,
 				enabled
 			});
 			name = '';
@@ -249,6 +267,7 @@
 						<div class="grid gap-1">
 							<Label for="cron-name">{t('myaaw.cron.name')}</Label>
 							<Input id="cron-name" bind:value={name} placeholder="Morning reminder" />
+							<FieldError code={errors.name} />
 						</div>
 						<div class="grid grid-cols-2 gap-2">
 							<div class="grid gap-1">
@@ -271,6 +290,7 @@
 						<div class="grid gap-1">
 							<Label for="cron-expr">{t('myaaw.cron.expr')}</Label>
 							<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
+							<FieldError code={errors.expr} />
 						</div>
 						<div class="grid gap-1">
 							<Label for="cron-message">{t('myaaw.cron.message')}</Label>
@@ -281,6 +301,7 @@
 								placeholder="Good morning!"
 								class="w-full rounded-md border border-input bg-transparent p-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 							></textarea>
+							<FieldError code={errors.message} />
 						</div>
 						<div class="grid grid-cols-2 gap-2">
 							<div class="grid gap-1">

@@ -2,9 +2,12 @@
 	import { providers as providersApi } from '$lib/apis/providers';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { validate, type FieldErrors } from '$lib/utils/validation';
+	import { providerSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
+	import FieldError from '$lib/components/common/FieldError.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -37,6 +40,7 @@
 	let apiKey = $state('');
 	let defaultModel = $state('');
 	let discovered = $state<ModelListView | null>(null);
+	let errors = $state<FieldErrors>({});
 
 	let agent = $derived(agentSelection.selected);
 
@@ -82,15 +86,27 @@
 	}
 
 	async function create() {
-		if (!agent || !name.trim() || !type) return;
+		if (!agent) return;
+		const result = validate(providerSchema, {
+			name,
+			type,
+			base_url: baseUrl,
+			api_key: apiKey,
+			default_model: defaultModel
+		});
+		if (!result.ok) {
+			errors = result.errors;
+			return;
+		}
+		errors = {};
 		saving = true;
 		try {
 			await providersApi.create(agent, {
-				name: name.trim(),
-				type,
-				base_url: baseUrl.trim() || undefined,
-				api_key: apiKey || undefined,
-				default_model: defaultModel || undefined
+				name: result.data.name,
+				type: result.data.type,
+				base_url: result.data.base_url || undefined,
+				api_key: result.data.api_key || undefined,
+				default_model: result.data.default_model || undefined
 			});
 			toastStore.success(t('myaaw.providers.saved'));
 			name = '';
@@ -234,7 +250,8 @@
 					>
 						<div class="grid gap-1">
 							<Label for="provider-name">{t('myaaw.providers.name')}</Label>
-							<Input id="provider-name" bind:value={name} placeholder="deepseek" required />
+							<Input id="provider-name" bind:value={name} placeholder="deepseek" />
+							<FieldError code={errors.name} />
 						</div>
 						<div class="grid gap-1">
 							<Label for="provider-type">{t('myaaw.providers.type')}</Label>
@@ -254,6 +271,7 @@
 								bind:value={baseUrl}
 								placeholder="https://api.deepseek.com"
 							/>
+							<FieldError code={errors.base_url} />
 						</div>
 						<div class="grid gap-1">
 							<Label for="provider-api-key">{t('myaaw.providers.api_key')}</Label>

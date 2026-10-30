@@ -2,9 +2,12 @@
 	import { contacts as contactsApi } from '$lib/apis/contacts';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { validate, type FieldErrors } from '$lib/utils/validation';
+	import { contactSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
+	import FieldError from '$lib/components/common/FieldError.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -31,6 +34,7 @@
 	let url = $state('');
 	let token = $state('');
 	let description = $state('');
+	let errors = $state<FieldErrors>({});
 
 	let agent = $derived(agentSelection.selected);
 
@@ -56,14 +60,20 @@
 	});
 
 	async function create() {
-		if (!agent || !name.trim() || !url.trim()) return;
+		if (!agent) return;
+		const result = validate(contactSchema, { name, url, token, description });
+		if (!result.ok) {
+			errors = result.errors;
+			return;
+		}
+		errors = {};
 		saving = true;
 		try {
 			await contactsApi.create(agent, {
-				name: name.trim(),
-				url: url.trim(),
-				token: token || undefined,
-				description: description.trim() || undefined
+				name: result.data.name,
+				url: result.data.url,
+				token: result.data.token || undefined,
+				description: result.data.description || undefined
 			});
 			name = '';
 			url = '';
@@ -193,10 +203,12 @@
 						<div class="grid gap-1">
 							<Label for="contact-name">{t('myaaw.contacts.name')}</Label>
 							<Input id="contact-name" bind:value={name} placeholder="research" />
+							<FieldError code={errors.name} />
 						</div>
 						<div class="grid gap-1">
 							<Label for="contact-url">{t('myaaw.contacts.url')}</Label>
 							<Input id="contact-url" bind:value={url} placeholder="https://host/a2a" />
+							<FieldError code={errors.url} />
 						</div>
 						<div class="grid gap-1">
 							<Label for="contact-token">{t('myaaw.contacts.token')}</Label>
@@ -206,6 +218,7 @@
 						<div class="grid gap-1">
 							<Label for="contact-description">{t('myaaw.contacts.description')}</Label>
 							<Input id="contact-description" bind:value={description} />
+							<FieldError code={errors.description} />
 						</div>
 						<Button type="submit" size="sm" loading={saving}>
 							<Plus class="mr-2 h-4 w-4" />

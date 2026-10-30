@@ -12,6 +12,7 @@
 		"cancel": "Batal",
 		"save": "Simpan",
 		"delete": "Hapus",
+		"edit": "Edit",
 		"settings": "Pengaturan",
 		"overview": "Ringkasan",
 		"profile": "Profil",
@@ -96,10 +97,20 @@
 		},
 		"agent": {
 			"label": "Agen",
-			"default": "bawaan",
+			"default": "default",
 			"running": "berjalan",
 			"stopped": "berhenti",
-			"none": "Belum ada agen. Buat dengan `myaaw onboard`."
+			"none": "Belum ada agen. Buat lewat `myaaw onboard`."
+		},
+		"validation": {
+			"required": "Wajib diisi",
+			"too_long": "Terlalu panjang",
+			"identifier": "Gunakan huruf, angka, titik, strip, atau garis bawah saja",
+			"url": "Harus URL http(s) yang valid",
+			"json": "Harus JSON yang valid",
+			"cron": "Gunakan ekspresi cron 5 field",
+			"env": "Setiap baris harus KEY=VALUE",
+			"no_slashes": "Tidak boleh mengandung garis miring"
 		},
 		"login": {
 			"subtitle": "Masuk ke control plane Myaaw.",
@@ -126,7 +137,12 @@
 			"agent_default_set": "{name} sekarang menjadi agen default",
 			"delete_agent": "Hapus agen",
 			"agent_delete_confirm": "Hapus agen {name}? Tindakan ini tidak bisa dibatalkan.",
-			"agent_deleted": "Agen dihapus"
+			"agent_deleted": "Agen dihapus",
+			"new_agent": "Agen baru",
+			"new_agent_desc": "Buat agen, penyedianya, dan direktori home-nya.",
+			"agent_name": "Nama agen",
+			"create_agent": "Buat agen",
+			"agent_created": "Agen {name} dibuat"
 		},
 		"chat": {
 			"title": "Chat",
@@ -212,6 +228,11 @@
 			"title": "Berkas",
 			"subtitle": "Jelajahi /home, /skills, dan /jobs, lalu edit berkas teks.",
 			"new_folder": "Folder baru",
+			"new_file": "Berkas baru",
+			"new_name": "Nama berkas atau folder baru",
+			"rename": "Ubah nama",
+			"renamed": "Nama diubah",
+			"file_created": "Berkas dibuat",
 			"empty": "Folder ini kosong.",
 			"search": "Cari teks...",
 			"editor": "Editor",
@@ -404,6 +425,9 @@
 			"cost": "Biaya",
 			"incomplete": "model tanpa harga",
 			"recent": "Run terbaru",
+			"sessions": "Sesi",
+			"session": "Sesi",
+			"select_session": "Pilih sesi untuk melihat gilirannya.",
 			"all_status": "Semua status",
 			"all_triggers": "Semua trigger",
 			"empty": "Belum ada run tercatat",

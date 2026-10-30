@@ -12,6 +12,7 @@
 		"cancel": "Cancel",
 		"save": "Save",
 		"delete": "Delete",
+		"edit": "Edit",
 		"settings": "Settings",
 		"overview": "Overview",
 		"profile": "Profile",
@@ -101,6 +102,16 @@
 			"stopped": "stopped",
 			"none": "No agents configured yet. Create one with `myaaw onboard`."
 		},
+		"validation": {
+			"required": "Required",
+			"too_long": "Too long",
+			"identifier": "Use letters, numbers, dot, dash or underscore only",
+			"url": "Must be a valid http(s) URL",
+			"json": "Must be valid JSON",
+			"cron": "Use a 5-field cron expression",
+			"env": "Each line must be KEY=VALUE",
+			"no_slashes": "Slashes are not allowed here"
+		},
 		"login": {
 			"subtitle": "Sign in to the Myaaw control plane.",
 			"submit": "Sign in",
@@ -126,7 +137,12 @@
 			"agent_default_set": "{name} is now the default agent",
 			"delete_agent": "Delete agent",
 			"agent_delete_confirm": "Delete agent {name}? This cannot be undone.",
-			"agent_deleted": "Agent deleted"
+			"agent_deleted": "Agent deleted",
+			"new_agent": "New agent",
+			"new_agent_desc": "Create an agent, its provider and its home directory.",
+			"agent_name": "Agent name",
+			"create_agent": "Create agent",
+			"agent_created": "Agent {name} created"
 		},
 		"chat": {
 			"title": "Chat",
@@ -212,6 +228,11 @@
 			"title": "Files",
 			"subtitle": "Browse /home, /skills, and /jobs, then edit text files.",
 			"new_folder": "New folder",
+			"new_file": "New file",
+			"new_name": "Name for a new file or folder",
+			"rename": "Rename",
+			"renamed": "Renamed",
+			"file_created": "File created",
 			"empty": "This folder is empty.",
 			"search": "Search text...",
 			"editor": "Editor",
@@ -404,6 +425,9 @@
 			"cost": "Cost",
 			"incomplete": "unpriced models",
 			"recent": "Recent runs",
+			"sessions": "Sessions",
+			"session": "Session",
+			"select_session": "Select a session to inspect its turns.",
 			"all_status": "All statuses",
 			"all_triggers": "All triggers",
 			"empty": "No recorded runs",
