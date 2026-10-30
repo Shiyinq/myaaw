@@ -249,6 +249,109 @@ func TestRouterFilesystem(t *testing.T) {
 	doJSON(t, app, "DELETE", "/agents/myfriend/fs?path=/home", token, "", fiber.StatusBadRequest, nil)
 }
 
+func TestRouterRawFiles(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	agentHome := filepath.Join(home, ".myaaw", "myfriend", "home")
+
+	// Smallest valid PNG (1x1, transparent).
+	png := []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+		0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41,
+		0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+		0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00,
+		0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+	}
+	if err := os.WriteFile(filepath.Join(agentHome, "pixel.png"), png, 0o644); err != nil {
+		t.Fatalf("write png: %v", err)
+	}
+
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	request := func(path, authorization string) *http.Response {
+		t.Helper()
+		req := httptest.NewRequest("GET", path, nil)
+		if authorization != "" {
+			req.Header.Set("Authorization", "Bearer "+authorization)
+		}
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		return resp
+	}
+
+	resp := request("/agents/myfriend/fs/raw?path=/home/pixel.png", token)
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, body)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "image/png" {
+		t.Fatalf("content-type = %q", got)
+	}
+	if nonstandard := resp.Header.Get("X-Content-Type-Options"); nonstandard != "nosniff" {
+		t.Fatalf("nosniff = %q", nonstandard)
+	}
+	if len(body) != len(png) {
+		t.Fatalf("body length = %d, want %d", len(body), len(png))
+	}
+
+	// A range request must return 206 so <video> can seek.
+	rangeReq := httptest.NewRequest("GET", "/agents/myfriend/fs/raw?path=/home/pixel.png", nil)
+	rangeReq.Header.Set("Authorization", "Bearer "+token)
+	rangeReq.Header.Set("Range", "bytes=0-7")
+	rangeResp, err := app.Test(rangeReq)
+	if err != nil {
+		t.Fatalf("range request: %v", err)
+	}
+	rangeResp.Body.Close()
+	if rangeResp.StatusCode != fiber.StatusPartialContent {
+		t.Fatalf("range status = %d", rangeResp.StatusCode)
+	}
+
+	// The query token keeps <img>/<video>/<a download> working.
+	queryResp := request("/agents/myfriend/fs/raw?path=/home/pixel.png&token="+token, "")
+	queryResp.Body.Close()
+	if queryResp.StatusCode != fiber.StatusOK {
+		t.Fatalf("token query status = %d", queryResp.StatusCode)
+	}
+
+	download := request("/agents/myfriend/fs/raw?path=/home/pixel.png&download=1", token)
+	download.Body.Close()
+	if disposition := download.Header.Get("Content-Disposition"); !strings.Contains(disposition, "attachment") {
+		t.Fatalf("content-disposition = %q", disposition)
+	}
+
+	missing := request("/agents/myfriend/fs/raw?path=/home/missing.png", token)
+	missing.Body.Close()
+	if missing.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("missing status = %d", missing.StatusCode)
+	}
+
+	directory := request("/agents/myfriend/fs/raw?path=/home", token)
+	directory.Body.Close()
+	if directory.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("directory status = %d", directory.StatusCode)
+	}
+
+	outOfSandbox := request("/agents/myfriend/fs/raw?path=/etc/passwd", token)
+	outOfSandbox.Body.Close()
+	if outOfSandbox.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("sandbox status = %d", outOfSandbox.StatusCode)
+	}
+}
+
 func TestRouterContext(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	home, err := os.UserHomeDir()

@@ -179,6 +179,28 @@ func (s *FileService) Read(agentName, virtualPath string) (FileContent, error) {
 	}, nil
 }
 
+// Raw resolves a virtual path to an absolute file path for streaming. It
+// returns the same errors as Read, but does not touch the file contents, so it
+// works for images, video, PDFs, and other binaries.
+func (s *FileService) Raw(agentName, virtualPath string) (string, string, error) {
+	abs, virtual, _, err := s.resolve(agentName, virtualPath)
+	if err != nil {
+		return "", "", err
+	}
+
+	info, err := os.Stat(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", ErrPathNotFound
+		}
+		return "", "", err
+	}
+	if info.IsDir() {
+		return "", "", fmt.Errorf("%w: path is a directory", ErrInvalidPath)
+	}
+	return abs, virtual, nil
+}
+
 // Write creates or overwrites a text file.
 func (s *FileService) Write(agentName, virtualPath, content string) (FileContent, error) {
 	if len(content) > maxWriteSize {

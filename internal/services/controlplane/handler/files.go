@@ -2,7 +2,9 @@ package handler
 
 import (
 	"errors"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"myaaw/internal/services/controlplane/service"
 
@@ -173,6 +175,45 @@ func (h *Handler) SearchFiles(c fiber.Ctx) error {
 		return fileError(c, err)
 	}
 	return c.JSON(fiber.Map{"matches": matches})
+}
+
+// RawFile streams a file with its real content type, so the browser can render
+// images, video, audio, and PDFs inline. Range requests are enabled, which is
+// what lets a <video> element seek without downloading the whole file.
+// @Summary      Stream an agent file
+// @Description  Serves the raw bytes with the extension's content type and range support. Pass download=1 to force a save dialog.
+// @Tags         Files
+// @Produce      application/octet-stream
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        path query string true "Virtual path" default(/home/AGENTS.md)
+// @Param        download query bool false "Send Content-Disposition: attachment"
+// @Success      200 {file} file
+// @Success      206 {file} file "Partial content"
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /agents/{name}/fs/raw [get]
+func (h *Handler) RawFile(c fiber.Ctx) error {
+	abs, _, err := h.files.Raw(c.Params("name"), c.Query("path"))
+	if err != nil {
+		return fileError(c, err)
+	}
+
+	// Never let a browser guess a type from the bytes: an HTML or SVG file that
+	// is opened directly must not acquire the control-plane origin's privileges.
+	c.Set("X-Content-Type-Options", "nosniff")
+	switch strings.ToLower(filepath.Ext(abs)) {
+	case ".html", ".htm", ".svg", ".xml":
+		c.Set("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:")
+	}
+
+	download := c.Query("download") == "1" || strings.EqualFold(c.Query("download"), "true")
+	return c.SendFile(abs, fiber.SendFile{
+		ByteRange:     true,
+		Download:      download,
+		CacheDuration: -1,
+	})
 }
 
 func fileError(c fiber.Ctx, err error) error {

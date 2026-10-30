@@ -29,7 +29,11 @@ func RequireAuth(auth *service.AuthService) fiber.Handler {
 func BearerToken(c fiber.Ctx) string {
 	header := strings.TrimSpace(c.Get("Authorization"))
 	if header == "" {
-		return ""
+		// Subresources (<img>, <video>, <iframe>, <a download>) cannot send an
+		// Authorization header, so the file endpoints accept the session token as
+		// a query parameter. The token is a 24-hour local session, and these
+		// requests never become history entries.
+		return strings.TrimSpace(c.Query("token"))
 	}
 
 	// Swagger UI's apiKey auth sends the raw value. Accept both forms so the

@@ -3376,6 +3376,54 @@ paths:
       summary: Create an agent directory
       tags:
       - Files
+  /agents/{name}/fs/raw:
+    get:
+      description: Serves the raw bytes with the extension's content type and range
+        support. Pass download=1 to force a save dialog.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - default: /home/AGENTS.md
+        description: Virtual path
+        in: query
+        name: path
+        required: true
+        type: string
+      - description: 'Send Content-Disposition: attachment'
+        in: query
+        name: download
+        type: boolean
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "206":
+          description: Partial content
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stream an agent file
+      tags:
+      - Files
   /agents/{name}/fs/read:
     get:
       parameters:

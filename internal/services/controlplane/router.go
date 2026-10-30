@@ -80,6 +80,7 @@ func NewApp() (*fiber.App, error) {
 	app.Delete("/agents/:name/approvals/grants", h.ClearApprovalGrants)
 
 	app.Get("/agents/:name/fs", h.ListFiles)
+	app.Get("/agents/:name/fs/raw", h.RawFile)
 	app.Get("/agents/:name/fs/read", h.ReadFile)
 	app.Get("/agents/:name/fs/search", h.SearchFiles)
 	app.Get("/agents/:name/context", h.ListContextFiles)
