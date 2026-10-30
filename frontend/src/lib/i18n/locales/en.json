@@ -167,7 +167,16 @@
 			"recent_chats": "Recent chats",
 			"recent_chats_desc": "Latest conversations for this agent.",
 			"no_chats": "No conversations yet.",
-			"start_chat": "New chat"
+			"start_chat": "New chat",
+			"activity": "Activity",
+			"activity_desc": "Chats created in the last 3 months.",
+			"activity_total": "{count} chats in this period",
+			"activity_cell": "{count} chats",
+			"activity_busiest": "Busiest {date} ({count})",
+			"activity_streak": "{count}-day streak",
+			"activity_less": "Less",
+			"activity_more": "More",
+			"activity_empty": "No chats in the last 3 months."
 		},
 		"onboard": {
 			"title": "New agent",

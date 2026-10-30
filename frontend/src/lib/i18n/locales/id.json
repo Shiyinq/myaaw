@@ -167,7 +167,16 @@
 			"recent_chats": "Chat terbaru",
 			"recent_chats_desc": "Percakapan terakhir untuk agen ini.",
 			"no_chats": "Belum ada percakapan.",
-			"start_chat": "Chat baru"
+			"start_chat": "Chat baru",
+			"activity": "Aktivitas",
+			"activity_desc": "Chat dibuat dalam 3 bulan terakhir.",
+			"activity_total": "{count} chat pada periode ini",
+			"activity_cell": "{count} chat",
+			"activity_busiest": "Tersibuk {date} ({count})",
+			"activity_streak": "Streak {count} hari",
+			"activity_less": "Sedikit",
+			"activity_more": "Banyak",
+			"activity_empty": "Belum ada chat dalam 3 bulan terakhir."
 		},
 		"onboard": {
 			"title": "Agen baru",

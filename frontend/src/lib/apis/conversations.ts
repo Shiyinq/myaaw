@@ -1,5 +1,10 @@
 import { agentPath, client } from './client';
-import type { ConversationDetail, ConversationPage, OKResponse } from '$lib/types';
+import type {
+	ConversationActivity,
+	ConversationDetail,
+	ConversationPage,
+	OKResponse
+} from '$lib/types';
 
 export const conversations = {
 	list: (agent: string, params: { search?: string; limit?: number; offset?: number } = {}) => {
@@ -27,5 +32,9 @@ export const conversations = {
 	remove: (agent: string, id: string) =>
 		client<OKResponse>(agentPath(agent, `/conversations/${encodeURIComponent(id)}`), {
 			method: 'DELETE'
-		})
+		}),
+	activity: (agent: string, params: { from: number; to: number }) =>
+		client<ConversationActivity>(
+			agentPath(agent, `/conversations/activity?from=${params.from}&to=${params.to}`)
+		)
 };

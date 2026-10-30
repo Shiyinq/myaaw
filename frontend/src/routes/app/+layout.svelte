@@ -197,6 +197,7 @@
 	let isFullHeight = $derived(
 		isChat ||
 			page.url.pathname === '/app' ||
+			page.url.pathname.startsWith('/app/dashboard') ||
 			page.url.pathname.startsWith('/app/files') ||
 			page.url.pathname.startsWith('/app/context') ||
 			page.url.pathname.startsWith('/app/skills') ||

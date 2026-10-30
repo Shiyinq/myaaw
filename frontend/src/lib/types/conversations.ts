@@ -25,6 +25,20 @@ export interface ConversationPage {
 	has_more: boolean;
 }
 
+/** One calendar day in the activity histogram. */
+export interface ActivityDay {
+	date: string;
+	count: number;
+}
+
+/** Per-day count of conversations created by the signed-in user. */
+export interface ConversationActivity {
+	from: number;
+	to: number;
+	total: number;
+	days: ActivityDay[];
+}
+
 export interface ConversationDetail {
 	id: string;
 	user_id: number;

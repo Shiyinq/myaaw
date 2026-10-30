@@ -11,6 +11,7 @@
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
+	import ActivityHeatmap from '$lib/components/dashboard/ActivityHeatmap.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -22,7 +23,12 @@
 	} from '$lib/components/ui/card';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Bot, MessageSquare, MessagesSquare, RefreshCw, Server } from 'lucide-svelte';
-	import type { ConversationSummary, ObservabilitySummary, ServerStatus } from '$lib/types';
+	import type {
+		ConversationActivity,
+		ConversationSummary,
+		ObservabilitySummary,
+		ServerStatus
+	} from '$lib/types';
 
 	const { t } = useTranslation();
 
@@ -37,6 +43,15 @@
 	let toolCustom = $state<number | null>(null);
 	let toolMcp = $state<number | null>(null);
 	let contactTotal = $state<number | null>(null);
+	let activity = $state<ConversationActivity | null>(null);
+	// Newest month first: the grid fills left to right, top to bottom.
+	let activityMonths = $derived.by(() => {
+		const today = new Date();
+		return Array.from(
+			{ length: 3 },
+			(_, index) => new Date(today.getFullYear(), today.getMonth() - index, 1)
+		);
+	});
 
 	let loading = $state(false);
 	let error = $state('');
@@ -47,15 +62,25 @@
 	async function loadFor(currentAgent: string) {
 		loading = true;
 		error = '';
-		const [statusResult, summaryResult, chatsResult, skillsResult, toolsResult, contactsResult] =
-			await Promise.allSettled([
-				serverApi.status(currentAgent),
-				observabilityApi.summary(currentAgent, 7),
-				conversationsApi.list(currentAgent, { limit: 5 }),
-				skillsApi.list(currentAgent),
-				toolsApi.list(currentAgent),
-				contactsApi.list(currentAgent)
-			]);
+		// The activity map covers the last three months.
+		const windowStart = activityMonths[activityMonths.length - 1].getTime();
+		const [
+			statusResult,
+			summaryResult,
+			chatsResult,
+			skillsResult,
+			toolsResult,
+			contactsResult,
+			activityResult
+		] = await Promise.allSettled([
+			serverApi.status(currentAgent),
+			observabilityApi.summary(currentAgent, 7),
+			conversationsApi.list(currentAgent, { limit: 5 }),
+			skillsApi.list(currentAgent),
+			toolsApi.list(currentAgent),
+			contactsApi.list(currentAgent),
+			conversationsApi.activity(currentAgent, { from: windowStart, to: Date.now() })
+		]);
 
 		status = statusResult.status === 'fulfilled' ? statusResult.value : null;
 		summary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
@@ -96,13 +121,16 @@
 		contactTotal =
 			contactsResult.status === 'fulfilled' ? (contactsResult.value.contacts ?? []).length : null;
 
+		activity = activityResult.status === 'fulfilled' ? activityResult.value : null;
+
 		const failed = [
 			statusResult,
 			summaryResult,
 			chatsResult,
 			skillsResult,
 			toolsResult,
-			contactsResult
+			contactsResult,
+			activityResult
 		].find((result) => result.status === 'rejected');
 		if (failed && failed.status === 'rejected') {
 			error = getErrorMessage(failed.reason);
@@ -175,7 +203,9 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="space-y-4">
+<div
+	class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 lg:gap-5 lg:overflow-hidden lg:p-6"
+>
 	{#if !agent}
 		<Card>
 			<CardContent class="flex flex-col items-center gap-3 py-10 text-center">
@@ -195,7 +225,7 @@
 			</div>
 		{/if}
 
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+		<div class="grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
 			<Card>
 				<CardHeader class="pb-2">
 					<CardTitle class="text-sm font-medium">{t('myaaw.home.runs')}</CardTitle>
@@ -256,7 +286,7 @@
 			</Card>
 		</div>
 
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+		<div class="grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
 			<Card>
 				<CardHeader class="pb-2">
 					<CardTitle class="text-sm font-medium">{t('myaaw.home.total_chats')}</CardTitle>
@@ -326,46 +356,58 @@
 			</Card>
 		</div>
 
-		<Card>
-			<CardHeader>
-				<CardTitle>{t('myaaw.home.recent_chats')}</CardTitle>
-				<CardDescription>{t('myaaw.home.recent_chats_desc')}</CardDescription>
-			</CardHeader>
-			<CardContent class="space-y-2">
-				{#if loading}
-					{#each Array.from({ length: 3 }) as _, index (index)}
-						<Skeleton class="h-12 w-full" />
-					{/each}
-				{:else if chats.length === 0}
-					<div class="flex flex-col items-center gap-2 py-6 text-center">
-						<MessagesSquare class="h-6 w-6 text-muted-foreground" />
-						<p class="text-sm text-muted-foreground">{t('myaaw.home.no_chats')}</p>
-						<Button variant="outline" size="sm" onclick={newChat}>
-							<MessageSquare class="mr-2 h-4 w-4" />
-							{t('myaaw.home.start_chat')}
-						</Button>
-					</div>
-				{:else}
-					{#each chats as chat (chat.id)}
-						<a
-							href={`/app/chat/${chat.id}`}
-							class="block rounded-md border p-2 transition-colors hover:bg-muted/50"
-						>
-							<div class="flex items-center justify-between gap-2">
-								<span class="truncate text-sm font-medium">
-									{chat.title || chat.id.slice(0, 12)}
-								</span>
-								<Badge variant="secondary" class="shrink-0">
-									{relativeTime(chat.updated_at)}
-								</Badge>
-							</div>
-							<p class="mt-0.5 text-[11px] text-muted-foreground">
-								{t('myaaw.conversations.messages', { count: chat.message_count })}
-							</p>
-						</a>
-					{/each}
-				{/if}
-			</CardContent>
-		</Card>
+		<div class="grid min-h-0 gap-4 lg:flex-1 lg:grid-cols-2 lg:gap-5">
+			<Card class="flex min-h-0 flex-col">
+				<CardHeader>
+					<CardTitle>{t('myaaw.home.recent_chats')}</CardTitle>
+					<CardDescription>{t('myaaw.home.recent_chats_desc')}</CardDescription>
+				</CardHeader>
+				<CardContent class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
+					{#if loading}
+						{#each Array.from({ length: 3 }) as _, index (index)}
+							<Skeleton class="h-12 w-full" />
+						{/each}
+					{:else if chats.length === 0}
+						<div class="flex flex-col items-center gap-2 py-6 text-center">
+							<MessagesSquare class="h-6 w-6 text-muted-foreground" />
+							<p class="text-sm text-muted-foreground">{t('myaaw.home.no_chats')}</p>
+							<Button variant="outline" size="sm" onclick={newChat}>
+								<MessageSquare class="mr-2 h-4 w-4" />
+								{t('myaaw.home.start_chat')}
+							</Button>
+						</div>
+					{:else}
+						{#each chats as chat (chat.id)}
+							<a
+								href={`/app/chat/${chat.id}`}
+								class="flex flex-1 flex-col justify-center rounded-md border p-2 transition-colors hover:bg-muted/50"
+							>
+								<div class="flex items-center justify-between gap-2">
+									<span class="truncate text-sm font-medium">
+										{chat.title || chat.id.slice(0, 12)}
+									</span>
+									<Badge variant="secondary" class="shrink-0">
+										{relativeTime(chat.updated_at)}
+									</Badge>
+								</div>
+								<p class="mt-0.5 text-[11px] text-muted-foreground">
+									{t('myaaw.conversations.messages', { count: chat.message_count })}
+								</p>
+							</a>
+						{/each}
+					{/if}
+				</CardContent>
+			</Card>
+
+			<Card class="flex min-h-0 flex-col">
+				<CardHeader>
+					<CardTitle>{t('myaaw.home.activity')}</CardTitle>
+					<CardDescription>{t('myaaw.home.activity_desc')}</CardDescription>
+				</CardHeader>
+				<CardContent class="flex min-h-0 flex-1 flex-col">
+					<ActivityHeatmap days={activity?.days ?? []} months={activityMonths} {loading} />
+				</CardContent>
+			</Card>
+		</div>
 	{/if}
 </div>
