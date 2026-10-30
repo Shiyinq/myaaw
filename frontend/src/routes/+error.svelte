@@ -57,7 +57,7 @@
 	let errorInfo = $derived(getErrorInfo(status));
 </script>
 
-<SEO title="FASMO | {status} - {errorInfo.title}" />
+<SEO title="Myaaw | {status} - {errorInfo.title}" />
 
 <div
 	class="min-h-screen flex items-center justify-center p-6 bg-background relative overflow-hidden"

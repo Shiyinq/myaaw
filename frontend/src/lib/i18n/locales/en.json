@@ -87,9 +87,9 @@
 		"recovery_helper": "We'll send you a link to reset your password.",
 		"send_reset_link": "Send Reset Link",
 		"seo": {
-			"login_desc": "Secure login access to the FASMO architecture.",
-			"register_desc": "Join the FASMO network.",
-			"verify_desc": "Verify your email address for FASMO."
+			"login_desc": "Secure login access to the Myaaw control plane.",
+			"register_desc": "Join the Myaaw network.",
+			"verify_desc": "Verify your email address for Myaaw."
 		},
 		"verify_email": {
 			"title": "Email Verification",
@@ -102,7 +102,7 @@
 			"status_verifying": "Verifying Email",
 			"status_verifying_desc": "Please wait while we confirm your identity...",
 			"status_success": "Email Verified!",
-			"status_success_desc": "Your email has been successfully verified. You now have full access to FASMO.",
+			"status_success_desc": "Your email has been successfully verified. You now have full access to Myaaw.",
 			"status_error": "Verification Failed",
 			"proceed_to_login": "PROCEED TO LOGIN",
 			"no_token": "No verification token provided."
@@ -134,7 +134,7 @@
 		"no_key": "No active API key found.",
 		"no_key_desc": "You don't have an active frequency key. Generate one to start transmission.",
 		"docs_title": "Developer Documentation",
-		"docs_desc": "Learn how to integrate FASMO into your own applications using our comprehensive API guide.",
+		"docs_desc": "Learn how to integrate Myaaw into your own applications using our comprehensive API guide.",
 		"copied": "Copied to clipboard.",
 		"revoked": "API Key revoked.",
 		"revoke_confirm": "Are you sure you want to sever the connection? This action cannot be undone and will immediately invalidate all existing connections.",

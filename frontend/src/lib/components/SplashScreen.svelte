@@ -1,13 +1,26 @@
-<script lang="ts">
-</script>
-
 <div
-	class="fixed inset-0 bg-background flex flex-col items-center justify-center z-[100] animate-in fade-in duration-500"
+	class="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-5 bg-background"
 >
 	<div
-		class="w-20 h-20 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center shadow-xl mb-6 ring-8 ring-primary/10 animate-pulse"
+		class="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary ring-8 ring-primary/5"
 	>
-		<img src="/favicon.png" alt="Fasmo Logo" class="w-10 h-10 rounded-full" />
+		<svg
+			viewBox="0 0 1024 1024"
+			class="h-9 w-9 text-primary-foreground"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="104"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			<path d="M262 724V330l250 266 250-266v394" />
+		</svg>
 	</div>
-	<h1 class="text-3xl font-black tracking-tighter text-foreground uppercase italic">Fasmo</h1>
+	<div class="flex flex-col items-center gap-1">
+		<span class="text-2xl font-bold tracking-tight">Myaaw</span>
+		<span class="text-[10px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
+			Control plane
+		</span>
+	</div>
 </div>

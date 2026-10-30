@@ -87,9 +87,9 @@
 		"recovery_helper": "Kami akan mengirimkan tautan untuk mengatur ulang kata sandi Anda.",
 		"send_reset_link": "Kirim Tautan Atur Ulang",
 		"seo": {
-			"login_desc": "Akses masuk aman ke arsitektur FASMO.",
-			"register_desc": "Bergabunglah dengan jaringan FASMO.",
-			"verify_desc": "Verifikasi alamat email Anda untuk FASMO."
+			"login_desc": "Akses masuk aman ke control plane Myaaw.",
+			"register_desc": "Bergabunglah dengan jaringan Myaaw.",
+			"verify_desc": "Verifikasi alamat email Anda untuk Myaaw."
 		},
 		"verify_email": {
 			"title": "Verifikasi Email",
@@ -102,7 +102,7 @@
 			"status_verifying": "Memverifikasi Email",
 			"status_verifying_desc": "Mohon tunggu sementara kami mengonfirmasi identitas Anda...",
 			"status_success": "Email Terverifikasi!",
-			"status_success_desc": "Email Anda telah berhasil diverifikasi. Anda sekarang memiliki akses penuh ke FASMO.",
+			"status_success_desc": "Email Anda telah berhasil diverifikasi. Anda sekarang memiliki akses penuh ke Myaaw.",
 			"status_error": "Verifikasi Gagal",
 			"proceed_to_login": "LANJUT KE MASUK",
 			"no_token": "Token verifikasi tidak ditemukan."
@@ -134,7 +134,7 @@
 		"no_key": "Tidak ada kunci API aktif ditemukan.",
 		"no_key_desc": "Anda tidak memiliki kunci frekuensi aktif. Buat satu untuk memulai transmisi.",
 		"docs_title": "Dokumentasi Pengembang",
-		"docs_desc": "Pelajari cara mengintegrasikan FASMO ke dalam aplikasi Anda sendiri menggunakan panduan API kami yang komprehensif.",
+		"docs_desc": "Pelajari cara mengintegrasikan Myaaw ke dalam aplikasi Anda sendiri menggunakan panduan API kami yang komprehensif.",
 		"copied": "Disalin ke papan klip.",
 		"revoked": "Kunci API dicabut.",
 		"revoke_confirm": "Apakah Anda yakin ingin memutuskan sambungan? Tindakan ini tidak dapat dibatalkan dan akan segera membatalkan semua koneksi yang ada.",
