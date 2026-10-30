@@ -180,7 +180,8 @@
 	let isFullHeight = $derived(
 		isChat ||
 			page.url.pathname.startsWith('/app/files') ||
-			page.url.pathname.startsWith('/app/context')
+			page.url.pathname.startsWith('/app/context') ||
+			page.url.pathname.startsWith('/app/skills')
 	);
 
 	async function logout() {

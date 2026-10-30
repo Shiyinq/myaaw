@@ -109,3 +109,14 @@ export function detectPreview(path: string): FilePreview {
 	}
 	return { kind: 'text', language: 'plaintext', label: ext ? ext.toUpperCase() : 'Text' };
 }
+
+/**
+ * Drops a leading YAML frontmatter block so SKILL.md metadata is not rendered
+ * as body text in the markdown preview.
+ */
+export function stripFrontmatter(text: string): string {
+	if (!text.startsWith('---')) return text;
+	const end = text.indexOf('\n---', 3);
+	if (end === -1) return text;
+	return text.slice(end + 4).replace(/^\s*\n/, '');
+}
