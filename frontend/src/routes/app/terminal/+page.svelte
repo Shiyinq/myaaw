@@ -130,18 +130,18 @@
 	}
 
 	// Prompt themes (powerlevel10k, starship, oh-my-posh) paint with Nerd Fonts
-	// Private Use Area codepoints. The bundled symbol font has to be decoded
-	// before xterm creates its renderer, otherwise the first prompt is drawn as
-	// boxes and the cell grid is measured against the fallback font.
+	// Private Use Area codepoints, which live in the bundled terminal font. It has
+	// to be decoded before xterm measures its grid, otherwise the first prompt is
+	// drawn with the fallback font and the cells are sized for the wrong glyphs.
 	async function ensureGlyphFont() {
 		if (!document.fonts) return;
 		try {
 			await Promise.all([
-				document.fonts.load('13px "Myaaw Nerd Symbols"', '\ue0b0\uf121'),
+				document.fonts.load('13px "Myaaw Mono"', 'M\ue0b0\uf121'),
 				document.fonts.ready
 			]);
 		} catch {
-			// Missing icons are cosmetic; the shell keeps working without them.
+			// A missing font only costs the look; the shell keeps working.
 		}
 	}
 
@@ -174,8 +174,7 @@
 			term = new Terminal({
 				cursorBlink: true,
 				fontSize: 13,
-				fontFamily:
-					'"JetBrains Mono", "Myaaw Nerd Symbols", ui-monospace, SFMono-Regular, Menlo, monospace',
+				fontFamily: '"Myaaw Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
 				scrollback: 5000,
 				theme: readTheme()
 			});
