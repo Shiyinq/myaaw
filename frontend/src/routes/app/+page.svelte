@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { agentSelection } from '$lib/stores';
+	import { agentSelection, toastStore } from '$lib/stores';
+	import { agents as agentsApi } from '$lib/apis/agents';
 	import { server as serverApi } from '$lib/apis/server';
 	import { observability as observabilityApi } from '$lib/apis/observability';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -8,20 +9,30 @@
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import {
 		Activity,
 		Bot,
 		CircleCheck,
 		CircleSlash,
+		Ellipsis,
 		RefreshCw,
 		Server,
 		MessageSquare,
-		Play
+		Play,
+		Star,
+		Trash2
 	} from 'lucide-svelte';
 	import type { ObservabilitySummary, RunSummary, ServerStatus } from '$lib/types';
 
@@ -82,6 +93,27 @@
 		void goto('/app/chat');
 	}
 
+	async function setDefaultAgent(name: string) {
+		try {
+			await agentsApi.setDefault(name);
+			await agentSelection.load(true);
+			toastStore.success(t('myaaw.home.agent_default_set', { name }));
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		}
+	}
+
+	async function removeAgent(name: string) {
+		if (!window.confirm(t('myaaw.home.agent_delete_confirm', { name }))) return;
+		try {
+			await agentsApi.remove(name);
+			await agentSelection.load(true);
+			toastStore.success(t('myaaw.home.agent_deleted'));
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		}
+	}
+
 	function formatCost(value?: number) {
 		return `$${(value ?? 0).toFixed(4)}`;
 	}
@@ -94,18 +126,15 @@
 
 <TopBarActions id="dashboard-refresh">
 	{#snippet children()}
-		<TopBarButton
-			label={t('common.refresh')}
-			icon={RefreshCw}
-			onclick={refresh}
-			loading={loading}
-		/>
+		<TopBarButton label={t('common.refresh')} icon={RefreshCw} onclick={refresh} {loading} />
 	{/snippet}
 </TopBarActions>
 
 <div class="space-y-6">
 	{#if error}
-		<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+		<div
+			class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+		>
 			{error}
 		</div>
 	{/if}
@@ -222,6 +251,36 @@
 									<MessageSquare class="mr-2 h-4 w-4" />
 									{t('myaaw.home.open_chat')}
 								</Button>
+								<DropdownMenu.Root>
+									<DropdownMenu.Trigger>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												variant="ghost"
+												size="icon-sm"
+												aria-label={t('myaaw.home.agent_actions')}
+											>
+												<Ellipsis class="h-4 w-4" />
+											</Button>
+										{/snippet}
+									</DropdownMenu.Trigger>
+									<DropdownMenu.Content align="end" class="w-44">
+										{#if !agent.default}
+											<DropdownMenu.Item onclick={() => setDefaultAgent(agent.name)}>
+												<Star class="mr-2 h-4 w-4" />
+												{t('myaaw.home.set_default')}
+											</DropdownMenu.Item>
+											<DropdownMenu.Separator />
+										{/if}
+										<DropdownMenu.Item
+											variant="destructive"
+											onclick={() => removeAgent(agent.name)}
+										>
+											<Trash2 class="mr-2 h-4 w-4" />
+											{t('myaaw.home.delete_agent')}
+										</DropdownMenu.Item>
+									</DropdownMenu.Content>
+								</DropdownMenu.Root>
 							</div>
 						</div>
 					{/each}
