@@ -2,6 +2,8 @@
 	import { files as filesApi } from '$lib/apis/files';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { validate } from '$lib/utils/validation';
+	import { fileNameSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
@@ -12,17 +14,20 @@
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import CodePreview from '$lib/components/common/CodePreview.svelte';
 	import { detectPreview } from '$lib/utils/filePreview';
+	import FieldError from '$lib/components/common/FieldError.svelte';
 	import {
 		ChevronLeft,
+		Check,
 		Eye,
 		File,
-		FilePlus2,
+		FilePlus,
 		Folder,
 		Pencil,
 		RefreshCw,
 		Save,
 		Search,
-		Trash2
+		Trash2,
+		X
 	} from 'lucide-svelte';
 	import type { FileContent, FileEntry, SearchMatch } from '$lib/types';
 
@@ -43,6 +48,9 @@
 	let matches = $state<SearchMatch[]>([]);
 	let searchLoading = $state(false);
 	let loadKey = '';
+	let renaming = $state('');
+	let renameValue = $state('');
+	let nameError = $state('');
 
 	let agent = $derived(agentSelection.selected);
 	let preview = $derived(selected ? detectPreview(selected.path) : null);
@@ -131,13 +139,81 @@
 	}
 
 	async function createFolder() {
-		if (!agent || !folderName.trim()) return;
-		const target = path === '' ? `/${folderName.trim()}` : `${path}/${folderName.trim()}`;
+		if (!agent) return;
+		const name = newEntryName();
+		if (!name) return;
+		const target = path === '' ? `/${name}` : `${path}/${name}`;
 		try {
 			await filesApi.mkdir(agent, target);
 			folderName = '';
 			await load(agent, path);
 			toastStore.success(t('myaaw.files.folder_created'));
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		}
+	}
+
+	async function createFile() {
+		if (!agent) return;
+		const name = newEntryName();
+		if (!name) return;
+		const target = path === '' ? `/${name}` : `${path}/${name}`;
+		try {
+			await filesApi.write(agent, target, '');
+			folderName = '';
+			await load(agent, path);
+			const file = await filesApi.read(agent, target);
+			selected = file;
+			content = file.content;
+			editing = true;
+			toastStore.success(t('myaaw.files.file_created'));
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		}
+	}
+
+	/** Validates the "new file or folder" input; returns the cleaned name. */
+	function newEntryName() {
+		const result = validate(fileNameSchema, folderName);
+		if (!result.ok) {
+			nameError = result.errors._ ?? '';
+			return '';
+		}
+		nameError = '';
+		return result.data;
+	}
+
+	function startRename(entry: FileEntry) {
+		renaming = entry.path;
+		renameValue = entry.name;
+		nameError = '';
+	}
+
+	function cancelRename() {
+		renaming = '';
+		renameValue = '';
+		nameError = '';
+	}
+
+	async function submitRename(entry: FileEntry) {
+		if (!agent) return;
+		const result = validate(fileNameSchema, renameValue);
+		if (!result.ok) {
+			nameError = result.errors._ ?? '';
+			return;
+		}
+		const parent = entry.path.split('/').slice(0, -1).join('/');
+		const target = parent ? `${parent}/${result.data}` : `/${result.data}`;
+		try {
+			await filesApi.rename(agent, entry.path, target);
+			if (selected?.path === entry.path) {
+				selected = null;
+				content = '';
+				editing = false;
+			}
+			cancelRename();
+			await load(agent, path);
+			toastStore.success(t('myaaw.files.renamed'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
@@ -210,11 +286,36 @@
 					</div>
 				</div>
 
-				<div class="flex gap-2">
-					<Input bind:value={folderName} placeholder={t('myaaw.files.new_folder')} class="h-8" />
-					<Button size="sm" variant="outline" onclick={createFolder}>
-						<FilePlus2 class="h-4 w-4" />
-					</Button>
+				<div class="space-y-1">
+					<div class="flex gap-2">
+						<Input
+							bind:value={folderName}
+							placeholder={t('myaaw.files.new_name')}
+							class="h-8"
+							onkeydown={(event) => {
+								if (event.key === 'Enter') void createFolder();
+							}}
+						/>
+						<Button
+							size="icon-sm"
+							variant="outline"
+							onclick={createFolder}
+							title={t('myaaw.files.new_folder')}
+							aria-label={t('myaaw.files.new_folder')}
+						>
+							<Folder class="h-4 w-4" />
+						</Button>
+						<Button
+							size="icon-sm"
+							variant="outline"
+							onclick={createFile}
+							title={t('myaaw.files.new_file')}
+							aria-label={t('myaaw.files.new_file')}
+						>
+							<FilePlus class="h-4 w-4" />
+						</Button>
+					</div>
+					<FieldError code={nameError} />
 				</div>
 			</div>
 
@@ -226,30 +327,69 @@
 				{/if}
 
 				{#each entries as entry (entry.path)}
-					<div class="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted">
-						<button
-							class="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
-							onclick={() => open(entry)}
-						>
-							{#if entry.is_dir}
-								<Folder class="h-4 w-4 shrink-0 text-muted-foreground" />
-							{:else}
-								<File class="h-4 w-4 shrink-0 text-muted-foreground" />
+					{#if renaming === entry.path}
+						<div class="flex items-center gap-1 rounded-md px-1 py-1">
+							<Input
+								bind:value={renameValue}
+								class="h-7 text-xs"
+								onkeydown={(event) => {
+									if (event.key === 'Enter') void submitRename(entry);
+									if (event.key === 'Escape') cancelRename();
+								}}
+							/>
+							<Button
+								size="icon-xs"
+								variant="secondary"
+								onclick={() => submitRename(entry)}
+								aria-label={t('common.save')}
+							>
+								<Check class="h-3 w-3" />
+							</Button>
+							<Button
+								size="icon-xs"
+								variant="ghost"
+								onclick={cancelRename}
+								aria-label={t('common.cancel')}
+							>
+								<X class="h-3 w-3" />
+							</Button>
+						</div>
+					{:else}
+						<div class="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted">
+							<button
+								class="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
+								onclick={() => open(entry)}
+							>
+								{#if entry.is_dir}
+									<Folder class="h-4 w-4 shrink-0 text-muted-foreground" />
+								{:else}
+									<File class="h-4 w-4 shrink-0 text-muted-foreground" />
+								{/if}
+								<span class="truncate">{entry.name}</span>
+							</button>
+							{#if !entry.is_dir}
+								<span class="text-[10px] text-muted-foreground">{formatSize(entry.size)}</span>
 							{/if}
-							<span class="truncate">{entry.name}</span>
-						</button>
-						{#if !entry.is_dir}
-							<span class="text-[10px] text-muted-foreground">{formatSize(entry.size)}</span>
-						{/if}
-						<Button
-							variant="ghost"
-							size="icon-xs"
-							class="opacity-0 group-hover:opacity-100"
-							onclick={() => remove(entry)}
-						>
-							<Trash2 class="h-3.5 w-3.5 text-destructive" />
-						</Button>
-					</div>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								class="opacity-0 group-hover:opacity-100"
+								onclick={() => startRename(entry)}
+								aria-label={t('myaaw.files.rename')}
+							>
+								<Pencil class="h-3.5 w-3.5" />
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								class="opacity-0 group-hover:opacity-100"
+								onclick={() => remove(entry)}
+								aria-label={t('common.delete')}
+							>
+								<Trash2 class="h-3.5 w-3.5 text-destructive" />
+							</Button>
+						</div>
+					{/if}
 				{/each}
 			</div>
 
