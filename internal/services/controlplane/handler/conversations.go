@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"myaaw/internal/services/controlplane/service"
 
@@ -35,6 +36,73 @@ func (h *Handler) ListConversations(c fiber.Ctx) error {
 		return conversationError(c, err)
 	}
 	return c.JSON(page)
+}
+
+const (
+	// maxActivityDays bounds the histogram window so a client cannot ask for
+	// years of buckets in one request.
+	maxActivityDays = 366
+	activityDay     = 24 * time.Hour
+)
+
+// ConversationActivity returns the number of conversations created per local
+// day inside [from, to]. It powers the dashboard activity map.
+// @Summary      Conversation activity
+// @Description  Per-day count of conversations created by the authenticated user. Defaults to the current month.
+// @Tags         Conversations
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        from query int false "Window start, unix milliseconds (default: first day of this month)"
+// @Param        to query int false "Window end, unix milliseconds (default: now)"
+// @Success      200 {object} service.ConversationActivity
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /agents/{name}/conversations/activity [get]
+func (h *Handler) ConversationActivity(c fiber.Ctx) error {
+	from, to, err := activityRange(c)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	activity, err := h.conversations.Activity(c.Params("name"), h.requestUserID(c), from, to)
+	if err != nil {
+		return conversationError(c, err)
+	}
+	return c.JSON(activity)
+}
+
+// activityRange parses the optional from/to query parameters. Both default to
+// the current month, measured in the server's local timezone to match the way
+// the daemon timestamps conversations.
+func activityRange(c fiber.Ctx) (time.Time, time.Time, error) {
+	now := time.Now()
+	from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	to := now
+
+	if raw := strings.TrimSpace(c.Query("from")); raw != "" {
+		millis, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || millis <= 0 {
+			return from, to, errors.New("from must be a unix millisecond timestamp")
+		}
+		from = time.UnixMilli(millis)
+	}
+	if raw := strings.TrimSpace(c.Query("to")); raw != "" {
+		millis, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || millis <= 0 {
+			return from, to, errors.New("to must be a unix millisecond timestamp")
+		}
+		to = time.UnixMilli(millis)
+	}
+
+	if to.Before(from) {
+		return from, to, errors.New("to must be after from")
+	}
+	if to.Sub(from) > maxActivityDays*activityDay {
+		return from, to, errors.New("window must be at most 366 days")
+	}
+	return from, to, nil
 }
 
 // GetConversation returns one conversation with a page of its transcript.

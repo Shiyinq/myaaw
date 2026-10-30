@@ -1049,6 +1049,15 @@ definitions:
       token_count:
         type: integer
     type: object
+  service.ActivityDay:
+    properties:
+      count:
+        example: 3
+        type: integer
+      date:
+        example: "2026-10-02"
+        type: string
+    type: object
   service.AgentInfo:
     properties:
       base_url:
@@ -1290,6 +1299,22 @@ definitions:
       path:
         type: string
       size:
+        type: integer
+    type: object
+  service.ConversationActivity:
+    properties:
+      days:
+        items:
+          $ref: '#/definitions/service.ActivityDay'
+        type: array
+      from:
+        example: 1730419200000
+        type: integer
+      to:
+        example: 1733011199999
+        type: integer
+      total:
+        example: 42
         type: integer
     type: object
   service.ConversationDetail:
@@ -2981,6 +3006,49 @@ paths:
       security:
       - BearerAuth: []
       summary: Rename conversation
+      tags:
+      - Conversations
+  /agents/{name}/conversations/activity:
+    get:
+      description: Per-day count of conversations created by the authenticated user.
+        Defaults to the current month.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: 'Window start, unix milliseconds (default: first day of this
+          month)'
+        in: query
+        name: from
+        type: integer
+      - description: 'Window end, unix milliseconds (default: now)'
+        in: query
+        name: to
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ConversationActivity'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Conversation activity
       tags:
       - Conversations
   /agents/{name}/cron:

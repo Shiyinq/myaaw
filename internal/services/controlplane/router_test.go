@@ -765,6 +765,82 @@ func TestRouterConversationManagement(t *testing.T) {
 	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine", token, "", fiber.StatusNotFound, nil)
 }
 
+func TestRouterConversationActivity(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	dbDir := filepath.Join(home, ".myaaw", "myfriend", "database")
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatalf("mkdir database: %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", filepath.Join(dbDir, "myaaw.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE conversations (
+		id TEXT PRIMARY KEY, user_id INTEGER, title TEXT, messages TEXT, active INTEGER, created_at DATETIME, updated_at DATETIME
+	)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	now := time.Now()
+	from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	to := from.AddDate(0, 0, 1)
+	seed := []struct {
+		id      string
+		userID  int
+		created time.Time
+	}{
+		{"conv-a", 0, from.Add(10 * time.Hour)},
+		{"conv-b", 0, from.Add(15 * time.Hour)},
+		{"conv-c", 0, to.Add(10 * time.Hour)},
+		{"conv-other", 7, from.Add(11 * time.Hour)},
+	}
+	for _, row := range seed {
+		if _, err := db.Exec(
+			`INSERT INTO conversations (id, user_id, title, messages, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
+			row.id, row.userID, row.id, `[{"role":"user","content":"hello"}]`, 1, row.created, row.created,
+		); err != nil {
+			t.Fatalf("insert %s: %v", row.id, err)
+		}
+	}
+	db.Close()
+
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	path := fmt.Sprintf("/agents/myfriend/conversations/activity?from=%d&to=%d",
+		from.UnixMilli(), to.UnixMilli())
+
+	var activity struct {
+		Total int `json:"total"`
+		Days  []struct {
+			Date  string `json:"date"`
+			Count int    `json:"count"`
+		} `json:"days"`
+	}
+	// The static activity route must win over /conversations/:id.
+	doJSON(t, app, "GET", path, token, "", fiber.StatusOK, &activity)
+
+	if len(activity.Days) != 2 {
+		t.Fatalf("days = %+v", activity.Days)
+	}
+	if activity.Days[0].Count != 2 || activity.Days[1].Count != 1 {
+		t.Fatalf("days = %+v", activity.Days)
+	}
+	if activity.Total != 3 {
+		t.Fatalf("total = %d, want 3", activity.Total)
+	}
+
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/activity?from=abc", token, "",
+		fiber.StatusBadRequest, nil)
+	doJSON(t, app, "GET", fmt.Sprintf("/agents/myfriend/conversations/activity?from=%d&to=%d",
+		to.UnixMilli(), from.UnixMilli()), token, "", fiber.StatusBadRequest, nil)
+}
+
 func TestRouterUsesConfiguredUserID(t *testing.T) {
 	gotUser := make(chan int, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

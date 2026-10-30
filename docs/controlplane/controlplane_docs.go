@@ -1400,6 +1400,70 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/conversations/activity": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Per-day count of conversations created by the authenticated user. Defaults to the current month.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Conversation activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window start, unix milliseconds (default: first day of this month)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window end, unix milliseconds (default: now)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ConversationActivity"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/conversations/{id}": {
             "get": {
                 "security": [
@@ -6180,6 +6244,19 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ActivityDay": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "date": {
+                    "type": "string",
+                    "example": "2026-10-02"
+                }
+            }
+        },
         "service.AgentInfo": {
             "type": "object",
             "properties": {
@@ -6548,6 +6625,29 @@ const docTemplatecontrolplane = `{
                 },
                 "size": {
                     "type": "integer"
+                }
+            }
+        },
+        "service.ConversationActivity": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ActivityDay"
+                    }
+                },
+                "from": {
+                    "type": "integer",
+                    "example": 1730419200000
+                },
+                "to": {
+                    "type": "integer",
+                    "example": 1733011199999
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
                 }
             }
         },

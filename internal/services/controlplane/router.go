@@ -125,6 +125,7 @@ func NewApp() (*fiber.App, error) {
 	app.Post("/agents/:name/config/reset", h.ResetConfig)
 	app.Patch("/agents/:name/config/reset", h.ResetConfigFields)
 	app.Get("/agents/:name/conversations", h.ListConversations)
+	app.Get("/agents/:name/conversations/activity", h.ConversationActivity)
 	app.Get("/agents/:name/conversations/:id", h.GetConversation)
 	app.Patch("/agents/:name/conversations/:id", h.RenameConversation)
 	app.Delete("/agents/:name/conversations/:id", h.DeleteConversation)

@@ -53,6 +53,88 @@ type ConversationDetail struct {
 	HasMore       bool               `json:"has_more"`
 }
 
+// ActivityDay is one calendar day with the number of conversations created
+// that day.
+type ActivityDay struct {
+	Date  string `json:"date" example:"2026-10-02"`
+	Count int    `json:"count" example:"3"`
+}
+
+// ConversationActivity is a per-day histogram of created conversations, used by
+// the dashboard activity map.
+type ConversationActivity struct {
+	From  int64         `json:"from" example:"1730419200000"`
+	To    int64         `json:"to" example:"1733011199999"`
+	Total int           `json:"total" example:"42"`
+	Days  []ActivityDay `json:"days"`
+}
+
+// Activity counts conversations created per local day inside [from, to].
+// Rows are read for the user and bucketed in Go: the daemon stores created_at
+// with time.Now(), so dates follow the machine's local timezone, while SQLite's
+// date() would convert them to UTC and shift days around midnight.
+func (s *ConversationService) Activity(agentName string, userID int, from, to time.Time) (ConversationActivity, error) {
+	from = startOfDay(from)
+	to = startOfDay(to)
+	activity := ConversationActivity{From: from.UnixMilli(), To: to.UnixMilli(), Days: []ActivityDay{}}
+
+	db, err := openAgentDB(agentName)
+	if err != nil {
+		return activity, err
+	}
+	if db == nil {
+		return fillActivityDays(activity, nil, from, to), nil
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`SELECT created_at FROM conversations WHERE user_id = ?`, userID)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such table") {
+			return fillActivityDays(activity, nil, from, to), nil
+		}
+		return activity, err
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var created time.Time
+		if err := rows.Scan(&created); err != nil {
+			return activity, err
+		}
+		day := startOfDay(created.In(time.Local))
+		if day.Before(from) || day.After(to) {
+			continue
+		}
+		counts[day.Format(activityDateLayout)]++
+	}
+	if err := rows.Err(); err != nil {
+		return activity, err
+	}
+
+	return fillActivityDays(activity, counts, from, to), nil
+}
+
+const activityDateLayout = "2006-01-02"
+
+// startOfDay returns midnight of value's day in its own location.
+func startOfDay(value time.Time) time.Time {
+	year, month, day := value.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, value.Location())
+}
+
+// fillActivityDays appends every date in [from, to] so the client never has to
+// fill gaps, and sums the total while doing so.
+func fillActivityDays(activity ConversationActivity, counts map[string]int, from, to time.Time) ConversationActivity {
+	for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
+		key := day.Format(activityDateLayout)
+		count := counts[key]
+		activity.Total += count
+		activity.Days = append(activity.Days, ActivityDay{Date: key, Count: count})
+	}
+	return activity
+}
+
 // ConversationService reads and mutates conversations in an agent's SQLite database.
 type ConversationService struct{}
 
