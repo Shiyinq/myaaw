@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
+		Boxes,
 		LayoutDashboard,
 		MessagesSquare,
 		FolderOpen,
@@ -37,12 +38,19 @@
 	let { children }: Props = $props();
 	const { t } = useTranslation();
 
+	const fleet = {
+		href: '/app',
+		label: 'myaaw.nav.fleet',
+		description: 'myaaw.fleet.subtitle',
+		icon: Boxes
+	};
+
 	const nav = [
 		{
 			label: 'myaaw.nav.group_workspace',
 			items: [
 				{
-					href: '/app',
+					href: '/app/dashboard',
 					label: 'myaaw.nav.dashboard',
 					description: 'myaaw.home.subtitle',
 					icon: LayoutDashboard
@@ -162,7 +170,9 @@
 		return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
 	}
 
-	let current = $derived(flatNav.find((item) => isActive(item.href)) ?? flatNav[0]);
+	let current = $derived(
+		isActive(fleet.href) ? fleet : (flatNav.find((item) => isActive(item.href)) ?? flatNav[0])
+	);
 	let initials = $derived((authStore.profile?.username ?? 'MY').slice(0, 2).toUpperCase());
 	let isChat = $derived(
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
@@ -187,6 +197,11 @@
 
 	function selectAgent(name: string) {
 		agentSelection.select(name);
+		// The fleet overview is not agent-scoped, so picking an agent there
+		// moves to that agent's dashboard.
+		if (page.url.pathname === '/app') {
+			void goto('/app/dashboard');
+		}
 	}
 </script>
 
@@ -320,6 +335,30 @@
 			</div>
 		{/if}
 
+		<!-- Fleet overview lives outside the agent scope, above the picker. -->
+		<div class={sidebar.collapsed ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
+			<a
+				href={fleet.href}
+				title={sidebar.collapsed ? t(fleet.label) : undefined}
+				aria-current={isActive(fleet.href) ? 'page' : undefined}
+				class={[
+					'relative flex items-center rounded-md text-sm transition-colors',
+					sidebar.collapsed ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
+					isActive(fleet.href)
+						? 'bg-accent font-medium text-accent-foreground'
+						: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+				]}
+			>
+				{#if sidebar.collapsed && isActive(fleet.href)}
+					<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
+				{/if}
+				<Boxes class="h-4 w-4 shrink-0" />
+				{#if !sidebar.collapsed}
+					<span class="truncate">{t(fleet.label)}</span>
+				{/if}
+			</a>
+		</div>
+
 		<div class={sidebar.collapsed ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
 			{#if sidebar.collapsed}
 				<DropdownMenu.Root>
@@ -440,6 +479,18 @@
 			</div>
 
 			<nav class="flex gap-1 overflow-x-auto border-t px-3 py-2 md:hidden">
+				<a
+					href={fleet.href}
+					aria-current={isActive(fleet.href) ? 'page' : undefined}
+					class={[
+						'whitespace-nowrap rounded-md px-2 py-1 text-xs transition-colors',
+						isActive(fleet.href)
+							? 'bg-accent font-medium text-accent-foreground'
+							: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+					]}
+				>
+					{t(fleet.label)}
+				</a>
 				{#each flatNav as item (item.href)}
 					<a
 						href={item.href}

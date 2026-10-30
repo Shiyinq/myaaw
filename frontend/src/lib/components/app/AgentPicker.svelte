@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { agentSelection } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
@@ -13,6 +15,11 @@
 	function onChange(event: Event) {
 		const value = (event.currentTarget as HTMLSelectElement).value;
 		agentSelection.select(value);
+		// The fleet overview is not agent-scoped, so picking an agent there opens
+		// that agent's dashboard.
+		if (page.url.pathname === '/app') {
+			void goto('/app/dashboard');
+		}
 	}
 </script>
 

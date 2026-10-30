@@ -74,6 +74,7 @@
 			"group_workspace": "Ruang Kerja",
 			"group_configure": "Konfigurasi",
 			"group_operations": "Operasional",
+			"fleet": "Armada",
 			"dashboard": "Dasbor",
 			"chat": "Chat",
 			"files": "Berkas",
@@ -118,6 +119,11 @@
 			"submitting": "Sedang masuk...",
 			"hint": "Kredensial default ada di ~/.myaaw/controlplane.json."
 		},
+		"fleet": {
+			"title": "Armada",
+			"subtitle": "Semua agen di control plane ini.",
+			"default_agent": "Agen default"
+		},
 		"home": {
 			"title": "Dasbor",
 			"subtitle": "Satu tempat untuk menjalankan dan memeriksa agen.",
@@ -128,6 +134,7 @@
 			"cost": "Biaya (7 hari)",
 			"cost_incomplete": "Sebagian model belum punya harga",
 			"recent": "Run terbaru",
+			"quick_actions": "Aksi cepat",
 			"open_chat": "Buka chat",
 			"no_agents": "Belum ada agen",
 			"no_agents_desc": "Jalankan `myaaw onboard` di terminal, lalu muat ulang halaman ini.",

@@ -74,6 +74,7 @@
 			"group_workspace": "Workspace",
 			"group_configure": "Configure",
 			"group_operations": "Operations",
+			"fleet": "Fleet",
 			"dashboard": "Dashboard",
 			"chat": "Chat",
 			"files": "Files",
@@ -118,6 +119,11 @@
 			"submitting": "Signing in...",
 			"hint": "Default credentials come from ~/.myaaw/controlplane.json."
 		},
+		"fleet": {
+			"title": "Fleet",
+			"subtitle": "Every agent on this control plane.",
+			"default_agent": "Default agent"
+		},
 		"home": {
 			"title": "Dashboard",
 			"subtitle": "One place to run and inspect your agents.",
@@ -128,6 +134,7 @@
 			"cost": "Cost (7d)",
 			"cost_incomplete": "Some models are unpriced",
 			"recent": "Recent runs",
+			"quick_actions": "Quick actions",
 			"open_chat": "Open chat",
 			"no_agents": "No agents yet",
 			"no_agents_desc": "Run `myaaw onboard` in the terminal, then refresh this page.",
