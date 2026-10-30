@@ -1,0 +1,18 @@
+{
+  // gopls inherits Zed's process environment. If Zed was launched from a shell
+  // that exported GOOS/GOARCH for a cross-build, gopls analyzes this tree for
+  // the wrong target and cgo-only packages (portaudio) fail with BrokenImport.
+  // Empty values mean "use the Go host default"; cgo stays on because the voice
+  // package needs it. Restart the gopls server after changing this file.
+  "lsp": {
+    "gopls": {
+      "binary": {
+        "env": {
+          "GOOS": "",
+          "GOARCH": "",
+          "CGO_ENABLED": "1"
+        }
+      }
+    }
+  }
+}
