@@ -44,6 +44,10 @@ export const agentSelection = {
 			select(fallback?.name ?? '');
 		}
 	},
+	// Optimistic patch so the UI reflects a start/stop request immediately.
+	setRunning(name: string, running: boolean) {
+		agents = agents.map((agent) => (agent.name === name ? { ...agent, running } : agent));
+	},
 	select,
 	async load(force = false) {
 		if (loading) return;

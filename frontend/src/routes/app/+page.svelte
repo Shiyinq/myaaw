@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { agents as agentsApi } from '$lib/apis/agents';
+	import { server as serverApi } from '$lib/apis/server';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { validate, type FieldErrors } from '$lib/utils/validation';
@@ -28,8 +29,10 @@
 		CircleCheck,
 		CircleSlash,
 		Ellipsis,
+		Play,
 		Plus,
 		RefreshCw,
+		Square,
 		Star,
 		Trash2
 	} from 'lucide-svelte';
@@ -37,6 +40,7 @@
 	const { t } = useTranslation();
 
 	let loading = $state(false);
+	let toggling = $state<string | null>(null);
 	let onboardOpen = $state(false);
 	let onboarding = $state(false);
 	let onboardErrors = $state<FieldErrors>({});
@@ -83,6 +87,39 @@
 			toastStore.success(t('myaaw.home.agent_deleted'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
+		}
+	}
+
+	async function toggleServer(name: string, running: boolean) {
+		if (toggling) return;
+		toggling = name;
+		// Flip the badge right away; the daemon takes a moment to bind its port.
+		agentSelection.setRunning(name, !running);
+		try {
+			if (running) await serverApi.stop(name);
+			else await serverApi.start(name);
+			toastStore.success(t(running ? 'myaaw.server.stop_done' : 'myaaw.server.start_done'));
+			await waitForServerState(name, !running);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+			await agentSelection.load(true);
+		} finally {
+			toggling = null;
+		}
+	}
+
+	// The daemon reports as running only once its port accepts connections, which
+	// can take a few seconds after a start request. Poll until the list agrees.
+	async function waitForServerState(name: string, running: boolean) {
+		for (let attempt = 0; attempt < 20; attempt += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 300));
+			try {
+				const { agents: list } = await agentsApi.list();
+				agentSelection.setAgents(list);
+				if (list.some((agent) => agent.name === name && agent.running === running)) return;
+			} catch {
+				// Transient failures are expected while the daemon boots; keep polling.
+			}
 		}
 	}
 
@@ -238,6 +275,15 @@
 										{/snippet}
 									</DropdownMenu.Trigger>
 									<DropdownMenu.Content align="end" class="w-44">
+										<DropdownMenu.Item onclick={() => toggleServer(agent.name, agent.running)}>
+											{#if agent.running}
+												<Square class="mr-2 h-4 w-4" />
+											{:else}
+												<Play class="mr-2 h-4 w-4" />
+											{/if}
+											{agent.running ? t('myaaw.server.stop') : t('myaaw.server.start')}
+										</DropdownMenu.Item>
+										<DropdownMenu.Separator />
 										{#if !agent.default}
 											<DropdownMenu.Item onclick={() => setDefaultAgent(agent.name)}>
 												<Star class="mr-2 h-4 w-4" />
