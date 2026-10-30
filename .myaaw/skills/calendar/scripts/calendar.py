@@ -5,7 +5,8 @@ import datetime
 import time
 
 # Constants
-DATA_DIR = os.path.join(os.path.expanduser("~"), ".myaaw", "database", "calendar")
+AGENT_ROOT = os.environ.get("MYAAW_AGENT_ROOT") or os.path.join(os.path.expanduser("~"), ".myaaw", "default")
+DATA_DIR = os.path.join(AGENT_ROOT, "database", "calendar")
 DATA_FILE = os.path.join(DATA_DIR, "calendar.json")
 
 def ensure_data_dir():

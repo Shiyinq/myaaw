@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"time"
 
@@ -70,15 +71,23 @@ func (t *MCPToolProxy) ToolDefinition() []byte {
 }
 
 func (t *MCPToolProxy) CallTool(arguments string, ctx *ToolsContext) string {
+	return t.CallToolStructured(context.Background(), arguments, ctx).Text
+}
+
+// CallToolStructured returns text and any ImageContent parts from the MCP
+// server, so screenshots from tools such as cua-driver reach the model.
+func (t *MCPToolProxy) CallToolStructured(ctx context.Context, arguments string, _ *ToolsContext) StructuredResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	ToolsLogger.Printf("Executing MCP Tool '%s' with arguments: %s", t.tool.Name, arguments)
 
 	var args map[string]interface{}
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments for MCP tool %s: %v", t.tool.Name, err)
+		return StructuredResult{Text: fmt.Sprintf("Error parsing arguments for MCP tool %s: %v", t.tool.Name, err)}
 	}
 
-	// Create a context with timeout for the tool execution
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
 	params := mcp.CallToolParams{
@@ -88,28 +97,36 @@ func (t *MCPToolProxy) CallTool(arguments string, ctx *ToolsContext) string {
 
 	result, err := t.session.CallTool(timeoutCtx, &params)
 	if err != nil {
-		return fmt.Sprintf("Error calling MCP tool %s: %v", t.tool.Name, err)
+		return StructuredResult{Text: fmt.Sprintf("Error calling MCP tool %s: %v", t.tool.Name, err)}
 	}
 
-	// Format the result
-	// MCP results can have text or other types of content
-	if len(result.Content) == 0 {
-		return "Success (no output returned)"
+	return formatMCPResult(t.tool.Name, result)
+}
+
+// formatMCPResult converts an MCP result into text plus inline images. Other
+// content types keep the previous placeholder behaviour.
+func formatMCPResult(toolName string, result *mcp.CallToolResult) StructuredResult {
+	if result == nil || len(result.Content) == 0 {
+		return StructuredResult{Text: "Success (no output returned)"}
 	}
 
-	var output string
+	var text strings.Builder
+	var images []ImageResult
 	for _, content := range result.Content {
 		switch c := content.(type) {
 		case *mcp.TextContent:
-			output += c.Text + "\n"
+			text.WriteString(c.Text)
+			text.WriteString("\n")
+		case *mcp.ImageContent:
+			images = append(images, ImageResult{MimeType: c.MIMEType, Data: string(c.Data)})
 		default:
-			output += fmt.Sprintf("[%T content]\n", c)
+			fmt.Fprintf(&text, "[%T content]\n", c)
 		}
 	}
 
+	output := text.String()
 	if result.IsError {
-		return fmt.Sprintf("Error from MCP tool %s:\n%s", t.tool.Name, output)
+		output = fmt.Sprintf("Error from MCP tool %s:\n%s", toolName, output)
 	}
-
-	return output
+	return StructuredResult{Text: output, Images: images}
 }

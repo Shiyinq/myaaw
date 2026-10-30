@@ -1,10 +1,11 @@
 package provider
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 	"time"
 
@@ -62,6 +63,7 @@ type GeminiUsageMetadata struct {
 	CandidatesTokenCount    int                  `json:"candidatesTokenCount"`
 	TotalTokenCount         int                  `json:"totalTokenCount"`
 	ThoughtsTokenCount      int                  `json:"thoughtsTokenCount"`
+	CachedContentTokenCount int                  `json:"cachedContentTokenCount"`
 	PromptTokensDetails     []GeminiTokensDetail `json:"promptTokensDetails"`
 	CandidatesTokensDetails []GeminiTokensDetail `json:"candidatesTokensDetails"`
 }
@@ -154,15 +156,37 @@ func MessagesToContents(messages []Message) []GeminiContent {
 			})
 		}
 
-		// 2. Handle Text Content
-		contentStr, isStr := message.Content.(string)
-		if isStr && contentStr != "" {
-			parts = append(parts, GeminiPart{
-				Text: contentStr,
-			})
-		} else if geminiPart, isPart := message.Content.(GeminiPart); isPart {
+		// 2. Handle Text and image content items. MessageContentItems normalizes
+		// strings, []ContentItem and persisted []interface{} values.
+		textContent := ""
+		var imageParts []GeminiPart
+		if geminiPart, isPart := message.Content.(GeminiPart); isPart {
 			// Backward compatibility or direct GeminiPart passing
 			parts = append(parts, geminiPart)
+		} else {
+			for _, item := range MessageContentItems(message) {
+				switch {
+				case item.Type == "text" && item.Text != "":
+					if textContent != "" {
+						textContent += "\n"
+					}
+					textContent += item.Text
+				case item.Type == "image_url" && item.ImageURL != nil:
+					mimeType, data, ok := parseImageDataURL(item.ImageURL.URL)
+					if !ok {
+						if strings.HasPrefix(item.ImageURL.URL, "http") {
+							log.Printf("gemini: skipping remote image URL in message content")
+						}
+						continue
+					}
+					imageParts = append(imageParts, GeminiPart{
+						InlineData: &GeminiInlineData{MimeType: mimeType, Data: data},
+					})
+				}
+			}
+			if textContent != "" {
+				parts = append(parts, GeminiPart{Text: textContent})
+			}
 		}
 
 		// 3. Handle Tool Calls (for model)
@@ -190,16 +214,23 @@ func MessagesToContents(messages []Message) []GeminiContent {
 
 		// 4. Handle Tool Responses (for tool role)
 		if message.Role == "tool" {
+			resultText := textContent
+			if resultText == "" {
+				resultText = MessageText(message)
+			}
 			// Gemini expects FunctionResponse to be matched by Name
 			parts = append(parts, GeminiPart{
 				FunctionResponse: &GeminiFunctionResponse{
 					Name: message.Name,
 					Response: map[string]interface{}{
-						"result": message.Content,
+						"result": resultText,
 					},
 				},
 			})
 		}
+
+		// 4b. Images carried by content items (tool screenshots, etc.).
+		parts = append(parts, imageParts...)
 
 		// 5. Handle Images (usually for user)
 		if len(message.Images) > 0 && role == "user" {
@@ -227,7 +258,7 @@ func MessagesToContents(messages []Message) []GeminiContent {
 		}
 
 		// BUNDLING LOGIC: If the last content has the same role, merge parts.
-		// This handles consecutive tool responses and user prompts (like ThoughtPrompt).
+		// This handles consecutive tool responses and user prompts.
 		if len(contents) > 0 && contents[len(contents)-1].Role == role {
 			contents[len(contents)-1].Parts = append(contents[len(contents)-1].Parts, parts...)
 		} else {
@@ -241,6 +272,28 @@ func MessagesToContents(messages []Message) []GeminiContent {
 	return contents
 }
 
+// parseImageDataURL splits a data: URL into its MIME type and base64 payload.
+func parseImageDataURL(raw string) (mimeType, data string, ok bool) {
+	const prefix = "data:"
+	if !strings.HasPrefix(raw, prefix) {
+		return "", "", false
+	}
+	rest := raw[len(prefix):]
+	comma := strings.IndexByte(rest, ',')
+	if comma < 0 {
+		return "", "", false
+	}
+	meta, payload := rest[:comma], rest[comma+1:]
+	if payload == "" || !strings.HasSuffix(meta, ";base64") {
+		return "", "", false
+	}
+	mimeType = strings.TrimSuffix(meta, ";base64")
+	if mimeType == "" {
+		mimeType = "image/png"
+	}
+	return mimeType, payload, true
+}
+
 func contentToMessage(content GeminiContent) Message {
 	role := content.Role
 	if role == "model" {
@@ -252,25 +305,18 @@ func contentToMessage(content GeminiContent) Message {
 	var toolCalls []ToolCall
 
 	for _, part := range content.Parts {
-		if part.Thought {
-			if part.Text != "" {
-				text := part.Text
-
-				// Fallback string matching for Gemini thinking payload missing the flag
-				// because gemini sometimes doesn't set the thought flag to false even if is not thought part
-				if strings.HasPrefix(text, "**") && strings.Contains(text, "**\n\n") && strings.HasSuffix(text, "\n\n\n") {
-					thoughtParts = append(thoughtParts, text)
-				} else {
-					part.Thought = false
-					textParts = append(textParts, text)
-				}
-
+		if part.Text != "" {
+			// Trust the provider's thought flag. Heuristics based on text
+			// formatting previously leaked reasoning into user-visible content.
+			if part.Thought {
+				thoughtParts = append(thoughtParts, part.Text)
+			} else {
+				textParts = append(textParts, part.Text)
 			}
-		} else if part.Text != "" {
-			textParts = append(textParts, part.Text)
 		}
 		if part.FunctionCall != nil {
 			toolCalls = append(toolCalls, ToolCall{
+				ID:   fmt.Sprintf("call_%d", len(toolCalls)),
 				Type: "function",
 				Function: FunctionCall{
 					Name:             part.FunctionCall.Name,
@@ -401,7 +447,7 @@ func (g *GeminiProvider) buildRequest(modelName string, messages []Message, tool
 	}
 
 	if len(messages) > 0 && messages[0].Role == "system" {
-		systemText := messages[0].Content.(string)
+		systemText := MessageText(messages[0])
 
 		if g.supportsSystemInstruction(fullModel) {
 			request.SystemInstruction = &GeminiContent{
@@ -423,121 +469,208 @@ func (g *GeminiProvider) buildRequest(modelName string, messages []Message, tool
 }
 
 func (g *GeminiProvider) Chat(modelName string, messages []Message, toolsList []map[string]interface{}) (Message, error) {
-	client := resty.New()
-	client.SetTimeout(120 * time.Second)
+	client := resty.New().SetTimeout(120 * time.Second)
 
 	request := g.buildRequest(modelName, messages, toolsList)
 
 	var response GeminiGenerateContent
-	res, _ := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(request).
-		SetResult(&response).
-		Post(g.baseURL + fmt.Sprintf("/v1beta/%s:generateContent?key=%s", g.DefaultModel(modelName), g.apiKey))
-
+	res, err := doWithRetry(func() (*resty.Response, error) {
+		return client.R().
+			SetHeader("Content-Type", "application/json").
+			SetBody(request).
+			SetResult(&response).
+			Post(g.baseURL + fmt.Sprintf("/v1beta/%s:generateContent?key=%s", g.DefaultModel(modelName), g.apiKey))
+	})
+	if err != nil {
+		return Message{}, fmt.Errorf("error fetching response: %w", err)
+	}
+	if res == nil {
+		return Message{}, fmt.Errorf("error fetching response: nil response")
+	}
 	if res.StatusCode() != 200 {
 		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
-	}
-
-	// Check safety
-	if len(response.Candidates) > 0 && response.Candidates[0].FinishReason == "SAFETY" {
-		return Message{}, fmt.Errorf("SAFETY")
 	}
 
 	if len(response.Candidates) == 0 {
 		return Message{}, fmt.Errorf("no candidates returned")
 	}
 
+	finishReason := response.Candidates[0].FinishReason
 	finalMsg := contentToMessage(response.Candidates[0].Content)
-
-	// Populate Usage
+	finalMsg.Version = 2
+	finalMsg.StopReason = mapGeminiFinishReason(finishReason)
 	finalMsg.Usage = g.extractUsage(response.UsageMetadata)
+	if finalMsg.StopReason == StopError {
+		finalMsg.IsError = true
+		finalMsg.ErrorMessage = fmt.Sprintf("gemini stopped the response: %s", finishReason)
+	}
 
 	return finalMsg, nil
 }
 
 func (g *GeminiProvider) ChatStream(modelName string, messages []Message, callback func(Message) error, toolsList []map[string]interface{}) error {
-	client := resty.New()
-	client.SetTimeout(120 * time.Second)
+	return chatStreamFromEvents(context.Background(), g, modelName, messages, toolsList, callback)
+}
+
+func (g *GeminiProvider) ChatStreamEvents(
+	ctx context.Context,
+	modelName string,
+	messages []Message,
+	toolsList []map[string]interface{},
+	onEvent func(StreamEvent) error,
+) error {
+	timeout := streamRequestTimeout()
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	client := resty.New().SetTimeout(timeout)
 
 	request := g.buildRequest(modelName, messages, toolsList)
 
-	res, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(request).
-		SetDoNotParseResponse(true).
-		Post(g.baseURL + fmt.Sprintf("/v1beta/%s:streamGenerateContent?key=%s", g.DefaultModel(modelName), g.apiKey))
+	return streamWithRetry(ctx,
+		func(reqCtx context.Context) (*resty.Response, error) {
+			return client.R().
+				SetContext(reqCtx).
+				SetHeader("Content-Type", "application/json").
+				SetBody(request).
+				SetDoNotParseResponse(true).
+				Post(g.baseURL + fmt.Sprintf("/v1beta/%s:streamGenerateContent?key=%s", g.DefaultModel(modelName), g.apiKey))
+		},
+		g.consumeGeminiStream,
+		onEvent,
+	)
+}
 
+// consumeGeminiStream parses the JSON array returned by streamGenerateContent.
+func (g *GeminiProvider) consumeGeminiStream(r io.Reader, onEvent func(StreamEvent) error) error {
+	decoder := json.NewDecoder(r)
+
+	tok, err := decoder.Token()
+	if err == io.EOF {
+		return fmt.Errorf("stream ended before any data")
+	}
 	if err != nil {
-		return fmt.Errorf("error in stream request: %w", err)
+		return fmt.Errorf("error reading stream: %w", err)
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '[' {
+		return fmt.Errorf("unexpected stream payload: expected JSON array")
 	}
 
-	if res == nil {
-		return fmt.Errorf("empty response")
-	}
+	var (
+		text         strings.Builder
+		thought      strings.Builder
+		toolCalls    []ToolCall
+		usage        Usage
+		finishReason string
+		sawChunk     bool
+	)
 
-	defer res.RawBody().Close()
+	for decoder.More() {
+		var chunk GeminiGenerateContent
+		if err := decoder.Decode(&chunk); err != nil {
+			return fmt.Errorf("error decoding stream chunk: %w", err)
+		}
+		sawChunk = true
 
-	reader := bufio.NewReader(res.RawBody())
-	var response GeminiGenerateContent
-	bufferJSON := ""
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
+		if chunk.UsageMetadata.TotalTokenCount > 0 {
+			usage = g.extractUsage(chunk.UsageMetadata)
+			if err := onEvent(StreamEvent{Type: StreamUsage, Usage: usage}); err != nil {
+				return err
 			}
-			return fmt.Errorf("error reading stream: %w", err)
 		}
 
-		line = strings.TrimSpace(line)
-		if line != "," {
-			bufferJSON += line
-		}
-
-		bufferJSON = strings.TrimPrefix(bufferJSON, "[")
-		err = json.Unmarshal([]byte(bufferJSON), &response)
-		if err != nil {
+		if len(chunk.Candidates) == 0 {
 			continue
 		}
-
-		if res.StatusCode() != 200 {
-			return fmt.Errorf("error fetching stream response: %v", bufferJSON)
+		candidate := chunk.Candidates[0]
+		if candidate.FinishReason != "" {
+			finishReason = candidate.FinishReason
 		}
 
-		if len(response.Candidates) > 0 {
-			partialMessage := contentToMessage(response.Candidates[0].Content)
-			err = callback(partialMessage)
-			if err != nil {
-				return fmt.Errorf("error in callback: %w", err)
+		for _, part := range candidate.Content.Parts {
+			if part.Text != "" {
+				if part.Thought {
+					thought.WriteString(part.Text)
+					if err := onEvent(StreamEvent{Type: StreamThinkingDelta, Thought: part.Text}); err != nil {
+						return err
+					}
+				} else {
+					text.WriteString(part.Text)
+					if err := onEvent(StreamEvent{Type: StreamTextDelta, Text: part.Text}); err != nil {
+						return err
+					}
+				}
+			}
+			if part.FunctionCall != nil {
+				toolCalls = append(toolCalls, ToolCall{
+					ID:   fmt.Sprintf("call_%d", len(toolCalls)),
+					Type: "function",
+					Function: FunctionCall{
+						Name:             part.FunctionCall.Name,
+						Arguments:        part.FunctionCall.Args,
+						ThoughtSignature: part.ThoughtSignature,
+					},
+				})
 			}
 		}
-
-		// Check for UsageMetadata (usually at the end or with candidates)
-		if response.UsageMetadata.TotalTokenCount > 0 {
-			usageMsg := Message{
-				Role:  "assistant",
-				Usage: g.extractUsage(response.UsageMetadata),
-			}
-
-			// Send usage update via callback
-			if err := callback(usageMsg); err != nil {
-				return fmt.Errorf("error in callback sending usage: %w", err)
-			}
-		}
-
-		bufferJSON = ""
 	}
 
-	return nil
+	if _, err := decoder.Token(); err != nil && err != io.EOF {
+		return fmt.Errorf("error closing stream: %w", err)
+	}
+	if !sawChunk {
+		return fmt.Errorf("stream ended without any data")
+	}
+
+	final := Message{
+		Role:       "assistant",
+		Usage:      usage,
+		ToolCalls:  toolCalls,
+		StopReason: mapGeminiFinishReason(finishReason),
+		Version:    2,
+	}
+	if text.Len() > 0 {
+		final.Content = text.String()
+	}
+	if thought.Len() > 0 {
+		final.Thought = thought.String()
+	}
+
+	var doneErr error
+	if final.StopReason == StopError {
+		doneErr = fmt.Errorf("gemini stopped the response: %s", finishReason)
+		final.ErrorMessage = doneErr.Error()
+	}
+
+	return onEvent(StreamEvent{
+		Type:       StreamDone,
+		Message:    &final,
+		Usage:      usage,
+		StopReason: final.StopReason,
+		Err:        doneErr,
+	})
+}
+
+func mapGeminiFinishReason(reason string) StopReason {
+	switch strings.ToUpper(strings.TrimSpace(reason)) {
+	case "", "STOP":
+		return StopNormal
+	case "MAX_TOKENS":
+		return StopLength
+	case "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII":
+		return StopError
+	default:
+		return StopNormal
+	}
 }
 
 func (g *GeminiProvider) extractUsage(usage GeminiUsageMetadata) Usage {
 	finalUsage := Usage{
-		PromptTokens:     usage.PromptTokenCount,
-		CompletionTokens: usage.CandidatesTokenCount,
-		TotalTokens:      usage.TotalTokenCount,
-		ThoughtsTokens:   usage.ThoughtsTokenCount,
+		PromptTokens:      usage.PromptTokenCount,
+		CompletionTokens:  usage.CandidatesTokenCount,
+		TotalTokens:       usage.TotalTokenCount,
+		ThoughtsTokens:    usage.ThoughtsTokenCount,
+		CachedInputTokens: usage.CachedContentTokenCount,
 	}
 
 	for _, detail := range usage.PromptTokensDetails {
@@ -609,14 +742,17 @@ func (g *GeminiProvider) Models() ([]string, error) {
 }
 
 func (g *GeminiProvider) geminiModels() (*GeminiModels, error) {
-	client := resty.New()
+	client := resty.New().SetTimeout(modelListTimeout)
 
 	var response GeminiModels
-	res, _ := client.R().
+	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetResult(&response).
 		Get(g.baseURL + fmt.Sprintf("/v1beta/models?key=%s", g.apiKey))
 
+	if err != nil {
+		return nil, fmt.Errorf("error fetching gemini models: %w", err)
+	}
 	if res.StatusCode() != 200 {
 		return nil, fmt.Errorf("error fetching gemini models: %s", res.String())
 	}

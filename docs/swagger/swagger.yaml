@@ -2,6 +2,8 @@ basePath: /
 definitions:
   api.ChatRequest:
     properties:
+      conversation_id:
+        type: string
       images:
         items:
           type: string
@@ -9,6 +11,39 @@ definitions:
       text:
         type: string
       user_id:
+        type: integer
+    type: object
+  api.TimelineItem:
+    properties:
+      args:
+        description: Args carries the full argument JSON of an approval item.
+        type: string
+      arguments:
+        type: string
+      attempt:
+        description: Retry and compaction details, set on their own kinds.
+        type: integer
+      dropped_messages:
+        type: integer
+      id:
+        type: string
+      is_error:
+        type: boolean
+      kind:
+        type: string
+      name:
+        type: string
+      result:
+        type: string
+      subagent:
+        description: SubAgent names the sub-agent that raised an approval item, if
+          any.
+        type: string
+      text:
+        type: string
+      tokens_after:
+        type: integer
+      tokens_before:
         type: integer
     type: object
   channel.QueueEnvelope:
@@ -26,16 +61,14 @@ definitions:
         example: error message
         type: string
     type: object
-  handler.ChatResponse:
+  handler.AttachmentResponse:
     properties:
-      text:
+      data_base64:
         type: string
-      trace:
-        items:
-          $ref: '#/definitions/handler.TraceStep'
-        type: array
-      usage:
-        $ref: '#/definitions/handler.UsageResponse'
+      file_name:
+        type: string
+      mime_type:
+        type: string
     type: object
   handler.HeartbeatRequest:
     properties:
@@ -48,14 +81,26 @@ definitions:
       trigger:
         type: string
     type: object
-  handler.TraceStep:
+  myaaw_internal_services_bot_handler.ChatResponse:
     properties:
-      action:
+      attachments:
+        items:
+          $ref: '#/definitions/handler.AttachmentResponse'
+        type: array
+      conversation_id:
         type: string
-      observation:
+      run_id:
         type: string
+      text:
+        type: string
+      timeline:
+        items:
+          $ref: '#/definitions/api.TimelineItem'
+        type: array
+      usage:
+        $ref: '#/definitions/myaaw_internal_services_bot_handler.UsageResponse'
     type: object
-  handler.UsageResponse:
+  myaaw_internal_services_bot_handler.UsageResponse:
     properties:
       completion_tokens:
         type: integer
@@ -72,13 +117,55 @@ info:
   title: Myaaw API Gateway
   version: 0.0.1
 paths:
+  /api/approvals/{id}:
+    post:
+      consumes:
+      - application/json
+      description: Answers a pending approval request created by /api/chat or /api/chat/stream.
+      parameters:
+      - description: Approval ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Owning user id (alternative to the body user_id)
+        in: header
+        name: X-Myaaw-User-ID
+        type: string
+      - description: 'Decision: allow_once | allow_session | allow_always | deny,
+          plus the owning user_id'
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      summary: Resolve a tool approval
+      tags:
+      - Chat
   /api/chat:
     post:
       consumes:
       - application/json
       description: Direct REST API chat endpoint (non-streaming)
       parameters:
-      - description: Chat request with user_id and text
+      - description: Chat request; user_id is optional and defaults to 0
         in: body
         name: request
         required: true
@@ -90,9 +177,17 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handler.ChatResponse'
+            $ref: '#/definitions/myaaw_internal_services_bot_handler.ChatResponse'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/common.ErrorResponse'
         "500":
@@ -108,7 +203,7 @@ paths:
       - application/json
       description: Direct REST API chat endpoint with Server-Sent Events streaming
       parameters:
-      - description: Chat request with user_id and text
+      - description: Chat request; user_id is optional and defaults to 0
         in: body
         name: request
         required: true
@@ -121,6 +216,14 @@ paths:
           description: OK
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/common.ErrorResponse'
         "500":

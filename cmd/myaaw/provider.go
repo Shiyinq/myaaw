@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
@@ -24,7 +25,7 @@ var providerCreateCmd = &cobra.Command{
 		var pType, pName, pBaseURL, pAPIKey string
 
 		fmt.Println(theme.RenderPrimary("--- Create LLM Provider Integration ---"))
-		
+
 		err := huh.NewForm(
 			huh.NewGroup(
 				huh.NewSelect[string]().
@@ -64,9 +65,12 @@ var providerCreateCmd = &cobra.Command{
 		pName = strings.TrimSpace(pName)
 		pBaseURL = strings.TrimSpace(pBaseURL)
 		pAPIKey = strings.TrimSpace(pAPIKey)
+		if pBaseURL == "" {
+			pBaseURL = provider.DefaultBaseURL(pType)
+		}
 
 		fmt.Println(theme.RenderSecondary("\nFetching available models..."))
-		
+
 		// Temporarily override config to initialize provider
 		config.LLMProviderBaseURL = pBaseURL
 		llm, err := provider.CreateLLMProvider(pType, pAPIKey)
@@ -140,7 +144,7 @@ var providerCreateCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✨ Provider '%s' created and saved successfully!", pName)))
+		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✨ Provider '%s' created and saved for agent '%s'!", pName, agentdir.Active())))
 	},
 }
 
@@ -154,7 +158,7 @@ var providerListCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println(theme.RenderPrimary("Configured Providers:"))
+		fmt.Println(theme.RenderPrimary(fmt.Sprintf("Configured Providers for agent %q:", agentdir.Active())))
 		for name, p := range cfg.Providers {
 			marker := " "
 			if name == cfg.DefaultProvider {
@@ -256,7 +260,7 @@ var providerDeleteCmd = &cobra.Command{
 		}
 
 		delete(cfg.Providers, name)
-		
+
 		if cfg.DefaultProvider == name {
 			cfg.DefaultProvider = ""
 			// Fallback to another one if available
@@ -314,9 +318,12 @@ var providerSetModelCmd = &cobra.Command{
 		}
 
 		fmt.Println(theme.RenderSecondary(fmt.Sprintf("\nFetching available models for %s...", name)))
-		
+
 		// Temporarily override config to initialize provider
 		config.LLMProviderBaseURL = pConfig.BaseURL
+		if config.LLMProviderBaseURL == "" {
+			config.LLMProviderBaseURL = provider.DefaultBaseURL(pConfig.Type)
+		}
 		llm, err := provider.CreateLLMProvider(pConfig.Type, pConfig.APIKey)
 		if err != nil {
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to create provider: %v", err)))

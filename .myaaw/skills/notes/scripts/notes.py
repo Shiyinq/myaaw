@@ -5,7 +5,8 @@ import datetime
 import glob
 
 # Constants
-DATA_DIR = os.path.join(os.path.expanduser("~"), ".myaaw", "database", "notes")
+AGENT_ROOT = os.environ.get("MYAAW_AGENT_ROOT") or os.path.join(os.path.expanduser("~"), ".myaaw", "default")
+DATA_DIR = os.path.join(AGENT_ROOT, "database", "notes")
 
 def ensure_user_dir(user_id):
     user_path = os.path.join(DATA_DIR, user_id)

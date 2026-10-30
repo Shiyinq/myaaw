@@ -9,42 +9,57 @@ import (
 	"time"
 
 	"myaaw/internal/agent"
+	"myaaw/internal/agentdir"
 
 	"github.com/fsnotify/fsnotify"
 )
 
 var (
-	// SkillsLogger writes to ~/.myaaw/logs/skills.log, separate from the
-	// tools log, so skill enable/disable activity can be monitored on its own.
+	// SkillsLogger writes to the active agent's logs/skills.log, separate from
+	// the tools log, so skill enable/disable activity can be monitored on its own.
 	SkillsLogger  *log.Logger
+	skillsLogFile *os.File
 	skillsWatcher *fsnotify.Watcher
 )
 
 func init() {
-	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		logDir := filepath.Join(homeDir, ".myaaw", "logs")
-		os.MkdirAll(logDir, 0755)
-		logPath := filepath.Join(logDir, "skills.log")
-
-		f, err := os.OpenFile(logPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-		if err == nil {
-			SkillsLogger = log.New(f, "", log.LstdFlags)
-			return
-		}
-	}
-	// Fallback to discard if failed
 	SkillsLogger = log.New(io.Discard, "", 0)
+	// See the tools package: do not create the agent directory during init for
+	// commands that do not target an initialized agent (for example restore).
+	if agentdir.AgentInitialized(agentdir.Active()) {
+		ConfigureLogging()
+	}
+}
+
+// ConfigureLogging reopens skills.log for the active agent.
+func ConfigureLogging() {
+	if skillsLogFile != nil {
+		_ = skillsLogFile.Close()
+		skillsLogFile = nil
+	}
+
+	logDir, err := agentdir.ActiveLogsDir()
+	if err != nil {
+		SkillsLogger = log.New(io.Discard, "", 0)
+		return
+	}
+	_ = os.MkdirAll(logDir, 0755)
+	f, err := os.OpenFile(filepath.Join(logDir, "skills.log"), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		SkillsLogger = log.New(io.Discard, "", 0)
+		return
+	}
+	skillsLogFile = f
+	SkillsLogger = log.New(f, "", log.LstdFlags)
 }
 
 // getEnabledSkillNames returns the sorted directory names of all currently
 // enabled skills (respecting skills.json and the SKILL.md frontmatter).
 func getEnabledSkillNames() []string {
-	myaawPath, err := agent.EnsureMyaawConfig()
+	skillsDir, err := agentdir.ActiveSkillsDir()
 	if err != nil {
 		return nil
 	}
-	skillsDir := filepath.Join(myaawPath, "skills")
 	skills, err := listEnabledSkills(skillsDir, loadSkillsFilter(skillsDir))
 	if err != nil {
 		return nil
@@ -70,13 +85,11 @@ func WatchSkills() {
 	// Log the initial state at startup
 	LogActiveSkills()
 
-	homeDir, err := os.UserHomeDir()
+	skillsDir, err := agentdir.ActiveSkillsDir()
 	if err != nil {
-		SkillsLogger.Printf("Failed to get home dir for skills watcher: %v", err)
+		SkillsLogger.Printf("Failed to resolve skills directory: %v", err)
 		return
 	}
-
-	skillsDir := filepath.Join(homeDir, ".myaaw", "skills")
 	if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
 		return
 	}

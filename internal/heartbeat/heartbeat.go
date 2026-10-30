@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
+	"myaaw/internal/agentdir"
 	globalConfig "myaaw/internal/config"
+
 	"github.com/go-resty/resty/v2"
 )
 
@@ -161,12 +162,10 @@ CRITICAL: "HEARTBEAT_OK" acts as a "silent skip". If you output it, the system a
 }
 
 func (s *HeartbeatService) readConfig() (*HeartbeatConfig, error) {
-	homeDir, err := os.UserHomeDir()
+	configPath, err := agentdir.ActiveConfigPath()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user home directory: %w", err)
+		return nil, fmt.Errorf("failed to resolve agent config path: %w", err)
 	}
-
-	configPath := strings.Join([]string{homeDir, ".myaaw", "config", "config.json"}, string(os.PathSeparator))
 
 	content, err := os.ReadFile(configPath)
 	if err != nil {

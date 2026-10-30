@@ -2,25 +2,34 @@ package handler
 
 import (
 	"bufio"
+	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
-	"myaaw/internal/channel"
+	"myaaw/internal/agent/approvals"
 	api "myaaw/internal/channel/api"
+	"myaaw/internal/services/bot/service"
 	"myaaw/internal/utils"
 
 	"github.com/gofiber/fiber/v3"
 )
 
 type ChatResponse struct {
-	Text  string         `json:"text"`
-	Trace []TraceStep    `json:"trace,omitempty"`
-	Usage *UsageResponse `json:"usage,omitempty"`
+	Text           string               `json:"text"`
+	ConversationID string               `json:"conversation_id,omitempty"`
+	RunID          string               `json:"run_id,omitempty"`
+	Timeline       []api.TimelineItem   `json:"timeline,omitempty"`
+	Usage          *UsageResponse       `json:"usage,omitempty"`
+	Attachments    []AttachmentResponse `json:"attachments,omitempty"`
 }
 
-type TraceStep struct {
-	Action      string `json:"action"`
-	Observation string `json:"observation,omitempty"`
+// AttachmentResponse is one delivered file, base64-encoded for API clients.
+type AttachmentResponse struct {
+	FileName   string `json:"file_name"`
+	MimeType   string `json:"mime_type,omitempty"`
+	DataBase64 string `json:"data_base64"`
 }
 
 type UsageResponse struct {
@@ -35,9 +44,11 @@ type UsageResponse struct {
 // @Tags		API
 // @Produce		json
 // @Accept		json
-// @Param		request	body		api.ChatRequest	true	"Chat request with user_id and text"
+// @Param		request	body		api.ChatRequest	true	"Chat request; user_id is optional and defaults to 0"
 // @Success		200		{object}	ChatResponse
-// @Failure     400    	{object}   	common.ErrorResponse
+// @Failure     400     {object}    common.ErrorResponse
+// @Failure     403     {object}    common.ErrorResponse
+// @Failure     404     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/api/chat [post]
 func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
@@ -65,28 +76,61 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 
 	log.Printf("API chat request from user ID %v", msg.UserID)
 
-	out, err := s.botService.Bot(msg)
-	if err != nil {
-		log.Printf("API chat error for user ID %v: %v", msg.UserID, err)
-		formattedError := utils.FormatErrorMessage(err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+	timeline := api.NewTimeline(nil)
+	run := &apiRun{
+		timeline: timeline,
+		done:     make(chan apiRunResult, 1),
+		first:    make(chan approvals.Request, 1),
+	}
+	// The run must survive the HTTP request returning an approval prompt.
+	runCtx := approvals.WithRequester(context.WithoutCancel(c.Context()), &blockingApprovalRequester{run: run})
+
+	go func() {
+		out, runErr := s.botService.BotStreamContext(runCtx, msg, timeline.HandleChunk)
+		run.done <- apiRunResult{out: out, err: runErr}
+		untrackRun(run)
+	}()
+
+	select {
+	case res := <-run.done:
+		return s.writeChatResult(c, run, res)
+	case req := <-run.first:
+		trackRun(req.ID, run)
+		return c.JSON(approvalRequestPayload(req))
+	}
+}
+
+// writeChatResult serializes a completed (or failed) non-streaming chat run.
+func (s *BotHandlerImpl) writeChatResult(c fiber.Ctx, run *apiRun, res apiRunResult) error {
+	if res.err != nil {
+		log.Printf("API chat error: %v", res.err)
+		formattedError := utils.FormatErrorMessage(res.err)
+		status := fiber.StatusInternalServerError
+		switch {
+		case errors.Is(res.err, service.ErrConversationNotFound):
+			status = fiber.StatusNotFound
+		case errors.Is(res.err, service.ErrConversationForbidden):
+			status = fiber.StatusForbidden
+		}
+		return c.Status(status).JSON(fiber.Map{
 			"error": formattedError,
 		})
 	}
 
+	out := res.out
 	resp := ChatResponse{
-		Text: out.Text,
+		Text:           out.Text,
+		ConversationID: out.ConversationID,
+		RunID:          out.RunID,
+		Timeline:       run.timeline.Items(),
 	}
-
-	if len(out.Trace) > 0 {
-		for _, step := range out.Trace {
-			resp.Trace = append(resp.Trace, TraceStep{
-				Action:      step.Action,
-				Observation: step.Observation,
-			})
-		}
+	for _, att := range out.Attachments {
+		resp.Attachments = append(resp.Attachments, AttachmentResponse{
+			FileName:   att.FileName,
+			MimeType:   att.MimeType,
+			DataBase64: base64.StdEncoding.EncodeToString(att.Data),
+		})
 	}
-
 	if out.Usage.TotalTokens > 0 {
 		resp.Usage = &UsageResponse{
 			PromptTokens:     out.Usage.PromptTokens,
@@ -94,7 +138,6 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 			TotalTokens:      out.Usage.TotalTokens,
 		}
 	}
-
 	return c.Status(fiber.StatusOK).JSON(resp)
 }
 
@@ -104,9 +147,11 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 // @Tags		API
 // @Produce		text/event-stream
 // @Accept		json
-// @Param		request	body		api.ChatRequest	true	"Chat request with user_id and text"
+// @Param		request	body		api.ChatRequest	true	"Chat request; user_id is optional and defaults to 0"
 // @Success		200
-// @Failure     400    	{object}   	common.ErrorResponse
+// @Failure     400     {object}    common.ErrorResponse
+// @Failure     403     {object}    common.ErrorResponse
+// @Failure     404     {object}    common.ErrorResponse
 // @Failure     500     {object}    common.ErrorResponse
 // @Router		/api/chat/stream [post]
 func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {
@@ -151,29 +196,13 @@ func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {
 			w.Flush()
 		}
 
-		out, err := s.botService.BotStream(msg, func(chunk channel.StreamChunk) {
-			if len(chunk.ToolCalls) > 0 {
-				writeSSE("tool", fiber.Map{
-					"name": chunk.ToolCalls[0].Function.Name,
-				})
-			} else if chunk.Text != "" {
-				writeSSE("chunk", fiber.Map{
-					"text": chunk.Text,
-				})
-			}
-
-			if len(chunk.Trace) > 0 {
-				var traceSteps []TraceStep
-				for _, step := range chunk.Trace {
-					traceSteps = append(traceSteps, TraceStep{
-						Action:      step.Action,
-						Observation: step.Observation,
-					})
-				}
-				writeSSE("trace", traceSteps)
-			}
+		timeline := api.NewTimeline(func(event api.SSEEvent) {
+			writeSSE(event.Name, event.Data)
 		})
 
+		requester := &sseApprovalRequester{emit: timeline.HandleChunk}
+		runCtx := approvals.WithRequester(c.Context(), requester)
+		out, err := s.botService.BotStreamContext(runCtx, msg, timeline.HandleChunk)
 		if err != nil {
 			log.Printf("API stream error for user ID %v: %v", msg.UserID, err)
 			writeSSE("error", fiber.Map{
@@ -183,18 +212,7 @@ func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {
 			return
 		}
 
-		doneData := fiber.Map{
-			"ok":   true,
-			"text": out.Text,
-		}
-		if out.Usage.TotalTokens > 0 {
-			doneData["usage"] = UsageResponse{
-				PromptTokens:     out.Usage.PromptTokens,
-				CompletionTokens: out.Usage.CompletionTokens,
-				TotalTokens:      out.Usage.TotalTokens,
-			}
-		}
-		writeSSE("done", doneData)
+		timeline.Done(out)
 	})
 
 	return nil

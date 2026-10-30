@@ -4,6 +4,8 @@ Myaaw provides a dynamic, lightweight, and extensible **Agent Skills System**. S
 
 Each skill is self-contained within its own directory and defined by a `SKILL.md` specification file. When needed, Myaaw agents dynamically read skill documentation using filesystem tools and execute corresponding scripts in an isolated environment.
 
+> Paths such as `~/.myaaw/skills/` in this guide refer to the active agent's directory: `~/.myaaw/<agent>/skills/`. The default agent uses `~/.myaaw/default/skills/`.
+
 ---
 
 ## Table of Contents
@@ -222,7 +224,9 @@ The script processes the input and prints results to `stdout`. The agent formats
 
 ## Managing Skills (Enable / Disable)
 
-You can enable or disable individual skills **without deleting them** by creating `~/.myaaw/skills/skills.json`. Each key is a skill **directory name** (`~/.myaaw/skills/<dir_name>`) mapped to a boolean:
+The simplest switch is the folder itself: a skill is discovered only when `~/.myaaw/<agent>/skills/<name>/` exists. `myaaw onboard` installs only the skills you select (**none by default**) and never creates folders for the rest, so an agent starts with exactly the skills you chose. Onboarding also never deletes a skill folder, so removing one is a manual action.
+
+You can also enable or disable individual skills **without deleting them** by creating `~/.myaaw/skills/skills.json`. Each key is a skill **directory name** (`~/.myaaw/skills/<dir_name>`) mapped to a boolean:
 
 ```json
 {

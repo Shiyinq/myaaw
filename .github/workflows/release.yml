@@ -55,6 +55,36 @@ jobs:
           echo "Building for ${{ matrix.goos }}/${{ matrix.goarch }}..."
           go build -v -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X main.Commit=${{ github.sha }} -X main.Date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" -o bin/myaaw-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/myaaw
 
+      # Optional: sign the macOS binary with a stable Developer ID identity so
+      # Screen Recording / Accessibility / Automation grants survive updates.
+      # Configure the three secrets below; without them this step is a no-op.
+      # It is continue-on-error, so a missing/invalid certificate can never
+      # block a release.
+      #   MACOS_CERT_P12       base64 of the Developer ID .p12
+      #   MACOS_CERT_PASSWORD  password of the .p12
+      #   MACOS_CERT_IDENTITY  e.g. "Developer ID Application: Name (TEAMID)"
+      - name: Sign binary (macOS, optional)
+        if: matrix.goos == 'darwin'
+        continue-on-error: true
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_CERT_IDENTITY: ${{ secrets.MACOS_CERT_IDENTITY }}
+        run: |
+          if [ -z "$MACOS_CERT_P12" ]; then
+            echo "No Developer ID certificate configured; skipping signing."
+            exit 0
+          fi
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p actions build.keychain
+          security list-keychains -d user -s build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p actions build.keychain
+          security import "$RUNNER_TEMP/cert.p12" -k build.keychain -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
+          codesign --force --identifier com.myaaw.cli --sign "$MACOS_CERT_IDENTITY" "bin/myaaw-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          codesign --verify --verbose "bin/myaaw-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:

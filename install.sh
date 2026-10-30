@@ -61,6 +61,24 @@ mkdir -p "$INSTALL_DIR" || true
 
 mv "$TMP_FILE" "${INSTALL_DIR}/${BIN_NAME}${EXT}"
 
+# macOS: re-sign with the local stable identity so Screen Recording /
+# Accessibility / Automation grants survive updates.
+if [ "$OS_NAME" = "darwin" ]; then
+    if security find-identity -v -p codesigning 2>/dev/null | grep -qF "Myaaw Agent"; then
+        if codesign --force --identifier com.myaaw.cli --sign "Myaaw Agent" "${INSTALL_DIR}/${BIN_NAME}${EXT}"; then
+            echo "🔏 Signed with 'Myaaw Agent' (stable macOS identity)."
+        else
+            echo "⚠️  codesign failed; macOS permissions may reset after updates."
+        fi
+    else
+        echo "ℹ️  No 'Myaaw Agent' signing identity found."
+        echo "    macOS permissions may reset after updates. Create it once with:"
+        echo "      ${INSTALL_DIR}/${BIN_NAME} codesign setup"
+        echo "    (or 'make codesign-setup' from a source checkout), then re-run this"
+        echo "    installer or 'myaaw update' so the binary gets signed."
+    fi
+fi
+
 echo "✅ Installation successful! MyAAW is now installed at ${INSTALL_DIR}/${BIN_NAME}${EXT}."
 
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]] && [ "$OS_NAME" != "windows" ]; then

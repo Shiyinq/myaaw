@@ -1,10 +1,12 @@
 package provider
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -71,88 +73,193 @@ func (o *OllamaProvider) buildRequest(modelName string, messages []Message, stre
 		Stream:   stream,
 		Messages: messages,
 	}
-	
 	if len(toolsList) > 0 {
 		req.Tools = toolsList
 	}
-	
 	return req
 }
 
 func (o *OllamaProvider) Chat(modelName string, messages []Message, toolsList []map[string]interface{}) (Message, error) {
-	client := resty.New()
-	client.SetTimeout(120 * time.Second)
-	_ = o.apiKey // unused for ollama
+	return o.chat(context.Background(), modelName, messages, toolsList)
+}
 
+func (o *OllamaProvider) chat(ctx context.Context, modelName string, messages []Message, toolsList []map[string]interface{}) (Message, error) {
+	client := resty.New().SetTimeout(120 * time.Second)
 	request := o.buildRequest(modelName, messages, false, toolsList)
 
 	var response OllamaResponse
-	res, _ := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(request).
-		SetResult(&response).
-		Post(o.baseURL + "/api/chat")
-
+	res, err := doWithRetry(func() (*resty.Response, error) {
+		return client.R().
+			SetContext(ctx).
+			SetHeader("Content-Type", "application/json").
+			SetBody(request).
+			SetResult(&response).
+			Post(o.baseURL + "/api/chat")
+	})
+	if err != nil {
+		return Message{}, fmt.Errorf("chat request failed: %w", err)
+	}
+	if res == nil {
+		return Message{}, errors.New("chat request returned a nil response")
+	}
 	if res.StatusCode() != 200 {
-		return Message{}, fmt.Errorf("error fetching response: %v", res.String())
+		return Message{}, fmt.Errorf("chat request failed (%d): %s", res.StatusCode(), strings.TrimSpace(res.String()))
 	}
 
-	if response.Message.ToolCalls != nil {
-		return response.Message, nil
+	msg := response.Message
+	msg.Version = 2
+	msg.StopReason = mapOllamaDoneReason(response.DoneReason)
+	msg.Usage = Usage{
+		PromptTokens:     response.PromptEvalCount,
+		CompletionTokens: response.EvalCount,
+		TotalTokens:      response.PromptEvalCount + response.EvalCount,
 	}
-
-	return response.Message, nil
+	if msg.StopReason == StopError {
+		msg.IsError = true
+		msg.ErrorMessage = fmt.Sprintf("ollama stopped the response: %s", response.DoneReason)
+	}
+	return msg, nil
 }
 
 func (o *OllamaProvider) ChatStream(modelName string, messages []Message, callback func(Message) error, toolsList []map[string]interface{}) error {
-	client := resty.New()
-	client.SetTimeout(120 * time.Second)
-	_ = o.apiKey // unused for ollama
+	return chatStreamFromEvents(context.Background(), o, modelName, messages, toolsList, callback)
+}
 
+func (o *OllamaProvider) ChatStreamEvents(
+	ctx context.Context,
+	modelName string,
+	messages []Message,
+	toolsList []map[string]interface{},
+	onEvent func(StreamEvent) error,
+) error {
+	timeout := streamRequestTimeout()
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	client := resty.New().SetTimeout(timeout)
 	request := o.buildRequest(modelName, messages, true, toolsList)
 
-	res, _ := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetBody(request).
-		SetDoNotParseResponse(true).
-		Post(o.baseURL + "/api/chat")
+	return streamWithRetry(ctx,
+		func(reqCtx context.Context) (*resty.Response, error) {
+			return client.R().
+				SetContext(reqCtx).
+				SetHeader("Content-Type", "application/json").
+				SetBody(request).
+				SetDoNotParseResponse(true).
+				Post(o.baseURL + "/api/chat")
+		},
+		o.consumeOllamaStream,
+		onEvent,
+	)
+}
 
-	defer res.RawBody().Close()
+// consumeOllamaStream parses Ollama's NDJSON stream.
+func (o *OllamaProvider) consumeOllamaStream(r io.Reader, onEvent func(StreamEvent) error) error {
+	decoder := json.NewDecoder(r)
 
-	reader := bufio.NewReader(res.RawBody())
-	var response OllamaResponse
+	var (
+		text       strings.Builder
+		thought    strings.Builder
+		toolCalls  []ToolCall
+		usage      Usage
+		done       bool
+		doneReason string
+		sawChunk   bool
+	)
 
 	for {
-		line, err := reader.ReadBytes('\n')
-
-		if res.StatusCode() != 200 {
-			return fmt.Errorf("error fetching stream response: %v", string(line))
-		}
-
-		if err != nil {
+		var chunk OllamaResponse
+		if err := decoder.Decode(&chunk); err != nil {
 			if err == io.EOF {
 				break
 			}
-			return fmt.Errorf("error reading stream: %w", err)
+			return fmt.Errorf("error decoding stream chunk: %w", err)
+		}
+		sawChunk = true
+
+		if content, ok := chunk.Message.Content.(string); ok && content != "" {
+			text.WriteString(content)
+			if err := onEvent(StreamEvent{Type: StreamTextDelta, Text: content}); err != nil {
+				return err
+			}
+		}
+		if chunk.Message.Thought != "" {
+			thought.WriteString(chunk.Message.Thought)
+			if err := onEvent(StreamEvent{Type: StreamThinkingDelta, Thought: chunk.Message.Thought}); err != nil {
+				return err
+			}
+		}
+		if len(chunk.Message.ToolCalls) > 0 {
+			toolCalls = chunk.Message.ToolCalls
 		}
 
-		err = json.Unmarshal(line, &response)
-		if err != nil {
-			return fmt.Errorf("error unmarshalling stream data: %w", err)
+		if chunk.PromptEvalCount > 0 || chunk.EvalCount > 0 {
+			usage = Usage{
+				PromptTokens:     chunk.PromptEvalCount,
+				CompletionTokens: chunk.EvalCount,
+				TotalTokens:      chunk.PromptEvalCount + chunk.EvalCount,
+			}
+			if err := onEvent(StreamEvent{Type: StreamUsage, Usage: usage}); err != nil {
+				return err
+			}
 		}
 
-		partialMessage := response.Message
-		err = callback(partialMessage)
-		if err != nil {
-			return fmt.Errorf("error in callback: %w", err)
-		}
-
-		if response.Done {
+		if chunk.Done {
+			done = true
+			if chunk.DoneReason != "" {
+				doneReason = chunk.DoneReason
+			}
 			break
 		}
 	}
 
-	return nil
+	if !sawChunk {
+		return errors.New("stream ended without any data")
+	}
+
+	final := Message{
+		Role:       "assistant",
+		Usage:      usage,
+		ToolCalls:  toolCalls,
+		StopReason: mapOllamaDoneReason(doneReason),
+		Version:    2,
+	}
+	if text.Len() > 0 {
+		final.Content = text.String()
+	}
+	if thought.Len() > 0 {
+		final.Thought = thought.String()
+	}
+	if !done {
+		final.StopReason = StopNormal
+	}
+
+	var doneErr error
+	if final.StopReason == StopError {
+		doneErr = fmt.Errorf("ollama stopped the response: %s", doneReason)
+		final.ErrorMessage = doneErr.Error()
+	}
+
+	return onEvent(StreamEvent{
+		Type:       StreamDone,
+		Message:    &final,
+		Usage:      usage,
+		StopReason: final.StopReason,
+		Err:        doneErr,
+	})
+}
+
+func mapOllamaDoneReason(reason string) StopReason {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "", "stop":
+		return StopNormal
+	case "length":
+		return StopLength
+	case "error":
+		return StopError
+	default:
+		return StopNormal
+	}
 }
 
 func (o *OllamaProvider) Models() ([]string, error) {
@@ -161,7 +268,7 @@ func (o *OllamaProvider) Models() ([]string, error) {
 		return nil, err
 	}
 
-	var models []string
+	models := make([]string, 0, len(tags.Models))
 	for _, model := range tags.Models {
 		models = append(models, model.Name)
 	}
@@ -170,14 +277,19 @@ func (o *OllamaProvider) Models() ([]string, error) {
 }
 
 func (o *OllamaProvider) ollamaTags() (*OllamaTagsResponse, error) {
-	client := resty.New()
+	client := resty.New().SetTimeout(modelListTimeout)
 
 	var response OllamaTagsResponse
-	res, _ := client.R().
+	res, err := client.R().
 		SetHeader("Content-Type", "application/json").
 		SetResult(&response).
 		Get(o.baseURL + "/api/tags")
-
+	if err != nil {
+		return nil, fmt.Errorf("error fetching ollama models: %w", err)
+	}
+	if res == nil {
+		return nil, fmt.Errorf("error fetching ollama models: nil response")
+	}
 	if res.StatusCode() != 200 {
 		return nil, fmt.Errorf("error fetching ollama models: %s", res.String())
 	}

@@ -4,7 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"path/filepath"
+
+	"myaaw/internal/agentdir"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -13,9 +14,8 @@ import (
 func PingSQLite() error {
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
-		homeDir, err := os.UserHomeDir()
-		if err == nil {
-			dbPath = filepath.Join(homeDir, ".myaaw", "database", "myaaw.db")
+		if path, err := agentdir.ActiveDatabasePath(); err == nil {
+			dbPath = path
 		} else {
 			dbPath = "myaaw.db"
 		}

@@ -2,7 +2,9 @@
 
 Myaaw provides an extensible, modular tooling system that empowers AI agents with custom capabilities. You can seamlessly extend Myaaw with **Model Context Protocol (MCP) servers**, **Custom CLI tools**, and configure **Built-in tools** through a single configuration file with **zero-downtime hot-reloading**.
 
-> **Looking for on-demand agent skills?** Check out the [Agent Skills Guide](agent_skills.md) for dynamic `SKILL.md` workflows.
+> Paths such as `~/.myaaw/tools/` in this guide refer to the active agent's directory: `~/.myaaw/<agent>/tools/`. The default agent uses `~/.myaaw/default/tools/`.
+
+> **Looking for on-demand agent skills?** Check out the [Agent Skills Guide](skills.md) for dynamic `SKILL.md` workflows.
 
 ---
 
@@ -15,7 +17,7 @@ Myaaw provides an extensible, modular tooling system that empowers AI agents wit
   - [Example: Playwright Browser Automation](#example-playwright-browser-automation)
   - [Example: Filesystem MCP Server](#example-filesystem-mcp-server)
 - [Custom CLI Tools](#custom-cli-tools)
-  - [CLI Tool Contract (`--schema` & `--execute`)](#cli-tool-contract---schema----execute)
+  - [CLI Execution Contract (`--execute '<json_arguments>'`)](#cli-execution-contract---execute-json_arguments)
   - [Method 1: Configured via `tools.json`](#method-1-configured-via-toolsjson)
   - [Method 2: Zero-Config Directory Tools](#method-2-zero-config-directory-tools)
   - [Custom Tool Examples](#custom-tool-examples)
@@ -93,6 +95,20 @@ All tools are configured in `~/.myaaw/tools/tools.json`.
 
 ## Managing Built-in Tools
 
+Every built-in tool is enabled unless `builtin_tools` says otherwise. `myaaw onboard` lists all of them with everything selected, and only the ones you deselect are written as `false`:
+
+```json
+{
+  "builtin_tools": {
+    "bash": false,
+    "filesystem": true,
+    "cron": true
+  }
+}
+```
+
+You can also edit `builtin_tools` by hand or through the control-plane tools API. Onboarding rewrites this map from the current selection, so a tool you re-enable is written back as `true`; `custom_tools` and `mcp_servers` are left untouched.
+
 You can enable or disable built-in tools by setting their boolean flag in `builtin_tools`:
 
 | Tool Name | Key / Alias | Description |
@@ -103,6 +119,8 @@ You can enable or disable built-in tools by setting their boolean flag in `built
 | **Python** | `"python"` or `"execute_python"` | Dynamic Python code execution in isolated venv |
 | **Provider** | `"provider"` | Change or switch LLM providers dynamically |
 | **Subagent** | `"subagent"` | Spawn autonomous subagents for task delegation |
+| **Contact** | `"contact"` | Manage contacts and delegate tasks to another agent via the A2A protocol (`send`, `list`, `get`, `add`) |
+| **A2A Input** | `"a2a_input"` | Ask an A2A caller for missing information (`input-required`) |
 
 > **Note**: If a built-in tool is omitted from `builtin_tools`, it defaults to `true` (enabled).
 

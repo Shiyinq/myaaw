@@ -1,4 +1,4 @@
-.PHONY: all build build-all install uninstall clean check run help swagger
+.PHONY: all build build-all install uninstall clean check run help swagger swagger-controlplane sign codesign-setup
 
 # Build variables
 BINARY_NAME=myaaw
@@ -49,16 +49,43 @@ endif
 
 BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)$(BINARY_EXT)
 
+# macOS code signing: a stable identity keeps TCC grants (Screen Recording,
+# Accessibility, Automation) valid across rebuilds. Set up the certificate
+# once with `make codesign-setup`, then signing happens automatically.
+CODESIGN_IDENTITY?=Myaaw Agent
+CODESIGN_ID=com.myaaw.cli
+CODESIGN_CHECK=security find-identity -v -p codesigning 2>/dev/null | grep -qF "$(CODESIGN_IDENTITY)"
+
 # Default target
 all: help
 
 ## build: Build the binary for current platform
-build: swagger
+build: swagger swagger-controlplane
 	@echo "🚧 Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@echo "   Version: $(VERSION)"
 	@mkdir -p $(BUILD_DIR)
 	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
+	@if [ "$(UNAME_S)" = "Darwin" ] && $(CODESIGN_CHECK); then \
+		codesign --force --identifier $(CODESIGN_ID) --sign "$(CODESIGN_IDENTITY)" $(BINARY_PATH); \
+		echo "🔏 Signed with '$(CODESIGN_IDENTITY)'"; \
+	fi
 	@echo "✅ Build complete: $(BINARY_PATH)"
+
+## sign: Codesign the built binary with the stable identity (macOS only)
+sign:
+	@if [ "$(UNAME_S)" != "Darwin" ]; then \
+		echo "ℹ️  codesign skipped (not macOS)"; \
+	elif $(CODESIGN_CHECK); then \
+		codesign --force --identifier $(CODESIGN_ID) --sign "$(CODESIGN_IDENTITY)" $(BINARY_PATH); \
+		echo "🔏 Signed $(BINARY_PATH) with '$(CODESIGN_IDENTITY)'"; \
+	else \
+		echo "⚠️  Signing identity '$(CODESIGN_IDENTITY)' not found."; \
+		echo "    Run: myaaw codesign setup (no checkout needed), or ./scripts/setup-codesign.sh"; \
+	fi
+
+## codesign-setup: Create the self-signed 'Myaaw Agent' signing certificate (macOS)
+codesign-setup:
+	@./scripts/setup-codesign.sh
 
 ## swagger: Generate Swagger documentation
 swagger:
@@ -66,8 +93,15 @@ swagger:
 	@mkdir -p docs/swagger
 	# NB: do NOT add --parseGoList=false here — it makes swag recursively parse
 	# the Go stdlib + all dependency sources and can take over an hour.
-	@swag init -g $(MAIN_GO) --parseDependency --parseInternal --output docs/swagger --exclude .myaaw
+	@swag init -g $(MAIN_GO) --parseDependency --parseInternal --output docs/swagger --exclude .myaaw,internal/services/controlplane
 	@echo "✅ Swagger generated"
+
+## swagger-controlplane: Generate Swagger documentation for `myaaw api`
+swagger-controlplane:
+	@echo "📝 Generating control plane Swagger documentation..."
+	@mkdir -p docs/controlplane
+	@swag init -g internal/services/controlplane/docs.go --parseDependency --parseInternal --output docs/controlplane --exclude .myaaw,internal/services/bot/handler,internal/services/queue/handler --instanceName controlplane
+	@echo "✅ Control plane Swagger generated"
 
 ## build-all: Cross-compile for Linux, Darwin, and Windows
 build-all:
@@ -95,6 +129,9 @@ install: build
 	@rm -f $(INSTALL_DIR)/$(BINARY_NAME)$(BINARY_EXT)
 	@cp $(BINARY_PATH) $(INSTALL_DIR)/$(BINARY_NAME)$(BINARY_EXT)
 	@chmod +x $(INSTALL_DIR)/$(BINARY_NAME)$(BINARY_EXT)
+	@if [ "$(UNAME_S)" = "Darwin" ] && $(CODESIGN_CHECK); then \
+		codesign --force --identifier $(CODESIGN_ID) --sign "$(CODESIGN_IDENTITY)" $(INSTALL_DIR)/$(BINARY_NAME)$(BINARY_EXT); \
+	fi
 	@echo "✅ Installed!"
 
 ## uninstall: Remove binary from system path

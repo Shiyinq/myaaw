@@ -10,14 +10,19 @@ import (
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"os"
-	"path/filepath"
 
+	"myaaw/internal/agent"
 	"myaaw/internal/agent/skills"
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/agent/tools/filesystem"
+	"myaaw/internal/agentdir"
 
+	_ "myaaw/internal/agent/tools/a2aauth"
+	_ "myaaw/internal/agent/tools/a2ainput"
 	_ "myaaw/internal/agent/tools/bash"
+	_ "myaaw/internal/agent/tools/computer"
+	_ "myaaw/internal/agent/tools/contact"
 	_ "myaaw/internal/agent/tools/cron"
-	_ "myaaw/internal/agent/tools/filesystem"
 	_ "myaaw/internal/agent/tools/provider"
 	_ "myaaw/internal/agent/tools/python"
 	_ "myaaw/internal/agent/tools/subagent"
@@ -29,6 +34,50 @@ var rootCmd = &cobra.Command{
 	Use:   "myaaw",
 	Short: "Personal AI Assistant",
 	Long:  "😼 A Cat who becomes your personal AI assistant.",
+	// Errors are printed once by main; commands suppress usage for logical
+	// failures so the output stays readable.
+	SilenceErrors: true,
+}
+
+var agentFlag string
+
+func isAgentCommand(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if current.Name() == "agent" {
+			return true
+		}
+	}
+	return false
+}
+
+func isAPISubcommand(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if current.Name() == "api" {
+			return true
+		}
+	}
+	return false
+}
+
+func isCodesignCommand(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if current.Name() == "codesign" {
+			return true
+		}
+	}
+	return false
+}
+
+func startAgentBackgroundLoaders() {
+	tools.ConfigureLogging()
+	skills.ConfigureLogging()
+	go func() {
+		// Log skills state first — it's independent of tool loading and should
+		// appear immediately, even if loading external tools is slow.
+		skills.WatchSkills()
+		tools.LoadExternalTools()
+		tools.WatchExternalTools()
+	}()
 }
 
 func init() {
@@ -43,6 +92,10 @@ func init() {
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(logsCmd)
+	rootCmd.AddCommand(observabilityCmd)
+	rootCmd.AddCommand(doctorCmd)
+	rootCmd.AddCommand(codesignCmd)
+	rootCmd.AddCommand(computerCmd)
 
 	// Aliases for convenience so users can type `myaaw start` instead of `myaaw server start`
 	rootCmd.AddCommand(serverStartCmd)
@@ -50,10 +103,14 @@ func init() {
 	rootCmd.AddCommand(serverRestartCmd)
 
 	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false, "enable verbose logging")
+	rootCmd.PersistentFlags().StringVar(&agentFlag, "agent", "", "agent name to use (defaults to the registry default)")
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		// Add global spacing
-		fmt.Println()
+		// Add global spacing, except for commands that may stream data to
+		// stdout (backup -o -).
+		if cmd.Name() != "backup" {
+			fmt.Println()
+		}
 
 		// Commands that don't require .myaaw configuration
 		metaCommands := map[string]bool{
@@ -61,32 +118,66 @@ func init() {
 			"version": true,
 			"help":    true,
 			"update":  true,
+			"agent":   true,
+			"api":     true,
+			"backup":  true,
+			"restore": true,
+			"doctor":  true,
 		}
 
-		if metaCommands[cmd.Name()] {
+		if metaCommands[cmd.Name()] || isAgentCommand(cmd) || isAPISubcommand(cmd) || isCodesignCommand(cmd) {
 			return nil
 		}
 
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil // Fallback to system env if home unknown
-		}
-
-		myaawPath := filepath.Join(homeDir, ".myaaw")
-		if _, err := os.Stat(myaawPath); os.IsNotExist(err) {
-			fmt.Println("⚠️  Myaaw is not initialized!")
-			fmt.Println("Please run 'myaaw onboard' to setup your configuration and features.")
+		if err := agentdir.EnsureLayout(); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  Could not prepare agent layout: %v\n", err)
 			os.Exit(1)
 		}
 
-		// Load and watch external tools asynchronously in the background so CLI commands open instantly
-		go func() {
-			// Log skills state first — it's independent of tool loading and should
-			// appear immediately, even if loading external tools is slow.
-			skills.WatchSkills()
-			tools.LoadExternalTools()
-			tools.WatchExternalTools()
-		}()
+		activeAgent, err := agentdir.ResolveActive(agentFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Invalid agent: %v\n", err)
+			os.Exit(1)
+		}
+		if !agentdir.AgentInitialized(activeAgent) && agentFlag == "" {
+			// The registry default may be missing while another agent exists.
+			if names, listErr := agentdir.ListAgents(); listErr == nil && len(names) > 0 {
+				activeAgent = names[0]
+				_ = agentdir.SetActive(activeAgent)
+			}
+		}
+		if !agentdir.AgentInitialized(activeAgent) {
+			fmt.Printf("⚠️  Agent %q is not initialized!\n", activeAgent)
+			fmt.Println("Please run 'myaaw onboard' or 'myaaw agent create <name>' first.")
+			os.Exit(1)
+		}
+
+		cwd, _ := os.Getwd()
+		if err := filesystem.ConfigureForActiveAgent(cwd); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  Could not configure filesystem paths: %v\n", err)
+		}
+
+		// Prepare the workspace before any command runs so it exists even before
+		// the first agent request.
+		if _, err := agent.EnsureWorkspace(); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  Could not prepare agent workspace: %v\n", err)
+		}
+
+		// Local agent sessions treat their launch directory as the active
+		// project, even when it has no marker files.
+		if cmd.Name() == "chat" || cmd.Name() == "voice-classic" {
+			if cwd != "" {
+				if err := filesystem.SetProjectDirectory(cwd); err != nil {
+					fmt.Fprintf(os.Stderr, "⚠️  Could not register current directory as project: %v\n", err)
+				}
+			}
+		}
+
+		// Load and watch external tools asynchronously in the background so CLI commands open instantly.
+		// Chat defers this until the agent picker has resolved the active agent.
+		if cmd.Name() != "chat" {
+			startAgentBackgroundLoaders()
+		}
 
 		return nil
 	}
@@ -115,11 +206,13 @@ func init() {
 				}
 
 				groups := []cmdGroup{
-					{name: "Core Commands", cmdNames: []string{"chat", "voice", "voice-classic", "status"}},
-					{name: "Automation", cmdNames: []string{"cron"}},
-					{name: "Service Management", cmdNames: []string{"start", "stop", "restart", "webhook"}},
-					{name: "Integrations", cmdNames: []string{"provider", "channel"}},
-					{name: "System & Config", cmdNames: []string{"logs", "config", "completion", "update", "version"}},
+					{name: "Chat & Voice", cmdNames: []string{"chat", "voice", "voice-classic"}},
+					{name: "Agents & Automation", cmdNames: []string{"agent", "cron"}},
+					{name: "Channels & Integrations", cmdNames: []string{"channel", "provider", "webhook"}},
+					{name: "Monitoring & Diagnostics", cmdNames: []string{"status", "logs", "observability", "doctor"}},
+					{name: "Settings & Desktop", cmdNames: []string{"config", "computer", "codesign"}},
+					{name: "Maintenance", cmdNames: []string{"backup", "restore", "update", "version", "completion"}},
+					{name: "Service Management", cmdNames: []string{"server", "start", "stop", "restart", "api"}},
 				}
 
 				findCmd := func(name string) *cobra.Command {
@@ -169,7 +262,7 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }

@@ -30,6 +30,11 @@ var (
 	// Muted / Dim Style
 	MutedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorMuted)).Italic(true)
 
+	// Dim Style renders annotations that sit behind the main tree, such as the
+	// thinking/text lines of a trace. It inherits the terminal's default
+	// foreground and only dims it, so the whole line keeps one tone.
+	DimStyle = lipgloss.NewStyle().Faint(true)
+
 	// Success Style
 	SuccessStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSuccess)).Bold(true)
 
@@ -76,4 +81,8 @@ func RenderWarning(text string) string {
 
 func RenderMuted(text string) string {
 	return MutedStyle.Render(text)
+}
+
+func RenderDim(text string) string {
+	return DimStyle.Render(text)
 }

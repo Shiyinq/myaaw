@@ -15,6 +15,68 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/approvals/{id}": {
+            "post": {
+                "description": "Answers a pending approval request created by /api/chat or /api/chat/stream.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Resolve a tool approval",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Approval ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Owning user id (alternative to the body user_id)",
+                        "name": "X-Myaaw-User-ID",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Decision: allow_once | allow_session | allow_always | deny, plus the owning user_id",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/chat": {
             "post": {
                 "description": "Direct REST API chat endpoint (non-streaming)",
@@ -30,7 +92,7 @@ const docTemplate = `{
                 "summary": "API Chat",
                 "parameters": [
                     {
-                        "description": "Chat request with user_id and text",
+                        "description": "Chat request; user_id is optional and defaults to 0",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -43,11 +105,23 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handler.ChatResponse"
+                            "$ref": "#/definitions/myaaw_internal_services_bot_handler.ChatResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -76,7 +150,7 @@ const docTemplate = `{
                 "summary": "API Chat Stream",
                 "parameters": [
                     {
-                        "description": "Chat request with user_id and text",
+                        "description": "Chat request; user_id is optional and defaults to 0",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -91,6 +165,18 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -245,6 +331,9 @@ const docTemplate = `{
         "api.ChatRequest": {
             "type": "object",
             "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
                 "images": {
                     "type": "array",
                     "items": {
@@ -255,6 +344,53 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.TimelineItem": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "description": "Args carries the full argument JSON of an approval item.",
+                    "type": "string"
+                },
+                "arguments": {
+                    "type": "string"
+                },
+                "attempt": {
+                    "description": "Retry and compaction details, set on their own kinds.",
+                    "type": "integer"
+                },
+                "dropped_messages": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_error": {
+                    "type": "boolean"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "result": {
+                    "type": "string"
+                },
+                "subagent": {
+                    "description": "SubAgent names the sub-agent that raised an approval item, if any.",
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "tokens_after": {
+                    "type": "integer"
+                },
+                "tokens_before": {
                     "type": "integer"
                 }
             }
@@ -282,20 +418,17 @@ const docTemplate = `{
                 }
             }
         },
-        "handler.ChatResponse": {
+        "handler.AttachmentResponse": {
             "type": "object",
             "properties": {
-                "text": {
+                "data_base64": {
                     "type": "string"
                 },
-                "trace": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handler.TraceStep"
-                    }
+                "file_name": {
+                    "type": "string"
                 },
-                "usage": {
-                    "$ref": "#/definitions/handler.UsageResponse"
+                "mime_type": {
+                    "type": "string"
                 }
             }
         },
@@ -316,18 +449,36 @@ const docTemplate = `{
                 }
             }
         },
-        "handler.TraceStep": {
+        "myaaw_internal_services_bot_handler.ChatResponse": {
             "type": "object",
             "properties": {
-                "action": {
+                "attachments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.AttachmentResponse"
+                    }
+                },
+                "conversation_id": {
                     "type": "string"
                 },
-                "observation": {
+                "run_id": {
                     "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "timeline": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.TimelineItem"
+                    }
+                },
+                "usage": {
+                    "$ref": "#/definitions/myaaw_internal_services_bot_handler.UsageResponse"
                 }
             }
         },
-        "handler.UsageResponse": {
+        "myaaw_internal_services_bot_handler.UsageResponse": {
             "type": "object",
             "properties": {
                 "completion_tokens": {

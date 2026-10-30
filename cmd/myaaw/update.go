@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"myaaw/internal/cli/theme"
+	"myaaw/internal/codesign"
 	"myaaw/internal/daemon"
 )
 
@@ -58,7 +59,7 @@ var updateCmd = &cobra.Command{
 		}
 
 		fmt.Println(theme.RenderSuccess("Update downloaded and installed!"))
-		
+
 		// Attempt to auto-restart if running as a daemon
 		dm, err := daemon.NewManager("myaaw-server")
 		if err == nil {
@@ -239,5 +240,14 @@ func performUpdate(url string) error {
 	}
 
 	fmt.Println(theme.RenderSuccess("Binary replaced successfully."))
+
+	// 5. Re-sign with the local stable identity so macOS keeps the TCC grants
+	// (Screen Recording, Accessibility, Automation) across updates.
+	res := codesign.Ensure(exe)
+	if res.Signed {
+		fmt.Println(theme.RenderSuccess("Signed with \"" + res.Identity + "\" (macOS permissions stay valid)."))
+	} else if res.Reason != "" {
+		fmt.Println(theme.RenderMuted("Not re-signed: " + res.Reason))
+	}
 	return nil
 }

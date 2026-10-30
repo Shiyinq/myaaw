@@ -25,10 +25,20 @@ The File System Tool provides a wide range of file and directory management capa
 
 ### Allowed Directories
 
-By default, the tool is restricted to: `~/myaaw_home` (user's home directory + "myaaw_home")
+By default, the tool is restricted to:
+
+- `~/.myaaw/<agent>/home` — agent workspace and memory files
+- `~/.myaaw/<agent>/skills` — agent skill definitions
+- `~/.myaaw/<agent>/jobs` — async Bash/Python and subagent job logs
+- the launch directory for local CLI sessions, even when it has no marker files
+- the detected project root, when Myaaw is launched inside a development project
+
+A project root is detected by walking up from the launch directory and looking for common markers (`go.mod`, `package.json`, `pyproject.toml`, `requirements.txt`, `Cargo.toml`, `composer.json`, `Gemfile`, `pom.xml`, `build.gradle`, `CMakeLists.txt`, `.git`, and `*.csproj`). The user's home directory itself is never treated as a project root.
 
 - All operations are validated against allowed directories
-- **Symlink Evaluation**: Symbolic links are followed and validated to prevent escaping the sandbox
+- **Component Boundary**: `/allowed/home-evil` is not treated as inside `/allowed/home`
+- **Symlink Evaluation**: Symbolic links are resolved, including for files that do not exist yet, to prevent escaping the sandbox
+- **Broken Symlinks**: Rejected instead of treated as normal missing files
 - Absolute path resolution ensures security
 
 
@@ -208,7 +218,7 @@ Returns raw file content as string
 - No file encryption/decryption
 - No symbolic link handling (except for security validation)
 - File size limited by system memory
-- **Output Limit**: Outputs are truncated at 32KB; full results are saved to `~/.myaaw/home/.logs/`
+- **Output Limit**: Outputs are truncated at 32KB; full results are saved to `~/.myaaw/<agent>/home/.logs/`
 - **Node Limit**: `directory_tree` is limited to 1000 nodes to prevent oversized JSON
 
 ## Best Practices

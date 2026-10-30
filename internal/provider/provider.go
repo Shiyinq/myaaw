@@ -6,6 +6,24 @@ import (
 	"errors"
 	"fmt"
 	"myaaw/internal/config"
+	"strings"
+	"time"
+)
+
+// modelListTimeout bounds model discovery. The onboarding wizard and the
+// dashboard call it interactively, so a slow or unreachable provider must fail
+// fast instead of waiting for the chat timeout.
+const modelListTimeout = 15 * time.Second
+
+// StopReason describes why an assistant turn ended.
+type StopReason string
+
+const (
+	StopNormal        StopReason = "normal"
+	StopMaxIterations StopReason = "max_iterations"
+	StopLength        StopReason = "length"
+	StopError         StopReason = "error"
+	StopAborted       StopReason = "aborted"
 )
 
 type Message struct {
@@ -15,7 +33,7 @@ type Message struct {
 	Images     []string    `json:"images,omitempty" bson:"images,omitempty"`
 	ToolCalls  []ToolCall  `json:"tool_calls,omitempty" bson:"tool_calls,omitempty"`
 	ToolCallID string      `json:"tool_call_id,omitempty" bson:"tool_call_id,omitempty"`
-	// ReAct Trace Fields
+	// ReAct Trace Fields (UI metadata; not sent to providers)
 	Thought     string `json:"thought,omitempty" bson:"thought,omitempty"`
 	Action      string `json:"action,omitempty" bson:"action,omitempty"`
 	ActionInput string `json:"action_input,omitempty" bson:"action_input,omitempty"`
@@ -24,6 +42,12 @@ type Message struct {
 	Trace []ReactStep `json:"trace,omitempty" bson:"trace,omitempty"`
 	// Token Usage
 	Usage Usage `json:"usage,omitempty" bson:"usage,omitempty"`
+	// Transcript metadata (agent loop v2)
+	IsError      bool       `json:"is_error,omitempty" bson:"is_error,omitempty"`
+	ErrorMessage string     `json:"error_message,omitempty" bson:"error_message,omitempty"`
+	DurationMs   int64      `json:"duration_ms,omitempty" bson:"duration_ms,omitempty"`
+	StopReason   StopReason `json:"stop_reason,omitempty" bson:"stop_reason,omitempty"`
+	Version      int        `json:"v,omitempty" bson:"v,omitempty"`
 }
 
 type UsageDetail struct {
@@ -32,11 +56,14 @@ type UsageDetail struct {
 }
 
 type Usage struct {
-	PromptTokens     int           `json:"prompt_tokens,omitempty" bson:"prompt_tokens,omitempty"`
-	CompletionTokens int           `json:"completion_tokens,omitempty" bson:"completion_tokens,omitempty"`
-	TotalTokens      int           `json:"total_tokens,omitempty" bson:"total_tokens,omitempty"`
-	ThoughtsTokens   int           `json:"thoughts_tokens,omitempty" bson:"thoughts_tokens,omitempty"`
-	Details          []UsageDetail `json:"details,omitempty" bson:"details,omitempty"`
+	PromptTokens     int `json:"prompt_tokens,omitempty" bson:"prompt_tokens,omitempty"`
+	CompletionTokens int `json:"completion_tokens,omitempty" bson:"completion_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens,omitempty" bson:"total_tokens,omitempty"`
+	ThoughtsTokens   int `json:"thoughts_tokens,omitempty" bson:"thoughts_tokens,omitempty"`
+	// CachedInputTokens is the share of PromptTokens served from the provider
+	// prompt cache. Providers that do not report it leave it at zero.
+	CachedInputTokens int           `json:"cached_input_tokens,omitempty" bson:"cached_input_tokens,omitempty"`
+	Details           []UsageDetail `json:"details,omitempty" bson:"details,omitempty"`
 }
 
 // ReactStep represents a single step in the ReAct loop
@@ -75,7 +102,10 @@ type ImageInfo struct {
 type LLMProvider interface {
 	ProviderName() string
 	Chat(modelName string, messages []Message, tools []map[string]interface{}) (Message, error)
+	// ChatStream is the legacy streaming API. New code should prefer
+	// ChatStreamEvents, which exposes deltas and an explicit stop reason.
 	ChatStream(modelName string, messages []Message, callback func(Message) error, tools []map[string]interface{}) error
+	ChatStreamEvents(ctx context.Context, modelName string, messages []Message, tools []map[string]interface{}, onEvent func(StreamEvent) error) error
 	Models() ([]string, error)
 	DefaultModel(modelName string) string
 }
@@ -104,6 +134,58 @@ var defaultLLMModels = map[string]string{
 	"openai": "gpt-4o",
 	"gemini": "models/gemini-3-flash-preview",
 	"groq":   "llama-3.2-1b-preview",
+}
+
+// DefaultModel returns the built-in model used when a provider config omits
+// default_model.
+func DefaultModel(providerName string) string {
+	return defaultLLMModels[providerName]
+}
+
+// IsKnownLLMProvider reports whether a provider factory is registered.
+func IsKnownLLMProvider(providerName string) bool {
+	_, ok := LLMproviderFactories[providerName]
+	return ok
+}
+
+// ModelsFor fetches the model list for a provider using an explicit base URL.
+// Unlike CreateLLMProvider it never touches the process-wide
+// config.LLMProviderBaseURL, so concurrent callers (CLI wizard, control-plane
+// API) cannot race on that global.
+func ModelsFor(providerType, baseURL, apiKey string) ([]string, error) {
+	providerType = strings.ToLower(strings.TrimSpace(providerType))
+	factory, exists := LLMproviderFactories[providerType]
+	if !exists {
+		return nil, fmt.Errorf("unknown llm provider %q", providerType)
+	}
+
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		baseURL = DefaultBaseURL(providerType)
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("no base URL configured for provider %q", providerType)
+	}
+
+	return factory(baseURL, strings.TrimSpace(apiKey), defaultLLMModels[providerType]).Models()
+}
+
+// DefaultBaseURL returns the public endpoint used when a provider config omits
+// base_url. Providers build request URLs by appending their own path, so the
+// value must not include a trailing slash.
+func DefaultBaseURL(providerName string) string {
+	switch providerName {
+	case "openai":
+		return "https://api.openai.com"
+	case "gemini":
+		return "https://generativelanguage.googleapis.com"
+	case "groq":
+		return "https://api.groq.com/openai"
+	case "ollama":
+		return "http://localhost:11434"
+	default:
+		return ""
+	}
 }
 
 var TranscriberFactories = map[string]factoryTranscriber{
@@ -168,4 +250,3 @@ func argsToString(i interface{}) string {
 
 	return string(jsonData)
 }
-

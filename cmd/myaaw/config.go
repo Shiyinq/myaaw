@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 
@@ -28,7 +29,8 @@ var checkCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(theme.RenderSecondary("🔍 Loading configuration..."))
 		config.LoadBaseConfig()
-		
+		fmt.Println(theme.RenderMuted(fmt.Sprintf("Agent: %s", agentdir.Active())))
+
 		cfg, err := config.LoadJSONConfigOnly()
 		if err != nil {
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to load config.json: %v", err)))
@@ -41,7 +43,7 @@ var checkCmd = &cobra.Command{
 			val := os.Getenv(key)
 			if val == "" {
 				if key == "DB_PATH" {
-					fmt.Printf("%-25s : %s (Default: ~/.myaaw/database/myaaw.db)\n", theme.RenderPrimary(key), theme.RenderMuted("[EMPTY]"))
+					fmt.Printf("%-25s : %s (Default: ~/.myaaw/<agent>/database/myaaw.db)\n", theme.RenderPrimary(key), theme.RenderMuted("[EMPTY]"))
 				} else {
 					fmt.Printf("%-25s : %s\n", theme.RenderPrimary(key), theme.RenderMuted("[EMPTY]"))
 				}
@@ -51,7 +53,7 @@ var checkCmd = &cobra.Command{
 		}
 
 		fmt.Println("\n" + theme.RenderPrimary("Checking config.json Health:"))
-		
+
 		// 1. LLM
 		if cfg.DefaultProvider == "" {
 			fmt.Printf("%-25s : %s\n", theme.RenderPrimary("Default LLM Provider"), theme.RenderError("[MISSING]"))
@@ -104,7 +106,7 @@ var dumpCmd = &cobra.Command{
 	Short: "Print current configuration (Secrets Masked)",
 	Run: func(cmd *cobra.Command, args []string) {
 		config.LoadBaseConfig()
-		
+
 		fmt.Println(theme.RenderPrimary("--- OS / Environment Variables ---"))
 		for _, key := range envKeys {
 			val := os.Getenv(key)
@@ -116,7 +118,7 @@ var dumpCmd = &cobra.Command{
 
 			if val == "" {
 				if key == "DB_PATH" {
-					fmt.Printf("%-25s: <EMPTY> (Default: ~/.myaaw/database/myaaw.db)\n", key)
+					fmt.Printf("%-25s: <EMPTY> (Default: ~/.myaaw/<agent>/database/myaaw.db)\n", key)
 				} else {
 					fmt.Printf("%-25s: <EMPTY>\n", key)
 				}
@@ -173,6 +175,21 @@ var dumpCmd = &cobra.Command{
 			if cfg.Channels.Discord.Token != "" {
 				fmt.Printf("  Discord.Token:   ******** (Masked)\n")
 			}
+		}
+
+		if cfg.Approvals != nil {
+			effective := config.MergeApprovals(cfg.Approvals)
+			timeout := 60
+			if effective.TimeoutSeconds != nil {
+				timeout = *effective.TimeoutSeconds
+			}
+			fmt.Println("\n[Approvals]")
+			fmt.Printf("  Mode:           %s\n", effective.Mode)
+			fmt.Printf("  TimeoutSeconds: %d\n", timeout)
+			fmt.Printf("  Unattended:     %s\n", effective.Unattended)
+			fmt.Printf("  Subagents:      %s\n", effective.Subagents)
+			fmt.Printf("  Allow:          %s\n", strings.Join(effective.Allow, ", "))
+			fmt.Printf("  Deny:           %s\n", strings.Join(effective.Deny, ", "))
 		}
 	},
 }

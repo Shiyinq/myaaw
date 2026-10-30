@@ -79,22 +79,14 @@ func init() {
 }
 
 func setWebhookURL(botToken string, url string) {
-	trimmedUrl := strings.TrimFunc(url, func(r rune) bool { return r == '/' })
-
-	webhookUrl := fmt.Sprintf("https://api.telegram.org/bot%s/setWebhook?url=%s/webhook/telegram", botToken, trimmedUrl)
-	resp, err := http.Get(webhookUrl)
-	if err != nil {
+	if err := registerTelegramWebhook(botToken, url); err != nil {
 		log.Fatalf("Error setting webhook: %v", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 200 {
-		fmt.Printf("%s Response status: %s\n", theme.RenderSuccess("✅ Webhook set successfully!"), resp.Status)
-	} else {
-		fmt.Printf("%s: %s\n", theme.RenderError("❌ Error setting webhook"), resp.Status)
-	}
+	fmt.Println(theme.RenderSuccess("✅ Webhook set successfully!"))
 }
 
+// registerTelegramWebhook points Telegram at https://<baseURL>/webhook/telegram.
+// It returns an error so onboarding can report a failure without exiting.
 func getWebhookInfo(botToken string) {
 	infoUrl := fmt.Sprintf("https://api.telegram.org/bot%s/getWebhookInfo", botToken)
 	resp, err := http.Get(infoUrl)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/agentdir"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -95,7 +96,15 @@ func isCommandSafe(cmd string) bool {
 	return true
 }
 
-func (b *BashTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
+func (b *BashTool) CallTool(arguments string, tctx *tools.ToolsContext) string {
+	return b.CallToolContext(context.Background(), arguments, tctx)
+}
+
+func (b *BashTool) ExecutionMode() tools.ExecutionMode {
+	return tools.ExecutionSequential
+}
+
+func (b *BashTool) CallToolContext(ctx context.Context, arguments string, tctx *tools.ToolsContext) string {
 	var args BashArgs
 	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
 		return fmt.Sprintf("Error parsing arguments: %v", err)
@@ -115,20 +124,19 @@ func (b *BashTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 
 	if args.Async {
 		jobID := fmt.Sprintf("job_%d", time.Now().UnixNano())
-		homeDir, err := os.UserHomeDir()
+		resultsDir, err := agentdir.ActiveJobsDir()
 		if err != nil {
-			return fmt.Sprintf("Error getting home dir: %v", err)
+			return fmt.Sprintf("Error resolving agent jobs dir: %v", err)
 		}
-		
-		resultsDir := filepath.Join(homeDir, ".myaaw", "jobs")
 		if err := os.MkdirAll(resultsDir, 0755); err != nil {
 			return fmt.Sprintf("Error creating jobs dir: %v", err)
 		}
-		
+
 		outputPath := filepath.Join(resultsDir, jobID+".log")
 
 		go func() {
-			outStr := b.executeCommand(args)
+			// Background jobs intentionally outlive the request.
+			outStr := b.executeCommand(context.Background(), args)
 			err := os.WriteFile(outputPath, []byte(outStr), 0644)
 			if err != nil {
 				log.Printf("Error writing async output to file %s: %v", outputPath, err)
@@ -142,10 +150,10 @@ func (b *BashTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 		return baseInstruction + " Estimate a reasonable wait time based on the task."
 	}
 
-	return b.executeCommand(args)
+	return b.executeCommand(ctx, args)
 }
 
-func (b *BashTool) executeCommand(args BashArgs) string {
+func (b *BashTool) executeCommand(parent context.Context, args BashArgs) string {
 	// Default timeout to 60 seconds if not specified
 	timeout := 60 * time.Second
 	if args.Timeout > 0 {
@@ -153,7 +161,7 @@ func (b *BashTool) executeCommand(args BashArgs) string {
 	}
 
 	// Create command execution context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	// Using "bash -c" to allow complex commands (pipes, redirects, etc)
@@ -162,14 +170,20 @@ func (b *BashTool) executeCommand(args BashArgs) string {
 	// Set environment variables
 	cmd.Env = os.Environ() // Inherit current environment
 	for k, v := range args.Env {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+		cmd.Env = tools.SetEnv(cmd.Env, k, v)
+	}
+	// Agent identity is authoritative and cannot be overridden by tool args,
+	// so a skill cannot accidentally write into another agent's data directory.
+	if agentRoot, err := agentdir.ActiveRoot(); err == nil {
+		cmd.Env = tools.SetEnv(cmd.Env, "MYAAW_AGENT", agentdir.Active())
+		cmd.Env = tools.SetEnv(cmd.Env, "MYAAW_AGENT_ROOT", agentRoot)
 	}
 
-	// Set working directory to ~/.myaaw/home to contain execution
-	if homeDir, err := os.UserHomeDir(); err == nil {
-		myaawHome := strings.ReplaceAll(filepath.Join(homeDir, ".myaaw", "home"), "\\", "/")
-		if info, err := os.Stat(myaawHome); err == nil && info.IsDir() {
-			cmd.Dir = myaawHome
+	// Set working directory to the active agent's home.
+	if agentHome, err := agentdir.ActiveHome(); err == nil {
+		agentHome = strings.ReplaceAll(agentHome, "\\", "/")
+		if info, err := os.Stat(agentHome); err == nil && info.IsDir() {
+			cmd.Dir = agentHome
 		}
 	}
 
@@ -181,8 +195,8 @@ func (b *BashTool) executeCommand(args BashArgs) string {
 	if len(outStr) > maxOutputSize {
 		// Save full output to a file
 		logPath := "unknown"
-		if homeDir, err := os.UserHomeDir(); err == nil {
-			logsDir := filepath.Join(homeDir, ".myaaw", "home", ".logs")
+		if agentHome, err := agentdir.ActiveHome(); err == nil {
+			logsDir := filepath.Join(agentHome, ".logs")
 			os.MkdirAll(logsDir, 0755)
 			if f, err := os.CreateTemp(logsDir, "bash-output-*.log"); err == nil {
 				f.Write(output)

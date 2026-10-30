@@ -1,42 +1,61 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"myaaw/internal/agent"
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
+	"myaaw/internal/obs"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
 	"myaaw/internal/services/bot/repository"
 	"slices"
 	"strconv"
+	"strings"
+	"sync"
 )
 
 type BotService interface {
 	IsAllowed(userID int) bool
 	checkUser(msg *channel.IncomingMessage) (*model.User, error)
 	Bot(msg *channel.IncomingMessage) (*channel.OutgoingMessage, error)
+	BotContext(ctx context.Context, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error)
 	BotStream(msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error)
+	BotStreamContext(ctx context.Context, msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error)
 	command(user *model.User, msg *channel.IncomingMessage) (bool, string, error)
 	conversation(user *model.User, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error)
 	ProcessHeartbeat(prompt, to, channelName, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error)
 }
 
 type BotServiceImpl struct {
-	userRepo         repository.UserRepository
-	conversationRepo repository.ConversationRepository
-	llmProvider      provider.LLMProvider
-	transcriber      provider.Transcriber
-	agent            agent.AgentProvider
+	userRepo          repository.UserRepository
+	conversationRepo  repository.ConversationRepository
+	llmProvider       provider.LLMProvider
+	transcriber       provider.Transcriber
+	agent             agent.AgentProvider
 	currentProviderID string
-	currentModel     string
+	currentModel      string
+
+	// Trace recording. The store is opened lazily on the first run so commands
+	// and tests that never execute the agent do not create a database.
+	obsOnce     sync.Once
+	obsStore    *obs.Store
+	obsExporter *obs.Exporter
+	obsPricer   *obs.Pricer
+	obsConfig   obs.Config
 }
 
 func NewBotService(userRepo repository.UserRepository, conversationRepo repository.ConversationRepository) BotService {
 	llmProvider, err := provider.CreateLLMProvider(config.LLMProviderName, config.LLMProviderAPIKey)
 	if err != nil {
-		log.Fatalf("Error create LLM provider - %s: %v", config.LLMProviderName, err)
+		// Not fatal: the supervisor would otherwise crash-loop the agent when a
+		// provider key is missing or a provider name is mistyped. Requests fail
+		// with a clear message instead, and a config fix is picked up by
+		// checkAndReloadProvider on the next message.
+		log.Printf("⚠️  Failed to create LLM provider %s: %v. Chat requests will fail until the provider is fixed.", config.LLMProviderName, err)
 	}
 
 	transcriber, err := provider.CreateTranscriber(config.TranscriberProviderName, config.TranscriberAPIKey)
@@ -44,17 +63,28 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 		log.Printf("Warning: Error creating Transcriber provider %s: %v. Transcriber functionality might be affected or disabled depending on message handling logic.", config.TranscriberProviderName, err)
 	}
 
-	ag := agent.NewAgent(llmProvider)
-
-	return &BotServiceImpl{
+	svc := &BotServiceImpl{
 		userRepo:         userRepo,
 		conversationRepo: conversationRepo,
 		llmProvider:      llmProvider,
 		transcriber:      transcriber,
-		agent:            ag,
-		currentProviderID: config.CurrentProviderID,
-		currentModel:     config.LLMDefaultModel,
 	}
+	if llmProvider != nil {
+		svc.agent = agent.NewAgent(llmProvider)
+		// Leaving these empty when creation failed lets checkAndReloadProvider
+		// retry as soon as the configuration changes.
+		svc.currentProviderID = config.CurrentProviderID
+		svc.currentModel = config.LLMDefaultModel
+	}
+	return svc
+}
+
+// requireProvider reports whether chat requests can reach an LLM.
+func (r *BotServiceImpl) requireProvider() error {
+	if r.llmProvider == nil || r.agent == nil {
+		return errors.New("LLM provider is not configured: check the provider type and API key in config.json")
+	}
+	return nil
 }
 
 func (r *BotServiceImpl) checkAndReloadProvider() {
@@ -88,9 +118,13 @@ func (r *BotServiceImpl) checkUser(msg *channel.IncomingMessage) (*model.User, e
 	}
 
 	if user == nil {
+		name := fmt.Sprintf("user-%d", msg.UserID)
+		if sender := strings.TrimSpace(msg.SenderName); sender != "" {
+			name = sender
+		}
 		newUser := model.User{
 			UserId:   msg.UserID,
-			Name:     fmt.Sprintf("user-%d", msg.UserID),
+			Name:     name,
 			Provider: r.llmProvider.ProviderName(),
 			Model:    r.llmProvider.DefaultModel(""),
 		}
@@ -130,6 +164,10 @@ func (r *BotServiceImpl) changeProviderAndModel(user *model.User) (*model.User, 
 }
 
 func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
+	return r.BotContext(context.Background(), msg)
+}
+
+func (r *BotServiceImpl) BotContext(ctx context.Context, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
 	r.checkAndReloadProvider()
 
 	user, err := r.checkUser(msg)
@@ -153,10 +191,14 @@ func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMes
 		return &channel.OutgoingMessage{Text: response}, nil
 	}
 
-	return r.conversation(user, msg)
+	return r.conversationContext(ctx, user, msg)
 }
 
 func (r *BotServiceImpl) BotStream(msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
+	return r.BotStreamContext(context.Background(), msg, onChunk)
+}
+
+func (r *BotServiceImpl) BotStreamContext(ctx context.Context, msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
 	r.checkAndReloadProvider()
 
 	user, err := r.checkUser(msg)
@@ -178,11 +220,13 @@ func (r *BotServiceImpl) BotStream(msg *channel.IncomingMessage, onChunk func(ch
 
 	if isCommand {
 		out := &channel.OutgoingMessage{Text: response}
-		onChunk(channel.StreamChunk{Text: response})
+		if onChunk != nil {
+			onChunk(channel.StreamChunk{Kind: "text", Text: response})
+		}
 		return out, nil
 	}
 
-	return r.conversationStream(user, msg, onChunk)
+	return r.conversationStreamContext(ctx, user, msg, onChunk)
 }
 
 func (r *BotServiceImpl) ProcessHeartbeat(prompt, to, channelName, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error) {

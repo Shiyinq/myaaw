@@ -1,49 +1,86 @@
 {
-    "default_provider": "gemini",
-    "providers": {
-        "gemini": {
-            "type": "gemini",
-            "api_key": "YOUR_GEMINI_API_KEY"
-        }
-    },
+    "default_provider": "",
+    "providers": {},
     "transcriber": {
-        "provider": "groq",
-        "api_key": "YOUR_GROQ_API_KEY"
+        "provider": "",
+        "api_key": ""
     },
     "synthesizer": {
-        "provider": "gemini",
-        "api_key": "YOUR_GEMINI_API_KEY"
+        "provider": "",
+        "api_key": ""
     },
     "heartbeat": {
-        "active": true,
+        "active": false,
         "every": "30m",
-        "to": "123456789",
-        "channel": "telegram"
+        "to": "",
+        "channel": ""
     },
     "bot": {
-        "owner_ids": [
-            "YOUR_OWNER_ID_1"
-        ],
+        "owner_ids": [],
         "type": "private",
         "watermark": false,
         "stream": true,
         "max_iterations": 100,
-        "warning_iterations": 90
+        "warning_iterations": 90,
+        "context_max_tokens": 64000,
+        "max_tool_output_bytes": 32768,
+        "repeat_tool_call_limit": 3,
+        "tool_timeout_seconds": 300,
+        "run_timeout_seconds": 900,
+        "stream_timeout_seconds": 180,
+        "request_retries": 1,
+        "queue_workers": 4,
+        "computer_use": {
+            "enabled": false
+        },
+        "blocked_tools": []
+    },
+    "approvals": {
+        "mode": "manual",
+        "timeout_seconds": 60,
+        "allow": [
+            "filesystem:list_directory",
+            "filesystem:list_allowed_directories",
+            "filesystem:read_file",
+            "filesystem:read_multiple_files",
+            "filesystem:directory_tree",
+            "filesystem:search_files",
+            "filesystem:grep_search",
+            "filesystem:get_file_info",
+            "computer:screenshot",
+            "computer:wait",
+            "computer:list_windows"
+        ],
+        "deny": [],
+        "unattended": "allow",
+        "subagents": "inherit"
     },
     "channels": {
         "telegram": {
-            "active": true,
-            "token": "YOUR_TELEGRAM_BOT_TOKEN",
+            "active": false,
+            "token": "",
             "mode": "polling",
             "ngrok_active": false,
             "ngrok_auth_token": ""
         },
         "discord": {
             "active": false,
-            "token": "YOUR_DISCORD_BOT_TOKEN"
+            "token": ""
         }
     },
     "cron": {
         "active": true
+    },
+    "observability": {
+        "enabled": true,
+        "retention_days": 30,
+        "max_content_chars": 16384,
+        "store_content": true,
+        "redact_patterns": [
+            "(?i)bearer\\s+[a-z0-9._~+/=-]{16,}",
+            "\\bsk-[A-Za-z0-9_-]{16,}",
+            "\\bgh[pousr]_[A-Za-z0-9]{20,}",
+            "\\bxox[abprs]-[A-Za-z0-9-]{10,}"
+        ]
     }
 }

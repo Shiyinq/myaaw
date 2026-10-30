@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"myaaw/internal/agent"
@@ -16,6 +17,81 @@ type SkillMetadata struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
 	Enabled     *bool  `yaml:"enabled"` // nil = not specified, defaults to enabled
+}
+
+// Skill describes one skill directory with its effective enabled state.
+type Skill struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+	Source      string `json:"source"`
+	ParseOK     bool   `json:"parse_ok"`
+}
+
+// Skill enabled-state sources.
+const (
+	SkillSourceConfig      = "config"
+	SkillSourceFrontmatter = "frontmatter"
+	SkillSourceDefault     = "default"
+)
+
+// ListSkills reads every directory in skillsDir and reports its effective
+// enabled state using the same priority as prompt generation: skills.json,
+// then the SKILL.md frontmatter, then enabled by default. A missing directory
+// is treated as empty.
+func ListSkills(skillsDir string) ([]Skill, error) {
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []Skill{}, nil
+		}
+		return nil, err
+	}
+
+	filter := loadSkillsFilter(skillsDir)
+
+	skills := make([]Skill, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		skill := Skill{
+			Name:        name,
+			DisplayName: name,
+			Enabled:     true,
+			Source:      SkillSourceDefault,
+		}
+
+		if content, readErr := os.ReadFile(filepath.Join(skillsDir, name, "SKILL.md")); readErr == nil {
+			if parts := strings.SplitN(string(content), "---", 3); len(parts) >= 3 {
+				var metadata SkillMetadata
+				if yaml.Unmarshal([]byte(parts[1]), &metadata) == nil {
+					skill.ParseOK = true
+					if metadata.Name != "" {
+						skill.DisplayName = metadata.Name
+					}
+					skill.Description = metadata.Description
+					if metadata.Enabled != nil {
+						skill.Enabled = *metadata.Enabled
+						skill.Source = SkillSourceFrontmatter
+					}
+				}
+			}
+		}
+
+		if filter != nil {
+			if enabled, exists := filter[name]; exists {
+				skill.Enabled = enabled
+				skill.Source = SkillSourceConfig
+			}
+		}
+		skills = append(skills, skill)
+	}
+
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
+	return skills, nil
 }
 
 // skillEntry is a single enabled skill discovered in the skills directory.
@@ -53,10 +129,10 @@ func buildSkillsInstruction(skillsDir string, filter map[string]bool) string {
 	var sb strings.Builder
 	sb.WriteString("\n\n# Agent Skills\n\n")
 	sb.WriteString("You have access to the following skills. You can use the 'filesystem' to read file skill and 'bash' tool to execute script if available.\n")
-	sb.WriteString("To use a skill, you must first read its documentation in the `~/.myaaw/skills/<skill-name>/SKILL.md` file. \nIf skills need user_id, userId, or userID, you must use User ID from the User Info. \n\n")
+	sb.WriteString(fmt.Sprintf("To use a skill, you must first read its documentation in the `%s/<skill-name>/SKILL.md` file. \nIf skills need user_id, userId, or userID, you must use User ID from the User Info. \n\n", skillsDir))
 
 	for _, skill := range skills {
-		sb.WriteString(fmt.Sprintf("- **%s** (`~/.myaaw/skills/%s`): %s\n", skill.displayName, skill.dirName, skill.description))
+		sb.WriteString(fmt.Sprintf("- **%s** (`%s`): %s\n", skill.displayName, filepath.Join(skillsDir, skill.dirName), skill.description))
 	}
 
 	return sb.String()
