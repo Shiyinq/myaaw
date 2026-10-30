@@ -4,13 +4,10 @@
 	import { server as serverApi } from '$lib/apis/server';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
-	import { validate, type FieldErrors } from '$lib/utils/validation';
-	import { onboardSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
-	import FieldError from '$lib/components/common/FieldError.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -20,9 +17,6 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import {
 		Bot,
@@ -32,6 +26,7 @@
 		Play,
 		Plus,
 		RefreshCw,
+		Settings2,
 		Square,
 		Star,
 		Trash2
@@ -41,14 +36,6 @@
 
 	let loading = $state(false);
 	let toggling = $state<string | null>(null);
-	let onboardOpen = $state(false);
-	let onboarding = $state(false);
-	let onboardErrors = $state<FieldErrors>({});
-	let newName = $state('');
-	let newType = $state('openai');
-	let newBaseUrl = $state('');
-	let newApiKey = $state('');
-	let newModel = $state('');
 
 	let agents = $derived(agentSelection.agents);
 	let runningCount = $derived(agents.filter((agent) => agent.running).length);
@@ -124,49 +111,11 @@
 	}
 
 	function openOnboard() {
-		onboardErrors = {};
-		onboardOpen = true;
+		void goto('/app/new');
 	}
 
-	async function createAgent() {
-		const result = validate(onboardSchema, {
-			name: newName,
-			provider_type: newType,
-			base_url: newBaseUrl,
-			api_key: newApiKey,
-			model: newModel
-		});
-		if (!result.ok) {
-			onboardErrors = result.errors;
-			return;
-		}
-		onboardErrors = {};
-		onboarding = true;
-		try {
-			const response = await agentsApi.onboard(result.data.name, {
-				provider: {
-					type: result.data.provider_type,
-					base_url: result.data.base_url || undefined,
-					api_key: result.data.api_key || undefined,
-					model: result.data.model || undefined
-				}
-			});
-			onboardOpen = false;
-			newName = '';
-			newBaseUrl = '';
-			newApiKey = '';
-			newModel = '';
-			toastStore.success(t('myaaw.home.agent_created', { name: result.data.name }));
-			for (const warning of response.warnings ?? []) {
-				toastStore.warning(warning);
-			}
-			await agentSelection.load(true);
-			agentSelection.select(result.data.name);
-		} catch (err) {
-			toastStore.error(getErrorMessage(err));
-		} finally {
-			onboarding = false;
-		}
+	function reconfigureAgent(name: string) {
+		void goto(`/app/new?agent=${encodeURIComponent(name)}`);
 	}
 </script>
 
@@ -284,6 +233,10 @@
 											{agent.running ? t('myaaw.server.stop') : t('myaaw.server.start')}
 										</DropdownMenu.Item>
 										<DropdownMenu.Separator />
+										<DropdownMenu.Item onclick={() => reconfigureAgent(agent.name)}>
+											<Settings2 class="mr-2 h-4 w-4" />
+											{t('myaaw.onboard.reconfigure')}
+										</DropdownMenu.Item>
 										{#if !agent.default}
 											<DropdownMenu.Item onclick={() => setDefaultAgent(agent.name)}>
 												<Star class="mr-2 h-4 w-4" />
@@ -308,58 +261,3 @@
 		</CardContent>
 	</Card>
 </div>
-
-<Dialog.Root bind:open={onboardOpen}>
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title>{t('myaaw.home.new_agent')}</Dialog.Title>
-			<Dialog.Description>{t('myaaw.home.new_agent_desc')}</Dialog.Description>
-		</Dialog.Header>
-		<form
-			class="space-y-3"
-			onsubmit={(event) => {
-				event.preventDefault();
-				void createAgent();
-			}}
-		>
-			<div class="grid gap-1">
-				<Label for="agent-name">{t('myaaw.home.agent_name')}</Label>
-				<Input id="agent-name" bind:value={newName} placeholder="research" />
-				<FieldError code={onboardErrors.name} />
-			</div>
-			<div class="grid gap-1">
-				<Label for="agent-provider-type">{t('myaaw.providers.type')}</Label>
-				<select
-					id="agent-provider-type"
-					bind:value={newType}
-					class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-				>
-					<option value="openai">openai</option>
-					<option value="gemini">gemini</option>
-				</select>
-			</div>
-			<div class="grid gap-1">
-				<Label for="agent-base-url">{t('myaaw.providers.base_url')}</Label>
-				<Input id="agent-base-url" bind:value={newBaseUrl} placeholder="https://api.deepseek.com" />
-				<FieldError code={onboardErrors.base_url} />
-			</div>
-			<div class="grid gap-1">
-				<Label for="agent-api-key">{t('myaaw.providers.api_key')}</Label>
-				<Input id="agent-api-key" type="password" bind:value={newApiKey} placeholder="sk-..." />
-			</div>
-			<div class="grid gap-1">
-				<Label for="agent-model">{t('myaaw.providers.model')}</Label>
-				<Input id="agent-model" bind:value={newModel} placeholder="deepseek-chat" />
-			</div>
-			<Dialog.Footer class="gap-2">
-				<Button type="button" variant="ghost" onclick={() => (onboardOpen = false)}>
-					{t('common.cancel')}
-				</Button>
-				<Button type="submit" loading={onboarding}>
-					<Plus class="mr-2 h-4 w-4" />
-					{t('myaaw.home.create_agent')}
-				</Button>
-			</Dialog.Footer>
-		</form>
-	</Dialog.Content>
-</Dialog.Root>

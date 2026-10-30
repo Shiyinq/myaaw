@@ -161,6 +161,16 @@
 
 	const flatNav = nav.flatMap((group) => group.items);
 
+	// Routes that have a title in the top bar but no sidebar entry.
+	const hiddenNav = [
+		{
+			href: '/app/new',
+			label: 'myaaw.onboard.title',
+			description: 'myaaw.onboard.subtitle',
+			icon: Sparkles
+		}
+	];
+
 	onMount(() => {
 		void agentSelection.load();
 	});
@@ -171,7 +181,11 @@
 	}
 
 	let current = $derived(
-		isActive(fleet.href) ? fleet : (flatNav.find((item) => isActive(item.href)) ?? flatNav[0])
+		isActive(fleet.href)
+			? fleet
+			: (hiddenNav.find((item) => isActive(item.href)) ??
+					flatNav.find((item) => isActive(item.href)) ??
+					flatNav[0])
 	);
 	let initials = $derived((authStore.profile?.username ?? 'MY').slice(0, 2).toUpperCase());
 	let isChat = $derived(
