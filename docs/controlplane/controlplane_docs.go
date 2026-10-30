@@ -4089,6 +4089,56 @@ const docTemplatecontrolplane = `{
             }
         },
         "/agents/{name}/terminal/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Terminal"
+                ],
+                "summary": "Get a terminal session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.TerminalInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
             "delete": {
                 "security": [
                     {

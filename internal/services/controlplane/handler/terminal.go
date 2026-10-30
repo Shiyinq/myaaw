@@ -72,7 +72,7 @@ func (h *Handler) StreamTerminal(c fiber.Ctx) error {
 	// writer later, when the ctx has already been recycled.
 	name, id := c.Params("name"), c.Params("id")
 
-	reader, err := h.terminals.Reader(name, id)
+	stream, err := h.terminals.Attach(name, id)
 	if err != nil {
 		return terminalError(c, err)
 	}
@@ -82,28 +82,45 @@ func (h *Handler) StreamTerminal(c fiber.Ctx) error {
 	c.Set("X-Accel-Buffering", "no")
 
 	return c.SendStreamWriter(func(w *bufio.Writer) {
-		// The stream is the session's only consumer. Once it ends - tab closed,
-		// tab refreshed, write error, or the shell exiting - nobody is left to
-		// talk to the PTY, so free the per-agent slot right away instead of
-		// leaving it for the idle sweep.
-		defer func() { _ = h.terminals.Close(name, id) }()
+		// Detaching does not kill the shell: it keeps running for the grace window
+		// so a navigation or reload can attach to it again.
+		defer stream.Close()
 
-		buffer := make([]byte, 32*1024)
-		for {
-			read, readErr := reader.Read(buffer)
-			if read > 0 {
-				if _, writeErr := w.Write(buffer[:read]); writeErr != nil {
-					return
-				}
-				if flushErr := w.Flush(); flushErr != nil {
-					return
-				}
+		// Flush before the first byte: a shell sitting at a prompt produces nothing, and
+		// the client should not wait to learn that the stream is open.
+		if err := w.Flush(); err != nil {
+			return
+		}
+
+		for chunk := range stream.Output() {
+			if _, err := w.Write(chunk); err != nil {
+				return
 			}
-			if readErr != nil {
+			if err := w.Flush(); err != nil {
 				return
 			}
 		}
 	})
+}
+
+// GetTerminal describes a live session, which is how the dashboard reattaches to
+// the same shell after a reload or a trip to another page.
+// @Summary      Get a terminal session
+// @Tags         Terminal
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        id path string true "Session ID"
+// @Success      200 {object} service.TerminalInfo
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /agents/{name}/terminal/{id} [get]
+func (h *Handler) GetTerminal(c fiber.Ctx) error {
+	info, err := h.terminals.Info(c.Params("name"), c.Params("id"))
+	if err != nil {
+		return terminalError(c, err)
+	}
+	return c.JSON(info)
 }
 
 // TouchTerminal keeps a session alive while its tab is open.

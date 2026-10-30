@@ -3,6 +3,8 @@ import type { OKResponse, TerminalInfo, TerminalStatus } from '$lib/types';
 
 export const terminal = {
 	status: (agent: string) => client<TerminalStatus>(agentPath(agent, '/terminal')),
+	/** Describes a live session; 404 once its grace window has passed. */
+	get: (agent: string, id: string) => client<TerminalInfo>(agentPath(agent, `/terminal/${id}`)),
 	open: (agent: string, cols: number, rows: number) =>
 		client<TerminalInfo>(agentPath(agent, '/terminal'), {
 			method: 'POST',
@@ -20,8 +22,9 @@ export const terminal = {
 			method: 'POST',
 			body: { cols, rows }
 		}),
-	close: (agent: string, id: string, keepalive = false) =>
-		client<OKResponse>(agentPath(agent, `/terminal/${id}`), { method: 'DELETE', keepalive }),
+	/** Kills the shell outright; the page normally just detaches instead. */
+	close: (agent: string, id: string) =>
+		client<OKResponse>(agentPath(agent, `/terminal/${id}`), { method: 'DELETE' }),
 	/** Keeps the session from being reaped while the tab stays open. */
 	heartbeat: (agent: string, id: string) =>
 		client<OKResponse>(agentPath(agent, `/terminal/${id}/heartbeat`), { method: 'POST' }),

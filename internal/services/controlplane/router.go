@@ -142,6 +142,7 @@ func NewApp() (*fiber.App, error) {
 	// lets the UI explain why it is unavailable.
 	app.Get("/agents/:name/terminal", h.TerminalStatus)
 	app.Post("/agents/:name/terminal", h.OpenTerminal)
+	app.Get("/agents/:name/terminal/:id", h.GetTerminal)
 	app.Get("/agents/:name/terminal/:id/stream", h.StreamTerminal)
 	app.Post("/agents/:name/terminal/:id/input", h.TerminalInput)
 	app.Post("/agents/:name/terminal/:id/resize", h.ResizeTerminal)

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
+	import { browser } from '$app/environment';
 	import '@xterm/xterm/css/xterm.css';
 	import { agentSelection } from '$lib/stores';
 	import { terminal as terminalApi } from '$lib/apis/terminal';
@@ -12,6 +13,7 @@
 	import { RefreshCw } from 'lucide-svelte';
 	import type { Terminal as XTerm } from '@xterm/xterm';
 	import type { FitAddon as XFitAddon } from '@xterm/addon-fit';
+	import type { SerializeAddon as XSerializeAddon } from '@xterm/addon-serialize';
 
 	const { t } = useTranslation();
 
@@ -27,7 +29,9 @@
 
 	let term: XTerm | null = null;
 	let fitAddon: XFitAddon | null = null;
+	let serializeAddon: XSerializeAddon | null = null;
 	let sessionId = '';
+	let sessionAgent = '';
 	let controller: AbortController | null = null;
 	let observer: ResizeObserver | null = null;
 	let inputQueue: string[] = [];
@@ -56,19 +60,74 @@
 	});
 
 	onDestroy(() => {
-		void teardown();
+		teardown();
 	});
 
 	onMount(() => {
-		// A refresh or a closed tab has to free the server-side shell immediately.
-		// The stream usually reports the drop too, but only once the shell writes
-		// something, so the unload request is what makes a reload feel instant.
-		const onHide = () => {
-			void closeForUnload();
-		};
+		// Closing the tab skips onDestroy, and the scrollback is the only thing the
+		// next visit cannot recover from the server.
+		const onHide = () => saveSnapshot();
 		window.addEventListener('pagehide', onHide);
 		return () => window.removeEventListener('pagehide', onHide);
 	});
+
+	/*
+	 * A shell outlives the page. Navigating away or reloading ends the stream, and
+	 * the server keeps the PTY for a grace window, so the tab's session id survives
+	 * in sessionStorage and the page attaches to it again instead of starting over.
+	 * The scrollback rides along in the same entry because the browser buffer dies
+	 * with the page; it is dropped when the server answers 404 for that id.
+	 */
+	const STORAGE_PREFIX = 'myaaw.terminal.';
+	const MAX_SNAPSHOT_LINES = 500;
+
+	interface StoredSession {
+		id: string;
+		buffer: string;
+	}
+
+	function readStored(agent: string): StoredSession | null {
+		if (!browser) return null;
+		try {
+			const raw = sessionStorage.getItem(STORAGE_PREFIX + agent);
+			if (!raw) return null;
+			const parsed = JSON.parse(raw) as StoredSession;
+			return parsed && typeof parsed.id === 'string' ? parsed : null;
+		} catch {
+			return null;
+		}
+	}
+
+	function writeStored(agent: string, id: string, buffer: string) {
+		if (!browser) return;
+		try {
+			sessionStorage.setItem(STORAGE_PREFIX + agent, JSON.stringify({ id, buffer }));
+		} catch {
+			// A full quota only costs the scrollback, never the shell.
+		}
+	}
+
+	function clearStored(agent: string) {
+		if (!browser) return;
+		try {
+			sessionStorage.removeItem(STORAGE_PREFIX + agent);
+		} catch {
+			// Nothing to do: the entry is unreadable anyway.
+		}
+	}
+
+	/** Stores the visible buffer so a reload does not look like a new shell. */
+	function saveSnapshot() {
+		if (!term || !serializeAddon || !sessionId || !sessionAgent) return;
+		try {
+			const buffer = serializeAddon.serialize({ scrollback: MAX_SNAPSHOT_LINES });
+			// Keyed by the agent that owns the session, not by the agent selected now:
+			// switching agents tears down the old shell first.
+			writeStored(sessionAgent, sessionId, buffer);
+		} catch {
+			// A failed snapshot is not worth breaking the teardown for.
+		}
+	}
 
 	// Prompt themes (powerlevel10k, starship, oh-my-posh) paint with Nerd Fonts
 	// Private Use Area codepoints. The bundled symbol font has to be decoded
@@ -90,7 +149,7 @@
 		const current = agentSelection.selected;
 		if (!current) return;
 
-		await teardown();
+		teardown();
 		connectedFor = current;
 		phase = 'connecting';
 		message = '';
@@ -103,9 +162,10 @@
 				return;
 			}
 
-			const [{ Terminal }, { FitAddon }] = await Promise.all([
+			const [{ Terminal }, { FitAddon }, { SerializeAddon }] = await Promise.all([
 				import('@xterm/xterm'),
-				import('@xterm/addon-fit')
+				import('@xterm/addon-fit'),
+				import('@xterm/addon-serialize')
 			]);
 			await tick();
 			if (!container) return;
@@ -120,28 +180,30 @@
 				theme: readTheme()
 			});
 			fitAddon = new FitAddon();
+			serializeAddon = new SerializeAddon();
 			term.loadAddon(fitAddon);
+			term.loadAddon(serializeAddon);
 			term.open(container);
 			fitAddon.fit();
 			hasTerminal = true;
 
-			const info = await openWithRetry(current, term.cols || 80, term.rows || 24);
+			const { info, buffer } = await attachSession(current, term.cols || 80, term.rows || 24);
+			sessionAgent = current;
 			sessionId = info.id;
 			sessionCwd = info.cwd;
 			sessionShell = info.shell;
+			if (buffer) term.write(buffer);
 
 			controller = new AbortController();
-			const response = await terminalApi.stream(current, info.id, controller.signal);
-			if (!response.ok || !response.body) {
-				throw new Error(`stream failed (${response.status})`);
-			}
-
+			// Input is wired up before the stream resolves: the server flushes the
+			// response only once the shell prints something, and an idle prompt prints
+			// nothing, so waiting here would leave the terminal unable to type.
 			term.onData(queueInput);
 			phase = 'connected';
 			startHeartbeat(current, info.id);
 			observer = new ResizeObserver(scheduleResize);
 			observer.observe(container);
-			void pump(response.body.getReader());
+			void pumpStream(current, info.id, controller.signal);
 		} catch (err) {
 			phase = 'error';
 			message = getErrorMessage(err);
@@ -150,6 +212,23 @@
 			fitAddon = null;
 			hasTerminal = false;
 		}
+	}
+
+	async function pumpStream(agent: string, id: string, signal: AbortSignal) {
+		let response: Response;
+		try {
+			response = await terminalApi.stream(agent, id, signal);
+		} catch {
+			return; // Aborted by teardown.
+		}
+		if (!response.ok || !response.body) {
+			if (phase === 'connected') {
+				phase = 'error';
+				message = `stream failed (${response.status})`;
+			}
+			return;
+		}
+		await pump(response.body.getReader());
 	}
 
 	// A reload can race the previous tab's unload request, so a fresh page may see
@@ -167,23 +246,39 @@
 		}
 	}
 
+	/**
+	 * Reattaches to the shell this tab was using, if it is still inside its grace
+	 * window, and otherwise opens a new one. The restored buffer is only valid for
+	 * the session it was captured from.
+	 */
+	async function attachSession(agent: string, cols: number, rows: number) {
+		const stored = readStored(agent);
+		if (stored) {
+			try {
+				const info = await terminalApi.get(agent, stored.id);
+				await terminalApi.resize(agent, info.id, cols, rows).catch(() => {});
+				return { info, buffer: stored.buffer };
+			} catch {
+				clearStored(agent);
+			}
+		}
+
+		const info = await openWithRetry(agent, cols, rows);
+		writeStored(agent, info.id, '');
+		return { info, buffer: '' };
+	}
+
 	/** Keeps a legitimately idle tab alive so its shell is not reaped. */
 	function startHeartbeat(agent: string, id: string) {
 		if (heartbeatTimer) clearInterval(heartbeatTimer);
 		heartbeatTimer = setInterval(() => {
-			void terminalApi.heartbeat(agent, id).catch(() => {});
+			void terminalApi.heartbeat(agent, id).catch((err) => {
+				if ((err as { status?: number }).status !== 404) return;
+				// The grace window ran out while the tab was idle.
+				clearStored(agent);
+				if (phase === 'connected') phase = 'disconnected';
+			});
 		}, 30_000);
-	}
-
-	/** Frees the shell while the page is being torn down by the browser. */
-	function closeForUnload() {
-		const agent = connectedFor;
-		const id = sessionId;
-		if (!agent || !id) return;
-		sessionId = '';
-		if (heartbeatTimer) clearInterval(heartbeatTimer);
-		heartbeatTimer = null;
-		return terminalApi.close(agent, id, true).catch(() => {});
 	}
 
 	async function pump(reader: ReadableStreamDefaultReader<Uint8Array>) {
@@ -233,7 +328,12 @@
 		}, 150);
 	}
 
-	async function teardown() {
+	function teardown() {
+		// Leave the shell alone: the server detaches it and keeps the PTY for its
+		// grace window, so the next visit attaches to the same process instead of
+		// starting over. Only the browser-side state is dropped here.
+		saveSnapshot();
+
 		observer?.disconnect();
 		observer = null;
 		controller?.abort();
@@ -246,20 +346,12 @@
 		if (heartbeatTimer) clearInterval(heartbeatTimer);
 		heartbeatTimer = null;
 
-		const stopFor = connectedFor;
-		const stopId = sessionId;
 		sessionId = '';
-		if (stopFor && stopId) {
-			try {
-				await terminalApi.close(stopFor, stopId);
-			} catch {
-				// The shell may already be gone.
-			}
-		}
-
+		sessionAgent = '';
 		term?.dispose();
 		term = null;
 		fitAddon = null;
+		serializeAddon = null;
 		hasTerminal = false;
 	}
 

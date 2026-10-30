@@ -388,11 +388,23 @@ func TestRouterTerminal(t *testing.T) {
 	doJSON(t, app, "POST", "/agents/myfriend/terminal/"+opened.ID+"/heartbeat", token,
 		"", fiber.StatusOK, nil)
 
+	var described struct {
+		ID    string `json:"id"`
+		Shell string `json:"shell"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/terminal/"+opened.ID, token, "",
+		fiber.StatusOK, &described)
+	if described.ID != opened.ID {
+		t.Fatalf("describe = %+v, want id %s", described, opened.ID)
+	}
+
 	// Sessions are scoped to the agent in the URL.
 	doJSON(t, app, "POST", "/agents/other/terminal/"+opened.ID+"/input", token,
 		"x", fiber.StatusNotFound, nil)
 	doJSON(t, app, "POST", "/agents/other/terminal/"+opened.ID+"/heartbeat", token,
 		"", fiber.StatusNotFound, nil)
+	doJSON(t, app, "GET", "/agents/other/terminal/"+opened.ID, token, "",
+		fiber.StatusNotFound, nil)
 
 	doJSON(t, app, "DELETE", "/agents/myfriend/terminal/"+opened.ID, token, "", fiber.StatusOK, nil)
 	doJSON(t, app, "DELETE", "/agents/myfriend/terminal/"+opened.ID, token, "", fiber.StatusOK, nil)

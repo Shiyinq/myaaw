@@ -354,7 +354,7 @@
 			"failed": "Connection failed",
 			"reconnect": "Reconnect",
 			"host_warning": "Runs on the API host, as the user running myaaw.",
-			"session_note": "The session ended. Reconnect for a fresh shell; nothing is kept in the background.",
+			"session_note": "The connection dropped. Reconnect to attach to the same shell while it is still alive; nothing runs in the background once it expires.",
 			"disabled_title": "Terminal is disabled",
 			"failed_title": "Could not open a shell",
 			"failed_hint": "Reconnect to try again. If another tab is still connected to this agent, close it first or wait about two minutes for the old session to expire.",

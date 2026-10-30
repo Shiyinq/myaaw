@@ -4648,6 +4648,38 @@ paths:
       summary: Close a terminal
       tags:
       - Terminal
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.TerminalInfo'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a terminal session
+      tags:
+      - Terminal
   /agents/{name}/terminal/{id}/heartbeat:
     post:
       description: Refreshes the idle clock. A session is reaped after two minutes

@@ -1047,13 +1047,14 @@ The flag exists because the launchd/systemd units carry no environment of their 
 |---|---|---|
 | `GET` | `/agents/:name/terminal` | `{enabled}` probe |
 | `POST` | `/agents/:name/terminal` | open a shell, body `{cols, rows}`, returns `{id, shell, cwd, cols, rows}` |
+| `GET` | `/agents/:name/terminal/:id` | describe a live session; this is the reattach probe |
 | `GET` | `/agents/:name/terminal/:id/stream` | chunked `application/octet-stream` with the PTY output |
 | `POST` | `/agents/:name/terminal/:id/input` | raw body bytes are written to the PTY |
 | `POST` | `/agents/:name/terminal/:id/resize` | `{cols, rows}` |
 | `POST` | `/agents/:name/terminal/:id/heartbeat` | refresh the idle clock while the tab is open |
 | `DELETE` | `/agents/:name/terminal/:id` | kill the shell (idempotent) |
 
-The session is a real PTY running `$SHELL` as the **same OS user as `myaaw api`**, with `TERM=xterm-256color`, `MYAAW_AGENT=<name>`, and the working directory set to `~/.myaaw/<agent>/home`. It is not sandboxed by the agent's tool approvals. Sessions live in memory, are capped at two per agent, and are reaped after two minutes without input, resize, or a heartbeat. A session also dies as soon as its stream ends — closed tab, refreshed tab, or a write error — so a page reload frees the slot immediately instead of blocking the next connection.
+The session is a real PTY running `$SHELL` as the **same OS user as `myaaw api`**, with `TERM=xterm-256color`, `MYAAW_AGENT=<name>`, and the working directory set to `~/.myaaw/<agent>/home`. It is not sandboxed by the agent's tool approvals. Sessions live in memory, are capped at two per agent, and survive a dropped stream: the shell keeps running for a **five minute grace window** so a reload or a trip to another page can reattach with `GET /agents/:name/terminal/:id`. One goroutine reads the PTY and fans out to at most one stream, so attaching again supersedes the reader a dead page left behind, and up to 256 KiB printed while no stream was attached is replayed on the next attach. Anything untouched for the whole window is reaped, a detached shell yields its slot to a new connection, and `DELETE` kills one immediately.
 
 ```bash
 # Open, then read the stream in one terminal and type into it from another

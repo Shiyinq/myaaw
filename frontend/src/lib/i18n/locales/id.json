@@ -354,7 +354,7 @@
 			"failed": "Gagal terhubung",
 			"reconnect": "Hubungkan ulang",
 			"host_warning": "Berjalan di host API, sebagai user yang menjalankan myaaw.",
-			"session_note": "Sesi berakhir. Hubungkan ulang untuk shell baru; tidak ada yang disimpan di background.",
+			"session_note": "Koneksi terputus. Hubungkan ulang untuk kembali ke shell yang sama selama masih hidup; setelah kedaluwarsa tidak ada yang berjalan di background.",
 			"disabled_title": "Terminal dinonaktifkan",
 			"failed_title": "Tidak bisa membuka shell",
 			"failed_hint": "Hubungkan ulang untuk mencoba lagi. Kalau tab lain masih terhubung ke agen ini, tutup dulu tab tersebut atau tunggu sekitar dua menit sampai sesi lama kedaluwarsa.",
