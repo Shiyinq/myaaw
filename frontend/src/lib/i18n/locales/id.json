@@ -351,7 +351,7 @@
 		"context": {
 			"title": "Konteks",
 			"subtitle": "Edit berkas identitas, memori, dan instruksi yang dibaca agen.",
-			"files": "Berkas",
+			"files": "Konteks Agen",
 			"empty": "Belum ada berkas konteks.",
 			"editor": "Editor",
 			"select_file": "Pilih berkas konteks.",
@@ -366,7 +366,7 @@
 			"subtitle": "Aktifkan, periksa, dan hapus skill agen.",
 			"empty": "Belum ada skill",
 			"empty_desc": "Skill dibuat oleh agen atau disalin ke folder skills agen.",
-			"list": "Skill terpasang",
+			"list": "Keterampilan Tersedia",
 			"enabled": "Aktif",
 			"invalid": "tidak valid",
 			"files": "Berkas",
@@ -418,8 +418,8 @@
 			"restart_hint": "Restart server agen setelah mengganti token."
 		},
 		"tools": {
-			"title": "Alat",
-			"subtitle": "Aktifkan alat bawaan dan daftarkan alat custom atau MCP.",
+			"title": "Alat Tersedia",
+			"subtitle": "Aktifkan tool bawaan dan daftarkan tool custom atau MCP.",
 			"builtin": "Alat bawaan",
 			"builtin_desc": "Hanya bisa diaktifkan atau dinonaktifkan.",
 			"custom": "Alat custom",
@@ -442,7 +442,7 @@
 		"contacts": {
 			"title": "Kontak",
 			"subtitle": "Agen A2A yang bisa menerima delegasi tugas.",
-			"list": "Kontak",
+			"list": "Kontak Agen",
 			"list_desc": "Token disamarkan setelah disimpan.",
 			"empty": "Belum ada kontak",
 			"empty_desc": "Tambahkan peer A2A agar agen bisa mendelegasikan tugas.",

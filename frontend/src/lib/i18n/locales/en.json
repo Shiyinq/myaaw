@@ -351,7 +351,7 @@
 		"context": {
 			"title": "Context",
 			"subtitle": "Edit the identity, memory, and instruction files the agent reads.",
-			"files": "Files",
+			"files": "Agent Context",
 			"empty": "No context files yet.",
 			"editor": "Editor",
 			"select_file": "Select a context file.",
@@ -366,7 +366,7 @@
 			"subtitle": "Enable, inspect, and remove agent skills.",
 			"empty": "No skills installed",
 			"empty_desc": "Skills are created by the agent or copied into the agent's skills folder.",
-			"list": "Installed skills",
+			"list": "Available Skills",
 			"enabled": "Enabled",
 			"invalid": "invalid",
 			"files": "Files",
@@ -418,7 +418,7 @@
 			"restart_hint": "Restart the agent server after changing tokens."
 		},
 		"tools": {
-			"title": "Tools",
+			"title": "Available Tools",
 			"subtitle": "Toggle built-in tools and register custom or MCP tools.",
 			"builtin": "Built-in tools",
 			"builtin_desc": "These can only be enabled or disabled.",
@@ -442,7 +442,7 @@
 		"contacts": {
 			"title": "Contacts",
 			"subtitle": "A2A agents this agent can delegate tasks to.",
-			"list": "Contacts",
+			"list": "Agent Contacts",
 			"list_desc": "Tokens are masked once saved.",
 			"empty": "No contacts yet",
 			"empty_desc": "Add an A2A peer to let this agent delegate work.",

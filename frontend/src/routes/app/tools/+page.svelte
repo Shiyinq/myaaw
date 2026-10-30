@@ -10,7 +10,7 @@
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Plus, RefreshCw, Trash2, Wrench } from 'lucide-svelte';
+	import { Plus, RefreshCw, Trash2 } from 'lucide-svelte';
 	import type { ToolsView } from '$lib/types';
 
 	const { t } = useTranslation();
@@ -167,8 +167,7 @@
 		<aside
 			class="flex h-[45vh] shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
 		>
-			<div class="flex shrink-0 items-center gap-2 border-b px-3 py-2.5">
-				<Wrench class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+			<div class="shrink-0 border-b px-3 py-2.5">
 				<p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
 					{t('myaaw.tools.title')}
 				</p>

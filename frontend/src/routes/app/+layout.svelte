@@ -14,7 +14,6 @@
 		Settings2,
 		LogOut,
 		Wrench,
-		Users,
 		SlidersHorizontal,
 		Clock,
 		ScrollText,
@@ -76,7 +75,7 @@
 					href: '/app/contacts',
 					label: 'myaaw.nav.contacts',
 					description: 'myaaw.contacts.subtitle',
-					icon: Users
+					icon: Bot
 				},
 				{
 					href: '/app/files',
@@ -177,7 +176,8 @@
 			page.url.pathname.startsWith('/app/skills') ||
 			page.url.pathname.startsWith('/app/logs') ||
 			page.url.pathname.startsWith('/app/observability') ||
-			page.url.pathname.startsWith('/app/tools')
+			page.url.pathname.startsWith('/app/tools') ||
+			page.url.pathname.startsWith('/app/contacts')
 	);
 
 	async function logout() {
