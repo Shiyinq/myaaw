@@ -26,138 +26,17 @@
 		"next": "Berikutnya",
 		"search": "Cari"
 	},
-	"theme": {
-		"toggle": "Ganti tema",
-		"light": "Terang",
-		"dark": "Gelap",
-		"system": "Sistem"
-	},
-	"landing": {
-		"hero": "Arsitektur Kecepatan Tinggi",
-		"tagline": "Gerbang Anda menuju arsitektur generasi berikutnya. Terpadu mulus untuk kecepatan maksimum.",
-		"features": {
-			"fast": {
-				"title": "Sangat Cepat",
-				"desc": "Ditenagai oleh Vite dan FastAPI untuk kecepatan luar biasa."
-			},
-			"secure": {
-				"title": "Auth Aman",
-				"desc": "Autentikasi berbasis JWT dengan dukungan OAuth bawaan."
-			},
-			"modern": {
-				"title": "UI Modern",
-				"desc": "Sistem desain glassmorphism yang ramping siap digunakan."
-			}
-		}
-	},
-	"auth": {
-		"welcome_back": "Selamat Datang Kembali",
-		"create_account": "Buat Akun",
-		"forgot_password": "Lupa Kata Sandi?",
-		"already_have_account": "Sudah punya akun?",
-		"dont_have_account": "Belum punya akun?",
-		"login_subtitle": "Lanjutkan sesi Anda. Masuk ke dalam aliran.",
-		"remember_me": "Ingat saya",
-		"logging_in": "Sedang masuk...",
-		"or_continue_with": "Atau lanjut dengan",
-		"username_placeholder": "Nama Pengguna atau Email",
-		"register_subtitle": "Bergabunglah dengan generasi berikutnya. Bangun masa depan Anda.",
-		"full_name": "Nama Lengkap",
-		"full_name_placeholder": "misal: Alex Chen",
-		"email_placeholder": "nama@contoh.com",
-		"confirm_password": "Konfirmasi Kata Sandi",
-		"creating_account": "Sedang mendaftar...",
-		"next": "Lanjut",
-		"back": "Kembali",
-		"step": "Langkah {step} dari {total}",
-		"reset_password": "Atur Ulang Kata Sandi",
-		"reset_password_subtitle": "Amankan kembali akun Anda. Pilih kunci baru.",
-		"new_password": "Kata Sandi Baru",
-		"resetting": "Mengatur ulang...",
-		"reset_success": "Kata sandi berhasil diatur ulang. Mengalihkan ke halaman masuk...",
-		"password_requirements": "Persyaratan Kata Sandi",
-		"req_length": "Minimal 8 karakter",
-		"req_number": "Mengandung angka",
-		"req_special": "Mengandung karakter khusus",
-		"req_match": "Kata sandi cocok",
-		"forgot_password_subtitle": "Kehilangan akses? Mulai protokol pemulihan.",
-		"check_inbox": "Cek kotak masuk Anda",
-		"recovery_sent": "Kami telah mengirimkan instruksi pemulihan kata sandi ke",
-		"back_to_login": "Kembali ke Masuk",
-		"recovery_helper": "Kami akan mengirimkan tautan untuk mengatur ulang kata sandi Anda.",
-		"send_reset_link": "Kirim Tautan Atur Ulang",
-		"seo": {
-			"login_desc": "Akses masuk aman ke control plane Myaaw.",
-			"register_desc": "Bergabunglah dengan jaringan Myaaw.",
-			"verify_desc": "Verifikasi alamat email Anda untuk Myaaw."
-		},
-		"verify_email": {
-			"title": "Verifikasi Email",
-			"verifying": "MEMVERIFIKASI",
-			"verifying_subtitle": "Mengonfirmasi sinyal Anda. \nMohon tunggu...",
-			"verified": "TERVERIFIKASI",
-			"verified_subtitle": "Koneksi terbentuk. \nAnda telah masuk dalam sistem.",
-			"failed": "GAGAL",
-			"failed_subtitle": "Sinyal terputus. \nVerifikasi tidak berhasil.",
-			"status_verifying": "Memverifikasi Email",
-			"status_verifying_desc": "Mohon tunggu sementara kami mengonfirmasi identitas Anda...",
-			"status_success": "Email Terverifikasi!",
-			"status_success_desc": "Email Anda telah berhasil diverifikasi. Anda sekarang memiliki akses penuh ke Myaaw.",
-			"status_error": "Verifikasi Gagal",
-			"proceed_to_login": "LANJUT KE MASUK",
-			"no_token": "Token verifikasi tidak ditemukan."
-		}
-	},
-	"dashboard": {
-		"title": "Dasbor",
-		"subtitle": "Kelola akun dan akses API Anda.",
-		"system_status": "Status sistem",
-		"active": "Aktif",
-		"api_access": "Akses API",
-		"status": "Status",
-		"active_status": "Aktif",
-		"inactive_status": "Tidak Aktif",
-		"copy": "Salin",
-		"revoke": "Cabut",
-		"revoke_title": "Cabut Akses?",
-		"revoke_warning": "Semua aplikasi yang menggunakan kunci ini akan langsung berhenti berfungsi.",
-		"management_title": "Manajemen Kunci API",
-		"management_desc": "Kelola kunci akses frekuensi Anda dengan aman",
-		"active_key": "Kunci Frekuensi Aktif",
-		"operational": "Operasional",
-		"logs_title": "Log Akses API",
-		"logs_desc": "Lihat aktivitas kunci API dan log autentikasi terbaru Anda.",
-		"logs_coming_soon": "Log aktivitas akan segera tersedia.",
-		"generate_key": "Buat Kunci",
-		"generating": "Memproses...",
-		"hover_to_view": "Arahkan kursor untuk melihat kunci. Jaga kerahasiaannya.",
-		"no_key": "Tidak ada kunci API aktif ditemukan.",
-		"no_key_desc": "Anda tidak memiliki kunci frekuensi aktif. Buat satu untuk memulai transmisi.",
-		"docs_title": "Dokumentasi Pengembang",
-		"docs_desc": "Pelajari cara mengintegrasikan Myaaw ke dalam aplikasi Anda sendiri menggunakan panduan API kami yang komprehensif.",
-		"copied": "Disalin ke papan klip.",
-		"revoked": "Kunci API dicabut.",
-		"revoke_confirm": "Apakah Anda yakin ingin memutuskan sambungan? Tindakan ini tidak dapat dibatalkan dan akan segera membatalkan semua koneksi yang ada.",
-		"gen_success": "Kunci API berhasil dibuat.",
-		"stats": {
-			"status_desc": "Infrastruktur global sedang daring",
-			"security": "Tingkat Keamanan",
-			"security_desc": "Enkripsi multi-faktor aktif",
-			"standard": "Standar",
-			"access_tier": "Tingkat Akses",
-			"access_tier_desc": "Maksimum yang diizinkan untuk tingkat Anda",
-			"keys_count": "{count} Kunci",
-			"last_login": "Login Terakhir",
-			"last_login_desc": "Berdasarkan sesi saat ini"
-		},
-		"profile_title": "Profil Pengguna",
-		"profile_desc": "Detail identifikasi pribadi Anda",
-		"id_number": "Nomor ID"
-	},
 	"errors": {
-		"token_invalid": "Token sesi tidak valid.",
-		"signal_lost": "Sesi berakhir. Token tidak ditemukan.",
-		"security_req": "Mohon penuhi semua persyaratan keamanan.",
+		"401": {
+			"title": "Tidak Sah",
+			"subtitle": "Autentikasi diperlukan.",
+			"description": "Silakan masuk untuk mengakses sumber daya ini."
+		},
+		"403": {
+			"title": "Akses Ditolak",
+			"subtitle": "Anda tidak memiliki izin untuk mengakses halaman ini.",
+			"description": "Silakan hubungi administrator jika Anda merasa ini adalah kesalahan."
+		},
 		"404": {
 			"title": "Halaman Tidak Ditemukan",
 			"subtitle": "Kami tidak dapat menemukan halaman yang Anda cari.",
@@ -168,16 +47,9 @@
 			"subtitle": "Terjadi kesalahan pada sistem kami.",
 			"description": "Sistem kami sedang mengalami gangguan. Silakan coba lagi nanti."
 		},
-		"403": {
-			"title": "Akses Ditolak",
-			"subtitle": "Anda tidak memiliki izin untuk mengakses halaman ini.",
-			"description": "Silakan hubungi administrator jika Anda merasa ini adalah kesalahan."
-		},
-		"401": {
-			"title": "Tidak Sah",
-			"subtitle": "Autentikasi diperlukan.",
-			"description": "Silakan masuk untuk mengakses sumber daya ini."
-		},
+		"token_invalid": "Token sesi tidak valid.",
+		"signal_lost": "Sesi berakhir. Token tidak ditemukan.",
+		"security_req": "Mohon penuhi semua persyaratan keamanan.",
 		"default": {
 			"title": "Terjadi Kesalahan",
 			"subtitle": "Terjadi kesalahan yang tidak terduga.",
@@ -248,7 +120,13 @@
 			"open_chat": "Buka chat",
 			"no_agents": "Belum ada agen",
 			"no_agents_desc": "Jalankan `myaaw onboard` di terminal, lalu muat ulang halaman ini.",
-			"no_runs": "Belum ada run tercatat."
+			"no_runs": "Belum ada run tercatat.",
+			"agent_actions": "Aksi agen",
+			"set_default": "Jadikan default",
+			"agent_default_set": "{name} sekarang menjadi agen default",
+			"delete_agent": "Hapus agen",
+			"agent_delete_confirm": "Hapus agen {name}? Tindakan ini tidak bisa dibatalkan.",
+			"agent_deleted": "Agen dihapus"
 		},
 		"chat": {
 			"title": "Chat",
@@ -490,6 +368,7 @@
 			"empty": "Belum ada berkas log.",
 			"select": "Pilih berkas",
 			"streaming": "Streaming baris langsung",
+			"reconnecting": "Koneksi terputus, menyambung ulang...",
 			"idle": "Stream berhenti",
 			"start": "Mulai tail",
 			"stop": "Hentikan",

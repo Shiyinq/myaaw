@@ -26,138 +26,17 @@
 		"next": "Next",
 		"search": "Search"
 	},
-	"theme": {
-		"toggle": "Toggle theme",
-		"light": "Light",
-		"dark": "Dark",
-		"system": "System"
-	},
-	"landing": {
-		"hero": "High Velocity Architecture",
-		"tagline": "Your gateway to next-generation architecture. Seamlessly fused for maximum velocity.",
-		"features": {
-			"fast": {
-				"title": "Lightning Fast",
-				"desc": "Powered by Vite and FastAPI for incredible speed."
-			},
-			"secure": {
-				"title": "Secure Auth",
-				"desc": "JWT-based authentication with OAuth support built-in."
-			},
-			"modern": {
-				"title": "Modern UI",
-				"desc": "Sleek glassmorphism design system ready to go."
-			}
-		}
-	},
-	"auth": {
-		"welcome_back": "Welcome Back",
-		"create_account": "Create Account",
-		"forgot_password": "Forgot Password?",
-		"already_have_account": "Already have an account?",
-		"dont_have_account": "Don't have an account?",
-		"login_subtitle": "Resume your session. Enter the stream.",
-		"remember_me": "Remember me",
-		"logging_in": "Logging in...",
-		"or_continue_with": "Or continue with",
-		"username_placeholder": "Username or Email",
-		"register_subtitle": "Join the next generation. Build your future.",
-		"full_name": "Full Name",
-		"full_name_placeholder": "e.g. Alex Chen",
-		"email_placeholder": "name@example.com",
-		"confirm_password": "Confirm Password",
-		"creating_account": "Creating account...",
-		"next": "Next",
-		"back": "Back",
-		"step": "Step {step} of {total}",
-		"reset_password": "Reset Password",
-		"reset_password_subtitle": "Secure your account again. Choose a new key.",
-		"new_password": "New Password",
-		"resetting": "Resetting...",
-		"reset_success": "Password reset successful. Redirecting to login...",
-		"password_requirements": "Password Requirements",
-		"req_length": "At least 8 characters",
-		"req_number": "Contains a number",
-		"req_special": "Contains special char",
-		"req_match": "Passwords match",
-		"forgot_password_subtitle": "Lost your key? Initiate recovery protocol.",
-		"check_inbox": "Check your inbox",
-		"recovery_sent": "We have sent a password recovery instruction to",
-		"back_to_login": "Back to Login",
-		"recovery_helper": "We'll send you a link to reset your password.",
-		"send_reset_link": "Send Reset Link",
-		"seo": {
-			"login_desc": "Secure login access to the Myaaw control plane.",
-			"register_desc": "Join the Myaaw network.",
-			"verify_desc": "Verify your email address for Myaaw."
-		},
-		"verify_email": {
-			"title": "Email Verification",
-			"verifying": "VERIFYING",
-			"verifying_subtitle": "Confirming your signal. \nPlease wait...",
-			"verified": "VERIFIED",
-			"verified_subtitle": "Connection established. \nYou're in the system.",
-			"failed": "FAILED",
-			"failed_subtitle": "Signal lost. \nVerification unsuccessful.",
-			"status_verifying": "Verifying Email",
-			"status_verifying_desc": "Please wait while we confirm your identity...",
-			"status_success": "Email Verified!",
-			"status_success_desc": "Your email has been successfully verified. You now have full access to Myaaw.",
-			"status_error": "Verification Failed",
-			"proceed_to_login": "PROCEED TO LOGIN",
-			"no_token": "No verification token provided."
-		}
-	},
-	"dashboard": {
-		"title": "Dashboard",
-		"subtitle": "Manage your account and API access.",
-		"system_status": "System status",
-		"active": "Active",
-		"api_access": "API Access",
-		"status": "Status",
-		"active_status": "Active",
-		"inactive_status": "Inactive",
-		"copy": "Copy",
-		"revoke": "Revoke",
-		"revoke_title": "Revoke Access?",
-		"revoke_warning": "All applications using this key will stop working instantly.",
-		"management_title": "API Key Management",
-		"management_desc": "Securely manage your frequency access keys",
-		"active_key": "Active Frequency Key",
-		"operational": "Operational",
-		"logs_title": "API Access Logs",
-		"logs_desc": "View your recent API key activities and authentication logs.",
-		"logs_coming_soon": "Activity logs will be available soon.",
-		"generate_key": "Generate Key",
-		"generating": "Generating...",
-		"hover_to_view": "Hover to view key. Keep it secret.",
-		"no_key": "No active API key found.",
-		"no_key_desc": "You don't have an active frequency key. Generate one to start transmission.",
-		"docs_title": "Developer Documentation",
-		"docs_desc": "Learn how to integrate Myaaw into your own applications using our comprehensive API guide.",
-		"copied": "Copied to clipboard.",
-		"revoked": "API Key revoked.",
-		"revoke_confirm": "Are you sure you want to sever the connection? This action cannot be undone and will immediately invalidate all existing connections.",
-		"gen_success": "API Key generated successfully.",
-		"stats": {
-			"status_desc": "Global infrastructure is online",
-			"security": "Security Level",
-			"security_desc": "Multi-factor encryption enabled",
-			"standard": "Standard",
-			"access_tier": "Access Tier",
-			"access_tier_desc": "Maximum allowed for your tier",
-			"keys_count": "{count} Key",
-			"last_login": "Last Login",
-			"last_login_desc": "Based on current session"
-		},
-		"profile_title": "User Profile",
-		"profile_desc": "Your personal identification details",
-		"id_number": "ID Number"
-	},
 	"errors": {
-		"token_invalid": "Invalid session token.",
-		"signal_lost": "Session expired. No token found.",
-		"security_req": "Please meet all security requirements.",
+		"401": {
+			"title": "Unauthorized",
+			"subtitle": "Authentication is required.",
+			"description": "Please log in to access this resource."
+		},
+		"403": {
+			"title": "Access Denied",
+			"subtitle": "You don't have permission to access this page.",
+			"description": "Please contact the administrator if you believe this is an error."
+		},
 		"404": {
 			"title": "Page Not Found",
 			"subtitle": "We couldn't find the page you're looking for.",
@@ -168,16 +47,9 @@
 			"subtitle": "Something went wrong on our end.",
 			"description": "Our systems are experiencing issues. Please try again later."
 		},
-		"403": {
-			"title": "Access Denied",
-			"subtitle": "You don't have permission to access this page.",
-			"description": "Please contact the administrator if you believe this is an error."
-		},
-		"401": {
-			"title": "Unauthorized",
-			"subtitle": "Authentication is required.",
-			"description": "Please log in to access this resource."
-		},
+		"token_invalid": "Invalid session token.",
+		"signal_lost": "Session expired. No token found.",
+		"security_req": "Please meet all security requirements.",
 		"default": {
 			"title": "Something Went Wrong",
 			"subtitle": "An unexpected error occurred.",
@@ -248,7 +120,13 @@
 			"open_chat": "Open chat",
 			"no_agents": "No agents yet",
 			"no_agents_desc": "Run `myaaw onboard` in the terminal, then refresh this page.",
-			"no_runs": "No recorded runs yet."
+			"no_runs": "No recorded runs yet.",
+			"agent_actions": "Agent actions",
+			"set_default": "Set as default",
+			"agent_default_set": "{name} is now the default agent",
+			"delete_agent": "Delete agent",
+			"agent_delete_confirm": "Delete agent {name}? This cannot be undone.",
+			"agent_deleted": "Agent deleted"
 		},
 		"chat": {
 			"title": "Chat",
@@ -490,6 +368,7 @@
 			"empty": "No log files yet.",
 			"select": "Select a file",
 			"streaming": "Streaming live lines",
+			"reconnecting": "Connection lost, reconnecting...",
 			"idle": "Stream is stopped",
 			"start": "Start tail",
 			"stop": "Stop",

@@ -6,7 +6,13 @@
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Play, RefreshCw, Square, Terminal } from 'lucide-svelte';
 	import type { LogFile } from '$lib/types';
 
@@ -17,6 +23,7 @@
 	let lines = $state<string[]>([]);
 	let loading = $state(false);
 	let streaming = $state(false);
+	let reconnecting = $state(false);
 	let error = $state('');
 	let loadKey = '';
 	let controller: AbortController | null = null;
@@ -59,6 +66,7 @@
 		if (!agent || !file || streaming) return;
 		lines = [];
 		streaming = true;
+		reconnecting = false;
 		error = '';
 		controller = new AbortController();
 		try {
@@ -66,6 +74,7 @@
 				agent,
 				file,
 				(event) => {
+					reconnecting = false;
 					if (event.event === 'line') {
 						const data = event.data as { line?: string };
 						lines = [...lines, data?.line ?? ''].slice(-1000);
@@ -74,7 +83,14 @@
 						if (data?.file) file = data.file;
 					}
 				},
-				controller.signal
+				{
+					signal: controller.signal,
+					// The server replays the file from the start, so clear the buffer.
+					onReconnect: () => {
+						lines = [];
+						reconnecting = true;
+					}
+				}
 			);
 		} catch (err) {
 			if ((err as Error)?.name !== 'AbortError') {
@@ -82,6 +98,7 @@
 			}
 		} finally {
 			streaming = false;
+			reconnecting = false;
 			controller = null;
 		}
 	}
@@ -90,6 +107,7 @@
 		controller?.abort();
 		controller = null;
 		streaming = false;
+		reconnecting = false;
 	}
 
 	function pick(name: string) {
@@ -105,7 +123,7 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -169,7 +187,11 @@
 							<span class="truncate">{file || t('myaaw.logs.select')}</span>
 						</CardTitle>
 						<CardDescription>
-							{streaming ? t('myaaw.logs.streaming') : t('myaaw.logs.idle')}
+							{reconnecting
+								? t('myaaw.logs.reconnecting')
+								: streaming
+									? t('myaaw.logs.streaming')
+									: t('myaaw.logs.idle')}
 						</CardDescription>
 					</div>
 					<div class="flex shrink-0 gap-2">
