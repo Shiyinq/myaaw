@@ -181,7 +181,8 @@
 		isChat ||
 			page.url.pathname.startsWith('/app/files') ||
 			page.url.pathname.startsWith('/app/context') ||
-			page.url.pathname.startsWith('/app/skills')
+			page.url.pathname.startsWith('/app/skills') ||
+			page.url.pathname.startsWith('/app/logs')
 	);
 
 	async function logout() {

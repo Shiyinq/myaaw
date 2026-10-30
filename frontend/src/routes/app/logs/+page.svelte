@@ -110,57 +110,69 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="space-y-4">
+<div class="flex h-full min-h-0 flex-col lg:flex-row">
 	{#if !agent}
-		<Card>
-			<CardContent class="py-10 text-center text-sm text-muted-foreground">
-				{t('myaaw.agent.none')}
-			</CardContent>
-		</Card>
-	{:else}
-		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-				{error}
-			</div>
-		{/if}
-
-		<div class="grid gap-4 lg:grid-cols-4">
-			<Card class="lg:col-span-1">
-				<CardHeader>
-					<CardTitle class="text-sm">{t('myaaw.logs.files')}</CardTitle>
-					<CardDescription>{t('myaaw.logs.files_desc')}</CardDescription>
-				</CardHeader>
-				<CardContent class="space-y-1">
-					{#if files.length === 0}
-						<p class="text-sm text-muted-foreground">{t('myaaw.logs.empty')}</p>
-					{/if}
-					{#each files as entry (entry.name)}
-						<button
-							class={[
-								'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-								entry.name === file ? 'bg-accent font-medium' : 'hover:bg-muted'
-							]}
-							onclick={() => pick(entry.name)}
-						>
-							<span class="truncate font-mono text-xs">{entry.name}</span>
-							<span class="text-[10px] text-muted-foreground">{Math.round(entry.size / 1024)}K</span>
-						</button>
-					{/each}
+		<div class="w-full p-4 lg:p-6">
+			<Card>
+				<CardContent class="py-10 text-center text-sm text-muted-foreground">
+					{t('myaaw.agent.none')}
 				</CardContent>
 			</Card>
+		</div>
+	{:else}
+		<!-- Log files: a second sidebar nested inside the main one. -->
+		<aside
+			class="flex h-[45vh] shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+		>
+			<div class="shrink-0 border-b px-3 py-2.5">
+				<p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+					{t('myaaw.logs.files')}
+				</p>
+			</div>
+			<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
+				{#if loading}
+					<p class="px-1 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
+				{:else if files.length === 0}
+					<p class="px-1 py-2 text-sm text-muted-foreground">{t('myaaw.logs.empty')}</p>
+				{/if}
+				{#each files as entry (entry.name)}
+					<button
+						class={[
+							'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+							entry.name === file ? 'bg-accent font-medium' : 'hover:bg-muted'
+						]}
+						onclick={() => pick(entry.name)}
+					>
+						<span class="truncate font-mono text-xs">{entry.name}</span>
+						<span class="shrink-0 text-[10px] text-muted-foreground">
+							{Math.round(entry.size / 1024)}K
+						</span>
+					</button>
+				{/each}
+			</div>
+		</aside>
 
-			<Card class="lg:col-span-3">
-				<CardHeader class="flex flex-row items-center justify-between">
-					<div>
+		<section class="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
+			{#if error}
+				<div
+					class="mb-3 shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+				>
+					{error}
+				</div>
+			{/if}
+
+			<Card class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+				<CardHeader class="flex shrink-0 flex-row items-center justify-between">
+					<div class="min-w-0">
 						<CardTitle class="flex items-center gap-2 text-sm">
-							<Terminal class="h-4 w-4" />
-							{file || t('myaaw.logs.select')}
+							<Terminal class="h-4 w-4 shrink-0" />
+							<span class="truncate">{file || t('myaaw.logs.select')}</span>
 						</CardTitle>
 						<CardDescription>
 							{streaming ? t('myaaw.logs.streaming') : t('myaaw.logs.idle')}
 						</CardDescription>
 					</div>
-					<div class="flex gap-2">
+					<div class="flex shrink-0 gap-2">
 						{#if streaming}
 							<Button size="sm" variant="destructive" onclick={stop}>
 								<Square class="mr-2 h-4 w-4" />
@@ -174,10 +186,10 @@
 						{/if}
 					</div>
 				</CardHeader>
-				<CardContent>
+				<CardContent class="min-h-0 flex-1">
 					<div
 						bind:this={output}
-						class="h-[28rem] overflow-auto rounded-md border bg-muted/20 p-2 font-mono text-[11px] leading-relaxed"
+						class="h-full overflow-auto rounded-md border border-input bg-muted/20 p-3 font-mono text-[11px] leading-relaxed"
 					>
 						{#if lines.length === 0}
 							<p class="text-muted-foreground">{t('myaaw.logs.no_output')}</p>
@@ -188,6 +200,6 @@
 					</div>
 				</CardContent>
 			</Card>
-		</div>
+		</section>
 	{/if}
 </div>
