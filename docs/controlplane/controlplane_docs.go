@@ -4557,6 +4557,36 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/capabilities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Onboarding capabilities",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.CapabilitiesView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "produces": [
@@ -6286,6 +6316,41 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.CapabilitiesView": {
+            "type": "object",
+            "properties": {
+                "providers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ProviderOptionView"
+                    }
+                },
+                "skills": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.CapabilityView"
+                    }
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.CapabilityView"
+                    }
+                }
+            }
+        },
+        "service.CapabilityView": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "weather"
+                }
+            }
+        },
         "service.ChannelView": {
             "type": "object",
             "properties": {
@@ -6947,6 +7012,31 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "service.ProviderOptionView": {
+            "type": "object",
+            "properties": {
+                "default_base_url": {
+                    "type": "string",
+                    "example": "https://api.openai.com"
+                },
+                "default_model": {
+                    "type": "string",
+                    "example": "gpt-4o"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "deepseek"
+                },
+                "label": {
+                    "type": "string",
+                    "example": "OpenAI (or compatible)"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "openai"
                 }
             }
         },

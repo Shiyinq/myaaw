@@ -59,6 +59,12 @@ func builtinSkillNames() []string { return onboard.BuiltinSkillNames() }
 
 func builtinToolNames() []string { return onboard.BuiltinToolNames() }
 
+func onboardSkillDescriptions() map[string]string { return onboard.SkillDescriptions() }
+
+func onboardToolDescriptions() map[string]string { return onboard.ToolDescriptions() }
+
+func onboardBuiltinCapabilities() onboard.Capabilities { return onboard.BuiltinCapabilities() }
+
 func loadConfigFromFile(path string) (*config.Config, error) { return onboard.LoadConfig(path) }
 
 func prepareAgentEnv(name string, desiredPort int) error {

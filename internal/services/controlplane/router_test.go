@@ -38,6 +38,50 @@ func TestRouterRequiresAuth(t *testing.T) {
 	}
 }
 
+func TestRouterListsOnboardingCapabilities(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var caps struct {
+		Providers []struct {
+			ID             string `json:"id"`
+			Type           string `json:"type"`
+			Label          string `json:"label"`
+			DefaultBaseURL string `json:"default_base_url"`
+			DefaultModel   string `json:"default_model"`
+		} `json:"providers"`
+		Skills []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"skills"`
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"tools"`
+	}
+	doJSON(t, app, "GET", "/capabilities", token, "", fiber.StatusOK, &caps)
+
+	if len(caps.Providers) != 3 {
+		t.Fatalf("providers = %+v", caps.Providers)
+	}
+	if caps.Providers[0].ID != "openai" || caps.Providers[1].ID != "deepseek" || caps.Providers[2].ID != "gemini" {
+		t.Fatalf("providers = %+v", caps.Providers)
+	}
+	if caps.Providers[1].Type != "openai" || caps.Providers[1].DefaultBaseURL != "https://api.deepseek.com" {
+		t.Fatalf("deepseek preset = %+v", caps.Providers[1])
+	}
+	if caps.Providers[0].DefaultBaseURL == "" || caps.Providers[0].DefaultModel == "" {
+		t.Fatalf("provider defaults = %+v", caps.Providers[0])
+	}
+	if len(caps.Skills) < 9 || len(caps.Tools) < 9 {
+		t.Fatalf("skills = %d, tools = %d", len(caps.Skills), len(caps.Tools))
+	}
+	if caps.Skills[0].Description == "" {
+		t.Fatalf("skill descriptions are missing: %+v", caps.Skills[0])
+	}
+}
+
 func TestRouterRejectsWrongPassword(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	app := mustNewApp(t)

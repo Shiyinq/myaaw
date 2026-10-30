@@ -3,15 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"myaaw"
-	"myaaw/internal/agent/tools"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/daemon"
 	"myaaw/internal/provider"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -22,7 +19,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var onboardCmd = &cobra.Command{
@@ -694,48 +690,11 @@ func (m onboardModel) disabledTools() []string {
 // builtinSkillNames lists the skill templates embedded in the binary.
 // builtinSkillDescriptions reads the description from each bundled SKILL.md.
 func builtinSkillDescriptions() map[string]string {
-	descriptions := make(map[string]string)
-	for _, name := range builtinSkillNames() {
-		data, err := myaaw.DefaultMyaawDir.ReadFile(path.Join(".myaaw", "skills", name, "SKILL.md"))
-		if err != nil {
-			continue
-		}
-		if description := frontmatterDescription(string(data)); description != "" {
-			descriptions[name] = description
-		}
-	}
-	return descriptions
+	return onboardSkillDescriptions()
 }
 
 func builtinToolDescriptions() map[string]string {
-	descriptions := make(map[string]string)
-	for _, info := range tools.GetBuiltinTools() {
-		if info.Description != "" {
-			descriptions[info.Name] = info.Description
-		}
-	}
-	return descriptions
-}
-
-// frontmatterDescription extracts a single-line description from a SKILL.md
-// frontmatter block.
-func frontmatterDescription(content string) string {
-	content = strings.ReplaceAll(content, "\r\n", "\n")
-	if !strings.HasPrefix(content, "---") {
-		return ""
-	}
-	rest := strings.TrimPrefix(content, "---")
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
-		return ""
-	}
-	var meta struct {
-		Description string `yaml:"description"`
-	}
-	if err := yaml.Unmarshal([]byte(rest[:end]), &meta); err != nil {
-		return ""
-	}
-	return strings.Join(strings.Fields(meta.Description), " ")
+	return onboardToolDescriptions()
 }
 
 // truncateOneLine shortens a description so it fits next to a skill or tool
@@ -768,22 +727,20 @@ type capabilitiesSummary struct {
 }
 
 // builtinCapabilities lists the embedded skills and the built-in tools with
-// their descriptions, in registry order.
+// their descriptions, in registry order. The catalog itself lives in the
+// shared onboard core so the control-plane API serves the same list.
 func builtinCapabilities() capabilitiesSummary {
-	skills := builtinSkillNames()
-	skillDescriptions := builtinSkillDescriptions()
-	tools := builtinToolNames()
-	toolDescriptions := builtinToolDescriptions()
+	caps := onboardBuiltinCapabilities()
 
 	summary := capabilitiesSummary{
-		Skills: make([]capabilityEntry, 0, len(skills)),
-		Tools:  make([]capabilityEntry, 0, len(tools)),
+		Skills: make([]capabilityEntry, 0, len(caps.Skills)),
+		Tools:  make([]capabilityEntry, 0, len(caps.Tools)),
 	}
-	for _, name := range skills {
-		summary.Skills = append(summary.Skills, capabilityEntry{Name: name, Description: skillDescriptions[name]})
+	for _, entry := range caps.Skills {
+		summary.Skills = append(summary.Skills, capabilityEntry{Name: entry.Name, Description: entry.Description})
 	}
-	for _, name := range tools {
-		summary.Tools = append(summary.Tools, capabilityEntry{Name: name, Description: toolDescriptions[name]})
+	for _, entry := range caps.Tools {
+		summary.Tools = append(summary.Tools, capabilityEntry{Name: entry.Name, Description: entry.Description})
 	}
 	return summary
 }

@@ -78,18 +78,23 @@ func (s *AgentService) Onboard(name string, req OnboardRequest) (OnboardResult, 
 
 	// setActive is false: the API always targets an explicit agent and must not
 	// change the control-plane process's active agent.
-	if _, err := onboard.Initialize(name, false); err != nil {
+	a2aWarning, err := onboard.Initialize(name, false)
+	if err != nil {
 		return OnboardResult{}, err
 	}
-	if _, warnings, err := onboard.Apply(name, input, 0); err != nil {
+	_, warnings, err := onboard.Apply(name, input, 0)
+	if err != nil {
 		return OnboardResult{}, err
-	} else {
-		view, viewErr := NewConfigService().Config(name)
-		if viewErr != nil {
-			return OnboardResult{}, viewErr
-		}
-		return OnboardResult{Created: !existed, Config: view, Warnings: warnings}, nil
 	}
+	if a2aWarning != nil {
+		warnings = append(warnings, "A2A contacts were not updated: "+a2aWarning.Error())
+	}
+
+	view, err := NewConfigService().Config(name)
+	if err != nil {
+		return OnboardResult{}, err
+	}
+	return OnboardResult{Created: !existed, Config: view, Warnings: warnings}, nil
 }
 
 func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {

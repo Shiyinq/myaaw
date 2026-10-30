@@ -1138,6 +1138,29 @@ definitions:
       name:
         type: string
     type: object
+  service.CapabilitiesView:
+    properties:
+      providers:
+        items:
+          $ref: '#/definitions/service.ProviderOptionView'
+        type: array
+      skills:
+        items:
+          $ref: '#/definitions/service.CapabilityView'
+        type: array
+      tools:
+        items:
+          $ref: '#/definitions/service.CapabilityView'
+        type: array
+    type: object
+  service.CapabilityView:
+    properties:
+      description:
+        type: string
+      name:
+        example: weather
+        type: string
+    type: object
   service.ChannelView:
     properties:
       active:
@@ -1575,6 +1598,24 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  service.ProviderOptionView:
+    properties:
+      default_base_url:
+        example: https://api.openai.com
+        type: string
+      default_model:
+        example: gpt-4o
+        type: string
+      id:
+        example: deepseek
+        type: string
+      label:
+        example: OpenAI (or compatible)
+        type: string
+      type:
+        example: openai
+        type: string
     type: object
   service.ProviderView:
     properties:
@@ -4837,6 +4878,24 @@ paths:
       summary: Change username
       tags:
       - Auth
+  /capabilities:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.CapabilitiesView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Onboarding capabilities
+      tags:
+      - Agents
   /health:
     get:
       produces:
