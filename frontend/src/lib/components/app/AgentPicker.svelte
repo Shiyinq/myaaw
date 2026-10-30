@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { agentSelection } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
@@ -14,7 +13,6 @@
 	function onChange(event: Event) {
 		const value = (event.currentTarget as HTMLSelectElement).value;
 		agentSelection.select(value);
-		void goto('/app');
 	}
 </script>
 

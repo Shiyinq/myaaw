@@ -75,6 +75,13 @@
 		await loadFor(agent);
 	}
 
+	// Opening a chat from the agent list also switches the selected agent, so the
+	// chat page (and every other page) shows that agent's data.
+	function openChat(name?: string) {
+		if (name) agentSelection.select(name);
+		void goto('/app/chat');
+	}
+
 	function formatCost(value?: number) {
 		return `$${(value ?? 0).toFixed(4)}`;
 	}
@@ -211,7 +218,7 @@
 								{#if agent.port}
 									<span class="font-mono text-xs text-muted-foreground">:{agent.port}</span>
 								{/if}
-								<Button variant="outline" size="sm" onclick={() => goto('/app/chat')}>
+								<Button variant="outline" size="sm" onclick={() => openChat(agent.name)}>
 									<MessageSquare class="mr-2 h-4 w-4" />
 									{t('myaaw.home.open_chat')}
 								</Button>
@@ -258,7 +265,7 @@
 				<Button
 					variant="ghost"
 					class="w-full justify-start"
-					onclick={() => goto('/app/chat')}
+					onclick={() => openChat(agentSelection.selected)}
 				>
 					<Play class="mr-2 h-4 w-4" />
 					{t('myaaw.home.open_chat')}

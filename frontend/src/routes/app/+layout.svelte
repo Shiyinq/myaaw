@@ -187,9 +187,6 @@
 
 	function selectAgent(name: string) {
 		agentSelection.select(name);
-		if (page.url.pathname !== '/app') {
-			void goto('/app');
-		}
 	}
 </script>
 

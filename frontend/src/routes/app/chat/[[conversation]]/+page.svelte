@@ -84,6 +84,7 @@
 	let historySearch = $state('');
 	let historyQuery = $state('');
 	let historyKey = '';
+	let chatAgentKey = '';
 	let editingId = $state('');
 	let editingTitle = $state('');
 
@@ -124,19 +125,51 @@
 		}
 	}
 
+	function readLastConversations(): Record<string, string> {
+		if (!browser) return {};
+		try {
+			const raw = localStorage.getItem(LAST_CONVERSATION_KEY);
+			if (!raw) return {};
+			const parsed: unknown = JSON.parse(raw);
+			return parsed && typeof parsed === 'object' ? (parsed as Record<string, string>) : {};
+		} catch {
+			return {};
+		}
+	}
+
 	function rememberConversation(id: string) {
-		if (!browser) return;
-		if (id && agent) localStorage.setItem(LAST_CONVERSATION_KEY, `${agent}|${id}`);
-		else localStorage.removeItem(LAST_CONVERSATION_KEY);
+		if (!browser || !agent) return;
+		const map = readLastConversations();
+		if (id) map[agent] = id;
+		else delete map[agent];
+		localStorage.setItem(LAST_CONVERSATION_KEY, JSON.stringify(map));
 	}
 
 	function lastConversationFor(agentName: string) {
-		if (!browser) return '';
-		const raw = localStorage.getItem(LAST_CONVERSATION_KEY);
-		if (!raw) return '';
-		const [storedAgent, id] = raw.split('|');
-		return storedAgent === agentName ? (id ?? '') : '';
+		return readLastConversations()[agentName] ?? '';
 	}
+
+	// Switching the agent must not keep showing the previous agent's transcript.
+	$effect(() => {
+		const currentAgent = agentSelection.selected;
+		if (!currentAgent) return;
+		const previous = chatAgentKey;
+		chatAgentKey = currentAgent;
+		if (!previous || previous === currentAgent) return;
+
+		const openConversation = page.params.conversation ?? '';
+		// Do not load a conversation that belongs to the previous agent.
+		if (openConversation) loadKey = `${currentAgent}:${openConversation}`;
+		conversationId = '';
+		items = [];
+		usage = null;
+		attachments = [];
+		error = '';
+		pendingApproval = null;
+		if (page.url.pathname !== '/app/chat') {
+			void goto('/app/chat', { replaceState: true, noScroll: true });
+		}
+	});
 
 	$effect(() => {
 		const currentAgent = agentSelection.selected;
