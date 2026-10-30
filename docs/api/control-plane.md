@@ -288,6 +288,7 @@ Virtual roots are `/home`, `/skills`, and `/jobs`. Paths outside those roots, ot
 | `POST` | `/agents/:name/fs/mkdir` | create `{path}` |
 | `POST` | `/agents/:name/fs/rename` | `{from, to}` |
 | `DELETE` | `/agents/:name/fs?path=...&recursive=true` | delete a file or directory |
+| `GET` | `/agents/:name/fs/raw?path=...` | stream the raw bytes (images, video, audio, PDF, any binary) |
 | `GET` | `/agents/:name/fs/search?q=milk&path=/home` | search text |
 
 Editing an agent's instructions:
@@ -305,6 +306,8 @@ curl -X POST "http://localhost:9000/agents/myfriend/fs/write" \
 ```
 
 Limits: reads and writes are capped at 2 MiB, binary files return `415`, and the three roots cannot be deleted or renamed.
+
+`fs/raw` bypasses the text limits: it streams the file with its real `Content-Type`, supports `Range` (so `<video>` can seek), sends `X-Content-Type-Options: nosniff`, and adds `Content-Security-Policy: sandbox` for `svg`/`html`/`xml`. Pass `download=1` for `Content-Disposition: attachment`, e.g. `curl -OJ "http://localhost:9000/agents/myfriend/fs/raw?path=/home/pixel.png&download=1" -H "Authorization: Bearer $TOKEN"`.
 
 ### Context files
 
@@ -1026,3 +1029,37 @@ All `/agents/...` paths are prefixed with `/agents/:name`. `POST /providers/mode
 - `/api/*` on the agent servers still has no auth; only the control plane protects access. Do not expose agent ports directly.
 - Tools can run Bash, filesystem, and Python operations, so control-plane access is privileged.
 - Keep `ALLOWED_ORIGINS` restrictive before serving a browser UI. The control plane reads it directly and allows `Authorization` in CORS preflight requests.
+- The optional terminal (section 21) hands out a full shell; keep it off unless the control plane stays on loopback.
+
+## 21. Terminal
+
+Disabled unless the control plane is started with `--terminal`, which sets `MYAAW_TERMINAL=1` for the process; every route answers `404` otherwise.
+
+```bash
+myaaw api restart --terminal      # enable, and record the flag in the daemon unit
+myaaw api restart                 # a restart without the flag turns it back off
+MYAAW_TERMINAL=1 myaaw api run    # one-off foreground run, no daemon
+```
+
+The flag exists because the launchd/systemd units carry no environment of their own, so exporting `MYAAW_TERMINAL` in your shell never reaches a daemon that is already running. The [Web Terminal guide](terminal.md) covers the dashboard page, the session lifecycle, and the security posture in full.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/agents/:name/terminal` | `{enabled}` probe |
+| `POST` | `/agents/:name/terminal` | open a shell, body `{cols, rows}`, returns `{id, shell, cwd, cols, rows}` |
+| `GET` | `/agents/:name/terminal/:id/stream` | chunked `application/octet-stream` with the PTY output |
+| `POST` | `/agents/:name/terminal/:id/input` | raw body bytes are written to the PTY |
+| `POST` | `/agents/:name/terminal/:id/resize` | `{cols, rows}` |
+| `POST` | `/agents/:name/terminal/:id/heartbeat` | refresh the idle clock while the tab is open |
+| `DELETE` | `/agents/:name/terminal/:id` | kill the shell (idempotent) |
+
+The session is a real PTY running `$SHELL` as the **same OS user as `myaaw api`**, with `TERM=xterm-256color`, `MYAAW_AGENT=<name>`, and the working directory set to `~/.myaaw/<agent>/home`. It is not sandboxed by the agent's tool approvals. Sessions live in memory, are capped at two per agent, and are reaped after two minutes without input, resize, or a heartbeat. A session also dies as soon as its stream ends — closed tab, refreshed tab, or a write error — so a page reload frees the slot immediately instead of blocking the next connection.
+
+```bash
+# Open, then read the stream in one terminal and type into it from another
+curl -X POST localhost:9000/agents/myfriend/terminal -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"cols":100,"rows":30}'
+curl -N localhost:9000/agents/myfriend/terminal/$ID/stream -H "Authorization: Bearer $TOKEN"
+curl -X POST localhost:9000/agents/myfriend/terminal/$ID/input -H "Authorization: Bearer $TOKEN" \
+  --data-binary $'ls -la\n'
+```

@@ -352,6 +352,69 @@ func TestRouterRawFiles(t *testing.T) {
 	}
 }
 
+func TestRouterTerminal(t *testing.T) {
+	t.Setenv("MYAAW_TERMINAL", "1")
+	t.Setenv("SHELL", "/bin/sh")
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var status struct {
+		Enabled bool `json:"enabled"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/terminal", token, "", fiber.StatusOK, &status)
+	if !status.Enabled {
+		t.Fatal("terminal should be enabled")
+	}
+
+	var opened struct {
+		ID    string `json:"id"`
+		Shell string `json:"shell"`
+		Cwd   string `json:"cwd"`
+	}
+	doJSON(t, app, "POST", "/agents/myfriend/terminal", token, `{"cols":100,"rows":30}`,
+		fiber.StatusOK, &opened)
+	if opened.ID == "" {
+		t.Fatalf("open = %+v", opened)
+	}
+	if !strings.HasSuffix(opened.Cwd, string(filepath.Separator)+"home") {
+		t.Fatalf("cwd = %q", opened.Cwd)
+	}
+
+	doJSON(t, app, "POST", "/agents/myfriend/terminal/"+opened.ID+"/resize", token,
+		`{"cols":120,"rows":40}`, fiber.StatusOK, nil)
+	doJSON(t, app, "POST", "/agents/myfriend/terminal/"+opened.ID+"/input", token,
+		"echo hi\n", fiber.StatusOK, nil)
+	doJSON(t, app, "POST", "/agents/myfriend/terminal/"+opened.ID+"/heartbeat", token,
+		"", fiber.StatusOK, nil)
+
+	// Sessions are scoped to the agent in the URL.
+	doJSON(t, app, "POST", "/agents/other/terminal/"+opened.ID+"/input", token,
+		"x", fiber.StatusNotFound, nil)
+	doJSON(t, app, "POST", "/agents/other/terminal/"+opened.ID+"/heartbeat", token,
+		"", fiber.StatusNotFound, nil)
+
+	doJSON(t, app, "DELETE", "/agents/myfriend/terminal/"+opened.ID, token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/terminal/"+opened.ID, token, "", fiber.StatusOK, nil)
+}
+
+func TestRouterTerminalDisabled(t *testing.T) {
+	t.Setenv("MYAAW_TERMINAL", "")
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var status struct {
+		Enabled bool `json:"enabled"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/terminal", token, "", fiber.StatusOK, &status)
+	if status.Enabled {
+		t.Fatal("terminal should be disabled without MYAAW_TERMINAL=1")
+	}
+
+	doJSON(t, app, "POST", "/agents/myfriend/terminal", token, `{}`, fiber.StatusNotFound, nil)
+}
+
 func TestRouterContext(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	home, err := os.UserHomeDir()

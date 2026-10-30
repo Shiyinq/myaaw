@@ -39,7 +39,8 @@ func NewApp() (*fiber.App, error) {
 	contactsSvc := service.NewContactService()
 	observabilitySvc := service.NewObservabilityService()
 	approvalsSvc := service.NewApprovalsService()
-	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc)
+	terminals := service.NewTerminalService()
+	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api"})
 	app.Use(cors.New(cors.Config{
@@ -136,6 +137,16 @@ func NewApp() (*fiber.App, error) {
 	app.Post("/agents/:name/server/start", h.StartServer)
 	app.Post("/agents/:name/server/stop", h.StopServer)
 	app.Post("/agents/:name/server/restart", h.RestartServer)
+
+	// A real PTY on the API host. Off unless MYAAW_TERMINAL=1; the status route
+	// lets the UI explain why it is unavailable.
+	app.Get("/agents/:name/terminal", h.TerminalStatus)
+	app.Post("/agents/:name/terminal", h.OpenTerminal)
+	app.Get("/agents/:name/terminal/:id/stream", h.StreamTerminal)
+	app.Post("/agents/:name/terminal/:id/input", h.TerminalInput)
+	app.Post("/agents/:name/terminal/:id/resize", h.ResizeTerminal)
+	app.Post("/agents/:name/terminal/:id/heartbeat", h.TouchTerminal)
+	app.Delete("/agents/:name/terminal/:id", h.CloseTerminal)
 	app.Get("/agents/:name/cron", h.ListCron)
 	app.Post("/agents/:name/cron", h.AddCron)
 	app.Delete("/agents/:name/cron/:id", h.RemoveCron)

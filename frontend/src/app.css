@@ -38,6 +38,26 @@
 		'Segoe UI Symbol', 'Noto Color Emoji';
 }
 
+/*
+ * Icon glyphs for the web terminal. Prompt themes (powerlevel10k, starship,
+ * oh-my-posh) draw with Nerd Fonts Private Use Area codepoints that no system
+ * monospace font covers, so they render as boxes in the browser. This is the
+ * official Symbols Nerd Font Mono, subset to the icon ranges only and licensed
+ * MIT (see static/fonts/LICENSE-NerdFontsSymbols.txt).
+ *
+ * unicode-range keeps it off the critical path: the file is only fetched once a
+ * prompt actually prints an icon, never for plain ASCII output.
+ */
+@font-face {
+	font-family: 'Myaaw Nerd Symbols';
+	src: url('/fonts/nerd-symbols-mono.woff2') format('woff2');
+	font-weight: normal;
+	font-style: normal;
+	font-display: block;
+	unicode-range:
+		U+2190-21FF, U+2300-23FF, U+2500-25FF, U+2600-27BF, U+2B00-2BFF, U+E000-F8FF, U+F0000-F1AF0;
+}
+
 @layer base {
 	:root {
 		--background: oklch(1 0 0);

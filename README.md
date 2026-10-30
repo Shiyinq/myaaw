@@ -478,7 +478,7 @@ Myaaw runs as a unified background service daemon.
 | Command | Subcommands | Description |
 | :--- | :--- | :--- |
 | **`server`** | `run`, `start`, `stop`, `status` | Manage the Myaaw Server (API + Background Workers) daemon. |
-| **`api`** | `run`, `start`, `stop`, `status`, `restart` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000). |
+| **`api`** | `run`, `start`, `stop`, `status`, `restart` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000). `--terminal` also allows the dashboard to open a shell on that host. |
 | **`webhook`** | `set`, `info`, `delete` | Manage Telegram bot webhook configuration easily. |
 
 > [!TIP]
@@ -562,6 +562,7 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | :--- | :--- |
 | [API](docs/api/api.md) | Per-agent `/api/chat` and `/api/chat/stream`, timeline items, and SSE events. |
 | [Control Plane API](docs/api/control-plane.md) | `myaaw api`: auth, agent switching, chat proxy, files, providers, channels, logs, and cron. |
+| [Web Terminal](docs/api/terminal.md) | A real shell on the API host from the browser: `--terminal`, session lifecycle, and security. |
 
 ### 📚 Generated references
 

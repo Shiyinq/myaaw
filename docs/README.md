@@ -33,7 +33,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | [Chat](cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
 | [Voice](cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |
 | [Service Management](cli/service.md) | Server daemon lifecycle, status, logs, and ports. |
-| [API](cli/api.md) | `api run/start/stop/restart/status`, daemon name, and ports. |
+| [API](cli/api.md) | `api run/start/stop/restart/status`, `--terminal`, daemon name, and ports. |
 | [Cron](cli/cron.md) | Scheduled jobs: cron expressions, intervals, one-time runs, and history. |
 | [Backup & Restore](cli/backup.md) | Per-agent archives, database snapshots, and verified restore. |
 | [Providers](cli/provider.md) | LLM provider integrations and models. |
@@ -49,6 +49,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | :--- | :--- |
 | [API](api/api.md) | Per-agent HTTP API for chat and SSE streaming. |
 | [Control Plane API](api/control-plane.md) | Unified multi-agent API used by web, desktop, and mobile clients. |
+| [Web Terminal](api/terminal.md) | Browser shell into the API host: enablement, lifecycle, and security. |
 
 ## Generated references
 

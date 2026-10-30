@@ -21,6 +21,7 @@ require (
 require (
 	github.com/a2aproject/a2a-go/v2 v2.7.0
 	github.com/charmbracelet/huh v1.0.0
+	github.com/creack/pty v1.1.24
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gofiber/contrib/v3/swaggo v1.0.0

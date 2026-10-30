@@ -595,6 +595,13 @@ definitions:
         example: /home/AGENTS.md
         type: string
     type: object
+  handler.terminalSizeRequest:
+    properties:
+      cols:
+        type: integer
+      rows:
+        type: integer
+    type: object
   myaaw_internal_cron.Job:
     properties:
       agent_id:
@@ -1928,6 +1935,19 @@ definitions:
         $ref: '#/definitions/obs.Status'
       step_index:
         type: integer
+    type: object
+  service.TerminalInfo:
+    properties:
+      cols:
+        type: integer
+      cwd:
+        type: string
+      id:
+        type: string
+      rows:
+        type: integer
+      shell:
+        type: string
     type: object
   service.ToolsView:
     properties:
@@ -4532,6 +4552,240 @@ paths:
       summary: Read a skill file
       tags:
       - Skills
+  /agents/{name}/terminal:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Terminal status
+      tags:
+      - Terminal
+    post:
+      consumes:
+      - application/json
+      description: Runs a real PTY on the API host, in the agent's home directory.
+        Disabled unless the API was started with MYAAW_TERMINAL=1 (myaaw api restart
+        --terminal).
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Initial size
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/handler.terminalSizeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.TerminalInfo'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Open a terminal
+      tags:
+      - Terminal
+  /agents/{name}/terminal/{id}:
+    delete:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Close a terminal
+      tags:
+      - Terminal
+  /agents/{name}/terminal/{id}/heartbeat:
+    post:
+      description: Refreshes the idle clock. A session is reaped after two minutes
+        without input, resize, or heartbeat.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Terminal heartbeat
+      tags:
+      - Terminal
+  /agents/{name}/terminal/{id}/input:
+    post:
+      consumes:
+      - application/octet-stream
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Send terminal input
+      tags:
+      - Terminal
+  /agents/{name}/terminal/{id}/resize:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Resize terminal
+      tags:
+      - Terminal
+  /agents/{name}/terminal/{id}/stream:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: raw PTY output
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stream terminal output
+      tags:
+      - Terminal
   /agents/{name}/tools:
     get:
       description: Built-in tools are the canonical set. Custom tools and MCP servers

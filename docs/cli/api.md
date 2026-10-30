@@ -15,11 +15,34 @@ myaaw api restart
 myaaw api status
 ```
 
-All subcommands accept the persistent `--port` flag (default `9000`):
+All subcommands accept two persistent flags:
+
+| Flag | Default | Meaning |
+| :--- | :--- | :--- |
+| `--port` | `9000` | Port the control plane listens on. |
+| `--terminal` | `false` | Allow the dashboard to open a shell on this host (sets `MYAAW_TERMINAL=1`). |
 
 ```bash
 myaaw api start --port 9100
 ```
+
+## Web terminal
+
+Shells are off unless the control plane is started with `--terminal`. The flag exists because the daemon unit carries no environment, so an exported `MYAAW_TERMINAL` never reaches it:
+
+```bash
+myaaw api restart --terminal     # enable, and record the flag in the daemon unit
+myaaw api restart                # restart without the flag turns it off again
+```
+
+`start` and `restart` pass the flag on to the child process (`myaaw api run --port <port> --terminal`), which is what makes it survive a reboot. For a foreground run, either form works:
+
+```bash
+myaaw api run --terminal
+MYAAW_TERMINAL=1 myaaw api run
+```
+
+It grants a full shell as the user running the API, so read the [Web Terminal guide](../api/terminal.md) before enabling it.
 
 ## `api run` (and bare `api`)
 
@@ -52,7 +75,7 @@ Stops the `myaaw-api` daemon and removes its PID file. It is safe to run when th
 
 ## `api restart`
 
-Stops the daemon, waits one second, then starts it again with the same port. Use it after changing control plane credentials or rebuilding the binary.
+Stops the daemon, waits one second, then starts it again with the same port. Use it after changing control plane credentials or rebuilding the binary. `--terminal` is not sticky: it is recorded only when you pass it, so `myaaw api restart` also revokes web terminal access.
 
 ## `api status`
 
@@ -87,11 +110,13 @@ myaaw api restart
 - **Port must match.** `start`, `stop`, `restart`, and `status` each read `--port` independently. Use the same value you started with, otherwise `status` reports the wrong endpoint.
 - **Agents must be running.** Chat is proxied, so the selected agent needs its own `myaaw server --agent <name> start`.
 - **Authentication is not optional.** Credentials live in `~/.myaaw/controlplane.json` (bcrypt hash, never plaintext) and clients send `Authorization: Bearer <token>`.
+- **`--terminal` is a host credential.** Whoever can log into the dashboard can run anything as the user that started the daemon. Leave it off unless the control plane stays on loopback.
 - **Daemon ports are independent.** The control plane on `9000` and agent servers on `8080`, `8081`, ... are separate processes with separate logs.
 
 ## Related
 
 - [Control Plane API guide](../api/control-plane.md)
+- [Web Terminal](../api/terminal.md)
 - [Service Management](service.md)
 - [Agent Command](agent.md)
 - [Logs](logs.md)

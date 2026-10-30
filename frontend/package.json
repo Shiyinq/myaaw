@@ -51,6 +51,8 @@
 		"workbox-window": "^7.4.1"
 	},
 	"dependencies": {
+		"@xterm/addon-fit": "^0.11.0",
+		"@xterm/xterm": "^6.0.0",
 		"clsx": "^2.1.1",
 		"highlight.js": "^11.12.0",
 		"isomorphic-dompurify": "^3.8.0",

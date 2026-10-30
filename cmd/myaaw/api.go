@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"myaaw/internal/cli/theme"
@@ -12,7 +13,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var apiPort string
+var (
+	apiPort     string
+	apiTerminal bool
+)
 
 var apiCmd = &cobra.Command{
 	Use:   "api",
@@ -105,7 +109,18 @@ var apiStatusCmd = &cobra.Command{
 	},
 }
 
+// enableTerminalFromFlag turns the --terminal flag into the environment
+// variable the control plane reads at startup. The flag exists because daemon
+// units carry no environment of their own.
+func enableTerminalFromFlag() {
+	if !apiTerminal {
+		return
+	}
+	_ = os.Setenv("MYAAW_TERMINAL", "1")
+}
+
 func runAPI() {
+	enableTerminalFromFlag()
 	if err := controlplane.Run(":" + apiPort); err != nil {
 		log.Fatalf("API server error: %v", err)
 	}
@@ -116,11 +131,18 @@ func apiDaemonName() string {
 }
 
 func apiRunArgs() []string {
-	return []string{"api", "run", "--port", apiPort}
+	args := []string{"api", "run", "--port", apiPort}
+	if apiTerminal {
+		// Daemon units carry no environment, so the flag is how `api start` and
+		// `api restart` remember that the terminal is enabled.
+		args = append(args, "--terminal")
+	}
+	return args
 }
 
 func init() {
 	apiCmd.PersistentFlags().StringVar(&apiPort, "port", "9000", "port to listen on")
+	apiCmd.PersistentFlags().BoolVar(&apiTerminal, "terminal", false, "allow the dashboard to open a shell on this host (enables MYAAW_TERMINAL)")
 	apiCmd.AddCommand(apiRunCmd)
 	apiCmd.AddCommand(apiStartCmd)
 	apiCmd.AddCommand(apiStopCmd)

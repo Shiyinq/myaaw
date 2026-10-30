@@ -78,6 +78,7 @@
 			"dashboard": "Dashboard",
 			"chat": "Chat",
 			"files": "Files",
+			"terminal": "Terminal",
 			"context": "Context",
 			"skills": "Skills",
 			"tools": "Tools",
@@ -342,6 +343,22 @@
 			"username_required": "Enter a username.",
 			"username_updated": "Username updated",
 			"session_note": "Tokens are valid for 24 hours and are cleared when the control plane restarts."
+		},
+		"terminal": {
+			"title": "Terminal",
+			"subtitle": "Shell on the machine running the API.",
+			"idle": "Idle",
+			"connecting": "Connecting",
+			"connected": "Connected",
+			"disconnected": "Disconnected",
+			"failed": "Connection failed",
+			"reconnect": "Reconnect",
+			"host_warning": "Runs on the API host, as the user running myaaw.",
+			"session_note": "The session ended. Reconnect for a fresh shell; nothing is kept in the background.",
+			"disabled_title": "Terminal is disabled",
+			"failed_title": "Could not open a shell",
+			"failed_hint": "Reconnect to try again. If another tab is still connected to this agent, close it first or wait about two minutes for the old session to expire.",
+			"disabled_desc": "Shells are off by default because they grant full access to the machine running the API. Restart the control plane with the flag below to turn them on."
 		},
 		"files": {
 			"title": "Files",

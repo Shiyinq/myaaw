@@ -21,6 +21,7 @@
 		ShieldCheck,
 		Activity,
 		Bot,
+		SquareTerminal,
 		PanelLeftClose,
 		PanelLeftOpen
 	} from 'lucide-svelte';
@@ -90,6 +91,12 @@
 					label: 'myaaw.nav.files',
 					description: 'myaaw.files.subtitle',
 					icon: FolderOpen
+				},
+				{
+					href: '/app/terminal',
+					label: 'myaaw.nav.terminal',
+					description: 'myaaw.terminal.subtitle',
+					icon: SquareTerminal
 				}
 			]
 		},
@@ -199,6 +206,7 @@
 			page.url.pathname === '/app' ||
 			page.url.pathname.startsWith('/app/dashboard') ||
 			page.url.pathname.startsWith('/app/files') ||
+			page.url.pathname.startsWith('/app/terminal') ||
 			page.url.pathname.startsWith('/app/context') ||
 			page.url.pathname.startsWith('/app/skills') ||
 			page.url.pathname.startsWith('/app/logs') ||

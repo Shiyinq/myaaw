@@ -78,6 +78,7 @@
 			"dashboard": "Dasbor",
 			"chat": "Chat",
 			"files": "Berkas",
+			"terminal": "Terminal",
 			"context": "Konteks",
 			"skills": "Keterampilan",
 			"tools": "Alat",
@@ -342,6 +343,22 @@
 			"username_required": "Masukkan nama pengguna.",
 			"username_updated": "Nama pengguna diperbarui",
 			"session_note": "Token berlaku 24 jam dan dihapus saat control plane di-restart."
+		},
+		"terminal": {
+			"title": "Terminal",
+			"subtitle": "Shell di mesin yang menjalankan API.",
+			"idle": "Diam",
+			"connecting": "Menghubungkan",
+			"connected": "Terhubung",
+			"disconnected": "Terputus",
+			"failed": "Gagal terhubung",
+			"reconnect": "Hubungkan ulang",
+			"host_warning": "Berjalan di host API, sebagai user yang menjalankan myaaw.",
+			"session_note": "Sesi berakhir. Hubungkan ulang untuk shell baru; tidak ada yang disimpan di background.",
+			"disabled_title": "Terminal dinonaktifkan",
+			"failed_title": "Tidak bisa membuka shell",
+			"failed_hint": "Hubungkan ulang untuk mencoba lagi. Kalau tab lain masih terhubung ke agen ini, tutup dulu tab tersebut atau tunggu sekitar dua menit sampai sesi lama kedaluwarsa.",
+			"disabled_desc": "Shell dimatikan secara default karena memberi akses penuh ke mesin yang menjalankan API. Restart control plane dengan flag di bawah untuk mengaktifkannya."
 		},
 		"files": {
 			"title": "Berkas",
