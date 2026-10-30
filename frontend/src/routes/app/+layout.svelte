@@ -182,7 +182,9 @@
 			page.url.pathname.startsWith('/app/files') ||
 			page.url.pathname.startsWith('/app/context') ||
 			page.url.pathname.startsWith('/app/skills') ||
-			page.url.pathname.startsWith('/app/logs')
+			page.url.pathname.startsWith('/app/logs') ||
+			page.url.pathname.startsWith('/app/observability') ||
+			page.url.pathname.startsWith('/app/tools')
 	);
 
 	async function logout() {
@@ -471,7 +473,7 @@
 			{#if isFullHeight}
 				<div class="h-full">{@render children()}</div>
 			{:else}
-				<div class="mx-auto w-full max-w-6xl px-4 py-6">
+				<div class="w-full p-4 lg:p-6">
 					{@render children()}
 				</div>
 			{/if}
