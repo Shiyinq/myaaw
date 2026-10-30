@@ -28,7 +28,6 @@
 		CircleCheck,
 		CircleSlash,
 		Ellipsis,
-		MessageSquare,
 		Plus,
 		RefreshCw,
 		Star,
@@ -64,11 +63,6 @@
 	function openChat(name: string) {
 		agentSelection.select(name);
 		void goto('/app/chat');
-	}
-
-	function openDashboard(name: string) {
-		agentSelection.select(name);
-		void goto('/app/dashboard');
 	}
 
 	async function setDefaultAgent(name: string) {
@@ -195,71 +189,75 @@
 					icon={Bot}
 				/>
 			{:else}
-				{#each agents as agent (agent.name)}
-					<div
-						class="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
-					>
-						<div class="flex min-w-0 items-center gap-2">
-							<Bot class="h-4 w-4 shrink-0 text-muted-foreground" />
+				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+					{#each agents as agent (agent.name)}
+						<div
+							class="relative rounded-xl border bg-card transition-colors hover:border-ring/40 hover:bg-muted/40"
+						>
 							<button
-								class="truncate text-left font-medium hover:underline"
-								onclick={() => openDashboard(agent.name)}
+								class="flex w-full flex-col items-center gap-1.5 p-5 text-center"
+								onclick={() => openChat(agent.name)}
+								title={t('myaaw.home.open_chat')}
 							>
-								{agent.name}
-							</button>
-							{#if agent.default}
-								<Badge variant="secondary">{t('myaaw.agent.default')}</Badge>
-							{/if}
-							{#if agent.running}
-								<Badge variant="outline" class="text-emerald-600 dark:text-emerald-400">
-									<CircleCheck class="mr-1 h-3 w-3" />
-									{t('myaaw.agent.running')}
-								</Badge>
-							{:else}
-								<Badge variant="outline" class="text-muted-foreground">
-									<CircleSlash class="mr-1 h-3 w-3" />
-									{t('myaaw.agent.stopped')}
-								</Badge>
-							{/if}
-						</div>
-						<div class="flex shrink-0 items-center gap-2">
-							{#if agent.port}
-								<span class="font-mono text-xs text-muted-foreground">:{agent.port}</span>
-							{/if}
-							<Button variant="outline" size="sm" onclick={() => openChat(agent.name)}>
-								<MessageSquare class="mr-2 h-4 w-4" />
-								{t('myaaw.home.open_chat')}
-							</Button>
-							<DropdownMenu.Root>
-								<DropdownMenu.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="ghost"
-											size="icon-sm"
-											aria-label={t('myaaw.home.agent_actions')}
-										>
-											<Ellipsis class="h-4 w-4" />
-										</Button>
-									{/snippet}
-								</DropdownMenu.Trigger>
-								<DropdownMenu.Content align="end" class="w-44">
-									{#if !agent.default}
-										<DropdownMenu.Item onclick={() => setDefaultAgent(agent.name)}>
-											<Star class="mr-2 h-4 w-4" />
-											{t('myaaw.home.set_default')}
-										</DropdownMenu.Item>
-										<DropdownMenu.Separator />
+								<Bot class="h-9 w-9 text-muted-foreground" />
+								<span class="mt-1 w-full truncate text-sm font-semibold">{agent.name}</span>
+								<span class="flex flex-wrap items-center justify-center gap-1">
+									{#if agent.default}
+										<Badge variant="secondary">{t('myaaw.agent.default')}</Badge>
 									{/if}
-									<DropdownMenu.Item variant="destructive" onclick={() => removeAgent(agent.name)}>
-										<Trash2 class="mr-2 h-4 w-4" />
-										{t('myaaw.home.delete_agent')}
-									</DropdownMenu.Item>
-								</DropdownMenu.Content>
-							</DropdownMenu.Root>
+									{#if agent.running}
+										<Badge variant="outline" class="text-emerald-600 dark:text-emerald-400">
+											<CircleCheck class="mr-1 h-3 w-3" />
+											{t('myaaw.agent.running')}
+										</Badge>
+									{:else}
+										<Badge variant="outline" class="text-muted-foreground">
+											<CircleSlash class="mr-1 h-3 w-3" />
+											{t('myaaw.agent.stopped')}
+										</Badge>
+									{/if}
+								</span>
+								{#if agent.port}
+									<span class="font-mono text-[10px] text-muted-foreground">
+										:{agent.port}
+									</span>
+								{/if}
+							</button>
+							<div class="absolute top-1 right-1">
+								<DropdownMenu.Root>
+									<DropdownMenu.Trigger>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												variant="ghost"
+												size="icon-sm"
+												aria-label={t('myaaw.home.agent_actions')}
+											>
+												<Ellipsis class="h-4 w-4" />
+											</Button>
+										{/snippet}
+									</DropdownMenu.Trigger>
+									<DropdownMenu.Content align="end" class="w-44">
+										{#if !agent.default}
+											<DropdownMenu.Item onclick={() => setDefaultAgent(agent.name)}>
+												<Star class="mr-2 h-4 w-4" />
+												{t('myaaw.home.set_default')}
+											</DropdownMenu.Item>
+											<DropdownMenu.Separator />
+										{/if}
+										<DropdownMenu.Item
+											variant="destructive"
+											onclick={() => removeAgent(agent.name)}
+										>
+											<Trash2 class="mr-2 h-4 w-4" />
+											{t('myaaw.home.delete_agent')}
+										</DropdownMenu.Item>
+									</DropdownMenu.Content>
+								</DropdownMenu.Root>
+							</div>
 						</div>
-					</div>
-				{/each}
+					{/each}
+				</div>
 			{/if}
 		</CardContent>
 	</Card>
