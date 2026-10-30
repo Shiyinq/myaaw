@@ -39,7 +39,7 @@ def parse_frontmatter(lines: list[str]) -> tuple[dict[str, str], list[str], list
         if raw[:1].isspace():
             continue  # nested value such as metadata.*
         if ":" not in raw:
-            return {}, [], ["invalid frontmatter line: %r" % raw]
+            return {}, [], [f"invalid frontmatter line: {raw!r}"]
         key, value = raw.split(":", 1)
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
@@ -60,12 +60,12 @@ def main() -> None:
     warnings: list[str] = []
 
     if not os.path.isdir(skill_dir):
-        print(json.dumps({"ok": False, "errors": ["not a directory: %s" % skill_dir]}))
+        print(json.dumps({"ok": False, "errors": [f"not a directory: {skill_dir}"]}))
         sys.exit(1)
 
     skill_md = os.path.join(skill_dir, "SKILL.md")
     if not os.path.isfile(skill_md):
-        print(json.dumps({"ok": False, "errors": ["SKILL.md not found in %s" % skill_dir]}))
+        print(json.dumps({"ok": False, "errors": [f"SKILL.md not found in {skill_dir}"]}))
         sys.exit(1)
 
     with open(skill_md, "r", encoding="utf-8") as handle:
@@ -84,31 +84,37 @@ def main() -> None:
     else:
         if not NAME_RE.fullmatch(name):
             errors.append(
-                "name %r must use lowercase letters, digits, and single hyphens" % name
+                f"name {name!r} must use lowercase letters, digits, and single hyphens"
             )
         if len(name) > 64:
-            errors.append("name is %d characters; the maximum is 64" % len(name))
+            errors.append(f"name is {len(name)} characters; the maximum is 64")
         if name != dir_name:
-            errors.append("name %r does not match the folder name %r" % (name, dir_name))
+            errors.append(
+                f"name {name!r} does not match the folder name {dir_name!r}"
+            )
 
     if not description:
         errors.append("frontmatter is missing the required 'description' field")
     elif len(description) > 1024:
-        errors.append("description is %d characters; the maximum is 1024" % len(description))
+        errors.append(
+            f"description is {len(description)} characters; the maximum is 1024"
+        )
     elif len(description) < 20:
         warnings.append("description is very short; explain what the skill does and when to use it")
     elif "use when" not in description.lower():
         warnings.append("description has no 'use when' clause; triggers may be unclear")
 
     if compatibility and len(compatibility) > 500:
-        errors.append("compatibility is %d characters; the maximum is 500" % len(compatibility))
+        errors.append(
+            f"compatibility is {len(compatibility)} characters; the maximum is 500"
+        )
 
     if not "".join(body).strip():
         errors.append("SKILL.md has no instructions after the frontmatter")
     elif len(body) > MAX_BODY_LINES:
         warnings.append(
-            "body has %d lines (recommended maximum %d); move detail into references/"
-            % (len(body), MAX_BODY_LINES)
+            f"body has {len(body)} lines (recommended maximum {MAX_BODY_LINES}); "
+            "move detail into references/"
         )
 
     result = {"ok": not errors, "path": skill_dir, "errors": errors, "warnings": warnings}
