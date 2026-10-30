@@ -2,9 +2,12 @@
 	import { tools as toolsApi } from '$lib/apis/tools';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { validate, type FieldErrors } from '$lib/utils/validation';
+	import { customToolSchema, mcpServerSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
+	import FieldError from '$lib/components/common/FieldError.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -16,8 +19,8 @@
 	} from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Plus, RefreshCw, Trash2 } from 'lucide-svelte';
-	import type { ToolsView } from '$lib/types';
+	import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
+	import type { CustomTool, MCPServer, ToolsView } from '$lib/types';
 
 	const { t } = useTranslation();
 
@@ -35,6 +38,11 @@
 	let mcpCommand = $state('');
 	let mcpArgs = $state('');
 	let mcpEnv = $state('');
+
+	let editingCustom = $state('');
+	let editingMCP = $state('');
+	let customErrors = $state<FieldErrors>({});
+	let mcpErrors = $state<FieldErrors>({});
 
 	let agent = $derived(agentSelection.selected);
 
@@ -84,23 +92,74 @@
 		}
 	}
 
-	async function createCustom() {
-		if (!agent || !customName.trim() || !customCommand.trim()) return;
+	function startEditCustom(tool: CustomTool) {
+		editingCustom = tool.name;
+		customName = tool.name;
+		customCommand = tool.command;
+		customArgs = (tool.args ?? []).join(', ');
+		customSchema = tool.schema ? JSON.stringify(tool.schema, null, 2) : '';
+		customErrors = {};
+	}
+
+	function cancelEditCustom() {
+		editingCustom = '';
+		customName = '';
+		customCommand = '';
+		customArgs = '';
+		customSchema = '';
+		customErrors = {};
+	}
+
+	function startEditMCP(server: MCPServer) {
+		editingMCP = server.name;
+		mcpName = server.name;
+		mcpCommand = server.command;
+		mcpArgs = (server.args ?? []).join(', ');
+		mcpEnv = '';
+		mcpErrors = {};
+	}
+
+	function cancelEditMCP() {
+		editingMCP = '';
+		mcpName = '';
+		mcpCommand = '';
+		mcpArgs = '';
+		mcpEnv = '';
+		mcpErrors = {};
+	}
+
+	async function saveCustom() {
+		if (!agent) return;
+		const result = validate(customToolSchema, {
+			name: customName,
+			command: customCommand,
+			args: customArgs,
+			schema: customSchema
+		});
+		if (!result.ok) {
+			customErrors = result.errors;
+			return;
+		}
+		customErrors = {};
 		saving = true;
 		try {
-			let schema: unknown = undefined;
-			if (customSchema.trim()) schema = JSON.parse(customSchema);
-			await toolsApi.createCustom(agent, {
-				name: customName.trim(),
-				command: customCommand.trim(),
-				args: splitArgs(customArgs),
-				schema,
-				enabled: true
-			});
-			customName = '';
-			customCommand = '';
-			customArgs = '';
-			customSchema = '';
+			const schema = result.data.schema.trim() ? JSON.parse(result.data.schema) : undefined;
+			if (editingCustom) {
+				await toolsApi.patchCustom(agent, editingCustom, {
+					command: result.data.command,
+					args: splitArgs(result.data.args ?? ''),
+					schema
+				});
+			} else {
+				await toolsApi.createCustom(agent, {
+					name: result.data.name,
+					command: result.data.command,
+					args: splitArgs(result.data.args ?? ''),
+					schema,
+					enabled: true
+				});
+			}
+			cancelEditCustom();
 			toastStore.success(t('myaaw.tools.saved'));
 			await load(agent);
 		} catch (err) {
@@ -110,21 +169,38 @@
 		}
 	}
 
-	async function createMCP() {
-		if (!agent || !mcpName.trim() || !mcpCommand.trim()) return;
+	async function saveMCP() {
+		if (!agent) return;
+		const result = validate(mcpServerSchema, {
+			name: mcpName,
+			command: mcpCommand,
+			args: mcpArgs,
+			env: mcpEnv
+		});
+		if (!result.ok) {
+			mcpErrors = result.errors;
+			return;
+		}
+		mcpErrors = {};
 		saving = true;
 		try {
-			await toolsApi.createMCP(agent, {
-				name: mcpName.trim(),
-				command: mcpCommand.trim(),
-				args: splitArgs(mcpArgs),
-				env: parseEnv(mcpEnv),
-				enabled: true
-			});
-			mcpName = '';
-			mcpCommand = '';
-			mcpArgs = '';
-			mcpEnv = '';
+			const env = parseEnv(result.data.env);
+			if (editingMCP) {
+				await toolsApi.patchMCP(agent, editingMCP, {
+					command: result.data.command,
+					args: splitArgs(result.data.args ?? ''),
+					...(Object.keys(env).length > 0 ? { env } : {})
+				});
+			} else {
+				await toolsApi.createMCP(agent, {
+					name: result.data.name,
+					command: result.data.command,
+					args: splitArgs(result.data.args ?? ''),
+					env,
+					enabled: true
+				});
+			}
+			cancelEditMCP();
 			toastStore.success(t('myaaw.tools.saved'));
 			await load(agent);
 		} catch (err) {
@@ -140,6 +216,8 @@
 		try {
 			if (kind === 'custom') await toolsApi.removeCustom(agent, name);
 			else await toolsApi.removeMCP(agent, name);
+			if (kind === 'custom' && editingCustom === name) cancelEditCustom();
+			if (kind === 'mcp' && editingMCP === name) cancelEditMCP();
 			await load(agent);
 			toastStore.success(t('myaaw.tools.deleted'));
 		} catch (err) {
@@ -228,6 +306,15 @@
 								size="icon-xs"
 								variant="ghost"
 								class="mt-0.5 shrink-0"
+								onclick={() => startEditCustom(tool)}
+								aria-label={t('common.edit')}
+							>
+								<Pencil class="h-3 w-3" />
+							</Button>
+							<Button
+								size="icon-xs"
+								variant="ghost"
+								class="mt-0.5 shrink-0"
 								onclick={() => remove('custom', tool.name)}
 								aria-label={t('common.delete')}
 							>
@@ -267,6 +354,15 @@
 								size="icon-xs"
 								variant="ghost"
 								class="mt-0.5 shrink-0"
+								onclick={() => startEditMCP(server)}
+								aria-label={t('common.edit')}
+							>
+								<Pencil class="h-3 w-3" />
+							</Button>
+							<Button
+								size="icon-xs"
+								variant="ghost"
+								class="mt-0.5 shrink-0"
 								onclick={() => remove('mcp', server.name)}
 								aria-label={t('common.delete')}
 							>
@@ -291,7 +387,9 @@
 
 			<Card class="mx-auto w-full max-w-3xl shrink-0">
 				<CardHeader>
-					<CardTitle>{t('myaaw.tools.custom')}</CardTitle>
+					<CardTitle>
+						{editingCustom ? editingCustom : t('myaaw.tools.custom')}
+					</CardTitle>
 					<CardDescription>{t('myaaw.tools.custom_desc')}</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -299,16 +397,23 @@
 						class="space-y-3"
 						onsubmit={(event) => {
 							event.preventDefault();
-							void createCustom();
+							void saveCustom();
 						}}
 					>
 						<div class="grid gap-1">
 							<Label for="custom-name">{t('myaaw.tools.name')}</Label>
-							<Input id="custom-name" bind:value={customName} placeholder="hello_helper" />
+							<Input
+								id="custom-name"
+								bind:value={customName}
+								placeholder="hello_helper"
+								disabled={editingCustom !== ''}
+							/>
+							<FieldError code={customErrors.name} />
 						</div>
 						<div class="grid gap-1">
 							<Label for="custom-command">{t('myaaw.tools.command')}</Label>
 							<Input id="custom-command" bind:value={customCommand} placeholder="node" />
+							<FieldError code={customErrors.command} />
 						</div>
 						<div class="grid gap-1">
 							<Label for="custom-args">{t('myaaw.tools.args')}</Label>
@@ -327,18 +432,30 @@
 								placeholder={'{"type":"function","function":{"name":"hello_helper","parameters":{}}}'}
 								class="w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 							></textarea>
+							<FieldError code={customErrors.schema} />
 						</div>
-						<Button type="submit" size="sm" loading={saving}>
-							<Plus class="mr-2 h-4 w-4" />
-							{t('myaaw.tools.create')}
-						</Button>
+						<div class="flex gap-2">
+							<Button type="submit" size="sm" loading={saving}>
+								{#if editingCustom}
+									{t('common.save')}
+								{:else}
+									<Plus class="mr-2 h-4 w-4" />
+									{t('myaaw.tools.create')}
+								{/if}
+							</Button>
+							{#if editingCustom}
+								<Button type="button" size="sm" variant="ghost" onclick={cancelEditCustom}>
+									{t('common.cancel')}
+								</Button>
+							{/if}
+						</div>
 					</form>
 				</CardContent>
 			</Card>
 
 			<Card class="mx-auto w-full max-w-3xl shrink-0">
 				<CardHeader>
-					<CardTitle>{t('myaaw.tools.mcp')}</CardTitle>
+					<CardTitle>{editingMCP ? editingMCP : t('myaaw.tools.mcp')}</CardTitle>
 					<CardDescription>{t('myaaw.tools.mcp_desc')}</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -346,16 +463,23 @@
 						class="space-y-3"
 						onsubmit={(event) => {
 							event.preventDefault();
-							void createMCP();
+							void saveMCP();
 						}}
 					>
 						<div class="grid gap-1">
 							<Label for="mcp-name">{t('myaaw.tools.name')}</Label>
-							<Input id="mcp-name" bind:value={mcpName} placeholder="playwright" />
+							<Input
+								id="mcp-name"
+								bind:value={mcpName}
+								placeholder="playwright"
+								disabled={editingMCP !== ''}
+							/>
+							<FieldError code={mcpErrors.name} />
 						</div>
 						<div class="grid gap-1">
 							<Label for="mcp-command">{t('myaaw.tools.command')}</Label>
 							<Input id="mcp-command" bind:value={mcpCommand} placeholder="npx" />
+							<FieldError code={mcpErrors.command} />
 						</div>
 						<div class="grid gap-1">
 							<Label for="mcp-args">{t('myaaw.tools.args')}</Label>
@@ -370,11 +494,23 @@
 								placeholder="TOKEN=secret"
 								class="w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 							></textarea>
+							<FieldError code={mcpErrors.env} />
 						</div>
-						<Button type="submit" size="sm" loading={saving}>
-							<Plus class="mr-2 h-4 w-4" />
-							{t('myaaw.tools.create')}
-						</Button>
+						<div class="flex gap-2">
+							<Button type="submit" size="sm" loading={saving}>
+								{#if editingMCP}
+									{t('common.save')}
+								{:else}
+									<Plus class="mr-2 h-4 w-4" />
+									{t('myaaw.tools.create')}
+								{/if}
+							</Button>
+							{#if editingMCP}
+								<Button type="button" size="sm" variant="ghost" onclick={cancelEditMCP}>
+									{t('common.cancel')}
+								</Button>
+							{/if}
+						</div>
 					</form>
 				</CardContent>
 			</Card>
