@@ -131,8 +131,8 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="flex h-full min-h-0 flex-col gap-4 p-4 lg:p-6">
-	<div class="grid shrink-0 gap-3 sm:grid-cols-3">
+<div class="flex flex-col gap-4">
+	<div class="grid gap-3 sm:grid-cols-3">
 		<Card>
 			<CardHeader class="pb-2">
 				<CardTitle class="text-sm font-medium">{t('myaaw.home.agents')}</CardTitle>
@@ -159,15 +159,15 @@
 		</Card>
 	</div>
 
-	<Card class="flex min-h-0 flex-1 flex-col">
-		<CardHeader class="shrink-0">
+	<Card>
+		<CardHeader>
 			<CardTitle class="flex items-center gap-2">
 				<Bot class="h-4 w-4 shrink-0" />
 				{t('myaaw.home.agents')}
 			</CardTitle>
 			<CardDescription>{t('myaaw.home.agents_desc')}</CardDescription>
 		</CardHeader>
-		<CardContent class="min-h-0 flex-1 overflow-y-auto">
+		<CardContent>
 			{#if agents.length === 0}
 				<EmptyState
 					title={t('myaaw.home.no_agents')}

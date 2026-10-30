@@ -203,7 +203,6 @@
 	// shell gives them the full height of the viewport instead of scrolling.
 	let isFullHeight = $derived(
 		isChat ||
-			page.url.pathname === '/app' ||
 			page.url.pathname.startsWith('/app/dashboard') ||
 			page.url.pathname.startsWith('/app/files') ||
 			page.url.pathname.startsWith('/app/terminal') ||
