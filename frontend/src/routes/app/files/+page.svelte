@@ -178,12 +178,7 @@
 
 <TopBarActions id="files-refresh">
 	{#snippet children()}
-		<TopBarButton
-			label={t('common.refresh')}
-			icon={RefreshCw}
-			onclick={refresh}
-			loading={loading}
-		/>
+		<TopBarButton label={t('common.refresh')} icon={RefreshCw} onclick={refresh} {loading} />
 	{/snippet}
 </TopBarActions>
 
@@ -347,8 +342,10 @@
 								{t('myaaw.files.too_large')}
 							</p>
 						{:else if preview?.kind === 'markdown'}
-							<div class="h-full overflow-y-auto rounded-md border border-input bg-muted/20 px-4 py-3">
-								<Markdown content={content} />
+							<div
+								class="h-full overflow-y-auto rounded-md border border-input bg-muted/20 px-4 py-3"
+							>
+								<Markdown {content} />
 							</div>
 						{:else}
 							<CodePreview code={content} language={preview?.language ?? 'plaintext'} />

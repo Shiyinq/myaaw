@@ -1,6 +1,4 @@
-<div
-	class="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-5 bg-background"
->
+<div class="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-5 bg-background">
 	<div
 		class="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary ring-8 ring-primary/5"
 	>

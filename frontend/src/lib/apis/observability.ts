@@ -44,10 +44,7 @@ export const observability = {
 		client<RunDetail>(agentPath(agent, `/observability/runs/${encodeURIComponent(id)}`)),
 	purge: (agent: string, before?: number) =>
 		client<OKResponse>(
-			agentPath(
-				agent,
-				`/observability/runs${before !== undefined ? `?before=${before}` : ''}`
-			),
+			agentPath(agent, `/observability/runs${before !== undefined ? `?before=${before}` : ''}`),
 			{ method: 'DELETE' }
 		)
 };

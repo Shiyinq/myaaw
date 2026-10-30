@@ -122,7 +122,7 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 	{/snippet}
 </TopBarActions>

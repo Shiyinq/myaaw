@@ -362,7 +362,9 @@
 			{#each nav as group, groupIndex (group.label)}
 				<div class="space-y-1">
 					{#if !sidebar.collapsed}
-						<p class="px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+						<p
+							class="px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+						>
 							{t(group.label)}
 						</p>
 					{:else if groupIndex > 0}
@@ -456,9 +458,7 @@
 		</header>
 
 		<main
-			class={isFullHeight
-				? 'min-h-0 flex-1 overflow-hidden'
-				: 'min-h-0 flex-1 overflow-y-auto'}
+			class={isFullHeight ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-0 flex-1 overflow-y-auto'}
 		>
 			{#if isFullHeight}
 				<div class="h-full">{@render children()}</div>

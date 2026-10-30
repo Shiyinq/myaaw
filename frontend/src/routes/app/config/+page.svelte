@@ -6,7 +6,13 @@
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Tabs from '$lib/components/ui/tabs';
@@ -15,7 +21,6 @@
 
 	const { t } = useTranslation();
 
-	let cfg = $state<AgentConfig | null>(null);
 	let tab = $state('bot');
 	let loading = $state(false);
 	let saving = $state(false);
@@ -61,7 +66,6 @@
 	let agent = $derived(agentSelection.selected);
 
 	function apply(cfgValue: AgentConfig) {
-		cfg = cfgValue;
 		const bot = cfgValue.bot;
 		botType = bot.type;
 		ownerIds = (bot.owner_ids ?? []).join(', ');
@@ -191,7 +195,7 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 		<TopBarButton
 			label={t('common.save')}
@@ -212,7 +216,9 @@
 		</Card>
 	{:else}
 		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+			<div
+				class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+			>
 				{error}
 			</div>
 		{/if}
@@ -350,7 +356,11 @@
 							{t('myaaw.config.obs_enabled')}
 						</label>
 						<label class="flex items-center gap-2 text-sm">
-							<input type="checkbox" bind:checked={obsStoreContent} class="h-4 w-4 accent-primary" />
+							<input
+								type="checkbox"
+								bind:checked={obsStoreContent}
+								class="h-4 w-4 accent-primary"
+							/>
 							{t('myaaw.config.obs_store_content')}
 						</label>
 						<div class="grid gap-1">

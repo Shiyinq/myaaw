@@ -1,5 +1,3 @@
-
-
 export interface CreateProviderRequest {
 	name: string;
 	type: string;

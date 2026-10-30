@@ -8,7 +8,13 @@
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
@@ -128,7 +134,7 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -142,7 +148,9 @@
 		</Card>
 	{:else}
 		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+			<div
+				class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+			>
 				{error}
 			</div>
 		{/if}

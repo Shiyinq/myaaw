@@ -7,7 +7,13 @@
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Plus, RefreshCw, Trash2 } from 'lucide-svelte';
@@ -148,7 +154,7 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -214,7 +220,8 @@
 									class="truncate text-[10px] text-muted-foreground"
 									title={`${tool.command} ${tool.args?.join(' ') ?? ''}`}
 								>
-									{tool.command} {tool.args?.join(' ') ?? ''}
+									{tool.command}
+									{tool.args?.join(' ') ?? ''}
 								</p>
 							</div>
 							<Button
@@ -252,7 +259,8 @@
 									class="truncate text-[10px] text-muted-foreground"
 									title={`${server.command} ${server.args?.join(' ') ?? ''}`}
 								>
-									{server.command} {server.args?.join(' ') ?? ''}
+									{server.command}
+									{server.args?.join(' ') ?? ''}
 								</p>
 							</div>
 							<Button
@@ -304,7 +312,11 @@
 						</div>
 						<div class="grid gap-1">
 							<Label for="custom-args">{t('myaaw.tools.args')}</Label>
-							<Input id="custom-args" bind:value={customArgs} placeholder="/path/script.js, --flag" />
+							<Input
+								id="custom-args"
+								bind:value={customArgs}
+								placeholder="/path/script.js, --flag"
+							/>
 						</div>
 						<div class="grid gap-1">
 							<Label for="custom-schema">{t('myaaw.tools.schema')}</Label>

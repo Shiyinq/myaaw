@@ -7,9 +7,23 @@
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { CircleCheck, CircleSlash, Play, RefreshCw, RotateCcw, Server, Square } from 'lucide-svelte';
+	import {
+		CircleCheck,
+		CircleSlash,
+		Play,
+		RefreshCw,
+		RotateCcw,
+		Server,
+		Square
+	} from 'lucide-svelte';
 	import type { ServerStatus } from '$lib/types';
 
 	const { t } = useTranslation();
@@ -64,7 +78,7 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -78,7 +92,9 @@
 		</Card>
 	{:else}
 		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+			<div
+				class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+			>
 				{error}
 			</div>
 		{/if}

@@ -8,7 +8,13 @@
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
@@ -130,7 +136,7 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -144,7 +150,9 @@
 		</Card>
 	{:else}
 		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+			<div
+				class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+			>
 				{error}
 			</div>
 		{/if}
@@ -167,7 +175,9 @@
 						/>
 					{/if}
 					{#each providers as provider (provider.name)}
-						<div class="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
+						<div
+							class="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+						>
 							<div class="min-w-0 space-y-1">
 								<div class="flex items-center gap-2">
 									<span class="font-medium">{provider.name}</span>
@@ -180,7 +190,11 @@
 									{#if provider.default_model}
 										<span class="font-mono">{provider.default_model}</span>
 									{/if}
-									<span>{provider.api_key.configured ? provider.api_key.masked : t('myaaw.providers.no_key')}</span>
+									<span
+										>{provider.api_key.configured
+											? provider.api_key.masked
+											: t('myaaw.providers.no_key')}</span
+									>
 									{#if provider.base_url}
 										<span class="truncate">{provider.base_url}</span>
 									{/if}
@@ -252,7 +266,13 @@
 						</div>
 
 						<div class="flex gap-2">
-							<Button type="button" variant="outline" size="sm" onclick={discover} loading={discovering}>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onclick={discover}
+								loading={discovering}
+							>
 								<Wand2 class="mr-2 h-4 w-4" />
 								{t('myaaw.providers.discover')}
 							</Button>
@@ -277,7 +297,11 @@
 						{:else}
 							<div class="grid gap-1">
 								<Label for="provider-model-manual">{t('myaaw.providers.model')}</Label>
-								<Input id="provider-model-manual" bind:value={defaultModel} placeholder="deepseek-chat" />
+								<Input
+									id="provider-model-manual"
+									bind:value={defaultModel}
+									placeholder="deepseek-chat"
+								/>
 							</div>
 						{/if}
 

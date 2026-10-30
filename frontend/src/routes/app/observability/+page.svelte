@@ -8,7 +8,13 @@
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Activity, ChevronLeft, ChevronRight, RefreshCw, Trash2 } from 'lucide-svelte';
 	import type { ObservabilitySummary, RunDetail, RunSummary, Span } from '$lib/types';
@@ -143,7 +149,7 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 		<TopBarButton
 			label={t('myaaw.observability.purge')}
@@ -154,7 +160,9 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4 lg:gap-4 lg:overflow-hidden lg:p-6">
+<div
+	class="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4 lg:gap-4 lg:overflow-hidden lg:p-6"
+>
 	{#if !agent}
 		<Card>
 			<CardContent class="py-10 text-center text-sm text-muted-foreground">
@@ -213,7 +221,8 @@
 					<div class="text-2xl font-bold">{formatCost(summary?.cost_usd)}</div>
 					<p class="text-[10px] text-muted-foreground">
 						tools: {formatCost(summary?.tool_cost_usd)}
-						{#if summary && !summary.cost_complete} · {t('myaaw.observability.incomplete')}{/if}
+						{#if summary && !summary.cost_complete}
+							· {t('myaaw.observability.incomplete')}{/if}
 					</p>
 				</CardContent>
 			</Card>
@@ -333,12 +342,15 @@
 										<span class="truncate font-medium">{row.span.name ?? row.span.kind}</span>
 										<span class="shrink-0 text-muted-foreground">
 											{formatMs(row.span.duration_ms)}
-											{#if row.span.cost_usd} · {formatCost(row.span.cost_usd)}{/if}
+											{#if row.span.cost_usd}
+												· {formatCost(row.span.cost_usd)}{/if}
 										</span>
 									</div>
 									{#if row.span.input_tokens || row.span.output_tokens}
 										<div class="text-[10px] text-muted-foreground">
-											in {formatTokens(row.span.input_tokens)} · out {formatTokens(row.span.output_tokens)}
+											in {formatTokens(row.span.input_tokens)} · out {formatTokens(
+												row.span.output_tokens
+											)}
 										</div>
 									{/if}
 									{#if preview(row.span)}

@@ -20,14 +20,7 @@
 	}: Props = $props();
 </script>
 
-<Button
-	{variant}
-	size="sm"
-	class="hidden shrink-0 sm:inline-flex"
-	{onclick}
-	{loading}
-	{disabled}
->
+<Button {variant} size="sm" class="hidden shrink-0 sm:inline-flex" {onclick} {loading} {disabled}>
 	<Icon class="mr-2 h-4 w-4" />
 	{label}
 </Button>

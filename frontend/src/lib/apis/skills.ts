@@ -7,10 +7,7 @@ export const skills = {
 		client<SkillDetail>(agentPath(agent, `/skills/${encodeURIComponent(skill)}`)),
 	file: (agent: string, skill: string, path: string) =>
 		client<SkillFileContent>(
-			agentPath(
-				agent,
-				`/skills/${encodeURIComponent(skill)}/file?path=${encodeURIComponent(path)}`
-			)
+			agentPath(agent, `/skills/${encodeURIComponent(skill)}/file?path=${encodeURIComponent(path)}`)
 		),
 	toggle: (agent: string, skill: string, enabled: boolean) =>
 		client<{ ok: boolean; name: string; enabled: boolean }>(

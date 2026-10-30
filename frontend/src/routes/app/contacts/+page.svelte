@@ -7,7 +7,13 @@
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Bot, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
@@ -91,7 +97,7 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -140,10 +146,7 @@
 								{contact.url}
 							</p>
 							{#if contact.description}
-								<p
-									class="truncate text-[10px] text-muted-foreground"
-									title={contact.description}
-								>
+								<p class="truncate text-[10px] text-muted-foreground" title={contact.description}>
 									{contact.description}
 								</p>
 							{/if}

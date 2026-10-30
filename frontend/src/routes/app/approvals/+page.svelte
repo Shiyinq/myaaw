@@ -7,7 +7,13 @@
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Separator } from '$lib/components/ui/separator';
 	import { RefreshCw, ShieldCheck, Trash2 } from 'lucide-svelte';
 	import type { ApprovalsView } from '$lib/types';
@@ -83,7 +89,7 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -97,7 +103,9 @@
 		</Card>
 	{:else}
 		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+			<div
+				class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+			>
 				{error}
 			</div>
 		{/if}
@@ -186,7 +194,10 @@
 								<p class="text-[10px] text-muted-foreground">
 									always:
 									{#each grant.always as scope, index (index)}
-										{scope.channel ?? 'any'}/{scope.user_id ?? 'any'}{index < (grant.always?.length ?? 0) - 1 ? ', ' : ''}
+										{scope.channel ?? 'any'}/{scope.user_id ?? 'any'}{index <
+										(grant.always?.length ?? 0) - 1
+											? ', '
+											: ''}
 									{/each}
 								</p>
 							{/if}

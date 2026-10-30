@@ -1,5 +1,11 @@
 import { agentPath, client } from './client';
-import type { CronHistoryResponse, CronJob, CronJobInput, CronJobsResponse, OKResponse } from '$lib/types';
+import type {
+	CronHistoryResponse,
+	CronJob,
+	CronJobInput,
+	CronJobsResponse,
+	OKResponse
+} from '$lib/types';
 
 export const cron = {
 	list: (agent: string) => client<CronJobsResponse>(agentPath(agent, '/cron')),

@@ -7,7 +7,13 @@
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { RefreshCw, Save, Trash2 } from 'lucide-svelte';
@@ -109,7 +115,7 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -123,7 +129,9 @@
 		</Card>
 	{:else}
 		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+			<div
+				class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+			>
 				{error}
 			</div>
 		{/if}
@@ -150,7 +158,11 @@
 						}}
 					>
 						<label class="flex items-center gap-2 text-sm">
-							<input type="checkbox" bind:checked={telegram.active} class="h-4 w-4 accent-primary" />
+							<input
+								type="checkbox"
+								bind:checked={telegram.active}
+								class="h-4 w-4 accent-primary"
+							/>
 							{t('myaaw.channels.active')}
 						</label>
 

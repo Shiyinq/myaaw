@@ -126,7 +126,9 @@
 				{/if}
 				{#each groups() as [folder, list] (folder)}
 					<div class="space-y-1">
-						<p class="px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+						<p
+							class="px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+						>
 							{folder}
 						</p>
 						{#each list as file (file.path)}
@@ -191,8 +193,10 @@
 								class="h-full w-full resize-none rounded-md border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 							></textarea>
 						{:else}
-							<div class="h-full overflow-y-auto rounded-md border border-input bg-muted/20 px-4 py-3">
-								<Markdown content={content} />
+							<div
+								class="h-full overflow-y-auto rounded-md border border-input bg-muted/20 px-4 py-3"
+							>
+								<Markdown {content} />
 							</div>
 						{/if}
 					{:else}

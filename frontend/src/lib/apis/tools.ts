@@ -1,10 +1,5 @@
 import { agentPath, client } from './client';
-import type {
-	CustomToolInput,
-	MCPServerInput,
-	OKResponse,
-	ToolsView
-} from '$lib/types';
+import type { CustomToolInput, MCPServerInput, OKResponse, ToolsView } from '$lib/types';
 
 export const tools = {
 	list: (agent: string) => client<ToolsView>(agentPath(agent, '/tools')),
