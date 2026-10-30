@@ -1,3 +1,5 @@
+import { API_BASE } from '$lib/constants';
+import { accessToken } from '$lib/stores/accessToken.svelte';
 import { agentPath, client } from './client';
 import type { FileContent, FileListResponse, OKResponse, SearchResponse } from '$lib/types';
 
@@ -26,5 +28,24 @@ export const files = {
 		client<OKResponse>(
 			agentPath(agent, `/fs?path=${encodeURIComponent(path)}&recursive=${recursive}`),
 			{ method: 'DELETE' }
-		)
+		),
+	/**
+	 * Same-origin URL for the raw bytes. <img>, <video>, <iframe> and
+	 * <a download> cannot send an Authorization header, so the session token
+	 * travels as a query parameter; the proxy keeps everything on this origin.
+	 */
+	rawUrl: (agent: string, path: string, options: { download?: boolean } = {}) => {
+		const query = new URLSearchParams({ path });
+		if (accessToken.value) query.set('token', accessToken.value);
+		if (options.download) query.set('download', '1');
+		return `${API_BASE}${agentPath(agent, `/fs/raw?${query.toString()}`)}`;
+	},
+	download: (agent: string, path: string) => {
+		const anchor = document.createElement('a');
+		anchor.href = files.rawUrl(agent, path, { download: true });
+		anchor.download = path.split('/').pop() || 'download';
+		document.body.append(anchor);
+		anchor.click();
+		anchor.remove();
+	}
 };

@@ -1,4 +1,14 @@
-export type FilePreviewKind = 'markdown' | 'code' | 'text' | 'binary';
+export type FilePreviewKind =
+	| 'markdown'
+	| 'code'
+	| 'text'
+	| 'csv'
+	| 'html'
+	| 'image'
+	| 'video'
+	| 'audio'
+	| 'pdf'
+	| 'binary';
 
 export interface FilePreview {
 	kind: FilePreviewKind;
@@ -6,6 +16,8 @@ export interface FilePreview {
 	language: string;
 	/** Short label shown in the header badge. */
 	label: string;
+	/** Whether the text editor may be opened for this file. */
+	editable: boolean;
 }
 
 const CODE_EXTENSIONS: Record<string, { language: string; label: string }> = {
@@ -32,7 +44,6 @@ const CODE_EXTENSIONS: Record<string, { language: string; label: string }> = {
 	html: { language: 'xml', label: 'HTML' },
 	htm: { language: 'xml', label: 'HTML' },
 	xml: { language: 'xml', label: 'XML' },
-	svg: { language: 'xml', label: 'SVG' },
 	go: { language: 'go', label: 'Go' },
 	rs: { language: 'rust', label: 'Rust' },
 	sql: { language: 'sql', label: 'SQL' },
@@ -47,23 +58,46 @@ const MARKDOWN_EXTENSIONS: Record<string, string> = {
 	mdx: 'MDX'
 };
 
+const IMAGE_EXTENSIONS: Record<string, string> = {
+	png: 'PNG',
+	jpg: 'JPEG',
+	jpeg: 'JPEG',
+	gif: 'GIF',
+	webp: 'WebP',
+	avif: 'AVIF',
+	bmp: 'BMP',
+	apng: 'APNG',
+	ico: 'Icon',
+	svg: 'SVG'
+};
+
+const VIDEO_EXTENSIONS: Record<string, string> = {
+	mp4: 'MP4',
+	m4v: 'MP4',
+	webm: 'WebM',
+	ogv: 'Ogg Video',
+	mov: 'QuickTime'
+};
+
+const AUDIO_EXTENSIONS: Record<string, string> = {
+	mp3: 'MP3',
+	wav: 'WAV',
+	m4a: 'AAC',
+	aac: 'AAC',
+	flac: 'FLAC',
+	ogg: 'Ogg Audio',
+	opus: 'Opus',
+	oga: 'Ogg Audio'
+};
+
+const HTML_EXTENSIONS = new Set(['html', 'htm']);
+const CSV_EXTENSIONS = new Set(['csv', 'tsv']);
+
 const BINARY_EXTENSIONS = new Set([
-	'png',
-	'jpg',
-	'jpeg',
-	'gif',
-	'webp',
-	'ico',
-	'bmp',
-	'pdf',
 	'zip',
 	'gz',
 	'tar',
 	'7z',
-	'mp3',
-	'mp4',
-	'mov',
-	'wav',
 	'woff',
 	'woff2',
 	'ttf',
@@ -76,7 +110,9 @@ const BINARY_EXTENSIONS = new Set([
 	'exe',
 	'bin',
 	'dmg',
-	'ds_store'
+	'ds_store',
+	'heic',
+	'psd'
 ]);
 
 function extensionOf(path: string): string {
@@ -90,8 +126,8 @@ function extensionOf(path: string): string {
 
 /**
  * Picks the preview mode for a file from its extension so the editor can show
- * rendered markdown, highlighted source code, plain text, or a "no preview"
- * notice for binary assets.
+ * rendered markdown, highlighted source, tables, or native media, and a "no
+ * preview" notice with a download action for everything else.
  */
 export function detectPreview(path: string): FilePreview {
 	const ext = extensionOf(path);
@@ -99,15 +135,41 @@ export function detectPreview(path: string): FilePreview {
 	const code = CODE_EXTENSIONS[ext];
 
 	if (markdownLabel) {
-		return { kind: 'markdown', language: 'markdown', label: markdownLabel };
+		return { kind: 'markdown', language: 'markdown', label: markdownLabel, editable: true };
+	}
+	if (HTML_EXTENSIONS.has(ext)) {
+		return { kind: 'html', language: 'xml', label: 'HTML', editable: true };
+	}
+	if (CSV_EXTENSIONS.has(ext)) {
+		return { kind: 'csv', language: 'plaintext', label: ext.toUpperCase(), editable: true };
+	}
+	const image = IMAGE_EXTENSIONS[ext];
+	if (image) {
+		return { kind: 'image', language: 'plaintext', label: image, editable: false };
+	}
+	const video = VIDEO_EXTENSIONS[ext];
+	if (video) {
+		return { kind: 'video', language: 'plaintext', label: video, editable: false };
+	}
+	const audio = AUDIO_EXTENSIONS[ext];
+	if (audio) {
+		return { kind: 'audio', language: 'plaintext', label: audio, editable: false };
+	}
+	if (ext === 'pdf') {
+		return { kind: 'pdf', language: 'plaintext', label: 'PDF', editable: false };
 	}
 	if (BINARY_EXTENSIONS.has(ext)) {
-		return { kind: 'binary', language: 'plaintext', label: ext.toUpperCase() };
+		return { kind: 'binary', language: 'plaintext', label: ext.toUpperCase(), editable: false };
 	}
 	if (code) {
-		return { kind: 'code', language: code.language, label: code.label };
+		return { kind: 'code', language: code.language, label: code.label, editable: true };
 	}
-	return { kind: 'text', language: 'plaintext', label: ext ? ext.toUpperCase() : 'Text' };
+	return {
+		kind: 'text',
+		language: 'plaintext',
+		label: ext ? ext.toUpperCase() : 'Text',
+		editable: true
+	};
 }
 
 /**
