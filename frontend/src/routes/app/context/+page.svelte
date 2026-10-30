@@ -3,7 +3,8 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import PageHeader from '$lib/components/app/PageHeader.svelte';
+	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
+	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
@@ -80,14 +81,20 @@
 	}
 </script>
 
-<div class="space-y-4">
-	<PageHeader title={t('myaaw.context.title')} description={t('myaaw.context.subtitle')}>
-		<Button size="sm" onclick={save} loading={saving} disabled={!path}>
-			<Save class="mr-2 h-4 w-4" />
-			{t('common.save')}
-		</Button>
-	</PageHeader>
+<TopBarActions id="context-save">
+	{#snippet children()}
+		<TopBarButton
+			label={t('common.save')}
+			icon={Save}
+			onclick={save}
+			loading={saving}
+			disabled={!path}
+			variant="default"
+		/>
+	{/snippet}
+</TopBarActions>
 
+<div class="space-y-4">
 	{#if !agent}
 		<Card>
 			<CardContent class="py-10 text-center text-sm text-muted-foreground">

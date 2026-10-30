@@ -3,7 +3,8 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import PageHeader from '$lib/components/app/PageHeader.svelte';
+	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
+	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -136,18 +137,24 @@
 	}
 </script>
 
-<div class="space-y-4">
-	<PageHeader title={t('myaaw.observability.title')} description={t('myaaw.observability.subtitle')}>
-		<Button variant="outline" size="sm" onclick={() => agent && load(agent)} loading={loading}>
-			<RefreshCw class="mr-2 h-4 w-4" />
-			{t('common.refresh')}
-		</Button>
-		<Button variant="destructive" size="sm" onclick={purge}>
-			<Trash2 class="mr-2 h-4 w-4" />
-			{t('myaaw.observability.purge')}
-		</Button>
-	</PageHeader>
+<TopBarActions id="observability-actions">
+	{#snippet children()}
+		<TopBarButton
+			label={t('common.refresh')}
+			icon={RefreshCw}
+			onclick={() => agent && load(agent)}
+			loading={loading}
+		/>
+		<TopBarButton
+			label={t('myaaw.observability.purge')}
+			icon={Trash2}
+			onclick={purge}
+			variant="destructive"
+		/>
+	{/snippet}
+</TopBarActions>
 
+<div class="space-y-4">
 	{#if !agent}
 		<Card>
 			<CardContent class="py-10 text-center text-sm text-muted-foreground">

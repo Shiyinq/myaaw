@@ -6,11 +6,11 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import PageHeader from '$lib/components/app/PageHeader.svelte';
+	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
+	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Card, CardContent } from '$lib/components/ui/card';
 	import {
 		AlertTriangle,
 		ArrowDownToLine,
@@ -50,6 +50,7 @@
 	let attachments = $state<Attachment[]>([]);
 	let error = $state('');
 	let scroller = $state<HTMLDivElement | null>(null);
+	let composer = $state<HTMLTextAreaElement | null>(null);
 
 	let controller: AbortController | null = null;
 	let counter = 0;
@@ -127,6 +128,7 @@
 
 		push({ kind: 'user', text });
 		input = '';
+		if (composer) composer.style.height = '';
 		streaming = true;
 		error = '';
 		pendingApproval = null;
@@ -258,17 +260,25 @@
 	}
 
 	function newChat() {
+		resetChat();
+		if (page.url.pathname !== '/app/chat') {
+			void goto('/app/chat');
+		}
+	}
+
+	function resetChat() {
 		controller?.abort();
 		controller = null;
 		streaming = false;
 		conversationId = '';
 		items = [];
+		input = '';
+		if (composer) composer.style.height = '';
 		usage = null;
 		attachments = [];
 		error = '';
 		pendingApproval = null;
 		loadKey = `${agent}:`;
-		void goto('/app/chat');
 	}
 
 	function onKeydown(event: KeyboardEvent) {
@@ -276,6 +286,18 @@
 			event.preventDefault();
 			void send();
 		}
+	}
+
+	function autosize(node: HTMLTextAreaElement) {
+		const resize = () => {
+			node.style.height = 'auto';
+			node.style.height = `${Math.min(node.scrollHeight, 160)}px`;
+		};
+		resize();
+		node.addEventListener('input', resize);
+		return {
+			destroy: () => node.removeEventListener('input', resize)
+		};
 	}
 
 	function attachmentUrl(attachment: Attachment) {
@@ -287,186 +309,202 @@
 	}
 </script>
 
-<div class="flex h-[calc(100vh-8.5rem)] flex-col gap-3">
-	<PageHeader title={t('myaaw.chat.title')} description={t('myaaw.chat.subtitle')}>
-		<Button variant="outline" size="sm" onclick={newChat}>
-			<MessageSquarePlus class="mr-2 h-4 w-4" />
-			{t('myaaw.chat.new')}
-		</Button>
-	</PageHeader>
+<TopBarActions id="chat-new">
+	{#snippet children()}
+		<TopBarButton
+			label={t('myaaw.chat.new')}
+			icon={MessageSquarePlus}
+			onclick={newChat}
+		/>
+	{/snippet}
+</TopBarActions>
 
+<div class="flex h-full flex-col">
 	{#if !agent}
-		<Card>
-			<CardContent class="py-10 text-center text-sm text-muted-foreground">
-				{t('myaaw.agent.none')}
-			</CardContent>
-		</Card>
+		<div class="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+			{t('myaaw.agent.none')}
+		</div>
 	{:else}
-		<Card class="flex min-h-0 flex-1 flex-col overflow-hidden">
-			<CardContent class="flex min-h-0 flex-1 flex-col gap-3 p-4">
-				<div class="flex items-center justify-between gap-2">
-					<div class="flex items-center gap-2 text-xs text-muted-foreground">
-						<Badge variant="outline">{agent}</Badge>
-						{#if conversationId}
-							<span class="font-mono">{conversationId.slice(0, 12)}…</span>
-						{/if}
-					</div>
-					{#if usage}
-						<span class="text-[11px] text-muted-foreground">
-							{t('myaaw.chat.tokens', { count: usage.total_tokens })}
-						</span>
-					{/if}
-				</div>
-
-				{#if error}
-					<div
-						class="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
-					>
-						{error}
-					</div>
+		<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto">
+			<div class="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
+				{#if loading}
+					<p class="text-sm text-muted-foreground">{t('myaaw.chat.loading')}</p>
+				{:else if items.length === 0}
+					<p class="py-20 text-center text-sm text-muted-foreground">
+						{t('myaaw.chat.empty')}
+					</p>
 				{/if}
 
-				<div bind:this={scroller} class="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-					{#if loading}
-						<p class="text-sm text-muted-foreground">{t('myaaw.chat.loading')}</p>
-					{:else if items.length === 0}
-						<p class="text-sm text-muted-foreground">{t('myaaw.chat.empty')}</p>
-					{/if}
-
-					{#each items as item, index (item.localId ?? `${item.kind}-${index}`)}
-						{#if item.kind === 'user'}
-							<div class="flex justify-end">
-								<div
-									class="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground"
-								>
-									{item.text}
-								</div>
-							</div>
-						{:else if item.kind === 'thought'}
-							<div class="flex items-start gap-2 text-xs italic text-muted-foreground">
-								<Brain class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-								<span class="whitespace-pre-wrap">{item.text}</span>
-							</div>
-						{:else if item.kind === 'text'}
-							<div class="max-w-[90%] rounded-2xl rounded-bl-sm border bg-muted/30 px-3 py-2">
-								<Markdown content={item.text ?? ''} />
-							</div>
-						{:else if item.kind === 'tool'}
-							<div class="max-w-[90%] rounded-lg border bg-card p-2 text-xs">
-								<div class="flex items-center gap-2 font-medium">
-									<Wrench class="h-3.5 w-3.5" />
-									<span class="font-mono">{item.name}</span>
-								</div>
-								{#if item.arguments}
-									<pre class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
-								{/if}
-								{#if item.result}
-									<div class={item.is_error ? 'mt-1 text-destructive' : 'mt-1 text-muted-foreground'}>
-										<div class="mb-0.5 flex items-center gap-1 font-medium">
-											<ArrowDownToLine class="h-3 w-3" />
-											{t('myaaw.chat.result')}
-										</div>
-										<pre class="overflow-x-auto whitespace-pre-wrap break-all">{item.result}</pre>
-									</div>
-								{/if}
-							</div>
-						{:else if item.kind === 'retry'}
-							<div class="flex items-center gap-1 text-[11px] text-muted-foreground">
-								<RotateCcw class="h-3 w-3" />
-								{t('myaaw.chat.retry', { attempt: item.attempt ?? 2 })}
-							</div>
-						{:else if item.kind === 'compaction'}
-							<div class="flex items-center gap-1 text-[11px] text-muted-foreground">
-								<Minimize2 class="h-3 w-3" />
-								{t('myaaw.chat.compaction', {
-									before: item.tokens_before ?? 0,
-									after: item.tokens_after ?? 0
-								})}
-							</div>
-						{:else if item.kind === 'approval'}
+				{#each items as item, index (item.localId ?? `${item.kind}-${index}`)}
+					{#if item.kind === 'user'}
+						<div class="flex justify-end">
 							<div
-								class="max-w-[90%] rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs"
+								class="max-w-[80%] whitespace-pre-wrap rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
 							>
-								<div class="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
-									<ShieldAlert class="h-4 w-4" />
-									{t('myaaw.chat.waiting')}
-								</div>
-								<div class="mt-1 font-mono text-foreground">{item.name}</div>
-								{#if item.arguments}
-									<pre class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
-								{/if}
-								{#if item.resolved}
-									<Badge variant="outline" class="mt-2">{item.resolved}</Badge>
-								{:else if pendingApproval && pendingApproval.approval_id === item.id}
-									<div class="mt-2 flex flex-wrap gap-2">
-										<Button size="xs" onclick={() => decide('allow_once')}>
-											{t('myaaw.chat.allow_once')}
-										</Button>
-										<Button size="xs" variant="secondary" onclick={() => decide('allow_session')}>
-											{t('myaaw.chat.allow_session')}
-										</Button>
-										<Button size="xs" variant="secondary" onclick={() => decide('allow_always')}>
-											{t('myaaw.chat.allow_always')}
-										</Button>
-										<Button size="xs" variant="destructive" onclick={() => decide('deny')}>
-											{t('myaaw.chat.deny')}
-										</Button>
+								{item.text}
+							</div>
+						</div>
+					{:else if item.kind === 'text'}
+						<div class="text-sm">
+							<Markdown content={item.text ?? ''} />
+						</div>
+					{:else if item.kind === 'thought'}
+						<div class="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+							<div class="mb-1 flex items-center gap-2 font-medium not-italic">
+								<Brain class="h-3.5 w-3.5" />
+								{t('myaaw.chat.thinking')}
+							</div>
+							<span class="whitespace-pre-wrap italic">{item.text}</span>
+						</div>
+					{:else if item.kind === 'tool'}
+						<div class="rounded-xl border bg-card/60 px-3 py-2 text-xs">
+							<div class="flex items-center gap-2 font-medium">
+								<Wrench class="h-3.5 w-3.5" />
+								<span class="font-mono">{item.name}</span>
+							</div>
+							{#if item.arguments}
+								<pre class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
+							{/if}
+							{#if item.result}
+								<div class={item.is_error ? 'mt-1 text-destructive' : 'mt-1 text-muted-foreground'}>
+									<div class="mb-0.5 flex items-center gap-1 font-medium">
+										<ArrowDownToLine class="h-3 w-3" />
+										{t('myaaw.chat.result')}
 									</div>
-								{/if}
+									<pre class="overflow-x-auto whitespace-pre-wrap break-all">{item.result}</pre>
+								</div>
+							{/if}
+						</div>
+					{:else if item.kind === 'retry'}
+						<div class="flex items-center gap-1 text-[11px] text-muted-foreground">
+							<RotateCcw class="h-3 w-3" />
+							{t('myaaw.chat.retry', { attempt: item.attempt ?? 2 })}
+						</div>
+					{:else if item.kind === 'compaction'}
+						<div class="flex items-center gap-1 text-[11px] text-muted-foreground">
+							<Minimize2 class="h-3 w-3" />
+							{t('myaaw.chat.compaction', {
+								before: item.tokens_before ?? 0,
+								after: item.tokens_after ?? 0
+							})}
+						</div>
+					{:else if item.kind === 'approval'}
+						<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+							<div class="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
+								<ShieldAlert class="h-4 w-4" />
+								{t('myaaw.chat.waiting')}
 							</div>
-						{:else if item.kind === 'error'}
-							<div class="flex items-start gap-2 text-xs text-destructive">
-								<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-								<span class="whitespace-pre-wrap">{item.text}</span>
-							</div>
-						{/if}
-					{/each}
-
-					{#if attachments.length > 0}
-						<div class="space-y-2">
-							{#each attachments as attachment (attachment.file_name)}
-								{#if isImage(attachment)}
-									<img
-										src={attachmentUrl(attachment)}
-										alt={attachment.file_name}
-										class="max-h-72 rounded-lg border"
-									/>
-								{:else}
-									<a
-										href={attachmentUrl(attachment)}
-										download={attachment.file_name}
-										class="inline-flex items-center gap-2 text-xs text-primary underline-offset-4 hover:underline"
-									>
-										<ArrowDownToLine class="h-3.5 w-3.5" />
-										{attachment.file_name}
-									</a>
-								{/if}
-							{/each}
+							<div class="mt-1 font-mono text-foreground">{item.name}</div>
+							{#if item.arguments}
+								<pre class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
+							{/if}
+							{#if item.resolved}
+								<Badge variant="outline" class="mt-2">{item.resolved}</Badge>
+							{:else if pendingApproval && pendingApproval.approval_id === item.id}
+								<div class="mt-2 flex flex-wrap gap-2">
+									<Button size="xs" onclick={() => decide('allow_once')}>
+										{t('myaaw.chat.allow_once')}
+									</Button>
+									<Button size="xs" variant="secondary" onclick={() => decide('allow_session')}>
+										{t('myaaw.chat.allow_session')}
+									</Button>
+									<Button size="xs" variant="secondary" onclick={() => decide('allow_always')}>
+										{t('myaaw.chat.allow_always')}
+									</Button>
+									<Button size="xs" variant="destructive" onclick={() => decide('deny')}>
+										{t('myaaw.chat.deny')}
+									</Button>
+								</div>
+							{/if}
+						</div>
+					{:else if item.kind === 'error'}
+						<div class="flex items-start gap-2 text-xs text-destructive">
+							<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+							<span class="whitespace-pre-wrap">{item.text}</span>
 						</div>
 					{/if}
-				</div>
+				{/each}
 
-				<div class="flex items-end gap-2 border-t pt-3">
-					<textarea
-						bind:value={input}
-						onkeydown={onKeydown}
-						rows="2"
-						placeholder={t('myaaw.chat.placeholder')}
-						class="min-h-10 w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-					></textarea>
-					{#if streaming}
-						<Button variant="destructive" size="sm" onclick={stop}>
-							<Square class="mr-2 h-4 w-4" />
-							{t('myaaw.chat.stop')}
-						</Button>
-					{:else}
-						<Button size="sm" onclick={send} disabled={!input.trim()}>
-							<Send class="mr-2 h-4 w-4" />
-							{t('myaaw.chat.send')}
-						</Button>
-					{/if}
+				{#if attachments.length > 0}
+					<div class="space-y-2">
+						{#each attachments as attachment (attachment.file_name)}
+							{#if isImage(attachment)}
+								<img
+									src={attachmentUrl(attachment)}
+									alt={attachment.file_name}
+									class="max-h-72 rounded-xl border"
+								/>
+							{:else}
+								<a
+									href={attachmentUrl(attachment)}
+									download={attachment.file_name}
+									class="inline-flex items-center gap-2 text-xs text-primary underline-offset-4 hover:underline"
+								>
+									<ArrowDownToLine class="h-3.5 w-3.5" />
+									{attachment.file_name}
+								</a>
+							{/if}
+						{/each}
+					</div>
+				{/if}
+			</div>
+		</div>
+
+		{#if error}
+			<div class="shrink-0 px-4">
+				<div
+					class="mx-auto max-w-5xl rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
+				>
+					{error}
 				</div>
-			</CardContent>
-		</Card>
+			</div>
+		{/if}
+
+		<div class="shrink-0 border-t bg-background/80 px-4 py-3 backdrop-blur">
+			<div class="mx-auto w-full max-w-5xl">
+				<div
+					class="rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60"
+				>
+					<textarea
+						bind:this={composer}
+						bind:value={input}
+						use:autosize
+						onkeydown={onKeydown}
+						rows="1"
+						placeholder={t('myaaw.chat.placeholder')}
+						class="max-h-40 min-h-[3.25rem] w-full resize-none rounded-t-2xl bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
+					></textarea>
+					<div class="flex items-center justify-between px-3 pb-2">
+						<span class="text-[10px] text-muted-foreground">
+							{#if usage}
+								{t('myaaw.chat.tokens', { count: usage.total_tokens })} ·
+							{/if}
+							{t('myaaw.chat.hint')}
+						</span>
+						{#if streaming}
+							<Button
+								size="icon"
+								variant="destructive"
+								class="rounded-full"
+								onclick={stop}
+								aria-label={t('myaaw.chat.stop')}
+							>
+								<Square class="h-4 w-4" />
+							</Button>
+						{:else}
+							<Button
+								size="icon"
+								class="rounded-full"
+								onclick={send}
+								disabled={!input.trim()}
+								aria-label={t('myaaw.chat.send')}
+							>
+								<Send class="h-4 w-4" />
+							</Button>
+						{/if}
+					</div>
+				</div>
+			</div>
+		</div>
 	{/if}
 </div>

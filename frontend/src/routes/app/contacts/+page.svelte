@@ -3,7 +3,8 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import PageHeader from '$lib/components/app/PageHeader.svelte';
+	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
+	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -85,14 +86,18 @@
 	}
 </script>
 
-<div class="space-y-4">
-	<PageHeader title={t('myaaw.contacts.title')} description={t('myaaw.contacts.subtitle')}>
-		<Button variant="outline" size="sm" onclick={() => agent && load(agent)} loading={loading}>
-			<RefreshCw class="mr-2 h-4 w-4" />
-			{t('common.refresh')}
-		</Button>
-	</PageHeader>
+<TopBarActions id="contacts-refresh">
+	{#snippet children()}
+		<TopBarButton
+			label={t('common.refresh')}
+			icon={RefreshCw}
+			onclick={() => agent && load(agent)}
+			loading={loading}
+		/>
+	{/snippet}
+</TopBarActions>
 
+<div class="space-y-4">
 	{#if !agent}
 		<Card>
 			<CardContent class="py-10 text-center text-sm text-muted-foreground">

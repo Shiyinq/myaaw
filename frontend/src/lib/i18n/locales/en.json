@@ -219,6 +219,10 @@
 			"observability": "Observability",
 			"settings": "Settings"
 		},
+		"sidebar": {
+			"collapse": "Collapse sidebar",
+			"expand": "Expand sidebar"
+		},
 		"agent": {
 			"label": "Agent",
 			"default": "default",
@@ -252,6 +256,7 @@
 			"subtitle": "Talk to the selected agent with streaming, tools, and approvals.",
 			"new": "New chat",
 			"placeholder": "Send a message... (Enter to send, Shift+Enter for a new line)",
+			"hint": "Enter to send · Shift+Enter for a new line",
 			"send": "Send",
 			"stop": "Stop",
 			"empty": "No messages yet. Start the conversation.",
@@ -261,6 +266,7 @@
 			"retry": "Provider retry #{attempt}",
 			"compaction": "Transcript trimmed: {before} → {after} tokens",
 			"waiting": "Waiting for approval",
+			"thinking": "Thinking",
 			"allow_once": "Allow once",
 			"allow_session": "Allow session",
 			"allow_always": "Always",
@@ -306,6 +312,13 @@
 			"subtitle": "Account and session.",
 			"profile": "Profile",
 			"profile_desc": "Credentials are stored in ~/.myaaw/controlplane.json.",
+			"app_settings": "App Settings",
+			"app_settings_desc": "Language and appearance for this browser.",
+			"language": "Language",
+			"theme": "Theme",
+			"theme_light": "Light",
+			"theme_dark": "Dark",
+			"theme_system": "System",
 			"password": "Change password",
 			"password_desc": "Changing the password signs out every session.",
 			"current_password": "Current password",

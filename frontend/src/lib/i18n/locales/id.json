@@ -219,6 +219,10 @@
 			"observability": "Observability",
 			"settings": "Pengaturan"
 		},
+		"sidebar": {
+			"collapse": "Ciutkan sidebar",
+			"expand": "Bentangkan sidebar"
+		},
 		"agent": {
 			"label": "Agen",
 			"default": "bawaan",
@@ -252,6 +256,7 @@
 			"subtitle": "Bicara dengan agen terpilih, lengkap dengan streaming, tool, dan approval.",
 			"new": "Chat baru",
 			"placeholder": "Kirim pesan... (Enter untuk kirim, Shift+Enter untuk baris baru)",
+			"hint": "Enter untuk kirim · Shift+Enter untuk baris baru",
 			"send": "Kirim",
 			"stop": "Hentikan",
 			"empty": "Belum ada pesan. Mulai percakapan.",
@@ -261,6 +266,7 @@
 			"retry": "Percobaan ulang penyedia #{attempt}",
 			"compaction": "Transkrip dipangkas: {before} → {after} token",
 			"waiting": "Menunggu persetujuan",
+			"thinking": "Berpikir",
 			"allow_once": "Izinkan sekali",
 			"allow_session": "Izinkan sesi ini",
 			"allow_always": "Selalu",
@@ -306,6 +312,13 @@
 			"subtitle": "Akun dan sesi.",
 			"profile": "Profil",
 			"profile_desc": "Kredensial disimpan di ~/.myaaw/controlplane.json.",
+			"app_settings": "Pengaturan Aplikasi",
+			"app_settings_desc": "Bahasa dan tampilan untuk browser ini.",
+			"language": "Bahasa",
+			"theme": "Tema",
+			"theme_light": "Terang",
+			"theme_dark": "Gelap",
+			"theme_system": "Sistem",
 			"password": "Ganti kata sandi",
 			"password_desc": "Mengganti kata sandi mengeluarkan semua sesi.",
 			"current_password": "Kata sandi saat ini",

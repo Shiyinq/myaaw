@@ -4,7 +4,7 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import PageHeader from '$lib/components/app/PageHeader.svelte';
+	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -109,22 +109,25 @@
 	}
 </script>
 
-<div class="space-y-4">
-	<PageHeader title={t('myaaw.conversations.title')} description={t('myaaw.conversations.subtitle')}>
-		<div class="flex w-full max-w-xs items-center gap-2">
+<TopBarActions id="conversations-search">
+	{#snippet children()}
+		<div class="flex items-center gap-2">
 			<Input
 				bind:value={searchInput}
 				placeholder={t('myaaw.conversations.search')}
+				class="h-8 w-28 sm:w-64"
 				onkeydown={(event) => {
 					if (event.key === 'Enter') applySearch();
 				}}
 			/>
-			<Button variant="outline" size="sm" onclick={applySearch}>
+			<Button variant="outline" size="sm" class="hidden sm:inline-flex" onclick={applySearch}>
 				{t('common.search')}
 			</Button>
 		</div>
-	</PageHeader>
+	{/snippet}
+</TopBarActions>
 
+<div class="space-y-4">
 	{#if error}
 		<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
 			{error}

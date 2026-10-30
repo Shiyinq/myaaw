@@ -3,8 +3,6 @@
 	import { goto } from '$app/navigation';
 	import { fade } from 'svelte/transition';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import LanguageSwitcher from '$lib/components/common/LanguageSwitcher.svelte';
-	import ThemeToggle from '$lib/components/common/ThemeToggle.svelte';
 	import SEO from '$lib/components/common/SEO.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
@@ -39,11 +37,6 @@
 <SEO title="Myaaw | {t('common.login')}" description={t('myaaw.login.subtitle')} />
 
 <div class="min-h-screen flex items-center justify-center p-6 bg-background relative">
-	<div class="absolute top-6 right-6 z-50 flex items-center gap-2">
-		<LanguageSwitcher />
-		<ThemeToggle />
-	</div>
-
 	<div class="w-full max-w-md" in:fade={{ duration: 200 }}>
 		<Card class="border-border">
 			<CardHeader class="space-y-2 text-center pb-8">

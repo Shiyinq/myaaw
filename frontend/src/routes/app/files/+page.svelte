@@ -3,7 +3,8 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import PageHeader from '$lib/components/app/PageHeader.svelte';
+	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
+	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -155,14 +156,18 @@
 	}
 </script>
 
-<div class="space-y-4">
-	<PageHeader title={t('myaaw.files.title')} description={t('myaaw.files.subtitle')}>
-		<Button variant="outline" size="sm" onclick={refresh} loading={loading}>
-			<RefreshCw class="mr-2 h-4 w-4" />
-			{t('common.refresh')}
-		</Button>
-	</PageHeader>
+<TopBarActions id="files-refresh">
+	{#snippet children()}
+		<TopBarButton
+			label={t('common.refresh')}
+			icon={RefreshCw}
+			onclick={refresh}
+			loading={loading}
+		/>
+	{/snippet}
+</TopBarActions>
 
+<div class="space-y-4">
 	{#if !agent}
 		<Card>
 			<CardContent class="py-10 text-center text-sm text-muted-foreground">

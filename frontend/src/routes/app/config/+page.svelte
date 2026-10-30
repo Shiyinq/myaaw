@@ -3,8 +3,9 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import PageHeader from '$lib/components/app/PageHeader.svelte';
-	import { Button } from '$lib/components/ui/button';
+	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
+	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
+
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -184,18 +185,25 @@
 	}
 </script>
 
-<div class="space-y-4">
-	<PageHeader title={t('myaaw.config.title')} description={t('myaaw.config.subtitle')}>
-		<Button variant="outline" size="sm" onclick={() => agent && load(agent)} loading={loading}>
-			<RefreshCw class="mr-2 h-4 w-4" />
-			{t('common.refresh')}
-		</Button>
-		<Button size="sm" onclick={save} loading={saving}>
-			<Save class="mr-2 h-4 w-4" />
-			{t('common.save')}
-		</Button>
-	</PageHeader>
+<TopBarActions id="config-actions">
+	{#snippet children()}
+		<TopBarButton
+			label={t('common.refresh')}
+			icon={RefreshCw}
+			onclick={() => agent && load(agent)}
+			loading={loading}
+		/>
+		<TopBarButton
+			label={t('common.save')}
+			icon={Save}
+			onclick={save}
+			loading={saving}
+			variant="default"
+		/>
+	{/snippet}
+</TopBarActions>
 
+<div class="space-y-4">
 	{#if !agent}
 		<Card>
 			<CardContent class="py-10 text-center text-sm text-muted-foreground">
