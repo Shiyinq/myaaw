@@ -17,7 +17,14 @@
 	} from '$lib/components/ui/card';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Activity, ChevronLeft, ChevronRight, RefreshCw, Trash2 } from 'lucide-svelte';
-	import type { ObservabilitySummary, RunDetail, RunSummary, Span } from '$lib/types';
+	import type {
+		ObservabilitySummary,
+		RunDetail,
+		RunSummary,
+		SessionDetail,
+		SessionSummary,
+		Span
+	} from '$lib/types';
 
 	const { t } = useTranslation();
 	const limit = 25;
@@ -32,6 +39,10 @@
 	let offset = $state(0);
 	let status = $state('');
 	let trigger = $state('');
+	let mode = $state<'runs' | 'sessions'>('runs');
+	let sessions = $state<SessionSummary[]>([]);
+	let session = $state<SessionDetail | null>(null);
+	let sessionLoading = $state(false);
 
 	let agent = $derived(agentSelection.selected);
 
@@ -57,17 +68,26 @@
 		loading = true;
 		error = '';
 		try {
-			const [summaryResult, runsResult] = await Promise.all([
-				observabilityApi.summary(currentAgent, 7),
-				observabilityApi.runs(currentAgent, {
-					limit,
-					offset,
-					status: status || undefined,
-					trigger: trigger || undefined
-				})
-			]);
-			summary = summaryResult;
-			runs = runsResult.runs ?? [];
+			if (mode === 'sessions') {
+				const [summaryResult, sessionsResult] = await Promise.all([
+					observabilityApi.summary(currentAgent, 7),
+					observabilityApi.sessions(currentAgent)
+				]);
+				summary = summaryResult;
+				sessions = sessionsResult.sessions ?? [];
+			} else {
+				const [summaryResult, runsResult] = await Promise.all([
+					observabilityApi.summary(currentAgent, 7),
+					observabilityApi.runs(currentAgent, {
+						limit,
+						offset,
+						status: status || undefined,
+						trigger: trigger || undefined
+					})
+				]);
+				summary = summaryResult;
+				runs = runsResult.runs ?? [];
+			}
 		} catch (err) {
 			error = getErrorMessage(err);
 		} finally {
@@ -75,9 +95,28 @@
 		}
 	}
 
+	function switchMode(next: 'runs' | 'sessions') {
+		if (mode === next) return;
+		mode = next;
+		offset = 0;
+		session = null;
+	}
+
+	async function openSession(item: SessionSummary) {
+		if (!agent) return;
+		sessionLoading = true;
+		try {
+			session = await observabilityApi.session(agent, item.conversation_id, false);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			sessionLoading = false;
+		}
+	}
+
 	$effect(() => {
 		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}:${offset}:${status}:${trigger}`;
+		const key = `${currentAgent}:${mode}:${offset}:${status}:${trigger}`;
 		if (!currentAgent || key === loadKey) return;
 		loadKey = key;
 		void load(currentAgent);
@@ -119,6 +158,18 @@
 
 	function formatTokens(value?: number) {
 		return (value ?? 0).toLocaleString();
+	}
+
+	function formatWhen(value?: number) {
+		if (!value) return '—';
+		// Observability timestamps are unix seconds; accept milliseconds too.
+		const millis = value > 1e12 ? value : value * 1000;
+		return new Date(millis).toLocaleString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
 	}
 
 	function preview(span: Span) {
@@ -231,93 +282,164 @@
 		<div class="grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-5 lg:gap-4 lg:overflow-visible">
 			<Card class="flex min-h-0 flex-col lg:col-span-2">
 				<CardHeader class="shrink-0 space-y-2">
-					<CardTitle class="flex items-center gap-2 text-sm">
-						<Activity class="h-4 w-4 shrink-0" />
-						{t('myaaw.observability.recent')}
-					</CardTitle>
-					<div class="flex gap-2">
-						<select
-							bind:value={status}
-							onchange={() => (offset = 0)}
-							class="h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-						>
-							<option value="">{t('myaaw.observability.all_status')}</option>
-							<option value="completed">completed</option>
-							<option value="failed">failed</option>
-							<option value="running">running</option>
-						</select>
-						<select
-							bind:value={trigger}
-							onchange={() => (offset = 0)}
-							class="h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-						>
-							<option value="">{t('myaaw.observability.all_triggers')}</option>
-							<option value="user">user</option>
-							<option value="cron">cron</option>
-							<option value="subagent">subagent</option>
-							<option value="a2a">a2a</option>
-						</select>
+					<div class="flex items-center justify-between gap-2">
+						<CardTitle class="flex items-center gap-2 text-sm">
+							<Activity class="h-4 w-4 shrink-0" />
+							{t('myaaw.observability.recent')}
+						</CardTitle>
+						<div class="flex shrink-0 gap-1">
+							<Button
+								size="xs"
+								variant={mode === 'runs' ? 'secondary' : 'ghost'}
+								onclick={() => switchMode('runs')}
+							>
+								{t('myaaw.observability.runs')}
+							</Button>
+							<Button
+								size="xs"
+								variant={mode === 'sessions' ? 'secondary' : 'ghost'}
+								onclick={() => switchMode('sessions')}
+							>
+								{t('myaaw.observability.sessions')}
+							</Button>
+						</div>
 					</div>
+					{#if mode === 'runs'}
+						<div class="flex gap-2">
+							<select
+								bind:value={status}
+								onchange={() => (offset = 0)}
+								class="h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+							>
+								<option value="">{t('myaaw.observability.all_status')}</option>
+								<option value="completed">completed</option>
+								<option value="failed">failed</option>
+								<option value="running">running</option>
+							</select>
+							<select
+								bind:value={trigger}
+								onchange={() => (offset = 0)}
+								class="h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+							>
+								<option value="">{t('myaaw.observability.all_triggers')}</option>
+								<option value="user">user</option>
+								<option value="cron">cron</option>
+								<option value="subagent">subagent</option>
+								<option value="a2a">a2a</option>
+							</select>
+						</div>
+					{/if}
 				</CardHeader>
 				<CardContent class="min-h-0 flex-1 space-y-1 overflow-y-auto">
-					{#if !loading && runs.length === 0}
-						<EmptyState
-							title={t('myaaw.observability.empty')}
-							description={t('myaaw.observability.empty_desc')}
-							icon={Activity}
-						/>
+					{#if mode === 'sessions'}
+						{#if !loading && sessions.length === 0}
+							<EmptyState
+								title={t('myaaw.observability.empty')}
+								description={t('myaaw.observability.empty_desc')}
+								icon={Activity}
+							/>
+						{/if}
+						{#each sessions as item (item.conversation_id)}
+							<button
+								class={[
+									'w-full rounded-md border p-2 text-left transition-colors',
+									session?.conversation_id === item.conversation_id ? 'bg-accent' : 'hover:bg-muted'
+								]}
+								onclick={() => openSession(item)}
+							>
+								<div class="flex items-center justify-between gap-2">
+									<span class="truncate font-mono text-[11px]">
+										{item.conversation_id}
+									</span>
+									<Badge variant="outline">{item.turns}</Badge>
+								</div>
+								<div
+									class="mt-1 flex items-center justify-between text-[10px] text-muted-foreground"
+								>
+									<span>{item.channel ?? '—'} · {formatWhen(item.last_active_at)}</span>
+									<span>
+										{formatTokens(item.input_tokens + item.output_tokens)} tok · {formatCost(
+											item.cost_usd
+										)}
+									</span>
+								</div>
+							</button>
+						{/each}
+					{:else}
+						{#if !loading && runs.length === 0}
+							<EmptyState
+								title={t('myaaw.observability.empty')}
+								description={t('myaaw.observability.empty_desc')}
+								icon={Activity}
+							/>
+						{/if}
+						{#each runs as run (run.id)}
+							<button
+								class={[
+									'w-full rounded-md border p-2 text-left transition-colors',
+									detail?.run.id === run.id ? 'bg-accent' : 'hover:bg-muted'
+								]}
+								onclick={() => openRun(run)}
+							>
+								<div class="flex items-center justify-between gap-2">
+									<span class="truncate font-mono text-[11px]">{run.id}</span>
+									<Badge variant={run.status === 'completed' ? 'secondary' : 'destructive'}>
+										{run.status}
+									</Badge>
+								</div>
+								<div
+									class="mt-1 flex items-center justify-between text-[10px] text-muted-foreground"
+								>
+									<span>{run.model ?? run.agent ?? '—'} · {run.trigger ?? 'user'}</span>
+									<span>{formatMs(run.total_ms)} · {formatCost(run.model_cost_usd)}</span>
+								</div>
+							</button>
+						{/each}
 					{/if}
-					{#each runs as run (run.id)}
-						<button
-							class={[
-								'w-full rounded-md border p-2 text-left transition-colors',
-								detail?.run.id === run.id ? 'bg-accent' : 'hover:bg-muted'
-							]}
-							onclick={() => openRun(run)}
-						>
-							<div class="flex items-center justify-between gap-2">
-								<span class="truncate font-mono text-[11px]">{run.id}</span>
-								<Badge variant={run.status === 'completed' ? 'secondary' : 'destructive'}>
-									{run.status}
-								</Badge>
-							</div>
-							<div class="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
-								<span>{run.model ?? run.agent ?? '—'} · {run.trigger ?? 'user'}</span>
-								<span>{formatMs(run.total_ms)} · {formatCost(run.model_cost_usd)}</span>
-							</div>
-						</button>
-					{/each}
 				</CardContent>
-				<div class="flex shrink-0 items-center justify-between gap-2 border-t px-4 pt-3">
-					<Button
-						variant="outline"
-						size="xs"
-						disabled={offset === 0}
-						onclick={() => (offset = Math.max(0, offset - limit))}
-					>
-						<ChevronLeft class="h-3.5 w-3.5" />
-					</Button>
-					{#if runs.length > 0}
-						<span class="text-[10px] text-muted-foreground">
-							{offset + 1}–{offset + runs.length}
-						</span>
-					{/if}
-					<Button
-						variant="outline"
-						size="xs"
-						disabled={runs.length < limit}
-						onclick={() => (offset = offset + limit)}
-					>
-						<ChevronRight class="h-3.5 w-3.5" />
-					</Button>
-				</div>
+				{#if mode === 'runs'}
+					<div class="flex shrink-0 items-center justify-between gap-2 border-t px-4 pt-3">
+						<Button
+							variant="outline"
+							size="xs"
+							disabled={offset === 0}
+							onclick={() => (offset = Math.max(0, offset - limit))}
+						>
+							<ChevronLeft class="h-3.5 w-3.5" />
+						</Button>
+						{#if runs.length > 0}
+							<span class="text-[10px] text-muted-foreground">
+								{offset + 1}–{offset + runs.length}
+							</span>
+						{/if}
+						<Button
+							variant="outline"
+							size="xs"
+							disabled={runs.length < limit}
+							onclick={() => (offset = offset + limit)}
+						>
+							<ChevronRight class="h-3.5 w-3.5" />
+						</Button>
+					</div>
+				{/if}
 			</Card>
 
 			<Card class="flex min-h-0 flex-col lg:col-span-3">
 				<CardHeader class="shrink-0">
-					<CardTitle class="text-sm">{t('myaaw.observability.trajectory')}</CardTitle>
+					<CardTitle class="text-sm">
+						{mode === 'sessions'
+							? t('myaaw.observability.session')
+							: t('myaaw.observability.trajectory')}
+					</CardTitle>
 					<CardDescription class="truncate">
-						{#if detail}
+						{#if mode === 'sessions'}
+							{#if session}
+								{session.conversation_id} · {session.turns} ·
+								{formatWhen(session.started_at)}
+							{:else}
+								{t('myaaw.observability.select_session')}
+							{/if}
+						{:else if detail}
 							{detail.run.id} · {detail.run.model ?? '—'} · {formatMs(detail.run.total_ms)} ·
 							{formatCost(detail.run.model_cost_usd)}
 						{:else}
@@ -326,7 +448,34 @@
 					</CardDescription>
 				</CardHeader>
 				<CardContent class="min-h-0 flex-1 space-y-1 overflow-y-auto">
-					{#if detailLoading}
+					{#if mode === 'sessions'}
+						{#if sessionLoading}
+							<p class="text-sm text-muted-foreground">{t('common.loading')}</p>
+						{:else if session}
+							{#each session.runs ?? [] as turn (turn.id)}
+								<div class="rounded-md border p-2 text-[11px]">
+									<div class="flex items-center justify-between gap-2">
+										<span class="truncate font-mono">{turn.id}</span>
+										<Badge variant={turn.status === 'completed' ? 'secondary' : 'destructive'}>
+											{turn.status}
+										</Badge>
+									</div>
+									<div
+										class="mt-1 flex items-center justify-between text-[10px] text-muted-foreground"
+									>
+										<span>{turn.model ?? '—'} · {turn.trigger ?? 'user'}</span>
+										<span>
+											{formatMs(turn.total_ms)} · {formatCost(turn.model_cost_usd)}
+										</span>
+									</div>
+								</div>
+							{/each}
+						{:else}
+							<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
+								{t('myaaw.observability.select_session')}
+							</p>
+						{/if}
+					{:else if detailLoading}
 						<p class="text-sm text-muted-foreground">{t('common.loading')}</p>
 					{:else if detail}
 						{#each rows as row (row.span.id)}
