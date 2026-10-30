@@ -154,7 +154,7 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="space-y-4">
+<div class="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4 lg:gap-4 lg:overflow-hidden lg:p-6">
 	{#if !agent}
 		<Card>
 			<CardContent class="py-10 text-center text-sm text-muted-foreground">
@@ -163,12 +163,14 @@
 		</Card>
 	{:else}
 		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+			<div
+				class="shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+			>
 				{error}
 			</div>
 		{/if}
 
-		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+		<div class="grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
 			<Card>
 				<CardHeader class="pb-2">
 					<CardTitle class="text-sm font-medium">{t('myaaw.observability.runs')}</CardTitle>
@@ -217,11 +219,11 @@
 			</Card>
 		</div>
 
-		<div class="grid gap-4 lg:grid-cols-5">
-			<Card class="lg:col-span-2">
-				<CardHeader class="space-y-2">
+		<div class="grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-5 lg:gap-4 lg:overflow-visible">
+			<Card class="flex min-h-0 flex-col lg:col-span-2">
+				<CardHeader class="shrink-0 space-y-2">
 					<CardTitle class="flex items-center gap-2 text-sm">
-						<Activity class="h-4 w-4" />
+						<Activity class="h-4 w-4 shrink-0" />
 						{t('myaaw.observability.recent')}
 					</CardTitle>
 					<div class="flex gap-2">
@@ -248,7 +250,7 @@
 						</select>
 					</div>
 				</CardHeader>
-				<CardContent class="space-y-1">
+				<CardContent class="min-h-0 flex-1 space-y-1 overflow-y-auto">
 					{#if !loading && runs.length === 0}
 						<EmptyState
 							title={t('myaaw.observability.empty')}
@@ -276,32 +278,36 @@
 							</div>
 						</button>
 					{/each}
-
-					<div class="flex items-center justify-between pt-2">
-						<Button
-							variant="outline"
-							size="xs"
-							disabled={offset === 0}
-							onclick={() => (offset = Math.max(0, offset - limit))}
-						>
-							<ChevronLeft class="h-3.5 w-3.5" />
-						</Button>
-						<Button
-							variant="outline"
-							size="xs"
-							disabled={runs.length < limit}
-							onclick={() => (offset = offset + limit)}
-						>
-							<ChevronRight class="h-3.5 w-3.5" />
-						</Button>
-					</div>
 				</CardContent>
+				<div class="flex shrink-0 items-center justify-between gap-2 border-t px-4 pt-3">
+					<Button
+						variant="outline"
+						size="xs"
+						disabled={offset === 0}
+						onclick={() => (offset = Math.max(0, offset - limit))}
+					>
+						<ChevronLeft class="h-3.5 w-3.5" />
+					</Button>
+					{#if runs.length > 0}
+						<span class="text-[10px] text-muted-foreground">
+							{offset + 1}–{offset + runs.length}
+						</span>
+					{/if}
+					<Button
+						variant="outline"
+						size="xs"
+						disabled={runs.length < limit}
+						onclick={() => (offset = offset + limit)}
+					>
+						<ChevronRight class="h-3.5 w-3.5" />
+					</Button>
+				</div>
 			</Card>
 
-			<Card class="lg:col-span-3">
-				<CardHeader>
+			<Card class="flex min-h-0 flex-col lg:col-span-3">
+				<CardHeader class="shrink-0">
 					<CardTitle class="text-sm">{t('myaaw.observability.trajectory')}</CardTitle>
-					<CardDescription>
+					<CardDescription class="truncate">
 						{#if detail}
 							{detail.run.id} · {detail.run.model ?? '—'} · {formatMs(detail.run.total_ms)} ·
 							{formatCost(detail.run.model_cost_usd)}
@@ -310,7 +316,7 @@
 						{/if}
 					</CardDescription>
 				</CardHeader>
-				<CardContent class="space-y-1">
+				<CardContent class="min-h-0 flex-1 space-y-1 overflow-y-auto">
 					{#if detailLoading}
 						<p class="text-sm text-muted-foreground">{t('common.loading')}</p>
 					{:else if detail}
@@ -342,9 +348,11 @@
 							</div>
 						{/each}
 						<Separator class="my-2" />
-						<p class="text-[10px] text-muted-foreground">{t('myaaw.observability.spans', { count: rows.length })}</p>
+						<p class="text-[10px] text-muted-foreground">
+							{t('myaaw.observability.spans', { count: rows.length })}
+						</p>
 					{:else}
-						<p class="py-10 text-center text-sm text-muted-foreground">
+						<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
 							{t('myaaw.observability.select_run')}
 						</p>
 					{/if}

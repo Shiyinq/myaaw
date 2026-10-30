@@ -7,7 +7,13 @@
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import {
+		Card,
+		CardContent,
+		CardDescription,
+		CardHeader,
+		CardTitle
+	} from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
@@ -149,12 +155,12 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
-			loading={loading}
+			{loading}
 		/>
 	{/snippet}
 </TopBarActions>
 
-<div class="space-y-4">
+<div class="h-full min-h-0 overflow-y-auto p-4 lg:p-6">
 	{#if !agent}
 		<Card>
 			<CardContent class="py-10 text-center text-sm text-muted-foreground">
@@ -163,168 +169,181 @@
 		</Card>
 	{:else}
 		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+			<div
+				class="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+			>
 				{error}
 			</div>
 		{/if}
 
-		<div class="grid gap-4 lg:grid-cols-2">
+		<div class="grid gap-4 lg:grid-cols-2 lg:items-start">
 			<Card>
 				<CardHeader>
 					<CardTitle class="flex items-center gap-2">
-						<Wrench class="h-4 w-4" />
+						<Wrench class="h-4 w-4 shrink-0" />
 						{t('myaaw.tools.builtin')}
 					</CardTitle>
 					<CardDescription>{t('myaaw.tools.builtin_desc')}</CardDescription>
 				</CardHeader>
-				<CardContent class="space-y-2">
+				<CardContent class="space-y-1">
 					{#each view?.builtin ?? [] as tool (tool.name)}
-						<label class="flex items-center justify-between gap-2 rounded-md px-1 py-1 text-sm">
-							<span class="flex items-center gap-2">
+						<label class="flex items-center justify-between gap-3 rounded-md px-1 py-1 text-sm">
+							<span class="flex shrink-0 items-center gap-2">
 								<input
 									type="checkbox"
 									checked={tool.enabled}
 									onchange={(event) => toggleBuiltin(tool.name, event.currentTarget.checked)}
-									class="h-4 w-4 accent-primary"
+									class="h-4 w-4 shrink-0 accent-primary"
 								/>
 								<span class="font-mono">{tool.name}</span>
 							</span>
-							<span class="truncate text-[11px] text-muted-foreground">{tool.description}</span>
+							<span class="min-w-0 flex-1 truncate text-right text-[11px] text-muted-foreground">
+								{tool.description}
+							</span>
 						</label>
 					{/each}
 				</CardContent>
 			</Card>
 
-			<Card>
-				<CardHeader>
-					<CardTitle>{t('myaaw.tools.custom')}</CardTitle>
-					<CardDescription>{t('myaaw.tools.custom_desc')}</CardDescription>
-				</CardHeader>
-				<CardContent class="space-y-3">
-					{#each view?.custom ?? [] as tool (tool.name)}
-						<div class="flex items-center justify-between gap-2 rounded-md border p-2 text-sm">
-							<div class="min-w-0">
-								<div class="flex items-center gap-2">
-									<span class="font-mono">{tool.name}</span>
-									<Badge variant={tool.enabled ? 'secondary' : 'outline'}>
-										{tool.enabled ? t('myaaw.tools.enabled') : t('myaaw.tools.disabled')}
-									</Badge>
-								</div>
-								<p class="truncate text-[11px] text-muted-foreground">
-									{tool.command} {tool.args?.join(' ') ?? ''}
-								</p>
-							</div>
-							<Button size="icon-sm" variant="ghost" onclick={() => remove('custom', tool.name)}>
-								<Trash2 class="h-3.5 w-3.5 text-destructive" />
-							</Button>
-						</div>
-					{:else}
-						<p class="text-sm text-muted-foreground">{t('myaaw.tools.empty')}</p>
-					{/each}
-
-					<Separator />
-					<form
-						class="space-y-2"
-						onsubmit={(event) => {
-							event.preventDefault();
-							void createCustom();
-						}}
-					>
-						<div class="grid gap-1">
-							<Label for="custom-name">{t('myaaw.tools.name')}</Label>
-							<Input id="custom-name" bind:value={customName} placeholder="hello_helper" />
-						</div>
-						<div class="grid gap-1">
-							<Label for="custom-command">{t('myaaw.tools.command')}</Label>
-							<Input id="custom-command" bind:value={customCommand} placeholder="node" />
-						</div>
-						<div class="grid gap-1">
-							<Label for="custom-args">{t('myaaw.tools.args')}</Label>
-							<Input id="custom-args" bind:value={customArgs} placeholder="/path/script.js, --flag" />
-						</div>
-						<div class="grid gap-1">
-							<Label for="custom-schema">{t('myaaw.tools.schema')}</Label>
-							<textarea
-								id="custom-schema"
-								bind:value={customSchema}
-								rows="3"
-								placeholder={'{"type":"function","function":{"name":"hello_helper","parameters":{}}}'}
-								class="w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-							></textarea>
-						</div>
-						<Button type="submit" size="sm" loading={saving}>
-							<Plus class="mr-2 h-4 w-4" />
-							{t('myaaw.tools.create')}
-						</Button>
-					</form>
-				</CardContent>
-			</Card>
-
-			<Card class="lg:col-span-2">
-				<CardHeader>
-					<CardTitle>{t('myaaw.tools.mcp')}</CardTitle>
-					<CardDescription>{t('myaaw.tools.mcp_desc')}</CardDescription>
-				</CardHeader>
-				<CardContent class="grid gap-4 md:grid-cols-2">
-					<div class="space-y-2">
-						{#each view?.mcp_servers ?? [] as server (server.name)}
+			<div class="flex flex-col gap-4">
+				<Card>
+					<CardHeader>
+						<CardTitle>{t('myaaw.tools.custom')}</CardTitle>
+						<CardDescription>{t('myaaw.tools.custom_desc')}</CardDescription>
+					</CardHeader>
+					<CardContent class="space-y-3">
+						{#each view?.custom ?? [] as tool (tool.name)}
 							<div class="flex items-center justify-between gap-2 rounded-md border p-2 text-sm">
 								<div class="min-w-0">
 									<div class="flex items-center gap-2">
-										<span class="font-mono">{server.name}</span>
-										<Badge variant={server.enabled ? 'secondary' : 'outline'}>
-											{server.enabled ? t('myaaw.tools.enabled') : t('myaaw.tools.disabled')}
+										<span class="font-mono">{tool.name}</span>
+										<Badge variant={tool.enabled ? 'secondary' : 'outline'}>
+											{tool.enabled ? t('myaaw.tools.enabled') : t('myaaw.tools.disabled')}
 										</Badge>
 									</div>
 									<p class="truncate text-[11px] text-muted-foreground">
-										{server.command} {server.args?.join(' ') ?? ''}
+										{tool.command}
+										{tool.args?.join(' ') ?? ''}
 									</p>
 								</div>
-								<Button size="icon-sm" variant="ghost" onclick={() => remove('mcp', server.name)}>
+								<Button size="icon-sm" variant="ghost" onclick={() => remove('custom', tool.name)}>
 									<Trash2 class="h-3.5 w-3.5 text-destructive" />
 								</Button>
 							</div>
 						{:else}
 							<p class="text-sm text-muted-foreground">{t('myaaw.tools.empty')}</p>
 						{/each}
-					</div>
 
-					<form
-						class="space-y-2"
-						onsubmit={(event) => {
-							event.preventDefault();
-							void createMCP();
-						}}
-					>
-						<div class="grid gap-1">
-							<Label for="mcp-name">{t('myaaw.tools.name')}</Label>
-							<Input id="mcp-name" bind:value={mcpName} placeholder="playwright" />
+						<Separator />
+						<form
+							class="space-y-2"
+							onsubmit={(event) => {
+								event.preventDefault();
+								void createCustom();
+							}}
+						>
+							<div class="grid gap-1">
+								<Label for="custom-name">{t('myaaw.tools.name')}</Label>
+								<Input id="custom-name" bind:value={customName} placeholder="hello_helper" />
+							</div>
+							<div class="grid gap-1">
+								<Label for="custom-command">{t('myaaw.tools.command')}</Label>
+								<Input id="custom-command" bind:value={customCommand} placeholder="node" />
+							</div>
+							<div class="grid gap-1">
+								<Label for="custom-args">{t('myaaw.tools.args')}</Label>
+								<Input
+									id="custom-args"
+									bind:value={customArgs}
+									placeholder="/path/script.js, --flag"
+								/>
+							</div>
+							<div class="grid gap-1">
+								<Label for="custom-schema">{t('myaaw.tools.schema')}</Label>
+								<textarea
+									id="custom-schema"
+									bind:value={customSchema}
+									rows="3"
+									placeholder={'{"type":"function","function":{"name":"hello_helper","parameters":{}}}'}
+									class="w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+								></textarea>
+							</div>
+							<Button type="submit" size="sm" loading={saving}>
+								<Plus class="mr-2 h-4 w-4" />
+								{t('myaaw.tools.create')}
+							</Button>
+						</form>
+					</CardContent>
+				</Card>
+
+				<Card>
+					<CardHeader>
+						<CardTitle>{t('myaaw.tools.mcp')}</CardTitle>
+						<CardDescription>{t('myaaw.tools.mcp_desc')}</CardDescription>
+					</CardHeader>
+					<CardContent class="space-y-3">
+						<div class="space-y-2">
+							{#each view?.mcp_servers ?? [] as server (server.name)}
+								<div class="flex items-center justify-between gap-2 rounded-md border p-2 text-sm">
+									<div class="min-w-0">
+										<div class="flex items-center gap-2">
+											<span class="font-mono">{server.name}</span>
+											<Badge variant={server.enabled ? 'secondary' : 'outline'}>
+												{server.enabled ? t('myaaw.tools.enabled') : t('myaaw.tools.disabled')}
+											</Badge>
+										</div>
+										<p class="truncate text-[11px] text-muted-foreground">
+											{server.command}
+											{server.args?.join(' ') ?? ''}
+										</p>
+									</div>
+									<Button size="icon-sm" variant="ghost" onclick={() => remove('mcp', server.name)}>
+										<Trash2 class="h-3.5 w-3.5 text-destructive" />
+									</Button>
+								</div>
+							{:else}
+								<p class="text-sm text-muted-foreground">{t('myaaw.tools.empty')}</p>
+							{/each}
 						</div>
-						<div class="grid gap-1">
-							<Label for="mcp-command">{t('myaaw.tools.command')}</Label>
-							<Input id="mcp-command" bind:value={mcpCommand} placeholder="npx" />
-						</div>
-						<div class="grid gap-1">
-							<Label for="mcp-args">{t('myaaw.tools.args')}</Label>
-							<Input id="mcp-args" bind:value={mcpArgs} placeholder="-y, @playwright/mcp" />
-						</div>
-						<div class="grid gap-1">
-							<Label for="mcp-env">{t('myaaw.tools.env')}</Label>
-							<textarea
-								id="mcp-env"
-								bind:value={mcpEnv}
-								rows="3"
-								placeholder="TOKEN=secret"
-								class="w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-							></textarea>
-						</div>
-						<Button type="submit" size="sm" loading={saving}>
-							<Plus class="mr-2 h-4 w-4" />
-							{t('myaaw.tools.create')}
-						</Button>
-					</form>
-				</CardContent>
-			</Card>
+
+						<Separator />
+						<form
+							class="space-y-2"
+							onsubmit={(event) => {
+								event.preventDefault();
+								void createMCP();
+							}}
+						>
+							<div class="grid gap-1">
+								<Label for="mcp-name">{t('myaaw.tools.name')}</Label>
+								<Input id="mcp-name" bind:value={mcpName} placeholder="playwright" />
+							</div>
+							<div class="grid gap-1">
+								<Label for="mcp-command">{t('myaaw.tools.command')}</Label>
+								<Input id="mcp-command" bind:value={mcpCommand} placeholder="npx" />
+							</div>
+							<div class="grid gap-1">
+								<Label for="mcp-args">{t('myaaw.tools.args')}</Label>
+								<Input id="mcp-args" bind:value={mcpArgs} placeholder="-y, @playwright/mcp" />
+							</div>
+							<div class="grid gap-1">
+								<Label for="mcp-env">{t('myaaw.tools.env')}</Label>
+								<textarea
+									id="mcp-env"
+									bind:value={mcpEnv}
+									rows="3"
+									placeholder="TOKEN=secret"
+									class="w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+								></textarea>
+							</div>
+							<Button type="submit" size="sm" loading={saving}>
+								<Plus class="mr-2 h-4 w-4" />
+								{t('myaaw.tools.create')}
+							</Button>
+						</form>
+					</CardContent>
+				</Card>
+			</div>
 		</div>
 	{/if}
 </div>
