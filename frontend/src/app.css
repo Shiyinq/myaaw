@@ -155,7 +155,10 @@
 }
 
 ::selection {
-	background-color: hsl(var(--primary) / 0.3);
+	/* The theme tokens are OKLCH, so they cannot be wrapped in hsl(); an
+	 * invalid var() substitution would fall back to a transparent highlight and
+	 * make selections invisible. */
+	background-color: color-mix(in oklch, var(--primary) 30%, transparent);
 	color: inherit;
 }
 
