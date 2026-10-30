@@ -94,74 +94,83 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="space-y-4">
+<div class="flex h-full min-h-0 flex-col lg:flex-row">
 	{#if !agent}
-		<Card>
-			<CardContent class="py-10 text-center text-sm text-muted-foreground">
-				{t('myaaw.agent.none')}
-			</CardContent>
-		</Card>
-	{:else}
-		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-				{error}
-			</div>
-		{/if}
-
-		<div class="grid gap-4 lg:grid-cols-4">
-			<Card class="lg:col-span-1">
-				<CardHeader>
-					<CardTitle class="text-sm">{t('myaaw.context.files')}</CardTitle>
-				</CardHeader>
-				<CardContent class="space-y-3">
-					{#if loading}
-						<p class="text-sm text-muted-foreground">{t('common.loading')}</p>
-					{:else if files.length === 0}
-						<p class="text-sm text-muted-foreground">{t('myaaw.context.empty')}</p>
-					{/if}
-					{#each groups() as [folder, list] (folder)}
-						<div class="space-y-1">
-							<p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-								{folder}
-							</p>
-							{#each list as file (file.path)}
-								<button
-									class={[
-										'block w-full truncate rounded-md px-2 py-1 text-left text-sm transition-colors',
-										file.path === path
-											? 'bg-accent font-medium text-accent-foreground'
-											: 'hover:bg-muted'
-									]}
-									onclick={() => agent && open(agent, file.path)}
-								>
-									{file.name}
-								</button>
-							{/each}
-						</div>
-					{/each}
+		<div class="w-full p-4 lg:p-6">
+			<Card>
+				<CardContent class="py-10 text-center text-sm text-muted-foreground">
+					{t('myaaw.agent.none')}
 				</CardContent>
 			</Card>
+		</div>
+	{:else}
+		<!-- Context files: a second sidebar nested inside the main one. -->
+		<aside
+			class="flex h-[45vh] shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+		>
+			<div class="shrink-0 border-b px-3 py-2.5">
+				<p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+					{t('myaaw.context.files')}
+				</p>
+			</div>
+			<div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
+				{#if loading}
+					<p class="px-1 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
+				{:else if files.length === 0}
+					<p class="px-1 py-2 text-sm text-muted-foreground">{t('myaaw.context.empty')}</p>
+				{/if}
+				{#each groups() as [folder, list] (folder)}
+					<div class="space-y-1">
+						<p class="px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+							{folder}
+						</p>
+						{#each list as file (file.path)}
+							<button
+								class={[
+									'block w-full truncate rounded-md px-2 py-1 text-left text-sm transition-colors',
+									file.path === path
+										? 'bg-accent font-medium text-accent-foreground'
+										: 'hover:bg-muted'
+								]}
+								onclick={() => agent && open(agent, file.path)}
+							>
+								{file.name}
+							</button>
+						{/each}
+					</div>
+				{/each}
+			</div>
+		</aside>
 
-			<Card class="lg:col-span-3">
-				<CardHeader class="flex flex-row items-center justify-between">
+		<section class="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
+			{#if error}
+				<div
+					class="mb-3 shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+				>
+					{error}
+				</div>
+			{/if}
+
+			<Card class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+				<CardHeader class="flex shrink-0 flex-row items-center justify-between">
 					<CardTitle class="truncate text-sm font-medium">
 						{path || t('myaaw.context.editor')}
 					</CardTitle>
 					<Badge variant="outline">{t('myaaw.context.markdown')}</Badge>
 				</CardHeader>
-				<CardContent>
+				<CardContent class="min-h-0 flex-1">
 					{#if path}
 						<textarea
 							bind:value={content}
-							class="min-h-[32rem] w-full resize-y rounded-md border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+							class="h-full w-full resize-none rounded-md border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 						></textarea>
 					{:else}
-						<p class="py-10 text-center text-sm text-muted-foreground">
+						<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
 							{t('myaaw.context.select_file')}
 						</p>
 					{/if}
 				</CardContent>
 			</Card>
-		</div>
+		</section>
 	{/if}
 </div>

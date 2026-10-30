@@ -175,6 +175,13 @@
 	let isChat = $derived(
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
 	);
+	// Pages with a split list + editor layout manage their own scrolling, so the
+	// shell gives them the full height of the viewport instead of scrolling.
+	let isFullHeight = $derived(
+		isChat ||
+			page.url.pathname.startsWith('/app/files') ||
+			page.url.pathname.startsWith('/app/context')
+	);
 
 	async function logout() {
 		await authStore.logout();
@@ -260,9 +267,20 @@
 		{#if sidebar.collapsed}
 			<div class="flex h-14 shrink-0 items-center justify-center border-b">
 				<div
-					class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground"
+					class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
 				>
-					M
+					<svg
+						viewBox="0 0 1024 1024"
+						class="h-4 w-4"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="104"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M262 724V330l250 266 250-266v394" />
+					</svg>
 				</div>
 			</div>
 			<button
@@ -276,9 +294,20 @@
 		{:else}
 			<div class="flex h-14 shrink-0 items-center gap-2 border-b pl-4">
 				<div
-					class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground"
+					class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
 				>
-					M
+					<svg
+						viewBox="0 0 1024 1024"
+						class="h-4 w-4"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="104"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M262 724V330l250 266 250-266v394" />
+					</svg>
 				</div>
 				<div class="flex min-w-0 flex-col leading-tight">
 					<span class="text-sm font-bold tracking-tight">Myaaw</span>
@@ -432,8 +461,12 @@
 			</nav>
 		</header>
 
-		<main class={isChat ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-0 flex-1 overflow-y-auto'}>
-			{#if isChat}
+		<main
+			class={isFullHeight
+				? 'min-h-0 flex-1 overflow-hidden'
+				: 'min-h-0 flex-1 overflow-y-auto'}
+		>
+			{#if isFullHeight}
 				<div class="h-full">{@render children()}</div>
 			{:else}
 				<div class="mx-auto w-full max-w-6xl px-4 py-6">

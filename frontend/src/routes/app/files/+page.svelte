@@ -9,7 +9,6 @@
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Separator } from '$lib/components/ui/separator';
 	import {
 		ChevronLeft,
 		File,
@@ -79,6 +78,13 @@
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
+	}
+
+	async function openMatch(match: SearchMatch) {
+		if (!agent) return;
+		const file = await filesApi.read(agent, match.path);
+		selected = file;
+		content = file.content;
 	}
 
 	async function save() {
@@ -167,110 +173,114 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="space-y-4">
+<div class="flex h-full min-h-0 flex-col lg:flex-row">
 	{#if !agent}
-		<Card>
-			<CardContent class="py-10 text-center text-sm text-muted-foreground">
-				{t('myaaw.agent.none')}
-			</CardContent>
-		</Card>
-	{:else}
-		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-				{error}
-			</div>
-		{/if}
-
-		<div class="grid gap-4 lg:grid-cols-5">
-			<Card class="lg:col-span-2">
-				<CardHeader class="space-y-2">
-					<div class="flex items-center gap-2">
-						<Button variant="ghost" size="icon-sm" onclick={goUp}>
-							<ChevronLeft class="h-4 w-4" />
-						</Button>
-						<div class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
-							<button class="hover:underline" onclick={() => agent && load(agent, '')}>roots</button>
-							{#each breadcrumb() as part, index (index)}
-								<span>/</span>
-								<span class="truncate font-medium text-foreground">{part}</span>
-							{/each}
-						</div>
-					</div>
-
-					<div class="flex gap-2">
-						<Input bind:value={folderName} placeholder={t('myaaw.files.new_folder')} class="h-8" />
-						<Button size="sm" variant="outline" onclick={createFolder}>
-							<FilePlus2 class="h-4 w-4" />
-						</Button>
-					</div>
-				</CardHeader>
-
-				<CardContent class="space-y-1">
-					{#if loading}
-						<p class="text-sm text-muted-foreground">{t('common.loading')}</p>
-					{:else if entries.length === 0}
-						<p class="text-sm text-muted-foreground">{t('myaaw.files.empty')}</p>
-					{/if}
-
-					{#each entries as entry (entry.path)}
-						<div class="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted">
-							<button
-								class="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
-								onclick={() => open(entry)}
-							>
-								{#if entry.is_dir}
-									<Folder class="h-4 w-4 shrink-0 text-muted-foreground" />
-								{:else}
-									<File class="h-4 w-4 shrink-0 text-muted-foreground" />
-								{/if}
-								<span class="truncate">{entry.name}</span>
-							</button>
-							{#if !entry.is_dir}
-								<span class="text-[10px] text-muted-foreground">{formatSize(entry.size)}</span>
-							{/if}
-							<Button
-								variant="ghost"
-								size="icon-xs"
-								class="opacity-0 group-hover:opacity-100"
-								onclick={() => remove(entry)}
-							>
-								<Trash2 class="h-3.5 w-3.5 text-destructive" />
-							</Button>
-						</div>
-					{/each}
-
-					<Separator class="my-2" />
-
-					<div class="flex gap-2">
-						<Input
-							bind:value={searchQuery}
-							placeholder={t('myaaw.files.search')}
-							class="h-8"
-							onkeydown={(event) => {
-								if (event.key === 'Enter') void search();
-							}}
-						/>
-						<Button size="sm" variant="outline" onclick={search} loading={searchLoading}>
-							<Search class="h-4 w-4" />
-						</Button>
-					</div>
-					{#each matches as match (match.path + match.line)}
-						<button
-							class="block w-full truncate rounded px-1 py-0.5 text-left text-xs hover:bg-muted"
-							onclick={() => agent && filesApi.read(agent, match.path).then((file) => {
-								selected = file;
-								content = file.content;
-							})}
-						>
-							<span class="font-mono">{match.path}:{match.line}</span>
-							<span class="text-muted-foreground"> {match.text}</span>
-						</button>
-					{/each}
+		<div class="w-full p-4 lg:p-6">
+			<Card>
+				<CardContent class="py-10 text-center text-sm text-muted-foreground">
+					{t('myaaw.agent.none')}
 				</CardContent>
 			</Card>
+		</div>
+	{:else}
+		<!-- File list: a second sidebar nested inside the main one. -->
+		<aside
+			class="flex h-[45vh] shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+		>
+			<div class="shrink-0 space-y-2 border-b p-3">
+				<div class="flex items-center gap-1">
+					<Button variant="ghost" size="icon-xs" onclick={goUp}>
+						<ChevronLeft class="h-4 w-4" />
+					</Button>
+					<div class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
+						<button class="hover:underline" onclick={() => agent && load(agent, '')}>roots</button>
+						{#each breadcrumb() as part, index (index)}
+							<span>/</span>
+							<span class="truncate font-medium text-foreground">{part}</span>
+						{/each}
+					</div>
+				</div>
 
-			<Card class="lg:col-span-3">
-				<CardHeader class="flex flex-row items-center justify-between">
+				<div class="flex gap-2">
+					<Input bind:value={folderName} placeholder={t('myaaw.files.new_folder')} class="h-8" />
+					<Button size="sm" variant="outline" onclick={createFolder}>
+						<FilePlus2 class="h-4 w-4" />
+					</Button>
+				</div>
+			</div>
+
+			<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
+				{#if loading}
+					<p class="px-1 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
+				{:else if entries.length === 0}
+					<p class="px-1 py-2 text-sm text-muted-foreground">{t('myaaw.files.empty')}</p>
+				{/if}
+
+				{#each entries as entry (entry.path)}
+					<div class="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted">
+						<button
+							class="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
+							onclick={() => open(entry)}
+						>
+							{#if entry.is_dir}
+								<Folder class="h-4 w-4 shrink-0 text-muted-foreground" />
+							{:else}
+								<File class="h-4 w-4 shrink-0 text-muted-foreground" />
+							{/if}
+							<span class="truncate">{entry.name}</span>
+						</button>
+						{#if !entry.is_dir}
+							<span class="text-[10px] text-muted-foreground">{formatSize(entry.size)}</span>
+						{/if}
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							class="opacity-0 group-hover:opacity-100"
+							onclick={() => remove(entry)}
+						>
+							<Trash2 class="h-3.5 w-3.5 text-destructive" />
+						</Button>
+					</div>
+				{/each}
+			</div>
+
+			<div class="shrink-0 space-y-1 border-t p-2">
+				<div class="flex gap-2">
+					<Input
+						bind:value={searchQuery}
+						placeholder={t('myaaw.files.search')}
+						class="h-8"
+						onkeydown={(event) => {
+							if (event.key === 'Enter') void search();
+						}}
+					/>
+					<Button size="sm" variant="outline" onclick={search} loading={searchLoading}>
+						<Search class="h-4 w-4" />
+					</Button>
+				</div>
+				{#each matches as match (match.path + match.line)}
+					<button
+						class="block w-full truncate rounded px-1 py-0.5 text-left text-xs hover:bg-muted"
+						onclick={() => openMatch(match)}
+					>
+						<span class="font-mono">{match.path}:{match.line}</span>
+						<span class="text-muted-foreground"> {match.text}</span>
+					</button>
+				{/each}
+			</div>
+		</aside>
+
+		<section class="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
+			{#if error}
+				<div
+					class="mb-3 shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+				>
+					{error}
+				</div>
+			{/if}
+
+			<Card class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+				<CardHeader class="flex shrink-0 flex-row items-center justify-between">
 					<CardTitle class="truncate text-sm font-medium">
 						{selected ? selected.path : t('myaaw.files.editor')}
 					</CardTitle>
@@ -284,19 +294,19 @@
 						</div>
 					{/if}
 				</CardHeader>
-				<CardContent>
+				<CardContent class="min-h-0 flex-1">
 					{#if selected}
 						<textarea
 							bind:value={content}
-							class="min-h-[28rem] w-full resize-y rounded-md border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+							class="h-full w-full resize-none rounded-md border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 						></textarea>
 					{:else}
-						<p class="py-10 text-center text-sm text-muted-foreground">
+						<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
 							{t('myaaw.files.select_file')}
 						</p>
 					{/if}
 				</CardContent>
 			</Card>
-		</div>
+		</section>
 	{/if}
 </div>
