@@ -203,7 +203,6 @@
 			"group_operations": "Operasional",
 			"dashboard": "Dasbor",
 			"chat": "Chat",
-			"conversations": "Percakapan",
 			"files": "Berkas",
 			"context": "Konteks",
 			"skills": "Keterampilan",
@@ -279,20 +278,11 @@
 			"rename": "Ubah judul"
 		},
 		"conversations": {
-			"title": "Percakapan",
-			"subtitle": "Lihat, ganti nama, dan hapus riwayat chat.",
 			"search": "Cari judul...",
-			"empty": "Belum ada percakapan",
-			"empty_desc": "Mulai chat dan percakapan akan muncul di sini.",
 			"messages": "{count} pesan",
-			"open": "Buka",
-			"rename": "Ganti nama",
-			"delete": "Hapus",
 			"delete_confirm": "Hapus percakapan ini?",
 			"renamed": "Percakapan diganti nama",
-			"deleted": "Percakapan dihapus",
-			"active": "aktif",
-			"total": "{total} percakapan · menampilkan {offset}–{end}"
+			"deleted": "Percakapan dihapus"
 		},
 		"server": {
 			"title": "Server",

@@ -5,7 +5,6 @@
 	import {
 		LayoutDashboard,
 		MessagesSquare,
-		ListTree,
 		FolderOpen,
 		Brain,
 		Sparkles,
@@ -56,18 +55,6 @@
 					icon: MessagesSquare
 				},
 				{
-					href: '/app/conversations',
-					label: 'myaaw.nav.conversations',
-					description: 'myaaw.conversations.subtitle',
-					icon: ListTree
-				},
-				{
-					href: '/app/files',
-					label: 'myaaw.nav.files',
-					description: 'myaaw.files.subtitle',
-					icon: FolderOpen
-				},
-				{
 					href: '/app/context',
 					label: 'myaaw.nav.context',
 					description: 'myaaw.context.subtitle',
@@ -90,6 +77,12 @@
 					label: 'myaaw.nav.contacts',
 					description: 'myaaw.contacts.subtitle',
 					icon: Users
+				},
+				{
+					href: '/app/files',
+					label: 'myaaw.nav.files',
+					description: 'myaaw.files.subtitle',
+					icon: FolderOpen
 				}
 			]
 		},

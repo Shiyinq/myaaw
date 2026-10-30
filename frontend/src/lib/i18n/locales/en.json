@@ -203,7 +203,6 @@
 			"group_operations": "Operations",
 			"dashboard": "Dashboard",
 			"chat": "Chat",
-			"conversations": "Conversations",
 			"files": "Files",
 			"context": "Context",
 			"skills": "Skills",
@@ -279,20 +278,11 @@
 			"rename": "Rename"
 		},
 		"conversations": {
-			"title": "Conversations",
-			"subtitle": "Browse, rename, and delete chat history.",
 			"search": "Search titles...",
-			"empty": "No conversations yet",
-			"empty_desc": "Start a chat and it will show up here.",
 			"messages": "{count} messages",
-			"open": "Open",
-			"rename": "Rename",
-			"delete": "Delete",
 			"delete_confirm": "Delete this conversation?",
 			"renamed": "Conversation renamed",
-			"deleted": "Conversation deleted",
-			"active": "active",
-			"total": "{total} conversations · showing {offset}–{end}"
+			"deleted": "Conversation deleted"
 		},
 		"server": {
 			"title": "Server",
