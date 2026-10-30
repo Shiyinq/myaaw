@@ -355,6 +355,9 @@
 			"editor": "Editor",
 			"select_file": "Pilih berkas konteks.",
 			"markdown": "Markdown",
+			"edit": "Edit",
+			"preview": "Pratinjau",
+			"editing": "Mengedit",
 			"saved": "Konteks disimpan"
 		},
 		"skills": {

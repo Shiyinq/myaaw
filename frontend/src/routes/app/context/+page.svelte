@@ -8,7 +8,8 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-	import { Save } from 'lucide-svelte';
+	import Markdown from '$lib/components/common/Markdown.svelte';
+	import { Eye, Pencil, Save } from 'lucide-svelte';
 	import type { ContextFile } from '$lib/types';
 
 	const { t } = useTranslation();
@@ -19,6 +20,7 @@
 	let loading = $state(false);
 	let saving = $state(false);
 	let error = $state('');
+	let editing = $state(false);
 	let loadKey = '';
 
 	let agent = $derived(agentSelection.selected);
@@ -35,6 +37,7 @@
 			} else {
 				path = '';
 				content = '';
+				editing = false;
 			}
 		} catch (err) {
 			error = getErrorMessage(err);
@@ -47,6 +50,7 @@
 		const file = await contextApi.read(currentAgent, nextPath);
 		path = file.path;
 		content = file.content;
+		editing = false;
 	}
 
 	$effect(() => {
@@ -63,6 +67,7 @@
 		try {
 			await contextApi.write(agent, path, content);
 			toastStore.success(t('myaaw.context.saved'));
+			editing = false;
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -153,17 +158,43 @@
 
 			<Card class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
 				<CardHeader class="flex shrink-0 flex-row items-center justify-between">
-					<CardTitle class="truncate text-sm font-medium">
-						{path || t('myaaw.context.editor')}
-					</CardTitle>
-					<Badge variant="outline">{t('myaaw.context.markdown')}</Badge>
+					<div class="flex min-w-0 items-center gap-1">
+						<CardTitle class="truncate text-sm font-medium">
+							{path || t('myaaw.context.editor')}
+						</CardTitle>
+						{#if path}
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								class="shrink-0 text-muted-foreground"
+								onclick={() => (editing = !editing)}
+								title={editing ? t('myaaw.context.preview') : t('myaaw.context.edit')}
+								aria-label={editing ? t('myaaw.context.preview') : t('myaaw.context.edit')}
+							>
+								{#if editing}
+									<Eye class="h-3.5 w-3.5" />
+								{:else}
+									<Pencil class="h-3.5 w-3.5" />
+								{/if}
+							</Button>
+						{/if}
+					</div>
+					<Badge variant="outline">
+						{editing ? t('myaaw.context.editing') : t('myaaw.context.markdown')}
+					</Badge>
 				</CardHeader>
 				<CardContent class="min-h-0 flex-1">
 					{#if path}
-						<textarea
-							bind:value={content}
-							class="h-full w-full resize-none rounded-md border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-						></textarea>
+						{#if editing}
+							<textarea
+								bind:value={content}
+								class="h-full w-full resize-none rounded-md border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+							></textarea>
+						{:else}
+							<div class="h-full overflow-y-auto rounded-md border border-input bg-muted/20 px-4 py-3">
+								<Markdown content={content} />
+							</div>
+						{/if}
 					{:else}
 						<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
 							{t('myaaw.context.select_file')}

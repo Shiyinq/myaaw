@@ -355,6 +355,9 @@
 			"editor": "Editor",
 			"select_file": "Select a context file.",
 			"markdown": "Markdown",
+			"edit": "Edit",
+			"preview": "Preview",
+			"editing": "Editing",
 			"saved": "Context saved"
 		},
 		"skills": {
