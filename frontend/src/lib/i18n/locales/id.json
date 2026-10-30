@@ -270,7 +270,13 @@
 			"allow_once": "Izinkan sekali",
 			"allow_session": "Izinkan sesi ini",
 			"allow_always": "Selalu",
-			"deny": "Tolak"
+			"deny": "Tolak",
+			"history": "Riwayat",
+			"history_empty": "Belum ada percakapan.",
+			"history_no_results": "Tidak ada percakapan yang cocok.",
+			"history_show": "Tampilkan riwayat",
+			"history_hide": "Sembunyikan riwayat",
+			"rename": "Ubah judul"
 		},
 		"conversations": {
 			"title": "Percakapan",

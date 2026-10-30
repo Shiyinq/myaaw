@@ -270,7 +270,13 @@
 			"allow_once": "Allow once",
 			"allow_session": "Allow session",
 			"allow_always": "Always",
-			"deny": "Deny"
+			"deny": "Deny",
+			"history": "History",
+			"history_empty": "No conversations yet.",
+			"history_no_results": "No conversations match your search.",
+			"history_show": "Show history",
+			"history_hide": "Hide history",
+			"rename": "Rename"
 		},
 		"conversations": {
 			"title": "Conversations",

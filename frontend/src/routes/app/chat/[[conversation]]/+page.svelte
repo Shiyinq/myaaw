@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { browser } from '$app/environment';
 	import { chat as chatApi } from '$lib/apis/chat';
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
 	import { agentSelection, toastStore } from '$lib/stores';
@@ -11,23 +12,33 @@
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Input } from '$lib/components/ui/input';
 	import {
 		AlertTriangle,
 		ArrowDownToLine,
 		Brain,
+		Check,
+		Loader2,
 		MessageSquarePlus,
 		Minimize2,
+		PanelRightClose,
+		PanelRightOpen,
+		Pencil,
 		RotateCcw,
+		Search,
 		Send,
 		ShieldAlert,
 		Square,
-		Wrench
+		Trash2,
+		Wrench,
+		X
 	} from 'lucide-svelte';
 	import type {
 		ApprovalDecision,
 		ApprovalPrompt,
 		Attachment,
 		ChatStreamEvent,
+		ConversationSummary,
 		TimelineItem,
 		Usage
 	} from '$lib/types';
@@ -55,6 +66,26 @@
 	let controller: AbortController | null = null;
 	let counter = 0;
 	let loadKey = '';
+
+	// Conversation history sidebar
+	const HISTORY_LIMIT = 20;
+	const HISTORY_KEY = 'myaaw_chat_history_open';
+	const LAST_CONVERSATION_KEY = 'myaaw_last_conversation';
+
+	let historyOpen = $state(
+		browser
+			? (localStorage.getItem(HISTORY_KEY) ?? String(window.innerWidth >= 1024)) === 'true'
+			: false
+	);
+	let history = $state<ConversationSummary[]>([]);
+	let historyOffset = $state(0);
+	let historyHasMore = $state(false);
+	let historyLoading = $state(false);
+	let historySearch = $state('');
+	let historyQuery = $state('');
+	let historyKey = '';
+	let editingId = $state('');
+	let editingTitle = $state('');
 
 	function scrollToBottom() {
 		if (scroller) scroller.scrollTop = scroller.scrollHeight;
@@ -93,13 +124,39 @@
 		}
 	}
 
+	function rememberConversation(id: string) {
+		if (!browser) return;
+		if (id && agent) localStorage.setItem(LAST_CONVERSATION_KEY, `${agent}|${id}`);
+		else localStorage.removeItem(LAST_CONVERSATION_KEY);
+	}
+
+	function lastConversationFor(agentName: string) {
+		if (!browser) return '';
+		const raw = localStorage.getItem(LAST_CONVERSATION_KEY);
+		if (!raw) return '';
+		const [storedAgent, id] = raw.split('|');
+		return storedAgent === agentName ? (id ?? '') : '';
+	}
+
 	$effect(() => {
 		const currentAgent = agentSelection.selected;
 		const currentConversation = page.params.conversation ?? '';
 		const key = `${currentAgent}:${currentConversation}`;
 		if (!currentAgent || key === loadKey) return;
+
+		// The sidebar links to /app/chat, so restore the last opened conversation
+		// instead of dropping the user into a brand new chat.
+		if (!currentConversation) {
+			const last = lastConversationFor(currentAgent);
+			if (last) {
+				void goto(`/app/chat/${last}`, { replaceState: true, noScroll: true });
+				return;
+			}
+		}
+
 		loadKey = key;
 		conversationId = currentConversation;
+		rememberConversation(currentConversation);
 		void loadConversation(currentAgent, currentConversation);
 	});
 
@@ -203,6 +260,8 @@
 							if (nextConversation && nextConversation !== conversationId) {
 								conversationId = nextConversation;
 								loadKey = `${agent}:${nextConversation}`;
+								rememberConversation(nextConversation);
+								void loadHistory(true);
 								void goto(`/app/chat/${nextConversation}`, {
 									replaceState: true,
 									noScroll: true
@@ -279,6 +338,127 @@
 		error = '';
 		pendingApproval = null;
 		loadKey = `${agent}:`;
+		rememberConversation('');
+	}
+
+	function toggleHistory() {
+		historyOpen = !historyOpen;
+		if (browser) localStorage.setItem(HISTORY_KEY, String(historyOpen));
+	}
+
+	async function loadHistory(reset = false) {
+		if (!agent || historyLoading) return;
+		historyLoading = true;
+		try {
+			const offset = reset ? 0 : historyOffset;
+			const result = await conversationsApi.list(agent, {
+				search: historyQuery || undefined,
+				limit: HISTORY_LIMIT,
+				offset
+			});
+			const pageItems = result.conversations ?? [];
+			if (reset) {
+				history = pageItems;
+			} else {
+				const known = new Set(history.map((item) => item.id));
+				history = [...history, ...pageItems.filter((item) => !known.has(item.id))];
+			}
+			historyOffset = offset + pageItems.length;
+			historyHasMore = pageItems.length > 0 && result.has_more;
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			historyLoading = false;
+		}
+	}
+
+	function loadMoreHistory() {
+		if (!historyHasMore || historyLoading) return;
+		void loadHistory(false);
+	}
+
+	$effect(() => {
+		const currentAgent = agentSelection.selected;
+		if (!currentAgent) return;
+		const key = `${currentAgent}:${historyQuery}`;
+		if (historyKey === key) return;
+		historyKey = key;
+		history = [];
+		historyOffset = 0;
+		historyHasMore = false;
+		void loadHistory(true);
+	});
+
+	// Debounce the search box so typing does not hit the API on every keystroke.
+	$effect(() => {
+		const value = historySearch.trim();
+		if (value === historyQuery) return;
+		const timer = setTimeout(() => (historyQuery = value), 300);
+		return () => clearTimeout(timer);
+	});
+
+	function infinite(node: HTMLElement) {
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((entry) => entry.isIntersecting)) loadMoreHistory();
+			},
+			{ rootMargin: '160px' }
+		);
+		observer.observe(node);
+		return { destroy: () => observer.disconnect() };
+	}
+
+	function startRename(item: ConversationSummary) {
+		editingId = item.id;
+		editingTitle = item.title;
+	}
+
+	async function saveRename() {
+		if (!agent || !editingId) return;
+		const title = editingTitle.trim();
+		if (!title) return;
+		try {
+			await conversationsApi.rename(agent, editingId, title);
+			history = history.map((item) => (item.id === editingId ? { ...item, title } : item));
+			editingId = '';
+			toastStore.success(t('myaaw.conversations.renamed'));
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		}
+	}
+
+	async function removeHistory(item: ConversationSummary) {
+		if (!agent) return;
+		if (!window.confirm(t('myaaw.conversations.delete_confirm'))) return;
+		try {
+			await conversationsApi.remove(agent, item.id);
+			history = history.filter((entry) => entry.id !== item.id);
+			historyOffset = Math.max(0, historyOffset - 1);
+			toastStore.success(t('myaaw.conversations.deleted'));
+			if (item.id === conversationId) {
+				resetChat();
+				await goto('/app/chat');
+			}
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		}
+	}
+
+	function openConversation(id: string) {
+		if (browser && window.innerWidth < 1024) toggleHistory();
+		if (id !== conversationId) void goto(`/app/chat/${id}`);
+	}
+
+	function formatWhen(value?: string) {
+		if (!value) return '';
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return '';
+		return date.toLocaleString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
 	}
 
 	function onKeydown(event: KeyboardEvent) {
@@ -309,202 +489,336 @@
 	}
 </script>
 
-<TopBarActions id="chat-new">
+<TopBarActions id="chat-actions">
 	{#snippet children()}
-		<TopBarButton
-			label={t('myaaw.chat.new')}
-			icon={MessageSquarePlus}
-			onclick={newChat}
-		/>
+		<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
+		<Button
+			variant="outline"
+			size="icon-sm"
+			onclick={toggleHistory}
+			title={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
+			aria-label={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
+		>
+			{#if historyOpen}
+				<PanelRightClose class="h-4 w-4" />
+			{:else}
+				<PanelRightOpen class="h-4 w-4" />
+			{/if}
+		</Button>
 	{/snippet}
 </TopBarActions>
 
-<div class="flex h-full flex-col">
-	{#if !agent}
-		<div class="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-			{t('myaaw.agent.none')}
-		</div>
-	{:else}
-		<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto">
-			<div class="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
-				{#if loading}
-					<p class="text-sm text-muted-foreground">{t('myaaw.chat.loading')}</p>
-				{:else if items.length === 0}
-					<p class="py-20 text-center text-sm text-muted-foreground">
-						{t('myaaw.chat.empty')}
-					</p>
-				{/if}
+<div class="flex h-full min-h-0">
+	<div class="flex min-w-0 flex-1 flex-col">
+		{#if !agent}
+			<div class="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+				{t('myaaw.agent.none')}
+			</div>
+		{:else}
+			<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto">
+				<div class="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
+					{#if loading}
+						<p class="text-sm text-muted-foreground">{t('myaaw.chat.loading')}</p>
+					{:else if items.length === 0}
+						<p class="py-20 text-center text-sm text-muted-foreground">
+							{t('myaaw.chat.empty')}
+						</p>
+					{/if}
 
-				{#each items as item, index (item.localId ?? `${item.kind}-${index}`)}
-					{#if item.kind === 'user'}
-						<div class="flex justify-end">
+					{#each items as item, index (item.localId ?? `${item.kind}-${index}`)}
+						{#if item.kind === 'user'}
+							<div class="flex justify-end">
+								<div
+									class="max-w-[80%] whitespace-pre-wrap rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
+								>
+									{item.text}
+								</div>
+							</div>
+						{:else if item.kind === 'text'}
+							<div class="text-sm">
+								<Markdown content={item.text ?? ''} />
+							</div>
+						{:else if item.kind === 'thought'}
 							<div
-								class="max-w-[80%] whitespace-pre-wrap rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
+								class="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
 							>
-								{item.text}
+								<div class="mb-1 flex items-center gap-2 font-medium not-italic">
+									<Brain class="h-3.5 w-3.5" />
+									{t('myaaw.chat.thinking')}
+								</div>
+								<span class="whitespace-pre-wrap italic">{item.text}</span>
 							</div>
-						</div>
-					{:else if item.kind === 'text'}
-						<div class="text-sm">
-							<Markdown content={item.text ?? ''} />
-						</div>
-					{:else if item.kind === 'thought'}
-						<div class="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-							<div class="mb-1 flex items-center gap-2 font-medium not-italic">
-								<Brain class="h-3.5 w-3.5" />
-								{t('myaaw.chat.thinking')}
-							</div>
-							<span class="whitespace-pre-wrap italic">{item.text}</span>
-						</div>
-					{:else if item.kind === 'tool'}
-						<div class="rounded-xl border bg-card/60 px-3 py-2 text-xs">
-							<div class="flex items-center gap-2 font-medium">
-								<Wrench class="h-3.5 w-3.5" />
-								<span class="font-mono">{item.name}</span>
-							</div>
-							{#if item.arguments}
-								<pre class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
-							{/if}
-							{#if item.result}
-								<div class={item.is_error ? 'mt-1 text-destructive' : 'mt-1 text-muted-foreground'}>
-									<div class="mb-0.5 flex items-center gap-1 font-medium">
-										<ArrowDownToLine class="h-3 w-3" />
-										{t('myaaw.chat.result')}
+						{:else if item.kind === 'tool'}
+							<div class="rounded-xl border bg-card/60 px-3 py-2 text-xs">
+								<div class="flex items-center gap-2 font-medium">
+									<Wrench class="h-3.5 w-3.5" />
+									<span class="font-mono">{item.name}</span>
+								</div>
+								{#if item.arguments}
+									<pre
+										class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
+								{/if}
+								{#if item.result}
+									<div
+										class={item.is_error ? 'mt-1 text-destructive' : 'mt-1 text-muted-foreground'}
+									>
+										<div class="mb-0.5 flex items-center gap-1 font-medium">
+											<ArrowDownToLine class="h-3 w-3" />
+											{t('myaaw.chat.result')}
+										</div>
+										<pre class="overflow-x-auto whitespace-pre-wrap break-all">{item.result}</pre>
 									</div>
-									<pre class="overflow-x-auto whitespace-pre-wrap break-all">{item.result}</pre>
-								</div>
-							{/if}
-						</div>
-					{:else if item.kind === 'retry'}
-						<div class="flex items-center gap-1 text-[11px] text-muted-foreground">
-							<RotateCcw class="h-3 w-3" />
-							{t('myaaw.chat.retry', { attempt: item.attempt ?? 2 })}
-						</div>
-					{:else if item.kind === 'compaction'}
-						<div class="flex items-center gap-1 text-[11px] text-muted-foreground">
-							<Minimize2 class="h-3 w-3" />
-							{t('myaaw.chat.compaction', {
-								before: item.tokens_before ?? 0,
-								after: item.tokens_after ?? 0
-							})}
-						</div>
-					{:else if item.kind === 'approval'}
-						<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
-							<div class="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
-								<ShieldAlert class="h-4 w-4" />
-								{t('myaaw.chat.waiting')}
+								{/if}
 							</div>
-							<div class="mt-1 font-mono text-foreground">{item.name}</div>
-							{#if item.arguments}
-								<pre class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
-							{/if}
-							{#if item.resolved}
-								<Badge variant="outline" class="mt-2">{item.resolved}</Badge>
-							{:else if pendingApproval && pendingApproval.approval_id === item.id}
-								<div class="mt-2 flex flex-wrap gap-2">
-									<Button size="xs" onclick={() => decide('allow_once')}>
-										{t('myaaw.chat.allow_once')}
-									</Button>
-									<Button size="xs" variant="secondary" onclick={() => decide('allow_session')}>
-										{t('myaaw.chat.allow_session')}
-									</Button>
-									<Button size="xs" variant="secondary" onclick={() => decide('allow_always')}>
-										{t('myaaw.chat.allow_always')}
-									</Button>
-									<Button size="xs" variant="destructive" onclick={() => decide('deny')}>
-										{t('myaaw.chat.deny')}
-									</Button>
+						{:else if item.kind === 'retry'}
+							<div class="flex items-center gap-1 text-[11px] text-muted-foreground">
+								<RotateCcw class="h-3 w-3" />
+								{t('myaaw.chat.retry', { attempt: item.attempt ?? 2 })}
+							</div>
+						{:else if item.kind === 'compaction'}
+							<div class="flex items-center gap-1 text-[11px] text-muted-foreground">
+								<Minimize2 class="h-3 w-3" />
+								{t('myaaw.chat.compaction', {
+									before: item.tokens_before ?? 0,
+									after: item.tokens_after ?? 0
+								})}
+							</div>
+						{:else if item.kind === 'approval'}
+							<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+								<div class="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
+									<ShieldAlert class="h-4 w-4" />
+									{t('myaaw.chat.waiting')}
 								</div>
-							{/if}
-						</div>
-					{:else if item.kind === 'error'}
-						<div class="flex items-start gap-2 text-xs text-destructive">
-							<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-							<span class="whitespace-pre-wrap">{item.text}</span>
+								<div class="mt-1 font-mono text-foreground">{item.name}</div>
+								{#if item.arguments}
+									<pre
+										class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
+								{/if}
+								{#if item.resolved}
+									<Badge variant="outline" class="mt-2">{item.resolved}</Badge>
+								{:else if pendingApproval && pendingApproval.approval_id === item.id}
+									<div class="mt-2 flex flex-wrap gap-2">
+										<Button size="xs" onclick={() => decide('allow_once')}>
+											{t('myaaw.chat.allow_once')}
+										</Button>
+										<Button size="xs" variant="secondary" onclick={() => decide('allow_session')}>
+											{t('myaaw.chat.allow_session')}
+										</Button>
+										<Button size="xs" variant="secondary" onclick={() => decide('allow_always')}>
+											{t('myaaw.chat.allow_always')}
+										</Button>
+										<Button size="xs" variant="destructive" onclick={() => decide('deny')}>
+											{t('myaaw.chat.deny')}
+										</Button>
+									</div>
+								{/if}
+							</div>
+						{:else if item.kind === 'error'}
+							<div class="flex items-start gap-2 text-xs text-destructive">
+								<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+								<span class="whitespace-pre-wrap">{item.text}</span>
+							</div>
+						{/if}
+					{/each}
+
+					{#if attachments.length > 0}
+						<div class="space-y-2">
+							{#each attachments as attachment (attachment.file_name)}
+								{#if isImage(attachment)}
+									<img
+										src={attachmentUrl(attachment)}
+										alt={attachment.file_name}
+										class="max-h-72 rounded-xl border"
+									/>
+								{:else}
+									<a
+										href={attachmentUrl(attachment)}
+										download={attachment.file_name}
+										class="inline-flex items-center gap-2 text-xs text-primary underline-offset-4 hover:underline"
+									>
+										<ArrowDownToLine class="h-3.5 w-3.5" />
+										{attachment.file_name}
+									</a>
+								{/if}
+							{/each}
 						</div>
 					{/if}
-				{/each}
-
-				{#if attachments.length > 0}
-					<div class="space-y-2">
-						{#each attachments as attachment (attachment.file_name)}
-							{#if isImage(attachment)}
-								<img
-									src={attachmentUrl(attachment)}
-									alt={attachment.file_name}
-									class="max-h-72 rounded-xl border"
-								/>
-							{:else}
-								<a
-									href={attachmentUrl(attachment)}
-									download={attachment.file_name}
-									class="inline-flex items-center gap-2 text-xs text-primary underline-offset-4 hover:underline"
-								>
-									<ArrowDownToLine class="h-3.5 w-3.5" />
-									{attachment.file_name}
-								</a>
-							{/if}
-						{/each}
-					</div>
-				{/if}
+				</div>
 			</div>
-		</div>
 
-		{#if error}
-			<div class="shrink-0 px-4">
-				<div
-					class="mx-auto max-w-5xl rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
-				>
-					{error}
+			{#if error}
+				<div class="shrink-0 px-4">
+					<div
+						class="mx-auto max-w-5xl rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
+					>
+						{error}
+					</div>
+				</div>
+			{/if}
+
+			<div class="shrink-0 border-t bg-background/80 px-4 py-3 backdrop-blur">
+				<div class="mx-auto w-full max-w-5xl">
+					<div
+						class="rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60"
+					>
+						<textarea
+							bind:this={composer}
+							bind:value={input}
+							use:autosize
+							onkeydown={onKeydown}
+							rows="1"
+							placeholder={t('myaaw.chat.placeholder')}
+							class="max-h-40 min-h-[3.25rem] w-full resize-none rounded-t-2xl bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
+						></textarea>
+						<div class="flex items-center justify-between px-3 pb-2">
+							<span class="text-[10px] text-muted-foreground">
+								{#if usage}
+									{t('myaaw.chat.tokens', { count: usage.total_tokens })} ·
+								{/if}
+								{t('myaaw.chat.hint')}
+							</span>
+							{#if streaming}
+								<Button
+									size="icon"
+									variant="destructive"
+									class="rounded-full"
+									onclick={stop}
+									aria-label={t('myaaw.chat.stop')}
+								>
+									<Square class="h-4 w-4" />
+								</Button>
+							{:else}
+								<Button
+									size="icon"
+									class="rounded-full"
+									onclick={send}
+									disabled={!input.trim()}
+									aria-label={t('myaaw.chat.send')}
+								>
+									<Send class="h-4 w-4" />
+								</Button>
+							{/if}
+						</div>
+					</div>
 				</div>
 			</div>
 		{/if}
+	</div>
 
-		<div class="shrink-0 border-t bg-background/80 px-4 py-3 backdrop-blur">
-			<div class="mx-auto w-full max-w-5xl">
-				<div
-					class="rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60"
-				>
-					<textarea
-						bind:this={composer}
-						bind:value={input}
-						use:autosize
-						onkeydown={onKeydown}
-						rows="1"
-						placeholder={t('myaaw.chat.placeholder')}
-						class="max-h-40 min-h-[3.25rem] w-full resize-none rounded-t-2xl bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
-					></textarea>
-					<div class="flex items-center justify-between px-3 pb-2">
-						<span class="text-[10px] text-muted-foreground">
-							{#if usage}
-								{t('myaaw.chat.tokens', { count: usage.total_tokens })} ·
-							{/if}
-							{t('myaaw.chat.hint')}
-						</span>
-						{#if streaming}
-							<Button
-								size="icon"
-								variant="destructive"
-								class="rounded-full"
-								onclick={stop}
-								aria-label={t('myaaw.chat.stop')}
-							>
-								<Square class="h-4 w-4" />
-							</Button>
-						{:else}
-							<Button
-								size="icon"
-								class="rounded-full"
-								onclick={send}
-								disabled={!input.trim()}
-								aria-label={t('myaaw.chat.send')}
-							>
-								<Send class="h-4 w-4" />
-							</Button>
-						{/if}
-					</div>
+	{#if agent && historyOpen}
+		<!-- Drawer on small screens, a static third column from lg up. -->
+		<button
+			type="button"
+			class="fixed inset-0 z-30 bg-black/40 lg:hidden"
+			aria-label={t('myaaw.chat.history_hide')}
+			onclick={toggleHistory}
+		></button>
+		<aside
+			class="fixed inset-y-0 right-0 z-40 flex w-72 max-w-[85vw] flex-col border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none"
+		>
+			<div class="shrink-0 border-b p-2">
+				<div class="relative">
+					<Search
+						class="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+					/>
+					<Input
+						bind:value={historySearch}
+						placeholder={t('myaaw.conversations.search')}
+						class="h-8 pl-7 text-xs"
+						aria-label={t('myaaw.conversations.search')}
+					/>
 				</div>
 			</div>
-		</div>
+
+			<div class="min-h-0 flex-1 overflow-y-auto p-2">
+				{#if historyLoading && history.length === 0}
+					<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
+				{:else if history.length === 0}
+					<p class="px-2 py-3 text-xs text-muted-foreground">
+						{historyQuery ? t('myaaw.chat.history_no_results') : t('myaaw.chat.history_empty')}
+					</p>
+				{/if}
+
+				{#each history as entry (entry.id)}
+					<div
+						class={[
+							'rounded-md transition-colors',
+							entry.id === conversationId ? 'bg-accent' : 'hover:bg-muted'
+						]}
+					>
+						{#if editingId === entry.id}
+							<div class="flex items-center gap-1 p-1">
+								<Input
+									bind:value={editingTitle}
+									class="h-7 text-xs"
+									onkeydown={(event) => {
+										if (event.key === 'Enter') void saveRename();
+										if (event.key === 'Escape') editingId = '';
+									}}
+								/>
+								<Button
+									size="icon-xs"
+									variant="secondary"
+									onclick={saveRename}
+									aria-label={t('common.save')}
+								>
+									<Check class="h-3 w-3" />
+								</Button>
+								<Button
+									size="icon-xs"
+									variant="ghost"
+									onclick={() => (editingId = '')}
+									aria-label={t('common.cancel')}
+								>
+									<X class="h-3 w-3" />
+								</Button>
+							</div>
+						{:else}
+							<div class="flex items-start gap-1 p-1">
+								<button
+									class="min-w-0 flex-1 rounded px-1 py-0.5 text-left"
+									onclick={() => openConversation(entry.id)}
+								>
+									<span class="block truncate text-xs font-medium">
+										{entry.title || entry.id.slice(0, 12)}
+									</span>
+									<span class="mt-0.5 block truncate text-[10px] text-muted-foreground">
+										{formatWhen(entry.updated_at)} · {t('myaaw.conversations.messages', {
+											count: entry.message_count
+										})}
+									</span>
+								</button>
+								<div class="flex shrink-0">
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										onclick={() => startRename(entry)}
+										aria-label={t('myaaw.chat.rename')}
+									>
+										<Pencil class="h-3 w-3" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										onclick={() => removeHistory(entry)}
+										aria-label={t('common.delete')}
+									>
+										<Trash2 class="h-3 w-3 text-destructive" />
+									</Button>
+								</div>
+							</div>
+						{/if}
+					</div>
+				{/each}
+
+				{#if historyHasMore}
+					<div use:infinite class="flex justify-center py-3">
+						{#if historyLoading}
+							<Loader2 class="h-4 w-4 animate-spin text-muted-foreground" />
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</aside>
 	{/if}
 </div>
