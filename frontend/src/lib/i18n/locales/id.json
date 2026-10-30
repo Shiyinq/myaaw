@@ -155,7 +155,19 @@
 			"new_agent_desc": "Buat agen, penyedianya, dan direktori home-nya.",
 			"agent_name": "Nama agen",
 			"create_agent": "Buat agen",
-			"agent_created": "Agen {name} dibuat"
+			"agent_created": "Agen {name} dibuat",
+			"total_skills": "Skill",
+			"total_tools": "Tool",
+			"total_chats": "Chat",
+			"total_contacts": "Kontak",
+			"skills_hint": "{enabled}/{total} aktif",
+			"tools_hint": "{builtin} bawaan · {custom} kustom · {mcp} MCP",
+			"contacts_hint": "Peer A2A",
+			"last_chat": "Chat terakhir {when}",
+			"recent_chats": "Chat terbaru",
+			"recent_chats_desc": "Percakapan terakhir untuk agen ini.",
+			"no_chats": "Belum ada percakapan.",
+			"start_chat": "Chat baru"
 		},
 		"onboard": {
 			"title": "Agen baru",

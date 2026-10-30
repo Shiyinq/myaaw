@@ -177,6 +177,15 @@
 		const key = `${currentAgent}:${currentConversation}`;
 		if (!currentAgent || key === loadKey) return;
 
+		// The dashboard's "new chat" action opts out of restoring history.
+		if (!currentConversation && page.url.searchParams.has('new')) {
+			resetChat();
+			// Drop the flag so a refresh keeps the empty composer instead of
+			// clearing it again.
+			void goto('/app/chat', { replaceState: true, noScroll: true });
+			return;
+		}
+
 		// The sidebar links to /app/chat, so restore the last opened conversation
 		// instead of dropping the user into a brand new chat.
 		if (!currentConversation) {

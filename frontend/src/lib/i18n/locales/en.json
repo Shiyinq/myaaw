@@ -155,7 +155,19 @@
 			"new_agent_desc": "Create an agent, its provider and its home directory.",
 			"agent_name": "Agent name",
 			"create_agent": "Create agent",
-			"agent_created": "Agent {name} created"
+			"agent_created": "Agent {name} created",
+			"total_skills": "Skills",
+			"total_tools": "Tools",
+			"total_chats": "Chats",
+			"total_contacts": "Contacts",
+			"skills_hint": "{enabled}/{total} enabled",
+			"tools_hint": "{builtin} built-in · {custom} custom · {mcp} MCP",
+			"contacts_hint": "A2A peers",
+			"last_chat": "Last chat {when}",
+			"recent_chats": "Recent chats",
+			"recent_chats_desc": "Latest conversations for this agent.",
+			"no_chats": "No conversations yet.",
+			"start_chat": "New chat"
 		},
 		"onboard": {
 			"title": "New agent",

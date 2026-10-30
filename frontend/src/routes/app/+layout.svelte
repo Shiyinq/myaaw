@@ -148,12 +148,6 @@
 					label: 'myaaw.nav.observability',
 					description: 'myaaw.observability.subtitle',
 					icon: Activity
-				},
-				{
-					href: '/app/settings',
-					label: 'myaaw.nav.settings',
-					description: 'myaaw.settings.subtitle',
-					icon: Settings2
 				}
 			]
 		}
@@ -161,13 +155,20 @@
 
 	const flatNav = nav.flatMap((group) => group.items);
 
-	// Routes that have a title in the top bar but no sidebar entry.
+	// Routes that have a title in the top bar but no sidebar entry. Settings is
+	// reachable from the account menu instead of the agent-scoped navigation.
 	const hiddenNav = [
 		{
 			href: '/app/new',
 			label: 'myaaw.onboard.title',
 			description: 'myaaw.onboard.subtitle',
 			icon: Sparkles
+		},
+		{
+			href: '/app/settings',
+			label: 'myaaw.nav.settings',
+			description: 'myaaw.settings.subtitle',
+			icon: Settings2
 		}
 	];
 
