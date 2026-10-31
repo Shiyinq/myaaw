@@ -184,6 +184,7 @@
 			usage = null;
 			sessionStats = null;
 			attachments = [];
+			stopTitlePolling();
 			topBarTitle.clear();
 			return;
 		}
@@ -198,7 +199,9 @@
 		try {
 			const detail = await conversationsApi.get(currentAgent, id, { limit: 0 });
 			items = historyTimeline(detail.messages);
-			topBarTitle.set(detail.title ?? '');
+			const title = detail.title ?? '';
+			applyTitle(id, title);
+			if (isPlaceholderTitle(title)) pollTitle(currentAgent, id, 0);
 			usage = null;
 			attachments = [];
 		} catch (err) {
@@ -210,15 +213,53 @@
 	}
 
 	/**
-	 * The shell shows the conversation title instead of the page label, so a new
-	 * chat picks up the title the server generates on its first turn.
+	 * The shell shows the conversation title instead of the page label. The title
+	 * of a new chat is generated in a background LLM call *after* the response,
+	 * so the first turn ends with "New Chat" in place; poll until it changes.
 	 */
+	let titleTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function isPlaceholderTitle(title: string) {
+		return !title || title === 'New Chat';
+	}
+
+	function applyTitle(id: string, title: string) {
+		if (conversationId !== id) return; // Another conversation won.
+		topBarTitle.set(title);
+		// Keep the history entry in step with the bar without reloading the list.
+		history = history.map((item) => (item.id === id ? { ...item, title } : item));
+	}
+
+	function stopTitlePolling() {
+		clearTimeout(titleTimer);
+		titleTimer = undefined;
+	}
+
+	function pollTitle(currentAgent: string, id: string, attempt: number) {
+		stopTitlePolling();
+		if (attempt > 8) return;
+		titleTimer = setTimeout(async () => {
+			if (conversationId !== id) return;
+			try {
+				const detail = await conversationsApi.get(currentAgent, id, { limit: 1 });
+				if (conversationId !== id) return;
+				const title = detail.title ?? '';
+				applyTitle(id, title);
+				if (isPlaceholderTitle(title)) pollTitle(currentAgent, id, attempt + 1);
+			} catch {
+				pollTitle(currentAgent, id, attempt + 1);
+			}
+		}, 2000);
+	}
+
 	async function refreshTitle(currentAgent: string, id: string) {
 		if (!currentAgent || !id) return;
 		try {
 			const detail = await conversationsApi.get(currentAgent, id, { limit: 1 });
 			if (conversationId !== id) return; // Another conversation won.
-			topBarTitle.set(detail.title ?? '');
+			const title = detail.title ?? '';
+			applyTitle(id, title);
+			if (isPlaceholderTitle(title)) pollTitle(currentAgent, id, 0);
 		} catch {
 			// Keep the title already on screen.
 		}
@@ -226,7 +267,10 @@
 
 	// Leaving the chat must not leave its title on every other page.
 	$effect(() => {
-		return () => topBarTitle.clear();
+		return () => {
+			stopTitlePolling();
+			topBarTitle.clear();
+		};
 	});
 
 	/**
@@ -326,6 +370,7 @@
 		attachments = [];
 		error = '';
 		pendingApproval = null;
+		stopTitlePolling();
 		topBarTitle.clear();
 		if (page.url.pathname !== '/app/chat') {
 			void goto('/app/chat', { replaceState: true, noScroll: true });
@@ -804,6 +849,7 @@
 		pendingApproval = null;
 		loadKey = `${agent}:`;
 		rememberConversation('');
+		stopTitlePolling();
 		topBarTitle.clear();
 		groupOpen = {};
 		groupStart = 0;
@@ -890,7 +936,10 @@
 		try {
 			await conversationsApi.rename(agent, editingId, title);
 			history = history.map((item) => (item.id === editingId ? { ...item, title } : item));
-			if (editingId === conversationId) topBarTitle.set(title);
+			if (editingId === conversationId) {
+				stopTitlePolling();
+				topBarTitle.set(title);
+			}
 			editingId = '';
 			toastStore.success(t('myaaw.conversations.renamed'));
 		} catch (err) {
@@ -1564,6 +1613,14 @@
 						{/if}
 					{/each}
 
+					{#if streaming && items[items.length - 1]?.kind === 'user'}
+						<!-- The first token can take a while; show that the run started. -->
+						<div class="flex items-center gap-2 px-1 py-1 text-xs text-muted-foreground">
+							<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+							<span class="font-medium">{t('myaaw.chat.tool_running')}</span>
+						</div>
+					{/if}
+
 					{#if attachments.length > 0}
 						<div class="space-y-2">
 							{#each attachments as attachment (attachment.file_name)}
@@ -1766,7 +1823,7 @@
 				{#each history as entry (entry.id)}
 					<div
 						class={[
-							'rounded-md transition-colors',
+							'group/entry rounded-md transition-colors',
 							entry.id === conversationId ? 'bg-accent' : 'hover:bg-muted'
 						]}
 					>
@@ -1812,7 +1869,9 @@
 										})}
 									</span>
 								</button>
-								<div class="flex shrink-0">
+								<div
+									class="pointer-events-none flex shrink-0 opacity-0 transition-opacity group-hover/entry:pointer-events-auto group-hover/entry:opacity-100 group-focus-within/entry:pointer-events-auto group-focus-within/entry:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
+								>
 									<Button
 										variant="ghost"
 										size="icon-xs"
