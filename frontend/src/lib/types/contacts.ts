@@ -17,3 +17,12 @@ export interface CreateContactRequest {
 	token?: string;
 	description?: string;
 }
+
+/** Omitting a field keeps its value; the token is only replaced when non-empty. */
+export interface UpdateContactRequest {
+	name?: string;
+	url?: string;
+	token?: string;
+	description?: string;
+	clear_token?: boolean;
+}

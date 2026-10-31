@@ -997,7 +997,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
 | Skills | `GET /agents/:name/skills`, `GET /skills/:skill`, `GET /skills/:skill/file?path=`, `PATCH /skills/:skill`, `DELETE /skills/:skill`, `DELETE /skills/:skill/config` |
 | Tools | `GET /agents/:name/tools`, `POST /tools/custom`, `POST /tools/mcp`, `PATCH /tools/builtin/:tool`, `PATCH /tools/custom/:tool`, `PATCH /tools/mcp/:tool`, `DELETE /tools/custom/:tool`, `DELETE /tools/mcp/:tool` |
-| Contacts | `GET/POST /agents/:name/contacts`, `DELETE /contacts/:contact` |
+| Contacts | `GET/POST /agents/:name/contacts`, `PATCH/DELETE /contacts/:contact` |
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |

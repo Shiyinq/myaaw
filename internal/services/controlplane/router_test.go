@@ -773,8 +773,24 @@ func TestRouterContacts(t *testing.T) {
 		t.Fatalf("token should be masked: %+v", list.Contacts[0].Token)
 	}
 
-	doJSON(t, app, "DELETE", "/agents/myfriend/contacts/remote", token, "", fiber.StatusOK, nil)
-	doJSON(t, app, "DELETE", "/agents/myfriend/contacts/remote", token, "", fiber.StatusNotFound, nil)
+	// Editing keeps the token unless one is supplied, and can rename.
+	doJSON(t, app, "PATCH", "/agents/myfriend/contacts/remote", token,
+		`{"url":"https://updated.example/a2a","name":"remote-2"}`, fiber.StatusOK, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/contacts", token, "", fiber.StatusOK, &list)
+	if len(list.Contacts) != 1 || list.Contacts[0].Name != "remote-2" || list.Contacts[0].URL != "https://updated.example/a2a" {
+		t.Fatalf("contacts after update = %+v", list.Contacts)
+	}
+	if !list.Contacts[0].Token.Configured {
+		t.Fatal("update without a token must keep the stored one")
+	}
+
+	doJSON(t, app, "PATCH", "/agents/myfriend/contacts/remote-2", token,
+		`{"url":"not-a-url"}`, fiber.StatusBadRequest, nil)
+	doJSON(t, app, "PATCH", "/agents/myfriend/contacts/gone", token,
+		`{"description":"x"}`, fiber.StatusNotFound, nil)
+
+	doJSON(t, app, "DELETE", "/agents/myfriend/contacts/remote-2", token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/contacts/remote-2", token, "", fiber.StatusNotFound, nil)
 }
 
 func TestRouterReadOnlyManagement(t *testing.T) {

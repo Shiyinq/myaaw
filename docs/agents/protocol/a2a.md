@@ -400,6 +400,12 @@ curl -X POST http://localhost:9000/agents/myfriend/contacts \
   -H 'Content-Type: application/json' \
   -d '{"name":"research","url":"https://other-host/a2a","token":"remote-token"}'
 
+# Update (rename, change the endpoint, or clear the token)
+curl -X PATCH http://localhost:9000/agents/myfriend/contacts/research \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://new-host/a2a","clear_token":true}'
+
 # Delete
 curl -X DELETE http://localhost:9000/agents/myfriend/contacts/research \
   -H "Authorization: Bearer $TOKEN"

@@ -1337,6 +1337,19 @@ definitions:
       transcriber:
         $ref: '#/definitions/service.ServiceSecretView'
     type: object
+  service.ContactUpdate:
+    properties:
+      clear_token:
+        type: boolean
+      description:
+        type: string
+      name:
+        type: string
+      token:
+        type: string
+      url:
+        type: string
+    type: object
   service.ContactView:
     properties:
       description:
@@ -2807,6 +2820,56 @@ paths:
       security:
       - BearerAuth: []
       summary: Delete a contact
+      tags:
+      - Contacts
+    patch:
+      consumes:
+      - application/json
+      description: Omitted fields keep their value. A non-empty token replaces the
+        stored one; clear_token removes it.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Contact name
+        in: path
+        name: contact
+        required: true
+        type: string
+      - description: Fields to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.ContactUpdate'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ContactView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update a contact
       tags:
       - Contacts
   /agents/{name}/context:

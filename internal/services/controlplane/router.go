@@ -107,6 +107,7 @@ func NewApp() (*fiber.App, error) {
 
 	app.Get("/agents/:name/contacts", h.ListContacts)
 	app.Post("/agents/:name/contacts", h.CreateContact)
+	app.Patch("/agents/:name/contacts/:contact", h.UpdateContact)
 	app.Delete("/agents/:name/contacts/:contact", h.DeleteContact)
 	app.Post("/agents/:name/fs/write", h.WriteFile)
 	app.Post("/agents/:name/fs/mkdir", h.Mkdir)

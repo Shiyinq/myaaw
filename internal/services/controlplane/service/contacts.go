@@ -34,6 +34,16 @@ type ContactInput struct {
 	Description string
 }
 
+// ContactUpdate edits a contact in place. Omitted fields keep their value; the
+// token is replaced only by a non-empty one, and ClearToken removes it.
+type ContactUpdate struct {
+	Name        *string `json:"name,omitempty"`
+	URL         *string `json:"url,omitempty"`
+	Token       *string `json:"token,omitempty"`
+	Description *string `json:"description,omitempty"`
+	ClearToken  bool    `json:"clear_token,omitempty"`
+}
+
 // ContactView masks the token on output.
 type ContactView struct {
 	Name        string      `json:"name"`
@@ -90,6 +100,53 @@ func (s *ContactService) Create(agentName string, in ContactInput) (ContactView,
 	return contactView(entry), nil
 }
 
+// Update edits an existing contact. The name in the path identifies it; the
+// body may rename it and change the endpoint, token, or description.
+func (s *ContactService) Update(agentName, name string, in ContactUpdate) (ContactView, error) {
+	entries, err := loadContactsFile(agentName)
+	if err != nil {
+		return ContactView{}, err
+	}
+	idx := contactIndex(entries, name)
+	if idx < 0 {
+		return ContactView{}, ErrContactNotFound
+	}
+
+	entry := entries[idx]
+	nextName := entry.Name
+	if in.Name != nil {
+		nextName = strings.TrimSpace(*in.Name)
+	}
+	nextURL := entry.URL
+	if in.URL != nil {
+		nextURL = strings.TrimSpace(*in.URL)
+	}
+	if err := validateContact(nextName, nextURL); err != nil {
+		return ContactView{}, err
+	}
+	if other := contactIndex(entries, nextName); other >= 0 && other != idx {
+		return ContactView{}, fmt.Errorf("%w: %s", ErrContactNameTaken, nextName)
+	}
+
+	entry.Name = nextName
+	entry.URL = nextURL
+	if in.Description != nil {
+		entry.Description = strings.TrimSpace(*in.Description)
+	}
+	if in.ClearToken {
+		entry.Token = ""
+	}
+	if in.Token != nil && strings.TrimSpace(*in.Token) != "" {
+		entry.Token = strings.TrimSpace(*in.Token)
+	}
+	entries[idx] = entry
+
+	if err := saveContactsFile(agentName, entries); err != nil {
+		return ContactView{}, err
+	}
+	return contactView(entry), nil
+}
+
 func (s *ContactService) Delete(agentName, name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\\x00") {
@@ -99,18 +156,23 @@ func (s *ContactService) Delete(agentName, name string) error {
 	if err != nil {
 		return err
 	}
-	idx := -1
-	for i, entry := range entries {
-		if strings.EqualFold(entry.Name, name) {
-			idx = i
-			break
-		}
-	}
+	idx := contactIndex(entries, name)
 	if idx < 0 {
 		return ErrContactNotFound
 	}
 	entries = append(entries[:idx], entries[idx+1:]...)
 	return saveContactsFile(agentName, entries)
+}
+
+// contactIndex finds a contact by name, case-insensitively.
+func contactIndex(entries []ContactEntry, name string) int {
+	name = strings.TrimSpace(name)
+	for i, entry := range entries {
+		if strings.EqualFold(entry.Name, name) {
+			return i
+		}
+	}
+	return -1
 }
 
 func contactView(entry ContactEntry) ContactView {

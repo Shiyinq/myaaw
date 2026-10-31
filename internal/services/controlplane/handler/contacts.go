@@ -59,6 +59,34 @@ func (h *Handler) CreateContact(c fiber.Ctx) error {
 	return c.JSON(view)
 }
 
+// UpdateContact edits a contact in place.
+// @Summary      Update a contact
+// @Description  Omitted fields keep their value. A non-empty token replaces the stored one; clear_token removes it.
+// @Tags         Contacts
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        contact path string true "Contact name"
+// @Param        request body service.ContactUpdate true "Fields to change"
+// @Success      200 {object} service.ContactView
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Failure      409 {object} common.ErrorResponse
+// @Router       /agents/{name}/contacts/{contact} [patch]
+func (h *Handler) UpdateContact(c fiber.Ctx) error {
+	var req service.ContactUpdate
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON request body"})
+	}
+	view, err := h.contacts.Update(c.Params("name"), c.Params("contact"), req)
+	if err != nil {
+		return contactError(c, err)
+	}
+	return c.JSON(view)
+}
+
 // DeleteContact removes a contact.
 // @Summary      Delete a contact
 // @Tags         Contacts

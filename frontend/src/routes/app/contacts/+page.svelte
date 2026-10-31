@@ -19,7 +19,7 @@
 	} from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Bot, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
+	import { Bot, Pencil, Plus, RefreshCw, Save, Trash2, X } from 'lucide-svelte';
 	import type { ContactView } from '$lib/types';
 
 	const { t } = useTranslation();
@@ -35,6 +35,8 @@
 	let token = $state('');
 	let description = $state('');
 	let errors = $state<FieldErrors>({});
+	let editing = $state<ContactView | null>(null);
+	let clearToken = $state(false);
 
 	let agent = $derived(agentSelection.selected);
 
@@ -75,10 +77,7 @@
 				token: result.data.token || undefined,
 				description: result.data.description || undefined
 			});
-			name = '';
-			url = '';
-			token = '';
-			description = '';
+			resetForm();
 			toastStore.success(t('myaaw.contacts.saved'));
 			await load(agent);
 		} catch (err) {
@@ -86,6 +85,62 @@
 		} finally {
 			saving = false;
 		}
+	}
+
+	async function update() {
+		if (!agent || !editing) return;
+		const result = validate(contactSchema, { name, url, token, description });
+		if (!result.ok) {
+			errors = result.errors;
+			return;
+		}
+		errors = {};
+		saving = true;
+		try {
+			await contactsApi.update(agent, editing.name, {
+				name: result.data.name,
+				url: result.data.url,
+				// An empty field means "keep the stored token".
+				token: result.data.token || undefined,
+				description: result.data.description ?? '',
+				clear_token: clearToken
+			});
+			resetForm();
+			toastStore.success(t('myaaw.contacts.updated'));
+			await load(agent);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			saving = false;
+		}
+	}
+
+	function submit() {
+		if (editing) {
+			void update();
+			return;
+		}
+		void create();
+	}
+
+	function startEdit(contact: ContactView) {
+		editing = contact;
+		name = contact.name;
+		url = contact.url;
+		description = contact.description ?? '';
+		token = '';
+		clearToken = false;
+		errors = {};
+	}
+
+	function resetForm() {
+		editing = null;
+		name = '';
+		url = '';
+		token = '';
+		description = '';
+		clearToken = false;
+		errors = {};
 	}
 
 	async function remove(contact: string) {
@@ -140,7 +195,12 @@
 				{/if}
 
 				{#each contacts as contact (contact.name)}
-					<div class="flex items-start gap-2 rounded-md px-1 py-1.5 hover:bg-muted">
+					<div
+						class={[
+							'flex items-start gap-2 rounded-md px-1 py-1.5 hover:bg-muted',
+							editing?.name === contact.name ? 'bg-muted' : ''
+						]}
+					>
 						<Bot class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
 						<div class="min-w-0 flex-1">
 							<div class="flex items-center gap-1.5">
@@ -161,15 +221,25 @@
 								</p>
 							{/if}
 						</div>
-						<Button
-							size="icon-xs"
-							variant="ghost"
-							class="mt-0.5 shrink-0"
-							onclick={() => remove(contact.name)}
-							aria-label={t('common.delete')}
-						>
-							<Trash2 class="h-3 w-3 text-destructive" />
-						</Button>
+						<div class="mt-0.5 flex shrink-0 gap-0.5">
+							<Button
+								size="icon-xs"
+								variant="ghost"
+								onclick={() => startEdit(contact)}
+								aria-label={t('myaaw.contacts.edit')}
+								title={t('myaaw.contacts.edit')}
+							>
+								<Pencil class="h-3 w-3" />
+							</Button>
+							<Button
+								size="icon-xs"
+								variant="ghost"
+								onclick={() => remove(contact.name)}
+								aria-label={t('common.delete')}
+							>
+								<Trash2 class="h-3 w-3 text-destructive" />
+							</Button>
+						</div>
 					</div>
 				{/each}
 			</div>
@@ -188,16 +258,18 @@
 				<CardHeader>
 					<CardTitle class="flex items-center gap-2">
 						<Bot class="h-4 w-4" />
-						{t('myaaw.contacts.create')}
+						{editing ? t('myaaw.contacts.edit') : t('myaaw.contacts.create')}
 					</CardTitle>
-					<CardDescription>{t('myaaw.contacts.create_desc')}</CardDescription>
+					<CardDescription>
+						{editing ? t('myaaw.contacts.edit_desc') : t('myaaw.contacts.create_desc')}
+					</CardDescription>
 				</CardHeader>
 				<CardContent>
 					<form
 						class="space-y-3"
 						onsubmit={(event) => {
 							event.preventDefault();
-							void create();
+							submit();
 						}}
 					>
 						<div class="grid gap-1">
@@ -212,18 +284,48 @@
 						</div>
 						<div class="grid gap-1">
 							<Label for="contact-token">{t('myaaw.contacts.token')}</Label>
-							<Input id="contact-token" type="password" bind:value={token} />
-							<p class="text-[10px] text-muted-foreground">{t('myaaw.contacts.token_hint')}</p>
+							<Input
+								id="contact-token"
+								type="password"
+								bind:value={token}
+								disabled={editing ? clearToken : false}
+							/>
+							<p class="text-[10px] text-muted-foreground">
+								{editing ? t('myaaw.contacts.token_hint_keep') : t('myaaw.contacts.token_hint')}
+							</p>
+							{#if editing?.token.configured}
+								<label class="flex items-center gap-2 text-xs text-muted-foreground">
+									<input
+										type="checkbox"
+										bind:checked={clearToken}
+										class="h-3.5 w-3.5 accent-primary"
+									/>
+									{t('myaaw.contacts.clear_token')}
+								</label>
+							{/if}
 						</div>
 						<div class="grid gap-1">
 							<Label for="contact-description">{t('myaaw.contacts.description')}</Label>
 							<Input id="contact-description" bind:value={description} />
 							<FieldError code={errors.description} />
 						</div>
-						<Button type="submit" size="sm" loading={saving}>
-							<Plus class="mr-2 h-4 w-4" />
-							{t('myaaw.contacts.create')}
-						</Button>
+						<div class="flex flex-wrap gap-2">
+							<Button type="submit" size="sm" loading={saving}>
+								{#if editing}
+									<Save class="mr-2 h-4 w-4" />
+									{t('common.save')}
+								{:else}
+									<Plus class="mr-2 h-4 w-4" />
+									{t('myaaw.contacts.create')}
+								{/if}
+							</Button>
+							{#if editing}
+								<Button type="button" size="sm" variant="ghost" onclick={resetForm}>
+									<X class="mr-2 h-4 w-4" />
+									{t('common.cancel')}
+								</Button>
+							{/if}
+						</div>
 					</form>
 				</CardContent>
 			</Card>
