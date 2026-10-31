@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type { ComponentType, Snippet } from 'svelte';
 	import type { Icon } from 'lucide-svelte';
-	import { Check, ChevronDown, Copy, Loader2 } from 'lucide-svelte';
+	import { ChevronDown, Loader2 } from 'lucide-svelte';
 	import { cn } from '$lib/utils';
-	import { useTranslation } from '$lib/i18n/useTranslation';
+	import CopyButton from '$lib/components/common/CopyButton.svelte';
 
 	interface Props {
 		title: string;
@@ -29,20 +29,6 @@
 		copyText = '',
 		children
 	}: Props = $props();
-
-	const { t } = useTranslation();
-	let copied = $state(false);
-
-	async function copy() {
-		if (!copyText) return;
-		try {
-			await navigator.clipboard.writeText(copyText);
-			copied = true;
-			setTimeout(() => (copied = false), 1500);
-		} catch {
-			// Clipboard access can be denied; leave the button as it is.
-		}
-	}
 </script>
 
 <div class="text-xs">
@@ -79,19 +65,7 @@
 		<div class="mt-1 ml-5.5">
 			{@render children()}
 			{#if copyText}
-				<button
-					type="button"
-					class="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-					onclick={copy}
-				>
-					{#if copied}
-						<Check class="h-3 w-3" />
-						{t('myaaw.chat.copied')}
-					{:else}
-						<Copy class="h-3 w-3" />
-						{t('myaaw.chat.copy')}
-					{/if}
-				</button>
+				<CopyButton text={copyText} label class="mt-1" />
 			{/if}
 		</div>
 	{/if}

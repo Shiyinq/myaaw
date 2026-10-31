@@ -13,6 +13,7 @@
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import ChatStep from '$lib/components/common/ChatStep.svelte';
+	import CopyButton from '$lib/components/common/CopyButton.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
@@ -73,6 +74,8 @@
 		steps: Item[];
 		running: boolean;
 		durationMs?: number;
+		/** The whole run as plain text, for the group's Copy button. */
+		transcript?: string;
 	}
 
 	type TimelineRow = { kind: 'item'; item: Item } | { kind: 'group'; group: StepGroup };
@@ -276,26 +279,40 @@
 
 		const rows: TimelineRow[] = [];
 		let steps: Item[] = [];
+		let lines: string[] = [];
 		const flush = () => {
-			if (steps.length === 0) return;
-			const first = steps[0];
-			rows.push({
-				kind: 'group',
-				group: {
-					key: `run-${first.localId ?? rows.length}`,
-					steps: [...steps],
-					running:
-						steps.some((step) => step.running) || steps.some((step) => step.localId === openGroup),
-					durationMs: steps.find((step) => step.group_duration_ms !== undefined)?.group_duration_ms
-				}
-			});
+			if (steps.length > 0) {
+				const first = steps[0];
+				rows.push({
+					kind: 'group',
+					group: {
+						key: `run-${first.localId ?? rows.length}`,
+						steps: [...steps],
+						running:
+							steps.some((step) => step.running) ||
+							steps.some((step) => step.localId === openGroup),
+						durationMs: steps.find((step) => step.group_duration_ms !== undefined)
+							?.group_duration_ms,
+						transcript: lines.join('\n\n')
+					}
+				});
+			}
 			steps = [];
+			lines = [];
 		};
 		items.forEach((item, index) => {
 			const processText = item.kind === 'text' && !answers.has(index);
 			if (STEP_KINDS.has(item.kind) || processText) {
 				steps.push(item);
+				const line = itemTranscript(item);
+				if (line) lines.push(line);
 			} else {
+				if (item.kind === 'text' && answers.has(index)) {
+					// The run's answer belongs to its transcript, even though it is
+					// shown outside the collapsible group.
+					const answer = (item.text ?? '').trim();
+					if (answer) lines.push(answer);
+				}
 				flush();
 				rows.push({ kind: 'item', item });
 			}
@@ -879,6 +896,28 @@
 		return oneLine(item.arguments ?? '');
 	}
 
+	/** One step of a run rendered as plain text, for the run's Copy button. */
+	function itemTranscript(item: Item): string {
+		if (item.kind === 'thought') {
+			const text = (item.text ?? '').trim();
+			return text ? `${t('myaaw.chat.think')}:\n${text}` : '';
+		}
+		if (item.kind === 'text') return (item.text ?? '').trim();
+		if (item.kind === 'tool') {
+			const invocation = toolInvocation(item).trim();
+			const head = invocation ? `${toolLabel(item.name)}: ${invocation}` : toolLabel(item.name);
+			return item.result ? `${head}\n${item.result.trim()}` : head;
+		}
+		if (item.kind === 'retry') return t('myaaw.chat.retry', { attempt: item.attempt ?? 2 });
+		if (item.kind === 'compaction') {
+			return t('myaaw.chat.compaction', {
+				before: item.tokens_before ?? 0,
+				after: item.tokens_after ?? 0
+			});
+		}
+		return '';
+	}
+
 	/**
 	 * Rebuilds the timeline from stored provider messages so reopening a chat
 	 * still shows thoughts, tool calls and their results, retries and
@@ -1134,29 +1173,37 @@
 							{@const group = row.group}
 							{@const open = isGroupOpen(group)}
 							<div class="space-y-0.5">
-								<button
-									type="button"
-									class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
-									onclick={() => toggleGroup(group)}
-									aria-expanded={open}
-								>
-									{#if group.running}
-										<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-									{:else}
-										<Clock class="h-3.5 w-3.5 shrink-0" />
-									{/if}
-									<span class="font-medium">
-										{group.running ? t('myaaw.chat.tool_running') : t('myaaw.chat.completed')}
-									</span>
-									{#if !group.running && group.durationMs !== undefined}
-										<span class="shrink-0 text-muted-foreground">
-											· {formatDuration(group.durationMs)}
+								<div class="group/run flex items-center gap-0.5">
+									<button
+										type="button"
+										class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+										onclick={() => toggleGroup(group)}
+										aria-expanded={open}
+									>
+										{#if group.running}
+											<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+										{:else}
+											<Clock class="h-3.5 w-3.5 shrink-0" />
+										{/if}
+										<span class="font-medium">
+											{group.running ? t('myaaw.chat.tool_running') : t('myaaw.chat.completed')}
 										</span>
+										{#if !group.running && group.durationMs !== undefined}
+											<span class="shrink-0 text-muted-foreground">
+												· {formatDuration(group.durationMs)}
+											</span>
+										{/if}
+										<ChevronDown
+											class={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')}
+										/>
+									</button>
+									{#if group.transcript}
+										<CopyButton
+											text={group.transcript}
+											class="opacity-0 transition-opacity group-hover/run:opacity-100 group-focus-within/run:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+										/>
 									{/if}
-									<ChevronDown
-										class={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')}
-									/>
-								</button>
+								</div>
 								{#if open}
 									<div class="space-y-1 pl-2">
 										{#each phaseRows(group) as phase, index (phase.kind === 'group' ? phase.group.key : (phase.item.localId ?? index))}
@@ -1277,10 +1324,13 @@
 											</div>
 										{/if}
 										{#if item.text}
-											<div
-												class="whitespace-pre-wrap rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
-											>
-												{item.text}
+											<div class="flex flex-col items-end">
+												<div
+													class="whitespace-pre-wrap rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
+												>
+													{item.text}
+												</div>
+												<CopyButton text={item.text} class="mt-0.5" />
 											</div>
 										{/if}
 									</div>
@@ -1288,6 +1338,7 @@
 							{:else if item.kind === 'text'}
 								<div class="text-sm">
 									<Markdown content={item.text ?? ''} />
+									<CopyButton text={item.text ?? ''} class="mt-1" />
 								</div>
 							{:else if item.kind === 'approval'}
 								<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
