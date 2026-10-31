@@ -9,6 +9,7 @@
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
+	import BackupsPanel from '$lib/components/backup/BackupsPanel.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -267,4 +268,8 @@
 			{/if}
 		</CardContent>
 	</Card>
+
+	<!-- Fleet-wide backup management: create archives for any agent and manage
+	     every archive. Agent-scoped backups live on /app/backups. -->
+	<BackupsPanel />
 </div>
