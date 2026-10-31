@@ -224,12 +224,15 @@ func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
 		}
 	}
 
-	if len(req.Skills) > 0 {
+	if req.Skills != nil {
 		skills, err := onboard.ParseOnboardSelection(strings.Join(req.Skills, ","), onboard.BuiltinSkillNames(), "skills")
 		if err != nil {
 			return in, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 		}
 		in.Skills = skills
+		// An empty list is meaningful: it disables installed built-in skills
+		// without deleting their folders.
+		in.SkillsSet = true
 	}
 
 	if req.DisableTools != nil {

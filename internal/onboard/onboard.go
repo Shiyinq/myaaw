@@ -44,8 +44,11 @@ type Input struct {
 	OwnerIDs           []string
 	OwnersSet          bool
 	Skills             []string
-	DisabledTools      []string
-	UpdateTools        bool
+	// SkillsSet means the caller managed the skills step: selected skills are
+	// installed, and installed built-in skills left unselected are disabled.
+	SkillsSet     bool
+	DisabledTools []string
+	UpdateTools   bool
 }
 
 // Initialize creates the agent layout, registers it, assigns a port, and wires
@@ -120,7 +123,11 @@ func Apply(name string, in Input, port int) (*config.Config, []string, error) {
 		return nil, nil, fmt.Errorf("write config.json: %w", err)
 	}
 
-	if err := InstallSkills(name, in.Skills); err != nil {
+	if in.SkillsSet {
+		if err := SyncSkills(name, in.Skills); err != nil {
+			return nil, nil, err
+		}
+	} else if err := InstallSkills(name, in.Skills); err != nil {
 		return nil, nil, err
 	}
 	if in.UpdateTools {
@@ -414,8 +421,9 @@ func MergeOwnerIDs(groups ...[]string) []string {
 	return merged
 }
 
-// InstallSkills copies only the chosen skill templates. Existing folders are
-// never overwritten, and unselected skills are not created.
+// InstallSkills copies only the chosen skill templates and records them as
+// enabled in skills.json. Existing folders are never overwritten and unselected
+// skills are not created.
 func InstallSkills(name string, selected []string) error {
 	skillsDir, err := agentdir.SkillsDir(name)
 	if err != nil {
@@ -430,10 +438,12 @@ func InstallSkills(name string, selected []string) error {
 		known[skill] = true
 	}
 
+	updates := make(map[string]bool, len(selected))
 	for _, skill := range selected {
 		if !known[skill] {
 			return fmt.Errorf("unknown skill %q", skill)
 		}
+		updates[skill] = true
 		dest := filepath.Join(skillsDir, skill)
 		if _, statErr := os.Stat(dest); statErr == nil {
 			continue
@@ -446,7 +456,81 @@ func InstallSkills(name string, selected []string) error {
 			return fmt.Errorf("install skill %q: %w", skill, err)
 		}
 	}
-	return nil
+	return updateSkillsFilter(skillsDir, updates)
+}
+
+// SyncSkills applies a managed skills selection: the selected built-in skills
+// are installed and enabled, while installed built-in skills that are no longer
+// selected are disabled in skills.json. Folders are never deleted, so a skill
+// removed from the wizard can be enabled again without reinstalling it.
+func SyncSkills(name string, selected []string) error {
+	if err := InstallSkills(name, selected); err != nil {
+		return err
+	}
+
+	skillsDir, err := agentdir.SkillsDir(name)
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	builtin := make(map[string]bool)
+	for _, skill := range BuiltinSkillNames() {
+		builtin[skill] = true
+	}
+	chosen := make(map[string]bool, len(selected))
+	for _, skill := range selected {
+		chosen[skill] = true
+	}
+
+	updates := make(map[string]bool)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		skill := entry.Name()
+		// Leave user-authored skills alone: the wizard only manages built-ins.
+		if !builtin[skill] || chosen[skill] {
+			continue
+		}
+		updates[skill] = false
+	}
+	return updateSkillsFilter(skillsDir, updates)
+}
+
+// updateSkillsFilter merges enabled flags into skills.json, preserving every
+// other key. Nothing is written when there is nothing to change.
+func updateSkillsFilter(skillsDir string, updates map[string]bool) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	path := filepath.Join(skillsDir, "skills.json")
+	filter := map[string]bool{}
+	if data, err := os.ReadFile(path); err == nil {
+		if unmarshalErr := json.Unmarshal(data, &filter); unmarshalErr != nil {
+			filter = map[string]bool{}
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if filter == nil {
+		filter = map[string]bool{}
+	}
+	for skill, enabled := range updates {
+		filter[skill] = enabled
+	}
+
+	data, err := json.MarshalIndent(filter, "", "  ")
+	if err != nil {
+		return err
+	}
+	return WriteFileAtomic(path, append(data, '\n'))
 }
 
 // SaveToolSelection writes builtin_tools to tools/tools.json while preserving

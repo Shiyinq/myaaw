@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { skills as skillsApi } from '$lib/apis/skills';
+	import { agents as agentsApi } from '$lib/apis/agents';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -14,11 +15,13 @@
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { detectPreview, stripFrontmatter } from '$lib/utils/filePreview';
 	import { RefreshCw, Sparkles, Trash2 } from 'lucide-svelte';
-	import type { SkillDetail, SkillFileContent } from '$lib/types';
+	import type { CapabilityEntry, SkillDetail, SkillFileContent } from '$lib/types';
 
 	const { t } = useTranslation();
 
 	let skills = $state<SkillDetail[]>([]);
+	let catalog = $state<CapabilityEntry[]>([]);
+	let installing = $state('');
 	let selected = $state<SkillDetail | null>(null);
 	let fileContent = $state<SkillFileContent | null>(null);
 	let filePath = $state('');
@@ -27,6 +30,16 @@
 	let loadKey = '';
 
 	let agent = $derived(agentSelection.selected);
+	// Built-in names drive which section a skill belongs to; the catalog itself
+	// lists every embedded template, installed or not.
+	let catalogNames = $derived(new Set(catalog.map((entry) => entry.name)));
+	let customSkills = $derived(skills.filter((skill) => !catalogNames.has(skill.name)));
+	let builtinRows = $derived(
+		catalog.map((entry) => ({
+			entry,
+			installed: skills.find((skill) => skill.name === entry.name) ?? null
+		}))
+	);
 
 	// The skill body is its SKILL.md, which the detail endpoint already returns,
 	// so start on that file instead of firing another request.
@@ -42,7 +55,11 @@
 		loading = true;
 		error = '';
 		try {
-			const result = await skillsApi.list(currentAgent);
+			const [result, caps] = await Promise.all([
+				skillsApi.list(currentAgent),
+				agentsApi.capabilities().catch(() => null)
+			]);
+			if (caps) catalog = caps.skills ?? [];
 			const list = result.skills ?? [];
 			skills = list.map((skill) => ({ ...skill, content: '', files: [] }));
 			const keep = list.find((skill) => skill.name === selected?.name) ?? list[0];
@@ -62,6 +79,37 @@
 		selected = await skillsApi.get(currentAgent, name);
 		fileContent = null;
 		filePath = selected.files.find((file) => file.path.toLowerCase().endsWith('.md'))?.path ?? '';
+	}
+
+	async function install(name: string) {
+		if (!agent || installing) return;
+		installing = name;
+		try {
+			await skillsApi.install(agent, name);
+			toastStore.success(t('myaaw.skills.installed_ok', { name }));
+			await load(agent);
+			await open(agent, name);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			installing = '';
+		}
+	}
+
+	/**
+	 * One checkbox for every built-in skill: checking an uninstalled skill copies
+	 * it in, checking a disabled one only re-enables it, and unchecking disables
+	 * it through skills.json without touching the folder.
+	 */
+	async function setBuiltin(name: string, enabled: boolean) {
+		const installed = skills.some((skill) => skill.name === name);
+		if (enabled && !installed) {
+			await install(name);
+			return;
+		}
+		if (installed) {
+			await toggle(name, enabled);
+		}
 	}
 
 	async function openFile(name: string) {
@@ -153,39 +201,98 @@
 					{t('myaaw.skills.list')}
 				</p>
 			</div>
-			<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
-				{#if loading}
-					<p class="px-1 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
-				{:else if skills.length === 0}
-					<p class="px-1 py-2 text-sm text-muted-foreground">{t('myaaw.skills.empty')}</p>
-				{/if}
+			<div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
+				<section class="space-y-0.5">
+					<p class="px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+						{t('myaaw.skills.custom')}
+					</p>
+					{#if loading}
+						<p class="px-1 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
+					{:else if customSkills.length === 0}
+						<p class="px-1 py-2 text-sm text-muted-foreground">
+							{t('myaaw.skills.custom_empty')}
+						</p>
+					{/if}
 
-				{#each skills as skill (skill.name)}
-					<div
-						class={[
-							'flex items-center gap-2 rounded-md px-1 py-1',
-							selected?.name === skill.name ? 'bg-accent' : 'hover:bg-muted'
-						]}
-					>
-						<input
-							type="checkbox"
-							checked={skill.enabled}
-							onchange={(event) => toggle(skill.name, event.currentTarget.checked)}
-							class="h-4 w-4 shrink-0 accent-primary"
-							aria-label={t('myaaw.skills.enabled')}
-						/>
-						<button
-							class="min-w-0 flex-1 truncate text-left text-sm"
-							onclick={() => agent && open(agent, skill.name)}
+					{#each customSkills as skill (skill.name)}
+						<div
+							class={[
+								'flex items-center gap-2 rounded-md px-1 py-1',
+								selected?.name === skill.name ? 'bg-accent' : 'hover:bg-muted'
+							]}
 						>
-							{skill.display_name || skill.name}
-						</button>
-						{#if !skill.parse_ok}
-							<Badge variant="destructive">{t('myaaw.skills.invalid')}</Badge>
-						{/if}
-						<Badge variant="outline" class="shrink-0 text-[10px]">{skill.source}</Badge>
-					</div>
-				{/each}
+							<input
+								type="checkbox"
+								checked={skill.enabled}
+								onchange={(event) => toggle(skill.name, event.currentTarget.checked)}
+								class="h-4 w-4 shrink-0 accent-primary"
+								aria-label={t('myaaw.skills.enabled')}
+							/>
+							<button
+								class="min-w-0 flex-1 truncate text-left text-sm"
+								onclick={() => agent && open(agent, skill.name)}
+							>
+								{skill.display_name || skill.name}
+							</button>
+							{#if !skill.parse_ok}
+								<Badge variant="destructive">{t('myaaw.skills.invalid')}</Badge>
+							{/if}
+							<Badge variant="outline" class="shrink-0 text-[10px]">{skill.source}</Badge>
+						</div>
+					{/each}
+				</section>
+
+				{#if builtinRows.length > 0}
+					<section class="space-y-0.5">
+						<p
+							class="px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+							title={t('myaaw.skills.builtin_desc')}
+						>
+							{t('myaaw.skills.builtin')}
+						</p>
+						{#each builtinRows as row (row.entry.name)}
+							<div
+								class={[
+									'flex items-center gap-2 rounded-md px-1 py-1',
+									selected?.name === row.entry.name ? 'bg-accent' : 'hover:bg-muted'
+								]}
+								title={row.entry.description}
+							>
+								<input
+									type="checkbox"
+									checked={!!row.installed?.enabled}
+									onchange={(event) => setBuiltin(row.entry.name, event.currentTarget.checked)}
+									class="h-4 w-4 shrink-0 accent-primary"
+									aria-label={row.entry.name}
+									disabled={installing === row.entry.name}
+								/>
+								<div class="min-w-0 flex-1">
+									{#if row.installed}
+										<button
+											type="button"
+											class="block w-full truncate text-left text-sm"
+											onclick={() => agent && open(agent, row.entry.name)}
+										>
+											{row.installed.display_name || row.entry.name}
+										</button>
+									{:else}
+										<span class="block truncate text-sm">{row.entry.name}</span>
+									{/if}
+									{#if row.entry.description}
+										<span class="block truncate text-[10px] text-muted-foreground">
+											{row.entry.description}
+										</span>
+									{/if}
+								</div>
+								{#if row.installed}
+									<Badge variant="outline" class="shrink-0 text-[10px]">
+										{row.installed.source}
+									</Badge>
+								{/if}
+							</div>
+						{/each}
+					</section>
+				{/if}
 			</div>
 		</aside>
 

@@ -3,6 +3,10 @@ import type { OKResponse, SkillDetail, SkillFileContent, SkillsResponse } from '
 
 export const skills = {
 	list: (agent: string) => client<SkillsResponse>(agentPath(agent, '/skills')),
+	install: (agent: string, skill: string) =>
+		client<SkillDetail>(agentPath(agent, `/skills/${encodeURIComponent(skill)}/install`), {
+			method: 'POST'
+		}),
 	get: (agent: string, skill: string) =>
 		client<SkillDetail>(agentPath(agent, `/skills/${encodeURIComponent(skill)}`)),
 	file: (agent: string, skill: string, path: string) =>

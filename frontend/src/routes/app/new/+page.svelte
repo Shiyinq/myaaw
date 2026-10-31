@@ -670,53 +670,53 @@
 					</div>
 					<div class="grid gap-1.5">
 						<Label for="onboard-model">{t('myaaw.onboard.model')}</Label>
-						<div class="flex gap-2">
-							{#if discovered && discovered.models.length > 0 && !manualModel}
-								<select id="onboard-model" class={selectClass} bind:value={model}>
-									{#each discovered.models as option}
-										<option value={option}>{option}</option>
-									{/each}
-								</select>
-							{:else}
-								<Input
-									id="onboard-model"
-									bind:value={model}
-									placeholder={activePreset?.default_model ?? 'gpt-4o'}
-								/>
-							{/if}
-							<Button
-								variant="outline"
-								size="sm"
-								class="shrink-0"
-								loading={discovering}
-								disabled={!canDiscover}
-								onclick={() => void discover()}
-							>
-								<Wand2 class="mr-2 h-4 w-4" />
-								{t('myaaw.onboard.model_discover')}
-							</Button>
-						</div>
-						<div class="flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
-							{#if !canDiscover}
-								<span>{t('myaaw.onboard.model_discover_hint')}</span>
-							{:else if discovered}
-								<span>
-									{discovered.source === 'live'
-										? t('myaaw.onboard.model_live')
-										: t('myaaw.onboard.model_fallback')}
-								</span>
-								{#if discovered.warning}
-									<span class="truncate">{discovered.warning}</span>
-								{/if}
-								{#if discovered.models.length > 0}
-									<button type="button" class="underline" onclick={toggleManualModel}>
-										{manualModel ? t('myaaw.onboard.model_list') : t('myaaw.onboard.model_manual')}
-									</button>
-								{/if}
-							{/if}
-						</div>
+						{#if discovered && discovered.models.length > 0 && !manualModel}
+							<select id="onboard-model" class={selectClass} bind:value={model}>
+								{#each discovered.models as option}
+									<option value={option}>{option}</option>
+								{/each}
+							</select>
+						{:else}
+							<Input
+								id="onboard-model"
+								bind:value={model}
+								placeholder={activePreset?.default_model ?? 'gpt-4o'}
+							/>
+						{/if}
 						<FieldError code={errors.model} />
 					</div>
+				</div>
+
+				<!-- Discovery needs the credentials above, so it comes right after them
+				     and keeps the two fields above on the same baseline. -->
+				<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+					<Button
+						variant="outline"
+						size="sm"
+						loading={discovering}
+						disabled={!canDiscover}
+						onclick={() => void discover()}
+					>
+						<Wand2 class="mr-2 h-4 w-4" />
+						{t('myaaw.onboard.model_discover')}
+					</Button>
+					{#if !canDiscover}
+						<span>{t('myaaw.onboard.model_discover_hint')}</span>
+					{:else if discovered}
+						<span>
+							{discovered.source === 'live'
+								? t('myaaw.onboard.model_live')
+								: t('myaaw.onboard.model_fallback')}
+						</span>
+						{#if discovered.warning}
+							<span class="truncate">{discovered.warning}</span>
+						{/if}
+						{#if discovered.models.length > 0}
+							<button type="button" class="underline" onclick={toggleManualModel}>
+								{manualModel ? t('myaaw.onboard.model_list') : t('myaaw.onboard.model_manual')}
+							</button>
+						{/if}
+					{/if}
 				</div>
 			</CardContent>
 		</Card>

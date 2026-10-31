@@ -62,6 +62,9 @@ type onboardOptions struct {
 	// disableToolsSet reports whether --disable-tools was passed, so an
 	// update without the flag can preserve the current disabled set.
 	disableToolsSet bool
+	// skillsSet reports whether --skills was passed, so an update without the
+	// flag can leave the installed skills and their enabled state untouched.
+	skillsSet bool
 }
 
 var onboardOpts onboardOptions
@@ -107,6 +110,7 @@ func registerOnboardFlags(cmd *cobra.Command) {
 
 func runOnboard(cmd *cobra.Command, args []string) {
 	onboardOpts.disableToolsSet = cmd.Flags().Changed("disable-tools")
+	onboardOpts.skillsSet = cmd.Flags().Changed("skills")
 	runOnboarding(strings.TrimSpace(agentFlag), false)
 }
 
@@ -1276,6 +1280,7 @@ func (m onboardModel) input() onboardInput {
 		OwnerIDs:           m.ownerIDsAll(),
 		OwnersSet:          m.ownersAsked,
 		Skills:             skills,
+		SkillsSet:          !m.skipSkills,
 		DisabledTools:      m.disabledTools(),
 		UpdateTools:        !m.skipTools,
 	}
@@ -2739,6 +2744,9 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 		return in, err
 	}
 	in.Skills = skills
+	// Only a run that mentions skills may change the selection; a plain update
+	// leaves installed skills and their enabled state alone.
+	in.SkillsSet = opts.skillsSet || strings.TrimSpace(opts.skills) != ""
 
 	disabledTools, err := parseOnboardSelection(opts.noTools, builtinToolNames(), "--disable-tools")
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 
 	"myaaw/internal/agent/skills"
 	"myaaw/internal/agentdir"
+	"myaaw/internal/onboard"
 )
 
 var (
@@ -307,6 +308,35 @@ func (s *SkillService) List(agentName string) ([]skills.Skill, error) {
 		return nil, err
 	}
 	return skills.ListSkills(dir)
+}
+
+// Install copies one embedded built-in skill into the agent's skills directory
+// and records it as enabled in skills.json. Installing a skill that is already
+// present only ensures the flag, so retrying is safe.
+func (s *SkillService) Install(agentName, name string) (SkillDetail, error) {
+	if err := validateSkillName(name); err != nil {
+		return SkillDetail{}, err
+	}
+	if err := agentdirValidateAgent(agentName); err != nil {
+		return SkillDetail{}, err
+	}
+	if !isBuiltinSkill(name) {
+		return SkillDetail{}, fmt.Errorf("%w: %q is not a built-in skill", ErrInvalidSkillName, name)
+	}
+	if err := onboard.InstallSkills(agentName, []string{name}); err != nil {
+		return SkillDetail{}, err
+	}
+	return s.Get(agentName, name)
+}
+
+// isBuiltinSkill reports whether name matches one of the embedded templates.
+func isBuiltinSkill(name string) bool {
+	for _, skill := range onboard.BuiltinSkillNames() {
+		if skill == name {
+			return true
+		}
+	}
+	return false
 }
 
 // SetEnabled writes the skill's enabled flag to skills.json, creating the

@@ -649,6 +649,18 @@ func TestRouterSkillsAndTools(t *testing.T) {
 	doJSON(t, app, "GET", "/agents/myfriend/skills/weather/file?path=missing.md", token, "", fiber.StatusNotFound, nil)
 	doJSON(t, app, "PATCH", "/agents/myfriend/skills/missing", token, `{"enabled":true}`, fiber.StatusNotFound, nil)
 
+	// Installing an embedded built-in skill copies it and records the flag.
+	var installedSkill struct {
+		Name    string `json:"name"`
+		Enabled bool   `json:"enabled"`
+	}
+	doJSON(t, app, "POST", "/agents/myfriend/skills/time/install", token, "", fiber.StatusOK, &installedSkill)
+	if installedSkill.Name != "time" || !installedSkill.Enabled {
+		t.Fatalf("installed skill = %+v", installedSkill)
+	}
+	doJSON(t, app, "POST", "/agents/myfriend/skills/not-a-skill/install", token, "", fiber.StatusBadRequest, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/skills/time", token, "", fiber.StatusOK, nil)
+
 	// Simulate a terminal deletion: the list must update without any cache.
 	if err := os.RemoveAll(filepath.Join(skillsDir, "weather")); err != nil {
 		t.Fatalf("remove skill dir: %v", err)
@@ -1482,6 +1494,41 @@ func login(t *testing.T, app *fiber.App) string {
 		t.Fatal("login returned an empty token")
 	}
 	return out.Token
+}
+
+func TestRouterOnboardSkillsSync(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	// Selecting a built-in installs it and records the enabled flag.
+	doJSON(t, app, "POST", "/agents/myfriend/onboard", token, `{"skills":["time"]}`, fiber.StatusOK, nil)
+
+	readSkills := func() map[string]bool {
+		t.Helper()
+		var view struct {
+			Skills []struct {
+				Name    string `json:"name"`
+				Enabled bool   `json:"enabled"`
+			} `json:"skills"`
+		}
+		doJSON(t, app, "GET", "/agents/myfriend/skills", token, "", fiber.StatusOK, &view)
+		byName := make(map[string]bool, len(view.Skills))
+		for _, skill := range view.Skills {
+			byName[skill.Name] = skill.Enabled
+		}
+		return byName
+	}
+
+	if enabled, ok := readSkills()["time"]; !ok || !enabled {
+		t.Fatalf("time should be installed and enabled, got enabled=%v exists=%v", enabled, ok)
+	}
+
+	// An empty selection disables it through skills.json without deleting the folder.
+	doJSON(t, app, "POST", "/agents/myfriend/onboard", token, `{"skills":[]}`, fiber.StatusOK, nil)
+	if enabled, ok := readSkills()["time"]; !ok || enabled {
+		t.Fatalf("time should stay installed but disabled, got enabled=%v exists=%v", enabled, ok)
+	}
 }
 
 func doJSON(t *testing.T, app *fiber.App, method, path, token, body string, wantStatus int, out any) {

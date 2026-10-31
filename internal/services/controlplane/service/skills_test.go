@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"myaaw/internal/onboard"
 )
 
 func setupSkillAgent(t *testing.T) string {
@@ -351,5 +353,47 @@ func TestSkillServiceUnknownAgent(t *testing.T) {
 	svc := NewSkillService()
 	if _, err := svc.List("missing"); !errors.Is(err, ErrAgentNotFound) {
 		t.Fatalf("err = %v, want ErrAgentNotFound", err)
+	}
+}
+
+func TestSkillServiceInstall(t *testing.T) {
+	agentRoot := setupConfigAgent(t, nil)
+	svc := NewSkillService()
+	names := onboard.BuiltinSkillNames()
+	if len(names) == 0 {
+		t.Skip("no built-in skills embedded")
+	}
+	name := names[0]
+
+	detail, err := svc.Install("myfriend", name)
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if detail.Name != name || !detail.Enabled {
+		t.Fatalf("detail = %+v, want %q enabled", detail, name)
+	}
+	if info, err := os.Stat(filepath.Join(agentRoot, "skills", name)); err != nil || !info.IsDir() {
+		t.Fatalf("skill folder missing: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(agentRoot, "skills", "skills.json"))
+	if err != nil {
+		t.Fatalf("read skills.json: %v", err)
+	}
+	var filter map[string]bool
+	if err := json.Unmarshal(data, &filter); err != nil {
+		t.Fatalf("parse skills.json: %v", err)
+	}
+	if !filter[name] {
+		t.Fatalf("skills.json = %+v, want %q enabled", filter, name)
+	}
+
+	// Installing again only ensures the flag.
+	if _, err := svc.Install("myfriend", name); err != nil {
+		t.Fatalf("Install again: %v", err)
+	}
+
+	if _, err := svc.Install("myfriend", "not-a-builtin"); !errors.Is(err, ErrInvalidSkillName) {
+		t.Fatalf("err = %v, want ErrInvalidSkillName", err)
 	}
 }

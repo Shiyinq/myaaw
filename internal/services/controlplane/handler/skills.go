@@ -27,6 +27,27 @@ func (h *Handler) ListSkills(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"skills": list})
 }
 
+// InstallSkill copies an embedded built-in skill into the agent.
+// @Summary      Install a built-in skill
+// @Description  Copies the embedded template into the agent's skills directory and records it as enabled in skills.json. An existing folder is never overwritten, so the call is idempotent.
+// @Tags         Skills
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        skill path string true "Skill directory name"
+// @Success      200 {object} service.SkillDetail
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /agents/{name}/skills/{skill}/install [post]
+func (h *Handler) InstallSkill(c fiber.Ctx) error {
+	detail, err := h.skills.Install(c.Params("name"), c.Params("skill"))
+	if err != nil {
+		return skillError(c, err)
+	}
+	return c.JSON(detail)
+}
+
 // GetSkill returns one skill's metadata, SKILL.md content, and file listing.
 // @Summary      Get skill detail
 // @Description  Includes the SKILL.md content and every file in the skill directory (scripts, images, nested folders). A stale skills.json key for a deleted folder is removed automatically.
