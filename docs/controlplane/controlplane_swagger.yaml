@@ -4711,6 +4711,46 @@ paths:
       summary: Read a skill file
       tags:
       - Skills
+  /agents/{name}/skills/{skill}/install:
+    post:
+      description: Copies the embedded template into the agent's skills directory
+        and records it as enabled in skills.json. An existing folder is never overwritten,
+        so the call is idempotent.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Skill directory name
+        in: path
+        name: skill
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.SkillDetail'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Install a built-in skill
+      tags:
+      - Skills
   /agents/{name}/terminal:
     get:
       parameters:
@@ -5641,6 +5681,79 @@ paths:
       summary: List models for a provider
       tags:
       - Providers
+  /skills/builtin/{skill}:
+    get:
+      description: Reads the template embedded in the binary, including SKILL.md and
+        every file in it. Nothing is written to the agent.
+      parameters:
+      - description: Skill directory name
+        in: path
+        name: skill
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.SkillDetail'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Preview a built-in skill
+      tags:
+      - Skills
+  /skills/builtin/{skill}/file:
+    get:
+      description: Text files return as plain text; binary files return base64 with
+        binary:true. Paths are relative to the template directory.
+      parameters:
+      - description: Skill directory name
+        in: path
+        name: skill
+        required: true
+        type: string
+      - description: File path relative to the skill directory
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.SkillFileContent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Read a built-in skill file
+      tags:
+      - Skills
 securityDefinitions:
   BearerAuth:
     description: Token returned by POST /auth/login. Paste it with or without the

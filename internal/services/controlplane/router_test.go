@@ -661,6 +661,29 @@ func TestRouterSkillsAndTools(t *testing.T) {
 	doJSON(t, app, "POST", "/agents/myfriend/skills/not-a-skill/install", token, "", fiber.StatusBadRequest, nil)
 	doJSON(t, app, "DELETE", "/agents/myfriend/skills/time", token, "", fiber.StatusOK, nil)
 
+	// A built-in template can be inspected before it is installed.
+	var builtinDetail struct {
+		Name    string `json:"name"`
+		Content string `json:"content"`
+		Files   []struct {
+			Path string `json:"path"`
+		} `json:"files"`
+	}
+	doJSON(t, app, "GET", "/skills/builtin/time", token, "", fiber.StatusOK, &builtinDetail)
+	if builtinDetail.Name != "time" || builtinDetail.Content == "" || len(builtinDetail.Files) == 0 {
+		t.Fatalf("builtin preview = %+v", builtinDetail)
+	}
+	var builtinFile struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	doJSON(t, app, "GET", "/skills/builtin/time/file?path=SKILL.md", token, "", fiber.StatusOK, &builtinFile)
+	if builtinFile.Path != "SKILL.md" || builtinFile.Content == "" {
+		t.Fatalf("builtin file = %+v", builtinFile)
+	}
+	doJSON(t, app, "GET", "/skills/builtin/not-a-skill", token, "", fiber.StatusNotFound, nil)
+	doJSON(t, app, "GET", "/skills/builtin/time/file?path=../secret", token, "", fiber.StatusBadRequest, nil)
+
 	// Simulate a terminal deletion: the list must update without any cache.
 	if err := os.RemoveAll(filepath.Join(skillsDir, "weather")); err != nil {
 		t.Fatalf("remove skill dir: %v", err)

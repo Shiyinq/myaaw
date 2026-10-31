@@ -16,6 +16,8 @@ import (
 	"myaaw/internal/agent/skills"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/onboard"
+
+	myaaw "myaaw"
 )
 
 var (
@@ -337,6 +339,98 @@ func isBuiltinSkill(name string) bool {
 		}
 	}
 	return false
+}
+
+// BuiltinDetail returns one embedded template without installing it, so a
+// skill can be inspected before it is copied into the agent.
+func (s *SkillService) BuiltinDetail(name string) (SkillDetail, error) {
+	if err := validateSkillName(name); err != nil {
+		return SkillDetail{}, err
+	}
+	if !isBuiltinSkill(name) {
+		return SkillDetail{}, ErrSkillNotFound
+	}
+
+	root := path.Join(".myaaw", "skills", name)
+	detail := SkillDetail{
+		Name:        name,
+		DisplayName: name,
+		Enabled:     false,
+		Source:      "builtin",
+		Files:       []SkillFile{},
+	}
+	if data, readErr := myaaw.DefaultMyaawDir.ReadFile(path.Join(root, "SKILL.md")); readErr == nil {
+		detail.ParseOK = true
+		detail.Content = string(data)
+		detail.Description = onboard.FrontmatterDescription(string(data))
+	}
+	files, err := listEmbedFiles(myaaw.DefaultMyaawDir, root)
+	if err != nil {
+		return SkillDetail{}, err
+	}
+	detail.Files = files
+	return detail, nil
+}
+
+// BuiltinFile returns one file from an embedded template.
+func (s *SkillService) BuiltinFile(name, relPath string) (SkillFileContent, error) {
+	if err := validateSkillName(name); err != nil {
+		return SkillFileContent{}, err
+	}
+	if !isBuiltinSkill(name) {
+		return SkillFileContent{}, ErrSkillNotFound
+	}
+	cleaned, err := normalizeSkillFilePath(relPath)
+	if err != nil {
+		return SkillFileContent{}, err
+	}
+
+	root := path.Join(".myaaw", "skills", name)
+	abs := path.Join(root, cleaned)
+	info, err := fs.Stat(myaaw.DefaultMyaawDir, abs)
+	if err != nil || !info.Mode().IsRegular() {
+		return SkillFileContent{}, ErrPathNotFound
+	}
+	if info.Size() > maxReadSize {
+		return SkillFileContent{}, ErrPathTooLarge
+	}
+	data, err := myaaw.DefaultMyaawDir.ReadFile(abs)
+	if err != nil {
+		return SkillFileContent{}, ErrPathNotFound
+	}
+
+	content := SkillFileContent{Path: cleaned, Size: info.Size()}
+	if looksBinary(data) {
+		content.Binary = true
+		content.Content = base64.StdEncoding.EncodeToString(data)
+	} else {
+		content.Content = string(data)
+	}
+	return content, nil
+}
+
+func listEmbedFiles(fsys fs.FS, root string) ([]SkillFile, error) {
+	files := make([]SkillFile, 0, 16)
+	walkErr := fs.WalkDir(fsys, root, func(p string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry == nil || entry.IsDir() {
+			return nil
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return nil
+		}
+		rel := strings.TrimPrefix(p, root+"/")
+		files = append(files, SkillFile{Path: rel, Size: info.Size()})
+		if len(files) >= maxSkillFiles {
+			return fs.SkipAll
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return files, nil
 }
 
 // SetEnabled writes the skill's enabled flag to skills.json, creating the

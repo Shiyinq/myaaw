@@ -48,6 +48,47 @@ func (h *Handler) InstallSkill(c fiber.Ctx) error {
 	return c.JSON(detail)
 }
 
+// GetBuiltinSkill previews an embedded skill without installing it.
+// @Summary      Preview a built-in skill
+// @Description  Reads the template embedded in the binary, including SKILL.md and every file in it. Nothing is written to the agent.
+// @Tags         Skills
+// @Produce      json
+// @Security     BearerAuth
+// @Param        skill path string true "Skill directory name"
+// @Success      200 {object} service.SkillDetail
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /skills/builtin/{skill} [get]
+func (h *Handler) GetBuiltinSkill(c fiber.Ctx) error {
+	detail, err := h.skills.BuiltinDetail(c.Params("skill"))
+	if err != nil {
+		return skillError(c, err)
+	}
+	return c.JSON(detail)
+}
+
+// GetBuiltinSkillFile reads one file from an embedded skill template.
+// @Summary      Read a built-in skill file
+// @Description  Text files return as plain text; binary files return base64 with binary:true. Paths are relative to the template directory.
+// @Tags         Skills
+// @Produce      json
+// @Security     BearerAuth
+// @Param        skill path string true "Skill directory name"
+// @Param        path query string true "File path relative to the skill directory"
+// @Success      200 {object} service.SkillFileContent
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Failure      413 {object} common.ErrorResponse
+// @Router       /skills/builtin/{skill}/file [get]
+func (h *Handler) GetBuiltinSkillFile(c fiber.Ctx) error {
+	content, err := h.skills.BuiltinFile(c.Params("skill"), c.Query("path"))
+	if err != nil {
+		return skillError(c, err)
+	}
+	return c.JSON(content)
+}
+
 // GetSkill returns one skill's metadata, SKILL.md content, and file listing.
 // @Summary      Get skill detail
 // @Description  Includes the SKILL.md content and every file in the skill directory (scripts, images, nested folders). A stale skills.json key for a deleted folder is removed automatically.

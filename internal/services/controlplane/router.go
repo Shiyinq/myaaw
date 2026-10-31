@@ -91,6 +91,8 @@ func NewApp() (*fiber.App, error) {
 
 	app.Get("/agents/:name/skills", h.ListSkills)
 	app.Post("/agents/:name/skills/:skill/install", h.InstallSkill)
+	app.Get("/skills/builtin/:skill", h.GetBuiltinSkill)
+	app.Get("/skills/builtin/:skill/file", h.GetBuiltinSkillFile)
 	app.Get("/agents/:name/skills/:skill", h.GetSkill)
 	app.Get("/agents/:name/skills/:skill/file", h.GetSkillFile)
 	app.Patch("/agents/:name/skills/:skill", h.ToggleSkill)

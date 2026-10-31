@@ -7,6 +7,12 @@ export const skills = {
 		client<SkillDetail>(agentPath(agent, `/skills/${encodeURIComponent(skill)}/install`), {
 			method: 'POST'
 		}),
+	/** Read an embedded template without installing it. */
+	builtin: (skill: string) => client<SkillDetail>(`/skills/builtin/${encodeURIComponent(skill)}`),
+	builtinFile: (skill: string, path: string) =>
+		client<SkillFileContent>(
+			`/skills/builtin/${encodeURIComponent(skill)}/file?path=${encodeURIComponent(path)}`
+		),
 	get: (agent: string, skill: string) =>
 		client<SkillDetail>(agentPath(agent, `/skills/${encodeURIComponent(skill)}`)),
 	file: (agent: string, skill: string, path: string) =>

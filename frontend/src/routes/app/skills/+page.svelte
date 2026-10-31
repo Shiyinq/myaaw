@@ -22,6 +22,7 @@
 	let skills = $state<SkillDetail[]>([]);
 	let catalog = $state<CapabilityEntry[]>([]);
 	let installing = $state('');
+	let previewMode = $state(false);
 	let selected = $state<SkillDetail | null>(null);
 	let fileContent = $state<SkillFileContent | null>(null);
 	let filePath = $state('');
@@ -77,8 +78,22 @@
 
 	async function open(currentAgent: string, name: string) {
 		selected = await skillsApi.get(currentAgent, name);
+		previewMode = false;
 		fileContent = null;
 		filePath = selected.files.find((file) => file.path.toLowerCase().endsWith('.md'))?.path ?? '';
+	}
+
+	/** Show a built-in template that is not installed yet. */
+	async function openBuiltin(name: string) {
+		if (!agent) return;
+		try {
+			selected = await skillsApi.builtin(name);
+			previewMode = true;
+			fileContent = null;
+			filePath = selected.files.find((file) => file.path.toLowerCase().endsWith('.md'))?.path ?? '';
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		}
 	}
 
 	async function install(name: string) {
@@ -116,7 +131,9 @@
 		if (!agent || !selected) return;
 		filePath = name;
 		try {
-			fileContent = await skillsApi.file(agent, selected.name, name);
+			fileContent = previewMode
+				? await skillsApi.builtinFile(selected.name, name)
+				: await skillsApi.file(agent, selected.name, name);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
@@ -276,12 +293,13 @@
 											{row.installed.display_name || row.entry.name}
 										</button>
 									{:else}
-										<span class="block truncate text-sm">{row.entry.name}</span>
-									{/if}
-									{#if row.entry.description}
-										<span class="block truncate text-[10px] text-muted-foreground">
-											{row.entry.description}
-										</span>
+										<button
+											type="button"
+											class="block w-full truncate text-left text-sm"
+											onclick={() => openBuiltin(row.entry.name)}
+										>
+											{row.entry.name}
+										</button>
 									{/if}
 								</div>
 								{#if row.installed}
@@ -296,7 +314,7 @@
 			</div>
 		</aside>
 
-		<section class="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
+		<section class="flex min-h-0 min-w-0 flex-1 flex-col p-4 lg:p-6">
 			{#if error}
 				<div
 					class="mb-3 shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
@@ -305,14 +323,14 @@
 				</div>
 			{/if}
 
-			{#if !loading && skills.length === 0}
+			{#if !loading && !selected}
 				<EmptyState
 					title={t('myaaw.skills.empty')}
 					description={t('myaaw.skills.empty_desc')}
 					icon={Sparkles}
 				/>
 			{:else}
-				<Card class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+				<Card class="mx-auto flex min-h-0 w-full max-w-5xl min-w-0 flex-1 flex-col overflow-hidden">
 					{#if selected}
 						<CardHeader class="flex shrink-0 flex-row items-start justify-between gap-2">
 							<div class="min-w-0">
@@ -324,13 +342,23 @@
 								</p>
 							</div>
 							<div class="flex shrink-0 gap-1">
-								<Button size="sm" variant="outline" onclick={() => clearConfig(selected!.name)}>
-									{t('myaaw.skills.reset')}
-								</Button>
-								<Button size="sm" variant="destructive" onclick={() => remove(selected!.name)}>
-									<Trash2 class="mr-2 h-4 w-4" />
-									{t('common.delete')}
-								</Button>
+								{#if previewMode}
+									<Button
+										size="sm"
+										loading={installing === selected.name}
+										onclick={() => install(selected!.name)}
+									>
+										{t('myaaw.skills.install')}
+									</Button>
+								{:else}
+									<Button size="sm" variant="outline" onclick={() => clearConfig(selected!.name)}>
+										{t('myaaw.skills.reset')}
+									</Button>
+									<Button size="sm" variant="destructive" onclick={() => remove(selected!.name)}>
+										<Trash2 class="mr-2 h-4 w-4" />
+										{t('common.delete')}
+									</Button>
+								{/if}
 							</div>
 						</CardHeader>
 
@@ -355,14 +383,14 @@
 							</div>
 						</CardContent>
 
-						<CardContent class="min-h-0 flex-1">
+						<CardContent class="min-h-0 min-w-0 flex-1">
 							{#if previewBinary}
 								<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
 									{t('myaaw.skills.binary')}
 								</p>
 							{:else if preview.kind === 'markdown'}
 								<div
-									class="h-full overflow-y-auto rounded-md border border-input bg-muted/20 px-4 py-3"
+									class="h-full min-w-0 overflow-x-auto overflow-y-auto rounded-md border border-input bg-muted/20 px-4 py-3"
 								>
 									<Markdown content={previewText} />
 								</div>
