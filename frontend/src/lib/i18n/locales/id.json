@@ -285,6 +285,7 @@
 			"steps": "{count} langkah",
 			"stats_tokens": "{count} token",
 			"stats_tok_per_sec": "{count} tok/s",
+			"stats_cache_hit": "Cache hit {percent}%",
 			"retry": "Percobaan ulang penyedia #{attempt}",
 			"compaction": "Transkrip dipangkas: {before} → {after} token",
 			"waiting": "Menunggu persetujuan",

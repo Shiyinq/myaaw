@@ -115,6 +115,7 @@ export interface SessionStats {
 	last_active_at: number;
 	input_tokens: number;
 	output_tokens: number;
+	cache_hit_tokens: number;
 	provider?: string;
 	model?: string;
 	error_count: number;

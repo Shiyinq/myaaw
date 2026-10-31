@@ -117,6 +117,7 @@
 		model?: string;
 		provider?: string;
 		tokPerSec?: number;
+		cacheRate?: number;
 	} | null>(null);
 	// Configured provider and its default model, as the terminal status line shows.
 	let providerInfo = $state<{
@@ -216,13 +217,19 @@
 		try {
 			const detail = await observabilityApi.sessionStats(currentAgent, id);
 			if (conversationId !== id) return; // Another conversation won.
+			// Cache hits are reported inside the prompt tokens, never above them.
+			const cacheRate =
+				detail.input_tokens > 0
+					? Math.min(100, Math.round((detail.cache_hit_tokens / detail.input_tokens) * 100))
+					: 0;
 			sessionStats = {
 				turns: detail.turns,
 				steps: detail.steps,
 				tokens: detail.input_tokens + detail.output_tokens,
 				model: detail.model ?? '',
 				provider: detail.provider ?? '',
-				tokPerSec: detail.tok_per_sec ?? 0
+				tokPerSec: detail.tok_per_sec ?? 0,
+				cacheRate
 			};
 		} catch {
 			// No runs recorded for this conversation; keep the local counts.
@@ -462,6 +469,7 @@
 	let statsSteps = $derived(sessionStats?.steps ?? stepCount);
 	let statsTokens = $derived(sessionStats?.tokens ?? usage?.total_tokens ?? 0);
 	let statsTokPerSec = $derived(sessionStats?.tokPerSec ?? 0);
+	let statsCacheRate = $derived(sessionStats?.cacheRate ?? 0);
 	let statsProvider = $derived.by(() => {
 		const model = sessionStats?.model ?? '';
 		const providers = providerInfo?.providers ?? [];
@@ -483,6 +491,7 @@
 	let statsModelLine = $derived(
 		[
 			statsTokens > 0 ? t('myaaw.chat.stats_tokens', { count: formatTokens(statsTokens) }) : '',
+			statsCacheRate > 0 ? t('myaaw.chat.stats_cache_hit', { percent: statsCacheRate }) : '',
 			statsProvider,
 			statsModel
 		]

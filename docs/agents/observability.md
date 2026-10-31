@@ -305,6 +305,60 @@ with similar input can differ several-fold in cost. The tree prints only the
 combined input, so read `cache_hit_tokens` from `--json` or the `spans` table
 when the cost looks surprising.
 
+#### Cache hit rate
+
+Every provider reports its cache hits differently — `prompt_cache_hit_tokens`
+(DeepSeek), `prompt_tokens_details.cached_tokens` (OpenAI), or
+`cached_content_token_count` (Gemini) — but all of them mean the same thing on
+the wire: the share of `prompt_tokens` served from cache. Myaaw normalises it
+into `cache_hit_tokens` on the `llm` span and rolls it up to the run, so the
+rate is a plain ratio:
+
+```text
+cache hit rate = cache_hit_tokens / input_tokens × 100
+```
+
+The denominator matters:
+
+| Denominator | Result |
+| :--- | :--- |
+| `input_tokens` (`prompt_tokens`) | correct — cached tokens are a subset of it |
+| `total_tokens` (`prompt + completion`) | understates the rate, because the completion is never cached |
+| `input_tokens − cache_hit_tokens` | overstates it — this is the miss count, not the prompt |
+
+Rules the number follows everywhere it is shown:
+
+- Capped at 100% and rounded to a whole percent. Providers occasionally report
+  a cached count a few tokens above the prompt they sent, which must not turn
+  into "103%".
+- Hidden when `cache_hit_tokens` is zero or `input_tokens` is zero. A provider
+  that does not report caching would otherwise show a misleading `0%`, and a
+  session with no prompt has no rate at all.
+- A session rate is weighted, not averaged:
+  `SUM(runs.cache_hit_tokens) / SUM(runs.input_tokens)`. Averaging per-turn
+  percentages would let a tiny turn outvote a large one.
+
+The dashboard status line shows this together with the rest of the session
+totals:
+
+```text
+3 turns · 8 steps · 182 tok/s      195K tok · Cache hit 91% · deepseek · deepseek-v4-flash
+```
+
+What each piece counts:
+
+| Field | Definition |
+| :--- | :--- |
+| `turns` | recorded runs in the session (one user message = one run) |
+| `steps` | `step` spans across every run, not an `llm` or `tool` count |
+| `tok/s` | `SUM(llm.output_tokens) / (SUM(llm.generation_ms) / 1000)` for the **newest run**: decode speed, so it moves per turn |
+| `tok` | session total, `SUM(input_tokens) + SUM(output_tokens)` |
+| provider · model | the newest run's provider and model, so a mid-chat model switch is reflected on the next turn |
+
+The session totals come from `GET /agents/:name/observability/sessions/:id/stats`,
+which aggregates in SQL (see [HTTP API](#7-http-api)) instead of loading the
+runs, so they stay correct for sessions longer than one page.
+
 One consequence of this layout: a **tool-call-only response has no `ttft`**.
 TTFT starts at the first streamed text or thinking delta. A model that answers
 with `tool_calls` and nothing else streams no delta, so the field is empty even
@@ -778,6 +832,7 @@ All endpoints require the control plane bearer token.
 | `GET` | `/agents/:name/observability/summary?days=7` | Totals, percentiles, breakdowns, badges, cost-completeness flags, and `database_bytes`. |
 | `GET` | `/agents/:name/observability/sessions?limit` | Sessions with turn count, tokens, and cost. |
 | `GET` | `/agents/:name/observability/sessions/:id` | One session with every turn, **oldest first**, its step count, and its full spans (prompts, thinking, answers, tool payloads). Add `?spans=false` for metadata only. |
+| `GET` | `/agents/:name/observability/sessions/:id/stats` | Aggregate totals only: `turns`, `steps`, `input_tokens`, `output_tokens`, `cache_hit_tokens`, `tok_per_sec`, the newest run's `provider` and `model`, and `error_count`. |
 | `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&model&trigger&from&to` | List runs, newest first. `trigger` is `user`, `cron`, or `subagent`. |
 | `GET` | `/agents/:name/observability/runs/:id` | One run with flat `spans` and a nested `tree`. |
 | `DELETE` | `/agents/:name/observability/runs?before=<unix ms>` | Delete runs; without `before` deletes everything. |
@@ -786,6 +841,35 @@ The session endpoint is what a trajectory UI needs: one request returns Turn 1..
 and every turn carries its spans (`system`, `user`, `step`, `compaction`, `llm`,
 `tool`, and nested subagent runs). See the mapping table in the
 [control plane guide](../api/control-plane.md#mapping-the-response-to-a-trajectory-ui).
+
+The `stats` endpoint is the cheap sibling: it aggregates the same session in SQL
+and returns only the numbers a status line or badge needs. The detail endpoint
+pages runs at 500, so totals derived from it can be short for very long
+sessions; `stats` has no such page and never loads a span.
+
+```json
+{
+  "conversation_id": "4e7371da-c190-434e-90d3-e1902f309c82",
+  "channel": "cli",
+  "turns": 2,
+  "steps": 6,
+  "started_at": 1761674469000,
+  "last_active_at": 1761674512000,
+  "input_tokens": 19300,
+  "output_tokens": 224,
+  "cache_hit_tokens": 17400,
+  "provider": "openai",
+  "model": "deepseek-v4-flash",
+  "error_count": 0,
+  "tok_per_sec": 182
+}
+```
+
+`cache_hit_tokens` is part of `input_tokens`, so the hit rate is
+`cache_hit_tokens / input_tokens` (see [Cache hit rate](#cache-hit-rate)).
+`provider` is the provider **type** of the newest run (`openai`, `gemini`); the
+configured provider name (for example `deepseek`) lives in the agent config and
+is what the dashboard prints.
 
 An agent that has never recorded a run returns an empty summary rather than an
 error, so a dashboard can render before the first message.

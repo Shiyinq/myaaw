@@ -471,6 +471,8 @@ type SessionTotals struct {
 	LastActiveAt   int64  `json:"last_active_at"`
 	InputTokens    int    `json:"input_tokens"`
 	OutputTokens   int    `json:"output_tokens"`
+	// CacheHitTokens is the part of InputTokens served from the prompt cache.
+	CacheHitTokens int `json:"cache_hit_tokens"`
 	// Provider is the provider type of the newest run, Model its model.
 	Provider   string `json:"provider,omitempty"`
 	Model      string `json:"model,omitempty"`
@@ -490,10 +492,11 @@ func (s *Store) SessionTotals(conversationID string) (SessionTotals, bool, error
 	row := s.db.QueryRow(`SELECT COALESCE(MAX(channel), ''), COUNT(*),
 			COALESCE(MIN(started_at), 0), COALESCE(MAX(started_at), 0),
 			COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+			COALESCE(SUM(cache_hit_tokens), 0),
 			COALESCE(SUM(CASE WHEN status IN ('error', 'interrupted') THEN 1 ELSE 0 END), 0)
 		FROM runs WHERE conversation_id = ?`, conversationID)
 	if err := row.Scan(&totals.Channel, &totals.Turns, &totals.StartedAt, &totals.LastActiveAt,
-		&totals.InputTokens, &totals.OutputTokens, &totals.ErrorCount); err != nil {
+		&totals.InputTokens, &totals.OutputTokens, &totals.CacheHitTokens, &totals.ErrorCount); err != nil {
 		return totals, false, fmt.Errorf("summarise session: %w", err)
 	}
 	if totals.Turns == 0 {

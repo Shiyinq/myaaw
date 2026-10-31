@@ -318,15 +318,18 @@ func TestSessionTotalsAggregatesOneConversation(t *testing.T) {
 	first := sampleRun("run_1", base)
 	first.InputTokens = 100
 	first.OutputTokens = 10
+	first.CacheHitTokens = 40
 
 	second := sampleRun("run_2", base+1000)
 	second.InputTokens = 200
 	second.OutputTokens = 20
+	second.CacheHitTokens = 80
 	second.Status = StatusError
 
 	latest := sampleRun("run_3", base+2000)
 	latest.InputTokens = 300
 	latest.OutputTokens = 30
+	latest.CacheHitTokens = 120
 	latest.Provider = "openai"
 	latest.Model = "deepseek-v4-flash"
 
@@ -366,6 +369,9 @@ func TestSessionTotalsAggregatesOneConversation(t *testing.T) {
 	}
 	if totals.InputTokens != 600 || totals.OutputTokens != 60 {
 		t.Fatalf("tokens = %d/%d", totals.InputTokens, totals.OutputTokens)
+	}
+	if totals.CacheHitTokens != 240 {
+		t.Fatalf("cache hit tokens = %d, want 240", totals.CacheHitTokens)
 	}
 	if totals.Provider != "openai" || totals.Model != "deepseek-v4-flash" {
 		t.Fatalf("latest run = %q/%q", totals.Provider, totals.Model)

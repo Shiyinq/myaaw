@@ -1781,7 +1781,8 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 		run := obs.Run{
 			ID: turn.id, StartedAt: turn.startedAt, ConversationID: "conv-session",
 			Channel: "cli", Model: "deepseek-flash", Status: obs.StatusCompleted,
-			TotalMs: 1200, InputTokens: 1000, OutputTokens: 100, ModelCostUSD: 0.001,
+			TotalMs: 1200, InputTokens: 1000, OutputTokens: 100,
+			CacheHitTokens: 400, ModelCostUSD: 0.001,
 		}
 		if err := store.UpsertRun(run); err != nil {
 			t.Fatalf("upsert run: %v", err)
@@ -1879,12 +1880,13 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 	}
 
 	var stats struct {
-		Turns        int    `json:"turns"`
-		Steps        int    `json:"steps"`
-		InputTokens  int    `json:"input_tokens"`
-		OutputTokens int    `json:"output_tokens"`
-		Model        string `json:"model"`
-		TokPerSec    int    `json:"tok_per_sec"`
+		Turns          int    `json:"turns"`
+		Steps          int    `json:"steps"`
+		InputTokens    int    `json:"input_tokens"`
+		OutputTokens   int    `json:"output_tokens"`
+		CacheHitTokens int    `json:"cache_hit_tokens"`
+		Model          string `json:"model"`
+		TokPerSec      int    `json:"tok_per_sec"`
 	}
 	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/conv-session/stats", token, "", fiber.StatusOK, &stats)
 	if stats.Turns != 2 || stats.Steps != 4 {
@@ -1892,6 +1894,9 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 	}
 	if stats.InputTokens != 2000 || stats.OutputTokens != 200 {
 		t.Fatalf("session stats tokens = %+v", stats)
+	}
+	if stats.CacheHitTokens != 800 {
+		t.Fatalf("session stats cache hits = %+v", stats)
 	}
 	if stats.Model != "deepseek-flash" {
 		t.Fatalf("session stats model = %+v", stats)

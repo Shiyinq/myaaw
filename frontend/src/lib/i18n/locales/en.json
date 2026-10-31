@@ -285,6 +285,7 @@
 			"steps": "{count} steps",
 			"stats_tokens": "{count} tok",
 			"stats_tok_per_sec": "{count} tok/s",
+			"stats_cache_hit": "Cache hit {percent}%",
 			"retry": "Provider retry #{attempt}",
 			"compaction": "Transcript trimmed: {before} → {after} tokens",
 			"waiting": "Waiting for approval",

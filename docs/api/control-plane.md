@@ -810,6 +810,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 | `GET` | `/agents/:name/observability/summary?days=7` | run totals, error rate, p50/p95 latency, per-step/model/trigger/tool breakdowns, most expensive and slowest run, `cost_complete` and `unpriced_*` flags, `tool_cost_usd`, and `database_bytes` |
 | `GET` | `/agents/:name/observability/sessions?limit` | conversations with their turn count, tokens, and cost |
 | `GET` | `/agents/:name/observability/sessions/:id` | one session with **all turns, oldest first**, plus per-turn step counts |
+| `GET` | `/agents/:name/observability/sessions/:id/stats` | session totals only: turns, steps, tokens, cache hits, `tok_per_sec`, and the newest run's provider/model |
 | `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&model&trigger&from&to` | recorded runs, newest first; each run carries `trigger` (`user`, `cron`, `subagent`, or `a2a`) |
 | `GET` | `/agents/:name/observability/runs/:id` | one run with flat `spans` and a nested `tree` |
 | `DELETE` | `/agents/:name/observability/runs?before=<unix ms>` | delete runs; without `before` deletes all |
@@ -900,6 +901,42 @@ session in one request:
 Add `?spans=false` when a client only needs the turn list (faster and much
 smaller). Without it, a session with many long turns can be a few megabytes,
 because every prompt and tool payload is included.
+
+### Session totals without the transcript
+
+A status line or a badge only needs the numbers.
+`GET /agents/:name/observability/sessions/:id/stats` aggregates them in SQL —
+no run or span is loaded — so it also stays correct for sessions longer than the
+500-run page the detail endpoint uses:
+
+```json
+{
+  "conversation_id": "4e7371da-c190-434e-90d3-e1902f309c82",
+  "channel": "cli",
+  "turns": 2,
+  "steps": 6,
+  "started_at": 1761674469000,
+  "last_active_at": 1761674512000,
+  "input_tokens": 19300,
+  "output_tokens": 224,
+  "cache_hit_tokens": 17400,
+  "provider": "openai",
+  "model": "deepseek-v4-flash",
+  "error_count": 0,
+  "tok_per_sec": 182
+}
+```
+
+- `turns` is the number of recorded runs; `steps` counts `step` spans across all
+  of them (not `llm` or `tool` spans).
+- `cache_hit_tokens` is part of `input_tokens`, so the hit rate is
+  `cache_hit_tokens / input_tokens` — never `/ total_tokens`. Hide the rate when
+  the count is zero: a provider that does not report caching is not a 0% rate.
+- `tok_per_sec` is the newest run's `SUM(output_tokens) / (SUM(generation_ms) / 1000)`,
+  so it changes from turn to turn.
+- `provider` is the provider **type** of the newest run (`openai`, `gemini`),
+  while the configured provider name (`deepseek`) lives in the agent config.
+- A conversation with no recorded runs returns 404, like the detail endpoint.
 
 ### Mapping the response to a trajectory UI
 
@@ -1005,7 +1042,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |
 | Cron | `GET/POST /cron`, `DELETE /cron/:id`, `POST /cron/:id/run`, `GET /cron/:id/history` |
-| Observability | `GET /observability/summary`, `GET /observability/sessions`, `GET /observability/sessions/:id`, `GET /observability/runs`, `GET /observability/runs/:id`, `DELETE /observability/runs` |
+| Observability | `GET /observability/summary`, `GET /observability/sessions`, `GET /observability/sessions/:id`, `GET /observability/sessions/:id/stats`, `GET /observability/runs`, `GET /observability/runs/:id`, `DELETE /observability/runs` |
 | Backups | `GET/POST /backups`, `GET/DELETE /backups/:name`, `POST /backups/:name/restore` |
 | System | `GET /health`, `GET /docs/*` |
 

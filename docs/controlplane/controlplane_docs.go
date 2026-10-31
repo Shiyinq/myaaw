@@ -6830,6 +6830,10 @@ const docTemplatecontrolplane = `{
         "obs.SessionTotals": {
             "type": "object",
             "properties": {
+                "cache_hit_tokens": {
+                    "description": "CacheHitTokens is the part of InputTokens served from the prompt cache.",
+                    "type": "integer"
+                },
                 "channel": {
                     "type": "string"
                 },
