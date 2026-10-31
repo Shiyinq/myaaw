@@ -299,6 +299,7 @@
 			"retry": "Percobaan ulang penyedia #{attempt}",
 			"compaction": "Transkrip dipangkas: {before} → {after} token",
 			"waiting": "Menunggu persetujuan",
+			"streaming": "Sedang menjawab…",
 			"think": "Berpikir",
 			"thinking": "Berpikir",
 			"tool": "Alat",

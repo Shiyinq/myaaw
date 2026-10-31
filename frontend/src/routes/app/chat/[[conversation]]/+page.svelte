@@ -8,6 +8,7 @@
 	import { files as filesApi } from '$lib/apis/files';
 	import { observability as observabilityApi } from '$lib/apis/observability';
 	import { agentSelection, toastStore, topBarTitle } from '$lib/stores';
+	import { chatRuns, type ChatItem } from '$lib/stores/chatRuns.svelte';
 	import { cn } from '$lib/utils';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -56,27 +57,16 @@
 	} from 'lucide-svelte';
 	import type {
 		ApprovalDecision,
-		ApprovalPrompt,
 		Attachment,
-		ChatStreamEvent,
 		ConversationSummary,
 		Message,
-		TimelineItem,
 		Upload,
 		Usage
 	} from '$lib/types';
 
 	const { t } = useTranslation();
 
-	interface Item extends TimelineItem {
-		localId?: string;
-		resolved?: string;
-		images?: string[];
-		uploads?: Upload[];
-		running?: boolean;
-		expanded?: boolean;
-		group_duration_ms?: number;
-	}
+	type Item = ChatItem;
 
 	interface StepGroup {
 		key: string;
@@ -145,12 +135,18 @@
 
 	let agent = $derived(agentSelection.selected);
 	let conversationId = $state('');
-	let items = $state<Item[]>([]);
+	// A run of the open conversation keeps streaming while the user is elsewhere;
+	// the page only renders whatever the store currently holds.
+	let activeRun = $derived(chatRuns.forConversation(agent ?? '', conversationId));
+	let historyItems = $state<Item[]>([]);
+	let items = $derived<Item[]>(activeRun ? activeRun.items : historyItems);
 	let input = $state('');
-	let streaming = $state(false);
+	let streaming = $derived(activeRun?.streaming ?? false);
 	let loading = $state(false);
-	let pendingApproval = $state<ApprovalPrompt | null>(null);
-	let usage = $state<Usage | null>(null);
+	let pendingApproval = $derived(activeRun?.pendingApproval ?? null);
+	let storedUsage = $state<Usage | null>(null);
+	let usage = $derived(activeRun?.usage ?? storedUsage);
+	let runError = $derived(activeRun?.error ?? '');
 	// Totals reported by the observability session, the source of truth for
 	// turns, tool steps and tokens.
 	let sessionStats = $state<{
@@ -173,7 +169,7 @@
 		default: string;
 		providers: { name: string; type: string; model: string }[];
 	} | null>(null);
-	let attachments = $state<Attachment[]>([]);
+	let attachments = $derived<Attachment[]>(activeRun?.attachments ?? []);
 	let pending = $state<PendingImage[]>([]);
 	let pendingFiles = $state<PendingFile[]>([]);
 	let dragOver = $state(false);
@@ -186,16 +182,12 @@
 	let scroller = $state<HTMLDivElement | null>(null);
 	let composer = $state<HTMLTextAreaElement | null>(null);
 
-	let controller: AbortController | null = null;
-	let counter = 0;
-	// Wall clock for the step group that is currently streaming, so its header
-	// can report the duration once the group closes.
-	let groupStart = 0;
-	let groupLastStep = '';
-	// Key of the group that is still collecting steps, so it stays open and
-	// spinning between tool calls instead of folding away mid-run.
-	let openGroup = $state('');
 	let loadKey = '';
+
+	// Key of the group that is still collecting steps, so its header stays open
+	// and spinning between tool calls instead of folding away mid-run. It lives
+	// on the run, because the run outlives this page.
+	let openGroup = $derived(activeRun?.openGroup ?? '');
 
 	// Conversation history sidebar
 	const HISTORY_LIMIT = 20;
@@ -208,6 +200,16 @@
 			: false
 	);
 	let history = $state<ConversationSummary[]>([]);
+	// Conversations whose run is still streaming in the background. The open one
+	// is skipped: its own timeline already shows the progress.
+	let streamingConversations = $derived(
+		new Set(
+			chatRuns
+				.all()
+				.filter((run) => run.streaming && run.agent === agent && run.conversationId !== '')
+				.map((run) => run.conversationId)
+		)
+	);
 	let historyOffset = $state(0);
 	let historyHasMore = $state(false);
 	let historyLoading = $state(false);
@@ -222,6 +224,22 @@
 		if (scroller) scroller.scrollTop = scroller.scrollHeight;
 	}
 
+	// A run that ends while another conversation (or menu) is open must not leave
+	// a stale spinner, title or message count in the sidebar. Refresh the list
+	// once, when a run of this agent stops running.
+	let runningCount = -1;
+	$effect(() => {
+		const running = chatRuns.all().filter((run) => run.agent === agent && run.streaming).length;
+		const previous = runningCount;
+		runningCount = running;
+		if (previous > running && previous >= 0) {
+			void loadHistory(true);
+			// The title comes from a background LLM call that runs after the answer,
+			// so the first refresh usually still shows "New Chat".
+			setTimeout(() => void loadHistory(true), 4000);
+		}
+	});
+
 	// Follow only new timeline rows. Expanding a step reassigns `items` with the
 	// same length, and that must not yank the view to the bottom.
 	let followedCount = 0;
@@ -233,10 +251,9 @@
 
 	async function loadConversation(currentAgent: string, id: string) {
 		if (!id) {
-			items = [];
-			usage = null;
+			historyItems = [];
+			storedUsage = null;
 			sessionStats = null;
-			attachments = [];
 			stopTitlePolling();
 			topBarTitle.clear();
 			return;
@@ -245,18 +262,17 @@
 		error = '';
 		sessionStats = null;
 		groupOpen = {};
-		groupStart = 0;
-		groupLastStep = '';
-		openGroup = '';
 		void refreshStats(currentAgent, id);
 		try {
 			const detail = await conversationsApi.get(currentAgent, id, { limit: 0 });
-			items = historyTimeline(detail.messages);
+			historyItems = historyTimeline(detail.messages);
+			// A finished run is redundant once the stored transcript is loaded; the
+			// server's copy includes the final answer. A live run keeps going.
+			chatRuns.settle(currentAgent, id);
 			const title = detail.title ?? '';
 			applyTitle(id, title);
 			if (isPlaceholderTitle(title)) pollTitle(currentAgent, id, 0);
-			usage = null;
-			attachments = [];
+			storedUsage = null;
 		} catch (err) {
 			error = getErrorMessage(err);
 		} finally {
@@ -419,12 +435,10 @@
 		// Do not load a conversation that belongs to the previous agent.
 		if (openConversation) loadKey = `${currentAgent}:${openConversation}`;
 		conversationId = '';
-		items = [];
-		usage = null;
+		historyItems = [];
+		storedUsage = null;
 		sessionStats = null;
-		attachments = [];
 		error = '';
-		pendingApproval = null;
 		stopTitlePolling();
 		topBarTitle.clear();
 		if (page.url.pathname !== '/app/chat') {
@@ -461,6 +475,54 @@
 		conversationId = currentConversation;
 		rememberConversation(currentConversation);
 		void loadConversation(currentAgent, currentConversation);
+	});
+
+	// This page is only a viewer of a run: callbacks are attached while it is on
+	// screen and dropped on unmount, so a background run never touches a
+	// destroyed page.
+	$effect(() => {
+		const run = activeRun;
+		if (!run) return;
+		const view = {
+			onConversation: (id: string) => {
+				if (conversationId === id) return;
+				conversationId = id;
+				loadKey = `${agent}:${id}`;
+				rememberConversation(id);
+				void loadHistory(true);
+				void goto(`/app/chat/${id}`, { replaceState: true, noScroll: true });
+			},
+			onDone: () => {
+				const currentAgent = agent ?? '';
+				const statsId = conversationId;
+				void refreshStats(currentAgent, statsId);
+				void refreshTitle(currentAgent, statsId);
+				// The run may land in the trace store just after `done`.
+				setTimeout(() => void refreshStats(currentAgent, statsId), 1500);
+			},
+			onError: (message: string) => {
+				error = message;
+			}
+		};
+		run.view = view;
+		return () => {
+			if (run.view === view) run.view = null;
+		};
+	});
+
+	// Esc interrupts the answer of the conversation on screen, like the stop
+	// button. Runs in other conversations keep going.
+	$effect(() => {
+		if (!browser) return;
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key !== 'Escape') return;
+			const run = activeRun;
+			if (!run?.streaming) return;
+			event.preventDefault();
+			void run.stop();
+		};
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
 	});
 
 	// Everything between the user's message and the final answer forms one
@@ -574,11 +636,6 @@
 		groupOpen = { ...groupOpen, [group.key]: !isGroupOpen(group) };
 	}
 
-	/** Consecutive thinking/tool rows are rendered as one collapsible group. */
-	function stepRow(item: TimelineItem) {
-		return STEP_KINDS.has(item.kind);
-	}
-
 	function formatDuration(ms: number) {
 		const seconds = ms / 1000;
 		if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
@@ -671,82 +728,18 @@
 		return count === 1 ? t('myaaw.chat.step_one') : t('myaaw.chat.steps', { count });
 	}
 
-	/** Records how long the open step group took on its last step. */
-	function closeGroup() {
-		if (!groupStart || !groupLastStep) return;
-		const duration = Date.now() - groupStart;
-		const last = groupLastStep;
-		groupStart = 0;
-		groupLastStep = '';
-		openGroup = '';
-		items = items.map((item) =>
-			item.localId === last ? { ...item, group_duration_ms: duration } : item
-		);
-	}
-
-	function push(item: Item) {
-		const localId = item.localId ?? `item-${++counter}`;
-		if (stepRow(item)) {
-			if (!groupStart) {
-				groupStart = Date.now();
-				openGroup = localId;
-			}
-			groupLastStep = localId;
-		} else if (item.kind !== 'text') {
-			// Text belongs to the run: the model often narrates between tools.
-			closeGroup();
-		}
-		items = [...items, { ...item, localId }];
-	}
-
-	/** A thinking block closes as soon as the model stops thinking. */
-	function finishThoughts() {
-		items = items.map((item) =>
-			item.kind === 'thought' && item.running ? { ...item, running: false, expanded: false } : item
-		);
-	}
-
-	function mergeLast(kind: string, text: string) {
-		const last = items[items.length - 1];
-		if (last && last.kind === kind && (kind !== 'thought' || last.running)) {
-			items = [...items.slice(0, -1), { ...last, text: (last.text ?? '') + text }];
-		} else if (kind === 'thought') {
-			// Streamed thinking starts open and folds away when it ends.
-			push({ kind, text, running: true, expanded: true });
-		} else {
-			push({ kind, text });
-		}
-	}
-
-	function setToolResult(id: string, result: string, isError?: boolean) {
-		const index = items.findIndex((item) => item.kind === 'tool' && item.id === id);
-		if (index < 0) {
-			// A result without its call still deserves a block.
-			push({ kind: 'tool', id, result, is_error: isError, running: false, expanded: false });
-			return;
-		}
-		items = items.map((item, position) =>
-			position === index
-				? { ...item, result, is_error: isError, running: false, expanded: false }
-				: item
-		);
-	}
-
 	function toggleItem(localId?: string) {
 		if (!localId) return;
-		items = items.map((item) =>
+		if (activeRun) {
+			activeRun.toggleItem(localId);
+			return;
+		}
+		historyItems = historyItems.map((item) =>
 			item.localId === localId ? { ...item, expanded: !item.expanded } : item
 		);
 	}
 
-	/** Folds an interrupted or finished run so no step keeps spinning. */
-	function endRun() {
-		finishThoughts();
-		items = items.map((item) => (item.running ? { ...item, running: false } : item));
-		closeGroup();
-	}
-
-	async function send() {
+	function send() {
 		const text = input.trim();
 		const images = pending.map((item) => item.base64);
 		const files = pendingFiles.map((item) => ({
@@ -756,170 +749,49 @@
 		}));
 		if ((!text && images.length === 0 && files.length === 0) || !agent || streaming) return;
 
-		push({
-			kind: 'user',
+		// The run owns the stream and its timeline, so opening another
+		// conversation or another menu no longer cuts the answer off.
+		chatRuns.start({
+			agent,
+			conversationId,
 			text,
-			images: pending.map((item) => item.dataUrl),
+			images,
+			imagesDisplay: pending.map((item) => item.dataUrl),
+			files,
 			uploads: pendingFiles.map((item) => ({
 				name: item.name,
 				path: '',
 				mime_type: item.mimeType,
 				size: item.size
-			}))
+			})),
+			// Keep the earlier turns of this conversation visible.
+			initialItems: items
 		});
+
 		input = '';
 		clearPending();
-		groupStart = 0;
-		groupLastStep = '';
-		openGroup = '';
+		groupOpen = {};
 		if (composer) composer.style.height = '';
-		streaming = true;
 		error = '';
-		pendingApproval = null;
-		usage = null;
-		attachments = [];
-		controller = new AbortController();
-
-		try {
-			await chatApi.stream(
-				agent,
-				{
-					text,
-					conversation_id: conversationId || undefined,
-					images: images.length > 0 ? images : undefined,
-					files: files.length > 0 ? files : undefined
-				},
-				(event) => {
-					const data = event.data as Record<string, any>;
-					switch (event.event as ChatStreamEvent) {
-						case 'thought':
-							mergeLast('thought', data?.text ?? '');
-							break;
-						case 'chunk':
-							finishThoughts();
-							mergeLast('text', data?.text ?? '');
-							break;
-						case 'tool':
-							finishThoughts();
-							push({
-								kind: 'tool',
-								id: data?.id,
-								name: data?.name,
-								arguments: data?.arguments,
-								running: true,
-								expanded: true
-							});
-							break;
-						case 'tool_result':
-							setToolResult(data?.id, data?.result ?? '', data?.is_error);
-							break;
-						case 'retry':
-							push({ kind: 'retry', attempt: data?.attempt });
-							break;
-						case 'compaction':
-							push({
-								kind: 'compaction',
-								tokens_before: data?.tokens_before,
-								tokens_after: data?.tokens_after,
-								dropped_messages: data?.dropped_messages
-							});
-							break;
-						case 'approval_required': {
-							const prompt: ApprovalPrompt = {
-								approval_id: data?.approval_id,
-								tool_name: data?.tool_name,
-								action: data?.action,
-								args_summary: data?.args_summary,
-								subagent: data?.subagent
-							};
-							pendingApproval = prompt;
-							push({
-								kind: 'approval',
-								id: prompt.approval_id,
-								name: prompt.tool_name,
-								arguments: prompt.args_summary,
-								subagent: prompt.subagent
-							});
-							break;
-						}
-						case 'approval_resolved': {
-							pendingApproval = null;
-							items = items.map((item) =>
-								item.kind === 'approval' && item.id === data?.approval_id
-									? { ...item, resolved: data?.decision ?? data?.reason ?? 'resolved' }
-									: item
-							);
-							break;
-						}
-						case 'done': {
-							endRun();
-							const nextConversation = data?.conversation_id;
-							if (nextConversation && nextConversation !== conversationId) {
-								conversationId = nextConversation;
-								loadKey = `${agent}:${nextConversation}`;
-								rememberConversation(nextConversation);
-								void loadHistory(true);
-								void goto(`/app/chat/${nextConversation}`, {
-									replaceState: true,
-									noScroll: true
-								});
-							}
-							if (data?.text) {
-								const hasText = [...items].reverse().some((item) => item.kind === 'text');
-								if (!hasText) push({ kind: 'text', text: data.text });
-							}
-							usage = data?.usage ?? null;
-							attachments = data?.attachments ?? [];
-							const statsId = conversationId;
-							void refreshStats(agent, statsId);
-							void refreshTitle(agent, statsId);
-							// The run may land in the trace store just after `done`.
-							setTimeout(() => void refreshStats(agent, statsId), 1500);
-							break;
-						}
-						case 'error': {
-							endRun();
-							error = data?.error ?? 'Stream error';
-							push({ kind: 'error', text: error });
-							break;
-						}
-					}
-				},
-				controller.signal
-			);
-		} catch (err) {
-			if ((err as Error)?.name !== 'AbortError') {
-				error = getErrorMessage(err);
-				toastStore.error(error);
-			}
-		} finally {
-			endRun();
-			streaming = false;
-			controller = null;
-		}
+		storedUsage = null;
 	}
 
 	async function decide(decision: ApprovalDecision) {
-		const prompt = pendingApproval;
-		if (!prompt || !agent) return;
-		pendingApproval = null;
+		const run = activeRun;
+		const prompt = run?.pendingApproval;
+		if (!run || !prompt || !agent) return;
 		try {
 			await chatApi.decide(agent, prompt.approval_id, decision);
-			items = items.map((item) =>
-				item.kind === 'approval' && item.id === prompt.approval_id
-					? { ...item, resolved: decision }
-					: item
-			);
+			run.resolveApproval(prompt.approval_id, decision);
 		} catch (err) {
 			error = getErrorMessage(err);
 			toastStore.error(error);
 		}
 	}
 
+	/** Stops the open conversation's run; other conversations keep streaming. */
 	function stop() {
-		controller?.abort();
-		controller = null;
-		streaming = false;
+		void activeRun?.stop();
 	}
 
 	function newChat() {
@@ -930,28 +802,21 @@
 	}
 
 	function resetChat() {
-		controller?.abort();
-		controller = null;
-		streaming = false;
+		// Runs of other conversations keep streaming: this only clears the view.
 		conversationId = '';
-		items = [];
+		historyItems = [];
 		input = '';
 		if (composer) composer.style.height = '';
-		usage = null;
+		storedUsage = null;
 		sessionStats = null;
-		attachments = [];
 		pending = [];
 		pendingFiles = [];
 		error = '';
-		pendingApproval = null;
 		loadKey = `${agent}:`;
 		rememberConversation('');
 		stopTitlePolling();
 		topBarTitle.clear();
 		groupOpen = {};
-		groupStart = 0;
-		groupLastStep = '';
-		openGroup = '';
 	}
 
 	function toggleHistory() {
@@ -1894,12 +1759,12 @@
 				</div>
 			</div>
 
-			{#if error}
+			{#if runError || error}
 				<div class="shrink-0 px-4">
 					<div
 						class="mx-auto max-w-5xl rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
 					>
-						{error}
+						{runError || error}
 					</div>
 				</div>
 			{/if}
@@ -2244,8 +2109,19 @@
 									class="min-w-0 flex-1 rounded px-1 py-0.5 text-left"
 									onclick={() => openConversation(entry.id)}
 								>
-									<span class="block truncate text-xs font-medium">
-										{entry.title || entry.id.slice(0, 12)}
+									<span class="flex items-center gap-1.5">
+										{#if streamingConversations.has(entry.id) && entry.id !== conversationId}
+											<!-- A run left in the background keeps going; flag it until it is
+											     opened, where the live stream itself shows the progress. -->
+											<Loader2
+												class="h-3 w-3 shrink-0 animate-spin text-muted-foreground"
+												aria-label={t('myaaw.chat.streaming')}
+												data-streaming="true"
+											/>
+										{/if}
+										<span class="min-w-0 truncate text-xs font-medium">
+											{entry.title || entry.id.slice(0, 12)}
+										</span>
 									</span>
 									<span class="mt-0.5 block truncate text-[10px] text-muted-foreground">
 										{formatWhen(entry.updated_at)} · {t('myaaw.conversations.messages', {

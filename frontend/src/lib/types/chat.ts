@@ -12,6 +12,8 @@ export interface Attachment {
 
 export interface ChatRequest {
 	text: string;
+	/** Lets the client stop this run with `POST /chat/stop`. */
+	request_id?: string;
 	conversation_id?: string;
 	images?: string[];
 	files?: ChatFile[];
@@ -64,6 +66,7 @@ export interface ChatResponse {
 export type ChatStreamEvent =
 	| 'thought'
 	| 'chunk'
+	| 'conversation'
 	| 'tool'
 	| 'tool_result'
 	| 'retry'

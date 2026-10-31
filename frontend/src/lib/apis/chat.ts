@@ -35,5 +35,14 @@ export const chat = {
 		client<OKResponse>(agentPath(agent, `/approvals/${encodeURIComponent(approvalId)}/decision`), {
 			method: 'POST',
 			body: { decision }
+		}),
+	/**
+	 * Stops a run on the agent server. Aborting the fetch only closes this tab's
+	 * copy of the stream; the agent keeps running unless it is told to stop.
+	 */
+	stop: (agent: string, requestId: string) =>
+		client<{ stopped: boolean }>(agentPath(agent, '/chat/stop'), {
+			method: 'POST',
+			body: { request_id: requestId }
 		})
 };

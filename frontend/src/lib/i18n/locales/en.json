@@ -299,6 +299,7 @@
 			"retry": "Provider retry #{attempt}",
 			"compaction": "Transcript trimmed: {before} → {after} tokens",
 			"waiting": "Waiting for approval",
+			"streaming": "Responding…",
 			"think": "Think",
 			"thinking": "Thinking",
 			"tool": "Tool",
