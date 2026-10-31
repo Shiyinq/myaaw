@@ -1,6 +1,12 @@
 import { agentPath, client } from './client';
 import { streamSSE, type SSEEvent } from '$lib/utils/sse';
-import type { ApprovalDecision, ChatRequest, ChatResponse, OKResponse } from '$lib/types';
+import type {
+	ApprovalDecision,
+	ChatRequest,
+	ChatResponse,
+	ChatRunInfo,
+	OKResponse
+} from '$lib/types';
 
 export const chat = {
 	send: (agent: string, payload: ChatRequest) =>
@@ -44,5 +50,22 @@ export const chat = {
 		client<{ stopped: boolean }>(agentPath(agent, '/chat/stop'), {
 			method: 'POST',
 			body: { request_id: requestId }
+		}),
+	/** Runs still in flight on the agent server, for a tab that just opened. */
+	runs: (agent: string) => client<{ runs: ChatRunInfo[] }>(agentPath(agent, '/chat/runs')),
+	/**
+	 * Re-attaches to a run: the server replays every buffered event and then
+	 * keeps streaming, so a reloaded or reopened tab continues where it left off.
+	 */
+	attach: (
+		agent: string,
+		requestId: string,
+		onEvent: (event: SSEEvent) => void,
+		signal?: AbortSignal
+	) =>
+		streamSSE(agentPath(agent, `/chat/run/${encodeURIComponent(requestId)}/stream?after=0`), {
+			method: 'GET',
+			signal,
+			onEvent
 		})
 };

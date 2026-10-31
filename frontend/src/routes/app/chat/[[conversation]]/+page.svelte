@@ -525,6 +525,14 @@
 		return () => window.removeEventListener('keydown', onKey);
 	});
 
+	// Runs started before this page existed (reload, closed tab, fresh login) are
+	// still alive on the agent server; attach to them again.
+	$effect(() => {
+		const currentAgent = agent ?? '';
+		if (!currentAgent) return;
+		void chatRuns.restore(currentAgent);
+	});
+
 	// Everything between the user's message and the final answer forms one
 	// outer collapsible run. Assistant text in between stays plain text, only
 	// the last answer of each run is shown outside the group.

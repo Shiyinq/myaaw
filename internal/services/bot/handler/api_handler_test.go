@@ -52,6 +52,8 @@ func newAPIAppWith(t *testing.T, svc service.BotService) *fiber.App {
 	app.Post("/api/chat", h.APIChat)
 	app.Post("/api/chat/stream", h.APIChatStream)
 	app.Post("/api/chat/stop", h.APIChatStop)
+	app.Get("/api/chat/runs", h.APIChatRuns)
+	app.Get("/api/chat/run/:id/stream", h.APIChatRunStream)
 	app.Post("/api/approvals/:id", h.ApprovalDecision)
 	return app
 }

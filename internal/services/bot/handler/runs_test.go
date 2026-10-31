@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -16,56 +18,115 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-func TestRunRegistryStopCancelsTheRun(t *testing.T) {
-	ctx, _, release := runContext(context.Background(), "req-1")
-	defer release()
+func TestRunBrokerStopCancelsTheRun(t *testing.T) {
+	run := activeRuns.start("req-1")
+	defer run.finish()
 
 	if !activeRuns.stop("req-1") {
 		t.Fatal("stop reported no run")
 	}
 
 	select {
-	case <-ctx.Done():
+	case <-run.Context().Done():
 	default:
 		t.Fatal("run context was not cancelled")
 	}
-	if !agent.StoppedByClient(ctx) {
-		t.Fatalf("cause = %v, want ErrRunStopped", context.Cause(ctx))
+	if !agent.StoppedByClient(run.Context()) {
+		t.Fatalf("cause = %v, want ErrRunStopped", context.Cause(run.Context()))
 	}
 }
 
-func TestRunRegistryReleaseForgetsTheRun(t *testing.T) {
-	_, _, release := runContext(context.Background(), "req-2")
-	release()
-
-	if activeRuns.stop("req-2") {
-		t.Fatal("a finished run is still stoppable")
-	}
-}
-
-func TestRunRegistryUnknownRequestID(t *testing.T) {
+func TestRunBrokerUnknownRequestID(t *testing.T) {
 	if activeRuns.stop("does-not-exist") {
 		t.Fatal("unknown request id reported a run")
 	}
+	if _, ok := activeRuns.get("does-not-exist"); ok {
+		t.Fatal("unknown request id was found")
+	}
 }
 
-func TestRunContextWithoutRequestIDIsNotRegistered(t *testing.T) {
-	ctx, _, release := runContext(context.Background(), "")
-	defer release()
+func TestRunBrokerListsAndFiltersRuns(t *testing.T) {
+	first := activeRuns.start("list-a")
+	first.setConversation("conv-a")
+	second := activeRuns.start("list-b")
+	second.setConversation("conv-b")
+	second.finish()
 
-	if ctx.Done() != nil {
-		t.Fatal("a run without a request id should not be cancelable")
+	everything := activeRuns.list("")
+	if len(everything) < 2 {
+		t.Fatalf("runs = %+v", everything)
 	}
-	if activeRuns.stop("") {
-		t.Fatal("empty request id was registered")
+
+	onlyA := activeRuns.list("conv-a")
+	if len(onlyA) != 1 || onlyA[0].RequestID != "list-a" || !onlyA[0].Streaming {
+		t.Fatalf("conv-a runs = %+v", onlyA)
+	}
+
+	onlyB := activeRuns.list("conv-b")
+	if len(onlyB) != 1 || onlyB[0].Streaming {
+		t.Fatalf("conv-b runs = %+v", onlyB)
+	}
+}
+
+// The whole point of the broker: events are buffered independently of any
+// connection, so a client that attaches late still receives them.
+func TestChatRunAttachReplaysAndFollows(t *testing.T) {
+	run := newChatRun("replay")
+	run.publish("chunk", map[string]any{"text": "a"})
+	run.publish("chunk", map[string]any{"text": "b"})
+
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		run.publish("done", map[string]any{"ok": true})
+		run.finish()
+	}()
+
+	var buf bytes.Buffer
+	writer := bufio.NewWriter(&buf)
+	done := make(chan struct{})
+	go func() {
+		run.attach(writer, 0)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("attach did not finish after the run completed")
+	}
+
+	stream := buf.String()
+	for _, want := range []string{`"text":"a"`, `"text":"b"`, `"ok":true`} {
+		if !strings.Contains(stream, want) {
+			t.Fatalf("stream missing %q:\n%s", want, stream)
+		}
+	}
+}
+
+func TestChatRunAttachResumesAfterIndex(t *testing.T) {
+	run := newChatRun("resume")
+	run.publish("chunk", map[string]any{"text": "a"})
+	run.publish("chunk", map[string]any{"text": "b"})
+	run.finish()
+
+	var buf bytes.Buffer
+	writer := bufio.NewWriter(&buf)
+	run.attach(writer, 1)
+
+	stream := buf.String()
+	if strings.Contains(stream, `"text":"a"`) {
+		t.Fatalf("attach replayed an event before the offset:\n%s", stream)
+	}
+	if !strings.Contains(stream, `"text":"b"`) {
+		t.Fatalf("stream missing the later event:\n%s", stream)
 	}
 }
 
 func TestAPIChatStopCancelsRegisteredRun(t *testing.T) {
 	app := newAPIApp(t, newFakeBotService())
 
-	ctx, _, release := runContext(context.Background(), "req-stop")
-	defer release()
+	run := activeRuns.start("req-stop")
+	defer run.finish()
 
 	req := httptest.NewRequest("POST", "/api/chat/stop", strings.NewReader(`{"request_id":"req-stop"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -92,7 +153,7 @@ func TestAPIChatStopCancelsRegisteredRun(t *testing.T) {
 		t.Fatalf("response = %s", payload)
 	}
 	select {
-	case <-ctx.Done():
+	case <-run.Context().Done():
 	default:
 		t.Fatal("run was not cancelled")
 	}
@@ -115,8 +176,32 @@ func TestAPIChatStopRequiresRequestID(t *testing.T) {
 	}
 }
 
+func TestAPIChatRunsListsRegisteredRuns(t *testing.T) {
+	app := newAPIApp(t, newFakeBotService())
+
+	run := activeRuns.start("listed-run")
+	run.setConversation("conv-listed")
+	defer run.finish()
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/api/chat/runs?conversation_id=conv-listed", nil))
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var payload struct {
+		Runs []RunInfo `json:"runs"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(payload.Runs) != 1 || payload.Runs[0].RequestID != "listed-run" || !payload.Runs[0].Streaming {
+		t.Fatalf("runs = %+v", payload.Runs)
+	}
+}
+
 // blockingBotService keeps a run alive until its context is cancelled, so the
-// handler can be observed stopping it mid-stream.
+// handler can be observed stopping it.
 type blockingBotService struct {
 	service.BotService
 	started chan struct{}

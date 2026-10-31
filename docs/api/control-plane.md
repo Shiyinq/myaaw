@@ -201,6 +201,7 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | Event | Data |
 |---|---|
 | `thought` | `{"text":"..."}` |
+| `run` | `{"request_id":"..."}` — first event; the id used to re-attach |
 | `conversation` | `{"conversation_id":"..."}` — emitted before the provider call, so a client knows the id even when the run is stopped |
 | `chunk` | `{"text":"..."}` (answer delta) |
 | `tool` | `{"id","name","arguments"}` |
@@ -226,7 +227,21 @@ curl -X POST http://localhost:9000/agents/myfriend/chat/stop \
 # {"stopped":true}
 ```
 
-Pass the same `request_id` you sent with the chat request. The agent cancels the provider call instead of finishing in the background, keeps the text produced so far as a normal transcript entry (not an error), and ends the stream with `done` carrying `"stopped":true`. Closing the stream connection has the same effect, which is what makes the dashboard's stop button and a refreshed tab behave the same way.
+Pass the same `request_id` you sent with the chat request. The agent cancels the provider call instead of finishing in the background, keeps the text produced so far as a normal transcript entry (not an error), and ends the stream with `done` carrying `"stopped":true`.
+
+Closing the connection does **not** stop a run. A reload, a closed tab, or a logout leaves the agent answering, and the dashboard re-attaches when it comes back:
+
+```bash
+# Runs still in flight (newest first)
+curl "http://localhost:9000/agents/myfriend/chat/runs" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Replay a run and keep streaming it
+curl -N "http://localhost:9000/agents/myfriend/chat/run/3f0c6b0e-9a51-4e7f-b2f4-4f0f2c1f9a11/stream?after=0" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+`after` skips events the client already has. The replay buffer is capped, a finished run stays attachable for 15 minutes, and runs live in the agent process (restarting the agent drops them). Every run announces itself with a `run` event carrying its request id.
 
 `EventSource` cannot send a POST body, so use `fetch` with `ReadableStream`:
 

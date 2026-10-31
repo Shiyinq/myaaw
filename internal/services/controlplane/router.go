@@ -77,6 +77,8 @@ func NewApp() (*fiber.App, error) {
 	app.Post("/agents/:name/chat", h.Chat)
 	app.Post("/agents/:name/chat/stream", h.ChatStream)
 	app.Post("/agents/:name/chat/stop", h.ChatStop)
+	app.Get("/agents/:name/chat/runs", h.ChatRuns)
+	app.Get("/agents/:name/chat/run/:id/stream", h.ChatRunStream)
 	app.Post("/agents/:name/approvals/:id/decision", h.ApprovalDecision)
 	app.Get("/agents/:name/approvals", h.GetApprovals)
 	app.Delete("/agents/:name/approvals/grants/:key", h.RevokeApprovalGrant)

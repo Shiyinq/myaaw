@@ -63,7 +63,17 @@ export interface ChatResponse {
 	approval?: ApprovalPrompt;
 }
 
+/** An in-flight (or recently finished) run a client can attach to. */
+export interface ChatRunInfo {
+	request_id: string;
+	conversation_id?: string;
+	streaming: boolean;
+	started_at: string;
+	finished_at?: string;
+}
+
 export type ChatStreamEvent =
+	| 'run'
 	| 'thought'
 	| 'chunk'
 	| 'conversation'

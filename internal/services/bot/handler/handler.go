@@ -31,6 +31,8 @@ type BotHandler interface {
 	APIChat(c fiber.Ctx) error
 	APIChatStream(c fiber.Ctx) error
 	APIChatStop(c fiber.Ctx) error
+	APIChatRuns(c fiber.Ctx) error
+	APIChatRunStream(c fiber.Ctx) error
 	ApprovalDecision(c fiber.Ctx) error
 }
 

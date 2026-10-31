@@ -102,6 +102,19 @@ definitions:
       trigger:
         type: string
     type: object
+  handler.RunInfo:
+    properties:
+      conversation_id:
+        type: string
+      finished_at:
+        type: string
+      request_id:
+        type: string
+      started_at:
+        type: string
+      streaming:
+        type: boolean
+    type: object
   myaaw_internal_services_bot_handler.ChatResponse:
     properties:
       attachments:
@@ -216,6 +229,56 @@ paths:
           schema:
             $ref: '#/definitions/common.ErrorResponse'
       summary: API Chat
+      tags:
+      - API
+  /api/chat/run/{id}/stream:
+    get:
+      description: Streams the events of a running (or recently finished) run, replaying
+        everything after `after`. The run keeps going when this connection drops.
+      parameters:
+      - description: Request id of the run
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 0
+        description: Skip events before this index
+        in: query
+        name: after
+        type: integer
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      summary: Attach to a run
+      tags:
+      - API
+  /api/chat/runs:
+    get:
+      description: Lists the runs a client can attach to, newest first. Finished runs
+        stay listed for a short while so a reconnecting tab can read their tail.
+      parameters:
+      - description: Only runs of this conversation
+        in: query
+        name: conversation_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/handler.RunInfo'
+              type: array
+            type: object
+      summary: List runs
       tags:
       - API
   /api/chat/stop:

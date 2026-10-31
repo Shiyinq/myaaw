@@ -150,6 +150,7 @@ data: <json>
 | Event | Data | Meaning |
 |---|---|---|
 | `thought` | `{"text": "..."}` | reasoning delta |
+| `run` | `{"request_id": "..."}` | first event; the id to reattach with |
 | `conversation` | `{"conversation_id": "..."}` | sent before the provider call, so a stopped run can still be reopened |
 | `chunk` | `{"text": "..."}` | answer text delta |
 | `tool` | `{"id","name","arguments"}` | tool execution started |
@@ -213,7 +214,23 @@ curl -X POST http://localhost:8080/api/chat/stop \
 # {"stopped":true}
 ```
 
-Stopping cancels the provider call, so no further tokens are spent. Whatever the model already produced stays in the transcript as normal text (it is not recorded as an error), and the stream ends with `done` carrying `"stopped":true`. `stopped:false` means no run with that id is active, usually because it already finished. Dropping the connection has the same effect: the agent notices the failed write and cancels the run instead of finishing it in the background.
+Stopping cancels the provider call, so no further tokens are spent. Whatever the model already produced stays in the transcript as normal text (it is not recorded as an error), and the stream ends with `done` carrying `"stopped":true`. `stopped:false` means no run with that id is active, usually because it already finished.
+
+### Runs outlive the connection
+
+Dropping the connection does **not** stop a run: a reload, a closed tab, or a logout leaves the agent working and buffers its events. Attach again to replay what you missed and continue live:
+
+```bash
+# What is still running (newest first)
+curl http://localhost:8080/api/chat/runs \
+  -H 'Content-Type: application/json'
+# {"runs":[{"request_id":"3f0c6b0e","conversation_id":"conv-id","streaming":true,"started_at":"..."}]}
+
+# Replay from the beginning and keep streaming
+curl -N "http://localhost:8080/api/chat/run/3f0c6b0e/stream?after=0"
+```
+
+`after` skips events the client already has, so a client that kept its own cursor resumes exactly where it stopped. The replay buffer is capped (the oldest events are dropped on very long runs) and a finished run stays attachable for 15 minutes. Each stream starts with a `run` event carrying the request id, which matters for clients that did not send one: the server generates it. Runs live in the agent process, so restarting the agent drops them.
 
 ### JavaScript example
 

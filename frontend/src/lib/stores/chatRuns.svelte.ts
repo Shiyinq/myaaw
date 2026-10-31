@@ -4,6 +4,7 @@ import type {
 	ApprovalPrompt,
 	Attachment,
 	ChatFile,
+	ChatRunInfo,
 	ChatStreamEvent,
 	TimelineItem,
 	Upload,
@@ -81,6 +82,8 @@ export class ChatRun {
 
 	/** Set by the mounted page; cleared when it unmounts. */
 	view: RunView | null = null;
+	/** Set by the registry so a lost run can be forgotten. */
+	discard?: () => void;
 
 	private controller: AbortController | null = null;
 	private counter = 0;
@@ -198,6 +201,38 @@ export class ChatRun {
 			this.finishedAt = Date.now();
 			this.controller = null;
 		});
+	}
+
+	/**
+	 * Attaches to a run that started before this page existed (a reload, a closed
+	 * tab, a logout). The server replays its buffer, so the timeline is rebuilt
+	 * from the beginning and then keeps streaming.
+	 */
+	async resume() {
+		this.streaming = true;
+		this.controller = new AbortController();
+		try {
+			await chatApi.attach(
+				this.agent,
+				this.requestId,
+				(event) => this.handleEvent(event as ChatEvent),
+				this.controller.signal
+			);
+		} catch (err) {
+			const status = (err as { status?: number } | undefined)?.status;
+			if (status === 404) {
+				// The server restarted or the run aged out; the transcript is history now.
+				this.discard?.();
+				return;
+			}
+			this.error = (err as Error)?.message || 'Stream error';
+			this.view?.onError?.(this.error);
+		} finally {
+			this.endRun();
+			this.streaming = false;
+			this.finishedAt = Date.now();
+			this.controller = null;
+		}
 	}
 
 	private async stream(options: StartRunOptions) {
@@ -344,11 +379,45 @@ export class ChatRun {
 type ChatEvent = { event: string; data: unknown };
 
 const runs = $state<ChatRun[]>([]);
+// Agents whose in-flight runs were already recovered after a reload.
+const restored = new Set<string>();
 
 export const chatRuns = {
 	/** Runs for every conversation, newest last. */
 	all(): ChatRun[] {
 		return runs;
+	},
+	/**
+	 * Picks up the runs the agent server still holds. Call it when the chat page
+	 * mounts: after a reload, a closed tab, or a fresh login the browser has no
+	 * streams, but the answers are still running and their buffers are replayable.
+	 */
+	async restore(agentName: string) {
+		if (!agentName || restored.has(agentName)) return;
+		restored.add(agentName);
+
+		let infos: ChatRunInfo[] = [];
+		try {
+			infos = (await chatApi.runs(agentName)).runs ?? [];
+		} catch {
+			// Allow a later attempt instead of giving up for the whole session.
+			restored.delete(agentName);
+			return;
+		}
+
+		for (const info of infos) {
+			if (!info.streaming || !info.request_id) continue;
+			if (runs.some((run) => run.requestId === info.request_id)) continue;
+
+			const run = new ChatRun(agentName, info.request_id);
+			run.conversationId = info.conversation_id ?? '';
+			run.discard = () => {
+				const index = runs.indexOf(run);
+				if (index >= 0) runs.splice(index, 1);
+			};
+			runs.push(run);
+			void run.resume();
+		}
 	},
 	/**
 	 * The run of the open conversation. A run stays unbound (empty id) only
