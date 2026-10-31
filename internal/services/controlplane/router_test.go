@@ -427,6 +427,74 @@ func TestRouterTerminalDisabled(t *testing.T) {
 	doJSON(t, app, "POST", "/agents/myfriend/terminal", token, `{}`, fiber.StatusNotFound, nil)
 }
 
+func TestRouterBackups(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var empty struct {
+		Dir      string `json:"dir"`
+		Archives []any  `json:"archives"`
+	}
+	doJSON(t, app, "GET", "/backups", token, "", fiber.StatusOK, &empty)
+	if empty.Dir == "" {
+		t.Fatal("backup dir is empty")
+	}
+
+	var created struct {
+		Dir      string `json:"dir"`
+		Archives []struct {
+			Agent string `json:"agent"`
+			Path  string `json:"path"`
+		} `json:"archives"`
+	}
+	doJSON(t, app, "POST", "/backups", token, `{"agents":["myfriend"]}`, fiber.StatusOK, &created)
+	if len(created.Archives) != 1 || created.Archives[0].Agent != "myfriend" {
+		t.Fatalf("create = %+v", created)
+	}
+	name := filepath.Base(created.Archives[0].Path)
+
+	req := httptest.NewRequest("GET", "/backups/"+name, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read download: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK || len(body) == 0 {
+		t.Fatalf("download status = %d, bytes = %d", resp.StatusCode, len(body))
+	}
+	if got := resp.Header.Get("Content-Disposition"); !strings.Contains(got, "attachment") {
+		t.Fatalf("disposition = %q", got)
+	}
+
+	// The dashboard downloads through <a download>, which cannot send headers, so
+	// the same archive must also be reachable with ?token=.
+	queryResp, err := app.Test(httptest.NewRequest("GET", "/backups/"+name+"?token="+token, nil))
+	if err != nil {
+		t.Fatalf("download with query token: %v", err)
+	}
+	queryResp.Body.Close()
+	if queryResp.StatusCode != fiber.StatusOK {
+		t.Fatalf("query token status = %d", queryResp.StatusCode)
+	}
+
+	// Traversal attempts and unknown names are reported as not found.
+	doJSON(t, app, "GET", "/backups/..%2F..%2Fetc%2Fpasswd", token, "", fiber.StatusNotFound, nil)
+	doJSON(t, app, "POST", "/backups/myaaw-backup-gone-20260101-000000.tar.gz/restore", token,
+		`{}`, fiber.StatusNotFound, nil)
+
+	// A bad agent name is the client's mistake, not a server error.
+	doJSON(t, app, "POST", "/backups", token, `{"agents":["../escape"]}`, fiber.StatusBadRequest, nil)
+
+	doJSON(t, app, "DELETE", "/backups/"+name, token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "GET", "/backups/"+name, token, "", fiber.StatusNotFound, nil)
+}
+
 func TestRouterContext(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	home, err := os.UserHomeDir()

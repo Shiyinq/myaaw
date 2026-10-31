@@ -1,6 +1,7 @@
 export * from './auth';
 export * from './agents';
 export * from './approvals';
+export * from './backup';
 export * from './chat';
 export * from './channels';
 export * from './common';

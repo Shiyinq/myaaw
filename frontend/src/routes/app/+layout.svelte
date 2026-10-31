@@ -20,6 +20,7 @@
 		ScrollText,
 		ShieldCheck,
 		Activity,
+		Archive,
 		Bot,
 		SquareTerminal,
 		PanelLeftClose,
@@ -143,6 +144,12 @@
 					label: 'myaaw.nav.logs',
 					description: 'myaaw.logs.subtitle',
 					icon: ScrollText
+				},
+				{
+					href: '/app/backups',
+					label: 'myaaw.nav.backups',
+					description: 'myaaw.backups.subtitle',
+					icon: Archive
 				},
 				{
 					href: '/app/approvals',

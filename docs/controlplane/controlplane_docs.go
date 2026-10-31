@@ -5107,6 +5107,229 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/backups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "List backups",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.BackupList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Writes a tar.gz archive per agent into the backup directory. An empty agent list backs up every initialized agent and adds the global registry.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Create backups",
+                "parameters": [
+                    {
+                        "description": "What to include",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/service.BackupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.BackupCreated"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/gzip"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Download a backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Archive name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "tar.gz archive",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Delete a backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Archive name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/{name}/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stops the agent if it is running, then rewrites its directory from the archive. force replaces an agent that already exists.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Restore a backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Archive name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Restore options",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/service.RestoreRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.RestoreResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/capabilities": {
             "get": {
                 "security": [
@@ -5252,6 +5475,23 @@ const docTemplatecontrolplane = `{
                 },
                 "tokens_before": {
                     "type": "integer"
+                }
+            }
+        },
+        "backup.Result": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string"
+                },
+                "bytes": {
+                    "type": "integer"
+                },
+                "files": {
+                    "type": "integer"
+                },
+                "path": {
+                    "type": "string"
                 }
             }
         },
@@ -6817,6 +7057,78 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.BackupArchive": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.BackupCreated": {
+            "type": "object",
+            "properties": {
+                "archives": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backup.Result"
+                    }
+                },
+                "dir": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.BackupList": {
+            "type": "object",
+            "properties": {
+                "archives": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.BackupArchive"
+                    }
+                },
+                "dir": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.BackupRequest": {
+            "type": "object",
+            "properties": {
+                "agents": {
+                    "description": "Agents is empty to back up every initialized agent.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "include_caches": {
+                    "type": "boolean"
+                },
+                "include_logs": {
+                    "type": "boolean"
+                },
+                "include_venv": {
+                    "type": "boolean"
+                },
+                "include_workspace": {
+                    "type": "boolean"
+                },
+                "no_secrets": {
+                    "type": "boolean"
+                }
+            }
+        },
         "service.BotPatch": {
             "type": "object",
             "properties": {
@@ -7668,6 +7980,44 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.ProviderView"
                     }
+                }
+            }
+        },
+        "service.RestoreRequest": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "description": "Agent renames the agent on restore. Empty keeps the archived name.",
+                    "type": "string"
+                },
+                "force": {
+                    "type": "boolean"
+                },
+                "restore_packages": {
+                    "type": "boolean"
+                },
+                "start": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "service.RestoreResult": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string"
+                },
+                "files": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "port_warning": {
+                    "type": "string"
+                },
+                "pre_restore_backup": {
+                    "type": "string"
                 }
             }
         },

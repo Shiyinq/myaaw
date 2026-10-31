@@ -1006,9 +1006,10 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |
 | Cron | `GET/POST /cron`, `DELETE /cron/:id`, `POST /cron/:id/run`, `GET /cron/:id/history` |
 | Observability | `GET /observability/summary`, `GET /observability/sessions`, `GET /observability/sessions/:id`, `GET /observability/runs`, `GET /observability/runs/:id`, `DELETE /observability/runs` |
+| Backups | `GET/POST /backups`, `GET/DELETE /backups/:name`, `POST /backups/:name/restore` |
 | System | `GET /health`, `GET /docs/*` |
 
-All `/agents/...` paths are prefixed with `/agents/:name`. `POST /providers/models` is the only provider route outside an agent: it takes explicit credentials so a dashboard can fill the model picker before onboarding.
+All `/agents/...` paths are prefixed with `/agents/:name`. `POST /providers/models` is the only provider route outside an agent: it takes explicit credentials so a dashboard can fill the model picker before onboarding. `/backups` is host-level rather than agent-scoped, because one archive can hold every agent plus the registry.
 
 ## 19. Errors
 
@@ -1017,7 +1018,7 @@ All `/agents/...` paths are prefixed with `/agents/:name`. `POST /providers/mode
 | `400` | invalid JSON, invalid path, or invalid config |
 | `401` | missing, invalid, or expired token |
 | `403` | conversation belongs to another user |
-| `404` | agent, provider, channel, job, conversation, or log file not found |
+| `404` | agent, provider, channel, job, conversation, log file, or backup archive not found |
 | `409` | agent already exists, or server already running |
 | `413` | file too large |
 | `415` | binary file |
@@ -1063,4 +1064,32 @@ curl -X POST localhost:9000/agents/myfriend/terminal -H "Authorization: Bearer $
 curl -N localhost:9000/agents/myfriend/terminal/$ID/stream -H "Authorization: Bearer $TOKEN"
 curl -X POST localhost:9000/agents/myfriend/terminal/$ID/input -H "Authorization: Bearer $TOKEN" \
   --data-binary $'ls -la\n'
+```
+
+## 22. Backups
+
+Host-level archives on disk: `~/.myaaw-backups` by default, overridable with `MYAAW_BACKUP_DIR`. Each file is a portable `tar.gz` for one agent, and a global archive is added when every agent is selected. The dashboard's **Backups** page and the `myaaw backup` / `myaaw restore` commands share the same machinery; see [Backup & Restore](../cli/backup.md).
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/backups` | `{dir, archives: [{name, agent, size, created_at}]}`, newest first |
+| `POST` | `/backups` | create, body `{agents?, include_workspace, include_logs, include_venv, include_caches, no_secrets}`; an empty `agents` backs up every agent plus the registry |
+| `GET` | `/backups/:name` | download the archive as `application/gzip` with `Content-Disposition: attachment` |
+| `DELETE` | `/backups/:name` | delete the file (idempotent) |
+| `POST` | `/backups/:name/restore` | apply it, body `{agent?, force, start, restore_packages}` |
+
+- `:name` must be an archive the server produced. Anything that is not `myaaw-backup-<agent>-<stamp>.tar.gz` inside the backup directory answers `404`, so the routes cannot read or delete arbitrary files.
+- SQLite databases are copied with `VACUUM INTO`, so a running daemon does not produce a torn archive.
+- Restoring stops the agent daemon when it is running, writes a pre-restore archive, then replaces `~/.myaaw/<agent>`. Without `force`, an existing agent is refused with `400`.
+- `start: true` starts the daemon again after a successful restore; it defaults to `false`.
+- Restore rewrites an agent directory, so the control plane token is as powerful here as on the CLI. Keep the API on loopback.
+
+```bash
+# Create, list, download, restore
+curl -X POST localhost:9000/backups -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"agents":["myfriend"]}'
+curl localhost:9000/backups -H "Authorization: Bearer $TOKEN"
+curl -OJ localhost:9000/backups/<name> -H "Authorization: Bearer $TOKEN"
+curl -X POST localhost:9000/backups/<name>/restore -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"force":true,"start":true}'
 ```

@@ -40,7 +40,8 @@ func NewApp() (*fiber.App, error) {
 	observabilitySvc := service.NewObservabilityService()
 	approvalsSvc := service.NewApprovalsService()
 	terminals := service.NewTerminalService()
-	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals)
+	backups := service.NewBackupService(serverSvc)
+	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api"})
 	app.Use(cors.New(cors.Config{
@@ -160,6 +161,14 @@ func NewApp() (*fiber.App, error) {
 	app.Get("/agents/:name/observability/runs", h.ObservabilityRuns)
 	app.Get("/agents/:name/observability/runs/:id", h.ObservabilityRun)
 	app.Delete("/agents/:name/observability/runs", h.DeleteObservabilityRuns)
+
+	// Host-level archives live outside the agent roots, so these routes are not
+	// scoped to an agent: one archive can hold every agent plus the registry.
+	app.Get("/backups", h.ListBackups)
+	app.Post("/backups", h.CreateBackup)
+	app.Get("/backups/:name", h.DownloadBackup)
+	app.Delete("/backups/:name", h.DeleteBackup)
+	app.Post("/backups/:name/restore", h.RestoreBackup)
 
 	return app, nil
 }

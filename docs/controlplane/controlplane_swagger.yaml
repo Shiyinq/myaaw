@@ -33,6 +33,17 @@ definitions:
       tokens_before:
         type: integer
     type: object
+  backup.Result:
+    properties:
+      agent:
+        type: string
+      bytes:
+        type: integer
+      files:
+        type: integer
+      path:
+        type: string
+    type: object
   common.ErrorResponse:
     properties:
       error:
@@ -1106,6 +1117,53 @@ definitions:
           $ref: '#/definitions/service.GrantView'
         type: array
     type: object
+  service.BackupArchive:
+    properties:
+      agent:
+        type: string
+      created_at:
+        type: string
+      name:
+        type: string
+      size:
+        type: integer
+    type: object
+  service.BackupCreated:
+    properties:
+      archives:
+        items:
+          $ref: '#/definitions/backup.Result'
+        type: array
+      dir:
+        type: string
+    type: object
+  service.BackupList:
+    properties:
+      archives:
+        items:
+          $ref: '#/definitions/service.BackupArchive'
+        type: array
+      dir:
+        type: string
+    type: object
+  service.BackupRequest:
+    properties:
+      agents:
+        description: Agents is empty to back up every initialized agent.
+        items:
+          type: string
+        type: array
+      include_caches:
+        type: boolean
+      include_logs:
+        type: boolean
+      include_venv:
+        type: boolean
+      include_workspace:
+        type: boolean
+      no_secrets:
+        type: boolean
+    type: object
   service.BotPatch:
     properties:
       blocked_tools:
@@ -1670,6 +1728,32 @@ definitions:
         items:
           $ref: '#/definitions/service.ProviderView'
         type: array
+    type: object
+  service.RestoreRequest:
+    properties:
+      agent:
+        description: Agent renames the agent on restore. Empty keeps the archived
+          name.
+        type: string
+      force:
+        type: boolean
+      restore_packages:
+        type: boolean
+      start:
+        type: boolean
+    type: object
+  service.RestoreResult:
+    properties:
+      agent:
+        type: string
+      files:
+        type: integer
+      note:
+        type: string
+      port_warning:
+        type: string
+      pre_restore_backup:
+        type: string
     type: object
   service.RunDetail:
     properties:
@@ -5280,6 +5364,147 @@ paths:
       summary: Change username
       tags:
       - Auth
+  /backups:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.BackupList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List backups
+      tags:
+      - Backups
+    post:
+      consumes:
+      - application/json
+      description: Writes a tar.gz archive per agent into the backup directory. An
+        empty agent list backs up every initialized agent and adds the global registry.
+      parameters:
+      - description: What to include
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/service.BackupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.BackupCreated'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create backups
+      tags:
+      - Backups
+  /backups/{name}:
+    delete:
+      parameters:
+      - description: Archive name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a backup
+      tags:
+      - Backups
+    get:
+      parameters:
+      - description: Archive name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/gzip
+      responses:
+        "200":
+          description: tar.gz archive
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Download a backup
+      tags:
+      - Backups
+  /backups/{name}/restore:
+    post:
+      consumes:
+      - application/json
+      description: Stops the agent if it is running, then rewrites its directory from
+        the archive. force replaces an agent that already exists.
+      parameters:
+      - description: Archive name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Restore options
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/service.RestoreRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.RestoreResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Restore a backup
+      tags:
+      - Backups
   /capabilities:
     get:
       produces:

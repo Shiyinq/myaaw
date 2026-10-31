@@ -2,6 +2,8 @@
 
 `myaaw backup` writes one portable `tar.gz` archive per agent, and `myaaw restore` verifies and restores it. An archive mirrors the on-disk layout (`<agent>/...`), so it can also be extracted by hand under `~/.myaaw`.
 
+The dashboard exposes the same operations on the **Backups** page (`/app/backups`): list the archive directory, create an archive for one agent or the whole fleet, download it, and restore or delete an archive. The routes are documented in the [Control Plane API guide](../api/control-plane.md#22-backups).
+
 ## Quick start
 
 ```bash
