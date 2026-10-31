@@ -228,12 +228,12 @@
 		<div class="grid shrink-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
 			<Card>
 				<CardHeader class="pb-2">
-					<CardTitle class="text-sm font-medium">{t('myaaw.home.runs')}</CardTitle>
+					<CardTitle class="text-sm font-medium">{t('myaaw.observability.tokens')}</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div class="text-2xl font-bold">{summary?.runs ?? 0}</div>
+					<div class="text-2xl font-bold">{formatTokens(summary?.input_tokens)}</div>
 					<p class="text-[10px] text-muted-foreground">
-						{t('myaaw.observability.errors')}: {summary?.errors ?? 0}
+						out {formatTokens(summary?.output_tokens)}
 					</p>
 				</CardContent>
 			</Card>
@@ -255,7 +255,10 @@
 				<CardContent>
 					<div class="text-2xl font-bold">{formatCost(summary?.cost_usd)}</div>
 					<p class="text-[10px] text-muted-foreground">
-						{t('myaaw.observability.tokens')}: {formatTokens(summary?.input_tokens)}
+						tools: {formatCost(summary?.tool_cost_usd)}
+						{#if summary && !summary.cost_complete}
+							· {t('myaaw.observability.incomplete')}
+						{/if}
 					</p>
 				</CardContent>
 			</Card>
