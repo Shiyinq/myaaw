@@ -3038,6 +3038,58 @@
                 }
             }
         },
+        "/agents/{name}/observability/sessions/{id}/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Observability"
+                ],
+                "summary": "Get session totals",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/obs.SessionTotals"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/observability/summary": {
             "get": {
                 "security": [
@@ -6765,6 +6817,49 @@
                     "type": "integer"
                 },
                 "unpriced_turns": {
+                    "type": "integer"
+                }
+            }
+        },
+        "obs.SessionTotals": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "conversation_id": {
+                    "type": "string"
+                },
+                "error_count": {
+                    "type": "integer"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "last_active_at": {
+                    "type": "integer"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "provider": {
+                    "description": "Provider is the provider type of the newest run, Model its model.",
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "integer"
+                },
+                "steps": {
+                    "type": "integer"
+                },
+                "tok_per_sec": {
+                    "description": "TokPerSec is the generation throughput of the newest run.",
+                    "type": "integer"
+                },
+                "turns": {
                     "type": "integer"
                 }
             }

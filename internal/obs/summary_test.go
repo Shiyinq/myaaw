@@ -310,3 +310,77 @@ func TestListSessionsGroupsTurnsByConversation(t *testing.T) {
 		t.Fatalf("session-a pricing = %+v", sessions[0])
 	}
 }
+
+func TestSessionTotalsAggregatesOneConversation(t *testing.T) {
+	store := newTestStore(t, Options{})
+	base := int64(1_700_000_000_000)
+
+	first := sampleRun("run_1", base)
+	first.InputTokens = 100
+	first.OutputTokens = 10
+
+	second := sampleRun("run_2", base+1000)
+	second.InputTokens = 200
+	second.OutputTokens = 20
+	second.Status = StatusError
+
+	latest := sampleRun("run_3", base+2000)
+	latest.InputTokens = 300
+	latest.OutputTokens = 30
+	latest.Provider = "openai"
+	latest.Model = "deepseek-v4-flash"
+
+	other := sampleRun("run_4", base+500)
+	other.ConversationID = "session-b"
+	other.InputTokens = 999
+
+	for _, run := range []Run{first, second, latest, other} {
+		if err := store.UpsertRun(run); err != nil {
+			t.Fatalf("upsert run: %v", err)
+		}
+	}
+
+	spans := []Span{
+		{ID: "s1a", RunID: first.ID, Kind: KindStep, StepIndex: 1, StartedAt: base, Status: StatusCompleted},
+		{ID: "s1b", RunID: first.ID, Kind: KindStep, StepIndex: 2, StartedAt: base, Status: StatusCompleted},
+		{ID: "s1tool", RunID: first.ID, Kind: KindTool, StepIndex: 1, StartedAt: base, Status: StatusCompleted},
+		{ID: "s2a", RunID: second.ID, Kind: KindStep, StepIndex: 1, StartedAt: base + 1000, Status: StatusError},
+		{ID: "s4a", RunID: other.ID, Kind: KindStep, StepIndex: 1, StartedAt: base + 500, Status: StatusCompleted},
+		{ID: "s3llm", RunID: latest.ID, Kind: KindLLM, Name: "deepseek-v4-flash", StepIndex: 1,
+			RequestIndex: 1, StartedAt: base + 2000, GenerationMs: 500, OutputTokens: 100,
+			Status: StatusCompleted},
+	}
+	if err := store.UpsertSpans(spans); err != nil {
+		t.Fatalf("upsert spans: %v", err)
+	}
+
+	totals, found, err := store.SessionTotals("conv-1")
+	if err != nil {
+		t.Fatalf("session totals: %v", err)
+	}
+	if !found {
+		t.Fatal("conv-1 not found")
+	}
+	if totals.Turns != 3 || totals.Steps != 3 {
+		t.Fatalf("turns = %d, steps = %d", totals.Turns, totals.Steps)
+	}
+	if totals.InputTokens != 600 || totals.OutputTokens != 60 {
+		t.Fatalf("tokens = %d/%d", totals.InputTokens, totals.OutputTokens)
+	}
+	if totals.Provider != "openai" || totals.Model != "deepseek-v4-flash" {
+		t.Fatalf("latest run = %q/%q", totals.Provider, totals.Model)
+	}
+	if totals.ErrorCount != 1 || totals.StartedAt != base || totals.LastActiveAt != base+2000 {
+		t.Fatalf("conv-1 totals = %+v", totals)
+	}
+	if totals.TokPerSec != 200 {
+		t.Fatalf("conv-1 tok/s = %d, want 200", totals.TokPerSec)
+	}
+
+	if _, found, err := store.SessionTotals("missing"); err != nil || found {
+		t.Fatalf("unknown session: found = %v, err = %v", found, err)
+	}
+	if _, found, err := store.SessionTotals(""); err != nil || found {
+		t.Fatalf("empty session: found = %v, err = %v", found, err)
+	}
+}

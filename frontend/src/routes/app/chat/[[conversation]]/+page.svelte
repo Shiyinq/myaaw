@@ -3,7 +3,9 @@
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
 	import { chat as chatApi } from '$lib/apis/chat';
+	import { config as configApi } from '$lib/apis/config';
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
+	import { observability as observabilityApi } from '$lib/apis/observability';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { cn } from '$lib/utils';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -26,7 +28,9 @@
 		Clock,
 		Code,
 		Cpu,
+		Database,
 		FolderOpen,
+		Gauge,
 		Globe,
 		ImagePlus,
 		Loader2,
@@ -104,6 +108,21 @@
 	let loading = $state(false);
 	let pendingApproval = $state<ApprovalPrompt | null>(null);
 	let usage = $state<Usage | null>(null);
+	// Totals reported by the observability session, the source of truth for
+	// turns, tool steps and tokens.
+	let sessionStats = $state<{
+		turns: number;
+		steps: number;
+		tokens: number;
+		model?: string;
+		provider?: string;
+		tokPerSec?: number;
+	} | null>(null);
+	// Configured provider and its default model, as the terminal status line shows.
+	let providerInfo = $state<{
+		default: string;
+		providers: { name: string; type: string; model: string }[];
+	} | null>(null);
 	let attachments = $state<Attachment[]>([]);
 	let pending = $state<PendingImage[]>([]);
 	let dragOver = $state(false);
@@ -162,15 +181,18 @@
 		if (!id) {
 			items = [];
 			usage = null;
+			sessionStats = null;
 			attachments = [];
 			return;
 		}
 		loading = true;
 		error = '';
+		sessionStats = null;
 		groupOpen = {};
 		groupStart = 0;
 		groupLastStep = '';
 		openGroup = '';
+		void refreshStats(currentAgent, id);
 		try {
 			const detail = await conversationsApi.get(currentAgent, id, { limit: 0 });
 			items = historyTimeline(detail.messages);
@@ -183,6 +205,55 @@
 			scrollToBottom();
 		}
 	}
+
+	/**
+	 * Session totals from observability: the same turns, tool steps and tokens
+	 * the trace view reports. Conversations recorded before tracing was enabled
+	 * have no runs, and keep the locally counted numbers.
+	 */
+	async function refreshStats(currentAgent: string, id: string) {
+		if (!currentAgent || !id) return;
+		try {
+			const detail = await observabilityApi.sessionStats(currentAgent, id);
+			if (conversationId !== id) return; // Another conversation won.
+			sessionStats = {
+				turns: detail.turns,
+				steps: detail.steps,
+				tokens: detail.input_tokens + detail.output_tokens,
+				model: detail.model ?? '',
+				provider: detail.provider ?? '',
+				tokPerSec: detail.tok_per_sec ?? 0
+			};
+		} catch {
+			// No runs recorded for this conversation; keep the local counts.
+		}
+	}
+
+	/** The agent's configured provider and its default model. */
+	async function loadProviderInfo(currentAgent: string) {
+		try {
+			const config = await configApi.get(currentAgent);
+			providerInfo = {
+				default: config.default_provider ?? '',
+				providers: (config.providers ?? []).map((provider) => ({
+					name: provider.name,
+					type: provider.type ?? '',
+					model: provider.default_model ?? ''
+				}))
+			};
+		} catch {
+			providerInfo = null;
+		}
+	}
+
+	let providerKey = '';
+	$effect(() => {
+		const currentAgent = agentSelection.selected;
+		if (!currentAgent || currentAgent === providerKey) return;
+		providerKey = currentAgent;
+		providerInfo = null;
+		void loadProviderInfo(currentAgent);
+	});
 
 	function readLastConversations(): Record<string, string> {
 		if (!browser) return {};
@@ -222,6 +293,7 @@
 		conversationId = '';
 		items = [];
 		usage = null;
+		sessionStats = null;
 		attachments = [];
 		error = '';
 		pendingApproval = null;
@@ -382,6 +454,54 @@
 		if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
 		const minutes = Math.floor(seconds / 60);
 		return `${minutes}m ${Math.round(seconds % 60)}s`;
+	}
+
+	let turnCount = $derived(items.filter((item) => item.kind === 'user').length);
+	let stepCount = $derived(items.filter((item) => item.kind === 'tool').length);
+	let statsTurns = $derived(sessionStats?.turns ?? turnCount);
+	let statsSteps = $derived(sessionStats?.steps ?? stepCount);
+	let statsTokens = $derived(sessionStats?.tokens ?? usage?.total_tokens ?? 0);
+	let statsTokPerSec = $derived(sessionStats?.tokPerSec ?? 0);
+	let statsProvider = $derived.by(() => {
+		const model = sessionStats?.model ?? '';
+		const providers = providerInfo?.providers ?? [];
+		if (providers.length === 0) return sessionStats?.provider ?? '';
+		// The newest run names the model, so a mid-chat switch follows it.
+		const byModel = model ? providers.find((provider) => provider.model === model) : undefined;
+		if (byModel) return byModel.name;
+		// A model that is not a provider default still points at one provider type.
+		const type = sessionStats?.provider ?? '';
+		const byType = type ? providers.filter((provider) => provider.type === type) : [];
+		if (byType.length === 1) return byType[0].name;
+		return providerInfo?.default || byType[0]?.name || '';
+	});
+	let statsModel = $derived(
+		sessionStats?.model ||
+			providerInfo?.providers.find((provider) => provider.name === providerInfo?.default)?.model ||
+			''
+	);
+	let statsModelLine = $derived(
+		[
+			statsTokens > 0 ? t('myaaw.chat.stats_tokens', { count: formatTokens(statsTokens) }) : '',
+			statsProvider,
+			statsModel
+		]
+			.filter(Boolean)
+			.join(' • ')
+	);
+
+	function formatTokens(count: number) {
+		if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+		if (count >= 1000) return `${Math.round(count / 1000)}K`;
+		return String(count);
+	}
+
+	function turnLabel(count: number) {
+		return count === 1 ? t('myaaw.chat.turn_one') : t('myaaw.chat.turns', { count });
+	}
+
+	function stepsLabel(count: number) {
+		return count === 1 ? t('myaaw.chat.step_one') : t('myaaw.chat.steps', { count });
 	}
 
 	/** Records how long the open step group took on its last step. */
@@ -567,6 +687,10 @@
 							}
 							usage = data?.usage ?? null;
 							attachments = data?.attachments ?? [];
+							const statsId = conversationId;
+							void refreshStats(agent, statsId);
+							// The run may land in the trace store just after `done`.
+							setTimeout(() => void refreshStats(agent, statsId), 1500);
 							break;
 						}
 						case 'error': {
@@ -630,6 +754,7 @@
 		input = '';
 		if (composer) composer.style.height = '';
 		usage = null;
+		sessionStats = null;
 		attachments = [];
 		error = '';
 		pendingApproval = null;
@@ -1498,9 +1623,6 @@
 									<ImagePlus class="h-4 w-4" />
 								</Button>
 								<span class="truncate text-[10px] text-muted-foreground">
-									{#if usage}
-										{t('myaaw.chat.tokens', { count: usage.total_tokens })} ·
-									{/if}
 									{t('myaaw.chat.hint')}
 								</span>
 							</div>
@@ -1524,6 +1646,23 @@
 								>
 									<Send class="h-4 w-4" />
 								</Button>
+							{/if}
+						</div>
+						<div
+							class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-t px-4 py-1.5 text-[10px] text-muted-foreground"
+						>
+							<span class="flex items-center gap-1">
+								<Gauge class="h-3 w-3 shrink-0" />
+								{turnLabel(statsTurns)} · {stepsLabel(statsSteps)}
+								{#if statsTokPerSec > 0}
+									· {t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
+								{/if}
+							</span>
+							{#if statsModelLine}
+								<span class="flex items-center gap-1 font-mono italic">
+									<Database class="h-3 w-3 shrink-0" />
+									{statsModelLine}
+								</span>
 							{/if}
 						</div>
 					</div>

@@ -5,7 +5,8 @@ import type {
 	RunDetail,
 	RunList,
 	SessionDetail,
-	SessionList
+	SessionList,
+	SessionStats
 } from '$lib/types';
 
 export interface RunFilters {
@@ -31,6 +32,10 @@ export const observability = {
 				agent,
 				`/observability/sessions/${encodeURIComponent(id)}?spans=${spans ? 'true' : 'false'}`
 			)
+		),
+	sessionStats: (agent: string, id: string) =>
+		client<SessionStats>(
+			agentPath(agent, `/observability/sessions/${encodeURIComponent(id)}/stats`)
 		),
 	runs: (agent: string, filters: RunFilters = {}) => {
 		const query = new URLSearchParams();

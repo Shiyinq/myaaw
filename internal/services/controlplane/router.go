@@ -163,6 +163,7 @@ func NewApp() (*fiber.App, error) {
 	app.Get("/agents/:name/observability/summary", h.ObservabilitySummary)
 	app.Get("/agents/:name/observability/sessions", h.ObservabilitySessions)
 	app.Get("/agents/:name/observability/sessions/:id", h.ObservabilitySession)
+	app.Get("/agents/:name/observability/sessions/:id/stats", h.ObservabilitySessionStats)
 	app.Get("/agents/:name/observability/runs", h.ObservabilityRuns)
 	app.Get("/agents/:name/observability/runs/:id", h.ObservabilityRun)
 	app.Delete("/agents/:name/observability/runs", h.DeleteObservabilityRuns)

@@ -3,6 +3,7 @@ package obs
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"sort"
 )
 
@@ -456,4 +457,71 @@ func (s *Store) ListSessions(limit int) ([]Session, error) {
 		sessions = append(sessions, session)
 	}
 	return sessions, rows.Err()
+}
+
+// SessionTotals are the aggregate numbers for one conversation: how many runs
+// it has, how many step spans all of them produced, and what they spent. They
+// are computed in SQL so long sessions are not truncated by a run page size.
+type SessionTotals struct {
+	ConversationID string `json:"conversation_id"`
+	Channel        string `json:"channel,omitempty"`
+	Turns          int    `json:"turns"`
+	Steps          int    `json:"steps"`
+	StartedAt      int64  `json:"started_at"`
+	LastActiveAt   int64  `json:"last_active_at"`
+	InputTokens    int    `json:"input_tokens"`
+	OutputTokens   int    `json:"output_tokens"`
+	// Provider is the provider type of the newest run, Model its model.
+	Provider   string `json:"provider,omitempty"`
+	Model      string `json:"model,omitempty"`
+	ErrorCount int    `json:"error_count"`
+	// TokPerSec is the generation throughput of the newest run.
+	TokPerSec int `json:"tok_per_sec"`
+}
+
+// SessionTotals aggregates one conversation. The boolean is false when the
+// conversation has no recorded runs.
+func (s *Store) SessionTotals(conversationID string) (SessionTotals, bool, error) {
+	totals := SessionTotals{ConversationID: conversationID}
+	if conversationID == "" {
+		return totals, false, nil
+	}
+
+	row := s.db.QueryRow(`SELECT COALESCE(MAX(channel), ''), COUNT(*),
+			COALESCE(MIN(started_at), 0), COALESCE(MAX(started_at), 0),
+			COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+			COALESCE(SUM(CASE WHEN status IN ('error', 'interrupted') THEN 1 ELSE 0 END), 0)
+		FROM runs WHERE conversation_id = ?`, conversationID)
+	if err := row.Scan(&totals.Channel, &totals.Turns, &totals.StartedAt, &totals.LastActiveAt,
+		&totals.InputTokens, &totals.OutputTokens, &totals.ErrorCount); err != nil {
+		return totals, false, fmt.Errorf("summarise session: %w", err)
+	}
+	if totals.Turns == 0 {
+		return totals, false, nil
+	}
+
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM spans s
+		JOIN runs r ON r.id = s.run_id
+		WHERE r.conversation_id = ? AND s.kind = 'step'`, conversationID).
+		Scan(&totals.Steps); err != nil {
+		return totals, false, fmt.Errorf("count session steps: %w", err)
+	}
+
+	var latestRunID string
+	if err := s.db.QueryRow(`SELECT id, COALESCE(provider, ''), COALESCE(model, '') FROM runs
+		WHERE conversation_id = ? ORDER BY started_at DESC LIMIT 1`, conversationID).
+		Scan(&latestRunID, &totals.Provider, &totals.Model); err != nil {
+		return totals, false, fmt.Errorf("latest session run: %w", err)
+	}
+
+	var generatedTokens, generationMs int64
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(output_tokens), 0), COALESCE(SUM(generation_ms), 0)
+		FROM spans WHERE run_id = ? AND kind = 'llm'`, latestRunID).
+		Scan(&generatedTokens, &generationMs); err != nil {
+		return totals, false, fmt.Errorf("session throughput: %w", err)
+	}
+	if generatedTokens > 0 && generationMs > 0 {
+		totals.TokPerSec = int(math.Round(float64(generatedTokens) / (float64(generationMs) / 1000)))
+	}
+	return totals, true, nil
 }

@@ -1805,6 +1805,7 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 			{
 				ID: turn.id + "_llm", RunID: turn.id, Kind: obs.KindLLM, Name: "deepseek-flash",
 				StepIndex: 1, RequestIndex: 1, StartedAt: turn.startedAt, Status: obs.StatusCompleted,
+				GenerationMs: 500, OutputTokens: 100,
 				InputJSON:  `{"messages":[{"role":"user","content":"hi"}]}`,
 				OutputJSON: `{"role":"assistant","content":"hello"}`,
 			},
@@ -1877,7 +1878,30 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 		t.Fatalf("cost = %v", detail.CostUSD)
 	}
 
+	var stats struct {
+		Turns        int    `json:"turns"`
+		Steps        int    `json:"steps"`
+		InputTokens  int    `json:"input_tokens"`
+		OutputTokens int    `json:"output_tokens"`
+		Model        string `json:"model"`
+		TokPerSec    int    `json:"tok_per_sec"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/conv-session/stats", token, "", fiber.StatusOK, &stats)
+	if stats.Turns != 2 || stats.Steps != 4 {
+		t.Fatalf("session stats = %+v", stats)
+	}
+	if stats.InputTokens != 2000 || stats.OutputTokens != 200 {
+		t.Fatalf("session stats tokens = %+v", stats)
+	}
+	if stats.Model != "deepseek-flash" {
+		t.Fatalf("session stats model = %+v", stats)
+	}
+	if stats.TokPerSec != 200 {
+		t.Fatalf("session stats tok/s = %+v", stats)
+	}
+
 	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/missing", token, "", fiber.StatusNotFound, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/missing/stats", token, "", fiber.StatusNotFound, nil)
 }
 
 func TestRouterApprovalsManagement(t *testing.T) {

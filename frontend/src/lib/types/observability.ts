@@ -104,3 +104,19 @@ export interface SessionTurn extends RunSummary {
 export interface SessionDetail extends SessionSummary {
 	runs: SessionTurn[] | null;
 }
+
+/** Aggregate totals for one session, computed without loading its runs. */
+export interface SessionStats {
+	conversation_id: string;
+	channel?: string;
+	turns: number;
+	steps: number;
+	started_at: number;
+	last_active_at: number;
+	input_tokens: number;
+	output_tokens: number;
+	provider?: string;
+	model?: string;
+	error_count: number;
+	tok_per_sec: number;
+}
