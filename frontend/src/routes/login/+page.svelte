@@ -25,12 +25,21 @@
 	let error = $derived(authStore.error);
 
 	async function handleLogin() {
+		if (loading) return;
 		try {
 			await authStore.login({ username, password });
 			await goto('/app');
 		} catch (err) {
 			logger.error('Login failed', err, { context: 'login' });
 		}
+	}
+
+	// Enter submits directly instead of relying on the form's implicit submission,
+	// which browser extensions and password-manager popups are allowed to swallow.
+	function submitOnEnter(event: KeyboardEvent) {
+		if (event.key !== 'Enter' || event.isComposing) return;
+		event.preventDefault();
+		void handleLogin();
 	}
 </script>
 
@@ -71,10 +80,12 @@
 						<Label for="username">{t('common.username')}</Label>
 						<Input
 							id="username"
+							name="username"
 							type="text"
 							autocomplete="username"
 							placeholder="myaaw"
 							bind:value={username}
+							onkeydown={submitOnEnter}
 							required
 						/>
 					</div>
@@ -83,10 +94,12 @@
 						<Label for="password">{t('common.password')}</Label>
 						<Input
 							id="password"
+							name="password"
 							type="password"
 							autocomplete="current-password"
 							placeholder="••••••••"
 							bind:value={password}
+							onkeydown={submitOnEnter}
 							required
 						/>
 					</div>
