@@ -7,6 +7,13 @@
  */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * shadcn's tab styles mark the selected tab with a bare `data-active` attribute,
+ * but bits-ui exposes it as data-state="active". Map the variant once so the
+ * active pill (and the underline in the line variant) actually renders.
+ */
+@custom-variant data-active (&[data-state='active']);
+
 @theme {
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);

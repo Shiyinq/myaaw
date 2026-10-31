@@ -17,6 +17,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { RefreshCw, Save } from 'lucide-svelte';
+	import { Activity, Bot, HeartPulse, ShieldCheck } from 'lucide-svelte';
 	import type { AgentConfig } from '$lib/types';
 
 	const { t } = useTranslation();
@@ -224,11 +225,23 @@
 		{/if}
 
 		<Tabs.Root bind:value={tab} class="space-y-4">
-			<Tabs.List class="w-full justify-start">
-				<Tabs.Trigger value="bot">{t('myaaw.config.tab_bot')}</Tabs.Trigger>
-				<Tabs.Trigger value="heartbeat">{t('myaaw.config.tab_heartbeat')}</Tabs.Trigger>
-				<Tabs.Trigger value="observability">{t('myaaw.config.tab_observability')}</Tabs.Trigger>
-				<Tabs.Trigger value="approvals">{t('myaaw.config.tab_approvals')}</Tabs.Trigger>
+			<Tabs.List variant="line" class="flex-wrap justify-start">
+				<Tabs.Trigger value="bot">
+					<Bot />
+					{t('myaaw.config.tab_bot')}
+				</Tabs.Trigger>
+				<Tabs.Trigger value="heartbeat">
+					<HeartPulse />
+					{t('myaaw.config.tab_heartbeat')}
+				</Tabs.Trigger>
+				<Tabs.Trigger value="observability">
+					<Activity />
+					{t('myaaw.config.tab_observability')}
+				</Tabs.Trigger>
+				<Tabs.Trigger value="approvals">
+					<ShieldCheck />
+					{t('myaaw.config.tab_approvals')}
+				</Tabs.Trigger>
 			</Tabs.List>
 
 			<Tabs.Content value="bot">
