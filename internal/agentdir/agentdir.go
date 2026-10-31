@@ -326,6 +326,12 @@ func AgentNameTaken(name string) (bool, error) {
 	return false, nil
 }
 
+// CreatedAtUTC returns the current instant as an RFC3339 UTC timestamp, the
+// format stored for a newly created agent's registry entry.
+func CreatedAtUTC() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}
+
 // RegisterAgent adds an agent to the registry if missing.
 func RegisterAgent(name string) error {
 	if err := ValidateName(name); err != nil {
@@ -336,7 +342,7 @@ func RegisterAgent(name string) error {
 		return err
 	}
 	if _, exists := registry.Agents[name]; !exists {
-		registry.Agents[name] = AgentInfo{CreatedAt: time.Now().Format("2006-01-02")}
+		registry.Agents[name] = AgentInfo{CreatedAt: CreatedAtUTC()}
 	}
 	if registry.Default == "" {
 		registry.Default = name
@@ -433,7 +439,7 @@ func EnsureLayout() error {
 	}
 
 	if _, exists := registry.Agents[DefaultAgentName]; !exists {
-		registry.Agents[DefaultAgentName] = AgentInfo{CreatedAt: time.Now().Format("2006-01-02")}
+		registry.Agents[DefaultAgentName] = AgentInfo{CreatedAt: CreatedAtUTC()}
 	}
 	if registry.Default == "" {
 		registry.Default = DefaultAgentName

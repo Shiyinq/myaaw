@@ -6,6 +6,8 @@ export interface AgentInfo {
 	running: boolean;
 	port?: number;
 	base_url?: string;
+	/** RFC3339 UTC instant the agent was created (used for sorting). */
+	created_at?: string;
 }
 
 export interface AgentsResponse {

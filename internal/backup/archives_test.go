@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestListArchives(t *testing.T) {
@@ -43,5 +44,25 @@ func TestListArchivesMissingDirectory(t *testing.T) {
 	_, err := ListArchives(filepath.Join(t.TempDir(), "missing"))
 	if err == nil || !os.IsNotExist(err) {
 		t.Fatalf("err = %v, want not-exist error", err)
+	}
+}
+
+func TestListArchivesParsesTimestampsAsUTC(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "myaaw-backup-agent-a-20261027-120000.tar.gz"), "x", 0o600)
+
+	archives, err := ListArchives(dir)
+	if err != nil {
+		t.Fatalf("ListArchives: %v", err)
+	}
+	if len(archives) != 1 {
+		t.Fatalf("archives = %d, want 1", len(archives))
+	}
+	created := archives[0].CreatedAt
+	if created.Location() != time.UTC {
+		t.Fatalf("CreatedAt location = %v, want UTC", created.Location())
+	}
+	if got := created.Format("15:04:05"); got != "12:00:00" {
+		t.Fatalf("CreatedAt = %q, want 12:00:00", got)
 	}
 }

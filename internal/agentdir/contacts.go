@@ -209,28 +209,53 @@ func sameAgentName(a, b string) bool {
 
 // removeSelfContact drops entries whose name matches the agent itself.
 func removeSelfContact(name string) error {
+	return removeContact(name, name)
+}
+
+// RemoveA2AContacts removes an agent from every remaining agent's contacts.json
+// after it is deleted, so no agent keeps a stale reference to a peer that no
+// longer exists. The deleted agent's own contact file goes away with its
+// directory. Missing or unreadable contact files are skipped so a partial
+// layout never blocks the rest of the mesh.
+func RemoveA2AContacts(name string) error {
+	names, err := ListAgents()
+	if err != nil {
+		return err
+	}
+	for _, other := range names {
+		if sameAgentName(other, name) {
+			continue
+		}
+		if err := removeContact(other, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeContact drops the contact named target from the given agent's contact
+// file, preserving unknown fields on the remaining entries.
+func removeContact(name, target string) error {
 	path, err := ContactsPath(name)
 	if err != nil {
 		return err
 	}
 	data, readErr := os.ReadFile(path)
 	if readErr != nil {
-		if os.IsNotExist(readErr) {
-			return nil
-		}
-		return readErr
+		// A missing or unreadable file is left alone instead of failing the mesh.
+		return nil
 	}
 
 	var entries []map[string]any
 	if err := json.Unmarshal(data, &entries); err != nil {
-		return err
+		return nil
 	}
 
 	kept := make([]map[string]any, 0, len(entries))
 	removed := false
 	for _, entry := range entries {
 		entryName, _ := entry["name"].(string)
-		if sameAgentName(entryName, name) {
+		if sameAgentName(entryName, target) {
 			removed = true
 			continue
 		}

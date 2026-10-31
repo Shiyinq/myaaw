@@ -212,6 +212,11 @@ var agentDeleteCmd = &cobra.Command{
 			}
 		}
 
+		// Drop the deleted agent from every remaining agent's contacts.
+		if err := agentdir.RemoveA2AContacts(name); err != nil {
+			fmt.Println(theme.RenderWarning(fmt.Sprintf("Agent deleted, but contacts were not fully cleaned up: %v", err)))
+		}
+
 		if err := removeAgentDir(root); err != nil {
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to delete agent: %v", err)))
 			return

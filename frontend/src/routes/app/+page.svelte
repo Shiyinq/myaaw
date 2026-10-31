@@ -14,6 +14,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import {
 		Card,
+		CardAction,
 		CardContent,
 		CardDescription,
 		CardHeader,
@@ -21,7 +22,9 @@
 	} from '$lib/components/ui/card';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import {
+		ArrowUpDown,
 		Bot,
+		Check,
 		CircleCheck,
 		CircleSlash,
 		Ellipsis,
@@ -42,6 +45,23 @@
 	let agents = $derived(agentSelection.agents);
 	let runningCount = $derived(agents.filter((agent) => agent.running).length);
 	let defaultAgent = $derived(agents.find((agent) => agent.default)?.name ?? '—');
+
+	// Newest first by default; the dropdown flips to oldest. Timestamps are UTC
+	// RFC3339, so lexicographic order matches chronological order. The default
+	// agent stays pinned to the top.
+	let sortNewest = $state(true);
+	let sortedAgents = $derived(
+		[...agents].sort((a, b) => {
+			if (a.default !== b.default) return a.default ? -1 : 1;
+			const at = a.created_at ?? '';
+			const bt = b.created_at ?? '';
+			if (!at && !bt) return 0;
+			if (!at) return 1;
+			if (!bt) return -1;
+			const cmp = at < bt ? -1 : at > bt ? 1 : 0;
+			return sortNewest ? -cmp : cmp;
+		})
+	);
 
 	async function refresh() {
 		loading = true;
@@ -174,6 +194,33 @@
 				{t('myaaw.home.agents')}
 			</CardTitle>
 			<CardDescription>{t('myaaw.home.agents_desc')}</CardDescription>
+			<CardAction>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<Button
+								{...props}
+								variant="ghost"
+								size="icon-sm"
+								aria-label={t('myaaw.home.sort')}
+								title={t('myaaw.home.sort')}
+							>
+								<ArrowUpDown class="h-4 w-4" />
+							</Button>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="w-44">
+						<DropdownMenu.Item onclick={() => (sortNewest = true)}>
+							<Check class={sortNewest ? 'mr-2 h-4 w-4' : 'mr-2 h-4 w-4 opacity-0'} />
+							{t('myaaw.home.sort_newest')}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => (sortNewest = false)}>
+							<Check class={!sortNewest ? 'mr-2 h-4 w-4' : 'mr-2 h-4 w-4 opacity-0'} />
+							{t('myaaw.home.sort_oldest')}
+						</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</CardAction>
 		</CardHeader>
 		<CardContent>
 			{#if agents.length === 0}
@@ -184,7 +231,7 @@
 				/>
 			{:else}
 				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-					{#each agents as agent (agent.name)}
+					{#each sortedAgents as agent (agent.name)}
 						<div
 							class="relative rounded-xl border bg-card transition-colors hover:border-ring/40 hover:bg-muted/40"
 						>

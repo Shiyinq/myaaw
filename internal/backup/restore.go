@@ -442,7 +442,7 @@ func registerAgent(name string, entry registryEntryFile) error {
 	if _, exists := registry.Agents[name]; !exists {
 		created := strings.TrimSpace(entry.CreatedAt)
 		if created == "" {
-			created = time.Now().Format("2006-01-02")
+			created = agentdir.CreatedAtUTC()
 		}
 		registry.Agents[name] = agentdir.AgentInfo{CreatedAt: created}
 	}

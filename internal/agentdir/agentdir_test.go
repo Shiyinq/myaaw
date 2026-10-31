@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateName(t *testing.T) {
@@ -44,6 +45,32 @@ func TestRegistryRoundTrip(t *testing.T) {
 	}
 	if _, exists := registry.Agents["myfriend"]; !exists {
 		t.Fatal("myfriend missing from registry")
+	}
+}
+
+func TestRegisterAgentStoresUTCTimestamp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	if err := RegisterAgent("myfriend"); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := LoadRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created := registry.Agents["myfriend"].CreatedAt
+	parsed, err := time.Parse(time.RFC3339, created)
+	if err != nil {
+		t.Fatalf("created_at %q is not RFC3339: %v", created, err)
+	}
+	if parsed.Location() != time.UTC {
+		t.Fatalf("created_at location = %v, want UTC", parsed.Location())
+	}
+	if time.Since(parsed) > time.Minute {
+		t.Fatalf("created_at %v is not recent", parsed)
 	}
 }
 

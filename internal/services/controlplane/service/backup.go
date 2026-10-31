@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"myaaw/internal/agentdir"
 	"myaaw/internal/backup"
@@ -101,7 +102,7 @@ func (s *BackupService) List() (BackupList, error) {
 			Name:      archive.Name,
 			Agent:     archive.Agent,
 			Size:      archive.Size,
-			CreatedAt: archive.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			CreatedAt: archive.CreatedAt.UTC().Format(time.RFC3339),
 		})
 	}
 	return list, nil

@@ -103,6 +103,45 @@ func TestSeedA2AContacts(t *testing.T) {
 	}
 }
 
+func TestRemoveA2AContacts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	if err := EnsureLayout(); err != nil {
+		t.Fatalf("EnsureLayout: %v", err)
+	}
+	setupAgent(t, "alice", "8081", "alice-secret")
+	setupAgent(t, "bob", "8082", "bob-secret")
+	setupAgent(t, "carol", "8083", "")
+	if err := SeedA2AContacts("carol"); err != nil {
+		t.Fatalf("SeedA2AContacts: %v", err)
+	}
+
+	// Alice also keeps a manual external contact that must survive the cleanup.
+	alicePath, _ := ContactsPath("alice")
+	if err := os.WriteFile(alicePath, []byte(`[{"name":"external","url":"https://x/a2a"},{"name":"carol","url":"http://localhost:8083/a2a"}]`), 0o600); err != nil {
+		t.Fatalf("write alice contacts: %v", err)
+	}
+
+	if err := RemoveA2AContacts("carol"); err != nil {
+		t.Fatalf("RemoveA2AContacts: %v", err)
+	}
+
+	for _, other := range []string{"alice", "bob"} {
+		entries := readContacts(t, other)
+		for _, entry := range entries {
+			if name, _ := entry["name"].(string); name == "carol" {
+				t.Fatalf("%s still lists carol: %+v", other, entries)
+			}
+		}
+	}
+	alice := readContacts(t, "alice")
+	if len(alice) != 1 || alice[0]["name"] != "external" {
+		t.Fatalf("alice contacts after cleanup = %+v, want only external", alice)
+	}
+}
+
 func TestSeedA2AContactsPreservesExistingContacts(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

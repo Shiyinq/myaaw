@@ -7075,6 +7075,9 @@ const docTemplatecontrolplane = `{
                 "base_url": {
                     "type": "string"
                 },
+                "created_at": {
+                    "type": "string"
+                },
                 "default": {
                     "type": "boolean"
                 },

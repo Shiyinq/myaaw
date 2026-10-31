@@ -23,11 +23,12 @@ var (
 
 // AgentInfo is the public shape returned by GET /agents.
 type AgentInfo struct {
-	Name    string `json:"name"`
-	Default bool   `json:"default"`
-	Running bool   `json:"running"`
-	Port    int    `json:"port,omitempty"`
-	BaseURL string `json:"base_url,omitempty"`
+	Name      string `json:"name"`
+	Default   bool   `json:"default"`
+	Running   bool   `json:"running"`
+	Port      int    `json:"port,omitempty"`
+	BaseURL   string `json:"base_url,omitempty"`
+	CreatedAt string `json:"created_at"`
 }
 
 // AgentService resolves per-agent paths, ports, and reachability.
@@ -71,6 +72,12 @@ func (s *AgentService) Delete(name string) error {
 		}
 	}
 
+	// Drop the deleted agent from every remaining agent's contacts before the
+	// directory disappears, so no peer keeps a stale reference.
+	if err := agentdir.RemoveA2AContacts(name); err != nil {
+		return err
+	}
+
 	if err := os.RemoveAll(root); err != nil {
 		return err
 	}
@@ -98,7 +105,11 @@ func (s *AgentService) List() ([]AgentInfo, error) {
 
 	agents := make([]AgentInfo, 0, len(names))
 	for _, name := range names {
-		info := AgentInfo{Name: name, Default: name == registry.Default}
+		info := AgentInfo{
+			Name:      name,
+			Default:   name == registry.Default,
+			CreatedAt: createdAtRFC3339(registry, name),
+		}
 		baseURL, port, err := s.resolve(name)
 		if err == nil {
 			info.BaseURL = baseURL
@@ -124,7 +135,11 @@ func (s *AgentService) Get(name string) (AgentInfo, error) {
 		return AgentInfo{}, err
 	}
 
-	info := AgentInfo{Name: name, Default: name == registry.Default}
+	info := AgentInfo{
+		Name:      name,
+		Default:   name == registry.Default,
+		CreatedAt: createdAtRFC3339(registry, name),
+	}
 	baseURL, port, err := s.resolve(name)
 	if err != nil {
 		return info, nil
@@ -133,6 +148,29 @@ func (s *AgentService) Get(name string) (AgentInfo, error) {
 	info.Port = port
 	info.Running = s.reachable(baseURL, port)
 	return info, nil
+}
+
+// createdAtRFC3339 normalizes a registry timestamp to RFC3339 UTC. Older
+// entries stored only a date, which is read as UTC midnight so they sort before
+// any agent created afterwards.
+func createdAtRFC3339(registry *agentdir.Registry, name string) string {
+	raw := ""
+	if registry != nil {
+		if entry, ok := registry.Agents[name]; ok {
+			raw = entry.CreatedAt
+		}
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
+		return parsed.UTC().Format(time.RFC3339)
+	}
+	if parsed, err := time.ParseInLocation("2006-01-02", raw, time.UTC); err == nil {
+		return parsed.UTC().Format(time.RFC3339)
+	}
+	return raw
 }
 
 // BaseURL returns the agent's HTTP base URL and port.

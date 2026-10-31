@@ -343,7 +343,7 @@ func createAgent(root, outDir string, toStdout bool, name string, opts Options, 
 		return manifest, nil
 	}
 
-	path, bytes, err := writeArchive(outDir, toStdout, opts.Stdout, fmt.Sprintf("myaaw-backup-%s-%s.tar.gz", name, now.Format("20060102-150405")), build)
+	path, bytes, err := writeArchive(outDir, toStdout, opts.Stdout, fmt.Sprintf("myaaw-backup-%s-%s.tar.gz", name, now.UTC().Format("20060102-150405")), build)
 	if err != nil {
 		return Result{}, err
 	}
@@ -381,7 +381,7 @@ func createGlobal(root, outDir string, opts Options, now time.Time) (Result, err
 		return manifest, nil
 	}
 
-	path, bytes, err := writeArchive(outDir, false, nil, fmt.Sprintf("myaaw-backup-global-%s.tar.gz", now.Format("20060102-150405")), build)
+	path, bytes, err := writeArchive(outDir, false, nil, fmt.Sprintf("myaaw-backup-global-%s.tar.gz", now.UTC().Format("20060102-150405")), build)
 	if err != nil {
 		return Result{}, err
 	}
