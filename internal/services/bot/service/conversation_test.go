@@ -191,6 +191,7 @@ func TestBuildConversationMessagesStoresUploads(t *testing.T) {
 		Text:           "summarize this",
 		Channel:        "api",
 		ConversationID: "conv-1",
+		Images:         []string{base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\n-fake-png"))},
 		Files: []channel.FileUpload{{
 			Name:       "notes.txt",
 			MimeType:   "text/plain",
@@ -216,9 +217,20 @@ func TestBuildConversationMessagesStoresUploads(t *testing.T) {
 		t.Fatalf("stored upload missing: %v", err)
 	}
 
-	text, _ := last.Content.(string)
+	// The image is sent inline to the model and also stored next to the document,
+	// so the person finds it in the Files page.
+	imagePath := filepath.Join(wantDir, "image-1.png")
+	if _, err := os.Stat(imagePath); err != nil {
+		t.Fatalf("stored image missing: %v", err)
+	}
+
+	text := provider.MessageText(last)
 	if !strings.Contains(text, "<attached>\n") || !strings.Contains(text, upload.Path) || !strings.HasSuffix(text, "\n\nsummarize this") {
 		t.Fatalf("content = %q", text)
+	}
+	items := provider.MessageContentItems(last)
+	if len(items) != 2 || items[1].Type != "image_url" {
+		t.Fatalf("content items = %+v, want the text and the image", items)
 	}
 }
 

@@ -10,6 +10,41 @@ import (
 	"myaaw/internal/channel"
 )
 
+func TestSaveUserImages(t *testing.T) {
+	userDir := t.TempDir()
+	png := base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\n-fake-png"))
+	jpeg := base64.StdEncoding.EncodeToString([]byte("\xff\xd8\xff\xe0-fake-jpeg"))
+
+	if err := saveUserImages(userDir, "conv-1", "msg-1", []string{png, jpeg}); err != nil {
+		t.Fatalf("saveUserImages: %v", err)
+	}
+
+	dir := filepath.Join(userDir, "uploads", "conv-1", "msg-1")
+	for _, want := range []string{"image-1.png", "image-2.jpg"} {
+		// The extension follows the base64 signature: the dashboard re-encodes to
+		// JPEG, an API client may well send PNG.
+		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
+			t.Fatalf("%s missing: %v", want, err)
+		}
+	}
+
+	encodedPNG := base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\n"))
+	if got := imageExtension(encodedPNG); got != ".png" {
+		t.Fatalf("png extension = %q", got)
+	}
+	if got := imageExtension(base64.StdEncoding.EncodeToString([]byte{0xff, 0xd8, 0xff, 0xe0})); got != ".jpg" {
+		t.Fatalf("jpeg extension = %q", got)
+	}
+
+	// No images means no directory either.
+	if err := saveUserImages(userDir, "conv-2", "msg-2", nil); err != nil {
+		t.Fatalf("empty save: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(userDir, "uploads", "conv-2")); !os.IsNotExist(err) {
+		t.Fatal("empty images should not create a directory")
+	}
+}
+
 func TestSaveUserFiles(t *testing.T) {
 	userDir := t.TempDir()
 	data := base64.StdEncoding.EncodeToString([]byte("hello,world\n"))

@@ -302,14 +302,21 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 	// here (existing or freshly created), so the folder is stable before the run.
 	messageID := uuid.New().String()
 	var uploads []provider.Upload
-	if len(msg.Files) > 0 {
+	if len(msg.Files) > 0 || len(msg.Images) > 0 {
 		userDir, rootErr := agentdir.ActiveUserDir()
 		if rootErr != nil {
 			return nil, rootErr
 		}
-		var saveErr error
-		uploads, saveErr = saveUserFiles(userDir, msg.ConversationID, messageID, msg.Files)
-		if saveErr != nil {
+		if len(msg.Files) > 0 {
+			var saveErr error
+			uploads, saveErr = saveUserFiles(userDir, msg.ConversationID, messageID, msg.Files)
+			if saveErr != nil {
+				return nil, saveErr
+			}
+		}
+		// Images still travel inline to the model; the copy on disk lets the person
+		// find them in the Files page next to the documents they uploaded.
+		if saveErr := saveUserImages(userDir, msg.ConversationID, messageID, msg.Images); saveErr != nil {
 			return nil, saveErr
 		}
 	}

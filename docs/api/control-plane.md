@@ -319,7 +319,7 @@ See [Tool Approvals](../agents/approvals.md) for fields, grant scopes, and per-c
 
 ## 6. Filesystem
 
-Virtual roots are `/home`, `/user`, `/skills`, and `/jobs`. `/user` holds content the person using the agent provided, such as files attached in chat (`/user/uploads/<conversation>/<message>/`). Paths outside those roots, other agents, traversal, and symlink escapes are rejected.
+Virtual roots are `/home`, `/user`, `/skills`, and `/jobs`. `/user` holds content the person using the agent provided, such as files and images attached in chat (`/user/uploads/<conversation>/<message>/`). Paths outside those roots, other agents, traversal, and symlink escapes are rejected.
 
 | Method | Path | Purpose |
 |---|---|---|

@@ -45,6 +45,49 @@ func saveUserFiles(userDir, conversationID, messageID string, files []channel.Fi
 	return uploads, nil
 }
 
+// saveUserImages writes a message's inline images under
+// <userDir>/uploads/<conversationID>/<messageID>/ as image-1.jpg, image-2.png, ...
+// They still travel inline to the model; this copy exists so the person using the
+// agent finds them in the Files page next to the documents they uploaded.
+func saveUserImages(userDir, conversationID, messageID string, images []string) error {
+	if len(images) == 0 {
+		return nil
+	}
+
+	dir := filepath.Join(userDir, "uploads", conversationID, messageID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create upload directory: %w", err)
+	}
+
+	for index, image := range images {
+		data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(image))
+		if err != nil {
+			return fmt.Errorf("decode image %d: %w", index+1, err)
+		}
+		name := uniqueFileName(dir, fmt.Sprintf("image-%d%s", index+1, imageExtension(image)))
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			return fmt.Errorf("write %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// imageExtension guesses the file extension from the base64 signature. The
+// dashboard re-encodes uploads to JPEG, but API clients may send PNG, WebP or
+// GIF bytes.
+func imageExtension(image string) string {
+	switch {
+	case strings.HasPrefix(image, "iVBORw0KGgo"):
+		return ".png"
+	case strings.HasPrefix(image, "UklGR"):
+		return ".webp"
+	case strings.HasPrefix(image, "R0lGOD"):
+		return ".gif"
+	default:
+		return ".jpg"
+	}
+}
+
 func safeFileName(name string) string {
 	name = strings.TrimSpace(name)
 	name = strings.ReplaceAll(name, "\\", "/")
