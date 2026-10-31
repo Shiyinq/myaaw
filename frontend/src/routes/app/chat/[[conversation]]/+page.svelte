@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
+	import { fade } from 'svelte/transition';
 	import { chat as chatApi } from '$lib/apis/chat';
 	import { config as configApi } from '$lib/apis/config';
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
@@ -182,6 +183,62 @@
 	let scroller = $state<HTMLDivElement | null>(null);
 	let composer = $state<HTMLTextAreaElement | null>(null);
 
+	// Turn rail: one mark per user message, so a long answer can be skipped
+	// straight back to its question. The rail is a short column centred on the
+	// right edge; it unfolds into a list on hover.
+	interface TurnMark {
+		id: string;
+		text: string;
+		top: number;
+	}
+
+	// The gap between ticks, and the height of a row in the unfolded list: they are
+	// the same, so nothing shifts when the card appears.
+	const RAIL_GAP = 26;
+	const RAIL_PAD = 8;
+	// Only this many ticks are drawn at once, so a long conversation never
+	// squeezes them into an unreadable column.
+	const RAIL_VISIBLE = 11;
+
+	let turnMarks = $state<TurnMark[]>([]);
+	let activeTurnId = $state('');
+	// The question the pointer is on, either a tick or a row of the unfolded list.
+	let hoverTurnId = $state('');
+	let railOpen = $state(false);
+	let cardList = $state<HTMLDivElement | null>(null);
+	// The list hides its scrollbar, so the edges tell whether it can be scrolled.
+	let cardScrollUp = $state(false);
+	let cardScrollDown = $state(false);
+
+	// The ticks are a window over the list, centred on the question being read. It
+	// rolls like a lens: the marks at both ends of the window are shorter and
+	// dimmer than the ones near the middle.
+	let railMarks = $derived.by(() => {
+		const total = turnMarks.length;
+		const visible = Math.min(total, RAIL_VISIBLE);
+		if (visible === 0) return [];
+		const active = Math.max(
+			0,
+			turnMarks.findIndex((mark) => mark.id === activeTurnId)
+		);
+		const half = (visible - 1) / 2;
+		const start = Math.min(Math.max(active - Math.round(half), 0), total - visible);
+		// A short conversation shows every mark at the same size; a long one rolls.
+		const rolls = total > RAIL_VISIBLE;
+		return Array.from({ length: visible }, (_, position) => {
+			const distance = rolls && half > 0 ? Math.abs(position - half) / half : 0;
+			return {
+				mark: turnMarks[start + position],
+				width: 14 - 7 * distance,
+				opacity: 1 - 0.5 * distance
+			};
+		});
+	});
+
+	let railHeight = $derived(
+		railMarks.length > 1 ? (railMarks.length - 1) * RAIL_GAP + RAIL_PAD * 2 : 0
+	);
+
 	let loadKey = '';
 
 	// Key of the group that is still collecting steps, so its header stays open
@@ -223,6 +280,105 @@
 	function scrollToBottom() {
 		if (scroller) scroller.scrollTop = scroller.scrollHeight;
 	}
+
+	/** Re-reads where each user message sits, after the transcript changes size. */
+	function measureTurns() {
+		const container = scroller;
+		if (!container) return;
+		const origin = container.getBoundingClientRect().top;
+		const texts = new Map<string, string>();
+		for (const item of items) {
+			if (item.kind === 'user' && item.localId) texts.set(item.localId, item.text ?? '');
+		}
+
+		turnMarks = Array.from(container.querySelectorAll<HTMLElement>('[data-chat-turn]')).map(
+			(node) => {
+				const id = node.dataset.chatTurn ?? '';
+				const top = node.getBoundingClientRect().top - origin + container.scrollTop;
+				return { id, text: texts.get(id) ?? '', top };
+			}
+		);
+	}
+
+	/**
+	 * The mark of the message that is currently in view: the newest question that
+	 * started above a probe a quarter down the viewport, or the last one once the
+	 * transcript is scrolled to the bottom, so an answer still being read keeps
+	 * its own question lit.
+	 */
+	function syncActiveTurn() {
+		if (!scroller || turnMarks.length === 0) return;
+		if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8) {
+			activeTurnId = turnMarks[turnMarks.length - 1].id;
+			return;
+		}
+		const probe = scroller.scrollTop + scroller.clientHeight * 0.25;
+		let active = turnMarks[0].id;
+		for (const mark of turnMarks) {
+			if (mark.top <= probe) active = mark.id;
+		}
+		activeTurnId = active;
+	}
+
+	function queueTurnMeasure() {
+		requestAnimationFrame(() => {
+			measureTurns();
+			syncActiveTurn();
+		});
+	}
+
+	function jumpToTurn(mark: TurnMark) {
+		if (!scroller) return;
+		scroller.scrollTo({ top: Math.max(0, mark.top - 16), behavior: 'smooth' });
+		activeTurnId = mark.id;
+	}
+
+	function onScroll() {
+		syncActiveTurn();
+	}
+
+	/** Whether the unfolded list has more turns above or below the visible part. */
+	function updateCardScroll() {
+		const list = cardList;
+		if (!list) return;
+		cardScrollUp = list.scrollTop > 4;
+		cardScrollDown = list.scrollTop + list.clientHeight < list.scrollHeight - 4;
+	}
+
+	$effect(() => {
+		// Open the list on the question being read, not on the oldest one.
+		if (!railOpen || !cardList) return;
+		const row = cardList.querySelector<HTMLElement>('[data-turn-active="true"]');
+		if (row) {
+			const delta = row.getBoundingClientRect().top - cardList.getBoundingClientRect().top;
+			cardList.scrollTop = Math.max(
+				0,
+				cardList.scrollTop + delta - (cardList.clientHeight - row.offsetHeight) / 2
+			);
+		}
+		updateCardScroll();
+	});
+
+	$effect(() => {
+		// Re-measure when the transcript gains or loses rows, or the viewport changes.
+		const count = items.length;
+		if (!scroller || count === 0 || !conversationId) {
+			turnMarks = [];
+			return;
+		}
+		const frame = requestAnimationFrame(() => {
+			measureTurns();
+			syncActiveTurn();
+		});
+		return () => cancelAnimationFrame(frame);
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		const onResize = () => queueTurnMeasure();
+		window.addEventListener('resize', onResize);
+		return () => window.removeEventListener('resize', onResize);
+	});
 
 	// A run that ends while another conversation (or menu) is open must not leave
 	// a stale spinner, title or message count in the sidebar. Refresh the list
@@ -1460,311 +1616,423 @@
 				{t('myaaw.agent.none')}
 			</div>
 		{:else}
-			<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto">
-				<div class="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
-					{#if loading}
-						<p class="text-sm text-muted-foreground">{t('myaaw.chat.loading')}</p>
-					{:else if items.length === 0}
-						<p class="py-20 text-center text-sm text-muted-foreground">
-							{t('myaaw.chat.empty')}
-						</p>
-					{/if}
+			<div class="relative flex min-h-0 flex-1 flex-col">
+				<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto" onscroll={onScroll}>
+					<div class="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
+						{#if loading}
+							<p class="text-sm text-muted-foreground">{t('myaaw.chat.loading')}</p>
+						{:else if items.length === 0}
+							<p class="py-20 text-center text-sm text-muted-foreground">
+								{t('myaaw.chat.empty')}
+							</p>
+						{/if}
 
-					{#each rendered as row (row.kind === 'group' ? row.group.key : (row.item.localId ?? row.item.kind))}
-						{#if row.kind === 'group'}
-							{@const group = row.group}
-							{@const open = isGroupOpen(group)}
-							<div class="space-y-0.5">
-								<div class="group/run flex items-center gap-0.5">
-									<button
-										type="button"
-										class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
-										onclick={() => toggleGroup(group)}
-										aria-expanded={open}
-									>
-										{#if group.running}
-											<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-										{:else}
-											<Clock class="h-3.5 w-3.5 shrink-0" />
-										{/if}
-										<span class="font-medium">
-											{group.running ? t('myaaw.chat.tool_running') : t('myaaw.chat.completed')}
-										</span>
-										{#if !group.running && group.durationMs !== undefined}
-											<span class="shrink-0 text-muted-foreground">
-												· {formatDuration(group.durationMs)}
-											</span>
-										{/if}
-										<ChevronDown
-											class={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')}
-										/>
-									</button>
-									{#if group.transcript}
-										<CopyButton
-											text={group.transcript}
-											class="opacity-0 transition-opacity group-hover/run:opacity-100 group-focus-within/run:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
-										/>
-									{/if}
-								</div>
-								{#if open}
-									<div class="space-y-1 pl-2">
-										{#each phaseRows(group) as phase, index (phase.kind === 'group' ? phase.group.key : (phase.item.localId ?? index))}
-											{#if phase.kind === 'text'}
-												<div class="px-1 text-sm">
-													<Markdown content={phase.item.text ?? ''} />
-												</div>
+						{#each rendered as row (row.kind === 'group' ? row.group.key : (row.item.localId ?? row.item.kind))}
+							{#if row.kind === 'group'}
+								{@const group = row.group}
+								{@const open = isGroupOpen(group)}
+								<div class="space-y-0.5">
+									<div class="group/run flex items-center gap-0.5">
+										<button
+											type="button"
+											class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+											onclick={() => toggleGroup(group)}
+											aria-expanded={open}
+										>
+											{#if group.running}
+												<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
 											{:else}
-												{@const phaseGroup = phase.group}
-												{@const phaseOpen = isGroupOpen(phaseGroup)}
-												<div class="space-y-0.5">
-													<button
-														type="button"
-														class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
-														onclick={() => toggleGroup(phaseGroup)}
-														aria-expanded={phaseOpen}
-													>
-														{#if phaseGroup.running}
-															<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-														{/if}
-														<span class="font-medium">{groupLabel(phaseGroup)}</span>
-														<ChevronDown
-															class={cn(
-																'h-3.5 w-3.5 shrink-0 transition-transform',
-																phaseOpen && 'rotate-180'
-															)}
-														/>
-													</button>
-													{#if phaseOpen}
-														<div class="space-y-0.5 pl-2">
-															{#each phaseGroup.steps as step (step.localId)}
-																{#if step.kind === 'thought'}
-																	<ChatStep
-																		title={t('myaaw.chat.think')}
-																		summary={oneLine(step.text ?? '')}
-																		icon={Brain}
-																		expanded={!!step.expanded}
-																		ontoggle={() => toggleItem(step.localId)}
-																		running={step.running}
-																	>
-																		<p class="whitespace-pre-wrap text-muted-foreground">
-																			{step.text}
-																		</p>
-																	</ChatStep>
-																{:else if step.kind === 'tool'}
-																	<ChatStep
-																		title={toolLabel(step.name)}
-																		summary={toolSummary(step)}
-																		icon={toolIcon(step.name)}
-																		expanded={!!step.expanded}
-																		ontoggle={() => toggleItem(step.localId)}
-																		running={step.running}
-																		error={step.is_error}
-																		copyText={toolInvocation(step)}
-																	>
-																		<div
-																			class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
-																		>
-																			<pre
-																				class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
-																					class="select-none text-zinc-500"
-																					>$ </span>{toolInvocation(step)}</pre>
-																			{#if step.result}
-																				<pre
-																					class={cn(
-																						'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
-																						step.is_error ? 'text-red-400' : 'text-zinc-300'
-																					)}>{step.result}</pre>
-																			{:else if step.running}
-																				<pre
-																					class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
-																						'myaaw.chat.tool_running'
-																					)}</pre>
-																			{/if}
-																		</div>
-																	</ChatStep>
-																{:else if step.kind === 'retry'}
-																	<div
-																		class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
-																	>
-																		<RotateCcw class="h-3.5 w-3.5 shrink-0" />
-																		{t('myaaw.chat.retry', { attempt: step.attempt ?? 2 })}
-																	</div>
-																{:else if step.kind === 'compaction'}
-																	<div
-																		class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
-																	>
-																		<Minimize2 class="h-3.5 w-3.5 shrink-0" />
-																		{t('myaaw.chat.compaction', {
-																			before: step.tokens_before ?? 0,
-																			after: step.tokens_after ?? 0
-																		})}
-																	</div>
-																{/if}
-															{/each}
-														</div>
-													{/if}
-												</div>
+												<Clock class="h-3.5 w-3.5 shrink-0" />
 											{/if}
-										{/each}
-									</div>
-								{/if}
-							</div>
-						{:else}
-							{@const item = row.item}
-							{#if item.kind === 'user'}
-								<div class="flex justify-end">
-									<div class="group/user flex max-w-[80%] flex-col items-end gap-2">
-										{#if item.images?.length}
-											<div class="flex flex-wrap justify-end gap-2">
-												{#each item.images as image, imageIndex (imageIndex)}
-													<img
-														src={image}
-														alt=""
-														class="max-h-48 rounded-2xl border object-contain"
-													/>
-												{/each}
-											</div>
+											<span class="font-medium">
+												{group.running ? t('myaaw.chat.tool_running') : t('myaaw.chat.completed')}
+											</span>
+											{#if !group.running && group.durationMs !== undefined}
+												<span class="shrink-0 text-muted-foreground">
+													· {formatDuration(group.durationMs)}
+												</span>
+											{/if}
+											<ChevronDown
+												class={cn(
+													'h-3.5 w-3.5 shrink-0 transition-transform',
+													open && 'rotate-180'
+												)}
+											/>
+										</button>
+										{#if group.transcript}
+											<CopyButton
+												text={group.transcript}
+												class="opacity-0 transition-opacity group-hover/run:opacity-100 group-focus-within/run:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+											/>
 										{/if}
-										{#if item.uploads?.length}
-											<div class="flex flex-wrap justify-end gap-2">
-												{#each item.uploads as upload (upload.path || upload.name)}
-													{@const downloadPath = uploadVirtualPath(upload)}
-													{#if agent && downloadPath}
+									</div>
+									{#if open}
+										<div class="space-y-1 pl-2">
+											{#each phaseRows(group) as phase, index (phase.kind === 'group' ? phase.group.key : (phase.item.localId ?? index))}
+												{#if phase.kind === 'text'}
+													<div class="px-1 text-sm">
+														<Markdown content={phase.item.text ?? ''} />
+													</div>
+												{:else}
+													{@const phaseGroup = phase.group}
+													{@const phaseOpen = isGroupOpen(phaseGroup)}
+													<div class="space-y-0.5">
 														<button
 															type="button"
-															title={t('myaaw.chat.download_file')}
-															aria-label={t('myaaw.chat.download_file')}
-															class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5 transition-colors hover:border-foreground/30 hover:bg-muted"
-															onclick={() => filesApi.download(agent, downloadPath)}
+															class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+															onclick={() => toggleGroup(phaseGroup)}
+															aria-expanded={phaseOpen}
 														>
-															<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
-															<span class="min-w-0 flex-1 truncate text-xs">{upload.name}</span>
-															{#if upload.size}
-																<span class="shrink-0 text-[10px] text-muted-foreground">
-																	{formatBytes(upload.size)}
-																</span>
+															{#if phaseGroup.running}
+																<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
 															{/if}
-															<Download
-																class="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover/file:text-foreground"
+															<span class="font-medium">{groupLabel(phaseGroup)}</span>
+															<ChevronDown
+																class={cn(
+																	'h-3.5 w-3.5 shrink-0 transition-transform',
+																	phaseOpen && 'rotate-180'
+																)}
 															/>
 														</button>
-													{:else}
-														<div
-															class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
-														>
-															<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
-															<span class="min-w-0 flex-1 truncate text-xs">{upload.name}</span>
-															{#if upload.size}
-																<span class="shrink-0 text-[10px] text-muted-foreground">
-																	{formatBytes(upload.size)}
-																</span>
-															{/if}
-														</div>
-													{/if}
-												{/each}
-											</div>
-										{/if}
-										{#if item.text}
-											<div class="flex flex-col items-end">
-												<div
-													class="whitespace-pre-wrap rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
-												>
-													{item.text}
-												</div>
-												<CopyButton
-													text={item.text}
-													class={cn(
-														'mt-0.5 opacity-0 transition-opacity group-hover/user:opacity-100 group-focus-within/user:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
-														item.localId === latestUserKey && 'opacity-100'
-													)}
-												/>
-											</div>
-										{/if}
-									</div>
-								</div>
-							{:else if item.kind === 'text'}
-								<div class="group/message text-sm">
-									<Markdown content={item.text ?? ''} />
-									<CopyButton
-										text={item.text ?? ''}
-										class={cn(
-											'mt-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
-											item.localId === latestAnswerKey && 'opacity-100'
-										)}
-									/>
-								</div>
-							{:else if item.kind === 'approval'}
-								<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
-									<div
-										class="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300"
-									>
-										<ShieldAlert class="h-4 w-4" />
-										{t('myaaw.chat.waiting')}
-									</div>
-									<div class="mt-1 font-mono text-foreground">{item.name}</div>
-									{#if item.arguments}
-										<pre
-											class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
-									{/if}
-									{#if item.resolved}
-										<Badge variant="outline" class="mt-2">{item.resolved}</Badge>
-									{:else if pendingApproval && pendingApproval.approval_id === item.id}
-										<div class="mt-2 flex flex-wrap gap-2">
-											<Button size="xs" onclick={() => decide('allow_once')}>
-												{t('myaaw.chat.allow_once')}
-											</Button>
-											<Button size="xs" variant="secondary" onclick={() => decide('allow_session')}>
-												{t('myaaw.chat.allow_session')}
-											</Button>
-											<Button size="xs" variant="secondary" onclick={() => decide('allow_always')}>
-												{t('myaaw.chat.allow_always')}
-											</Button>
-											<Button size="xs" variant="destructive" onclick={() => decide('deny')}>
-												{t('myaaw.chat.deny')}
-											</Button>
+														{#if phaseOpen}
+															<div class="space-y-0.5 pl-2">
+																{#each phaseGroup.steps as step (step.localId)}
+																	{#if step.kind === 'thought'}
+																		<ChatStep
+																			title={t('myaaw.chat.think')}
+																			summary={oneLine(step.text ?? '')}
+																			icon={Brain}
+																			expanded={!!step.expanded}
+																			ontoggle={() => toggleItem(step.localId)}
+																			running={step.running}
+																		>
+																			<p class="whitespace-pre-wrap text-muted-foreground">
+																				{step.text}
+																			</p>
+																		</ChatStep>
+																	{:else if step.kind === 'tool'}
+																		<ChatStep
+																			title={toolLabel(step.name)}
+																			summary={toolSummary(step)}
+																			icon={toolIcon(step.name)}
+																			expanded={!!step.expanded}
+																			ontoggle={() => toggleItem(step.localId)}
+																			running={step.running}
+																			error={step.is_error}
+																			copyText={toolInvocation(step)}
+																		>
+																			<div
+																				class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
+																			>
+																				<pre
+																					class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
+																						class="select-none text-zinc-500"
+																						>$ </span>{toolInvocation(step)}</pre>
+																				{#if step.result}
+																					<pre
+																						class={cn(
+																							'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
+																							step.is_error ? 'text-red-400' : 'text-zinc-300'
+																						)}>{step.result}</pre>
+																				{:else if step.running}
+																					<pre
+																						class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
+																							'myaaw.chat.tool_running'
+																						)}</pre>
+																				{/if}
+																			</div>
+																		</ChatStep>
+																	{:else if step.kind === 'retry'}
+																		<div
+																			class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
+																		>
+																			<RotateCcw class="h-3.5 w-3.5 shrink-0" />
+																			{t('myaaw.chat.retry', { attempt: step.attempt ?? 2 })}
+																		</div>
+																	{:else if step.kind === 'compaction'}
+																		<div
+																			class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
+																		>
+																			<Minimize2 class="h-3.5 w-3.5 shrink-0" />
+																			{t('myaaw.chat.compaction', {
+																				before: step.tokens_before ?? 0,
+																				after: step.tokens_after ?? 0
+																			})}
+																		</div>
+																	{/if}
+																{/each}
+															</div>
+														{/if}
+													</div>
+												{/if}
+											{/each}
 										</div>
 									{/if}
 								</div>
-							{:else if item.kind === 'error'}
-								<div class="flex items-start gap-2 text-xs text-destructive">
-									<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-									<span class="whitespace-pre-wrap">{item.text}</span>
-								</div>
-							{/if}
-						{/if}
-					{/each}
-
-					{#if streaming && items[items.length - 1]?.kind === 'user'}
-						<!-- The first token can take a while; show that the run started. -->
-						<div class="flex items-center gap-2 px-1 py-1 text-xs text-muted-foreground">
-							<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-							<span class="font-medium">{t('myaaw.chat.tool_running')}</span>
-						</div>
-					{/if}
-
-					{#if attachments.length > 0}
-						<div class="space-y-2">
-							{#each attachments as attachment (attachment.file_name)}
-								{#if isImage(attachment)}
-									<img
-										src={attachmentUrl(attachment)}
-										alt={attachment.file_name}
-										class="max-h-72 rounded-xl border"
-									/>
-								{:else}
-									<a
-										href={attachmentUrl(attachment)}
-										download={attachment.file_name}
-										class="inline-flex items-center gap-2 text-xs text-primary underline-offset-4 hover:underline"
-									>
-										<ArrowDownToLine class="h-3.5 w-3.5" />
-										{attachment.file_name}
-									</a>
+							{:else}
+								{@const item = row.item}
+								{#if item.kind === 'user'}
+									<div class="flex justify-end" data-chat-turn={item.localId}>
+										<div class="group/user flex max-w-[80%] flex-col items-end gap-2">
+											{#if item.images?.length}
+												<div class="flex flex-wrap justify-end gap-2">
+													{#each item.images as image, imageIndex (imageIndex)}
+														<img
+															src={image}
+															alt=""
+															class="max-h-48 rounded-2xl border object-contain"
+														/>
+													{/each}
+												</div>
+											{/if}
+											{#if item.uploads?.length}
+												<div class="flex flex-wrap justify-end gap-2">
+													{#each item.uploads as upload (upload.path || upload.name)}
+														{@const downloadPath = uploadVirtualPath(upload)}
+														{#if agent && downloadPath}
+															<button
+																type="button"
+																title={t('myaaw.chat.download_file')}
+																aria-label={t('myaaw.chat.download_file')}
+																class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5 transition-colors hover:border-foreground/30 hover:bg-muted"
+																onclick={() => filesApi.download(agent, downloadPath)}
+															>
+																<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+																<span class="min-w-0 flex-1 truncate text-xs">{upload.name}</span>
+																{#if upload.size}
+																	<span class="shrink-0 text-[10px] text-muted-foreground">
+																		{formatBytes(upload.size)}
+																	</span>
+																{/if}
+																<Download
+																	class="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover/file:text-foreground"
+																/>
+															</button>
+														{:else}
+															<div
+																class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
+															>
+																<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+																<span class="min-w-0 flex-1 truncate text-xs">{upload.name}</span>
+																{#if upload.size}
+																	<span class="shrink-0 text-[10px] text-muted-foreground">
+																		{formatBytes(upload.size)}
+																	</span>
+																{/if}
+															</div>
+														{/if}
+													{/each}
+												</div>
+											{/if}
+											{#if item.text}
+												<div class="flex flex-col items-end">
+													<div
+														class="whitespace-pre-wrap rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
+													>
+														{item.text}
+													</div>
+													<CopyButton
+														text={item.text}
+														class={cn(
+															'mt-0.5 opacity-0 transition-opacity group-hover/user:opacity-100 group-focus-within/user:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
+															item.localId === latestUserKey && 'opacity-100'
+														)}
+													/>
+												</div>
+											{/if}
+										</div>
+									</div>
+								{:else if item.kind === 'text'}
+									<div class="group/message text-sm">
+										<Markdown content={item.text ?? ''} />
+										<CopyButton
+											text={item.text ?? ''}
+											class={cn(
+												'mt-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
+												item.localId === latestAnswerKey && 'opacity-100'
+											)}
+										/>
+									</div>
+								{:else if item.kind === 'approval'}
+									<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+										<div
+											class="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300"
+										>
+											<ShieldAlert class="h-4 w-4" />
+											{t('myaaw.chat.waiting')}
+										</div>
+										<div class="mt-1 font-mono text-foreground">{item.name}</div>
+										{#if item.arguments}
+											<pre
+												class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
+										{/if}
+										{#if item.resolved}
+											<Badge variant="outline" class="mt-2">{item.resolved}</Badge>
+										{:else if pendingApproval && pendingApproval.approval_id === item.id}
+											<div class="mt-2 flex flex-wrap gap-2">
+												<Button size="xs" onclick={() => decide('allow_once')}>
+													{t('myaaw.chat.allow_once')}
+												</Button>
+												<Button
+													size="xs"
+													variant="secondary"
+													onclick={() => decide('allow_session')}
+												>
+													{t('myaaw.chat.allow_session')}
+												</Button>
+												<Button
+													size="xs"
+													variant="secondary"
+													onclick={() => decide('allow_always')}
+												>
+													{t('myaaw.chat.allow_always')}
+												</Button>
+												<Button size="xs" variant="destructive" onclick={() => decide('deny')}>
+													{t('myaaw.chat.deny')}
+												</Button>
+											</div>
+										{/if}
+									</div>
+								{:else if item.kind === 'error'}
+									<div class="flex items-start gap-2 text-xs text-destructive">
+										<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+										<span class="whitespace-pre-wrap">{item.text}</span>
+									</div>
 								{/if}
-							{/each}
-						</div>
-					{/if}
+							{/if}
+						{/each}
+
+						{#if streaming && items[items.length - 1]?.kind === 'user'}
+							<!-- The first token can take a while; show that the run started. -->
+							<div class="flex items-center gap-2 px-1 py-1 text-xs text-muted-foreground">
+								<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+								<span class="font-medium">{t('myaaw.chat.tool_running')}</span>
+							</div>
+						{/if}
+
+						{#if attachments.length > 0}
+							<div class="space-y-2">
+								{#each attachments as attachment (attachment.file_name)}
+									{#if isImage(attachment)}
+										<img
+											src={attachmentUrl(attachment)}
+											alt={attachment.file_name}
+											class="max-h-72 rounded-xl border"
+										/>
+									{:else}
+										<a
+											href={attachmentUrl(attachment)}
+											download={attachment.file_name}
+											class="inline-flex items-center gap-2 text-xs text-primary underline-offset-4 hover:underline"
+										>
+											<ArrowDownToLine class="h-3.5 w-3.5" />
+											{attachment.file_name}
+										</a>
+									{/if}
+								{/each}
+							</div>
+						{/if}
+					</div>
 				</div>
+
+				{#if turnMarks.length > 1}
+					<!-- One tick per user message, in a short column centred on the right edge.
+					     Hovering unfolds the list of questions, each row carrying its own tick,
+					     so a tick always shares its line with the question it belongs to. -->
+					<div
+						class="absolute top-1/2 right-5 z-10 w-6 -translate-y-1/2"
+						style="height: {railHeight}px"
+						role="group"
+						aria-label={t('myaaw.chat.turns', { count: turnMarks.length })}
+						onmouseenter={() => (railOpen = true)}
+						onmouseleave={() => {
+							railOpen = false;
+							hoverTurnId = '';
+						}}
+					>
+						{#if railOpen}
+							<div class="absolute top-1/2 right-0 -translate-y-1/2">
+								<div
+									class="relative w-64 rounded-xl border bg-popover p-1.5 shadow-lg"
+									transition:fade={{ duration: 150 }}
+								>
+									<div
+										bind:this={cardList}
+										onscroll={updateCardScroll}
+										class="max-h-[286px] overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+									>
+										{#each turnMarks as mark (mark.id)}
+											<button
+												type="button"
+												class={cn(
+													'flex h-[26px] w-full cursor-pointer items-center gap-3 rounded-md pr-3 pl-2 text-left text-[13px] transition-colors',
+													mark.id === activeTurnId
+														? 'text-primary'
+														: mark.id === hoverTurnId
+															? 'bg-muted/60 text-foreground'
+															: 'text-muted-foreground hover:bg-muted/60'
+												)}
+												data-turn-active={mark.id === activeTurnId ? 'true' : undefined}
+												onclick={() => jumpToTurn(mark)}
+												onmouseenter={() => (hoverTurnId = mark.id)}
+												onmouseleave={() => (hoverTurnId = '')}
+											>
+												<span class="min-w-0 flex-1 truncate">
+													{oneLine(mark.text) || t('myaaw.chat.untitled_turn')}
+												</span>
+												<span
+													class={cn(
+														'shrink-0 rounded-full transition-all',
+														mark.id === activeTurnId
+															? 'h-1 w-5 bg-primary'
+															: mark.id === hoverTurnId
+																? 'h-1 w-5 bg-muted-foreground'
+																: 'h-0.5 w-3.5 bg-muted-foreground/40'
+													)}
+												></span>
+											</button>
+										{/each}
+									</div>
+
+									{#if cardScrollUp}
+										<div
+											class="pointer-events-none absolute inset-x-1.5 top-1.5 h-5 rounded-t-lg bg-gradient-to-b from-popover to-transparent"
+										></div>
+									{/if}
+									{#if cardScrollDown}
+										<div
+											class="pointer-events-none absolute inset-x-1.5 bottom-1.5 h-5 rounded-b-lg bg-gradient-to-t from-popover to-transparent"
+										></div>
+									{/if}
+								</div>
+							</div>
+						{:else}
+							{#each railMarks as entry, position (entry.mark.id)}
+								<button
+									type="button"
+									class="absolute right-0 flex h-3 w-full -translate-y-1/2 cursor-pointer items-center justify-end transition-all duration-200"
+									style="top: {RAIL_PAD + position * RAIL_GAP}px; opacity: {entry.mark.id ===
+									activeTurnId
+										? 1
+										: entry.opacity}"
+									aria-label={oneLine(entry.mark.text) || t('myaaw.chat.jump_to_turn')}
+									title={oneLine(entry.mark.text)}
+									onclick={() => jumpToTurn(entry.mark)}
+								>
+									<span
+										class={cn(
+											'block rounded-full transition-all duration-200',
+											entry.mark.id === activeTurnId
+												? 'h-1 bg-primary'
+												: 'h-0.5 bg-muted-foreground/60'
+										)}
+										style="width: {entry.mark.id === activeTurnId ? 20 : entry.width}px"
+									></span>
+								</button>
+							{/each}
+						{/if}
+					</div>
+				{/if}
 			</div>
 
 			{#if runError || error}

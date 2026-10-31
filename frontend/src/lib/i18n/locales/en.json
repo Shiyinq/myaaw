@@ -331,7 +331,9 @@
 			"attachment_total_too_large": "Attachments must total under {size} MB.",
 			"file_unsupported": "Unsupported file type.",
 			"file_failed": "Could not read that file.",
-			"download_file": "Download file"
+			"download_file": "Download file",
+			"jump_to_turn": "Jump to this message",
+			"untitled_turn": "(attachment only)"
 		},
 		"conversations": {
 			"search": "Search titles...",

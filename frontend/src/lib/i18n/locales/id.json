@@ -331,7 +331,9 @@
 			"attachment_total_too_large": "Total lampiran harus di bawah {size} MB.",
 			"file_unsupported": "Tipe file tidak didukung.",
 			"file_failed": "File tidak bisa dibaca.",
-			"download_file": "Unduh berkas"
+			"download_file": "Unduh berkas",
+			"jump_to_turn": "Lompat ke pesan ini",
+			"untitled_turn": "(hanya lampiran)"
 		},
 		"conversations": {
 			"search": "Cari judul...",
