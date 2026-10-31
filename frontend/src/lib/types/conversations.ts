@@ -4,13 +4,26 @@ export interface ContentPart {
 	image_url?: { url?: string };
 }
 
+export interface ToolCall {
+	id?: string;
+	type?: string;
+	function?: {
+		name?: string;
+		arguments?: string | Record<string, unknown>;
+	};
+}
+
 export interface Message {
 	role: string;
 	content: string | ContentPart[];
 	images?: string[];
-	tool_calls?: unknown[];
+	tool_calls?: ToolCall[];
 	tool_call_id?: string;
+	is_error?: boolean;
+	name?: string;
 	thought?: string;
+	action?: string;
+	action_input?: string;
 }
 
 export interface ConversationSummary {

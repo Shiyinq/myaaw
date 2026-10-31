@@ -5,12 +5,14 @@
 	import { chat as chatApi } from '$lib/apis/chat';
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
 	import { agentSelection, toastStore } from '$lib/stores';
+	import { cn } from '$lib/utils';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
+	import ChatStep from '$lib/components/common/ChatStep.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
@@ -19,10 +21,17 @@
 		ArrowDownToLine,
 		Brain,
 		Check,
+		ChevronDown,
+		Clock,
+		Code,
+		Cpu,
+		FolderOpen,
+		Globe,
 		ImagePlus,
 		Loader2,
 		MessageSquarePlus,
 		Minimize2,
+		Monitor,
 		PanelRightClose,
 		PanelRightOpen,
 		Pencil,
@@ -31,7 +40,9 @@
 		Send,
 		ShieldAlert,
 		Square,
+		SquareTerminal,
 		Trash2,
+		Users,
 		Wrench,
 		X
 	} from 'lucide-svelte';
@@ -52,7 +63,21 @@
 		localId?: string;
 		resolved?: string;
 		images?: string[];
+		running?: boolean;
+		expanded?: boolean;
+		group_duration_ms?: number;
 	}
+
+	interface StepGroup {
+		key: string;
+		steps: Item[];
+		running: boolean;
+		durationMs?: number;
+	}
+
+	type TimelineRow = { kind: 'item'; item: Item } | { kind: 'group'; group: StepGroup };
+
+	const STEP_KINDS = new Set(['thought', 'tool', 'retry', 'compaction']);
 
 	interface PendingImage {
 		id: string;
@@ -80,12 +105,20 @@
 	let pending = $state<PendingImage[]>([]);
 	let dragOver = $state(false);
 	let fileInput = $state<HTMLInputElement | null>(null);
+	let groupOpen = $state<Record<string, boolean>>({});
 	let error = $state('');
 	let scroller = $state<HTMLDivElement | null>(null);
 	let composer = $state<HTMLTextAreaElement | null>(null);
 
 	let controller: AbortController | null = null;
 	let counter = 0;
+	// Wall clock for the step group that is currently streaming, so its header
+	// can report the duration once the group closes.
+	let groupStart = 0;
+	let groupLastStep = '';
+	// Key of the group that is still collecting steps, so it stays open and
+	// spinning between tool calls instead of folding away mid-run.
+	let openGroup = $state('');
 	let loadKey = '';
 
 	// Conversation history sidebar
@@ -113,8 +146,12 @@
 		if (scroller) scroller.scrollTop = scroller.scrollHeight;
 	}
 
+	// Follow only new timeline rows. Expanding a step reassigns `items` with the
+	// same length, and that must not yank the view to the bottom.
+	let followedCount = 0;
 	$effect(() => {
-		void items.length;
+		if (items.length === followedCount) return;
+		followedCount = items.length;
 		scrollToBottom();
 	});
 
@@ -127,17 +164,13 @@
 		}
 		loading = true;
 		error = '';
+		groupOpen = {};
+		groupStart = 0;
+		groupLastStep = '';
+		openGroup = '';
 		try {
 			const detail = await conversationsApi.get(currentAgent, id, { limit: 0 });
-			items = detail.messages
-				.filter((message) => message.role === 'user' || message.role === 'assistant')
-				.map((message, index) => ({
-					kind: message.role === 'user' ? 'user' : 'text',
-					text: messageText(message),
-					images: message.role === 'user' ? messageImages(message) : undefined,
-					localId: `history-${index}`
-				}))
-				.filter((item) => item.text || (item.images?.length ?? 0) > 0);
+			items = historyTimeline(detail.messages);
 			usage = null;
 			attachments = [];
 		} catch (err) {
@@ -225,23 +258,188 @@
 		void loadConversation(currentAgent, currentConversation);
 	});
 
+	// Everything between the user's message and the final answer forms one
+	// outer collapsible run. Assistant text in between stays plain text, only
+	// the last answer of each run is shown outside the group.
+	let rendered: TimelineRow[] = $derived.by(() => {
+		const answers = new Set<number>();
+		let pending = -1;
+		items.forEach((item, index) => {
+			if (item.kind === 'user') {
+				if (pending >= 0) answers.add(pending);
+				pending = -1;
+			} else if (item.kind === 'text') {
+				pending = index;
+			}
+		});
+		if (pending >= 0) answers.add(pending);
+
+		const rows: TimelineRow[] = [];
+		let steps: Item[] = [];
+		const flush = () => {
+			if (steps.length === 0) return;
+			const first = steps[0];
+			rows.push({
+				kind: 'group',
+				group: {
+					key: `run-${first.localId ?? rows.length}`,
+					steps: [...steps],
+					running:
+						steps.some((step) => step.running) || steps.some((step) => step.localId === openGroup),
+					durationMs: steps.find((step) => step.group_duration_ms !== undefined)?.group_duration_ms
+				}
+			});
+			steps = [];
+		};
+		items.forEach((item, index) => {
+			const processText = item.kind === 'text' && !answers.has(index);
+			if (STEP_KINDS.has(item.kind) || processText) {
+				steps.push(item);
+			} else {
+				flush();
+				rows.push({ kind: 'item', item });
+			}
+		});
+		flush();
+		return rows;
+	});
+
+	function isGroupOpen(group: StepGroup) {
+		return groupOpen[group.key] ?? group.running;
+	}
+
+	function groupLabel(group: StepGroup) {
+		const kinds = new Set(group.steps.map((step) => step.kind));
+		const thought = kinds.has('thought');
+		const tool = kinds.has('tool');
+		if (thought && tool) return t('myaaw.chat.tools_and_thinking');
+		if (tool) return t('myaaw.chat.tools');
+		if (thought) return t('myaaw.chat.thinking');
+		return t('myaaw.chat.process');
+	}
+
+	type PhaseRow = { kind: 'text'; item: Item } | { kind: 'group'; group: StepGroup };
+
+	/** Splits a run into phases: thinking/tool groups with the remarks in between. */
+	function phaseRows(group: StepGroup): PhaseRow[] {
+		const rows: PhaseRow[] = [];
+		let steps: Item[] = [];
+		const flush = () => {
+			if (steps.length === 0) return;
+			const first = steps[0];
+			rows.push({
+				kind: 'group',
+				group: {
+					key: `phase-${first.localId ?? rows.length}`,
+					steps: [...steps],
+					running:
+						steps.some((step) => step.running) || steps.some((step) => step.localId === openGroup),
+					durationMs: steps.find((step) => step.group_duration_ms !== undefined)?.group_duration_ms
+				}
+			});
+			steps = [];
+		};
+		for (const item of group.steps) {
+			if (item.kind === 'text') {
+				flush();
+				rows.push({ kind: 'text', item });
+			} else {
+				steps.push(item);
+			}
+		}
+		flush();
+		return rows;
+	}
+
+	function toggleGroup(group: StepGroup) {
+		groupOpen = { ...groupOpen, [group.key]: !isGroupOpen(group) };
+	}
+
+	/** Consecutive thinking/tool rows are rendered as one collapsible group. */
+	function stepRow(item: TimelineItem) {
+		return STEP_KINDS.has(item.kind);
+	}
+
+	function formatDuration(ms: number) {
+		const seconds = ms / 1000;
+		if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
+		const minutes = Math.floor(seconds / 60);
+		return `${minutes}m ${Math.round(seconds % 60)}s`;
+	}
+
+	/** Records how long the open step group took on its last step. */
+	function closeGroup() {
+		if (!groupStart || !groupLastStep) return;
+		const duration = Date.now() - groupStart;
+		const last = groupLastStep;
+		groupStart = 0;
+		groupLastStep = '';
+		openGroup = '';
+		items = items.map((item) =>
+			item.localId === last ? { ...item, group_duration_ms: duration } : item
+		);
+	}
+
 	function push(item: Item) {
-		items = [...items, { ...item, localId: item.localId ?? `item-${++counter}` }];
+		const localId = item.localId ?? `item-${++counter}`;
+		if (stepRow(item)) {
+			if (!groupStart) {
+				groupStart = Date.now();
+				openGroup = localId;
+			}
+			groupLastStep = localId;
+		} else if (item.kind !== 'text') {
+			// Text belongs to the run: the model often narrates between tools.
+			closeGroup();
+		}
+		items = [...items, { ...item, localId }];
+	}
+
+	/** A thinking block closes as soon as the model stops thinking. */
+	function finishThoughts() {
+		items = items.map((item) =>
+			item.kind === 'thought' && item.running ? { ...item, running: false, expanded: false } : item
+		);
 	}
 
 	function mergeLast(kind: string, text: string) {
 		const last = items[items.length - 1];
-		if (last && last.kind === kind) {
+		if (last && last.kind === kind && (kind !== 'thought' || last.running)) {
 			items = [...items.slice(0, -1), { ...last, text: (last.text ?? '') + text }];
+		} else if (kind === 'thought') {
+			// Streamed thinking starts open and folds away when it ends.
+			push({ kind, text, running: true, expanded: true });
 		} else {
 			push({ kind, text });
 		}
 	}
 
 	function setToolResult(id: string, result: string, isError?: boolean) {
-		items = items.map((item) =>
-			item.kind === 'tool' && item.id === id ? { ...item, result, is_error: isError } : item
+		const index = items.findIndex((item) => item.kind === 'tool' && item.id === id);
+		if (index < 0) {
+			// A result without its call still deserves a block.
+			push({ kind: 'tool', id, result, is_error: isError, running: false, expanded: false });
+			return;
+		}
+		items = items.map((item, position) =>
+			position === index
+				? { ...item, result, is_error: isError, running: false, expanded: false }
+				: item
 		);
+	}
+
+	function toggleItem(localId?: string) {
+		if (!localId) return;
+		items = items.map((item) =>
+			item.localId === localId ? { ...item, expanded: !item.expanded } : item
+		);
+	}
+
+	/** Folds an interrupted or finished run so no step keeps spinning. */
+	function endRun() {
+		finishThoughts();
+		items = items.map((item) => (item.running ? { ...item, running: false } : item));
+		closeGroup();
 	}
 
 	async function send() {
@@ -252,6 +450,9 @@
 		push({ kind: 'user', text, images: pending.map((item) => item.dataUrl) });
 		input = '';
 		clearPending();
+		groupStart = 0;
+		groupLastStep = '';
+		openGroup = '';
 		if (composer) composer.style.height = '';
 		streaming = true;
 		error = '';
@@ -275,14 +476,18 @@
 							mergeLast('thought', data?.text ?? '');
 							break;
 						case 'chunk':
+							finishThoughts();
 							mergeLast('text', data?.text ?? '');
 							break;
 						case 'tool':
+							finishThoughts();
 							push({
 								kind: 'tool',
 								id: data?.id,
 								name: data?.name,
-								arguments: data?.arguments
+								arguments: data?.arguments,
+								running: true,
+								expanded: true
 							});
 							break;
 						case 'tool_result':
@@ -327,6 +532,7 @@
 							break;
 						}
 						case 'done': {
+							endRun();
 							const nextConversation = data?.conversation_id;
 							if (nextConversation && nextConversation !== conversationId) {
 								conversationId = nextConversation;
@@ -347,6 +553,7 @@
 							break;
 						}
 						case 'error': {
+							endRun();
 							error = data?.error ?? 'Stream error';
 							push({ kind: 'error', text: error });
 							break;
@@ -361,6 +568,7 @@
 				toastStore.error(error);
 			}
 		} finally {
+			endRun();
 			streaming = false;
 			controller = null;
 		}
@@ -410,6 +618,10 @@
 		pendingApproval = null;
 		loadKey = `${agent}:`;
 		rememberConversation('');
+		groupOpen = {};
+		groupStart = 0;
+		groupLastStep = '';
+		openGroup = '';
 	}
 
 	function toggleHistory() {
@@ -561,6 +773,196 @@
 			urls.push(`data:image/jpeg;base64,${image}`);
 		}
 		return urls;
+	}
+
+	const TOOL_LABELS: Record<string, string> = {
+		bash: 'Bash',
+		execute_python: 'Python',
+		filesystem: 'Files',
+		computer: 'Computer',
+		subagent: 'Agent',
+		cron: 'Cron',
+		provider: 'Provider',
+		contact: 'Contact'
+	};
+
+	// Fields that read well as a one-line summary, most specific first.
+	const SUMMARY_KEYS = [
+		'command',
+		'code',
+		'instruction',
+		'action',
+		'path',
+		'pattern',
+		'query',
+		'url',
+		'text',
+		'name'
+	];
+
+	function toolArgs(item: Item): Record<string, unknown> {
+		if (!item.arguments) return {};
+		try {
+			const parsed: unknown = JSON.parse(item.arguments);
+			return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+		} catch {
+			return {};
+		}
+	}
+
+	function toolLabel(name?: string) {
+		const key = (name ?? '').toLowerCase();
+		if (TOOL_LABELS[key]) return TOOL_LABELS[key];
+		return name ? name.charAt(0).toUpperCase() + name.slice(1) : t('myaaw.chat.tool');
+	}
+
+	function toolIcon(name?: string) {
+		const key = (name ?? '').toLowerCase();
+		if (key === 'bash') return SquareTerminal;
+		if (key === 'execute_python') return Code;
+		if (key === 'filesystem') return FolderOpen;
+		if (key === 'computer') return Monitor;
+		if (key === 'subagent') return Users;
+		if (key === 'cron') return Clock;
+		if (key === 'provider') return Cpu;
+		if (/scrap|search|crawl|web|fetch|a2a/.test(key)) return Globe;
+		return Wrench;
+	}
+
+	function oneLine(text: string) {
+		return text.replace(/\s+/g, ' ').trim();
+	}
+
+	/** "list_directory /path", the shape the filesystem tool arguments take. */
+	function filesystemAction(args: Record<string, unknown>) {
+		if (typeof args.tool_name !== 'string') return '';
+		const target = ['path', 'old_path', 'new_path', 'pattern']
+			.map((key) => args[key])
+			.find((value) => typeof value === 'string' && value.trim());
+		return oneLine([args.tool_name, target].filter((value) => typeof value === 'string').join(' '));
+	}
+
+	/** The invocation shown in the dark panel, without the prompt prefix. */
+	function toolInvocation(item: Item) {
+		const args = toolArgs(item);
+		if (typeof args.command === 'string') return args.command;
+		if (typeof args.code === 'string') return args.code;
+		if (item.name === 'filesystem') {
+			const action = filesystemAction(args);
+			if (action) return action;
+		}
+		if (item.arguments) {
+			try {
+				return JSON.stringify(JSON.parse(item.arguments), null, 2);
+			} catch {
+				return item.arguments;
+			}
+		}
+		return item.name ?? '';
+	}
+
+	function toolSummary(item: Item) {
+		const args = toolArgs(item);
+		const keys = Object.keys(args);
+		if (keys.length === 0) {
+			if (item.result) return oneLine(item.result);
+			return item.running ? t('myaaw.chat.tool_running') : '';
+		}
+		if (item.name === 'filesystem') {
+			const action = filesystemAction(args);
+			if (action) return action;
+		}
+		for (const key of SUMMARY_KEYS) {
+			const value = args[key];
+			if (typeof value === 'string' && value.trim()) return oneLine(value);
+		}
+		return oneLine(item.arguments ?? '');
+	}
+
+	/**
+	 * Rebuilds the timeline from stored provider messages so reopening a chat
+	 * still shows thoughts, tool calls and their results, retries and
+	 * compactions. Mirrors the TUI's convertProviderMessages.
+	 */
+	function historyTimeline(messages: Message[]): Item[] {
+		const timeline: Item[] = [];
+		const tools = new Map<string, number>();
+		let index = 0;
+		const nextId = () => `history-${index++}`;
+
+		for (const message of messages) {
+			if (message.thought) {
+				timeline.push({
+					kind: 'thought',
+					text: message.thought,
+					running: false,
+					expanded: false,
+					localId: nextId()
+				});
+			}
+
+			if (message.role === 'tool') {
+				const result = messageText(message);
+				const position = message.tool_call_id ? tools.get(message.tool_call_id) : undefined;
+				if (position !== undefined) {
+					timeline[position] = {
+						...timeline[position],
+						result,
+						is_error: message.is_error,
+						running: false,
+						expanded: false
+					};
+				} else {
+					timeline.push({
+						kind: 'tool',
+						id: message.tool_call_id,
+						name: message.name,
+						result,
+						is_error: message.is_error,
+						running: false,
+						expanded: false,
+						localId: nextId()
+					});
+				}
+				continue;
+			}
+
+			if (message.role === 'user') {
+				const text = messageText(message);
+				const images = messageImages(message);
+				if (text || images.length > 0) {
+					timeline.push({
+						kind: 'user',
+						text,
+						images: images.length > 0 ? images : undefined,
+						localId: nextId()
+					});
+				}
+				continue;
+			}
+
+			if (message.role !== 'assistant') continue;
+
+			const text = messageText(message);
+			if (text) timeline.push({ kind: 'text', text, localId: nextId() });
+
+			for (const call of message.tool_calls ?? []) {
+				const id = call.id ?? '';
+				const args = call.function?.arguments;
+				timeline.push({
+					kind: 'tool',
+					id,
+					name: call.function?.name,
+					arguments: typeof args === 'string' ? args : args ? JSON.stringify(args) : undefined,
+					running: false,
+					expanded: false,
+					localId: nextId()
+				});
+				if (id) tools.set(id, timeline.length - 1);
+			}
+		}
+
+		return timeline;
 	}
 
 	function readAsDataUrl(file: File): Promise<string> {
@@ -727,114 +1129,204 @@
 						</p>
 					{/if}
 
-					{#each items as item, index (item.localId ?? `${item.kind}-${index}`)}
-						{#if item.kind === 'user'}
-							<div class="flex justify-end">
-								<div class="flex max-w-[80%] flex-col items-end gap-2">
-									{#if item.images?.length}
-										<div class="flex flex-wrap justify-end gap-2">
-											{#each item.images as image, imageIndex (imageIndex)}
-												<img
-													src={image}
-													alt=""
-													class="max-h-48 rounded-2xl border object-contain"
-												/>
-											{/each}
-										</div>
+					{#each rendered as row (row.kind === 'group' ? row.group.key : (row.item.localId ?? row.item.kind))}
+						{#if row.kind === 'group'}
+							{@const group = row.group}
+							{@const open = isGroupOpen(group)}
+							<div class="space-y-0.5">
+								<button
+									type="button"
+									class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+									onclick={() => toggleGroup(group)}
+									aria-expanded={open}
+								>
+									{#if group.running}
+										<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+									{:else}
+										<Clock class="h-3.5 w-3.5 shrink-0" />
 									{/if}
-									{#if item.text}
-										<div
-											class="whitespace-pre-wrap rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
-										>
-											{item.text}
-										</div>
+									<span class="font-medium">
+										{group.running ? t('myaaw.chat.tool_running') : t('myaaw.chat.completed')}
+									</span>
+									{#if !group.running && group.durationMs !== undefined}
+										<span class="shrink-0 text-muted-foreground">
+											· {formatDuration(group.durationMs)}
+										</span>
 									{/if}
-								</div>
-							</div>
-						{:else if item.kind === 'text'}
-							<div class="text-sm">
-								<Markdown content={item.text ?? ''} />
-							</div>
-						{:else if item.kind === 'thought'}
-							<div
-								class="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
-							>
-								<div class="mb-1 flex items-center gap-2 font-medium not-italic">
-									<Brain class="h-3.5 w-3.5" />
-									{t('myaaw.chat.thinking')}
-								</div>
-								<span class="whitespace-pre-wrap italic">{item.text}</span>
-							</div>
-						{:else if item.kind === 'tool'}
-							<div class="rounded-xl border bg-card/60 px-3 py-2 text-xs">
-								<div class="flex items-center gap-2 font-medium">
-									<Wrench class="h-3.5 w-3.5" />
-									<span class="font-mono">{item.name}</span>
-								</div>
-								{#if item.arguments}
-									<pre
-										class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
+									<ChevronDown
+										class={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')}
+									/>
+								</button>
+								{#if open}
+									<div class="space-y-1 pl-2">
+										{#each phaseRows(group) as phase, index (phase.kind === 'group' ? phase.group.key : (phase.item.localId ?? index))}
+											{#if phase.kind === 'text'}
+												<div class="px-1 text-sm">
+													<Markdown content={phase.item.text ?? ''} />
+												</div>
+											{:else}
+												{@const phaseGroup = phase.group}
+												{@const phaseOpen = isGroupOpen(phaseGroup)}
+												<div class="space-y-0.5">
+													<button
+														type="button"
+														class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+														onclick={() => toggleGroup(phaseGroup)}
+														aria-expanded={phaseOpen}
+													>
+														{#if phaseGroup.running}
+															<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+														{/if}
+														<span class="font-medium">{groupLabel(phaseGroup)}</span>
+														<ChevronDown
+															class={cn(
+																'h-3.5 w-3.5 shrink-0 transition-transform',
+																phaseOpen && 'rotate-180'
+															)}
+														/>
+													</button>
+													{#if phaseOpen}
+														<div class="space-y-0.5 pl-2">
+															{#each phaseGroup.steps as step (step.localId)}
+																{#if step.kind === 'thought'}
+																	<ChatStep
+																		title={t('myaaw.chat.think')}
+																		summary={oneLine(step.text ?? '')}
+																		icon={Brain}
+																		expanded={!!step.expanded}
+																		ontoggle={() => toggleItem(step.localId)}
+																		running={step.running}
+																	>
+																		<p class="whitespace-pre-wrap text-muted-foreground">
+																			{step.text}
+																		</p>
+																	</ChatStep>
+																{:else if step.kind === 'tool'}
+																	<ChatStep
+																		title={toolLabel(step.name)}
+																		summary={toolSummary(step)}
+																		icon={toolIcon(step.name)}
+																		expanded={!!step.expanded}
+																		ontoggle={() => toggleItem(step.localId)}
+																		running={step.running}
+																		error={step.is_error}
+																		copyText={toolInvocation(step)}
+																	>
+																		<div
+																			class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
+																		>
+																			<pre
+																				class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
+																					class="select-none text-zinc-500"
+																					>$ </span>{toolInvocation(step)}</pre>
+																			{#if step.result}
+																				<pre
+																					class={cn(
+																						'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
+																						step.is_error ? 'text-red-400' : 'text-zinc-300'
+																					)}>{step.result}</pre>
+																			{:else if step.running}
+																				<pre
+																					class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
+																						'myaaw.chat.tool_running'
+																					)}</pre>
+																			{/if}
+																		</div>
+																	</ChatStep>
+																{:else if step.kind === 'retry'}
+																	<div
+																		class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
+																	>
+																		<RotateCcw class="h-3.5 w-3.5 shrink-0" />
+																		{t('myaaw.chat.retry', { attempt: step.attempt ?? 2 })}
+																	</div>
+																{:else if step.kind === 'compaction'}
+																	<div
+																		class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
+																	>
+																		<Minimize2 class="h-3.5 w-3.5 shrink-0" />
+																		{t('myaaw.chat.compaction', {
+																			before: step.tokens_before ?? 0,
+																			after: step.tokens_after ?? 0
+																		})}
+																	</div>
+																{/if}
+															{/each}
+														</div>
+													{/if}
+												</div>
+											{/if}
+										{/each}
+									</div>
 								{/if}
-								{#if item.result}
+							</div>
+						{:else}
+							{@const item = row.item}
+							{#if item.kind === 'user'}
+								<div class="flex justify-end">
+									<div class="flex max-w-[80%] flex-col items-end gap-2">
+										{#if item.images?.length}
+											<div class="flex flex-wrap justify-end gap-2">
+												{#each item.images as image, imageIndex (imageIndex)}
+													<img
+														src={image}
+														alt=""
+														class="max-h-48 rounded-2xl border object-contain"
+													/>
+												{/each}
+											</div>
+										{/if}
+										{#if item.text}
+											<div
+												class="whitespace-pre-wrap rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
+											>
+												{item.text}
+											</div>
+										{/if}
+									</div>
+								</div>
+							{:else if item.kind === 'text'}
+								<div class="text-sm">
+									<Markdown content={item.text ?? ''} />
+								</div>
+							{:else if item.kind === 'approval'}
+								<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
 									<div
-										class={item.is_error ? 'mt-1 text-destructive' : 'mt-1 text-muted-foreground'}
+										class="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300"
 									>
-										<div class="mb-0.5 flex items-center gap-1 font-medium">
-											<ArrowDownToLine class="h-3 w-3" />
-											{t('myaaw.chat.result')}
+										<ShieldAlert class="h-4 w-4" />
+										{t('myaaw.chat.waiting')}
+									</div>
+									<div class="mt-1 font-mono text-foreground">{item.name}</div>
+									{#if item.arguments}
+										<pre
+											class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
+									{/if}
+									{#if item.resolved}
+										<Badge variant="outline" class="mt-2">{item.resolved}</Badge>
+									{:else if pendingApproval && pendingApproval.approval_id === item.id}
+										<div class="mt-2 flex flex-wrap gap-2">
+											<Button size="xs" onclick={() => decide('allow_once')}>
+												{t('myaaw.chat.allow_once')}
+											</Button>
+											<Button size="xs" variant="secondary" onclick={() => decide('allow_session')}>
+												{t('myaaw.chat.allow_session')}
+											</Button>
+											<Button size="xs" variant="secondary" onclick={() => decide('allow_always')}>
+												{t('myaaw.chat.allow_always')}
+											</Button>
+											<Button size="xs" variant="destructive" onclick={() => decide('deny')}>
+												{t('myaaw.chat.deny')}
+											</Button>
 										</div>
-										<pre class="overflow-x-auto whitespace-pre-wrap break-all">{item.result}</pre>
-									</div>
-								{/if}
-							</div>
-						{:else if item.kind === 'retry'}
-							<div class="flex items-center gap-1 text-[11px] text-muted-foreground">
-								<RotateCcw class="h-3 w-3" />
-								{t('myaaw.chat.retry', { attempt: item.attempt ?? 2 })}
-							</div>
-						{:else if item.kind === 'compaction'}
-							<div class="flex items-center gap-1 text-[11px] text-muted-foreground">
-								<Minimize2 class="h-3 w-3" />
-								{t('myaaw.chat.compaction', {
-									before: item.tokens_before ?? 0,
-									after: item.tokens_after ?? 0
-								})}
-							</div>
-						{:else if item.kind === 'approval'}
-							<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
-								<div class="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
-									<ShieldAlert class="h-4 w-4" />
-									{t('myaaw.chat.waiting')}
+									{/if}
 								</div>
-								<div class="mt-1 font-mono text-foreground">{item.name}</div>
-								{#if item.arguments}
-									<pre
-										class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
-								{/if}
-								{#if item.resolved}
-									<Badge variant="outline" class="mt-2">{item.resolved}</Badge>
-								{:else if pendingApproval && pendingApproval.approval_id === item.id}
-									<div class="mt-2 flex flex-wrap gap-2">
-										<Button size="xs" onclick={() => decide('allow_once')}>
-											{t('myaaw.chat.allow_once')}
-										</Button>
-										<Button size="xs" variant="secondary" onclick={() => decide('allow_session')}>
-											{t('myaaw.chat.allow_session')}
-										</Button>
-										<Button size="xs" variant="secondary" onclick={() => decide('allow_always')}>
-											{t('myaaw.chat.allow_always')}
-										</Button>
-										<Button size="xs" variant="destructive" onclick={() => decide('deny')}>
-											{t('myaaw.chat.deny')}
-										</Button>
-									</div>
-								{/if}
-							</div>
-						{:else if item.kind === 'error'}
-							<div class="flex items-start gap-2 text-xs text-destructive">
-								<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-								<span class="whitespace-pre-wrap">{item.text}</span>
-							</div>
+							{:else if item.kind === 'error'}
+								<div class="flex items-start gap-2 text-xs text-destructive">
+									<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+									<span class="whitespace-pre-wrap">{item.text}</span>
+								</div>
+							{/if}
 						{/if}
 					{/each}
 
