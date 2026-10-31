@@ -57,6 +57,52 @@ func TestMessagesToContentsTextOnlyUnchanged(t *testing.T) {
 	}
 }
 
+func TestContentToMessageStoresToolArgumentsAsJSONString(t *testing.T) {
+	msg := contentToMessage(GeminiContent{
+		Role: "model",
+		Parts: []GeminiPart{{
+			FunctionCall:     &GeminiFunctionCall{Name: "provider", Args: map[string]interface{}{"action": "list"}},
+			ThoughtSignature: "sig-1",
+		}},
+	})
+
+	if msg.Role != "assistant" {
+		t.Fatalf("role = %q", msg.Role)
+	}
+	if len(msg.ToolCalls) != 1 {
+		t.Fatalf("tool calls = %+v", msg.ToolCalls)
+	}
+	call := msg.ToolCalls[0]
+	if call.Function.Name != "provider" || call.Function.Arguments != `{"action":"list"}` {
+		t.Fatalf("call = %+v", call.Function)
+	}
+	if call.Function.ThoughtSignature != "sig-1" {
+		t.Fatalf("thought signature = %q", call.Function.ThoughtSignature)
+	}
+}
+
+func TestMessagesToContentsDecodesStringToolArguments(t *testing.T) {
+	contents := MessagesToContents([]Message{{
+		Role: "assistant",
+		ToolCalls: []ToolCall{{
+			ID:       "call_0",
+			Type:     "function",
+			Function: FunctionCall{Name: "provider", Arguments: `{"action":"list"}`},
+		}},
+	}})
+
+	if len(contents) != 1 || len(contents[0].Parts) != 1 {
+		t.Fatalf("contents = %+v", contents)
+	}
+	call := contents[0].Parts[0].FunctionCall
+	if call == nil || call.Name != "provider" {
+		t.Fatalf("function call = %+v", call)
+	}
+	if call.Args["action"] != "list" {
+		t.Fatalf("args = %+v", call.Args)
+	}
+}
+
 func TestParseImageDataURL(t *testing.T) {
 	mimeType, data, ok := parseImageDataURL("data:image/jpeg;base64,/9j/AAAA")
 	if !ok || mimeType != "image/jpeg" || data != "/9j/AAAA" {

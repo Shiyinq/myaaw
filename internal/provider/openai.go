@@ -92,11 +92,35 @@ func messagesToOpenAIMessages(messages []Message) []OpenAIMessage {
 			Name:             m.Name,
 			Content:          m.Content,
 			ReasoningContent: m.Thought,
-			ToolCalls:        m.ToolCalls,
+			ToolCalls:        openAIToolCalls(m.ToolCalls),
 			ToolCallID:       m.ToolCallID,
 		})
 	}
 	return openAIMessages
+}
+
+// openAIToolCalls keeps the OpenAI wire shape: arguments is a JSON string and
+// provider-specific extras such as Gemini thought signatures are dropped.
+// Transcripts written by another provider can hold decoded argument objects,
+// which strict servers answer with a 422 instead of running the tool.
+func openAIToolCalls(calls []ToolCall) []ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+
+	out := make([]ToolCall, 0, len(calls))
+	for _, call := range calls {
+		out = append(out, ToolCall{
+			Index: call.Index,
+			ID:    call.ID,
+			Type:  call.Type,
+			Function: FunctionCall{
+				Name:      call.Function.Name,
+				Arguments: ToolCallArgumentsString(call.Function.Arguments),
+			},
+		})
+	}
+	return out
 }
 
 func openAIMessageToMessage(o OpenAIMessage) Message {

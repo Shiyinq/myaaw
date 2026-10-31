@@ -1,0 +1,102 @@
+package provider
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestToolCallArgumentsString(t *testing.T) {
+	cases := []struct {
+		name string
+		args interface{}
+		want string
+	}{
+		{name: "nil", args: nil, want: "{}"},
+		{name: "empty string", args: "  ", want: "{}"},
+		{name: "json string passed through", args: `{"action":"list"}`, want: `{"action":"list"}`},
+		{
+			name: "decoded map is encoded",
+			args: map[string]interface{}{"action": "set_default", "name": "deepseek"},
+			want: `{"action":"set_default","name":"deepseek"}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ToolCallArgumentsString(tc.args); got != tc.want {
+				t.Fatalf("ToolCallArgumentsString(%v) = %q, want %q", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
+// A transcript written by Gemini stores arguments as a decoded object. Replaying
+// it against an OpenAI-compatible provider must send a JSON string, otherwise
+// the request is rejected before the tool ever runs.
+func TestMessagesToOpenAIMessagesNormalizeToolCalls(t *testing.T) {
+	messages := []Message{{
+		Role: "assistant",
+		ToolCalls: []ToolCall{{
+			ID:   "call_0",
+			Type: "function",
+			Function: FunctionCall{
+				Name:             "provider",
+				Arguments:        map[string]interface{}{"action": "set_default", "name": "deepseek"},
+				ThoughtSignature: "gemini-signature",
+			},
+		}},
+	}}
+
+	encoded, err := json.Marshal(messagesToOpenAIMessages(messages))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	body := string(encoded)
+
+	if !strings.Contains(body, `"arguments":"{\"action\":\"set_default\",\"name\":\"deepseek\"}"`) {
+		t.Fatalf("arguments are not a JSON string: %s", body)
+	}
+	if strings.Contains(body, "thought_signature") {
+		t.Fatalf("gemini thought signature leaked into the OpenAI payload: %s", body)
+	}
+}
+
+func TestMessagesToOpenAIMessagesKeepStringArguments(t *testing.T) {
+	messages := []Message{{
+		Role: "assistant",
+		ToolCalls: []ToolCall{{
+			ID:       "call_1",
+			Type:     "function",
+			Function: FunctionCall{Name: "bash", Arguments: `{"command":"ls"}`},
+		}},
+	}}
+
+	encoded, err := json.Marshal(messagesToOpenAIMessages(messages))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"arguments":"{\"command\":\"ls\"}"`) {
+		t.Fatalf("string arguments changed: %s", encoded)
+	}
+}
+
+// Regression: a conversation switched from Gemini to DeepSeek persisted this
+// exact assistant turn. Replaying it produced a 422 "invalid type: map,
+// expected a string" before the tool could run.
+func TestOpenAIPayloadFromStoredGeminiTranscript(t *testing.T) {
+	const stored = `{"role":"assistant","tool_calls":[{"id":"call_0","type":"function","function":{"name":"provider","arguments":{"action":"set_default","name":"deepseek"},"thought_signature":"EswHCskH"}}],"thought":"switch it","v":2}`
+
+	var msg Message
+	if err := json.Unmarshal([]byte(stored), &msg); err != nil {
+		t.Fatalf("unmarshal stored message: %v", err)
+	}
+
+	encoded, err := json.Marshal(messagesToOpenAIMessages([]Message{msg}))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"arguments":"{\"action\":\"set_default\",\"name\":\"deepseek\"}"`) {
+		t.Fatalf("arguments are not a JSON string: %s", encoded)
+	}
+}

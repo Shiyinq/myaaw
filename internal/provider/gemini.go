@@ -319,8 +319,10 @@ func contentToMessage(content GeminiContent) Message {
 				ID:   fmt.Sprintf("call_%d", len(toolCalls)),
 				Type: "function",
 				Function: FunctionCall{
-					Name:             part.FunctionCall.Name,
-					Arguments:        part.FunctionCall.Args,
+					Name:      part.FunctionCall.Name,
+					Arguments: ToolCallArgumentsString(part.FunctionCall.Args),
+					// Gemini echoes this back with the function call, so the
+					// signature has to survive in the transcript.
 					ThoughtSignature: part.ThoughtSignature,
 				},
 			})
@@ -607,7 +609,7 @@ func (g *GeminiProvider) consumeGeminiStream(r io.Reader, onEvent func(StreamEve
 					Type: "function",
 					Function: FunctionCall{
 						Name:             part.FunctionCall.Name,
-						Arguments:        part.FunctionCall.Args,
+						Arguments:        ToolCallArgumentsString(part.FunctionCall.Args),
 						ThoughtSignature: part.ThoughtSignature,
 					},
 				})
