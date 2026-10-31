@@ -86,8 +86,10 @@ func TestMessagesToOpenAIMessagesKeepStringArguments(t *testing.T) {
 // expected a string" before the tool could run.
 // Regression: a run stopped while the model was thinking left an assistant turn
 // with only reasoning stored. Replaying it made DeepSeek answer 400 "Invalid
-// assistant message: content or tool_calls must be set".
-func TestMessagesToOpenAIMessagesDropEmptyAssistantTurn(t *testing.T) {
+// assistant message: content or tool_calls must be set". The reasoning is now
+// promoted to the message text, so the model keeps its plan and the request is
+// valid, while clients still render it as a thought.
+func TestMessagesToOpenAIMessagesPromoteThinkingTurn(t *testing.T) {
 	messages := []Message{
 		{Role: "user", Content: "write an essay"},
 		{Role: "assistant", Thought: "planning", Content: nil},
@@ -97,14 +99,21 @@ func TestMessagesToOpenAIMessagesDropEmptyAssistantTurn(t *testing.T) {
 	}
 
 	out := messagesToOpenAIMessages(messages)
-	if len(out) != 3 {
-		t.Fatalf("messages = %+v, want user, answer and the tool call", out)
+	// The thinking turn is kept; the turn with neither text nor reasoning is not.
+	if len(out) != 4 {
+		t.Fatalf("messages = %+v, want user, thinking, answer and the tool call", out)
 	}
-	if out[0].Role != "user" || out[1].Content != "the answer" {
+	if out[1].Role != "assistant" || out[1].Content != "[stopped while thinking]\nplanning" {
+		t.Fatalf("thinking turn = %+v", out[1])
+	}
+	if out[1].ReasoningContent != "" {
+		t.Fatalf("reasoning was sent twice: %+v", out[1])
+	}
+	if out[2].Content != "the answer" {
 		t.Fatalf("messages = %+v", out)
 	}
-	if len(out[2].ToolCalls) != 1 || out[2].ToolCalls[0].Function.Name != "bash" {
-		t.Fatalf("tool call turn was dropped: %+v", out[2])
+	if len(out[3].ToolCalls) != 1 || out[3].ToolCalls[0].Function.Name != "bash" {
+		t.Fatalf("tool call turn was dropped: %+v", out[3])
 	}
 }
 

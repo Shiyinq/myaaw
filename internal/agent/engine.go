@@ -333,10 +333,8 @@ func (a *Agent) RunEvents(
 
 		startMessage()
 		_ = emit(AgentEvent{Type: EventMessageEnd, Message: &final})
-		if replayableAssistantTurn(final) {
-			transcript = append(transcript, final)
-			newMessages = append(newMessages, final)
-		}
+		transcript = append(transcript, final)
+		newMessages = append(newMessages, final)
 
 		if streamStop == provider.StopError || streamStop == provider.StopAborted {
 			stopReason = streamStop
@@ -651,25 +649,6 @@ func extractToolsContext(messages []provider.Message) tools.ToolsContext {
 		break
 	}
 	return ctx
-}
-
-// replayableAssistantTurn reports whether an assistant message can be sent back
-// to a provider. A turn that only produced reasoning (for example a run stopped
-// while the model was still thinking) has no content and no tool calls, and
-// providers reject it outright: "Invalid assistant message: content or
-// tool_calls must be set". Such a turn is shown in the UI but never stored.
-func replayableAssistantTurn(message provider.Message) bool {
-	if len(message.ToolCalls) > 0 || len(message.Images) > 0 {
-		return true
-	}
-	switch content := message.Content.(type) {
-	case nil:
-		return false
-	case string:
-		return strings.TrimSpace(content) != ""
-	}
-	// Content items (images, structured text) are never empty enough to drop.
-	return true
 }
 
 func argsToString(value interface{}) string {

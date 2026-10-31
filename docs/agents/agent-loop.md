@@ -231,7 +231,26 @@ Important fields:
 | `Usage` | Token usage |
 | `Version` | Transcript version (`2`) |
 
-### 5.2 Legacy migration
+### 5.2 Turns that were stopped while thinking
+
+A run can end while the model is still producing reasoning (the user pressed Stop, pressed Esc, or the run was aborted). The engine keeps that turn in the transcript as `Thought` with no `Content` and no tool calls:
+
+```text
+user "write a 2500-word essay"
+assistant (thought only, stop_reason=aborted)
+```
+
+Clients rely on that shape: the dashboard renders the reasoning as a Thinking block, so it survives a reload instead of disappearing with the live stream. Providers, however, reject an assistant message with neither `content` nor `tool_calls` (DeepSeek: `Invalid assistant message: content or tool_calls must be set`).
+
+So the transcript keeps `Thought` and the payload layer adapts it:
+
+- OpenAI-compatible providers receive `content` = `[stopped while thinking]\n<reasoning>` with `reasoning_content` cleared, so the request is valid and the model does not lose the plan it had started; the reasoning is not sent twice.
+- Gemini already sends reasoning as a `thought: true` part, so nothing changes there.
+- A turn with no text, no reasoning and no tool calls has nothing to send and is skipped.
+
+This means the transcript is the source of truth for the UI, while each provider adapter owns whatever shape the provider accepts. Clients never see the promoted text as an answer.
+
+### 5.3 Legacy migration
 
 `MigrateLegacyTranscript`:
 
@@ -245,7 +264,7 @@ Important fields:
 
 Migration is idempotent: v2 transcripts are never expanded again.
 
-### 5.3 Persistence
+### 5.4 Persistence
 
 `runConversation` calls `saveConversation` with `result.Transcript`.
 

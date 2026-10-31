@@ -160,10 +160,10 @@ func (p *thinkingProvider) ChatStreamEvents(
 	return ctx.Err()
 }
 
-// A turn stopped while the model was still thinking has no answer and no tool
-// calls, so it must not reach the transcript: providers reject it on the next
-// request with "Invalid assistant message: content or tool_calls must be set".
-func TestAgentLoopUserStopDuringThinkingLeavesNoEmptyTurn(t *testing.T) {
+// A turn stopped while the model was still thinking is kept, so the dashboard
+// can show what it was thinking after a reload. The provider payload promotes
+// that reasoning to text (see provider.messagesToOpenAIMessages).
+func TestAgentLoopUserStopDuringThinkingKeepsTheThought(t *testing.T) {
 	prov := &thinkingProvider{started: make(chan struct{}), thought: "planning the answer"}
 	a := NewAgent(prov)
 
@@ -182,13 +182,24 @@ func TestAgentLoopUserStopDuringThinkingLeavesNoEmptyTurn(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
+
+	var assistant int
 	for _, message := range result.Transcript {
-		if message.Role == "assistant" && provider.MessageText(message) == "" && len(message.ToolCalls) == 0 {
-			t.Fatalf("empty assistant turn was stored: %+v", message)
+		if message.Role != "assistant" {
+			continue
+		}
+		assistant++
+		if message.Thought != "planning the answer" {
+			t.Fatalf("thought = %q", message.Thought)
+		}
+		if provider.MessageText(message) != "" || len(message.ToolCalls) != 0 {
+			t.Fatalf("thinking turn gained content: %+v", message)
 		}
 	}
+	if assistant != 1 {
+		t.Fatalf("assistant turns = %d, want the interrupted thinking turn", assistant)
+	}
 	if result.Final.Thought == "" {
-		// The reasoning still reaches the UI even though it is not persisted.
 		t.Fatal("final message lost the thought")
 	}
 }

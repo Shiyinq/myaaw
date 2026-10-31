@@ -88,21 +88,45 @@ type OpenAIStreamOptions struct {
 func messagesToOpenAIMessages(messages []Message) []OpenAIMessage {
 	openAIMessages := make([]OpenAIMessage, 0, len(messages))
 	for _, m := range messages {
-		if emptyAssistantTurn(m) {
-			// Providers reject an assistant turn without content or tool calls, and
-			// older transcripts can hold one from a run stopped while thinking.
+		if emptyAssistantTurn(m) && strings.TrimSpace(m.Thought) == "" {
+			// Nothing to send: no text, no reasoning, no tool calls.
 			continue
 		}
+
+		content := m.Content
+		reasoning := m.Thought
+		if thoughtOnlyTurn(m) {
+			// A run stopped while the model was still thinking is stored with its
+			// reasoning and nothing else. Providers reject such a turn, and the
+			// reasoning is the only thing the model produced, so send it as the
+			// message text instead of dropping the turn (which would make the
+			// model forget what it was planning). It still reaches clients as a
+			// thought block, not as an answer.
+			content = thinkingOnlyText(m.Thought)
+			reasoning = ""
+		}
+
 		openAIMessages = append(openAIMessages, OpenAIMessage{
 			Role:             m.Role,
 			Name:             m.Name,
-			Content:          m.Content,
-			ReasoningContent: m.Thought,
+			Content:          content,
+			ReasoningContent: reasoning,
 			ToolCalls:        openAIToolCalls(m.ToolCalls),
 			ToolCallID:       m.ToolCallID,
 		})
 	}
 	return openAIMessages
+}
+
+// thinkingOnlyText labels reasoning that became the message text, so the model
+// understands the turn was interrupted rather than answered.
+func thinkingOnlyText(thought string) string {
+	return "[stopped while thinking]\n" + strings.TrimSpace(thought)
+}
+
+// thoughtOnlyTurn reports an assistant message whose only payload is reasoning.
+func thoughtOnlyTurn(m Message) bool {
+	return emptyAssistantTurn(m) && strings.TrimSpace(m.Thought) != ""
 }
 
 // emptyAssistantTurn reports an assistant message that carries nothing a
