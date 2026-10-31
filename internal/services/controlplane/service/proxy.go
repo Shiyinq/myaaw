@@ -37,6 +37,11 @@ func (p *ProxyService) ChatStream(c fiber.Ctx, agentName string, userID int) err
 	return p.forward(c, agentName, "/api/chat/stream", userID)
 }
 
+// ChatStop cancels the run a client started with the same request id.
+func (p *ProxyService) ChatStop(c fiber.Ctx, agentName string, userID int) error {
+	return p.forward(c, agentName, "/api/chat/stop", userID)
+}
+
 // ApprovalDecision forwards a tool approval decision to the agent that owns the
 // pending run.
 func (p *ProxyService) ApprovalDecision(c fiber.Ctx, agentName, approvalID string, userID int) error {

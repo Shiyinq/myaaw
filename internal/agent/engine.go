@@ -128,6 +128,13 @@ func (a *Agent) RunEvents(
 
 	for {
 		if err := ctx.Err(); err != nil {
+			if StoppedByClient(ctx) {
+				// The client stopped the run: keep what was produced instead of
+				// appending an abort marker the user never asked for.
+				stopReason = provider.StopAborted
+				runErr = err
+				break
+			}
 			text := "⚠️ Request aborted."
 			if errors.Is(err, context.DeadlineExceeded) {
 				text = fmt.Sprintf("⚠️ Agent run timed out after %s. Task may be incomplete.", cfg.RunTimeout)
@@ -291,10 +298,17 @@ func (a *Agent) RunEvents(
 		addUsage(&usage, turnTokens)
 
 		if streamErr != nil {
-			final.IsError = true
-			final.ErrorMessage = streamErr.Error()
-			if provider.MessageText(final) == "" {
-				final.Content = "⚠️ Agent error: " + streamErr.Error()
+			if StoppedByClient(ctx) {
+				// A user stop keeps the partial answer as normal text, so a
+				// refreshed transcript does not look like a failure.
+				final.IsError = false
+				final.ErrorMessage = ""
+			} else {
+				final.IsError = true
+				final.ErrorMessage = streamErr.Error()
+				if provider.MessageText(final) == "" {
+					final.Content = "⚠️ Agent error: " + streamErr.Error()
+				}
 			}
 		}
 

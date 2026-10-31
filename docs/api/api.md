@@ -46,6 +46,7 @@ Anyone who can reach the port can run the agent and its tools. Keep the server o
   "text": "Check my workspace",
   "images": ["<base64-image>"],
   "files": [{"name": "notes.txt", "mime_type": "text/plain", "data_base64": "<base64>"}],
+  "request_id": "3f0c6b0e-9a51-4e7f-b2f4-4f0f2c1f9a11",
   "conversation_id": "conv-id-or-NEW"
 }
 ```
@@ -56,6 +57,7 @@ Anyone who can reach the port can run the agent and its tools. Keep the server o
 | `text` | string | yes | must not be empty |
 | `images` | string[] | no | base64 image data; only the Gemini provider consumes them |
 | `files` | object[] | no | documents to store: `name`, `mime_type`, `data_base64`; up to 8 files, 10 MB each, 20 MB total |
+| `request_id` | string | no | client-chosen id; `POST /api/chat/stop` with the same value cancels this run |
 | `conversation_id` | string | no | continue a specific conversation; omit it to start a new session (`"NEW"` also starts a new session) |
 
 `user_id` maps to a row in the agent's SQLite database. Omit `conversation_id` and every request starts a **new conversation**. To continue a session, pass the `conversation_id` returned by the previous response. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
@@ -148,12 +150,13 @@ data: <json>
 | Event | Data | Meaning |
 |---|---|---|
 | `thought` | `{"text": "..."}` | reasoning delta |
+| `conversation` | `{"conversation_id": "..."}` | sent before the provider call, so a stopped run can still be reopened |
 | `chunk` | `{"text": "..."}` | answer text delta |
 | `tool` | `{"id","name","arguments"}` | tool execution started |
 | `tool_result` | `{"id","name","result","is_error"}` | tool execution finished |
 | `approval_required` | `{"approval_id","tool_name","action","args_summary","args","subagent"?}` — a gated tool is waiting; `args` is the full JSON and `subagent` names the child task when relevant |
 | `approval_resolved` | `{"approval_id","decision","reason"}` | the decision was applied (or the request timed out) |
-| `done` | `{"ok":true,"text":"...","conversation_id":"...","usage":{...},"attachments":[{...}]}` | run finished; `conversation_id`, `usage`, and `attachments` are optional |
+| `done` | `{"ok":true,"text":"...","conversation_id":"...","run_id":"...","usage":{...},"attachments":[{...}],"stopped":true}` | run finished; `conversation_id`, `run_id`, `usage`, `attachments`, and `stopped` are optional |
 | `error` | `{"error":"..."}` | run failed; followed by `done` with `ok:false` |
 
 The `chunk` name is kept for compatibility. Treat it as `text`.
@@ -192,6 +195,25 @@ data: {"ok":true,"text":"There are 3 files.","usage":{"completion_tokens":30,"pr
 6. On `error`, show `error`; the following `done` has `ok:false`.
 
 `done.text` is authoritative because streamed deltas can be incomplete even when the run succeeds. This is the same finalization the TUI and Telegram timelines perform.
+
+### Stopping a run: `POST /api/chat/stop`
+
+Send a `request_id` with the chat request, then post the same id to cancel it:
+
+```bash
+# 1. start
+curl -N -X POST http://localhost:8080/api/chat/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":12345,"text":"Write a long essay","request_id":"3f0c6b0e"}' &
+
+# 2. stop
+curl -X POST http://localhost:8080/api/chat/stop \
+  -H 'Content-Type: application/json' \
+  -d '{"request_id":"3f0c6b0e"}'
+# {"stopped":true}
+```
+
+Stopping cancels the provider call, so no further tokens are spent. Whatever the model already produced stays in the transcript as normal text (it is not recorded as an error), and the stream ends with `done` carrying `"stopped":true`. `stopped:false` means no run with that id is active, usually because it already finished. Dropping the connection has the same effect: the agent notices the failed write and cancels the run instead of finishing it in the background.
 
 ### JavaScript example
 

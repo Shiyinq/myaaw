@@ -277,6 +277,10 @@ definitions:
         items:
           type: string
         type: array
+      request_id:
+        description: RequestID lets the client stop this run with POST /agents/{name}/chat/stop.
+        example: 3f0c6b0e-9a51-4e7f-b2f4-4f0f2c1f9a11
+        type: string
       text:
         example: Check my workspace
         type: string
@@ -2611,6 +2615,50 @@ paths:
       security:
       - BearerAuth: []
       summary: Chat with an agent
+      tags:
+      - Chat
+  /agents/{name}/chat/stop:
+    post:
+      consumes:
+      - application/json
+      description: Cancels the run started with the same request_id. The partial transcript
+        is kept and the run stops spending provider tokens.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: 'Request id: {\'
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stop a running chat
       tags:
       - Chat
   /agents/{name}/chat/stream:

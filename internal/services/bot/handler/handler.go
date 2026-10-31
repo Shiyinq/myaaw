@@ -30,6 +30,7 @@ type BotHandler interface {
 	Heartbeat(c fiber.Ctx) error
 	APIChat(c fiber.Ctx) error
 	APIChatStream(c fiber.Ctx) error
+	APIChatStop(c fiber.Ctx) error
 	ApprovalDecision(c fiber.Ctx) error
 }
 

@@ -12,6 +12,7 @@ import (
 	api "myaaw/internal/channel/api"
 	"myaaw/internal/services/bot/service"
 	"myaaw/internal/utils"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -36,6 +37,39 @@ type UsageResponse struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+}
+
+// ChatStopRequest identifies a running chat for POST /api/chat/stop.
+type ChatStopRequest struct {
+	RequestID string `json:"request_id"`
+}
+
+// APIChatStop
+// @Summary		Stop a running chat
+// @Description	Cancels the run started with the same request_id. Whatever the model produced is kept in the transcript, and the run stops spending provider tokens.
+// @Tags		API
+// @Accept		json
+// @Produce	json
+// @Param		request	body		ChatStopRequest	true	"Request id of the run to stop"
+// @Success		200		{object}	map[string]bool
+// @Failure		400		{object}	common.ErrorResponse
+// @Router		/api/chat/stop [post]
+func (s *BotHandlerImpl) APIChatStop(c fiber.Ctx) error {
+	var req ChatStopRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid JSON request body",
+		})
+	}
+
+	requestID := strings.TrimSpace(req.RequestID)
+	if requestID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "request_id is required",
+		})
+	}
+
+	return c.JSON(fiber.Map{"stopped": activeRuns.stop(requestID)})
 }
 
 // APIChat
@@ -83,9 +117,11 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 		first:    make(chan approvals.Request, 1),
 	}
 	// The run must survive the HTTP request returning an approval prompt.
-	runCtx := approvals.WithRequester(context.WithoutCancel(c.Context()), &blockingApprovalRequester{run: run})
+	base := approvals.WithRequester(context.WithoutCancel(c.Context()), &blockingApprovalRequester{run: run})
+	runCtx, _, release := runContext(base, req.RequestID)
 
 	go func() {
+		defer release()
 		out, runErr := s.botService.BotStreamContext(runCtx, msg, timeline.HandleChunk)
 		run.done <- apiRunResult{out: out, err: runErr}
 		untrackRun(run)
@@ -185,15 +221,28 @@ func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {
 	c.Set("Connection", "keep-alive")
 	c.Set("Transfer-Encoding", "chunked")
 
+	// The stream handler runs after this function returns, so the run context is
+	// released inside the writer, not by a defer here.
+	streamCtx, cancel, release := runContext(c.Context(), req.RequestID)
+
 	c.SendStreamWriter(func(w *bufio.Writer) {
+		defer release()
+
+		// A failed write means the client is gone (closed tab, refreshed page).
+		// Stopping the run keeps it from finishing in the background.
 		writeSSE := func(event string, data interface{}) {
 			jsonData, err := json.Marshal(data)
 			if err != nil {
 				log.Printf("SSE marshal error: %v", err)
 				return
 			}
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, string(jsonData))
-			w.Flush()
+			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, string(jsonData)); err != nil {
+				stopRun(cancel)
+				return
+			}
+			if err := w.Flush(); err != nil {
+				stopRun(cancel)
+			}
 		}
 
 		timeline := api.NewTimeline(func(event api.SSEEvent) {
@@ -201,7 +250,7 @@ func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {
 		})
 
 		requester := &sseApprovalRequester{emit: timeline.HandleChunk}
-		runCtx := approvals.WithRequester(c.Context(), requester)
+		runCtx := approvals.WithRequester(streamCtx, requester)
 		out, err := s.botService.BotStreamContext(runCtx, msg, timeline.HandleChunk)
 		if err != nil {
 			log.Printf("API stream error for user ID %v: %v", msg.UserID, err)

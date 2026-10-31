@@ -33,6 +33,9 @@ type OutgoingMessage struct {
 	// RunID identifies the recorded trace for this message. It is empty when
 	// observability is disabled.
 	RunID string
+	// Stopped reports that the client stopped the run. The text carries
+	// whatever the model managed to produce before the stop.
+	Stopped bool
 }
 
 // FileUpload is one uploaded file carried by a chat message.
@@ -51,8 +54,8 @@ type Attachment struct {
 
 type StreamChunk struct {
 	// Kind distinguishes progress events: "step", "text", "thought", "tool",
-	// "tool_result", "trace", "usage", or "attachment". Empty means plain text
-	// for backwards compatibility.
+	// "tool_result", "trace", "usage", "conversation", or "attachment".
+	// Empty means plain text for backwards compatibility.
 	Kind string
 	// StepIndex is the 1-based loop iteration for Kind "step".
 	StepIndex      int
@@ -68,6 +71,9 @@ type StreamChunk struct {
 	Thought        string
 	// Attempt is set on Kind "retry".
 	Attempt int
+	// ConversationID is set on Kind "conversation" so a client knows the id
+	// before the run finishes (a stopped run never sends "done").
+	ConversationID string
 	// Approval fields are set on Kind "approval_required" and
 	// "approval_resolved".
 	ApprovalID  string

@@ -92,6 +92,27 @@ func (h *Handler) ChatStream(c fiber.Ctx) error {
 	return nil
 }
 
+// ChatStop proxies a stop request to the selected agent.
+// @Summary      Stop a running chat
+// @Description  Cancels the run started with the same request_id. The partial transcript is kept and the run stops spending provider tokens.
+// @Tags         Chat
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        request body object true "Request id: {\"request_id\":\"...\"}"
+// @Success      200 {object} map[string]bool
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Failure      502 {object} common.ErrorResponse
+// @Router       /agents/{name}/chat/stop [post]
+func (h *Handler) ChatStop(c fiber.Ctx) error {
+	if err := h.proxy.ChatStop(c, c.Params("name"), h.auth.UserID()); err != nil {
+		return proxyError(c, err)
+	}
+	return nil
+}
+
 // ApprovalDecision proxies a tool approval decision to the selected agent.
 // @Summary      Resolve a tool approval
 // @Description  Forwards the decision to the agent that owns the pending run.

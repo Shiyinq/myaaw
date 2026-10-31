@@ -170,6 +170,22 @@ func TestRouterProxiesChatStream(t *testing.T) {
 	}
 }
 
+func TestRouterProxiesChatStop(t *testing.T) {
+	upstream := newUpstream(t)
+	setupTestAgent(t, upstream.URL)
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var got struct {
+		Stopped   bool   `json:"stopped"`
+		RequestID string `json:"request_id"`
+	}
+	doJSON(t, app, "POST", "/agents/myfriend/chat/stop", token, `{"request_id":"req-42"}`, fiber.StatusOK, &got)
+	if !got.Stopped || got.RequestID != "req-42" {
+		t.Fatalf("stop response = %+v", got)
+	}
+}
+
 func TestRouterServesControlPlaneSwagger(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	app := mustNewApp(t)
@@ -1746,6 +1762,15 @@ func newUpstream(t *testing.T) *httptest.Server {
 		if flusher != nil {
 			flusher.Flush()
 		}
+	})
+	mux.HandleFunc("/api/chat/stop", func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			RequestID string `json:"request_id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		w.Header().Set("Content-Type", "application/json")
+		// Echo the request id so the test can prove the body was forwarded.
+		_, _ = fmt.Fprintf(w, `{"stopped":true,"request_id":%q}`, payload.RequestID)
 	})
 
 	server := httptest.NewServer(mux)

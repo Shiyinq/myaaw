@@ -201,6 +201,7 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | Event | Data |
 |---|---|
 | `thought` | `{"text":"..."}` |
+| `conversation` | `{"conversation_id":"..."}` — emitted before the provider call, so a client knows the id even when the run is stopped |
 | `chunk` | `{"text":"..."}` (answer delta) |
 | `tool` | `{"id","name","arguments"}` |
 | `tool_result` | `{"id","name","result","is_error"}` |
@@ -208,12 +209,24 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | `approval_required` | `{"approval_id","tool_name","action","args_summary","subagent"?}` — a gated tool is waiting; `subagent` names the child task when relevant |
 | `approval_resolved` | `{"approval_id","decision","reason"}` |
 | `compaction` | `{"tokens_before","tokens_after","dropped_messages"}` — the transcript was trimmed |
-| `done` | `{"ok":true,"text","conversation_id"?,"run_id"?,"usage"?,"attachments"?}` |
+| `done` | `{"ok":true,"text","conversation_id"?,"run_id"?,"usage"?,"attachments"?,"stopped"?}` |
 | `error` | `{"error":"..."}` followed by `done {"ok":false}` |
 
 Merge consecutive deltas per kind. On `done`, use `done.text` as the authoritative final answer; it can differ from the accumulated deltas when the run stops without normal output.
 
 For streaming requests, an invalid `conversation_id` is reported as an `error` event because the HTTP status is already `200` once the stream starts.
+
+### Stopping a run
+
+```bash
+curl -X POST http://localhost:9000/agents/myfriend/chat/stop \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"request_id":"3f0c6b0e-9a51-4e7f-b2f4-4f0f2c1f9a11"}'
+# {"stopped":true}
+```
+
+Pass the same `request_id` you sent with the chat request. The agent cancels the provider call instead of finishing in the background, keeps the text produced so far as a normal transcript entry (not an error), and ends the stream with `done` carrying `"stopped":true`. Closing the stream connection has the same effect, which is what makes the dashboard's stop button and a refreshed tab behave the same way.
 
 `EventSource` cannot send a POST body, so use `fetch` with `ReadableStream`:
 

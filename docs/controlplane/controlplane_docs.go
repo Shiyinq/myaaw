@@ -684,6 +684,73 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/chat/stop": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Cancels the run started with the same request_id. The partial transcript is kept and the run stops spending provider tokens.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Stop a running chat",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Request id: {\\",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/chat/stream": {
             "post": {
                 "security": [
@@ -6135,6 +6202,11 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "request_id": {
+                    "description": "RequestID lets the client stop this run with POST /agents/{name}/chat/stop.",
+                    "type": "string",
+                    "example": "3f0c6b0e-9a51-4e7f-b2f4-4f0f2c1f9a11"
                 },
                 "text": {
                     "type": "string",

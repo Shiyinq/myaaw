@@ -135,6 +135,49 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/chat/stop": {
+            "post": {
+                "description": "Cancels the run started with the same request_id. Whatever the model produced is kept in the transcript, and the run stops spending provider tokens.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API"
+                ],
+                "summary": "Stop a running chat",
+                "parameters": [
+                    {
+                        "description": "Request id of the run to stop",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ChatStopRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/chat/stream": {
             "post": {
                 "description": "Direct REST API chat endpoint with Server-Sent Events streaming",
@@ -346,6 +389,10 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "request_id": {
+                    "description": "RequestID lets the client stop this run with POST /api/chat/stop.",
+                    "type": "string"
+                },
                 "text": {
                     "type": "string"
                 },
@@ -448,6 +495,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "mime_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.ChatStopRequest": {
+            "type": "object",
+            "properties": {
+                "request_id": {
                     "type": "string"
                 }
             }

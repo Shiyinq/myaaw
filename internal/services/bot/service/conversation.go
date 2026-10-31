@@ -55,6 +55,13 @@ func (r *BotServiceImpl) runConversation(
 		return nil, err
 	}
 
+	// Announce the conversation before the provider call: a run that is stopped
+	// mid-stream never reaches "done", and the client still needs the id to
+	// reopen what was saved.
+	if onChunk != nil && msg.ConversationID != "" {
+		onChunk(channel.StreamChunk{Kind: "conversation", ConversationID: msg.ConversationID})
+	}
+
 	cfg := agent.DefaultRunConfig(user.Model)
 	cfg.ContextMaxTokens = config.AgentContextMaxTokens
 
@@ -170,7 +177,10 @@ func (r *BotServiceImpl) runConversation(
 	if finalText == "" && result.StopReason == provider.StopMaxIterations {
 		finalText = agent.MaxIterationsMessage
 	}
-	if finalText == "" && result.Err != nil {
+	// A client stop is not a failure: keep the partial answer quiet instead of
+	// surfacing "context canceled" as an agent error.
+	stopped := agent.StoppedByClient(ctx)
+	if finalText == "" && result.Err != nil && !stopped {
 		finalText = "⚠️ Agent error: " + result.Err.Error()
 	}
 
@@ -182,6 +192,7 @@ func (r *BotServiceImpl) runConversation(
 		ConversationID: msg.ConversationID,
 		RunID:          runID,
 		Attachments:    result.Attachments,
+		Stopped:        stopped,
 	}
 
 	// Tell streaming consumers which text is the final answer. Intermediate
@@ -205,6 +216,10 @@ func (r *BotServiceImpl) runConversation(
 	}
 
 	if runErr != nil {
+		if stopped {
+			// The partial transcript above is already saved; report a clean stop.
+			return out, nil
+		}
 		if errors.Is(runErr, context.Canceled) {
 			return out, runErr
 		}

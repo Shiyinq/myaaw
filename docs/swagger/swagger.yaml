@@ -12,6 +12,9 @@ definitions:
         items:
           type: string
         type: array
+      request_id:
+        description: RequestID lets the client stop this run with POST /api/chat/stop.
+        type: string
       text:
         type: string
       user_id:
@@ -81,6 +84,11 @@ definitions:
       file_name:
         type: string
       mime_type:
+        type: string
+    type: object
+  handler.ChatStopRequest:
+    properties:
+      request_id:
         type: string
     type: object
   handler.HeartbeatRequest:
@@ -208,6 +216,36 @@ paths:
           schema:
             $ref: '#/definitions/common.ErrorResponse'
       summary: API Chat
+      tags:
+      - API
+  /api/chat/stop:
+    post:
+      consumes:
+      - application/json
+      description: Cancels the run started with the same request_id. Whatever the
+        model produced is kept in the transcript, and the run stops spending provider
+        tokens.
+      parameters:
+      - description: Request id of the run to stop
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ChatStopRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      summary: Stop a running chat
       tags:
       - API
   /api/chat/stream:

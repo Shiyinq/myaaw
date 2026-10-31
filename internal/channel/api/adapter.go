@@ -27,8 +27,10 @@ func (a *APIAdapter) Name() string {
 }
 
 type ChatRequest struct {
-	UserID         int                  `json:"user_id"`
-	Text           string               `json:"text"`
+	UserID int    `json:"user_id"`
+	Text   string `json:"text"`
+	// RequestID lets the client stop this run with POST /api/chat/stop.
+	RequestID      string               `json:"request_id,omitempty"`
 	Images         []string             `json:"images,omitempty"`
 	Files          []channel.FileUpload `json:"files,omitempty"`
 	ConversationID string               `json:"conversation_id,omitempty"`

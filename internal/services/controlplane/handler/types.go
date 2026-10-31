@@ -104,8 +104,10 @@ type PatchMCPRequest struct {
 
 // ChatRequest mirrors the agent chat request for documentation purposes.
 type ChatRequest struct {
-	UserID         int        `json:"user_id" example:"0"`
-	Text           string     `json:"text" example:"Check my workspace"`
+	UserID int    `json:"user_id" example:"0"`
+	Text   string `json:"text" example:"Check my workspace"`
+	// RequestID lets the client stop this run with POST /agents/{name}/chat/stop.
+	RequestID      string     `json:"request_id,omitempty" example:"3f0c6b0e-9a51-4e7f-b2f4-4f0f2c1f9a11"`
 	Images         []string   `json:"images,omitempty"`
 	Files          []ChatFile `json:"files,omitempty"`
 	ConversationID string     `json:"conversation_id,omitempty" example:"conv-id or NEW"`
