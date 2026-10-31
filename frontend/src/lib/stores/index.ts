@@ -7,3 +7,4 @@ export * from './selectedAgent.svelte';
 export * from './sidebar.svelte';
 export * from './toast.svelte';
 export * from './topBarSlot.svelte';
+export * from './topBarTitle.svelte';

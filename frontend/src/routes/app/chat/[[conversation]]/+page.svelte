@@ -6,7 +6,7 @@
 	import { config as configApi } from '$lib/apis/config';
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
 	import { observability as observabilityApi } from '$lib/apis/observability';
-	import { agentSelection, toastStore } from '$lib/stores';
+	import { agentSelection, toastStore, topBarTitle } from '$lib/stores';
 	import { cn } from '$lib/utils';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -184,6 +184,7 @@
 			usage = null;
 			sessionStats = null;
 			attachments = [];
+			topBarTitle.clear();
 			return;
 		}
 		loading = true;
@@ -197,6 +198,7 @@
 		try {
 			const detail = await conversationsApi.get(currentAgent, id, { limit: 0 });
 			items = historyTimeline(detail.messages);
+			topBarTitle.set(detail.title ?? '');
 			usage = null;
 			attachments = [];
 		} catch (err) {
@@ -206,6 +208,26 @@
 			scrollToBottom();
 		}
 	}
+
+	/**
+	 * The shell shows the conversation title instead of the page label, so a new
+	 * chat picks up the title the server generates on its first turn.
+	 */
+	async function refreshTitle(currentAgent: string, id: string) {
+		if (!currentAgent || !id) return;
+		try {
+			const detail = await conversationsApi.get(currentAgent, id, { limit: 1 });
+			if (conversationId !== id) return; // Another conversation won.
+			topBarTitle.set(detail.title ?? '');
+		} catch {
+			// Keep the title already on screen.
+		}
+	}
+
+	// Leaving the chat must not leave its title on every other page.
+	$effect(() => {
+		return () => topBarTitle.clear();
+	});
 
 	/**
 	 * Session totals from observability: the same turns, tool steps and tokens
@@ -304,6 +326,7 @@
 		attachments = [];
 		error = '';
 		pendingApproval = null;
+		topBarTitle.clear();
 		if (page.url.pathname !== '/app/chat') {
 			void goto('/app/chat', { replaceState: true, noScroll: true });
 		}
@@ -465,6 +488,17 @@
 
 	let turnCount = $derived(items.filter((item) => item.kind === 'user').length);
 	let stepCount = $derived(items.filter((item) => item.kind === 'tool').length);
+
+	/** The newest row of a kind, which keeps its copy button visible. */
+	function lastItemId(kind: string) {
+		for (let index = items.length - 1; index >= 0; index--) {
+			if (items[index].kind === kind) return items[index].localId ?? '';
+		}
+		return '';
+	}
+
+	let latestUserKey = $derived(lastItemId('user'));
+	let latestAnswerKey = $derived(lastItemId('text'));
 	let statsTurns = $derived(sessionStats?.turns ?? turnCount);
 	let statsSteps = $derived(sessionStats?.steps ?? stepCount);
 	let statsTokens = $derived(sessionStats?.tokens ?? usage?.total_tokens ?? 0);
@@ -698,6 +732,7 @@
 							attachments = data?.attachments ?? [];
 							const statsId = conversationId;
 							void refreshStats(agent, statsId);
+							void refreshTitle(agent, statsId);
 							// The run may land in the trace store just after `done`.
 							setTimeout(() => void refreshStats(agent, statsId), 1500);
 							break;
@@ -769,6 +804,7 @@
 		pendingApproval = null;
 		loadKey = `${agent}:`;
 		rememberConversation('');
+		topBarTitle.clear();
 		groupOpen = {};
 		groupStart = 0;
 		groupLastStep = '';
@@ -854,6 +890,7 @@
 		try {
 			await conversationsApi.rename(agent, editingId, title);
 			history = history.map((item) => (item.id === editingId ? { ...item, title } : item));
+			if (editingId === conversationId) topBarTitle.set(title);
 			editingId = '';
 			toastStore.success(t('myaaw.conversations.renamed'));
 		} catch (err) {
@@ -1445,7 +1482,7 @@
 							{@const item = row.item}
 							{#if item.kind === 'user'}
 								<div class="flex justify-end">
-									<div class="flex max-w-[80%] flex-col items-end gap-2">
+									<div class="group/user flex max-w-[80%] flex-col items-end gap-2">
 										{#if item.images?.length}
 											<div class="flex flex-wrap justify-end gap-2">
 												{#each item.images as image, imageIndex (imageIndex)}
@@ -1464,15 +1501,27 @@
 												>
 													{item.text}
 												</div>
-												<CopyButton text={item.text} class="mt-0.5" />
+												<CopyButton
+													text={item.text}
+													class={cn(
+														'mt-0.5 opacity-0 transition-opacity group-hover/user:opacity-100 group-focus-within/user:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
+														item.localId === latestUserKey && 'opacity-100'
+													)}
+												/>
 											</div>
 										{/if}
 									</div>
 								</div>
 							{:else if item.kind === 'text'}
-								<div class="text-sm">
+								<div class="group/message text-sm">
 									<Markdown content={item.text ?? ''} />
-									<CopyButton text={item.text ?? ''} class="mt-1" />
+									<CopyButton
+										text={item.text ?? ''}
+										class={cn(
+											'mt-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
+											item.localId === latestAnswerKey && 'opacity-100'
+										)}
+									/>
 								</div>
 							{:else if item.kind === 'approval'}
 								<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">

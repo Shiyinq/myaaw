@@ -26,7 +26,7 @@
 		PanelLeftClose,
 		PanelLeftOpen
 	} from 'lucide-svelte';
-	import { agentSelection, authStore, sidebar, topBarSlot } from '$lib/stores';
+	import { agentSelection, authStore, sidebar, topBarSlot, topBarTitle } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import AgentPicker from '$lib/components/app/AgentPicker.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
@@ -481,19 +481,23 @@
 		<header class="shrink-0 border-b bg-background/80 backdrop-blur">
 			<div class="flex h-14 items-center gap-3 px-4">
 				<div class="min-w-0 flex-1">
-					<div class="flex items-center gap-2">
+					{#if isChat && topBarTitle.value}
 						<h1 class="truncate text-sm font-semibold tracking-tight">
-							{t(current.label)}
+							{topBarTitle.value}
 						</h1>
-						{#if isChat}
-							<Badge variant="outline" class="hidden shrink-0 sm:inline-flex">
-								{agentSelection.current?.name ?? agentSelection.selected ?? '—'}
-							</Badge>
-						{/if}
-					</div>
-					<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
-						{t(current.description)}
-					</p>
+					{:else}
+						<div class="flex items-center gap-2">
+							<h1 class="truncate text-sm font-semibold tracking-tight">{t(current.label)}</h1>
+							{#if isChat}
+								<Badge variant="outline" class="hidden shrink-0 sm:inline-flex">
+									{agentSelection.current?.name ?? agentSelection.selected ?? '—'}
+								</Badge>
+							{/if}
+						</div>
+						<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
+							{t(current.description)}
+						</p>
+					{/if}
 				</div>
 
 				<div class="flex shrink-0 items-center gap-2">
