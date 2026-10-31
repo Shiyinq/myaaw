@@ -7,6 +7,7 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
@@ -471,7 +472,13 @@
 
 	async function removeHistory(item: ConversationSummary) {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.conversations.delete_confirm'))) return;
+		if (
+			!(await askConfirm({
+				message: t('myaaw.conversations.delete_confirm'),
+				variant: 'destructive'
+			}))
+		)
+			return;
 		try {
 			await conversationsApi.remove(agent, item.id);
 			history = history.filter((entry) => entry.id !== item.id);

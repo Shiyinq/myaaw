@@ -5,6 +5,7 @@
 	import { validate, type FieldErrors } from '$lib/utils/validation';
 	import { providerSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import FieldError from '$lib/components/common/FieldError.svelte';
@@ -135,7 +136,13 @@
 
 	async function remove(provider: string) {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.providers.delete_confirm', { name: provider }))) return;
+		if (
+			!(await askConfirm({
+				message: t('myaaw.providers.delete_confirm', { name: provider }),
+				variant: 'destructive'
+			}))
+		)
+			return;
 		try {
 			await providersApi.remove(agent, provider);
 			await load(agent);

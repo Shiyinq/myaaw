@@ -10,6 +10,8 @@
 		"error": "Terjadi kesalahan",
 		"success": "Berhasil",
 		"cancel": "Batal",
+		"confirm": "Lanjutkan",
+		"confirm_title": "Yakin?",
 		"save": "Simpan",
 		"delete": "Hapus",
 		"edit": "Edit",

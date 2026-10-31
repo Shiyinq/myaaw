@@ -10,6 +10,8 @@
 		"error": "An error occurred",
 		"success": "Success",
 		"cancel": "Cancel",
+		"confirm": "Continue",
+		"confirm_title": "Are you sure?",
 		"save": "Save",
 		"delete": "Delete",
 		"edit": "Edit",

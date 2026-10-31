@@ -6,6 +6,7 @@
 	import { validate, type FieldErrors } from '$lib/utils/validation';
 	import { cronJobSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import FieldError from '$lib/components/common/FieldError.svelte';
@@ -186,7 +187,8 @@
 
 	async function remove(id: string) {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.cron.delete_confirm'))) return;
+		if (!(await askConfirm({ message: t('myaaw.cron.delete_confirm'), variant: 'destructive' })))
+			return;
 		try {
 			await cronApi.remove(agent, id);
 			if (historyFor === id) {

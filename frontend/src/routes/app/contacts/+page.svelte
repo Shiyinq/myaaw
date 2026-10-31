@@ -5,6 +5,7 @@
 	import { validate, type FieldErrors } from '$lib/utils/validation';
 	import { contactSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import FieldError from '$lib/components/common/FieldError.svelte';
@@ -145,7 +146,13 @@
 
 	async function remove(contact: string) {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.contacts.delete_confirm', { name: contact }))) return;
+		if (
+			!(await askConfirm({
+				message: t('myaaw.contacts.delete_confirm', { name: contact }),
+				variant: 'destructive'
+			}))
+		)
+			return;
 		try {
 			await contactsApi.remove(agent, contact);
 			await load(agent);

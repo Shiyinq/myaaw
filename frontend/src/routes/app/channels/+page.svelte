@@ -3,6 +3,7 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
@@ -98,7 +99,7 @@
 
 	async function disable(channel: 'telegram' | 'discord') {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.channels.disable_confirm'))) return;
+		if (!(await askConfirm({ message: t('myaaw.channels.disable_confirm') }))) return;
 		try {
 			await channelsApi.disable(agent, channel);
 			toastStore.success(t('myaaw.channels.disabled'));

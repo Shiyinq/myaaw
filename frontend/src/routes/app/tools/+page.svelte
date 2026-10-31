@@ -5,6 +5,7 @@
 	import { validate, type FieldErrors } from '$lib/utils/validation';
 	import { customToolSchema, mcpServerSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import FieldError from '$lib/components/common/FieldError.svelte';
@@ -212,7 +213,13 @@
 
 	async function remove(kind: 'custom' | 'mcp', name: string) {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.tools.delete_confirm', { name }))) return;
+		if (
+			!(await askConfirm({
+				message: t('myaaw.tools.delete_confirm', { name }),
+				variant: 'destructive'
+			}))
+		)
+			return;
 		try {
 			if (kind === 'custom') await toolsApi.removeCustom(agent, name);
 			else await toolsApi.removeMCP(agent, name);

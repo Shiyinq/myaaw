@@ -3,6 +3,7 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
@@ -94,7 +95,13 @@
 
 	async function remove(name: string) {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.skills.delete_confirm', { name }))) return;
+		if (
+			!(await askConfirm({
+				message: t('myaaw.skills.delete_confirm', { name }),
+				variant: 'destructive'
+			}))
+		)
+			return;
 		try {
 			await skillsApi.remove(agent, name);
 			toastStore.success(t('myaaw.skills.deleted'));

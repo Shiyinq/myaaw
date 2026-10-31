@@ -5,6 +5,7 @@
 	import { validate } from '$lib/utils/validation';
 	import { fileNameSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -152,7 +153,13 @@
 
 	async function remove(entry: FileEntry) {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.files.delete_confirm', { name: entry.name }))) return;
+		if (
+			!(await askConfirm({
+				message: t('myaaw.files.delete_confirm', { name: entry.name }),
+				variant: 'destructive'
+			}))
+		)
+			return;
 		try {
 			await filesApi.remove(agent, entry.path, entry.is_dir);
 			if (selected?.path === entry.path) {

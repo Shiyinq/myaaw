@@ -3,6 +3,7 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 
@@ -142,7 +143,8 @@
 
 	async function resetSection(section: ResettableSection) {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.config.reset_confirm'))) return;
+		if (!(await askConfirm({ message: t('myaaw.config.reset_confirm'), variant: 'destructive' })))
+			return;
 		saving = true;
 		try {
 			await configApi.resetFields(agent, section === 'bot' ? { bot: [] } : { [section]: true });
@@ -157,7 +159,10 @@
 
 	async function resetAll() {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.config.reset_all_confirm'))) return;
+		if (
+			!(await askConfirm({ message: t('myaaw.config.reset_all_confirm'), variant: 'destructive' }))
+		)
+			return;
 		saving = true;
 		try {
 			await configApi.reset(agent);

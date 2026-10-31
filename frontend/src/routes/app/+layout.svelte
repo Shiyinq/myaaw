@@ -29,6 +29,7 @@
 	import { agentSelection, authStore, sidebar, topBarSlot } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import AgentPicker from '$lib/components/app/AgentPicker.svelte';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
@@ -551,4 +552,7 @@
 			{/if}
 		</main>
 	</div>
+
+	<!-- One confirmation dialog for every page; askConfirm() drives it. -->
+	<ConfirmDialog />
 </div>

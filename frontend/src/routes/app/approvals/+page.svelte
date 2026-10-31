@@ -3,6 +3,7 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
@@ -49,7 +50,13 @@
 
 	async function revoke(key: string) {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.approvals.revoke_confirm', { key }))) return;
+		if (
+			!(await askConfirm({
+				message: t('myaaw.approvals.revoke_confirm', { key }),
+				variant: 'destructive'
+			}))
+		)
+			return;
 		try {
 			await approvalsApi.revokeKey(agent, key);
 			await load(agent);
@@ -72,7 +79,10 @@
 
 	async function clearAll() {
 		if (!agent) return;
-		if (!window.confirm(t('myaaw.approvals.clear_confirm'))) return;
+		if (
+			!(await askConfirm({ message: t('myaaw.approvals.clear_confirm'), variant: 'destructive' }))
+		)
+			return;
 		try {
 			await approvalsApi.clear(agent);
 			await load(agent);

@@ -12,6 +12,7 @@
 	import { hasErrors, validate, type FieldErrors } from '$lib/utils/validation';
 	import { agentSetupSchema, type AgentSetupForm } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import CapabilityPicker from '$lib/components/onboard/CapabilityPicker.svelte';
@@ -556,7 +557,7 @@
 			agentSelection.select(target);
 
 			if (reconfigure && serverRunning) {
-				if (window.confirm(t('myaaw.onboard.restart_confirm', { name: target }))) {
+				if (await askConfirm({ message: t('myaaw.onboard.restart_confirm', { name: target }) })) {
 					await serverApi.restart(target);
 					toastStore.success(t('myaaw.onboard.restart_done'));
 				}

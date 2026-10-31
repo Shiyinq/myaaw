@@ -5,6 +5,7 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
@@ -67,7 +68,13 @@
 	}
 
 	async function removeAgent(name: string) {
-		if (!window.confirm(t('myaaw.home.agent_delete_confirm', { name }))) return;
+		if (
+			!(await askConfirm({
+				message: t('myaaw.home.agent_delete_confirm', { name }),
+				variant: 'destructive'
+			}))
+		)
+			return;
 		try {
 			await agentsApi.remove(name);
 			await agentSelection.load(true);
