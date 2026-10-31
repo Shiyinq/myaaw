@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { cron as cronApi } from '$lib/apis/cron';
+	import { config as configApi } from '$lib/apis/config';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { validate, type FieldErrors } from '$lib/utils/validation';
@@ -24,7 +25,7 @@
 	import { CalendarClock, History, Play, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
 	import type { CronExecution, CronJob } from '$lib/types';
 
-	const { t } = useTranslation();
+	const { t, locale } = useTranslation();
 
 	let jobs = $state<CronJob[]>([]);
 	let loading = $state(false);
@@ -42,21 +43,93 @@
 	let enabled = $state(true);
 	let errors = $state<FieldErrors>({});
 
+	// The preset is a frontend convenience: it renders the cron expression the
+	// backend already understands, so nothing new is stored.
+	let preset = $state('custom');
+	let presetMinutes = $state(15);
+	let presetTime = $state('07:00');
+	let presetWeekday = $state('1');
+	let presetDay = $state('1');
+
 	let historyFor = $state('');
 	let history = $state<CronExecution[]>([]);
 
+	let schedulerActive = $state(true);
+	let savingScheduler = $state(false);
+
 	let agent = $derived(agentSelection.selected);
+
+	const weekdays = $derived(
+		Array.from({ length: 7 }, (_, index) => ({
+			value: String(index),
+			label: new Intl.DateTimeFormat(locale.value, {
+				weekday: 'long',
+				timeZone: 'UTC'
+			}).format(new Date(Date.UTC(2023, 0, 1 + index)))
+		}))
+	);
+
+	function presetTimeParts() {
+		const [hour, minute] = presetTime.split(':').map((part) => Number.parseInt(part, 10));
+		return {
+			hour: Number.isFinite(hour) ? Math.min(23, Math.max(0, hour)) : 0,
+			minute: Number.isFinite(minute) ? Math.min(59, Math.max(0, minute)) : 0
+		};
+	}
+
+	/** The cron expression a preset expands to; empty for the custom mode. */
+	const presetCron = $derived.by(() => {
+		const { hour, minute } = presetTimeParts();
+		switch (preset) {
+			case 'hourly':
+				return '0 * * * *';
+			case 'daily':
+				return `${minute} ${hour} * * *`;
+			case 'weekdays':
+				return `${minute} ${hour} * * 1-5`;
+			case 'weekly':
+				return `${minute} ${hour} * * ${presetWeekday}`;
+			case 'monthly':
+				return `${minute} ${hour} ${presetDay} * *`;
+			case 'minutes': {
+				const every = Math.min(59, Math.max(1, Number(presetMinutes) || 1));
+				return `*/${every} * * * *`;
+			}
+			default:
+				return '';
+		}
+	});
 
 	async function load(currentAgent: string) {
 		loading = true;
 		error = '';
 		try {
-			const result = await cronApi.list(currentAgent);
+			const [result, cfg] = await Promise.all([
+				cronApi.list(currentAgent),
+				configApi.get(currentAgent).catch(() => null)
+			]);
 			jobs = result.jobs ?? [];
+			schedulerActive = cfg?.cron?.active ?? true;
 		} catch (err) {
 			error = getErrorMessage(err);
 		} finally {
 			loading = false;
+		}
+	}
+
+	// The agent reads cron.active when it loads its config, so the switch only
+	// takes effect after a server restart.
+	async function setScheduler(next: boolean) {
+		if (!agent) return;
+		savingScheduler = true;
+		try {
+			await configApi.patch(agent, { cron: { active: next } });
+			schedulerActive = next;
+			toastStore.success(t('myaaw.cron.scheduler_saved'));
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			savingScheduler = false;
 		}
 	}
 
@@ -70,10 +143,13 @@
 
 	async function create() {
 		if (!agent) return;
+		// A preset is converted to cron syntax here, so the backend only ever sees
+		// a plain expression.
+		const submitted = kind === 'cron' && preset !== 'custom' ? presetCron : expr;
 		const result = validate(cronJobSchema, {
 			name,
 			schedule_kind: kind,
-			expr,
+			expr: submitted,
 			tz,
 			message,
 			channel,
@@ -173,8 +249,28 @@
 			</div>
 		{/if}
 
+		<Card>
+			<CardHeader class="pb-2">
+				<CardTitle class="text-sm font-medium">{t('myaaw.cron.scheduler')}</CardTitle>
+				<CardDescription>{t('myaaw.cron.scheduler_desc')}</CardDescription>
+			</CardHeader>
+			<CardContent class="space-y-1">
+				<label class="flex items-center gap-2 text-sm">
+					<input
+						type="checkbox"
+						checked={schedulerActive}
+						disabled={savingScheduler}
+						onchange={(event) => setScheduler(event.currentTarget.checked)}
+						class="h-4 w-4 accent-primary"
+					/>
+					{t('myaaw.cron.scheduler_active')}
+				</label>
+				<p class="text-xs text-muted-foreground">{t('myaaw.cron.scheduler_hint')}</p>
+			</CardContent>
+		</Card>
+
 		<div class="grid gap-4 lg:grid-cols-5">
-			<Card class="lg:col-span-3">
+			<Card class="self-start lg:col-span-3">
 				<CardHeader>
 					<CardTitle class="flex items-center gap-2">
 						<CalendarClock class="h-4 w-4" />
@@ -188,6 +284,7 @@
 							title={t('myaaw.cron.empty')}
 							description={t('myaaw.cron.empty_desc')}
 							icon={CalendarClock}
+							class="min-h-[220px]"
 						/>
 					{/if}
 					{#each jobs as job (job.id)}
@@ -287,11 +384,79 @@
 								<Input id="cron-tz" bind:value={tz} />
 							</div>
 						</div>
-						<div class="grid gap-1">
-							<Label for="cron-expr">{t('myaaw.cron.expr')}</Label>
-							<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
-							<FieldError code={errors.expr} />
-						</div>
+						{#if kind === 'cron'}
+							<div class="grid gap-1">
+								<Label for="cron-preset">{t('myaaw.cron.preset')}</Label>
+								<select
+									id="cron-preset"
+									bind:value={preset}
+									class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+								>
+									<option value="custom">{t('myaaw.cron.preset_custom')}</option>
+									<option value="minutes">{t('myaaw.cron.preset_minutes')}</option>
+									<option value="hourly">{t('myaaw.cron.preset_hourly')}</option>
+									<option value="daily">{t('myaaw.cron.preset_daily')}</option>
+									<option value="weekdays">{t('myaaw.cron.preset_weekdays')}</option>
+									<option value="weekly">{t('myaaw.cron.preset_weekly')}</option>
+									<option value="monthly">{t('myaaw.cron.preset_monthly')}</option>
+								</select>
+							</div>
+
+							{#if preset === 'minutes'}
+								<div class="grid gap-1">
+									<Label for="cron-minutes">{t('myaaw.cron.minutes')}</Label>
+									<Input
+										id="cron-minutes"
+										type="number"
+										min="1"
+										max="59"
+										bind:value={presetMinutes}
+									/>
+								</div>
+							{:else if preset === 'daily' || preset === 'weekdays' || preset === 'weekly' || preset === 'monthly'}
+								<div class="grid grid-cols-2 gap-2">
+									<div class="grid gap-1">
+										<Label for="cron-time">{t('myaaw.cron.time')}</Label>
+										<Input id="cron-time" type="time" bind:value={presetTime} />
+									</div>
+									{#if preset === 'weekly'}
+										<div class="grid gap-1">
+											<Label for="cron-weekday">{t('myaaw.cron.weekday')}</Label>
+											<select
+												id="cron-weekday"
+												bind:value={presetWeekday}
+												class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+											>
+												{#each weekdays as day (day.value)}
+													<option value={day.value}>{day.label}</option>
+												{/each}
+											</select>
+										</div>
+									{:else if preset === 'monthly'}
+										<div class="grid gap-1">
+											<Label for="cron-day">{t('myaaw.cron.day_of_month')}</Label>
+											<Input id="cron-day" type="number" min="1" max="31" bind:value={presetDay} />
+										</div>
+									{/if}
+								</div>
+							{/if}
+
+							<div class="grid gap-1">
+								<Label for="cron-expr">{t('myaaw.cron.expr')}</Label>
+								{#if preset === 'custom'}
+									<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
+								{:else}
+									<Input id="cron-expr" value={presetCron} disabled />
+								{/if}
+								<FieldError code={errors.expr} />
+							</div>
+						{:else}
+							<div class="grid gap-1">
+								<Label for="cron-expr">{t('myaaw.cron.expr')}</Label>
+								<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
+								<FieldError code={errors.expr} />
+							</div>
+						{/if}
 						<div class="grid gap-1">
 							<Label for="cron-message">{t('myaaw.cron.message')}</Label>
 							<textarea
