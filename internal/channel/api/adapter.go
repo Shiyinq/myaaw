@@ -27,10 +27,11 @@ func (a *APIAdapter) Name() string {
 }
 
 type ChatRequest struct {
-	UserID         int      `json:"user_id"`
-	Text           string   `json:"text"`
-	Images         []string `json:"images,omitempty"`
-	ConversationID string   `json:"conversation_id,omitempty"`
+	UserID         int                  `json:"user_id"`
+	Text           string               `json:"text"`
+	Images         []string             `json:"images,omitempty"`
+	Files          []channel.FileUpload `json:"files,omitempty"`
+	ConversationID string               `json:"conversation_id,omitempty"`
 }
 
 func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMessage, error) {
@@ -42,8 +43,8 @@ func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 	// user_id is optional. Direct agent API calls default to 0; the control
 	// plane injects its configured user ID before proxying chat requests.
 
-	if req.Text == "" && len(req.Images) == 0 {
-		return nil, fmt.Errorf("text or images are required")
+	if req.Text == "" && len(req.Images) == 0 && len(req.Files) == 0 {
+		return nil, fmt.Errorf("text, images, or files are required")
 	}
 	if len(req.Images) > maxImages {
 		return nil, fmt.Errorf("at most %d images are allowed", maxImages)
@@ -60,6 +61,10 @@ func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 		}
 	}
 
+	if err := validateFiles(req.Files); err != nil {
+		return nil, err
+	}
+
 	conversationID := req.ConversationID
 	if conversationID == "" {
 		// API clients must opt in to an existing session; without an ID each
@@ -71,6 +76,7 @@ func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 		UserID:         req.UserID,
 		Text:           req.Text,
 		Images:         req.Images,
+		Files:          req.Files,
 		Channel:        "api",
 		ConversationID: conversationID,
 		RawMeta:        APIMeta{},
@@ -87,4 +93,83 @@ func (a *APIAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onCh
 
 func (a *APIAdapter) SendError(msg *channel.IncomingMessage, errText string) error {
 	return nil
+}
+
+const (
+	// maxFiles caps the uploads of one chat request.
+	maxFiles = 8
+	// maxFileBytes and maxTotalFileBytes bound a single file and a whole
+	// request so a chat cannot write unbounded data into the agent folder.
+	maxFileBytes      = 10 << 20
+	maxTotalFileBytes = 20 << 20
+)
+
+var fileExtensions = map[string]bool{
+	".txt": true, ".md": true, ".markdown": true, ".csv": true, ".tsv": true,
+	".json": true, ".xml": true, ".yaml": true, ".yml": true, ".log": true,
+	".rtf": true, ".pdf": true, ".doc": true, ".docx": true, ".xls": true,
+	".xlsx": true, ".ppt": true, ".pptx": true, ".odt": true, ".ods": true,
+	".odp": true,
+}
+
+// validateFiles decodes, bounds and sanitizes uploads in place. The agent
+// stores files but never sends their bytes to a model, so the checks here only
+// need to prevent bad names and unbounded writes.
+func validateFiles(files []channel.FileUpload) error {
+	if len(files) == 0 {
+		return nil
+	}
+	if len(files) > maxFiles {
+		return fmt.Errorf("at most %d files are allowed", maxFiles)
+	}
+
+	var total int64
+	for i := range files {
+		file := &files[i]
+		name := sanitizeFileName(file.Name)
+		if name == "" {
+			return fmt.Errorf("file name is required")
+		}
+		data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(file.DataBase64))
+		if err != nil || len(data) == 0 {
+			return fmt.Errorf("file %q must be base64-encoded", name)
+		}
+		if int64(len(data)) > maxFileBytes {
+			return fmt.Errorf("file %q exceeds %d MB", name, maxFileBytes>>20)
+		}
+		total += int64(len(data))
+		if total > maxTotalFileBytes {
+			return fmt.Errorf("total upload size exceeds %d MB", maxTotalFileBytes>>20)
+		}
+		if !allowedFile(name, file.MimeType) {
+			return fmt.Errorf("unsupported file type: %q", name)
+		}
+		file.Name = name
+	}
+	return nil
+}
+
+func sanitizeFileName(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.ReplaceAll(name, "\\", "/")
+	parts := strings.Split(name, "/")
+	name = parts[len(parts)-1]
+	if name == "" || name == "." || name == ".." {
+		return ""
+	}
+	return name
+}
+
+func allowedFile(name, mime string) bool {
+	if mime != "" {
+		if strings.HasPrefix(mime, "text/") || mime == "application/json" ||
+			mime == "application/xml" || mime == "application/pdf" {
+			return true
+		}
+	}
+	dot := strings.LastIndex(name, ".")
+	if dot < 0 {
+		return false
+	}
+	return fileExtensions[strings.ToLower(name[dot:])]
 }

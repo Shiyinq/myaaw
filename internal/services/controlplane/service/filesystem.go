@@ -88,24 +88,25 @@ type agentRoot struct {
 	abs     string
 }
 
-// FileService exposes the per-agent home, skills, and jobs directories.
+// FileService exposes the per-agent home, skills, jobs, and user directories.
 type FileService struct{}
 
 func NewFileService() *FileService {
 	return &FileService{}
 }
 
-// List returns the three virtual roots or the entries of a directory.
+// List returns the virtual roots or the entries of a directory.
 func (s *FileService) List(agentName, virtualPath string) ([]FileEntry, error) {
 	if virtualPath == "" || virtualPath == "/" {
 		return []FileEntry{
 			{Name: "home", Path: "/home", IsDir: true},
+			{Name: "user", Path: "/user", IsDir: true},
 			{Name: "skills", Path: "/skills", IsDir: true},
 			{Name: "jobs", Path: "/jobs", IsDir: true},
 		}, nil
 	}
 
-	abs, virtual, _, err := s.resolve(agentName, virtualPath)
+	abs, virtual, root, err := s.resolve(agentName, virtualPath)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +114,11 @@ func (s *FileService) List(agentName, virtualPath string) ([]FileEntry, error) {
 	entries, err := os.ReadDir(abs)
 	if err != nil {
 		if os.IsNotExist(err) {
+			// A virtual root that has not been created yet (for example /user
+			// before the first upload) reads as empty instead of missing.
+			if virtual == root.virtual {
+				return []FileEntry{}, nil
+			}
 			return nil, ErrPathNotFound
 		}
 		return nil, err
@@ -511,8 +517,8 @@ func contextFolder(cleaned string) string {
 	return "root"
 }
 
-// resolve maps a virtual path (/home, /skills, /jobs) to a filesystem path and
-// rejects traversal, other agents, and symlink escapes.
+// resolve maps a virtual path (/home, /user, /skills, /jobs) to a filesystem
+// path and rejects traversal, other agents, and symlink escapes.
 func (s *FileService) resolve(agentName, virtualPath string) (string, string, agentRoot, error) {
 	if err := agentdirValidateAgent(agentName); err != nil {
 		return "", "", agentRoot{}, err
@@ -531,7 +537,7 @@ func (s *FileService) resolve(agentName, virtualPath string) (string, string, ag
 	}
 	cleaned := path.Clean(virtualPath)
 	if cleaned == "/" {
-		return "", "", agentRoot{}, fmt.Errorf("%w: choose /home, /skills, or /jobs", ErrInvalidPath)
+		return "", "", agentRoot{}, fmt.Errorf("%w: choose /home, /user, /skills, or /jobs", ErrInvalidPath)
 	}
 
 	for _, root := range roots {
@@ -546,7 +552,7 @@ func (s *FileService) resolve(agentName, virtualPath string) (string, string, ag
 		return abs, cleaned, root, nil
 	}
 
-	return "", "", agentRoot{}, fmt.Errorf("%w: path must start with /home, /skills, or /jobs", ErrInvalidPath)
+	return "", "", agentRoot{}, fmt.Errorf("%w: path must start with /home, /user, /skills, or /jobs", ErrInvalidPath)
 }
 
 func (s *FileService) roots(agentName string) ([]agentRoot, error) {
@@ -555,6 +561,10 @@ func (s *FileService) roots(agentName string) ([]agentRoot, error) {
 	}
 
 	home, err := agentdir.Home(agentName)
+	if err != nil {
+		return nil, err
+	}
+	user, err := agentdir.UserDir(agentName)
 	if err != nil {
 		return nil, err
 	}
@@ -569,13 +579,14 @@ func (s *FileService) roots(agentName string) ([]agentRoot, error) {
 
 	return []agentRoot{
 		{virtual: "/home", abs: home},
+		{virtual: "/user", abs: user},
 		{virtual: "/skills", abs: skills},
 		{virtual: "/jobs", abs: jobs},
 	}, nil
 }
 
 func isRootPath(virtual string) bool {
-	return virtual == "/home" || virtual == "/skills" || virtual == "/jobs"
+	return virtual == "/home" || virtual == "/user" || virtual == "/skills" || virtual == "/jobs"
 }
 
 func looksBinary(data []byte) bool {

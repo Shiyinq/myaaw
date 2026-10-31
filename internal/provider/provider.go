@@ -27,12 +27,16 @@ const (
 )
 
 type Message struct {
-	Role       string      `json:"role" bson:"role"`
-	Name       string      `json:"name,omitempty" bson:"name,omitempty"`
-	Content    interface{} `json:"content,omitempty" bson:"content,omitempty"`
-	Images     []string    `json:"images,omitempty" bson:"images,omitempty"`
-	ToolCalls  []ToolCall  `json:"tool_calls,omitempty" bson:"tool_calls,omitempty"`
-	ToolCallID string      `json:"tool_call_id,omitempty" bson:"tool_call_id,omitempty"`
+	Role    string      `json:"role" bson:"role"`
+	Name    string      `json:"name,omitempty" bson:"name,omitempty"`
+	Content interface{} `json:"content,omitempty" bson:"content,omitempty"`
+	Images  []string    `json:"images,omitempty" bson:"images,omitempty"`
+	// ID is the stable transcript-entry id, used to address the files a user
+	// uploaded with that message.
+	ID         string     `json:"id,omitempty" bson:"id,omitempty"`
+	Uploads    []Upload   `json:"uploads,omitempty" bson:"uploads,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty" bson:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty" bson:"tool_call_id,omitempty"`
 	// ReAct Trace Fields (UI metadata; not sent to providers)
 	Thought     string `json:"thought,omitempty" bson:"thought,omitempty"`
 	Action      string `json:"action,omitempty" bson:"action,omitempty"`
@@ -97,6 +101,15 @@ type ContentItem struct {
 
 type ImageInfo struct {
 	URL string `json:"url,omitempty"`
+}
+
+// Upload is one file a user attached to a message. It is persisted to disk;
+// the provider only ever sees its path, never the raw bytes.
+type Upload struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	MimeType string `json:"mime_type,omitempty"`
+	Size     int64  `json:"size,omitempty"`
 }
 
 type LLMProvider interface {

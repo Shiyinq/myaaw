@@ -6,16 +6,19 @@ import (
 )
 
 type IncomingMessage struct {
-	UserID         int      // unified user identifier
-	SenderName     string   // optional display name for new users (e.g. "a2a:alice")
-	Text           string   // text content (or transcribed voice)
-	Images         []string // base64 encoded images
-	Voice          []byte   // raw audio bytes
-	Channel        string   // "telegram", "api", etc.
-	ReplyTo        string   // quoted/replied text context
-	RawMeta        any      // channel-specific metadata (e.g. chat ID, message ID)
-	TriggerType    string   // "cron", "heartbeat", or empty
-	ConversationID string   // specific conversation/session ID (optional)
+	UserID     int      // unified user identifier
+	SenderName string   // optional display name for new users (e.g. "a2a:alice")
+	Text       string   // text content (or transcribed voice)
+	Images     []string // base64 encoded images
+	Voice      []byte   // raw audio bytes
+	// Files are user-uploaded documents. They are persisted to disk and the
+	// model receives their paths rather than the raw bytes.
+	Files          []FileUpload
+	Channel        string // "telegram", "api", etc.
+	ReplyTo        string // quoted/replied text context
+	RawMeta        any    // channel-specific metadata (e.g. chat ID, message ID)
+	TriggerType    string // "cron", "heartbeat", or empty
+	ConversationID string // specific conversation/session ID (optional)
 }
 
 type OutgoingMessage struct {
@@ -30,6 +33,13 @@ type OutgoingMessage struct {
 	// RunID identifies the recorded trace for this message. It is empty when
 	// observability is disabled.
 	RunID string
+}
+
+// FileUpload is one uploaded file carried by a chat message.
+type FileUpload struct {
+	Name       string `json:"name"`
+	MimeType   string `json:"mime_type,omitempty"`
+	DataBase64 string `json:"data_base64"`
 }
 
 // Attachment is one file produced by a tool and delivered to the user.

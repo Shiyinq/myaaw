@@ -9,11 +9,14 @@ import (
 
 	"myaaw/internal/agent"
 	"myaaw/internal/agent/skills"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
 	"myaaw/internal/obs/agenttrace"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -278,12 +281,35 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 	}
 
 	messages = append(messages, convMessages...)
-	messages = append(messages, r.buildUserMessage(msg))
+
+	// A user upload is addressed by its own message id so the frontend can show
+	// the files again under the right turn. The conversation id is already final
+	// here (existing or freshly created), so the folder is stable before the run.
+	messageID := uuid.New().String()
+	var uploads []provider.Upload
+	if len(msg.Files) > 0 {
+		userDir, rootErr := agentdir.ActiveUserDir()
+		if rootErr != nil {
+			return nil, rootErr
+		}
+		var saveErr error
+		uploads, saveErr = saveUserFiles(userDir, msg.ConversationID, messageID, msg.Files)
+		if saveErr != nil {
+			return nil, saveErr
+		}
+	}
+
+	userMessage := r.buildUserMessage(msg, uploads)
+	userMessage.ID = messageID
+	userMessage.Uploads = uploads
+	messages = append(messages, userMessage)
 	return messages, nil
 }
 
 // buildUserMessage converts a generic IncomingMessage to a provider.Message.
-func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider.Message {
+// Uploaded files are introduced to the model by their absolute path, never by
+// their bytes; images keep flowing to the provider as usual.
+func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage, uploads []provider.Upload) provider.Message {
 	text := msg.Text
 	role := "user"
 	switch msg.TriggerType {
@@ -293,6 +319,23 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 		text = "[SYSTEM TRIGGER: CRON JOB]\n(NOTE: The user does NOT see this trigger message. You must now deliver the reminder or perform the scheduled task for the user based on this prompt)\n\n" + text
 	case "subagent":
 		text = "[SYSTEM TRIGGER: SUB-AGENT RESULT]\n(NOTE: The user does NOT see this trigger message. A background sub-agent has completed its task. Review its report below, inform the user about the completion, and summarize the key findings/results. If you started multiple sub-agents, check the batch progress.)\n\n" + text
+	}
+
+	if len(uploads) > 0 {
+		var builder strings.Builder
+		builder.WriteString(provider.AttachmentBlockOpen)
+		builder.WriteString("\n")
+		builder.WriteString("[read them with the filesystem or bash tools]\n")
+		for _, upload := range uploads {
+			builder.WriteString(upload.Path)
+			builder.WriteString("\n")
+		}
+		builder.WriteString(provider.AttachmentBlockClose)
+		if text != "" {
+			builder.WriteString("\n\n")
+			builder.WriteString(text)
+		}
+		text = builder.String()
 	}
 
 	if msg.ReplyTo != "" {
@@ -415,11 +458,13 @@ func (r *BotServiceImpl) GenerateConversationTitle(user *model.User, messages []
 	defaultTitle := "New Chat"
 	var firstUserMsg string
 	for _, msg := range messages {
-		if msg.Role == "user" && msg.Content != nil {
-			if content, ok := msg.Content.(string); ok && content != "" {
-				firstUserMsg = content
-				break
-			}
+		if msg.Role != "user" {
+			continue
+		}
+		// Titles describe the conversation, not the uploaded file paths.
+		if text := provider.StripAttachmentBlock(provider.MessageText(msg)); text != "" {
+			firstUserMsg = text
+			break
 		}
 	}
 	if firstUserMsg == "" {

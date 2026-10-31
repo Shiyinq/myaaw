@@ -13,7 +13,7 @@ import (
 
 // ListFiles browses an agent directory.
 // @Summary      Browse agent files
-// @Description  Lists the virtual roots (/home, /skills, /jobs) or the entries of one directory.
+// @Description  Lists the virtual roots (/home, /user, /skills, /jobs) or the entries of one directory.
 // @Tags         Files
 // @Produce      json
 // @Security     BearerAuth

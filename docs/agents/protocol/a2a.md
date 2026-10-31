@@ -240,7 +240,7 @@ The `contact` tool downloads file artifacts (both `raw` and `url` parts) into th
 - Other `raw` parts are written to `~/.myaaw/<agent>/jobs/a2a/<taskId>/` and their absolute path is appended to the message text, so the agent can read them with its filesystem tool.
 - `url` parts are passed through as file references; `data` parts are encoded as JSON.
 - Limits: 10 files per message, 5 MiB per file, and 8 MiB of inline file bytes per message (base64 inflates the raw bytes by about 4/3). Larger payloads must use `url` parts.
-- The HTTP request body limit defaults to 16 MiB (`A2A_MAX_REQUEST_BYTES`) and is sized to carry the inline budget plus the JSON envelope.
+- The HTTP request body limit defaults to 32 MiB (`A2A_MAX_REQUEST_BYTES`) and is sized to carry the inline budget plus the JSON envelope; it also covers base64 chat attachments.
 
 ### Streaming (`SendStreamingMessage`)
 

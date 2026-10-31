@@ -5,6 +5,7 @@
 	import { chat as chatApi } from '$lib/apis/chat';
 	import { config as configApi } from '$lib/apis/config';
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
+	import { files as filesApi } from '$lib/apis/files';
 	import { observability as observabilityApi } from '$lib/apis/observability';
 	import { agentSelection, toastStore, topBarTitle } from '$lib/stores';
 	import { cn } from '$lib/utils';
@@ -29,16 +30,18 @@
 		Code,
 		Cpu,
 		Database,
+		Download,
+		FileText,
 		FolderOpen,
 		Gauge,
 		Globe,
-		ImagePlus,
 		Loader2,
 		MessageSquarePlus,
 		Minimize2,
 		Monitor,
 		PanelRightClose,
 		PanelRightOpen,
+		Paperclip,
 		Pencil,
 		RotateCcw,
 		Search,
@@ -59,6 +62,7 @@
 		ConversationSummary,
 		Message,
 		TimelineItem,
+		Upload,
 		Usage
 	} from '$lib/types';
 
@@ -68,6 +72,7 @@
 		localId?: string;
 		resolved?: string;
 		images?: string[];
+		uploads?: Upload[];
 		running?: boolean;
 		expanded?: boolean;
 		group_duration_ms?: number;
@@ -93,12 +98,50 @@
 		base64: string;
 	}
 
+	interface PendingFile {
+		id: string;
+		name: string;
+		mimeType: string;
+		size: number;
+		base64: string;
+	}
+
 	const MAX_IMAGES = 6;
 	const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 	const MAX_IMAGE_EDGE = 1600;
 	// Raster formats only: the browser re-encodes them to JPEG, and SVG/GIF
 	// animations would not survive that, so they are rejected up front.
 	const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+	const MAX_FILES = 8;
+	const MAX_FILE_BYTES = 10 * 1024 * 1024;
+	// Images and files share one budget because both travel inline as base64 in
+	// the same request. The control plane caps a request body at 32 MiB, which
+	// leaves room for base64 inflation (~4/3) and the JSON envelope.
+	const MAX_TOTAL_UPLOAD_BYTES = 20 * 1024 * 1024;
+	const FILE_EXTENSIONS = new Set([
+		'.txt',
+		'.md',
+		'.markdown',
+		'.csv',
+		'.tsv',
+		'.json',
+		'.xml',
+		'.yaml',
+		'.yml',
+		'.log',
+		'.rtf',
+		'.pdf',
+		'.doc',
+		'.docx',
+		'.xls',
+		'.xlsx',
+		'.ppt',
+		'.pptx',
+		'.odt',
+		'.ods',
+		'.odp'
+	]);
 
 	let agent = $derived(agentSelection.selected);
 	let conversationId = $state('');
@@ -132,6 +175,7 @@
 	} | null>(null);
 	let attachments = $state<Attachment[]>([]);
 	let pending = $state<PendingImage[]>([]);
+	let pendingFiles = $state<PendingFile[]>([]);
 	let dragOver = $state(false);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let groupOpen = $state<Record<string, boolean>>({});
@@ -605,6 +649,12 @@
 		return count.toLocaleString();
 	}
 
+	function formatBytes(bytes: number) {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
+
 	function formatSeconds(ms: number) {
 		if (ms <= 0) return '—';
 		const seconds = ms / 1000;
@@ -699,9 +749,24 @@
 	async function send() {
 		const text = input.trim();
 		const images = pending.map((item) => item.base64);
-		if ((!text && images.length === 0) || !agent || streaming) return;
+		const files = pendingFiles.map((item) => ({
+			name: item.name,
+			mime_type: item.mimeType || undefined,
+			data_base64: item.base64
+		}));
+		if ((!text && images.length === 0 && files.length === 0) || !agent || streaming) return;
 
-		push({ kind: 'user', text, images: pending.map((item) => item.dataUrl) });
+		push({
+			kind: 'user',
+			text,
+			images: pending.map((item) => item.dataUrl),
+			uploads: pendingFiles.map((item) => ({
+				name: item.name,
+				path: '',
+				mime_type: item.mimeType,
+				size: item.size
+			}))
+		});
 		input = '';
 		clearPending();
 		groupStart = 0;
@@ -721,7 +786,8 @@
 				{
 					text,
 					conversation_id: conversationId || undefined,
-					images: images.length > 0 ? images : undefined
+					images: images.length > 0 ? images : undefined,
+					files: files.length > 0 ? files : undefined
 				},
 				(event) => {
 					const data = event.data as Record<string, any>;
@@ -874,6 +940,8 @@
 		usage = null;
 		sessionStats = null;
 		attachments = [];
+		pending = [];
+		pendingFiles = [];
 		error = '';
 		pendingApproval = null;
 		loadKey = `${agent}:`;
@@ -1026,6 +1094,26 @@
 				.join('\n');
 		}
 		return '';
+	}
+
+	/**
+	 * Uploads live under <agent>/user/uploads/<conversation>/<message>/ and the
+	 * transcript stores their absolute path. The Files API addresses them through
+	 * the /user virtual root, so keep the path from that folder on.
+	 */
+	function uploadVirtualPath(upload: Upload): string {
+		const marker = '/user/uploads/';
+		const index = upload.path.indexOf(marker);
+		return index >= 0 ? upload.path.slice(index) : '';
+	}
+
+	/**
+	 * The agent prefixes a user turn that carries uploads with an <attached>
+	 * block of file paths, so the model can read them with its tools. The UI
+	 * lists those files as chips instead of showing the raw paths.
+	 */
+	function withoutAttached(text: string): string {
+		return text.replace(/<attached>[\s\S]*?<\/attached>\s*/g, '').trim();
 	}
 
 	function messageImages(message: Message): string[] {
@@ -1216,13 +1304,14 @@
 			}
 
 			if (message.role === 'user') {
-				const text = messageText(message);
+				const text = withoutAttached(messageText(message));
 				const images = messageImages(message);
-				if (text || images.length > 0) {
+				if (text || images.length > 0 || (message.uploads?.length ?? 0) > 0) {
 					timeline.push({
 						kind: 'user',
 						text,
 						images: images.length > 0 ? images : undefined,
+						uploads: message.uploads,
 						localId: nextId()
 					});
 				}
@@ -1262,6 +1351,31 @@
 		});
 	}
 
+	/** Reads a file's bytes as raw base64 (no data-URL prefix). */
+	function readAsBase64(file: File): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => {
+				const dataUrl = String(reader.result);
+				resolve(dataUrl.includes(',') ? (dataUrl.split(',')[1] ?? '') : dataUrl);
+			};
+			reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+			reader.readAsDataURL(file);
+		});
+	}
+
+	/** Encoded size of a base64 payload, rounded up. */
+	function base64Bytes(value: string): number {
+		return Math.ceil((value.length * 3) / 4);
+	}
+
+	/** Bytes already queued for upload: inlined images plus document sizes. */
+	function uploadBytes(images: PendingImage[], files: PendingFile[]): number {
+		const imageBytes = images.reduce((sum, item) => sum + base64Bytes(item.base64), 0);
+		const fileBytes = files.reduce((sum, item) => sum + item.size, 0);
+		return imageBytes + fileBytes;
+	}
+
 	/** Downscale and re-encode to JPEG so four screenshots still fit the request limit. */
 	async function prepareImage(file: File): Promise<string> {
 		const dataUrl = await readAsDataUrl(file);
@@ -1292,22 +1406,17 @@
 		if (!files) return;
 		const candidates = Array.from(files);
 		const images = candidates.filter((file) => IMAGE_TYPES.has(file.type));
-		if (images.length !== candidates.length) {
-			toastStore.error(t('myaaw.chat.image_only'));
-		}
-		if (images.length === 0) return;
+		const documents = candidates.filter((file) => !IMAGE_TYPES.has(file.type));
+
+		let totalBytes = uploadBytes(pending, pendingFiles);
 
 		const room = MAX_IMAGES - pending.length;
-		if (room <= 0) {
-			toastStore.error(t('myaaw.chat.image_limit', { count: MAX_IMAGES }));
-			return;
-		}
 		if (images.length > room) {
 			toastStore.error(t('myaaw.chat.image_limit', { count: MAX_IMAGES }));
 		}
 
 		const additions: PendingImage[] = [];
-		for (const file of images.slice(0, room)) {
+		for (const file of images.slice(0, Math.max(0, room))) {
 			if (file.size > MAX_IMAGE_BYTES) {
 				toastStore.error(t('myaaw.chat.image_too_large', { size: 10 }));
 				continue;
@@ -1316,26 +1425,75 @@
 				const dataUrl = await prepareImage(file);
 				const base64 = dataUrl.split(',')[1] ?? '';
 				if (!base64) continue;
+				const bytes = base64Bytes(base64);
+				if (totalBytes + bytes > MAX_TOTAL_UPLOAD_BYTES) {
+					toastStore.error(t('myaaw.chat.attachment_total_too_large', { size: 20 }));
+					continue;
+				}
 				additions.push({
 					id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
 					name: file.name,
 					dataUrl,
 					base64
 				});
+				totalBytes += bytes;
 			} catch {
 				toastStore.error(t('myaaw.chat.image_failed'));
 			}
 		}
 		if (additions.length > 0) pending = [...pending, ...additions];
+
+		const fileRoom = MAX_FILES - pendingFiles.length;
+		if (documents.length > fileRoom) {
+			toastStore.error(t('myaaw.chat.file_limit', { count: MAX_FILES }));
+		}
+
+		const fileAdditions: PendingFile[] = [];
+		for (const file of documents.slice(0, Math.max(0, fileRoom))) {
+			const dot = file.name.lastIndexOf('.');
+			const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : '';
+			if (!FILE_EXTENSIONS.has(ext)) {
+				toastStore.error(t('myaaw.chat.file_unsupported'));
+				continue;
+			}
+			if (file.size > MAX_FILE_BYTES) {
+				toastStore.error(t('myaaw.chat.file_too_large', { size: 10 }));
+				continue;
+			}
+			if (totalBytes + file.size > MAX_TOTAL_UPLOAD_BYTES) {
+				toastStore.error(t('myaaw.chat.attachment_total_too_large', { size: 20 }));
+				continue;
+			}
+			try {
+				const base64 = await readAsBase64(file);
+				if (!base64) continue;
+				fileAdditions.push({
+					id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+					name: file.name,
+					mimeType: file.type,
+					size: file.size,
+					base64
+				});
+				totalBytes += file.size;
+			} catch {
+				toastStore.error(t('myaaw.chat.file_failed'));
+			}
+		}
+		if (fileAdditions.length > 0) pendingFiles = [...pendingFiles, ...fileAdditions];
 	}
 
 	function clearPending() {
 		pending = [];
+		pendingFiles = [];
 		if (fileInput) fileInput.value = '';
 	}
 
 	function removePending(id: string) {
 		pending = pending.filter((item) => item.id !== id);
+	}
+
+	function removePendingFile(id: string) {
+		pendingFiles = pendingFiles.filter((item) => item.id !== id);
 	}
 
 	function onFileInput(event: Event) {
@@ -1347,7 +1505,11 @@
 	function onPaste(event: ClipboardEvent) {
 		const files = Array.from(event.clipboardData?.files ?? []);
 		if (files.length === 0) return;
-		if (files.some((file) => IMAGE_TYPES.has(file.type))) {
+		if (
+			files.some(
+				(file) => IMAGE_TYPES.has(file.type) || FILE_EXTENSIONS.has(fileExtension(file.name))
+			)
+		) {
 			event.preventDefault();
 		}
 		void addFiles(files);
@@ -1378,6 +1540,11 @@
 
 	function isImage(attachment: Attachment) {
 		return (attachment.mime_type ?? '').startsWith('image/');
+	}
+
+	function fileExtension(name: string) {
+		const dot = name.lastIndexOf('.');
+		return dot >= 0 ? name.slice(dot).toLowerCase() : '';
 	}
 </script>
 
@@ -1585,6 +1752,45 @@
 												{/each}
 											</div>
 										{/if}
+										{#if item.uploads?.length}
+											<div class="flex flex-wrap justify-end gap-2">
+												{#each item.uploads as upload (upload.path || upload.name)}
+													{@const downloadPath = uploadVirtualPath(upload)}
+													{#if agent && downloadPath}
+														<button
+															type="button"
+															title={t('myaaw.chat.download_file')}
+															aria-label={t('myaaw.chat.download_file')}
+															class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5 transition-colors hover:border-foreground/30 hover:bg-muted"
+															onclick={() => filesApi.download(agent, downloadPath)}
+														>
+															<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+															<span class="min-w-0 flex-1 truncate text-xs">{upload.name}</span>
+															{#if upload.size}
+																<span class="shrink-0 text-[10px] text-muted-foreground">
+																	{formatBytes(upload.size)}
+																</span>
+															{/if}
+															<Download
+																class="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover/file:text-foreground"
+															/>
+														</button>
+													{:else}
+														<div
+															class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
+														>
+															<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+															<span class="min-w-0 flex-1 truncate text-xs">{upload.name}</span>
+															{#if upload.size}
+																<span class="shrink-0 text-[10px] text-muted-foreground">
+																	{formatBytes(upload.size)}
+																</span>
+															{/if}
+														</div>
+													{/if}
+												{/each}
+											</div>
+										{/if}
 										{#if item.text}
 											<div class="flex flex-col items-end">
 												<div
@@ -1742,9 +1948,33 @@
 								{/each}
 							</div>
 						{/if}
+						{#if pendingFiles.length > 0}
+							<div class="flex flex-wrap gap-2 px-3 pt-3">
+								{#each pendingFiles as file (file.id)}
+									<div
+										class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
+									>
+										<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+										<span class="min-w-0 flex-1 truncate text-xs">{file.name}</span>
+										<span class="shrink-0 text-[10px] text-muted-foreground">
+											{formatBytes(file.size)}
+										</span>
+										<button
+											type="button"
+											class="shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+											onclick={() => removePendingFile(file.id)}
+											aria-label={t('myaaw.chat.remove_image')}
+											title={t('myaaw.chat.remove_image')}
+										>
+											<X class="h-3 w-3" />
+										</button>
+									</div>
+								{/each}
+							</div>
+						{/if}
 						{#if dragOver}
 							<p class="px-4 pt-2 text-[11px] font-medium text-foreground">
-								{t('myaaw.chat.drop_images')}
+								{t('myaaw.chat.drop_files')}
 							</p>
 						{/if}
 						<textarea
@@ -1762,7 +1992,7 @@
 								<input
 									bind:this={fileInput}
 									type="file"
-									accept="image/*"
+									accept="image/*,.txt,.md,.markdown,.csv,.tsv,.json,.xml,.yaml,.yml,.log,.rtf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp"
 									multiple
 									class="hidden"
 									onchange={onFileInput}
@@ -1772,12 +2002,12 @@
 									size="icon-sm"
 									variant="ghost"
 									class="shrink-0 rounded-full"
-									disabled={pending.length >= MAX_IMAGES}
+									disabled={pending.length >= MAX_IMAGES && pendingFiles.length >= MAX_FILES}
 									onclick={() => fileInput?.click()}
-									aria-label={t('myaaw.chat.attach_image')}
-									title={t('myaaw.chat.attach_image')}
+									aria-label={t('myaaw.chat.attach')}
+									title={t('myaaw.chat.attach')}
 								>
-									<ImagePlus class="h-4 w-4" />
+									<Paperclip class="h-4 w-4" />
 								</Button>
 								<span class="truncate text-[10px] text-muted-foreground">
 									{t('myaaw.chat.hint')}
@@ -1798,7 +2028,7 @@
 									size="icon"
 									class="rounded-full"
 									onclick={send}
-									disabled={!input.trim() && pending.length === 0}
+									disabled={!input.trim() && pending.length === 0 && pendingFiles.length === 0}
 									aria-label={t('myaaw.chat.send')}
 								>
 									<Send class="h-4 w-4" />

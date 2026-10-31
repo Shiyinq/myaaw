@@ -53,9 +53,10 @@ var A2AGRPCTLSCert string
 var A2AGRPCTLSKey string
 
 // A2AMaxRequestBytes is the server-wide HTTP request body limit. It must be
-// large enough to carry the maximum inline file payload (base64 inflates raw
-// bytes by roughly 4/3).
-var A2AMaxRequestBytes int = 16 << 20
+// large enough to carry the maximum inline payload: the control plane accepts
+// 20 MiB of chat attachments per request, and base64 inflates raw bytes by
+// roughly 4/3.
+var A2AMaxRequestBytes int = 32 << 20
 
 // A2AContactTimeoutSeconds bounds a contact tool call. It must exceed the
 // remote agent's run timeout, otherwise the caller gives up while the task is
@@ -948,7 +949,7 @@ func validateAgentConfig() {
 		AgentRunTimeoutSeconds = 900
 	}
 	if A2AMaxRequestBytes <= 0 {
-		A2AMaxRequestBytes = 16 << 20
+		A2AMaxRequestBytes = 32 << 20
 	}
 	if A2AContactTimeoutSeconds <= 0 {
 		A2AContactTimeoutSeconds = 960

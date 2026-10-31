@@ -1,9 +1,14 @@
 package service
 
 import (
+	"encoding/base64"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"myaaw/internal/agentdir"
 	"myaaw/internal/channel"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
@@ -149,10 +154,78 @@ func TestBuildConversationMessagesReusesA2AContext(t *testing.T) {
 	}
 }
 
+func TestBuildUserMessageWrapsUploadPathsInAttachedBlock(t *testing.T) {
+	svc := &BotServiceImpl{llmProvider: provider.NewOpenAIProvider("http://127.0.0.1:1", "sk-test", "test-model")}
+
+	uploads := []provider.Upload{
+		{Name: "a.txt", Path: "/agent/user/uploads/conv/msg/a.txt"},
+		{Name: "b.csv", Path: "/agent/user/uploads/conv/msg/b.csv"},
+	}
+	msg := svc.buildUserMessage(&channel.IncomingMessage{Text: "summarize these"}, uploads)
+
+	want := "<attached>\n[read them with the filesystem or bash tools]\n" +
+		"/agent/user/uploads/conv/msg/a.txt\n/agent/user/uploads/conv/msg/b.csv\n</attached>\n\nsummarize these"
+	if msg.Content != want {
+		t.Fatalf("content = %q, want %q", msg.Content, want)
+	}
+}
+
+func TestBuildConversationMessagesStoresUploads(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	previous := agentdir.Active()
+	if err := agentdir.SetActive("myfriend"); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+	t.Cleanup(func() { _ = agentdir.SetActive(previous) })
+
+	repo := newFakeConversationRepo()
+	repo.conversations["conv-1"] = &model.Conversation{Id: "conv-1", UserId: -1}
+	service := &BotServiceImpl{
+		conversationRepo: repo,
+		llmProvider:      provider.NewOpenAIProvider("http://127.0.0.1:1", "sk-test", "test-model"),
+	}
+	msg := &channel.IncomingMessage{
+		UserID:         -1,
+		Text:           "summarize this",
+		Channel:        "api",
+		ConversationID: "conv-1",
+		Files: []channel.FileUpload{{
+			Name:       "notes.txt",
+			MimeType:   "text/plain",
+			DataBase64: base64.StdEncoding.EncodeToString([]byte("hello")),
+		}},
+	}
+
+	messages, err := service.buildConversationMessages(&model.User{UserId: -1}, msg)
+	if err != nil {
+		t.Fatalf("buildConversationMessages: %v", err)
+	}
+	last := messages[len(messages)-1]
+	if len(last.Uploads) != 1 || last.ID == "" {
+		t.Fatalf("uploads = %+v, id = %q", last.Uploads, last.ID)
+	}
+
+	upload := last.Uploads[0]
+	wantDir := filepath.Join(home, ".myaaw", "myfriend", "user", "uploads", "conv-1", last.ID)
+	if filepath.Dir(upload.Path) != wantDir {
+		t.Fatalf("upload dir = %q, want %q", filepath.Dir(upload.Path), wantDir)
+	}
+	if _, err := os.Stat(upload.Path); err != nil {
+		t.Fatalf("stored upload missing: %v", err)
+	}
+
+	text, _ := last.Content.(string)
+	if !strings.Contains(text, "<attached>\n") || !strings.Contains(text, upload.Path) || !strings.HasSuffix(text, "\n\nsummarize this") {
+		t.Fatalf("content = %q", text)
+	}
+}
+
 func TestBuildUserMessageImagesWithoutText(t *testing.T) {
 	svc := &BotServiceImpl{llmProvider: provider.NewOpenAIProvider("http://127.0.0.1:1", "sk-test", "test-model")}
 
-	msg := svc.buildUserMessage(&channel.IncomingMessage{Images: []string{"AAAA"}})
+	msg := svc.buildUserMessage(&channel.IncomingMessage{Images: []string{"AAAA"}}, nil)
 	items := provider.MessageContentItems(msg)
 	if len(items) != 1 {
 		t.Fatalf("content items = %+v, want only the image", items)

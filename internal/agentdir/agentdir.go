@@ -142,7 +142,12 @@ func activePath(elem string) (string, error) {
 	return agentPath(Active(), elem)
 }
 
-func Home(name string) (string, error)      { return agentPath(name, "home") }
+func Home(name string) (string, error) { return agentPath(name, "home") }
+
+// UserDir is the root for content owned by the person using the agent, such as
+// files they upload from chat. It is separate from home so agent-authored
+// context never mixes with user-provided data.
+func UserDir(name string) (string, error)   { return agentPath(name, "user") }
 func ConfigDir(name string) (string, error) { return agentPath(name, "config") }
 func ConfigPath(name string) (string, error) {
 	return agentPath(name, filepath.Join("config", "config.json"))
@@ -169,6 +174,7 @@ func ObservabilityPath(name string) (string, error) {
 }
 
 func ActiveHome() (string, error)         { return activePath("home") }
+func ActiveUserDir() (string, error)      { return activePath("user") }
 func ActiveConfigPath() (string, error)   { return activePath(filepath.Join("config", "config.json")) }
 func ActiveEnvPath() (string, error)      { return activePath(".env") }
 func ActiveSkillsDir() (string, error)    { return activePath("skills") }

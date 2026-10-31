@@ -156,6 +156,17 @@ To continue an existing conversation, pass its `conversation_id`. Omit it to sta
 }
 ```
 
+### Attaching files
+
+```bash
+curl -X POST http://localhost:9000/agents/myfriend/chat \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Summarize the report","files":[{"name":"report.csv","mime_type":"text/csv","data_base64":"cmV2ZW51ZQoxMDAK"}]}'
+```
+
+`files` accepts `name`, `mime_type`, and `data_base64`: up to 8 documents per request, 10 MB each and 20 MB in total (base64-encoded). The agent writes them to `~/.myaaw/<agent>/user/uploads/<conversation_id>/<message_id>/` and prepends their absolute paths to the user turn inside an `<attached>` block, so the model reads the files with its tools instead of receiving their bytes. The dashboard hides that block and renders the files as chips; `GET /agents/:name/fs?path=/user` browses the same folder.
+
 Response:
 
 ```json
@@ -278,11 +289,11 @@ See [Tool Approvals](../agents/approvals.md) for fields, grant scopes, and per-c
 
 ## 6. Filesystem
 
-Virtual roots are `/home`, `/skills`, and `/jobs`. Paths outside those roots, other agents, traversal, and symlink escapes are rejected.
+Virtual roots are `/home`, `/user`, `/skills`, and `/jobs`. `/user` holds content the person using the agent provided, such as files attached in chat (`/user/uploads/<conversation>/<message>/`). Paths outside those roots, other agents, traversal, and symlink escapes are rejected.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents/:name/fs?path=/home` | list a directory (`path` empty → the three roots) |
+| `GET` | `/agents/:name/fs?path=/home` | list a directory (`path` empty → the virtual roots) |
 | `GET` | `/agents/:name/fs/read?path=/home/AGENTS.md` | read a text file |
 | `POST` | `/agents/:name/fs/write` | write `{path, content}` |
 | `POST` | `/agents/:name/fs/mkdir` | create `{path}` |
@@ -305,7 +316,7 @@ curl -X POST "http://localhost:9000/agents/myfriend/fs/write" \
   -d '{"path":"/home/AGENTS.md","content":"# Updated instructions\n"}'
 ```
 
-Limits: reads and writes are capped at 2 MiB, binary files return `415`, and the three roots cannot be deleted or renamed.
+Limits: reads and writes are capped at 2 MiB, binary files return `415`, and the virtual roots cannot be deleted or renamed.
 
 `fs/raw` bypasses the text limits: it streams the file with its real `Content-Type`, supports `Range` (so `<video>` can seek), sends `X-Content-Type-Options: nosniff`, and adds `Content-Security-Policy: sandbox` for `svg`/`html`/`xml`. Pass `download=1` for `Content-Disposition: attachment`, e.g. `curl -OJ "http://localhost:9000/agents/myfriend/fs/raw?path=/home/pixel.png&download=1" -H "Authorization: Bearer $TOKEN"`.
 

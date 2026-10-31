@@ -29,6 +29,7 @@ func TestConfigureAllowedDirectoriesIncludesMyaawDirs(t *testing.T) {
 
 	for _, want := range []string{
 		filepath.Join(agentRoot, "home"),
+		filepath.Join(agentRoot, "user"),
 		filepath.Join(agentRoot, "skills"),
 		filepath.Join(agentRoot, "jobs"),
 	} {

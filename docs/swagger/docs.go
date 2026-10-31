@@ -334,6 +334,12 @@ const docTemplate = `{
                 "conversation_id": {
                     "type": "string"
                 },
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/channel.FileUpload"
+                    }
+                },
                 "images": {
                     "type": "array",
                     "items": {
@@ -392,6 +398,20 @@ const docTemplate = `{
                 },
                 "tokens_before": {
                     "type": "integer"
+                }
+            }
+        },
+        "channel.FileUpload": {
+            "type": "object",
+            "properties": {
+                "data_base64": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

@@ -2092,7 +2092,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Lists the virtual roots (/home, /skills, /jobs) or the entries of one directory.",
+                "description": "Lists the virtual roots (/home, /user, /skills, /jobs) or the entries of one directory.",
                 "produces": [
                     "application/json"
                 ],
@@ -6103,12 +6103,32 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "handler.ChatFile": {
+            "type": "object",
+            "properties": {
+                "data_base64": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.ChatRequest": {
             "type": "object",
             "properties": {
                 "conversation_id": {
                     "type": "string",
                     "example": "conv-id or NEW"
+                },
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.ChatFile"
+                    }
                 },
                 "images": {
                     "type": "array",
@@ -7195,6 +7215,10 @@ const docTemplatecontrolplane = `{
                 "error_message": {
                     "type": "string"
                 },
+                "id": {
+                    "description": "ID is the stable transcript-entry id, used to address the files a user\nuploaded with that message.",
+                    "type": "string"
+                },
                 "images": {
                     "type": "array",
                     "items": {
@@ -7235,6 +7259,12 @@ const docTemplatecontrolplane = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/provider.ReactStep"
+                    }
+                },
+                "uploads": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.Upload"
                     }
                 },
                 "usage": {
@@ -7304,6 +7334,23 @@ const docTemplatecontrolplane = `{
                 },
                 "type": {
                     "type": "string"
+                }
+            }
+        },
+        "provider.Upload": {
+            "type": "object",
+            "properties": {
+                "mime_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
                 }
             }
         },

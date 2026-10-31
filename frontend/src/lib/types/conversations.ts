@@ -24,6 +24,16 @@ export interface Message {
 	thought?: string;
 	action?: string;
 	action_input?: string;
+	id?: string;
+	uploads?: Upload[];
+}
+
+/** A file a user attached to a message; persisted on the agent. */
+export interface Upload {
+	name: string;
+	path: string;
+	mime_type?: string;
+	size?: number;
 }
 
 export interface ConversationSummary {

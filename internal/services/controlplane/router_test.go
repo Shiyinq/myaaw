@@ -219,7 +219,7 @@ func TestRouterFilesystem(t *testing.T) {
 		} `json:"entries"`
 	}
 	doJSON(t, app, "GET", "/agents/myfriend/fs", token, "", fiber.StatusOK, &roots)
-	if len(roots.Entries) != 3 || roots.Entries[0].Path != "/home" {
+	if len(roots.Entries) != 4 || roots.Entries[0].Path != "/home" || roots.Entries[1].Path != "/user" {
 		t.Fatalf("roots = %+v", roots)
 	}
 

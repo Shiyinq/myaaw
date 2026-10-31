@@ -14,6 +14,14 @@ export interface ChatRequest {
 	text: string;
 	conversation_id?: string;
 	images?: string[];
+	files?: ChatFile[];
+}
+
+/** An uploaded document, sent base64 and persisted on the agent. */
+export interface ChatFile {
+	name: string;
+	mime_type?: string;
+	data_base64: string;
 }
 
 export interface TimelineItem {

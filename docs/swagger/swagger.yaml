@@ -4,6 +4,10 @@ definitions:
     properties:
       conversation_id:
         type: string
+      files:
+        items:
+          $ref: '#/definitions/channel.FileUpload'
+        type: array
       images:
         items:
           type: string
@@ -45,6 +49,15 @@ definitions:
         type: integer
       tokens_before:
         type: integer
+    type: object
+  channel.FileUpload:
+    properties:
+      data_base64:
+        type: string
+      mime_type:
+        type: string
+      name:
+        type: string
     type: object
   channel.QueueEnvelope:
     properties:

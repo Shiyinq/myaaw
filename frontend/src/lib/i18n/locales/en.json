@@ -319,13 +319,18 @@
 			"history_show": "Show history",
 			"history_hide": "Hide history",
 			"rename": "Rename",
-			"attach_image": "Attach image",
-			"drop_images": "Drop images here",
-			"remove_image": "Remove image",
+			"attach": "Attach files",
+			"drop_files": "Drop files here",
+			"remove_image": "Remove",
 			"image_limit": "Up to {count} images per message.",
 			"image_too_large": "Each image must be under {size} MB.",
-			"image_only": "Only images can be attached.",
-			"image_failed": "Could not read that image."
+			"image_failed": "Could not read that image.",
+			"file_limit": "Up to {count} files per message.",
+			"file_too_large": "Each file must be under {size} MB.",
+			"attachment_total_too_large": "Attachments must total under {size} MB.",
+			"file_unsupported": "Unsupported file type.",
+			"file_failed": "Could not read that file.",
+			"download_file": "Download file"
 		},
 		"conversations": {
 			"search": "Search titles...",
@@ -398,7 +403,7 @@
 		},
 		"files": {
 			"title": "Files",
-			"subtitle": "Browse /home, /skills, and /jobs, then edit text files.",
+			"subtitle": "Browse /home, /user, /skills, and /jobs, then edit text files.",
 			"new_folder": "New folder",
 			"new_file": "New file",
 			"new_name": "Name for a new file or folder",

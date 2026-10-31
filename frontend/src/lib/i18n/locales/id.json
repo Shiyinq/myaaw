@@ -319,13 +319,18 @@
 			"history_show": "Tampilkan riwayat",
 			"history_hide": "Sembunyikan riwayat",
 			"rename": "Ubah judul",
-			"attach_image": "Lampirkan gambar",
-			"drop_images": "Lepas gambar di sini",
-			"remove_image": "Hapus gambar",
+			"attach": "Lampirkan file",
+			"drop_files": "Lepas file di sini",
+			"remove_image": "Hapus",
 			"image_limit": "Maksimal {count} gambar per pesan.",
 			"image_too_large": "Setiap gambar harus di bawah {size} MB.",
-			"image_only": "Hanya gambar yang bisa dilampirkan.",
-			"image_failed": "Gambar tidak bisa dibaca."
+			"image_failed": "Gambar tidak bisa dibaca.",
+			"file_limit": "Maksimal {count} file per pesan.",
+			"file_too_large": "Setiap file harus di bawah {size} MB.",
+			"attachment_total_too_large": "Total lampiran harus di bawah {size} MB.",
+			"file_unsupported": "Tipe file tidak didukung.",
+			"file_failed": "File tidak bisa dibaca.",
+			"download_file": "Unduh berkas"
 		},
 		"conversations": {
 			"search": "Cari judul...",
@@ -398,7 +403,7 @@
 		},
 		"files": {
 			"title": "Berkas",
-			"subtitle": "Jelajahi /home, /skills, dan /jobs, lalu edit berkas teks.",
+			"subtitle": "Jelajahi /home, /user, /skills, dan /jobs, lalu edit berkas teks.",
 			"new_folder": "Folder baru",
 			"new_file": "Berkas baru",
 			"new_name": "Nama berkas atau folder baru",

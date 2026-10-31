@@ -255,11 +255,24 @@ definitions:
       token:
         type: string
     type: object
+  handler.ChatFile:
+    properties:
+      data_base64:
+        type: string
+      mime_type:
+        type: string
+      name:
+        type: string
+    type: object
   handler.ChatRequest:
     properties:
       conversation_id:
         example: conv-id or NEW
         type: string
+      files:
+        items:
+          $ref: '#/definitions/handler.ChatFile'
+        type: array
       images:
         items:
           type: string
@@ -1017,6 +1030,11 @@ definitions:
         type: integer
       error_message:
         type: string
+      id:
+        description: |-
+          ID is the stable transcript-entry id, used to address the files a user
+          uploaded with that message.
+        type: string
       images:
         items:
           type: string
@@ -1045,6 +1063,10 @@ definitions:
         description: Trace stores all ReAct steps as JSON array for final response
         items:
           $ref: '#/definitions/provider.ReactStep'
+        type: array
+      uploads:
+        items:
+          $ref: '#/definitions/provider.Upload'
         type: array
       usage:
         allOf:
@@ -1092,6 +1114,17 @@ definitions:
         type: integer
       type:
         type: string
+    type: object
+  provider.Upload:
+    properties:
+      mime_type:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
     type: object
   provider.Usage:
     properties:
@@ -3531,7 +3564,7 @@ paths:
       tags:
       - Files
     get:
-      description: Lists the virtual roots (/home, /skills, /jobs) or the entries
+      description: Lists the virtual roots (/home, /user, /skills, /jobs) or the entries
         of one directory.
       parameters:
       - description: Agent name

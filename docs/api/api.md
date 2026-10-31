@@ -45,6 +45,7 @@ Anyone who can reach the port can run the agent and its tools. Keep the server o
   "user_id": 12345,
   "text": "Check my workspace",
   "images": ["<base64-image>"],
+  "files": [{"name": "notes.txt", "mime_type": "text/plain", "data_base64": "<base64>"}],
   "conversation_id": "conv-id-or-NEW"
 }
 ```
@@ -54,9 +55,12 @@ Anyone who can reach the port can run the agent and its tools. Keep the server o
 | `user_id` | integer | yes | must be non-zero; identifies the user and conversation owner |
 | `text` | string | yes | must not be empty |
 | `images` | string[] | no | base64 image data; only the Gemini provider consumes them |
+| `files` | object[] | no | documents to store: `name`, `mime_type`, `data_base64`; up to 8 files, 10 MB each, 20 MB total |
 | `conversation_id` | string | no | continue a specific conversation; omit it to start a new session (`"NEW"` also starts a new session) |
 
 `user_id` maps to a row in the agent's SQLite database. Omit `conversation_id` and every request starts a **new conversation**. To continue a session, pass the `conversation_id` returned by the previous response. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
+
+Uploaded files are written to `~/.myaaw/<agent>/user/uploads/<conversation_id>/<message_id>/` and their absolute paths are prepended to the user turn inside an `<attached>` block, so the model reads them with its tools instead of receiving their bytes.
 
 ## 4. Non-streaming: `POST /api/chat`
 

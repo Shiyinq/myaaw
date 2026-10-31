@@ -78,6 +78,8 @@ invalid: my friend, ../admin, my.friend, my/friend, -agent, _agent, pids
 │   ├── skills/
 │   ├── logs/
 │   ├── jobs/
+│   ├── user/
+│   │   └── uploads/
 │   ├── cron/
 │   ├── tools/
 │   └── database/
