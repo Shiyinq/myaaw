@@ -442,12 +442,15 @@
 							{@render botLabel('bot-blocked', 'myaaw.config.blocked_tools', 'blocked_tools')}
 							<Input id="bot-blocked" bind:value={blockedTools} placeholder="bash, python" />
 						</div>
-						<div class="flex items-center justify-between gap-2">
-							<label class="flex items-center gap-2 text-sm">
-								<input type="checkbox" bind:checked={stream} class="h-4 w-4 accent-primary" />
-								{t('myaaw.config.stream')}
-							</label>
-							{@render resetIcon('bot', 'stream')}
+						<div class="grid gap-1">
+							<div class="flex items-center justify-between gap-2">
+								<label class="flex items-center gap-2 text-sm">
+									<input type="checkbox" bind:checked={stream} class="h-4 w-4 accent-primary" />
+									{t('myaaw.config.stream')}
+								</label>
+								{@render resetIcon('bot', 'stream')}
+							</div>
+							<span class="text-xs text-muted-foreground">{t('myaaw.config.stream_hint')}</span>
 						</div>
 						<div class="flex items-center justify-between gap-2">
 							<label class="flex items-center gap-2 text-sm">

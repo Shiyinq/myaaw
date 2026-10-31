@@ -191,6 +191,8 @@ Response:
 
 ### Streaming (SSE)
 
+Streaming is per request here, not a setting: `bot.stream` / `STREAM_RESPONSE` only switches the webhook channels and the one-shot CLI, and never these endpoints. The dashboard always streams because its thinking/tool timeline, the Stop button, runs that survive navigation, and re-attaching after a reload all read from these events; `POST /agents/{name}/chat` is the non-streaming alternative for clients that only want the finished answer. See [agent loop §11](../agents/agent-loop.md#11-configuration) for the full reasoning.
+
 ```bash
 curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
   -H "Authorization: Bearer $TOKEN" \

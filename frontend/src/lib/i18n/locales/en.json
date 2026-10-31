@@ -538,6 +538,7 @@
 			"reset_done": "Config reset to defaults",
 			"blocked_tools": "Blocked tools",
 			"stream": "Streaming",
+			"stream_hint": "Applies to one-shot myaaw chat runs and messaging channels. The dashboard always streams its timeline.",
 			"watermark": "Watermark",
 			"computer_use": "Computer use",
 			"heartbeat_title": "Heartbeat",
@@ -558,7 +559,7 @@
 			"approvals_title": "Approval policy",
 			"approvals_desc": "Applies to every tool call.",
 			"saved": "Configuration saved",
-			"restart_hint": "Restart the agent server for queue worker and observability changes to take effect."
+			"restart_hint": "Restart the agent server for streaming, queue worker and observability changes to take effect."
 		},
 		"tools": {
 			"title": "Available Tools",

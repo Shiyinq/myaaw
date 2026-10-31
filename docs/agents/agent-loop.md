@@ -477,7 +477,7 @@ TUI features:
 
 Neither channel adds new configuration. Both use:
 
-- `bot.stream` / `STREAM_RESPONSE` to select streaming;
+- `bot.stream` / `STREAM_RESPONSE` to select streaming for webhook channels and one-shot CLI runs (the dashboard always streams);
 - `bot.watermark` for the final-answer watermark.
 
 ### 10.6 System prompt context
@@ -514,10 +514,32 @@ Neither channel adds new configuration. Both use:
 |---|---|---:|---|
 | — | `max_iterations` | `100` | Agent iteration limit |
 | — | `warning_iterations` | `90` | Start warning when steps remain |
-| `STREAM_RESPONSE` | `stream` | `true` | Streaming vs non-streaming |
+| `STREAM_RESPONSE` | `stream` | `true` | Streaming vs non-streaming for webhook channels and one-shot CLI runs; dashboard chat always streams |
 | — | `watermark` | `false` | Final-answer watermark |
 
 Per-agent tool exclusion does not use global config; use `Agent.WithExcludedTools(...)` in code.
+
+#### `stream` does not cover the dashboard
+
+`bot.stream` (env `STREAM_RESPONSE`) is read once when the agent process starts and only affects the paths that send a message through the channel abstraction:
+
+- **Webhook channels** (`POST /webhook/bot`, i.e. Telegram and Discord): streaming edits one bubble per item; non-streaming sends the bubbles from the finished `Trace`.
+- **One-shot CLI** (`myaaw chat -p "..."`): streaming prints tokens as they arrive; non-streaming waits and prints the answer once. The TUI status line reads the same flag.
+
+It has no effect on the dashboard or on the REST chat endpoints. The dashboard renders a live timeline fed by `POST /agents/{name}/chat/stream`, and every chat feature added on top of that timeline is built from the events:
+
+| Dashboard behaviour | What it depends on |
+|---|---|
+| Thinking blocks and tool steps appear while the run is working | `thought`, `tool` and `tool_result` events; the non-streaming response only carries the finished `timeline` |
+| The answer grows token by token | `chunk` deltas |
+| Stop button and Esc interrupt the answer mid-way | a run in flight plus `POST /chat/stop`; the partial text you interrupt only exists because it was streamed |
+| Opening another conversation or another menu leaves the answer running, and coming back shows it still streaming | one attach stream per run (`/chat/run/{id}/stream`), which the chat page keeps outside the component and re-binds when it returns |
+| A loading spinner on conversations that are still answering | the same live run registry the attach streams feed |
+| Reloading the page, closing the tab or logging out and resuming later | the buffered events are replayed when the client attaches again, so the timeline is rebuilt from the start |
+
+With `stream: false` the run still exists on the agent (it is registered by `request_id`, so `POST /chat/stop` still works), but the client receives **nothing** until it finishes: no thinking block, no growing answer to interrupt, no partial transcript to come back to, and no events to rebuild after a reload. The flag can only choose how a channel delivers a finished answer, not replace the transport this page is built on.
+
+A client that wants the non-streaming shape asks for it per request: `POST /api/chat` returns the finished answer plus the timeline in one JSON body. Because the flag is read at startup, editing it in the dashboard takes effect only after the agent server is restarted (`myaaw server restart --agent <name>`).
 
 ### 11.3 Configuration precedence
 

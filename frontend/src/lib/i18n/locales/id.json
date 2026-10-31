@@ -726,6 +726,7 @@
 			"reset_done": "Konfigurasi dikembalikan ke bawaan",
 			"blocked_tools": "Tool diblokir",
 			"stream": "Streaming",
+			"stream_hint": "Berlaku untuk myaaw chat sekali jalan dan kanal pesan. Dashboard selalu menampilkan aliran timeline.",
 			"watermark": "Watermark",
 			"computer_use": "Computer use",
 			"heartbeat_title": "Heartbeat",
@@ -746,7 +747,7 @@
 			"approvals_title": "Kebijakan approval",
 			"approvals_desc": "Berlaku untuk setiap pemanggilan tool.",
 			"saved": "Konfigurasi disimpan",
-			"restart_hint": "Restart server agen agar perubahan queue worker dan observability berlaku."
+			"restart_hint": "Restart server agen agar perubahan streaming, queue worker, dan observability berlaku."
 		}
 	}
 }

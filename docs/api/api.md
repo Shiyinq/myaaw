@@ -131,6 +131,8 @@ curl -X POST http://localhost:8080/api/chat \
 
 ## 5. Streaming: `POST /api/chat/stream`
 
+Whether a run streams is decided by the endpoint, not by `bot.stream` / `STREAM_RESPONSE`: that setting only switches the webhook channels (Telegram, Discord) and one-shot CLI runs. The dashboard uses this stream for its timeline, the Stop button, background runs and re-attaching after a reload; use `POST /api/chat` when you want the finished answer in one response.
+
 ```bash
 curl -N -X POST http://localhost:8080/api/chat/stream \
   -H 'Content-Type: application/json' \
