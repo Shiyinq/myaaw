@@ -1282,23 +1282,33 @@ definitions:
   service.ConfigResetRequest:
     properties:
       approvals:
-        type: boolean
+        items:
+          type: string
+        type: array
       bot:
-        description: bot field names; an empty list resets the whole bot section
         items:
           type: string
         type: array
       cron:
-        type: boolean
+        items:
+          type: string
+        type: array
       heartbeat:
-        description: true resets the whole section
-        type: boolean
+        items:
+          type: string
+        type: array
       observability:
-        type: boolean
+        items:
+          type: string
+        type: array
       synthesizer:
-        type: boolean
+        items:
+          type: string
+        type: array
       transcriber:
-        type: boolean
+        items:
+          type: string
+        type: array
     type: object
   service.ConfigView:
     properties:

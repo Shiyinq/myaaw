@@ -7309,30 +7309,46 @@ const docTemplatecontrolplane = `{
             "type": "object",
             "properties": {
                 "approvals": {
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "bot": {
-                    "description": "bot field names; an empty list resets the whole bot section",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
                 "cron": {
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "heartbeat": {
-                    "description": "true resets the whole section",
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "observability": {
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "synthesizer": {
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "transcriber": {
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

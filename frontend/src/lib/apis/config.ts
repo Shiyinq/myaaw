@@ -11,12 +11,24 @@ export interface ConfigPatch {
 	approvals?: Partial<ApprovalsConfig>;
 }
 
+export interface ConfigResetRequest {
+	bot?: string[];
+	/** `true` resets the whole section, a list resets only those fields. */
+	heartbeat?: boolean | string[];
+	cron?: boolean | string[];
+	transcriber?: boolean | string[];
+	synthesizer?: boolean | string[];
+	observability?: boolean | string[];
+	approvals?: boolean | string[];
+}
+
 export const config = {
 	get: (agent: string) => client<AgentConfig>(agentPath(agent, '/config')),
 	patch: (agent: string, payload: ConfigPatch) =>
 		client<AgentConfig>(agentPath(agent, '/config'), { method: 'PATCH', body: payload }),
 	reset: (agent: string) =>
 		client<AgentConfig>(agentPath(agent, '/config/reset'), { method: 'POST' }),
-	resetFields: (agent: string, payload: Record<string, string[] | []>) =>
+	/** Resets the listed sections; `bot: []` resets the whole bot section. */
+	resetFields: (agent: string, payload: ConfigResetRequest) =>
 		client<AgentConfig>(agentPath(agent, '/config/reset'), { method: 'PATCH', body: payload })
 };

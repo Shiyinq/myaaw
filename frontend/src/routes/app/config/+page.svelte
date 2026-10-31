@@ -13,10 +13,11 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
+	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { RefreshCw, Save } from 'lucide-svelte';
+	import { RefreshCw, RotateCcw, Save, Undo2 } from 'lucide-svelte';
 	import { Activity, Bot, HeartPulse, ShieldCheck } from 'lucide-svelte';
 	import type { AgentConfig } from '$lib/types';
 
@@ -41,6 +42,7 @@
 	let streamTimeout = $state(180);
 	let requestRetries = $state(1);
 	let queueWorkers = $state(4);
+	let repeatToolCallLimit = $state(3);
 	let computerUse = $state(false);
 	let blockedTools = $state('');
 
@@ -66,6 +68,9 @@
 
 	let agent = $derived(agentSelection.selected);
 
+	const resettable = ['bot', 'heartbeat', 'observability', 'approvals'] as const;
+	type ResettableSection = (typeof resettable)[number];
+
 	function apply(cfgValue: AgentConfig) {
 		const bot = cfgValue.bot;
 		botType = bot.type;
@@ -81,6 +86,7 @@
 		streamTimeout = bot.stream_timeout_seconds;
 		requestRetries = bot.request_retries;
 		queueWorkers = bot.queue_workers;
+		repeatToolCallLimit = bot.repeat_tool_call_limit ?? 3;
 		computerUse = bot.computer_use?.enabled ?? false;
 		blockedTools = (bot.blocked_tools ?? []).join(', ');
 
@@ -134,6 +140,55 @@
 			.filter(Boolean);
 	}
 
+	async function resetSection(section: ResettableSection) {
+		if (!agent) return;
+		if (!window.confirm(t('myaaw.config.reset_confirm'))) return;
+		saving = true;
+		try {
+			await configApi.resetFields(agent, section === 'bot' ? { bot: [] } : { [section]: true });
+			toastStore.success(t('myaaw.config.reset_done'));
+			await load(agent);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function resetAll() {
+		if (!agent) return;
+		if (!window.confirm(t('myaaw.config.reset_all_confirm'))) return;
+		saving = true;
+		try {
+			await configApi.reset(agent);
+			toastStore.success(t('myaaw.config.reset_done'));
+			await load(agent);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			saving = false;
+		}
+	}
+
+	function resetCurrent() {
+		const section = resettable.find((item) => item === tab);
+		if (section) void resetSection(section);
+	}
+
+	async function resetField(section: string, field: string) {
+		if (!agent) return;
+		saving = true;
+		try {
+			await configApi.resetFields(agent, { [section]: [field] });
+			toastStore.success(t('myaaw.config.reset_done'));
+			await load(agent);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			saving = false;
+		}
+	}
+
 	async function save() {
 		if (!agent) return;
 		saving = true;
@@ -153,6 +208,7 @@
 					stream_timeout_seconds: Number(streamTimeout),
 					request_retries: Number(requestRetries),
 					queue_workers: Number(queueWorkers),
+					repeat_tool_call_limit: Number(repeatToolCallLimit),
 					computer_use: { enabled: computerUse },
 					blocked_tools: splitList(blockedTools)
 				},
@@ -190,6 +246,30 @@
 	}
 </script>
 
+{#snippet resetIcon(section: string, field: string)}
+	<button
+		type="button"
+		class="shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+		title={t('myaaw.config.reset_field')}
+		aria-label={t('myaaw.config.reset_field')}
+		disabled={saving}
+		onclick={() => resetField(section, field)}
+	>
+		<Undo2 class="h-3.5 w-3.5" />
+	</button>
+{/snippet}
+
+{#snippet fieldLabel(id: string, key: string, section: string, field: string)}
+	<div class="flex items-center justify-between gap-2">
+		<Label for={id}>{t(key)}</Label>
+		{@render resetIcon(section, field)}
+	</div>
+{/snippet}
+
+{#snippet botLabel(id: string, key: string, field: string)}
+	{@render fieldLabel(id, key, 'bot', field)}
+{/snippet}
+
 <TopBarActions id="config-actions">
 	{#snippet children()}
 		<TopBarButton
@@ -197,6 +277,12 @@
 			icon={RefreshCw}
 			onclick={() => agent && load(agent)}
 			{loading}
+		/>
+		<TopBarButton
+			label={t('myaaw.config.reset_all')}
+			icon={RotateCcw}
+			onclick={resetAll}
+			variant="outline"
 		/>
 		<TopBarButton
 			label={t('common.save')}
@@ -225,24 +311,30 @@
 		{/if}
 
 		<Tabs.Root bind:value={tab} class="space-y-4">
-			<Tabs.List variant="line" class="flex-wrap justify-start">
-				<Tabs.Trigger value="bot">
-					<Bot />
-					{t('myaaw.config.tab_bot')}
-				</Tabs.Trigger>
-				<Tabs.Trigger value="heartbeat">
-					<HeartPulse />
-					{t('myaaw.config.tab_heartbeat')}
-				</Tabs.Trigger>
-				<Tabs.Trigger value="observability">
-					<Activity />
-					{t('myaaw.config.tab_observability')}
-				</Tabs.Trigger>
-				<Tabs.Trigger value="approvals">
-					<ShieldCheck />
-					{t('myaaw.config.tab_approvals')}
-				</Tabs.Trigger>
-			</Tabs.List>
+			<div class="flex flex-wrap items-center justify-between gap-2">
+				<Tabs.List variant="line" class="flex-wrap justify-start">
+					<Tabs.Trigger value="bot">
+						<Bot />
+						{t('myaaw.config.tab_bot')}
+					</Tabs.Trigger>
+					<Tabs.Trigger value="heartbeat">
+						<HeartPulse />
+						{t('myaaw.config.tab_heartbeat')}
+					</Tabs.Trigger>
+					<Tabs.Trigger value="observability">
+						<Activity />
+						{t('myaaw.config.tab_observability')}
+					</Tabs.Trigger>
+					<Tabs.Trigger value="approvals">
+						<ShieldCheck />
+						{t('myaaw.config.tab_approvals')}
+					</Tabs.Trigger>
+				</Tabs.List>
+				<Button variant="ghost" size="sm" onclick={resetCurrent} disabled={saving}>
+					<RotateCcw class="mr-1.5 h-3 w-3" />
+					{t('myaaw.config.reset_section')}
+				</Button>
+			</div>
 
 			<Tabs.Content value="bot">
 				<Card>
@@ -252,7 +344,7 @@
 					</CardHeader>
 					<CardContent class="grid gap-4 md:grid-cols-2">
 						<div class="grid gap-1">
-							<Label for="bot-type">{t('myaaw.config.bot_type')}</Label>
+							{@render botLabel('bot-type', 'myaaw.config.bot_type', 'type')}
 							<select
 								id="bot-type"
 								bind:value={botType}
@@ -263,61 +355,109 @@
 							</select>
 						</div>
 						<div class="grid gap-1">
-							<Label for="bot-owners">{t('myaaw.config.owner_ids')}</Label>
+							{@render botLabel('bot-owners', 'myaaw.config.owner_ids', 'owner_ids')}
 							<Input id="bot-owners" bind:value={ownerIds} placeholder="123456789, 987654321" />
 						</div>
 						<div class="grid gap-1">
-							<Label for="bot-max-iterations">{t('myaaw.config.max_iterations')}</Label>
+							{@render botLabel(
+								'bot-max-iterations',
+								'myaaw.config.max_iterations',
+								'max_iterations'
+							)}
 							<Input id="bot-max-iterations" type="number" bind:value={maxIterations} />
 						</div>
 						<div class="grid gap-1">
-							<Label for="bot-warning-iterations">{t('myaaw.config.warning_iterations')}</Label>
+							{@render botLabel(
+								'bot-warning-iterations',
+								'myaaw.config.warning_iterations',
+								'warning_iterations'
+							)}
 							<Input id="bot-warning-iterations" type="number" bind:value={warningIterations} />
 						</div>
 						<div class="grid gap-1">
-							<Label for="bot-context-tokens">{t('myaaw.config.context_max_tokens')}</Label>
+							{@render botLabel(
+								'bot-context-tokens',
+								'myaaw.config.context_max_tokens',
+								'context_max_tokens'
+							)}
 							<Input id="bot-context-tokens" type="number" bind:value={contextMaxTokens} />
 						</div>
 						<div class="grid gap-1">
-							<Label for="bot-tool-output">{t('myaaw.config.max_tool_output_bytes')}</Label>
+							{@render botLabel(
+								'bot-tool-output',
+								'myaaw.config.max_tool_output_bytes',
+								'max_tool_output_bytes'
+							)}
 							<Input id="bot-tool-output" type="number" bind:value={maxToolOutputBytes} />
 						</div>
 						<div class="grid gap-1">
-							<Label for="bot-tool-timeout">{t('myaaw.config.tool_timeout_seconds')}</Label>
+							{@render botLabel(
+								'bot-tool-timeout',
+								'myaaw.config.tool_timeout_seconds',
+								'tool_timeout_seconds'
+							)}
 							<Input id="bot-tool-timeout" type="number" bind:value={toolTimeout} />
 						</div>
 						<div class="grid gap-1">
-							<Label for="bot-run-timeout">{t('myaaw.config.run_timeout_seconds')}</Label>
+							{@render botLabel(
+								'bot-run-timeout',
+								'myaaw.config.run_timeout_seconds',
+								'run_timeout_seconds'
+							)}
 							<Input id="bot-run-timeout" type="number" bind:value={runTimeout} />
 						</div>
 						<div class="grid gap-1">
-							<Label for="bot-stream-timeout">{t('myaaw.config.stream_timeout_seconds')}</Label>
+							{@render botLabel(
+								'bot-stream-timeout',
+								'myaaw.config.stream_timeout_seconds',
+								'stream_timeout_seconds'
+							)}
 							<Input id="bot-stream-timeout" type="number" bind:value={streamTimeout} />
 						</div>
 						<div class="grid gap-1">
-							<Label for="bot-retries">{t('myaaw.config.request_retries')}</Label>
+							{@render botLabel('bot-retries', 'myaaw.config.request_retries', 'request_retries')}
 							<Input id="bot-retries" type="number" bind:value={requestRetries} />
 						</div>
 						<div class="grid gap-1">
-							<Label for="bot-workers">{t('myaaw.config.queue_workers')}</Label>
+							{@render botLabel('bot-workers', 'myaaw.config.queue_workers', 'queue_workers')}
 							<Input id="bot-workers" type="number" bind:value={queueWorkers} min="1" max="16" />
 						</div>
 						<div class="grid gap-1">
-							<Label for="bot-blocked">{t('myaaw.config.blocked_tools')}</Label>
+							{@render botLabel(
+								'bot-repeat-limit',
+								'myaaw.config.repeat_tool_call_limit',
+								'repeat_tool_call_limit'
+							)}
+							<Input id="bot-repeat-limit" type="number" bind:value={repeatToolCallLimit} min="0" />
+							<span class="text-xs text-muted-foreground">
+								{t('myaaw.config.repeat_tool_call_limit_hint')}
+							</span>
+						</div>
+						<div class="grid gap-1">
+							{@render botLabel('bot-blocked', 'myaaw.config.blocked_tools', 'blocked_tools')}
 							<Input id="bot-blocked" bind:value={blockedTools} placeholder="bash, python" />
 						</div>
-						<label class="flex items-center gap-2 text-sm">
-							<input type="checkbox" bind:checked={stream} class="h-4 w-4 accent-primary" />
-							{t('myaaw.config.stream')}
-						</label>
-						<label class="flex items-center gap-2 text-sm">
-							<input type="checkbox" bind:checked={watermark} class="h-4 w-4 accent-primary" />
-							{t('myaaw.config.watermark')}
-						</label>
-						<label class="flex items-center gap-2 text-sm">
-							<input type="checkbox" bind:checked={computerUse} class="h-4 w-4 accent-primary" />
-							{t('myaaw.config.computer_use')}
-						</label>
+						<div class="flex items-center justify-between gap-2">
+							<label class="flex items-center gap-2 text-sm">
+								<input type="checkbox" bind:checked={stream} class="h-4 w-4 accent-primary" />
+								{t('myaaw.config.stream')}
+							</label>
+							{@render resetIcon('bot', 'stream')}
+						</div>
+						<div class="flex items-center justify-between gap-2">
+							<label class="flex items-center gap-2 text-sm">
+								<input type="checkbox" bind:checked={watermark} class="h-4 w-4 accent-primary" />
+								{t('myaaw.config.watermark')}
+							</label>
+							{@render resetIcon('bot', 'watermark')}
+						</div>
+						<div class="flex items-center justify-between gap-2">
+							<label class="flex items-center gap-2 text-sm">
+								<input type="checkbox" bind:checked={computerUse} class="h-4 w-4 accent-primary" />
+								{t('myaaw.config.computer_use')}
+							</label>
+							{@render resetIcon('bot', 'computer_use')}
+						</div>
 					</CardContent>
 				</Card>
 			</Tabs.Content>
@@ -329,16 +469,19 @@
 						<CardDescription>{t('myaaw.config.heartbeat_desc')}</CardDescription>
 					</CardHeader>
 					<CardContent class="grid gap-4 md:grid-cols-2">
-						<label class="flex items-center gap-2 text-sm">
-							<input type="checkbox" bind:checked={hbActive} class="h-4 w-4 accent-primary" />
-							{t('myaaw.config.active')}
-						</label>
+						<div class="flex items-center justify-between gap-2">
+							<label class="flex items-center gap-2 text-sm">
+								<input type="checkbox" bind:checked={hbActive} class="h-4 w-4 accent-primary" />
+								{t('myaaw.config.active')}
+							</label>
+							{@render resetIcon('heartbeat', 'active')}
+						</div>
 						<div class="grid gap-1">
-							<Label for="hb-every">{t('myaaw.config.every')}</Label>
+							{@render fieldLabel('hb-every', 'myaaw.config.every', 'heartbeat', 'every')}
 							<Input id="hb-every" bind:value={hbEvery} placeholder="30m" />
 						</div>
 						<div class="grid gap-1">
-							<Label for="hb-channel">{t('myaaw.config.channel')}</Label>
+							{@render fieldLabel('hb-channel', 'myaaw.config.channel', 'heartbeat', 'channel')}
 							<select
 								id="hb-channel"
 								bind:value={hbChannel}
@@ -350,7 +493,7 @@
 							</select>
 						</div>
 						<div class="grid gap-1">
-							<Label for="hb-to">{t('myaaw.config.to')}</Label>
+							{@render fieldLabel('hb-to', 'myaaw.config.to', 'heartbeat', 'to')}
 							<Input id="hb-to" bind:value={hbTo} />
 						</div>
 					</CardContent>
@@ -364,28 +507,49 @@
 						<CardDescription>{t('myaaw.config.obs_desc')}</CardDescription>
 					</CardHeader>
 					<CardContent class="grid gap-4 md:grid-cols-2">
-						<label class="flex items-center gap-2 text-sm">
-							<input type="checkbox" bind:checked={obsEnabled} class="h-4 w-4 accent-primary" />
-							{t('myaaw.config.obs_enabled')}
-						</label>
-						<label class="flex items-center gap-2 text-sm">
-							<input
-								type="checkbox"
-								bind:checked={obsStoreContent}
-								class="h-4 w-4 accent-primary"
-							/>
-							{t('myaaw.config.obs_store_content')}
-						</label>
+						<div class="flex items-center justify-between gap-2">
+							<label class="flex items-center gap-2 text-sm">
+								<input type="checkbox" bind:checked={obsEnabled} class="h-4 w-4 accent-primary" />
+								{t('myaaw.config.obs_enabled')}
+							</label>
+							{@render resetIcon('observability', 'enabled')}
+						</div>
+						<div class="flex items-center justify-between gap-2">
+							<label class="flex items-center gap-2 text-sm">
+								<input
+									type="checkbox"
+									bind:checked={obsStoreContent}
+									class="h-4 w-4 accent-primary"
+								/>
+								{t('myaaw.config.obs_store_content')}
+							</label>
+							{@render resetIcon('observability', 'store_content')}
+						</div>
 						<div class="grid gap-1">
-							<Label for="obs-retention">{t('myaaw.config.obs_retention')}</Label>
+							{@render fieldLabel(
+								'obs-retention',
+								'myaaw.config.obs_retention',
+								'observability',
+								'retention_days'
+							)}
 							<Input id="obs-retention" type="number" bind:value={obsRetention} min="0" />
 						</div>
 						<div class="grid gap-1">
-							<Label for="obs-max-chars">{t('myaaw.config.obs_max_chars')}</Label>
+							{@render fieldLabel(
+								'obs-max-chars',
+								'myaaw.config.obs_max_chars',
+								'observability',
+								'max_content_chars'
+							)}
 							<Input id="obs-max-chars" type="number" bind:value={obsMaxChars} />
 						</div>
 						<div class="grid gap-1 md:col-span-2">
-							<Label for="obs-redact">{t('myaaw.config.obs_redact')}</Label>
+							{@render fieldLabel(
+								'obs-redact',
+								'myaaw.config.obs_redact',
+								'observability',
+								'redact_patterns'
+							)}
 							<textarea
 								id="obs-redact"
 								bind:value={obsRedact}
@@ -395,7 +559,12 @@
 							></textarea>
 						</div>
 						<div class="grid gap-1">
-							<Label for="obs-model-prices">{t('myaaw.config.model_prices')}</Label>
+							{@render fieldLabel(
+								'obs-model-prices',
+								'myaaw.config.model_prices',
+								'observability',
+								'model_prices'
+							)}
 							<textarea
 								id="obs-model-prices"
 								bind:value={obsModelPrices}
@@ -404,7 +573,12 @@
 							></textarea>
 						</div>
 						<div class="grid gap-1">
-							<Label for="obs-tool-prices">{t('myaaw.config.tool_prices')}</Label>
+							{@render fieldLabel(
+								'obs-tool-prices',
+								'myaaw.config.tool_prices',
+								'observability',
+								'tool_prices'
+							)}
 							<textarea
 								id="obs-tool-prices"
 								bind:value={obsToolPrices}
@@ -424,7 +598,7 @@
 					</CardHeader>
 					<CardContent class="grid gap-4 md:grid-cols-2">
 						<div class="grid gap-1">
-							<Label for="ap-mode">{t('myaaw.approvals.mode')}</Label>
+							{@render fieldLabel('ap-mode', 'myaaw.approvals.mode', 'approvals', 'mode')}
 							<select
 								id="ap-mode"
 								bind:value={apMode}
@@ -435,11 +609,21 @@
 							</select>
 						</div>
 						<div class="grid gap-1">
-							<Label for="ap-timeout">{t('myaaw.approvals.timeout')}</Label>
+							{@render fieldLabel(
+								'ap-timeout',
+								'myaaw.approvals.timeout',
+								'approvals',
+								'timeout_seconds'
+							)}
 							<Input id="ap-timeout" type="number" bind:value={apTimeout} />
 						</div>
 						<div class="grid gap-1">
-							<Label for="ap-unattended">{t('myaaw.approvals.unattended')}</Label>
+							{@render fieldLabel(
+								'ap-unattended',
+								'myaaw.approvals.unattended',
+								'approvals',
+								'unattended'
+							)}
 							<select
 								id="ap-unattended"
 								bind:value={apUnattended}
@@ -450,7 +634,12 @@
 							</select>
 						</div>
 						<div class="grid gap-1">
-							<Label for="ap-subagents">{t('myaaw.approvals.subagents')}</Label>
+							{@render fieldLabel(
+								'ap-subagents',
+								'myaaw.approvals.subagents',
+								'approvals',
+								'subagents'
+							)}
 							<select
 								id="ap-subagents"
 								bind:value={apSubagents}
@@ -462,7 +651,7 @@
 							</select>
 						</div>
 						<div class="grid gap-1">
-							<Label for="ap-allow">{t('myaaw.approvals.allow')}</Label>
+							{@render fieldLabel('ap-allow', 'myaaw.approvals.allow', 'approvals', 'allow')}
 							<textarea
 								id="ap-allow"
 								bind:value={apAllow}
@@ -472,7 +661,7 @@
 							></textarea>
 						</div>
 						<div class="grid gap-1">
-							<Label for="ap-deny">{t('myaaw.approvals.deny')}</Label>
+							{@render fieldLabel('ap-deny', 'myaaw.approvals.deny', 'approvals', 'deny')}
 							<textarea
 								id="ap-deny"
 								bind:value={apDeny}

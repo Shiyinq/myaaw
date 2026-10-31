@@ -635,7 +635,7 @@ curl -X PATCH http://localhost:9000/agents/myfriend/config \
   -d '{"bot":{"type":"public","max_iterations":50},"heartbeat":{"active":false}}'
 ```
 
-`PATCH /config/reset` takes the same section names and restores them from the template; `{"bot": []}` resets the whole bot section, while `{"bot": ["type"]}` resets just one field. Providers and channels are not touched by this variant.
+`PATCH /config/reset` takes the same section names and restores them from the template. Every section accepts `true` for the whole section, `[]` for the same thing, or a list of field names; `false` leaves it alone. So `{"bot": []}` resets the whole bot section, `{"bot": ["type"]}` resets one bot field, and `{"heartbeat": ["every"], "approvals": ["mode"]}` resets two fields in two sections. Providers and channels are not touched by this variant.
 
 `bot.queue_workers` (1–16) sets how many inbound chats the agent processes at once; messages from the same user stay in order. It takes effect after `POST /agents/:name/server/restart`.
 
