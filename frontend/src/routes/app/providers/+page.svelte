@@ -22,7 +22,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
-	import { Cpu, Plus, RefreshCw, Star, Trash2, Wand2 } from 'lucide-svelte';
+	import { Cpu, Pencil, Plus, RefreshCw, Star, Trash2, Wand2 } from 'lucide-svelte';
 	import type { ModelListView, ProviderView } from '$lib/types';
 
 	const { t } = useTranslation();
@@ -42,6 +42,7 @@
 	let defaultModel = $state('');
 	let discovered = $state<ModelListView | null>(null);
 	let errors = $state<FieldErrors>({});
+	let editing = $state('');
 
 	let agent = $derived(agentSelection.selected);
 
@@ -68,14 +69,19 @@
 	});
 
 	async function discover() {
+		if (!agent) return;
 		discovering = true;
 		discovered = null;
 		try {
-			discovered = await providersApi.modelsForCredentials({
-				type,
-				base_url: baseUrl || undefined,
-				api_key: apiKey || undefined
-			});
+			// Editing with a blank key can reuse the stored secret.
+			discovered =
+				editing && !apiKey
+					? await providersApi.models(agent, editing)
+					: await providersApi.modelsForCredentials({
+							type,
+							base_url: baseUrl || undefined,
+							api_key: apiKey || undefined
+						});
 			if (!defaultModel && discovered.models.length > 0) {
 				defaultModel = discovered.models[0];
 			}
@@ -86,7 +92,29 @@
 		}
 	}
 
-	async function create() {
+	function startEdit(provider: ProviderView) {
+		editing = provider.name;
+		name = provider.name;
+		type = provider.type === 'gemini' ? 'gemini' : 'openai';
+		baseUrl = provider.base_url ?? '';
+		defaultModel = provider.default_model ?? '';
+		apiKey = '';
+		discovered = null;
+		errors = {};
+	}
+
+	function resetForm() {
+		editing = '';
+		name = '';
+		type = 'openai';
+		baseUrl = '';
+		apiKey = '';
+		defaultModel = '';
+		discovered = null;
+		errors = {};
+	}
+
+	async function save() {
 		if (!agent) return;
 		const result = validate(providerSchema, {
 			name,
@@ -102,19 +130,26 @@
 		errors = {};
 		saving = true;
 		try {
-			await providersApi.create(agent, {
-				name: result.data.name,
-				type: result.data.type,
-				base_url: result.data.base_url || undefined,
-				api_key: result.data.api_key || undefined,
-				default_model: result.data.default_model || undefined
-			});
+			if (editing) {
+				// An empty key keeps the stored secret; empty strings clear the
+				// endpoint and model instead of leaving the old values in place.
+				await providersApi.update(agent, editing, {
+					type: result.data.type,
+					base_url: result.data.base_url ?? '',
+					api_key: result.data.api_key?.trim() || undefined,
+					default_model: result.data.default_model ?? ''
+				});
+			} else {
+				await providersApi.create(agent, {
+					name: result.data.name,
+					type: result.data.type,
+					base_url: result.data.base_url || undefined,
+					api_key: result.data.api_key || undefined,
+					default_model: result.data.default_model || undefined
+				});
+			}
 			toastStore.success(t('myaaw.providers.saved'));
-			name = '';
-			baseUrl = '';
-			apiKey = '';
-			defaultModel = '';
-			discovered = null;
+			resetForm();
 			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -145,6 +180,7 @@
 			return;
 		try {
 			await providersApi.remove(agent, provider);
+			if (editing === provider) resetForm();
 			await load(agent);
 			toastStore.success(t('myaaw.providers.deleted'));
 		} catch (err) {
@@ -233,6 +269,15 @@
 									<Star class="mr-2 h-4 w-4" />
 									{t('myaaw.providers.set_default')}
 								</Button>
+								<Button
+									size="icon-sm"
+									variant="ghost"
+									onclick={() => startEdit(provider)}
+									aria-label={t('myaaw.providers.edit')}
+									title={t('myaaw.providers.edit')}
+								>
+									<Pencil class="h-3.5 w-3.5" />
+								</Button>
 								<Button size="icon-sm" variant="ghost" onclick={() => remove(provider.name)}>
 									<Trash2 class="h-3.5 w-3.5 text-destructive" />
 								</Button>
@@ -244,20 +289,29 @@
 
 			<Card class="lg:col-span-2">
 				<CardHeader>
-					<CardTitle class="text-sm">{t('myaaw.providers.create')}</CardTitle>
-					<CardDescription>{t('myaaw.providers.create_desc')}</CardDescription>
+					<CardTitle class="text-sm">
+						{editing ? t('myaaw.providers.edit') : t('myaaw.providers.create')}
+					</CardTitle>
+					<CardDescription>
+						{editing ? t('myaaw.providers.edit_desc') : t('myaaw.providers.create_desc')}
+					</CardDescription>
 				</CardHeader>
 				<CardContent>
 					<form
 						class="space-y-3"
 						onsubmit={(event) => {
 							event.preventDefault();
-							void create();
+							void save();
 						}}
 					>
 						<div class="grid gap-1">
 							<Label for="provider-name">{t('myaaw.providers.name')}</Label>
-							<Input id="provider-name" bind:value={name} placeholder="deepseek" />
+							<Input
+								id="provider-name"
+								bind:value={name}
+								placeholder="deepseek"
+								disabled={editing !== ''}
+							/>
 							<FieldError code={errors.name} />
 						</div>
 						<div class="grid gap-1">
@@ -286,7 +340,7 @@
 								id="provider-api-key"
 								type="password"
 								bind:value={apiKey}
-								placeholder="sk-..."
+								placeholder={editing ? t('myaaw.providers.api_key_keep') : 'sk-...'}
 							/>
 						</div>
 
@@ -331,10 +385,21 @@
 						{/if}
 
 						<Separator />
-						<Button type="submit" size="sm" loading={saving}>
-							<Plus class="mr-2 h-4 w-4" />
-							{t('myaaw.providers.create')}
-						</Button>
+						<div class="flex flex-wrap gap-2">
+							<Button type="submit" size="sm" loading={saving}>
+								{#if editing}
+									{t('common.save')}
+								{:else}
+									<Plus class="mr-2 h-4 w-4" />
+									{t('myaaw.providers.create')}
+								{/if}
+							</Button>
+							{#if editing}
+								<Button type="button" size="sm" variant="ghost" onclick={resetForm}>
+									{t('common.cancel')}
+								</Button>
+							{/if}
+						</div>
 					</form>
 				</CardContent>
 			</Card>
