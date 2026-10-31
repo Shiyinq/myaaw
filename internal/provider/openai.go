@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -87,6 +88,11 @@ type OpenAIStreamOptions struct {
 func messagesToOpenAIMessages(messages []Message) []OpenAIMessage {
 	openAIMessages := make([]OpenAIMessage, 0, len(messages))
 	for _, m := range messages {
+		if emptyAssistantTurn(m) {
+			// Providers reject an assistant turn without content or tool calls, and
+			// older transcripts can hold one from a run stopped while thinking.
+			continue
+		}
 		openAIMessages = append(openAIMessages, OpenAIMessage{
 			Role:             m.Role,
 			Name:             m.Name,
@@ -97,6 +103,21 @@ func messagesToOpenAIMessages(messages []Message) []OpenAIMessage {
 		})
 	}
 	return openAIMessages
+}
+
+// emptyAssistantTurn reports an assistant message that carries nothing a
+// provider accepts: no text, no tool calls, no images.
+func emptyAssistantTurn(m Message) bool {
+	if m.Role != "assistant" || len(m.ToolCalls) > 0 || len(m.Images) > 0 {
+		return false
+	}
+	switch content := m.Content.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(content) == ""
+	}
+	return false
 }
 
 // openAIToolCalls keeps the OpenAI wire shape: arguments is a JSON string and
