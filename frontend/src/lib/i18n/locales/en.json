@@ -294,7 +294,14 @@
 			"history_no_results": "No conversations match your search.",
 			"history_show": "Show history",
 			"history_hide": "Hide history",
-			"rename": "Rename"
+			"rename": "Rename",
+			"attach_image": "Attach image",
+			"drop_images": "Drop images here",
+			"remove_image": "Remove image",
+			"image_limit": "Up to {count} images per message.",
+			"image_too_large": "Each image must be under {size} MB.",
+			"image_only": "Only images can be attached.",
+			"image_failed": "Could not read that image."
 		},
 		"conversations": {
 			"search": "Search titles...",

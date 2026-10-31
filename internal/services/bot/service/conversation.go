@@ -306,7 +306,10 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage) provider
 		isGroq := providerName == "groq"
 
 		if isOpenAI || isGroq {
-			contentItems := []provider.ContentItem{{Type: "text", Text: text}}
+			contentItems := make([]provider.ContentItem, 0, len(msg.Images)+1)
+			if text != "" {
+				contentItems = append(contentItems, provider.ContentItem{Type: "text", Text: text})
+			}
 			for _, img := range msg.Images {
 				contentItems = append(contentItems, provider.ContentItem{
 					Type:     "image_url",

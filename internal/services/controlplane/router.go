@@ -6,6 +6,7 @@ import (
 
 	_ "myaaw/docs/controlplane"
 	"myaaw/internal/agentdir"
+	"myaaw/internal/config"
 	"myaaw/internal/services/controlplane/handler"
 	cpMiddleware "myaaw/internal/services/controlplane/middleware"
 	"myaaw/internal/services/controlplane/service"
@@ -43,7 +44,7 @@ func NewApp() (*fiber.App, error) {
 	backups := service.NewBackupService(serverSvc)
 	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups)
 
-	app := fiber.New(fiber.Config{AppName: "myaaw api"})
+	app := fiber.New(fiber.Config{AppName: "myaaw api", BodyLimit: config.A2AMaxRequestBytes})
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: allowedOrigins(),
 		AllowMethods: []string{"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"},

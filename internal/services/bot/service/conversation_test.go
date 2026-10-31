@@ -148,3 +148,16 @@ func TestBuildConversationMessagesReusesA2AContext(t *testing.T) {
 		t.Fatalf("messages = %d, want 4 (system + 2 history + new)", len(messages))
 	}
 }
+
+func TestBuildUserMessageImagesWithoutText(t *testing.T) {
+	svc := &BotServiceImpl{llmProvider: provider.NewOpenAIProvider("http://127.0.0.1:1", "sk-test", "test-model")}
+
+	msg := svc.buildUserMessage(&channel.IncomingMessage{Images: []string{"AAAA"}})
+	items := provider.MessageContentItems(msg)
+	if len(items) != 1 {
+		t.Fatalf("content items = %+v, want only the image", items)
+	}
+	if items[0].Type != "image_url" || items[0].ImageURL == nil || items[0].ImageURL.URL != "data:image/jpeg;base64,AAAA" {
+		t.Fatalf("image item = %+v", items[0])
+	}
+}

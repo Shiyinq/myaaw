@@ -19,6 +19,7 @@
 		ArrowDownToLine,
 		Brain,
 		Check,
+		ImagePlus,
 		Loader2,
 		MessageSquarePlus,
 		Minimize2,
@@ -40,6 +41,7 @@
 		Attachment,
 		ChatStreamEvent,
 		ConversationSummary,
+		Message,
 		TimelineItem,
 		Usage
 	} from '$lib/types';
@@ -49,7 +51,22 @@
 	interface Item extends TimelineItem {
 		localId?: string;
 		resolved?: string;
+		images?: string[];
 	}
+
+	interface PendingImage {
+		id: string;
+		name: string;
+		dataUrl: string;
+		base64: string;
+	}
+
+	const MAX_IMAGES = 6;
+	const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+	const MAX_IMAGE_EDGE = 1600;
+	// Raster formats only: the browser re-encodes them to JPEG, and SVG/GIF
+	// animations would not survive that, so they are rejected up front.
+	const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
 	let agent = $derived(agentSelection.selected);
 	let conversationId = $state('');
@@ -60,6 +77,9 @@
 	let pendingApproval = $state<ApprovalPrompt | null>(null);
 	let usage = $state<Usage | null>(null);
 	let attachments = $state<Attachment[]>([]);
+	let pending = $state<PendingImage[]>([]);
+	let dragOver = $state(false);
+	let fileInput = $state<HTMLInputElement | null>(null);
 	let error = $state('');
 	let scroller = $state<HTMLDivElement | null>(null);
 	let composer = $state<HTMLTextAreaElement | null>(null);
@@ -113,9 +133,11 @@
 				.filter((message) => message.role === 'user' || message.role === 'assistant')
 				.map((message, index) => ({
 					kind: message.role === 'user' ? 'user' : 'text',
-					text: message.content,
+					text: messageText(message),
+					images: message.role === 'user' ? messageImages(message) : undefined,
 					localId: `history-${index}`
-				}));
+				}))
+				.filter((item) => item.text || (item.images?.length ?? 0) > 0);
 			usage = null;
 			attachments = [];
 		} catch (err) {
@@ -224,10 +246,12 @@
 
 	async function send() {
 		const text = input.trim();
-		if (!text || !agent || streaming) return;
+		const images = pending.map((item) => item.base64);
+		if ((!text && images.length === 0) || !agent || streaming) return;
 
-		push({ kind: 'user', text });
+		push({ kind: 'user', text, images: pending.map((item) => item.dataUrl) });
 		input = '';
+		clearPending();
 		if (composer) composer.style.height = '';
 		streaming = true;
 		error = '';
@@ -239,7 +263,11 @@
 		try {
 			await chatApi.stream(
 				agent,
-				{ text, conversation_id: conversationId || undefined },
+				{
+					text,
+					conversation_id: conversationId || undefined,
+					images: images.length > 0 ? images : undefined
+				},
 				(event) => {
 					const data = event.data as Record<string, any>;
 					switch (event.event as ChatStreamEvent) {
@@ -510,6 +538,131 @@
 		});
 	}
 
+	function messageText(message: Message): string {
+		if (typeof message.content === 'string') return message.content;
+		if (Array.isArray(message.content)) {
+			return message.content
+				.filter((part) => part.type === 'text')
+				.map((part) => part.text ?? '')
+				.filter(Boolean)
+				.join('\n');
+		}
+		return '';
+	}
+
+	function messageImages(message: Message): string[] {
+		const urls: string[] = [];
+		if (Array.isArray(message.content)) {
+			for (const part of message.content) {
+				if (part.type === 'image_url' && part.image_url?.url) urls.push(part.image_url.url);
+			}
+		}
+		for (const image of message.images ?? []) {
+			urls.push(`data:image/jpeg;base64,${image}`);
+		}
+		return urls;
+	}
+
+	function readAsDataUrl(file: File): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(String(reader.result));
+			reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+			reader.readAsDataURL(file);
+		});
+	}
+
+	/** Downscale and re-encode to JPEG so four screenshots still fit the request limit. */
+	async function prepareImage(file: File): Promise<string> {
+		const dataUrl = await readAsDataUrl(file);
+		const image = new Image();
+		await new Promise<void>((resolve, reject) => {
+			image.onload = () => resolve();
+			image.onerror = () => reject(new Error('decode failed'));
+			image.src = dataUrl;
+		});
+		if (image.naturalWidth === 0 || image.naturalHeight === 0) {
+			throw new Error('empty image');
+		}
+
+		const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(image.width, image.height));
+		const canvas = document.createElement('canvas');
+		canvas.width = Math.max(1, Math.round(image.width * scale));
+		canvas.height = Math.max(1, Math.round(image.height * scale));
+		const context = canvas.getContext('2d');
+		if (!context) return dataUrl;
+		// JPEG has no alpha channel; a white backdrop keeps transparent PNGs readable.
+		context.fillStyle = '#ffffff';
+		context.fillRect(0, 0, canvas.width, canvas.height);
+		context.drawImage(image, 0, 0, canvas.width, canvas.height);
+		return canvas.toDataURL('image/jpeg', 0.85);
+	}
+
+	async function addFiles(files: FileList | File[] | null | undefined) {
+		if (!files) return;
+		const candidates = Array.from(files);
+		const images = candidates.filter((file) => IMAGE_TYPES.has(file.type));
+		if (images.length !== candidates.length) {
+			toastStore.error(t('myaaw.chat.image_only'));
+		}
+		if (images.length === 0) return;
+
+		const room = MAX_IMAGES - pending.length;
+		if (room <= 0) {
+			toastStore.error(t('myaaw.chat.image_limit', { count: MAX_IMAGES }));
+			return;
+		}
+		if (images.length > room) {
+			toastStore.error(t('myaaw.chat.image_limit', { count: MAX_IMAGES }));
+		}
+
+		const additions: PendingImage[] = [];
+		for (const file of images.slice(0, room)) {
+			if (file.size > MAX_IMAGE_BYTES) {
+				toastStore.error(t('myaaw.chat.image_too_large', { size: 10 }));
+				continue;
+			}
+			try {
+				const dataUrl = await prepareImage(file);
+				const base64 = dataUrl.split(',')[1] ?? '';
+				if (!base64) continue;
+				additions.push({
+					id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+					name: file.name,
+					dataUrl,
+					base64
+				});
+			} catch {
+				toastStore.error(t('myaaw.chat.image_failed'));
+			}
+		}
+		if (additions.length > 0) pending = [...pending, ...additions];
+	}
+
+	function clearPending() {
+		pending = [];
+		if (fileInput) fileInput.value = '';
+	}
+
+	function removePending(id: string) {
+		pending = pending.filter((item) => item.id !== id);
+	}
+
+	function onFileInput(event: Event) {
+		const element = event.currentTarget as HTMLInputElement;
+		void addFiles(element.files);
+		element.value = '';
+	}
+
+	function onPaste(event: ClipboardEvent) {
+		const files = Array.from(event.clipboardData?.files ?? []);
+		if (files.length === 0) return;
+		if (files.some((file) => IMAGE_TYPES.has(file.type))) {
+			event.preventDefault();
+		}
+		void addFiles(files);
+	}
+
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
 			event.preventDefault();
@@ -577,10 +730,25 @@
 					{#each items as item, index (item.localId ?? `${item.kind}-${index}`)}
 						{#if item.kind === 'user'}
 							<div class="flex justify-end">
-								<div
-									class="max-w-[80%] whitespace-pre-wrap rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
-								>
-									{item.text}
+								<div class="flex max-w-[80%] flex-col items-end gap-2">
+									{#if item.images?.length}
+										<div class="flex flex-wrap justify-end gap-2">
+											{#each item.images as image, imageIndex (imageIndex)}
+												<img
+													src={image}
+													alt=""
+													class="max-h-48 rounded-2xl border object-contain"
+												/>
+											{/each}
+										</div>
+									{/if}
+									{#if item.text}
+										<div
+											class="whitespace-pre-wrap rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
+										>
+											{item.text}
+										</div>
+									{/if}
 								</div>
 							</div>
 						{:else if item.kind === 'text'}
@@ -708,24 +876,91 @@
 			<div class="shrink-0 border-t bg-background/80 px-4 py-3 backdrop-blur">
 				<div class="mx-auto w-full max-w-5xl">
 					<div
-						class="rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60"
+						role="group"
+						class={[
+							'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60',
+							dragOver ? 'border-ring ring-2 ring-ring/30' : ''
+						]}
+						ondragover={(event) => {
+							event.preventDefault();
+							dragOver = true;
+						}}
+						ondragleave={(event) => {
+							event.preventDefault();
+							dragOver = false;
+						}}
+						ondrop={(event) => {
+							event.preventDefault();
+							dragOver = false;
+							void addFiles(event.dataTransfer?.files);
+						}}
 					>
+						{#if pending.length > 0}
+							<div class="flex flex-wrap gap-2 px-3 pt-3">
+								{#each pending as image (image.id)}
+									<div class="relative">
+										<img
+											src={image.dataUrl}
+											alt={image.name}
+											class="h-16 w-16 rounded-lg border object-cover"
+										/>
+										<button
+											type="button"
+											class="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:text-foreground"
+											onclick={() => removePending(image.id)}
+											aria-label={t('myaaw.chat.remove_image')}
+											title={t('myaaw.chat.remove_image')}
+										>
+											<X class="h-3 w-3" />
+										</button>
+									</div>
+								{/each}
+							</div>
+						{/if}
+						{#if dragOver}
+							<p class="px-4 pt-2 text-[11px] font-medium text-foreground">
+								{t('myaaw.chat.drop_images')}
+							</p>
+						{/if}
 						<textarea
 							bind:this={composer}
 							bind:value={input}
 							use:autosize
 							onkeydown={onKeydown}
+							onpaste={onPaste}
 							rows="1"
 							placeholder={t('myaaw.chat.placeholder')}
 							class="max-h-40 min-h-[3.25rem] w-full resize-none rounded-t-2xl bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
 						></textarea>
 						<div class="flex items-center justify-between px-3 pb-2">
-							<span class="text-[10px] text-muted-foreground">
-								{#if usage}
-									{t('myaaw.chat.tokens', { count: usage.total_tokens })} ·
-								{/if}
-								{t('myaaw.chat.hint')}
-							</span>
+							<div class="flex min-w-0 items-center gap-1">
+								<input
+									bind:this={fileInput}
+									type="file"
+									accept="image/*"
+									multiple
+									class="hidden"
+									onchange={onFileInput}
+								/>
+								<Button
+									type="button"
+									size="icon-sm"
+									variant="ghost"
+									class="shrink-0 rounded-full"
+									disabled={pending.length >= MAX_IMAGES}
+									onclick={() => fileInput?.click()}
+									aria-label={t('myaaw.chat.attach_image')}
+									title={t('myaaw.chat.attach_image')}
+								>
+									<ImagePlus class="h-4 w-4" />
+								</Button>
+								<span class="truncate text-[10px] text-muted-foreground">
+									{#if usage}
+										{t('myaaw.chat.tokens', { count: usage.total_tokens })} ·
+									{/if}
+									{t('myaaw.chat.hint')}
+								</span>
+							</div>
 							{#if streaming}
 								<Button
 									size="icon"
@@ -741,7 +976,7 @@
 									size="icon"
 									class="rounded-full"
 									onclick={send}
-									disabled={!input.trim()}
+									disabled={!input.trim() && pending.length === 0}
 									aria-label={t('myaaw.chat.send')}
 								>
 									<Send class="h-4 w-4" />

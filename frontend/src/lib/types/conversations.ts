@@ -1,6 +1,12 @@
+export interface ContentPart {
+	type: string;
+	text?: string;
+	image_url?: { url?: string };
+}
+
 export interface Message {
 	role: string;
-	content: string;
+	content: string | ContentPart[];
 	images?: string[];
 	tool_calls?: unknown[];
 	tool_call_id?: string;

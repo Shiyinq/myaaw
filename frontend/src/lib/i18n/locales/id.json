@@ -294,7 +294,14 @@
 			"history_no_results": "Tidak ada percakapan yang cocok.",
 			"history_show": "Tampilkan riwayat",
 			"history_hide": "Sembunyikan riwayat",
-			"rename": "Ubah judul"
+			"rename": "Ubah judul",
+			"attach_image": "Lampirkan gambar",
+			"drop_images": "Lepas gambar di sini",
+			"remove_image": "Hapus gambar",
+			"image_limit": "Maksimal {count} gambar per pesan.",
+			"image_too_large": "Setiap gambar harus di bawah {size} MB.",
+			"image_only": "Hanya gambar yang bisa dilampirkan.",
+			"image_failed": "Gambar tidak bisa dibaca."
 		},
 		"conversations": {
 			"search": "Cari judul...",
