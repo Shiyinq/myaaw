@@ -6824,6 +6824,9 @@
         "obs.SessionTotals": {
             "type": "object",
             "properties": {
+                "cache_hit_rate": {
+                    "type": "integer"
+                },
                 "cache_hit_tokens": {
                     "description": "CacheHitTokens is the part of InputTokens served from the prompt cache.",
                     "type": "integer"
@@ -6841,6 +6844,10 @@
                     "type": "integer"
                 },
                 "last_active_at": {
+                    "type": "integer"
+                },
+                "llm_ms": {
+                    "description": "LlmMs and ToolMs are the wall time spent in provider requests and tool\nexecutions across the session. TtftMs is the mean first-token latency of\nthe requests that streamed a first token.",
                     "type": "integer"
                 },
                 "model": {
@@ -6863,7 +6870,20 @@
                     "description": "TokPerSec is the generation throughput of the newest run.",
                     "type": "integer"
                 },
+                "tool_ms": {
+                    "type": "integer"
+                },
+                "total_tokens": {
+                    "description": "TotalTokens is input + output. UncachedInputTokens is InputTokens minus\nthe cache hits, and CacheHitRate is the rounded share served from cache.\nThey are computed here so clients never re-derive the arithmetic.",
+                    "type": "integer"
+                },
+                "ttft_ms": {
+                    "type": "integer"
+                },
                 "turns": {
+                    "type": "integer"
+                },
+                "uncached_input_tokens": {
                     "type": "integer"
                 }
             }

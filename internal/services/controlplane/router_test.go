@@ -1806,7 +1806,7 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 			{
 				ID: turn.id + "_llm", RunID: turn.id, Kind: obs.KindLLM, Name: "deepseek-flash",
 				StepIndex: 1, RequestIndex: 1, StartedAt: turn.startedAt, Status: obs.StatusCompleted,
-				GenerationMs: 500, OutputTokens: 100,
+				DurationMs: 900, FirstTokenMs: 200, GenerationMs: 500, OutputTokens: 100,
 				InputJSON:  `{"messages":[{"role":"user","content":"hi"}]}`,
 				OutputJSON: `{"role":"assistant","content":"hello"}`,
 			},
@@ -1880,13 +1880,19 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 	}
 
 	var stats struct {
-		Turns          int    `json:"turns"`
-		Steps          int    `json:"steps"`
-		InputTokens    int    `json:"input_tokens"`
-		OutputTokens   int    `json:"output_tokens"`
-		CacheHitTokens int    `json:"cache_hit_tokens"`
-		Model          string `json:"model"`
-		TokPerSec      int    `json:"tok_per_sec"`
+		Turns               int    `json:"turns"`
+		Steps               int    `json:"steps"`
+		InputTokens         int    `json:"input_tokens"`
+		OutputTokens        int    `json:"output_tokens"`
+		CacheHitTokens      int    `json:"cache_hit_tokens"`
+		TotalTokens         int    `json:"total_tokens"`
+		UncachedInputTokens int    `json:"uncached_input_tokens"`
+		CacheHitRate        int    `json:"cache_hit_rate"`
+		Model               string `json:"model"`
+		TokPerSec           int    `json:"tok_per_sec"`
+		LlmMs               int64  `json:"llm_ms"`
+		ToolMs              int64  `json:"tool_ms"`
+		TtftMs              int64  `json:"ttft_ms"`
 	}
 	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/conv-session/stats", token, "", fiber.StatusOK, &stats)
 	if stats.Turns != 2 || stats.Steps != 4 {
@@ -1898,11 +1904,17 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 	if stats.CacheHitTokens != 800 {
 		t.Fatalf("session stats cache hits = %+v", stats)
 	}
+	if stats.TotalTokens != 2200 || stats.UncachedInputTokens != 1200 || stats.CacheHitRate != 40 {
+		t.Fatalf("session stats derived tokens = %+v", stats)
+	}
 	if stats.Model != "deepseek-flash" {
 		t.Fatalf("session stats model = %+v", stats)
 	}
 	if stats.TokPerSec != 200 {
 		t.Fatalf("session stats tok/s = %+v", stats)
+	}
+	if stats.LlmMs != 1800 || stats.ToolMs != 0 || stats.TtftMs != 200 {
+		t.Fatalf("session stats timing = %+v", stats)
 	}
 
 	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/missing", token, "", fiber.StatusNotFound, nil)

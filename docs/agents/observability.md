@@ -355,6 +355,13 @@ What each piece counts:
 | `tok` | session total, `SUM(input_tokens) + SUM(output_tokens)` |
 | provider · model | the newest run's provider and model, so a mid-chat model switch is reflected on the next turn |
 
+Clicking either group opens a panel for the same session. The left one breaks the
+run down into **LLM time** (`SUM(llm.duration_ms)`), **tool time**
+(`SUM(tool.duration_ms)`), **average TTFT** (mean `first_token_ms` over the `llm`
+spans that streamed a first token) and tok/s. The right one splits the tokens into
+**cache hit**, **uncached input** (`input − cached`), **cached input** and
+**output** — those three add up to the session total exactly.
+
 The session totals come from `GET /agents/:name/observability/sessions/:id/stats`,
 which aggregates in SQL (see [HTTP API](#7-http-api)) instead of loading the
 runs, so they stay correct for sessions longer than one page.
@@ -832,7 +839,7 @@ All endpoints require the control plane bearer token.
 | `GET` | `/agents/:name/observability/summary?days=7` | Totals, percentiles, breakdowns, badges, cost-completeness flags, and `database_bytes`. |
 | `GET` | `/agents/:name/observability/sessions?limit` | Sessions with turn count, tokens, and cost. |
 | `GET` | `/agents/:name/observability/sessions/:id` | One session with every turn, **oldest first**, its step count, and its full spans (prompts, thinking, answers, tool payloads). Add `?spans=false` for metadata only. |
-| `GET` | `/agents/:name/observability/sessions/:id/stats` | Aggregate totals only: `turns`, `steps`, `input_tokens`, `output_tokens`, `cache_hit_tokens`, `tok_per_sec`, the newest run's `provider` and `model`, and `error_count`. |
+| `GET` | `/agents/:name/observability/sessions/:id/stats` | Aggregate totals only: `turns`, `steps`, `input_tokens`, `output_tokens`, `cache_hit_tokens`, `total_tokens`, `uncached_input_tokens`, `cache_hit_rate`, `llm_ms`, `tool_ms`, `ttft_ms`, `tok_per_sec`, the newest run's `provider` and `model`, and `error_count`. |
 | `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&model&trigger&from&to` | List runs, newest first. `trigger` is `user`, `cron`, or `subagent`. |
 | `GET` | `/agents/:name/observability/runs/:id` | One run with flat `spans` and a nested `tree`. |
 | `DELETE` | `/agents/:name/observability/runs?before=<unix ms>` | Delete runs; without `before` deletes everything. |
@@ -858,18 +865,30 @@ sessions; `stats` has no such page and never loads a span.
   "input_tokens": 19300,
   "output_tokens": 224,
   "cache_hit_tokens": 17400,
+  "total_tokens": 19524,
+  "uncached_input_tokens": 1900,
+  "cache_hit_rate": 90,
   "provider": "openai",
   "model": "deepseek-v4-flash",
   "error_count": 0,
-  "tok_per_sec": 182
+  "tok_per_sec": 182,
+  "llm_ms": 22700,
+  "tool_ms": 13700,
+  "ttft_ms": 1600
 }
 ```
 
 `cache_hit_tokens` is part of `input_tokens`, so the hit rate is
 `cache_hit_tokens / input_tokens` (see [Cache hit rate](#cache-hit-rate)).
-`provider` is the provider **type** of the newest run (`openai`, `gemini`); the
-configured provider name (for example `deepseek`) lives in the agent config and
-is what the dashboard prints.
+`total_tokens`, `uncached_input_tokens` and `cache_hit_rate` are that arithmetic
+already done by the API (rounded and capped at 100%), so a client only formats
+numbers. `llm_ms` and `tool_ms` are the wall time spent inside `llm` and `tool`
+spans, `ttft_ms` is the mean first-token latency of the `llm` spans that
+streamed a first token (requests that only returned tool calls have none, and
+are left out of the average rather than counted as zero). `tok_per_sec` covers
+the newest run only. `provider` is the provider **type** of the newest run
+(`openai`, `gemini`); the configured provider name (for example `deepseek`) lives
+in the agent config and is what the dashboard prints.
 
 An agent that has never recorded a run returns an empty summary rather than an
 error, so a dashboard can render before the first message.

@@ -116,8 +116,14 @@ export interface SessionStats {
 	input_tokens: number;
 	output_tokens: number;
 	cache_hit_tokens: number;
+	total_tokens: number;
+	uncached_input_tokens: number;
+	cache_hit_rate: number;
 	provider?: string;
 	model?: string;
 	error_count: number;
 	tok_per_sec: number;
+	llm_ms: number;
+	tool_ms: number;
+	ttft_ms: number;
 }

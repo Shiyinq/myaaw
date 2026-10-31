@@ -752,6 +752,8 @@ definitions:
     type: object
   obs.SessionTotals:
     properties:
+      cache_hit_rate:
+        type: integer
       cache_hit_tokens:
         description: CacheHitTokens is the part of InputTokens served from the prompt
           cache.
@@ -765,6 +767,12 @@ definitions:
       input_tokens:
         type: integer
       last_active_at:
+        type: integer
+      llm_ms:
+        description: |-
+          LlmMs and ToolMs are the wall time spent in provider requests and tool
+          executions across the session. TtftMs is the mean first-token latency of
+          the requests that streamed a first token.
         type: integer
       model:
         type: string
@@ -780,7 +788,19 @@ definitions:
       tok_per_sec:
         description: TokPerSec is the generation throughput of the newest run.
         type: integer
+      tool_ms:
+        type: integer
+      total_tokens:
+        description: |-
+          TotalTokens is input + output. UncachedInputTokens is InputTokens minus
+          the cache hits, and CacheHitRate is the rounded share served from cache.
+          They are computed here so clients never re-derive the arithmetic.
+        type: integer
+      ttft_ms:
+        type: integer
       turns:
+        type: integer
+      uncached_input_tokens:
         type: integer
     type: object
   obs.Span:

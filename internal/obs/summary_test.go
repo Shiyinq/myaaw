@@ -350,8 +350,13 @@ func TestSessionTotalsAggregatesOneConversation(t *testing.T) {
 		{ID: "s2a", RunID: second.ID, Kind: KindStep, StepIndex: 1, StartedAt: base + 1000, Status: StatusError},
 		{ID: "s4a", RunID: other.ID, Kind: KindStep, StepIndex: 1, StartedAt: base + 500, Status: StatusCompleted},
 		{ID: "s3llm", RunID: latest.ID, Kind: KindLLM, Name: "deepseek-v4-flash", StepIndex: 1,
-			RequestIndex: 1, StartedAt: base + 2000, GenerationMs: 500, OutputTokens: 100,
+			RequestIndex: 1, StartedAt: base + 2000, DurationMs: 800, FirstTokenMs: 200,
+			GenerationMs: 500, OutputTokens: 100, Status: StatusCompleted},
+		{ID: "s1llm", RunID: first.ID, Kind: KindLLM, Name: "deepseek-flash", StepIndex: 1,
+			RequestIndex: 1, StartedAt: base, DurationMs: 200, FirstTokenMs: 400,
 			Status: StatusCompleted},
+		{ID: "s1tool", RunID: first.ID, Kind: KindTool, Name: "bash", StepIndex: 1,
+			StartedAt: base, DurationMs: 100, Status: StatusCompleted},
 	}
 	if err := store.UpsertSpans(spans); err != nil {
 		t.Fatalf("upsert spans: %v", err)
@@ -373,6 +378,12 @@ func TestSessionTotalsAggregatesOneConversation(t *testing.T) {
 	if totals.CacheHitTokens != 240 {
 		t.Fatalf("cache hit tokens = %d, want 240", totals.CacheHitTokens)
 	}
+	if totals.TotalTokens != 660 || totals.UncachedInputTokens != 360 {
+		t.Fatalf("derived tokens = total %d, uncached %d", totals.TotalTokens, totals.UncachedInputTokens)
+	}
+	if totals.CacheHitRate != 40 {
+		t.Fatalf("cache hit rate = %d, want 40", totals.CacheHitRate)
+	}
 	if totals.Provider != "openai" || totals.Model != "deepseek-v4-flash" {
 		t.Fatalf("latest run = %q/%q", totals.Provider, totals.Model)
 	}
@@ -381,6 +392,9 @@ func TestSessionTotalsAggregatesOneConversation(t *testing.T) {
 	}
 	if totals.TokPerSec != 200 {
 		t.Fatalf("conv-1 tok/s = %d, want 200", totals.TokPerSec)
+	}
+	if totals.LlmMs != 1000 || totals.ToolMs != 100 || totals.TtftMs != 300 {
+		t.Fatalf("conv-1 timing = llm %d, tool %d, ttft %d", totals.LlmMs, totals.ToolMs, totals.TtftMs)
 	}
 
 	if _, found, err := store.SessionTotals("missing"); err != nil || found {

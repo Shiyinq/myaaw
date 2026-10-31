@@ -473,12 +473,24 @@ type SessionTotals struct {
 	OutputTokens   int    `json:"output_tokens"`
 	// CacheHitTokens is the part of InputTokens served from the prompt cache.
 	CacheHitTokens int `json:"cache_hit_tokens"`
+	// TotalTokens is input + output. UncachedInputTokens is InputTokens minus
+	// the cache hits, and CacheHitRate is the rounded share served from cache.
+	// They are computed here so clients never re-derive the arithmetic.
+	TotalTokens         int `json:"total_tokens"`
+	UncachedInputTokens int `json:"uncached_input_tokens"`
+	CacheHitRate        int `json:"cache_hit_rate"`
 	// Provider is the provider type of the newest run, Model its model.
 	Provider   string `json:"provider,omitempty"`
 	Model      string `json:"model,omitempty"`
 	ErrorCount int    `json:"error_count"`
 	// TokPerSec is the generation throughput of the newest run.
 	TokPerSec int `json:"tok_per_sec"`
+	// LlmMs and ToolMs are the wall time spent in provider requests and tool
+	// executions across the session. TtftMs is the mean first-token latency of
+	// the requests that streamed a first token.
+	LlmMs  int64 `json:"llm_ms"`
+	ToolMs int64 `json:"tool_ms"`
+	TtftMs int64 `json:"ttft_ms"`
 }
 
 // SessionTotals aggregates one conversation. The boolean is false when the
@@ -503,12 +515,37 @@ func (s *Store) SessionTotals(conversationID string) (SessionTotals, bool, error
 		return totals, false, nil
 	}
 
+	totals.TotalTokens = totals.InputTokens + totals.OutputTokens
+	totals.UncachedInputTokens = totals.InputTokens - totals.CacheHitTokens
+	if totals.UncachedInputTokens < 0 {
+		totals.UncachedInputTokens = 0
+	}
+	if totals.InputTokens > 0 {
+		rate := math.Round(float64(totals.CacheHitTokens) / float64(totals.InputTokens) * 100)
+		// A provider occasionally reports a few more cached tokens than it sent;
+		// a rate above 100% is not a rate.
+		totals.CacheHitRate = int(math.Min(100, rate))
+	}
+
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM spans s
 		JOIN runs r ON r.id = s.run_id
 		WHERE r.conversation_id = ? AND s.kind = 'step'`, conversationID).
 		Scan(&totals.Steps); err != nil {
 		return totals, false, fmt.Errorf("count session steps: %w", err)
 	}
+
+	var ttft float64
+	if err := s.db.QueryRow(`SELECT
+			COALESCE(SUM(CASE WHEN s.kind = 'llm' THEN s.duration_ms ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN s.kind = 'tool' THEN s.duration_ms ELSE 0 END), 0),
+			COALESCE(AVG(CASE WHEN s.kind = 'llm' AND s.first_token_ms > 0
+				THEN s.first_token_ms END), 0)
+		FROM spans s JOIN runs r ON r.id = s.run_id
+		WHERE r.conversation_id = ?`, conversationID).
+		Scan(&totals.LlmMs, &totals.ToolMs, &ttft); err != nil {
+		return totals, false, fmt.Errorf("summarise session timing: %w", err)
+	}
+	totals.TtftMs = int64(math.Round(ttft))
 
 	var latestRunID string
 	if err := s.db.QueryRow(`SELECT id, COALESCE(provider, ''), COALESCE(model, '') FROM runs

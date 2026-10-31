@@ -118,6 +118,12 @@
 		provider?: string;
 		tokPerSec?: number;
 		cacheRate?: number;
+		cacheHitTokens?: number;
+		uncachedInputTokens?: number;
+		outputTokens?: number;
+		llmMs?: number;
+		toolMs?: number;
+		ttftMs?: number;
 	} | null>(null);
 	// Configured provider and its default model, as the terminal status line shows.
 	let providerInfo = $state<{
@@ -130,6 +136,9 @@
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let groupOpen = $state<Record<string, boolean>>({});
 	let error = $state('');
+	// The two status-line popovers open on click and close on an outside click.
+	let openStats = $state(false);
+	let openUsage = $state(false);
 	let scroller = $state<HTMLDivElement | null>(null);
 	let composer = $state<HTMLTextAreaElement | null>(null);
 
@@ -283,19 +292,21 @@
 		try {
 			const detail = await observabilityApi.sessionStats(currentAgent, id);
 			if (conversationId !== id) return; // Another conversation won.
-			// Cache hits are reported inside the prompt tokens, never above them.
-			const cacheRate =
-				detail.input_tokens > 0
-					? Math.min(100, Math.round((detail.cache_hit_tokens / detail.input_tokens) * 100))
-					: 0;
+			// Every number below is computed by the API; the view only formats it.
 			sessionStats = {
 				turns: detail.turns,
 				steps: detail.steps,
-				tokens: detail.input_tokens + detail.output_tokens,
+				tokens: detail.total_tokens,
 				model: detail.model ?? '',
 				provider: detail.provider ?? '',
 				tokPerSec: detail.tok_per_sec ?? 0,
-				cacheRate
+				cacheRate: detail.cache_hit_rate ?? 0,
+				cacheHitTokens: detail.cache_hit_tokens ?? 0,
+				uncachedInputTokens: detail.uncached_input_tokens ?? 0,
+				outputTokens: detail.output_tokens ?? 0,
+				llmMs: detail.llm_ms ?? 0,
+				toolMs: detail.tool_ms ?? 0,
+				ttftMs: detail.ttft_ms ?? 0
 			};
 		} catch {
 			// No runs recorded for this conversation; keep the local counts.
@@ -549,6 +560,12 @@
 	let statsTokens = $derived(sessionStats?.tokens ?? usage?.total_tokens ?? 0);
 	let statsTokPerSec = $derived(sessionStats?.tokPerSec ?? 0);
 	let statsCacheRate = $derived(sessionStats?.cacheRate ?? 0);
+	let statsLlmMs = $derived(sessionStats?.llmMs ?? 0);
+	let statsToolMs = $derived(sessionStats?.toolMs ?? 0);
+	let statsTtftMs = $derived(sessionStats?.ttftMs ?? 0);
+	let statsOutputTokens = $derived(sessionStats?.outputTokens ?? 0);
+	let statsCachedTokens = $derived(sessionStats?.cacheHitTokens ?? 0);
+	let statsUncachedTokens = $derived(sessionStats?.uncachedInputTokens ?? 0);
 	let statsProvider = $derived.by(() => {
 		const model = sessionStats?.model ?? '';
 		const providers = providerInfo?.providers ?? [];
@@ -582,6 +599,18 @@
 		if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
 		if (count >= 1000) return `${Math.round(count / 1000)}K`;
 		return String(count);
+	}
+
+	function formatCount(count: number) {
+		return count.toLocaleString();
+	}
+
+	function formatSeconds(ms: number) {
+		if (ms <= 0) return '—';
+		const seconds = ms / 1000;
+		if (seconds < 60) return `${seconds.toFixed(1)}s`;
+		const minutes = Math.floor(seconds / 60);
+		return `${minutes}m ${Math.round(seconds % 60)}s`;
 	}
 
 	function turnLabel(count: number) {
@@ -1352,6 +1381,19 @@
 	}
 </script>
 
+<svelte:window
+	onclick={() => {
+		openStats = false;
+		openUsage = false;
+	}}
+	onkeydown={(event) => {
+		if (event.key === 'Escape') {
+			openStats = false;
+			openUsage = false;
+		}
+	}}
+/>
+
 <TopBarActions id="chat-actions">
 	{#snippet children()}
 		<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
@@ -1766,18 +1808,130 @@
 						<div
 							class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-t px-4 py-1.5 text-[10px] text-muted-foreground"
 						>
-							<span class="flex items-center gap-1">
-								<Gauge class="h-3 w-3 shrink-0" />
-								{turnLabel(statsTurns)} · {stepsLabel(statsSteps)}
-								{#if statsTokPerSec > 0}
-									· {t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
+							<div class="relative">
+								<button
+									type="button"
+									class={cn(
+										'flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none',
+										openStats && 'text-foreground'
+									)}
+									onclick={(event) => {
+										event.stopPropagation();
+										openStats = !openStats;
+										openUsage = false;
+									}}
+									aria-expanded={openStats}
+								>
+									<Gauge class="h-3 w-3 shrink-0" />
+									{turnLabel(statsTurns)} · {stepsLabel(statsSteps)}
+									{#if statsTokPerSec > 0}
+										· {t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
+									{/if}
+								</button>
+								{#if openStats && sessionStats}
+									<div
+										class="absolute bottom-full left-1/2 z-30 mb-2 w-64 -translate-x-1/2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md"
+										onclick={(event) => event.stopPropagation()}
+										role="presentation"
+									>
+										<div class="flex items-center gap-2 font-medium">
+											<Gauge class="h-3.5 w-3.5" />
+											{t('myaaw.chat.stats_session_title')}
+										</div>
+										<div class="my-2 h-px bg-border"></div>
+										<dl class="space-y-1.5">
+											<div class="flex justify-between gap-3">
+												<dt>{t('myaaw.chat.stats_llm_time')}</dt>
+												<dd class="tabular-nums">{formatSeconds(statsLlmMs)}</dd>
+											</div>
+											<div class="flex justify-between gap-3">
+												<dt>{t('myaaw.chat.stats_tool_time')}</dt>
+												<dd class="tabular-nums">{formatSeconds(statsToolMs)}</dd>
+											</div>
+											<div class="flex justify-between gap-3">
+												<dt>{t('myaaw.chat.stats_ttft')}</dt>
+												<dd class="tabular-nums">{formatSeconds(statsTtftMs)}</dd>
+											</div>
+											<div class="flex justify-between gap-3">
+												<dt>{t('myaaw.chat.stats_tps')}</dt>
+												<dd class="tabular-nums">
+													{t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
+												</dd>
+											</div>
+										</dl>
+									</div>
 								{/if}
-							</span>
+							</div>
+
 							{#if statsModelLine}
-								<span class="flex items-center gap-1 font-mono italic">
-									<Database class="h-3 w-3 shrink-0" />
-									{statsModelLine}
-								</span>
+								<div class="relative">
+									<button
+										type="button"
+										class={cn(
+											'flex items-center gap-1 rounded-md px-1 py-0.5 font-mono italic transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none',
+											openUsage && 'text-foreground'
+										)}
+										onclick={(event) => {
+											event.stopPropagation();
+											openUsage = !openUsage;
+											openStats = false;
+										}}
+										aria-expanded={openUsage}
+									>
+										<Database class="h-3 w-3 shrink-0" />
+										{statsModelLine}
+									</button>
+									{#if openUsage && sessionStats}
+										<div
+											class="absolute bottom-full left-1/2 z-30 mb-2 w-64 -translate-x-1/2 rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md"
+											onclick={(event) => event.stopPropagation()}
+											role="presentation"
+										>
+											<div class="flex items-center justify-between gap-3 font-medium">
+												<span class="flex items-center gap-2">
+													<Database class="h-3.5 w-3.5" />
+													{t('myaaw.chat.stats_usage_title')}
+												</span>
+												<span class="tabular-nums">
+													{t('myaaw.chat.stats_tokens', {
+														count: formatCount(statsTokens)
+													})}
+												</span>
+											</div>
+											<div class="my-2 h-px bg-border"></div>
+											<dl class="space-y-1.5">
+												<div class="flex justify-between gap-3">
+													<dt>{t('myaaw.chat.stats_cache_hit_label')}</dt>
+													<dd class="tabular-nums">{statsCacheRate}%</dd>
+												</div>
+												<div class="flex justify-between gap-3">
+													<dt>{t('myaaw.chat.stats_uncached_input')}</dt>
+													<dd class="tabular-nums">
+														{t('myaaw.chat.stats_tokens', {
+															count: formatCount(statsUncachedTokens)
+														})}
+													</dd>
+												</div>
+												<div class="flex justify-between gap-3">
+													<dt>{t('myaaw.chat.stats_cached_input')}</dt>
+													<dd class="tabular-nums">
+														{t('myaaw.chat.stats_tokens', {
+															count: formatCount(statsCachedTokens)
+														})}
+													</dd>
+												</div>
+												<div class="flex justify-between gap-3">
+													<dt>{t('myaaw.chat.stats_output')}</dt>
+													<dd class="tabular-nums">
+														{t('myaaw.chat.stats_tokens', {
+															count: formatCount(statsOutputTokens)
+														})}
+													</dd>
+												</div>
+											</dl>
+										</div>
+									{/if}
+								</div>
 							{/if}
 						</div>
 					</div>

@@ -920,20 +920,33 @@ no run or span is loaded — so it also stays correct for sessions longer than t
   "input_tokens": 19300,
   "output_tokens": 224,
   "cache_hit_tokens": 17400,
+  "total_tokens": 19524,
+  "uncached_input_tokens": 1900,
+  "cache_hit_rate": 90,
   "provider": "openai",
   "model": "deepseek-v4-flash",
   "error_count": 0,
-  "tok_per_sec": 182
+  "tok_per_sec": 182,
+  "llm_ms": 22700,
+  "tool_ms": 13700,
+  "ttft_ms": 1600
 }
 ```
 
 - `turns` is the number of recorded runs; `steps` counts `step` spans across all
   of them (not `llm` or `tool` spans).
 - `cache_hit_tokens` is part of `input_tokens`, so the hit rate is
-  `cache_hit_tokens / input_tokens` — never `/ total_tokens`. Hide the rate when
-  the count is zero: a provider that does not report caching is not a 0% rate.
+  `cache_hit_tokens / input_tokens` — never `/ total_tokens`. `cache_hit_rate`,
+  `total_tokens` and `uncached_input_tokens` are that arithmetic already done by
+  the API (capped at 100% and rounded); clients only format them. Hide the rate
+  when the count is zero: a provider that does not report caching is not a 0%
+  rate.
 - `tok_per_sec` is the newest run's `SUM(output_tokens) / (SUM(generation_ms) / 1000)`,
   so it changes from turn to turn.
+- `llm_ms` and `tool_ms` are the wall time spent inside `llm` and `tool` spans
+  across the session. `ttft_ms` averages `first_token_ms` over the `llm` spans
+  that actually streamed a first token; tool-call-only requests are excluded
+  instead of counting as a zero.
 - `provider` is the provider **type** of the newest run (`openai`, `gemini`),
   while the configured provider name (`deepseek`) lives in the agent config.
 - A conversation with no recorded runs returns 404, like the detail endpoint.
