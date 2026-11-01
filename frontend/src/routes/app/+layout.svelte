@@ -48,6 +48,7 @@
 	import { server as serverApi } from '$lib/apis/server';
 	import { getErrorMessage } from '$lib/utils/api';
 	import AgentPicker from '$lib/components/app/AgentPicker.svelte';
+	import Logo from '$lib/components/common/Logo.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ShortcutHelp from '$lib/components/app/ShortcutHelp.svelte';
 	import CommandPalette from '$lib/components/app/CommandPalette.svelte';
@@ -492,18 +493,7 @@
 				<div
 					class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
 				>
-					<svg
-						viewBox="0 0 1024 1024"
-						class="h-4 w-4"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="104"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<path d="M262 724V330l250 266 250-266v394" />
-					</svg>
+					<Logo class="h-[18px] w-[18px]" />
 				</div>
 			</div>
 			<button
@@ -520,18 +510,7 @@
 				<div
 					class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
 				>
-					<svg
-						viewBox="0 0 1024 1024"
-						class="h-4 w-4"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="104"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-					>
-						<path d="M262 724V330l250 266 250-266v394" />
-					</svg>
+					<Logo class="h-[18px] w-[18px]" />
 				</div>
 				<div class="flex min-w-0 flex-col leading-tight">
 					<span class="text-sm font-bold tracking-tight">Myaaw</span>

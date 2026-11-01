@@ -1,11 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
 	<rect width="1024" height="1024" rx="232" fill="#0A0A0A" />
 	<path
-		d="M262 724V330l250 266 250-266v394"
-		fill="none"
-		stroke="#FFFFFF"
-		stroke-width="104"
-		stroke-linecap="round"
-		stroke-linejoin="round"
+		fill="#FFFFFF"
+		fill-rule="evenodd"
+		clip-rule="evenodd"
+		d="M240 430 L268 210 C272 190 296 184 312 198 L430 296 C452 290 482 286 512 286 C542 286 572 290 594 296 L712 198 C728 184 752 190 756 210 L784 430 C784 600 700 700 512 700 C324 700 240 600 240 430 Z M402 470 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z M542 470 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z"
 	/>
 </svg>
