@@ -84,13 +84,57 @@
 	}
 
 	async function toggleBuiltin(name: string, enabled: boolean) {
-		if (!agent) return;
+		if (!agent || !view) return;
 		try {
 			await toolsApi.toggleBuiltin(agent, name, enabled);
-			await load(agent);
+			view = {
+				...view,
+				builtin: view.builtin.map((tool) => (tool.name === name ? { ...tool, enabled } : tool))
+			};
+			toastToggle(name, enabled);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
+			// Put the checkbox back in step with what the server kept.
+			await load(agent);
 		}
+	}
+
+	async function toggleCustom(name: string, enabled: boolean) {
+		if (!agent || !view) return;
+		try {
+			await toolsApi.patchCustom(agent, name, { enabled });
+			view = {
+				...view,
+				custom: view.custom.map((tool) => (tool.name === name ? { ...tool, enabled } : tool))
+			};
+			toastToggle(name, enabled);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+			await load(agent);
+		}
+	}
+
+	async function toggleMCP(name: string, enabled: boolean) {
+		if (!agent || !view) return;
+		try {
+			await toolsApi.patchMCP(agent, name, { enabled });
+			view = {
+				...view,
+				mcp_servers: view.mcp_servers.map((server) =>
+					server.name === name ? { ...server, enabled } : server
+				)
+			};
+			toastToggle(name, enabled);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+			await load(agent);
+		}
+	}
+
+	function toastToggle(name: string, enabled: boolean) {
+		toastStore.success(
+			enabled ? t('myaaw.tools.enabled_ok', { name }) : t('myaaw.tools.disabled_ok', { name })
+		);
 	}
 
 	function startEditCustom(tool: CustomTool) {
@@ -290,16 +334,22 @@
 						{t('myaaw.tools.custom')}
 					</p>
 					{#each view?.custom ?? [] as tool (tool.name)}
-						<div class="flex items-start gap-1 rounded-md px-1 py-1 hover:bg-muted">
+						<div class="flex items-start gap-2 rounded-md px-1 py-1 hover:bg-muted">
+							<input
+								type="checkbox"
+								checked={tool.enabled}
+								onchange={(event) => toggleCustom(tool.name, event.currentTarget.checked)}
+								aria-label={tool.name}
+								class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+							/>
 							<div class="min-w-0 flex-1">
 								<div class="flex items-center gap-1.5">
 									<span class="min-w-0 truncate font-mono text-xs">{tool.name}</span>
-									<Badge
-										variant={tool.enabled ? 'secondary' : 'outline'}
-										class="shrink-0 text-[10px]"
-									>
-										{tool.enabled ? t('myaaw.tools.enabled') : t('myaaw.tools.disabled')}
-									</Badge>
+									{#if !tool.enabled}
+										<Badge variant="outline" class="shrink-0 text-[10px]">
+											{t('myaaw.tools.disabled')}
+										</Badge>
+									{/if}
 								</div>
 								<p
 									class="truncate text-[10px] text-muted-foreground"
@@ -338,16 +388,22 @@
 						{t('myaaw.tools.mcp')}
 					</p>
 					{#each view?.mcp_servers ?? [] as server (server.name)}
-						<div class="flex items-start gap-1 rounded-md px-1 py-1 hover:bg-muted">
+						<div class="flex items-start gap-2 rounded-md px-1 py-1 hover:bg-muted">
+							<input
+								type="checkbox"
+								checked={server.enabled}
+								onchange={(event) => toggleMCP(server.name, event.currentTarget.checked)}
+								aria-label={server.name}
+								class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+							/>
 							<div class="min-w-0 flex-1">
 								<div class="flex items-center gap-1.5">
 									<span class="min-w-0 truncate font-mono text-xs">{server.name}</span>
-									<Badge
-										variant={server.enabled ? 'secondary' : 'outline'}
-										class="shrink-0 text-[10px]"
-									>
-										{server.enabled ? t('myaaw.tools.enabled') : t('myaaw.tools.disabled')}
-									</Badge>
+									{#if !server.enabled}
+										<Badge variant="outline" class="shrink-0 text-[10px]">
+											{t('myaaw.tools.disabled')}
+										</Badge>
+									{/if}
 								</div>
 								<p
 									class="truncate text-[10px] text-muted-foreground"

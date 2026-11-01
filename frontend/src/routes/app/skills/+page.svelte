@@ -153,6 +153,9 @@
 			await skillsApi.toggle(agent, name, enabled);
 			skills = skills.map((skill) => (skill.name === name ? { ...skill, enabled } : skill));
 			if (selected?.name === name) selected = { ...selected, enabled };
+			toastStore.success(
+				enabled ? t('myaaw.skills.enabled_ok', { name }) : t('myaaw.skills.disabled_ok', { name })
+			);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}

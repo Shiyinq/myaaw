@@ -466,7 +466,9 @@
 			"deleted": "Skill deleted",
 			"config_cleared": "Toggle override cleared",
 			"select": "Select a skill to inspect it.",
-			"binary": "Binary file — preview is not available."
+			"binary": "Binary file — preview is not available.",
+			"enabled_ok": "{name} enabled",
+			"disabled_ok": "{name} disabled"
 		},
 		"providers": {
 			"title": "Providers",
@@ -584,7 +586,9 @@
 			"create": "Add",
 			"saved": "Tool saved",
 			"deleted": "Tool removed",
-			"delete_confirm": "Remove {name}?"
+			"delete_confirm": "Remove {name}?",
+			"enabled_ok": "{name} enabled",
+			"disabled_ok": "{name} disabled"
 		},
 		"contacts": {
 			"title": "Contacts",

@@ -466,7 +466,9 @@
 			"deleted": "Skill dihapus",
 			"config_cleared": "Override toggle dihapus",
 			"select": "Pilih skill untuk diperiksa.",
-			"binary": "Berkas biner — pratinjau tidak tersedia."
+			"binary": "Berkas biner — pratinjau tidak tersedia.",
+			"enabled_ok": "{name} diaktifkan",
+			"disabled_ok": "{name} dinonaktifkan"
 		},
 		"providers": {
 			"title": "Penyedia",
@@ -531,7 +533,9 @@
 			"create": "Tambah",
 			"saved": "Alat disimpan",
 			"deleted": "Alat dihapus",
-			"delete_confirm": "Hapus {name}?"
+			"delete_confirm": "Hapus {name}?",
+			"enabled_ok": "{name} diaktifkan",
+			"disabled_ok": "{name} dinonaktifkan"
 		},
 		"contacts": {
 			"title": "Kontak",
