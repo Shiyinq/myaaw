@@ -22,15 +22,16 @@
 	} from '$lib/components/ui/card';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import {
-		ArrowUpDown,
 		Bot,
 		Check,
 		CircleCheck,
 		CircleSlash,
 		Ellipsis,
+		Loader2,
 		Play,
 		Plus,
 		RefreshCw,
+		RotateCw,
 		Settings2,
 		Square,
 		Star,
@@ -41,6 +42,9 @@
 
 	let loading = $state(false);
 	let toggling = $state<string | null>(null);
+	// Which fleet-wide action is running, if any. One at a time, so the daemons
+	// never race for the same port.
+	let bulkBusy = $state<'' | 'start' | 'restart' | 'stop'>('');
 
 	let agents = $derived(agentSelection.agents);
 	let runningCount = $derived(agents.filter((agent) => agent.running).length);
@@ -106,7 +110,7 @@
 	}
 
 	async function toggleServer(name: string, running: boolean) {
-		if (toggling) return;
+		if (toggling || bulkBusy) return;
 		toggling = name;
 		// Flip the badge right away; the daemon takes a moment to bind its port.
 		agentSelection.setRunning(name, !running);
@@ -134,6 +138,90 @@
 				if (list.some((agent) => agent.name === name && agent.running === running)) return;
 			} catch {
 				// Transient failures are expected while the daemon boots; keep polling.
+			}
+		}
+	}
+
+	async function restartServer(name: string) {
+		if (toggling || bulkBusy) return;
+		toggling = name;
+		try {
+			await serverApi.restart(name);
+			toastStore.success(t('myaaw.server.restart_done'));
+			await waitForServerState(name, true);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+			await agentSelection.load(true);
+		} finally {
+			toggling = null;
+		}
+	}
+
+	/**
+	 * Starts what is stopped, or restarts/stops what is running, for the whole fleet.
+	 * Every badge flips before the first request goes out, so the labels on the cards
+	 * answer the click immediately instead of after the daemons finish booting.
+	 */
+	async function bulkAction(kind: 'start' | 'restart' | 'stop') {
+		if (bulkBusy || toggling) return;
+		const targets = agents.filter((agent) => (kind === 'start' ? !agent.running : agent.running));
+		if (targets.length === 0) return;
+		if (
+			kind === 'stop' &&
+			!(await askConfirm({
+				message: t('myaaw.home.stop_all_confirm', { count: targets.length }),
+				variant: 'destructive'
+			}))
+		) {
+			return;
+		}
+
+		bulkBusy = kind;
+		const running = kind !== 'stop';
+		for (const agent of targets) agentSelection.setRunning(agent.name, running);
+
+		const failed: string[] = [];
+		for (const agent of targets) {
+			try {
+				if (kind === 'start') await serverApi.start(agent.name);
+				else if (kind === 'restart') await serverApi.restart(agent.name);
+				else await serverApi.stop(agent.name);
+			} catch {
+				failed.push(agent.name);
+			}
+		}
+
+		await waitForStates(
+			targets.filter((agent) => !failed.includes(agent.name)).map((agent) => agent.name),
+			running
+		);
+		if (failed.length > 0) await agentSelection.load(true);
+
+		bulkBusy = '';
+		if (failed.length > 0) {
+			toastStore.error(t('myaaw.server.bulk_failed', { names: failed.join(', ') }));
+		}
+		const done = targets.length - failed.length;
+		if (done > 0) {
+			const key =
+				kind === 'start' ? 'bulk_started' : kind === 'restart' ? 'bulk_restarted' : 'bulk_stopped';
+			toastStore.success(t(`myaaw.server.${key}`, { count: done }));
+		}
+	}
+
+	/** Polls until every named agent reports the expected state, then gives up. */
+	async function waitForStates(names: string[], running: boolean) {
+		const pending = new Set(names);
+		for (let attempt = 0; attempt < 20 && pending.size > 0; attempt += 1) {
+			await new Promise((resolve) => setTimeout(resolve, 300));
+			try {
+				const { agents: list } = await agentsApi.list();
+				agentSelection.setAgents(list);
+				for (const agent of list) {
+					if (pending.has(agent.name) && agent.running === running) pending.delete(agent.name);
+				}
+			} catch {
+				// Transient failures are expected while the daemons boot; keep polling.
 			}
 		}
 	}
@@ -202,14 +290,14 @@
 								{...props}
 								variant="ghost"
 								size="icon-sm"
-								aria-label={t('myaaw.home.sort')}
-								title={t('myaaw.home.sort')}
+								aria-label={t('myaaw.home.fleet_actions')}
+								title={t('myaaw.home.fleet_actions')}
 							>
-								<ArrowUpDown class="h-4 w-4" />
+								<Ellipsis class="h-4 w-4" />
 							</Button>
 						{/snippet}
 					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-44">
+					<DropdownMenu.Content align="end" class="w-60">
 						<DropdownMenu.Item onclick={() => (sortNewest = true)}>
 							<Check class={sortNewest ? 'mr-2 h-4 w-4' : 'mr-2 h-4 w-4 opacity-0'} />
 							{t('myaaw.home.sort_newest')}
@@ -217,6 +305,40 @@
 						<DropdownMenu.Item onclick={() => (sortNewest = false)}>
 							<Check class={!sortNewest ? 'mr-2 h-4 w-4' : 'mr-2 h-4 w-4 opacity-0'} />
 							{t('myaaw.home.sort_oldest')}
+						</DropdownMenu.Item>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item
+							disabled={bulkBusy !== '' || runningCount === agents.length}
+							onclick={() => void bulkAction('start')}
+						>
+							{#if bulkBusy === 'start'}
+								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+							{:else}
+								<Play class="mr-2 h-4 w-4" />
+							{/if}
+							{t('myaaw.server.start_all')}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item
+							disabled={bulkBusy !== '' || runningCount === 0}
+							onclick={() => void bulkAction('restart')}
+						>
+							{#if bulkBusy === 'restart'}
+								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+							{:else}
+								<RotateCw class="mr-2 h-4 w-4" />
+							{/if}
+							{t('myaaw.server.restart_all')}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item
+							disabled={bulkBusy !== '' || runningCount === 0}
+							onclick={() => void bulkAction('stop')}
+						>
+							{#if bulkBusy === 'stop'}
+								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+							{:else}
+								<Square class="mr-2 h-4 w-4" />
+							{/if}
+							{t('myaaw.server.stop_all')}
 						</DropdownMenu.Item>
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
@@ -278,8 +400,11 @@
 											</Button>
 										{/snippet}
 									</DropdownMenu.Trigger>
-									<DropdownMenu.Content align="end" class="w-44">
-										<DropdownMenu.Item onclick={() => toggleServer(agent.name, agent.running)}>
+									<DropdownMenu.Content align="end" class="w-48">
+										<DropdownMenu.Item
+											disabled={!!toggling || bulkBusy !== ''}
+											onclick={() => toggleServer(agent.name, agent.running)}
+										>
 											{#if agent.running}
 												<Square class="mr-2 h-4 w-4" />
 											{:else}
@@ -287,6 +412,19 @@
 											{/if}
 											{agent.running ? t('myaaw.server.stop') : t('myaaw.server.start')}
 										</DropdownMenu.Item>
+										{#if agent.running}
+											<DropdownMenu.Item
+												disabled={!!toggling || bulkBusy !== ''}
+												onclick={() => void restartServer(agent.name)}
+											>
+												{#if toggling === agent.name}
+													<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+												{:else}
+													<RotateCw class="mr-2 h-4 w-4" />
+												{/if}
+												{t('myaaw.server.restart')}
+											</DropdownMenu.Item>
+										{/if}
 										<DropdownMenu.Separator />
 										<DropdownMenu.Item onclick={() => reconfigureAgent(agent.name)}>
 											<Settings2 class="mr-2 h-4 w-4" />

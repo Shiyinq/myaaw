@@ -182,7 +182,9 @@
 			"activity_streak": "Streak {count} hari",
 			"activity_less": "Sedikit",
 			"activity_more": "Banyak",
-			"activity_empty": "Belum ada chat dalam 3 bulan terakhir."
+			"activity_empty": "Belum ada chat dalam 3 bulan terakhir.",
+			"fleet_actions": "Aksi fleet",
+			"stop_all_confirm": "Hentikan {count} agent yang sedang berjalan?"
 		},
 		"onboard": {
 			"title": "Agen baru",
@@ -360,7 +362,14 @@
 			"stop_done": "Server dihentikan",
 			"restart_done": "Server di-restart",
 			"note_title": "Kapan perlu restart",
-			"note_desc": "Restart setelah mengubah token penyedia/kanal, queue worker, atau pengaturan observability."
+			"note_desc": "Restart setelah mengubah token penyedia/kanal, queue worker, atau pengaturan observability.",
+			"start_all": "Jalankan semua agent",
+			"restart_all": "Restart semua agent yang berjalan",
+			"stop_all": "Hentikan semua agent yang berjalan",
+			"bulk_started": "Agent dijalankan: {count}",
+			"bulk_restarted": "Agent di-restart: {count}",
+			"bulk_stopped": "Agent dihentikan: {count}",
+			"bulk_failed": "Gagal: {names}"
 		},
 		"settings": {
 			"title": "Pengaturan",

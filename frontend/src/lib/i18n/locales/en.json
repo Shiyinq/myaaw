@@ -182,7 +182,9 @@
 			"activity_streak": "{count}-day streak",
 			"activity_less": "Less",
 			"activity_more": "More",
-			"activity_empty": "No chats in the last 3 months."
+			"activity_empty": "No chats in the last 3 months.",
+			"fleet_actions": "Fleet actions",
+			"stop_all_confirm": "Stop {count} running agent(s)?"
 		},
 		"onboard": {
 			"title": "New agent",
@@ -360,7 +362,14 @@
 			"stop_done": "Server stopped",
 			"restart_done": "Server restarted",
 			"note_title": "When to restart",
-			"note_desc": "Restart after changing provider or channel tokens, queue workers, or observability settings."
+			"note_desc": "Restart after changing provider or channel tokens, queue workers, or observability settings.",
+			"start_all": "Start all agents",
+			"restart_all": "Restart all running agents",
+			"stop_all": "Stop all running agents",
+			"bulk_started": "Agents started: {count}",
+			"bulk_restarted": "Agents restarted: {count}",
+			"bulk_stopped": "Agents stopped: {count}",
+			"bulk_failed": "Failed: {names}"
 		},
 		"settings": {
 			"title": "Settings",
