@@ -316,6 +316,16 @@
 		if (scroller) scroller.scrollTop = scroller.scrollHeight;
 	}
 
+	/** Drops the rail and the paging cursor, for when the transcript is cleared. */
+	function clearRail() {
+		turns = [];
+		turnMarks = [];
+		loadedOffset = 0;
+		activeTurnIndex = null;
+		hoverTurnIndex = null;
+		railOpen = false;
+	}
+
 	/** Re-reads where each user message sits, after the transcript changes size. */
 	function measureTurns() {
 		const container = scroller;
@@ -488,8 +498,7 @@
 	async function loadConversation(currentAgent: string, id: string) {
 		if (!id) {
 			historyItems = [];
-			loadedOffset = 0;
-			turns = [];
+			clearRail();
 			storedUsage = null;
 			sessionStats = null;
 			stopTitlePolling();
@@ -751,6 +760,7 @@
 		if (openConversation) loadKey = `${currentAgent}:${openConversation}`;
 		conversationId = '';
 		historyItems = [];
+		clearRail();
 		storedUsage = null;
 		sessionStats = null;
 		error = '';
@@ -1128,6 +1138,7 @@
 		// Runs of other conversations keep streaming: this only clears the view.
 		conversationId = '';
 		historyItems = [];
+		clearRail();
 		input = '';
 		if (composer) composer.style.height = '';
 		storedUsage = null;

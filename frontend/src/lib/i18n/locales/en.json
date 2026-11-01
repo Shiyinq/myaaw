@@ -273,7 +273,7 @@
 			"title": "Chat",
 			"subtitle": "Talk to the selected agent with streaming, tools, and approvals.",
 			"new": "New chat",
-			"placeholder": "Send a message... (Enter to send, Shift+Enter for a new line)",
+			"placeholder": "Send a message...",
 			"hint": "Enter to send · Shift+Enter for a new line",
 			"send": "Send",
 			"stop": "Stop",

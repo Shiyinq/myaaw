@@ -273,7 +273,7 @@
 			"title": "Chat",
 			"subtitle": "Bicara dengan agen terpilih, lengkap dengan streaming, tool, dan approval.",
 			"new": "Chat baru",
-			"placeholder": "Kirim pesan... (Enter untuk kirim, Shift+Enter untuk baris baru)",
+			"placeholder": "Kirim pesan...",
 			"hint": "Enter untuk kirim · Shift+Enter untuk baris baru",
 			"send": "Kirim",
 			"stop": "Hentikan",
