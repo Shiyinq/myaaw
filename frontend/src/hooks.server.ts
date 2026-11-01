@@ -40,7 +40,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	return resolve(event, {
+	const response = await resolve(event, {
 		transformPageChunk: ({ html }) => html.replace('%lang%', locale)
 	});
+
+	// robots.txt is advisory, and this dashboard is private: repeat the same
+	// instruction on the response, so a crawler that never reads robots.txt still
+	// hears it.
+	response.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
+	return response;
 };

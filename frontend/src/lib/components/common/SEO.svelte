@@ -22,6 +22,9 @@
 </script>
 
 <svelte:head>
+	<!-- Private control plane: never index, never follow. Matches robots.txt. -->
+	<meta name="robots" content="noindex, nofollow, noarchive" />
+
 	<!-- Primary Meta Tags -->
 	<title>{title}</title>
 	<meta name="title" content={title} />
