@@ -337,6 +337,8 @@
 			"file_failed": "File tidak bisa dibaca.",
 			"download_file": "Unduh berkas",
 			"jump_to_turn": "Lompat ke pesan ini",
+			"turns_title": "Pesan yang kamu kirim",
+			"turns_close": "Tutup daftar ini",
 			"untitled_turn": "(hanya lampiran)",
 			"speech_start": "Mulai dikte",
 			"speech_stop": "Hentikan dikte",
@@ -779,7 +781,6 @@
 		"shortcuts": {
 			"title": "Shortcut papan tombol",
 			"description": "Tekan ? kapan saja untuk membuka daftar ini.",
-			"settings_desc": "Semua shortcut yang dikenali dashboard.",
 			"group_general": "Umum",
 			"group_chat": "Chat",
 			"group_speech": "Suara ke teks",

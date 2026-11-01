@@ -337,6 +337,8 @@
 			"file_failed": "Could not read that file.",
 			"download_file": "Download file",
 			"jump_to_turn": "Jump to this message",
+			"turns_title": "Messages you sent",
+			"turns_close": "Close this list",
 			"untitled_turn": "(attachment only)",
 			"speech_start": "Start dictation",
 			"speech_stop": "Stop dictation",
@@ -779,7 +781,6 @@
 		"shortcuts": {
 			"title": "Keyboard shortcuts",
 			"description": "Press ? at any time to open this list.",
-			"settings_desc": "Every shortcut the dashboard listens for.",
 			"group_general": "General",
 			"group_chat": "Chat",
 			"group_speech": "Speech to text",

@@ -5,6 +5,7 @@
 	import {
 		Boxes,
 		Keyboard,
+		Languages,
 		LayoutDashboard,
 		Play,
 		MessagesSquare,
@@ -16,6 +17,8 @@
 		Server,
 		Settings2,
 		LogOut,
+		Monitor,
+		Moon,
 		Wrench,
 		SlidersHorizontal,
 		Clock,
@@ -26,6 +29,7 @@
 		Archive,
 		Bot,
 		SquareTerminal,
+		Sun,
 		RotateCw,
 		PanelLeftClose,
 		PanelLeftOpen,
@@ -55,13 +59,14 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import { resetMode, setMode, userPrefersMode } from 'mode-watcher';
 
 	interface Props {
 		children: import('svelte').Snippet;
 	}
 
 	let { children }: Props = $props();
-	const { t } = useTranslation();
+	const { t, locale, changeLocale, availableLocales } = useTranslation();
 
 	$effect(() => {
 		if (typeof window === 'undefined') return;
@@ -316,6 +321,49 @@
 					run: () => runAgentAction('start', agent.name)
 				});
 			}
+		}
+
+		const theme = userPrefersMode.current;
+		list.push({
+			id: 'action:theme-light',
+			labelKey: 'myaaw.settings.theme_light',
+			aliases: ['theme', 'tema', 'light', 'terang'],
+			group: 'action',
+			icon: Sun,
+			current: theme === 'light',
+			run: () => setMode('light')
+		});
+		list.push({
+			id: 'action:theme-dark',
+			labelKey: 'myaaw.settings.theme_dark',
+			aliases: ['theme', 'tema', 'dark', 'gelap'],
+			group: 'action',
+			icon: Moon,
+			current: theme === 'dark',
+			run: () => setMode('dark')
+		});
+		list.push({
+			id: 'action:theme-system',
+			labelKey: 'myaaw.settings.theme_system',
+			aliases: ['theme', 'tema', 'system', 'sistem', 'auto'],
+			group: 'action',
+			icon: Monitor,
+			current: theme === 'system',
+			run: () => resetMode()
+		});
+		for (const item of availableLocales) {
+			list.push({
+				id: `action:locale:${item.code}`,
+				name: item.nativeName,
+				aliases:
+					item.code === 'id'
+						? ['language', 'bahasa', 'indonesia', 'indonesian', 'id']
+						: ['language', 'bahasa', 'english', 'inggris', 'en'],
+				group: 'action',
+				icon: Languages,
+				current: locale.value === item.code,
+				run: () => changeLocale(item.code)
+			});
 		}
 
 		list.push({
