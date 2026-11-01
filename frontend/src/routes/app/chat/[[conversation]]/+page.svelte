@@ -1798,7 +1798,12 @@
 		{:else}
 			<div class="relative flex min-h-0 flex-1 flex-col">
 				<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto" onscroll={onScroll}>
-					<div class="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
+					<div
+						class={cn(
+							'mx-auto w-full max-w-4xl space-y-5 px-4 py-6',
+							railTurns.length > 1 && 'pr-14'
+						)}
+					>
 						{#if loadingOlder}
 							<p
 								class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
@@ -2232,7 +2237,7 @@
 			{#if runError || error}
 				<div class="shrink-0 px-4">
 					<div
-						class="mx-auto max-w-5xl rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
+						class="mx-auto max-w-4xl rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
 					>
 						{runError || error}
 					</div>
@@ -2240,7 +2245,7 @@
 			{/if}
 
 			<div class="shrink-0 border-t bg-background/80 px-4 py-3 backdrop-blur">
-				<div class="mx-auto w-full max-w-5xl">
+				<div class={cn('mx-auto w-full max-w-4xl', railTurns.length > 1 && 'pr-14')}>
 					<div
 						role="group"
 						class={[
