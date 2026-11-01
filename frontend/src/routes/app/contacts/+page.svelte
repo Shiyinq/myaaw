@@ -2,6 +2,7 @@
 	import { contacts as contactsApi } from '$lib/apis/contacts';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { revealPane } from '$lib/utils/scroll';
 	import { validate, type FieldErrors } from '$lib/utils/validation';
 	import { contactSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -24,6 +25,10 @@
 	import type { ContactView } from '$lib/types';
 
 	const { t } = useTranslation();
+
+	// Below lg the list and the panel share one scrolling page, so the panel is
+	// brought into view whenever a row further up is picked.
+	let detail = $state<HTMLElement | null>(null);
 
 	let contacts = $state<ContactView[]>([]);
 	let loading = $state(false);
@@ -132,6 +137,7 @@
 		token = '';
 		clearToken = false;
 		errors = {};
+		revealPane(detail);
 	}
 
 	function resetForm() {
@@ -174,7 +180,7 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="flex h-full min-h-0 flex-col lg:flex-row">
+<div class="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
 	{#if !agent}
 		<div class="w-full p-4 lg:p-6">
 			<Card>
@@ -186,7 +192,7 @@
 	{:else}
 		<!-- Contacts are remote A2A agents: a second sidebar nested inside the main one. -->
 		<aside
-			class="flex h-[45vh] shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+			class="flex shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
 		>
 			<div class="shrink-0 border-b px-3 py-2.5">
 				<p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
@@ -194,7 +200,7 @@
 				</p>
 			</div>
 
-			<div class="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+			<div class="space-y-1 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
 				{#if loading}
 					<p class="px-1 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
 				{:else if contacts.length === 0}
@@ -252,7 +258,10 @@
 			</div>
 		</aside>
 
-		<section class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 lg:p-6">
+		<section
+			bind:this={detail}
+			class="flex flex-col gap-4 p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:p-6"
+		>
 			{#if error}
 				<div
 					class="shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"

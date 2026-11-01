@@ -17,14 +17,7 @@
 	} from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
 	import { Input } from '$lib/components/ui/input';
-	import {
-		Archive,
-		Download,
-		HardDriveDownload,
-		RefreshCw,
-		RotateCcw,
-		Trash2
-	} from 'lucide-svelte';
+	import { Archive, Download, HardDriveDownload, RotateCcw, Trash2 } from 'lucide-svelte';
 	import type { BackupArchive, BackupList } from '$lib/types';
 
 	interface Props {
@@ -40,7 +33,6 @@
 
 	const { t } = useTranslation();
 
-	let loading = $state(false);
 	let creating = $state(false);
 	let restoring = $state(false);
 	let error = $state('');
@@ -86,14 +78,11 @@
 	onMount(refresh);
 
 	async function refresh() {
-		loading = true;
 		error = '';
 		try {
 			data = await backupsApi.list();
 		} catch (err) {
 			error = getErrorMessage(err);
-		} finally {
-			loading = false;
 		}
 	}
 
@@ -407,28 +396,21 @@
 
 	{#if scoped}
 		<Card>
-			<CardHeader class="pb-2">
+			<CardHeader class="pb-2 max-sm:flex max-sm:flex-col max-sm:gap-2">
 				<CardTitle class="text-sm font-medium">{t('myaaw.backups.dir')}</CardTitle>
 				<CardDescription>{t('myaaw.backups.dir_hint')}</CardDescription>
-				<CardAction class="flex items-center gap-1">
+				<!-- Below sm the action drops under the description and takes the full
+				     width, where it reads as the card's primary action. -->
+				<CardAction class="flex items-center gap-1 max-sm:w-full">
 					<Button
 						variant={showCreate ? 'secondary' : 'default'}
 						size="sm"
+						class="max-sm:w-full"
 						onclick={toggleCreate}
 						disabled={!agent}
 					>
 						<HardDriveDownload class="mr-1.5 h-4 w-4" />
 						{t('myaaw.backups.create')}
-					</Button>
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						onclick={refresh}
-						{loading}
-						aria-label={t('common.refresh')}
-						title={t('common.refresh')}
-					>
-						<RefreshCw class="h-4 w-4" />
 					</Button>
 				</CardAction>
 			</CardHeader>
@@ -471,26 +453,21 @@
 		<!-- Fleet view: one card for the whole backup surface, with the directory
 		     shown inline and the archives below it. -->
 		<Card>
-			<CardHeader>
+			<CardHeader class="max-sm:flex max-sm:flex-col max-sm:gap-2">
 				<CardTitle class="flex items-center gap-2">
 					<Archive class="h-4 w-4 shrink-0" />
 					{t('myaaw.backups.archives')}
 				</CardTitle>
 				<CardDescription>{t('myaaw.backups.archives_desc')}</CardDescription>
-				<CardAction class="flex items-center gap-1">
-					<Button variant={showCreate ? 'secondary' : 'default'} size="sm" onclick={toggleCreate}>
+				<CardAction class="flex items-center gap-1 max-sm:w-full">
+					<Button
+						variant={showCreate ? 'secondary' : 'default'}
+						size="sm"
+						class="max-sm:w-full"
+						onclick={toggleCreate}
+					>
 						<HardDriveDownload class="mr-1.5 h-4 w-4" />
 						{t('myaaw.backups.create')}
-					</Button>
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						onclick={refresh}
-						{loading}
-						aria-label={t('common.refresh')}
-						title={t('common.refresh')}
-					>
-						<RefreshCw class="h-4 w-4" />
 					</Button>
 				</CardAction>
 			</CardHeader>

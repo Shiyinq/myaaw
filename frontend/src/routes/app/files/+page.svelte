@@ -2,6 +2,7 @@
 	import { files as filesApi } from '$lib/apis/files';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { revealPane } from '$lib/utils/scroll';
 	import { validate } from '$lib/utils/validation';
 	import { fileNameSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -36,6 +37,10 @@
 	import type { FileContent, FileEntry, SearchMatch } from '$lib/types';
 
 	const { t } = useTranslation();
+
+	// Below lg the list and the panel share one scrolling page, so the panel is
+	// brought into view whenever a row further up is picked.
+	let detail = $state<HTMLElement | null>(null);
 
 	const PREVIEW_LIMIT = 512 * 1024;
 
@@ -109,6 +114,7 @@
 		}
 
 		mediaFailed = false;
+		revealPane(detail);
 		const kind = detectPreview(entry.path).kind;
 		if (MEDIA_KINDS.has(kind)) {
 			// Binary media never goes through the text reader.
@@ -135,6 +141,7 @@
 		content = file.content;
 		editing = false;
 		mediaFailed = false;
+		revealPane(detail);
 	}
 
 	async function save() {
@@ -294,7 +301,7 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="flex h-full min-h-0 flex-col lg:flex-row">
+<div class="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
 	{#snippet previewFallback()}
 		<div class="flex h-full flex-col items-center justify-center gap-3 text-center">
 			<p class="text-sm text-muted-foreground">
@@ -321,7 +328,7 @@
 	{:else}
 		<!-- File list: a second sidebar nested inside the main one. -->
 		<aside
-			class="flex h-[45vh] shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+			class="flex shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
 		>
 			<div class="shrink-0 space-y-2 border-b p-3">
 				<div class="flex items-center gap-1">
@@ -370,7 +377,7 @@
 				</div>
 			</div>
 
-			<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
+			<div class="space-y-0.5 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
 				{#if loading}
 					<p class="px-1 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
 				{:else if entries.length === 0}
@@ -488,7 +495,7 @@
 			</div>
 		</aside>
 
-		<section class="flex min-h-0 flex-1 flex-col p-4 lg:p-6">
+		<section bind:this={detail} class="flex flex-col p-4 lg:min-h-0 lg:flex-1 lg:p-6">
 			{#if error}
 				<div
 					class="mb-3 shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
@@ -497,7 +504,7 @@
 				</div>
 			{/if}
 
-			<Card class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+			<Card class="mx-auto flex w-full max-w-5xl flex-col max-lg:h-[60vh] lg:min-h-0 lg:flex-1">
 				<CardHeader class="flex shrink-0 flex-row items-center justify-between">
 					<div class="flex min-w-0 items-center gap-1">
 						<CardTitle class="truncate text-sm font-medium">

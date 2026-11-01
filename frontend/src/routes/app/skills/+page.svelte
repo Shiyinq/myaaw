@@ -3,6 +3,7 @@
 	import { agents as agentsApi } from '$lib/apis/agents';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { revealPane } from '$lib/utils/scroll';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
@@ -18,6 +19,10 @@
 	import type { CapabilityEntry, SkillDetail, SkillFileContent } from '$lib/types';
 
 	const { t } = useTranslation();
+
+	// Below lg the list and the panel share one scrolling page, so the panel is
+	// brought into view whenever a row further up is picked.
+	let detail = $state<HTMLElement | null>(null);
 
 	let skills = $state<SkillDetail[]>([]);
 	let catalog = $state<CapabilityEntry[]>([]);
@@ -202,7 +207,7 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="flex h-full min-h-0 flex-col lg:flex-row">
+<div class="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
 	{#if !agent}
 		<div class="w-full p-4 lg:p-6">
 			<Card>
@@ -214,14 +219,14 @@
 	{:else}
 		<!-- Skill list: a second sidebar nested inside the main one. -->
 		<aside
-			class="flex h-[45vh] shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+			class="flex shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
 		>
 			<div class="shrink-0 border-b px-3 py-2.5">
 				<p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
 					{t('myaaw.skills.list')}
 				</p>
 			</div>
-			<div class="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
+			<div class="space-y-3 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
 				<section class="space-y-0.5">
 					<p class="px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
 						{t('myaaw.skills.custom')}
@@ -250,7 +255,11 @@
 							/>
 							<button
 								class="min-w-0 flex-1 truncate text-left text-sm"
-								onclick={() => agent && open(agent, skill.name)}
+								onclick={() => {
+									if (!agent) return;
+									revealPane(detail);
+									void open(agent, skill.name);
+								}}
 							>
 								{skill.display_name || skill.name}
 							</button>
@@ -291,7 +300,11 @@
 										<button
 											type="button"
 											class="block w-full truncate text-left text-sm"
-											onclick={() => agent && open(agent, row.entry.name)}
+											onclick={() => {
+												if (!agent) return;
+												revealPane(detail);
+												void open(agent, row.entry.name);
+											}}
 										>
 											{row.installed.display_name || row.entry.name}
 										</button>
@@ -317,7 +330,7 @@
 			</div>
 		</aside>
 
-		<section class="flex min-h-0 min-w-0 flex-1 flex-col p-4 lg:p-6">
+		<section bind:this={detail} class="flex min-w-0 flex-col p-4 lg:min-h-0 lg:flex-1 lg:p-6">
 			{#if error}
 				<div
 					class="mb-3 shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
@@ -333,7 +346,9 @@
 					icon={Sparkles}
 				/>
 			{:else}
-				<Card class="mx-auto flex min-h-0 w-full max-w-5xl min-w-0 flex-1 flex-col overflow-hidden">
+				<Card
+					class="mx-auto flex w-full max-w-5xl min-w-0 flex-col lg:min-h-0 lg:flex-1 lg:overflow-hidden"
+				>
 					{#if selected}
 						<CardHeader class="flex shrink-0 flex-row items-start justify-between gap-2">
 							<div class="min-w-0">
@@ -386,7 +401,7 @@
 							</div>
 						</CardContent>
 
-						<CardContent class="min-h-0 min-w-0 flex-1">
+						<CardContent class="min-h-0 min-w-0 max-lg:h-[60vh] lg:flex-1">
 							{#if previewBinary}
 								<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
 									{t('myaaw.skills.binary')}
