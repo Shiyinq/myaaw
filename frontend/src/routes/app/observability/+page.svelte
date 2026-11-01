@@ -510,7 +510,7 @@
 										</div>
 									{/if}
 									{#if preview(row.span)}
-										<p class="mt-1 break-words text-muted-foreground">{preview(row.span)}</p>
+										<p class="mt-1 wrap-break-word text-muted-foreground">{preview(row.span)}</p>
 									{/if}
 								</div>
 							</div>

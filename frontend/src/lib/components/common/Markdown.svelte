@@ -13,7 +13,7 @@
 	const html = $derived(DOMPurify.sanitize(marked.parse(content ?? '') as string));
 </script>
 
-<div class="prose prose-sm dark:prose-invert max-w-none break-words">
+<div class="prose prose-sm dark:prose-invert max-w-none wrap-break-word">
 	<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 	{@html html}
 </div>

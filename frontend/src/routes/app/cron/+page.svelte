@@ -286,7 +286,7 @@
 							title={t('myaaw.cron.empty')}
 							description={t('myaaw.cron.empty_desc')}
 							icon={CalendarClock}
-							class="min-h-[220px]"
+							class="min-h-55"
 						/>
 					{/if}
 					{#each jobs as job (job.id)}

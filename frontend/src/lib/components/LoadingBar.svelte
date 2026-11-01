@@ -38,7 +38,7 @@
 {#if visible}
 	<div
 		transition:fade={{ duration: 200 }}
-		class="fixed top-0 left-0 right-0 z-[1000000] pointer-events-none h-[3px] bg-primary/10"
+		class="fixed top-0 left-0 right-0 z-1000000 pointer-events-none h-0.75 bg-primary/10"
 	>
 		<div
 			class="h-full bg-primary shadow-[0_0_15px_var(--primary)] transition-all duration-300 ease-out"

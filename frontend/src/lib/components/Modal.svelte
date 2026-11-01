@@ -32,7 +32,7 @@
 <Dialog.Root open={true} onOpenChange={handleOpenChange}>
 	<Dialog.Portal>
 		<Dialog.Overlay />
-		<Dialog.Content class="sm:max-w-[425px]">
+		<Dialog.Content class="sm:max-w-106.25">
 			<Dialog.Header>
 				<Dialog.Title>{title}</Dialog.Title>
 				<Dialog.Description>{message}</Dialog.Description>

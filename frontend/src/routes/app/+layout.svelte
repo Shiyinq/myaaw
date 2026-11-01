@@ -586,7 +586,7 @@
 				<div
 					class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
 				>
-					<Logo class="h-[18px] w-[18px]" />
+					<Logo class="h-4.5 w-4.5" />
 				</div>
 			</div>
 			<button
@@ -603,7 +603,7 @@
 				<div
 					class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
 				>
-					<Logo class="h-[18px] w-[18px]" />
+					<Logo class="h-4.5 w-4.5" />
 				</div>
 				<div class="flex min-w-0 flex-col leading-tight">
 					<span class="text-sm font-bold tracking-tight">Myaaw</span>

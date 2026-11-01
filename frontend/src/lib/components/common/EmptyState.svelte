@@ -17,7 +17,7 @@
 
 <Empty.Root
 	class={cn(
-		'border-2 border-dashed bg-muted/5 min-h-[350px] animate-in fade-in zoom-in-95 duration-500',
+		'border-2 border-dashed bg-muted/5 min-h-87.5 animate-in fade-in zoom-in-95 duration-500',
 		className
 	)}
 >
@@ -28,7 +28,7 @@
 			</Empty.Media>
 		{/if}
 		<Empty.Title class="text-xl font-bold">{title}</Empty.Title>
-		<Empty.Description class="max-w-[280px] leading-relaxed">
+		<Empty.Description class="max-w-70 leading-relaxed">
 			{description}
 		</Empty.Description>
 	</Empty.Header>

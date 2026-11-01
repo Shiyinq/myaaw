@@ -434,7 +434,7 @@
 							<!-- Row actions float over the name on hover so the file name can use
 							     the full width of the sidebar instead of reserving space for them. -->
 							<div
-								class="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 bg-gradient-to-l from-muted via-muted to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-lg:pointer-events-auto max-lg:opacity-100"
+								class="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 bg-linear-to-l from-muted via-muted to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-lg:pointer-events-auto max-lg:opacity-100"
 							>
 								<Button
 									variant="ghost"

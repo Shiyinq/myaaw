@@ -65,7 +65,7 @@
 >
 	<!-- Decorative background element -->
 	<div
-		class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-primary/5 rounded-full blur-3xl -z-10"
+		class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-125 h-125 bg-primary/5 rounded-full blur-3xl -z-10"
 	></div>
 
 	<div class="w-full max-w-lg text-center space-y-6">

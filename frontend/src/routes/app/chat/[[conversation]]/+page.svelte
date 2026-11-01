@@ -2034,13 +2034,13 @@
 		<div
 			bind:this={cardList}
 			onscroll={updateCardScroll}
-			class="max-h-[286px] overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+			class="max-h-71.5 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 		>
 			{#each railTurns as turn (turn.index)}
 				<button
 					type="button"
 					class={cn(
-						'flex h-[26px] w-full cursor-pointer items-center gap-3 rounded-md pr-3 pl-2 text-left text-[13px] transition-colors',
+						'flex h-6.5 w-full cursor-pointer items-center gap-3 rounded-md pr-3 pl-2 text-left text-[13px] transition-colors',
 						turn.index === activeTurnIndex
 							? 'text-primary'
 							: turn.index === hoverTurnIndex
@@ -2071,12 +2071,12 @@
 
 		{#if cardScrollUp}
 			<div
-				class="pointer-events-none absolute inset-x-1.5 top-1.5 h-5 rounded-t-lg bg-gradient-to-b from-popover to-transparent"
+				class="pointer-events-none absolute inset-x-1.5 top-1.5 h-5 rounded-t-lg bg-linear-to-b from-popover to-transparent"
 			></div>
 		{/if}
 		{#if cardScrollDown}
 			<div
-				class="pointer-events-none absolute inset-x-1.5 bottom-1.5 h-5 rounded-b-lg bg-gradient-to-t from-popover to-transparent"
+				class="pointer-events-none absolute inset-x-1.5 bottom-1.5 h-5 rounded-b-lg bg-linear-to-t from-popover to-transparent"
 			></div>
 		{/if}
 	</div>
@@ -2351,7 +2351,7 @@
 												{#if item.text}
 													<div class="flex max-w-full flex-col items-end">
 														<div
-															class="max-w-full whitespace-pre-wrap break-words rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
+															class="max-w-full whitespace-pre-wrap wrap-break-word rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
 														>
 															{item.text}
 														</div>
@@ -2367,7 +2367,7 @@
 											</div>
 										</div>
 									{:else if item.kind === 'text'}
-										<div class="group/message break-words text-sm">
+										<div class="group/message wrap-break-word text-sm">
 											<Markdown content={item.text ?? ''} />
 											<CopyButton
 												text={item.text ?? ''}
@@ -2626,7 +2626,7 @@
 							onpaste={onPaste}
 							rows="1"
 							placeholder={t('myaaw.chat.placeholder')}
-							class="max-h-40 min-h-[2.75rem] w-full resize-none rounded-t-2xl bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground sm:min-h-[3.25rem] sm:px-4 sm:py-3"
+							class="max-h-40 min-h-11 w-full resize-none rounded-t-2xl bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground sm:min-h-13 sm:px-4 sm:py-3"
 						></textarea>
 						<div class="flex items-center justify-between px-2 pb-1.5 sm:px-3 sm:pb-2">
 							<div class="flex min-w-0 items-center gap-1">
