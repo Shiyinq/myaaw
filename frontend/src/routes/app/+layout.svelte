@@ -4,7 +4,9 @@
 	import { page } from '$app/state';
 	import {
 		Boxes,
+		Keyboard,
 		LayoutDashboard,
+		Play,
 		MessagesSquare,
 		FolderOpen,
 		Brain,
@@ -19,18 +21,36 @@
 		Clock,
 		ScrollText,
 		ShieldCheck,
+		Square,
 		Activity,
 		Archive,
 		Bot,
 		SquareTerminal,
+		RotateCw,
 		PanelLeftClose,
 		PanelLeftOpen,
 		UserRound
 	} from 'lucide-svelte';
-	import { agentSelection, authStore, sidebar, topBarSlot, topBarTitle } from '$lib/stores';
+	import {
+		agentSelection,
+		authStore,
+		commandPalette,
+		shortcutHelp,
+		sidebar,
+		toastStore,
+		topBarSlot,
+		topBarTitle
+	} from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { isOverlayOpen, isTypingTarget, matchesShortcut } from '$lib/utils/keys';
+	import type { Command } from '$lib/commands';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
+	import { server as serverApi } from '$lib/apis/server';
+	import { getErrorMessage } from '$lib/utils/api';
 	import AgentPicker from '$lib/components/app/AgentPicker.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import ShortcutHelp from '$lib/components/app/ShortcutHelp.svelte';
+	import CommandPalette from '$lib/components/app/CommandPalette.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
@@ -41,6 +61,31 @@
 
 	let { children }: Props = $props();
 	const { t } = useTranslation();
+
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		const onKey = (event: KeyboardEvent) => {
+			if (event.defaultPrevented) return;
+			// The main sidebar belongs to the shell, so this works on every page.
+			if (matchesShortcut(event, 'mod+backslash')) {
+				event.preventDefault();
+				sidebar.toggle();
+				return;
+			}
+			// The palette is reachable from every page, including while it is open.
+			if (matchesShortcut(event, 'mod+k')) {
+				event.preventDefault();
+				commandPalette.toggle();
+				return;
+			}
+			if (matchesShortcut(event, '?') && !isTypingTarget(event.target) && !isOverlayOpen()) {
+				event.preventDefault();
+				shortcutHelp.show();
+			}
+		};
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
+	});
 
 	const fleet = {
 		href: '/app',
@@ -199,6 +244,106 @@
 		void agentSelection.load();
 	});
 
+	// The palette lists each agent's start/stop/restart, so refresh the daemon
+	// states as it opens instead of trusting a possibly stale list.
+	$effect(() => {
+		if (commandPalette.open) void agentSelection.load(true);
+	});
+
+	// Everything the palette can reach: every destination of the shell, every
+	// agent, and the actions that have no page of their own.
+	let commands = $derived.by<Command[]>(() => {
+		const list: Command[] = [];
+		const navigate = (
+			href: string,
+			labelKey: string,
+			descriptionKey: string,
+			icon: Command['icon']
+		) => {
+			list.push({ id: `nav:${href}`, labelKey, descriptionKey, icon, group: 'navigate', href });
+		};
+
+		navigate(fleet.href, fleet.label, fleet.description, fleet.icon);
+		for (const group of nav) {
+			for (const item of group.items) {
+				navigate(item.href, item.label, item.description, item.icon);
+			}
+		}
+		for (const item of hiddenNav) {
+			navigate(item.href, item.label, item.description, item.icon);
+		}
+
+		for (const agent of agentSelection.agents) {
+			list.push({
+				id: `agent:${agent.name}`,
+				labelKey: 'myaaw.command.switch_to',
+				params: { name: agent.name },
+				aliases: ['agent', 'agen', agent.name],
+				group: 'agent',
+				icon: Bot,
+				current: agent.name === agentSelection.selected,
+				run: () => selectAgent(agent.name)
+			});
+			// Only the actions that make sense for the current daemon state.
+			if (agent.running) {
+				list.push({
+					id: `agent-restart:${agent.name}`,
+					labelKey: 'myaaw.command.restart_agent',
+					params: { name: agent.name },
+					aliases: ['restart', agent.name],
+					group: 'agent',
+					icon: RotateCw,
+					run: () => runAgentAction('restart', agent.name)
+				});
+				list.push({
+					id: `agent-stop:${agent.name}`,
+					labelKey: 'myaaw.command.stop_agent',
+					params: { name: agent.name },
+					aliases: ['stop', 'hentikan', agent.name],
+					group: 'agent',
+					icon: Square,
+					run: () => runAgentAction('stop', agent.name)
+				});
+			} else {
+				list.push({
+					id: `agent-start:${agent.name}`,
+					labelKey: 'myaaw.command.start_agent',
+					params: { name: agent.name },
+					aliases: ['start', 'jalankan', agent.name],
+					group: 'agent',
+					icon: Play,
+					run: () => runAgentAction('start', agent.name)
+				});
+			}
+		}
+
+		list.push({
+			id: 'action:shortcuts',
+			labelKey: 'myaaw.shortcuts.title',
+			aliases: ['keyboard', 'papan tombol', 'shortcut'],
+			group: 'action',
+			icon: Keyboard,
+			run: () => shortcutHelp.show()
+		});
+		list.push({
+			id: 'action:logout',
+			labelKey: 'common.logout',
+			aliases: ['sign out', 'keluar'],
+			group: 'action',
+			icon: LogOut,
+			destructive: true,
+			run: async () => {
+				const confirmed = await askConfirm({
+					message: t('myaaw.command.logout_confirm'),
+					variant: 'destructive'
+				});
+				if (confirmed) await logout();
+			}
+		});
+
+		return list;
+	});
+
 	function isActive(href: string) {
 		if (href === '/app') return page.url.pathname === '/app';
 		return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
@@ -229,6 +374,30 @@
 			page.url.pathname.startsWith('/app/tools') ||
 			page.url.pathname.startsWith('/app/contacts')
 	);
+
+	/** Starts, stops or restarts one agent from any page, badge flipped first. */
+	async function runAgentAction(kind: 'start' | 'stop' | 'restart', name: string) {
+		const running = kind !== 'stop';
+		agentSelection.setRunning(name, running);
+		try {
+			if (kind === 'start') await serverApi.start(name);
+			else if (kind === 'stop') await serverApi.stop(name);
+			else await serverApi.restart(name);
+			toastStore.success(
+				t(
+					kind === 'start'
+						? 'myaaw.server.start_done'
+						: kind === 'stop'
+							? 'myaaw.server.stop_done'
+							: 'myaaw.server.restart_done'
+				)
+			);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			await agentSelection.load(true);
+		}
+	}
 
 	async function logout() {
 		await authStore.logout();
@@ -293,6 +462,10 @@
 				<Settings2 class="mr-2 h-4 w-4" />
 				{t('myaaw.nav.settings')}
 			</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={() => shortcutHelp.show()}>
+				<Keyboard class="mr-2 h-4 w-4" />
+				{t('myaaw.shortcuts.title')}
+			</DropdownMenu.Item>
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={logout}>
 				<LogOut class="mr-2 h-4 w-4" />
@@ -338,6 +511,7 @@
 				onclick={() => sidebar.toggle()}
 				title={t('myaaw.sidebar.expand')}
 				aria-label={t('myaaw.sidebar.expand')}
+				aria-keyshortcuts="Control+\\ Meta+\\"
 			>
 				<PanelLeftOpen class="h-3.5 w-3.5" />
 			</button>
@@ -370,6 +544,7 @@
 					onclick={() => sidebar.toggle()}
 					title={t('myaaw.sidebar.collapse')}
 					aria-label={t('myaaw.sidebar.collapse')}
+					aria-keyshortcuts="Control+\\ Meta+\\"
 				>
 					<PanelLeftClose class="h-4 w-4" />
 				</button>
@@ -568,4 +743,10 @@
 
 	<!-- One confirmation dialog for every page; askConfirm() drives it. -->
 	<ConfirmDialog />
+
+	<!-- The shortcut list opens from `?` or from any button that calls shortcutHelp.show(). -->
+	<ShortcutHelp />
+
+	<!-- Mod+K walks every page, and every agent, without touching the sidebar. -->
+	<CommandPalette {commands} />
 </div>

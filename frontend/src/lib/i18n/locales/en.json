@@ -775,6 +775,44 @@
 			"trajectory": "Trajectory",
 			"select_run": "Select a run to inspect its spans.",
 			"spans": "{count} spans"
+		},
+		"shortcuts": {
+			"title": "Keyboard shortcuts",
+			"description": "Press ? at any time to open this list.",
+			"settings_desc": "Every shortcut the dashboard listens for.",
+			"group_general": "General",
+			"group_chat": "Chat",
+			"group_speech": "Speech to text",
+			"sidebar": "Show or hide the main sidebar",
+			"help": "Show this list",
+			"send": "Send the message",
+			"attach": "Attach a file",
+			"history": "Show or hide the chat history",
+			"prev_turn": "Jump to the previous question",
+			"next_turn": "Jump to the next question",
+			"new_chat": "Start a new chat",
+			"interrupt": "Close a dialog, stop dictation, then stop the answer",
+			"dictate": "Start or stop speech to text",
+			"focus": "Focus the message box",
+			"platform_note": "Shortcuts are for your system; the other platform is shown in grey.",
+			"search": "Search chats",
+			"command": "Open the command palette"
+		},
+		"command": {
+			"title": "Command palette",
+			"placeholder": "Type a command or search...",
+			"empty": "No matching command",
+			"group_navigate": "Navigate",
+			"group_agent": "Agents",
+			"group_action": "Actions",
+			"switch_to": "Switch to {name}",
+			"current": "Current",
+			"logout_confirm": "Log out of this session?",
+			"hint_move": "Navigate",
+			"hint_select": "Select",
+			"start_agent": "Start {name}",
+			"stop_agent": "Stop {name}",
+			"restart_agent": "Restart {name}"
 		}
 	}
 }

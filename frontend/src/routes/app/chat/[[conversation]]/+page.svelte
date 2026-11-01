@@ -12,6 +12,7 @@
 	import { agentSelection, toastStore, topBarTitle } from '$lib/stores';
 	import { chatRuns, type ChatItem } from '$lib/stores/chatRuns.svelte';
 	import { cn } from '$lib/utils';
+	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
@@ -316,6 +317,7 @@
 	let historyQuery = $state('');
 	let historyKey = '';
 	let chatAgentKey = '';
+	let searchBox = $state<HTMLInputElement | null>(null);
 	let editingId = $state('');
 	let editingTitle = $state('');
 
@@ -845,19 +847,12 @@
 		};
 	});
 
-	// Esc interrupts the answer of the conversation on screen, like the stop
-	// button. Runs in other conversations keep going.
+	// An answer just ended: the reader is most likely typing next.
+	let wasStreaming = false;
 	$effect(() => {
-		if (!browser) return;
-		const onKey = (event: KeyboardEvent) => {
-			if (event.key !== 'Escape') return;
-			const run = activeRun;
-			if (!run?.streaming) return;
-			event.preventDefault();
-			void run.stop();
-		};
-		window.addEventListener('keydown', onKey);
-		return () => window.removeEventListener('keydown', onKey);
+		const now = streaming;
+		if (wasStreaming && !now) void focusComposer();
+		wasStreaming = now;
 	});
 
 	// Runs started before this page existed (reload, closed tab, fresh login) are
@@ -1139,11 +1134,26 @@
 		void activeRun?.stop();
 	}
 
-	function newChat() {
+	async function newChat() {
 		resetChat();
 		if (page.url.pathname !== '/app/chat') {
-			void goto('/app/chat');
+			await goto('/app/chat');
 		}
+		// A fresh chat exists to be typed into; focus once the route has settled.
+		await focusComposer();
+	}
+
+	async function focusComposer() {
+		await tick();
+		composer?.focus();
+	}
+
+	/** Opens the chat history and puts the cursor in its search box. */
+	async function focusHistorySearch() {
+		if (!historyOpen) toggleHistory();
+		await tick();
+		searchBox?.focus();
+		searchBox?.select();
 	}
 
 	function resetChat() {
@@ -1743,6 +1753,83 @@
 		}
 	}
 
+	/** Turns the page shortcuts into actions; the composer keeps its own keys. */
+	function onShortcutKey(event: KeyboardEvent) {
+		// The composer already consumed Enter (with or without a modifier).
+		if (event.defaultPrevented) return;
+
+		if (matchesShortcut(event, 'escape')) {
+			// An open dialog or menu owns Esc, so interrupting waits its turn.
+			if (isOverlayOpen()) return;
+			if (listening) {
+				event.preventDefault();
+				stopSpeech();
+				return;
+			}
+			openStats = false;
+			openUsage = false;
+			const run = activeRun;
+			if (run?.streaming) {
+				event.preventDefault();
+				void run.stop();
+			}
+			return;
+		}
+
+		if (matchesShortcut(event, '/')) {
+			event.preventDefault();
+			void focusComposer();
+			return;
+		}
+		if (matchesShortcut(event, 'mod+enter')) {
+			event.preventDefault();
+			send();
+			return;
+		}
+		if (matchesShortcut(event, 'mod+shift+space')) {
+			event.preventDefault();
+			toggleSpeech();
+			return;
+		}
+		if (matchesShortcut(event, 'mod+shift+s')) {
+			event.preventDefault();
+			void focusHistorySearch();
+			return;
+		}
+		if (matchesShortcut(event, 'mod+shift+f')) {
+			event.preventDefault();
+			if (!(pending.length >= MAX_IMAGES && pendingFiles.length >= MAX_FILES)) {
+				fileInput?.click();
+			}
+			return;
+		}
+		if (matchesShortcut(event, 'mod+shift+h')) {
+			event.preventDefault();
+			toggleHistory();
+			return;
+		}
+
+		// Arrow and letter shortcuts must not steal keys from a text field.
+		if (isTypingTarget(event.target)) return;
+		if (matchesShortcut(event, 'alt+arrowup') || matchesShortcut(event, 'alt+arrowdown')) {
+			event.preventDefault();
+			jumpTurn(matchesShortcut(event, 'alt+arrowup') ? -1 : 1);
+			return;
+		}
+		if (matchesShortcut(event, 'alt+n')) {
+			event.preventDefault();
+			newChat();
+		}
+	}
+
+	/** Moves to the question before or after the one being read. */
+	function jumpTurn(direction: -1 | 1) {
+		if (railTurns.length === 0) return;
+		const current = railTurns.findIndex((turn) => turn.index === activeTurnIndex);
+		const next = current < 0 ? 0 : Math.min(Math.max(current + direction, 0), railTurns.length - 1);
+		void jumpToTurn(railTurns[next]);
+	}
+
 	function autosize(node: HTMLTextAreaElement) {
 		const resize = () => {
 			node.style.height = 'auto';
@@ -1901,12 +1988,7 @@
 		openStats = false;
 		openUsage = false;
 	}}
-	onkeydown={(event) => {
-		if (event.key === 'Escape') {
-			openStats = false;
-			openUsage = false;
-		}
-	}}
+	onkeydown={onShortcutKey}
 />
 
 <TopBarActions id="chat-actions">
@@ -1916,8 +1998,9 @@
 			variant="outline"
 			size="icon-sm"
 			onclick={toggleHistory}
-			title={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
+			title={`${historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')} (${formatShortcut('mod+shift+h')})`}
 			aria-label={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
+			aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
 		>
 			{#if historyOpen}
 				<PanelRightClose class="h-4 w-4" />
@@ -2484,7 +2567,8 @@
 									disabled={pending.length >= MAX_IMAGES && pendingFiles.length >= MAX_FILES}
 									onclick={() => fileInput?.click()}
 									aria-label={t('myaaw.chat.attach')}
-									title={t('myaaw.chat.attach')}
+									aria-keyshortcuts="Control+Shift+F Meta+Shift+F"
+									title={`${t('myaaw.chat.attach')} (${formatShortcut('mod+shift+f')})`}
 								>
 									<Paperclip class="h-4 w-4" />
 								</Button>
@@ -2498,7 +2582,8 @@
 									aria-label={listening
 										? t('myaaw.chat.speech_stop')
 										: t('myaaw.chat.speech_start')}
-									title={listening ? t('myaaw.chat.speech_stop') : t('myaaw.chat.speech_start')}
+									aria-keyshortcuts="Control+Shift+Space Meta+Shift+Space"
+									title={`${listening ? t('myaaw.chat.speech_stop') : t('myaaw.chat.speech_start')} (${formatShortcut('mod+shift+space')})`}
 								>
 									<Mic class={cn('h-4 w-4', listening && 'animate-pulse')} />
 								</Button>
@@ -2680,10 +2765,12 @@
 						class="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
 					/>
 					<Input
+						bind:ref={searchBox}
 						bind:value={historySearch}
 						placeholder={t('myaaw.conversations.search')}
 						class="h-8 pl-7 text-xs"
 						aria-label={t('myaaw.conversations.search')}
+						aria-keyshortcuts="Control+Shift+S Meta+Shift+S"
 					/>
 				</div>
 			</div>

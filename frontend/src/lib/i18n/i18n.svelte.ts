@@ -84,6 +84,16 @@ function getNestedValue(obj: Translations, path: string): string {
 }
 
 /**
+ * Every language a key is translated to. Search results must not depend on the
+ * locale the interface is using, so the command palette looks up both.
+ */
+export function translationsOf(key: string): string[] {
+	return Object.values(translations)
+		.map((dictionary) => getNestedValue(dictionary, key))
+		.filter((value, index, all) => value !== key && all.indexOf(value) === index);
+}
+
+/**
  * Translation function - reactive via Svelte 5 Runes
  */
 export function t(key: string, params?: Record<string, string | number>): string {

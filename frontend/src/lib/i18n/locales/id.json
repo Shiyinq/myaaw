@@ -775,6 +775,44 @@
 			"approvals_desc": "Berlaku untuk setiap pemanggilan tool.",
 			"saved": "Konfigurasi disimpan",
 			"restart_hint": "Restart server agen agar perubahan streaming, queue worker, dan observability berlaku."
+		},
+		"shortcuts": {
+			"title": "Shortcut papan tombol",
+			"description": "Tekan ? kapan saja untuk membuka daftar ini.",
+			"settings_desc": "Semua shortcut yang dikenali dashboard.",
+			"group_general": "Umum",
+			"group_chat": "Chat",
+			"group_speech": "Suara ke teks",
+			"sidebar": "Tampilkan atau sembunyikan sidebar utama",
+			"help": "Tampilkan daftar ini",
+			"send": "Kirim pesan",
+			"attach": "Lampirkan file",
+			"history": "Tampilkan atau sembunyikan riwayat chat",
+			"prev_turn": "Lompat ke pertanyaan sebelumnya",
+			"next_turn": "Lompat ke pertanyaan berikutnya",
+			"new_chat": "Mulai chat baru",
+			"interrupt": "Tutup dialog, hentikan dikte, lalu hentikan jawaban",
+			"dictate": "Mulai atau hentikan suara ke teks",
+			"focus": "Fokus ke kotak pesan",
+			"platform_note": "Shortcut mengikuti sistem kamu; platform lain ditampilkan abu-abu.",
+			"search": "Cari chat",
+			"command": "Buka command palette"
+		},
+		"command": {
+			"title": "Command palette",
+			"placeholder": "Ketik perintah atau cari...",
+			"empty": "Tidak ada perintah cocok",
+			"group_navigate": "Navigasi",
+			"group_agent": "Agent",
+			"group_action": "Aksi",
+			"switch_to": "Pindah ke {name}",
+			"current": "Aktif",
+			"logout_confirm": "Keluar dari sesi ini?",
+			"hint_move": "Navigasi",
+			"hint_select": "Pilih",
+			"start_agent": "Jalankan {name}",
+			"stop_agent": "Hentikan {name}",
+			"restart_agent": "Restart {name}"
 		}
 	}
 }
