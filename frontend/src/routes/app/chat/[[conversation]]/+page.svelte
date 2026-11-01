@@ -40,6 +40,7 @@
 		Globe,
 		Loader2,
 		MessageSquarePlus,
+		Mic,
 		Minimize2,
 		Monitor,
 		PanelRightClose,
@@ -67,7 +68,7 @@
 		Usage
 	} from '$lib/types';
 
-	const { t } = useTranslation();
+	const { t, locale } = useTranslation();
 
 	type Item = ChatItem;
 
@@ -241,7 +242,13 @@
 		const live = turnMarks
 			.filter((mark) => !stored.has(mark.index))
 			.map((mark) => ({ index: mark.index, text: mark.text }));
-		return [...turns, ...live];
+		// One entry per question: a row can repeat an index the summary already has
+		// while a run is settling, and a keyed block cannot repeat a key.
+		const unique = new Map<number, { index: number; text: string }>();
+		for (const turn of [...turns, ...live]) {
+			if (!unique.has(turn.index)) unique.set(turn.index, turn);
+		}
+		return [...unique.values()];
 	});
 
 	// The ticks are a window over the list, centred on the question being read. It
@@ -342,7 +349,8 @@
 		turnMarks = Array.from(container.querySelectorAll<HTMLElement>('[data-chat-turn]')).map(
 			(node, position) => {
 				const id = node.dataset.chatTurn ?? '';
-				const stored = Number(node.dataset.chatTurnIndex ?? '');
+				const raw = node.dataset.chatTurnIndex;
+				const stored = raw === undefined || raw === '' ? Number.NaN : Number(raw);
 				// A question from a live run is not stored yet: it gets a negative
 				// index so the rail can still point at it.
 				const index = Number.isFinite(stored) ? stored : -(position + 1);
@@ -496,6 +504,8 @@
 	});
 
 	async function loadConversation(currentAgent: string, id: string) {
+		// Dictation belongs to the composer the reader is looking at.
+		stopSpeech();
 		if (!id) {
 			historyItems = [];
 			clearRail();
@@ -1074,6 +1084,8 @@
 
 	function send() {
 		const text = input.trim();
+		// Sending ends the dictation: the answer must not be typed over.
+		stopSpeech();
 		const images = pending.map((item) => item.base64);
 		const files = pendingFiles.map((item) => ({
 			name: item.name,
@@ -1743,6 +1755,133 @@
 		};
 	}
 
+	// --- Dictation -------------------------------------------------------------
+	// Speech to text uses the browser's own recogniser (Chrome, Edge, Safari): no
+	// library, and the audio never passes through this app.
+	interface SpeechEventLike {
+		resultIndex: number;
+		results: {
+			length: number;
+			[index: number]: { isFinal: boolean; [index: number]: { transcript: string } };
+		};
+	}
+
+	interface RecognitionLike {
+		lang: string;
+		continuous: boolean;
+		interimResults: boolean;
+		start: () => void;
+		stop: () => void;
+		abort: () => void;
+		onresult: ((event: SpeechEventLike) => void) | null;
+		onerror: ((event: { error: string }) => void) | null;
+		onend: (() => void) | null;
+	}
+
+	let listening = $state(false);
+	let speech: RecognitionLike | null = null;
+	// What the composer held when dictation started, and the part the recogniser
+	// has settled on. The interim tail is rewritten on every event.
+	let speechHead = '';
+	let speechSettled = '';
+
+	function speechConstructor() {
+		if (!browser) return null;
+		const scope = window as unknown as {
+			SpeechRecognition?: new () => RecognitionLike;
+			webkitSpeechRecognition?: new () => RecognitionLike;
+		};
+		return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
+	}
+
+	async function setSpeechText(value: string) {
+		input = value;
+		// The composer grows from its own input event, which a state change does not
+		// dispatch.
+		await tick();
+		composer?.dispatchEvent(new Event('input', { bubbles: true }));
+	}
+
+	function stopSpeech() {
+		if (!listening && !speech) return;
+		listening = false;
+		try {
+			speech?.stop();
+		} catch {
+			// Already stopped.
+		}
+		speech = null;
+	}
+
+	function toggleSpeech() {
+		if (listening) {
+			stopSpeech();
+			return;
+		}
+		const Constructor = speechConstructor();
+		if (!Constructor) {
+			toastStore.error(t('myaaw.chat.speech_unsupported'));
+			return;
+		}
+		// One recogniser per dictation: it cannot be started again after an abort.
+		const recognition = new Constructor();
+		recognition.lang = locale.value === 'id' ? 'id-ID' : 'en-US';
+		recognition.continuous = true;
+		recognition.interimResults = true;
+		speechHead = input ? `${input.trimEnd()} ` : '';
+		speechSettled = '';
+		recognition.onresult = (event) => {
+			let interim = '';
+			for (let index = event.resultIndex; index < event.results.length; index += 1) {
+				const result = event.results[index];
+				const text = result[0]?.transcript ?? '';
+				if (result.isFinal) speechSettled += text;
+				else interim += text;
+			}
+			void setSpeechText(`${speechHead}${speechSettled}${interim}`);
+		};
+		recognition.onerror = (event) => {
+			listening = false;
+			speech = null;
+			const key =
+				event.error === 'not-allowed' || event.error === 'service-not-allowed'
+					? 'speech_denied'
+					: event.error === 'audio-capture'
+						? 'speech_no_microphone'
+						: 'speech_error';
+			toastStore.error(t(`myaaw.chat.${key}`));
+		};
+		recognition.onend = () => {
+			if (!listening) return;
+			// Chrome ends a session after a pause; keep the dictation going.
+			try {
+				recognition.start();
+			} catch {
+				listening = false;
+				speech = null;
+			}
+		};
+		try {
+			recognition.start();
+		} catch {
+			toastStore.error(t('myaaw.chat.speech_error'));
+			return;
+		}
+		speech = recognition;
+		listening = true;
+	}
+
+	// Leaving the page must not keep the microphone open.
+	$effect(() => () => {
+		listening = false;
+		try {
+			speech?.abort();
+		} catch {
+			// Already stopped.
+		}
+		speech = null;
+	});
+
 	function attachmentUrl(attachment: Attachment) {
 		return `data:${attachment.mime_type || 'application/octet-stream'};base64,${attachment.data_base64}`;
 	}
@@ -2349,8 +2488,22 @@
 								>
 									<Paperclip class="h-4 w-4" />
 								</Button>
+								<Button
+									type="button"
+									size="icon-sm"
+									variant="ghost"
+									class={cn('shrink-0 rounded-full', listening && 'text-destructive')}
+									onclick={toggleSpeech}
+									aria-pressed={listening}
+									aria-label={listening
+										? t('myaaw.chat.speech_stop')
+										: t('myaaw.chat.speech_start')}
+									title={listening ? t('myaaw.chat.speech_stop') : t('myaaw.chat.speech_start')}
+								>
+									<Mic class={cn('h-4 w-4', listening && 'animate-pulse')} />
+								</Button>
 								<span class="truncate text-[10px] text-muted-foreground">
-									{t('myaaw.chat.hint')}
+									{listening ? t('myaaw.chat.speech_listening') : t('myaaw.chat.hint')}
 								</span>
 							</div>
 							{#if streaming}
