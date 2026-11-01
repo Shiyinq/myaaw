@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		Boxes,
@@ -33,7 +33,9 @@
 		RotateCw,
 		PanelLeftClose,
 		PanelLeftOpen,
-		UserRound
+		Menu,
+		UserRound,
+		X
 	} from 'lucide-svelte';
 	import {
 		agentSelection,
@@ -68,6 +70,31 @@
 	let { children }: Props = $props();
 	const { t, locale, changeLocale, availableLocales } = useTranslation();
 
+	// On a phone the same sidebar is a drawer: closed until the header opens it,
+	// and always showing the labels, because an icon rail that slides in over the
+	// page explains nothing. `compact` is the desktop-only "icons and no labels"
+	// state, so a phone ignores a collapse that was chosen on a wide screen.
+	let drawerOpen = $state(false);
+	let wide = $state(false);
+	let compactSidebar = $derived(sidebar.collapsed && wide);
+
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		const query = window.matchMedia('(min-width: 768px)');
+		const sync = () => {
+			wide = query.matches;
+			if (wide) drawerOpen = false;
+		};
+		sync();
+		query.addEventListener('change', sync);
+		return () => query.removeEventListener('change', sync);
+	});
+
+	// A drawer that stays open hides the page it just navigated to.
+	afterNavigate(() => {
+		drawerOpen = false;
+	});
+
 	$effect(() => {
 		if (typeof window === 'undefined') return;
 		const onKey = (event: KeyboardEvent) => {
@@ -75,7 +102,13 @@
 			// The main sidebar belongs to the shell, so this works on every page.
 			if (matchesShortcut(event, 'mod+backslash')) {
 				event.preventDefault();
-				sidebar.toggle();
+				if (wide) sidebar.toggle();
+				else drawerOpen = !drawerOpen;
+				return;
+			}
+			if (event.key === 'Escape' && drawerOpen) {
+				event.preventDefault();
+				drawerOpen = false;
 				return;
 			}
 			// The palette is reachable from every page, including while it is open.
@@ -530,13 +563,25 @@
 		sidebar.collapsed ? 'md:pl-16' : 'md:pl-60'
 	]}
 >
+	{#if drawerOpen}
+		<!-- The drawer covers the page it came from, so the tap that dismisses it must
+		     land somewhere that is not a link. -->
+		<button
+			type="button"
+			class="fixed inset-0 z-40 bg-black/40 md:hidden"
+			aria-label={t('myaaw.sidebar.close')}
+			onclick={() => (drawerOpen = false)}
+		></button>
+	{/if}
 	<aside
+		inert={!wide && !drawerOpen}
 		class={[
-			'fixed inset-y-0 left-0 z-40 hidden flex-col border-r bg-card transition-[width] duration-200 md:flex',
-			sidebar.collapsed ? 'w-16' : 'w-60'
+			'fixed inset-y-0 left-0 z-50 flex w-64 max-w-[80vw] flex-col border-r bg-card shadow-xl transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
+			drawerOpen ? 'translate-x-0' : '-translate-x-full',
+			compactSidebar ? 'md:w-16' : 'md:w-60'
 		]}
 	>
-		{#if sidebar.collapsed}
+		{#if compactSidebar}
 			<div class="flex h-14 shrink-0 items-center justify-center border-b">
 				<div
 					class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
@@ -567,7 +612,7 @@
 					</span>
 				</div>
 				<button
-					class="ml-auto flex w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+					class="ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:flex"
 					onclick={() => sidebar.toggle()}
 					title={t('myaaw.sidebar.collapse')}
 					aria-label={t('myaaw.sidebar.collapse')}
@@ -575,35 +620,43 @@
 				>
 					<PanelLeftClose class="h-4 w-4" />
 				</button>
+				<button
+					class="ml-auto flex w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+					onclick={() => (drawerOpen = false)}
+					title={t('myaaw.sidebar.close')}
+					aria-label={t('myaaw.sidebar.close')}
+				>
+					<X class="h-4 w-4" />
+				</button>
 			</div>
 		{/if}
 
 		<!-- Fleet overview lives outside the agent scope, above the picker. -->
-		<div class={sidebar.collapsed ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
+		<div class={compactSidebar ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
 			<a
 				href={fleet.href}
-				title={sidebar.collapsed ? t(fleet.label) : undefined}
+				title={compactSidebar ? t(fleet.label) : undefined}
 				aria-current={isActive(fleet.href) ? 'page' : undefined}
 				class={[
 					'relative flex items-center rounded-md text-sm transition-colors',
-					sidebar.collapsed ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
+					compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
 					isActive(fleet.href)
 						? 'bg-accent font-medium text-accent-foreground'
 						: 'text-muted-foreground hover:bg-muted hover:text-foreground'
 				]}
 			>
-				{#if sidebar.collapsed && isActive(fleet.href)}
+				{#if compactSidebar && isActive(fleet.href)}
 					<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
 				{/if}
 				<Boxes class="h-4 w-4 shrink-0" />
-				{#if !sidebar.collapsed}
+				{#if !compactSidebar}
 					<span class="truncate">{t(fleet.label)}</span>
 				{/if}
 			</a>
 		</div>
 
-		<div class={sidebar.collapsed ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
-			{#if sidebar.collapsed}
+		<div class={compactSidebar ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
+			{#if compactSidebar}
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
 						{#snippet child({ props })}
@@ -640,10 +693,10 @@
 			{/if}
 		</div>
 
-		<nav class={['flex-1 overflow-y-auto', sidebar.collapsed ? 'space-y-2 p-2' : 'space-y-5 p-3']}>
+		<nav class={['flex-1 overflow-y-auto', compactSidebar ? 'space-y-2 p-2' : 'space-y-5 p-3']}>
 			{#each nav as group, groupIndex (group.label)}
 				<div class="space-y-1">
-					{#if !sidebar.collapsed}
+					{#if !compactSidebar}
 						<p
 							class="px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
 						>
@@ -656,21 +709,21 @@
 						{@const Icon = item.icon}
 						<a
 							href={item.href}
-							title={sidebar.collapsed ? t(item.label) : undefined}
+							title={compactSidebar ? t(item.label) : undefined}
 							aria-current={isActive(item.href) ? 'page' : undefined}
 							class={[
 								'relative flex items-center rounded-md text-sm transition-colors',
-								sidebar.collapsed ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
+								compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
 								isActive(item.href)
 									? 'bg-accent font-medium text-accent-foreground'
 									: 'text-muted-foreground hover:bg-muted hover:text-foreground'
 							]}
 						>
-							{#if sidebar.collapsed && isActive(item.href)}
+							{#if compactSidebar && isActive(item.href)}
 								<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
 							{/if}
 							<Icon class="h-4 w-4 shrink-0" />
-							{#if !sidebar.collapsed}
+							{#if !compactSidebar}
 								<span class="truncate">{t(item.label)}</span>
 							{/if}
 						</a>
@@ -679,8 +732,8 @@
 			{/each}
 		</nav>
 
-		<div class={sidebar.collapsed ? 'shrink-0 border-t p-2' : 'shrink-0 border-t p-3'}>
-			{#if sidebar.collapsed}
+		<div class={compactSidebar ? 'shrink-0 border-t p-2' : 'shrink-0 border-t p-3'}>
+			{#if compactSidebar}
 				<div class="flex justify-center">{@render account(true, 'start')}</div>
 			{:else}
 				{@render account(false)}
@@ -690,7 +743,20 @@
 
 	<div class="flex h-dvh flex-col">
 		<header class="shrink-0 border-b bg-background/80 backdrop-blur">
-			<div class="flex h-14 items-center gap-3 px-4">
+			<div class="flex h-14 items-center gap-2 px-2 sm:gap-3 sm:px-4">
+				<!-- Phones reach the whole navigation through the drawer; from md up the
+				     sidebar is always on screen, so the button is not rendered there. -->
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					class="shrink-0 md:hidden"
+					onclick={() => (drawerOpen = true)}
+					title={t('myaaw.sidebar.open')}
+					aria-label={t('myaaw.sidebar.open')}
+					aria-keyshortcuts="Control+\\ Meta+\\"
+				>
+					<Menu class="h-4 w-4" />
+				</Button>
 				<div class="min-w-0 flex-1">
 					{#if isChat && topBarTitle.value}
 						<h1 class="truncate text-sm font-semibold tracking-tight">
@@ -715,44 +781,8 @@
 					{#if topBarSlot.current}
 						{@render topBarSlot.current.content()}
 					{/if}
-
-					<div class="flex items-center gap-2 md:hidden">
-						<div class="w-24">
-							<AgentPicker compact />
-						</div>
-						{@render account(true)}
-					</div>
 				</div>
 			</div>
-
-			<nav class="flex gap-1 overflow-x-auto border-t px-3 py-2 md:hidden">
-				<a
-					href={fleet.href}
-					aria-current={isActive(fleet.href) ? 'page' : undefined}
-					class={[
-						'whitespace-nowrap rounded-md px-2 py-1 text-xs transition-colors',
-						isActive(fleet.href)
-							? 'bg-accent font-medium text-accent-foreground'
-							: 'text-muted-foreground hover:bg-muted hover:text-foreground'
-					]}
-				>
-					{t(fleet.label)}
-				</a>
-				{#each flatNav as item (item.href)}
-					<a
-						href={item.href}
-						aria-current={isActive(item.href) ? 'page' : undefined}
-						class={[
-							'whitespace-nowrap rounded-md px-2 py-1 text-xs transition-colors',
-							isActive(item.href)
-								? 'bg-accent font-medium text-accent-foreground'
-								: 'text-muted-foreground hover:bg-muted hover:text-foreground'
-						]}
-					>
-						{t(item.label)}
-					</a>
-				{/each}
-			</nav>
 		</header>
 
 		<main

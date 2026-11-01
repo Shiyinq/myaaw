@@ -98,6 +98,8 @@
 			"profile": "Profil"
 		},
 		"sidebar": {
+			"open": "Buka menu",
+			"close": "Tutup menu",
 			"collapse": "Ciutkan sidebar",
 			"expand": "Bentangkan sidebar"
 		},

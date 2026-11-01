@@ -2297,7 +2297,7 @@
 											data-chat-turn={item.localId}
 											data-chat-turn-index={item.messageIndex}
 										>
-											<div class="group/user flex max-w-[80%] flex-col items-end gap-2">
+											<div class="group/user flex min-w-0 max-w-[80%] flex-col items-end gap-2">
 												{#if item.images?.length}
 													<div class="flex flex-wrap justify-end gap-2">
 														{#each item.images as image, imageIndex (imageIndex)}
@@ -2349,7 +2349,7 @@
 													</div>
 												{/if}
 												{#if item.text}
-													<div class="flex flex-col items-end">
+													<div class="flex max-w-full flex-col items-end">
 														<div
 															class="max-w-full whitespace-pre-wrap break-words rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
 														>

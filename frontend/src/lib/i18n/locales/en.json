@@ -98,6 +98,8 @@
 			"profile": "Profile"
 		},
 		"sidebar": {
+			"open": "Open the menu",
+			"close": "Close the menu",
 			"collapse": "Collapse sidebar",
 			"expand": "Expand sidebar"
 		},
