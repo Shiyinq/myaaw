@@ -204,7 +204,7 @@
 </TopBarActions>
 
 <div
-	class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 lg:gap-5 lg:overflow-hidden lg:p-6"
+	class="h-full overflow-y-auto p-4 max-lg:space-y-4 lg:flex lg:min-h-0 lg:flex-col lg:gap-5 lg:overflow-hidden lg:p-6"
 >
 	{#if !agent}
 		<Card>
