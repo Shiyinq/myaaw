@@ -279,6 +279,7 @@
 			"stop": "Hentikan",
 			"empty": "Belum ada pesan. Mulai percakapan.",
 			"loading": "Memuat percakapan...",
+			"loading_older": "Memuat pesan lama...",
 			"turn_one": "1 turn",
 			"turns": "{count} turn",
 			"step_one": "1 langkah",

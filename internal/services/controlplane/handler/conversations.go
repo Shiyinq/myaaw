@@ -115,7 +115,7 @@ func activityRange(c fiber.Ctx) (time.Time, time.Time, error) {
 // @Param        id path string true "Conversation ID"
 // @Param        user_id query int false "User ID (defaults to the authenticated user)"
 // @Param        limit query int false "Message page size (0 = all, max 500)"
-// @Param        offset query int false "Message offset (default 0)"
+// @Param        offset query int false "Message offset (default 0, negative starts from the end)"
 // @Success      200 {object} service.ConversationDetail
 // @Failure      401 {object} common.ErrorResponse
 // @Failure      403 {object} common.ErrorResponse

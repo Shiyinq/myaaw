@@ -1519,6 +1519,11 @@ definitions:
         type: string
       total_messages:
         type: integer
+      turns:
+        description: Turns covers the whole conversation, not only the returned messages.
+        items:
+          $ref: '#/definitions/service.ConversationTurn'
+        type: array
       updated_at:
         type: string
       user_id:
@@ -1555,6 +1560,14 @@ definitions:
         type: string
       user_id:
         type: integer
+    type: object
+  service.ConversationTurn:
+    properties:
+      index:
+        description: Index is the position of the question in the stored transcript.
+        type: integer
+      text:
+        type: string
     type: object
   service.CronJobInput:
     properties:
@@ -3312,7 +3325,7 @@ paths:
         in: query
         name: limit
         type: integer
-      - description: Message offset (default 0)
+      - description: Message offset (default 0, negative starts from the end)
         in: query
         name: offset
         type: integer

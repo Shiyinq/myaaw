@@ -68,6 +68,12 @@ export interface ConversationActivity {
 	days: ActivityDay[];
 }
 
+/** One of the user's questions, located in the whole stored transcript. */
+export interface ConversationTurn {
+	index: number;
+	text: string;
+}
+
 export interface ConversationDetail {
 	id: string;
 	user_id: number;
@@ -80,4 +86,6 @@ export interface ConversationDetail {
 	limit: number;
 	offset: number;
 	has_more: boolean;
+	/** Every question of the conversation, not only the returned messages. */
+	turns: ConversationTurn[];
 }

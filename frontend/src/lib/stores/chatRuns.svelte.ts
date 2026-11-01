@@ -21,6 +21,8 @@ import type {
 
 export interface ChatItem extends TimelineItem {
 	localId?: string;
+	/** Position of the stored message this row was rebuilt from, if any. */
+	messageIndex?: number;
 	resolved?: string;
 	images?: string[];
 	uploads?: Upload[];

@@ -1760,7 +1760,7 @@ const docTemplatecontrolplane = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Message offset (default 0)",
+                        "description": "Message offset (default 0, negative starts from the end)",
                         "name": "offset",
                         "in": "query"
                     }
@@ -8125,6 +8125,13 @@ const docTemplatecontrolplane = `{
                 "total_messages": {
                     "type": "integer"
                 },
+                "turns": {
+                    "description": "Turns covers the whole conversation, not only the returned messages.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ConversationTurn"
+                    }
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -8179,6 +8186,18 @@ const docTemplatecontrolplane = `{
                 },
                 "user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "service.ConversationTurn": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "description": "Index is the position of the question in the stored transcript.",
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
                 }
             }
         },

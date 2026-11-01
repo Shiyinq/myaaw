@@ -39,6 +39,15 @@ type ConversationPage struct {
 	HasMore       bool                  `json:"has_more"`
 }
 
+// ConversationTurn locates one of the user's questions inside a transcript. The
+// turn rail draws one tick per turn, so a client needs the whole list even when
+// it has only loaded a page of messages.
+type ConversationTurn struct {
+	// Index is the position of the question in the stored transcript.
+	Index int    `json:"index"`
+	Text  string `json:"text"`
+}
+
 type ConversationDetail struct {
 	ID            string             `json:"id"`
 	UserID        int                `json:"user_id"`
@@ -51,6 +60,13 @@ type ConversationDetail struct {
 	Limit         int                `json:"limit"`
 	Offset        int                `json:"offset"`
 	HasMore       bool               `json:"has_more"`
+	// Turns covers the whole conversation, not only the returned messages, because
+	// the client draws one tick per question. It is not paginated: every detail
+	// response carries the full list. If improvement is needed (thousands of turns,
+	// or a payload that starts to hurt), either ship the indexes only and fetch
+	// labels per window, cap the list with a `turns_truncated` flag, or lower
+	// turnTextLimit.
+	Turns []ConversationTurn `json:"turns"`
 }
 
 // ActivityDay is one calendar day with the number of conversations created
@@ -225,6 +241,28 @@ func (s *ConversationService) List(agentName string, userID, limit, offset int, 
 	return page, nil
 }
 
+// turnTextLimit caps how much of a question travels with the turn summary. The
+// rail only needs a label; the full text is already in the messages page.
+const turnTextLimit = 160
+
+// conversationTurns summarises the user's questions: where each one sits in the
+// transcript and a one-line label. Images and tool output are left out so the
+// summary stays small enough to ship with every transcript page.
+func conversationTurns(messages []provider.Message) []ConversationTurn {
+	turns := make([]ConversationTurn, 0, len(messages)/4)
+	for index, message := range messages {
+		if message.Role != "user" {
+			continue
+		}
+		text := strings.Join(strings.Fields(provider.MessageText(message)), " ")
+		if runes := []rune(text); len(runes) > turnTextLimit {
+			text = string(runes[:turnTextLimit])
+		}
+		turns = append(turns, ConversationTurn{Index: index, Text: text})
+	}
+	return turns
+}
+
 // Get returns one conversation owned by userID with a page of its transcript.
 func (s *ConversationService) Get(agentName, id string, userID, limit, offset int) (ConversationDetail, error) {
 	db, err := openAgentDB(agentName)
@@ -265,7 +303,13 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 	}
 	detail.Messages = agent.MigrateLegacyTranscript(detail.Messages)
 	detail.TotalMessages = len(detail.Messages)
+	detail.Turns = conversationTurns(detail.Messages)
 
+	// A negative offset asks for the last page, so a client can open a long
+	// conversation on its newest messages without first reading the total.
+	if offset < 0 && limit > 0 {
+		offset = detail.TotalMessages - limit
+	}
 	if offset < 0 {
 		offset = 0
 	}

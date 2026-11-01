@@ -228,6 +228,52 @@ func TestConversationServiceGet(t *testing.T) {
 	}
 }
 
+func TestConversationServiceGetLastPage(t *testing.T) {
+	setupConversationAgent(t)
+	conversations := NewConversationService()
+
+	tail, err := conversations.Get("myfriend", "conv-1", 7, 2, -1)
+	if err != nil {
+		t.Fatalf("Get tail: %v", err)
+	}
+	if tail.TotalMessages != 3 || tail.Offset != 1 || len(tail.Messages) != 2 || tail.HasMore {
+		t.Fatalf("tail = %+v", tail)
+	}
+	if tail.Messages[0].Content != "hello" {
+		t.Fatalf("tail messages = %+v", tail.Messages)
+	}
+	// The turn summary covers the whole conversation, not just the page.
+	if len(tail.Turns) != 1 || tail.Turns[0].Index != 1 || tail.Turns[0].Text != "hello" {
+		t.Fatalf("tail turns = %+v", tail.Turns)
+	}
+
+	older, err := conversations.Get("myfriend", "conv-1", 7, 2, 0)
+	if err != nil {
+		t.Fatalf("Get older: %v", err)
+	}
+	if older.Offset != 0 || len(older.Messages) != 2 || !older.HasMore {
+		t.Fatalf("older = %+v", older)
+	}
+
+	// A conversation shorter than the page starts at zero.
+	short, err := conversations.Get("myfriend", "conv-1", 7, 50, -1)
+	if err != nil {
+		t.Fatalf("Get short: %v", err)
+	}
+	if short.Offset != 0 || len(short.Messages) != 3 {
+		t.Fatalf("short = %+v", short)
+	}
+
+	// Asking for everything keeps the old behaviour.
+	all, err := conversations.Get("myfriend", "conv-1", 7, 0, -1)
+	if err != nil {
+		t.Fatalf("Get all: %v", err)
+	}
+	if all.Offset != 0 || len(all.Messages) != 3 {
+		t.Fatalf("all = %+v", all)
+	}
+}
+
 func TestConversationServiceRename(t *testing.T) {
 	setupConversationAgent(t)
 	conversations := NewConversationService()

@@ -279,6 +279,7 @@
 			"stop": "Stop",
 			"empty": "No messages yet. Start the conversation.",
 			"loading": "Loading conversation...",
+			"loading_older": "Loading older messages...",
 			"turn_one": "1 turn",
 			"turns": "{count} turns",
 			"step_one": "1 step",

@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
+	import { tick } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { chat as chatApi } from '$lib/apis/chat';
 	import { config as configApi } from '$lib/apis/config';
@@ -60,6 +61,7 @@
 		ApprovalDecision,
 		Attachment,
 		ConversationSummary,
+		ConversationTurn,
 		Message,
 		Upload,
 		Usage
@@ -140,6 +142,13 @@
 	// the page only renders whatever the store currently holds.
 	let activeRun = $derived(chatRuns.forConversation(agent ?? '', conversationId));
 	let historyItems = $state<Item[]>([]);
+	// The transcript is loaded a page at a time so a long conversation does not
+	// arrive in one payload; these track where the loaded page starts.
+	let loadedOffset = $state(0);
+	let loadingOlder = $state(false);
+	// Set while older messages are being prepended: the transcript must keep the
+	// reading position and must not follow the new rows to the bottom.
+	let prepending = false;
 	let items = $derived<Item[]>(activeRun ? activeRun.items : historyItems);
 	let input = $state('');
 	let streaming = $derived(activeRun?.streaming ?? false);
@@ -186,10 +195,12 @@
 	// Turn rail: one mark per user message, so a long answer can be skipped
 	// straight back to its question. The rail is a short column centred on the
 	// right edge; it unfolds into a list on hover.
+	// A tick in the rail points at one of the user's questions.
 	interface TurnMark {
 		id: string;
 		text: string;
 		top: number;
+		index: number;
 	}
 
 	// The gap between ticks, and the height of a row in the unfolded list: they are
@@ -200,27 +211,48 @@
 	// squeezes them into an unreadable column.
 	const RAIL_VISIBLE = 11;
 
+	// Every question of the conversation, from the server summary, so the rail
+	// covers the whole transcript even when only a page of messages is loaded.
+	//
+	// The summary is not paginated: it rides along with every detail response, so
+	// it stays cheap for hundreds of turns but grows with the conversation.
+	// If improvement is needed (a transcript of thousands of turns, or a payload
+	// that starts to hurt), the options are, cheapest first:
+	//   (a) ship the indexes only and fetch the labels for the open window on hover
+	//       (the ticks stay complete, the card loads its rows in batches);
+	//   (b) cap the list, e.g. 300 turns, and add a `turns_truncated` flag;
+	//   (c) lower the per-turn cap (160 characters today) so the list is smaller.
+	let turns = $state<ConversationTurn[]>([]);
+	// The measured marks of the questions that are currently rendered.
 	let turnMarks = $state<TurnMark[]>([]);
-	let activeTurnId = $state('');
+	let activeTurnIndex = $state<number | null>(null);
 	// The question the pointer is on, either a tick or a row of the unfolded list.
-	let hoverTurnId = $state('');
+	let hoverTurnIndex = $state<number | null>(null);
 	let railOpen = $state(false);
 	let cardList = $state<HTMLDivElement | null>(null);
 	// The list hides its scrollbar, so the edges tell whether it can be scrolled.
 	let cardScrollUp = $state(false);
 	let cardScrollDown = $state(false);
 
+	// A question asked in a live run is not in the summary yet; it gets a negative
+	// index so the rail can still show and light it.
+	let railTurns = $derived.by(() => {
+		const stored = new Set(turns.map((turn) => turn.index));
+		const live = turnMarks
+			.filter((mark) => !stored.has(mark.index))
+			.map((mark) => ({ index: mark.index, text: mark.text }));
+		return [...turns, ...live];
+	});
+
 	// The ticks are a window over the list, centred on the question being read. It
 	// rolls like a lens: the marks at both ends of the window are shorter and
 	// dimmer than the ones near the middle.
 	let railMarks = $derived.by(() => {
-		const total = turnMarks.length;
+		const total = railTurns.length;
 		const visible = Math.min(total, RAIL_VISIBLE);
 		if (visible === 0) return [];
-		const active = Math.max(
-			0,
-			turnMarks.findIndex((mark) => mark.id === activeTurnId)
-		);
+		const found = railTurns.findIndex((turn) => turn.index === activeTurnIndex);
+		const active = found < 0 ? 0 : found;
 		const half = (visible - 1) / 2;
 		const start = Math.min(Math.max(active - Math.round(half), 0), total - visible);
 		// A short conversation shows every mark at the same size; a long one rolls.
@@ -228,7 +260,7 @@
 		return Array.from({ length: visible }, (_, position) => {
 			const distance = rolls && half > 0 ? Math.abs(position - half) / half : 0;
 			return {
-				mark: turnMarks[start + position],
+				turn: railTurns[start + position],
 				width: 14 - 7 * distance,
 				opacity: 1 - 0.5 * distance
 			};
@@ -248,6 +280,9 @@
 
 	// Conversation history sidebar
 	const HISTORY_LIMIT = 20;
+	// Messages fetched per transcript page; scrolling to the top fetches the page
+	// before the loaded one.
+	const PAGE_SIZE = 20;
 	const HISTORY_KEY = 'myaaw_chat_history_open';
 	const LAST_CONVERSATION_KEY = 'myaaw_last_conversation';
 
@@ -286,16 +321,24 @@
 		const container = scroller;
 		if (!container) return;
 		const origin = container.getBoundingClientRect().top;
-		const texts = new Map<string, string>();
+		const texts = new Map<number, string>();
 		for (const item of items) {
-			if (item.kind === 'user' && item.localId) texts.set(item.localId, item.text ?? '');
+			if (item.kind === 'user' && item.messageIndex !== undefined) {
+				texts.set(item.messageIndex, item.text ?? '');
+			}
 		}
+		const storedTexts = new Map(turns.map((turn) => [turn.index, turn.text]));
 
 		turnMarks = Array.from(container.querySelectorAll<HTMLElement>('[data-chat-turn]')).map(
-			(node) => {
+			(node, position) => {
 				const id = node.dataset.chatTurn ?? '';
+				const stored = Number(node.dataset.chatTurnIndex ?? '');
+				// A question from a live run is not stored yet: it gets a negative
+				// index so the rail can still point at it.
+				const index = Number.isFinite(stored) ? stored : -(position + 1);
 				const top = node.getBoundingClientRect().top - origin + container.scrollTop;
-				return { id, text: texts.get(id) ?? '', top };
+				const text = storedTexts.get(index) ?? texts.get(index) ?? '';
+				return { id, index, text, top };
 			}
 		);
 	}
@@ -309,32 +352,71 @@
 	function syncActiveTurn() {
 		if (!scroller || turnMarks.length === 0) return;
 		if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8) {
-			activeTurnId = turnMarks[turnMarks.length - 1].id;
+			// At the bottom the newest question is the one being answered.
+			const last = railTurns[railTurns.length - 1];
+			activeTurnIndex = last ? last.index : null;
 			return;
 		}
 		const probe = scroller.scrollTop + scroller.clientHeight * 0.25;
-		let active = turnMarks[0].id;
+		let active = turnMarks[0].index;
 		for (const mark of turnMarks) {
-			if (mark.top <= probe) active = mark.id;
+			if (mark.top <= probe) active = mark.index;
 		}
-		activeTurnId = active;
+		activeTurnIndex = active;
 	}
 
+	// Measuring reads a rect per user message, so a burst of triggers (typing in
+	// the composer, resizing, prepending a page) coalesces into one frame.
+	let measureFrame = 0;
 	function queueTurnMeasure() {
-		requestAnimationFrame(() => {
+		if (measureFrame) return;
+		measureFrame = requestAnimationFrame(() => {
+			measureFrame = 0;
 			measureTurns();
 			syncActiveTurn();
 		});
 	}
 
-	function jumpToTurn(mark: TurnMark) {
+	/**
+	 * Scrolls to one of the questions. A question in a page that is not loaded yet
+	 * pulls the transcript back to it first, so the whole conversation stays
+	 * reachable from the rail even though only a window of it is in memory.
+	 */
+	async function jumpToTurn(turn: ConversationTurn) {
 		if (!scroller) return;
+		let mark = turnMarks.find((candidate) => candidate.index === turn.index);
+		if (!mark) {
+			await loadOlderUntil(turn.index);
+			mark = turnMarks.find((candidate) => candidate.index === turn.index);
+		}
+		if (!mark) return;
 		scroller.scrollTo({ top: Math.max(0, mark.top - 16), behavior: 'smooth' });
-		activeTurnId = mark.id;
+		activeTurnIndex = turn.index;
+	}
+
+	/** Loads pages until the question at index is rendered, or nothing is left. */
+	async function loadOlderUntil(index: number) {
+		// A jump can cross hundreds of messages. Chunks of 100 keep the walk to a few
+		// requests, where page-sized chunks would need one request per twenty
+		// messages and one big request would drag in every image on the way.
+		//
+		// If improvement is needed (an image-heavy stretch makes one chunk too
+		// expensive), the options are:
+		//   (a) jump by replacing the window: one page around the target, then add a
+		//       `loadNewer` so scrolling down fetches the messages after it;
+		//   (b) shrink the chunk to 40–60 messages, trading requests for weight;
+		//   (c) fall back to the page size and accept one request per 20 messages.
+		for (let guard = 0; guard < 6 && loadedOffset > index; guard += 1) {
+			const before = loadedOffset;
+			await loadOlder(100);
+			if (loadedOffset === before) return;
+		}
 	}
 
 	function onScroll() {
 		syncActiveTurn();
+		// Near the top the previous page is pulled in, keeping the reader's place.
+		if (scroller && scroller.scrollTop < 120) void loadOlder();
 	}
 
 	/** Whether the unfolded list has more turns above or below the visible part. */
@@ -366,11 +448,7 @@
 			turnMarks = [];
 			return;
 		}
-		const frame = requestAnimationFrame(() => {
-			measureTurns();
-			syncActiveTurn();
-		});
-		return () => cancelAnimationFrame(frame);
+		queueTurnMeasure();
 	});
 
 	$effect(() => {
@@ -397,17 +475,21 @@
 	});
 
 	// Follow only new timeline rows. Expanding a step reassigns `items` with the
-	// same length, and that must not yank the view to the bottom.
+	// same length, and that must not yank the view to the bottom. Neither must
+	// prepending an older page.
 	let followedCount = 0;
 	$effect(() => {
 		if (items.length === followedCount) return;
 		followedCount = items.length;
+		if (prepending) return;
 		scrollToBottom();
 	});
 
 	async function loadConversation(currentAgent: string, id: string) {
 		if (!id) {
 			historyItems = [];
+			loadedOffset = 0;
+			turns = [];
 			storedUsage = null;
 			sessionStats = null;
 			stopTitlePolling();
@@ -420,8 +502,20 @@
 		groupOpen = {};
 		void refreshStats(currentAgent, id);
 		try {
-			const detail = await conversationsApi.get(currentAgent, id, { limit: 0 });
-			historyItems = historyTimeline(detail.messages);
+			// Ask for the last page so the chat opens at the newest message without
+			// pulling the whole transcript, which for image-heavy chats is megabytes.
+			// A negative offset means "the last page"; the server normalises it to
+			// total - limit, and every later page walks back from that point.
+			// If improvement is needed (the API stops accepting a negative offset),
+			// fetch `limit: 1` first to read total_messages and then ask for
+			// `offset: total - PAGE_SIZE` — one extra round trip, no server change.
+			const detail = await conversationsApi.get(currentAgent, id, {
+				limit: PAGE_SIZE,
+				offset: -1
+			});
+			loadedOffset = detail.offset;
+			turns = detail.turns ?? [];
+			historyItems = historyTimeline(detail.messages, detail.offset);
 			// A finished run is redundant once the stored transcript is loaded; the
 			// server's copy includes the final answer. A live run keeps going.
 			chatRuns.settle(currentAgent, id);
@@ -434,6 +528,71 @@
 		} finally {
 			loading = false;
 			scrollToBottom();
+		}
+
+		// A page that does not fill the viewport cannot be scrolled, so the reader
+		// would never reach the trigger that pulls older messages; fetch until it
+		// scrolls (or the transcript is complete).
+		await tick();
+		for (let guard = 0; guard < 5; guard += 1) {
+			if (!scroller || loadedOffset === 0) break;
+			if (scroller.scrollHeight > scroller.clientHeight + 8) break;
+			const before = loadedOffset;
+			await loadOlder();
+			if (loadedOffset === before) break;
+		}
+		scrollToBottom();
+	}
+
+	/**
+	 * Prepends the page of messages that sit before the loaded one. The scroll
+	 * position is restored to the row the reader was on, because the measured
+	 * marks of the turn rail are absolute offsets inside this scroller.
+	 */
+	async function loadOlder(pageSize = PAGE_SIZE) {
+		const currentAgent = agent ?? '';
+		if (loadingOlder || loadedOffset === 0 || !conversationId || !currentAgent) return;
+		// While a run streams, the timeline comes from the run, not from storage.
+		if (activeRun) return;
+
+		loadingOlder = true;
+		prepending = true;
+		const before = scroller?.scrollHeight ?? 0;
+		const previousTop = scroller?.scrollTop ?? 0;
+		try {
+			// The loaded window is [loadedOffset, total), so the page before it ends
+			// exactly at loadedOffset and the two never overlap. Offsets therefore
+			// walk backwards one page at a time (323 → 303 → 283 …).
+			const start = Math.max(0, loadedOffset - pageSize);
+			const detail = await conversationsApi.get(currentAgent, conversationId, {
+				limit: loadedOffset - start,
+				offset: start
+			});
+			if (conversationId === '' || detail.messages.length === 0 || detail.offset >= loadedOffset) {
+				// Nothing older is left: stop asking, but keep what is already shown.
+				loadedOffset = 0;
+				return;
+			}
+			const known = new Set(historyItems.map((item) => item.localId));
+			historyItems = [
+				...historyTimeline(detail.messages, detail.offset).filter(
+					(item) => !known.has(item.localId)
+				),
+				...historyItems
+			];
+			loadedOffset = detail.offset;
+			await tick();
+			if (scroller) scroller.scrollTop = previousTop + (scroller.scrollHeight - before);
+			measureTurns();
+			syncActiveTurn();
+		} catch (err) {
+			error = getErrorMessage(err);
+		} finally {
+			// The rows really were added above: keep the counter in step so the
+			// auto-scroll effect does not fire for them later.
+			followedCount = items.length;
+			loadingOlder = false;
+			prepending = false;
 		}
 	}
 
@@ -1289,20 +1448,27 @@
 	 * still shows thoughts, tool calls and their results, retries and
 	 * compactions. Mirrors the TUI's convertProviderMessages.
 	 */
-	function historyTimeline(messages: Message[]): Item[] {
+	function historyTimeline(messages: Message[], startIndex = 0): Item[] {
 		const timeline: Item[] = [];
 		const tools = new Map<string, number>();
+		let messageIndex = startIndex - 1;
 		let index = 0;
-		const nextId = () => `history-${index++}`;
+		// Ids carry the position in the whole conversation, not in the loaded page,
+		// so prepending an older page keeps every existing row (and any step the
+		// reader has open) under the same key.
+		const nextId = () => `history-${messageIndex}-${index++}`;
 
 		for (const message of messages) {
+			messageIndex += 1;
+			index = 0;
 			if (message.thought) {
 				timeline.push({
 					kind: 'thought',
 					text: message.thought,
 					running: false,
 					expanded: false,
-					localId: nextId()
+					localId: nextId(),
+					messageIndex
 				});
 			}
 
@@ -1326,7 +1492,8 @@
 						is_error: message.is_error,
 						running: false,
 						expanded: false,
-						localId: nextId()
+						localId: nextId(),
+						messageIndex
 					});
 				}
 				continue;
@@ -1341,7 +1508,8 @@
 						text,
 						images: images.length > 0 ? images : undefined,
 						uploads: message.uploads,
-						localId: nextId()
+						localId: nextId(),
+						messageIndex
 					});
 				}
 				continue;
@@ -1350,7 +1518,7 @@
 			if (message.role !== 'assistant') continue;
 
 			const text = messageText(message);
-			if (text) timeline.push({ kind: 'text', text, localId: nextId() });
+			if (text) timeline.push({ kind: 'text', text, localId: nextId(), messageIndex });
 
 			for (const call of message.tool_calls ?? []) {
 				const id = call.id ?? '';
@@ -1362,7 +1530,8 @@
 					arguments: typeof args === 'string' ? args : args ? JSON.stringify(args) : undefined,
 					running: false,
 					expanded: false,
-					localId: nextId()
+					localId: nextId(),
+					messageIndex
 				});
 				if (id) tools.set(id, timeline.length - 1);
 			}
@@ -1619,6 +1788,15 @@
 			<div class="relative flex min-h-0 flex-1 flex-col">
 				<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto" onscroll={onScroll}>
 					<div class="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
+						{#if loadingOlder}
+							<p
+								class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
+								aria-live="polite"
+							>
+								<Loader2 class="h-3.5 w-3.5 animate-spin" />
+								{t('myaaw.chat.loading_older')}
+							</p>
+						{/if}
 						{#if loading}
 							<p class="text-sm text-muted-foreground">{t('myaaw.chat.loading')}</p>
 						{:else if items.length === 0}
@@ -1772,7 +1950,11 @@
 							{:else}
 								{@const item = row.item}
 								{#if item.kind === 'user'}
-									<div class="flex justify-end" data-chat-turn={item.localId}>
+									<div
+										class="flex justify-end"
+										data-chat-turn={item.localId}
+										data-chat-turn-index={item.messageIndex}
+									>
 										<div class="group/user flex max-w-[80%] flex-col items-end gap-2">
 											{#if item.images?.length}
 												<div class="flex flex-wrap justify-end gap-2">
@@ -1935,19 +2117,20 @@
 					</div>
 				</div>
 
-				{#if turnMarks.length > 1}
-					<!-- One tick per user message, in a short column centred on the right edge.
-					     Hovering unfolds the list of questions, each row carrying its own tick,
-					     so a tick always shares its line with the question it belongs to. -->
+				{#if railTurns.length > 1}
+					<!-- One tick per user message in the whole conversation, in a short column
+					     centred on the right edge. Hovering unfolds the list of questions, each
+					     row carrying its own tick, so a tick always shares its line with the
+					     question it belongs to. -->
 					<div
 						class="absolute top-1/2 right-5 z-10 w-6 -translate-y-1/2"
 						style="height: {railHeight}px"
 						role="group"
-						aria-label={t('myaaw.chat.turns', { count: turnMarks.length })}
+						aria-label={t('myaaw.chat.turns', { count: railTurns.length })}
 						onmouseenter={() => (railOpen = true)}
 						onmouseleave={() => {
 							railOpen = false;
-							hoverTurnId = '';
+							hoverTurnIndex = null;
 						}}
 					>
 						{#if railOpen}
@@ -1961,31 +2144,31 @@
 										onscroll={updateCardScroll}
 										class="max-h-[286px] overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 									>
-										{#each turnMarks as mark (mark.id)}
+										{#each railTurns as turn (turn.index)}
 											<button
 												type="button"
 												class={cn(
 													'flex h-[26px] w-full cursor-pointer items-center gap-3 rounded-md pr-3 pl-2 text-left text-[13px] transition-colors',
-													mark.id === activeTurnId
+													turn.index === activeTurnIndex
 														? 'text-primary'
-														: mark.id === hoverTurnId
+														: turn.index === hoverTurnIndex
 															? 'bg-muted/60 text-foreground'
 															: 'text-muted-foreground hover:bg-muted/60'
 												)}
-												data-turn-active={mark.id === activeTurnId ? 'true' : undefined}
-												onclick={() => jumpToTurn(mark)}
-												onmouseenter={() => (hoverTurnId = mark.id)}
-												onmouseleave={() => (hoverTurnId = '')}
+												data-turn-active={turn.index === activeTurnIndex ? 'true' : undefined}
+												onclick={() => void jumpToTurn(turn)}
+												onmouseenter={() => (hoverTurnIndex = turn.index)}
+												onmouseleave={() => (hoverTurnIndex = null)}
 											>
 												<span class="min-w-0 flex-1 truncate">
-													{oneLine(mark.text) || t('myaaw.chat.untitled_turn')}
+													{oneLine(turn.text) || t('myaaw.chat.untitled_turn')}
 												</span>
 												<span
 													class={cn(
 														'shrink-0 rounded-full transition-all',
-														mark.id === activeTurnId
+														turn.index === activeTurnIndex
 															? 'h-1 w-5 bg-primary'
-															: mark.id === hoverTurnId
+															: turn.index === hoverTurnIndex
 																? 'h-1 w-5 bg-muted-foreground'
 																: 'h-0.5 w-3.5 bg-muted-foreground/40'
 													)}
@@ -2007,26 +2190,26 @@
 								</div>
 							</div>
 						{:else}
-							{#each railMarks as entry, position (entry.mark.id)}
+							{#each railMarks as entry, position (entry.turn.index)}
 								<button
 									type="button"
 									class="absolute right-0 flex h-3 w-full -translate-y-1/2 cursor-pointer items-center justify-end transition-all duration-200"
-									style="top: {RAIL_PAD + position * RAIL_GAP}px; opacity: {entry.mark.id ===
-									activeTurnId
+									style="top: {RAIL_PAD + position * RAIL_GAP}px; opacity: {entry.turn.index ===
+									activeTurnIndex
 										? 1
 										: entry.opacity}"
-									aria-label={oneLine(entry.mark.text) || t('myaaw.chat.jump_to_turn')}
-									title={oneLine(entry.mark.text)}
-									onclick={() => jumpToTurn(entry.mark)}
+									aria-label={oneLine(entry.turn.text) || t('myaaw.chat.jump_to_turn')}
+									title={oneLine(entry.turn.text)}
+									onclick={() => void jumpToTurn(entry.turn)}
 								>
 									<span
 										class={cn(
 											'block rounded-full transition-all duration-200',
-											entry.mark.id === activeTurnId
+											entry.turn.index === activeTurnIndex
 												? 'h-1 bg-primary'
 												: 'h-0.5 bg-muted-foreground/60'
 										)}
-										style="width: {entry.mark.id === activeTurnId ? 20 : entry.width}px"
+										style="width: {entry.turn.index === activeTurnIndex ? 20 : entry.width}px"
 									></span>
 								</button>
 							{/each}
