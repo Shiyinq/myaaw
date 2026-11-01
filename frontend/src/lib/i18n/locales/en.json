@@ -94,7 +94,8 @@
 			"backups": "Backups",
 			"approvals": "Approvals",
 			"observability": "Observability",
-			"settings": "Settings"
+			"settings": "Settings",
+			"profile": "Profile"
 		},
 		"sidebar": {
 			"collapse": "Collapse sidebar",
@@ -336,7 +337,14 @@
 			"file_failed": "Could not read that file.",
 			"download_file": "Download file",
 			"jump_to_turn": "Jump to this message",
-			"untitled_turn": "(attachment only)"
+			"untitled_turn": "(attachment only)",
+			"speech_start": "Start dictation",
+			"speech_stop": "Stop dictation",
+			"speech_listening": "Listening...",
+			"speech_unsupported": "This browser cannot transcribe speech. Try Chrome, Edge or Safari.",
+			"speech_denied": "Microphone access was denied.",
+			"speech_no_microphone": "No microphone was found.",
+			"speech_error": "Speech recognition failed."
 		},
 		"conversations": {
 			"search": "Search titles...",
@@ -371,18 +379,10 @@
 			"bulk_stopped": "Agents stopped: {count}",
 			"bulk_failed": "Failed: {names}"
 		},
-		"settings": {
-			"title": "Settings",
-			"subtitle": "Account and session.",
-			"profile": "Profile",
-			"profile_desc": "Credentials are stored in ~/.myaaw/controlplane.json.",
-			"app_settings": "App Settings",
-			"app_settings_desc": "Language and appearance for this browser.",
-			"language": "Language",
-			"theme": "Theme",
-			"theme_light": "Light",
-			"theme_dark": "Dark",
-			"theme_system": "System",
+		"profile": {
+			"title": "Profile",
+			"subtitle": "Your account, password, and username.",
+			"credentials_note": "Credentials are stored in ~/.myaaw/controlplane.json.",
 			"password": "Change password",
 			"password_desc": "Changing the password signs out every session.",
 			"current_password": "Current password",
@@ -397,6 +397,17 @@
 			"username_required": "Enter a username.",
 			"username_updated": "Username updated",
 			"session_note": "Tokens are valid for 24 hours and are cleared when the control plane restarts."
+		},
+		"settings": {
+			"title": "Settings",
+			"subtitle": "Preferences for this browser.",
+			"app_settings": "App Settings",
+			"app_settings_desc": "Language and appearance for this browser.",
+			"language": "Language",
+			"theme": "Theme",
+			"theme_light": "Light",
+			"theme_dark": "Dark",
+			"theme_system": "System"
 		},
 		"terminal": {
 			"title": "Terminal",

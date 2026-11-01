@@ -94,7 +94,8 @@
 			"backups": "Cadangan",
 			"approvals": "Approval",
 			"observability": "Observability",
-			"settings": "Pengaturan"
+			"settings": "Pengaturan",
+			"profile": "Profil"
 		},
 		"sidebar": {
 			"collapse": "Ciutkan sidebar",
@@ -336,7 +337,14 @@
 			"file_failed": "File tidak bisa dibaca.",
 			"download_file": "Unduh berkas",
 			"jump_to_turn": "Lompat ke pesan ini",
-			"untitled_turn": "(hanya lampiran)"
+			"untitled_turn": "(hanya lampiran)",
+			"speech_start": "Mulai dikte",
+			"speech_stop": "Hentikan dikte",
+			"speech_listening": "Mendengarkan...",
+			"speech_unsupported": "Browser ini tidak bisa menuliskan suara. Coba Chrome, Edge, atau Safari.",
+			"speech_denied": "Akses mikrofon ditolak.",
+			"speech_no_microphone": "Mikrofon tidak ditemukan.",
+			"speech_error": "Pengenalan suara gagal."
 		},
 		"conversations": {
 			"search": "Cari judul...",
@@ -371,18 +379,10 @@
 			"bulk_stopped": "Agent dihentikan: {count}",
 			"bulk_failed": "Gagal: {names}"
 		},
-		"settings": {
-			"title": "Pengaturan",
-			"subtitle": "Akun dan sesi.",
-			"profile": "Profil",
-			"profile_desc": "Kredensial disimpan di ~/.myaaw/controlplane.json.",
-			"app_settings": "Pengaturan Aplikasi",
-			"app_settings_desc": "Bahasa dan tampilan untuk browser ini.",
-			"language": "Bahasa",
-			"theme": "Tema",
-			"theme_light": "Terang",
-			"theme_dark": "Gelap",
-			"theme_system": "Sistem",
+		"profile": {
+			"title": "Profil",
+			"subtitle": "Akun, kata sandi, dan nama pengguna.",
+			"credentials_note": "Kredensial disimpan di ~/.myaaw/controlplane.json.",
 			"password": "Ganti kata sandi",
 			"password_desc": "Mengganti kata sandi mengeluarkan semua sesi.",
 			"current_password": "Kata sandi saat ini",
@@ -397,6 +397,17 @@
 			"username_required": "Masukkan nama pengguna.",
 			"username_updated": "Nama pengguna diperbarui",
 			"session_note": "Token berlaku 24 jam dan dihapus saat control plane di-restart."
+		},
+		"settings": {
+			"title": "Pengaturan",
+			"subtitle": "Preferensi untuk browser ini.",
+			"app_settings": "Pengaturan Aplikasi",
+			"app_settings_desc": "Bahasa dan tampilan untuk browser ini.",
+			"language": "Bahasa",
+			"theme": "Tema",
+			"theme_light": "Terang",
+			"theme_dark": "Gelap",
+			"theme_system": "Sistem"
 		},
 		"terminal": {
 			"title": "Terminal",

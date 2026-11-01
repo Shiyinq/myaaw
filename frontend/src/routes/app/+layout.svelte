@@ -24,7 +24,8 @@
 		Bot,
 		SquareTerminal,
 		PanelLeftClose,
-		PanelLeftOpen
+		PanelLeftOpen,
+		UserRound
 	} from 'lucide-svelte';
 	import { agentSelection, authStore, sidebar, topBarSlot, topBarTitle } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -170,14 +171,21 @@
 
 	const flatNav = nav.flatMap((group) => group.items);
 
-	// Routes that have a title in the top bar but no sidebar entry. Settings is
-	// reachable from the account menu instead of the agent-scoped navigation.
+	// Routes that have a title in the top bar but no sidebar entry. Profile and
+	// settings are reachable from the account menu instead of the agent-scoped
+	// navigation.
 	const hiddenNav = [
 		{
 			href: '/app/new',
 			label: 'myaaw.onboard.title',
 			description: 'myaaw.onboard.subtitle',
 			icon: Sparkles
+		},
+		{
+			href: '/app/profile',
+			label: 'myaaw.nav.profile',
+			description: 'myaaw.profile.subtitle',
+			icon: UserRound
 		},
 		{
 			href: '/app/settings',
@@ -247,7 +255,7 @@
 						variant="outline"
 						size="icon-sm"
 						class="rounded-full"
-						aria-label={t('myaaw.nav.settings')}
+						aria-label={t('myaaw.nav.profile')}
 					>
 						<span class="text-[10px] font-bold uppercase">{initials}</span>
 					</Button>
@@ -271,14 +279,15 @@
 			{/snippet}
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align={compact ? align : 'start'} class="w-56">
-			<DropdownMenu.Label>
-				<div class="flex flex-col">
-					<span class="text-sm font-medium">{authStore.profile?.username ?? '—'}</span>
-					<span class="text-xs text-muted-foreground">
-						user #{authStore.profile?.user_id ?? '—'}
-					</span>
-				</div>
-			</DropdownMenu.Label>
+			<DropdownMenu.Item
+				class="flex-col items-start gap-0 p-2"
+				onclick={() => goto('/app/profile')}
+			>
+				<span class="text-sm font-medium">{authStore.profile?.username ?? '—'}</span>
+				<span class="text-xs text-muted-foreground">
+					user #{authStore.profile?.user_id ?? '—'}
+				</span>
+			</DropdownMenu.Item>
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item onclick={() => goto('/app/settings')}>
 				<Settings2 class="mr-2 h-4 w-4" />
