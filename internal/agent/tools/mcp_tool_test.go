@@ -10,6 +10,7 @@ import (
 func TestFormatMCPResultTextAndImage(t *testing.T) {
 	result := &mcp.CallToolResult{Content: []mcp.Content{
 		&mcp.TextContent{Text: "captured"},
+		// The SDK hands over the decoded bytes; the data URL needs base64 text.
 		&mcp.ImageContent{MIMEType: "image/png", Data: []byte("AAAA")},
 	}}
 
@@ -17,7 +18,19 @@ func TestFormatMCPResultTextAndImage(t *testing.T) {
 	if !strings.Contains(out.Text, "captured") {
 		t.Fatalf("text = %q", out.Text)
 	}
-	if len(out.Images) != 1 || out.Images[0].MimeType != "image/png" || out.Images[0].Data != "AAAA" {
+	if len(out.Images) != 1 || out.Images[0].MimeType != "image/png" || out.Images[0].Data != "QUFBQQ==" {
+		t.Fatalf("images = %+v", out.Images)
+	}
+}
+
+func TestFormatMCPResultSkipsEmptyImage(t *testing.T) {
+	result := &mcp.CallToolResult{Content: []mcp.Content{
+		&mcp.TextContent{Text: "captured"},
+		&mcp.ImageContent{MIMEType: "image/png"},
+	}}
+
+	out := formatMCPResult("screenshot", result)
+	if len(out.Images) != 0 {
 		t.Fatalf("images = %+v", out.Images)
 	}
 }

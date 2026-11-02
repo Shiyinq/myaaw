@@ -180,6 +180,7 @@ func (a *Agent) RunEvents(
 		if cfg.TransformContext != nil {
 			requestMessages = cfg.TransformContext(ctx, requestMessages)
 		}
+		requestMessages = SanitizeImageDataURLs(requestMessages)
 		requestMessages = EvictTranscriptImages(requestMessages, cfg.MaxImageCount, cfg.MaxImageBytes)
 		if cfg.ContextMaxTokens > 0 {
 			var compactStats CompactStats
