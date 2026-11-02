@@ -23,6 +23,8 @@ export interface ChatItem extends TimelineItem {
 	localId?: string;
 	/** Position of the stored message this row was rebuilt from, if any. */
 	messageIndex?: number;
+	/** UTC timestamp shown next to user and answer rows. */
+	createdAt?: string;
 	resolved?: string;
 	images?: string[];
 	uploads?: Upload[];
@@ -45,6 +47,8 @@ export interface StartRunOptions {
 	uploads: Upload[];
 	/** Rows already on screen, so continuing a chat keeps its earlier turns. */
 	initialItems?: ChatItem[];
+	/** Rewinds the transcript instead of appending: 0 = regenerate the last turn. */
+	rewindUserOffset?: number;
 }
 
 /** The page attaches these while a run is on screen. */
@@ -192,12 +196,17 @@ export class ChatRun {
 			const match = /^item-(\d+)$/.exec(item.localId ?? '');
 			return match ? Math.max(max, Number(match[1])) : max;
 		}, 0);
-		this.push({
-			kind: 'user',
-			text: options.text,
-			images: options.imagesDisplay.length > 0 ? options.imagesDisplay : undefined,
-			uploads: options.uploads.length > 0 ? options.uploads : undefined
-		});
+		// An edit or a regeneration already carries its user turn in `initialItems`;
+		// only a normal send appends a new question.
+		if (options.rewindUserOffset === undefined) {
+			this.push({
+				kind: 'user',
+				text: options.text,
+				images: options.imagesDisplay.length > 0 ? options.imagesDisplay : undefined,
+				uploads: options.uploads.length > 0 ? options.uploads : undefined,
+				createdAt: new Date().toISOString()
+			});
+		}
 		this.controller = new AbortController();
 
 		void this.stream(options).finally(() => {
@@ -249,7 +258,8 @@ export class ChatRun {
 					request_id: this.requestId,
 					conversation_id: options.conversationId || undefined,
 					images: options.images.length > 0 ? options.images : undefined,
-					files: options.files.length > 0 ? options.files : undefined
+					files: options.files.length > 0 ? options.files : undefined,
+					rewind_user_offset: options.rewindUserOffset
 				},
 				(event) => this.handleEvent(event),
 				this.controller?.signal
@@ -330,6 +340,11 @@ export class ChatRun {
 					const hasText = [...this.items].reverse().some((item) => item.kind === 'text');
 					if (!hasText) this.push({ kind: 'text', text: data.text });
 				}
+				// Live rows have no stored timestamp yet; stamp the answer when it lands.
+				const stampedAt = new Date().toISOString();
+				this.items = this.items.map((item) =>
+					item.kind === 'text' && !item.createdAt ? { ...item, createdAt: stampedAt } : item
+				);
 				this.usage = data?.usage ?? null;
 				this.attachments = data?.attachments ?? [];
 				this.view?.onDone?.(this);

@@ -354,7 +354,12 @@
 			"speak_unsupported": "Browser ini tidak bisa membacakan teks. Coba Chrome, Edge, atau Safari.",
 			"speak_error": "Jawaban gagal dibacakan.",
 			"speak_no_voice": "Belum ada suara {language} yang terpasang, jadi suara bawaan membacanya dengan aksen.",
-			"speak_local_voice": "Suara sistem ini kadang tidak berfungsi di Chrome. Kalau terdengar aneh, pilih suara Google di Pengaturan › Chat."
+			"speak_local_voice": "Suara sistem ini kadang tidak berfungsi di Chrome. Kalau terdengar aneh, pilih suara Google di Pengaturan › Chat.",
+			"edit": "Edit pesan",
+			"edit_save": "Simpan dan kirim ulang",
+			"edit_cancel": "Batal",
+			"regenerate": "Buat ulang jawaban",
+			"yesterday": "Kemarin"
 		},
 		"conversations": {
 			"search": "Cari judul...",

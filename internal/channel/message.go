@@ -19,6 +19,10 @@ type IncomingMessage struct {
 	RawMeta        any    // channel-specific metadata (e.g. chat ID, message ID)
 	TriggerType    string // "cron", "heartbeat", or empty
 	ConversationID string // specific conversation/session ID (optional)
+	// RewindUserOffset rewinds the stored transcript before this turn: 0 keeps the
+	// transcript up to the last user message (regenerate), N keeps it up to the
+	// user message N turns earlier (edit). Nil appends a normal user message.
+	RewindUserOffset *int
 }
 
 type OutgoingMessage struct {

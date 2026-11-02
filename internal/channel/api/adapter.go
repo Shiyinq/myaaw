@@ -34,6 +34,10 @@ type ChatRequest struct {
 	Images         []string             `json:"images,omitempty"`
 	Files          []channel.FileUpload `json:"files,omitempty"`
 	ConversationID string               `json:"conversation_id,omitempty"`
+	// RewindUserOffset rewinds the transcript before this turn. 0 keeps the
+	// transcript up to the last user message (regenerate); N keeps it up to the
+	// user message N turns earlier (edit that message with `text`).
+	RewindUserOffset *int `json:"rewind_user_offset,omitempty"`
 }
 
 func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMessage, error) {
@@ -45,8 +49,11 @@ func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 	// user_id is optional. Direct agent API calls default to 0; the control
 	// plane injects its configured user ID before proxying chat requests.
 
-	if req.Text == "" && len(req.Images) == 0 && len(req.Files) == 0 {
+	if req.Text == "" && len(req.Images) == 0 && len(req.Files) == 0 && req.RewindUserOffset == nil {
 		return nil, fmt.Errorf("text, images, or files are required")
+	}
+	if req.RewindUserOffset != nil && *req.RewindUserOffset < 0 {
+		return nil, fmt.Errorf("rewind_user_offset must be zero or greater")
 	}
 	if len(req.Images) > maxImages {
 		return nil, fmt.Errorf("at most %d images are allowed", maxImages)
@@ -74,14 +81,26 @@ func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 		conversationID = "NEW"
 	}
 
+	trigger := ""
+	if req.RewindUserOffset != nil {
+		// Label the observability run so edits and regenerations are easy to find.
+		if strings.TrimSpace(req.Text) != "" {
+			trigger = "edit"
+		} else {
+			trigger = "regenerate"
+		}
+	}
+
 	return &channel.IncomingMessage{
-		UserID:         req.UserID,
-		Text:           req.Text,
-		Images:         req.Images,
-		Files:          req.Files,
-		Channel:        "api",
-		ConversationID: conversationID,
-		RawMeta:        APIMeta{},
+		UserID:           req.UserID,
+		Text:             req.Text,
+		Images:           req.Images,
+		Files:            req.Files,
+		Channel:          "api",
+		ConversationID:   conversationID,
+		RewindUserOffset: req.RewindUserOffset,
+		TriggerType:      trigger,
+		RawMeta:          APIMeta{},
 	}, nil
 }
 

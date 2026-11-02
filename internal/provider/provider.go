@@ -52,6 +52,9 @@ type Message struct {
 	DurationMs   int64      `json:"duration_ms,omitempty" bson:"duration_ms,omitempty"`
 	StopReason   StopReason `json:"stop_reason,omitempty" bson:"stop_reason,omitempty"`
 	Version      int        `json:"v,omitempty" bson:"v,omitempty"`
+	// CreatedAt is when the message entered the transcript, stored in UTC. A nil
+	// timestamp means the message predates per-message times.
+	CreatedAt *time.Time `json:"created_at,omitempty" bson:"created_at,omitempty"`
 }
 
 type UsageDetail struct {

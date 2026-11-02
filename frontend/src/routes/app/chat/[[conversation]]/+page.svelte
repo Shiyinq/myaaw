@@ -25,6 +25,7 @@
 	import ChatStep from '$lib/components/common/ChatStep.svelte';
 	import CopyButton from '$lib/components/common/CopyButton.svelte';
 	import SpeakButton from '$lib/components/common/SpeakButton.svelte';
+	import ChatTime from '$lib/components/common/ChatTime.svelte';
 	import Logo from '$lib/components/common/Logo.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { theme } from 'mode-watcher';
@@ -160,6 +161,10 @@
 	let prepending = false;
 	let items = $derived<Item[]>(activeRun ? activeRun.items : historyItems);
 	let input = $state('');
+	// Inline edit of one user message, addressed by its row id.
+	let editingMessageId = $state('');
+	let messageDraft = $state('');
+	let draftArea = $state<HTMLTextAreaElement | null>(null);
 	let streaming = $derived(activeRun?.streaming ?? false);
 	let loading = $state(false);
 	let pendingApproval = $derived(activeRun?.pendingApproval ?? null);
@@ -974,6 +979,8 @@
 		const scope = `${agent ?? ''}:${conversationId}`;
 		if (scope === spokenScope) return;
 		spokenScope = scope;
+		editingMessageId = '';
+		messageDraft = '';
 		untrack(() => tts.stop());
 	});
 
@@ -1203,9 +1210,10 @@
 
 	function send() {
 		const text = input.trim();
-		// Sending ends the dictation and any answer being read out.
+		// Sending ends the dictation, any read-aloud, and an unfinished edit.
 		stopSpeech();
 		tts.stop();
+		cancelEdit();
 		const images = pending.map((item) => item.base64);
 		const files = pendingFiles.map((item) => ({
 			name: item.name,
@@ -1239,6 +1247,88 @@
 		if (composer) composer.style.height = '';
 		error = '';
 		storedUsage = null;
+	}
+
+	// --- Editing and regenerating ---------------------------------------------
+	// Both rewrite the stored transcript on the agent (linear history, the way
+	// the chat UI already reads): everything after the target turn is dropped
+	// before the new answer streams in.
+
+	/** How many user turns sit after this row; the agent rewinds from the end. */
+	function rewindOffsetAfter(index: number) {
+		let offset = 0;
+		for (let i = index + 1; i < items.length; i += 1) {
+			if (items[i].kind === 'user') offset += 1;
+		}
+		return offset;
+	}
+
+	function beginEdit(index: number, item: Item) {
+		if (streaming || !item.text) return;
+		tts.stop();
+		stopSpeech();
+		editingMessageId = item.localId ?? '';
+		messageDraft = item.text;
+		void tick().then(() => {
+			draftArea?.focus();
+			draftArea?.select();
+		});
+	}
+
+	function cancelEdit() {
+		editingMessageId = '';
+		messageDraft = '';
+	}
+
+	function startRewind(nextItems: Item[], text: string, offset: number) {
+		if (!agent || streaming) return;
+		stopSpeech();
+		tts.stop();
+		editingMessageId = '';
+		messageDraft = '';
+		error = '';
+		storedUsage = null;
+		groupOpen = {};
+		chatRuns.start({
+			agent,
+			conversationId,
+			text,
+			images: [],
+			imagesDisplay: [],
+			files: [],
+			uploads: [],
+			initialItems: nextItems,
+			rewindUserOffset: offset
+		});
+	}
+
+	function saveEdit(index: number, item: Item) {
+		const text = messageDraft.trim();
+		if (!text || !item.text || text === item.text.trim()) {
+			cancelEdit();
+			return;
+		}
+		const next = items
+			.slice(0, index + 1)
+			.map((row, position) => (position === index ? { ...row, text } : row));
+		startRewind(next, text, rewindOffsetAfter(index));
+	}
+
+	/**
+	 * Regenerates the answer at `index`: rewind to the user turn it answers and
+	 * drop everything after it, the same linear history an edit produces.
+	 */
+	function regenerateFrom(index: number) {
+		if (streaming || !conversationId) return;
+		let userIndex = -1;
+		for (let i = Math.min(index, items.length - 1); i >= 0; i -= 1) {
+			if (items[i].kind === 'user') {
+				userIndex = i;
+				break;
+			}
+		}
+		if (userIndex < 0) return;
+		startRewind(items.slice(0, userIndex + 1), '', rewindOffsetAfter(userIndex));
 	}
 
 	async function decide(decision: ApprovalDecision) {
@@ -1611,6 +1701,9 @@
 		const tools = new Map<string, number>();
 		let messageIndex = startIndex - 1;
 		let index = 0;
+		// Last step row of the current turn, so the persisted duration can label
+		// the "Completed" group after a reload.
+		let lastStep = -1;
 		// Ids carry the position in the whole conversation, not in the loaded page,
 		// so prepending an older page keeps every existing row (and any step the
 		// reader has open) under the same key.
@@ -1628,6 +1721,7 @@
 					localId: nextId(),
 					messageIndex
 				});
+				lastStep = timeline.length - 1;
 			}
 
 			if (message.role === 'tool') {
@@ -1641,6 +1735,7 @@
 						running: false,
 						expanded: false
 					};
+					lastStep = position;
 				} else {
 					timeline.push({
 						kind: 'tool',
@@ -1653,11 +1748,13 @@
 						localId: nextId(),
 						messageIndex
 					});
+					lastStep = timeline.length - 1;
 				}
 				continue;
 			}
 
 			if (message.role === 'user') {
+				lastStep = -1;
 				const text = withoutAttached(messageText(message));
 				const images = messageImages(message);
 				if (text || images.length > 0 || (message.uploads?.length ?? 0) > 0) {
@@ -1667,7 +1764,8 @@
 						images: images.length > 0 ? images : undefined,
 						uploads: message.uploads,
 						localId: nextId(),
-						messageIndex
+						messageIndex,
+						createdAt: message.created_at
 					});
 				}
 				continue;
@@ -1676,7 +1774,15 @@
 			if (message.role !== 'assistant') continue;
 
 			const text = messageText(message);
-			if (text) timeline.push({ kind: 'text', text, localId: nextId(), messageIndex });
+			if (text) {
+				timeline.push({
+					kind: 'text',
+					text,
+					localId: nextId(),
+					messageIndex,
+					createdAt: message.created_at
+				});
+			}
 
 			for (const call of message.tool_calls ?? []) {
 				const id = call.id ?? '';
@@ -1691,7 +1797,14 @@
 					localId: nextId(),
 					messageIndex
 				});
+				lastStep = timeline.length - 1;
 				if (id) tools.set(id, timeline.length - 1);
+			}
+
+			// The final assistant message carries the turn's duration; pin it on the
+			// last step so the group header can show it after a reload.
+			if (message.duration_ms && lastStep >= 0) {
+				timeline[lastStep] = { ...timeline[lastStep], group_duration_ms: message.duration_ms };
 			}
 		}
 
@@ -1964,6 +2077,22 @@
 			node.style.height = `${Math.min(node.scrollHeight, 160)}px`;
 		};
 		resize();
+		node.addEventListener('input', resize);
+		return {
+			destroy: () => node.removeEventListener('input', resize)
+		};
+	}
+
+	/** Grows the inline message editor to fit the whole message, then scrolls. */
+	function autosizeEditor(node: HTMLTextAreaElement) {
+		const resize = () => {
+			node.style.height = 'auto';
+			const max = Math.max(160, Math.round(window.innerHeight * 0.45));
+			node.style.height = `${Math.min(node.scrollHeight, max)}px`;
+			node.style.overflowY = node.scrollHeight > max ? 'auto' : 'hidden';
+		};
+		// The bound value is applied after the element mounts, so wait a frame.
+		requestAnimationFrame(resize);
 		node.addEventListener('input', resize);
 		return {
 			destroy: () => node.removeEventListener('input', resize)
@@ -2406,7 +2535,7 @@
 											data-chat-turn-index={item.messageIndex}
 										>
 											<div
-												class="group/user flex min-w-0 max-w-[80%] flex-col items-end gap-2 terminal:max-w-full terminal:items-start"
+												class="group/user flex w-full min-w-0 max-w-[80%] flex-col items-end gap-2 terminal:max-w-full terminal:items-start"
 											>
 												{#if item.images?.length}
 													<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
@@ -2459,24 +2588,73 @@
 													</div>
 												{/if}
 												{#if item.text}
-													<div class="flex max-w-full flex-col items-end terminal:items-start">
-														<div
-															class="max-w-full whitespace-pre-wrap wrap-break-word rounded-[var(--chat-bubble-radius)] bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-[color:var(--chat-bubble-ring)] terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
-														>
-															<span
-																class="mr-1.5 hidden select-none font-semibold text-muted-foreground terminal:inline"
+													<div
+														class="flex w-full max-w-full flex-col items-end terminal:items-start"
+													>
+														{#if editingMessageId === item.localId}
+															<div class="flex w-full max-w-3xl flex-col items-end gap-1">
+																<textarea
+																	bind:this={draftArea}
+																	bind:value={messageDraft}
+																	use:autosizeEditor
+																	rows="1"
+																	class="min-h-11 w-full resize-none rounded-[var(--chat-bubble-radius)] border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
+																	onkeydown={(event) => {
+																		if (event.isComposing) return;
+																		if (event.key === 'Escape') {
+																			event.preventDefault();
+																			cancelEdit();
+																		} else if (event.key === 'Enter' && !event.shiftKey) {
+																			event.preventDefault();
+																			saveEdit(items.indexOf(item), item);
+																		}
+																	}}
+																></textarea>
+																<div class="flex items-center gap-1">
+																	<Button size="xs" variant="secondary" onclick={cancelEdit}>
+																		{t('myaaw.chat.edit_cancel')}
+																	</Button>
+																	<Button
+																		size="xs"
+																		disabled={!messageDraft.trim()}
+																		onclick={() => saveEdit(items.indexOf(item), item)}
+																	>
+																		{t('myaaw.chat.edit_save')}
+																	</Button>
+																</div>
+															</div>
+														{:else}
+															<div
+																class="max-w-full whitespace-pre-wrap wrap-break-word rounded-[var(--chat-bubble-radius)] bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-[color:var(--chat-bubble-ring)] terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
 															>
-																❯
-															</span>
-															{item.text}
-														</div>
-														<CopyButton
-															text={item.text}
-															class={cn(
-																'mt-0.5 opacity-0 transition-opacity group-hover/user:opacity-100 group-focus-within/user:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
-																item.localId === latestUserKey && 'opacity-100'
-															)}
-														/>
+																<span
+																	class="mr-1.5 hidden select-none font-semibold text-muted-foreground terminal:inline"
+																>
+																	❯
+																</span>
+																{item.text}
+															</div>
+															<div
+																class={cn(
+																	'mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/user:opacity-100 group-focus-within/user:opacity-100 [@media(hover:none)]:opacity-100',
+																	item.localId === latestUserKey && 'opacity-100'
+																)}
+															>
+																<CopyButton text={item.text} />
+																{#if !streaming}
+																	<button
+																		type="button"
+																		class="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+																		aria-label={t('myaaw.chat.edit')}
+																		title={t('myaaw.chat.edit')}
+																		onclick={() => beginEdit(items.indexOf(item), item)}
+																	>
+																		<Pencil class="h-3.5 w-3.5" />
+																	</button>
+																{/if}
+																<ChatTime value={item.createdAt} />
+															</div>
+														{/if}
 													</div>
 												{/if}
 											</div>
@@ -2488,7 +2666,7 @@
 											<Markdown content={item.text ?? ''} />
 											<div
 												class={cn(
-													'mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
+													'mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100',
 													item.localId === latestAnswerKey && 'opacity-100'
 												)}
 											>
@@ -2496,6 +2674,18 @@
 												{#if !(streaming && item.localId === latestAnswerKey)}
 													<SpeakButton id={item.localId ?? ''} text={item.text ?? ''} />
 												{/if}
+												{#if !streaming && conversationId}
+													<button
+														type="button"
+														class="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+														aria-label={t('myaaw.chat.regenerate')}
+														title={t('myaaw.chat.regenerate')}
+														onclick={() => regenerateFrom(items.indexOf(item))}
+													>
+														<RotateCcw class="h-3.5 w-3.5" />
+													</button>
+												{/if}
+												<ChatTime value={item.createdAt} />
 											</div>
 										</div>
 									{:else if item.kind === 'approval'}

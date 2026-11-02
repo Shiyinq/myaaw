@@ -73,3 +73,35 @@ func TestParseIncomingMapsConversationID(t *testing.T) {
 		t.Fatalf("missing conversation id should start a new session, got %q", msg.ConversationID)
 	}
 }
+
+func TestParseIncomingRewind(t *testing.T) {
+	adapter := NewAPIAdapter()
+
+	// Regenerating sends no text: the stored last user message is the prompt.
+	msg, err := adapter.ParseIncoming([]byte(`{"conversation_id":"conv-1","rewind_user_offset":0}`))
+	if err != nil {
+		t.Fatalf("ParseIncoming regenerate: %v", err)
+	}
+	if msg.RewindUserOffset == nil || *msg.RewindUserOffset != 0 {
+		t.Fatalf("rewind = %v", msg.RewindUserOffset)
+	}
+	if msg.Text != "" || msg.TriggerType != "regenerate" {
+		t.Fatalf("message = %+v", msg)
+	}
+
+	// Editing an earlier turn carries the replacement text.
+	msg, err = adapter.ParseIncoming([]byte(`{"conversation_id":"conv-1","text":"fixed","rewind_user_offset":2}`))
+	if err != nil {
+		t.Fatalf("ParseIncoming edit: %v", err)
+	}
+	if msg.RewindUserOffset == nil || *msg.RewindUserOffset != 2 || msg.Text != "fixed" {
+		t.Fatalf("message = %+v", msg)
+	}
+	if msg.TriggerType != "edit" {
+		t.Fatalf("trigger = %q", msg.TriggerType)
+	}
+
+	if _, err := adapter.ParseIncoming([]byte(`{"conversation_id":"conv-1","rewind_user_offset":-1}`)); err == nil {
+		t.Fatal("a negative rewind offset should be rejected")
+	}
+}

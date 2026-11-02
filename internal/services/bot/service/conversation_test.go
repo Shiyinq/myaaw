@@ -246,3 +246,118 @@ func TestBuildUserMessageImagesWithoutText(t *testing.T) {
 		t.Fatalf("image item = %+v", items[0])
 	}
 }
+
+func TestRewindToUserMessageDropsTrailingTurns(t *testing.T) {
+	messages := []provider.Message{
+		{Role: "user", Content: "one"},
+		{Role: "assistant", Content: "answer one"},
+		{Role: "user", Content: "two"},
+		{Role: "assistant", Content: "answer two"},
+		{Role: "user", Content: "three"},
+		{Role: "assistant", Content: "answer three"},
+	}
+
+	// Regenerate the last answer: keep up to "three".
+	kept, err := rewindToUserMessage(messages, 0, "")
+	if err != nil {
+		t.Fatalf("rewind: %v", err)
+	}
+	if len(kept) != 5 || provider.MessageText(kept[4]) != "three" {
+		t.Fatalf("kept = %+v", kept)
+	}
+
+	// Edit the first question: everything after it is dropped.
+	edited, err := rewindToUserMessage(messages, 2, "one, edited")
+	if err != nil {
+		t.Fatalf("rewind edit: %v", err)
+	}
+	if len(edited) != 1 || provider.MessageText(edited[0]) != "one, edited" {
+		t.Fatalf("edited = %+v", edited)
+	}
+	if edited[0].CreatedAt == nil {
+		t.Fatal("an edited message should be stamped")
+	}
+}
+
+func TestRewindToUserMessageRejectsMissingTurn(t *testing.T) {
+	_, err := rewindToUserMessage([]provider.Message{{Role: "assistant", Content: "hi"}}, 0, "")
+	if err == nil {
+		t.Fatal("rewind without a user message should fail")
+	}
+}
+
+func TestBuildConversationMessagesRewindsBeforeRunning(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	repo := newFakeConversationRepo()
+	repo.conversations["conv-1"] = &model.Conversation{
+		Id:     "conv-1",
+		UserId: 1,
+		Messages: []provider.Message{
+			{Role: "user", Content: "first"},
+			{Role: "assistant", Content: "one"},
+			{Role: "user", Content: "second"},
+			{Role: "assistant", Content: "two"},
+		},
+	}
+	service := &BotServiceImpl{conversationRepo: repo}
+
+	// Regenerate: keep the transcript up to the last user message and append
+	// nothing, so the model answers that same question again.
+	zero := 0
+	regenerate := &channel.IncomingMessage{
+		UserID:           1,
+		Channel:          "api",
+		ConversationID:   "conv-1",
+		RewindUserOffset: &zero,
+	}
+	messages, err := service.buildConversationMessages(&model.User{UserId: 1}, regenerate)
+	if err != nil {
+		t.Fatalf("regenerate: %v", err)
+	}
+	if len(messages) != 4 || provider.MessageText(messages[3]) != "second" {
+		t.Fatalf("messages = %+v", messages)
+	}
+	// The run carries no text of its own, but the trace should still show the
+	// question that was replayed.
+	if regenerate.Text != "second" {
+		t.Fatalf("trace text = %q, want the replayed question", regenerate.Text)
+	}
+
+	// Edit an earlier turn: the replacement text replaces it and everything
+	// after it is dropped.
+	one := 1
+	messages, err = service.buildConversationMessages(&model.User{UserId: 1}, &channel.IncomingMessage{
+		UserID:           1,
+		Text:             "first, edited",
+		Channel:          "api",
+		ConversationID:   "conv-1",
+		RewindUserOffset: &one,
+	})
+	if err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if len(messages) != 2 || provider.MessageText(messages[1]) != "first, edited" {
+		t.Fatalf("messages = %+v", messages)
+	}
+	if messages[1].CreatedAt == nil {
+		t.Fatal("an edited user message should be stamped")
+	}
+
+	// A normal send still appends the user message and stamps it in UTC.
+	messages, err = service.buildConversationMessages(&model.User{UserId: 1}, &channel.IncomingMessage{
+		UserID:         1,
+		Text:           "third",
+		Channel:        "api",
+		ConversationID: "conv-1",
+	})
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	last := messages[len(messages)-1]
+	if last.Role != "user" || provider.MessageText(last) != "third" || last.CreatedAt == nil {
+		t.Fatalf("last = %+v", last)
+	}
+}

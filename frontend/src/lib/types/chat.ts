@@ -17,6 +17,8 @@ export interface ChatRequest {
 	conversation_id?: string;
 	images?: string[];
 	files?: ChatFile[];
+	/** Rewinds the transcript: 0 regenerates the last turn, N edits an earlier one. */
+	rewind_user_offset?: number;
 }
 
 /** An uploaded document, sent base64 and persisted on the agent. */

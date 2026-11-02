@@ -354,7 +354,12 @@
 			"speak_unsupported": "This browser cannot read text aloud. Try Chrome, Edge or Safari.",
 			"speak_error": "Could not read that answer aloud.",
 			"speak_no_voice": "No {language} voice is installed, so the default voice reads it with an accent.",
-			"speak_local_voice": "This system voice can be unreliable in Chrome. If it sounds wrong, pick the Google voice in Settings › Chat."
+			"speak_local_voice": "This system voice can be unreliable in Chrome. If it sounds wrong, pick the Google voice in Settings › Chat.",
+			"edit": "Edit message",
+			"edit_save": "Save and resend",
+			"edit_cancel": "Cancel",
+			"regenerate": "Regenerate response",
+			"yesterday": "Yesterday"
 		},
 		"conversations": {
 			"search": "Search titles...",

@@ -24,8 +24,13 @@ export interface Message {
 	thought?: string;
 	action?: string;
 	action_input?: string;
+	/** Stable transcript-entry id, used to address uploaded files. */
 	id?: string;
 	uploads?: Upload[];
+	/** UTC timestamp of the stored message, serialised by the agent. */
+	created_at?: string;
+	/** How long the turn took, set on the final assistant message. */
+	duration_ms?: number;
 }
 
 /** A file a user attached to a message; persisted on the agent. */

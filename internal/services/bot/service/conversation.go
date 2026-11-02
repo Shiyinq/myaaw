@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -210,6 +211,7 @@ func (r *BotServiceImpl) runConversation(
 
 	skipPersistence := msg.TriggerType == "heartbeat" && strings.TrimSpace(finalText) == "HEARTBEAT_OK"
 	if !skipPersistence {
+		stampTurnDuration(result.Transcript, result.StartedAt, result.EndedAt)
 		if err := r.saveConversation(user, msg, result.Transcript); err != nil {
 			return nil, err
 		}
@@ -295,6 +297,27 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		msg.ConversationID = created.Id
 	}
 
+	// An edit or a regeneration rewrites the stored transcript instead of
+	// appending a user message: everything after the target turn is dropped.
+	if msg.RewindUserOffset != nil {
+		rewound, rewindErr := rewindToUserMessage(convMessages, *msg.RewindUserOffset, msg.Text)
+		if rewindErr != nil {
+			return nil, rewindErr
+		}
+		// A regeneration sends no text of its own. Record the prompt it replays so
+		// the observability run still shows which question the answer was for.
+		if strings.TrimSpace(msg.Text) == "" {
+			for i := len(rewound) - 1; i >= 0; i-- {
+				if rewound[i].Role == "user" {
+					msg.Text = provider.MessageText(rewound[i])
+					break
+				}
+			}
+		}
+		messages = append(messages, rewound...)
+		return messages, nil
+	}
+
 	messages = append(messages, convMessages...)
 
 	// A user upload is addressed by its own message id so the frontend can show
@@ -324,8 +347,71 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 	userMessage := r.buildUserMessage(msg, uploads)
 	userMessage.ID = messageID
 	userMessage.Uploads = uploads
+	created := time.Now().UTC()
+	userMessage.CreatedAt = &created
 	messages = append(messages, userMessage)
 	return messages, nil
+}
+
+// stampTurnDuration records how long the turn took on its final assistant
+// message, so the transcript can still show "Completed · Ns" after a reload.
+func stampTurnDuration(transcript []provider.Message, startedAt, endedAt time.Time) {
+	if len(transcript) == 0 || !endedAt.After(startedAt) {
+		return
+	}
+	duration := endedAt.Sub(startedAt).Milliseconds()
+	for i := len(transcript) - 1; i >= 0; i-- {
+		if transcript[i].Role == "assistant" {
+			transcript[i].DurationMs = duration
+			return
+		}
+	}
+}
+
+// rewindToUserMessage keeps the transcript up to the user message `offset`
+// turns from the end (0 is the last one) and drops everything after it. A
+// non-empty replacement rewrites that user message in place and refreshes its
+// timestamp, which is how an edited turn is persisted.
+func rewindToUserMessage(
+	messages []provider.Message,
+	offset int,
+	replacement string,
+) ([]provider.Message, error) {
+	if offset < 0 {
+		return nil, fmt.Errorf("rewind offset must be zero or greater")
+	}
+
+	total := 0
+	for _, message := range messages {
+		if message.Role == "user" {
+			total++
+		}
+	}
+	if offset >= total {
+		return nil, fmt.Errorf("rewind target not found")
+	}
+
+	target := total - 1 - offset
+	seen := -1
+	for index, message := range messages {
+		if message.Role != "user" {
+			continue
+		}
+		seen++
+		if seen != target {
+			continue
+		}
+
+		kept := append([]provider.Message(nil), messages[:index+1]...)
+		if strings.TrimSpace(replacement) != "" {
+			kept[index].Content = replacement
+			edited := time.Now().UTC()
+			kept[index].CreatedAt = &edited
+		}
+		return kept, nil
+	}
+
+	return nil, fmt.Errorf("rewind target not found")
 }
 
 // buildUserMessage converts a generic IncomingMessage to a provider.Message.
@@ -458,6 +544,13 @@ func stripTranscript(transcript []provider.Message) []provider.Message {
 	copy(messages, transcript[start:])
 	for i := range messages {
 		messages[i].Version = 2
+	}
+	// Only the final answer of this turn is stamped. Messages loaded from an
+	// older transcript have no time, and backfilling them would make every old
+	// turn look like it just happened.
+	if last := len(messages) - 1; last >= 0 && messages[last].Role == "assistant" && messages[last].CreatedAt == nil {
+		now := time.Now().UTC()
+		messages[last].CreatedAt = &now
 	}
 	return messages
 }
