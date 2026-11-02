@@ -63,6 +63,8 @@
 	let editingFolderTitle = $state('');
 	let creatingFolder = $state(false);
 	let newFolderName = $state('');
+	/** Whether the search box owns the header row (simple mode). */
+	let searchFocused = $state(false);
 	/** The inline rename fields, so each one takes focus the moment it appears. */
 	let renameInput = $state<HTMLInputElement | null>(null);
 	let folderRenameInput = $state<HTMLInputElement | null>(null);
@@ -114,6 +116,19 @@
 		if (!node) return;
 		node.focus();
 		node.select();
+	}
+
+	// In simple mode the new-chat button shares the header row with the search
+	// box. Focusing the search (or its clear button) widens it to the whole row
+	// and the button steps aside until the search loses focus again.
+	function onSearchFocusIn() {
+		searchFocused = true;
+	}
+
+	function onSearchFocusOut(event: FocusEvent) {
+		const wrapper = event.currentTarget as HTMLElement;
+		const next = event.relatedTarget as Node | null;
+		if (!next || !wrapper.contains(next)) searchFocused = false;
 	}
 
 	function loadCollapsed(): Record<string, boolean> {
@@ -555,7 +570,7 @@
 
 <div class="flex h-full min-h-0 flex-col">
 	<div class="flex shrink-0 items-center gap-2 border-b p-2">
-		<div class="relative min-w-0 flex-1">
+		<div class="relative min-w-0 flex-1" onfocusin={onSearchFocusIn} onfocusout={onSearchFocusOut}>
 			<Search
 				class="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
 			/>
@@ -583,6 +598,17 @@
 				</button>
 			{/if}
 		</div>
+		{#if onNew && !searching && !searchFocused}
+			<button
+				type="button"
+				class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-dashed text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
+				onclick={onNew}
+				aria-label={t('myaaw.chat.new')}
+				title={t('myaaw.chat.new')}
+			>
+				<Plus class="h-4 w-4" />
+			</button>
+		{/if}
 		{#if onClose}
 			<Button
 				variant="ghost"
@@ -596,17 +622,6 @@
 			</Button>
 		{/if}
 	</div>
-
-	{#if onNew && !searching}
-		<button
-			type="button"
-			class="mx-2 mt-2 flex shrink-0 items-center gap-2 rounded-md border border-dashed px-2 py-1.5 text-xs text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
-			onclick={onNew}
-		>
-			<Plus class="h-3.5 w-3.5" />
-			{t('myaaw.chat.new')}
-		</button>
-	{/if}
 
 	<div class="min-h-0 flex-1 overflow-y-auto p-2">
 		{#if searching}
