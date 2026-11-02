@@ -600,7 +600,7 @@
 	<aside
 		inert={!wide && !drawerOpen}
 		class={[
-			'fixed inset-y-0 left-0 z-50 flex w-64 max-w-[80vw] flex-col border-r bg-card shadow-xl frost-drawer transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
+			'fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r bg-card shadow-xl frost-drawer transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
 			drawerOpen ? 'translate-x-0' : '-translate-x-full',
 			compactSidebar ? 'md:w-16' : 'md:w-60'
 		]}

@@ -3069,7 +3069,7 @@
 			onclick={toggleHistory}
 		></button>
 		<aside
-			class="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[85vw] flex-col border-l bg-card lg:static frost-drawer lg:z-auto lg:h-full lg:max-w-none"
+			class="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card lg:static lg:z-auto lg:h-full lg:w-72 lg:max-w-none frost-drawer"
 		>
 			<ConversationList
 				activeId={conversationId}
