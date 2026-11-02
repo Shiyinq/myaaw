@@ -20,9 +20,13 @@ import (
 // @Param        name path string true "Agent name"
 // @Param        user_id query int false "User ID (defaults to the authenticated user)"
 // @Param        search query string false "Case-insensitive title search"
+// @Param        pinned query bool false "Only pinned conversations"
+// @Param        unfiled query bool false "Only Recents: not pinned and not in a folder"
+// @Param        folder query string false "Only conversations in this folder id"
 // @Param        limit query int false "Page size (default 50, max 200)"
 // @Param        offset query int false "Offset (default 0)"
 // @Success      200 {object} service.ConversationPage
+// @Failure      400 {object} common.ErrorResponse
 // @Failure      401 {object} common.ErrorResponse
 // @Failure      404 {object} common.ErrorResponse
 // @Router       /agents/{name}/conversations [get]
@@ -31,11 +35,33 @@ func (h *Handler) ListConversations(c fiber.Ctx) error {
 	offset, _ := strconv.Atoi(c.Query("offset"))
 	search := strings.TrimSpace(c.Query("search"))
 
-	page, err := h.conversations.List(c.Params("name"), h.requestUserID(c), limit, offset, search)
+	filter := service.ConversationFilter{
+		Pinned:   queryBool(c.Query("pinned")),
+		Unfiled:  queryBool(c.Query("unfiled")),
+		FolderID: strings.TrimSpace(c.Query("folder")),
+	}
+	sections := 0
+	for _, set := range []bool{filter.Pinned, filter.Unfiled, filter.FolderID != ""} {
+		if set {
+			sections++
+		}
+	}
+	if sections > 1 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "pinned, unfiled and folder are mutually exclusive",
+		})
+	}
+
+	page, err := h.conversations.List(c.Params("name"), h.requestUserID(c), limit, offset, search, filter)
 	if err != nil {
 		return conversationError(c, err)
 	}
 	return c.JSON(page)
+}
+
+// queryBool accepts the two spellings a browser client may send for a flag.
+func queryBool(raw string) bool {
+	return raw == "1" || strings.EqualFold(raw, "true")
 }
 
 const (

@@ -684,6 +684,247 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/chat-folders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Folders are scoped to the authenticated user (or the user_id query).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat folders"
+                ],
+                "summary": "List chat folders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatFolderList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Names are trimmed, unique per user ignoring case, and limited to 64 characters. A user may keep up to 100 folders.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat folders"
+                ],
+                "summary": "Create a chat folder",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Folder name",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.folderNameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatFolder"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/chat-folders/{folder}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the folder and its conversations in one transaction. deleted_ids lets a client leave an open transcript.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat folders"
+                ],
+                "summary": "Delete a chat folder",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Folder ID",
+                        "name": "folder",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatFolderDelete"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat folders"
+                ],
+                "summary": "Rename a chat folder",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Folder ID",
+                        "name": "folder",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New folder name",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.folderNameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatFolder"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/chat/run/{id}/stream": {
             "get": {
                 "security": [
@@ -1618,6 +1859,24 @@ const docTemplatecontrolplane = `{
                         "in": "query"
                     },
                     {
+                        "type": "boolean",
+                        "description": "Only pinned conversations",
+                        "name": "pinned",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only Recents: not pinned and not in a folder",
+                        "name": "unfiled",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only conversations in this folder id",
+                        "name": "folder",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "Page size (default 50, max 200)",
                         "name": "limit",
@@ -1635,6 +1894,12 @@ const docTemplatecontrolplane = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/service.ConversationPage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "401": {
@@ -1908,6 +2173,160 @@ const docTemplatecontrolplane = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.RenameConversationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/conversations/{id}/folder": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "folder_id must belong to the same user; null moves the chat out of its folder.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Move a conversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Target folder (null for Recents)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.moveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/conversations/{id}/pin": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Pinning sets pinned_at to now; unpinning clears it. It never changes updated_at.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Pin a conversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pinned state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.pinRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
                         }
                     },
                     "400": {
@@ -6829,6 +7248,30 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "handler.folderNameRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.moveRequest": {
+            "type": "object",
+            "properties": {
+                "folder_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.pinRequest": {
+            "type": "object",
+            "properties": {
+                "pinned": {
+                    "type": "boolean"
+                }
+            }
+        },
         "handler.terminalSizeRequest": {
             "type": "object",
             "properties": {
@@ -7391,6 +7834,10 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "content": {},
+                "created_at": {
+                    "description": "CreatedAt is when the message entered the transcript, stored in UTC. A nil\ntimestamp means the message predates per-message times.",
+                    "type": "string"
+                },
                 "duration_ms": {
                     "type": "integer"
                 },
@@ -7867,6 +8314,54 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ChatFolder": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ChatFolderDelete": {
+            "type": "object",
+            "properties": {
+                "deleted_chats": {
+                    "type": "integer"
+                },
+                "deleted_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ok": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "service.ChatFolderList": {
+            "type": "object",
+            "properties": {
+                "folders": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ChatFolder"
+                    }
+                }
+            }
+        },
         "service.ComputerUsePatch": {
             "type": "object",
             "properties": {
@@ -8101,6 +8596,9 @@ const docTemplatecontrolplane = `{
                 "created_at": {
                     "type": "string"
                 },
+                "folder_id": {
+                    "type": "string"
+                },
                 "has_more": {
                     "type": "boolean"
                 },
@@ -8119,6 +8617,12 @@ const docTemplatecontrolplane = `{
                 "offset": {
                     "type": "integer"
                 },
+                "pinned": {
+                    "type": "boolean"
+                },
+                "pinned_at": {
+                    "type": "string"
+                },
                 "title": {
                     "type": "string"
                 },
@@ -8126,7 +8630,7 @@ const docTemplatecontrolplane = `{
                     "type": "integer"
                 },
                 "turns": {
-                    "description": "Turns covers the whole conversation, not only the returned messages.",
+                    "description": "Turns covers the whole conversation, not only the returned messages, because\nthe client draws one tick per question. It is not paginated: every detail\nresponse carries the full list. If improvement is needed (thousands of turns,\nor a payload that starts to hurt), either ship the indexes only and fetch\nlabels per window, cap the list with a ` + "`" + `turns_truncated` + "`" + ` flag, or lower\nturnTextLimit.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/service.ConversationTurn"
@@ -8172,11 +8676,20 @@ const docTemplatecontrolplane = `{
                 "created_at": {
                     "type": "string"
                 },
+                "folder_id": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
                 "message_count": {
                     "type": "integer"
+                },
+                "pinned": {
+                    "type": "boolean"
+                },
+                "pinned_at": {
+                    "type": "string"
                 },
                 "title": {
                     "type": "string"

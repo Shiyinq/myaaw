@@ -49,6 +49,29 @@ export interface ConversationSummary {
 	message_count: number;
 	created_at: string;
 	updated_at: string;
+	pinned?: boolean;
+	pinned_at?: string | null;
+	folder_id?: string | null;
+}
+
+/** One user-created group of conversations. */
+export interface ChatFolder {
+	id: string;
+	name: string;
+	count: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ChatFolderList {
+	folders: ChatFolder[] | null;
+}
+
+/** What a folder deletion removed, so the UI can leave a deleted transcript. */
+export interface ChatFolderDelete {
+	ok: boolean;
+	deleted_chats: number;
+	deleted_ids: string[] | null;
 }
 
 export interface ConversationPage {

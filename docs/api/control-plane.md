@@ -763,15 +763,25 @@ turning recording on: the trace database is opened once per process.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents/:name/conversations?search=&limit=&offset=` | paginated conversation list |
+| `GET` | `/agents/:name/conversations?search=&limit=&offset=` | paginated conversation list (`pinned`, `unfiled`, `folder` filters) |
 | `GET` | `/agents/:name/conversations/activity?from=&to=` | per-day conversation counts for the dashboard activity map |
 | `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages |
 | `PATCH` | `/agents/:name/conversations/:id` | rename `{title}` |
 | `DELETE` | `/agents/:name/conversations/:id` | delete a conversation |
+| `PUT` | `/agents/:name/conversations/:id/pin` | pin or unpin `{pinned}` |
+| `PUT` | `/agents/:name/conversations/:id/folder` | move into a folder, or to Recents with `{"folder_id": null}` |
+| `GET` | `/agents/:name/chat-folders` | the user's chat folders with a chat count each |
+| `POST` | `/agents/:name/chat-folders` | create a folder `{name}` |
+| `PATCH` | `/agents/:name/chat-folders/:folder` | rename a folder `{name}` |
+| `DELETE` | `/agents/:name/chat-folders/:folder` | delete a folder and every chat inside it |
 
-**User scoping.** List, detail, rename, and delete use the `user_id` from `~/.myaaw/controlplane.json` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
+**User scoping.** List, detail, rename, delete, pin, move, and every folder route use the `user_id` from `~/.myaaw/controlplane.json` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
 
 **Search.** `search` matches the **title only**, case-insensitive for ASCII, and is applied before pagination. `total` reflects the filtered count.
+
+**Filters.** `pinned=1` returns pinned chats newest-pinned first; `unfiled=1` returns Recents (not pinned, not in a folder); `folder=<id>` returns one folder. The three filters are mutually exclusive (`400`).
+
+**Fields.** Every conversation row carries `pinned`, `pinned_at`, and `folder_id` (`null` outside a folder); the list never sorts pinned chats into Recents.
 
 **Create.** There is no explicit create endpoint: call chat without `conversation_id` and use the `conversation_id` returned in the response.
 
@@ -830,6 +840,79 @@ curl -X DELETE http://localhost:9000/agents/myfriend/conversations/conv-id \
 ```
 
 Conversations come from the agent's own SQLite database. Legacy traces are migrated on read. If the database does not exist yet, the list is empty.
+
+### Pin and unpin
+
+```bash
+curl -X PUT http://localhost:9000/agents/myfriend/conversations/conv-id/pin \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"pinned":true}'
+```
+
+```json
+{"ok": true}
+```
+
+`pinned` is required (`400`). Pinning stamps `pinned_at` with the current time and never touches `updated_at`; unpinning clears it. `pinned=1` lists pinned chats by `pinned_at` descending.
+
+### Move to a folder
+
+```bash
+curl -X PUT http://localhost:9000/agents/myfriend/conversations/conv-id/folder \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"folder_id":"folder-id"}'
+```
+
+```json
+{"ok": true}
+```
+
+`folder_id` must belong to the same user (`404` otherwise) and may not be empty (`400`). Send `{"folder_id":null}` to move the chat back to Recents. Moving leaves `pinned` alone, so a pinned chat can also live in a folder.
+
+### Chat folders
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/agents/:name/chat-folders` | list folders with a chat count each |
+| `POST` | `/agents/:name/chat-folders` | create `{name}` |
+| `PATCH` | `/agents/:name/chat-folders/:folder` | rename `{name}` |
+| `DELETE` | `/agents/:name/chat-folders/:folder` | delete the folder and its chats |
+
+Names are trimmed, 1–64 characters, unique per user ignoring case, and a user may keep up to 100 folders. Errors: `400` invalid name, `409` duplicate name or too many folders, `404` unknown folder or agent.
+
+```bash
+curl -X POST http://localhost:9000/agents/myfriend/chat-folders \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Workspace cleanup"}'
+```
+
+```json
+{
+  "id": "folder-id",
+  "name": "Workspace cleanup",
+  "count": 0,
+  "created_at": "2026-11-02T10:00:00Z",
+  "updated_at": "2026-11-02T10:00:00Z"
+}
+```
+
+`GET /agents/:name/chat-folders` returns `{"folders":[...]}` ordered by name; `count` is the number of chats inside. The list is not paginated: it always returns every folder the user owns, so the 100-folder cap is also the maximum response size. `PATCH` returns the renamed folder in the same shape.
+
+Deleting a folder also deletes its conversations, in one transaction:
+
+```bash
+curl -X DELETE http://localhost:9000/agents/myfriend/chat-folders/folder-id \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{"ok": true, "deleted_chats": 2, "deleted_ids": ["conv-1", "conv-2"]}
+```
+
+`deleted_ids` lets a client leave a transcript that no longer exists.
 
 ### Activity
 
@@ -1161,7 +1244,8 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
-| Conversations | `GET /conversations?search=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id` |
+| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder` |
+| Chat folders | `GET /chat-folders`, `POST /chat-folders`, `PATCH /chat-folders/:folder`, `DELETE /chat-folders/:folder` |
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |
 | Cron | `GET/POST /cron`, `DELETE /cron/:id`, `POST /cron/:id/run`, `GET /cron/:id/history` |

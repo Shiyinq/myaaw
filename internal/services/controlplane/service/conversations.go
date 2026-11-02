@@ -6,10 +6,12 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"myaaw/internal/agent"
 	"myaaw/internal/agentdir"
+	"myaaw/internal/chatdb"
 	"myaaw/internal/provider"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -22,13 +24,24 @@ var (
 )
 
 type ConversationSummary struct {
-	ID           string    `json:"id"`
-	UserID       int       `json:"user_id"`
-	Title        string    `json:"title"`
-	Active       bool      `json:"active"`
-	MessageCount int       `json:"message_count"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           string     `json:"id"`
+	UserID       int        `json:"user_id"`
+	Title        string     `json:"title"`
+	Active       bool       `json:"active"`
+	MessageCount int        `json:"message_count"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	Pinned       bool       `json:"pinned"`
+	PinnedAt     *time.Time `json:"pinned_at"`
+	FolderID     *string    `json:"folder_id"`
+}
+
+// ConversationFilter narrows a list to one section of the sidebar. The
+// handler rejects combinations; the service applies whatever is set.
+type ConversationFilter struct {
+	Pinned   bool
+	Unfiled  bool
+	FolderID string
 }
 
 type ConversationPage struct {
@@ -55,6 +68,9 @@ type ConversationDetail struct {
 	Active        bool               `json:"active"`
 	CreatedAt     time.Time          `json:"created_at"`
 	UpdatedAt     time.Time          `json:"updated_at"`
+	Pinned        bool               `json:"pinned"`
+	PinnedAt      *time.Time         `json:"pinned_at"`
+	FolderID      *string            `json:"folder_id"`
 	Messages      []provider.Message `json:"messages"`
 	TotalMessages int                `json:"total_messages"`
 	Limit         int                `json:"limit"`
@@ -159,7 +175,12 @@ func NewConversationService() *ConversationService {
 }
 
 // List returns conversations owned by userID. search matches the title only.
-func (s *ConversationService) List(agentName string, userID, limit, offset int, search string) (ConversationPage, error) {
+func (s *ConversationService) List(
+	agentName string,
+	userID, limit, offset int,
+	search string,
+	filter ConversationFilter,
+) (ConversationPage, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
@@ -185,6 +206,16 @@ func (s *ConversationService) List(agentName string, userID, limit, offset int, 
 
 	conditions := []string{"user_id = ?"}
 	args := []any{userID}
+	if filter.Pinned {
+		conditions = append(conditions, "pinned_at IS NOT NULL")
+	}
+	if filter.Unfiled {
+		conditions = append(conditions, "pinned_at IS NULL", "folder_id IS NULL")
+	}
+	if filter.FolderID != "" {
+		conditions = append(conditions, "folder_id = ?")
+		args = append(args, filter.FolderID)
+	}
 	if search != "" {
 		conditions = append(conditions, `title LIKE ? ESCAPE '\'`)
 		args = append(args, "%"+escapeLike(search)+"%")
@@ -201,8 +232,12 @@ func (s *ConversationService) List(agentName string, userID, limit, offset int, 
 		return page, nil
 	}
 
-	query := `SELECT id, user_id, title, active, created_at, updated_at, messages FROM conversations` +
-		where + ` ORDER BY updated_at DESC, created_at DESC LIMIT ? OFFSET ?`
+	order := ` ORDER BY updated_at DESC, created_at DESC`
+	if filter.Pinned {
+		order = ` ORDER BY pinned_at DESC, updated_at DESC, created_at DESC`
+	}
+	query := `SELECT id, user_id, title, active, created_at, updated_at, pinned_at, folder_id, messages FROM conversations` +
+		where + order + ` LIMIT ? OFFSET ?`
 	queryArgs := append(append([]any{}, args...), limit, offset)
 
 	rows, err := db.Query(query, queryArgs...)
@@ -215,6 +250,8 @@ func (s *ConversationService) List(agentName string, userID, limit, offset int, 
 		var (
 			summary  ConversationSummary
 			messages string
+			pinnedAt sql.NullTime
+			folderID sql.NullString
 		)
 		if err := rows.Scan(
 			&summary.ID,
@@ -223,9 +260,20 @@ func (s *ConversationService) List(agentName string, userID, limit, offset int, 
 			&summary.Active,
 			&summary.CreatedAt,
 			&summary.UpdatedAt,
+			&pinnedAt,
+			&folderID,
 			&messages,
 		); err != nil {
 			return page, err
+		}
+		summary.Pinned = pinnedAt.Valid
+		if pinnedAt.Valid {
+			value := pinnedAt.Time
+			summary.PinnedAt = &value
+		}
+		if folderID.Valid {
+			value := folderID.String
+			summary.FolderID = &value
 		}
 		var parsed []provider.Message
 		if json.Unmarshal([]byte(messages), &parsed) == nil {
@@ -274,10 +322,12 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 	}
 	defer db.Close()
 
-	const query = `SELECT id, user_id, title, messages, active, created_at, updated_at FROM conversations WHERE id = ? LIMIT 1`
+	const query = `SELECT id, user_id, title, messages, active, created_at, updated_at, pinned_at, folder_id FROM conversations WHERE id = ? LIMIT 1`
 	var (
 		detail       ConversationDetail
 		messagesJSON string
+		pinnedAt     sql.NullTime
+		folderID     sql.NullString
 	)
 	err = db.QueryRow(query, id).Scan(
 		&detail.ID,
@@ -287,12 +337,23 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 		&detail.Active,
 		&detail.CreatedAt,
 		&detail.UpdatedAt,
+		&pinnedAt,
+		&folderID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ConversationDetail{}, ErrConversationNotFound
 	}
 	if err != nil {
 		return ConversationDetail{}, err
+	}
+	detail.Pinned = pinnedAt.Valid
+	if pinnedAt.Valid {
+		value := pinnedAt.Time
+		detail.PinnedAt = &value
+	}
+	if folderID.Valid {
+		value := folderID.String
+		detail.FolderID = &value
 	}
 	if detail.UserID != userID {
 		return ConversationDetail{}, ErrConversationForbidden
@@ -434,5 +495,25 @@ func openAgentDB(agentName string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := ensureChatSchema(dbPath, db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
+}
+
+// ensureChatSchema runs the additive migration once per database file in this
+// process. The control plane may open a database created by an older agent
+// build, so it cannot rely on config.initSchema having run.
+var ensuredChatSchema sync.Map
+
+func ensureChatSchema(dbPath string, db *sql.DB) error {
+	if _, done := ensuredChatSchema.Load(dbPath); done {
+		return nil
+	}
+	if err := chatdb.EnsureSchema(db); err != nil {
+		return err
+	}
+	ensuredChatSchema.Store(dbPath, true)
+	return nil
 }

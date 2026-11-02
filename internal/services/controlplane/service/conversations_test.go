@@ -81,7 +81,7 @@ func TestConversationServiceList(t *testing.T) {
 	setupConversationAgent(t)
 	conversations := NewConversationService()
 
-	page, err := conversations.List("myfriend", 7, 10, 0, "")
+	page, err := conversations.List("myfriend", 7, 10, 0, "", ConversationFilter{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestConversationServiceList(t *testing.T) {
 		t.Fatalf("message count = %d, want 3", page.Conversations[1].MessageCount)
 	}
 
-	other, err := conversations.List("myfriend", 8, 10, 0, "")
+	other, err := conversations.List("myfriend", 8, 10, 0, "", ConversationFilter{})
 	if err != nil {
 		t.Fatalf("List other user: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestConversationServiceList(t *testing.T) {
 		t.Fatalf("other = %+v", other)
 	}
 
-	empty, err := conversations.List("myfriend", 0, 10, 0, "")
+	empty, err := conversations.List("myfriend", 0, 10, 0, "", ConversationFilter{})
 	if err != nil {
 		t.Fatalf("List user 0: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestConversationServiceListSearch(t *testing.T) {
 	dbPath := setupConversationAgent(t)
 	conversations := NewConversationService()
 
-	page, err := conversations.List("myfriend", 7, 10, 0, "fir")
+	page, err := conversations.List("myfriend", 7, 10, 0, "fir", ConversationFilter{})
 	if err != nil {
 		t.Fatalf("List search: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestConversationServiceListSearch(t *testing.T) {
 		t.Fatalf("search page = %+v", page)
 	}
 
-	none, err := conversations.List("myfriend", 7, 10, 0, "other")
+	none, err := conversations.List("myfriend", 7, 10, 0, "other", ConversationFilter{})
 	if err != nil {
 		t.Fatalf("List search miss: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestConversationServiceListSearch(t *testing.T) {
 	}
 	db.Close()
 
-	escaped, err := conversations.List("myfriend", 7, 10, 0, "100%")
+	escaped, err := conversations.List("myfriend", 7, 10, 0, "100%", ConversationFilter{})
 	if err != nil {
 		t.Fatalf("List escaped search: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestConversationServiceListPagination(t *testing.T) {
 	setupConversationAgent(t)
 	conversations := NewConversationService()
 
-	first, err := conversations.List("myfriend", 7, 1, 0, "")
+	first, err := conversations.List("myfriend", 7, 1, 0, "", ConversationFilter{})
 	if err != nil {
 		t.Fatalf("List first: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestConversationServiceListPagination(t *testing.T) {
 		t.Fatalf("first page = %+v", first.Conversations)
 	}
 
-	second, err := conversations.List("myfriend", 7, 1, 1, "")
+	second, err := conversations.List("myfriend", 7, 1, 1, "", ConversationFilter{})
 	if err != nil {
 		t.Fatalf("List second: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestConversationServiceListPagination(t *testing.T) {
 		t.Fatalf("second page = %+v", second.Conversations)
 	}
 
-	empty, err := conversations.List("myfriend", 7, 1, 5, "")
+	empty, err := conversations.List("myfriend", 7, 1, 5, "", ConversationFilter{})
 	if err != nil {
 		t.Fatalf("List empty: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestConversationServiceDelete(t *testing.T) {
 func TestConversationServiceWithoutDatabase(t *testing.T) {
 	setupConfigAgent(t, nil)
 
-	page, err := NewConversationService().List("myfriend", 0, 10, 0, "")
+	page, err := NewConversationService().List("myfriend", 0, 10, 0, "", ConversationFilter{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

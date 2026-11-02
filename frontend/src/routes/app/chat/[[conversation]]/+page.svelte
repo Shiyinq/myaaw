@@ -812,6 +812,9 @@
 
 	// Switching the agent must not keep showing the previous agent's transcript.
 	let chatAgentKey = '';
+	// A folder picked in the sidebar before the first message exists; it is
+	// applied once the server creates the conversation.
+	let pendingFolder = $state('');
 	$effect(() => {
 		const currentAgent = agentSelection.selected;
 		if (!currentAgent) return;
@@ -838,17 +841,24 @@
 	$effect(() => {
 		const currentAgent = agentSelection.selected;
 		const currentConversation = page.params.conversation ?? '';
-		const key = `${currentAgent}:${currentConversation}`;
-		if (!currentAgent || key === loadKey) return;
+		if (!currentAgent) return;
 
-		// The dashboard's "new chat" action opts out of restoring history.
+		// The dashboard's (and a folder's) "new chat" action opts out of restoring
+		// history. The folder stays in the URL until the first message creates the
+		// conversation. This runs before the key guard so a second "new chat" in
+		// the same folder still resets the composer.
 		if (!currentConversation && page.url.searchParams.has('new')) {
+			pendingFolder = page.url.searchParams.get('folder') ?? '';
 			resetChat();
 			// Drop the flag so a refresh keeps the empty composer instead of
 			// clearing it again.
-			void goto('/app/chat', { replaceState: true, noScroll: true });
+			const suffix = pendingFolder ? `?folder=${encodeURIComponent(pendingFolder)}` : '';
+			void goto(`/app/chat${suffix}`, { replaceState: true, noScroll: true });
 			return;
 		}
+
+		const key = `${currentAgent}:${currentConversation}`;
+		if (key === loadKey) return;
 
 		// The sidebar links to /app/chat, so restore the last opened conversation
 		// instead of dropping the user into a brand new chat.
@@ -903,7 +913,14 @@
 				conversationId = id;
 				loadKey = `${agent}:${id}`;
 				rememberConversation(id);
-				conversationHistory.refresh();
+				if (pendingFolder) {
+					const folderId = pendingFolder;
+					pendingFolder = '';
+					// move() refreshes the sections, including the new title.
+					void conversationHistory.move(id, folderId);
+				} else {
+					conversationHistory.refresh();
+				}
 				void goto(`/app/chat/${id}`, { replaceState: true, noScroll: true });
 			},
 			onDone: (run: ChatRun) => {
@@ -3058,6 +3075,8 @@
 				activeId={conversationId}
 				onOpen={openConversation}
 				onClose={toggleHistory}
+				onNewInFolder={(folderId) =>
+					void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
 				onDeleted={onHistoryDeleted}
 				onRenamed={onHistoryRenamed}
 				bind:searchInput={searchBox}

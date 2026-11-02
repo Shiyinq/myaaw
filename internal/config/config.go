@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"myaaw/internal/agentdir"
+	"myaaw/internal/chatdb"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
@@ -1017,6 +1018,13 @@ func initSchema(db *sql.DB) {
 		if _, err := db.Exec(q); err != nil {
 			log.Fatalf("Failed to execute schema query: %v", err)
 		}
+	}
+
+	// Chat folders and their conversation columns are additive; the control
+	// plane runs the same helper so a DB created by an older build is upgraded
+	// even before this process starts.
+	if err := chatdb.EnsureSchema(db); err != nil {
+		log.Fatalf("Failed to ensure chat schema: %v", err)
 	}
 }
 

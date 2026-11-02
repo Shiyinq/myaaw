@@ -623,6 +623,21 @@ definitions:
         example: /home/AGENTS.md
         type: string
     type: object
+  handler.folderNameRequest:
+    properties:
+      name:
+        type: string
+    type: object
+  handler.moveRequest:
+    properties:
+      folder_id:
+        type: string
+    type: object
+  handler.pinRequest:
+    properties:
+      pinned:
+        type: boolean
+    type: object
   handler.terminalSizeRequest:
     properties:
       cols:
@@ -1030,6 +1045,11 @@ definitions:
       action_input:
         type: string
       content: {}
+      created_at:
+        description: |-
+          CreatedAt is when the message entered the transcript, stored in UTC. A nil
+          timestamp means the message predates per-message times.
+        type: string
       duration_ms:
         type: integer
       error_message:
@@ -1349,6 +1369,37 @@ definitions:
           $ref: '#/definitions/service.ChannelView'
         type: array
     type: object
+  service.ChatFolder:
+    properties:
+      count:
+        type: integer
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  service.ChatFolderDelete:
+    properties:
+      deleted_chats:
+        type: integer
+      deleted_ids:
+        items:
+          type: string
+        type: array
+      ok:
+        type: boolean
+    type: object
+  service.ChatFolderList:
+    properties:
+      folders:
+        items:
+          $ref: '#/definitions/service.ChatFolder'
+        type: array
+    type: object
   service.ComputerUsePatch:
     properties:
       enabled:
@@ -1503,6 +1554,8 @@ definitions:
         type: boolean
       created_at:
         type: string
+      folder_id:
+        type: string
       has_more:
         type: boolean
       id:
@@ -1515,12 +1568,22 @@ definitions:
         type: array
       offset:
         type: integer
+      pinned:
+        type: boolean
+      pinned_at:
+        type: string
       title:
         type: string
       total_messages:
         type: integer
       turns:
-        description: Turns covers the whole conversation, not only the returned messages.
+        description: |-
+          Turns covers the whole conversation, not only the returned messages, because
+          the client draws one tick per question. It is not paginated: every detail
+          response carries the full list. If improvement is needed (thousands of turns,
+          or a payload that starts to hurt), either ship the indexes only and fetch
+          labels per window, cap the list with a `turns_truncated` flag, or lower
+          turnTextLimit.
         items:
           $ref: '#/definitions/service.ConversationTurn'
         type: array
@@ -1550,10 +1613,16 @@ definitions:
         type: boolean
       created_at:
         type: string
+      folder_id:
+        type: string
       id:
         type: string
       message_count:
         type: integer
+      pinned:
+        type: boolean
+      pinned_at:
+        type: string
       title:
         type: string
       updated_at:
@@ -2630,6 +2699,163 @@ paths:
       summary: Chat with an agent
       tags:
       - Chat
+  /agents/{name}/chat-folders:
+    get:
+      description: Folders are scoped to the authenticated user (or the user_id query).
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ChatFolderList'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List chat folders
+      tags:
+      - Chat folders
+    post:
+      consumes:
+      - application/json
+      description: Names are trimmed, unique per user ignoring case, and limited to
+        64 characters. A user may keep up to 100 folders.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Folder name
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.folderNameRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/service.ChatFolder'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a chat folder
+      tags:
+      - Chat folders
+  /agents/{name}/chat-folders/{folder}:
+    delete:
+      description: Removes the folder and its conversations in one transaction. deleted_ids
+        lets a client leave an open transcript.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Folder ID
+        in: path
+        name: folder
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ChatFolderDelete'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a chat folder
+      tags:
+      - Chat folders
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Folder ID
+        in: path
+        name: folder
+        required: true
+        type: string
+      - description: New folder name
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.folderNameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ChatFolder'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Rename a chat folder
+      tags:
+      - Chat folders
   /agents/{name}/chat/run/{id}/stream:
     get:
       description: Streams the events of a running (or recently finished) run, replaying
@@ -3234,6 +3460,18 @@ paths:
         in: query
         name: search
         type: string
+      - description: Only pinned conversations
+        in: query
+        name: pinned
+        type: boolean
+      - description: 'Only Recents: not pinned and not in a folder'
+        in: query
+        name: unfiled
+        type: boolean
+      - description: Only conversations in this folder id
+        in: query
+        name: folder
+        type: string
       - description: Page size (default 50, max 200)
         in: query
         name: limit
@@ -3249,6 +3487,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/service.ConversationPage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
         "401":
           description: Unauthorized
           schema:
@@ -3405,6 +3647,108 @@ paths:
       security:
       - BearerAuth: []
       summary: Rename conversation
+      tags:
+      - Conversations
+  /agents/{name}/conversations/{id}/folder:
+    put:
+      consumes:
+      - application/json
+      description: folder_id must belong to the same user; null moves the chat out
+        of its folder.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Target folder (null for Recents)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.moveRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Move a conversation
+      tags:
+      - Conversations
+  /agents/{name}/conversations/{id}/pin:
+    put:
+      consumes:
+      - application/json
+      description: Pinning sets pinned_at to now; unpinning clears it. It never changes
+        updated_at.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Pinned state
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.pinRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Pin a conversation
       tags:
       - Conversations
   /agents/{name}/conversations/activity:

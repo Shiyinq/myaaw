@@ -466,6 +466,10 @@ const docTemplate = `{
                     "description": "RequestID lets the client stop this run with POST /api/chat/stop.",
                     "type": "string"
                 },
+                "rewind_user_offset": {
+                    "description": "RewindUserOffset rewinds the transcript before this turn. 0 keeps the\ntranscript up to the last user message (regenerate); N keeps it up to the\nuser message N turns earlier (edit that message with ` + "`" + `text` + "`" + `).",
+                    "type": "integer"
+                },
                 "text": {
                     "type": "string"
                 },

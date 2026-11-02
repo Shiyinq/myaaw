@@ -743,6 +743,8 @@
 						activeId={activeConversation}
 						onOpen={(id) => void goto(`/app/chat/${id}`)}
 						onNew={() => void goto('/app/chat?new=1')}
+						onNewInFolder={(folderId) =>
+							void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
 						onDeleted={(id) => {
 							if (id === activeConversation) void goto('/app/chat?new=1');
 						}}
