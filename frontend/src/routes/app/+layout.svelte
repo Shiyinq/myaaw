@@ -608,7 +608,9 @@
 		<!-- One header for both states: the brand block keeps its position while the
 		     labels fade and the width animates, so collapsing does not swap the
 		     whole header in one frame. -->
-		<div class="relative flex h-14 shrink-0 items-center gap-2 overflow-hidden border-b pr-2 pl-4">
+		<div
+			class="relative flex h-14 shrink-0 items-center gap-2 overflow-hidden border-b pr-2 pl-4 md:pr-0"
+		>
 			<div
 				class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
 			>
@@ -627,7 +629,7 @@
 			</div>
 			<button
 				class={[
-					'ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-2 text-muted-foreground transition-[color,opacity] hover:bg-muted hover:text-foreground md:flex',
+					'ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-[color,opacity] hover:bg-muted hover:text-foreground md:flex',
 					compactSidebar ? 'pointer-events-none opacity-0' : 'opacity-100'
 				]}
 				onclick={() => sidebar.toggle()}
