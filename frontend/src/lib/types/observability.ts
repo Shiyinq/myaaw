@@ -1,3 +1,40 @@
+export interface StepStat {
+	step_index: number;
+	count: number;
+	avg_ms: number;
+	p95_ms: number;
+	cost_usd: number;
+}
+
+export interface ModelStat {
+	model: string;
+	calls: number;
+	input_tokens: number;
+	output_tokens: number;
+	cache_hit_tokens: number;
+	cost_usd: number;
+	priced: boolean;
+	unpriced_calls: number;
+}
+
+export interface TriggerStat {
+	trigger: string;
+	runs: number;
+	errors: number;
+	input_tokens: number;
+	output_tokens: number;
+	cost_usd: number;
+	tool_cost_usd?: number;
+}
+
+export interface ToolStat {
+	name: string;
+	calls: number;
+	errors: number;
+	avg_ms: number;
+	cost_usd: number;
+}
+
 export interface ObservabilitySummary {
 	from: number;
 	to: number;
@@ -18,8 +55,12 @@ export interface ObservabilitySummary {
 	duration_ms_p50: number;
 	duration_ms_p95: number;
 	first_token_ms_p50: number;
-	per_tool?: { name: string; calls: number; cost_usd?: number }[];
-	per_trigger?: { trigger: string; runs: number; cost_usd?: number }[];
+	per_step?: StepStat[];
+	by_model?: ModelStat[];
+	by_trigger?: TriggerStat[];
+	per_tool?: ToolStat[];
+	most_expensive_run_id?: string;
+	slowest_run_id?: string;
 }
 
 export interface RunSummary {

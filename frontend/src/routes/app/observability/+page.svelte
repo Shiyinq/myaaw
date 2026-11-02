@@ -40,7 +40,7 @@
 	let offset = $state(0);
 	let status = $state('');
 	let trigger = $state('');
-	let mode = $state<'runs' | 'sessions'>('runs');
+	let mode = $state<'runs' | 'sessions' | 'summary'>('summary');
 	let sessions = $state<SessionSummary[]>([]);
 	let session = $state<SessionDetail | null>(null);
 	let sessionLoading = $state(false);
@@ -77,24 +77,18 @@
 		loading = true;
 		error = '';
 		try {
+			const summaryResult = await observabilityApi.summary(currentAgent, 7);
+			summary = summaryResult;
 			if (mode === 'sessions') {
-				const [summaryResult, sessionsResult] = await Promise.all([
-					observabilityApi.summary(currentAgent, 7),
-					observabilityApi.sessions(currentAgent)
-				]);
-				summary = summaryResult;
+				const sessionsResult = await observabilityApi.sessions(currentAgent);
 				sessions = sessionsResult.sessions ?? [];
-			} else {
-				const [summaryResult, runsResult] = await Promise.all([
-					observabilityApi.summary(currentAgent, 7),
-					observabilityApi.runs(currentAgent, {
-						limit,
-						offset,
-						status: status || undefined,
-						trigger: trigger || undefined
-					})
-				]);
-				summary = summaryResult;
+			} else if (mode === 'runs') {
+				const runsResult = await observabilityApi.runs(currentAgent, {
+					limit,
+					offset,
+					status: status || undefined,
+					trigger: trigger || undefined
+				});
 				runs = runsResult.runs ?? [];
 			}
 		} catch (err) {
@@ -104,7 +98,7 @@
 		}
 	}
 
-	function switchMode(next: 'runs' | 'sessions') {
+	function switchMode(next: 'runs' | 'sessions' | 'summary') {
 		if (mode === next) return;
 		mode = next;
 		offset = 0;
@@ -175,6 +169,18 @@
 
 	function formatTokens(value?: number) {
 		return (value ?? 0).toLocaleString();
+	}
+
+	function formatBytes(value?: number) {
+		if (!value) return '—';
+		const units = ['B', 'KB', 'MB', 'GB'];
+		let size = value;
+		let unit = 0;
+		while (size >= 1024 && unit < units.length - 1) {
+			size /= 1024;
+			unit += 1;
+		}
+		return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 	}
 
 	function formatWhen(value?: number) {
@@ -311,6 +317,46 @@
 	</div>
 {/snippet}
 
+{#snippet summaryTable(title: string, headers: string[], rows: string[][])}
+	<div>
+		<div class="mb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+			{title}
+		</div>
+		<div class="overflow-x-auto rounded-md border">
+			<table class="w-full border-collapse text-[11px]">
+				<thead>
+					<tr class="bg-muted/40 text-[10px] text-muted-foreground">
+						{#each headers as header, index (index)}
+							<th
+								class={index === 0
+									? 'px-2 py-1 text-left font-medium'
+									: 'px-2 py-1 text-right font-medium'}
+							>
+								{header}
+							</th>
+						{/each}
+					</tr>
+				</thead>
+				<tbody>
+					{#each rows as row, rowIndex (rowIndex)}
+						<tr class="border-t">
+							{#each row as cell, cellIndex (cellIndex)}
+								<td class={cellIndex === 0 ? 'px-2 py-1' : 'px-2 py-1 text-right tabular-nums'}>
+									{cell}
+								</td>
+							{/each}
+						</tr>
+					{:else}
+						<tr>
+							<td class="px-2 py-1 text-muted-foreground" colspan={headers.length}>—</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	</div>
+{/snippet}
+
 <TopBarActions id="observability-actions">
 	{#snippet children()}
 		<TopBarButton
@@ -329,7 +375,10 @@
 </TopBarActions>
 
 <div
-	class="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4 lg:gap-4 lg:overflow-hidden lg:p-6"
+	class={[
+		'flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4 lg:gap-4 lg:p-6',
+		mode === 'summary' ? 'lg:overflow-y-auto' : 'lg:overflow-hidden'
+	]}
 >
 	{#if !agent}
 		<Card>
@@ -396,15 +445,32 @@
 			</Card>
 		</div>
 
-		<div class="grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-5 lg:gap-4 lg:overflow-visible">
-			<Card class="flex min-h-0 flex-col lg:col-span-2">
+		<div
+			class={mode === 'summary'
+				? 'grid gap-3 lg:grid-cols-5 lg:gap-4'
+				: 'grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-5 lg:gap-4 lg:overflow-visible'}
+		>
+			<Card
+				class={mode === 'summary'
+					? 'flex flex-col lg:col-span-5'
+					: 'flex min-h-0 flex-col lg:col-span-2'}
+			>
 				<CardHeader class="shrink-0 space-y-2">
 					<div class="flex items-center justify-between gap-2">
 						<CardTitle class="flex items-center gap-2 text-sm">
 							<Activity class="h-4 w-4 shrink-0" />
-							{t('myaaw.observability.recent')}
+							{mode === 'summary'
+								? t('myaaw.observability.summary')
+								: t('myaaw.observability.recent')}
 						</CardTitle>
 						<div class="flex shrink-0 gap-1">
+							<Button
+								size="xs"
+								variant={mode === 'summary' ? 'secondary' : 'ghost'}
+								onclick={() => switchMode('summary')}
+							>
+								{t('myaaw.observability.summary')}
+							</Button>
 							<Button
 								size="xs"
 								variant={mode === 'runs' ? 'secondary' : 'ghost'}
@@ -447,8 +513,139 @@
 						</div>
 					{/if}
 				</CardHeader>
-				<CardContent class="min-h-0 flex-1 space-y-1 overflow-y-auto">
-					{#if mode === 'sessions'}
+				<CardContent
+					class={mode === 'summary' ? 'space-y-1' : 'min-h-0 flex-1 space-y-1 overflow-y-auto'}
+				>
+					{#if mode === 'summary'}
+						<div class="space-y-4 p-1 text-[11px]">
+							<div class="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+								<span>
+									{t('myaaw.observability.cached')}: {formatTokens(summary?.cache_hit_tokens)}
+								</span>
+								<span>p95: {formatMs(summary?.duration_ms_p95)}</span>
+								<span>TTFT p50: {formatMs(summary?.first_token_ms_p50)}</span>
+								<span>
+									{t('myaaw.observability.database')}: {formatBytes(summary?.database_bytes)}
+								</span>
+							</div>
+
+							{#if summary && !summary.cost_complete}
+								<p class="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-[10px]">
+									{t('myaaw.observability.unpriced_note', {
+										runs: summary.unpriced_runs,
+										input: formatTokens(summary.unpriced_input_tokens),
+										output: formatTokens(summary.unpriced_output_tokens)
+									})}
+								</p>
+							{/if}
+
+							{@render summaryTable(
+								t('myaaw.observability.per_model'),
+								[
+									t('myaaw.observability.model'),
+									t('myaaw.observability.calls'),
+									t('myaaw.observability.input'),
+									t('myaaw.observability.output'),
+									t('myaaw.observability.cost')
+								],
+								(summary?.by_model ?? []).map((item) => [
+									`${item.model}${item.unpriced_calls > 0 ? ' *' : ''}`,
+									String(item.calls),
+									formatTokens(item.input_tokens),
+									formatTokens(item.output_tokens),
+									formatCost(item.cost_usd)
+								])
+							)}
+
+							{@render summaryTable(
+								t('myaaw.observability.per_trigger'),
+								[
+									t('myaaw.observability.trigger'),
+									t('myaaw.observability.runs'),
+									t('myaaw.observability.errors'),
+									t('myaaw.observability.input'),
+									t('myaaw.observability.output'),
+									t('myaaw.observability.cost'),
+									t('myaaw.observability.tool_cost')
+								],
+								(summary?.by_trigger ?? []).map((item) => [
+									item.trigger,
+									String(item.runs),
+									String(item.errors),
+									formatTokens(item.input_tokens),
+									formatTokens(item.output_tokens),
+									formatCost(item.cost_usd),
+									formatCost(item.tool_cost_usd)
+								])
+							)}
+
+							{@render summaryTable(
+								t('myaaw.observability.per_tool'),
+								[
+									t('myaaw.observability.tool'),
+									t('myaaw.observability.calls'),
+									t('myaaw.observability.errors'),
+									t('myaaw.observability.avg'),
+									t('myaaw.observability.cost')
+								],
+								(summary?.per_tool ?? []).map((item) => [
+									item.name,
+									String(item.calls),
+									String(item.errors),
+									formatMs(item.avg_ms),
+									formatCost(item.cost_usd)
+								])
+							)}
+
+							{@render summaryTable(
+								t('myaaw.observability.per_step'),
+								[
+									t('myaaw.observability.step'),
+									t('myaaw.observability.count'),
+									t('myaaw.observability.avg'),
+									'p95',
+									t('myaaw.observability.cost')
+								],
+								(summary?.per_step ?? []).map((item) => [
+									String(item.step_index),
+									String(item.count),
+									formatMs(item.avg_ms),
+									formatMs(item.p95_ms),
+									formatCost(item.cost_usd)
+								])
+							)}
+
+							{#if summary && (summary.most_expensive_run_id || summary.slowest_run_id)}
+								<div>
+									<div
+										class="mb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
+									>
+										{t('myaaw.observability.highlights')}
+									</div>
+									<div class="grid gap-1 rounded-md border p-2">
+										{#if summary.most_expensive_run_id}
+											<div class="flex items-center justify-between gap-2">
+												<span class="text-muted-foreground">
+													{t('myaaw.observability.most_expensive')}
+												</span>
+												<span class="truncate font-mono">
+													{summary.most_expensive_run_id}
+												</span>
+											</div>
+										{/if}
+										{#if summary.slowest_run_id}
+											<div class="flex items-center justify-between gap-2">
+												<span class="text-muted-foreground">
+													{t('myaaw.observability.slowest')}
+												</span>
+												<span class="truncate font-mono">{summary.slowest_run_id}</span>
+											</div>
+										{/if}
+									</div>
+								</div>
+							{/if}
+						</div>
+					{:else if mode === 'sessions'}
 						{#if !loading && sessions.length === 0}
 							<EmptyState
 								title={t('myaaw.observability.empty')}
@@ -545,98 +742,100 @@
 				{/if}
 			</Card>
 
-			<Card class="flex min-h-0 flex-col lg:col-span-3">
-				<CardHeader class="shrink-0">
-					<CardTitle class="text-sm">
-						{mode === 'sessions'
-							? t('myaaw.observability.session')
-							: t('myaaw.observability.trajectory')}
-					</CardTitle>
-					<CardDescription class="truncate">
-						{#if mode === 'sessions'}
-							{#if session}
-								{session.conversation_id} · {session.turns} ·
-								{formatWhen(session.started_at)}
+			{#if mode !== 'summary'}
+				<Card class="flex min-h-0 flex-col lg:col-span-3">
+					<CardHeader class="shrink-0">
+						<CardTitle class="text-sm">
+							{mode === 'sessions'
+								? t('myaaw.observability.session')
+								: t('myaaw.observability.trajectory')}
+						</CardTitle>
+						<CardDescription class="truncate">
+							{#if mode === 'sessions'}
+								{#if session}
+									{session.conversation_id} · {session.turns} ·
+									{formatWhen(session.started_at)}
+								{:else}
+									{t('myaaw.observability.select_session')}
+								{/if}
+							{:else if detail}
+								{detail.run.id} · {detail.run.model ?? '—'} · {formatMs(detail.run.total_ms)} ·
+								{formatCost(detail.run.model_cost_usd)}
 							{:else}
-								{t('myaaw.observability.select_session')}
+								{t('myaaw.observability.select_run')}
 							{/if}
-						{:else if detail}
-							{detail.run.id} · {detail.run.model ?? '—'} · {formatMs(detail.run.total_ms)} ·
-							{formatCost(detail.run.model_cost_usd)}
-						{:else}
-							{t('myaaw.observability.select_run')}
-						{/if}
-					</CardDescription>
-				</CardHeader>
-				<CardContent class="min-h-0 flex-1 space-y-1 overflow-y-auto">
-					{#if mode === 'sessions'}
-						{#if sessionLoading}
+						</CardDescription>
+					</CardHeader>
+					<CardContent class="min-h-0 flex-1 space-y-1 overflow-y-auto">
+						{#if mode === 'sessions'}
+							{#if sessionLoading}
+								<p class="text-sm text-muted-foreground">{t('common.loading')}</p>
+							{:else if session}
+								{#each session.runs ?? [] as turn (turn.id)}
+									<div class="rounded-md border">
+										<div class="flex items-center justify-between gap-2 px-2 py-1.5 text-[11px]">
+											<span class="truncate font-mono">{turn.id}</span>
+											<Badge variant={turn.status === 'completed' ? 'secondary' : 'destructive'}>
+												{turn.status}
+											</Badge>
+										</div>
+										<div
+											class="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t px-2 py-1 text-[10px] text-muted-foreground"
+										>
+											<span>{turn.model ?? '—'} · {turn.trigger ?? 'user'}</span>
+											<span>{formatMs(turn.total_ms)} · {formatCost(turn.model_cost_usd)}</span>
+											{#if turn.input_tokens || turn.output_tokens}
+												<span>
+													in {formatTokens(turn.input_tokens)} · out {formatTokens(
+														turn.output_tokens
+													)}
+												</span>
+											{/if}
+										</div>
+										<div class="space-y-1 border-t p-2">
+											{#if answerOf(turn.spans)}
+												<div class="mb-2">
+													{@render answerBlock(answerOf(turn.spans))}
+												</div>
+											{/if}
+											{#each spanRows(turn.spans) as row (row.span.id)}
+												{@render spanRow(row)}
+											{:else}
+												<p class="text-[10px] text-muted-foreground">
+													{t('myaaw.observability.no_spans')}
+												</p>
+											{/each}
+										</div>
+									</div>
+								{/each}
+							{:else}
+								<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
+									{t('myaaw.observability.select_session')}
+								</p>
+							{/if}
+						{:else if detailLoading}
 							<p class="text-sm text-muted-foreground">{t('common.loading')}</p>
-						{:else if session}
-							{#each session.runs ?? [] as turn (turn.id)}
-								<div class="rounded-md border">
-									<div class="flex items-center justify-between gap-2 px-2 py-1.5 text-[11px]">
-										<span class="truncate font-mono">{turn.id}</span>
-										<Badge variant={turn.status === 'completed' ? 'secondary' : 'destructive'}>
-											{turn.status}
-										</Badge>
-									</div>
-									<div
-										class="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t px-2 py-1 text-[10px] text-muted-foreground"
-									>
-										<span>{turn.model ?? '—'} · {turn.trigger ?? 'user'}</span>
-										<span>{formatMs(turn.total_ms)} · {formatCost(turn.model_cost_usd)}</span>
-										{#if turn.input_tokens || turn.output_tokens}
-											<span>
-												in {formatTokens(turn.input_tokens)} · out {formatTokens(
-													turn.output_tokens
-												)}
-											</span>
-										{/if}
-									</div>
-									<div class="space-y-1 border-t p-2">
-										{#if answerOf(turn.spans)}
-											<div class="mb-2">
-												{@render answerBlock(answerOf(turn.spans))}
-											</div>
-										{/if}
-										{#each spanRows(turn.spans) as row (row.span.id)}
-											{@render spanRow(row)}
-										{:else}
-											<p class="text-[10px] text-muted-foreground">
-												{t('myaaw.observability.no_spans')}
-											</p>
-										{/each}
-									</div>
+						{:else if detail}
+							{#if answerOf(detail.spans)}
+								<div class="mb-2">
+									{@render answerBlock(answerOf(detail.spans))}
 								</div>
+							{/if}
+							{#each rows as row (row.span.id)}
+								{@render spanRow(row)}
 							{/each}
+							<Separator class="my-2" />
+							<p class="text-[10px] text-muted-foreground">
+								{t('myaaw.observability.spans', { count: rows.length })}
+							</p>
 						{:else}
 							<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
-								{t('myaaw.observability.select_session')}
+								{t('myaaw.observability.select_run')}
 							</p>
 						{/if}
-					{:else if detailLoading}
-						<p class="text-sm text-muted-foreground">{t('common.loading')}</p>
-					{:else if detail}
-						{#if answerOf(detail.spans)}
-							<div class="mb-2">
-								{@render answerBlock(answerOf(detail.spans))}
-							</div>
-						{/if}
-						{#each rows as row (row.span.id)}
-							{@render spanRow(row)}
-						{/each}
-						<Separator class="my-2" />
-						<p class="text-[10px] text-muted-foreground">
-							{t('myaaw.observability.spans', { count: rows.length })}
-						</p>
-					{:else}
-						<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
-							{t('myaaw.observability.select_run')}
-						</p>
-					{/if}
-				</CardContent>
-			</Card>
+					</CardContent>
+				</Card>
+			{/if}
 		</div>
 	{/if}
 </div>
