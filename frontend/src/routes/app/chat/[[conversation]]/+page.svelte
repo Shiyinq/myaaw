@@ -2034,7 +2034,7 @@
      the transcript on a touch screen. -->
 {#snippet railCard()}
 	<div
-		class="relative w-64 rounded-xl border bg-popover p-1.5 shadow-lg glass:bg-popover/85 glass:backdrop-blur-2xl"
+		class="relative w-64 rounded-xl border bg-popover p-1.5 shadow-lg glass-popover"
 		transition:fade={{ duration: 150 }}
 		role="presentation"
 		onclick={(event) => event.stopPropagation()}
@@ -2577,7 +2577,7 @@
 								<div
 									role="group"
 									class={[
-										'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60 terminal:rounded-none glass:bg-card/65 glass:shadow-lg glass:backdrop-blur-xl',
+										'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60 terminal:rounded-none glass-card',
 										dragOver ? 'border-ring ring-2 ring-ring/30' : ''
 									]}
 									ondragover={(event) => {
@@ -2750,7 +2750,7 @@
 											</button>
 											{#if openStats && sessionStats}
 												<div
-													class="absolute bottom-full left-0 z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md glass:bg-popover/90 glass:backdrop-blur-2xl sm:left-1/2 sm:-translate-x-1/2"
+													class="absolute bottom-full left-0 z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md glass-popover sm:left-1/2 sm:-translate-x-1/2"
 													onclick={(event) => event.stopPropagation()}
 													role="presentation"
 												>
@@ -2815,7 +2815,7 @@
 												</button>
 												{#if openUsage && sessionStats}
 													<div
-														class="absolute right-0 bottom-full z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md glass:bg-popover/90 glass:backdrop-blur-2xl sm:right-auto sm:left-1/2 sm:-translate-x-1/2"
+														class="absolute right-0 bottom-full z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md glass-popover sm:right-auto sm:left-1/2 sm:-translate-x-1/2"
 														onclick={(event) => event.stopPropagation()}
 														role="presentation"
 													>
@@ -2884,7 +2884,7 @@
 			onclick={toggleHistory}
 		></button>
 		<aside
-			class="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[85vw] flex-col border-l bg-card lg:static glass:bg-card/75 glass:backdrop-blur-2xl lg:z-auto lg:h-full lg:max-w-none"
+			class="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[85vw] flex-col border-l bg-card lg:static glass-drawer lg:z-auto lg:h-full lg:max-w-none"
 		>
 			<div class="flex shrink-0 items-center gap-2 border-b p-2">
 				<div class="relative min-w-0 flex-1">

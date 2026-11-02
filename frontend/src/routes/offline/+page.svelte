@@ -6,9 +6,7 @@
 	const { t } = useTranslation();
 </script>
 
-<div
-	class="min-h-screen flex flex-col items-center justify-center bg-background glass:bg-transparent px-4"
->
+<div class="min-h-screen flex flex-col items-center justify-center bg-background glass-clear px-4">
 	<div class="text-center max-w-md w-full">
 		<WifiOff class="mx-auto h-24 w-24 text-muted-foreground mb-6" />
 		<h1 class="text-3xl font-bold text-foreground mb-4">{t('offline.title')}</h1>

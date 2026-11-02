@@ -16,13 +16,11 @@
 
 /*
  * Named themes (glass, carbon, terminal, paper, blueprint) are a `data-theme`
- * value that mode-watcher writes to <html> next to the `dark` class. Their CSS
- * blocks only change tokens, the page background or the typeface, so most
- * themes need no markup changes. Two of them additionally need per-element
- * presentation: `glass` is translucent, and `terminal` re-reads the chat
- * transcript as a shell session.
+ * value that mode-watcher writes to <html> next to the `dark` class. They change
+ * tokens, the page background, the typeface, or — for glass — a named surface
+ * class, so adding a theme rarely touches the components. Only `terminal`
+ * needs a variant, because it re-reads the chat transcript per element.
  */
-@custom-variant glass (&:where([data-theme='glass'], [data-theme='glass'] *));
 @custom-variant terminal (&:where([data-theme='terminal'], [data-theme='terminal'] *));
 
 @theme {
@@ -351,6 +349,54 @@
 		background-size: 24px 24px;
 		background-attachment: fixed;
 	}
+}
+
+/*
+ * Glass surfaces. Only this theme is translucent, and the recipes used to be
+ * repeated at every call site with drifting alphas. Each kind of sheet now has
+ * one class that describes its material, so a component keeps the opaque `bg-*`
+ * it needs for every other theme and adds the class for glass. These rules are
+ * intentionally unlayered: an unlayered declaration outranks the layered `bg-*`
+ * utility on the same element, which is exactly the override we want.
+ */
+[data-theme='glass'] .glass-aside {
+	background-color: color-mix(in oklab, var(--card) 55%, transparent);
+	-webkit-backdrop-filter: blur(24px);
+	backdrop-filter: blur(24px);
+}
+
+[data-theme='glass'] .glass-card {
+	background-color: color-mix(in oklab, var(--card) 70%, transparent);
+	background-image: linear-gradient(
+		to bottom,
+		color-mix(in oklab, white 5%, transparent),
+		transparent
+	);
+	-webkit-backdrop-filter: blur(24px);
+	backdrop-filter: blur(24px);
+}
+
+[data-theme='glass'] .glass-popover {
+	background-color: color-mix(in oklab, var(--popover) 85%, transparent);
+	-webkit-backdrop-filter: blur(40px);
+	backdrop-filter: blur(40px);
+}
+
+[data-theme='glass'] .glass-drawer {
+	background-color: color-mix(in oklab, var(--card) 65%, transparent);
+	-webkit-backdrop-filter: blur(40px);
+	backdrop-filter: blur(40px);
+}
+
+[data-theme='glass'] .glass-chrome {
+	background-color: color-mix(in oklab, var(--background) 60%, transparent);
+	-webkit-backdrop-filter: blur(24px);
+	backdrop-filter: blur(24px);
+}
+
+/* Full-bleed screens let the page aura show through instead of painting a sheet. */
+[data-theme='glass'] .glass-clear {
+	background-color: transparent;
 }
 
 @layer base {

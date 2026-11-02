@@ -540,7 +540,7 @@
 
 <div
 	class={[
-		'h-dvh bg-background glass:bg-transparent transition-[padding] duration-200',
+		'h-dvh bg-background glass-clear transition-[padding] duration-200',
 		sidebar.collapsed ? 'md:pl-16' : 'md:pl-60'
 	]}
 >
@@ -557,7 +557,7 @@
 	<aside
 		inert={!wide && !drawerOpen}
 		class={[
-			'fixed inset-y-0 left-0 z-50 flex w-64 max-w-[80vw] flex-col border-r bg-card shadow-xl glass:bg-card/60 glass:backdrop-blur-2xl transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
+			'fixed inset-y-0 left-0 z-50 flex w-64 max-w-[80vw] flex-col border-r bg-card shadow-xl glass-drawer transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
 			drawerOpen ? 'translate-x-0' : '-translate-x-full',
 			compactSidebar ? 'md:w-16' : 'md:w-60'
 		]}
@@ -571,7 +571,7 @@
 				</div>
 			</div>
 			<button
-				class="absolute top-4 -right-3 z-50 flex h-6 w-6 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-sm glass:bg-card/80 glass:backdrop-blur transition-colors hover:bg-muted hover:text-foreground"
+				class="absolute top-4 -right-3 z-50 flex h-6 w-6 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-sm glass-card transition-colors hover:bg-muted hover:text-foreground"
 				onclick={() => sidebar.toggle()}
 				title={t('myaaw.sidebar.expand')}
 				aria-label={t('myaaw.sidebar.expand')}
@@ -723,9 +723,7 @@
 	</aside>
 
 	<div class="flex h-dvh flex-col">
-		<header
-			class="shrink-0 border-b bg-background/80 backdrop-blur glass:bg-background/60 glass:backdrop-blur-xl"
-		>
+		<header class="shrink-0 border-b bg-background/80 backdrop-blur glass-chrome">
 			<div class="flex h-14 items-center gap-2 px-2 sm:gap-3 sm:px-4">
 				<!-- Phones reach the whole navigation through the drawer; from md up the
 				     sidebar is always on screen, so the button is not rendered there. -->

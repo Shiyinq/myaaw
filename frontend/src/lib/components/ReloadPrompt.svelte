@@ -17,7 +17,7 @@
 
 {#if $needRefresh}
 	<div
-		class="fixed bottom-6 right-6 bg-card text-card-foreground glass:bg-card/80 glass:backdrop-blur-xl p-4 rounded-xl shadow-lg z-50 border border-border"
+		class="fixed bottom-6 right-6 bg-card glass-card text-card-foreground p-4 rounded-xl shadow-lg z-50 border border-border"
 	>
 		<p class="font-medium">{t('pwa.newVersion')}</p>
 		<div class="flex gap-2 mt-4 justify-end">
