@@ -17,6 +17,8 @@ export interface Preferences {
 	density: Density;
 	textScale: number;
 	reduceMotion: boolean;
+	/** Chat-first shell: the sidebar becomes an agent picker plus the chat list. */
+	simpleMode: boolean;
 	sendKey: SendKey;
 	autoScroll: boolean;
 	steps: StepDisplay;
@@ -37,6 +39,7 @@ const DEFAULTS: Preferences = {
 	density: 'comfortable',
 	textScale: 100,
 	reduceMotion: false,
+	simpleMode: false,
 	sendKey: 'enter',
 	autoScroll: true,
 	steps: 'summary',
@@ -70,6 +73,7 @@ function load(): Preferences {
 			density: parsed.density === 'compact' ? 'compact' : 'comfortable',
 			textScale: Math.min(125, Math.max(100, Math.round(Number(parsed.textScale) || 100))),
 			reduceMotion: parsed.reduceMotion === true,
+			simpleMode: parsed.simpleMode === true,
 			sendKey: parsed.sendKey === 'mod-enter' ? 'mod-enter' : 'enter',
 			autoScroll: parsed.autoScroll !== false,
 			steps: parsed.steps === 'expanded' ? 'expanded' : 'summary',

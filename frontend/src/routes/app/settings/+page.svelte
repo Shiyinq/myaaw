@@ -202,6 +202,15 @@
 					{/each}
 				</div>
 			</div>
+
+			<div class="grid gap-2 border-t pt-5">
+				{@render toggle(
+					t('myaaw.settings.simple_mode'),
+					t('myaaw.settings.simple_mode_desc'),
+					preferences.value.simpleMode,
+					(next) => preferences.update({ simpleMode: next })
+				)}
+			</div>
 		</CardContent>
 	</Card>
 

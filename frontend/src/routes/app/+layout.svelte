@@ -38,6 +38,7 @@
 		agentSelection,
 		authStore,
 		commandPalette,
+		conversationHistory,
 		shortcutHelp,
 		sidebar,
 		toastStore,
@@ -51,6 +52,7 @@
 	import { server as serverApi } from '$lib/apis/server';
 	import { getErrorMessage } from '$lib/utils/api';
 	import AgentPicker from '$lib/components/app/AgentPicker.svelte';
+	import ConversationList from '$lib/components/app/ConversationList.svelte';
 	import Logo from '$lib/components/common/Logo.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ShortcutHelp from '$lib/components/app/ShortcutHelp.svelte';
@@ -60,6 +62,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { theme, userPrefersMode } from 'mode-watcher';
 	import { APPEARANCE, applyAppearance, isAppearanceActive } from '$lib/theme';
+	import { preferences } from '$lib/stores/preferences.svelte';
 
 	interface Props {
 		children: import('svelte').Snippet;
@@ -74,7 +77,16 @@
 	// state, so a phone ignores a collapse that was chosen on a wide screen.
 	let drawerOpen = $state(false);
 	let wide = $state(false);
-	let compactSidebar = $derived(sidebar.collapsed && wide);
+	// Simple mode is a chat-first shell: no Fleet shortcut, no page groups, and a
+	// chat list under the agent picker. It always uses the wide sidebar because a
+	// list of titles cannot fit in the icon rail.
+	let simpleMode = $derived(preferences.value.simpleMode);
+	let compactSidebar = $derived(sidebar.collapsed && wide && !simpleMode);
+	let activeConversation = $derived(page.params.conversation ?? '');
+
+	// The chat list belongs to the shell, so the chat page's history panel and the
+	// simple-mode sidebar share one fetch (see stores/conversationHistory).
+	conversationHistory.init();
 
 	$effect(() => {
 		if (typeof window === 'undefined') return;
@@ -541,7 +553,7 @@
 <div
 	class={[
 		'h-dvh bg-background page-clear transition-[padding] duration-200',
-		sidebar.collapsed ? 'md:pl-16' : 'md:pl-60'
+		compactSidebar ? 'md:pl-16' : 'md:pl-60'
 	]}
 >
 	{#if drawerOpen}
@@ -592,15 +604,17 @@
 						Control plane
 					</span>
 				</div>
-				<button
-					class="ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:flex"
-					onclick={() => sidebar.toggle()}
-					title={t('myaaw.sidebar.collapse')}
-					aria-label={t('myaaw.sidebar.collapse')}
-					aria-keyshortcuts="Control+\\ Meta+\\"
-				>
-					<PanelLeftClose class="h-4 w-4" />
-				</button>
+				{#if !simpleMode}
+					<button
+						class="ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:flex"
+						onclick={() => sidebar.toggle()}
+						title={t('myaaw.sidebar.collapse')}
+						aria-label={t('myaaw.sidebar.collapse')}
+						aria-keyshortcuts="Control+\\ Meta+\\"
+					>
+						<PanelLeftClose class="h-4 w-4" />
+					</button>
+				{/if}
 				<button
 					class="ml-auto flex w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
 					onclick={() => (drawerOpen = false)}
@@ -613,28 +627,30 @@
 		{/if}
 
 		<!-- Fleet overview lives outside the agent scope, above the picker. -->
-		<div class={compactSidebar ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
-			<a
-				href={fleet.href}
-				title={compactSidebar ? t(fleet.label) : undefined}
-				aria-current={isActive(fleet.href) ? 'page' : undefined}
-				class={[
-					'relative flex items-center rounded-md text-sm transition-colors list-row',
-					compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
-					isActive(fleet.href)
-						? 'bg-accent font-medium text-accent-foreground'
-						: 'text-muted-foreground hover:bg-muted hover:text-foreground'
-				]}
-			>
-				{#if compactSidebar && isActive(fleet.href)}
-					<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
-				{/if}
-				<Boxes class="h-4 w-4 shrink-0" />
-				{#if !compactSidebar}
-					<span class="truncate">{t(fleet.label)}</span>
-				{/if}
-			</a>
-		</div>
+		{#if !simpleMode}
+			<div class={compactSidebar ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
+				<a
+					href={fleet.href}
+					title={compactSidebar ? t(fleet.label) : undefined}
+					aria-current={isActive(fleet.href) ? 'page' : undefined}
+					class={[
+						'relative flex items-center rounded-md text-sm transition-colors list-row',
+						compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
+						isActive(fleet.href)
+							? 'bg-accent font-medium text-accent-foreground'
+							: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+					]}
+				>
+					{#if compactSidebar && isActive(fleet.href)}
+						<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
+					{/if}
+					<Boxes class="h-4 w-4 shrink-0" />
+					{#if !compactSidebar}
+						<span class="truncate">{t(fleet.label)}</span>
+					{/if}
+				</a>
+			</div>
+		{/if}
 
 		<div class={compactSidebar ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
 			{#if compactSidebar}
@@ -674,44 +690,57 @@
 			{/if}
 		</div>
 
-		<nav class={['flex-1 overflow-y-auto', compactSidebar ? 'space-y-2 p-2' : 'space-y-5 p-3']}>
-			{#each nav as group, groupIndex (group.label)}
-				<div class="space-y-1">
-					{#if !compactSidebar}
-						<p
-							class="px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
-						>
-							{t(group.label)}
-						</p>
-					{:else if groupIndex > 0}
-						<div class="mx-auto my-2 h-px w-6 bg-border"></div>
-					{/if}
-					{#each group.items as item (item.href)}
-						{@const Icon = item.icon}
-						<a
-							href={item.href}
-							title={compactSidebar ? t(item.label) : undefined}
-							aria-current={isActive(item.href) ? 'page' : undefined}
-							class={[
-								'relative flex items-center rounded-md text-sm transition-colors list-row',
-								compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
-								isActive(item.href)
-									? 'bg-accent font-medium text-accent-foreground'
-									: 'text-muted-foreground hover:bg-muted hover:text-foreground'
-							]}
-						>
-							{#if compactSidebar && isActive(item.href)}
-								<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
-							{/if}
-							<Icon class="h-4 w-4 shrink-0" />
-							{#if !compactSidebar}
-								<span class="truncate">{t(item.label)}</span>
-							{/if}
-						</a>
-					{/each}
-				</div>
-			{/each}
-		</nav>
+		{#if simpleMode}
+			<div class="flex min-h-0 flex-1 flex-col">
+				<ConversationList
+					activeId={activeConversation}
+					onOpen={(id) => void goto(`/app/chat/${id}`)}
+					onNew={() => void goto('/app/chat?new=1')}
+					onDeleted={(id) => {
+						if (id === activeConversation) void goto('/app/chat?new=1');
+					}}
+				/>
+			</div>
+		{:else}
+			<nav class={['flex-1 overflow-y-auto', compactSidebar ? 'space-y-2 p-2' : 'space-y-5 p-3']}>
+				{#each nav as group, groupIndex (group.label)}
+					<div class="space-y-1">
+						{#if !compactSidebar}
+							<p
+								class="px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+							>
+								{t(group.label)}
+							</p>
+						{:else if groupIndex > 0}
+							<div class="mx-auto my-2 h-px w-6 bg-border"></div>
+						{/if}
+						{#each group.items as item (item.href)}
+							{@const Icon = item.icon}
+							<a
+								href={item.href}
+								title={compactSidebar ? t(item.label) : undefined}
+								aria-current={isActive(item.href) ? 'page' : undefined}
+								class={[
+									'relative flex items-center rounded-md text-sm transition-colors list-row',
+									compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
+									isActive(item.href)
+										? 'bg-accent font-medium text-accent-foreground'
+										: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+								]}
+							>
+								{#if compactSidebar && isActive(item.href)}
+									<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
+								{/if}
+								<Icon class="h-4 w-4 shrink-0" />
+								{#if !compactSidebar}
+									<span class="truncate">{t(item.label)}</span>
+								{/if}
+							</a>
+						{/each}
+					</div>
+				{/each}
+			</nav>
+		{/if}
 
 		<div class={compactSidebar ? 'shrink-0 border-t p-2' : 'shrink-0 border-t p-3'}>
 			{#if compactSidebar}

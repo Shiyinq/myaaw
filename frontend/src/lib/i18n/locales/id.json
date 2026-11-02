@@ -490,7 +490,9 @@
 			"notify_sound_ping": "Ping",
 			"notify_sound_triple": "Tiga Nada",
 			"notify_sound_doorbell": "Bel Pintu",
-			"notify_sound_marimba": "Marimba"
+			"notify_sound_marimba": "Marimba",
+			"simple_mode": "Mode sederhana",
+			"simple_mode_desc": "Ubah sidebar menjadi daftar chat dengan pemilih agen, lalu sembunyikan pintasan Fleet dan kelompok halaman."
 		},
 		"terminal": {
 			"title": "Terminal",

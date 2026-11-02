@@ -2,6 +2,7 @@ export * from './accessToken.svelte';
 export * from './authStatus.svelte';
 export * from './auth.svelte';
 export * from './commandPalette.svelte';
+export * from './conversationHistory.svelte';
 
 export * from './global.svelte';
 export * from './preferences.svelte';

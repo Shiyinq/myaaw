@@ -490,7 +490,9 @@
 			"notify_sound_ping": "Ping",
 			"notify_sound_triple": "Triple",
 			"notify_sound_doorbell": "Doorbell",
-			"notify_sound_marimba": "Marimba"
+			"notify_sound_marimba": "Marimba",
+			"simple_mode": "Simple mode",
+			"simple_mode_desc": "Turn the sidebar into the chat list with an agent picker, and hide the Fleet shortcut and the page groups."
 		},
 		"terminal": {
 			"title": "Terminal",

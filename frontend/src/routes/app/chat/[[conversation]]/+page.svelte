@@ -9,7 +9,7 @@
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
 	import { files as filesApi } from '$lib/apis/files';
 	import { observability as observabilityApi } from '$lib/apis/observability';
-	import { agentSelection, toastStore, topBarTitle } from '$lib/stores';
+	import { agentSelection, conversationHistory, toastStore, topBarTitle } from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import { chatRuns, type ChatItem, type ChatRun } from '$lib/stores/chatRuns.svelte';
 	import { tts } from '$lib/speech/tts.svelte';
@@ -18,7 +18,7 @@
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import { askConfirm } from '$lib/stores/confirm.svelte';
+	import ConversationList from '$lib/components/app/ConversationList.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
@@ -31,12 +31,10 @@
 	import { theme } from 'mode-watcher';
 	import { isFrosted } from '$lib/theme';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Input } from '$lib/components/ui/input';
 	import {
 		AlertTriangle,
 		ArrowDownToLine,
 		Brain,
-		Check,
 		ChevronDown,
 		Clock,
 		Code,
@@ -57,12 +55,10 @@
 		Paperclip,
 		Pencil,
 		RotateCcw,
-		Search,
 		Send,
 		ShieldAlert,
 		Square,
 		SquareTerminal,
-		Trash2,
 		Users,
 		Wrench,
 		X
@@ -70,7 +66,6 @@
 	import type {
 		ApprovalDecision,
 		Attachment,
-		ConversationSummary,
 		ConversationTurn,
 		Message,
 		Upload,
@@ -147,6 +142,9 @@
 	]);
 
 	let agent = $derived(agentSelection.selected);
+	// The simple shell already carries the chat list and a new-chat action, so the
+	// page hides its own copies and never opens the duplicate history panel.
+	let simpleMode = $derived(preferences.value.simpleMode);
 	let conversationId = $state('');
 	// A run of the open conversation keeps streaming while the user is elsewhere;
 	// the page only renders whatever the store currently holds.
@@ -311,7 +309,6 @@
 	let openGroup = $derived(activeRun?.openGroup ?? '');
 
 	// Conversation history sidebar
-	const HISTORY_LIMIT = 20;
 	// Messages fetched per transcript page; scrolling to the top fetches the page
 	// before the loaded one.
 	const PAGE_SIZE = 20;
@@ -321,27 +318,7 @@
 	let historyOpen = $state(
 		browser ? window.innerWidth >= 1024 && localStorage.getItem(HISTORY_KEY) !== 'false' : false
 	);
-	let history = $state<ConversationSummary[]>([]);
-	// Conversations whose run is still streaming in the background. The open one
-	// is skipped: its own timeline already shows the progress.
-	let streamingConversations = $derived(
-		new Set(
-			chatRuns
-				.all()
-				.filter((run) => run.streaming && run.agent === agent && run.conversationId !== '')
-				.map((run) => run.conversationId)
-		)
-	);
-	let historyOffset = $state(0);
-	let historyHasMore = $state(false);
-	let historyLoading = $state(false);
-	let historySearch = $state('');
-	let historyQuery = $state('');
-	let historyKey = '';
-	let chatAgentKey = '';
 	let searchBox = $state<HTMLInputElement | null>(null);
-	let editingId = $state('');
-	let editingTitle = $state('');
 
 	function scrollToBottom() {
 		stickToBottom = true;
@@ -549,10 +526,10 @@
 		const previous = runningCount;
 		runningCount = running;
 		if (previous > running && previous >= 0) {
-			void loadHistory(true);
+			conversationHistory.refresh();
 			// The title comes from a background LLM call that runs after the answer,
 			// so the first refresh usually still shows "New Chat".
-			setTimeout(() => void loadHistory(true), 4000);
+			setTimeout(() => conversationHistory.refresh(), 4000);
 		}
 	});
 
@@ -706,7 +683,7 @@
 		if (conversationId !== id) return; // Another conversation won.
 		topBarTitle.set(title);
 		// Keep the history entry in step with the bar without reloading the list.
-		history = history.map((item) => (item.id === id ? { ...item, title } : item));
+		conversationHistory.update(id, title);
 	}
 
 	function stopTitlePolling() {
@@ -834,6 +811,7 @@
 	}
 
 	// Switching the agent must not keep showing the previous agent's transcript.
+	let chatAgentKey = '';
 	$effect(() => {
 		const currentAgent = agentSelection.selected;
 		if (!currentAgent) return;
@@ -925,7 +903,7 @@
 				conversationId = id;
 				loadKey = `${agent}:${id}`;
 				rememberConversation(id);
-				void loadHistory(true);
+				conversationHistory.refresh();
 				void goto(`/app/chat/${id}`, { replaceState: true, noScroll: true });
 			},
 			onDone: (run: ChatRun) => {
@@ -1391,116 +1369,9 @@
 	}
 
 	function toggleHistory() {
+		if (simpleMode) return;
 		historyOpen = !historyOpen;
 		if (browser) localStorage.setItem(HISTORY_KEY, String(historyOpen));
-	}
-
-	async function loadHistory(reset = false) {
-		if (!agent || historyLoading) return;
-		historyLoading = true;
-		try {
-			const offset = reset ? 0 : historyOffset;
-			const result = await conversationsApi.list(agent, {
-				search: historyQuery || undefined,
-				limit: HISTORY_LIMIT,
-				offset
-			});
-			const pageItems = result.conversations ?? [];
-			if (reset) {
-				history = pageItems;
-			} else {
-				const known = new Set(history.map((item) => item.id));
-				history = [...history, ...pageItems.filter((item) => !known.has(item.id))];
-			}
-			historyOffset = offset + pageItems.length;
-			historyHasMore = pageItems.length > 0 && result.has_more;
-		} catch (err) {
-			toastStore.error(getErrorMessage(err));
-		} finally {
-			historyLoading = false;
-		}
-	}
-
-	function loadMoreHistory() {
-		if (!historyHasMore || historyLoading) return;
-		void loadHistory(false);
-	}
-
-	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		if (!currentAgent) return;
-		const key = `${currentAgent}:${historyQuery}`;
-		if (historyKey === key) return;
-		historyKey = key;
-		history = [];
-		historyOffset = 0;
-		historyHasMore = false;
-		void loadHistory(true);
-	});
-
-	// Debounce the search box so typing does not hit the API on every keystroke.
-	$effect(() => {
-		const value = historySearch.trim();
-		if (value === historyQuery) return;
-		const timer = setTimeout(() => (historyQuery = value), 300);
-		return () => clearTimeout(timer);
-	});
-
-	function infinite(node: HTMLElement) {
-		const observer = new IntersectionObserver(
-			(entries) => {
-				if (entries.some((entry) => entry.isIntersecting)) loadMoreHistory();
-			},
-			{ rootMargin: '160px' }
-		);
-		observer.observe(node);
-		return { destroy: () => observer.disconnect() };
-	}
-
-	function startRename(item: ConversationSummary) {
-		editingId = item.id;
-		editingTitle = item.title;
-	}
-
-	async function saveRename() {
-		if (!agent || !editingId) return;
-		const title = editingTitle.trim();
-		if (!title) return;
-		try {
-			await conversationsApi.rename(agent, editingId, title);
-			history = history.map((item) => (item.id === editingId ? { ...item, title } : item));
-			if (editingId === conversationId) {
-				stopTitlePolling();
-				topBarTitle.set(title);
-			}
-			editingId = '';
-			toastStore.success(t('myaaw.conversations.renamed'));
-		} catch (err) {
-			toastStore.error(getErrorMessage(err));
-		}
-	}
-
-	async function removeHistory(item: ConversationSummary) {
-		if (!agent) return;
-		if (
-			!(await askConfirm({
-				message: t('myaaw.conversations.delete_confirm'),
-				variant: 'destructive'
-			}))
-		)
-			return;
-		try {
-			await conversationsApi.remove(agent, item.id);
-			history = history.filter((entry) => entry.id !== item.id);
-			historyOffset = Math.max(0, historyOffset - 1);
-			toastStore.success(t('myaaw.conversations.deleted'));
-			if (item.id === conversationId) {
-				resetChat();
-				await goto('/app/chat');
-			}
-		} catch (err) {
-			toastStore.error(getErrorMessage(err));
-		}
 	}
 
 	function openConversation(id: string) {
@@ -1508,16 +1379,16 @@
 		if (id !== conversationId) void goto(`/app/chat/${id}`);
 	}
 
-	function formatWhen(value?: string) {
-		if (!value) return '';
-		const date = new Date(value);
-		if (Number.isNaN(date.getTime())) return '';
-		return date.toLocaleString(undefined, {
-			month: 'short',
-			day: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit'
-		});
+	function onHistoryDeleted(id: string) {
+		if (id !== conversationId) return;
+		resetChat();
+		void goto('/app/chat');
+	}
+
+	function onHistoryRenamed(id: string, title: string) {
+		if (id !== conversationId) return;
+		stopTitlePolling();
+		topBarTitle.set(title);
 	}
 
 	function messageText(message: Message): string {
@@ -2320,21 +2191,23 @@
 
 <TopBarActions id="chat-actions">
 	{#snippet children()}
-		<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
-		<Button
-			variant="outline"
-			size="icon-sm"
-			onclick={toggleHistory}
-			title={`${historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')} (${formatShortcut('mod+shift+h')})`}
-			aria-label={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
-			aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
-		>
-			{#if historyOpen}
-				<PanelRightClose class="h-4 w-4" />
-			{:else}
-				<PanelRightOpen class="h-4 w-4" />
-			{/if}
-		</Button>
+		{#if !simpleMode}
+			<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
+			<Button
+				variant="outline"
+				size="icon-sm"
+				onclick={toggleHistory}
+				title={`${historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')} (${formatShortcut('mod+shift+h')})`}
+				aria-label={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
+				aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
+			>
+				{#if historyOpen}
+					<PanelRightClose class="h-4 w-4" />
+				{:else}
+					<PanelRightOpen class="h-4 w-4" />
+				{/if}
+			</Button>
+		{/if}
 	{/snippet}
 </TopBarActions>
 
@@ -3170,7 +3043,7 @@
 		{/if}
 	</div>
 
-	{#if agent && historyOpen}
+	{#if agent && historyOpen && !simpleMode}
 		<!-- Drawer on small screens, a static third column from lg up. -->
 		<button
 			type="button"
@@ -3181,135 +3054,14 @@
 		<aside
 			class="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[85vw] flex-col border-l bg-card lg:static frost-drawer lg:z-auto lg:h-full lg:max-w-none"
 		>
-			<div class="flex shrink-0 items-center gap-2 border-b p-2">
-				<div class="relative min-w-0 flex-1">
-					<Search
-						class="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
-					/>
-					<Input
-						bind:ref={searchBox}
-						bind:value={historySearch}
-						placeholder={t('myaaw.conversations.search')}
-						class="h-8 pl-7 text-xs"
-						aria-label={t('myaaw.conversations.search')}
-						aria-keyshortcuts="Control+Shift+S Meta+Shift+S"
-					/>
-				</div>
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					class="shrink-0 lg:hidden"
-					onclick={toggleHistory}
-					aria-label={t('myaaw.chat.history_hide')}
-					title={t('myaaw.chat.history_hide')}
-				>
-					<X class="h-4 w-4" />
-				</Button>
-			</div>
-
-			<div class="min-h-0 flex-1 overflow-y-auto p-2">
-				{#if historyLoading && history.length === 0}
-					<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
-				{:else if history.length === 0}
-					<p class="px-2 py-3 text-xs text-muted-foreground">
-						{historyQuery ? t('myaaw.chat.history_no_results') : t('myaaw.chat.history_empty')}
-					</p>
-				{/if}
-
-				{#each history as entry (entry.id)}
-					<div
-						class={[
-							'group/entry rounded-md transition-colors list-row',
-							entry.id === conversationId ? 'bg-accent' : 'hover:bg-muted'
-						]}
-						aria-current={entry.id === conversationId ? 'true' : undefined}
-					>
-						{#if editingId === entry.id}
-							<div class="flex items-center gap-1 p-1">
-								<Input
-									bind:value={editingTitle}
-									class="h-7 text-xs"
-									onkeydown={(event) => {
-										if (event.key === 'Enter') void saveRename();
-										if (event.key === 'Escape') editingId = '';
-									}}
-								/>
-								<Button
-									size="icon-xs"
-									variant="secondary"
-									onclick={saveRename}
-									aria-label={t('common.save')}
-								>
-									<Check class="h-3 w-3" />
-								</Button>
-								<Button
-									size="icon-xs"
-									variant="ghost"
-									onclick={() => (editingId = '')}
-									aria-label={t('common.cancel')}
-								>
-									<X class="h-3 w-3" />
-								</Button>
-							</div>
-						{:else}
-							<div class="flex items-start gap-1 p-1">
-								<button
-									class="min-w-0 flex-1 rounded px-1 py-0.5 text-left"
-									onclick={() => openConversation(entry.id)}
-								>
-									<span class="flex items-center gap-1.5">
-										{#if streamingConversations.has(entry.id) && entry.id !== conversationId}
-											<!-- A run left in the background keeps going; flag it until it is
-											     opened, where the live stream itself shows the progress. -->
-											<Loader2
-												class="h-3 w-3 shrink-0 animate-spin text-muted-foreground"
-												aria-label={t('myaaw.chat.streaming')}
-												data-streaming="true"
-											/>
-										{/if}
-										<span class="min-w-0 truncate text-xs font-medium">
-											{entry.title || entry.id.slice(0, 12)}
-										</span>
-									</span>
-									<span class="mt-0.5 block truncate text-[10px] text-muted-foreground">
-										{formatWhen(entry.updated_at)} · {t('myaaw.conversations.messages', {
-											count: entry.message_count
-										})}
-									</span>
-								</button>
-								<div
-									class="pointer-events-none flex shrink-0 opacity-0 transition-opacity group-hover/entry:pointer-events-auto group-hover/entry:opacity-100 group-focus-within/entry:pointer-events-auto group-focus-within/entry:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
-								>
-									<Button
-										variant="ghost"
-										size="icon-xs"
-										onclick={() => startRename(entry)}
-										aria-label={t('myaaw.chat.rename')}
-									>
-										<Pencil class="h-3 w-3" />
-									</Button>
-									<Button
-										variant="ghost"
-										size="icon-xs"
-										onclick={() => removeHistory(entry)}
-										aria-label={t('common.delete')}
-									>
-										<Trash2 class="h-3 w-3 text-destructive" />
-									</Button>
-								</div>
-							</div>
-						{/if}
-					</div>
-				{/each}
-
-				{#if historyHasMore}
-					<div use:infinite class="flex justify-center py-3">
-						{#if historyLoading}
-							<Loader2 class="h-4 w-4 animate-spin text-muted-foreground" />
-						{/if}
-					</div>
-				{/if}
-			</div>
+			<ConversationList
+				activeId={conversationId}
+				onOpen={openConversation}
+				onClose={toggleHistory}
+				onDeleted={onHistoryDeleted}
+				onRenamed={onHistoryRenamed}
+				bind:searchInput={searchBox}
+			/>
 		</aside>
 	{/if}
 </div>
