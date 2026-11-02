@@ -9,6 +9,12 @@ export type AudioLanguage = 'app' | 'id' | 'en';
 export type SpeechLanguage = AudioLanguage | 'auto';
 
 /**
+ * Which shell the app renders: the full navigation, the chat-first layout, or
+ * the minimal focus layout meant for a single agent.
+ */
+export type ShellMode = 'standard' | 'simple' | 'focus';
+
+/**
  * Per-browser preferences that are not a theme: how dense the lists are, how
  * large the type is, and how the chat composer behaves. Themes live in
  * `lib/theme.ts`; this file only holds the knobs that are not colours.
@@ -18,7 +24,9 @@ export interface Preferences {
 	textScale: number;
 	reduceMotion: boolean;
 	/** Chat-first shell: the sidebar becomes an agent picker plus the chat list. */
-	simpleMode: boolean;
+	shellMode: ShellMode;
+	/** Agent used by focus mode; empty falls back to the default agent. */
+	focusAgent: string;
 	sendKey: SendKey;
 	autoScroll: boolean;
 	steps: StepDisplay;
@@ -39,7 +47,8 @@ const DEFAULTS: Preferences = {
 	density: 'comfortable',
 	textScale: 100,
 	reduceMotion: false,
-	simpleMode: false,
+	shellMode: 'standard',
+	focusAgent: '',
 	sendKey: 'enter',
 	autoScroll: true,
 	steps: 'summary',
@@ -62,6 +71,15 @@ function speechLanguage(value: unknown): SpeechLanguage {
 	return value === 'app' || value === 'id' || value === 'en' ? value : 'auto';
 }
 
+/**
+ * Reads the shell mode, migrating the old boolean that only knew simple mode.
+ */
+function shellMode(parsed: Partial<Preferences> & { simpleMode?: unknown }): ShellMode {
+	if (parsed.shellMode === 'simple' || parsed.shellMode === 'focus') return parsed.shellMode;
+	if (parsed.shellMode === 'standard') return 'standard';
+	return parsed.simpleMode === true ? 'simple' : 'standard';
+}
+
 /** Reads the stored preferences, dropping unknown or malformed values. */
 function load(): Preferences {
 	if (!browser) return { ...DEFAULTS };
@@ -73,7 +91,8 @@ function load(): Preferences {
 			density: parsed.density === 'compact' ? 'compact' : 'comfortable',
 			textScale: Math.min(125, Math.max(100, Math.round(Number(parsed.textScale) || 100))),
 			reduceMotion: parsed.reduceMotion === true,
-			simpleMode: parsed.simpleMode === true,
+			shellMode: shellMode(parsed),
+			focusAgent: typeof parsed.focusAgent === 'string' ? parsed.focusAgent : '',
 			sendKey: parsed.sendKey === 'mod-enter' ? 'mod-enter' : 'enter',
 			autoScroll: parsed.autoScroll !== false,
 			steps: parsed.steps === 'expanded' ? 'expanded' : 'summary',

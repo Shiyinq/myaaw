@@ -508,8 +508,13 @@
 			"notify_sound_triple": "Triple",
 			"notify_sound_doorbell": "Doorbell",
 			"notify_sound_marimba": "Marimba",
-			"simple_mode": "Simple mode",
-			"simple_mode_desc": "Turn the sidebar into the chat list with an agent picker. Turn it off for standard mode and the full navigation."
+			"shell_mode": "Shell",
+			"shell_mode_desc": "Pick how much navigation the app shows: everything (standard), a chat list in the sidebar (simple), or one agent with a minimal rail (focus).",
+			"mode_standard": "Standard",
+			"mode_simple": "Simple",
+			"mode_focus": "Focus",
+			"focus_agent": "Focus agent",
+			"focus_agent_desc": "The only agent this mode shows. Everything else stays out of the way."
 		},
 		"terminal": {
 			"title": "Terminal",
@@ -711,6 +716,28 @@
 			"delete_confirm": "Remove {name}?",
 			"enabled_ok": "{name} enabled",
 			"disabled_ok": "{name} disabled"
+		},
+		"plugins": {
+			"title": "Plugins",
+			"subtitle": "The skills, tools, and connections this agent can use.",
+			"intro": "Everything this agent can do, in one place.",
+			"agent": "Agent: {name}",
+			"search": "Search skills, tools, and connections",
+			"skills": "Skills",
+			"skills_desc": "Extra know-how the agent loads when a task needs it.",
+			"tools": "Built-in tools",
+			"tools_desc": "Everyday actions like files, terminal, and browsing.",
+			"custom": "Custom tools",
+			"custom_desc": "Commands added for this agent.",
+			"mcp": "MCP connections",
+			"mcp_desc": "External servers that bring in more tools.",
+			"active": "Active",
+			"off": "Off",
+			"count_active": "{active} of {total} active",
+			"empty": "Nothing here yet.",
+			"no_results": "No matches.",
+			"tag_custom": "custom",
+			"tag_mcp": "MCP"
 		},
 		"contacts": {
 			"title": "Contacts",
@@ -947,8 +974,27 @@
 			"restart_agent": "Restart {name}",
 			"group_appearance": "Appearance",
 			"group_language": "Language",
-			"simple_mode_enable": "Simple Mode",
-			"simple_mode_disable": "Standard Mode"
+			"shell_mode_cycle": "Switch shell (standard → simple → focus)"
+		},
+		"focus": {
+			"rail_label": "Focus navigation",
+			"tabbar_label": "Focus menu",
+			"rail_brand": "Myaaw",
+			"rail_chat": "Chat",
+			"rail_cron": "Cron",
+			"rail_plugins": "Plugins",
+			"panel_close": "Close panel",
+			"status_connected": "Connected",
+			"status_stopped": "Stopped",
+			"status_unknown": "Unknown",
+			"tab_history": "History",
+			"tab_context": "Context",
+			"history_today": "Today",
+			"history_yesterday": "Yesterday",
+			"history_empty": "No conversations yet.",
+			"context_soul": "Soul",
+			"context_memory": "Memory",
+			"context_empty": "Not written yet"
 		}
 	}
 }

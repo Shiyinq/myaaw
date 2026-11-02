@@ -32,6 +32,7 @@
 		PanelLeft,
 		PanelLeftClose,
 		PanelLeftOpen,
+		Puzzle,
 		Menu,
 		UserRound,
 		X
@@ -55,6 +56,9 @@
 	import { getErrorMessage } from '$lib/utils/api';
 	import AgentPicker from '$lib/components/app/AgentPicker.svelte';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
+	import AccountMenu from '$lib/components/app/AccountMenu.svelte';
+	import FocusRail from '$lib/components/focus/FocusRail.svelte';
+	import FocusTabBar from '$lib/components/focus/FocusTabBar.svelte';
 	import Logo from '$lib/components/common/Logo.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ShortcutHelp from '$lib/components/app/ShortcutHelp.svelte';
@@ -82,7 +86,10 @@
 	// Simple mode is a chat-first shell: no Fleet shortcut and no page groups,
 	// just the agent picker and the chat list. Collapsing it keeps the same
 	// minimal rail on desktop: brand, agent, new chat and the profile menu.
-	let simpleMode = $derived(preferences.value.simpleMode);
+	// Focus mode is the third shell: one agent, its own fixed rail, and no menus.
+	let shellMode = $derived(preferences.value.shellMode);
+	let simpleMode = $derived(shellMode === 'simple');
+	let focusMode = $derived(shellMode === 'focus');
 	let compactSidebar = $derived(sidebar.collapsed && wide);
 	let activeConversation = $derived(page.params.conversation ?? '');
 	let simpleSearchInput = $state<HTMLInputElement | null>(null);
@@ -90,6 +97,18 @@
 	// The chat list belongs to the shell, so the chat page's history panel and the
 	// simple-mode sidebar share one fetch (see stores/conversationHistory).
 	conversationHistory.init();
+
+	// Focus mode is single-agent: whichever page is open, the chosen agent is the
+	// one that answers, so the chat, the panel, and the APIs stay in step.
+	$effect(() => {
+		if (!focusMode) return;
+		const agents = agentSelection.agents;
+		const preferred = preferences.value.focusAgent;
+		const known = agents.some((agent) => agent.name === preferred);
+		const fallback = agents.find((agent) => agent.default)?.name ?? agents[0]?.name ?? '';
+		const wanted = known ? preferred : fallback;
+		if (wanted && agentSelection.selected !== wanted) agentSelection.select(wanted);
+	});
 
 	$effect(() => {
 		if (typeof window === 'undefined') return;
@@ -115,6 +134,8 @@
 			// The main sidebar belongs to the shell, so this works on every page.
 			if (matchesShortcut(event, 'mod+backslash')) {
 				event.preventDefault();
+				// Focus mode has a permanent rail instead of a collapsible sidebar.
+				if (focusMode) return;
 				if (wide) sidebar.toggle();
 				else drawerOpen = !drawerOpen;
 				return;
@@ -280,6 +301,12 @@
 	// navigation.
 	const hiddenNav = [
 		{
+			href: '/app/plugins',
+			label: 'myaaw.plugins.title',
+			description: 'myaaw.plugins.subtitle',
+			icon: Puzzle
+		},
+		{
 			href: '/app/new',
 			label: 'myaaw.onboard.title',
 			description: 'myaaw.onboard.subtitle',
@@ -376,17 +403,23 @@
 			}
 		}
 
-		// The palette can flip the shell between the chat-first and the default
-		// (standard) layout without a trip to Settings.
+		// The palette can flip between the three shells without a trip to Settings.
+		const shells = ['standard', 'simple', 'focus'] as const;
 		list.push({
-			id: 'action:simple-mode',
-			labelKey: preferences.value.simpleMode
-				? 'myaaw.command.simple_mode_disable'
-				: 'myaaw.command.simple_mode_enable',
-			aliases: ['simple', 'sederhana', 'standard', 'standar', 'mode', 'sidebar', 'layout'],
+			id: 'action:shell-mode',
+			labelKey: 'myaaw.command.shell_mode_cycle',
+			aliases: ['mode', 'layout', 'focus', 'simple', 'standard', 'sidebar', 'shell'],
 			group: 'appearance',
 			icon: PanelLeft,
-			run: () => preferences.update({ simpleMode: !preferences.value.simpleMode })
+			run: () => {
+				const next = shells[(shells.indexOf(preferences.value.shellMode) + 1) % shells.length];
+				const focusAgent =
+					preferences.value.focusAgent ||
+					agentSelection.current?.name ||
+					agentSelection.selected ||
+					'';
+				preferences.update({ shellMode: next, focusAgent });
+			}
 		});
 		for (const option of APPEARANCE) {
 			list.push({
@@ -453,7 +486,6 @@
 					flatNav.find((item) => isActive(item.href)) ??
 					flatNav[0])
 	);
-	let initials = $derived((authStore.profile?.username ?? 'MY').slice(0, 2).toUpperCase());
 	let isChat = $derived(
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
 	);
@@ -520,327 +552,289 @@
 	}
 </script>
 
-{#snippet account(compact: boolean, align: 'start' | 'end' = 'end')}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				{#if compact}
-					<Button
-						{...props}
-						variant="outline"
-						size="icon-sm"
-						class="rounded-full"
-						aria-label={t('myaaw.nav.profile')}
-					>
-						<span class="text-[10px] font-bold uppercase">{initials}</span>
-					</Button>
-				{:else}
-					<Button {...props} variant="outline" class="h-auto w-full justify-start gap-2 py-2">
-						<span
-							class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold uppercase"
-						>
-							{initials}
-						</span>
-						<span class="flex min-w-0 flex-col items-start leading-tight">
-							<span class="w-full truncate text-sm font-medium">
-								{authStore.profile?.username ?? '—'}
-							</span>
-							<span class="text-[10px] text-muted-foreground">
-								user #{authStore.profile?.user_id ?? '—'}
-							</span>
-						</span>
-					</Button>
-				{/if}
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align={compact ? align : 'start'} class="w-56">
-			<DropdownMenu.Item
-				class="flex-col items-start gap-0 p-2"
-				onclick={() => goto('/app/profile')}
-			>
-				<span class="text-sm font-medium">{authStore.profile?.username ?? '—'}</span>
-				<span class="text-xs text-muted-foreground">
-					user #{authStore.profile?.user_id ?? '—'}
-				</span>
-			</DropdownMenu.Item>
-			<DropdownMenu.Separator />
-			<DropdownMenu.Item onclick={() => goto('/app/settings')}>
-				<Settings2 class="mr-2 h-4 w-4" />
-				{t('myaaw.nav.settings')}
-			</DropdownMenu.Item>
-			<DropdownMenu.Item onclick={() => shortcutHelp.show()}>
-				<Keyboard class="mr-2 h-4 w-4" />
-				{t('myaaw.shortcuts.title')}
-			</DropdownMenu.Item>
-			<DropdownMenu.Separator />
-			<DropdownMenu.Item variant="destructive" onclick={logout}>
-				<LogOut class="mr-2 h-4 w-4" />
-				{t('common.logout')}
-			</DropdownMenu.Item>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
-{/snippet}
-
 <div
 	class={[
 		'h-dvh bg-background page-clear transition-[padding] duration-200',
-		compactSidebar ? 'md:pl-16' : 'md:pl-60'
+		focusMode ? 'md:pl-14' : compactSidebar ? 'md:pl-16' : 'md:pl-60'
 	]}
 >
-	{#if drawerOpen}
-		<!-- The drawer covers the page it came from, so the tap that dismisses it must
-		     land somewhere that is not a link. -->
-		<button
-			type="button"
-			class="fixed inset-0 z-40 bg-black/40 md:hidden"
-			aria-label={t('myaaw.sidebar.close')}
-			onclick={() => (drawerOpen = false)}
-		></button>
-	{/if}
-	<aside
-		inert={!wide && !drawerOpen}
-		class={[
-			'fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r bg-card shadow-xl frost-drawer transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
-			drawerOpen ? 'translate-x-0' : '-translate-x-full',
-			compactSidebar ? 'md:w-16' : 'md:w-60'
-		]}
-	>
-		<!-- One header for both states: the brand block keeps its position while the
+	{#if focusMode}
+		<FocusRail />
+		<FocusTabBar />
+	{:else}
+		{#if drawerOpen}
+			<!-- The drawer covers the page it came from, so the tap that dismisses it must
+			     land somewhere that is not a link. -->
+			<button
+				type="button"
+				class="fixed inset-0 z-40 bg-black/40 md:hidden"
+				aria-label={t('myaaw.sidebar.close')}
+				onclick={() => (drawerOpen = false)}
+			></button>
+		{/if}
+		<aside
+			inert={!wide && !drawerOpen}
+			class={[
+				'fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r bg-card shadow-xl frost-drawer transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
+				drawerOpen ? 'translate-x-0' : '-translate-x-full',
+				compactSidebar ? 'md:w-16' : 'md:w-60'
+			]}
+		>
+			<!-- One header for both states: the brand block keeps its position while the
 		     labels fade and the width animates, so collapsing does not swap the
 		     whole header in one frame. -->
-		<div
-			class="relative flex h-14 shrink-0 items-center gap-2 overflow-hidden border-b pr-2 pl-4 md:pr-0"
-		>
 			<div
-				class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+				class="relative flex h-14 shrink-0 items-center gap-2 overflow-hidden border-b pr-2 pl-4 md:pr-0"
 			>
-				<Logo class="h-4.5 w-4.5" />
-			</div>
-			<div
-				class={[
-					'flex min-w-0 flex-col overflow-hidden leading-tight whitespace-nowrap transition-all duration-200',
-					compactSidebar ? 'max-w-0 opacity-0' : 'max-w-44 opacity-100'
-				]}
-			>
-				<span class="text-sm font-bold tracking-tight">Myaaw</span>
-				<span class="text-[10px] uppercase tracking-widest text-muted-foreground">
-					Control plane
-				</span>
-			</div>
-			<button
-				class={[
-					'ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-[color,opacity] hover:bg-muted hover:text-foreground md:flex',
-					compactSidebar ? 'pointer-events-none opacity-0' : 'opacity-100'
-				]}
-				onclick={() => sidebar.toggle()}
-				title={t('myaaw.sidebar.collapse')}
-				aria-label={t('myaaw.sidebar.collapse')}
-				aria-keyshortcuts="Control+\\ Meta+\\"
-			>
-				<PanelLeftClose class="h-4 w-4" />
-			</button>
-			<button
-				class="ml-auto flex w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
-				onclick={() => (drawerOpen = false)}
-				title={t('myaaw.sidebar.close')}
-				aria-label={t('myaaw.sidebar.close')}
-			>
-				<X class="h-4 w-4" />
-			</button>
-		</div>
-		{#if compactSidebar}
-			<button
-				class="absolute top-4 -right-3 z-50 flex h-6 w-6 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-sm frost-card transition-colors hover:bg-muted hover:text-foreground"
-				onclick={() => sidebar.toggle()}
-				title={t('myaaw.sidebar.expand')}
-				aria-label={t('myaaw.sidebar.expand')}
-				aria-keyshortcuts="Control+\\ Meta+\\"
-			>
-				<PanelLeftOpen class="h-3.5 w-3.5" />
-			</button>
-		{/if}
-
-		<!-- Fleet overview lives outside the agent scope, above the picker. -->
-		{#if !simpleMode}
-			<div class={compactSidebar ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
-				<a
-					href={fleet.href}
-					title={compactSidebar ? t(fleet.label) : undefined}
-					aria-current={isActive(fleet.href) ? 'page' : undefined}
+				<div
+					class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+				>
+					<Logo class="h-4.5 w-4.5" />
+				</div>
+				<div
 					class={[
-						'relative flex items-center rounded-md text-sm transition-colors list-row',
-						compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
-						isActive(fleet.href)
-							? 'bg-accent font-medium text-accent-foreground'
-							: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+						'flex min-w-0 flex-col overflow-hidden leading-tight whitespace-nowrap transition-all duration-200',
+						compactSidebar ? 'max-w-0 opacity-0' : 'max-w-44 opacity-100'
 					]}
 				>
-					{#if compactSidebar && isActive(fleet.href)}
-						<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
-					{/if}
-					<Boxes class="h-4 w-4 shrink-0" />
-					{#if !compactSidebar}
-						<span class="truncate">{t(fleet.label)}</span>
-					{/if}
-				</a>
+					<span class="text-sm font-bold tracking-tight">Myaaw</span>
+					<span class="text-[10px] uppercase tracking-widest text-muted-foreground">
+						Control plane
+					</span>
+				</div>
+				<button
+					class={[
+						'ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-[color,opacity] hover:bg-muted hover:text-foreground md:flex',
+						compactSidebar ? 'pointer-events-none opacity-0' : 'opacity-100'
+					]}
+					onclick={() => sidebar.toggle()}
+					title={t('myaaw.sidebar.collapse')}
+					aria-label={t('myaaw.sidebar.collapse')}
+					aria-keyshortcuts="Control+\\ Meta+\\"
+				>
+					<PanelLeftClose class="h-4 w-4" />
+				</button>
+				<button
+					class="ml-auto flex w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+					onclick={() => (drawerOpen = false)}
+					title={t('myaaw.sidebar.close')}
+					aria-label={t('myaaw.sidebar.close')}
+				>
+					<X class="h-4 w-4" />
+				</button>
 			</div>
-		{/if}
-
-		<div class={compactSidebar ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
 			{#if compactSidebar}
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger>
-						{#snippet child({ props })}
-							<Button
-								{...props}
-								variant="outline"
-								size="icon-sm"
-								class="mx-auto flex"
-								title={agentSelection.current?.name ?? t('myaaw.agent.label')}
-								aria-label={t('myaaw.agent.label')}
-							>
-								<Bot class="h-4 w-4" />
-							</Button>
-						{/snippet}
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Content side="right" align="start" class="w-48">
-						{#each agentSelection.agents as item (item.name)}
-							<DropdownMenu.Item onclick={() => selectAgent(item.name)}>
-								<span class="truncate">{item.name}</span>
-								{#if item.default}
-									<span class="ml-auto text-[10px] text-muted-foreground">
-										{t('myaaw.agent.default')}
-									</span>
-								{/if}
-							</DropdownMenu.Item>
-						{/each}
-						{#if agentSelection.agents.length === 0}
-							<p class="px-2 py-1 text-xs text-muted-foreground">{t('myaaw.agent.none')}</p>
-						{/if}
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
-			{:else}
-				<AgentPicker />
+				<button
+					class="absolute top-4 -right-3 z-50 flex h-6 w-6 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-sm frost-card transition-colors hover:bg-muted hover:text-foreground"
+					onclick={() => sidebar.toggle()}
+					title={t('myaaw.sidebar.expand')}
+					aria-label={t('myaaw.sidebar.expand')}
+					aria-keyshortcuts="Control+\\ Meta+\\"
+				>
+					<PanelLeftOpen class="h-3.5 w-3.5" />
+				</button>
 			{/if}
-		</div>
 
-		{#if simpleMode}
-			{#if compactSidebar}
-				<div class="shrink-0 border-b p-2">
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						class="mx-auto flex"
-						onclick={() => void goto('/app/chat?new=1')}
-						title={t('myaaw.chat.new')}
-						aria-label={t('myaaw.chat.new')}
+			<!-- Fleet overview lives outside the agent scope, above the picker. -->
+			{#if !simpleMode}
+				<div class={compactSidebar ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
+					<a
+						href={fleet.href}
+						title={compactSidebar ? t(fleet.label) : undefined}
+						aria-current={isActive(fleet.href) ? 'page' : undefined}
+						class={[
+							'relative flex items-center rounded-md text-sm transition-colors list-row',
+							compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
+							isActive(fleet.href)
+								? 'bg-accent font-medium text-accent-foreground'
+								: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+						]}
 					>
-						<MessageSquarePlus class="h-4 w-4" />
-					</Button>
-				</div>
-				<div class="flex-1"></div>
-			{:else}
-				<div class="flex min-h-0 flex-1 flex-col">
-					<ConversationList
-						activeId={activeConversation}
-						onOpen={(id) => void goto(`/app/chat/${id}`)}
-						onNew={() => void goto('/app/chat?new=1')}
-						onNewInFolder={(folderId) =>
-							void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
-						onDeleted={(id) => {
-							if (id === activeConversation) void goto('/app/chat?new=1');
-						}}
-						bind:searchInput={simpleSearchInput}
-					/>
-				</div>
-			{/if}
-		{:else}
-			<nav class={['flex-1 overflow-y-auto', compactSidebar ? 'space-y-2 p-2' : 'space-y-5 p-3']}>
-				{#each nav as group, groupIndex (group.label)}
-					<div class="space-y-1">
-						{#if !compactSidebar}
-							<p
-								class="px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
-							>
-								{t(group.label)}
-							</p>
-						{:else if groupIndex > 0}
-							<div class="mx-auto my-2 h-px w-6 bg-border"></div>
+						{#if compactSidebar && isActive(fleet.href)}
+							<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
 						{/if}
-						{#each group.items as item (item.href)}
-							{@const Icon = item.icon}
-							<a
-								href={item.href}
-								title={compactSidebar ? t(item.label) : undefined}
-								aria-current={isActive(item.href) ? 'page' : undefined}
-								class={[
-									'relative flex items-center rounded-md text-sm transition-colors list-row',
-									compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
-									isActive(item.href)
-										? 'bg-accent font-medium text-accent-foreground'
-										: 'text-muted-foreground hover:bg-muted hover:text-foreground'
-								]}
-							>
-								{#if compactSidebar && isActive(item.href)}
-									<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
-								{/if}
-								<Icon class="h-4 w-4 shrink-0" />
-								{#if !compactSidebar}
-									<span class="truncate">{t(item.label)}</span>
-								{/if}
-							</a>
-						{/each}
-					</div>
-				{/each}
-			</nav>
-		{/if}
-
-		<div class={compactSidebar ? 'shrink-0 border-t p-2' : 'shrink-0 border-t p-3'}>
-			{#if compactSidebar}
-				<div class="flex justify-center">{@render account(true, 'start')}</div>
-			{:else}
-				{@render account(false)}
+						<Boxes class="h-4 w-4 shrink-0" />
+						{#if !compactSidebar}
+							<span class="truncate">{t(fleet.label)}</span>
+						{/if}
+					</a>
+				</div>
 			{/if}
-		</div>
-	</aside>
 
-	<div class="flex h-dvh flex-col">
-		<header class="h-14 shrink-0 border-b bg-background/80 backdrop-blur frost-chrome">
+			<div class={compactSidebar ? 'shrink-0 border-b p-2' : 'shrink-0 border-b p-3'}>
+				{#if compactSidebar}
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									variant="outline"
+									size="icon-sm"
+									class="mx-auto flex"
+									title={agentSelection.current?.name ?? t('myaaw.agent.label')}
+									aria-label={t('myaaw.agent.label')}
+								>
+									<Bot class="h-4 w-4" />
+								</Button>
+							{/snippet}
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Content side="right" align="start" class="w-48">
+							{#each agentSelection.agents as item (item.name)}
+								<DropdownMenu.Item onclick={() => selectAgent(item.name)}>
+									<span class="truncate">{item.name}</span>
+									{#if item.default}
+										<span class="ml-auto text-[10px] text-muted-foreground">
+											{t('myaaw.agent.default')}
+										</span>
+									{/if}
+								</DropdownMenu.Item>
+							{/each}
+							{#if agentSelection.agents.length === 0}
+								<p class="px-2 py-1 text-xs text-muted-foreground">{t('myaaw.agent.none')}</p>
+							{/if}
+						</DropdownMenu.Content>
+					</DropdownMenu.Root>
+				{:else}
+					<AgentPicker />
+				{/if}
+			</div>
+
+			{#if simpleMode}
+				{#if compactSidebar}
+					<div class="shrink-0 border-b p-2">
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							class="mx-auto flex"
+							onclick={() => void goto('/app/chat?new=1')}
+							title={t('myaaw.chat.new')}
+							aria-label={t('myaaw.chat.new')}
+						>
+							<MessageSquarePlus class="h-4 w-4" />
+						</Button>
+					</div>
+					<div class="flex-1"></div>
+				{:else}
+					<div class="flex min-h-0 flex-1 flex-col">
+						<ConversationList
+							activeId={activeConversation}
+							onOpen={(id) => void goto(`/app/chat/${id}`)}
+							onNew={() => void goto('/app/chat?new=1')}
+							onNewInFolder={(folderId) =>
+								void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+							onDeleted={(id) => {
+								if (id === activeConversation) void goto('/app/chat?new=1');
+							}}
+							bind:searchInput={simpleSearchInput}
+						/>
+					</div>
+				{/if}
+			{:else}
+				<nav class={['flex-1 overflow-y-auto', compactSidebar ? 'space-y-2 p-2' : 'space-y-5 p-3']}>
+					{#each nav as group, groupIndex (group.label)}
+						<div class="space-y-1">
+							{#if !compactSidebar}
+								<p
+									class="px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+								>
+									{t(group.label)}
+								</p>
+							{:else if groupIndex > 0}
+								<div class="mx-auto my-2 h-px w-6 bg-border"></div>
+							{/if}
+							{#each group.items as item (item.href)}
+								{@const Icon = item.icon}
+								<a
+									href={item.href}
+									title={compactSidebar ? t(item.label) : undefined}
+									aria-current={isActive(item.href) ? 'page' : undefined}
+									class={[
+										'relative flex items-center rounded-md text-sm transition-colors list-row',
+										compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
+										isActive(item.href)
+											? 'bg-accent font-medium text-accent-foreground'
+											: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+									]}
+								>
+									{#if compactSidebar && isActive(item.href)}
+										<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
+									{/if}
+									<Icon class="h-4 w-4 shrink-0" />
+									{#if !compactSidebar}
+										<span class="truncate">{t(item.label)}</span>
+									{/if}
+								</a>
+							{/each}
+						</div>
+					{/each}
+				</nav>
+			{/if}
+
+			<div class={compactSidebar ? 'shrink-0 border-t p-2' : 'shrink-0 border-t p-3'}>
+				{#if compactSidebar}
+					<div class="flex justify-center"><AccountMenu compact align="start" /></div>
+				{:else}
+					<AccountMenu />
+				{/if}
+			</div>
+		</aside>
+	{/if}
+
+	<div class="relative flex h-dvh flex-col">
+		<header
+			class={focusMode && isChat
+				? 'pointer-events-none absolute inset-x-0 top-0 z-40 h-14 lg:z-[60]'
+				: 'h-14 shrink-0 border-b bg-background/80 backdrop-blur frost-chrome'}
+		>
 			<div class="flex h-full items-center gap-2 px-2 sm:gap-3 sm:px-4">
 				<!-- Phones reach the whole navigation through the drawer; from md up the
 				     sidebar is always on screen, so the button is not rendered there. -->
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					class="shrink-0 md:hidden"
-					onclick={() => (drawerOpen = true)}
-					title={t('myaaw.sidebar.open')}
-					aria-label={t('myaaw.sidebar.open')}
-					aria-keyshortcuts="Control+\\ Meta+\\"
-				>
-					<Menu class="h-4 w-4" />
-				</Button>
+				{#if !focusMode}
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						class="shrink-0 md:hidden"
+						onclick={() => (drawerOpen = true)}
+						title={t('myaaw.sidebar.open')}
+						aria-label={t('myaaw.sidebar.open')}
+						aria-keyshortcuts="Control+\\ Meta+\\"
+					>
+						<Menu class="h-4 w-4" />
+					</Button>
+				{/if}
 				<div class="min-w-0 flex-1">
-					{#if isChat && topBarTitle.value}
-						<h1 class="truncate text-sm font-semibold tracking-tight">
-							{topBarTitle.value}
-						</h1>
+					{#if focusMode && isChat}
+						<!-- The chat screen has no title; the agent mark floats over it. -->
+					{:else if !focusMode}
+						{#if isChat && topBarTitle.value}
+							<h1 class="truncate text-sm font-semibold tracking-tight">
+								{topBarTitle.value}
+							</h1>
+						{:else}
+							<div class="flex items-center gap-2">
+								<h1 class="truncate text-sm font-semibold tracking-tight">
+									{t(current.label)}
+								</h1>
+								{#if isChat}
+									<Badge variant="outline" class="hidden shrink-0 sm:inline-flex">
+										{agentSelection.current?.name ?? agentSelection.selected ?? '—'}
+									</Badge>
+								{/if}
+							</div>
+							<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
+								{t(current.description)}
+							</p>
+						{/if}
 					{:else}
-						<div class="flex items-center gap-2">
-							<h1 class="truncate text-sm font-semibold tracking-tight">{t(current.label)}</h1>
-							{#if isChat}
-								<Badge variant="outline" class="hidden shrink-0 sm:inline-flex">
-									{agentSelection.current?.name ?? agentSelection.selected ?? '—'}
-								</Badge>
-							{/if}
-						</div>
+						<!-- Focus mode keeps the page header for every page except chat. -->
+						<h1 class="truncate text-sm font-semibold tracking-tight">{t(current.label)}</h1>
 						<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
 							{t(current.description)}
 						</p>
 					{/if}
 				</div>
 
-				<div class="flex shrink-0 items-center gap-2">
+				<div class="pointer-events-auto flex shrink-0 items-center gap-2">
 					{#if topBarSlot.current}
 						{@render topBarSlot.current.content()}
 					{/if}
@@ -848,8 +842,13 @@
 			</div>
 		</header>
 
+		<!-- Focus mode phones get a bottom tab bar instead of the rail, so the page
+		     content keeps clear of it, including the iOS home-indicator inset. -->
 		<main
-			class={isFullHeight ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-0 flex-1 overflow-y-auto'}
+			class={[
+				isFullHeight ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-0 flex-1 overflow-y-auto',
+				focusMode ? 'pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0' : ''
+			]}
 		>
 			{#if isFullHeight}
 				<div class="h-full">{@render children()}</div>

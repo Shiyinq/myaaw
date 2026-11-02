@@ -508,8 +508,13 @@
 			"notify_sound_triple": "Tiga Nada",
 			"notify_sound_doorbell": "Bel Pintu",
 			"notify_sound_marimba": "Marimba",
-			"simple_mode": "Mode sederhana",
-			"simple_mode_desc": "Ubah sidebar menjadi daftar chat dengan pemilih agen. Matikan untuk mode standar dan navigasi lengkap."
+			"shell_mode": "Tampilan",
+			"shell_mode_desc": "Pilih seberapa banyak navigasi yang ditampilkan: lengkap (standar), daftar chat di sidebar (sederhana), atau satu agen dengan rail minimal (fokus).",
+			"mode_standard": "Standar",
+			"mode_simple": "Sederhana",
+			"mode_focus": "Fokus",
+			"focus_agent": "Agen fokus",
+			"focus_agent_desc": "Satu-satunya agen di mode ini. Menu lain disembunyikan."
 		},
 		"terminal": {
 			"title": "Terminal",
@@ -658,6 +663,28 @@
 			"delete_confirm": "Hapus {name}?",
 			"enabled_ok": "{name} diaktifkan",
 			"disabled_ok": "{name} dinonaktifkan"
+		},
+		"plugins": {
+			"title": "Plugin",
+			"subtitle": "Skill, tool, dan koneksi yang bisa dipakai agen ini.",
+			"intro": "Semua kemampuan agen ini dalam satu tempat.",
+			"agent": "Agen: {name}",
+			"search": "Cari skill, tool, dan koneksi",
+			"skills": "Skill",
+			"skills_desc": "Pengetahuan tambahan yang dimuat saat dibutuhkan.",
+			"tools": "Tool bawaan",
+			"tools_desc": "Aksi sehari-hari seperti file, terminal, dan browser.",
+			"custom": "Tool kustom",
+			"custom_desc": "Perintah tambahan untuk agen ini.",
+			"mcp": "Koneksi MCP",
+			"mcp_desc": "Server eksternal yang menambah tool.",
+			"active": "Aktif",
+			"off": "Nonaktif",
+			"count_active": "{active} dari {total} aktif",
+			"empty": "Belum ada isinya.",
+			"no_results": "Tidak ada yang cocok.",
+			"tag_custom": "kustom",
+			"tag_mcp": "MCP"
 		},
 		"contacts": {
 			"title": "Kontak",
@@ -947,8 +974,27 @@
 			"restart_agent": "Restart {name}",
 			"group_appearance": "Tampilan",
 			"group_language": "Bahasa",
-			"simple_mode_enable": "Mode Sederhana",
-			"simple_mode_disable": "Mode Standar"
+			"shell_mode_cycle": "Ganti tampilan (standar → sederhana → fokus)"
+		},
+		"focus": {
+			"rail_label": "Navigasi fokus",
+			"tabbar_label": "Menu fokus",
+			"rail_brand": "Myaaw",
+			"rail_chat": "Chat",
+			"rail_cron": "Cron",
+			"rail_plugins": "Plugin",
+			"panel_close": "Tutup panel",
+			"status_connected": "Terhubung",
+			"status_stopped": "Berhenti",
+			"status_unknown": "Tidak diketahui",
+			"tab_history": "Riwayat",
+			"tab_context": "Konteks",
+			"history_today": "Hari ini",
+			"history_yesterday": "Kemarin",
+			"history_empty": "Belum ada percakapan.",
+			"context_soul": "Soul",
+			"context_memory": "Memori",
+			"context_empty": "Belum ditulis"
 		}
 	}
 }

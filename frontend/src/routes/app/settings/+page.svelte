@@ -21,7 +21,8 @@
 		type AppearanceOption
 	} from '$lib/theme';
 	import { preferences } from '$lib/stores/preferences.svelte';
-	import type { AudioLanguage, SpeechLanguage } from '$lib/stores/preferences.svelte';
+	import type { AudioLanguage, ShellMode, SpeechLanguage } from '$lib/stores/preferences.svelte';
+	import { agentSelection } from '$lib/stores';
 	import { tts } from '$lib/speech/tts.svelte';
 	import { notificationSounds, playNotification } from '$lib/sound/notify.svelte';
 	import type { Locale } from '$lib/i18n';
@@ -36,6 +37,20 @@
 		{ value: 'comfortable', label: t('myaaw.settings.density_comfortable') },
 		{ value: 'compact', label: t('myaaw.settings.density_compact') }
 	]);
+
+	const shellModeOptions = $derived([
+		{ value: 'standard', label: t('myaaw.settings.mode_standard') },
+		{ value: 'simple', label: t('myaaw.settings.mode_simple') },
+		{ value: 'focus', label: t('myaaw.settings.mode_focus') }
+	]);
+
+	/** Switching to focus mode needs an agent; default to the current one. */
+	function pickShellMode(next: string) {
+		const mode = next as ShellMode;
+		const focusAgent =
+			preferences.value.focusAgent || agentSelection.current?.name || agentSelection.selected || '';
+		preferences.update({ shellMode: mode, focusAgent });
+	}
 
 	const sendOptions = $derived([
 		{ value: 'enter', label: t('myaaw.settings.send_enter') },
@@ -204,12 +219,37 @@
 			</div>
 
 			<div class="grid gap-2 border-t pt-5">
-				{@render toggle(
-					t('myaaw.settings.simple_mode'),
-					t('myaaw.settings.simple_mode_desc'),
-					preferences.value.simpleMode,
-					(next) => preferences.update({ simpleMode: next })
-				)}
+				<div class="grid gap-1">
+					<Label>{t('myaaw.settings.shell_mode')}</Label>
+					<p class="text-xs text-muted-foreground">{t('myaaw.settings.shell_mode_desc')}</p>
+				</div>
+				{@render choice(shellModeOptions, preferences.value.shellMode, pickShellMode)}
+				{#if preferences.value.shellMode === 'focus'}
+					<div class="mt-1 grid max-w-sm gap-2 rounded-lg border border-dashed p-3">
+						<div class="grid gap-1">
+							<Label for="focus-agent">{t('myaaw.settings.focus_agent')}</Label>
+							<p class="text-xs text-muted-foreground">
+								{t('myaaw.settings.focus_agent_desc')}
+							</p>
+						</div>
+						{#if agentSelection.agents.length > 0}
+							<select
+								id="focus-agent"
+								class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+								value={preferences.value.focusAgent || agentSelection.current?.name || ''}
+								onchange={(event) => preferences.update({ focusAgent: event.currentTarget.value })}
+							>
+								{#each agentSelection.agents as item (item.name)}
+									<option value={item.name}>
+										{item.name}{item.default ? ` · ${t('myaaw.agent.default')}` : ''}
+									</option>
+								{/each}
+							</select>
+						{:else}
+							<p class="text-xs text-muted-foreground">{t('myaaw.agent.none')}</p>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</CardContent>
 	</Card>

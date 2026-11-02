@@ -19,6 +19,8 @@
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
+	import FocusAgentPanel from '$lib/components/focus/FocusAgentPanel.svelte';
+	import FocusContextEditor from '$lib/components/focus/FocusContextEditor.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
@@ -144,7 +146,11 @@
 	let agent = $derived(agentSelection.selected);
 	// The simple shell already carries the chat list and a new-chat action, so the
 	// page hides its own copies and never opens the duplicate history panel.
-	let simpleMode = $derived(preferences.value.simpleMode);
+	let shellMode = $derived(preferences.value.shellMode);
+	let simpleMode = $derived(shellMode === 'simple');
+	let focusMode = $derived(shellMode === 'focus');
+	// In focus mode a context file replaces the transcript column until it closes.
+	let focusContextPath = $state('');
 	let conversationId = $state('');
 	// A run of the open conversation keeps streaming while the user is elsewhere;
 	// the page only renders whatever the store currently holds.
@@ -872,6 +878,7 @@
 
 		loadKey = key;
 		conversationId = currentConversation;
+		focusContextPath = '';
 		rememberConversation(currentConversation);
 		void loadConversation(currentAgent, currentConversation);
 	});
@@ -1372,6 +1379,7 @@
 		historyItems = [];
 		clearRail();
 		input = '';
+		focusContextPath = '';
 		if (composer) composer.style.height = '';
 		storedUsage = null;
 		sessionStats = null;
@@ -1392,6 +1400,7 @@
 	}
 
 	function openConversation(id: string) {
+		focusContextPath = '';
 		if (browser && window.innerWidth < 1024) toggleHistory();
 		if (id !== conversationId) void goto(`/app/chat/${id}`);
 	}
@@ -2229,8 +2238,15 @@
 </TopBarActions>
 
 <div class="flex h-full min-h-0">
-	<div class="flex min-w-0 flex-1 flex-col">
-		{#if !agent}
+	<div
+		class={[
+			'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
+			focusMode && historyOpen ? 'lg:pr-[22rem]' : ''
+		]}
+	>
+		{#if agent && focusMode && focusContextPath}
+			<FocusContextEditor {agent} path={focusContextPath} onClose={() => (focusContextPath = '')} />
+		{:else if !agent}
 			<div class="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
 				{t('myaaw.agent.none')}
 			</div>
@@ -2239,6 +2255,24 @@
 				<!-- The rail hangs beside the transcript only, so it never takes width
 				     from the composer. -->
 				<div class="relative flex min-h-0 flex-1 flex-col">
+					{#if focusMode}
+						<!-- Focus mode has no chat title, so the agent floats above the
+						     transcript instead: brand mark plus the agent's name. -->
+						<div
+							class="pointer-events-none absolute top-2 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5"
+						>
+							<span
+								class="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-background/70"
+							>
+								<Logo class="h-8 w-8" />
+							</span>
+							<span
+								class="rounded-full border bg-card/90 px-2.5 py-0.5 text-xs font-semibold shadow-sm backdrop-blur"
+							>
+								{agent}
+							</span>
+						</div>
+					{/if}
 					<div
 						bind:this={scroller}
 						class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
@@ -2247,6 +2281,7 @@
 						<div
 							class={cn(
 								'mx-auto w-full max-w-4xl space-y-5 px-4 py-6',
+								focusMode && 'pt-24',
 								railTurns.length > 1 && 'pr-8 md:pr-14',
 								// Nothing to read: sit in the middle of the column instead of
 								// hugging the top edge.
@@ -2267,7 +2302,10 @@
 								<p class="text-sm text-muted-foreground">{t('myaaw.chat.loading')}</p>
 							{:else if items.length === 0}
 								<div class="flex flex-col items-center gap-4">
-									<Logo class="h-20 w-20 text-muted-foreground/25" />
+									<!-- Focus mode already shows the mark at the top. -->
+									{#if !focusMode}
+										<Logo class="h-20 w-20 text-muted-foreground/25" />
+									{/if}
 									<p class="text-center text-sm text-muted-foreground">
 										{t('myaaw.chat.empty')}
 									</p>
@@ -2909,7 +2947,11 @@
 										{/if}
 									</div>
 									<div
-										class="flex flex-nowrap items-center justify-center gap-x-2 border-t px-3 py-1.5 text-[10px] leading-tight text-muted-foreground"
+										class={cn(
+											'flex flex-nowrap items-center justify-center gap-x-2 border-t px-3 py-1.5 text-[10px] leading-tight text-muted-foreground',
+											// Focus mode keeps the composer bare: no session counters.
+											focusMode && 'hidden'
+										)}
 									>
 										<div class="relative">
 											<button
@@ -3060,7 +3102,36 @@
 		{/if}
 	</div>
 
-	{#if agent && historyOpen && !simpleMode}
+	{#if agent && focusMode}
+		<!-- Focus mode keeps the panel mounted so opening and closing slides it in
+		     and out, like the left drawer in standard mode. -->
+		{#if historyOpen}
+			<button
+				type="button"
+				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+				aria-label={t('myaaw.chat.history_hide')}
+				onclick={toggleHistory}
+			></button>
+		{/if}
+		<aside
+			class={[
+				'fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card transition-transform duration-200 lg:w-[22rem] lg:max-w-none frost-drawer',
+				historyOpen ? 'translate-x-0' : 'translate-x-full'
+			]}
+			inert={!historyOpen}
+		>
+			<FocusAgentPanel
+				{agent}
+				activeId={conversationId}
+				onOpen={openConversation}
+				onClose={toggleHistory}
+				onOpenContext={(path) => {
+					focusContextPath = path;
+					if (browser && window.innerWidth < 1024) toggleHistory();
+				}}
+			/>
+		</aside>
+	{:else if agent && historyOpen && !simpleMode}
 		<!-- Drawer on small screens, a static third column from lg up. -->
 		<button
 			type="button"
