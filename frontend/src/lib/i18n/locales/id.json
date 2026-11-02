@@ -824,9 +824,17 @@
 			"output": "Output",
 			"cached": "Cache",
 			"database": "Basis data",
+			"tables": "Tabel",
+			"charts": "Grafik",
 			"highlights": "Sorotan",
 			"most_expensive": "Run termahal",
 			"slowest": "Run terlama",
+			"share_of_cost": "{percent}% dari biaya model",
+			"vs_p95": "{ratio}× latensi p95",
+			"metric": "Metrik",
+			"run": "Run",
+			"value": "Nilai",
+			"comparison": "Perbandingan",
 			"unpriced_note": "{runs} run memakai model tanpa harga; {input} token input dan {output} token output tidak dihitung. Model bertanda * punya panggilan tanpa harga."
 		},
 		"config": {

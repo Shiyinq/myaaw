@@ -877,9 +877,17 @@
 			"output": "Output",
 			"cached": "Cached",
 			"database": "Database",
+			"tables": "Tables",
+			"charts": "Charts",
 			"highlights": "Highlights",
 			"most_expensive": "Most expensive run",
 			"slowest": "Slowest run",
+			"share_of_cost": "{percent}% of the model cost",
+			"vs_p95": "{ratio}× the p95 latency",
+			"metric": "Metric",
+			"run": "Run",
+			"value": "Value",
+			"comparison": "Comparison",
 			"unpriced_note": "{runs} runs have models without a price; {input} input and {output} output tokens are not billed. Models marked * have unpriced calls."
 		},
 		"shortcuts": {
