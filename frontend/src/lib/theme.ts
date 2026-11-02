@@ -48,6 +48,17 @@ export type ThemeId =
 	| 'mist';
 
 /**
+ * Three colours that stand in for a theme in the Settings preview: its page, a
+ * sheet above it, and the accent. Kept here next to the theme it describes so a
+ * new entry cannot be added without one.
+ */
+export interface ThemeSwatch {
+	bg: string;
+	card: string;
+	accent: string;
+}
+
+/**
  * One selectable appearance, offered in Settings and the command palette. The
  * plain Light, Dark and System entries are modes with no custom theme; the rest
  * set `data-theme` and switch to the mode they are designed for.
@@ -59,6 +70,7 @@ export interface AppearanceOption {
 	theme: '' | ThemeId;
 	aliases: string[];
 	icon: ComponentType<Icon>;
+	swatch: ThemeSwatch;
 }
 
 export const APPEARANCE: AppearanceOption[] = [
@@ -68,7 +80,12 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'light',
 		theme: 'siamese',
 		aliases: ['siamese', 'siam', 'kucing siam', 'seal point', 'blue eyes', 'mata biru'],
-		icon: PawPrint
+		icon: PawPrint,
+		swatch: {
+			bg: 'oklch(0.96 0.013 82)',
+			card: 'oklch(0.985 0.008 82)',
+			accent: 'oklch(0.34 0.03 55)'
+		}
 	},
 	{
 		id: 'light',
@@ -76,7 +93,8 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'light',
 		theme: '',
 		aliases: ['light', 'terang'],
-		icon: Sun
+		icon: Sun,
+		swatch: { bg: 'oklch(1 0 0)', card: 'oklch(0.96 0 0)', accent: 'oklch(0.205 0 0)' }
 	},
 	{
 		id: 'paper',
@@ -84,7 +102,12 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'light',
 		theme: 'paper',
 		aliases: ['paper', 'kertas', 'read', 'baca', 'sepia'],
-		icon: BookOpen
+		icon: BookOpen,
+		swatch: {
+			bg: 'oklch(0.975 0.008 85)',
+			card: 'oklch(0.995 0.004 85)',
+			accent: 'oklch(0.24 0.014 70)'
+		}
 	},
 	{
 		id: 'slate',
@@ -92,7 +115,12 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'light',
 		theme: 'slate',
 		aliases: ['slate', 'cool', 'dingin', 'grey', 'abu'],
-		icon: Layers
+		icon: Layers,
+		swatch: {
+			bg: 'oklch(0.965 0.006 250)',
+			card: 'oklch(0.995 0.002 250)',
+			accent: 'oklch(0.22 0.012 250)'
+		}
 	},
 	{
 		id: 'graphite',
@@ -100,7 +128,8 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'light',
 		theme: 'graphite',
 		aliases: ['graphite', 'grafit', 'print', 'printout', 'cetak'],
-		icon: PenLine
+		icon: PenLine,
+		swatch: { bg: 'oklch(0.965 0 0)', card: 'oklch(1 0 0)', accent: 'oklch(0.17 0 0)' }
 	},
 	{
 		id: 'typewriter',
@@ -108,7 +137,8 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'light',
 		theme: 'typewriter',
 		aliases: ['typewriter', 'mesin tik', 'mono', 'light terminal'],
-		icon: Type
+		icon: Type,
+		swatch: { bg: 'oklch(0.985 0 0)', card: 'oklch(1 0 0)', accent: 'oklch(0.16 0 0)' }
 	},
 	{
 		id: 'kontras-light',
@@ -116,7 +146,8 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'light',
 		theme: 'kontras-light',
 		aliases: ['contrast light', 'kontras terang', 'accessibility', 'aksesibilitas'],
-		icon: SunMedium
+		icon: SunMedium,
+		swatch: { bg: 'oklch(1 0 0)', card: 'oklch(0.93 0 0)', accent: 'oklch(0 0 0)' }
 	},
 	{
 		id: 'mist',
@@ -124,7 +155,12 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'light',
 		theme: 'mist',
 		aliases: ['mist', 'kabut', 'frosted light', 'glass light'],
-		icon: CloudFog
+		icon: CloudFog,
+		swatch: {
+			bg: 'oklch(0.94 0.006 250)',
+			card: 'oklch(1 0 0)',
+			accent: 'oklch(0.2 0.01 250)'
+		}
 	},
 	{
 		id: 'dark',
@@ -132,7 +168,8 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'dark',
 		theme: '',
 		aliases: ['dark', 'gelap'],
-		icon: Moon
+		icon: Moon,
+		swatch: { bg: 'oklch(0.145 0 0)', card: 'oklch(0.21 0 0)', accent: 'oklch(0.985 0 0)' }
 	},
 	{
 		id: 'carbon',
@@ -140,7 +177,8 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'dark',
 		theme: 'carbon',
 		aliases: ['carbon', 'karbon', 'black', 'hitam', 'amoled', 'oled'],
-		icon: Contrast
+		icon: Contrast,
+		swatch: { bg: 'oklch(0 0 0)', card: 'oklch(0.09 0 0)', accent: 'oklch(0.985 0 0)' }
 	},
 	{
 		id: 'noir',
@@ -148,7 +186,8 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'dark',
 		theme: 'noir',
 		aliases: ['noir', 'grain', 'film', 'texture', 'tekstur'],
-		icon: Film
+		icon: Film,
+		swatch: { bg: 'oklch(0.14 0 0)', card: 'oklch(0.18 0 0)', accent: 'oklch(0.97 0 0)' }
 	},
 	{
 		id: 'redup',
@@ -156,7 +195,8 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'dark',
 		theme: 'redup',
 		aliases: ['dim', 'redup', 'night', 'malam', 'low contrast'],
-		icon: MoonStar
+		icon: MoonStar,
+		swatch: { bg: 'oklch(0.19 0 0)', card: 'oklch(0.23 0 0)', accent: 'oklch(0.88 0 0)' }
 	},
 	{
 		id: 'kontras',
@@ -164,7 +204,8 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'dark',
 		theme: 'kontras',
 		aliases: ['contrast', 'kontras', 'accessibility', 'aksesibilitas', 'high contrast'],
-		icon: Accessibility
+		icon: Accessibility,
+		swatch: { bg: 'oklch(0 0 0)', card: 'oklch(0.14 0 0)', accent: 'oklch(1 0 0)' }
 	},
 	{
 		id: 'blueprint',
@@ -172,7 +213,12 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'dark',
 		theme: 'blueprint',
 		aliases: ['blueprint', 'cetak biru', 'grid', 'grid paper', 'blue'],
-		icon: Grid3x3
+		icon: Grid3x3,
+		swatch: {
+			bg: 'oklch(0.16 0.008 255)',
+			card: 'oklch(0.19 0.01 255)',
+			accent: 'oklch(0.985 0 0)'
+		}
 	},
 	{
 		id: 'terminal',
@@ -180,7 +226,8 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'dark',
 		theme: 'terminal',
 		aliases: ['terminal', 'mono', 'monospace', 'console'],
-		icon: Terminal
+		icon: Terminal,
+		swatch: { bg: 'oklch(0.145 0 0)', card: 'oklch(0.17 0 0)', accent: 'oklch(0.985 0 0)' }
 	},
 	{
 		id: 'glass',
@@ -188,7 +235,8 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'dark',
 		theme: 'glass',
 		aliases: ['glass', 'kaca', 'frosted', 'blur'],
-		icon: Sparkles
+		icon: Sparkles,
+		swatch: { bg: 'oklch(0.135 0 0)', card: 'oklch(0.19 0 0)', accent: 'oklch(0.985 0 0)' }
 	},
 	{
 		id: 'system',
@@ -196,9 +244,20 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'system',
 		theme: '',
 		aliases: ['system', 'sistem', 'auto'],
-		icon: Monitor
+		icon: Monitor,
+		swatch: {
+			bg: 'linear-gradient(135deg, oklch(0.98 0 0) 50%, oklch(0.16 0 0) 50%)',
+			card: 'oklch(0.55 0 0)',
+			accent: 'oklch(0.5 0 0)'
+		}
 	}
 ];
+
+/** The plain modes, shown apart from the named themes in Settings. */
+export const MODES = APPEARANCE.filter((option) => option.theme === '');
+
+/** The named themes. */
+export const THEMES = APPEARANCE.filter((option) => option.theme !== '');
 
 /**
  * The mode a named theme is designed for, or `undefined` for the plain modes.
