@@ -5,18 +5,18 @@
 
 	interface Props {
 		/** UTC timestamp from the agent, or an ISO string recorded in the tab. */
-		value?: string;
+		at?: string;
 		class?: string;
 	}
 
-	let { value, class: className = '' }: Props = $props();
+	let { at, class: className = '' }: Props = $props();
 	const { t, locale } = useTranslation();
 
-	const label = $derived(formatChatTimestamp(value, locale.value, t('myaaw.chat.yesterday')));
+	const label = $derived(formatChatTimestamp(at, locale.value, t('myaaw.chat.yesterday')));
 </script>
 
 {#if label}
-	<time datetime={value} class={cn('text-[11px] text-muted-foreground tabular-nums', className)}>
+	<time datetime={at} class={cn('text-[11px] text-muted-foreground tabular-nums', className)}>
 		{label}
 	</time>
 {/if}

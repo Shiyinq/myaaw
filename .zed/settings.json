@@ -13,6 +13,16 @@
           "CGO_ENABLED": "1"
         }
       }
+    },
+    // Tailwind 4 uses @plugin, @custom-variant, @theme and @apply, which the
+    // plain CSS language server reports as unknown rules. Those are Tailwind
+    // directives, not mistakes, so silence that one lint.
+    "vscode-css-language-server": {
+      "settings": {
+        "css": { "lint": { "unknownAtRules": "ignore" } },
+        "scss": { "lint": { "unknownAtRules": "ignore" } },
+        "less": { "lint": { "unknownAtRules": "ignore" } }
+      }
     }
   }
 }

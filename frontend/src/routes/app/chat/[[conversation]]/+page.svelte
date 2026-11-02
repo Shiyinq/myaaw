@@ -2598,7 +2598,7 @@
 																	bind:value={messageDraft}
 																	use:autosizeEditor
 																	rows="1"
-																	class="min-h-11 w-full resize-none rounded-[var(--chat-bubble-radius)] border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
+																	class="min-h-11 w-full resize-none rounded-(--chat-bubble-radius) border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
 																	onkeydown={(event) => {
 																		if (event.isComposing) return;
 																		if (event.key === 'Escape') {
@@ -2625,7 +2625,7 @@
 															</div>
 														{:else}
 															<div
-																class="max-w-full whitespace-pre-wrap wrap-break-word rounded-[var(--chat-bubble-radius)] bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-[color:var(--chat-bubble-ring)] terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
+																class="max-w-full whitespace-pre-wrap wrap-break-word rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-(--chat-bubble-ring) terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
 															>
 																<span
 																	class="mr-1.5 hidden select-none font-semibold text-muted-foreground terminal:inline"
@@ -2652,7 +2652,7 @@
 																		<Pencil class="h-3.5 w-3.5" />
 																	</button>
 																{/if}
-																<ChatTime value={item.createdAt} />
+																<ChatTime at={item.createdAt ?? ''} />
 															</div>
 														{/if}
 													</div>
@@ -2685,7 +2685,7 @@
 														<RotateCcw class="h-3.5 w-3.5" />
 													</button>
 												{/if}
-												<ChatTime value={item.createdAt} />
+												<ChatTime at={item.createdAt ?? ''} />
 											</div>
 										</div>
 									{:else if item.kind === 'approval'}
