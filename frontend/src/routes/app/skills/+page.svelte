@@ -219,7 +219,7 @@
 	{:else}
 		<!-- Skill list: a second sidebar nested inside the main one. -->
 		<aside
-			class="flex shrink-0 flex-col border-b bg-card glass-aside lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
 		>
 			<div class="shrink-0 border-b px-3 py-2.5">
 				<p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">

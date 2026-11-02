@@ -15,7 +15,7 @@
 	let { title, summary, description, open = $bindable(false), children }: Props = $props();
 </script>
 
-<div class="rounded-xl border bg-card glass-card">
+<div class="rounded-xl border bg-card frost-card">
 	<button
 		type="button"
 		class="flex w-full items-center gap-3 p-4 text-left"

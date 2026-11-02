@@ -3,15 +3,18 @@ import type { Icon } from 'lucide-svelte';
 import {
 	Accessibility,
 	BookOpen,
+	CloudFog,
 	Contrast,
 	Film,
 	Grid3x3,
 	Layers,
 	Monitor,
 	Moon,
+	MoonStar,
 	PenLine,
 	Sparkles,
 	Sun,
+	SunMedium,
 	Terminal,
 	Type
 } from 'lucide-svelte';
@@ -23,9 +26,9 @@ export type ThemeMode = 'light' | 'dark' | 'system';
  * A named theme is a `data-theme` value layered on top of a fixed mode. The
  * matching `:root[data-theme='…']` block in `app.css` restyles tokens (and, for
  * a few, the page background or the typeface), so adding a theme is usually a
- * registry entry here plus one CSS block — no component markup changes. Only a
- * translucent theme like `glass` additionally needs named surface classes, and
- * only `terminal` needs a variant, because it re-reads the transcript.
+ * registry entry here plus one CSS block — no component markup changes.
+ * Translucent themes (glass, mist) share the named `frost-*` surface classes,
+ * and only `terminal` needs a variant, because it re-reads the transcript.
  */
 export type ThemeId =
 	| 'glass'
@@ -37,7 +40,10 @@ export type ThemeId =
 	| 'slate'
 	| 'typewriter'
 	| 'kontras'
-	| 'noir';
+	| 'kontras-light'
+	| 'noir'
+	| 'redup'
+	| 'mist';
 
 /**
  * One selectable appearance, offered in Settings and the command palette. The
@@ -95,6 +101,22 @@ export const APPEARANCE: AppearanceOption[] = [
 		icon: Type
 	},
 	{
+		id: 'kontras-light',
+		labelKey: 'myaaw.settings.theme_kontras_light',
+		mode: 'light',
+		theme: 'kontras-light',
+		aliases: ['contrast light', 'kontras terang', 'accessibility', 'aksesibilitas'],
+		icon: SunMedium
+	},
+	{
+		id: 'mist',
+		labelKey: 'myaaw.settings.theme_mist',
+		mode: 'light',
+		theme: 'mist',
+		aliases: ['mist', 'kabut', 'frosted light', 'glass light'],
+		icon: CloudFog
+	},
+	{
 		id: 'dark',
 		labelKey: 'myaaw.settings.theme_dark',
 		mode: 'dark',
@@ -117,6 +139,14 @@ export const APPEARANCE: AppearanceOption[] = [
 		theme: 'noir',
 		aliases: ['noir', 'grain', 'film', 'texture', 'tekstur'],
 		icon: Film
+	},
+	{
+		id: 'redup',
+		labelKey: 'myaaw.settings.theme_redup',
+		mode: 'dark',
+		theme: 'redup',
+		aliases: ['dim', 'redup', 'night', 'malam', 'low contrast'],
+		icon: MoonStar
 	},
 	{
 		id: 'kontras',
@@ -181,7 +211,7 @@ export function applyAppearance(option: AppearanceOption): void {
 	else setMode(option.mode);
 }
 
-/** Whether the current custom theme is `glass`, the only translucent one. */
-export function isGlass(theme: string | undefined): boolean {
-	return theme === 'glass';
+/** Whether the current custom theme paints frosted sheets (glass or mist). */
+export function isFrosted(theme: string | undefined): boolean {
+	return theme === 'glass' || theme === 'mist';
 }

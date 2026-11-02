@@ -420,6 +420,9 @@
 			"theme_slate": "Slate",
 			"theme_typewriter": "Mesin Tik",
 			"theme_kontras": "Kontras",
+			"theme_kontras_light": "Kontras Terang",
+			"theme_redup": "Redup",
+			"theme_mist": "Kabut",
 			"theme_noir": "Noir",
 			"theme_system": "Sistem"
 		},

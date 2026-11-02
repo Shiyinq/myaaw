@@ -24,7 +24,7 @@
 	import Logo from '$lib/components/common/Logo.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { theme } from 'mode-watcher';
-	import { isGlass } from '$lib/theme';
+	import { isFrosted } from '$lib/theme';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import {
@@ -199,9 +199,9 @@
 	// The composer floats over the transcript, so the transcript is padded by its
 	// measured height: the last message can always be scrolled above it.
 	let composerHeight = $state(0);
-	// Only the glass theme floats the composer over the transcript; every other
-	// theme keeps it in its own row, the way it has always been.
-	let glassMode = $derived(isGlass(theme.current));
+	// The frosted themes float the composer over the transcript; every other theme
+	// keeps it in its own row, the way it has always been.
+	let frosted = $derived(isFrosted(theme.current));
 
 	// Turn rail: one mark per user message, so a long answer can be skipped
 	// straight back to its question. The rail is a short column centred on the
@@ -2034,7 +2034,7 @@
      the transcript on a touch screen. -->
 {#snippet railCard()}
 	<div
-		class="relative w-64 rounded-xl border bg-popover p-1.5 shadow-lg glass-popover"
+		class="relative w-64 rounded-xl border bg-popover p-1.5 shadow-lg frost-popover"
 		transition:fade={{ duration: 150 }}
 		role="presentation"
 		onclick={(event) => event.stopPropagation()}
@@ -2134,7 +2134,7 @@
 								// hugging the top edge.
 								items.length === 0 && 'flex min-h-full flex-col items-center justify-center'
 							)}
-							style:padding-bottom={glassMode ? `${composerHeight + 24}px` : null}
+							style:padding-bottom={frosted ? `${composerHeight + 24}px` : null}
 						>
 							{#if loadingOlder}
 								<p
@@ -2552,8 +2552,8 @@
 					{/if}
 					<div
 						bind:clientHeight={composerHeight}
-						class={['shrink-0', glassMode && 'relative z-20']}
-						style:margin-top={glassMode ? `-${composerHeight}px` : null}
+						class={['shrink-0', frosted && 'relative z-20']}
+						style:margin-top={frosted ? `-${composerHeight}px` : null}
 					>
 						{#if runError || error}
 							<div class="px-4 pb-2">
@@ -2568,7 +2568,7 @@
 						<div
 							class={[
 								'border-t px-2 py-2 sm:px-4 sm:py-3',
-								glassMode
+								frosted
 									? 'bg-linear-to-b from-transparent via-card/40 to-card/40 backdrop-blur-xl'
 									: 'bg-background/80 backdrop-blur'
 							]}
@@ -2577,7 +2577,7 @@
 								<div
 									role="group"
 									class={[
-										'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60 terminal:rounded-none glass-card',
+										'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60 terminal:rounded-none frost-card',
 										dragOver ? 'border-ring ring-2 ring-ring/30' : ''
 									]}
 									ondragover={(event) => {
@@ -2750,7 +2750,7 @@
 											</button>
 											{#if openStats && sessionStats}
 												<div
-													class="absolute bottom-full left-0 z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md glass-popover sm:left-1/2 sm:-translate-x-1/2"
+													class="absolute bottom-full left-0 z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md frost-popover sm:left-1/2 sm:-translate-x-1/2"
 													onclick={(event) => event.stopPropagation()}
 													role="presentation"
 												>
@@ -2815,7 +2815,7 @@
 												</button>
 												{#if openUsage && sessionStats}
 													<div
-														class="absolute right-0 bottom-full z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md glass-popover sm:right-auto sm:left-1/2 sm:-translate-x-1/2"
+														class="absolute right-0 bottom-full z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md frost-popover sm:right-auto sm:left-1/2 sm:-translate-x-1/2"
 														onclick={(event) => event.stopPropagation()}
 														role="presentation"
 													>
@@ -2884,7 +2884,7 @@
 			onclick={toggleHistory}
 		></button>
 		<aside
-			class="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[85vw] flex-col border-l bg-card lg:static glass-drawer lg:z-auto lg:h-full lg:max-w-none"
+			class="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[85vw] flex-col border-l bg-card lg:static frost-drawer lg:z-auto lg:h-full lg:max-w-none"
 		>
 			<div class="flex shrink-0 items-center gap-2 border-b p-2">
 				<div class="relative min-w-0 flex-1">

@@ -15,11 +15,13 @@
 @custom-variant data-active (&[data-state='active']);
 
 /*
- * Named themes (glass, carbon, terminal, paper, blueprint) are a `data-theme`
+ * Named themes (paper, slate, graphite, typewriter, kontras, kontras-light,
+ * mist, carbon, noir, redup, blueprint, terminal, glass) are a `data-theme`
  * value that mode-watcher writes to <html> next to the `dark` class. They change
- * tokens, the page background, the typeface, or — for glass — a named surface
- * class, so adding a theme rarely touches the components. Only `terminal`
- * needs a variant, because it re-reads the chat transcript per element.
+ * tokens, the page background or the typeface, so most themes never touch the
+ * components. The translucent ones (glass, mist) share the `frost-*` surface
+ * classes, and only `terminal` needs a variant, because it re-reads the chat
+ * transcript per element.
  */
 @custom-variant terminal (&:where([data-theme='terminal'], [data-theme='terminal'] *));
 
@@ -96,6 +98,18 @@
 		/* Outline for sheets (cards, menus, dialogs); a theme may sharpen it. */
 		--surface-ring: color-mix(in oklab, var(--foreground) 10%, transparent);
 		--chat-bubble-ring: transparent;
+		/*
+		 * Frosted sheets (the glass and mist themes) read their material from
+		 * these, so a new translucent theme only has to change the numbers.
+		 */
+		--frost-aside-alpha: 55%;
+		--frost-card-alpha: 70%;
+		--frost-popover-alpha: 85%;
+		--frost-drawer-alpha: 65%;
+		--frost-chrome-alpha: 60%;
+		--frost-blur-sheet: 24px;
+		--frost-blur-float: 40px;
+		--frost-sheen: color-mix(in oklab, white 5%, transparent);
 		--font-ui-mono:
 			'Myaaw Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
 			'Courier New', monospace;
@@ -491,6 +505,113 @@
 		background-size: 200px 200px;
 		background-attachment: fixed;
 	}
+
+	/*
+	 * Mist — glass in daylight: a pale cool page under the same frosted sheets,
+	 * tuned lighter and less blurred so small text stays readable.
+	 */
+	:root[data-theme='mist'] {
+		--background: oklch(0.94 0.006 250);
+		--foreground: oklch(0.2 0.01 250);
+		--card: oklch(1 0 0);
+		--card-foreground: oklch(0.2 0.01 250);
+		--popover: oklch(1 0 0);
+		--popover-foreground: oklch(0.2 0.01 250);
+		--primary: oklch(0.2 0.01 250);
+		--primary-foreground: oklch(0.99 0.002 250);
+		--secondary: oklch(0.9 0.008 250);
+		--secondary-foreground: oklch(0.2 0.01 250);
+		--muted: oklch(0.9 0.008 250);
+		--muted-foreground: oklch(0.45 0.012 250);
+		--accent: oklch(0.88 0.01 250);
+		--accent-foreground: oklch(0.2 0.01 250);
+		--border: oklch(0.85 0.006 250);
+		--input: oklch(0.85 0.006 250);
+		--ring: oklch(0.2 0.01 250);
+		--radius: 0.5rem;
+		--frost-aside-alpha: 65%;
+		--frost-card-alpha: 78%;
+		--frost-popover-alpha: 88%;
+		--frost-drawer-alpha: 75%;
+		--frost-chrome-alpha: 65%;
+		--frost-blur-sheet: 20px;
+		--frost-blur-float: 32px;
+		--frost-sheen: color-mix(in oklab, white 45%, transparent);
+	}
+
+	:root[data-theme='mist'] body {
+		background-image:
+			radial-gradient(
+				60rem 40rem at 10% -10%,
+				color-mix(in oklab, var(--foreground) 5%, transparent),
+				transparent 70%
+			),
+			radial-gradient(
+				50rem 34rem at 95% 5%,
+				color-mix(in oklab, var(--foreground) 4%, transparent),
+				transparent 70%
+			),
+			radial-gradient(
+				70rem 44rem at 50% 120%,
+				color-mix(in oklab, var(--foreground) 5%, transparent),
+				transparent 72%
+			);
+		background-attachment: fixed;
+		background-repeat: no-repeat;
+	}
+
+	/*
+	 * Redup — a low-glare dark page for night work: lighter surfaces, dimmer
+	 * text and a softer ring than plain dark. Contrast still clears AA.
+	 */
+	:root[data-theme='redup'] {
+		--background: oklch(0.19 0 0);
+		--foreground: oklch(0.88 0 0);
+		--card: oklch(0.23 0 0);
+		--card-foreground: oklch(0.88 0 0);
+		--popover: oklch(0.25 0 0);
+		--popover-foreground: oklch(0.88 0 0);
+		--primary: oklch(0.88 0 0);
+		--primary-foreground: oklch(0.19 0 0);
+		--secondary: oklch(0.27 0 0);
+		--secondary-foreground: oklch(0.88 0 0);
+		--muted: oklch(0.27 0 0);
+		--muted-foreground: oklch(0.66 0 0);
+		--accent: oklch(0.28 0 0);
+		--accent-foreground: oklch(0.88 0 0);
+		--border: oklch(0.3 0 0);
+		--input: oklch(0.3 0 0);
+		--ring: oklch(0.8 0 0);
+		--radius: 0.5rem;
+	}
+
+	/*
+	 * Kontras Terang — the light half of the accessibility pair: paper white,
+	 * pure black text, heavy hairlines and no rounding.
+	 */
+	:root[data-theme='kontras-light'] {
+		--background: oklch(1 0 0);
+		--foreground: oklch(0 0 0);
+		--card: oklch(1 0 0);
+		--card-foreground: oklch(0 0 0);
+		--popover: oklch(1 0 0);
+		--popover-foreground: oklch(0 0 0);
+		--primary: oklch(0 0 0);
+		--primary-foreground: oklch(1 0 0);
+		--secondary: oklch(0.93 0 0);
+		--secondary-foreground: oklch(0 0 0);
+		--muted: oklch(0.93 0 0);
+		--muted-foreground: oklch(0.25 0 0);
+		--accent: oklch(0.9 0 0);
+		--accent-foreground: oklch(0 0 0);
+		--border: oklch(0.45 0 0);
+		--input: oklch(0.45 0 0);
+		--ring: oklch(0 0 0);
+		--surface-ring: var(--border);
+		--chat-bubble-ring: var(--border);
+		--radius: 0.125rem;
+		--chat-bubble-radius: var(--radius);
+	}
 }
 
 /*
@@ -501,39 +622,43 @@
  * intentionally unlayered: an unlayered declaration outranks the layered `bg-*`
  * utility on the same element, which is exactly the override we want.
  */
-[data-theme='glass'] .glass-aside {
-	background-color: color-mix(in oklab, var(--card) 55%, transparent);
-	-webkit-backdrop-filter: blur(24px);
-	backdrop-filter: blur(24px);
+/*
+ * Frosted surfaces. Glass and Mist are the two translucent themes, and both
+ * draw from the same recipe: a component keeps the opaque `bg-*` it needs for
+ * every other theme and adds the class describing the sheet. Alpha and blur
+ * come from `--frost-*`, so each theme only tunes numbers. These rules are
+ * intentionally unlayered: an unlayered declaration outranks the layered `bg-*`
+ * utility on the same element, which is exactly the override we want.
+ */
+:is([data-theme='glass'], [data-theme='mist']) .frost-aside {
+	background-color: color-mix(in oklab, var(--card) var(--frost-aside-alpha), transparent);
+	-webkit-backdrop-filter: blur(var(--frost-blur-sheet));
+	backdrop-filter: blur(var(--frost-blur-sheet));
 }
 
-[data-theme='glass'] .glass-card {
-	background-color: color-mix(in oklab, var(--card) 70%, transparent);
-	background-image: linear-gradient(
-		to bottom,
-		color-mix(in oklab, white 5%, transparent),
-		transparent
-	);
-	-webkit-backdrop-filter: blur(24px);
-	backdrop-filter: blur(24px);
+:is([data-theme='glass'], [data-theme='mist']) .frost-card {
+	background-color: color-mix(in oklab, var(--card) var(--frost-card-alpha), transparent);
+	background-image: linear-gradient(to bottom, var(--frost-sheen), transparent);
+	-webkit-backdrop-filter: blur(var(--frost-blur-sheet));
+	backdrop-filter: blur(var(--frost-blur-sheet));
 }
 
-[data-theme='glass'] .glass-popover {
-	background-color: color-mix(in oklab, var(--popover) 85%, transparent);
-	-webkit-backdrop-filter: blur(40px);
-	backdrop-filter: blur(40px);
+:is([data-theme='glass'], [data-theme='mist']) .frost-popover {
+	background-color: color-mix(in oklab, var(--popover) var(--frost-popover-alpha), transparent);
+	-webkit-backdrop-filter: blur(var(--frost-blur-float));
+	backdrop-filter: blur(var(--frost-blur-float));
 }
 
-[data-theme='glass'] .glass-drawer {
-	background-color: color-mix(in oklab, var(--card) 65%, transparent);
-	-webkit-backdrop-filter: blur(40px);
-	backdrop-filter: blur(40px);
+:is([data-theme='glass'], [data-theme='mist']) .frost-drawer {
+	background-color: color-mix(in oklab, var(--card) var(--frost-drawer-alpha), transparent);
+	-webkit-backdrop-filter: blur(var(--frost-blur-float));
+	backdrop-filter: blur(var(--frost-blur-float));
 }
 
-[data-theme='glass'] .glass-chrome {
-	background-color: color-mix(in oklab, var(--background) 60%, transparent);
-	-webkit-backdrop-filter: blur(24px);
-	backdrop-filter: blur(24px);
+:is([data-theme='glass'], [data-theme='mist']) .frost-chrome {
+	background-color: color-mix(in oklab, var(--background) var(--frost-chrome-alpha), transparent);
+	-webkit-backdrop-filter: blur(var(--frost-blur-sheet));
+	backdrop-filter: blur(var(--frost-blur-sheet));
 }
 
 /*
@@ -542,17 +667,20 @@
  * a sheet of its own. Opaque themes keep their background.
  */
 [data-theme='glass'] .page-clear,
+[data-theme='mist'] .page-clear,
 [data-theme='blueprint'] .page-clear,
 [data-theme='noir'] .page-clear {
 	background-color: transparent;
 }
 
 /*
- * A filled row is enough to mark the current item in every theme but Kontras,
- * where the fill is too faint, so the selected row also gets a visible outline.
- * `aria-current` is already set by the sidebar, lists and chat history.
+ * A filled row is enough to mark the current item in every theme but the
+ * contrast pair, where the fill is too faint, so the selected row also gets a
+ * visible outline. `aria-current` is already set by the sidebar, lists and
+ * chat history.
  */
-[data-theme='kontras'] [aria-current]:not([aria-current='false']) {
+:is([data-theme='kontras'], [data-theme='kontras-light'])
+	[aria-current]:not([aria-current='false']) {
 	outline: 1px solid var(--border);
 	outline-offset: -1px;
 }
@@ -561,7 +689,7 @@
  * The hover fill is too faint on its own too, so an interactive row under the
  * pointer shows the same outline it would when current.
  */
-[data-theme='kontras'] .list-row:hover {
+:is([data-theme='kontras'], [data-theme='kontras-light']) .list-row:hover {
 	outline: 1px solid var(--border);
 	outline-offset: -1px;
 }

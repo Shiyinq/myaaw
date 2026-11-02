@@ -420,6 +420,9 @@
 			"theme_slate": "Slate",
 			"theme_typewriter": "Typewriter",
 			"theme_kontras": "Contrast",
+			"theme_kontras_light": "Contrast Light",
+			"theme_redup": "Dim",
+			"theme_mist": "Mist",
 			"theme_noir": "Noir",
 			"theme_system": "System"
 		},
