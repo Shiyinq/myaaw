@@ -811,6 +811,40 @@ aside a[aria-current='page']:not(.justify-center)::after {
 	outline-offset: -1px;
 }
 
+/*
+ * Reader preferences, independent of the theme: they live on <html> as data
+ * attributes so any theme can combine with any of them.
+ */
+:root[data-density='compact'] .list-row {
+	padding-top: 0.125rem;
+	padding-bottom: 0.125rem;
+}
+
+:root[data-density='compact'] table :where(th, td) {
+	padding-top: 0.25rem;
+	padding-bottom: 0.25rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+:root[data-reduce-motion='true'] *,
+:root[data-reduce-motion='true'] *::before,
+:root[data-reduce-motion='true'] *::after {
+	animation-duration: 0.01ms !important;
+	animation-iteration-count: 1 !important;
+	transition-duration: 0.01ms !important;
+	scroll-behavior: auto !important;
+}
+
 @layer base {
 	/* Token colours for the highlight.js code preview, tuned per theme. */
 	:root {

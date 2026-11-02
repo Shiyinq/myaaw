@@ -10,6 +10,7 @@
 	import { files as filesApi } from '$lib/apis/files';
 	import { observability as observabilityApi } from '$lib/apis/observability';
 	import { agentSelection, toastStore, topBarTitle } from '$lib/stores';
+	import { preferences } from '$lib/stores/preferences.svelte';
 	import { chatRuns, type ChatItem } from '$lib/stores/chatRuns.svelte';
 	import { cn } from '$lib/utils';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
@@ -196,6 +197,9 @@
 	let openUsage = $state(false);
 	let scroller = $state<HTMLDivElement | null>(null);
 	let composer = $state<HTMLTextAreaElement | null>(null);
+	// True while the transcript sits at the end, so a growing answer may follow it.
+	// Scrolling away clears it until the reader comes back.
+	let stickToBottom = $state(true);
 	// The composer floats over the transcript, so the transcript is padded by its
 	// measured height: the last message can always be scrolled above it.
 	let composerHeight = $state(0);
@@ -332,7 +336,20 @@
 	let editingTitle = $state('');
 
 	function scrollToBottom() {
+		stickToBottom = true;
 		if (scroller) scroller.scrollTop = scroller.scrollHeight;
+	}
+
+	/** Whether the transcript is close enough to the end to keep following it. */
+	function nearBottom(slack = 80) {
+		if (!scroller) return true;
+		return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= slack;
+	}
+
+	/** How much text the last row holds; it changes on every streamed token. */
+	function tailGrowth(item: Item | undefined): number {
+		if (!item) return 0;
+		return (item.text?.length ?? 0) + (item.arguments?.length ?? 0) + (item.result?.length ?? 0);
 	}
 
 	/** Drops the rail and the paging cursor, for when the transcript is cleared. */
@@ -470,6 +487,7 @@
 	}
 
 	function onScroll() {
+		stickToBottom = nearBottom();
 		syncActiveTurn();
 		// Near the top the previous page is pulled in, keeping the reader's place.
 		if (scroller && scroller.scrollTop < 120) void loadOlder();
@@ -530,15 +548,27 @@
 		}
 	});
 
-	// Follow only new timeline rows. Expanding a step reassigns `items` with the
-	// same length, and that must not yank the view to the bottom. Neither must
-	// prepending an older page.
+	// Follow only new timeline rows and the growing tail of a streamed answer.
+	// Expanding a step reassigns `items` with the same length, and that must not
+	// yank the view to the bottom. Neither must prepending an older page. A sent
+	// message always jumps into view; a growing answer is followed only when the
+	// reader asked for it and has not scrolled away.
 	let followedCount = 0;
+	let followedTail = -1;
 	$effect(() => {
-		if (items.length === followedCount) return;
-		followedCount = items.length;
+		const count = items.length;
+		const tail = items[count - 1];
+		const growth = tailGrowth(tail);
+		if (count === followedCount && growth === followedTail) return;
+		const isNewRow = count !== followedCount;
+		followedCount = count;
+		followedTail = growth;
 		if (prepending) return;
-		scrollToBottom();
+		if (isNewRow && tail?.kind === 'user') {
+			scrollToBottom();
+			return;
+		}
+		if (preferences.value.autoScroll && stickToBottom) scrollToBottom();
 	});
 
 	async function loadConversation(currentAgent: string, id: string) {
@@ -850,6 +880,31 @@
 		void loadConversation(currentAgent, currentConversation);
 	});
 
+	// One draft per agent and conversation, so switching chats keeps what was typed
+	// and sending removes it. `draftKey` guards against writing the old text under
+	// the conversation that was just opened.
+	let draftKey = '';
+
+	function draftStorageKey(who: string, id: string) {
+		return `myaaw_draft:${who}:${id || 'new'}`;
+	}
+
+	$effect(() => {
+		if (!browser) return;
+		const key = draftStorageKey(agent ?? '', conversationId);
+		if (key === draftKey) return;
+		draftKey = key;
+		input = preferences.value.keepDrafts ? (localStorage.getItem(key) ?? '') : '';
+	});
+
+	$effect(() => {
+		if (!browser || !draftKey) return;
+		const key = draftStorageKey(agent ?? '', conversationId);
+		if (key !== draftKey) return;
+		if (preferences.value.keepDrafts && input) localStorage.setItem(key, input);
+		else localStorage.removeItem(key);
+	});
+
 	// This page is only a viewer of a run: callbacks are attached while it is on
 	// screen and dropped on unmount, so a background run never touches a
 	// destroyed page.
@@ -960,7 +1015,7 @@
 	});
 
 	function isGroupOpen(group: StepGroup) {
-		return groupOpen[group.key] ?? group.running;
+		return groupOpen[group.key] ?? (group.running || preferences.value.steps === 'expanded');
 	}
 
 	function groupLabel(group: StepGroup) {
@@ -1783,10 +1838,13 @@
 	}
 
 	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-			event.preventDefault();
-			void send();
-		}
+		if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+		const withModifier = event.metaKey || event.ctrlKey;
+		// In the default mode Enter sends and a modifier is optional. In the other
+		// mode Enter breaks the line and only the modifier sends.
+		if (preferences.value.sendKey === 'mod-enter' && !withModifier) return;
+		event.preventDefault();
+		void send();
 	}
 
 	/** Turns the page shortcuts into actions; the composer keeps its own keys. */
@@ -2693,11 +2751,13 @@
 											>
 												<Mic class={cn('h-4 w-4', listening && 'animate-pulse')} />
 											</Button>
-											<span
-												class="hidden min-w-0 truncate text-[10px] text-muted-foreground sm:inline"
-											>
-												{listening ? t('myaaw.chat.speech_listening') : t('myaaw.chat.hint')}
-											</span>
+											{#if listening}
+												<span
+													class="hidden min-w-0 truncate text-[10px] text-muted-foreground sm:inline"
+												>
+													{t('myaaw.chat.speech_listening')}
+												</span>
+											{/if}
 										</div>
 										{#if streaming}
 											<Button

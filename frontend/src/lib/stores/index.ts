@@ -4,6 +4,7 @@ export * from './auth.svelte';
 export * from './commandPalette.svelte';
 
 export * from './global.svelte';
+export * from './preferences.svelte';
 export * from './selectedAgent.svelte';
 export * from './shortcutHelp.svelte';
 export * from './sidebar.svelte';

@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { isAuthenticated, authStore, isInitialDataLoaded, accessToken } from '$lib/stores';
+	import { applyPreferences, preferences } from '$lib/stores/preferences.svelte';
 	import { locale, type Locale } from '$lib/i18n';
 	import { ModeWatcher, setMode, theme, userPrefersMode } from 'mode-watcher';
 	import { Toaster } from '$lib/components/ui/sonner';
@@ -36,6 +37,11 @@
 		if (required && required !== 'system' && userPrefersMode.current !== required) {
 			setMode(required);
 		}
+	});
+
+	// Density, type scale, motion and focus outlines are plain `<html>` switches.
+	$effect(() => {
+		applyPreferences(preferences.value);
 	});
 
 	let mounted = $state(false);
