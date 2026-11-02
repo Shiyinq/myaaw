@@ -24,6 +24,7 @@
 	import Logo from '$lib/components/common/Logo.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { theme } from 'mode-watcher';
+	import { isGlass } from '$lib/theme';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import {
@@ -200,7 +201,7 @@
 	let composerHeight = $state(0);
 	// Only the glass theme floats the composer over the transcript; every other
 	// theme keeps it in its own row, the way it has always been.
-	let glassMode = $derived(theme.current === 'glass');
+	let glassMode = $derived(isGlass(theme.current));
 
 	// Turn rail: one mark per user message, so a long answer can be skipped
 	// straight back to its question. The rail is a short column centred on the
@@ -2301,13 +2302,15 @@
 									{@const item = row.item}
 									{#if item.kind === 'user'}
 										<div
-											class="flex justify-end"
+											class="flex justify-end terminal:justify-start"
 											data-chat-turn={item.localId}
 											data-chat-turn-index={item.messageIndex}
 										>
-											<div class="group/user flex min-w-0 max-w-[80%] flex-col items-end gap-2">
+											<div
+												class="group/user flex min-w-0 max-w-[80%] flex-col items-end gap-2 terminal:max-w-full terminal:items-start"
+											>
 												{#if item.images?.length}
-													<div class="flex flex-wrap justify-end gap-2">
+													<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
 														{#each item.images as image, imageIndex (imageIndex)}
 															<img
 																src={image}
@@ -2318,7 +2321,7 @@
 													</div>
 												{/if}
 												{#if item.uploads?.length}
-													<div class="flex flex-wrap justify-end gap-2">
+													<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
 														{#each item.uploads as upload (upload.path || upload.name)}
 															{@const downloadPath = uploadVirtualPath(upload)}
 															{#if agent && downloadPath}
@@ -2357,10 +2360,15 @@
 													</div>
 												{/if}
 												{#if item.text}
-													<div class="flex max-w-full flex-col items-end">
+													<div class="flex max-w-full flex-col items-end terminal:items-start">
 														<div
-															class="max-w-full whitespace-pre-wrap wrap-break-word rounded-3xl bg-secondary px-4 py-2.5 text-sm text-secondary-foreground"
+															class="max-w-full whitespace-pre-wrap wrap-break-word rounded-[var(--chat-bubble-radius)] bg-secondary px-4 py-2.5 text-sm text-secondary-foreground terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
 														>
+															<span
+																class="mr-1.5 hidden select-none font-semibold text-muted-foreground terminal:inline"
+															>
+																❯
+															</span>
 															{item.text}
 														</div>
 														<CopyButton
@@ -2375,7 +2383,9 @@
 											</div>
 										</div>
 									{:else if item.kind === 'text'}
-										<div class="group/message wrap-break-word text-sm">
+										<div
+											class="group/message wrap-break-word text-sm terminal:border-l terminal:pl-3"
+										>
 											<Markdown content={item.text ?? ''} />
 											<CopyButton
 												text={item.text ?? ''}
@@ -2567,7 +2577,7 @@
 								<div
 									role="group"
 									class={[
-										'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60 glass:bg-card/65 glass:shadow-lg glass:backdrop-blur-xl',
+										'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60 terminal:rounded-none glass:bg-card/65 glass:shadow-lg glass:backdrop-blur-xl',
 										dragOver ? 'border-ring ring-2 ring-ring/30' : ''
 									]}
 									ondragover={(event) => {
@@ -2643,7 +2653,7 @@
 										onpaste={onPaste}
 										rows="1"
 										placeholder={t('myaaw.chat.placeholder')}
-										class="max-h-40 min-h-11 w-full resize-none rounded-t-2xl bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground sm:min-h-13 sm:px-4 sm:py-3"
+										class="max-h-40 min-h-11 w-full resize-none rounded-t-2xl bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground terminal:rounded-none sm:min-h-13 sm:px-4 sm:py-3"
 									></textarea>
 									<div class="flex items-center justify-between px-2 pb-1.5 sm:px-3 sm:pb-2">
 										<div class="flex min-w-0 items-center gap-1">

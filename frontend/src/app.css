@@ -15,11 +15,15 @@
 @custom-variant data-active (&[data-state='active']);
 
 /*
- * The frosted-glass look is a theme of its own, not the default: mode-watcher
- * puts `data-theme="glass"` on <html> next to `dark`, and only then do the
- * `glass:` utilities turn a surface translucent and blur what is behind it.
+ * Named themes (glass, carbon, terminal, paper, blueprint) are a `data-theme`
+ * value that mode-watcher writes to <html> next to the `dark` class. Their CSS
+ * blocks only change tokens, the page background or the typeface, so most
+ * themes need no markup changes. Two of them additionally need per-element
+ * presentation: `glass` is translucent, and `terminal` re-reads the chat
+ * transcript as a shell session.
  */
 @custom-variant glass (&:where([data-theme='glass'], [data-theme='glass'] *));
+@custom-variant terminal (&:where([data-theme='terminal'], [data-theme='terminal'] *));
 
 @theme {
 	--color-background: var(--background);
@@ -195,10 +199,20 @@
 
 @layer base {
 	/*
-	 * The glass theme is smoked, not coloured: the page paints a few wide,
-	 * colourless pools of light and every translucent sheet above it blurs them.
-	 * `fixed` keeps the pools still, so a sheet never slides over a moving glow.
-	 * Plain dark and light keep the flat background they always had.
+	 * Named themes. Each block is self-contained: it overrides the tokens the
+	 * theme changes and leans on `.dark` (or `:root`) for everything else, since
+	 * `data-theme` always sits next to the mode class it was chosen with.
+	 */
+
+	/* Chat bubbles are pills in the default themes; sharper themes pull them in. */
+	:root {
+		--chat-bubble-radius: 1.5rem;
+	}
+
+	/*
+	 * Glass — smoked, not coloured. The page paints a few wide, colourless pools
+	 * of light and every translucent sheet above it blurs them. `fixed` keeps the
+	 * pools still, so a sheet never slides over a moving glow.
 	 */
 	:root[data-theme='glass'] {
 		--background: oklch(0.135 0 0);
@@ -225,6 +239,117 @@
 			);
 		background-attachment: fixed;
 		background-repeat: no-repeat;
+	}
+
+	/*
+	 * Carbon — true black, hairline borders and crisp corners. No blur, no
+	 * gradients: it leans on sharp contrast instead of decoration.
+	 */
+	:root[data-theme='carbon'] {
+		--background: oklch(0 0 0);
+		--foreground: oklch(0.985 0 0);
+		--card: oklch(0.09 0 0);
+		--card-foreground: oklch(0.985 0 0);
+		--popover: oklch(0.13 0 0);
+		--popover-foreground: oklch(0.985 0 0);
+		--primary: oklch(0.985 0 0);
+		--primary-foreground: oklch(0.11 0 0);
+		--secondary: oklch(0.16 0 0);
+		--secondary-foreground: oklch(0.985 0 0);
+		--muted: oklch(0.16 0 0);
+		--muted-foreground: oklch(0.7 0 0);
+		--accent: oklch(0.16 0 0);
+		--accent-foreground: oklch(0.985 0 0);
+		--border: oklch(0.19 0 0);
+		--input: oklch(0.19 0 0);
+		--ring: oklch(0.9 0 0);
+		--radius: 0.25rem;
+		--chat-bubble-radius: var(--radius);
+	}
+
+	/*
+	 * Terminal — the whole shell runs on Myaaw Mono with near-square corners.
+	 * The palette stays close to plain dark so the typeface carries the identity.
+	 */
+	:root[data-theme='terminal'] {
+		--font-sans:
+			'Myaaw Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+			'Courier New', monospace;
+		--font-mono:
+			'Myaaw Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+			'Courier New', monospace;
+		--radius: 0.125rem;
+		--card: oklch(0.16 0 0);
+		--popover: oklch(0.19 0 0);
+		--muted: oklch(0.24 0 0);
+		--muted-foreground: oklch(0.72 0 0);
+		--border: oklch(0.3 0 0);
+		--input: oklch(0.3 0 0);
+		--chat-bubble-radius: 0rem;
+	}
+
+	/*
+	 * Paper — a warm, low-contrast light page for long reading. No pure white:
+	 * the tint is the difference, like a page left out in warm lamplight.
+	 */
+	:root[data-theme='paper'] {
+		--background: oklch(0.975 0.008 85);
+		--foreground: oklch(0.24 0.014 70);
+		--card: oklch(0.995 0.004 85);
+		--card-foreground: oklch(0.24 0.014 70);
+		--popover: oklch(0.995 0.004 85);
+		--popover-foreground: oklch(0.24 0.014 70);
+		--primary: oklch(0.24 0.014 70);
+		--primary-foreground: oklch(0.985 0.006 85);
+		--secondary: oklch(0.94 0.012 85);
+		--secondary-foreground: oklch(0.24 0.014 70);
+		--muted: oklch(0.94 0.012 85);
+		--muted-foreground: oklch(0.52 0.02 75);
+		--accent: oklch(0.92 0.016 80);
+		--accent-foreground: oklch(0.24 0.014 70);
+		--border: oklch(0.88 0.015 85);
+		--input: oklch(0.88 0.015 85);
+		--ring: oklch(0.24 0.014 70);
+	}
+
+	/*
+	 * Blueprint — drafting paper for a control plane: a barely-blue dark palette
+	 * under a faint fixed 24px grid. Colourless enough to stay neutral, cool
+	 * enough to read as technical.
+	 */
+	:root[data-theme='blueprint'] {
+		--background: oklch(0.16 0.008 255);
+		--foreground: oklch(0.985 0 0);
+		--card: oklch(0.19 0.01 255);
+		--card-foreground: oklch(0.985 0 0);
+		--popover: oklch(0.21 0.01 255);
+		--popover-foreground: oklch(0.985 0 0);
+		--secondary: oklch(0.26 0.012 255);
+		--secondary-foreground: oklch(0.985 0 0);
+		--muted: oklch(0.26 0.012 255);
+		--muted-foreground: oklch(0.72 0.01 255);
+		--accent: oklch(0.26 0.012 255);
+		--accent-foreground: oklch(0.985 0 0);
+		--border: oklch(0.28 0.014 255);
+		--input: oklch(0.28 0.014 255);
+		--radius: 0.375rem;
+		--chat-bubble-radius: var(--radius);
+	}
+
+	:root[data-theme='blueprint'] body {
+		background-image:
+			linear-gradient(
+				to right,
+				color-mix(in oklab, var(--foreground) 3.5%, transparent) 1px,
+				transparent 1px
+			),
+			linear-gradient(
+				to bottom,
+				color-mix(in oklab, var(--foreground) 3.5%, transparent) 1px,
+				transparent 1px
+			);
+		background-size: 24px 24px;
+		background-attachment: fixed;
 	}
 }
 

@@ -412,6 +412,10 @@
 			"theme_light": "Terang",
 			"theme_dark": "Gelap",
 			"theme_glass": "Kaca",
+			"theme_carbon": "Karbon",
+			"theme_terminal": "Terminal",
+			"theme_paper": "Kertas",
+			"theme_blueprint": "Cetak Biru",
 			"theme_system": "Sistem"
 		},
 		"terminal": {

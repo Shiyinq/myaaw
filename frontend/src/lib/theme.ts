@@ -1,0 +1,123 @@
+import type { ComponentType } from 'svelte';
+import type { Icon } from 'lucide-svelte';
+import { BookOpen, Contrast, Grid3x3, Monitor, Moon, Sparkles, Sun, Terminal } from 'lucide-svelte';
+import { resetMode, setMode, setTheme } from 'mode-watcher';
+
+export type ThemeMode = 'light' | 'dark' | 'system';
+
+/**
+ * A named theme is a `data-theme` value layered on top of a fixed mode. The
+ * matching `:root[data-theme='…']` block in `app.css` restyles tokens (and, for
+ * a few, the page background or the typeface), so adding a theme is usually a
+ * registry entry here plus one CSS block — no component markup changes. Only a
+ * translucent theme like `glass` additionally needs its own `@custom-variant`
+ * and per-surface utility classes.
+ */
+export type ThemeId = 'glass' | 'carbon' | 'terminal' | 'paper' | 'blueprint';
+
+/**
+ * One selectable appearance, offered in Settings and the command palette. The
+ * plain Light, Dark and System entries are modes with no custom theme; the rest
+ * set `data-theme` and switch to the mode they are designed for.
+ */
+export interface AppearanceOption {
+	id: string;
+	labelKey: string;
+	mode: ThemeMode;
+	theme: '' | ThemeId;
+	aliases: string[];
+	icon: ComponentType<Icon>;
+}
+
+export const APPEARANCE: AppearanceOption[] = [
+	{
+		id: 'light',
+		labelKey: 'myaaw.settings.theme_light',
+		mode: 'light',
+		theme: '',
+		aliases: ['light', 'terang'],
+		icon: Sun
+	},
+	{
+		id: 'paper',
+		labelKey: 'myaaw.settings.theme_paper',
+		mode: 'light',
+		theme: 'paper',
+		aliases: ['paper', 'kertas', 'read', 'baca', 'sepia'],
+		icon: BookOpen
+	},
+	{
+		id: 'dark',
+		labelKey: 'myaaw.settings.theme_dark',
+		mode: 'dark',
+		theme: '',
+		aliases: ['dark', 'gelap'],
+		icon: Moon
+	},
+	{
+		id: 'carbon',
+		labelKey: 'myaaw.settings.theme_carbon',
+		mode: 'dark',
+		theme: 'carbon',
+		aliases: ['carbon', 'karbon', 'black', 'hitam', 'amoled', 'oled'],
+		icon: Contrast
+	},
+	{
+		id: 'terminal',
+		labelKey: 'myaaw.settings.theme_terminal',
+		mode: 'dark',
+		theme: 'terminal',
+		aliases: ['terminal', 'mono', 'monospace', 'console'],
+		icon: Terminal
+	},
+	{
+		id: 'blueprint',
+		labelKey: 'myaaw.settings.theme_blueprint',
+		mode: 'dark',
+		theme: 'blueprint',
+		aliases: ['blueprint', 'cetak biru', 'grid', 'grid paper', 'blue'],
+		icon: Grid3x3
+	},
+	{
+		id: 'glass',
+		labelKey: 'myaaw.settings.theme_glass',
+		mode: 'dark',
+		theme: 'glass',
+		aliases: ['glass', 'kaca', 'frosted', 'blur'],
+		icon: Sparkles
+	},
+	{
+		id: 'system',
+		labelKey: 'myaaw.settings.theme_system',
+		mode: 'system',
+		theme: '',
+		aliases: ['system', 'sistem', 'auto'],
+		icon: Monitor
+	}
+];
+
+/** Whether an appearance option is the one currently in effect. */
+export function isAppearanceActive(
+	option: AppearanceOption,
+	mode: ThemeMode,
+	theme: string | undefined
+): boolean {
+	if (option.theme) return theme === option.theme;
+	return theme === '' && mode === option.mode;
+}
+
+/**
+ * Applies an appearance option. Plain modes clear `data-theme` first so a
+ * surface that was translucent (glass) or restyled never lingers; named themes
+ * set the theme and then the mode it is designed for.
+ */
+export function applyAppearance(option: AppearanceOption): void {
+	setTheme(option.theme);
+	if (option.mode === 'system') resetMode();
+	else setMode(option.mode);
+}
+
+/** Whether the current custom theme is `glass`, the only translucent one. */
+export function isGlass(theme: string | undefined): boolean {
+	return theme === 'glass';
+}

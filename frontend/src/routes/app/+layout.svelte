@@ -17,8 +17,6 @@
 		Server,
 		Settings2,
 		LogOut,
-		Monitor,
-		Moon,
 		Wrench,
 		SlidersHorizontal,
 		Clock,
@@ -29,7 +27,6 @@
 		Archive,
 		Bot,
 		SquareTerminal,
-		Sun,
 		RotateCw,
 		PanelLeftClose,
 		PanelLeftOpen,
@@ -61,7 +58,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import { resetMode, setMode, setTheme, theme, userPrefersMode } from 'mode-watcher';
+	import { theme, userPrefersMode } from 'mode-watcher';
+	import { APPEARANCE, applyAppearance, isAppearanceActive } from '$lib/theme';
 
 	interface Props {
 		children: import('svelte').Snippet;
@@ -356,58 +354,17 @@
 			}
 		}
 
-		const mode = userPrefersMode.current;
-		// Glass is a theme on top of dark mode, so it is offered next to the modes
-		// and clears the custom theme when one of the plain ones is chosen.
-		const glass = theme.current === 'glass';
-		list.push({
-			id: 'action:theme-light',
-			labelKey: 'myaaw.settings.theme_light',
-			aliases: ['theme', 'tema', 'light', 'terang'],
-			group: 'action',
-			icon: Sun,
-			current: !glass && mode === 'light',
-			run: () => {
-				setTheme('');
-				setMode('light');
-			}
-		});
-		list.push({
-			id: 'action:theme-dark',
-			labelKey: 'myaaw.settings.theme_dark',
-			aliases: ['theme', 'tema', 'dark', 'gelap'],
-			group: 'action',
-			icon: Moon,
-			current: !glass && mode === 'dark',
-			run: () => {
-				setTheme('');
-				setMode('dark');
-			}
-		});
-		list.push({
-			id: 'action:theme-glass',
-			labelKey: 'myaaw.settings.theme_glass',
-			aliases: ['theme', 'tema', 'glass', 'kaca', 'frosted', 'blur'],
-			group: 'action',
-			icon: Sparkles,
-			current: glass,
-			run: () => {
-				setTheme('glass');
-				setMode('dark');
-			}
-		});
-		list.push({
-			id: 'action:theme-system',
-			labelKey: 'myaaw.settings.theme_system',
-			aliases: ['theme', 'tema', 'system', 'sistem', 'auto'],
-			group: 'action',
-			icon: Monitor,
-			current: !glass && mode === 'system',
-			run: () => {
-				setTheme('');
-				resetMode();
-			}
-		});
+		for (const option of APPEARANCE) {
+			list.push({
+				id: `action:theme:${option.id}`,
+				labelKey: option.labelKey,
+				aliases: ['theme', 'tema', ...option.aliases],
+				group: 'action',
+				icon: option.icon,
+				current: isAppearanceActive(option, userPrefersMode.current, theme.current),
+				run: () => applyAppearance(option)
+			});
+		}
 		for (const item of availableLocales) {
 			list.push({
 				id: `action:locale:${item.code}`,

@@ -412,6 +412,10 @@
 			"theme_light": "Light",
 			"theme_dark": "Dark",
 			"theme_glass": "Glass",
+			"theme_carbon": "Carbon",
+			"theme_terminal": "Terminal",
+			"theme_paper": "Paper",
+			"theme_blueprint": "Blueprint",
 			"theme_system": "System"
 		},
 		"terminal": {

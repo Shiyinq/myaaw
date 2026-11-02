@@ -10,37 +10,14 @@
 	} from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
 	import { Palette } from 'lucide-svelte';
-	import { resetMode, setMode, setTheme, theme, userPrefersMode } from 'mode-watcher';
+	import { theme, userPrefersMode } from 'mode-watcher';
+	import { APPEARANCE, applyAppearance, isAppearanceActive } from '$lib/theme';
 	import type { Locale } from '$lib/i18n';
 
 	const { t, locale, changeLocale, availableLocales } = useTranslation();
 
 	function changeLanguage(event: Event) {
 		changeLocale((event.currentTarget as HTMLSelectElement).value as Locale);
-	}
-
-	const glass = $derived(theme.current === 'glass');
-
-	// Glass is dark mode plus a custom theme, so picking a plain mode has to clear
-	// the theme again or `data-theme` would keep the surfaces translucent.
-	function chooseLight() {
-		setTheme('');
-		setMode('light');
-	}
-
-	function chooseDark() {
-		setTheme('');
-		setMode('dark');
-	}
-
-	function chooseSystem() {
-		setTheme('');
-		resetMode();
-	}
-
-	function chooseGlass() {
-		setTheme('glass');
-		setMode('dark');
 	}
 </script>
 
@@ -70,30 +47,17 @@
 			<div class="grid gap-1">
 				<Label>{t('myaaw.settings.theme')}</Label>
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-					<Button
-						variant={!glass && userPrefersMode.current === 'light' ? 'default' : 'outline'}
-						size="sm"
-						onclick={chooseLight}
-					>
-						{t('myaaw.settings.theme_light')}
-					</Button>
-					<Button
-						variant={!glass && userPrefersMode.current === 'dark' ? 'default' : 'outline'}
-						size="sm"
-						onclick={chooseDark}
-					>
-						{t('myaaw.settings.theme_dark')}
-					</Button>
-					<Button variant={glass ? 'default' : 'outline'} size="sm" onclick={chooseGlass}>
-						{t('myaaw.settings.theme_glass')}
-					</Button>
-					<Button
-						variant={!glass && userPrefersMode.current === 'system' ? 'default' : 'outline'}
-						size="sm"
-						onclick={chooseSystem}
-					>
-						{t('myaaw.settings.theme_system')}
-					</Button>
+					{#each APPEARANCE as option (option.id)}
+						<Button
+							variant={isAppearanceActive(option, userPrefersMode.current, theme.current)
+								? 'default'
+								: 'outline'}
+							size="sm"
+							onclick={() => applyAppearance(option)}
+						>
+							{t(option.labelKey)}
+						</Button>
+					{/each}
 				</div>
 			</div>
 		</CardContent>
