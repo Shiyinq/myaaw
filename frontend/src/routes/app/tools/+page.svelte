@@ -322,7 +322,7 @@
 					</p>
 					{#each view?.builtin ?? [] as tool (tool.name)}
 						<label
-							class="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
+							class="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted list-row"
 							title={tool.description}
 						>
 							<input
@@ -341,7 +341,7 @@
 						{t('myaaw.tools.custom')}
 					</p>
 					{#each view?.custom ?? [] as tool (tool.name)}
-						<div class="flex items-start gap-2 rounded-md px-1 py-1 hover:bg-muted">
+						<div class="flex items-start gap-2 rounded-md px-1 py-1 hover:bg-muted list-row">
 							<input
 								type="checkbox"
 								checked={tool.enabled}
@@ -395,7 +395,7 @@
 						{t('myaaw.tools.mcp')}
 					</p>
 					{#each view?.mcp_servers ?? [] as server (server.name)}
-						<div class="flex items-start gap-2 rounded-md px-1 py-1 hover:bg-muted">
+						<div class="flex items-start gap-2 rounded-md px-1 py-1 hover:bg-muted list-row">
 							<input
 								type="checkbox"
 								checked={server.enabled}

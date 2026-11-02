@@ -93,6 +93,12 @@
 		--input: oklch(0.922 0 0);
 		--ring: oklch(0.145 0 0);
 		--radius: 0.5rem;
+		/* Outline for sheets (cards, menus, dialogs); a theme may sharpen it. */
+		--surface-ring: color-mix(in oklab, var(--foreground) 10%, transparent);
+		--chat-bubble-ring: transparent;
+		--font-ui-mono:
+			'Myaaw Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+			'Courier New', monospace;
 		--chart-1: oklch(0.646 0.222 41.116);
 		--chart-2: oklch(0.6 0.118 184.704);
 		--chart-3: oklch(0.398 0.07 227.392);
@@ -270,12 +276,8 @@
 	 * The palette stays close to plain dark so the typeface carries the identity.
 	 */
 	:root[data-theme='terminal'] {
-		--font-sans:
-			'Myaaw Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
-			'Courier New', monospace;
-		--font-mono:
-			'Myaaw Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
-			'Courier New', monospace;
+		--font-sans: var(--font-ui-mono);
+		--font-mono: var(--font-ui-mono);
 		--radius: 0.125rem;
 		--card: oklch(0.16 0 0);
 		--popover: oklch(0.19 0 0);
@@ -349,6 +351,146 @@
 		background-size: 24px 24px;
 		background-attachment: fixed;
 	}
+
+	/*
+	 * Graphite — a printed spec sheet: neutral grey paper, white cards, hairline
+	 * rules and square corners. The light counterpart to Carbon.
+	 */
+	:root[data-theme='graphite'] {
+		--background: oklch(0.965 0 0);
+		--foreground: oklch(0.17 0 0);
+		--card: oklch(1 0 0);
+		--card-foreground: oklch(0.17 0 0);
+		--popover: oklch(1 0 0);
+		--popover-foreground: oklch(0.17 0 0);
+		--primary: oklch(0.17 0 0);
+		--primary-foreground: oklch(0.99 0 0);
+		--secondary: oklch(0.93 0 0);
+		--secondary-foreground: oklch(0.17 0 0);
+		--muted: oklch(0.93 0 0);
+		--muted-foreground: oklch(0.5 0 0);
+		--accent: oklch(0.91 0 0);
+		--accent-foreground: oklch(0.17 0 0);
+		--border: oklch(0.86 0 0);
+		--input: oklch(0.86 0 0);
+		--ring: oklch(0.17 0 0);
+		--radius: 0.125rem;
+		--chat-bubble-radius: var(--radius);
+	}
+
+	/*
+	 * Slate — the cool light counterpart to Paper: a blue-grey page with white
+	 * cards. Soft corners, so chat bubbles keep their pill.
+	 */
+	:root[data-theme='slate'] {
+		--background: oklch(0.965 0.006 250);
+		--foreground: oklch(0.22 0.012 250);
+		--card: oklch(0.995 0.002 250);
+		--card-foreground: oklch(0.22 0.012 250);
+		--popover: oklch(0.995 0.002 250);
+		--popover-foreground: oklch(0.22 0.012 250);
+		--primary: oklch(0.22 0.012 250);
+		--primary-foreground: oklch(0.99 0.002 250);
+		--secondary: oklch(0.93 0.008 250);
+		--secondary-foreground: oklch(0.22 0.012 250);
+		--muted: oklch(0.93 0.008 250);
+		--muted-foreground: oklch(0.5 0.015 250);
+		--accent: oklch(0.92 0.01 250);
+		--accent-foreground: oklch(0.22 0.012 250);
+		--border: oklch(0.88 0.008 250);
+		--input: oklch(0.88 0.008 250);
+		--ring: oklch(0.22 0.012 250);
+		--radius: 0.375rem;
+	}
+
+	/*
+	 * Typewriter — the light counterpart to Terminal: the whole shell runs on
+	 * Myaaw Mono again, this time on near-white paper with square corners.
+	 */
+	:root[data-theme='typewriter'] {
+		--font-sans: var(--font-ui-mono);
+		--font-mono: var(--font-ui-mono);
+		--background: oklch(0.985 0 0);
+		--foreground: oklch(0.16 0 0);
+		--card: oklch(1 0 0);
+		--card-foreground: oklch(0.16 0 0);
+		--popover: oklch(1 0 0);
+		--popover-foreground: oklch(0.16 0 0);
+		--primary: oklch(0.16 0 0);
+		--primary-foreground: oklch(0.99 0 0);
+		--secondary: oklch(0.94 0 0);
+		--secondary-foreground: oklch(0.16 0 0);
+		--muted: oklch(0.94 0 0);
+		--muted-foreground: oklch(0.5 0 0);
+		--accent: oklch(0.92 0 0);
+		--accent-foreground: oklch(0.16 0 0);
+		--border: oklch(0.85 0 0);
+		--input: oklch(0.85 0 0);
+		--ring: oklch(0.16 0 0);
+		--radius: 0.125rem;
+		--chat-bubble-radius: var(--radius);
+	}
+
+	/*
+	 * Kontras — accessibility: pure black, pure white text, visible hairlines and
+	 * a bright focus ring, so the interface survives a bad projector or low vision.
+	 */
+	:root[data-theme='kontras'] {
+		--background: oklch(0 0 0);
+		--foreground: oklch(1 0 0);
+		--card: oklch(0 0 0);
+		--card-foreground: oklch(1 0 0);
+		--popover: oklch(0.08 0 0);
+		--popover-foreground: oklch(1 0 0);
+		--primary: oklch(1 0 0);
+		--primary-foreground: oklch(0 0 0);
+		--secondary: oklch(0.18 0 0);
+		--secondary-foreground: oklch(1 0 0);
+		--muted: oklch(0.18 0 0);
+		--muted-foreground: oklch(0.82 0 0);
+		--accent: oklch(0.22 0 0);
+		--accent-foreground: oklch(1 0 0);
+		--border: oklch(0.52 0 0);
+		--input: oklch(0.52 0 0);
+		--ring: oklch(1 0 0);
+		--surface-ring: var(--border);
+		--chat-bubble-ring: var(--border);
+		--radius: 0.125rem;
+		--chat-bubble-radius: var(--radius);
+	}
+
+	/*
+	 * Noir — charcoal under a faint film grain. The grain is one tiny tiled SVG
+	 * (desaturated fractal noise at 6% opacity) repeated as a background layer,
+	 * so it costs a single paint and never sits between text and its reader.
+	 */
+	:root[data-theme='noir'] {
+		--background: oklch(0.14 0 0);
+		--foreground: oklch(0.97 0 0);
+		--card: oklch(0.175 0 0);
+		--card-foreground: oklch(0.97 0 0);
+		--popover: oklch(0.2 0 0);
+		--popover-foreground: oklch(0.97 0 0);
+		--primary: oklch(0.97 0 0);
+		--primary-foreground: oklch(0.14 0 0);
+		--secondary: oklch(0.22 0 0);
+		--secondary-foreground: oklch(0.97 0 0);
+		--muted: oklch(0.22 0 0);
+		--muted-foreground: oklch(0.71 0 0);
+		--accent: oklch(0.24 0 0);
+		--accent-foreground: oklch(0.97 0 0);
+		--border: oklch(0.27 0 0);
+		--input: oklch(0.27 0 0);
+		--ring: oklch(0.88 0 0);
+		--radius: 0.375rem;
+	}
+
+	:root[data-theme='noir'] body {
+		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23g)' opacity='0.06'/%3E%3C/svg%3E");
+		background-repeat: repeat;
+		background-size: 200px 200px;
+		background-attachment: fixed;
+	}
 }
 
 /*
@@ -394,9 +536,34 @@
 	backdrop-filter: blur(24px);
 }
 
-/* Full-bleed screens let the page aura show through instead of painting a sheet. */
-[data-theme='glass'] .glass-clear {
+/*
+ * Themes that paint their own canvas (the glass aura, the blueprint grid, the
+ * noir grain) need the body to show through, so the page wrapper stops painting
+ * a sheet of its own. Opaque themes keep their background.
+ */
+[data-theme='glass'] .page-clear,
+[data-theme='blueprint'] .page-clear,
+[data-theme='noir'] .page-clear {
 	background-color: transparent;
+}
+
+/*
+ * A filled row is enough to mark the current item in every theme but Kontras,
+ * where the fill is too faint, so the selected row also gets a visible outline.
+ * `aria-current` is already set by the sidebar, lists and chat history.
+ */
+[data-theme='kontras'] [aria-current]:not([aria-current='false']) {
+	outline: 1px solid var(--border);
+	outline-offset: -1px;
+}
+
+/*
+ * The hover fill is too faint on its own too, so an interactive row under the
+ * pointer shows the same outline it would when current.
+ */
+[data-theme='kontras'] .list-row:hover {
+	outline: 1px solid var(--border);
+	outline-offset: -1px;
 }
 
 @layer base {

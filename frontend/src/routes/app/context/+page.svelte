@@ -139,11 +139,12 @@
 						{#each list as file (file.path)}
 							<button
 								class={[
-									'block w-full truncate rounded-md px-2 py-1 text-left text-sm transition-colors',
+									'block w-full truncate rounded-md px-2 py-1 text-left text-sm transition-colors list-row',
 									file.path === path
 										? 'bg-accent font-medium text-accent-foreground'
 										: 'hover:bg-muted'
 								]}
+								aria-current={file.path === path ? 'true' : undefined}
 								onclick={() => {
 									if (!agent) return;
 									revealPane(detail);

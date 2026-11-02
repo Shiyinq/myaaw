@@ -242,9 +242,10 @@
 					{#each customSkills as skill (skill.name)}
 						<div
 							class={[
-								'flex items-center gap-2 rounded-md px-1 py-1',
+								'flex items-center gap-2 rounded-md px-1 py-1 list-row',
 								selected?.name === skill.name ? 'bg-accent' : 'hover:bg-muted'
 							]}
+							aria-current={selected?.name === skill.name ? 'true' : undefined}
 						>
 							<input
 								type="checkbox"
@@ -282,9 +283,10 @@
 						{#each builtinRows as row (row.entry.name)}
 							<div
 								class={[
-									'flex items-center gap-2 rounded-md px-1 py-1',
+									'flex items-center gap-2 rounded-md px-1 py-1 list-row',
 									selected?.name === row.entry.name ? 'bg-accent' : 'hover:bg-muted'
 								]}
+								aria-current={selected?.name === row.entry.name ? 'true' : undefined}
 								title={row.entry.description}
 							>
 								<input

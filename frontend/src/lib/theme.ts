@@ -1,6 +1,20 @@
 import type { ComponentType } from 'svelte';
 import type { Icon } from 'lucide-svelte';
-import { BookOpen, Contrast, Grid3x3, Monitor, Moon, Sparkles, Sun, Terminal } from 'lucide-svelte';
+import {
+	Accessibility,
+	BookOpen,
+	Contrast,
+	Film,
+	Grid3x3,
+	Layers,
+	Monitor,
+	Moon,
+	PenLine,
+	Sparkles,
+	Sun,
+	Terminal,
+	Type
+} from 'lucide-svelte';
 import { resetMode, setMode, setTheme } from 'mode-watcher';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
@@ -10,10 +24,20 @@ export type ThemeMode = 'light' | 'dark' | 'system';
  * matching `:root[data-theme='…']` block in `app.css` restyles tokens (and, for
  * a few, the page background or the typeface), so adding a theme is usually a
  * registry entry here plus one CSS block — no component markup changes. Only a
- * translucent theme like `glass` additionally needs its own `@custom-variant`
- * and per-surface utility classes.
+ * translucent theme like `glass` additionally needs named surface classes, and
+ * only `terminal` needs a variant, because it re-reads the transcript.
  */
-export type ThemeId = 'glass' | 'carbon' | 'terminal' | 'paper' | 'blueprint';
+export type ThemeId =
+	| 'glass'
+	| 'carbon'
+	| 'terminal'
+	| 'paper'
+	| 'blueprint'
+	| 'graphite'
+	| 'slate'
+	| 'typewriter'
+	| 'kontras'
+	| 'noir';
 
 /**
  * One selectable appearance, offered in Settings and the command palette. The
@@ -47,6 +71,30 @@ export const APPEARANCE: AppearanceOption[] = [
 		icon: BookOpen
 	},
 	{
+		id: 'slate',
+		labelKey: 'myaaw.settings.theme_slate',
+		mode: 'light',
+		theme: 'slate',
+		aliases: ['slate', 'cool', 'dingin', 'grey', 'abu'],
+		icon: Layers
+	},
+	{
+		id: 'graphite',
+		labelKey: 'myaaw.settings.theme_graphite',
+		mode: 'light',
+		theme: 'graphite',
+		aliases: ['graphite', 'grafit', 'print', 'printout', 'cetak'],
+		icon: PenLine
+	},
+	{
+		id: 'typewriter',
+		labelKey: 'myaaw.settings.theme_typewriter',
+		mode: 'light',
+		theme: 'typewriter',
+		aliases: ['typewriter', 'mesin tik', 'mono', 'light terminal'],
+		icon: Type
+	},
+	{
 		id: 'dark',
 		labelKey: 'myaaw.settings.theme_dark',
 		mode: 'dark',
@@ -63,12 +111,20 @@ export const APPEARANCE: AppearanceOption[] = [
 		icon: Contrast
 	},
 	{
-		id: 'terminal',
-		labelKey: 'myaaw.settings.theme_terminal',
+		id: 'noir',
+		labelKey: 'myaaw.settings.theme_noir',
 		mode: 'dark',
-		theme: 'terminal',
-		aliases: ['terminal', 'mono', 'monospace', 'console'],
-		icon: Terminal
+		theme: 'noir',
+		aliases: ['noir', 'grain', 'film', 'texture', 'tekstur'],
+		icon: Film
+	},
+	{
+		id: 'kontras',
+		labelKey: 'myaaw.settings.theme_kontras',
+		mode: 'dark',
+		theme: 'kontras',
+		aliases: ['contrast', 'kontras', 'accessibility', 'aksesibilitas', 'high contrast'],
+		icon: Accessibility
 	},
 	{
 		id: 'blueprint',
@@ -77,6 +133,14 @@ export const APPEARANCE: AppearanceOption[] = [
 		theme: 'blueprint',
 		aliases: ['blueprint', 'cetak biru', 'grid', 'grid paper', 'blue'],
 		icon: Grid3x3
+	},
+	{
+		id: 'terminal',
+		labelKey: 'myaaw.settings.theme_terminal',
+		mode: 'dark',
+		theme: 'terminal',
+		aliases: ['terminal', 'mono', 'monospace', 'console'],
+		icon: Terminal
 	},
 	{
 		id: 'glass',

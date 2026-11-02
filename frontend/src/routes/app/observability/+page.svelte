@@ -349,9 +349,12 @@
 						{#each sessions as item (item.conversation_id)}
 							<button
 								class={[
-									'w-full rounded-md border p-2 text-left transition-colors',
+									'w-full rounded-md border p-2 text-left transition-colors list-row',
 									session?.conversation_id === item.conversation_id ? 'bg-accent' : 'hover:bg-muted'
 								]}
+								aria-current={session?.conversation_id === item.conversation_id
+									? 'true'
+									: undefined}
 								onclick={() => openSession(item)}
 							>
 								<div class="flex items-center justify-between gap-2">
@@ -383,9 +386,10 @@
 						{#each runs as run (run.id)}
 							<button
 								class={[
-									'w-full rounded-md border p-2 text-left transition-colors',
+									'w-full rounded-md border p-2 text-left transition-colors list-row',
 									detail?.run.id === run.id ? 'bg-accent' : 'hover:bg-muted'
 								]}
+								aria-current={detail?.run.id === run.id ? 'true' : undefined}
 								onclick={() => openRun(run)}
 							>
 								<div class="flex items-center justify-between gap-2">

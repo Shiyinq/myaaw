@@ -2362,7 +2362,7 @@
 												{#if item.text}
 													<div class="flex max-w-full flex-col items-end terminal:items-start">
 														<div
-															class="max-w-full whitespace-pre-wrap wrap-break-word rounded-[var(--chat-bubble-radius)] bg-secondary px-4 py-2.5 text-sm text-secondary-foreground terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
+															class="max-w-full whitespace-pre-wrap wrap-break-word rounded-[var(--chat-bubble-radius)] bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-[color:var(--chat-bubble-ring)] terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
 														>
 															<span
 																class="mr-1.5 hidden select-none font-semibold text-muted-foreground terminal:inline"
@@ -2924,9 +2924,10 @@
 				{#each history as entry (entry.id)}
 					<div
 						class={[
-							'group/entry rounded-md transition-colors',
+							'group/entry rounded-md transition-colors list-row',
 							entry.id === conversationId ? 'bg-accent' : 'hover:bg-muted'
 						]}
+						aria-current={entry.id === conversationId ? 'true' : undefined}
 					>
 						{#if editingId === entry.id}
 							<div class="flex items-center gap-1 p-1">

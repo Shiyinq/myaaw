@@ -540,7 +540,7 @@
 
 <div
 	class={[
-		'h-dvh bg-background glass-clear transition-[padding] duration-200',
+		'h-dvh bg-background page-clear transition-[padding] duration-200',
 		sidebar.collapsed ? 'md:pl-16' : 'md:pl-60'
 	]}
 >
@@ -619,7 +619,7 @@
 				title={compactSidebar ? t(fleet.label) : undefined}
 				aria-current={isActive(fleet.href) ? 'page' : undefined}
 				class={[
-					'relative flex items-center rounded-md text-sm transition-colors',
+					'relative flex items-center rounded-md text-sm transition-colors list-row',
 					compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
 					isActive(fleet.href)
 						? 'bg-accent font-medium text-accent-foreground'
@@ -693,7 +693,7 @@
 							title={compactSidebar ? t(item.label) : undefined}
 							aria-current={isActive(item.href) ? 'page' : undefined}
 							class={[
-								'relative flex items-center rounded-md text-sm transition-colors',
+								'relative flex items-center rounded-md text-sm transition-colors list-row',
 								compactSidebar ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
 								isActive(item.href)
 									? 'bg-accent font-medium text-accent-foreground'

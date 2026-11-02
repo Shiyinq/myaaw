@@ -413,7 +413,10 @@
 							</Button>
 						</div>
 					{:else}
-						<div class="group relative flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted">
+						<div
+							class="group relative flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted list-row"
+							aria-current={selected?.path === entry.path ? 'true' : undefined}
+						>
 							<button
 								class="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
 								onclick={() => open(entry)}
@@ -485,7 +488,7 @@
 				</div>
 				{#each matches as match (match.path + match.line)}
 					<button
-						class="block w-full truncate rounded px-1 py-0.5 text-left text-xs hover:bg-muted"
+						class="block w-full truncate rounded px-1 py-0.5 text-left text-xs hover:bg-muted list-row"
 						onclick={() => openMatch(match)}
 					>
 						<span class="font-mono">{match.path}:{match.line}</span>

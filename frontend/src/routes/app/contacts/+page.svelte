@@ -210,7 +210,7 @@
 				{#each contacts as contact (contact.name)}
 					<div
 						class={[
-							'flex items-start gap-2 rounded-md px-1 py-1.5 hover:bg-muted',
+							'flex items-start gap-2 rounded-md px-1 py-1.5 hover:bg-muted list-row',
 							editing?.name === contact.name ? 'bg-muted' : ''
 						]}
 					>

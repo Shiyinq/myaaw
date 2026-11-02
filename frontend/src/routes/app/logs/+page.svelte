@@ -162,9 +162,10 @@
 				{#each files as entry (entry.name)}
 					<button
 						class={[
-							'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+							'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors list-row',
 							entry.name === file ? 'bg-accent font-medium' : 'hover:bg-muted'
 						]}
+						aria-current={entry.name === file ? 'true' : undefined}
 						onclick={() => pick(entry.name)}
 					>
 						<span class="truncate font-mono text-xs">{entry.name}</span>

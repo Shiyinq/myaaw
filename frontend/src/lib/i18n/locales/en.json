@@ -416,6 +416,11 @@
 			"theme_terminal": "Terminal",
 			"theme_paper": "Paper",
 			"theme_blueprint": "Blueprint",
+			"theme_graphite": "Graphite",
+			"theme_slate": "Slate",
+			"theme_typewriter": "Typewriter",
+			"theme_kontras": "Contrast",
+			"theme_noir": "Noir",
 			"theme_system": "System"
 		},
 		"terminal": {

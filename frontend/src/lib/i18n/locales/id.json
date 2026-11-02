@@ -416,6 +416,11 @@
 			"theme_terminal": "Terminal",
 			"theme_paper": "Kertas",
 			"theme_blueprint": "Cetak Biru",
+			"theme_graphite": "Grafit",
+			"theme_slate": "Slate",
+			"theme_typewriter": "Mesin Tik",
+			"theme_kontras": "Kontras",
+			"theme_noir": "Noir",
 			"theme_system": "Sistem"
 		},
 		"terminal": {
