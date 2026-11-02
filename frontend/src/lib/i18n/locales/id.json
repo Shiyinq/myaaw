@@ -472,7 +472,20 @@
 			"speech_no_voice_hint": "Belum ada suara untuk bahasa ini. Tambahkan di pengaturan suara sistem, atau pilih suara di atas.",
 			"speech_unsupported_note": "Browser ini tidak bisa membacakan teks. Coba Chrome, Edge, atau Safari.",
 			"dictation_language": "Bahasa dikte",
-			"dictation_language_desc": "Dipakai tombol mikrofon di komposer."
+			"dictation_language_desc": "Dipakai tombol mikrofon di komposer.",
+			"notify_responses": "Putar suara saat jawaban selesai",
+			"notify_responses_desc": "Beri nada pendek setiap kali agen selesai.",
+			"notify_sound": "Suara notifikasi",
+			"notify_volume": "Volume",
+			"notify_preview": "Putar suara",
+			"notify_sound_chime": "Lonceng",
+			"notify_sound_bell": "Bel",
+			"notify_sound_blip": "Blip",
+			"notify_sound_soft": "Lembut",
+			"notify_sound_ping": "Ping",
+			"notify_sound_triple": "Tiga Nada",
+			"notify_sound_doorbell": "Bel Pintu",
+			"notify_sound_marimba": "Marimba"
 		},
 		"terminal": {
 			"title": "Terminal",

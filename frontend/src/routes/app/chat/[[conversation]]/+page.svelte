@@ -13,6 +13,7 @@
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import { chatRuns, type ChatItem, type ChatRun } from '$lib/stores/chatRuns.svelte';
 	import { tts } from '$lib/speech/tts.svelte';
+	import { playNotification } from '$lib/sound/notify.svelte';
 	import { cn } from '$lib/utils';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -929,6 +930,12 @@
 				void refreshTitle(currentAgent, statsId);
 				// The run may land in the trace store just after `done`.
 				setTimeout(() => void refreshStats(currentAgent, statsId), 1500);
+
+				// The completion tone is separate from read-aloud: a quiet answer
+				// still deserves a short cue that the agent has finished.
+				if (!run.error && !run.resumed && preferences.value.notifyEnabled) {
+					playNotification(preferences.value.notifySound, preferences.value.notifyVolume);
+				}
 
 				// Only an answer that was produced while the reader was here is read
 				// aloud: a restored run or a background tab stays quiet.

@@ -23,6 +23,7 @@
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import type { AudioLanguage, SpeechLanguage } from '$lib/stores/preferences.svelte';
 	import { tts } from '$lib/speech/tts.svelte';
+	import { notificationSounds, playNotification } from '$lib/sound/notify.svelte';
 	import type { Locale } from '$lib/i18n';
 
 	const { t, locale, changeLocale, availableLocales } = useTranslation();
@@ -80,6 +81,7 @@
 	);
 
 	const speechRate = $derived(preferences.value.speechRate.toFixed(2));
+	const notifyVolumePercent = $derived(Math.round(preferences.value.notifyVolume * 100));
 
 	function previewSpeech() {
 		tts.speak('settings-preview', t('myaaw.settings.speech_sample'));
@@ -392,6 +394,60 @@
 					<p class="text-xs text-muted-foreground">
 						{t('myaaw.settings.dictation_language_desc')}
 					</p>
+				</div>
+
+				<div class="grid gap-3 border-t pt-5">
+					{@render toggle(
+						t('myaaw.settings.notify_responses'),
+						t('myaaw.settings.notify_responses_desc'),
+						preferences.value.notifyEnabled,
+						(next) => preferences.update({ notifyEnabled: next })
+					)}
+
+					<div class="grid gap-2 sm:max-w-xs">
+						<Label for="notify-sound">{t('myaaw.settings.notify_sound')}</Label>
+						<select
+							id="notify-sound"
+							value={preferences.value.notifySound}
+							onchange={(event) => preferences.update({ notifySound: event.currentTarget.value })}
+							class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+						>
+							{#each notificationSounds as sound (sound.id)}
+								<option value={sound.id}>{t(sound.labelKey)}</option>
+							{/each}
+						</select>
+
+						<div class="grid gap-2">
+							<div class="flex items-center justify-between gap-3">
+								<Label for="notify-volume">{t('myaaw.settings.notify_volume')}</Label>
+								<span class="text-xs tabular-nums text-muted-foreground"
+									>{notifyVolumePercent}%</span
+								>
+							</div>
+							<input
+								id="notify-volume"
+								type="range"
+								min="0"
+								max="1"
+								step="0.05"
+								value={preferences.value.notifyVolume}
+								oninput={(event) =>
+									preferences.update({ notifyVolume: Number(event.currentTarget.value) })}
+								class="h-1.5 w-full cursor-pointer accent-primary"
+							/>
+						</div>
+
+						<div>
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={() =>
+									playNotification(preferences.value.notifySound, preferences.value.notifyVolume)}
+							>
+								{t('myaaw.settings.notify_preview')}
+							</Button>
+						</div>
+					</div>
 				</div>
 			</div>
 		</CardContent>

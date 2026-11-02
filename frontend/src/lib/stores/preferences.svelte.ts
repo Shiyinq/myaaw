@@ -26,6 +26,9 @@ export interface Preferences {
 	speechLang: SpeechLanguage;
 	speechVoice: string;
 	dictationLang: AudioLanguage;
+	notifyEnabled: boolean;
+	notifySound: string;
+	notifyVolume: number;
 }
 
 const STORAGE_KEY = 'myaaw_prefs';
@@ -42,7 +45,10 @@ const DEFAULTS: Preferences = {
 	speechRate: 1,
 	speechLang: 'auto',
 	speechVoice: '',
-	dictationLang: 'app'
+	dictationLang: 'app',
+	notifyEnabled: true,
+	notifySound: 'chime',
+	notifyVolume: 0.7
 };
 
 function audioLanguage(value: unknown): AudioLanguage {
@@ -75,7 +81,14 @@ function load(): Preferences {
 			),
 			speechLang: speechLanguage(parsed.speechLang),
 			speechVoice: typeof parsed.speechVoice === 'string' ? parsed.speechVoice : '',
-			dictationLang: audioLanguage(parsed.dictationLang)
+			dictationLang: audioLanguage(parsed.dictationLang),
+			notifyEnabled: parsed.notifyEnabled !== false,
+			notifySound:
+				typeof parsed.notifySound === 'string' && parsed.notifySound ? parsed.notifySound : 'chime',
+			notifyVolume: Math.min(
+				1,
+				Math.max(0, Math.round((Number(parsed.notifyVolume) || 0.7) * 100) / 100)
+			)
 		};
 	} catch {
 		return { ...DEFAULTS };

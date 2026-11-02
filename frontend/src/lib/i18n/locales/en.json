@@ -472,7 +472,20 @@
 			"speech_no_voice_hint": "No voice for this language is installed. Add one in your system speech settings, or pick a voice above.",
 			"speech_unsupported_note": "This browser cannot read text aloud. Try Chrome, Edge or Safari.",
 			"dictation_language": "Dictation language",
-			"dictation_language_desc": "Used by the microphone button in the composer."
+			"dictation_language_desc": "Used by the microphone button in the composer.",
+			"notify_responses": "Play a sound when an answer finishes",
+			"notify_responses_desc": "Alert with a short tone each time an agent finishes.",
+			"notify_sound": "Notification sound",
+			"notify_volume": "Volume",
+			"notify_preview": "Play sound",
+			"notify_sound_chime": "Chime",
+			"notify_sound_bell": "Bell",
+			"notify_sound_blip": "Blip",
+			"notify_sound_soft": "Soft",
+			"notify_sound_ping": "Ping",
+			"notify_sound_triple": "Triple",
+			"notify_sound_doorbell": "Doorbell",
+			"notify_sound_marimba": "Marimba"
 		},
 		"terminal": {
 			"title": "Terminal",
