@@ -14,7 +14,7 @@ export interface Command {
 	/** Values interpolated into `labelKey`, e.g. the agent name. */
 	params?: Record<string, string | number>;
 	aliases?: string[];
-	group: 'navigate' | 'agent' | 'action';
+	group: 'navigate' | 'agent' | 'appearance' | 'language' | 'action';
 	icon: ComponentType<Icon>;
 	href?: string;
 	run?: () => void | Promise<void>;

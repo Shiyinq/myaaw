@@ -493,7 +493,7 @@
 			"notify_sound_doorbell": "Bel Pintu",
 			"notify_sound_marimba": "Marimba",
 			"simple_mode": "Mode sederhana",
-			"simple_mode_desc": "Ubah sidebar menjadi daftar chat dengan pemilih agen, lalu sembunyikan pintasan Fleet dan kelompok halaman."
+			"simple_mode_desc": "Ubah sidebar menjadi daftar chat dengan pemilih agen. Matikan untuk mode standar dan navigasi lengkap."
 		},
 		"terminal": {
 			"title": "Terminal",
@@ -928,7 +928,11 @@
 			"hint_select": "Pilih",
 			"start_agent": "Jalankan {name}",
 			"stop_agent": "Hentikan {name}",
-			"restart_agent": "Restart {name}"
+			"restart_agent": "Restart {name}",
+			"group_appearance": "Tampilan",
+			"group_language": "Bahasa",
+			"simple_mode_enable": "Mode Sederhana",
+			"simple_mode_disable": "Mode Standar"
 		}
 	}
 }

@@ -16,10 +16,12 @@
 	let active = $state(0);
 	let input = $state<HTMLInputElement | null>(null);
 
-	const GROUP_ORDER: Command['group'][] = ['agent', 'navigate', 'action'];
+	const GROUP_ORDER: Command['group'][] = ['agent', 'navigate', 'appearance', 'language', 'action'];
 	const GROUP_LABELS: Record<Command['group'], string> = {
 		navigate: 'myaaw.command.group_navigate',
 		agent: 'myaaw.command.group_agent',
+		appearance: 'myaaw.command.group_appearance',
+		language: 'myaaw.command.group_language',
 		action: 'myaaw.command.group_action'
 	};
 
@@ -107,7 +109,10 @@
 <Dialog.Root open={commandPalette.open} onOpenChange={(value) => commandPalette.set(value)}>
 	<Dialog.Portal>
 		<Dialog.Overlay />
-		<Dialog.Content class="top-[12%] max-w-xl translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl">
+		<Dialog.Content
+			class="top-[12%] max-w-xl translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl"
+			showCloseButton={false}
+		>
 			<Dialog.Title class="sr-only">{t('myaaw.command.title')}</Dialog.Title>
 			<Dialog.Description class="sr-only">{t('myaaw.command.placeholder')}</Dialog.Description>
 

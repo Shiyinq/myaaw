@@ -29,6 +29,7 @@
 		Bot,
 		SquareTerminal,
 		RotateCw,
+		PanelLeft,
 		PanelLeftClose,
 		PanelLeftOpen,
 		Menu,
@@ -375,12 +376,24 @@
 			}
 		}
 
+		// The palette can flip the shell between the chat-first and the default
+		// (standard) layout without a trip to Settings.
+		list.push({
+			id: 'action:simple-mode',
+			labelKey: preferences.value.simpleMode
+				? 'myaaw.command.simple_mode_disable'
+				: 'myaaw.command.simple_mode_enable',
+			aliases: ['simple', 'sederhana', 'standard', 'standar', 'mode', 'sidebar', 'layout'],
+			group: 'appearance',
+			icon: PanelLeft,
+			run: () => preferences.update({ simpleMode: !preferences.value.simpleMode })
+		});
 		for (const option of APPEARANCE) {
 			list.push({
 				id: `action:theme:${option.id}`,
 				labelKey: option.labelKey,
 				aliases: ['theme', 'tema', ...option.aliases],
-				group: 'action',
+				group: 'appearance',
 				icon: option.icon,
 				current: isAppearanceActive(option, userPrefersMode.current, theme.current),
 				run: () => applyAppearance(option)
@@ -394,7 +407,7 @@
 					item.code === 'id'
 						? ['language', 'bahasa', 'indonesia', 'indonesian', 'id']
 						: ['language', 'bahasa', 'english', 'inggris', 'en'],
-				group: 'action',
+				group: 'language',
 				icon: Languages,
 				current: locale.value === item.code,
 				run: () => changeLocale(item.code)

@@ -493,7 +493,7 @@
 			"notify_sound_doorbell": "Doorbell",
 			"notify_sound_marimba": "Marimba",
 			"simple_mode": "Simple mode",
-			"simple_mode_desc": "Turn the sidebar into the chat list with an agent picker, and hide the Fleet shortcut and the page groups."
+			"simple_mode_desc": "Turn the sidebar into the chat list with an agent picker. Turn it off for standard mode and the full navigation."
 		},
 		"terminal": {
 			"title": "Terminal",
@@ -928,7 +928,11 @@
 			"hint_select": "Select",
 			"start_agent": "Start {name}",
 			"stop_agent": "Stop {name}",
-			"restart_agent": "Restart {name}"
+			"restart_agent": "Restart {name}",
+			"group_appearance": "Appearance",
+			"group_language": "Language",
+			"simple_mode_enable": "Simple Mode",
+			"simple_mode_disable": "Standard Mode"
 		}
 	}
 }
