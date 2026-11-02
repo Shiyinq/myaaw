@@ -98,6 +98,7 @@ Chat and conversation endpoints use this ID automatically. Clients do not need t
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/agents` | list agents with `default`, `running`, `port`, `base_url` |
+| `GET` | `/capabilities` | provider presets, embedded skills and built-in tools for the onboarding form |
 | `GET` | `/agents/:name` | one agent |
 | `POST` | `/agents/:name/onboard` | create or reconfigure an agent with the full setup in one call |
 | `DELETE` | `/agents/:name` | delete agent data (default agent is protected) |
@@ -127,6 +128,34 @@ curl -X POST http://localhost:9000/agents/myfriend/onboard \
 ```
 
 `201` means the agent was created, `200` means it was reconfigured. The body is `{created, config, warnings}`; `warnings` carries non-fatal issues such as a failed Telegram webhook registration.
+
+### Capabilities catalog
+
+`GET /capabilities` is the only catalog route that is not scoped to an agent: an agent that does not exist yet has no skills or tools directory to read. It returns the same catalog as `myaaw onboard --list-capabilities --json`, so a wizard can build the create form before calling `POST /agents/:name/onboard`.
+
+```bash
+curl http://localhost:9000/capabilities -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "providers": [
+    {
+      "id": "deepseek",
+      "type": "openai",
+      "label": "DeepSeek",
+      "default_base_url": "https://api.deepseek.com",
+      "default_model": "deepseek-chat"
+    }
+  ],
+  "skills": [{"name": "weather", "description": "Fetch a weather forecast"}],
+  "tools": [{"name": "bash", "description": "Run shell commands"}]
+}
+```
+
+- `providers[].id` is the preset the wizard shows; `type` is the wire type the provider config needs. `default_base_url` and `default_model` are omitted when the preset has none.
+- `skills[].name` is the value `POST /agents/:name/onboard` accepts in `skills`, and the name `POST /agents/:name/skills/:skill/install` copies.
+- `tools[].name` matches the built-in tool names in `GET /agents/:name/tools`, so a wizard can send `disable_tools`.
 
 ## 5. Chat
 
@@ -426,6 +455,9 @@ Skills live in `~/.myaaw/<agent>/skills/<skill>/SKILL.md`. The enabled state fol
 | `GET` | `/agents/:name/skills/:skill` | skill detail: `SKILL.md` content + file listing |
 | `GET` | `/agents/:name/skills/:skill/file?path=scripts/weather.py` | read one file in the skill (base64 for binary) |
 | `PATCH` | `/agents/:name/skills/:skill` | `{enabled}` → writes `skills.json` |
+| `POST` | `/agents/:name/skills/:skill/install` | copy an embedded built-in skill into the agent |
+| `GET` | `/skills/builtin/:skill` | preview an embedded skill without installing it |
+| `GET` | `/skills/builtin/:skill/file?path=SKILL.md` | read one file from the embedded template |
 | `DELETE` | `/agents/:name/skills/:skill` | remove the skill folder and its `skills.json` key (idempotent) |
 | `DELETE` | `/agents/:name/skills/:skill/config` | remove only the `skills.json` override (folder untouched, idempotent) |
 
@@ -458,6 +490,17 @@ List response:
 - Empty or missing directories return an empty list. A missing or invalid `skills.json` behaves like the agent loader: everything defaults to enabled, and the next write replaces the file.
 - A stale `skills.json` key left behind by a manual folder deletion is ignored by the list (no ghost skills) and can be cleaned with `DELETE`, which succeeds as long as the folder or the key exists.
 - `DELETE /skills/:skill/config` clears a toggle written by `PATCH` without deleting the skill. After that, the enabled state falls back to the `SKILL.md` frontmatter `enabled` field, or to the default (enabled) when the frontmatter does not specify one. The skill folder must exist; a missing key still returns `200`.
+
+### Installing and previewing built-in skills
+
+`POST /agents/:name/skills/:skill/install` copies one of the templates embedded in the binary — the names listed in `GET /capabilities` — into the agent's `skills/` directory, records it as enabled in `skills.json`, and returns the same detail as `GET /agents/:name/skills/:skill`. An existing folder is never overwritten, so repeating the call is safe (`200`). A name that is not embedded returns `400`, because the route only installs built-ins; use the filesystem routes for a skill shipped some other way. `POST /agents/:name/onboard` uses the same installer for the `skills` list.
+
+```bash
+curl -X POST http://localhost:9000/agents/myfriend/skills/weather/install \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+`GET /skills/builtin/:skill` and `GET /skills/builtin/:skill/file?path=...` read the template inside the binary without touching the agent, so a wizard can preview what an installation would add. The response shapes match the agent-scoped routes; `source` is `"builtin"` and `enabled` is `false`. A name outside the embedded set returns `404`.
 
 Skill detail:
 
@@ -721,6 +764,7 @@ turning recording on: the trace database is opened once per process.
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/agents/:name/conversations?search=&limit=&offset=` | paginated conversation list |
+| `GET` | `/agents/:name/conversations/activity?from=&to=` | per-day conversation counts for the dashboard activity map |
 | `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages |
 | `PATCH` | `/agents/:name/conversations/:id` | rename `{title}` |
 | `DELETE` | `/agents/:name/conversations/:id` | delete a conversation |
@@ -786,6 +830,30 @@ curl -X DELETE http://localhost:9000/agents/myfriend/conversations/conv-id \
 ```
 
 Conversations come from the agent's own SQLite database. Legacy traces are migrated on read. If the database does not exist yet, the list is empty.
+
+### Activity
+
+`GET /agents/:name/conversations/activity?from=&to=` returns how many conversations the authenticated user created per local day; the dashboard activity map reads it. `?user_id=` works here too, like the other conversation routes.
+
+```bash
+curl "http://localhost:9000/agents/myfriend/conversations/activity?from=1761955200000&to=1764547199999" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "from": 1761955200000,
+  "to": 1764547199999,
+  "total": 42,
+  "days": [{"date": "2026-11-02", "count": 3}]
+}
+```
+
+- `from` and `to` are unix **milliseconds**. They default to the first day of the current month and now; both are normalised to the start of their day.
+- The window may span at most 366 days and `to` must not precede `from` (`400` otherwise).
+- Every date in the window is returned, including days with `count: 0`, so the client never has to fill gaps.
+- Days are bucketed in the API host's local timezone, matching how the agent stamps `created_at`.
+- A missing database or `conversations` table returns the full zero-filled window instead of an error.
 
 ## 14. Logs
 
@@ -1082,17 +1150,18 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Group | Endpoints |
 |---|---|
 | Auth | `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, `POST /auth/change-password`, `PUT /auth/username` |
-| Agents | `GET /agents`, `GET/DELETE /agents/:name`, `POST /agents/:name/onboard`, `POST /agents/:name/default` |
-| Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream` |
-| Files | `GET/DELETE /agents/:name/fs`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
+| Agents | `GET /agents`, `GET /capabilities`, `GET/DELETE /agents/:name`, `POST /agents/:name/onboard`, `POST /agents/:name/default` |
+| Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream`, `POST /agents/:name/chat/stop`, `GET /agents/:name/chat/runs`, `GET /agents/:name/chat/run/:id/stream` |
+| Approvals | `GET /agents/:name/approvals`, `POST /agents/:name/approvals/:id/decision`, `DELETE /agents/:name/approvals/grants`, `DELETE /agents/:name/approvals/grants/:key`, `DELETE /agents/:name/approvals/grants/:key/sessions/:conversation` |
+| Files | `GET/DELETE /agents/:name/fs`, `GET /fs/raw`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
-| Skills | `GET /agents/:name/skills`, `GET /skills/:skill`, `GET /skills/:skill/file?path=`, `PATCH /skills/:skill`, `DELETE /skills/:skill`, `DELETE /skills/:skill/config` |
+| Skills | `GET /agents/:name/skills`, `POST /skills/:skill/install`, `GET /skills/builtin/:skill`, `GET /skills/builtin/:skill/file?path=`, `GET /skills/:skill`, `GET /skills/:skill/file?path=`, `PATCH /skills/:skill`, `DELETE /skills/:skill`, `DELETE /skills/:skill/config` |
 | Tools | `GET /agents/:name/tools`, `POST /tools/custom`, `POST /tools/mcp`, `PATCH /tools/builtin/:tool`, `PATCH /tools/custom/:tool`, `PATCH /tools/mcp/:tool`, `DELETE /tools/custom/:tool`, `DELETE /tools/mcp/:tool` |
 | Contacts | `GET/POST /agents/:name/contacts`, `PATCH/DELETE /contacts/:contact` |
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
-| Conversations | `GET /conversations?search=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id` |
+| Conversations | `GET /conversations?search=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id` |
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |
 | Cron | `GET/POST /cron`, `DELETE /cron/:id`, `POST /cron/:id/run`, `GET /cron/:id/history` |
@@ -1100,7 +1169,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Backups | `GET/POST /backups`, `GET/DELETE /backups/:name`, `POST /backups/:name/restore` |
 | System | `GET /health`, `GET /docs/*` |
 
-All `/agents/...` paths are prefixed with `/agents/:name`. `POST /providers/models` is the only provider route outside an agent: it takes explicit credentials so a dashboard can fill the model picker before onboarding. `/backups` is host-level rather than agent-scoped, because one archive can hold every agent plus the registry.
+All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, `POST /providers/models`, `/skills/builtin/*` and `/backups` are the routes outside an agent: the first two let a dashboard build and check an agent before it exists, the built-in skills are embedded in the binary, and `/backups` is host-level because one archive can hold every agent plus the registry.
 
 ## 19. Errors
 
