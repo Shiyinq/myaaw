@@ -3,6 +3,10 @@ import { browser } from '$app/environment';
 export type Density = 'comfortable' | 'compact';
 export type SendKey = 'enter' | 'mod-enter';
 export type StepDisplay = 'summary' | 'expanded';
+/** Audio language: follow the interface, or force one of the shipped locales. */
+export type AudioLanguage = 'app' | 'id' | 'en';
+/** Read-aloud may also guess the language from the answer itself. */
+export type SpeechLanguage = AudioLanguage | 'auto';
 
 /**
  * Per-browser preferences that are not a theme: how dense the lists are, how
@@ -17,6 +21,11 @@ export interface Preferences {
 	autoScroll: boolean;
 	steps: StepDisplay;
 	keepDrafts: boolean;
+	speakResponses: boolean;
+	speechRate: number;
+	speechLang: SpeechLanguage;
+	speechVoice: string;
+	dictationLang: AudioLanguage;
 }
 
 const STORAGE_KEY = 'myaaw_prefs';
@@ -28,8 +37,21 @@ const DEFAULTS: Preferences = {
 	sendKey: 'enter',
 	autoScroll: true,
 	steps: 'summary',
-	keepDrafts: true
+	keepDrafts: true,
+	speakResponses: false,
+	speechRate: 1,
+	speechLang: 'auto',
+	speechVoice: '',
+	dictationLang: 'app'
 };
+
+function audioLanguage(value: unknown): AudioLanguage {
+	return value === 'id' || value === 'en' ? value : 'app';
+}
+
+function speechLanguage(value: unknown): SpeechLanguage {
+	return value === 'app' || value === 'id' || value === 'en' ? value : 'auto';
+}
 
 /** Reads the stored preferences, dropping unknown or malformed values. */
 function load(): Preferences {
@@ -45,7 +67,15 @@ function load(): Preferences {
 			sendKey: parsed.sendKey === 'mod-enter' ? 'mod-enter' : 'enter',
 			autoScroll: parsed.autoScroll !== false,
 			steps: parsed.steps === 'expanded' ? 'expanded' : 'summary',
-			keepDrafts: parsed.keepDrafts !== false
+			keepDrafts: parsed.keepDrafts !== false,
+			speakResponses: parsed.speakResponses === true,
+			speechRate: Math.min(
+				1.5,
+				Math.max(0.75, Math.round((Number(parsed.speechRate) || 1) * 100) / 100)
+			),
+			speechLang: speechLanguage(parsed.speechLang),
+			speechVoice: typeof parsed.speechVoice === 'string' ? parsed.speechVoice : '',
+			dictationLang: audioLanguage(parsed.dictationLang)
 		};
 	} catch {
 		return { ...DEFAULTS };

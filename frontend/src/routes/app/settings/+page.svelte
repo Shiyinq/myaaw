@@ -9,7 +9,9 @@
 	} from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Button } from '$lib/components/ui/button';
 	import { Accessibility, Check, MessageSquare, Palette } from 'lucide-svelte';
+	import { onMount } from 'svelte';
 	import { theme, userPrefersMode } from 'mode-watcher';
 	import {
 		applyAppearance,
@@ -19,6 +21,8 @@
 		type AppearanceOption
 	} from '$lib/theme';
 	import { preferences } from '$lib/stores/preferences.svelte';
+	import type { AudioLanguage, SpeechLanguage } from '$lib/stores/preferences.svelte';
+	import { tts } from '$lib/speech/tts.svelte';
 	import type { Locale } from '$lib/i18n';
 
 	const { t, locale, changeLocale, availableLocales } = useTranslation();
@@ -41,6 +45,45 @@
 		{ value: 'summary', label: t('myaaw.settings.steps_summary') },
 		{ value: 'expanded', label: t('myaaw.settings.steps_expanded') }
 	]);
+
+	// The synthesiser list is empty until the browser announces it, so the card
+	// waits for the mount before claiming support.
+	let speechSupported = $state(false);
+	onMount(() => {
+		speechSupported = tts.supported;
+		tts.refreshVoices();
+	});
+
+	const speechLanguageOptions = $derived([
+		{ value: 'auto', label: t('myaaw.settings.speech_language_auto') },
+		{ value: 'app', label: t('myaaw.settings.speech_language_app') },
+		{ value: 'id', label: t('myaaw.settings.speech_language_id') },
+		{ value: 'en', label: t('myaaw.settings.speech_language_en') }
+	]);
+
+	const dictationLanguageOptions = $derived([
+		{ value: 'app', label: t('myaaw.settings.speech_language_app') },
+		{ value: 'id', label: t('myaaw.settings.speech_language_id') },
+		{ value: 'en', label: t('myaaw.settings.speech_language_en') }
+	]);
+
+	const languageFilter = $derived.by(() => {
+		const choice = preferences.value.speechLang;
+		if (choice === 'auto') return '';
+		return choice === 'app' ? locale.value : choice;
+	});
+
+	const voiceOptions = $derived(
+		tts.voices
+			.filter((voice) => !languageFilter || voice.lang.toLowerCase().startsWith(languageFilter))
+			.sort((a, b) => a.name.localeCompare(b.name))
+	);
+
+	const speechRate = $derived(preferences.value.speechRate.toFixed(2));
+
+	function previewSpeech() {
+		tts.speak('settings-preview', t('myaaw.settings.speech_sample'));
+	}
 </script>
 
 {#snippet themeTile(option: AppearanceOption)}
@@ -242,6 +285,114 @@
 					preferences.value.keepDrafts,
 					(next) => preferences.update({ keepDrafts: next })
 				)}
+			</div>
+
+			<div class="grid gap-5 border-t pt-5">
+				{#if speechSupported}
+					<div class="grid gap-2">
+						{@render toggle(
+							t('myaaw.settings.speak_responses'),
+							t('myaaw.settings.speak_responses_desc'),
+							preferences.value.speakResponses,
+							(next) => preferences.update({ speakResponses: next })
+						)}
+					</div>
+
+					<div class="grid gap-2 sm:max-w-xs">
+						<Label for="speech-language">{t('myaaw.settings.speech_language')}</Label>
+						<select
+							id="speech-language"
+							value={preferences.value.speechLang}
+							onchange={(event) =>
+								preferences.update({
+									speechLang: event.currentTarget.value as SpeechLanguage
+								})}
+							class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+						>
+							{#each speechLanguageOptions as option (option.value)}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
+					</div>
+
+					<div class="grid gap-2 sm:max-w-xs">
+						<Label for="speech-voice">{t('myaaw.settings.speech_voice')}</Label>
+						<select
+							id="speech-voice"
+							value={preferences.value.speechVoice}
+							onfocus={() => tts.refreshVoices()}
+							onchange={(event) => preferences.update({ speechVoice: event.currentTarget.value })}
+							class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+						>
+							<option value="">{t('myaaw.settings.speech_voice_default')}</option>
+							{#each voiceOptions as voice (voice.voiceURI)}
+								<option value={voice.voiceURI}>
+									{voice.name} · {voice.lang}{voice.localService
+										? ''
+										: ` · ${t('myaaw.settings.speech_voice_online')}`}
+								</option>
+							{/each}
+						</select>
+						{#if tts.voices.length === 0}
+							<p class="text-xs text-muted-foreground">
+								{t('myaaw.settings.speech_loading_voices')}
+							</p>
+						{:else if languageFilter && voiceOptions.length === 0}
+							<p class="text-xs text-muted-foreground">
+								{t('myaaw.settings.speech_no_voice_hint')}
+							</p>
+						{/if}
+					</div>
+
+					<div class="grid gap-2">
+						<div class="flex items-center justify-between gap-3 sm:max-w-sm">
+							<Label for="speech-rate">{t('myaaw.settings.speech_rate')}</Label>
+							<span class="text-xs tabular-nums text-muted-foreground">{speechRate}×</span>
+						</div>
+						<input
+							id="speech-rate"
+							type="range"
+							min="0.75"
+							max="1.5"
+							step="0.05"
+							value={preferences.value.speechRate}
+							oninput={(event) =>
+								preferences.update({ speechRate: Number(event.currentTarget.value) })}
+							class="h-1.5 w-full max-w-sm cursor-pointer accent-primary"
+						/>
+						<div>
+							<Button variant="outline" size="sm" onclick={previewSpeech}>
+								{t('myaaw.settings.speech_preview')}
+							</Button>
+						</div>
+					</div>
+
+					<p class="text-xs text-muted-foreground">{t('myaaw.settings.speech_note')}</p>
+				{:else}
+					<p class="text-sm text-muted-foreground">
+						{t('myaaw.settings.speech_unsupported_note')}
+					</p>
+				{/if}
+
+				<div class="grid gap-2 sm:max-w-xs">
+					<Label for="dictation-language">{t('myaaw.settings.dictation_language')}</Label>
+					<select
+						id="dictation-language"
+						value={preferences.value.dictationLang}
+						onchange={(event) =>
+							preferences.update({
+								dictationLang: event.currentTarget.value as AudioLanguage
+							})}
+						class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+					>
+						{#each dictationLanguageOptions as option (option.value)}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+					<p class="text-xs text-muted-foreground">
+						{t('myaaw.settings.dictation_language_desc')}
+					</p>
+				</div>
 			</div>
 		</CardContent>
 	</Card>

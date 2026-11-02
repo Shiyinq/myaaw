@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { browser } from '$app/environment';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { chat as chatApi } from '$lib/apis/chat';
 	import { config as configApi } from '$lib/apis/config';
@@ -11,7 +11,8 @@
 	import { observability as observabilityApi } from '$lib/apis/observability';
 	import { agentSelection, toastStore, topBarTitle } from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences.svelte';
-	import { chatRuns, type ChatItem } from '$lib/stores/chatRuns.svelte';
+	import { chatRuns, type ChatItem, type ChatRun } from '$lib/stores/chatRuns.svelte';
+	import { tts } from '$lib/speech/tts.svelte';
 	import { cn } from '$lib/utils';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -22,6 +23,7 @@
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import ChatStep from '$lib/components/common/ChatStep.svelte';
 	import CopyButton from '$lib/components/common/CopyButton.svelte';
+	import SpeakButton from '$lib/components/common/SpeakButton.svelte';
 	import Logo from '$lib/components/common/Logo.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { theme } from 'mode-watcher';
@@ -920,13 +922,25 @@
 				void loadHistory(true);
 				void goto(`/app/chat/${id}`, { replaceState: true, noScroll: true });
 			},
-			onDone: () => {
+			onDone: (run: ChatRun) => {
 				const currentAgent = agent ?? '';
 				const statsId = conversationId;
 				void refreshStats(currentAgent, statsId);
 				void refreshTitle(currentAgent, statsId);
 				// The run may land in the trace store just after `done`.
 				setTimeout(() => void refreshStats(currentAgent, statsId), 1500);
+
+				// Only an answer that was produced while the reader was here is read
+				// aloud: a restored run or a background tab stays quiet.
+				if (
+					preferences.value.speakResponses &&
+					!run.error &&
+					!run.resumed &&
+					document.visibilityState === 'visible'
+				) {
+					const answer = [...run.items].reverse().find((item) => item.kind === 'text');
+					if (answer?.text) tts.speak(answer.localId ?? '', answer.text);
+				}
 			},
 			onError: (message: string) => {
 				error = message;
@@ -945,6 +959,18 @@
 		if (wasStreaming && !now) void focusComposer();
 		wasStreaming = now;
 	});
+
+	// Speech belongs to the conversation that started it; another chat, another
+	// agent, or leaving the page stops the audio instead of talking over it.
+	let spokenScope = '';
+	$effect(() => {
+		const scope = `${agent ?? ''}:${conversationId}`;
+		if (scope === spokenScope) return;
+		spokenScope = scope;
+		untrack(() => tts.stop());
+	});
+
+	$effect(() => () => tts.stop());
 
 	// Runs started before this page existed (reload, closed tab, fresh login) are
 	// still alive on the agent server; attach to them again.
@@ -1170,8 +1196,9 @@
 
 	function send() {
 		const text = input.trim();
-		// Sending ends the dictation: the answer must not be typed over.
+		// Sending ends the dictation and any answer being read out.
 		stopSpeech();
+		tts.stop();
 		const images = pending.map((item) => item.base64);
 		const files = pendingFiles.map((item) => ({
 			name: item.name,
@@ -1966,6 +1993,13 @@
 	let speechHead = '';
 	let speechSettled = '';
 
+	/** Dictation language has its own setting; it no longer follows the interface. */
+	function dictationLanguage() {
+		const choice = preferences.value.dictationLang;
+		const base = choice === 'app' ? locale.value : choice;
+		return base === 'id' ? 'id-ID' : 'en-US';
+	}
+
 	function speechConstructor() {
 		if (!browser) return null;
 		const scope = window as unknown as {
@@ -2006,7 +2040,7 @@
 		}
 		// One recogniser per dictation: it cannot be started again after an abort.
 		const recognition = new Constructor();
-		recognition.lang = locale.value === 'id' ? 'id-ID' : 'en-US';
+		recognition.lang = dictationLanguage();
 		recognition.continuous = true;
 		recognition.interimResults = true;
 		speechHead = input ? `${input.trimEnd()} ` : '';
@@ -2445,13 +2479,17 @@
 											class="group/message wrap-break-word text-sm terminal:border-l terminal:pl-3"
 										>
 											<Markdown content={item.text ?? ''} />
-											<CopyButton
-												text={item.text ?? ''}
+											<div
 												class={cn(
-													'mt-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
+													'mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100',
 													item.localId === latestAnswerKey && 'opacity-100'
 												)}
-											/>
+											>
+												<CopyButton text={item.text ?? ''} />
+												{#if !(streaming && item.localId === latestAnswerKey)}
+													<SpeakButton id={item.localId ?? ''} text={item.text ?? ''} />
+												{/if}
+											</div>
 										</div>
 									{:else if item.kind === 'approval'}
 										<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">

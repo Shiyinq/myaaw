@@ -86,15 +86,18 @@ export class ChatRun {
 	view: RunView | null = null;
 	/** Set by the registry so a lost run can be forgotten. */
 	discard?: () => void;
+	/** True when the run was reattached after a reload; it must not speak by itself. */
+	readonly resumed: boolean;
 
 	private controller: AbortController | null = null;
 	private counter = 0;
 	private groupStart = 0;
 	private groupLastStep = '';
 
-	constructor(agent: string, requestId: string) {
+	constructor(agent: string, requestId: string, resumed = false) {
 		this.agent = agent;
 		this.requestId = requestId;
+		this.resumed = resumed;
 	}
 
 	// ---------------------------------------------------------------- timeline
@@ -411,7 +414,7 @@ export const chatRuns = {
 			if (!info.streaming || !info.request_id) continue;
 			if (runs.some((run) => run.requestId === info.request_id)) continue;
 
-			const run = new ChatRun(agentName, info.request_id);
+			const run = new ChatRun(agentName, info.request_id, true);
 			run.conversationId = info.conversation_id ?? '';
 			run.discard = () => {
 				const index = runs.indexOf(run);
