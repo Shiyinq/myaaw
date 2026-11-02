@@ -101,7 +101,8 @@
 			"open": "Open the menu",
 			"close": "Close the menu",
 			"collapse": "Collapse sidebar",
-			"expand": "Expand sidebar"
+			"expand": "Expand sidebar",
+			"hide": "Hide sidebar"
 		},
 		"agent": {
 			"label": "Agent",

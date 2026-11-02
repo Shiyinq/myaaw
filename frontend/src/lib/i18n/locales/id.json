@@ -101,7 +101,8 @@
 			"open": "Buka menu",
 			"close": "Tutup menu",
 			"collapse": "Ciutkan sidebar",
-			"expand": "Bentangkan sidebar"
+			"expand": "Bentangkan sidebar",
+			"hide": "Sembunyikan sidebar"
 		},
 		"agent": {
 			"label": "Agen",

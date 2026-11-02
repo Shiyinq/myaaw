@@ -82,6 +82,9 @@
 	// list of titles cannot fit in the icon rail.
 	let simpleMode = $derived(preferences.value.simpleMode);
 	let compactSidebar = $derived(sidebar.collapsed && wide && !simpleMode);
+	// Simple mode has no icon rail: folding it either shows the chat list or
+	// nothing, so the shortcut gives the reader the full page width.
+	let hiddenSidebar = $derived(simpleMode && sidebar.collapsed && wide);
 	let activeConversation = $derived(page.params.conversation ?? '');
 
 	// The chat list belongs to the shell, so the chat page's history panel and the
@@ -553,7 +556,7 @@
 <div
 	class={[
 		'h-dvh bg-background page-clear transition-[padding] duration-200',
-		compactSidebar ? 'md:pl-16' : 'md:pl-60'
+		hiddenSidebar ? 'md:pl-0' : compactSidebar ? 'md:pl-16' : 'md:pl-60'
 	]}
 >
 	{#if drawerOpen}
@@ -569,8 +572,10 @@
 	<aside
 		inert={!wide && !drawerOpen}
 		class={[
-			'fixed inset-y-0 left-0 z-50 flex w-64 max-w-[80vw] flex-col border-r bg-card shadow-xl frost-drawer transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
+			'fixed inset-y-0 left-0 z-50 flex w-64 max-w-[80vw] flex-col border-r bg-card shadow-xl frost-drawer transition-transform duration-200 md:z-40 md:shadow-none',
 			drawerOpen ? 'translate-x-0' : '-translate-x-full',
+			hiddenSidebar ? 'md:-translate-x-full' : 'md:translate-x-0',
+			hiddenSidebar ? 'md:transition-transform' : 'md:transition-[width]',
 			compactSidebar ? 'md:w-16' : 'md:w-60'
 		]}
 	>
@@ -604,17 +609,15 @@
 						Control plane
 					</span>
 				</div>
-				{#if !simpleMode}
-					<button
-						class="ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:flex"
-						onclick={() => sidebar.toggle()}
-						title={t('myaaw.sidebar.collapse')}
-						aria-label={t('myaaw.sidebar.collapse')}
-						aria-keyshortcuts="Control+\\ Meta+\\"
-					>
-						<PanelLeftClose class="h-4 w-4" />
-					</button>
-				{/if}
+				<button
+					class="ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:flex"
+					onclick={() => sidebar.toggle()}
+					title={simpleMode ? t('myaaw.sidebar.hide') : t('myaaw.sidebar.collapse')}
+					aria-label={simpleMode ? t('myaaw.sidebar.hide') : t('myaaw.sidebar.collapse')}
+					aria-keyshortcuts="Control+\\ Meta+\\"
+				>
+					<PanelLeftClose class="h-4 w-4" />
+				</button>
 				<button
 					class="ml-auto flex w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
 					onclick={() => (drawerOpen = false)}
@@ -767,6 +770,21 @@
 				>
 					<Menu class="h-4 w-4" />
 				</Button>
+				{#if simpleMode && sidebar.collapsed}
+					<!-- The shortcut hides the sidebar in simple mode; this is the way back
+					     for a reader who does not remember it. -->
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						class="shrink-0 max-md:hidden"
+						onclick={() => sidebar.toggle()}
+						title={t('myaaw.sidebar.expand')}
+						aria-label={t('myaaw.sidebar.expand')}
+						aria-keyshortcuts="Control+\\ Meta+\\"
+					>
+						<Menu class="h-4 w-4" />
+					</Button>
+				{/if}
 				<div class="min-w-0 flex-1">
 					{#if isChat && topBarTitle.value}
 						<h1 class="truncate text-sm font-semibold tracking-tight">
