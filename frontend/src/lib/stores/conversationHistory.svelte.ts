@@ -96,6 +96,11 @@ export const conversationHistory = {
 	setSearch(value: string) {
 		search = value;
 	},
+	/** Clears both copies so the list refreshes without waiting for the debounce. */
+	clearSearch() {
+		search = '';
+		query = '';
+	},
 	loadMore,
 	/** Reloads the first page, e.g. after a run finished and the title changed. */
 	refresh() {

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
@@ -9,6 +9,7 @@
 		LayoutDashboard,
 		Play,
 		MessagesSquare,
+		MessageSquarePlus,
 		FolderOpen,
 		Brain,
 		Sparkles,
@@ -77,15 +78,13 @@
 	// state, so a phone ignores a collapse that was chosen on a wide screen.
 	let drawerOpen = $state(false);
 	let wide = $state(false);
-	// Simple mode is a chat-first shell: no Fleet shortcut, no page groups, and a
-	// chat list under the agent picker. It always uses the wide sidebar because a
-	// list of titles cannot fit in the icon rail.
+	// Simple mode is a chat-first shell: no Fleet shortcut and no page groups,
+	// just the agent picker and the chat list. Collapsing it keeps the same
+	// minimal rail on desktop: brand, agent, new chat and the profile menu.
 	let simpleMode = $derived(preferences.value.simpleMode);
-	let compactSidebar = $derived(sidebar.collapsed && wide && !simpleMode);
-	// Simple mode has no icon rail: folding it either shows the chat list or
-	// nothing, so the shortcut gives the reader the full page width.
-	let hiddenSidebar = $derived(simpleMode && sidebar.collapsed && wide);
+	let compactSidebar = $derived(sidebar.collapsed && wide);
 	let activeConversation = $derived(page.params.conversation ?? '');
+	let simpleSearchInput = $state<HTMLInputElement | null>(null);
 
 	// The chat list belongs to the shell, so the chat page's history panel and the
 	// simple-mode sidebar share one fetch (see stores/conversationHistory).
@@ -128,6 +127,13 @@
 			if (matchesShortcut(event, 'mod+k')) {
 				event.preventDefault();
 				commandPalette.toggle();
+				return;
+			}
+			// In simple mode the chat list lives in the sidebar, so the shortcut has
+			// to reach its search box; the chat page handles its own panel otherwise.
+			if (matchesShortcut(event, 'mod+shift+s') && simpleMode) {
+				event.preventDefault();
+				void focusSimpleSearch();
 				return;
 			}
 			if (matchesShortcut(event, '?') && !isTypingTarget(event.target) && !isOverlayOpen()) {
@@ -453,6 +459,15 @@
 			page.url.pathname.startsWith('/app/contacts')
 	);
 
+	/** Opens the chat list (from the rail if needed) and focuses its search box. */
+	async function focusSimpleSearch() {
+		if (!simpleMode) return;
+		if (sidebar.collapsed) sidebar.toggle();
+		await tick();
+		simpleSearchInput?.focus();
+		simpleSearchInput?.select();
+	}
+
 	/** Starts, stops or restarts one agent from any page, badge flipped first. */
 	async function runAgentAction(kind: 'start' | 'stop' | 'restart', name: string) {
 		const running = kind !== 'stop';
@@ -556,7 +571,7 @@
 <div
 	class={[
 		'h-dvh bg-background page-clear transition-[padding] duration-200',
-		hiddenSidebar ? 'md:pl-0' : compactSidebar ? 'md:pl-16' : 'md:pl-60'
+		compactSidebar ? 'md:pl-16' : 'md:pl-60'
 	]}
 >
 	{#if drawerOpen}
@@ -572,21 +587,53 @@
 	<aside
 		inert={!wide && !drawerOpen}
 		class={[
-			'fixed inset-y-0 left-0 z-50 flex w-64 max-w-[80vw] flex-col border-r bg-card shadow-xl frost-drawer transition-transform duration-200 md:z-40 md:shadow-none',
+			'fixed inset-y-0 left-0 z-50 flex w-64 max-w-[80vw] flex-col border-r bg-card shadow-xl frost-drawer transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
 			drawerOpen ? 'translate-x-0' : '-translate-x-full',
-			hiddenSidebar ? 'md:-translate-x-full' : 'md:translate-x-0',
-			hiddenSidebar ? 'md:transition-transform' : 'md:transition-[width]',
 			compactSidebar ? 'md:w-16' : 'md:w-60'
 		]}
 	>
-		{#if compactSidebar}
-			<div class="flex h-14 shrink-0 items-center justify-center border-b">
-				<div
-					class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
-				>
-					<Logo class="h-4.5 w-4.5" />
-				</div>
+		<!-- One header for both states: the brand block keeps its position while the
+		     labels fade and the width animates, so collapsing does not swap the
+		     whole header in one frame. -->
+		<div class="relative flex h-14 shrink-0 items-center gap-2 overflow-hidden border-b pl-4">
+			<div
+				class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+			>
+				<Logo class="h-4.5 w-4.5" />
 			</div>
+			<div
+				class={[
+					'flex min-w-0 flex-col overflow-hidden leading-tight whitespace-nowrap transition-all duration-200',
+					compactSidebar ? 'max-w-0 opacity-0' : 'max-w-44 opacity-100'
+				]}
+			>
+				<span class="text-sm font-bold tracking-tight">Myaaw</span>
+				<span class="text-[10px] uppercase tracking-widest text-muted-foreground">
+					Control plane
+				</span>
+			</div>
+			<button
+				class={[
+					'ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-[color,opacity] hover:bg-muted hover:text-foreground md:flex',
+					compactSidebar ? 'pointer-events-none opacity-0' : 'opacity-100'
+				]}
+				onclick={() => sidebar.toggle()}
+				title={t('myaaw.sidebar.collapse')}
+				aria-label={t('myaaw.sidebar.collapse')}
+				aria-keyshortcuts="Control+\\ Meta+\\"
+			>
+				<PanelLeftClose class="h-4 w-4" />
+			</button>
+			<button
+				class="ml-auto flex w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+				onclick={() => (drawerOpen = false)}
+				title={t('myaaw.sidebar.close')}
+				aria-label={t('myaaw.sidebar.close')}
+			>
+				<X class="h-4 w-4" />
+			</button>
+		</div>
+		{#if compactSidebar}
 			<button
 				class="absolute top-4 -right-3 z-50 flex h-6 w-6 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-sm frost-card transition-colors hover:bg-muted hover:text-foreground"
 				onclick={() => sidebar.toggle()}
@@ -596,37 +643,6 @@
 			>
 				<PanelLeftOpen class="h-3.5 w-3.5" />
 			</button>
-		{:else}
-			<div class="flex h-14 shrink-0 items-center gap-2 border-b pl-4">
-				<div
-					class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
-				>
-					<Logo class="h-4.5 w-4.5" />
-				</div>
-				<div class="flex min-w-0 flex-col leading-tight">
-					<span class="text-sm font-bold tracking-tight">Myaaw</span>
-					<span class="text-[10px] uppercase tracking-widest text-muted-foreground">
-						Control plane
-					</span>
-				</div>
-				<button
-					class="ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:flex"
-					onclick={() => sidebar.toggle()}
-					title={simpleMode ? t('myaaw.sidebar.hide') : t('myaaw.sidebar.collapse')}
-					aria-label={simpleMode ? t('myaaw.sidebar.hide') : t('myaaw.sidebar.collapse')}
-					aria-keyshortcuts="Control+\\ Meta+\\"
-				>
-					<PanelLeftClose class="h-4 w-4" />
-				</button>
-				<button
-					class="ml-auto flex w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
-					onclick={() => (drawerOpen = false)}
-					title={t('myaaw.sidebar.close')}
-					aria-label={t('myaaw.sidebar.close')}
-				>
-					<X class="h-4 w-4" />
-				</button>
-			</div>
 		{/if}
 
 		<!-- Fleet overview lives outside the agent scope, above the picker. -->
@@ -694,16 +710,33 @@
 		</div>
 
 		{#if simpleMode}
-			<div class="flex min-h-0 flex-1 flex-col">
-				<ConversationList
-					activeId={activeConversation}
-					onOpen={(id) => void goto(`/app/chat/${id}`)}
-					onNew={() => void goto('/app/chat?new=1')}
-					onDeleted={(id) => {
-						if (id === activeConversation) void goto('/app/chat?new=1');
-					}}
-				/>
-			</div>
+			{#if compactSidebar}
+				<div class="shrink-0 border-b p-2">
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						class="mx-auto flex"
+						onclick={() => void goto('/app/chat?new=1')}
+						title={t('myaaw.chat.new')}
+						aria-label={t('myaaw.chat.new')}
+					>
+						<MessageSquarePlus class="h-4 w-4" />
+					</Button>
+				</div>
+				<div class="flex-1"></div>
+			{:else}
+				<div class="flex min-h-0 flex-1 flex-col">
+					<ConversationList
+						activeId={activeConversation}
+						onOpen={(id) => void goto(`/app/chat/${id}`)}
+						onNew={() => void goto('/app/chat?new=1')}
+						onDeleted={(id) => {
+							if (id === activeConversation) void goto('/app/chat?new=1');
+						}}
+						bind:searchInput={simpleSearchInput}
+					/>
+				</div>
+			{/if}
 		{:else}
 			<nav class={['flex-1 overflow-y-auto', compactSidebar ? 'space-y-2 p-2' : 'space-y-5 p-3']}>
 				{#each nav as group, groupIndex (group.label)}
@@ -770,21 +803,6 @@
 				>
 					<Menu class="h-4 w-4" />
 				</Button>
-				{#if simpleMode && sidebar.collapsed}
-					<!-- The shortcut hides the sidebar in simple mode; this is the way back
-					     for a reader who does not remember it. -->
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						class="shrink-0 max-md:hidden"
-						onclick={() => sidebar.toggle()}
-						title={t('myaaw.sidebar.expand')}
-						aria-label={t('myaaw.sidebar.expand')}
-						aria-keyshortcuts="Control+\\ Meta+\\"
-					>
-						<Menu class="h-4 w-4" />
-					</Button>
-				{/if}
 				<div class="min-w-0 flex-1">
 					{#if isChat && topBarTitle.value}
 						<h1 class="truncate text-sm font-semibold tracking-tight">

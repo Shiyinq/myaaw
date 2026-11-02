@@ -101,8 +101,7 @@
 			"open": "Buka menu",
 			"close": "Tutup menu",
 			"collapse": "Ciutkan sidebar",
-			"expand": "Bentangkan sidebar",
-			"hide": "Sembunyikan sidebar"
+			"expand": "Bentangkan sidebar"
 		},
 		"agent": {
 			"label": "Agen",
@@ -367,7 +366,8 @@
 			"messages": "{count} pesan",
 			"delete_confirm": "Hapus percakapan ini?",
 			"renamed": "Percakapan diganti nama",
-			"deleted": "Percakapan dihapus"
+			"deleted": "Percakapan dihapus",
+			"clear_search": "Hapus pencarian"
 		},
 		"server": {
 			"title": "Server",

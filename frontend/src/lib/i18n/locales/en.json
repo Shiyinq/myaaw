@@ -101,8 +101,7 @@
 			"open": "Open the menu",
 			"close": "Close the menu",
 			"collapse": "Collapse sidebar",
-			"expand": "Expand sidebar",
-			"hide": "Hide sidebar"
+			"expand": "Expand sidebar"
 		},
 		"agent": {
 			"label": "Agent",
@@ -367,7 +366,8 @@
 			"messages": "{count} messages",
 			"delete_confirm": "Delete this conversation?",
 			"renamed": "Conversation renamed",
-			"deleted": "Conversation deleted"
+			"deleted": "Conversation deleted",
+			"clear_search": "Clear search"
 		},
 		"server": {
 			"title": "Server",

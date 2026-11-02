@@ -114,10 +114,24 @@
 				value={conversationHistory.search}
 				oninput={(event) => conversationHistory.setSearch(event.currentTarget.value)}
 				placeholder={t('myaaw.conversations.search')}
-				class="h-8 pl-7 text-xs"
+				class="h-8 pr-7 pl-7 text-xs"
 				aria-label={t('myaaw.conversations.search')}
 				aria-keyshortcuts="Control+Shift+S Meta+Shift+S"
 			/>
+			{#if conversationHistory.search}
+				<button
+					type="button"
+					class="absolute top-1/2 right-1 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
+					onclick={() => {
+						conversationHistory.clearSearch();
+						searchInput?.focus();
+					}}
+					title={t('myaaw.conversations.clear_search')}
+					aria-label={t('myaaw.conversations.clear_search')}
+				>
+					<X class="h-3 w-3" />
+				</button>
+			{/if}
 		</div>
 		{#if onClose}
 			<Button
