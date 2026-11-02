@@ -804,7 +804,9 @@
 			"purged": "Run dihapus",
 			"trajectory": "Trajektori",
 			"select_run": "Pilih run untuk melihat span-nya.",
-			"spans": "{count} span"
+			"spans": "{count} span",
+			"no_spans": "Tidak ada span tercatat untuk turn ini.",
+			"answer": "Jawaban"
 		},
 		"config": {
 			"title": "Konfigurasi",

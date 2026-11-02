@@ -857,7 +857,9 @@
 			"purged": "Runs deleted",
 			"trajectory": "Trajectory",
 			"select_run": "Select a run to inspect its spans.",
-			"spans": "{count} spans"
+			"spans": "{count} spans",
+			"no_spans": "No spans recorded for this turn.",
+			"answer": "Answer"
 		},
 		"shortcuts": {
 			"title": "Keyboard shortcuts",
