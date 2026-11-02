@@ -98,6 +98,8 @@
 		/* Outline for sheets (cards, menus, dialogs); a theme may sharpen it. */
 		--surface-ring: color-mix(in oklab, var(--foreground) 10%, transparent);
 		--chat-bubble-ring: transparent;
+		/* Colour of the paw that marks the active sidebar item; most themes hide it. */
+		--nav-paw: transparent;
 		/*
 		 * Frosted sheets (the glass and mist themes) read their material from
 		 * these, so a new translucent theme only has to change the numbers.
@@ -225,6 +227,98 @@
 	/* Chat bubbles are pills in the default themes; sharper themes pull them in. */
 	:root {
 		--chat-bubble-radius: 1.5rem;
+	}
+
+	/*
+	 * Myaaw Siam — the seal-point cat: a fawn body with the dark points as the
+	 * accents. The house theme for a first visit.
+	 */
+	:root[data-theme='siamese'] {
+		--background: oklch(0.96 0.013 82);
+		--foreground: oklch(0.22 0.022 55);
+		--card: oklch(0.985 0.008 82);
+		--card-foreground: oklch(0.22 0.022 55);
+		--popover: oklch(0.985 0.008 82);
+		--popover-foreground: oklch(0.22 0.022 55);
+		--primary: oklch(0.34 0.03 55);
+		--primary-foreground: oklch(0.97 0.012 82);
+		--secondary: oklch(0.9 0.018 78);
+		--secondary-foreground: oklch(0.22 0.022 55);
+		--muted: oklch(0.9 0.018 78);
+		--muted-foreground: oklch(0.47 0.02 68);
+		--accent: oklch(0.905 0.022 76);
+		--accent-foreground: oklch(0.22 0.022 55);
+		--border: oklch(0.855 0.022 78);
+		--input: oklch(0.855 0.022 78);
+		--ring: oklch(0.45 0.045 55);
+		--surface-ring: color-mix(in oklab, var(--foreground) 14%, transparent);
+		--radius: 0.5rem;
+		--nav-paw: currentColor;
+	}
+
+	/*
+	 * The sidebars are part of the cat too: seal along the top like the ears,
+	 * fawn toward the bottom like the flank.
+	 */
+	:root[data-theme='siamese'] aside {
+		background-image: linear-gradient(
+			to bottom,
+			color-mix(in oklab, var(--foreground) 7%, transparent),
+			transparent 34%,
+			color-mix(in oklab, oklch(0.8 0.05 72) 40%, transparent)
+		);
+	}
+
+	/*
+	 * Cards and floating surfaces wear the same coat as the page: a warm fawn
+	 * bloom at the top and a whisper of seal at the bottom, so nothing in the
+	 * theme reads as a flat sheet.
+	 */
+	:root[data-theme='siamese']
+		:is(
+			[data-slot='card'],
+			[data-slot='dialog-content'],
+			[data-slot='dropdown-menu-content'],
+			[data-slot='dropdown-menu-sub-content']
+		) {
+		background-image: linear-gradient(
+			to bottom,
+			color-mix(in oklab, oklch(0.82 0.05 70) 16%, transparent),
+			transparent 42%,
+			color-mix(in oklab, var(--foreground) 3%, transparent)
+		);
+	}
+
+	/*
+	 * The coat, read vertically: seal along the back (top) and tail (bottom),
+	 * fawn warming the flanks, and a cream belly down the middle. The paw trail
+	 * and the one blue eye sit on top.
+	 */
+	:root[data-theme='siamese'] body {
+		background-image:
+			url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 200'%3E%3Cg fill='%232a211a' fill-opacity='0.07' transform='translate(70 140) rotate(-16) scale(0.85)'%3E%3Cellipse cx='0' cy='10' rx='30' ry='27'/%3E%3Ccircle cx='-20' cy='-18' r='13'/%3E%3Ccircle cx='0' cy='-26' r='13.5'/%3E%3Ccircle cx='20' cy='-18' r='13'/%3E%3C/g%3E%3Cg fill='%23b3926f' fill-opacity='0.14' transform='translate(150 85) rotate(12) scale(0.62)'%3E%3Cellipse cx='0' cy='10' rx='30' ry='27'/%3E%3Ccircle cx='-20' cy='-18' r='13'/%3E%3Ccircle cx='0' cy='-26' r='13.5'/%3E%3Ccircle cx='20' cy='-18' r='13'/%3E%3C/g%3E%3Cg fill='%232a211a' fill-opacity='0.05' transform='translate(215 40) rotate(28) scale(0.42)'%3E%3Cellipse cx='0' cy='10' rx='30' ry='27'/%3E%3Ccircle cx='-20' cy='-18' r='13'/%3E%3Ccircle cx='0' cy='-26' r='13.5'/%3E%3Ccircle cx='20' cy='-18' r='13'/%3E%3C/g%3E%3C/svg%3E"),
+			linear-gradient(
+				to bottom,
+				color-mix(in oklab, var(--foreground) 15%, transparent),
+				transparent 28%,
+				transparent 70%,
+				color-mix(in oklab, var(--foreground) 14%, transparent)
+			),
+			radial-gradient(
+				120% 95% at 50% 55%,
+				transparent 34%,
+				color-mix(in oklab, oklch(0.8 0.05 72) 45%, transparent) 100%
+			);
+		background-position:
+			right 2rem bottom 1.5rem,
+			0 0,
+			0 0;
+		background-size:
+			22rem 17rem,
+			auto,
+			auto;
+		background-repeat: no-repeat;
+		background-attachment: fixed;
 	}
 
 	/*
@@ -668,9 +762,32 @@
  */
 [data-theme='glass'] .page-clear,
 [data-theme='mist'] .page-clear,
+[data-theme='siamese'] .page-clear,
 [data-theme='blueprint'] .page-clear,
 [data-theme='noir'] .page-clear {
 	background-color: transparent;
+}
+
+/*
+ * The active sidebar item wears the paw when a theme gives it a colour; it is
+ * the one piece of the mark that fits in a 14px slot, and it keeps the shell
+ * recognisably Myaaw even when the logo has scrolled out of view. Compact
+ * (icon-only) items keep their bar.
+ */
+aside a[aria-current='page']:not(.justify-center)::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	right: 0.625rem;
+	width: 0.875rem;
+	height: 0.875rem;
+	transform: translateY(-50%);
+	background-color: var(--nav-paw);
+	opacity: 0.45;
+	-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-46 -48 92 92'%3E%3Cg fill='%23fff'%3E%3Cellipse cx='0' cy='10' rx='30' ry='27'/%3E%3Ccircle cx='-20' cy='-18' r='13'/%3E%3Ccircle cx='0' cy='-26' r='13.5'/%3E%3Ccircle cx='20' cy='-18' r='13'/%3E%3C/g%3E%3C/svg%3E")
+		center / contain no-repeat;
+	mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-46 -48 92 92'%3E%3Cg fill='%23fff'%3E%3Cellipse cx='0' cy='10' rx='30' ry='27'/%3E%3Ccircle cx='-20' cy='-18' r='13'/%3E%3Ccircle cx='0' cy='-26' r='13.5'/%3E%3Ccircle cx='20' cy='-18' r='13'/%3E%3C/g%3E%3C/svg%3E")
+		center / contain no-repeat;
 }
 
 /*

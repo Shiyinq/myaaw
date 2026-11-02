@@ -409,6 +409,7 @@
 			"app_settings_desc": "Language and appearance for this browser.",
 			"language": "Language",
 			"theme": "Theme",
+			"theme_siamese": "Myaaw Siamese",
 			"theme_light": "Light",
 			"theme_dark": "Dark",
 			"theme_glass": "Glass",

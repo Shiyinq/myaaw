@@ -16,6 +16,21 @@
 			href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
 			rel="stylesheet"
 		/>
+		<script>
+			// A first visit gets the house theme; any explicit choice is persisted and
+			// wins from then on (an empty stored theme still counts as a choice).
+			try {
+				if (
+					localStorage.getItem('mode-watcher-theme') === null &&
+					localStorage.getItem('mode-watcher-mode') === null
+				) {
+					localStorage.setItem('mode-watcher-theme', 'siamese');
+					localStorage.setItem('mode-watcher-mode', 'light');
+				}
+			} catch {
+				// Storage can be refused (private mode); the app still works on defaults.
+			}
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

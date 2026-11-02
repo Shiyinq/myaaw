@@ -11,6 +11,7 @@ import {
 	Monitor,
 	Moon,
 	MoonStar,
+	PawPrint,
 	PenLine,
 	Sparkles,
 	Sun,
@@ -31,6 +32,7 @@ export type ThemeMode = 'light' | 'dark' | 'system';
  * and only `terminal` needs a variant, because it re-reads the transcript.
  */
 export type ThemeId =
+	| 'siamese'
 	| 'glass'
 	| 'carbon'
 	| 'terminal'
@@ -60,6 +62,14 @@ export interface AppearanceOption {
 }
 
 export const APPEARANCE: AppearanceOption[] = [
+	{
+		id: 'siamese',
+		labelKey: 'myaaw.settings.theme_siamese',
+		mode: 'light',
+		theme: 'siamese',
+		aliases: ['siamese', 'siam', 'kucing siam', 'seal point', 'blue eyes', 'mata biru'],
+		icon: PawPrint
+	},
 	{
 		id: 'light',
 		labelKey: 'myaaw.settings.theme_light',
@@ -189,6 +199,14 @@ export const APPEARANCE: AppearanceOption[] = [
 		icon: Monitor
 	}
 ];
+
+/**
+ * The mode a named theme is designed for, or `undefined` for the plain modes.
+ * Used to keep `data-theme` and the `dark` class from disagreeing.
+ */
+export function modeForTheme(theme: string | undefined): ThemeMode | undefined {
+	return APPEARANCE.find((option) => option.theme !== '' && option.theme === theme)?.mode;
+}
 
 /** Whether an appearance option is the one currently in effect. */
 export function isAppearanceActive(

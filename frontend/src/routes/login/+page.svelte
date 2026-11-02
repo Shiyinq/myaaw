@@ -14,6 +14,7 @@
 		CardContent
 	} from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
+	import Logo from '$lib/components/common/Logo.svelte';
 	import { logger } from '$lib/utils/logger';
 
 	const { t } = useTranslation();
@@ -49,8 +50,10 @@
 	<div class="w-full max-w-md" in:fade={{ duration: 200 }}>
 		<Card class="border-border">
 			<CardHeader class="space-y-2 text-center pb-8">
-				<div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
-					<span class="text-xl font-bold text-primary-foreground">M</span>
+				<div
+					class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground"
+				>
+					<Logo class="h-8 w-8" />
 				</div>
 				<CardTitle class="text-3xl font-bold tracking-tight">Myaaw</CardTitle>
 				<CardDescription>{t('myaaw.login.subtitle')}</CardDescription>

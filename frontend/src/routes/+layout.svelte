@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { isAuthenticated, authStore, isInitialDataLoaded, accessToken } from '$lib/stores';
 	import { locale, type Locale } from '$lib/i18n';
-	import { ModeWatcher } from 'mode-watcher';
+	import { ModeWatcher, setMode, theme, userPrefersMode } from 'mode-watcher';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import LoadingBar from '$lib/components/LoadingBar.svelte';
 	import SplashScreen from '$lib/components/SplashScreen.svelte';
@@ -13,6 +13,7 @@
 	import { logger } from '$lib/utils/logger';
 	import OfflinePage from './offline/+page.svelte';
 	import ReloadPrompt from '$lib/components/ReloadPrompt.svelte';
+	import { modeForTheme } from '$lib/theme';
 
 	interface Props {
 		data: { locale: string };
@@ -24,6 +25,16 @@
 	$effect(() => {
 		if (data?.locale) {
 			locale.value = data.locale as Locale;
+		}
+	});
+
+	// A named theme is designed for one mode, and storage can disagree with it (a
+	// theme picked before it changed, or a hand-edited value). Reconcile so a light
+	// theme never runs with the `dark` class, or the other way round.
+	$effect(() => {
+		const required = modeForTheme(theme.current);
+		if (required && required !== 'system' && userPrefersMode.current !== required) {
+			setMode(required);
 		}
 	});
 
