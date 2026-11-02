@@ -328,7 +328,7 @@
 	{:else}
 		<!-- File list: a second sidebar nested inside the main one. -->
 		<aside
-			class="flex shrink-0 flex-col border-b bg-card lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+			class="flex shrink-0 flex-col border-b bg-card glass:bg-card/55 glass:backdrop-blur-xl lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
 		>
 			<div class="shrink-0 space-y-2 border-b p-3">
 				<div class="flex items-center gap-1">

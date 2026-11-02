@@ -411,6 +411,7 @@
 			"theme": "Theme",
 			"theme_light": "Light",
 			"theme_dark": "Dark",
+			"theme_glass": "Glass",
 			"theme_system": "System"
 		},
 		"terminal": {

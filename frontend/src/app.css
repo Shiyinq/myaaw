@@ -14,6 +14,13 @@
  */
 @custom-variant data-active (&[data-state='active']);
 
+/*
+ * The frosted-glass look is a theme of its own, not the default: mode-watcher
+ * puts `data-theme="glass"` on <html> next to `dark`, and only then do the
+ * `glass:` utilities turn a surface translucent and blur what is behind it.
+ */
+@custom-variant glass (&:where([data-theme='glass'], [data-theme='glass'] *));
+
 @theme {
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
@@ -184,6 +191,41 @@
 	 * make selections invisible. */
 	background-color: color-mix(in oklch, var(--primary) 30%, transparent);
 	color: inherit;
+}
+
+@layer base {
+	/*
+	 * The glass theme is smoked, not coloured: the page paints a few wide,
+	 * colourless pools of light and every translucent sheet above it blurs them.
+	 * `fixed` keeps the pools still, so a sheet never slides over a moving glow.
+	 * Plain dark and light keep the flat background they always had.
+	 */
+	:root[data-theme='glass'] {
+		--background: oklch(0.135 0 0);
+		--card: oklch(0.19 0 0);
+		--popover: oklch(0.21 0 0);
+	}
+
+	:root[data-theme='glass'] body {
+		background-image:
+			radial-gradient(
+				58rem 38rem at 6% -14%,
+				color-mix(in oklab, var(--foreground) 6%, transparent),
+				transparent 68%
+			),
+			radial-gradient(
+				46rem 32rem at 98% 2%,
+				color-mix(in oklab, var(--foreground) 4%, transparent),
+				transparent 68%
+			),
+			radial-gradient(
+				74rem 44rem at 44% 120%,
+				color-mix(in oklab, var(--foreground) 5%, transparent),
+				transparent 72%
+			);
+		background-attachment: fixed;
+		background-repeat: no-repeat;
+	}
 }
 
 @layer base {

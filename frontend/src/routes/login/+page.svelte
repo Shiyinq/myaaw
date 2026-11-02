@@ -45,7 +45,9 @@
 
 <SEO title="Myaaw | {t('common.login')}" description={t('myaaw.login.subtitle')} />
 
-<div class="min-h-screen flex items-center justify-center p-6 bg-background relative">
+<div
+	class="min-h-screen flex items-center justify-center p-6 bg-background glass:bg-transparent relative"
+>
 	<div class="w-full max-w-md" in:fade={{ duration: 200 }}>
 		<Card class="border-border">
 			<CardHeader class="space-y-2 text-center pb-8">

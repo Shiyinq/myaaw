@@ -60,7 +60,7 @@
 <SEO title="Myaaw | {status} - {errorInfo.title}" />
 
 <div
-	class="min-h-screen flex items-center justify-center p-6 bg-background relative overflow-hidden"
+	class="min-h-screen flex items-center justify-center p-6 bg-background glass:bg-transparent relative overflow-hidden"
 	in:fly={{ y: 20, duration: 1000 }}
 >
 	<!-- Decorative background element -->

@@ -23,6 +23,7 @@
 	import CopyButton from '$lib/components/common/CopyButton.svelte';
 	import Logo from '$lib/components/common/Logo.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { theme } from 'mode-watcher';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import {
@@ -194,6 +195,12 @@
 	let openUsage = $state(false);
 	let scroller = $state<HTMLDivElement | null>(null);
 	let composer = $state<HTMLTextAreaElement | null>(null);
+	// The composer floats over the transcript, so the transcript is padded by its
+	// measured height: the last message can always be scrolled above it.
+	let composerHeight = $state(0);
+	// Only the glass theme floats the composer over the transcript; every other
+	// theme keeps it in its own row, the way it has always been.
+	let glassMode = $derived(theme.current === 'glass');
 
 	// Turn rail: one mark per user message, so a long answer can be skipped
 	// straight back to its question. The rail is a short column centred on the
@@ -2026,7 +2033,7 @@
      the transcript on a touch screen. -->
 {#snippet railCard()}
 	<div
-		class="relative w-64 rounded-xl border bg-popover p-1.5 shadow-lg"
+		class="relative w-64 rounded-xl border bg-popover p-1.5 shadow-lg glass:bg-popover/85 glass:backdrop-blur-2xl"
 		transition:fade={{ duration: 150 }}
 		role="presentation"
 		onclick={(event) => event.stopPropagation()}
@@ -2112,10 +2119,10 @@
 			<div class="flex min-h-0 flex-1 flex-col">
 				<!-- The rail hangs beside the transcript only, so it never takes width
 				     from the composer. -->
-				<div class="relative min-h-0 flex-1">
+				<div class="relative flex min-h-0 flex-1 flex-col">
 					<div
 						bind:this={scroller}
-						class="h-full overflow-x-hidden overflow-y-auto"
+						class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
 						onscroll={onScroll}
 					>
 						<div
@@ -2126,6 +2133,7 @@
 								// hugging the top edge.
 								items.length === 0 && 'flex min-h-full flex-col items-center justify-center'
 							)}
+							style:padding-bottom={glassMode ? `${composerHeight + 24}px` : null}
 						>
 							{#if loadingOlder}
 								<p
@@ -2532,306 +2540,324 @@
 							</div>
 						{/if}
 					{/if}
-				</div>
-			</div>
-
-			{#if runError || error}
-				<div class="shrink-0 px-4">
 					<div
-						class="mx-auto max-w-4xl rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
+						bind:clientHeight={composerHeight}
+						class={['shrink-0', glassMode && 'relative z-20']}
+						style:margin-top={glassMode ? `-${composerHeight}px` : null}
 					>
-						{runError || error}
-					</div>
-				</div>
-			{/if}
+						{#if runError || error}
+							<div class="px-4 pb-2">
+								<div
+									class="mx-auto max-w-4xl rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
+								>
+									{runError || error}
+								</div>
+							</div>
+						{/if}
 
-			<div class="shrink-0 border-t bg-background/80 px-2 py-2 backdrop-blur sm:px-4 sm:py-3">
-				<div class="mx-auto w-full max-w-4xl">
-					<div
-						role="group"
-						class={[
-							'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60',
-							dragOver ? 'border-ring ring-2 ring-ring/30' : ''
-						]}
-						ondragover={(event) => {
-							event.preventDefault();
-							dragOver = true;
-						}}
-						ondragleave={(event) => {
-							event.preventDefault();
-							dragOver = false;
-						}}
-						ondrop={(event) => {
-							event.preventDefault();
-							dragOver = false;
-							void addFiles(event.dataTransfer?.files);
-						}}
-					>
-						{#if pending.length > 0}
-							<div class="flex flex-wrap gap-2 px-3 pt-3">
-								{#each pending as image (image.id)}
-									<div class="relative">
-										<img
-											src={image.dataUrl}
-											alt={image.name}
-											class="h-16 w-16 rounded-lg border object-cover"
-										/>
-										<button
-											type="button"
-											class="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:text-foreground"
-											onclick={() => removePending(image.id)}
-											aria-label={t('myaaw.chat.remove_image')}
-											title={t('myaaw.chat.remove_image')}
-										>
-											<X class="h-3 w-3" />
-										</button>
-									</div>
-								{/each}
-							</div>
-						{/if}
-						{#if pendingFiles.length > 0}
-							<div class="flex flex-wrap gap-2 px-3 pt-3">
-								{#each pendingFiles as file (file.id)}
-									<div
-										class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
-									>
-										<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
-										<span class="min-w-0 flex-1 truncate text-xs">{file.name}</span>
-										<span class="shrink-0 text-[10px] text-muted-foreground">
-											{formatBytes(file.size)}
-										</span>
-										<button
-											type="button"
-											class="shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-											onclick={() => removePendingFile(file.id)}
-											aria-label={t('myaaw.chat.remove_image')}
-											title={t('myaaw.chat.remove_image')}
-										>
-											<X class="h-3 w-3" />
-										</button>
-									</div>
-								{/each}
-							</div>
-						{/if}
-						{#if dragOver}
-							<p class="px-4 pt-2 text-[11px] font-medium text-foreground">
-								{t('myaaw.chat.drop_files')}
-							</p>
-						{/if}
-						<textarea
-							bind:this={composer}
-							bind:value={input}
-							use:autosize
-							onkeydown={onKeydown}
-							onpaste={onPaste}
-							rows="1"
-							placeholder={t('myaaw.chat.placeholder')}
-							class="max-h-40 min-h-11 w-full resize-none rounded-t-2xl bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground sm:min-h-13 sm:px-4 sm:py-3"
-						></textarea>
-						<div class="flex items-center justify-between px-2 pb-1.5 sm:px-3 sm:pb-2">
-							<div class="flex min-w-0 items-center gap-1">
-								<input
-									bind:this={fileInput}
-									type="file"
-									accept="image/*,.txt,.md,.markdown,.csv,.tsv,.json,.xml,.yaml,.yml,.log,.rtf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp"
-									multiple
-									class="hidden"
-									onchange={onFileInput}
-								/>
-								<Button
-									type="button"
-									size="icon-sm"
-									variant="ghost"
-									class="shrink-0 rounded-full"
-									disabled={pending.length >= MAX_IMAGES && pendingFiles.length >= MAX_FILES}
-									onclick={() => fileInput?.click()}
-									aria-label={t('myaaw.chat.attach')}
-									aria-keyshortcuts="Control+Shift+F Meta+Shift+F"
-									title={`${t('myaaw.chat.attach')} (${formatShortcut('mod+shift+f')})`}
-								>
-									<Paperclip class="h-4 w-4" />
-								</Button>
-								<Button
-									type="button"
-									size="icon-sm"
-									variant="ghost"
-									class={cn('shrink-0 rounded-full', listening && 'text-destructive')}
-									onclick={toggleSpeech}
-									aria-pressed={listening}
-									aria-label={listening
-										? t('myaaw.chat.speech_stop')
-										: t('myaaw.chat.speech_start')}
-									aria-keyshortcuts="Control+Shift+Space Meta+Shift+Space"
-									title={`${listening ? t('myaaw.chat.speech_stop') : t('myaaw.chat.speech_start')} (${formatShortcut('mod+shift+space')})`}
-								>
-									<Mic class={cn('h-4 w-4', listening && 'animate-pulse')} />
-								</Button>
-								<span class="hidden min-w-0 truncate text-[10px] text-muted-foreground sm:inline">
-									{listening ? t('myaaw.chat.speech_listening') : t('myaaw.chat.hint')}
-								</span>
-							</div>
-							{#if streaming}
-								<Button
-									size="icon"
-									variant="destructive"
-									class="rounded-full"
-									onclick={stop}
-									aria-label={t('myaaw.chat.stop')}
-								>
-									<Square class="h-4 w-4" />
-								</Button>
-							{:else}
-								<Button
-									size="icon"
-									class="rounded-full"
-									onclick={send}
-									disabled={!input.trim() && pending.length === 0 && pendingFiles.length === 0}
-									aria-label={t('myaaw.chat.send')}
-								>
-									<Send class="h-4 w-4" />
-								</Button>
-							{/if}
-						</div>
 						<div
-							class="flex flex-nowrap items-center justify-center gap-x-2 border-t px-3 py-1.5 text-[10px] leading-tight text-muted-foreground"
+							class={[
+								'border-t px-2 py-2 sm:px-4 sm:py-3',
+								glassMode
+									? 'bg-linear-to-b from-transparent via-card/40 to-card/40 backdrop-blur-xl'
+									: 'bg-background/80 backdrop-blur'
+							]}
 						>
-							<div class="relative">
-								<button
-									type="button"
-									class={cn(
-										'flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none',
-										openStats && 'text-foreground'
-									)}
-									onclick={(event) => {
-										event.stopPropagation();
-										openStats = !openStats;
-										openUsage = false;
+							<div class="mx-auto w-full max-w-4xl">
+								<div
+									role="group"
+									class={[
+										'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60 glass:bg-card/65 glass:shadow-lg glass:backdrop-blur-xl',
+										dragOver ? 'border-ring ring-2 ring-ring/30' : ''
+									]}
+									ondragover={(event) => {
+										event.preventDefault();
+										dragOver = true;
 									}}
-									aria-expanded={openStats}
+									ondragleave={(event) => {
+										event.preventDefault();
+										dragOver = false;
+									}}
+									ondrop={(event) => {
+										event.preventDefault();
+										dragOver = false;
+										void addFiles(event.dataTransfer?.files);
+									}}
 								>
-									<Gauge class="h-3 w-3 shrink-0" />
-									<span class="whitespace-nowrap">
-										{turnLabel(statsTurns)} · {stepsLabel(statsSteps)}
-										{#if statsTokPerSec > 0}
-											· {t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
-										{/if}
-									</span>
-								</button>
-								{#if openStats && sessionStats}
-									<div
-										class="absolute bottom-full left-0 z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md sm:left-1/2 sm:-translate-x-1/2"
-										onclick={(event) => event.stopPropagation()}
-										role="presentation"
-									>
-										<div class="flex items-center gap-2 font-medium">
-											<Gauge class="h-3.5 w-3.5" />
-											{t('myaaw.chat.stats_session_title')}
-										</div>
-										<div class="my-2 h-px bg-border"></div>
-										<dl class="space-y-1.5">
-											<div class="flex justify-between gap-3">
-												<dt>{t('myaaw.chat.stats_llm_time')}</dt>
-												<dd class="tabular-nums">{formatSeconds(statsLlmMs)}</dd>
-											</div>
-											<div class="flex justify-between gap-3">
-												<dt>{t('myaaw.chat.stats_tool_time')}</dt>
-												<dd class="tabular-nums">{formatSeconds(statsToolMs)}</dd>
-											</div>
-											<div class="flex justify-between gap-3">
-												<dt>{t('myaaw.chat.stats_ttft')}</dt>
-												<dd class="tabular-nums">{formatSeconds(statsTtftMs)}</dd>
-											</div>
-											<div class="flex justify-between gap-3">
-												<dt>{t('myaaw.chat.stats_tps')}</dt>
-												<dd class="tabular-nums">
-													{t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
-												</dd>
-											</div>
-										</dl>
-									</div>
-								{/if}
-							</div>
-
-							{#if statsTokenText || statsCacheText || statsModelText}
-								<div class="relative min-w-0">
-									<button
-										type="button"
-										class={cn(
-											'flex items-center gap-1 rounded-md px-1 py-0.5 font-mono italic transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none',
-											openUsage && 'text-foreground'
-										)}
-										onclick={(event) => {
-											event.stopPropagation();
-											openUsage = !openUsage;
-											openStats = false;
-										}}
-										aria-expanded={openUsage}
-									>
-										<Database class="h-3 w-3 shrink-0" />
-										{#if statsTokenText}
-											<span class="whitespace-nowrap">{statsTokenText}</span>
-										{/if}
-										{#if statsCacheText}
-											<span class="hidden whitespace-nowrap sm:inline">• {statsCacheText}</span>
-										{/if}
-										{#if statsModelText}
-											<span class="hidden truncate whitespace-nowrap sm:inline">
-												• {statsModelText}
-											</span>
-										{/if}
-									</button>
-									{#if openUsage && sessionStats}
-										<div
-											class="absolute right-0 bottom-full z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md sm:right-auto sm:left-1/2 sm:-translate-x-1/2"
-											onclick={(event) => event.stopPropagation()}
-											role="presentation"
-										>
-											<div class="flex items-center justify-between gap-3 font-medium">
-												<span class="flex items-center gap-2">
-													<Database class="h-3.5 w-3.5" />
-													{t('myaaw.chat.stats_usage_title')}
-												</span>
-												<span class="tabular-nums">
-													{t('myaaw.chat.stats_tokens', {
-														count: formatCount(statsTokens)
-													})}
-												</span>
-											</div>
-											<div class="my-2 h-px bg-border"></div>
-											<dl class="space-y-1.5">
-												<div class="flex justify-between gap-3">
-													<dt>{t('myaaw.chat.stats_cache_hit_label')}</dt>
-													<dd class="tabular-nums">{statsCacheRate}%</dd>
+									{#if pending.length > 0}
+										<div class="flex flex-wrap gap-2 px-3 pt-3">
+											{#each pending as image (image.id)}
+												<div class="relative">
+													<img
+														src={image.dataUrl}
+														alt={image.name}
+														class="h-16 w-16 rounded-lg border object-cover"
+													/>
+													<button
+														type="button"
+														class="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:text-foreground"
+														onclick={() => removePending(image.id)}
+														aria-label={t('myaaw.chat.remove_image')}
+														title={t('myaaw.chat.remove_image')}
+													>
+														<X class="h-3 w-3" />
+													</button>
 												</div>
-												<div class="flex justify-between gap-3">
-													<dt>{t('myaaw.chat.stats_uncached_input')}</dt>
-													<dd class="tabular-nums">
-														{t('myaaw.chat.stats_tokens', {
-															count: formatCount(statsUncachedTokens)
-														})}
-													</dd>
-												</div>
-												<div class="flex justify-between gap-3">
-													<dt>{t('myaaw.chat.stats_cached_input')}</dt>
-													<dd class="tabular-nums">
-														{t('myaaw.chat.stats_tokens', {
-															count: formatCount(statsCachedTokens)
-														})}
-													</dd>
-												</div>
-												<div class="flex justify-between gap-3">
-													<dt>{t('myaaw.chat.stats_output')}</dt>
-													<dd class="tabular-nums">
-														{t('myaaw.chat.stats_tokens', {
-															count: formatCount(statsOutputTokens)
-														})}
-													</dd>
-												</div>
-											</dl>
+											{/each}
 										</div>
 									{/if}
+									{#if pendingFiles.length > 0}
+										<div class="flex flex-wrap gap-2 px-3 pt-3">
+											{#each pendingFiles as file (file.id)}
+												<div
+													class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
+												>
+													<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+													<span class="min-w-0 flex-1 truncate text-xs">{file.name}</span>
+													<span class="shrink-0 text-[10px] text-muted-foreground">
+														{formatBytes(file.size)}
+													</span>
+													<button
+														type="button"
+														class="shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+														onclick={() => removePendingFile(file.id)}
+														aria-label={t('myaaw.chat.remove_image')}
+														title={t('myaaw.chat.remove_image')}
+													>
+														<X class="h-3 w-3" />
+													</button>
+												</div>
+											{/each}
+										</div>
+									{/if}
+									{#if dragOver}
+										<p class="px-4 pt-2 text-[11px] font-medium text-foreground">
+											{t('myaaw.chat.drop_files')}
+										</p>
+									{/if}
+									<textarea
+										bind:this={composer}
+										bind:value={input}
+										use:autosize
+										onkeydown={onKeydown}
+										onpaste={onPaste}
+										rows="1"
+										placeholder={t('myaaw.chat.placeholder')}
+										class="max-h-40 min-h-11 w-full resize-none rounded-t-2xl bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground sm:min-h-13 sm:px-4 sm:py-3"
+									></textarea>
+									<div class="flex items-center justify-between px-2 pb-1.5 sm:px-3 sm:pb-2">
+										<div class="flex min-w-0 items-center gap-1">
+											<input
+												bind:this={fileInput}
+												type="file"
+												accept="image/*,.txt,.md,.markdown,.csv,.tsv,.json,.xml,.yaml,.yml,.log,.rtf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp"
+												multiple
+												class="hidden"
+												onchange={onFileInput}
+											/>
+											<Button
+												type="button"
+												size="icon-sm"
+												variant="ghost"
+												class="shrink-0 rounded-full"
+												disabled={pending.length >= MAX_IMAGES && pendingFiles.length >= MAX_FILES}
+												onclick={() => fileInput?.click()}
+												aria-label={t('myaaw.chat.attach')}
+												aria-keyshortcuts="Control+Shift+F Meta+Shift+F"
+												title={`${t('myaaw.chat.attach')} (${formatShortcut('mod+shift+f')})`}
+											>
+												<Paperclip class="h-4 w-4" />
+											</Button>
+											<Button
+												type="button"
+												size="icon-sm"
+												variant="ghost"
+												class={cn('shrink-0 rounded-full', listening && 'text-destructive')}
+												onclick={toggleSpeech}
+												aria-pressed={listening}
+												aria-label={listening
+													? t('myaaw.chat.speech_stop')
+													: t('myaaw.chat.speech_start')}
+												aria-keyshortcuts="Control+Shift+Space Meta+Shift+Space"
+												title={`${listening ? t('myaaw.chat.speech_stop') : t('myaaw.chat.speech_start')} (${formatShortcut('mod+shift+space')})`}
+											>
+												<Mic class={cn('h-4 w-4', listening && 'animate-pulse')} />
+											</Button>
+											<span
+												class="hidden min-w-0 truncate text-[10px] text-muted-foreground sm:inline"
+											>
+												{listening ? t('myaaw.chat.speech_listening') : t('myaaw.chat.hint')}
+											</span>
+										</div>
+										{#if streaming}
+											<Button
+												size="icon"
+												variant="destructive"
+												class="rounded-full"
+												onclick={stop}
+												aria-label={t('myaaw.chat.stop')}
+											>
+												<Square class="h-4 w-4" />
+											</Button>
+										{:else}
+											<Button
+												size="icon"
+												class="rounded-full"
+												onclick={send}
+												disabled={!input.trim() &&
+													pending.length === 0 &&
+													pendingFiles.length === 0}
+												aria-label={t('myaaw.chat.send')}
+											>
+												<Send class="h-4 w-4" />
+											</Button>
+										{/if}
+									</div>
+									<div
+										class="flex flex-nowrap items-center justify-center gap-x-2 border-t px-3 py-1.5 text-[10px] leading-tight text-muted-foreground"
+									>
+										<div class="relative">
+											<button
+												type="button"
+												class={cn(
+													'flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none',
+													openStats && 'text-foreground'
+												)}
+												onclick={(event) => {
+													event.stopPropagation();
+													openStats = !openStats;
+													openUsage = false;
+												}}
+												aria-expanded={openStats}
+											>
+												<Gauge class="h-3 w-3 shrink-0" />
+												<span class="whitespace-nowrap">
+													{turnLabel(statsTurns)} · {stepsLabel(statsSteps)}
+													{#if statsTokPerSec > 0}
+														· {t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
+													{/if}
+												</span>
+											</button>
+											{#if openStats && sessionStats}
+												<div
+													class="absolute bottom-full left-0 z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md glass:bg-popover/90 glass:backdrop-blur-2xl sm:left-1/2 sm:-translate-x-1/2"
+													onclick={(event) => event.stopPropagation()}
+													role="presentation"
+												>
+													<div class="flex items-center gap-2 font-medium">
+														<Gauge class="h-3.5 w-3.5" />
+														{t('myaaw.chat.stats_session_title')}
+													</div>
+													<div class="my-2 h-px bg-border"></div>
+													<dl class="space-y-1.5">
+														<div class="flex justify-between gap-3">
+															<dt>{t('myaaw.chat.stats_llm_time')}</dt>
+															<dd class="tabular-nums">{formatSeconds(statsLlmMs)}</dd>
+														</div>
+														<div class="flex justify-between gap-3">
+															<dt>{t('myaaw.chat.stats_tool_time')}</dt>
+															<dd class="tabular-nums">{formatSeconds(statsToolMs)}</dd>
+														</div>
+														<div class="flex justify-between gap-3">
+															<dt>{t('myaaw.chat.stats_ttft')}</dt>
+															<dd class="tabular-nums">{formatSeconds(statsTtftMs)}</dd>
+														</div>
+														<div class="flex justify-between gap-3">
+															<dt>{t('myaaw.chat.stats_tps')}</dt>
+															<dd class="tabular-nums">
+																{t('myaaw.chat.stats_tok_per_sec', { count: statsTokPerSec })}
+															</dd>
+														</div>
+													</dl>
+												</div>
+											{/if}
+										</div>
+
+										{#if statsTokenText || statsCacheText || statsModelText}
+											<div class="relative min-w-0">
+												<button
+													type="button"
+													class={cn(
+														'flex items-center gap-1 rounded-md px-1 py-0.5 font-mono italic transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none',
+														openUsage && 'text-foreground'
+													)}
+													onclick={(event) => {
+														event.stopPropagation();
+														openUsage = !openUsage;
+														openStats = false;
+													}}
+													aria-expanded={openUsage}
+												>
+													<Database class="h-3 w-3 shrink-0" />
+													{#if statsTokenText}
+														<span class="whitespace-nowrap">{statsTokenText}</span>
+													{/if}
+													{#if statsCacheText}
+														<span class="hidden whitespace-nowrap sm:inline"
+															>• {statsCacheText}</span
+														>
+													{/if}
+													{#if statsModelText}
+														<span class="hidden truncate whitespace-nowrap sm:inline">
+															• {statsModelText}
+														</span>
+													{/if}
+												</button>
+												{#if openUsage && sessionStats}
+													<div
+														class="absolute right-0 bottom-full z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md glass:bg-popover/90 glass:backdrop-blur-2xl sm:right-auto sm:left-1/2 sm:-translate-x-1/2"
+														onclick={(event) => event.stopPropagation()}
+														role="presentation"
+													>
+														<div class="flex items-center justify-between gap-3 font-medium">
+															<span class="flex items-center gap-2">
+																<Database class="h-3.5 w-3.5" />
+																{t('myaaw.chat.stats_usage_title')}
+															</span>
+															<span class="tabular-nums">
+																{t('myaaw.chat.stats_tokens', {
+																	count: formatCount(statsTokens)
+																})}
+															</span>
+														</div>
+														<div class="my-2 h-px bg-border"></div>
+														<dl class="space-y-1.5">
+															<div class="flex justify-between gap-3">
+																<dt>{t('myaaw.chat.stats_cache_hit_label')}</dt>
+																<dd class="tabular-nums">{statsCacheRate}%</dd>
+															</div>
+															<div class="flex justify-between gap-3">
+																<dt>{t('myaaw.chat.stats_uncached_input')}</dt>
+																<dd class="tabular-nums">
+																	{t('myaaw.chat.stats_tokens', {
+																		count: formatCount(statsUncachedTokens)
+																	})}
+																</dd>
+															</div>
+															<div class="flex justify-between gap-3">
+																<dt>{t('myaaw.chat.stats_cached_input')}</dt>
+																<dd class="tabular-nums">
+																	{t('myaaw.chat.stats_tokens', {
+																		count: formatCount(statsCachedTokens)
+																	})}
+																</dd>
+															</div>
+															<div class="flex justify-between gap-3">
+																<dt>{t('myaaw.chat.stats_output')}</dt>
+																<dd class="tabular-nums">
+																	{t('myaaw.chat.stats_tokens', {
+																		count: formatCount(statsOutputTokens)
+																	})}
+																</dd>
+															</div>
+														</dl>
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</div>
 								</div>
-							{/if}
+							</div>
 						</div>
 					</div>
 				</div>
@@ -2848,7 +2874,7 @@
 			onclick={toggleHistory}
 		></button>
 		<aside
-			class="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[85vw] flex-col border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none"
+			class="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[85vw] flex-col border-l bg-card lg:static glass:bg-card/75 glass:backdrop-blur-2xl lg:z-auto lg:h-full lg:max-w-none"
 		>
 			<div class="flex shrink-0 items-center gap-2 border-b p-2">
 				<div class="relative min-w-0 flex-1">

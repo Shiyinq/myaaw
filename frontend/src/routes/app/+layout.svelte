@@ -61,7 +61,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import { resetMode, setMode, userPrefersMode } from 'mode-watcher';
+	import { resetMode, setMode, setTheme, theme, userPrefersMode } from 'mode-watcher';
 
 	interface Props {
 		children: import('svelte').Snippet;
@@ -356,15 +356,21 @@
 			}
 		}
 
-		const theme = userPrefersMode.current;
+		const mode = userPrefersMode.current;
+		// Glass is a theme on top of dark mode, so it is offered next to the modes
+		// and clears the custom theme when one of the plain ones is chosen.
+		const glass = theme.current === 'glass';
 		list.push({
 			id: 'action:theme-light',
 			labelKey: 'myaaw.settings.theme_light',
 			aliases: ['theme', 'tema', 'light', 'terang'],
 			group: 'action',
 			icon: Sun,
-			current: theme === 'light',
-			run: () => setMode('light')
+			current: !glass && mode === 'light',
+			run: () => {
+				setTheme('');
+				setMode('light');
+			}
 		});
 		list.push({
 			id: 'action:theme-dark',
@@ -372,8 +378,23 @@
 			aliases: ['theme', 'tema', 'dark', 'gelap'],
 			group: 'action',
 			icon: Moon,
-			current: theme === 'dark',
-			run: () => setMode('dark')
+			current: !glass && mode === 'dark',
+			run: () => {
+				setTheme('');
+				setMode('dark');
+			}
+		});
+		list.push({
+			id: 'action:theme-glass',
+			labelKey: 'myaaw.settings.theme_glass',
+			aliases: ['theme', 'tema', 'glass', 'kaca', 'frosted', 'blur'],
+			group: 'action',
+			icon: Sparkles,
+			current: glass,
+			run: () => {
+				setTheme('glass');
+				setMode('dark');
+			}
 		});
 		list.push({
 			id: 'action:theme-system',
@@ -381,8 +402,11 @@
 			aliases: ['theme', 'tema', 'system', 'sistem', 'auto'],
 			group: 'action',
 			icon: Monitor,
-			current: theme === 'system',
-			run: () => resetMode()
+			current: !glass && mode === 'system',
+			run: () => {
+				setTheme('');
+				resetMode();
+			}
 		});
 		for (const item of availableLocales) {
 			list.push({
@@ -559,7 +583,7 @@
 
 <div
 	class={[
-		'h-dvh bg-background transition-[padding] duration-200',
+		'h-dvh bg-background glass:bg-transparent transition-[padding] duration-200',
 		sidebar.collapsed ? 'md:pl-16' : 'md:pl-60'
 	]}
 >
@@ -576,7 +600,7 @@
 	<aside
 		inert={!wide && !drawerOpen}
 		class={[
-			'fixed inset-y-0 left-0 z-50 flex w-64 max-w-[80vw] flex-col border-r bg-card shadow-xl transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
+			'fixed inset-y-0 left-0 z-50 flex w-64 max-w-[80vw] flex-col border-r bg-card shadow-xl glass:bg-card/60 glass:backdrop-blur-2xl transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
 			drawerOpen ? 'translate-x-0' : '-translate-x-full',
 			compactSidebar ? 'md:w-16' : 'md:w-60'
 		]}
@@ -590,7 +614,7 @@
 				</div>
 			</div>
 			<button
-				class="absolute top-4 -right-3 z-50 flex h-6 w-6 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
+				class="absolute top-4 -right-3 z-50 flex h-6 w-6 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-sm glass:bg-card/80 glass:backdrop-blur transition-colors hover:bg-muted hover:text-foreground"
 				onclick={() => sidebar.toggle()}
 				title={t('myaaw.sidebar.expand')}
 				aria-label={t('myaaw.sidebar.expand')}
@@ -742,7 +766,9 @@
 	</aside>
 
 	<div class="flex h-dvh flex-col">
-		<header class="shrink-0 border-b bg-background/80 backdrop-blur">
+		<header
+			class="shrink-0 border-b bg-background/80 backdrop-blur glass:bg-background/60 glass:backdrop-blur-xl"
+		>
 			<div class="flex h-14 items-center gap-2 px-2 sm:gap-3 sm:px-4">
 				<!-- Phones reach the whole navigation through the drawer; from md up the
 				     sidebar is always on screen, so the button is not rendered there. -->
