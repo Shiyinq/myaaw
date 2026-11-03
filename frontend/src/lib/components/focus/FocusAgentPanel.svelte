@@ -296,7 +296,7 @@
 						type="button"
 						data-conversation-id={item.id}
 						class={[
-							'flex w-full items-start gap-2 rounded-lg p-2 text-left transition-colors',
+							'flex w-full items-start gap-2 rounded-lg p-2 text-left transition-colors list-row',
 							item.id === activeId ? 'bg-accent' : 'hover:bg-muted'
 						]}
 						onclick={() => onOpen(item.id)}

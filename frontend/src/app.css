@@ -815,7 +815,17 @@ aside a[aria-current='page']:not(.justify-center)::after {
  * Reader preferences, independent of the theme: they live on <html> as data
  * attributes so any theme can combine with any of them.
  */
-:root[data-density='compact'] .list-row {
+:root[data-density='compact'] .list-row:not(.conversation-row) {
+	padding-top: 0.125rem;
+	padding-bottom: 0.125rem;
+}
+
+/*
+ * Conversation rows carry their padding on the inner block, because the row
+ * itself hosts the absolutely positioned actions. Padding the row instead would
+ * make the compact preference grow the row rather than tighten it.
+ */
+:root[data-density='compact'] .conversation-row .row-pad {
 	padding-top: 0.125rem;
 	padding-bottom: 0.125rem;
 }

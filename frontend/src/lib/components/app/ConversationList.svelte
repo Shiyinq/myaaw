@@ -428,7 +428,7 @@
 		aria-label={entry.title || entry.id}
 		data-conversation-id={entry.id}
 		class={[
-			'group/entry rounded-md transition-colors list-row',
+			'group/entry conversation-row rounded-md transition-colors list-row',
 			entry.id === activeId ? 'bg-accent' : 'hover:bg-muted',
 			draggingId === entry.id ? 'opacity-50' : ''
 		]}
@@ -466,7 +466,7 @@
 				</Button>
 			</div>
 		{:else}
-			<div class="relative flex items-start gap-1 p-1">
+			<div class="relative flex items-start gap-1 row-pad p-1">
 				<button
 					class="min-w-0 flex-1 rounded px-1 py-0.5 text-left"
 					onclick={() => onOpen(entry.id)}
