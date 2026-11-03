@@ -684,7 +684,14 @@
 			"empty": "Belum ada isinya.",
 			"no_results": "Tidak ada yang cocok.",
 			"tag_custom": "kustom",
-			"tag_mcp": "MCP"
+			"tag_mcp": "MCP",
+			"open_details": "Buka detail {name}",
+			"toggle": "Aktifkan atau nonaktifkan {name}",
+			"toggle_desc": "Saat aktif, agen bisa memakainya.",
+			"no_description": "Belum ada deskripsi.",
+			"environment": "Environment",
+			"add_custom": "Tambah tool kustom",
+			"add_mcp": "Tambah server MCP"
 		},
 		"contacts": {
 			"title": "Kontak",

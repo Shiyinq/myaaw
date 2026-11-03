@@ -737,7 +737,14 @@
 			"empty": "Nothing here yet.",
 			"no_results": "No matches.",
 			"tag_custom": "custom",
-			"tag_mcp": "MCP"
+			"tag_mcp": "MCP",
+			"open_details": "Open details for {name}",
+			"toggle": "Enable or disable {name}",
+			"toggle_desc": "When on, the agent can use it.",
+			"no_description": "No description.",
+			"environment": "Environment",
+			"add_custom": "Add custom tool",
+			"add_mcp": "Add MCP server"
 		},
 		"contacts": {
 			"title": "Contacts",
