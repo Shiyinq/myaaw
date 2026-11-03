@@ -1,5 +1,6 @@
 import { browser } from '$app/environment';
 import { agents as agentsApi } from '$lib/apis/agents';
+import { colorOf, type BloubColor } from '$lib/bloub';
 import { SELECTED_AGENT_KEY } from '$lib/constants';
 import { getErrorMessage } from '$lib/utils/api';
 import type { AgentInfo } from '$lib/types';
@@ -35,6 +36,16 @@ export const agentSelection = {
 	},
 	get current(): AgentInfo | undefined {
 		return agents.find((agent) => agent.name === selected) ?? agents.find((agent) => agent.default);
+	},
+	/**
+	 * Palette key for the selected agent, already resolved to ink for agents that
+	 * never picked one. Every agent-scoped surface reads this instead of working
+	 * out the default on its own.
+	 */
+	get color(): BloubColor {
+		const entry =
+			agents.find((agent) => agent.name === selected) ?? agents.find((agent) => agent.default);
+		return colorOf(entry?.agent_color);
 	},
 	setAgents(next: AgentInfo[]) {
 		agents = next;

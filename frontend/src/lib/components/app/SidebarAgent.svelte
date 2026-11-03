@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Bot } from 'lucide-svelte';
 	import AgentPicker from '$lib/components/app/AgentPicker.svelte';
+	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import { colorOf } from '$lib/bloub';
 	import { agentSelection } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
@@ -34,17 +35,18 @@
 						{...props}
 						variant="outline"
 						size="icon-sm"
-						class="mx-auto flex"
+						class="mx-auto flex border-0"
 						title={agentSelection.current?.name ?? t('myaaw.agent.label')}
 						aria-label={t('myaaw.agent.label')}
 					>
-						<Bot class="h-4 w-4" />
+						<Bloub mood="attentif" size={26} color={colorOf(agentSelection.current?.agent_color)} />
 					</Button>
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content side="right" align="start" class="w-48">
 				{#each agentSelection.agents as item (item.name)}
-					<DropdownMenu.Item onclick={() => selectAgent(item.name)}>
+					<DropdownMenu.Item onclick={() => selectAgent(item.name)} class="gap-2">
+						<Bloub mood="attentif" size={20} color={colorOf(item.agent_color)} class="shrink-0" />
 						<span class="truncate">{item.name}</span>
 						{#if item.default}
 							<span class="ml-auto text-[10px] text-muted-foreground">

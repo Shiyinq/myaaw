@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { PanelLeftClose, PanelLeftOpen, X } from 'lucide-svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
-	import { sidebar } from '$lib/stores';
+	import { agentSelection, sidebar } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
 	const { t } = useTranslation();
@@ -27,7 +27,7 @@
 		compact ? 'justify-center' : 'pr-2 pl-4 md:pr-0'
 	]}
 >
-	<Bloub mood="attentif" size={compact ? 40 : 48} />
+	<Bloub mood="attentif" size={compact ? 40 : 48} color={agentSelection.color} />
 	<div
 		class={[
 			'flex min-w-0 flex-col overflow-hidden leading-tight whitespace-nowrap transition-all duration-200',

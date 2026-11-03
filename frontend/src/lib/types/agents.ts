@@ -8,6 +8,8 @@ export interface AgentInfo {
 	base_url?: string;
 	/** RFC3339 UTC instant the agent was created (used for sorting). */
 	created_at?: string;
+	/** Bloub palette key; absent from an older control plane, read it with `colorOf()`. */
+	agent_color?: string;
 }
 
 export interface AgentsResponse {
@@ -50,6 +52,8 @@ export interface OnboardRequest {
 	channels?: OnboardChannels;
 	heartbeat?: OnboardHeartbeat;
 	bot?: OnboardBot;
+	/** Palette key stored in the registry; omitted keeps the current colour. */
+	agent_color?: string;
 }
 
 export interface OnboardResponse {

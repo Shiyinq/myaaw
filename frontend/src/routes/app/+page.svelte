@@ -9,6 +9,8 @@
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
+	import Bloub from '$lib/components/common/Bloub.svelte';
+	import { colorOf } from '$lib/bloub';
 	import BackupsPanel from '$lib/components/backup/BackupsPanel.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -363,7 +365,7 @@
 								onclick={() => openChat(agent.name)}
 								title={t('myaaw.home.open_chat')}
 							>
-								<Bot class="h-9 w-9 text-muted-foreground" />
+								<Bloub mood="attentif" size={40} tight color={colorOf(agent.agent_color)} />
 								<span class="mt-1 w-full truncate text-sm font-semibold">{agent.name}</span>
 								<span class="flex flex-wrap items-center justify-center gap-1">
 									{#if agent.default}

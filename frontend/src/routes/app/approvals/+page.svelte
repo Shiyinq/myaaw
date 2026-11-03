@@ -111,7 +111,7 @@
 			<CardContent
 				class="flex flex-col items-center gap-3 py-10 text-center text-sm text-muted-foreground"
 			>
-				<Bloub mood="confus" size={56} tight />
+				<Bloub mood="confus" size={56} tight color={agentSelection.color} />
 				{t('myaaw.agent.none')}
 			</CardContent>
 		</Card>
@@ -195,7 +195,7 @@
 				<CardContent class="space-y-2">
 					{#if (view?.grants?.length ?? 0) === 0}
 						<div class="flex flex-col items-center gap-2 py-2 text-center">
-							<Bloub mood="heureux" size={48} tight />
+							<Bloub mood="heureux" size={48} tight color={agentSelection.color} />
 							<p class="text-sm text-muted-foreground">{t('myaaw.approvals.no_grants')}</p>
 						</div>
 					{/if}

@@ -11,10 +11,11 @@
 	} from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import Bloub from '$lib/components/common/Bloub.svelte';
+	import { colorOf } from '$lib/bloub';
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
 	import { context as contextApi } from '$lib/apis/context';
 	import { server as serverApi } from '$lib/apis/server';
-	import { toastStore } from '$lib/stores';
+	import { agentSelection, toastStore } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
 	import type { ContextFile, ConversationSummary } from '$lib/types';
@@ -60,6 +61,10 @@
 	const soul = $derived(files[CONTEXT_SOUL]);
 	const memory = $derived(files[CONTEXT_MEMORY]);
 	const initial = $derived((agent || '?').slice(0, 1).toUpperCase());
+	/** The palette key this agent was saved with; ink for agents without one. */
+	const agentColor = $derived(
+		colorOf(agentSelection.agents.find((entry) => entry.name === agent)?.agent_color)
+	);
 
 	const statusLabel = $derived(
 		status === 'connected'
@@ -226,7 +231,13 @@
 			<X class="h-4 w-4" />
 		</Button>
 
-		<Bloub mood="attentif" size={64} tight class="text-lg font-semibold uppercase">
+		<Bloub
+			mood="attentif"
+			size={64}
+			tight
+			color={agentColor}
+			class="text-lg font-semibold uppercase"
+		>
 			{#snippet fallback()}
 				{initial}
 			{/snippet}
@@ -283,7 +294,7 @@
 				<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
 			{:else if items.length === 0}
 				<div class="flex flex-col items-center gap-2 px-2 py-4 text-center">
-					<Bloub mood="timide" size={40} tight />
+					<Bloub mood="timide" size={40} tight color={agentColor} />
 					<p class="text-xs text-muted-foreground">{t('myaaw.focus.history_empty')}</p>
 				</div>
 			{/if}

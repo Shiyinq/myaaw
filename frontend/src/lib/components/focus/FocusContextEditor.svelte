@@ -4,7 +4,8 @@
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import { context as contextApi } from '$lib/apis/context';
-	import { toastStore } from '$lib/stores';
+	import { agentSelection, toastStore } from '$lib/stores';
+	import { colorOf } from '$lib/bloub';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
 
@@ -18,6 +19,11 @@
 	let { agent, path, onClose }: Props = $props();
 
 	const { t } = useTranslation();
+
+	/** The placeholder is this agent's, so it wears its colour. */
+	const agentColor = $derived(
+		colorOf(agentSelection.agents.find((entry) => entry.name === agent)?.agent_color)
+	);
 
 	let content = $state('');
 	let loading = $state(false);
@@ -145,7 +151,7 @@
 			</div>
 		{:else}
 			<div class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-				<Bloub mood="curieux" size={56} tight />
+				<Bloub mood="curieux" size={56} tight color={agentColor} />
 				<p class="text-sm text-muted-foreground">{t('myaaw.focus.context_empty')}</p>
 				<Button variant="outline" size="sm" onclick={() => (editing = true)}>
 					<Pencil class="h-3.5 w-3.5" />

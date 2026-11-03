@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { Clock, MessagesSquare, Puzzle } from 'lucide-svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
+	import { agentSelection } from '$lib/stores';
 	import AccountMenu from '$lib/components/app/AccountMenu.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
@@ -36,7 +37,7 @@
 			title={t('myaaw.focus.rail_brand')}
 			aria-label={t('myaaw.focus.rail_brand')}
 		>
-			<Bloub mood="attentif" size={40} />
+			<Bloub mood="attentif" size={40} color={agentSelection.color} />
 		</a>
 	{/if}
 

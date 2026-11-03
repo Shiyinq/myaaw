@@ -31,6 +31,36 @@ export const BLOUB_CYCLES = ['idle', 'idle2', 'loading', 'notification', 'sleep'
 
 export type BloubCycle = (typeof BLOUB_CYCLES)[number];
 
+/**
+ * The palette the artwork ships in, in picker order. These ids double as the
+ * keys stored in the agent registry, so they must keep matching the file names
+ * in `static/myaaw-bloub/` on both sides.
+ */
+export const BLOUB_COLORS = [
+	'encre',
+	'brun',
+	'rouge',
+	'orange',
+	'ambre',
+	'vert',
+	'turquoise',
+	'bleu',
+	'violet',
+	'rose',
+	'gris',
+	'creme'
+] as const;
+
+export type BloubColor = (typeof BLOUB_COLORS)[number];
+
+/** Ink. Agents registered before colours existed resolve to this. */
+export const BLOUB_DEFAULT_COLOR: BloubColor = 'encre';
+
+/** Folds empty and unknown keys onto the default; use it on values read back from the API. */
+export function colorOf(value: string | null | undefined): BloubColor {
+	return BLOUB_COLORS.includes(value as BloubColor) ? (value as BloubColor) : BLOUB_DEFAULT_COLOR;
+}
+
 /** Static emotion used when a cycle has to freeze (reduced motion). */
 export const CYCLE_FALLBACK: Record<BloubCycle, BloubMood> = {
 	idle: 'neutre',
@@ -41,10 +71,10 @@ export const CYCLE_FALLBACK: Record<BloubCycle, BloubMood> = {
 	wink: 'heureux'
 };
 
-export function moodSrc(mood: BloubMood): string {
-	return `/myaaw-bloub/bloub-cat-${mood}-encre-anime.svg`;
+export function moodSrc(mood: BloubMood, color: BloubColor = BLOUB_DEFAULT_COLOR): string {
+	return `/myaaw-bloub/bloub-cat-${mood}-${color}-anime.svg`;
 }
 
-export function cycleSrc(cycle: BloubCycle): string {
-	return `/myaaw-bloub/bloub-cat-${cycle}-encre-cycle.gif`;
+export function cycleSrc(cycle: BloubCycle, color: BloubColor = BLOUB_DEFAULT_COLOR): string {
+	return `/myaaw-bloub/bloub-cat-${cycle}-${color}-cycle.gif`;
 }

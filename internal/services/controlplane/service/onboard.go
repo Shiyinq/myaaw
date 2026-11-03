@@ -54,6 +54,10 @@ type OnboardRequest struct {
 	Channels     *OnboardChannelsInput  `json:"channels,omitempty"`
 	Heartbeat    *OnboardHeartbeatInput `json:"heartbeat,omitempty"`
 	Bot          *OnboardBotInput       `json:"bot,omitempty"`
+	// AgentColor is the palette key the dashboard draws this agent with. Omitted
+	// keeps whatever the registry already holds, so a reconfigure never resets
+	// a colour the user picked earlier.
+	AgentColor *string `json:"agent_color,omitempty"`
 }
 
 // OnboardResult reports what was written.
@@ -71,6 +75,16 @@ func (s *AgentService) Onboard(name string, req OnboardRequest) (OnboardResult, 
 	}
 	existed := agentdir.AgentInitialized(name)
 
+	// The palette key is validated before anything is created: a bad one must not
+	// leave a half-made agent behind while the call reports a failure.
+	iconColor := ""
+	if req.AgentColor != nil {
+		iconColor = strings.TrimSpace(*req.AgentColor)
+		if !agentdir.ValidAgentColor(iconColor) {
+			return OnboardResult{}, fmt.Errorf("%w: agent_color %q is not in the palette", ErrInvalidConfig, iconColor)
+		}
+	}
+
 	input, err := buildOnboardInput(name, req)
 	if err != nil {
 		return OnboardResult{}, err
@@ -85,6 +99,14 @@ func (s *AgentService) Onboard(name string, req OnboardRequest) (OnboardResult, 
 	_, warnings, err := onboard.Apply(name, input, 0)
 	if err != nil {
 		return OnboardResult{}, err
+	}
+	// The registry entry exists only after Initialize, and the colour is written
+	// last: a failed apply must not leave a colour saved for a config that was
+	// never written.
+	if iconColor != "" {
+		if err := agentdir.SetAgentColor(name, iconColor); err != nil {
+			return OnboardResult{}, err
+		}
 	}
 	if a2aWarning != nil {
 		warnings = append(warnings, "A2A contacts were not updated: "+a2aWarning.Error())

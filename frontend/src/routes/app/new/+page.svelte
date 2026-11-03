@@ -8,6 +8,7 @@
 	import { skills as skillsApi } from '$lib/apis/skills';
 	import { tools as toolsApi } from '$lib/apis/tools';
 	import { agentSelection, toastStore } from '$lib/stores';
+	import { BLOUB_DEFAULT_COLOR, colorOf, type BloubColor } from '$lib/bloub';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { hasErrors, validate, type FieldErrors } from '$lib/utils/validation';
 	import { agentSetupSchema, type AgentSetupForm } from '$lib/schemas';
@@ -16,6 +17,7 @@
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import CapabilityPicker from '$lib/components/onboard/CapabilityPicker.svelte';
+	import AgentColorPicker from '$lib/components/onboard/AgentColorPicker.svelte';
 	import Section from '$lib/components/onboard/Section.svelte';
 	import FieldError from '$lib/components/common/FieldError.svelte';
 	import { Badge } from '$lib/components/ui/badge';
@@ -55,6 +57,7 @@
 		channels: string;
 		access: string;
 		heartbeat: string;
+		color: string;
 	}
 
 	const selectClass =
@@ -91,6 +94,9 @@
 	let heartbeatChannel = $state<'telegram' | 'discord'>('telegram');
 	let heartbeatTo = $state('');
 	let heartbeatEvery = $state('30m');
+
+	/** Palette key for this agent's face. Legacy agents resolve to ink. */
+	let agentColor = $state<BloubColor>(BLOUB_DEFAULT_COLOR);
 
 	let capabilities = $state<CapabilitiesView | null>(null);
 	let initial = $state<SetupSnapshot | null>(null);
@@ -209,7 +215,8 @@
 		access: [botType, ownerIds.trim()].join('|'),
 		heartbeat: [heartbeatActive, heartbeatChannel, heartbeatTo.trim(), heartbeatEvery.trim()].join(
 			'|'
-		)
+		),
+		color: agentColor
 	});
 	let changed = $derived({
 		provider: !!initial && initial.provider !== snapshot.provider,
@@ -217,7 +224,8 @@
 		tools: !!initial && initial.tools !== snapshot.tools,
 		channels: !!initial && initial.channels !== snapshot.channels,
 		access: !!initial && initial.access !== snapshot.access,
-		heartbeat: !!initial && initial.heartbeat !== snapshot.heartbeat
+		heartbeat: !!initial && initial.heartbeat !== snapshot.heartbeat,
+		color: !!initial && initial.color !== snapshot.color
 	});
 
 	let capabilitiesSummary = $derived(
@@ -303,6 +311,7 @@
 		heartbeatChannel = 'telegram';
 		heartbeatTo = '';
 		heartbeatEvery = '30m';
+		agentColor = BLOUB_DEFAULT_COLOR;
 
 		const skills: Record<string, boolean> = {};
 		for (const entry of capabilitySkills) skills[entry.name] = false;
@@ -344,6 +353,7 @@
 
 			name = target;
 			serverRunning = info.running;
+			agentColor = colorOf(info.agent_color);
 
 			const provider =
 				config.providers.find((item) => item.name === config.default_provider) ??
@@ -495,6 +505,11 @@
 				.filter(Boolean);
 			payload.bot = { type: botType, owner_ids: owners.length > 0 ? owners : undefined };
 		}
+		// The colour is registry metadata, not agent config: send it only when it
+		// actually changed, so an untouched legacy agent stays untouched.
+		if (!initial || changed.color) {
+			payload.agent_color = agentColor;
+		}
 		return payload;
 	}
 
@@ -605,6 +620,20 @@
 				<CardDescription>{t('myaaw.onboard.identity_desc')}</CardDescription>
 			</CardHeader>
 			<CardContent class="space-y-4">
+				<!-- The colour comes first: the face is the agent's identity, so it is
+				     chosen before the name the user gives it. -->
+				<div class="space-y-2">
+					<div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+						<Label>{t('myaaw.onboard.agent_color_title')}</Label>
+						<span class="text-[11px] text-muted-foreground">
+							{t('myaaw.onboard.agent_color_hint')}
+						</span>
+					</div>
+					<AgentColorPicker bind:value={agentColor} />
+				</div>
+
+				<Separator />
+
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div class="grid gap-1.5">
 						<Label for="onboard-name">{t('myaaw.onboard.agent_name')}</Label>

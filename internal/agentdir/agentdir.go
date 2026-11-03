@@ -29,6 +29,50 @@ var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 type AgentInfo struct {
 	CreatedAt string `json:"created_at"`
 	Path      string `json:"path,omitempty"`
+	// AgentColor is the palette key the dashboard draws the agent with. It is an
+	// id from AgentColors, never an asset path: the registry stays unaware of how
+	// the frontend renders it.
+	AgentColor string `json:"agent_color,omitempty"`
+}
+
+// AgentColors are the Bloub palette keys, in the order the picker shows them.
+// They match the file names the dashboard ships, and `encre` is the ink default.
+var AgentColors = []string{
+	"encre",
+	"brun",
+	"rouge",
+	"orange",
+	"ambre",
+	"vert",
+	"turquoise",
+	"bleu",
+	"violet",
+	"rose",
+	"gris",
+	"creme",
+}
+
+// DefaultAgentColor is used whenever an agent has no colour of its own: agents
+// registered before colours existed stay untouched on disk and read as ink.
+const DefaultAgentColor = "encre"
+
+// ValidAgentColor reports whether key is one of the palette ids.
+func ValidAgentColor(key string) bool {
+	for _, color := range AgentColors {
+		if color == key {
+			return true
+		}
+	}
+	return false
+}
+
+// AgentColorOrDefault resolves a stored value, folding empty and unknown keys
+// back onto DefaultAgentColor so callers never have to guess.
+func AgentColorOrDefault(key string) string {
+	if ValidAgentColor(key) {
+		return key
+	}
+	return DefaultAgentColor
 }
 
 // Registry is stored in ~/.myaaw/agents.json.
@@ -385,6 +429,29 @@ func SetDefault(name string) error {
 		return fmt.Errorf("agent %q is not registered", name)
 	}
 	registry.Default = name
+	return SaveRegistry(registry)
+}
+
+// SetAgentColor stores the palette key an agent is drawn with. A key that is not
+// in AgentColors is rejected rather than coerced, so a typo cannot silently ship
+// as ink.
+func SetAgentColor(name, color string) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+	if !ValidAgentColor(color) {
+		return fmt.Errorf("agent colour %q is not in the palette", color)
+	}
+	registry, err := LoadRegistry()
+	if err != nil {
+		return err
+	}
+	entry, exists := registry.Agents[name]
+	if !exists {
+		return fmt.Errorf("agent %q is not registered", name)
+	}
+	entry.AgentColor = color
+	registry.Agents[name] = entry
 	return SaveRegistry(registry)
 }
 

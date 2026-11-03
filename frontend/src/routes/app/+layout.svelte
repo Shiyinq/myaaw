@@ -606,7 +606,13 @@
 				     chat screen already floats its own mark. -->
 				{#if focusMode}
 					{#if !isChat}
-						<Bloub mood="attentif" size={32} eager class="-mr-2 shrink-0 md:hidden" />
+						<Bloub
+							mood="attentif"
+							size={32}
+							eager
+							color={agentSelection.color}
+							class="-mr-2 shrink-0 md:hidden"
+						/>
 					{/if}
 				{:else}
 					<Button
@@ -618,7 +624,7 @@
 						aria-label={t('myaaw.sidebar.open')}
 						aria-keyshortcuts="Control+\\ Meta+\\"
 					>
-						<Bloub mood="attentif" size={32} eager />
+						<Bloub mood="attentif" size={32} eager color={agentSelection.color} />
 					</Button>
 				{/if}
 				<div class="min-w-0 flex-1">

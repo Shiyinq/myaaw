@@ -1,6 +1,14 @@
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
-	import { CYCLE_FALLBACK, cycleSrc, moodSrc, type BloubCycle, type BloubMood } from '$lib/bloub';
+	import {
+		BLOUB_DEFAULT_COLOR,
+		CYCLE_FALLBACK,
+		cycleSrc,
+		moodSrc,
+		type BloubColor,
+		type BloubCycle,
+		type BloubMood
+	} from '$lib/bloub';
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import { cn } from '$lib/utils';
 
@@ -9,6 +17,8 @@
 		mood?: BloubMood;
 		/** Looping GIF. Freezes to `mood`/`CYCLE_FALLBACK` under reduced motion. */
 		cycle?: BloubCycle;
+		/** Palette key. Agents carry their own; everything else stays ink. */
+		color?: BloubColor;
 		size?: number;
 		/** Accessible text. Omit for decorative instances (the default). */
 		label?: string;
@@ -32,6 +42,7 @@
 	let {
 		mood = 'neutre',
 		cycle,
+		color = BLOUB_DEFAULT_COLOR,
 		size = 64,
 		label,
 		fallback,
@@ -52,8 +63,8 @@
 	const artScale = $derived(usingCycle ? CYCLE_SCALE : 1);
 	const src = $derived.by(() => {
 		// A cycle is motion; reduced motion gets the closest static emotion.
-		if (usingCycle && cycle) return cycleSrc(cycle);
-		return moodSrc(cycle ? CYCLE_FALLBACK[cycle] : mood);
+		if (usingCycle && cycle) return cycleSrc(cycle, color);
+		return moodSrc(cycle ? CYCLE_FALLBACK[cycle] : mood, color);
 	});
 	const tightMargin = $derived(tight ? `${-Math.round(size * 0.24)}px` : undefined);
 	const isCycleSrc = (value: string) => value.endsWith('-cycle.gif');

@@ -8037,6 +8037,10 @@ const docTemplatecontrolplane = `{
         "service.AgentInfo": {
             "type": "object",
             "properties": {
+                "agent_color": {
+                    "description": "AgentColor is always resolved: an agent registered before colours existed\nreads back as the palette default, so clients never have to know it.",
+                    "type": "string"
+                },
                 "base_url": {
                     "type": "string"
                 },
@@ -9045,6 +9049,10 @@ const docTemplatecontrolplane = `{
         "service.OnboardRequest": {
             "type": "object",
             "properties": {
+                "agent_color": {
+                    "description": "AgentColor is the palette key the dashboard draws this agent with. Omitted\nkeeps whatever the registry already holds, so a reconfigure never resets\na colour the user picked earlier.",
+                    "type": "string"
+                },
                 "bot": {
                     "$ref": "#/definitions/service.OnboardBotInput"
                 },

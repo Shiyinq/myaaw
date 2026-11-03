@@ -90,6 +90,20 @@
 				"surpris": "Bloub terkejut",
 				"timide": "Bloub tampak malu",
 				"triste": "Bloub sedih"
+			},
+			"color": {
+				"encre": "Tinta",
+				"brun": "Cokelat",
+				"rouge": "Merah",
+				"orange": "Oranye",
+				"ambre": "Kuning",
+				"vert": "Hijau",
+				"turquoise": "Toska",
+				"bleu": "Biru",
+				"violet": "Ungu",
+				"rose": "Merah muda",
+				"gris": "Abu-abu",
+				"creme": "Krem"
 			}
 		},
 		"nav": {
@@ -216,6 +230,8 @@
 			"reconfigure_subtitle": "Field kosong mempertahankan nilai saat ini.",
 			"identity": "Identitas",
 			"identity_desc": "Nama dan penyedia model bahasa.",
+			"agent_color_title": "Warna agent",
+			"agent_color_hint": "Tiap agent punya wajahnya sendiri.",
 			"agent_name": "Nama agen",
 			"provider_type": "Tipe penyedia",
 			"provider_name": "Nama penyedia",

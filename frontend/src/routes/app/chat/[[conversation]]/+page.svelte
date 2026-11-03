@@ -30,7 +30,7 @@
 	import ChatTime from '$lib/components/common/ChatTime.svelte';
 	import Logo from '$lib/components/common/Logo.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
-	import { cycleSrc, moodSrc, type BloubCycle, type BloubMood } from '$lib/bloub';
+	import { colorOf, cycleSrc, moodSrc, type BloubCycle, type BloubMood } from '$lib/bloub';
 	import { Button } from '$lib/components/ui/button';
 	import { theme } from 'mode-watcher';
 	import { isFrosted } from '$lib/theme';
@@ -1133,6 +1133,9 @@
 	let hovering = $state(false);
 	let hoverMood = $state<BloubMood>('curieux');
 	let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+
+	/** The mark belongs to the agent, so it wears that agent's palette colour. */
+	const markColor = $derived(colorOf(agentSelection.current?.agent_color));
 
 	function nextHoverMood(current: BloubMood): BloubMood {
 		const pool = HOVER_MOODS.filter((mood) => mood !== current);
@@ -2268,10 +2271,10 @@
 
 <svelte:head>
 	{#each CHAT_MOODS as mood (mood)}
-		<link rel="preload" as="image" type="image/svg+xml" href={moodSrc(mood)} />
+		<link rel="preload" as="image" type="image/svg+xml" href={moodSrc(mood, markColor)} />
 	{/each}
 	{#each CHAT_CYCLES as cycle (cycle)}
-		<link rel="preload" as="image" href={cycleSrc(cycle)} />
+		<link rel="preload" as="image" href={cycleSrc(cycle, markColor)} />
 	{/each}
 </svelte:head>
 
@@ -2382,7 +2385,7 @@
 				class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground"
 			>
 				{#if focusMode}
-					<Bloub mood="confus" size={56} />
+					<Bloub mood="confus" size={56} color={markColor} />
 				{/if}
 				<span>{t('myaaw.agent.none')}</span>
 			</div>
@@ -2409,6 +2412,7 @@
 							<Bloub
 								mood={markMood}
 								cycle={markCycle}
+								color={markColor}
 								size={96}
 								eager
 								tight
@@ -2460,6 +2464,7 @@
 									<Bloub
 										mood={hovering ? hoverMood : 'neutre'}
 										cycle={hovering ? undefined : 'idle2'}
+										color={markColor}
 										size={112}
 										eager
 										tight
@@ -2493,7 +2498,7 @@
 												aria-expanded={open}
 											>
 												{#if group.running}
-													<Bloub mood={groupMood(group)} size={18} />
+													<Bloub mood={groupMood(group)} size={18} color={markColor} />
 												{:else}
 													<Clock class="h-3.5 w-3.5 shrink-0" />
 												{/if}
@@ -2537,7 +2542,7 @@
 																aria-expanded={phaseOpen}
 															>
 																{#if phaseGroup.running}
-																	<Bloub mood={groupMood(phaseGroup)} size={18} />
+																	<Bloub mood={groupMood(phaseGroup)} size={18} color={markColor} />
 																{/if}
 																<span class="font-medium">{groupLabel(phaseGroup)}</span>
 																<ChevronDown
@@ -2837,7 +2842,7 @@
 								<!-- The first token can take a while; show that the run started. -->
 								<div class="flex items-center gap-2 px-1 py-1 text-xs text-muted-foreground">
 									{#if focusMode}
-										<Bloub mood={bloubMood} size={20} />
+										<Bloub mood={bloubMood} size={20} color={markColor} />
 									{:else}
 										<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
 									{/if}

@@ -90,6 +90,20 @@
 				"surpris": "Bloub is surprised",
 				"timide": "Bloub looks shy",
 				"triste": "Bloub looks sad"
+			},
+			"color": {
+				"encre": "Ink",
+				"brun": "Brown",
+				"rouge": "Red",
+				"orange": "Orange",
+				"ambre": "Amber",
+				"vert": "Green",
+				"turquoise": "Teal",
+				"bleu": "Blue",
+				"violet": "Violet",
+				"rose": "Pink",
+				"gris": "Grey",
+				"creme": "Cream"
 			}
 		},
 		"nav": {
@@ -216,6 +230,8 @@
 			"reconfigure_subtitle": "Empty fields keep the current value.",
 			"identity": "Identity",
 			"identity_desc": "Name and language model provider.",
+			"agent_color_title": "Agent colour",
+			"agent_color_hint": "Each agent keeps its own face.",
 			"agent_name": "Agent name",
 			"provider_type": "Provider type",
 			"provider_name": "Provider name",

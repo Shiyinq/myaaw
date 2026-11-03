@@ -29,6 +29,9 @@ type AgentInfo struct {
 	Port      int    `json:"port,omitempty"`
 	BaseURL   string `json:"base_url,omitempty"`
 	CreatedAt string `json:"created_at"`
+	// AgentColor is always resolved: an agent registered before colours existed
+	// reads back as the palette default, so clients never have to know it.
+	AgentColor string `json:"agent_color"`
 }
 
 // AgentService resolves per-agent paths, ports, and reachability.
@@ -106,9 +109,10 @@ func (s *AgentService) List() ([]AgentInfo, error) {
 	agents := make([]AgentInfo, 0, len(names))
 	for _, name := range names {
 		info := AgentInfo{
-			Name:      name,
-			Default:   name == registry.Default,
-			CreatedAt: createdAtRFC3339(registry, name),
+			Name:       name,
+			Default:    name == registry.Default,
+			CreatedAt:  createdAtRFC3339(registry, name),
+			AgentColor: agentdir.AgentColorOrDefault(registry.Agents[name].AgentColor),
 		}
 		baseURL, port, err := s.resolve(name)
 		if err == nil {
@@ -136,9 +140,10 @@ func (s *AgentService) Get(name string) (AgentInfo, error) {
 	}
 
 	info := AgentInfo{
-		Name:      name,
-		Default:   name == registry.Default,
-		CreatedAt: createdAtRFC3339(registry, name),
+		Name:       name,
+		Default:    name == registry.Default,
+		CreatedAt:  createdAtRFC3339(registry, name),
+		AgentColor: agentdir.AgentColorOrDefault(registry.Agents[name].AgentColor),
 	}
 	baseURL, port, err := s.resolve(name)
 	if err != nil {
