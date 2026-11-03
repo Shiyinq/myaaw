@@ -9,10 +9,11 @@ export type AudioLanguage = 'app' | 'id' | 'en';
 export type SpeechLanguage = AudioLanguage | 'auto';
 
 /**
- * Which shell the app renders: the full navigation, the chat-first layout, or
- * the minimal focus layout meant for a single agent.
+ * Which shell the app renders: the full navigation meant for people who want
+ * every page, the chat-first layout of the first LLM apps, or the minimal focus
+ * layout meant for a single agent.
  */
-export type ShellMode = 'standard' | 'simple' | 'focus';
+export type ShellMode = 'advanced' | 'classic' | 'focus';
 
 /**
  * Per-browser preferences that are not a theme: how dense the lists are, how
@@ -23,7 +24,7 @@ export interface Preferences {
 	density: Density;
 	textScale: number;
 	reduceMotion: boolean;
-	/** Chat-first shell: the sidebar becomes an agent picker plus the chat list. */
+	/** Classic shell: the sidebar becomes an agent picker plus the chat list. */
 	shellMode: ShellMode;
 	/** Agent used by focus mode; empty falls back to the default agent. */
 	focusAgent: string;
@@ -47,7 +48,7 @@ const DEFAULTS: Preferences = {
 	density: 'comfortable',
 	textScale: 100,
 	reduceMotion: false,
-	shellMode: 'standard',
+	shellMode: 'advanced',
 	focusAgent: '',
 	sendKey: 'enter',
 	autoScroll: true,
@@ -72,12 +73,24 @@ function speechLanguage(value: unknown): SpeechLanguage {
 }
 
 /**
- * Reads the shell mode, migrating the old boolean that only knew simple mode.
+ * What the browser stored. Shell mode is loose on purpose: older builds wrote
+ * `standard` for this shell and `simple` for the classic one, and the oldest
+ * builds stored a boolean instead.
  */
-function shellMode(parsed: Partial<Preferences> & { simpleMode?: unknown }): ShellMode {
-	if (parsed.shellMode === 'simple' || parsed.shellMode === 'focus') return parsed.shellMode;
-	if (parsed.shellMode === 'standard') return 'standard';
-	return parsed.simpleMode === true ? 'simple' : 'standard';
+interface StoredPreferences extends Partial<Omit<Preferences, 'shellMode'>> {
+	shellMode?: string;
+	simpleMode?: unknown;
+}
+
+/** Reads the shell mode, migrating the names of the shells that came before. */
+function shellMode(parsed: StoredPreferences): ShellMode {
+	const value = parsed.shellMode;
+	if (value === 'advanced' || value === 'classic' || value === 'focus') return value;
+	// This shell was called "standard" before "advanced", and the classic shell
+	// was called "simple" before that.
+	if (value === 'standard') return 'advanced';
+	if (value === 'simple' || parsed.simpleMode === true) return 'classic';
+	return 'advanced';
 }
 
 /** Reads the stored preferences, dropping unknown or malformed values. */
@@ -86,7 +99,7 @@ function load(): Preferences {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
 		if (!raw) return { ...DEFAULTS };
-		const parsed = JSON.parse(raw) as Partial<Preferences>;
+		const parsed = JSON.parse(raw) as StoredPreferences;
 		return {
 			density: parsed.density === 'compact' ? 'compact' : 'comfortable',
 			textScale: Math.min(125, Math.max(100, Math.round(Number(parsed.textScale) || 100))),

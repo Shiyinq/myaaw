@@ -509,9 +509,9 @@
 			"notify_sound_doorbell": "Bel Pintu",
 			"notify_sound_marimba": "Marimba",
 			"shell_mode": "Tampilan",
-			"shell_mode_desc": "Pilih seberapa banyak navigasi yang ditampilkan: lengkap (standar), daftar chat di sidebar (sederhana), atau satu agen dengan rail minimal (fokus).",
-			"mode_standard": "Standar",
-			"mode_simple": "Sederhana",
+			"shell_mode_desc": "Pilih seberapa banyak navigasi yang ditampilkan: lengkap (lanjutan), daftar chat di sidebar (klasik), atau satu agen dengan rail minimal (fokus).",
+			"mode_advanced": "Lanjutan",
+			"mode_classic": "Klasik",
 			"mode_focus": "Fokus",
 			"focus_agent": "Agen fokus",
 			"focus_agent_desc": "Satu-satunya agen di mode ini. Menu lain disembunyikan."
@@ -974,7 +974,7 @@
 			"restart_agent": "Restart {name}",
 			"group_appearance": "Tampilan",
 			"group_language": "Bahasa",
-			"shell_mode_cycle": "Ganti tampilan (standar → sederhana → fokus)"
+			"shell_mode_cycle": "Ganti tampilan (lanjutan → klasik → fokus)"
 		},
 		"focus": {
 			"rail_label": "Navigasi fokus",

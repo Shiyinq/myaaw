@@ -144,10 +144,10 @@
 	]);
 
 	let agent = $derived(agentSelection.selected);
-	// The simple shell already carries the chat list and a new-chat action, so the
+	// The classic shell already carries the chat list and a new-chat action, so the
 	// page hides its own copies and never opens the duplicate history panel.
 	let shellMode = $derived(preferences.value.shellMode);
-	let simpleMode = $derived(shellMode === 'simple');
+	let classicMode = $derived(shellMode === 'classic');
 	let focusMode = $derived(shellMode === 'focus');
 	// In focus mode a context file replaces the transcript column until it closes.
 	let focusContextPath = $state('');
@@ -1394,7 +1394,7 @@
 	}
 
 	function toggleHistory() {
-		if (simpleMode) return;
+		if (classicMode) return;
 		historyOpen = !historyOpen;
 		if (browser) localStorage.setItem(HISTORY_KEY, String(historyOpen));
 	}
@@ -2217,7 +2217,7 @@
 
 <TopBarActions id="chat-actions">
 	{#snippet children()}
-		{#if !simpleMode}
+		{#if !classicMode}
 			<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
 			<Button
 				variant="outline"
@@ -2241,7 +2241,7 @@
 	<div
 		class={[
 			'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
-			focusMode && historyOpen ? 'lg:pr-[22rem]' : ''
+			focusMode && historyOpen ? 'lg:pr-88' : ''
 		]}
 	>
 		{#if agent && focusMode && focusContextPath}
@@ -3104,7 +3104,7 @@
 
 	{#if agent && focusMode}
 		<!-- Focus mode keeps the panel mounted so opening and closing slides it in
-		     and out, like the left drawer in standard mode. -->
+		     and out, like the left drawer in advanced mode. -->
 		{#if historyOpen}
 			<button
 				type="button"
@@ -3115,7 +3115,7 @@
 		{/if}
 		<aside
 			class={[
-				'fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card transition-transform duration-200 lg:w-[22rem] lg:max-w-none frost-drawer',
+				'fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card transition-transform duration-200 lg:w-88 lg:max-w-none frost-drawer',
 				historyOpen ? 'translate-x-0' : 'translate-x-full'
 			]}
 			inert={!historyOpen}
@@ -3131,7 +3131,7 @@
 				}}
 			/>
 		</aside>
-	{:else if agent && historyOpen && !simpleMode}
+	{:else if agent && historyOpen && !classicMode}
 		<!-- Drawer on small screens, a static third column from lg up. -->
 		<button
 			type="button"

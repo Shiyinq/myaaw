@@ -175,7 +175,7 @@ function refresh() {
 }
 
 /**
- * One list for the whole app: the chat page's history panel and the simple-mode
+ * One list for the whole app: the chat page's history panel and the classic-mode
  * sidebar both read it, so neither needs its own fetch. `init()` wires the
  * reactive parts once, from the app shell, because effects must start inside a
  * component.

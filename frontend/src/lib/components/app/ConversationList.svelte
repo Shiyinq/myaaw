@@ -63,7 +63,7 @@
 	let editingFolderTitle = $state('');
 	let creatingFolder = $state(false);
 	let newFolderName = $state('');
-	/** Whether the search box owns the header row (simple mode). */
+	/** Whether the search box owns the header row (classic mode). */
 	let searchFocused = $state(false);
 	/** The inline rename fields, so each one takes focus the moment it appears. */
 	let renameInput = $state<HTMLInputElement | null>(null);
@@ -118,7 +118,7 @@
 		node.select();
 	}
 
-	// In simple mode the new-chat button shares the header row with the search
+	// In classic mode the new-chat button shares the header row with the search
 	// box. Focusing the search (or its clear button) widens it to the whole row
 	// and the button steps aside until the search loses focus again.
 	function onSearchFocusIn() {

@@ -509,9 +509,9 @@
 			"notify_sound_doorbell": "Doorbell",
 			"notify_sound_marimba": "Marimba",
 			"shell_mode": "Shell",
-			"shell_mode_desc": "Pick how much navigation the app shows: everything (standard), a chat list in the sidebar (simple), or one agent with a minimal rail (focus).",
-			"mode_standard": "Standard",
-			"mode_simple": "Simple",
+			"shell_mode_desc": "Pick how much navigation the app shows: everything (advanced), a chat list in the sidebar (classic), or one agent with a minimal rail (focus).",
+			"mode_advanced": "Advanced",
+			"mode_classic": "Classic",
 			"mode_focus": "Focus",
 			"focus_agent": "Focus agent",
 			"focus_agent_desc": "The only agent this mode shows. Everything else stays out of the way."
@@ -974,7 +974,7 @@
 			"restart_agent": "Restart {name}",
 			"group_appearance": "Appearance",
 			"group_language": "Language",
-			"shell_mode_cycle": "Switch shell (standard → simple → focus)"
+			"shell_mode_cycle": "Switch shell (advanced → classic → focus)"
 		},
 		"focus": {
 			"rail_label": "Focus navigation",
