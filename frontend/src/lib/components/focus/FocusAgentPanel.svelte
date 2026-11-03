@@ -11,7 +11,6 @@
 	} from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import Bloub from '$lib/components/common/Bloub.svelte';
-	import type { BloubMood } from '$lib/bloub';
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
 	import { context as contextApi } from '$lib/apis/context';
 	import { server as serverApi } from '$lib/apis/server';
@@ -61,9 +60,6 @@
 	const soul = $derived(files[CONTEXT_SOUL]);
 	const memory = $derived(files[CONTEXT_MEMORY]);
 	const initial = $derived((agent || '?').slice(0, 1).toUpperCase());
-	const avatarMood = $derived<BloubMood>(
-		status === 'connected' ? 'heureux' : status === 'stopped' ? 'somnolent' : 'confus'
-	);
 
 	const statusLabel = $derived(
 		status === 'connected'
@@ -230,7 +226,7 @@
 			<X class="h-4 w-4" />
 		</Button>
 
-		<Bloub mood={avatarMood} size={64} tight class="text-lg font-semibold uppercase">
+		<Bloub mood="attentif" size={64} tight class="text-lg font-semibold uppercase">
 			{#snippet fallback()}
 				{initial}
 			{/snippet}
