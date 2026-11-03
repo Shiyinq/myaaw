@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { skills as skillsApi } from '$lib/apis/skills';
 	import { tools as toolsApi } from '$lib/apis/tools';
+	import { agents as agentsApi } from '$lib/apis/agents';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -10,6 +11,7 @@
 	import CustomToolEditor from '$lib/components/tools/CustomToolEditor.svelte';
 	import McpServerEditor from '$lib/components/tools/McpServerEditor.svelte';
 	import PluginDetailsDialog from '$lib/components/plugins/PluginDetailsDialog.svelte';
+	import SkillCreatorDialog from '$lib/components/plugins/SkillCreatorDialog.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -28,7 +30,14 @@
 		Wrench
 	} from 'lucide-svelte';
 	import type { LucideIcon } from '$lib/types/icons';
-	import type { CustomTool, MCPServer, Skill, SkillDetail, ToolsView } from '$lib/types';
+	import type {
+		CapabilityEntry,
+		CustomTool,
+		MCPServer,
+		Skill,
+		SkillDetail,
+		ToolsView
+	} from '$lib/types';
 	import type { PluginKind, PluginTarget } from '$lib/types/plugins';
 	import type { Snippet } from 'svelte';
 
@@ -36,7 +45,9 @@
 
 	let agent = $derived(agentSelection.selected);
 	let skills = $state<Skill[]>([]);
+	let catalog = $state<CapabilityEntry[]>([]);
 	let view = $state<ToolsView | null>(null);
+	let installing = $state('');
 	let loading = $state(false);
 	let error = $state('');
 	let query = $state('');
@@ -49,6 +60,8 @@
 	let detailLoading = $state(false);
 
 	let customDialogOpen = $state(false);
+	let skillCreatorOpen = $state(false);
+	let enablingCreator = $state(false);
 	let editingCustom = $state<CustomTool | null>(null);
 	let mcpDialogOpen = $state(false);
 	let editingMCP = $state<MCPServer | null>(null);
@@ -64,9 +77,14 @@
 		loading = true;
 		error = '';
 		try {
-			const [skillList, toolsView] = await Promise.all([skillsApi.list(name), toolsApi.list(name)]);
+			const [skillList, toolsView, caps] = await Promise.all([
+				skillsApi.list(name),
+				toolsApi.list(name),
+				agentsApi.capabilities().catch(() => null)
+			]);
 			skills = skillList.skills ?? [];
 			view = toolsView;
+			catalog = caps?.skills ?? [];
 		} catch (err) {
 			error = getErrorMessage(err);
 		} finally {
@@ -84,9 +102,33 @@
 	const custom = $derived(view?.custom ?? []);
 	const servers = $derived(view?.mcp_servers ?? []);
 
-	const shownSkills = $derived(
-		search ? skills.filter((item) => hit(item.display_name, item.name, item.description)) : skills
+	// The page lists the same catalogue the skills page does: installed skills keep
+	// their switch, and a built-in that is not in the agent yet is listed too, with
+	// an off switch that copies it in.
+	const catalogNames = $derived(new Set(catalog.map((entry) => entry.name)));
+	const customSkillList = $derived(skills.filter((item) => !catalogNames.has(item.name)));
+	const builtinSkillRows = $derived(
+		catalog.map((entry) => ({
+			entry,
+			installed: skills.find((item) => item.name === entry.name) ?? null
+		}))
 	);
+
+	const shownCustomSkills = $derived(
+		search
+			? customSkillList.filter((item) => hit(item.display_name, item.name, item.description))
+			: customSkillList
+	);
+	const shownBuiltinSkills = $derived(
+		search
+			? builtinSkillRows.filter(({ entry, installed }) =>
+					hit(entry.name, entry.description, installed?.display_name, installed?.description)
+				)
+			: builtinSkillRows
+	);
+
+	// The dialog that explains how to author a skill needs this one skill's state.
+	const skillCreator = $derived(skills.find((item) => item.name === 'skill-creator') ?? null);
 	const shownBuiltin = $derived(
 		search ? builtin.filter((item) => hit(item.name, item.description)) : builtin
 	);
@@ -99,7 +141,8 @@
 
 	const nothingMatches = $derived(
 		search !== '' &&
-			shownSkills.length === 0 &&
+			shownCustomSkills.length === 0 &&
+			shownBuiltinSkills.length === 0 &&
 			shownBuiltin.length === 0 &&
 			shownCustom.length === 0 &&
 			shownServers.length === 0
@@ -110,7 +153,7 @@
 			icon: Sparkles,
 			label: t('myaaw.plugins.skills'),
 			active: skills.filter((item) => item.enabled).length,
-			total: skills.length
+			total: catalog.length + customSkillList.length
 		},
 		{
 			icon: Wrench,
@@ -208,6 +251,41 @@
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 			await load(agent);
+		}
+	}
+
+	/** Copies a built-in skill into the agent; it arrives enabled. */
+	async function installSkill(name: string) {
+		if (!agent || installing) return;
+		installing = name;
+		try {
+			await skillsApi.install(agent, name);
+			toastStore.success(t('myaaw.skills.installed_ok', { name }));
+			await load(agent);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			installing = '';
+		}
+	}
+
+	/** A built-in row: enabling an absent one installs it, the rest toggles. */
+	async function setBuiltinSkill(name: string, installed: boolean, enabled: boolean) {
+		if (enabled && !installed) {
+			await installSkill(name);
+			return;
+		}
+		if (installed) await toggleSkill(name, enabled);
+	}
+
+	/** One click from the create-skill dialog: install it, or just switch it on. */
+	async function enableSkillCreator() {
+		if (!agent || enablingCreator) return;
+		enablingCreator = true;
+		try {
+			await setBuiltinSkill('skill-creator', !!skillCreator, true);
+		} finally {
+			enablingCreator = false;
 		}
 	}
 
@@ -479,15 +557,39 @@
 				{t('myaaw.plugins.no_results')}
 			</p>
 		{:else}
+			{#if shownBuiltinSkills.length > 0}
+				<section class="space-y-2">
+					{@render groupHeader(Sparkles, t('myaaw.skills.builtin'), t('myaaw.skills.builtin_desc'))}
+					<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+						{#each shownBuiltinSkills as { entry, installed } (entry.name)}
+							{@render card(
+								Sparkles,
+								installed?.display_name || entry.name,
+								installed?.description ?? entry.description ?? '',
+								!!installed?.enabled,
+								installed ? '' : t('myaaw.skills.install'),
+								() => (installed ? openSkill(entry.name) : void installSkill(entry.name)),
+								(next) => void setBuiltinSkill(entry.name, !!installed, next)
+							)}
+						{/each}
+					</div>
+				</section>
+			{/if}
+
 			<section class="space-y-2">
-				{@render groupHeader(Sparkles, t('myaaw.plugins.skills'), t('myaaw.plugins.skills_desc'))}
-				{#if shownSkills.length === 0}
+				{@render groupHeader(
+					Sparkles,
+					t('myaaw.skills.custom'),
+					t('myaaw.plugins.skills_desc'),
+					addSkillButton
+				)}
+				{#if shownCustomSkills.length === 0}
 					<p class="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">
 						{t('myaaw.plugins.empty')}
 					</p>
 				{:else}
 					<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-						{#each shownSkills as item (item.name)}
+						{#each shownCustomSkills as item (item.name)}
 							{@render card(
 								Sparkles,
 								item.display_name || item.name,
@@ -584,6 +686,13 @@
 	{/if}
 </div>
 
+<SkillCreatorDialog
+	bind:open={skillCreatorOpen}
+	creatorEnabled={!!skillCreator?.enabled}
+	enabling={enablingCreator}
+	onenable={() => void enableSkillCreator()}
+/>
+
 {#snippet addCustomButton()}
 	<Button
 		size="sm"
@@ -596,6 +705,13 @@
 	>
 		<Plus class="mr-1 h-3.5 w-3.5" />
 		{t('myaaw.plugins.add_custom')}
+	</Button>
+{/snippet}
+
+{#snippet addSkillButton()}
+	<Button size="sm" variant="outline" class="shrink-0" onclick={() => (skillCreatorOpen = true)}>
+		<Plus class="mr-1 h-3.5 w-3.5" />
+		{t('myaaw.plugins.add_custom_skill')}
 	</Button>
 {/snippet}
 

@@ -727,7 +727,16 @@
 			"no_description": "Belum ada deskripsi.",
 			"environment": "Environment",
 			"add_custom": "Tambah tool kustom",
-			"add_mcp": "Tambah server MCP"
+			"add_mcp": "Tambah server MCP",
+			"add_custom_skill": "Tambah skill kustom",
+			"skill_dialog_title": "Buat skill kustom",
+			"skill_dialog_body": "Cara tercepat adalah meminta agent menulisnya: jelaskan pekerjaannya dalam satu pesan, agent akan menyusun skill-nya.",
+			"skill_dialog_requirement": "Ini butuh skill skill-creator, yaitu skill yang menulis skill baru.",
+			"skill_dialog_enable": "Aktifkan skill-creator",
+			"skill_dialog_enabled": "skill-creator sudah aktif",
+			"skill_dialog_prompt_label": "Contoh prompt",
+			"skill_dialog_prompt": "Pakai skill skill-creator untuk membuat skill bernama web-watch. Alurnya: ambil halaman yang saya berikan setiap sore pukul 19.00, bandingkan dengan salinan kemarin, lalu kirim ke Telegram hanya bagian yang berubah.",
+			"skill_dialog_close": "Tutup"
 		},
 		"contacts": {
 			"title": "Kontak",

@@ -780,7 +780,16 @@
 			"no_description": "No description.",
 			"environment": "Environment",
 			"add_custom": "Add custom tool",
-			"add_mcp": "Add MCP server"
+			"add_mcp": "Add MCP server",
+			"add_custom_skill": "Add custom skill",
+			"skill_dialog_title": "Create a custom skill",
+			"skill_dialog_body": "The quickest way is to let the agent write it: describe the job in one message and it scaffolds the skill for you.",
+			"skill_dialog_requirement": "This needs the skill-creator skill, the one that writes new skills.",
+			"skill_dialog_enable": "Turn on skill-creator",
+			"skill_dialog_enabled": "skill-creator is on",
+			"skill_dialog_prompt_label": "Example prompt",
+			"skill_dialog_prompt": "Use the skill-creator skill to create a skill called web-watch. The flow should be: fetch the page I give you every evening at 19:00, compare it with yesterday's copy, and send only what changed to Telegram.",
+			"skill_dialog_close": "Close"
 		},
 		"contacts": {
 			"title": "Contacts",
