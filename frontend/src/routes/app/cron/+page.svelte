@@ -285,6 +285,7 @@
 						<EmptyState
 							title={t('myaaw.cron.empty')}
 							description={t('myaaw.cron.empty_desc')}
+							bloub="somnolent"
 							icon={CalendarClock}
 							class="min-h-55"
 						/>

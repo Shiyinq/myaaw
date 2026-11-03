@@ -273,6 +273,7 @@
 			description={scoped
 				? t('myaaw.backups.empty_desc_agent', { agent: agent ?? '' })
 				: t('myaaw.backups.empty_desc')}
+			bloub="timide"
 			icon={Archive}
 		/>
 	{:else}

@@ -1118,6 +1118,7 @@
 							<EmptyState
 								title={t('myaaw.observability.empty')}
 								description={t('myaaw.observability.empty_desc')}
+								bloub="curieux"
 								icon={Activity}
 							/>
 						{/if}
@@ -1155,6 +1156,7 @@
 							<EmptyState
 								title={t('myaaw.observability.empty')}
 								description={t('myaaw.observability.empty_desc')}
+								bloub="curieux"
 								icon={Activity}
 							/>
 						{/if}

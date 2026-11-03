@@ -72,6 +72,26 @@
 		"reloadButton": "Coba Muat Ulang"
 	},
 	"myaaw": {
+		"bloub": {
+			"alt": {
+				"attentif": "Bloub sedang menyimak",
+				"blase": "Bloub tampak bosan",
+				"colere": "Bloub tampak marah",
+				"confus": "Bloub tampak bingung",
+				"curieux": "Bloub penasaran",
+				"effraye": "Bloub tampak takut",
+				"excite": "Bloub bersemangat",
+				"fier": "Bloub tampak bangga",
+				"heureux": "Bloub bahagia",
+				"hilare": "Bloub tertawa",
+				"mefiant": "Bloub tampak waspada",
+				"neutre": "Bloub",
+				"somnolent": "Bloub tampak mengantuk",
+				"surpris": "Bloub terkejut",
+				"timide": "Bloub tampak malu",
+				"triste": "Bloub sedih"
+			}
+		},
 		"nav": {
 			"group_workspace": "Ruang Kerja",
 			"group_configure": "Konfigurasi",

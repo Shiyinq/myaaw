@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { PanelLeftClose, PanelLeftOpen, X } from 'lucide-svelte';
-	import Logo from '$lib/components/common/Logo.svelte';
+	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { sidebar } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
@@ -22,13 +22,12 @@
 	header in one frame.
 -->
 <div
-	class="relative flex h-14 shrink-0 items-center gap-2 overflow-hidden border-b pr-2 pl-4 md:pr-0"
+	class={[
+		'relative flex h-14 shrink-0 items-center overflow-hidden border-b',
+		compact ? 'justify-center' : 'pr-2 pl-4 md:pr-0'
+	]}
 >
-	<div
-		class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
-	>
-		<Logo class="h-4.5 w-4.5" />
-	</div>
+	<Bloub mood="attentif" size={compact ? 40 : 48} />
 	<div
 		class={[
 			'flex min-w-0 flex-col overflow-hidden leading-tight whitespace-nowrap transition-all duration-200',
@@ -40,8 +39,8 @@
 	</div>
 	<button
 		class={[
-			'ml-auto hidden w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-[color,opacity] hover:bg-muted hover:text-foreground md:flex',
-			compact ? 'pointer-events-none opacity-0' : 'opacity-100'
+			'ml-auto w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground transition-[color,opacity] hover:bg-muted hover:text-foreground',
+			compact ? 'hidden' : 'hidden md:flex'
 		]}
 		onclick={() => sidebar.toggle()}
 		title={t('myaaw.sidebar.collapse')}

@@ -345,6 +345,7 @@
 				<EmptyState
 					title={t('myaaw.skills.empty')}
 					description={t('myaaw.skills.empty_desc')}
+					bloub="curieux"
 					icon={Sparkles}
 				/>
 			{:else}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Brain, Loader2, Pencil, Sparkles, X } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
+	import Bloub from '$lib/components/common/Bloub.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import { context as contextApi } from '$lib/apis/context';
 	import { toastStore } from '$lib/stores';
@@ -144,6 +145,7 @@
 			</div>
 		{:else}
 			<div class="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+				<Bloub mood="curieux" size={56} tight />
 				<p class="text-sm text-muted-foreground">{t('myaaw.focus.context_empty')}</p>
 				<Button variant="outline" size="sm" onclick={() => (editing = true)}>
 					<Pencil class="h-3.5 w-3.5" />

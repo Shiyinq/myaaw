@@ -1,5 +1,7 @@
 <script lang="ts">
 	import * as Empty from '$lib/components/ui/empty';
+	import Bloub from '$lib/components/common/Bloub.svelte';
+	import type { BloubMood } from '$lib/bloub';
 	import { cn } from '$lib/utils';
 	import type { LucideIcon } from '$lib/types/icons';
 
@@ -7,11 +9,20 @@
 		title: string;
 		description: string;
 		icon?: LucideIcon;
+		/** Replaces the lucide icon with the mascot when set. */
+		bloub?: BloubMood;
 		class?: string;
 		children?: any;
 	}
 
-	let { title, description, icon: IconComponent, class: className, children }: Props = $props();
+	let {
+		title,
+		description,
+		icon: IconComponent,
+		bloub,
+		class: className,
+		children
+	}: Props = $props();
 </script>
 
 <Empty.Root
@@ -21,7 +32,9 @@
 	)}
 >
 	<Empty.Header>
-		{#if IconComponent}
+		{#if bloub}
+			<Bloub mood={bloub} size={96} tight />
+		{:else if IconComponent}
 			<Empty.Media variant="icon" class="bg-muted/50 h-20 w-20">
 				<IconComponent class="h-10 w-10 text-muted-foreground/70" />
 			</Empty.Media>

@@ -10,6 +10,8 @@
 		X
 	} from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
+	import Bloub from '$lib/components/common/Bloub.svelte';
+	import type { BloubMood } from '$lib/bloub';
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
 	import { context as contextApi } from '$lib/apis/context';
 	import { server as serverApi } from '$lib/apis/server';
@@ -59,6 +61,9 @@
 	const soul = $derived(files[CONTEXT_SOUL]);
 	const memory = $derived(files[CONTEXT_MEMORY]);
 	const initial = $derived((agent || '?').slice(0, 1).toUpperCase());
+	const avatarMood = $derived<BloubMood>(
+		status === 'connected' ? 'heureux' : status === 'stopped' ? 'somnolent' : 'confus'
+	);
 
 	const statusLabel = $derived(
 		status === 'connected'
@@ -225,12 +230,11 @@
 			<X class="h-4 w-4" />
 		</Button>
 
-		<div
-			class="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-lg font-semibold uppercase"
-			aria-hidden="true"
-		>
-			{initial}
-		</div>
+		<Bloub mood={avatarMood} size={64} tight class="text-lg font-semibold uppercase">
+			{#snippet fallback()}
+				{initial}
+			{/snippet}
+		</Bloub>
 		<p class="max-w-full truncate text-sm font-semibold">{agent}</p>
 		<p class="flex items-center gap-1.5 text-xs text-muted-foreground">
 			<span
@@ -282,7 +286,10 @@
 			{#if loading && items.length === 0}
 				<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
 			{:else if items.length === 0}
-				<p class="px-2 py-3 text-xs text-muted-foreground">{t('myaaw.focus.history_empty')}</p>
+				<div class="flex flex-col items-center gap-2 px-2 py-4 text-center">
+					<Bloub mood="timide" size={40} tight />
+					<p class="text-xs text-muted-foreground">{t('myaaw.focus.history_empty')}</p>
+				</div>
 			{/if}
 
 			{#each groups as group (group.key)}

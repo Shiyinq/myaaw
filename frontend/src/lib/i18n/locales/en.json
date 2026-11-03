@@ -72,6 +72,26 @@
 		"reloadButton": "Try Reloading"
 	},
 	"myaaw": {
+		"bloub": {
+			"alt": {
+				"attentif": "Bloub is listening",
+				"blase": "Bloub looks unimpressed",
+				"colere": "Bloub looks angry",
+				"confus": "Bloub looks confused",
+				"curieux": "Bloub is curious",
+				"effraye": "Bloub looks scared",
+				"excite": "Bloub is excited",
+				"fier": "Bloub looks proud",
+				"heureux": "Bloub is happy",
+				"hilare": "Bloub is laughing",
+				"mefiant": "Bloub looks wary",
+				"neutre": "Bloub",
+				"somnolent": "Bloub looks sleepy",
+				"surpris": "Bloub is surprised",
+				"timide": "Bloub looks shy",
+				"triste": "Bloub looks sad"
+			}
+		},
 		"nav": {
 			"group_workspace": "Workspace",
 			"group_configure": "Configure",

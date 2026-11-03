@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { Clock, MessagesSquare, Puzzle } from 'lucide-svelte';
-	import Logo from '$lib/components/common/Logo.svelte';
+	import Bloub from '$lib/components/common/Bloub.svelte';
 	import AccountMenu from '$lib/components/app/AccountMenu.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
@@ -32,11 +32,11 @@
 	{#if !chatActive}
 		<a
 			href="/app/chat"
-			class="mb-1 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+			class="mb-1 flex h-10 w-10 items-center justify-center"
 			title={t('myaaw.focus.rail_brand')}
 			aria-label={t('myaaw.focus.rail_brand')}
 		>
-			<Logo class="h-5 w-5" />
+			<Bloub mood="attentif" size={40} />
 		</a>
 	{/if}
 

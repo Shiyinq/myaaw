@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<defs>
+		<mask id="myaaw-paw" maskUnits="userSpaceOnUse" x="0" y="0" width="1100" height="1100">
+			<rect x="0" y="0" width="1100" height="1100" fill="#fff"/>
+			<g transform="translate(752 600) rotate(22) scale(2)" fill="#000" stroke="#000" stroke-width="22"><ellipse cx="0" cy="10" rx="30" ry="27"/><circle cx="-20" cy="-18" r="13"/><circle cx="0" cy="-26" r="13.5"/><circle cx="20" cy="-18" r="13"/></g>
+		</mask>
+	</defs>
+	<rect width="1024" height="1024" rx="232" fill="#0A0A0A"/>
+	<g transform="translate(104 181) scale(0.75)" fill="#FFFFFF">
+		<path fill-rule="evenodd" clip-rule="evenodd" d="M240 430 L268 210 C272 190 296 184 312 198 L430 296 C452 290 482 286 512 286 C542 286 572 290 594 296 L712 198 C728 184 752 190 756 210 L784 430 C784 600 700 700 512 700 C324 700 240 600 240 430 Z M402 470 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z M542 470 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" mask="url(#myaaw-paw)"/>
+		<g transform="translate(752 600) rotate(22) scale(2)"><ellipse cx="0" cy="10" rx="30" ry="27"/><circle cx="-20" cy="-18" r="13"/><circle cx="0" cy="-26" r="13.5"/><circle cx="20" cy="-18" r="13"/></g>
+	</g>
+</svg>

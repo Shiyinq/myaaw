@@ -6,6 +6,7 @@
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
+	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -107,7 +108,10 @@
 <div class="space-y-4">
 	{#if !agent}
 		<Card>
-			<CardContent class="py-10 text-center text-sm text-muted-foreground">
+			<CardContent
+				class="flex flex-col items-center gap-3 py-10 text-center text-sm text-muted-foreground"
+			>
+				<Bloub mood="confus" size={56} tight />
 				{t('myaaw.agent.none')}
 			</CardContent>
 		</Card>
@@ -190,7 +194,10 @@
 				</CardHeader>
 				<CardContent class="space-y-2">
 					{#if (view?.grants?.length ?? 0) === 0}
-						<p class="text-sm text-muted-foreground">{t('myaaw.approvals.no_grants')}</p>
+						<div class="flex flex-col items-center gap-2 py-2 text-center">
+							<Bloub mood="heureux" size={48} tight />
+							<p class="text-sm text-muted-foreground">{t('myaaw.approvals.no_grants')}</p>
+						</div>
 					{/if}
 					{#each view?.grants ?? [] as grant (grant.key)}
 						<div class="space-y-1 rounded-md border p-2">

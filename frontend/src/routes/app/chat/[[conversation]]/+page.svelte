@@ -29,6 +29,8 @@
 	import SpeakButton from '$lib/components/common/SpeakButton.svelte';
 	import ChatTime from '$lib/components/common/ChatTime.svelte';
 	import Logo from '$lib/components/common/Logo.svelte';
+	import Bloub from '$lib/components/common/Bloub.svelte';
+	import { cycleSrc, moodSrc, type BloubCycle, type BloubMood } from '$lib/bloub';
 	import { Button } from '$lib/components/ui/button';
 	import { theme } from 'mode-watcher';
 	import { isFrosted } from '$lib/theme';
@@ -966,13 +968,29 @@
 		};
 	});
 
-	// An answer just ended: the reader is most likely typing next.
+	// An answer just ended: the reader is most likely typing next, and the mark
+	// plays one notification loop before settling back to idle.
 	let wasStreaming = false;
+	let completed = $state(false);
+	let completedTimer: ReturnType<typeof setTimeout> | undefined;
 	$effect(() => {
 		const now = streaming;
-		if (wasStreaming && !now) void focusComposer();
+		if (wasStreaming && !now) {
+			void focusComposer();
+			if (!runError && !error && preferences.value.notifyEnabled) {
+				completed = true;
+				clearTimeout(completedTimer);
+				// Show the completion notification for two seconds, then idle again.
+				completedTimer = setTimeout(() => (completed = false), 2000);
+			}
+		}
+		if (now) {
+			completed = false;
+			clearTimeout(completedTimer);
+		}
 		wasStreaming = now;
 	});
+	$effect(() => () => clearTimeout(completedTimer));
 
 	// Speech belongs to the conversation that started it; another chat, another
 	// agent, or leaving the page stops the audio instead of talking over it.
@@ -1055,6 +1073,110 @@
 		flush();
 		return rows;
 	});
+
+	type BloubStage = 'idle' | 'waiting' | 'thinking' | 'tools' | 'writing' | 'approval' | 'error';
+
+	const BLOUB_STAGE_MOOD: Record<BloubStage, BloubMood> = {
+		idle: 'neutre',
+		waiting: 'attentif',
+		thinking: 'curieux',
+		tools: 'excite',
+		writing: 'timide',
+		approval: 'surpris',
+		error: 'triste'
+	};
+
+	// Faces the mascot cycles through while hovered in the idle state.
+	const HOVER_MOODS: BloubMood[] = ['confus', 'curieux', 'mefiant', 'effraye', 'colere'];
+
+	// Warm every face the chat can switch to (phase + hover). Without this the
+	// first switch swaps to an uncached SVG while the old GIF's 1.27x transform
+	// is already gone, which reads as a flash.
+	const CHAT_MOODS: BloubMood[] = [
+		...new Set([...Object.values(BLOUB_STAGE_MOOD), ...HOVER_MOODS])
+	];
+
+	// Cycles the chat can switch to. The notification GIF is otherwise fetched
+	// cold on the first finished run, which makes it pop in late.
+	const CHAT_CYCLES: BloubCycle[] = ['idle2', 'notification'];
+
+	// What the agent is doing right now, for the mascot. The last transcript row
+	// tells the story: a user row means the first token is still pending, a
+	// running group is thinking or calling tools, and a text row is being written.
+	const bloubStage = $derived.by((): BloubStage => {
+		if (runError || error) return 'error';
+		if (pendingApproval) return 'approval';
+		if (!streaming) return 'idle';
+		const last = rendered[rendered.length - 1];
+		if (!last) return 'waiting';
+		if (last.kind === 'item') {
+			if (last.item.kind === 'text') return 'writing';
+			if (last.item.kind === 'approval') return 'approval';
+			if (last.item.kind === 'error') return 'error';
+			return 'waiting';
+		}
+		if (!last.group.running) return 'writing';
+		return last.group.steps.some((step) => step.kind === 'tool') ? 'tools' : 'thinking';
+	});
+
+	const bloubMood: BloubMood = $derived(BLOUB_STAGE_MOOD[bloubStage]);
+	const bloubCycle: BloubCycle | undefined = $derived(bloubStage === 'idle' ? 'idle2' : undefined);
+
+	/** The expression for a running step group: tools wear the excited face. */
+	function groupMood(group: StepGroup): BloubMood {
+		return group.steps.some((step) => step.kind === 'tool') ? 'excite' : 'curieux';
+	}
+
+	// Hovering the mascot is a small, idle-only reaction: it picks a random face
+	// and keeps changing while the pointer stays. The phase expression wins
+	// whenever the agent is responding, so hover never overrides it.
+	let hovering = $state(false);
+	let hoverMood = $state<BloubMood>('curieux');
+	let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function nextHoverMood(current: BloubMood): BloubMood {
+		const pool = HOVER_MOODS.filter((mood) => mood !== current);
+		return pool[Math.floor(Math.random() * pool.length)] ?? current;
+	}
+
+	function scheduleHoverMood() {
+		clearTimeout(hoverTimer);
+		hoverTimer = setTimeout(
+			() => {
+				if (!hovering) return;
+				hoverMood = nextHoverMood(hoverMood);
+				scheduleHoverMood();
+			},
+			2400 + Math.random() * 1600
+		);
+	}
+
+	function startHover() {
+		hovering = true;
+		hoverMood = nextHoverMood(hoverMood);
+		scheduleHoverMood();
+	}
+
+	function stopHover() {
+		hovering = false;
+		clearTimeout(hoverTimer);
+	}
+
+	// A hover that began on the empty screen must not survive into a new run or a
+	// different transcript.
+	$effect(() => {
+		void items.length;
+		stopHover();
+	});
+
+	$effect(() => () => clearTimeout(hoverTimer));
+
+	const markMood: BloubMood = $derived(
+		completed ? 'neutre' : bloubStage === 'idle' && hovering ? hoverMood : bloubMood
+	);
+	const markCycle: BloubCycle | undefined = $derived(
+		completed ? 'notification' : bloubStage === 'idle' && hovering ? undefined : bloubCycle
+	);
 
 	function isGroupOpen(group: StepGroup) {
 		return groupOpen[group.key] ?? (group.running || preferences.value.steps === 'expanded');
@@ -2144,6 +2266,15 @@
 	}
 </script>
 
+<svelte:head>
+	{#each CHAT_MOODS as mood (mood)}
+		<link rel="preload" as="image" type="image/svg+xml" href={moodSrc(mood)} />
+	{/each}
+	{#each CHAT_CYCLES as cycle (cycle)}
+		<link rel="preload" as="image" href={cycleSrc(cycle)} />
+	{/each}
+</svelte:head>
+
 <svelte:window
 	onclick={() => {
 		openStats = false;
@@ -2247,35 +2378,51 @@
 		{#if agent && focusMode && focusContextPath}
 			<FocusContextEditor {agent} path={focusContextPath} onClose={() => (focusContextPath = '')} />
 		{:else if !agent}
-			<div class="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-				{t('myaaw.agent.none')}
+			<div
+				class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground"
+			>
+				{#if focusMode}
+					<Bloub mood="confus" size={56} />
+				{/if}
+				<span>{t('myaaw.agent.none')}</span>
 			</div>
 		{:else}
 			<div class="flex min-h-0 flex-1 flex-col">
 				<!-- The rail hangs beside the transcript only, so it never takes width
 				     from the composer. -->
 				<div class="relative flex min-h-0 flex-1 flex-col">
-					{#if focusMode}
+					{#if focusMode && items.length > 0}
 						<!-- Focus mode has no chat title, so the agent floats above the
 						     transcript instead: brand mark plus the agent's name. The scrim
 						     below fades whatever scrolls under it, using the theme's own
-						     background so it works in every light and dark theme. -->
+						     background so it works in every light and dark theme. An empty
+						     chat shows the mark in its empty state instead, once. -->
 						<div
 							aria-hidden="true"
-							class="pointer-events-none absolute inset-x-0 top-0 z-10 h-28 bg-linear-to-b from-background via-background/70 to-transparent backdrop-blur-[2px] mask-[linear-gradient(to_bottom,black,transparent)]"
+							class="pointer-events-none absolute inset-x-0 top-0 z-10 h-40 bg-linear-to-b from-background via-background/70 to-transparent backdrop-blur-[2px] mask-[linear-gradient(to_bottom,black,transparent)]"
 						></div>
 						<!-- Centred on the browser, not on the column: the 56px rail sits to
 						     the left of this box, so half of it is pulled back at md and up. -->
 						<div
-							class="pointer-events-none absolute top-2 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5 md:-ml-7"
+							class="pointer-events-none absolute top-3 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-0 md:-ml-7"
 						>
-							<span
-								class="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-background/70"
+							<Bloub
+								mood={markMood}
+								cycle={markCycle}
+								size={96}
+								eager
+								tight
+								fade
+								class="pointer-events-auto"
+								onmouseenter={startHover}
+								onmouseleave={stopHover}
 							>
-								<Logo class="h-8 w-8" />
-							</span>
+								{#snippet fallback()}
+									<Logo class="h-16 w-16 text-primary" />
+								{/snippet}
+							</Bloub>
 							<span
-								class="rounded-full border bg-card/90 px-2.5 py-0.5 text-xs font-semibold shadow-sm backdrop-blur"
+								class="mt-1 rounded-full border bg-card/90 px-2.5 py-0.5 text-xs font-semibold shadow-sm backdrop-blur"
 							>
 								{agent}
 							</span>
@@ -2289,7 +2436,7 @@
 						<div
 							class={cn(
 								'mx-auto w-full max-w-4xl space-y-5 px-4 py-6',
-								focusMode && 'pt-24',
+								focusMode && items.length > 0 && 'pt-40',
 								railTurns.length > 1 && 'pr-8 md:pr-14',
 								// Nothing to read: sit in the middle of the column instead of
 								// hugging the top edge.
@@ -2309,12 +2456,25 @@
 							{#if loading}
 								<p class="text-sm text-muted-foreground">{t('myaaw.chat.loading')}</p>
 							{:else if items.length === 0}
-								<div class="flex flex-col items-center gap-4">
-									<!-- Focus mode already shows the mark at the top. -->
-									{#if !focusMode}
-										<Logo class="h-20 w-20 text-muted-foreground/25" />
+								<div class="flex flex-col items-center">
+									<Bloub
+										mood={hovering ? hoverMood : 'neutre'}
+										cycle={hovering ? undefined : 'idle2'}
+										size={112}
+										eager
+										tight
+										fade
+										onmouseenter={startHover}
+										onmouseleave={stopHover}
+									/>
+									{#if focusMode}
+										<span
+											class="mt-1 rounded-full border bg-card/90 px-2.5 py-0.5 text-xs font-semibold shadow-sm backdrop-blur"
+										>
+											{agent}
+										</span>
 									{/if}
-									<p class="text-center text-sm text-muted-foreground">
+									<p class="mt-3 text-center text-sm text-muted-foreground">
 										{t('myaaw.chat.empty')}
 									</p>
 								</div>
@@ -2333,7 +2493,7 @@
 												aria-expanded={open}
 											>
 												{#if group.running}
-													<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+													<Bloub mood={groupMood(group)} size={18} />
 												{:else}
 													<Clock class="h-3.5 w-3.5 shrink-0" />
 												{/if}
@@ -2377,7 +2537,7 @@
 																aria-expanded={phaseOpen}
 															>
 																{#if phaseGroup.running}
-																	<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+																	<Bloub mood={groupMood(phaseGroup)} size={18} />
 																{/if}
 																<span class="font-medium">{groupLabel(phaseGroup)}</span>
 																<ChevronDown
@@ -2676,7 +2836,11 @@
 							{#if streaming && items[items.length - 1]?.kind === 'user'}
 								<!-- The first token can take a while; show that the run started. -->
 								<div class="flex items-center gap-2 px-1 py-1 text-xs text-muted-foreground">
-									<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+									{#if focusMode}
+										<Bloub mood={bloubMood} size={20} />
+									{:else}
+										<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+									{/if}
 									<span class="font-medium">{t('myaaw.chat.tool_running')}</span>
 								</div>
 							{/if}

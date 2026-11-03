@@ -230,6 +230,7 @@
 						<EmptyState
 							title={t('myaaw.providers.empty')}
 							description={t('myaaw.providers.empty_desc')}
+							bloub="curieux"
 							icon={Cpu}
 						/>
 					{/if}

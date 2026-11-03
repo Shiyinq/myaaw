@@ -349,6 +349,7 @@
 				<EmptyState
 					title={t('myaaw.home.no_agents')}
 					description={t('myaaw.home.no_agents_desc')}
+					bloub="curieux"
 					icon={Bot}
 				/>
 			{:else}

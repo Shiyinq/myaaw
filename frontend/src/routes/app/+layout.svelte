@@ -30,7 +30,6 @@
 		RotateCw,
 		PanelLeft,
 		Puzzle,
-		Menu,
 		UserRound
 	} from 'lucide-svelte';
 	import {
@@ -56,6 +55,7 @@
 	import AdvancedSidebar from '$lib/components/advanced/AdvancedSidebar.svelte';
 	import FocusRail from '$lib/components/focus/FocusRail.svelte';
 	import FocusTabBar from '$lib/components/focus/FocusTabBar.svelte';
+	import Bloub from '$lib/components/common/Bloub.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ShortcutHelp from '$lib/components/app/ShortcutHelp.svelte';
 	import CommandPalette from '$lib/components/app/CommandPalette.svelte';
@@ -549,7 +549,7 @@
 <div
 	class={[
 		'h-dvh bg-background page-clear transition-[padding] duration-200',
-		focusMode ? 'md:pl-14' : compactSidebar ? 'md:pl-16' : 'md:pl-60'
+		focusMode || compactSidebar ? 'md:pl-14' : 'md:pl-60'
 	]}
 >
 	{#if focusMode}
@@ -571,7 +571,7 @@
 			class={[
 				'fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r bg-card shadow-xl frost-drawer transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
 				drawerOpen ? 'translate-x-0' : '-translate-x-full',
-				compactSidebar ? 'md:w-16' : 'md:w-60'
+				compactSidebar ? 'md:w-14' : 'md:w-60'
 			]}
 		>
 			<!-- Each shell owns its sidebar; the drawer frame above stays shared. -->
@@ -601,18 +601,24 @@
 		>
 			<div class="flex h-full items-center gap-2 px-2 sm:gap-3 sm:px-4">
 				<!-- Phones reach the whole navigation through the drawer; from md up the
-				     sidebar is always on screen, so the button is not rendered there. -->
-				{#if !focusMode}
+				     sidebar is always on screen, so the control is not rendered there.
+				     Focus mode has no drawer: its mascot is a static brand mark, and the
+				     chat screen already floats its own mark. -->
+				{#if focusMode}
+					{#if !isChat}
+						<Bloub mood="attentif" size={32} eager class="-mr-2 shrink-0 md:hidden" />
+					{/if}
+				{:else}
 					<Button
 						variant="ghost"
 						size="icon-sm"
-						class="shrink-0 md:hidden"
+						class="-mr-2 shrink-0 border-0 md:hidden"
 						onclick={() => (drawerOpen = true)}
 						title={t('myaaw.sidebar.open')}
 						aria-label={t('myaaw.sidebar.open')}
 						aria-keyshortcuts="Control+\\ Meta+\\"
 					>
-						<Menu class="h-4 w-4" />
+						<Bloub mood="attentif" size={32} eager />
 					</Button>
 				{/if}
 				<div class="min-w-0 flex-1">
