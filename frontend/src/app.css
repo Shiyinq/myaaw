@@ -944,3 +944,14 @@ aside a[aria-current='page']:not(.justify-center)::after {
 		font-weight: 600;
 	}
 }
+
+/*
+ * Toasts say what happened in words and colour, never with a face. sonner always
+ * renders an icon column and styles it with `[data-sonner-toast] [data-icon]`,
+ * which outranks a utility class, so hiding it is done here once for every theme.
+ */
+.toaster [data-sonner-toast] [data-icon] {
+	/* `!important` because sonner ships its icon rules from a style tag injected at
+	 * runtime, after this sheet. */
+	display: none !important;
+}
