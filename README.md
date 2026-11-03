@@ -1,7 +1,7 @@
 # 🔗 Myaaw (My AI Agent Well)
 
 <div align="center">
-  <img src="docs/images/mascot/myaaw.png" alt="Myaaw Mascot" width="200" />
+  <img src="docs/images/mascot/bloub-cat-idle2-encre-cycle.gif" alt="Myaaw Mascot" width="200" />
 
   [![Go Report Card](https://goreportcard.com/badge/github.com/Shiyinq/myaaw)](https://goreportcard.com/report/github.com/Shiyinq/myaaw)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
