@@ -518,6 +518,15 @@ myaaw cron add --name "Meeting Remind" --at "30m" --message "Meeting in 30 mins"
 | **`update`** | - | Automatically check for and install the latest version via GitHub Releases. |
 | **`version`** | - | Show build version, commit hash, and system info. |
 
+## 🐱 Mascot
+
+The **Bloub** mascot — the monochrome cat, its expressions and its cycles — was
+drawn with [bloub](https://github.com/jeremy-prt/bloub), a study of the visual
+behaviour of the x.ai bot avatar (MIT, © Jérémy Perret). The cat shape is our own;
+the animation approach follows that project. Myaaw is not affiliated with, endorsed
+by or connected to x.ai, and “Grok” and “x.ai” belong to their owners. The MIT
+licence of this repository covers the code, not the mascot artwork.
+
 ## 📚 Documentation
 
 All guides are grouped by topic. Start with the [Documentation Index](docs/README.md).
