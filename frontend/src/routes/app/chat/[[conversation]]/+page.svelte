@@ -2257,9 +2257,17 @@
 				<div class="relative flex min-h-0 flex-1 flex-col">
 					{#if focusMode}
 						<!-- Focus mode has no chat title, so the agent floats above the
-						     transcript instead: brand mark plus the agent's name. -->
+						     transcript instead: brand mark plus the agent's name. The scrim
+						     below fades whatever scrolls under it, using the theme's own
+						     background so it works in every light and dark theme. -->
 						<div
-							class="pointer-events-none absolute top-2 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5"
+							aria-hidden="true"
+							class="pointer-events-none absolute inset-x-0 top-0 z-10 h-28 bg-linear-to-b from-background via-background/70 to-transparent backdrop-blur-[2px] mask-[linear-gradient(to_bottom,black,transparent)]"
+						></div>
+						<!-- Centred on the browser, not on the column: the 56px rail sits to
+						     the left of this box, so half of it is pulled back at md and up. -->
+						<div
+							class="pointer-events-none absolute top-2 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5 md:-ml-7"
 						>
 							<span
 								class="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-background/70"

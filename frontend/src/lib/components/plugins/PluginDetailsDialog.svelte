@@ -159,7 +159,7 @@
 
 		<div class="min-w-0 space-y-4">
 			{#if target.kind === 'skill' || target.kind === 'builtin'}
-				<p class="text-sm break-words whitespace-pre-line text-muted-foreground">
+				<p class="text-sm wrap-break-word whitespace-pre-line text-muted-foreground">
 					{description || t('myaaw.plugins.no_description')}
 				</p>
 			{/if}
