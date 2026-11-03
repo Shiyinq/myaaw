@@ -1,13 +1,12 @@
 <script lang="ts">
-	import type { ComponentType } from 'svelte';
-	import type { Icon } from 'lucide-svelte';
 	import * as Empty from '$lib/components/ui/empty';
 	import { cn } from '$lib/utils';
+	import type { LucideIcon } from '$lib/types/icons';
 
 	interface Props {
 		title: string;
 		description: string;
-		icon?: ComponentType<Icon>;
+		icon?: LucideIcon;
 		class?: string;
 		children?: any;
 	}

@@ -1,14 +1,14 @@
 <script lang="ts">
-	import type { ComponentType, Snippet } from 'svelte';
-	import type { Icon } from 'lucide-svelte';
+	import type { Snippet } from 'svelte';
 	import { ChevronDown, Loader2 } from 'lucide-svelte';
+	import type { LucideIcon } from '$lib/types/icons';
 	import { cn } from '$lib/utils';
 	import CopyButton from '$lib/components/common/CopyButton.svelte';
 
 	interface Props {
 		title: string;
 		summary?: string;
-		icon: ComponentType<Icon>;
+		icon: LucideIcon;
 		expanded: boolean;
 		ontoggle: () => void;
 		running?: boolean;

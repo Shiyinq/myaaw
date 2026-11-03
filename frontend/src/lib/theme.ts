@@ -1,5 +1,4 @@
-import type { ComponentType } from 'svelte';
-import type { Icon } from 'lucide-svelte';
+import type { LucideIcon } from '$lib/types/icons';
 import {
 	Accessibility,
 	BookOpen,
@@ -69,7 +68,7 @@ export interface AppearanceOption {
 	mode: ThemeMode;
 	theme: '' | ThemeId;
 	aliases: string[];
-	icon: ComponentType<Icon>;
+	icon: LucideIcon;
 	swatch: ThemeSwatch;
 }
 

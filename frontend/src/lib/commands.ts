@@ -1,5 +1,4 @@
-import type { ComponentType } from 'svelte';
-import type { Icon } from 'lucide-svelte';
+import type { LucideIcon } from '$lib/types/icons';
 
 /**
  * One entry of the command palette. Navigation entries carry `href`; anything
@@ -15,7 +14,7 @@ export interface Command {
 	params?: Record<string, string | number>;
 	aliases?: string[];
 	group: 'navigate' | 'agent' | 'appearance' | 'language' | 'action';
-	icon: ComponentType<Icon>;
+	icon: LucideIcon;
 	href?: string;
 	run?: () => void | Promise<void>;
 	destructive?: boolean;
