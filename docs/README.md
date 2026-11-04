@@ -51,6 +51,13 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | [Control Plane API](api/control-plane.md) | Unified multi-agent API used by web, desktop, and mobile clients. |
 | [Web Terminal](api/terminal.md) | Browser shell into the API host: enablement, lifecycle, and security. |
 
+## Channels
+
+| Document | Description |
+| :--- | :--- |
+| [Channels](channels/README.md) | How each conversation channel handles incoming messages. |
+| [Telegram](channels/telegram.md) | Message flow, group/topic rules, sessions, implemented vs notes. |
+
 ## Generated references
 
 - [Control plane Swagger](controlplane/)

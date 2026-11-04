@@ -783,6 +783,28 @@ turning recording on: the trace database is opened once per process.
 
 **Fields.** Every conversation row carries `pinned`, `pinned_at`, and `folder_id` (`null` outside a folder); the list never sorts pinned chats into Recents.
 
+**Channel scopes.** `scope` says which chat target owns the session, and the
+list/detail also carry the display names learned from that channel:
+
+| Field | Meaning |
+|---|---|
+| `scope` | `""` for DM/CLI/API (per-user session), `tg:<chatID>` for a Telegram group or its General topic, `tg:<chatID>:<threadID>` for a forum topic |
+| `chat_name` | group/server name, when known |
+| `topic_name` | forum topic name, when known |
+| `is_forum` | the chat has topics, so its chat-level scope is the default topic |
+
+`chat_name`, `topic_name`, and `is_forum` are omitted when empty or false. Names
+are best-effort: a topic learns its name on creation, rename, or when someone
+replies to its first message. Messages from group/topic chats also carry
+`sender_id`, `sender_name`, and `sender_username` for display; they are never
+sent to the model.
+
+Scopes do not change ownership: a shared topic session is owned by the
+`user_id` that created it. Conversation routes accept `?user_id=` for
+administration, but a chat run always uses the configured control-plane user,
+so the agent's ownership check can still return `403` for a session created by
+someone else.
+
 **Create.** There is no explicit create endpoint: call chat without `conversation_id` and use the `conversation_id` returned in the response.
 
 ### List
