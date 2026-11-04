@@ -251,6 +251,24 @@ Send two messages in the same chat and compare `cached_input_tokens` on the
 second run in the observability view. The second turn should report cached tokens
 roughly equal to the system prompt plus the first turn.
 
+### Sources
+
+- **OpenAI — Prompt caching**
+  <https://platform.openai.com/docs/guides/prompt-caching> — prefix matching,
+  keep stable instructions first and move timestamps/user-specific content to
+  the end or into later messages, minimum ~1,024 visible tokens, `cached_tokens`
+  rounded to 128-token blocks, and the warning that extending an existing
+  message can prevent reuse of its prefix.
+- **DeepSeek — Context caching**
+  <https://api-docs.deepseek.com/guides/kv_cache> — overlapping prefixes are
+  served from cache, a later request must fully match a persisted prefix unit,
+  common prefixes across requests are persisted too, and the hit/miss counts are
+  reported as `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`.
+- **Gemini — Context caching**
+  <https://ai.google.dev/gemini-api/docs/caching> — implicit caching, minimum
+  2,048 tokens (2.5) / 4,096 tokens (newer models), put large common content at
+  the beginning, and report hits in `total_cached_tokens`.
+
 ---
 
 ## 8. Is Myaaw cache-safe?
