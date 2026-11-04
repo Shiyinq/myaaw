@@ -214,8 +214,11 @@ CLI, API, and DM sessions are untouched.
 - Updates that carry no name leave the stored one untouched; only non-empty
   values replace it. `is_forum` is always refreshed from the latest update, so
   enabling or disabling Topics is reflected immediately.
-- Sender fields are display-only; they are **not** sent to LLM providers (unlike
-  `provider.Message.Name`).
+- Sender fields stay dashboard-only in the transcript. The agent learns the
+  speaker, the room, and the time from the `<userinfo>` block prepended to each
+  user message. See [Agent Context](../agents/context.md).
+- The system prompt no longer carries `User ID`, `Channel Platform`, or the
+  clock, so provider prefix caching can reuse the conversation history.
 - The dashboard renders `Group › Topic` in the sidebar badge and
   `Name · @username · #id` above group/topic user bubbles. The badge sits on
   its own line, with the date and message count underneath.

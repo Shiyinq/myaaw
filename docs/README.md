@@ -8,6 +8,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | :--- | :--- |
 | [Multi-Agent Guide](agents/multi-agent.md) | Registry, agent commands, per-agent config, channels, ports, and servers. |
 | [Agent Loop](agents/agent-loop.md) | `RunEvents` engine, transcript v2, compaction, tools, and retries. |
+| [Agent Context](agents/context.md) | What the agent knows per turn, the `<userinfo>`/`<attached>` blocks, and prompt-cache safety. |
 | [Agent Skills](agents/skills.md) | `SKILL.md` skills, discovery, prompt injection, and data isolation. |
 | [MCP & Custom Tools](agents/mcp-and-custom-tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
 | [Observability](agents/observability.md) | Traces, token usage, model cost, retention, and OTLP export. |

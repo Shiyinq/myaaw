@@ -199,8 +199,11 @@ Access is decided by `IsAllowed(userID)`:
   name that was already learned.
 - Renames are picked up on the next message in that channel.
 - DMs store no server/channel name at all.
-- Sender fields are display-only; they are **not** sent to LLM providers (unlike
-  `provider.Message.Name`).
+- Sender fields stay dashboard-only in the transcript. The agent learns the
+  speaker, the room, and the time from the `<userinfo>` block prepended to each
+  user message. See [Agent Context](../agents/context.md).
+- The system prompt no longer carries `User ID`, `Channel Platform`, or the
+  clock, so provider prefix caching can reuse the conversation history.
 - The sender name also becomes the dashboard display name for a user whose
   record is created by an incoming Discord message.
 
