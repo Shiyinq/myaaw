@@ -108,7 +108,10 @@ Rules:
   For Telegram/Discord it is optional and only needed to target a specific
   (for example older) conversation.
 - `chat_type` is only meaningful for Discord DMs: a DM needs the recipient's user
-  id, while a guild message needs a channel id, and both are snowflakes.
+  id, while a guild message needs a channel id, and both are snowflakes. For a
+  DM, `to` is the **user id**, not the DM channel id: the chat context shows both
+  (`ChatID` is the DM channel), and the adapter only accepts the channel id as a
+  fallback because Discord confirms it is a DM.
 - Without `session_id`, the scope is derived exactly like an inbound message:
   `tg:<chat>`, `tg:<chat>:<thread>`, or `dc:<channel>`.
 

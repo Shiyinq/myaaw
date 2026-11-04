@@ -346,4 +346,5 @@ sqlite3 -header -column "file:$HOME/.myaaw/default/database/myaaw.db?mode=ro" \
 | Badge says `Discord` instead of `Server › #channel` | The names were never seen. Send a message in that channel; `chat_scopes` is written per message. A thread may stay unnamed until Discord caches it. |
 | Sender label missing in the dashboard | Messages stored before the sender fields existed have none; only new channel messages carry `sender_id`. |
 | No answer in a thread | The bot needs **Send Messages in Threads** and Read Message History in the parent channel. |
+| A DM reminder/cron never arrives, log says `Invalid Recipient(s)` (50033) | The job's `to` is the DM **channel id**. Use the recipient's user id, or let the `cron` tool default it; the adapter now falls back to a confirmed DM channel id. See [Cron & Heartbeat](../agents/cron-heartbeat.md). |
 | Images are missing | The attachment's `Content-Type` must be an image; other files are ignored. Check the download error in the log. |

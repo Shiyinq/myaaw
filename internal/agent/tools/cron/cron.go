@@ -55,7 +55,7 @@ const toolSchema = `{
                 },
                 "to": {
                     "type": "string",
-                    "description": "Target id: user id (dm/api/cli), chat id (telegram), channel id (discord). Defaults to the current chat when omitted."
+                    "description": "Target id: user id for DMs (api, cli, Discord DM), chat id for Telegram, channel id for a Discord guild or thread. Defaults to the current chat when omitted."
                 },
                 "thread_id": {
                     "type": "string",
@@ -67,7 +67,7 @@ const toolSchema = `{
                 },
                 "chat_type": {
                     "type": "string",
-                    "description": "dm or guild (discord only), to tell a DM from a channel."
+                    "description": "dm or guild (discord only). A dm target is the user id, never the DM channel id."
                 },
                 "tz": {
                     "type": "string",
@@ -172,6 +172,12 @@ func (t *CronTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 			}
 			if chatType == "" {
 				chatType = ctx.ChatType
+			}
+			// A Discord DM is addressed by user id, but <userinfo> shows the DM
+			// channel id as ChatID and models copy it. Rewrite it to the speaker so
+			// the job opens the right DM instead of failing "Invalid Recipient(s)".
+			if strings.EqualFold(chatType, "dm") && to != "" && to == ctx.ChatID && ctx.UserID != "" {
+				to = ctx.UserID
 			}
 		}
 

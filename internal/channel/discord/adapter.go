@@ -30,6 +30,7 @@ type DiscordMeta struct {
 type DiscordAdapter struct {
 	session     *discordgo.Session
 	transport   discordTransport
+	dmResolver  dmAPI
 	handlerOnce sync.Once
 
 	dmMu       sync.Mutex
@@ -321,21 +322,49 @@ func (d *DiscordAdapter) resolveChannel(meta DiscordMeta) (string, error) {
 	return d.dmChannel(meta.UserID)
 }
 
-// dmChannel opens (or reuses) the direct-message channel for a user id.
-func (d *DiscordAdapter) dmChannel(userID string) (string, error) {
+// dmAPI is the part of the Discord REST API needed to resolve a DM channel. It
+// is an interface so the fallback can be tested without a gateway connection.
+type dmAPI interface {
+	UserChannelCreate(recipientID string, options ...discordgo.RequestOption) (*discordgo.Channel, error)
+	Channel(channelID string, options ...discordgo.RequestOption) (*discordgo.Channel, error)
+}
+
+func (d *DiscordAdapter) dmAPIOrNil() dmAPI {
+	if d.dmResolver != nil {
+		return d.dmResolver
+	}
 	if d.session == nil {
+		return nil
+	}
+	return d.session
+}
+
+// dmChannel opens (or reuses) the direct-message channel for a user id. The
+// target may also be a DM channel id: a model reading the chat context can copy
+// ChatID instead of the speaker's UserID, so a confirmed DM channel is accepted
+// instead of failing with "Invalid Recipient(s)".
+func (d *DiscordAdapter) dmChannel(target string) (string, error) {
+	api := d.dmAPIOrNil()
+	if api == nil {
 		return "", fmt.Errorf("discord session is not available")
 	}
 	d.dmMu.Lock()
 	defer d.dmMu.Unlock()
-	if id, ok := d.dmChannels[userID]; ok {
+	if d.dmChannels == nil {
+		d.dmChannels = map[string]string{}
+	}
+	if id, ok := d.dmChannels[target]; ok {
 		return id, nil
 	}
-	channel, err := d.session.UserChannelCreate(userID)
+	channel, err := api.UserChannelCreate(target)
 	if err != nil {
+		if existing, lookupErr := api.Channel(target); lookupErr == nil && existing != nil && existing.Type == discordgo.ChannelTypeDM {
+			d.dmChannels[target] = existing.ID
+			return existing.ID, nil
+		}
 		return "", fmt.Errorf("open discord dm: %w", err)
 	}
-	d.dmChannels[userID] = channel.ID
+	d.dmChannels[target] = channel.ID
 	return channel.ID, nil
 }
 

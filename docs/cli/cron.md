@@ -38,7 +38,7 @@ myaaw cron add \
 | `--name` | yes | Job name. |
 | `--message` | yes | Prompt sent to the agent when the job runs. |
 | `--channel` | yes | Delivery channel: `telegram`, `discord`, `api`, or `cli`. |
-| `--to` | yes | Target id: user id (`api`/`cli`/Telegram DM), chat id (Telegram), or channel id (Discord). |
+| `--to` | yes | Target id: user id (`api`/`cli`/Discord DM), chat id (Telegram), or channel id (Discord guild or thread). |
 | `--thread-id` | no | Telegram forum topic (`message_thread_id`). A topic needs both `--to` (chat id) and this. |
 | `--session-id` | no | Pin the exact conversation id. Required for `api`/`cli`, optional for Telegram/Discord. |
 | `--chat-type` | no | `dm` or `guild` (Discord), to tell a DM from a channel. |

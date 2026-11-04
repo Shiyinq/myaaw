@@ -79,6 +79,46 @@ func TestCallToolBindsRunningAgent(t *testing.T) {
 	}
 }
 
+// A Discord DM targets the user id, but the chat context exposes the DM channel
+// id as ChatID, and models copy it. The job must still open the right DM.
+func TestCallToolRewritesDMChannelIDToUser(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := agentdir.SetActive("agent-b"); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+	t.Cleanup(func() { _ = agentdir.SetActive(agentdir.DefaultAgentName) })
+	fakeCLI(t)
+
+	out := NewCronTool().CallTool(`{
+		"action": "add",
+		"name": "Reminder makan",
+		"message": "Waktunya makan",
+		"at": "2m",
+		"channel": "discord",
+		"to": "111222333444555666",
+		"chat_type": "dm"
+	}`, &tools.ToolsContext{
+		Channel:        "discord",
+		ChatID:         "111222333444555666",
+		ChatType:       "dm",
+		UserID:         "222333444555666777",
+		ConversationID: "0f4e8b3a-1111-4222-8333-944455556666",
+		Scope:          "",
+	})
+
+	fields := strings.Fields(out)
+	if !hasPair(fields, "--to", "222333444555666777") {
+		t.Errorf("DM target was not rewritten to the user id: %v", fields)
+	}
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] == "--to" && fields[i+1] == "111222333444555666" {
+			t.Fatalf("DM channel id was kept as the recipient: %v", fields)
+		}
+	}
+}
+
 func TestCallToolUsesExplicitTargetOverContext(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
