@@ -252,6 +252,7 @@ The conversation list renders the scope stored on each session:
 | Channel name only | `Discord › #channel` |
 | Neither name | `Discord` |
 
+- The badge uses the Discord glyph; Telegram scopes keep the paper-plane icon.
 - The badge sits on its own line, with the date and message count underneath.
 - Sender labels (`Name · @username · #id`) appear above channel user bubbles
   automatically once `sender_*` is stored.

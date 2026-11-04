@@ -18,6 +18,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
+	import DiscordIcon from '$lib/components/common/DiscordIcon.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { browser } from '$app/environment';
 	import { untrack } from 'svelte';
@@ -536,7 +537,11 @@
 								class="inline-flex max-w-full min-w-0 items-center gap-0.5 rounded bg-muted px-1 py-px font-medium text-foreground/70"
 								title={scopeTitle(entry)}
 							>
-								<Send class="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+								{#if entry.scope.startsWith('dc:')}
+									<DiscordIcon class="h-2.5 w-2.5 shrink-0" />
+								{:else}
+									<Send class="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+								{/if}
 								<span class="min-w-0 truncate">{scopeLabel(entry)}</span>
 							</span>
 						{/if}
