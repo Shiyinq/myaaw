@@ -7,6 +7,8 @@ import (
 	"log"
 	"myaaw/internal/agent"
 	"myaaw/internal/channel"
+	"myaaw/internal/channel/discord"
+	"myaaw/internal/channel/telegram"
 	"myaaw/internal/config"
 	"myaaw/internal/obs"
 	"myaaw/internal/provider"
@@ -27,7 +29,16 @@ type BotService interface {
 	BotStreamContext(ctx context.Context, msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error)
 	command(user *model.User, msg *channel.IncomingMessage) (bool, string, error)
 	conversation(user *model.User, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error)
-	ProcessHeartbeat(prompt, to, channelName, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error)
+	ProcessHeartbeat(prompt string, target HeartbeatTarget, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error)
+}
+
+// HeartbeatTarget is where a scheduled turn should run and be delivered.
+type HeartbeatTarget struct {
+	Channel   string
+	To        string
+	ThreadID  string
+	SessionID string
+	ChatType  string
 }
 
 type BotServiceImpl struct {
@@ -229,20 +240,12 @@ func (r *BotServiceImpl) BotStreamContext(ctx context.Context, msg *channel.Inco
 	return r.conversationStreamContext(ctx, user, msg, onChunk)
 }
 
-func (r *BotServiceImpl) ProcessHeartbeat(prompt, to, channelName, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error) {
+func (r *BotServiceImpl) ProcessHeartbeat(prompt string, target HeartbeatTarget, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error) {
 	r.checkAndReloadProvider()
-	log.Printf("Processing heartbeat request from %s (Channel: %s)...", to, channelName)
 
-	userId, err := strconv.Atoi(to)
+	msg, err := r.heartbeatMessage(prompt, target, triggerType)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid user ID format: %v", err)
-	}
-
-	msg := &channel.IncomingMessage{
-		UserID:      userId,
-		Text:        prompt,
-		Channel:     channelName,
-		TriggerType: triggerType,
+		return nil, nil, err
 	}
 
 	user, err := r.checkUser(msg)
@@ -258,4 +261,159 @@ func (r *BotServiceImpl) ProcessHeartbeat(prompt, to, channelName, triggerType s
 
 	log.Println("Heartbeat conversation processed successfully.")
 	return msg, out, nil
+}
+
+// heartbeatMessage builds the synthetic inbound message for a scheduled target.
+// It is the single place where a job's scope, room ids, owner, and display names
+// are resolved, so a scheduled turn looks exactly like a live message.
+func (r *BotServiceImpl) heartbeatMessage(prompt string, target HeartbeatTarget, triggerType string) (*channel.IncomingMessage, error) {
+	target.Channel = strings.ToLower(strings.TrimSpace(target.Channel))
+	target.To = strings.TrimSpace(target.To)
+	target.ThreadID = strings.TrimSpace(target.ThreadID)
+	target.SessionID = strings.TrimSpace(target.SessionID)
+	target.ChatType = strings.ToLower(strings.TrimSpace(target.ChatType))
+
+	if target.Channel == "" {
+		return nil, fmt.Errorf("heartbeat target is missing a channel")
+	}
+	if target.To == "" && target.SessionID == "" {
+		return nil, fmt.Errorf("heartbeat target is missing an id")
+	}
+	if (target.Channel == "api" || target.Channel == "cli") && target.SessionID == "" {
+		// A web or terminal chat has no platform room id, so without a pinned
+		// session the turn would land in whichever conversation is active.
+		return nil, fmt.Errorf("heartbeat target %s requires a session id", target.Channel)
+	}
+
+	msg := &channel.IncomingMessage{
+		Text:        prompt,
+		Channel:     target.Channel,
+		TriggerType: triggerType,
+		ChatType:    target.ChatType,
+	}
+
+	// A pinned session supplies its own owner and scope, and bypasses the
+	// per-user lookup. This is how web/terminal reminders reach the exact chat.
+	pinned := target.SessionID != ""
+	if pinned {
+		conv, err := r.conversationRepo.GetConversationById(target.SessionID)
+		if err != nil {
+			return nil, fmt.Errorf("load heartbeat session: %w", err)
+		}
+		if conv == nil {
+			return nil, fmt.Errorf("heartbeat session %s not found", target.SessionID)
+		}
+		msg.ConversationID = conv.Id
+		msg.Scope = conv.Scope
+		msg.UserID = conv.UserId
+	}
+
+	if !pinned {
+		msg.Scope = heartbeatScope(target)
+	}
+
+	// Platform identity: the prompt sees the same room fields as a live message.
+	switch target.Channel {
+	case "telegram":
+		chatID, err := strconv.Atoi(target.To)
+		if err != nil {
+			return nil, fmt.Errorf("invalid telegram chat id %q", target.To)
+		}
+		if msg.ChatType == "" {
+			if chatID > 0 {
+				msg.ChatType = "private"
+			} else {
+				msg.ChatType = "supergroup"
+			}
+		}
+		threadID := 0
+		if target.ThreadID != "" {
+			threadID, err = strconv.Atoi(target.ThreadID)
+			if err != nil {
+				return nil, fmt.Errorf("invalid telegram thread id %q", target.ThreadID)
+			}
+		}
+		msg.IsThread = threadID >= 2
+		msg.ChatID = target.To
+		msg.TopicID = target.ThreadID
+		msg.RawMeta = telegram.TelegramMeta{ChatID: chatID, ThreadID: threadID}
+	case "discord":
+		if msg.ChatType == "" {
+			msg.ChatType = "guild"
+		}
+		if msg.ChatType == "dm" {
+			// The target is a user id, not a channel id; Send opens the DM channel.
+			msg.RawMeta = discord.DiscordMeta{UserID: target.To, IsDM: true}
+		} else {
+			msg.ChatID = target.To
+			msg.RawMeta = discord.DiscordMeta{ChannelID: target.To}
+		}
+	case "api", "cli":
+		// No outbound adapter: the turn is saved in the pinned session and the
+		// dashboard or terminal shows it on the next read.
+	default:
+		return nil, fmt.Errorf("unsupported heartbeat channel %q", target.Channel)
+	}
+
+	// A pinned session keeps its owner; a DM belongs to the target user; a
+	// shared chat uses the configured owner so no fake users are created.
+	if !pinned && msg.UserID == 0 {
+		if msg.Scope == "" {
+			if id, err := strconv.Atoi(target.To); err == nil {
+				msg.UserID = id
+			}
+		}
+		if msg.UserID == 0 {
+			msg.UserID = ownerUserID()
+		}
+	}
+
+	// Names make the dashboard badge and <userinfo> match a live message.
+	if msg.Scope != "" {
+		if chatName, topicName, isForum, err := r.conversationRepo.GetScopeNames(msg.Scope); err == nil {
+			msg.ChatName = chatName
+			msg.TopicName = topicName
+			msg.IsForum = isForum
+		}
+	}
+
+	return msg, nil
+}
+
+// heartbeatScope derives the conversation scope from a scheduled target, using
+// the same rules as an inbound message.
+func heartbeatScope(target HeartbeatTarget) string {
+	switch target.Channel {
+	case "telegram":
+		chatID, err := strconv.Atoi(target.To)
+		if err != nil || chatID > 0 {
+			// Direct messages are per-user and keep the legacy empty scope.
+			return ""
+		}
+		threadID := 0
+		if target.ThreadID != "" {
+			threadID, _ = strconv.Atoi(target.ThreadID)
+		}
+		if threadID <= 1 {
+			return "tg:" + target.To
+		}
+		return fmt.Sprintf("tg:%s:%d", target.To, threadID)
+	case "discord":
+		if target.ChatType == "dm" || target.To == "" {
+			return ""
+		}
+		return "dc:" + target.To
+	}
+	return ""
+}
+
+// ownerUserID is the conversation owner for shared targets, so scheduled turns
+// never create a user whose id is a chat or channel id.
+func ownerUserID() int {
+	for _, id := range config.OwnerIDs {
+		if n, err := strconv.Atoi(strings.TrimSpace(id)); err == nil && n != 0 {
+			return n
+		}
+	}
+	return 0
 }

@@ -7,7 +7,7 @@ import (
 	"myaaw/internal/agent/approvals"
 	"myaaw/internal/channel"
 	"myaaw/internal/channel/discord"
-	telegram "myaaw/internal/channel/telegram"
+	"myaaw/internal/channel/telegram"
 	_ "myaaw/internal/common"
 	"myaaw/internal/config"
 	"myaaw/internal/services/bot/service"
@@ -17,13 +17,6 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 )
-
-func telegramMeta(userID int) telegram.TelegramMeta {
-	return telegram.TelegramMeta{
-		ChatID:    userID,
-		MessageID: 0,
-	}
-}
 
 type BotHandler interface {
 	Webhook(c fiber.Ctx) error
@@ -42,10 +35,13 @@ type BotHandlerImpl struct {
 }
 
 type HeartbeatRequest struct {
-	Prompt  string `json:"prompt"`
-	To      string `json:"to"`
-	Channel string `json:"channel"`
-	Trigger string `json:"trigger"`
+	Prompt    string `json:"prompt"`
+	To        string `json:"to"`
+	ThreadID  string `json:"thread_id"`
+	SessionID string `json:"session_id"`
+	ChatType  string `json:"chat_type"`
+	Channel   string `json:"channel"`
+	Trigger   string `json:"trigger"`
 }
 
 func NewBotHandler(botService service.BotService, channelRegistry *channel.Registry) BotHandler {
@@ -157,6 +153,16 @@ func getUserLock(userID string) *sync.Mutex {
 	return val.(*sync.Mutex)
 }
 
+// heartbeatLockKey keys the heartbeat lock by the session when one is pinned,
+// and by the delivery room otherwise (channel + chat + topic). Two topics in one
+// group, or a topic and its parent chat, never share a lock.
+func heartbeatLockKey(req HeartbeatRequest) string {
+	if session := strings.TrimSpace(req.SessionID); session != "" {
+		return "session:" + session
+	}
+	return "target:" + req.Channel + ":" + req.To + ":" + req.ThreadID
+}
+
 // Heartbeat
 // @Summary		Heartbeat
 // @Description	To process heartbeat request from consumer
@@ -185,29 +191,28 @@ func (s *BotHandlerImpl) Heartbeat(c fiber.Ctx) error {
 		})
 	}
 
-	// Use per-user lock to prevent race conditions during concurrent heartbeats (e.g., from sub-agents)
-	lock := getUserLock(req.To)
+	// Serialise turns that share a session, or the same target when no session
+	// is pinned. A job and a live channel message must not race.
+	lock := getUserLock(heartbeatLockKey(req))
 	lock.Lock()
 	defer lock.Unlock()
 
-	msg, out, err := s.botService.ProcessHeartbeat(req.Prompt, req.To, req.Channel, req.Trigger)
+	msg, out, err := s.botService.ProcessHeartbeat(req.Prompt, service.HeartbeatTarget{
+		Channel:   req.Channel,
+		To:        req.To,
+		ThreadID:  req.ThreadID,
+		SessionID: req.SessionID,
+		ChatType:  req.ChatType,
+	}, req.Trigger)
 	if err != nil {
 		return utils.ErrorInternalServer(c, "failed to process heartbeat: "+err.Error())
 	}
 
-	if out != nil && req.Channel != "" && strings.TrimSpace(out.Text) != "HEARTBEAT_OK" {
+	// Only the chat platforms have an outbound adapter. API/CLI turns are saved
+	// in their pinned session and surface when the client reads it.
+	if out != nil && (req.Channel == "telegram" || req.Channel == "discord") && strings.TrimSpace(out.Text) != "HEARTBEAT_OK" {
 		adapter := s.channelRegistry.Get(req.Channel)
 		if adapter != nil {
-			if msg.RawMeta == nil {
-				switch req.Channel {
-				case "telegram":
-					msg.RawMeta = telegramMeta(msg.UserID)
-				case "discord":
-					msg.RawMeta = discord.DiscordMeta{
-						ChannelID: req.To,
-					}
-				}
-			}
 			if deliverErr := adapter.Send(msg, out); deliverErr != nil {
 				log.Printf("Failed to deliver heartbeat response: %v", deliverErr)
 			}

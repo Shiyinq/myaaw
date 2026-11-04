@@ -9,6 +9,7 @@ import (
 	"myaaw/internal/cron"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -26,7 +27,7 @@ var cronListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all scheduled jobs",
 	Run: func(cmd *cobra.Command, args []string) {
-		store := getStore()
+		store := getStore(cronAgent(cmd))
 		jobs, err := store.Load()
 		if err != nil {
 			log.Fatalf("Failed to load jobs: %v", err)
@@ -71,8 +72,11 @@ var cronAddCmd = &cobra.Command{
 		message, _ := cmd.Flags().GetString("message")
 		channel, _ := cmd.Flags().GetString("channel")
 		to, _ := cmd.Flags().GetString("to")
+		threadID, _ := cmd.Flags().GetString("thread-id")
+		sessionID, _ := cmd.Flags().GetString("session-id")
+		chatType, _ := cmd.Flags().GetString("chat-type")
 		tz, _ := cmd.Flags().GetString("tz")
-		agentID, _ := cmd.Flags().GetString("agent")
+		agentID := cronAgent(cmd)
 
 		if name == "" || message == "" || channel == "" || to == "" {
 			fmt.Println(theme.RenderError("Missing required flags: --name, --message, --channel, --to"))
@@ -134,16 +138,19 @@ var cronAddCmd = &cobra.Command{
 				Content: message,
 			},
 			Delivery: cron.Delivery{
-				Mode:    "announce",
-				Channel: channel,
-				To:      to,
+				Mode:      "announce",
+				Channel:   channel,
+				To:        to,
+				ThreadID:  threadID,
+				SessionID: sessionID,
+				ChatType:  chatType,
 			},
 			Enabled:   true,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
 
-		store := getStore()
+		store := getStore(agentID)
 		if err := store.Add(job); err != nil {
 			log.Fatalf("Failed to add job: %v", err)
 		}
@@ -159,7 +166,7 @@ var cronRemoveCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		id := args[0]
-		store := getStore()
+		store := getStore(cronAgent(cmd))
 
 		// If ID is short, try to find full ID
 		if len(id) < 36 {
@@ -186,7 +193,8 @@ var cronRunCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		id := args[0]
-		store := getStore()
+		agent := cronAgent(cmd)
+		store := getStore(agent)
 
 		// If ID is short, try to find full ID
 		if len(id) < 36 {
@@ -199,7 +207,7 @@ var cronRunCmd = &cobra.Command{
 			}
 		}
 
-		history := getHistoryLogger()
+		history := getHistoryLogger(agent)
 		scheduler := cron.NewScheduler(store, history)
 
 		// Load config for MYAAWBaseURL instead of manually setting env
@@ -226,8 +234,9 @@ var cronHistoryCmd = &cobra.Command{
 	Args:  cobra.RangeArgs(0, 1),
 	Run: func(cmd *cobra.Command, args []string) {
 		limit, _ := cmd.Flags().GetInt("limit")
-		store := getStore()
-		history := getHistoryLogger()
+		agent := cronAgent(cmd)
+		store := getStore(agent)
+		history := getHistoryLogger(agent)
 
 		// Case 1: Global History (No ID provided)
 		if len(args) == 0 {
@@ -346,18 +355,31 @@ func init() {
 	cronAddCmd.Flags().String("every", "", "Interval (e.g. '30m', '1h')")
 	cronAddCmd.Flags().String("at", "", "Specific time (e.g. '2023-10-27T10:00:00' or '10m')")
 	cronAddCmd.Flags().String("message", "", "Message/Prompt to send")
-	cronAddCmd.Flags().String("channel", "", "Target channel (telegram, discord)")
-	cronAddCmd.Flags().String("to", "", "Target chat ID or channel ID")
+	cronAddCmd.Flags().String("channel", "", "Target channel (telegram, discord, api, cli)")
+	cronAddCmd.Flags().String("to", "", "Target id: user id (dm/api/cli), chat id (telegram), channel id (discord)")
+	cronAddCmd.Flags().String("thread-id", "", "Telegram forum message_thread_id")
+	cronAddCmd.Flags().String("session-id", "", "Pin the exact conversation id (required for api/cli)")
+	cronAddCmd.Flags().String("chat-type", "", "dm or guild (discord, to tell a DM from a channel)")
 	cronAddCmd.Flags().String("tz", "", "Timezone (e.g. Asia/Jakarta)")
-	cronAddCmd.Flags().String("agent", "main", "Agent ID")
+	cronAddCmd.Flags().String("agent", "", "Agent ID (defaults to the active agent)")
 
 	// Check if main.go has rootCmd and add command there
 	// Since this is in package main, we can assume rootCmd is available if in same package
 	rootCmd.AddCommand(cronCmd)
 }
 
-func getStore() *cron.Store {
-	cronDir, err := agentdir.ActiveCronDir()
+// cronAgent returns the agent a cron command operates on: the explicit --agent
+// value when present, otherwise the process active agent. The store directory
+// and job.AgentID both come from this value, so they can never disagree.
+func cronAgent(cmd *cobra.Command) string {
+	if name, _ := cmd.Flags().GetString("agent"); strings.TrimSpace(name) != "" {
+		return strings.TrimSpace(name)
+	}
+	return agentdir.Active()
+}
+
+func getStore(agent string) *cron.Store {
+	cronDir, err := agentdir.CronDir(agent)
 	if err != nil {
 		cronDir = ".myaaw-cron"
 	}
@@ -365,8 +387,8 @@ func getStore() *cron.Store {
 	return cron.NewStore(path)
 }
 
-func getHistoryLogger() *cron.HistoryLogger {
-	cronDir, err := agentdir.ActiveCronDir()
+func getHistoryLogger(agent string) *cron.HistoryLogger {
+	cronDir, err := agentdir.CronDir(agent)
 	if err != nil {
 		cronDir = ".myaaw-cron"
 	}

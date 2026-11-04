@@ -16,6 +16,7 @@ import (
 	"myaaw/internal/agentdir"
 	"myaaw/internal/config"
 	"myaaw/internal/obs"
+	"myaaw/internal/onboard"
 )
 
 var (
@@ -661,10 +662,13 @@ type ComputerUsePatch struct {
 }
 
 type HeartbeatPatch struct {
-	Active  *bool   `json:"active,omitempty"`
-	Channel *string `json:"channel,omitempty"`
-	To      *string `json:"to,omitempty"`
-	Every   *string `json:"every,omitempty"`
+	Active    *bool   `json:"active,omitempty"`
+	Channel   *string `json:"channel,omitempty"`
+	To        *string `json:"to,omitempty"`
+	ThreadID  *string `json:"thread_id,omitempty"`
+	SessionID *string `json:"session_id,omitempty"`
+	ChatType  *string `json:"chat_type,omitempty"`
+	Every     *string `json:"every,omitempty"`
 }
 
 type CronPatch struct {
@@ -1011,6 +1015,23 @@ func applyHeartbeatPatch(hb *config.HeartbeatConfig, patch HeartbeatPatch) error
 	if patch.To != nil {
 		hb.To = strings.TrimSpace(*patch.To)
 	}
+	if patch.ThreadID != nil {
+		threadID := strings.TrimSpace(*patch.ThreadID)
+		if err := onboard.ValidateThreadID(threadID); err != nil {
+			return ErrInvalidConfig
+		}
+		hb.ThreadID = threadID
+	}
+	if patch.SessionID != nil {
+		hb.SessionID = strings.TrimSpace(*patch.SessionID)
+	}
+	if patch.ChatType != nil {
+		chatType := strings.ToLower(strings.TrimSpace(*patch.ChatType))
+		if err := onboard.ValidateHeartbeatChatType(chatType); err != nil {
+			return ErrInvalidConfig
+		}
+		hb.ChatType = chatType
+	}
 	if patch.Every != nil {
 		every := strings.TrimSpace(*patch.Every)
 		if d, err := time.ParseDuration(every); err != nil || d <= 0 {
@@ -1088,6 +1109,12 @@ func resetHeartbeatFields(cfg, tmpl *config.Config, fields []string) {
 			cfg.Heartbeat.Every = tmpl.Heartbeat.Every
 		case "to":
 			cfg.Heartbeat.To = tmpl.Heartbeat.To
+		case "thread_id":
+			cfg.Heartbeat.ThreadID = tmpl.Heartbeat.ThreadID
+		case "session_id":
+			cfg.Heartbeat.SessionID = tmpl.Heartbeat.SessionID
+		case "chat_type":
+			cfg.Heartbeat.ChatType = tmpl.Heartbeat.ChatType
 		case "channel":
 			cfg.Heartbeat.Channel = tmpl.Heartbeat.Channel
 		}

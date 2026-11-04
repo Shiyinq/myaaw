@@ -13,6 +13,7 @@ import (
 
 	"myaaw/internal/agentdir"
 	"myaaw/internal/cron"
+	"myaaw/internal/onboard"
 
 	"github.com/google/uuid"
 )
@@ -27,6 +28,9 @@ type CronJobInput struct {
 	Message      string `json:"message"`
 	Channel      string `json:"channel,omitempty"`
 	To           string `json:"to,omitempty"`
+	ThreadID     string `json:"thread_id,omitempty"`
+	SessionID    string `json:"session_id,omitempty"`
+	ChatType     string `json:"chat_type,omitempty"`
 	Enabled      *bool  `json:"enabled,omitempty"`
 }
 
@@ -74,6 +78,14 @@ func (s *CronService) Add(agentName string, in CronJobInput) (cron.Job, error) {
 	if in.Enabled != nil {
 		enabled = *in.Enabled
 	}
+	threadID := strings.TrimSpace(in.ThreadID)
+	if err := onboard.ValidateThreadID(threadID); err != nil {
+		return cron.Job{}, fmt.Errorf("%w: thread_id: %v", ErrInvalidConfig, err)
+	}
+	chatType := strings.ToLower(strings.TrimSpace(in.ChatType))
+	if err := onboard.ValidateHeartbeatChatType(chatType); err != nil {
+		return cron.Job{}, fmt.Errorf("%w: chat_type: %v", ErrInvalidConfig, err)
+	}
 	now := time.Now().UTC()
 	job := cron.Job{
 		ID:      uuid.NewString(),
@@ -89,9 +101,12 @@ func (s *CronService) Add(agentName string, in CronJobInput) (cron.Job, error) {
 			Content: message,
 		},
 		Delivery: cron.Delivery{
-			Mode:    "announce",
-			Channel: strings.TrimSpace(in.Channel),
-			To:      strings.TrimSpace(in.To),
+			Mode:      "announce",
+			Channel:   strings.TrimSpace(in.Channel),
+			To:        strings.TrimSpace(in.To),
+			ThreadID:  threadID,
+			SessionID: strings.TrimSpace(in.SessionID),
+			ChatType:  chatType,
 		},
 		Enabled:   enabled,
 		CreatedAt: now,
@@ -141,10 +156,13 @@ func (s *CronService) Run(agentName, id string) error {
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"prompt":  job.Payload.Content,
-		"to":      job.Delivery.To,
-		"channel": job.Delivery.Channel,
-		"trigger": "cron",
+		"prompt":     job.Payload.Content,
+		"to":         job.Delivery.To,
+		"thread_id":  job.Delivery.ThreadID,
+		"session_id": job.Delivery.SessionID,
+		"chat_type":  job.Delivery.ChatType,
+		"channel":    job.Delivery.Channel,
+		"trigger":    "cron",
 	})
 	if err != nil {
 		return err

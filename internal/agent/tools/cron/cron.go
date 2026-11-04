@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/agentdir"
 	"os"
 	"os/exec"
 	"strings"
@@ -50,11 +51,23 @@ const toolSchema = `{
                 },
                 "channel": {
                     "type": "string",
-                    "description": "Target channel (telegram, discord) (required for 'add')."
+                    "description": "Target channel (telegram, discord, api, cli). Defaults to the current chat when omitted."
                 },
                 "to": {
                     "type": "string",
-                    "description": "Target recipient ID (user ID from the related channel) (required for 'add')."
+                    "description": "Target id: user id (dm/api/cli), chat id (telegram), channel id (discord). Defaults to the current chat when omitted."
+                },
+                "thread_id": {
+                    "type": "string",
+                    "description": "Telegram forum message_thread_id. Defaults to the current topic."
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Exact conversation id to deliver into. Defaults to the current session; required for api/cli."
+                },
+                "chat_type": {
+                    "type": "string",
+                    "description": "dm or guild (discord only), to tell a DM from a channel."
                 },
                 "tz": {
                     "type": "string",
@@ -132,18 +145,57 @@ func (t *CronTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 		if message, ok := args["message"].(string); ok && message != "" {
 			cmdArgs = append(cmdArgs, "--message", message)
 		}
-		if channel, ok := args["channel"].(string); ok && channel != "" {
+
+		// Default the delivery target to the chat the model is talking in, so a
+		// simple "remind me in 5 minutes" needs no ids from the user.
+		channel := argString(args, "channel")
+		to := argString(args, "to")
+		threadID := argString(args, "thread_id")
+		sessionID := argString(args, "session_id")
+		chatType := argString(args, "chat_type")
+		if ctx != nil {
+			if channel == "" {
+				channel = ctx.Channel
+			}
+			if to == "" {
+				if ctx.Scope != "" {
+					to = ctx.ChatID
+				} else {
+					to = ctx.UserID
+				}
+			}
+			if threadID == "" {
+				threadID = ctx.TopicID
+			}
+			if sessionID == "" {
+				sessionID = ctx.ConversationID
+			}
+			if chatType == "" {
+				chatType = ctx.ChatType
+			}
+		}
+
+		if channel != "" {
 			cmdArgs = append(cmdArgs, "--channel", channel)
 		}
-		if to, ok := args["to"].(string); ok && to != "" {
+		if to != "" {
 			cmdArgs = append(cmdArgs, "--to", to)
+		}
+		if threadID != "" {
+			cmdArgs = append(cmdArgs, "--thread-id", threadID)
+		}
+		if sessionID != "" {
+			cmdArgs = append(cmdArgs, "--session-id", sessionID)
+		}
+		if chatType != "" {
+			cmdArgs = append(cmdArgs, "--chat-type", chatType)
 		}
 		if tz, ok := args["tz"].(string); ok && tz != "" {
 			cmdArgs = append(cmdArgs, "--tz", tz)
 		}
-		if agent, ok := args["agent"].(string); ok && agent != "" {
-			cmdArgs = append(cmdArgs, "--agent", agent)
-		}
+		// Always bind the job to the active agent so jobs.json and agent_id never
+		// disagree (the old CLI default was the hard-coded "main").
+		cmdArgs = append(cmdArgs, "--agent", agentdir.Active())
 
 	case "remove", "run":
 		if id, ok := args["id"].(string); ok && id != "" {
@@ -179,10 +231,19 @@ func (t *CronTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 		}
 	}
 
+	// Set the environment after the binary is chosen: reassigning cmd drops Env,
+	// and the child must resolve the same agent as the running server.
+	cmd.Env = tools.SetEnv(os.Environ(), "MYAAW_AGENT", agentdir.Active())
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("Error executing command '%s %v': %v\nOutput: %s", bin, cmdArgs, err, string(output))
 	}
 
 	return string(output)
+}
+
+func argString(args map[string]interface{}, key string) string {
+	value, _ := args[key].(string)
+	return strings.TrimSpace(value)
 }

@@ -117,13 +117,16 @@ func Active() string {
 	return activeName
 }
 
-// SetActive validates and selects the current process agent.
+// SetActive validates and selects the current process agent. It also exports
+// MYAAW_AGENT so child processes (tool subprocesses, shell commands) resolve the
+// same agent instead of falling back to the registry default.
 func SetActive(name string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
 	activeName = name
 	activeSet = true
+	_ = os.Setenv("MYAAW_AGENT", name)
 	return nil
 }
 

@@ -1,0 +1,239 @@
+# Cron and Heartbeat
+
+How Myaaw runs work on a schedule and delivers it into the right conversation.
+
+Both features share one endpoint and one target model. The difference is what
+starts the run:
+
+| Feature | Trigger | Configured in | Output |
+| :--- | :--- | :--- | :--- |
+| **Heartbeat** | fixed interval (`every`) | `config.json` → `heartbeat` | one message per tick, or silent on `HEARTBEAT_OK` |
+| **Cron** | cron expression, interval, or one specific time | `jobs.json` (agent cron dir) | one message per run, recorded in cron history |
+
+---
+
+## 1. Heartbeat
+
+`config.json`:
+
+```json
+"heartbeat": {
+  "active": true,
+  "every": "20m",
+  "channel": "telegram",
+  "to": "-1001234567890",
+  "thread_id": "77",
+  "session_id": "",
+  "chat_type": ""
+}
+```
+
+- `active` turns the ticker on; `every` is a Go duration (`20m`, `1h30m`).
+- `thread_id` targets a Telegram forum topic, `session_id` pins an exact
+  conversation, and `chat_type` (`dm`/`guild`) distinguishes a Discord DM from a
+  channel. They follow the rules in §3.
+- Every tick posts the built-in heartbeat prompt to `POST /heartbeat` with
+  `trigger: "heartbeat"`.
+- The prompt asks the model to read `HEARTBEAT.md`, do what is needed, and reply
+  with exactly `HEARTBEAT_OK` when there is nothing to say. `HEARTBEAT_OK` is
+  never stored and never delivered.
+- The config is re-read on every tick and hot-reloaded when `config.json`
+  changes.
+
+## 2. Cron
+
+Jobs live in `<agent>/cron/jobs.json`:
+
+```json
+{
+  "id": "b946503f-…",
+  "name": "Water reminder",
+  "agent_id": "default",
+  "schedule": { "kind": "at", "expr": "2026-11-04T16:50:48+07:00", "tz": "" },
+  "payload": { "kind": "agentTurn", "content": "💧 Time to drink water!" },
+  "delivery": {
+    "mode": "announce",
+    "channel": "api",
+    "to": "111222333444555666",
+    "thread_id": "",
+    "session_id": "af53cc52-2196-42ae-bc00-9cde4a9a853c",
+    "chat_type": ""
+  },
+  "enabled": true,
+  "created_at": "2026-11-04T16:48:48+07:00",
+  "updated_at": "2026-11-04T16:48:48+07:00"
+}
+```
+
+| Field | Meaning |
+| :--- | :--- |
+| `schedule.kind` | `cron` (5-field expression), `every` (duration), or `at` (absolute time) |
+| `schedule.tz` | timezone for a cron expression, e.g. `Asia/Jakarta` |
+| `payload.content` | the prompt sent to the agent |
+| `delivery` | where the answer goes (see §3) |
+| `agent_id` | the agent that owns the job; must match the directory it lives in |
+
+A relative `at` (for example `10m`) is converted to an absolute timestamp when
+the job is created, so a reload does not restart the timer.
+
+Jobs can be managed from three places:
+
+- the agent's `cron` tool (the model schedules a reminder while chatting),
+- `myaaw cron add/list/remove/run/history`,
+- editing `jobs.json` directly (the scheduler watches the file).
+
+---
+
+## 3. Delivery target
+
+A target resolves to exactly one conversation session.
+
+| Surface | `channel` | `to` | `thread_id` | `session_id` | `chat_type` |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Telegram DM | `telegram` | user id | — | optional | — |
+| Telegram group | `telegram` | chat id (negative) | — | optional | — |
+| Telegram forum topic | `telegram` | chat id | topic id | optional | — |
+| Discord DM | `discord` | recipient user id | — | optional | `dm` |
+| Discord channel | `discord` | channel id | — | optional | `guild` |
+| Discord thread | `discord` | thread channel id | — | optional | `guild` |
+| Web (API) | `api` | user id | — | **required** | — |
+| Terminal (CLI) | `cli` | `0` or user id | — | **required** | — |
+
+Rules:
+
+- `to` is the platform id. A Telegram topic is **not** a standalone id: it needs
+  both the chat id (`to`) and `message_thread_id` (`thread_id`).
+- `session_id` pins the exact conversation and wins over scope. It is mandatory
+  for `api`/`cli`, because a dashboard or terminal chat has no platform chat id.
+  For Telegram/Discord it is optional and only needed to target a specific
+  (for example older) conversation.
+- `chat_type` is only meaningful for Discord DMs: a DM needs the recipient's user
+  id, while a guild message needs a channel id, and both are snowflakes.
+- Without `session_id`, the scope is derived exactly like an inbound message:
+  `tg:<chat>`, `tg:<chat>:<thread>`, or `dc:<channel>`.
+
+---
+
+## 4. What happens during a scheduled run
+
+```
+scheduler / heartbeat tick
+  → POST /heartbeat {prompt, channel, to, thread_id, session_id, chat_type, trigger}
+  → lock by session_id (or channel:to:thread)
+  → ProcessHeartbeat resolves the session, owner, names, and RawMeta
+  → the agent runs with the same system prompt and the <userinfo> block
+  → the turn is saved into that conversation
+  → the reply is delivered through the channel adapter
+```
+
+Details:
+
+- **Session join.** The run writes into the target chat's conversation, so the
+  agent sees the same history as a live message and the dashboard shows one
+  session with the right badge.
+- **Owner.** A pinned session keeps its owner. A DM belongs to the target user.
+  A shared chat uses `bot.owner_ids[0]`, so no conversation row is created under
+  a chat or channel id.
+- **Names.** `chat_scopes` supplies the group/server and topic/channel names for
+  the dashboard badge and `<userinfo>`.
+- **Delivery.**
+  - Telegram uses `chat id` + `message_thread_id`.
+  - Discord uses the channel/thread id, or opens a DM channel for a user id.
+  - API/CLI have no outbound adapter; the turn is saved in the pinned session
+    and appears when the dashboard or terminal reads it.
+- **Errors.** A failed delivery is logged; it never fails the run itself.
+- **Heartbeat silence.** `HEARTBEAT_OK` is neither stored nor delivered.
+
+---
+
+## 5. Creating a job from a chat
+
+The agent's `cron` tool defaults the delivery target to the **current session**,
+so a simple request needs no ids:
+
+> "remind me to eat in 5 minutes"
+
+becomes a job with:
+
+- `channel` = the current channel,
+- `to` = the current chat id (or user id on DM/API/CLI),
+- `thread_id` = the current topic (Telegram),
+- `session_id` = the current conversation id,
+- `agent_id` = the active agent.
+
+Cross-surface requests ("send it to the Telegram group") need the target id from
+the user, because the model cannot know another chat's id from the current one.
+
+`myaaw cron add` exposes the same fields:
+
+```sh
+myaaw cron add \
+  --name "Water reminder" \
+  --at 10m \
+  --message "Time to drink water" \
+  --channel api \
+  --to 111222333444555666 \
+  --session-id af53cc52-2196-42ae-bc00-9cde4a9a853c
+```
+
+`--agent` defaults to the active agent. Its value also decides where the job is
+stored: `--agent myfriend` always writes `~/.myaaw/myfriend/cron/jobs.json`, never the
+registry default's file, so `agent_id` and the directory cannot disagree.
+
+---
+
+## 6. Multi-agent isolation
+
+- Each agent has its own `cron/jobs.json` and its own scheduler that posts to its
+  own server URL.
+- The store directory and `agent_id` are resolved from the same value: the
+  `--agent` flag when given, otherwise the process active agent
+  (`agentdir.CronDir(agent)`). A job can never be written with an `agent_id` that
+  does not match its directory.
+- The `cron` tool binds its `myaaw cron` subprocess explicitly: it passes
+  `--agent <active>` and exports `MYAAW_AGENT`, so the child cannot fall back to
+  the registry default. `agentdir.SetActive` also exports `MYAAW_AGENT`, which
+  covers any other tool that spawns `myaaw` or a shell command.
+- A `session_id` is meaningful only inside the agent that owns the conversation.
+  A job must never carry a session id from another agent: `ProcessHeartbeat`
+  loads the conversation from this agent's database and rejects an unknown id.
+- Heartbeat config is per agent (`<agent>/config/config.json`), so its target is
+  always agent-local.
+
+### Setting the heartbeat target
+
+Interactive onboarding asks only for channel and destination, so it keeps any
+saved `thread_id`/`session_id`/`chat_type` when the destination has not changed.
+To set them explicitly:
+
+```sh
+myaaw onboard --agent default \
+  --heartbeat-channel telegram \
+  --heartbeat-to -1001234567890 \
+  --heartbeat-thread 77 \
+  --heartbeat-every 20m
+```
+
+`--heartbeat-session <conversation-id>` pins an exact conversation, and
+`--heartbeat-chat-type dm` targets a Discord DM. The control-plane
+`PATCH /agents/{name}/config` accepts the same three keys under `heartbeat`.
+
+## 7. Compatibility
+
+- Existing jobs/config without `thread_id`/`session_id`/`chat_type` keep working:
+  the scope is derived from `channel` + `to`, and Telegram messages land in
+  General as before.
+- Older `jobs.json` files that recorded `agent_id: "main"` remain valid on load;
+  new jobs use the real agent name.
+- No database schema change is required.
+
+## 8. Troubleshooting
+
+| Symptom | Check |
+| :--- | :--- |
+| Reminder lands in General instead of a topic | `thread_id` is missing; set `delivery.thread_id` (Telegram). |
+| Web/CLI reminder starts a new chat | `session_id` is missing; it is required for `api`/`cli`. |
+| Reminder appears under a fake user | the target resolved no owner; check `bot.owner_ids`. |
+| Job runs but no message | `HEARTBEAT_OK` was returned, the channel has no adapter (api/cli), or delivery failed (check the log). |
+| `agent_id` is `main` in `jobs.json` | older job written before the active-agent fix; recreate or edit it. |
+| Job runs on the wrong agent | `agent_id`/directory mismatch; recreate from the correct agent. Jobs created by a server that was running an older binary may sit in another agent's `jobs.json`; recreate them after restarting the agent. |

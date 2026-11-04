@@ -129,7 +129,13 @@ definitions:
         type: boolean
       channel:
         type: string
+      chat_type:
+        type: string
       every:
+        type: string
+      session_id:
+        type: string
+      thread_id:
         type: string
       to:
         type: string
@@ -186,13 +192,24 @@ definitions:
   cron.Delivery:
     properties:
       channel:
-        description: telegram, discord
+        description: telegram, discord, api, cli
+        type: string
+      chat_type:
+        description: |-
+          ChatType distinguishes a Discord DM from a guild channel ("dm" vs
+          "guild"). Telegram derives it from the sign of To.
         type: string
       mode:
         description: announce
         type: string
+      session_id:
+        description: SessionID pins the exact conversation (required for api/cli targets).
+        type: string
+      thread_id:
+        description: ThreadID is the Telegram message_thread_id for a forum topic.
+        type: string
       to:
-        description: chat_id
+        description: user id (dm/api/cli), chat id (telegram), channel id (discord)
         type: string
     type: object
   cron.ExecutionResult:
@@ -1682,6 +1699,8 @@ definitions:
     properties:
       channel:
         type: string
+      chat_type:
+        type: string
       enabled:
         type: boolean
       expr:
@@ -1692,6 +1711,10 @@ definitions:
         type: string
       schedule_kind:
         description: cron, every, at
+        type: string
+      session_id:
+        type: string
+      thread_id:
         type: string
       to:
         type: string
@@ -1763,7 +1786,13 @@ definitions:
         type: boolean
       channel:
         type: string
+      chat_type:
+        type: string
       every:
+        type: string
+      session_id:
+        type: string
+      thread_id:
         type: string
       to:
         type: string
@@ -1872,8 +1901,17 @@ definitions:
       channel:
         example: telegram
         type: string
+      chat_type:
+        example: dm
+        type: string
       every:
         example: 30m
+        type: string
+      session_id:
+        example: 0f4e8b3a-1111-4222-8333-944455556666
+        type: string
+      thread_id:
+        example: "77"
         type: string
       to:
         example: "123456789"

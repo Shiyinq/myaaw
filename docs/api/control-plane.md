@@ -122,7 +122,7 @@ curl -X POST http://localhost:9000/agents/myfriend/onboard \
     "skills": ["time", "notes"],
     "disable_tools": ["bash"],
     "channels": {"telegram_token":"123:abc","telegram_mode":"polling"},
-    "heartbeat": {"active":true,"channel":"telegram","to":"123456789","every":"30m"},
+    "heartbeat": {"active":true,"channel":"telegram","to":"-1001234567890","thread_id":"77","every":"30m"},
     "bot": {"type":"private","owner_ids":["123456789"]}
   }'
 ```
@@ -711,7 +711,7 @@ Both return `{"models": [...], "source": "live"|"default", "warning": "..."}`. I
 | `POST` | `/agents/:name/config/reset` | restore the whole `config.json` to the template (resets providers and channels too) |
 | `PATCH` | `/agents/:name/config/reset` | reset only the named bot fields and sections |
 
-`PATCH /config` covers `bot` (`type`, `owner_ids`, and every tuning field), `heartbeat`, `cron.active`, `transcriber`, `synthesizer`, and `observability`. Omitted fields are left untouched, so a key is never deleted:
+`PATCH /config` covers `bot` (`type`, `owner_ids`, and every tuning field), `heartbeat` (`active`, `channel`, `to`, `thread_id`, `session_id`, `chat_type`, `every`), `cron.active`, `transcriber`, `synthesizer`, and `observability`. Omitted fields are left untouched, so a key is never deleted:
 
 ```bash
 curl -X PATCH http://localhost:9000/agents/myfriend/config \
@@ -719,7 +719,7 @@ curl -X PATCH http://localhost:9000/agents/myfriend/config \
   -d '{"bot":{"type":"public","max_iterations":50},"heartbeat":{"active":false}}'
 ```
 
-`PATCH /config/reset` takes the same section names and restores them from the template. Every section accepts `true` for the whole section, `[]` for the same thing, or a list of field names; `false` leaves it alone. So `{"bot": []}` resets the whole bot section, `{"bot": ["type"]}` resets one bot field, and `{"heartbeat": ["every"], "approvals": ["mode"]}` resets two fields in two sections. Providers and channels are not touched by this variant.
+`PATCH /config/reset` takes the same section names and restores them from the template. Every section accepts `true` for the whole section, `[]` for the same thing, or a list of field names; `false` leaves it alone. So `{"bot": []}` resets the whole bot section, `{"bot": ["type"]}` resets one bot field, and `{"heartbeat": ["every"], "approvals": ["mode"]}` resets two fields in two sections. The heartbeat fields are `active`, `channel`, `to`, `thread_id`, `session_id`, `chat_type`, and `every`. Providers and channels are not touched by this variant.
 
 `bot.queue_workers` (1–16) sets how many inbound chats the agent processes at once; messages from the same user stay in order. It takes effect after `POST /agents/:name/server/restart`.
 
@@ -1010,10 +1010,19 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
   "tz": "Asia/Jakarta",
   "message": "Good morning!",
   "channel": "telegram",
-  "to": "123456789",
+  "to": "-1001234567890",
+  "thread_id": "77",
+  "session_id": "",
+  "chat_type": "",
   "enabled": true
 }
 ```
+
+`thread_id` targets a Telegram forum topic, `session_id` pins an exact
+conversation (required when `channel` is `api` or `cli`), and `chat_type`
+(`dm`/`guild`) tells a Discord DM from a channel. `agent_id` is set from `:name`,
+so the job always lands in that agent's `cron/jobs.json`. See
+[Cron & Heartbeat](../agents/cron-heartbeat.md) for the target matrix.
 
 `schedule_kind` is `cron`, `every`, or `at`. Running a job requires the agent server to be up; results are written to the job history.
 

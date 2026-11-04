@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,12 +14,16 @@ func TestCronServiceAddListRunRemove(t *testing.T) {
 	agentRoot := setupConfigAgent(t, nil)
 
 	heartbeatCalls := 0
+	var heartbeatBody map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/heartbeat" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		heartbeatCalls++
+		if err := json.NewDecoder(r.Body).Decode(&heartbeatBody); err != nil {
+			t.Errorf("decode heartbeat body: %v", err)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
@@ -37,7 +42,9 @@ func TestCronServiceAddListRunRemove(t *testing.T) {
 		Expr:         "1h",
 		Message:      "hello",
 		Channel:      "telegram",
-		To:           "123",
+		To:           "-1001234567890",
+		ThreadID:     "77",
+		SessionID:    "0f4e8b3a-1111-4222-8333-944455556666",
 	})
 	if err != nil {
 		t.Fatalf("Add: %v", err)
@@ -59,6 +66,19 @@ func TestCronServiceAddListRunRemove(t *testing.T) {
 	}
 	if heartbeatCalls != 1 {
 		t.Fatalf("heartbeat calls = %d", heartbeatCalls)
+	}
+	// "Run now" must forward the same target the job stores, or the reply lands
+	// in General (Telegram) or in the wrong session.
+	for key, want := range map[string]string{
+		"channel":    "telegram",
+		"to":         "-1001234567890",
+		"thread_id":  "77",
+		"session_id": "0f4e8b3a-1111-4222-8333-944455556666",
+		"trigger":    "cron",
+	} {
+		if got := heartbeatBody[key]; got != want {
+			t.Errorf("heartbeat %s = %q, want %q", key, got, want)
+		}
 	}
 
 	history, err := cronSvc.History("myfriend", job.ID[:8], 10)
@@ -97,5 +117,52 @@ func TestCronServiceValidatesInput(t *testing.T) {
 	_, err = cronSvc.Add("myfriend", CronJobInput{ScheduleKind: "every", Expr: "1h", Message: ""})
 	if !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("err = %v, want ErrInvalidConfig", err)
+	}
+	_, err = cronSvc.Add("myfriend", CronJobInput{
+		ScheduleKind: "every", Expr: "1h", Message: "m", Channel: "telegram", To: "1", ThreadID: "topic",
+	})
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("non-numeric thread_id: err = %v, want ErrInvalidConfig", err)
+	}
+	_, err = cronSvc.Add("myfriend", CronJobInput{
+		ScheduleKind: "every", Expr: "1h", Message: "m", Channel: "discord", To: "1", ChatType: "channel",
+	})
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("unknown chat_type: err = %v, want ErrInvalidConfig", err)
+	}
+}
+
+// The dashboard must be able to express the same delivery targets as the CLI and
+// the cron tool: a forum topic, an exact session, and a Discord DM.
+func TestCronServiceKeepsDeliveryTarget(t *testing.T) {
+	setupConfigAgent(t, nil)
+	cronSvc := NewCronService(NewAgentService())
+
+	job, err := cronSvc.Add("myfriend", CronJobInput{
+		Name:         "Topic reminder",
+		ScheduleKind: "every",
+		Expr:         "1h",
+		Message:      "hello",
+		Channel:      "telegram",
+		To:           "-1001234567890",
+		ThreadID:     "77",
+		SessionID:    "0f4e8b3a-1111-4222-8333-944455556666",
+	})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if job.AgentID != "myfriend" {
+		t.Fatalf("AgentID = %q", job.AgentID)
+	}
+	if job.Delivery.ThreadID != "77" || job.Delivery.SessionID != "0f4e8b3a-1111-4222-8333-944455556666" {
+		t.Fatalf("delivery = %+v", job.Delivery)
+	}
+
+	stored, err := cronSvc.List("myfriend")
+	if err != nil || len(stored) != 1 {
+		t.Fatalf("list = %+v, err = %v", stored, err)
+	}
+	if stored[0].Delivery.ThreadID != "77" {
+		t.Fatalf("stored delivery = %+v", stored[0].Delivery)
 	}
 }

@@ -13,6 +13,9 @@
         "active": false,
         "every": "30m",
         "to": "",
+        "thread_id": "",
+        "session_id": "",
+        "chat_type": "",
         "channel": ""
     },
     "bot": {

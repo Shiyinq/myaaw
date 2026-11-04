@@ -19,6 +19,13 @@ type ToolsContext struct {
 	UserID  string
 	Channel string
 	BaseURL string
+	// Session identity for tools that schedule work (cron) or reference the
+	// current chat. Filled from the active IncomingMessage.
+	ConversationID string
+	ChatID         string
+	TopicID        string
+	ChatType       string
+	Scope          string
 }
 
 // SetEnv returns env with key set to value, replacing any existing entries.

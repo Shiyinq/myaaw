@@ -40,6 +40,9 @@ type Input struct {
 	HeartbeatSet       bool
 	HeartbeatChannel   string
 	HeartbeatTo        string
+	HeartbeatThreadID  string
+	HeartbeatSessionID string
+	HeartbeatChatType  string
 	HeartbeatEvery     string
 	OwnerIDs           []string
 	OwnersSet          bool
@@ -221,12 +224,29 @@ func MergeConfig(base *config.Config, in Input) *config.Config {
 
 	if in.HeartbeatSet {
 		if in.Heartbeat {
-			cfg.Heartbeat = config.HeartbeatConfig{
-				Active:  true,
-				Channel: in.HeartbeatChannel,
-				To:      in.HeartbeatTo,
-				Every:   in.HeartbeatEvery,
+			heartbeat := config.HeartbeatConfig{
+				Active:    true,
+				Channel:   in.HeartbeatChannel,
+				To:        in.HeartbeatTo,
+				Every:     in.HeartbeatEvery,
+				ThreadID:  in.HeartbeatThreadID,
+				SessionID: in.HeartbeatSessionID,
+				ChatType:  in.HeartbeatChatType,
 			}
+			// The wizard never asks for these, so keep the saved values when the
+			// destination has not moved and the caller did not override them.
+			if heartbeat.Channel == cfg.Heartbeat.Channel && heartbeat.To == cfg.Heartbeat.To {
+				if heartbeat.ThreadID == "" {
+					heartbeat.ThreadID = cfg.Heartbeat.ThreadID
+				}
+				if heartbeat.SessionID == "" {
+					heartbeat.SessionID = cfg.Heartbeat.SessionID
+				}
+				if heartbeat.ChatType == "" {
+					heartbeat.ChatType = cfg.Heartbeat.ChatType
+				}
+			}
+			cfg.Heartbeat = heartbeat
 		} else {
 			cfg.Heartbeat.Active = false
 		}
@@ -338,6 +358,30 @@ func ValidateChatID(value string) error {
 		}
 	}
 	return nil
+}
+
+// ValidateThreadID checks a Telegram forum message_thread_id.
+func ValidateThreadID(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return fmt.Errorf("thread ID %q must be numeric", value)
+		}
+	}
+	return nil
+}
+
+// ValidateHeartbeatChatType checks the optional dm/guild hint. Empty means the
+// channel default is used.
+func ValidateHeartbeatChatType(value string) error {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "dm", "guild":
+		return nil
+	}
+	return fmt.Errorf("chat type %q must be dm or guild", value)
 }
 
 // ParseOwnerIDs splits a comma-separated owner list, de-duplicating entries.

@@ -99,7 +99,8 @@ myaaw onboard --yes \
   --model deepseek-chat \
   --channel telegram --telegram-token "$TG_TOKEN" --telegram-mode polling \
   --owner 123456789 \
-  --heartbeat-channel telegram --heartbeat-to 123456789 --heartbeat-every 30m
+  --heartbeat-channel telegram --heartbeat-to -1001234567890 --heartbeat-thread 77 \
+  --heartbeat-every 30m
 ```
 
 | Flag | Wizard step |
@@ -118,7 +119,7 @@ myaaw onboard --yes \
 | `--telegram-token` | Telegram bot token (prefer `TELEGRAM_BOT_TOKEN`) |
 | `--webhook-url` | Public `https://` URL (webhook mode) |
 | `--discord-token` | Discord bot token (prefer `DISCORD_BOT_TOKEN`) |
-| `--heartbeat-channel`, `--heartbeat-to`, `--heartbeat-every` | Heartbeat (`--heartbeat-channel off` disables it) |
+| `--heartbeat-channel`, `--heartbeat-to`, `--heartbeat-thread`, `--heartbeat-session`, `--heartbeat-chat-type`, `--heartbeat-every` | Heartbeat (`--heartbeat-channel off` disables it). `--heartbeat-thread` targets a Telegram forum topic, `--heartbeat-session` pins an exact conversation, and `--heartbeat-chat-type dm` targets a Discord DM. |
 | `--bot-type private\|public` | Bot access type (default: `private`) |
 | `--owner` | Owner IDs for any channel, comma separated (optional) |
 | `--telegram-owner` | Telegram owner user IDs, comma separated (optional) |

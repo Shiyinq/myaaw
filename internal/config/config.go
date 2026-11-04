@@ -467,10 +467,13 @@ type ChannelConfig struct {
 }
 
 type HeartbeatConfig struct {
-	Active  bool   `json:"active"`
-	Every   string `json:"every"`
-	To      string `json:"to"`
-	Channel string `json:"channel"`
+	Active    bool   `json:"active"`
+	Every     string `json:"every"`
+	To        string `json:"to"`
+	ThreadID  string `json:"thread_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	ChatType  string `json:"chat_type,omitempty"`
+	Channel   string `json:"channel"`
 }
 
 var CronActive bool

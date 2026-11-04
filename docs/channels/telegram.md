@@ -340,8 +340,9 @@ Related tests live in `internal/channel/telegram/*_test.go`,
   `message_reaction_count` are never received. Enabling `chat_member` requires
   both group admin rights **and** an explicit `allowed_updates`.
 - `edited_message` is ignored; editing a message does not trigger a new reply.
-- Heartbeats sent to a group omit `message_thread_id`, so they land in
-  **General**.
+- Heartbeats and cron jobs land in **General** unless the target carries a
+  thread id: set `heartbeat.thread_id` in `config.json`, or `delivery.thread_id`
+  on a job. See [Cron & Heartbeat](../agents/cron-heartbeat.md).
 - Privacy mode / group admin status must be configured manually in
   BotFather/Telegram; Myaaw has no button for it.
 
@@ -394,7 +395,7 @@ sqlite3 -header -column "file:$HOME/.myaaw/default/database/myaaw.db?mode=ro" \
 | :--- | :--- |
 | Bot silent in a group/topic | `getMe` → `can_read_all_group_messages`; is the bot an admin? Do the logs show the update at all? |
 | Bot replies to `Hi` in DMs but not in groups | Privacy mode is still enabled; disable it (and re-add the bot) or promote the bot to admin. |
-| Replies appear in **General** instead of the topic | The outbound call is missing `message_thread_id`; verify the running build includes the thread changes. |
+| Replies appear in **General** instead of the topic | For a live reply, the outbound call is missing `message_thread_id`. For a scheduled message, set `heartbeat.thread_id` or the job's `delivery.thread_id`. |
 | Bot answers *"Masih kosong…"* | The running build predates the content filter; service messages are reaching the agent. |
 | Commands say "Command not found" in groups | Old build without the `@username` suffix fix, or a genuinely unknown command. |
 | Topic sessions get mixed | Check the `scope` values in the DB; every topic must have `tg:<chatID>:<threadID>`. |

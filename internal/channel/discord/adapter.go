@@ -21,12 +21,19 @@ import (
 type DiscordMeta struct {
 	ChannelID string
 	MessageID string
+	// UserID is the DM recipient. When ChannelID is empty and IsDM is set, Send
+	// opens (or reuses) the DM channel for this user.
+	UserID string
+	IsDM   bool
 }
 
 type DiscordAdapter struct {
 	session     *discordgo.Session
 	transport   discordTransport
 	handlerOnce sync.Once
+
+	dmMu       sync.Mutex
+	dmChannels map[string]string
 }
 
 func NewDiscordAdapter(token string) (*DiscordAdapter, error) {
@@ -39,8 +46,9 @@ func NewDiscordAdapter(token string) (*DiscordAdapter, error) {
 	// enough. DMs work without it, which is why a bot can look half-broken.
 	session.Identify.Intents |= discordgo.IntentMessageContent
 	return &DiscordAdapter{
-		session:   session,
-		transport: newRetryingTransport(discordAPI{session: session}),
+		session:    session,
+		transport:  newRetryingTransport(discordAPI{session: session}),
+		dmChannels: map[string]string{},
 	}, nil
 }
 
@@ -270,12 +278,16 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 
 func (d *DiscordAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMessage) error {
 	meta := msg.RawMeta.(DiscordMeta)
+	channelID, err := d.resolveChannel(meta)
+	if err != nil {
+		return err
+	}
 	items := buildDiscordTimeline(out.Trace, out.Text, out.Thought)
 	var sendErr error
 	if len(items) > 0 {
 		timeline := &discordTimeline{
 			transport: d.transportOrAPI(),
-			channelID: meta.ChannelID,
+			channelID: channelID,
 			replyTo:   meta.MessageID,
 			tools:     map[string]*discordTimelineItem{},
 			now:       time.Now,
@@ -291,10 +303,40 @@ func (d *DiscordAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoin
 		sendErr = timeline.err
 	}
 
-	if err := d.sendAttachments(meta.ChannelID, out.Attachments); err != nil && sendErr == nil {
+	if err := d.sendAttachments(channelID, out.Attachments); err != nil && sendErr == nil {
 		sendErr = err
 	}
 	return sendErr
+}
+
+// resolveChannel returns the channel to send to, opening a DM channel for a
+// user-targeted heartbeat or cron job when needed.
+func (d *DiscordAdapter) resolveChannel(meta DiscordMeta) (string, error) {
+	if meta.ChannelID != "" {
+		return meta.ChannelID, nil
+	}
+	if !meta.IsDM || meta.UserID == "" {
+		return "", fmt.Errorf("discord: no target channel")
+	}
+	return d.dmChannel(meta.UserID)
+}
+
+// dmChannel opens (or reuses) the direct-message channel for a user id.
+func (d *DiscordAdapter) dmChannel(userID string) (string, error) {
+	if d.session == nil {
+		return "", fmt.Errorf("discord session is not available")
+	}
+	d.dmMu.Lock()
+	defer d.dmMu.Unlock()
+	if id, ok := d.dmChannels[userID]; ok {
+		return id, nil
+	}
+	channel, err := d.session.UserChannelCreate(userID)
+	if err != nil {
+		return "", fmt.Errorf("open discord dm: %w", err)
+	}
+	d.dmChannels[userID] = channel.ID
+	return channel.ID, nil
 }
 
 func (d *DiscordAdapter) sendAttachments(channelID string, attachments []channel.Attachment) error {
@@ -336,19 +378,23 @@ func (d *DiscordAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(
 	if transport == nil {
 		return nil, fmt.Errorf("discord transport is not configured")
 	}
-
-	initialID, err := transport.SendReply(meta.ChannelID, meta.MessageID, "✨ Typing...")
+	channelID, err := d.resolveChannel(meta)
 	if err != nil {
 		return nil, err
 	}
 
-	timeline := newDiscordTimeline(transport, meta.ChannelID, meta.MessageID, initialID)
+	initialID, err := transport.SendReply(channelID, meta.MessageID, "✨ Typing...")
+	if err != nil {
+		return nil, err
+	}
+
+	timeline := newDiscordTimeline(transport, channelID, meta.MessageID, initialID)
 	err = streamFn(timeline.handleChunk)
 	timeline.finish()
 	if err != nil {
 		return nil, err
 	}
-	if err := d.sendAttachments(meta.ChannelID, timeline.attachments); err != nil {
+	if err := d.sendAttachments(channelID, timeline.attachments); err != nil {
 		return nil, err
 	}
 
@@ -369,7 +415,11 @@ func (d *DiscordAdapter) SendError(msg *channel.IncomingMessage, errText string)
 	if transport == nil {
 		return fmt.Errorf("discord transport is not configured")
 	}
-	_, err := transport.Send(meta.ChannelID, "❌ "+errText)
+	channelID, err := d.resolveChannel(meta)
+	if err != nil {
+		return err
+	}
+	_, err = transport.Send(channelID, "❌ "+errText)
 	return err
 }
 

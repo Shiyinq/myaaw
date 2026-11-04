@@ -74,6 +74,33 @@ func TestRegisterAgentStoresUTCTimestamp(t *testing.T) {
 	}
 }
 
+func TestSetActiveExportsAgentEnv(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	if err := SetActive("myfriend"); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+	t.Cleanup(func() { _ = SetActive(DefaultAgentName) })
+
+	// Tool subprocesses inherit the environment, not the in-process variable. The
+	// exported value keeps `myaaw <command>` children on the same agent as the
+	// server that spawned them.
+	if got := os.Getenv("MYAAW_AGENT"); got != "myfriend" {
+		t.Fatalf("MYAAW_AGENT = %q, want myfriend", got)
+	}
+	if got := Active(); got != "myfriend" {
+		t.Fatalf("Active() = %q, want myfriend", got)
+	}
+
+	// An in-process selection wins over a stale inherited value.
+	t.Setenv("MYAAW_AGENT", "other")
+	if got := Active(); got != "myfriend" {
+		t.Fatalf("Active() after env change = %q, want myfriend", got)
+	}
+}
+
 func TestEnsureLayoutMigratesLegacyLayout(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

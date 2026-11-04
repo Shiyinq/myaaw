@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"myaaw/internal/channel"
 )
 
 func TestEnsureWorkspaceCreatesDirectoryTree(t *testing.T) {
@@ -160,6 +162,28 @@ func TestSystemPromptHasNoPerTurnContext(t *testing.T) {
 		if strings.Contains(prompt, forbidden) {
 			t.Errorf("system prompt must not contain %q\n\n%s", forbidden, prompt)
 		}
+	}
+}
+
+func TestToolsContextForCarriesSession(t *testing.T) {
+	ctx := ToolsContextFor(&channel.IncomingMessage{
+		UserID:         42,
+		Channel:        "telegram",
+		ChatType:       "supergroup",
+		ChatID:         "-1001234567890",
+		TopicID:        "77",
+		Scope:          "tg:-1001234567890:77",
+		ConversationID: "0f4e8b3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
+	})
+
+	if ctx.UserID != "42" || ctx.Channel != "telegram" || ctx.ChatType != "supergroup" {
+		t.Fatalf("identity = %+v", ctx)
+	}
+	if ctx.ChatID != "-1001234567890" || ctx.TopicID != "77" || ctx.Scope != "tg:-1001234567890:77" {
+		t.Fatalf("target = %+v", ctx)
+	}
+	if ctx.ConversationID != "0f4e8b3a-1c2d-4e5f-8a9b-0c1d2e3f4a5b" {
+		t.Fatalf("session = %q", ctx.ConversationID)
 	}
 }
 

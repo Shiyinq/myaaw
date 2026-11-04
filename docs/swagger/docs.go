@@ -590,7 +590,16 @@ const docTemplate = `{
                 "channel": {
                     "type": "string"
                 },
+                "chat_type": {
+                    "type": "string"
+                },
                 "prompt": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "thread_id": {
                     "type": "string"
                 },
                 "to": {

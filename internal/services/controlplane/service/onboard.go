@@ -32,10 +32,13 @@ type OnboardChannelsInput struct {
 
 // OnboardHeartbeatInput configures the periodic self-check.
 type OnboardHeartbeatInput struct {
-	Active  bool   `json:"active"`
-	Channel string `json:"channel,omitempty" example:"telegram"`
-	To      string `json:"to,omitempty" example:"123456789"`
-	Every   string `json:"every,omitempty" example:"30m"`
+	Active    bool   `json:"active"`
+	Channel   string `json:"channel,omitempty" example:"telegram"`
+	To        string `json:"to,omitempty" example:"123456789"`
+	ThreadID  string `json:"thread_id,omitempty" example:"77"`
+	SessionID string `json:"session_id,omitempty" example:"0f4e8b3a-1111-4222-8333-944455556666"`
+	ChatType  string `json:"chat_type,omitempty" example:"dm"`
+	Every     string `json:"every,omitempty" example:"30m"`
 }
 
 // OnboardBotInput configures access and owner IDs.
@@ -227,8 +230,19 @@ func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
 			if d, err := time.ParseDuration(every); err != nil || d <= 0 {
 				return in, fmt.Errorf("%w: heartbeat.every must be a positive duration", ErrInvalidConfig)
 			}
+			threadID := strings.TrimSpace(h.ThreadID)
+			if err := onboard.ValidateThreadID(threadID); err != nil {
+				return in, fmt.Errorf("%w: heartbeat.thread_id: %v", ErrInvalidConfig, err)
+			}
+			chatType := strings.ToLower(strings.TrimSpace(h.ChatType))
+			if err := onboard.ValidateHeartbeatChatType(chatType); err != nil {
+				return in, fmt.Errorf("%w: heartbeat.chat_type: %v", ErrInvalidConfig, err)
+			}
 			in.HeartbeatChannel = channel
 			in.HeartbeatTo = to
+			in.HeartbeatThreadID = threadID
+			in.HeartbeatSessionID = strings.TrimSpace(h.SessionID)
+			in.HeartbeatChatType = chatType
 			in.HeartbeatEvery = every
 		}
 	}

@@ -6515,7 +6515,16 @@ const docTemplatecontrolplane = `{
                 "channel": {
                     "type": "string"
                 },
+                "chat_type": {
+                    "type": "string"
+                },
                 "every": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "thread_id": {
                     "type": "string"
                 },
                 "to": {
@@ -6595,15 +6604,27 @@ const docTemplatecontrolplane = `{
             "type": "object",
             "properties": {
                 "channel": {
-                    "description": "telegram, discord",
+                    "description": "telegram, discord, api, cli",
+                    "type": "string"
+                },
+                "chat_type": {
+                    "description": "ChatType distinguishes a Discord DM from a guild channel (\"dm\" vs\n\"guild\"). Telegram derives it from the sign of To.",
                     "type": "string"
                 },
                 "mode": {
                     "description": "announce",
                     "type": "string"
                 },
+                "session_id": {
+                    "description": "SessionID pins the exact conversation (required for api/cli targets).",
+                    "type": "string"
+                },
+                "thread_id": {
+                    "description": "ThreadID is the Telegram message_thread_id for a forum topic.",
+                    "type": "string"
+                },
                 "to": {
-                    "description": "chat_id",
+                    "description": "user id (dm/api/cli), chat id (telegram), channel id (discord)",
                     "type": "string"
                 }
             }
@@ -8761,6 +8782,9 @@ const docTemplatecontrolplane = `{
                 "channel": {
                     "type": "string"
                 },
+                "chat_type": {
+                    "type": "string"
+                },
                 "enabled": {
                     "type": "boolean"
                 },
@@ -8775,6 +8799,12 @@ const docTemplatecontrolplane = `{
                 },
                 "schedule_kind": {
                     "description": "cron, every, at",
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "thread_id": {
                     "type": "string"
                 },
                 "to": {
@@ -8885,7 +8915,16 @@ const docTemplatecontrolplane = `{
                 "channel": {
                     "type": "string"
                 },
+                "chat_type": {
+                    "type": "string"
+                },
                 "every": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "thread_id": {
                     "type": "string"
                 },
                 "to": {
@@ -9049,9 +9088,21 @@ const docTemplatecontrolplane = `{
                     "type": "string",
                     "example": "telegram"
                 },
+                "chat_type": {
+                    "type": "string",
+                    "example": "dm"
+                },
                 "every": {
                     "type": "string",
                     "example": "30m"
+                },
+                "session_id": {
+                    "type": "string",
+                    "example": "0f4e8b3a-1111-4222-8333-944455556666"
+                },
+                "thread_id": {
+                    "type": "string",
+                    "example": "77"
                 },
                 "to": {
                     "type": "string",

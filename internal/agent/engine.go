@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -623,16 +624,7 @@ func addUsage(dst *provider.Usage, src provider.Usage) {
 }
 
 func extractToolsContext(messages []provider.Message) tools.ToolsContext {
-	baseURL := config.MYAAWBaseURL
-	if baseURL == "" {
-		port := strings.TrimPrefix(config.PORT, ":")
-		if port == "" {
-			port = "8080"
-		}
-		baseURL = "http://localhost:" + port
-	}
-
-	ctx := tools.ToolsContext{BaseURL: baseURL}
+	ctx := tools.ToolsContext{BaseURL: toolsBaseURL()}
 	for _, message := range messages {
 		if message.Role != "system" {
 			continue
@@ -650,6 +642,36 @@ func extractToolsContext(messages []provider.Message) tools.ToolsContext {
 		break
 	}
 	return ctx
+}
+
+// ToolsContextFor builds the tool context from the message the run is handling.
+// Unlike extractToolsContext it does not parse the prompt, so it still works now
+// that the system prompt is static.
+func ToolsContextFor(msg *channel.IncomingMessage) tools.ToolsContext {
+	ctx := tools.ToolsContext{BaseURL: toolsBaseURL()}
+	if msg == nil {
+		return ctx
+	}
+	ctx.UserID = strconv.Itoa(msg.UserID)
+	ctx.Channel = msg.Channel
+	ctx.ConversationID = msg.ConversationID
+	ctx.ChatID = msg.ChatID
+	ctx.TopicID = msg.TopicID
+	ctx.ChatType = msg.ChatType
+	ctx.Scope = msg.Scope
+	return ctx
+}
+
+func toolsBaseURL() string {
+	baseURL := config.MYAAWBaseURL
+	if baseURL == "" {
+		port := strings.TrimPrefix(config.PORT, ":")
+		if port == "" {
+			port = "8080"
+		}
+		baseURL = "http://localhost:" + port
+	}
+	return baseURL
 }
 
 func argsToString(value interface{}) string {

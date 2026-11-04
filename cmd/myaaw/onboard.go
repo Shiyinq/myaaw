@@ -7,6 +7,7 @@ import (
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/daemon"
+	"myaaw/internal/onboard"
 	"myaaw/internal/provider"
 	"os"
 	"path/filepath"
@@ -47,6 +48,9 @@ type onboardOptions struct {
 	dcToken         string
 	hbChannel       string
 	hbTo            string
+	hbThread        string
+	hbSession       string
+	hbChatType      string
 	hbEvery         string
 	owner           string
 	tgOwner         string
@@ -94,6 +98,9 @@ func registerOnboardFlags(cmd *cobra.Command) {
 	f.StringVar(&onboardOpts.dcToken, "discord-token", "", "discord bot token (prefer DISCORD_BOT_TOKEN)")
 	f.StringVar(&onboardOpts.hbChannel, "heartbeat-channel", "", "heartbeat channel: telegram, discord, off, or skip")
 	f.StringVar(&onboardOpts.hbTo, "heartbeat-to", "", "heartbeat destination chat/channel ID")
+	f.StringVar(&onboardOpts.hbThread, "heartbeat-thread", "", "heartbeat Telegram forum topic id")
+	f.StringVar(&onboardOpts.hbSession, "heartbeat-session", "", "heartbeat conversation id to append to")
+	f.StringVar(&onboardOpts.hbChatType, "heartbeat-chat-type", "", "heartbeat Discord chat type: dm or guild")
 	f.StringVar(&onboardOpts.hbEvery, "heartbeat-every", "", "heartbeat interval, e.g. 30m or 1h")
 	f.StringVar(&onboardOpts.owner, "owner", "", "owner IDs for any channel, comma separated")
 	f.StringVar(&onboardOpts.tgOwner, "telegram-owner", "", "Telegram owner user IDs, comma separated (optional)")
@@ -2715,10 +2722,21 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 		if d, err := time.ParseDuration(every); err != nil || d <= 0 {
 			return in, fmt.Errorf("--heartbeat-every must be a positive duration such as 30m or 1h")
 		}
+		threadID := strings.TrimSpace(opts.hbThread)
+		if err := onboard.ValidateThreadID(threadID); err != nil {
+			return in, fmt.Errorf("--heartbeat-thread: %v", err)
+		}
+		chatType := strings.ToLower(strings.TrimSpace(opts.hbChatType))
+		if err := onboard.ValidateHeartbeatChatType(chatType); err != nil {
+			return in, fmt.Errorf("--heartbeat-chat-type: %v", err)
+		}
 		in.Heartbeat = true
 		in.HeartbeatSet = true
 		in.HeartbeatChannel = hbChannel
 		in.HeartbeatTo = strings.TrimSpace(opts.hbTo)
+		in.HeartbeatThreadID = threadID
+		in.HeartbeatSessionID = strings.TrimSpace(opts.hbSession)
+		in.HeartbeatChatType = chatType
 		in.HeartbeatEvery = every
 	}
 

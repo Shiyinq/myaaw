@@ -21,10 +21,13 @@ type HeartbeatService struct {
 
 type HeartbeatConfig struct {
 	Heartbeat struct {
-		Active  bool   `json:"active"`
-		Every   string `json:"every"`
-		To      string `json:"to"`
-		Channel string `json:"channel"`
+		Active    bool   `json:"active"`
+		Every     string `json:"every"`
+		To        string `json:"to"`
+		ThreadID  string `json:"thread_id"`
+		SessionID string `json:"session_id"`
+		ChatType  string `json:"chat_type"`
+		Channel   string `json:"channel"`
 	} `json:"heartbeat"`
 }
 
@@ -133,10 +136,13 @@ B. If everything is fine and NO action is needed:
 CRITICAL: "HEARTBEAT_OK" acts as a "silent skip". If you output it, the system assumes you did nothing. If you did something, DO NOT output it.`
 
 	payload := map[string]interface{}{
-		"prompt":  prompt,
-		"to":      config.Heartbeat.To,
-		"channel": config.Heartbeat.Channel,
-		"trigger": "heartbeat",
+		"prompt":     prompt,
+		"to":         config.Heartbeat.To,
+		"thread_id":  config.Heartbeat.ThreadID,
+		"session_id": config.Heartbeat.SessionID,
+		"chat_type":  config.Heartbeat.ChatType,
+		"channel":    config.Heartbeat.Channel,
+		"trigger":    "heartbeat",
 	}
 
 	baseURL := globalConfig.MYAAWBaseURL

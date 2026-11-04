@@ -67,6 +67,12 @@ func (r *BotServiceImpl) runConversation(
 	cfg := agent.DefaultRunConfig(user.Model)
 	cfg.ContextMaxTokens = config.AgentContextMaxTokens
 
+	// Tools that schedule work (cron) or reference the current chat need the
+	// session identity. The system prompt is static now, so it cannot be parsed
+	// for this any more; carry it explicitly.
+	ctxTools := agent.ToolsContextFor(msg)
+	cfg.ToolsContext = &ctxTools
+
 	// Persist the transcript while the turn runs so a crash, restart, or kill
 	// cannot lose the user message and the tool results already produced. The
 	// heartbeat trigger is excluded because HEARTBEAT_OK turns must not enter the

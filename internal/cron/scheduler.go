@@ -211,10 +211,13 @@ func (s *Scheduler) executeJob(job Job) {
 
 	// Construct HeartbeatRequest
 	payload := map[string]interface{}{
-		"prompt":  job.Payload.Content,
-		"to":      job.Delivery.To,
-		"channel": job.Delivery.Channel,
-		"trigger": "cron",
+		"prompt":     job.Payload.Content,
+		"to":         job.Delivery.To,
+		"thread_id":  job.Delivery.ThreadID,
+		"session_id": job.Delivery.SessionID,
+		"chat_type":  job.Delivery.ChatType,
+		"channel":    job.Delivery.Channel,
+		"trigger":    "cron",
 	}
 
 	resp, err := client.R().
