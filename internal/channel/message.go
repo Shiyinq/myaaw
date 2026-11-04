@@ -6,11 +6,16 @@ import (
 )
 
 type IncomingMessage struct {
-	UserID     int      // unified user identifier
-	SenderName string   // optional display name for new users (e.g. "a2a:alice")
-	Text       string   // text content (or transcribed voice)
-	Images     []string // base64 encoded images
-	Voice      []byte   // raw audio bytes
+	UserID     int    // unified user identifier
+	SenderName string // optional display name for new users (e.g. "a2a:alice")
+	// SenderID/SenderUsername identify the human behind a group message. They
+	// are only meaningful when Scope is set; adapters for group-capable channels
+	// fill them from the platform payload.
+	SenderID       string
+	SenderUsername string
+	Text           string   // text content (or transcribed voice)
+	Images         []string // base64 encoded images
+	Voice          []byte   // raw audio bytes
 	// Files are user-uploaded documents. They are persisted to disk and the
 	// model receives their paths rather than the raw bytes.
 	Files          []FileUpload
@@ -19,6 +24,16 @@ type IncomingMessage struct {
 	RawMeta        any    // channel-specific metadata (e.g. chat ID, message ID)
 	TriggerType    string // "cron", "heartbeat", or empty
 	ConversationID string // specific conversation/session ID (optional)
+	// Scope groups conversations by chat target (for example a Telegram forum
+	// topic). Empty keeps the legacy per-user conversation behavior.
+	Scope string
+	// ChatName/TopicName are display names for the scope (group name and forum
+	// topic). They are best-effort: a channel may know only one of them.
+	ChatName  string
+	TopicName string
+	// IsForum reports that the chat has named sub-topics and that the chat-level
+	// scope represents the default topic (Telegram "General").
+	IsForum bool
 	// RewindUserOffset rewinds the stored transcript before this turn: 0 keeps the
 	// transcript up to the last user message (regenerate), N keeps it up to the
 	// user message N turns earlier (edit). Nil appends a normal user message.

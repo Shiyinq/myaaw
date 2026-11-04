@@ -44,6 +44,14 @@ func (h *QueueHandlerImpl) HandleTelegramChat(c fiber.Ctx) error {
 		return c.Status(fiber.StatusOK).JSON(bson.M{"ok": true})
 	}
 
+	// Record group/topic names before the content filter drops service messages.
+	telegram.RecordScopeNames(rawPayload)
+
+	// Service messages and membership updates carry no content for the agent.
+	if !telegram.HasChatContent(rawPayload) {
+		return c.Status(fiber.StatusOK).JSON(bson.M{"ok": true})
+	}
+
 	envelope := &channel.QueueEnvelope{
 		Channel: "telegram",
 		Payload: rawPayload,

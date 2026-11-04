@@ -21,6 +21,15 @@ import (
 func BotRouter(router fiber.Router) {
 	userRepo := repository.NewUserRepository(config.DB)
 	convRepo := repository.NewConversationRepository(config.DB)
+
+	// Chat display names (group/topic) are learned from Telegram updates that
+	// never reach the agent; the channel layer hands them to this sink.
+	telegram.SetScopeNameSink(func(names telegram.ScopeNames) {
+		if err := convRepo.UpsertScopeNames(names.Scope, names.ChatName, names.TopicName, names.IsForum); err != nil {
+			log.Printf("Failed to store chat scope names for %s: %v", names.Scope, err)
+		}
+	})
+
 	serv := service.NewBotService(userRepo, convRepo)
 
 	registry := channel.NewRegistry()

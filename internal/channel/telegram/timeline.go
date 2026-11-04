@@ -27,14 +27,14 @@ const (
 // telegramTransport isolates Telegram API calls so the timeline state machine
 // can be tested without network access.
 type telegramTransport interface {
-	Send(chatID, replyTo int, text, parseMode string) (int, error)
-	Edit(chatID, messageID int, text, parseMode string) error
+	Send(chatID, threadID, replyTo int, text, parseMode string) (int, error)
+	Edit(chatID, threadID, messageID int, text, parseMode string) error
 }
 
 type telegramAPI struct{}
 
-func (telegramAPI) Send(chatID, replyTo int, text, parseMode string) (int, error) {
-	res, err := SendTelegramMessage(chatID, replyTo, text, parseMode)
+func (telegramAPI) Send(chatID, threadID, replyTo int, text, parseMode string) (int, error) {
+	res, err := SendTelegramMessage(chatID, threadID, replyTo, text, parseMode)
 	if err != nil {
 		return 0, err
 	}
@@ -48,8 +48,8 @@ func (telegramAPI) Send(chatID, replyTo int, text, parseMode string) (int, error
 	return res.Result.MessageId, nil
 }
 
-func (telegramAPI) Edit(chatID, messageID int, text, parseMode string) error {
-	res, err := EditTelegramMessage(chatID, 0, messageID, text, parseMode)
+func (telegramAPI) Edit(chatID, threadID, messageID int, text, parseMode string) error {
+	res, err := EditTelegramMessage(chatID, threadID, 0, messageID, text, parseMode)
 	if err != nil {
 		return err
 	}
@@ -86,6 +86,7 @@ type telegramTimelineItem struct {
 type telegramTimeline struct {
 	transport telegramTransport
 	chatID    int
+	threadID  int
 	replyTo   int
 
 	placeholderID      int
@@ -108,10 +109,11 @@ type telegramTimeline struct {
 	now           func() time.Time
 }
 
-func newTelegramTimeline(transport telegramTransport, chatID, replyTo, placeholderID int) *telegramTimeline {
+func newTelegramTimeline(transport telegramTransport, chatID, threadID, replyTo, placeholderID int) *telegramTimeline {
 	return &telegramTimeline{
 		transport:     transport,
 		chatID:        chatID,
+		threadID:      threadID,
 		replyTo:       replyTo,
 		placeholderID: placeholderID,
 		sentAny:       placeholderID != 0,
@@ -379,7 +381,7 @@ func (tl *telegramTimeline) sendRaw(content, mode string) int {
 	if !tl.placeholderClaimed && tl.placeholderID != 0 {
 		tl.placeholderClaimed = true
 		tl.sentAny = true
-		if err := tl.transport.Edit(tl.chatID, tl.placeholderID, content, mode); err != nil {
+		if err := tl.transport.Edit(tl.chatID, tl.threadID, tl.placeholderID, content, mode); err != nil {
 			log.Printf("telegram timeline: failed to claim placeholder: %v", err)
 			tl.recordErr(err)
 		}
@@ -391,7 +393,7 @@ func (tl *telegramTimeline) sendRaw(content, mode string) int {
 		replyTo = tl.replyTo
 		tl.sentAny = true
 	}
-	messageID, err := tl.transport.Send(tl.chatID, replyTo, content, mode)
+	messageID, err := tl.transport.Send(tl.chatID, tl.threadID, replyTo, content, mode)
 	if err != nil {
 		log.Printf("telegram timeline: failed to send bubble: %v", err)
 		tl.recordErr(err)
@@ -418,7 +420,7 @@ func (tl *telegramTimeline) editRaw(item *telegramTimelineItem, content, mode st
 		now.Sub(item.lastEdit) < tl.editInterval {
 		return
 	}
-	if err := tl.transport.Edit(tl.chatID, item.MessageID, content, mode); err != nil {
+	if err := tl.transport.Edit(tl.chatID, tl.threadID, item.MessageID, content, mode); err != nil {
 		log.Printf("telegram timeline: failed to edit bubble: %v", err)
 		tl.recordErr(err)
 		return

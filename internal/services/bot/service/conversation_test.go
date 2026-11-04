@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,6 +59,28 @@ func (f *fakeConversationRepo) CreateConversationWithId(userId int, id, title st
 	return conversation, nil
 }
 
+func (f *fakeConversationRepo) CreateConversationInScope(userId int, scope, title string) (*model.Conversation, error) {
+	if scope == "" {
+		return f.CreateConversation(userId, title)
+	}
+	// Rotate the scope: only one conversation per scope stays active.
+	for _, conv := range f.conversations {
+		if conv.Scope == scope {
+			conv.Active = false
+		}
+	}
+	conversation := &model.Conversation{
+		Id:       fmt.Sprintf("generated-%d", len(f.conversations)+1),
+		UserId:   userId,
+		Scope:    scope,
+		Title:    title,
+		Messages: []provider.Message{},
+		Active:   true,
+	}
+	f.conversations[conversation.Id] = conversation
+	return conversation, nil
+}
+
 func (f *fakeConversationRepo) UpdateConversationById(id string, messages []provider.Message, _ string) error {
 	f.updates = append(f.updates, conversationUpdate{id: id, messages: messages})
 	return nil
@@ -70,6 +93,20 @@ func (f *fakeConversationRepo) DeleteConversationById(string) error { return nil
 func (f *fakeConversationRepo) GetActiveConversationByUserId(int) (*model.Conversation, error) {
 	return nil, nil
 }
+
+func (f *fakeConversationRepo) GetActiveConversationByScope(userId int, scope string) (*model.Conversation, error) {
+	if scope == "" {
+		return f.GetActiveConversationByUserId(userId)
+	}
+	for _, conv := range f.conversations {
+		if conv.Scope == scope && conv.Active {
+			return conv, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeConversationRepo) UpsertScopeNames(string, string, string, bool) error { return nil }
 
 func TestBuildConversationMessagesCreatesA2AContext(t *testing.T) {
 	home := t.TempDir()
@@ -151,6 +188,41 @@ func TestBuildConversationMessagesReusesA2AContext(t *testing.T) {
 	}
 	if len(messages) != 4 {
 		t.Fatalf("messages = %d, want 4 (system + 2 history + new)", len(messages))
+	}
+}
+
+func TestBuildUserMessageTagsGroupSenders(t *testing.T) {
+	svc := &BotServiceImpl{llmProvider: provider.NewOpenAIProvider("http://127.0.0.1:1", "sk-test", "test-model")}
+
+	group := svc.buildUserMessage(&channel.IncomingMessage{
+		UserID:         123456789,
+		Scope:          "tg:-1001111:77",
+		SenderID:       "123456789",
+		SenderName:     "Alice",
+		SenderUsername: "Alice",
+		Text:           "hello",
+	}, nil)
+	if group.SenderID != "123456789" || group.SenderName != "Alice" || group.SenderUsername != "Alice" {
+		t.Fatalf("group sender = %+v", group)
+	}
+
+	// Direct chats keep the transcript clean: no sender metadata.
+	dm := svc.buildUserMessage(&channel.IncomingMessage{UserID: 123456789, Text: "hello"}, nil)
+	if dm.SenderID != "" || dm.SenderName != "" || dm.SenderUsername != "" {
+		t.Fatalf("dm sender = %+v", dm)
+	}
+}
+
+func TestBuildUserMessageFallsBackToUserID(t *testing.T) {
+	svc := &BotServiceImpl{llmProvider: provider.NewOpenAIProvider("http://127.0.0.1:1", "sk-test", "test-model")}
+
+	msg := svc.buildUserMessage(&channel.IncomingMessage{
+		UserID: 42,
+		Scope:  "tg:-1001111",
+		Text:   "hi",
+	}, nil)
+	if msg.SenderID != "42" {
+		t.Fatalf("sender id = %q, want the user id fallback", msg.SenderID)
 	}
 }
 
@@ -359,5 +431,131 @@ func TestBuildConversationMessagesRewindsBeforeRunning(t *testing.T) {
 	last := messages[len(messages)-1]
 	if last.Role != "user" || provider.MessageText(last) != "third" || last.CreatedAt == nil {
 		t.Fatalf("last = %+v", last)
+	}
+}
+
+func TestBuildConversationMessagesSharesScopeAcrossUsers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	repo := newFakeConversationRepo()
+	repo.conversations["topic-session"] = &model.Conversation{
+		Id:     "topic-session",
+		UserId: 111,
+		Scope:  "tg:-100:77",
+		Active: true,
+		Messages: []provider.Message{
+			{Role: "user", Content: "hello from 111"},
+			{Role: "assistant", Content: "hi"},
+		},
+	}
+	service := &BotServiceImpl{conversationRepo: repo}
+	msg := &channel.IncomingMessage{
+		UserID:  222,
+		Text:    "hello from 222",
+		Channel: "telegram",
+		Scope:   "tg:-100:77",
+	}
+
+	messages, err := service.buildConversationMessages(&model.User{UserId: 222}, msg)
+	if err != nil {
+		t.Fatalf("buildConversationMessages: %v", err)
+	}
+	if msg.ConversationID != "topic-session" {
+		t.Fatalf("conversation id = %q, want the shared topic session", msg.ConversationID)
+	}
+	if len(messages) != 4 {
+		t.Fatalf("messages = %d, want 4 (system + shared history + new)", len(messages))
+	}
+}
+
+func TestBuildConversationMessagesRejectsOtherScope(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	repo := newFakeConversationRepo()
+	repo.conversations["topic-session"] = &model.Conversation{
+		Id:     "topic-session",
+		UserId: 111,
+		Scope:  "tg:-100:77",
+		Active: true,
+	}
+	service := &BotServiceImpl{conversationRepo: repo}
+	msg := &channel.IncomingMessage{
+		UserID:         222,
+		Text:           "sneaky",
+		Channel:        "telegram",
+		Scope:          "tg:-100:78",
+		ConversationID: "topic-session",
+	}
+
+	if _, err := service.buildConversationMessages(&model.User{UserId: 222}, msg); !errors.Is(err, ErrConversationForbidden) {
+		t.Fatalf("err = %v, want ErrConversationForbidden", err)
+	}
+}
+
+func TestNewCommandRotatesOnlyItsScope(t *testing.T) {
+	repo := newFakeConversationRepo()
+	repo.conversations["photo"] = &model.Conversation{
+		Id:     "photo",
+		UserId: 1,
+		Scope:  "tg:-100:77",
+		Active: true,
+	}
+	repo.conversations["notif"] = &model.Conversation{
+		Id:     "notif",
+		UserId: 1,
+		Scope:  "tg:-100:78",
+		Active: true,
+	}
+	repo.conversations["dm"] = &model.Conversation{
+		Id:     "dm",
+		UserId: 1,
+		Active: true,
+	}
+	service := &BotServiceImpl{conversationRepo: repo}
+
+	isCommand, response, err := service.command(&model.User{UserId: 1}, &channel.IncomingMessage{
+		UserID: 1,
+		Text:   "/new",
+		Scope:  "tg:-100:77",
+	})
+	if err != nil || !isCommand {
+		t.Fatalf("command = %v, %v", isCommand, err)
+	}
+	if response == "" {
+		t.Fatal("expected a confirmation message")
+	}
+	if repo.conversations["photo"].Active {
+		t.Fatal("the topic session should have been rotated")
+	}
+	if !repo.conversations["notif"].Active || !repo.conversations["dm"].Active {
+		t.Fatal("/new in one topic must not touch other scopes")
+	}
+}
+
+func TestNewCommandWithoutScopeKeepsPerUserBehavior(t *testing.T) {
+	repo := newFakeConversationRepo()
+	service := &BotServiceImpl{conversationRepo: repo}
+
+	isCommand, response, err := service.command(&model.User{UserId: 5}, &channel.IncomingMessage{
+		UserID: 5,
+		Text:   "/new",
+	})
+	if err != nil || !isCommand {
+		t.Fatalf("command = %v, %v", isCommand, err)
+	}
+	if response == "" {
+		t.Fatal("expected a confirmation message")
+	}
+	if len(repo.conversations) != 1 {
+		t.Fatalf("conversations = %d, want 1", len(repo.conversations))
+	}
+	for _, conv := range repo.conversations {
+		if conv.Scope != "" {
+			t.Fatalf("DM session should be unscoped: %+v", conv)
+		}
 	}
 }

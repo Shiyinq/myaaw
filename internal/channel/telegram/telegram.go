@@ -38,16 +38,17 @@ func telegramFileURL(filePath string) string {
 
 // telegram format message
 type UserMessage struct {
-	Chat           Chat            `json:"chat"`
-	Date           int64           `json:"date"`
-	From           From            `json:"from"`
-	MessageId      int             `json:"message_id"`
-	ReplyToMessage *ReplyToMessage `json:"reply_to_message,omitempty"`
-	Text           string          `json:"text,omitempty"`
-	Photo          []Photo         `json:"photo,omitempty"`
-	Document       *Document       `json:"document,omitempty"`
-	Caption        string          `json:"caption,omitempty"`
-	Voice          *Voice          `json:"voice,omitempty"`
+	Chat            Chat            `json:"chat"`
+	Date            int64           `json:"date"`
+	From            From            `json:"from"`
+	MessageId       int             `json:"message_id"`
+	MessageThreadID int             `json:"message_thread_id,omitempty"`
+	ReplyToMessage  *ReplyToMessage `json:"reply_to_message,omitempty"`
+	Text            string          `json:"text,omitempty"`
+	Photo           []Photo         `json:"photo,omitempty"`
+	Document        *Document       `json:"document,omitempty"`
+	Caption         string          `json:"caption,omitempty"`
+	Voice           *Voice          `json:"voice,omitempty"`
 }
 
 type ReplyToMessage struct {
@@ -99,8 +100,10 @@ type Voice struct {
 type Chat struct {
 	FirstName string `json:"first_name"`
 	Id        int    `json:"id"`
+	Title     string `json:"title"`
 	Type      string `json:"type"`
 	Username  string `json:"username"`
+	IsForum   bool   `json:"is_forum,omitempty"`
 }
 
 type From struct {
@@ -124,6 +127,7 @@ type TelegramSendMessage struct {
 	Text                  string                      `json:"text"`
 	ParseMode             string                      `json:"parse_mode,omitempty"`
 	ReplyToMessageID      int                         `json:"reply_to_message_id"`
+	MessageThreadID       int                         `json:"message_thread_id,omitempty"`
 	ChatID                int                         `json:"chat_id"`
 	DisableWebPagePreview bool                        `json:"disable_web_page_preview,omitempty"`
 	LinkPreviewOptions    *TelegramLinkPreviewOptions `json:"link_preview_options,omitempty"`
@@ -135,6 +139,7 @@ type TelegramEditMessage struct {
 	ParseMode             string                      `json:"parse_mode,omitempty"`
 	MessageID             int                         `json:"message_id"`
 	ReplyToMessageID      int                         `json:"reply_to_message_id"`
+	MessageThreadID       int                         `json:"message_thread_id,omitempty"`
 	ChatID                int                         `json:"chat_id"`
 	DisableWebPagePreview bool                        `json:"disable_web_page_preview,omitempty"`
 	LinkPreviewOptions    *TelegramLinkPreviewOptions `json:"link_preview_options,omitempty"`
@@ -164,15 +169,21 @@ type TelegramFileResponse struct {
 
 // sendTelegramTypingAction sends the "typing" indicator. It is best-effort: a
 // failure here must never take down the process or block the message itself.
-func sendTelegramTypingAction(chatId int) error {
+// threadID targets a forum topic; zero means the chat's default thread.
+func sendTelegramTypingAction(chatId, threadId int) error {
 	client := resty.New().SetTimeout(telegramTypingTimeout)
+
+	body := map[string]interface{}{
+		"chat_id": chatId,
+		"action":  "typing",
+	}
+	if threadId != 0 {
+		body["message_thread_id"] = threadId
+	}
 
 	_, err := client.R().
 		SetHeader("Content-Type", "application/json").
-		SetBody(map[string]interface{}{
-			"chat_id": chatId,
-			"action":  "typing",
-		}).
+		SetBody(body).
 		Post(telegramAPIURL("sendChatAction"))
 	if err != nil {
 		return fmt.Errorf("send typing indicator: %w", err)
@@ -181,8 +192,8 @@ func sendTelegramTypingAction(chatId int) error {
 }
 
 // sendTelegramPhoto uploads one attachment as a real image message. Telegram's
-// sendPhoto expects multipart/form-data.
-func sendTelegramPhoto(chatID, replyTo int, att channel.Attachment) error {
+// sendPhoto expects multipart/form-data. threadID targets a forum topic.
+func sendTelegramPhoto(chatID, threadID, replyTo int, att channel.Attachment) error {
 	if len(att.Data) == 0 {
 		return nil
 	}
@@ -193,6 +204,9 @@ func sendTelegramPhoto(chatID, replyTo int, att channel.Attachment) error {
 	form := map[string]string{"chat_id": strconv.Itoa(chatID)}
 	if replyTo != 0 {
 		form["reply_to_message_id"] = strconv.Itoa(replyTo)
+	}
+	if threadID != 0 {
+		form["message_thread_id"] = strconv.Itoa(threadID)
 	}
 
 	client := resty.New().SetTimeout(telegramFileTimeout)
@@ -209,10 +223,11 @@ func sendTelegramPhoto(chatID, replyTo int, att channel.Attachment) error {
 	return nil
 }
 
-func telegramSendBody(chatID, replyID int, text, parseMode string) *TelegramSendMessage {
+func telegramSendBody(chatID, threadID, replyID int, text, parseMode string) *TelegramSendMessage {
 	body := &TelegramSendMessage{
 		Text:                  text,
 		ChatID:                chatID,
+		MessageThreadID:       threadID,
 		DisableWebPagePreview: true,
 		LinkPreviewOptions:    &TelegramLinkPreviewOptions{IsDisabled: true},
 	}
@@ -225,11 +240,12 @@ func telegramSendBody(chatID, replyID int, text, parseMode string) *TelegramSend
 	return body
 }
 
-func telegramEditBody(chatID, replyID, messageID int, text, parseMode string) *TelegramEditMessage {
+func telegramEditBody(chatID, threadID, replyID, messageID int, text, parseMode string) *TelegramEditMessage {
 	body := &TelegramEditMessage{
 		Text:                  text,
 		MessageID:             messageID,
 		ReplyToMessageID:      replyID,
+		MessageThreadID:       threadID,
 		ChatID:                chatID,
 		DisableWebPagePreview: true,
 		LinkPreviewOptions:    &TelegramLinkPreviewOptions{IsDisabled: true},
@@ -240,17 +256,17 @@ func telegramEditBody(chatID, replyID, messageID int, text, parseMode string) *T
 	return body
 }
 
-func SendTelegramMessage(chatId int, replyId int, text string, parseMode string) (*TelegramSendMessageStatus, error) {
-	return SendTelegramRequest("sendMessage", telegramSendBody(chatId, replyId, text, parseMode), chatId)
+func SendTelegramMessage(chatId, threadId, replyId int, text string, parseMode string) (*TelegramSendMessageStatus, error) {
+	return SendTelegramRequest("sendMessage", telegramSendBody(chatId, threadId, replyId, text, parseMode), chatId, threadId)
 }
 
-func EditTelegramMessage(chatId int, replyId int, editMessageId int, text string, parseMode string) (*TelegramSendMessageStatus, error) {
-	return SendTelegramRequest("editMessageText", telegramEditBody(chatId, replyId, editMessageId, text, parseMode), chatId)
+func EditTelegramMessage(chatId, threadId, replyId int, editMessageId int, text string, parseMode string) (*TelegramSendMessageStatus, error) {
+	return SendTelegramRequest("editMessageText", telegramEditBody(chatId, threadId, replyId, editMessageId, text, parseMode), chatId, threadId)
 }
 
-func SendTelegramRequest(method string, message interface{}, chatId int) (*TelegramSendMessageStatus, error) {
+func SendTelegramRequest(method string, message interface{}, chatId, threadId int) (*TelegramSendMessageStatus, error) {
 	if method != "editMessageText" {
-		if err := sendTelegramTypingAction(chatId); err != nil {
+		if err := sendTelegramTypingAction(chatId, threadId); err != nil {
 			log.Printf("telegram: %v", err)
 		}
 	}

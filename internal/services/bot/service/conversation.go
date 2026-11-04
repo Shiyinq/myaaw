@@ -16,6 +16,7 @@ import (
 	"myaaw/internal/obs/agenttrace"
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
+	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -239,6 +240,19 @@ func (r *BotServiceImpl) runConversation(
 	return out, nil
 }
 
+// conversationAccessible reports whether a message may continue a conversation.
+// Scoped conversations (for example a Telegram topic) are shared by everyone in
+// that scope; unscoped conversations stay private to their owner.
+func conversationAccessible(conv *model.Conversation, user *model.User, msg *channel.IncomingMessage) bool {
+	if conv == nil {
+		return false
+	}
+	if msg.Scope != "" && conv.Scope != "" {
+		return conv.Scope == msg.Scope
+	}
+	return conv.UserId == user.UserId
+}
+
 func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channel.IncomingMessage) ([]provider.Message, error) {
 	userSystem := agent.NewSystemPromptBuilder(int64(user.UserId), msg.Channel).Build()
 	userSystem += skills.GetSkillsInstruction()
@@ -271,13 +285,13 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 			conv = created
 		case found == nil:
 			return nil, ErrConversationNotFound
-		case found.UserId != user.UserId:
+		case !conversationAccessible(found, user, msg):
 			return nil, ErrConversationForbidden
 		default:
 			conv = found
 		}
 	default:
-		active, err := r.conversationRepo.GetActiveConversationByUserId(user.UserId)
+		active, err := r.conversationRepo.GetActiveConversationByScope(user.UserId, msg.Scope)
 		if err != nil {
 			return nil, err
 		}
@@ -289,12 +303,20 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		convMessages = agent.MigrateLegacyTranscript(conv.Messages)
 		msg.ConversationID = conv.Id
 	} else {
-		created, err := r.conversationRepo.CreateConversation(user.UserId, "New Chat")
+		created, err := r.conversationRepo.CreateConversationInScope(user.UserId, msg.Scope, "New Chat")
 		if err != nil {
 			return nil, err
 		}
 		convMessages = agent.MigrateLegacyTranscript(created.Messages)
 		msg.ConversationID = created.Id
+	}
+
+	// Keep the display name of the chat target fresh. Best-effort: a failed name
+	// write must never break the turn.
+	if msg.Scope != "" && strings.TrimSpace(msg.ChatName) != "" {
+		if err := r.conversationRepo.UpsertScopeNames(msg.Scope, msg.ChatName, msg.TopicName, msg.IsForum); err != nil {
+			log.Printf("Failed to store chat scope names for %s: %v", msg.Scope, err)
+		}
 	}
 
 	// An edit or a regeneration rewrites the stored transcript instead of
@@ -446,9 +468,21 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage, uploads 
 		text = builder.String()
 	}
 
+	// Sender metadata is display-only and exists only for shared chats (groups,
+	// forum topics). CLI, API, and DM messages stay exactly as before.
+	message := provider.Message{Role: role, Version: 2}
+	if msg.Scope != "" {
+		message.SenderID = strings.TrimSpace(msg.SenderID)
+		if message.SenderID == "" {
+			message.SenderID = strconv.Itoa(msg.UserID)
+		}
+		message.SenderName = strings.TrimSpace(msg.SenderName)
+		message.SenderUsername = strings.TrimSpace(msg.SenderUsername)
+	}
+
 	if msg.ReplyTo != "" {
-		text = text + "\n\ncontex:\n" + msg.ReplyTo
-		return provider.Message{Role: role, Content: text, Version: 2}
+		message.Content = text + "\n\ncontex:\n" + msg.ReplyTo
+		return message
 	}
 
 	if len(msg.Images) > 0 {
@@ -467,13 +501,17 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage, uploads 
 					ImageURL: &provider.ImageInfo{URL: "data:image/jpeg;base64," + img},
 				})
 			}
-			return provider.Message{Role: role, Content: contentItems, Version: 2}
+			message.Content = contentItems
+			return message
 		}
 
-		return provider.Message{Role: role, Content: text, Images: msg.Images, Version: 2}
+		message.Content = text
+		message.Images = msg.Images
+		return message
 	}
 
-	return provider.Message{Role: role, Content: text, Version: 2}
+	message.Content = text
+	return message
 }
 
 // conversationCheckpointInterval throttles transcript checkpoints so a long
@@ -492,7 +530,7 @@ func (r *BotServiceImpl) saveConversation(user *model.User, msg *channel.Incomin
 		conv, err = r.conversationRepo.GetConversationById(msg.ConversationID)
 	}
 	if conv == nil {
-		conv, err = r.conversationRepo.GetActiveConversationByUserId(msg.UserID)
+		conv, err = r.conversationRepo.GetActiveConversationByScope(msg.UserID, msg.Scope)
 	}
 	if err != nil && conv == nil {
 		return err

@@ -146,6 +146,26 @@ func TestMessageQueueKeyGroupsByUser(t *testing.T) {
 			want: "user:123",
 		},
 		{
+			name: "telegram dm keeps the per-user key",
+			body: `{"channel":"telegram","payload":{"update_id":1,"message":{"from":{"id":123},"chat":{"id":123,"type":"private"}}}}`,
+			want: "user:123",
+		},
+		{
+			name: "telegram group uses the chat scope",
+			body: `{"channel":"telegram","payload":{"update_id":1,"message":{"from":{"id":123},"chat":{"id":-1001111,"type":"supergroup"}}}}`,
+			want: "scope:tg:-1001111",
+		},
+		{
+			name: "telegram general topic uses the chat scope",
+			body: `{"channel":"telegram","payload":{"update_id":1,"message":{"message_thread_id":1,"from":{"id":123},"chat":{"id":-1001111,"type":"supergroup"}}}}`,
+			want: "scope:tg:-1001111",
+		},
+		{
+			name: "telegram forum topic uses its own scope",
+			body: `{"channel":"telegram","payload":{"update_id":1,"message":{"message_thread_id":77,"from":{"id":123},"chat":{"id":-1001111,"type":"supergroup"}}}}`,
+			want: "scope:tg:-1001111:77",
+		},
+		{
 			name: "discord",
 			body: `{"channel":"discord","payload":{"message":{"from":{"id":456},"chat":{"id":"chan"}},"discord_author":{"id":"456"}}}`,
 			want: "user:456",

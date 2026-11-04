@@ -33,10 +33,16 @@ type Message struct {
 	Images  []string    `json:"images,omitempty" bson:"images,omitempty"`
 	// ID is the stable transcript-entry id, used to address the files a user
 	// uploaded with that message.
-	ID         string     `json:"id,omitempty" bson:"id,omitempty"`
-	Uploads    []Upload   `json:"uploads,omitempty" bson:"uploads,omitempty"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty" bson:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty" bson:"tool_call_id,omitempty"`
+	ID string `json:"id,omitempty" bson:"id,omitempty"`
+	// Sender metadata for messages that arrive from a shared chat (a group or a
+	// forum topic). These are display fields: they are never sent to providers,
+	// unlike Name.
+	SenderID       string     `json:"sender_id,omitempty" bson:"sender_id,omitempty"`
+	SenderName     string     `json:"sender_name,omitempty" bson:"sender_name,omitempty"`
+	SenderUsername string     `json:"sender_username,omitempty" bson:"sender_username,omitempty"`
+	Uploads        []Upload   `json:"uploads,omitempty" bson:"uploads,omitempty"`
+	ToolCalls      []ToolCall `json:"tool_calls,omitempty" bson:"tool_calls,omitempty"`
+	ToolCallID     string     `json:"tool_call_id,omitempty" bson:"tool_call_id,omitempty"`
 	// ReAct Trace Fields (UI metadata; not sent to providers)
 	Thought     string `json:"thought,omitempty" bson:"thought,omitempty"`
 	Action      string `json:"action,omitempty" bson:"action,omitempty"`

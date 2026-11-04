@@ -140,7 +140,7 @@ func (s *BotHandlerImpl) approvalContext(ctx context.Context, adapter channel.Ad
 	switch msg.Channel {
 	case "telegram":
 		if meta, ok := msg.RawMeta.(telegram.TelegramMeta); ok {
-			return approvals.WithRequester(ctx, telegram.NewApprovalRequester(meta.ChatID, meta.MessageID))
+			return approvals.WithRequester(ctx, telegram.NewApprovalRequester(meta.ChatID, meta.ThreadID, meta.MessageID))
 		}
 	case "discord":
 		if meta, ok := msg.RawMeta.(discord.DiscordMeta); ok {

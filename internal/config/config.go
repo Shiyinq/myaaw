@@ -1006,6 +1006,7 @@ func initSchema(db *sql.DB) {
 		`CREATE TABLE IF NOT EXISTS conversations (
 			id TEXT PRIMARY KEY,
 			user_id INTEGER,
+			scope TEXT NOT NULL DEFAULT '',
 			title TEXT,
 			messages TEXT,
 			active BOOLEAN,

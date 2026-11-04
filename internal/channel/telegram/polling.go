@@ -206,6 +206,14 @@ func processUpdate(payload json.RawMessage, q service.QueueService) {
 		return
 	}
 
+	// Record group/topic names before the content filter drops service messages.
+	RecordScopeNames(payload)
+
+	// Service messages and membership updates carry no content for the agent.
+	if !HasChatContent(payload) {
+		return
+	}
+
 	// Send the FULL update object to mirror Webhook behavior
 	envelope := channel.QueueEnvelope{
 		Channel: "telegram",

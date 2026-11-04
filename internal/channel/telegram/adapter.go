@@ -7,12 +7,15 @@ import (
 	"myaaw/internal/channel"
 	"myaaw/internal/provider"
 	"myaaw/internal/utils"
+	"strconv"
+	"strings"
 	"time"
 )
 
 type TelegramMeta struct {
 	ChatID    int
 	MessageID int
+	ThreadID  int
 }
 
 type TelegramAdapter struct {
@@ -45,12 +48,19 @@ func (t *TelegramAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incom
 	}
 
 	msg := &channel.IncomingMessage{
-		UserID:  chat.Message.From.Id,
-		Channel: "telegram",
+		UserID:         chat.Message.From.Id,
+		SenderID:       strconv.Itoa(chat.Message.From.Id),
+		SenderName:     strings.TrimSpace(chat.Message.From.FirstName),
+		SenderUsername: strings.TrimSpace(chat.Message.From.Username),
+		Channel:        "telegram",
+		ChatName:       strings.TrimSpace(chat.Message.Chat.Title),
+		IsForum:        chat.Message.Chat.IsForum,
 		RawMeta: TelegramMeta{
 			ChatID:    chat.Message.Chat.Id,
 			MessageID: chat.Message.MessageId,
+			ThreadID:  chat.Message.MessageThreadID,
 		},
+		Scope: telegramScope(chat.Message.Chat, chat.Message.MessageThreadID),
 	}
 
 	if chat.Message.Voice != nil {
@@ -82,6 +92,7 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 		timeline := &telegramTimeline{
 			transport: t.transportOrAPI(),
 			chatID:    meta.ChatID,
+			threadID:  meta.ThreadID,
 			replyTo:   meta.MessageID,
 			tools:     map[string]*telegramTimelineItem{},
 			now:       time.Now,
@@ -99,7 +110,7 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 	}
 
 	for _, att := range out.Attachments {
-		if err := sendTelegramPhoto(meta.ChatID, meta.MessageID, att); err != nil && sendErr == nil {
+		if err := sendTelegramPhoto(meta.ChatID, meta.ThreadID, meta.MessageID, att); err != nil && sendErr == nil {
 			sendErr = err
 		}
 	}
@@ -111,20 +122,20 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 	transport := t.transportOrAPI()
 
 	placeholderID := 0
-	if sendID, err := transport.Send(meta.ChatID, meta.MessageID, indicator("typing"), "markdown"); err != nil {
+	if sendID, err := transport.Send(meta.ChatID, meta.ThreadID, meta.MessageID, indicator("typing"), "markdown"); err != nil {
 		log.Println(err)
 	} else {
 		placeholderID = sendID
 	}
 
-	timeline := newTelegramTimeline(transport, meta.ChatID, meta.MessageID, placeholderID)
+	timeline := newTelegramTimeline(transport, meta.ChatID, meta.ThreadID, meta.MessageID, placeholderID)
 	err := streamFn(timeline.handleChunk)
 	timeline.finish()
 	if err != nil {
 		return nil, err
 	}
 	for _, att := range timeline.attachments {
-		if sendErr := sendTelegramPhoto(meta.ChatID, meta.MessageID, att); sendErr != nil {
+		if sendErr := sendTelegramPhoto(meta.ChatID, meta.ThreadID, meta.MessageID, att); sendErr != nil {
 			return nil, sendErr
 		}
 	}
@@ -139,7 +150,7 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 
 func (t *TelegramAdapter) SendError(msg *channel.IncomingMessage, errText string) error {
 	meta := msg.RawMeta.(TelegramMeta)
-	_, err := SendTelegramMessage(meta.ChatID, 0, errText, "markdown")
+	_, err := SendTelegramMessage(meta.ChatID, meta.ThreadID, 0, errText, "markdown")
 	return err
 }
 

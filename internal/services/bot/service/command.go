@@ -7,8 +7,16 @@ import (
 	"myaaw/internal/utils"
 )
 
+// CommandContext carries what a command needs: the user record, the incoming
+// message, and the conversation scope (empty for DM/CLI/API).
+type CommandContext struct {
+	User  *model.User
+	Msg   *channel.IncomingMessage
+	Scope string
+}
+
 type CommandFactory interface {
-	HandleCommand(user *model.User, args string) (bool, string, error)
+	HandleCommand(ctx CommandContext, args string) (bool, string, error)
 }
 
 type StartCommand struct {
@@ -19,7 +27,7 @@ func NewStartCommand(r *BotServiceImpl) CommandFactory {
 	return &StartCommand{r: r}
 }
 
-func (c *StartCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
+func (c *StartCommand) HandleCommand(ctx CommandContext, args string) (bool, string, error) {
 	return true, common.CommandStart(), nil
 }
 
@@ -31,7 +39,7 @@ func NewAboutCommand(r *BotServiceImpl) CommandFactory {
 	return &AboutCommand{r: r}
 }
 
-func (c *AboutCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
+func (c *AboutCommand) HandleCommand(ctx CommandContext, args string) (bool, string, error) {
 	return true, common.CommandAbout(), nil
 }
 
@@ -43,10 +51,15 @@ func NewNewCommand(r *BotServiceImpl) CommandFactory {
 	return &NewCommand{r: r}
 }
 
-func (c *NewCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
-	_, err := c.r.conversationRepo.CreateConversation(user.UserId, "")
+func (c *NewCommand) HandleCommand(ctx CommandContext, args string) (bool, string, error) {
+	// Scoped channels (Telegram topics) rotate the session for that scope only.
+	// An empty scope keeps the legacy per-user behavior.
+	_, err := c.r.conversationRepo.CreateConversationInScope(ctx.User.UserId, ctx.Scope, "")
 	if err != nil {
 		return true, common.CommandNewFailed(), nil
+	}
+	if ctx.Scope != "" {
+		return true, common.CommandNewTopic(), nil
 	}
 	return true, common.CommandNew(), nil
 }
@@ -59,8 +72,8 @@ func NewMeCommand(r *BotServiceImpl) CommandFactory {
 	return &MeCommand{r: r}
 }
 
-func (c *MeCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
-	return true, utils.CommandMe(user), nil
+func (c *MeCommand) HandleCommand(ctx CommandContext, args string) (bool, string, error) {
+	return true, utils.CommandMe(ctx.User), nil
 }
 
 type NotFoundCommand struct {
@@ -71,7 +84,7 @@ func NewNotFoundCommand(r *BotServiceImpl) CommandFactory {
 	return &NotFoundCommand{r: r}
 }
 
-func (c *NotFoundCommand) HandleCommand(user *model.User, args string) (bool, string, error) {
+func (c *NotFoundCommand) HandleCommand(ctx CommandContext, args string) (bool, string, error) {
 	return true, common.CommandNotFound(), nil
 }
 
@@ -82,23 +95,23 @@ type CommandExecutor struct {
 func NewCommandExecutor(r *BotServiceImpl) *CommandExecutor {
 	return &CommandExecutor{
 		commandMap: map[string]CommandFactory{
-			"start":  NewStartCommand(r),
-			"menu":   NewStartCommand(r),
-			"help":   NewStartCommand(r),
-			"about":  NewAboutCommand(r),
-			"new":    NewNewCommand(r),
+			"start": NewStartCommand(r),
+			"menu":  NewStartCommand(r),
+			"help":  NewStartCommand(r),
+			"about": NewAboutCommand(r),
+			"new":   NewNewCommand(r),
 
 			"me": NewMeCommand(r),
 		},
 	}
 }
 
-func (e *CommandExecutor) ExecuteCommand(command string, user *model.User, args string) (bool, string, error) {
+func (e *CommandExecutor) ExecuteCommand(command string, ctx CommandContext, args string) (bool, string, error) {
 	cmd, exists := e.commandMap[command]
 	if !exists {
 		cmd = NewNotFoundCommand(nil)
 	}
-	return cmd.HandleCommand(user, args)
+	return cmd.HandleCommand(ctx, args)
 }
 
 func (r *BotServiceImpl) command(user *model.User, msg *channel.IncomingMessage) (bool, string, error) {
@@ -108,5 +121,5 @@ func (r *BotServiceImpl) command(user *model.User, msg *channel.IncomingMessage)
 	}
 
 	executor := NewCommandExecutor(r)
-	return executor.ExecuteCommand(command, user, args)
+	return executor.ExecuteCommand(command, CommandContext{User: user, Msg: msg, Scope: msg.Scope}, args)
 }

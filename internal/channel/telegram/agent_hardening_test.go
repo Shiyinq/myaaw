@@ -48,7 +48,7 @@ func TestTypingActionFailureIsNotFatal(t *testing.T) {
 	t.Cleanup(func() { telegramAPIBaseURL = oldBase })
 
 	done := make(chan error, 1)
-	go func() { done <- sendTelegramTypingAction(1) }()
+	go func() { done <- sendTelegramTypingAction(1, 0) }()
 
 	select {
 	case err := <-done:
@@ -76,7 +76,7 @@ func TestSendRetriesServerErrors(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":7}}`))
 	})
 
-	res, err := SendTelegramMessage(1, 0, "hi", "")
+	res, err := SendTelegramMessage(1, 0, 0, "hi", "")
 	if err != nil {
 		t.Fatalf("SendTelegramMessage: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestSendRetriesRateLimit(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":9}}`))
 	})
 
-	if _, err := SendTelegramMessage(1, 0, "hi", ""); err != nil {
+	if _, err := SendTelegramMessage(1, 0, 0, "hi", ""); err != nil {
 		t.Fatalf("SendTelegramMessage: %v", err)
 	}
 	if got := sends.Load(); got != 2 {
@@ -124,7 +124,7 @@ func TestSendDoesNotRetryBadRequest(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ok":false,"description":"bad"}`))
 	})
 
-	if _, err := SendTelegramMessage(1, 0, "hi", ""); err == nil {
+	if _, err := SendTelegramMessage(1, 0, 0, "hi", ""); err == nil {
 		t.Fatal("expected a 400 to fail")
 	}
 	if got := sends.Load(); got != 1 {
@@ -153,7 +153,7 @@ func TestSendDoesNotRetryTransportErrors(t *testing.T) {
 		_ = conn.Close()
 	})
 
-	if _, err := SendTelegramMessage(1, 0, "hi", ""); err == nil {
+	if _, err := SendTelegramMessage(1, 0, 0, "hi", ""); err == nil {
 		t.Fatal("expected the dropped connection to fail")
 	}
 	if got := sends.Load(); got != 1 {
@@ -184,7 +184,7 @@ func TestEditRetriesTransportErrors(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":9}}`))
 	})
 
-	if _, err := EditTelegramMessage(1, 0, 9, "hi", ""); err != nil {
+	if _, err := EditTelegramMessage(1, 0, 0, 9, "hi", ""); err != nil {
 		t.Fatalf("EditTelegramMessage: %v", err)
 	}
 	if got := edits.Load(); got != 2 {

@@ -8,6 +8,7 @@ import (
 	"myaaw/internal/cron"
 	"myaaw/internal/heartbeat"
 	"myaaw/internal/services/queue/repository"
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,14 +111,20 @@ func consumeMessages() {
 	}
 }
 
-// messageQueueKey groups work by conversation owner so a user's messages are
-// handled in order. It mirrors the conversation lookup, which is keyed by user
-// ID alone, so one user never has two runs writing the same transcript.
+// messageQueueKey groups work by conversation target so messages that share a
+// session are handled in order. Direct chats keep the per-user key; group chats
+// (including forum topics) use the same scope as the conversation lookup, so a
+// user's DM and a group topic never serialize each other.
 func messageQueueKey(body []byte) string {
 	var envelope struct {
 		Channel string `json:"channel"`
 		Payload struct {
 			Message struct {
+				MessageThreadID json.RawMessage `json:"message_thread_id"`
+				Chat            struct {
+					ID   json.RawMessage `json:"id"`
+					Type string          `json:"type"`
+				} `json:"chat"`
 				From struct {
 					ID json.Number `json:"id"`
 				} `json:"from"`
@@ -131,6 +138,15 @@ func messageQueueKey(body []byte) string {
 		return "unparsed"
 	}
 
+	if envelope.Channel == "telegram" {
+		chatType := strings.ToLower(strings.TrimSpace(envelope.Payload.Message.Chat.Type))
+		if chatType != "" && chatType != "private" {
+			if key := telegramScopeKey(envelope.Payload.Message.Chat.ID, envelope.Payload.Message.MessageThreadID); key != "" {
+				return "scope:" + key
+			}
+		}
+	}
+
 	userID := strings.TrimSpace(envelope.Payload.Message.From.ID.String())
 	if userID == "" || userID == "0" {
 		userID = strings.TrimSpace(envelope.Payload.DiscordAuthor.ID)
@@ -140,4 +156,35 @@ func messageQueueKey(body []byte) string {
 		return "channel:" + envelope.Channel
 	}
 	return "user:" + userID
+}
+
+// telegramScopeKey mirrors the conversation scope: threads 0 and 1 are the
+// chat-level bucket (non-forum groups and the General topic).
+func telegramScopeKey(chatID, threadID json.RawMessage) string {
+	chat := rawIDString(chatID)
+	if chat == "" || chat == "0" {
+		return ""
+	}
+	thread, err := strconv.Atoi(rawIDString(threadID))
+	if err != nil || thread <= 1 {
+		return "tg:" + chat
+	}
+	return fmt.Sprintf("tg:%s:%d", chat, thread)
+}
+
+// rawIDString reads an ID that may be encoded as a JSON number or a string.
+// Discord uses string channel IDs, Telegram uses numbers.
+func rawIDString(raw json.RawMessage) string {
+	s := strings.TrimSpace(string(raw))
+	if s == "" || s == "null" {
+		return ""
+	}
+	if strings.HasPrefix(s, `"`) {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return ""
+		}
+		return value
+	}
+	return s
 }
