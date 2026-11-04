@@ -34,6 +34,10 @@ func NewDiscordAdapter(token string) (*DiscordAdapter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error creating Discord session: %w", err)
 	}
+	// Guild channel messages carry no content unless the privileged Message
+	// Content intent is requested; the Developer Portal toggle alone is not
+	// enough. DMs work without it, which is why a bot can look half-broken.
+	session.Identify.Intents |= discordgo.IntentMessageContent
 	return &DiscordAdapter{
 		session:   session,
 		transport: newRetryingTransport(discordAPI{session: session}),
@@ -95,9 +99,7 @@ func handleDiscordMessage(s *discordgo.Session, m *discordgo.MessageCreate, queu
 		return
 	}
 
-	userID, _ := strconv.Atoi(m.Author.ID)
-
-	var images []string
+	images := []string{}
 	for _, attachment := range m.Attachments {
 		if attachment.ContentType != "" && utils.IsImage(attachment.ContentType) {
 			base64Img, err := utils.DownloadFileToBase64(attachment.URL)
@@ -109,26 +111,21 @@ func handleDiscordMessage(s *discordgo.Session, m *discordgo.MessageCreate, queu
 		}
 	}
 
-	payload := map[string]interface{}{
-		"message": map[string]interface{}{
-			"from": map[string]interface{}{
-				"id": userID,
-			},
-			"chat": map[string]interface{}{
-				"id": m.ChannelID, // ChannelID is string
-			},
-			"message_id": m.ID,
-			"text":       m.Content,
-			"images":     images,
-		},
-		"original_source": "discord",
-		"discord_author": map[string]interface{}{
-			"id":       m.Author.ID,
-			"username": m.Author.Username,
-		},
+	// Name lookups are best-effort: a thread may not be cached by the state.
+	var (
+		channelInfo *discordgo.Channel
+		guildInfo   *discordgo.Guild
+	)
+	if cached, err := s.State.Channel(m.ChannelID); err == nil {
+		channelInfo = cached
+	}
+	if m.GuildID != "" {
+		if cached, err := s.State.Guild(m.GuildID); err == nil {
+			guildInfo = cached
+		}
 	}
 
-	rawPayload, _ := json.Marshal(payload)
+	rawPayload := buildMessagePayload(m, channelInfo, guildInfo, images)
 	envelope := &channel.QueueEnvelope{
 		Channel: "discord",
 		Payload: rawPayload,
@@ -142,6 +139,68 @@ func handleDiscordMessage(s *discordgo.Session, m *discordgo.MessageCreate, queu
 	}
 }
 
+// buildMessagePayload wraps a Discord message in the queue payload that
+// ParseIncoming reads back. Guild/channel names are best-effort: the gateway
+// state may not have a thread cached.
+func buildMessagePayload(m *discordgo.MessageCreate, channelInfo *discordgo.Channel, guildInfo *discordgo.Guild, images []string) []byte {
+	chatType := "guild"
+	if m.GuildID == "" {
+		chatType = "dm"
+	}
+
+	guildID := m.GuildID
+	channelName := ""
+	if channelInfo != nil {
+		if chatType != "dm" {
+			channelName = channelInfo.Name
+		}
+		if guildID == "" {
+			guildID = channelInfo.GuildID
+		}
+	}
+	guildName := ""
+	if guildInfo != nil {
+		guildName = guildInfo.Name
+	}
+
+	displayName := strings.TrimSpace(m.Author.GlobalName)
+	if displayName == "" {
+		displayName = strings.TrimSpace(m.Author.Username)
+	}
+
+	userID, _ := strconv.Atoi(m.Author.ID)
+	payload := map[string]interface{}{
+		"message": map[string]interface{}{
+			"from": map[string]interface{}{
+				"id":         userID,
+				"first_name": displayName,
+				"username":   m.Author.Username,
+			},
+			"chat": map[string]interface{}{
+				"id":   m.ChannelID,
+				"type": chatType,
+				"name": channelName,
+			},
+			"guild": map[string]interface{}{
+				"id":   guildID,
+				"name": guildName,
+			},
+			"message_id": m.ID,
+			"text":       m.Content,
+			"images":     images,
+		},
+		"original_source": "discord",
+		"discord_author": map[string]interface{}{
+			"id":          m.Author.ID,
+			"username":    m.Author.Username,
+			"global_name": m.Author.GlobalName,
+		},
+	}
+
+	raw, _ := json.Marshal(payload)
+	return raw
+}
+
 func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMessage, error) {
 	// We construct a custom map structure in the listener, so we parse it back here.
 	var data struct {
@@ -149,13 +208,24 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 			Text      string   `json:"text"`
 			Images    []string `json:"images"`
 			MessageID string   `json:"message_id"`
-			Chat      struct {
-				ID string `json:"id"`
+			From      struct {
+				FirstName string `json:"first_name"`
+				Username  string `json:"username"`
+			} `json:"from"`
+			Chat struct {
+				ID   string `json:"id"`
+				Type string `json:"type"`
+				Name string `json:"name"`
 			} `json:"chat"`
+			Guild struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"guild"`
 		} `json:"message"`
 		DiscordAuthor struct {
-			ID       string `json:"id"`
-			Username string `json:"username"`
+			ID         string `json:"id"`
+			Username   string `json:"username"`
+			GlobalName string `json:"global_name"`
 		} `json:"discord_author"`
 	}
 
@@ -165,11 +235,25 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 
 	userID, _ := strconv.Atoi(data.DiscordAuthor.ID)
 
+	senderName := strings.TrimSpace(data.DiscordAuthor.GlobalName)
+	if senderName == "" {
+		senderName = strings.TrimSpace(data.Message.From.FirstName)
+	}
+	if senderName == "" {
+		senderName = strings.TrimSpace(data.DiscordAuthor.Username)
+	}
+
 	return &channel.IncomingMessage{
-		UserID:  userID,
-		Text:    data.Message.Text,
-		Images:  data.Message.Images,
-		Channel: "discord",
+		UserID:         userID,
+		SenderID:       strings.TrimSpace(data.DiscordAuthor.ID),
+		SenderName:     senderName,
+		SenderUsername: strings.TrimSpace(data.DiscordAuthor.Username),
+		Text:           data.Message.Text,
+		Images:         data.Message.Images,
+		Channel:        "discord",
+		Scope:          discordScope(data.Message.Chat.Type, data.Message.Chat.ID),
+		ChatName:       strings.TrimSpace(data.Message.Guild.Name),
+		TopicName:      strings.TrimSpace(data.Message.Chat.Name),
 		RawMeta: DiscordMeta{
 			ChannelID: data.Message.Chat.ID,
 			MessageID: data.Message.MessageID,

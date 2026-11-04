@@ -418,6 +418,7 @@
 			"search": "Cari judul...",
 			"messages": "{count} pesan",
 			"telegram": "Telegram",
+			"discord": "Discord",
 			"telegram_group": "Grup Telegram",
 			"telegram_topic": "Topik {thread}",
 			"general_topic": "Umum",

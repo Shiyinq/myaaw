@@ -147,6 +147,15 @@ func messageQueueKey(body []byte) string {
 		}
 	}
 
+	if envelope.Channel == "discord" {
+		chatType := strings.ToLower(strings.TrimSpace(envelope.Payload.Message.Chat.Type))
+		if chatType != "" && chatType != "dm" {
+			if channelID := rawIDString(envelope.Payload.Message.Chat.ID); channelID != "" {
+				return "scope:dc:" + channelID
+			}
+		}
+	}
+
 	userID := strings.TrimSpace(envelope.Payload.Message.From.ID.String())
 	if userID == "" || userID == "0" {
 		userID = strings.TrimSpace(envelope.Payload.DiscordAuthor.ID)

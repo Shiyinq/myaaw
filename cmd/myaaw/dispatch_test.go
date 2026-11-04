@@ -176,6 +176,16 @@ func TestMessageQueueKeyGroupsByUser(t *testing.T) {
 			want: "user:789",
 		},
 		{
+			name: "discord guild channel uses the channel scope",
+			body: `{"channel":"discord","payload":{"message":{"from":{"id":456},"chat":{"id":"999888","type":"guild"}},"discord_author":{"id":"456"}}}`,
+			want: "scope:dc:999888",
+		},
+		{
+			name: "discord dm keeps the per-user key",
+			body: `{"channel":"discord","payload":{"message":{"from":{"id":456},"chat":{"id":"999888","type":"dm"}},"discord_author":{"id":"456"}}}`,
+			want: "user:456",
+		},
+		{
 			name: "unknown sender",
 			body: `{"channel":"telegram","payload":{}}`,
 			want: "channel:telegram",

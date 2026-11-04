@@ -200,6 +200,14 @@
 	function scopeLabel(entry: ConversationSummary): string {
 		const scope = entry.scope ?? '';
 		const parts = scope.split(':');
+
+		// Discord channels are separate scopes; the channel name is the "topic".
+		if (parts[0] === 'dc') {
+			const server = entry.chat_name?.trim() || t('myaaw.conversations.discord');
+			const channel = entry.topic_name?.trim();
+			return channel ? `${server} › #${channel}` : server;
+		}
+
 		if (parts[0] !== 'tg') return entry.chat_name?.trim() || scope;
 
 		if (parts.length >= 3) {

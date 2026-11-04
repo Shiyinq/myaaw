@@ -418,6 +418,7 @@
 			"search": "Search titles...",
 			"messages": "{count} messages",
 			"telegram": "Telegram",
+			"discord": "Discord",
 			"telegram_group": "Telegram group",
 			"telegram_topic": "Topic {thread}",
 			"general_topic": "General",

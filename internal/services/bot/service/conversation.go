@@ -313,7 +313,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 
 	// Keep the display name of the chat target fresh. Best-effort: a failed name
 	// write must never break the turn.
-	if msg.Scope != "" && strings.TrimSpace(msg.ChatName) != "" {
+	if msg.Scope != "" && (strings.TrimSpace(msg.ChatName) != "" || strings.TrimSpace(msg.TopicName) != "") {
 		if err := r.conversationRepo.UpsertScopeNames(msg.Scope, msg.ChatName, msg.TopicName, msg.IsForum); err != nil {
 			log.Printf("Failed to store chat scope names for %s: %v", msg.Scope, err)
 		}
