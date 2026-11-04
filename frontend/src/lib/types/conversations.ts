@@ -21,6 +21,10 @@ export interface Message {
 	tool_call_id?: string;
 	is_error?: boolean;
 	name?: string;
+	/** Sender metadata for group/topic messages (display only). */
+	sender_id?: string;
+	sender_name?: string;
+	sender_username?: string;
 	thought?: string;
 	action?: string;
 	action_input?: string;
@@ -45,6 +49,14 @@ export interface ConversationSummary {
 	id: string;
 	user_id: number;
 	title: string;
+	/** Chat target the session belongs to, e.g. a Telegram topic. Empty for CLI/API/DM. */
+	scope?: string;
+	/** Display name of the chat target (group/server name). */
+	chat_name?: string;
+	/** Display name of the forum topic, when the target has one. */
+	topic_name?: string;
+	/** The chat has named topics; its chat-level scope is the default topic. */
+	is_forum?: boolean;
 	active: boolean;
 	message_count: number;
 	created_at: string;
@@ -106,6 +118,11 @@ export interface ConversationDetail {
 	id: string;
 	user_id: number;
 	title: string;
+	/** Chat target the session belongs to, e.g. a Telegram topic. Empty for CLI/API/DM. */
+	scope?: string;
+	chat_name?: string;
+	topic_name?: string;
+	is_forum?: boolean;
 	active: boolean;
 	created_at: string;
 	updated_at: string;

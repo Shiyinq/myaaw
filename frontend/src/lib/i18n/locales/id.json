@@ -312,8 +312,9 @@
 		},
 		"chat": {
 			"title": "Chat",
-			"subtitle": "Bicara dengan agen terpilih, lengkap dengan streaming, tool, dan approval.",
+			"subtitle": "Bicara dengan agen terpilih lewat streaming, tools, dan approval.",
 			"new": "Chat baru",
+			"sender_label": "Pengirim",
 			"placeholder": "Kirim pesan...",
 			"send": "Kirim",
 			"stop": "Hentikan",
@@ -416,6 +417,10 @@
 		"conversations": {
 			"search": "Cari judul...",
 			"messages": "{count} pesan",
+			"telegram": "Telegram",
+			"telegram_group": "Grup Telegram",
+			"telegram_topic": "Topik {thread}",
+			"general_topic": "Umum",
 			"delete_confirm": "Hapus percakapan ini?",
 			"renamed": "Percakapan diganti nama",
 			"deleted": "Percakapan dihapus",

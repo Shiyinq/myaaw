@@ -314,6 +314,7 @@
 			"title": "Chat",
 			"subtitle": "Talk to the selected agent with streaming, tools, and approvals.",
 			"new": "New chat",
+			"sender_label": "Sender",
 			"placeholder": "Send a message...",
 			"send": "Send",
 			"stop": "Stop",
@@ -416,6 +417,10 @@
 		"conversations": {
 			"search": "Search titles...",
 			"messages": "{count} messages",
+			"telegram": "Telegram",
+			"telegram_group": "Telegram group",
+			"telegram_topic": "Topic {thread}",
+			"general_topic": "General",
 			"delete_confirm": "Delete this conversation?",
 			"renamed": "Conversation renamed",
 			"deleted": "Conversation deleted",

@@ -11,6 +11,7 @@
 		PinOff,
 		Plus,
 		Search,
+		Send,
 		Trash2,
 		X
 	} from 'lucide-svelte';
@@ -189,6 +190,37 @@
 			hour: '2-digit',
 			minute: '2-digit'
 		});
+	}
+
+	/**
+	 * Labels a stored scope for the conversation list. Empty scopes are CLI, API,
+	 * and DM chats and render no badge at all. Chat/topic names come from the
+	 * channel and fall back to generic labels until they are known.
+	 */
+	function scopeLabel(entry: ConversationSummary): string {
+		const scope = entry.scope ?? '';
+		const parts = scope.split(':');
+		if (parts[0] !== 'tg') return entry.chat_name?.trim() || scope;
+
+		if (parts.length >= 3) {
+			const chat = entry.chat_name?.trim() || t('myaaw.conversations.telegram');
+			const topic =
+				entry.topic_name?.trim() || t('myaaw.conversations.telegram_topic', { thread: parts[2] });
+			return `${chat} › ${topic}`;
+		}
+
+		// A chat-level scope is the default topic only for forum chats; a plain
+		// group without topics keeps just its name.
+		if (entry.is_forum) {
+			const chat = entry.chat_name?.trim() || t('myaaw.conversations.telegram');
+			return `${chat} › ${t('myaaw.conversations.general_topic')}`;
+		}
+		return entry.chat_name?.trim() || t('myaaw.conversations.telegram_group');
+	}
+
+	/** Full identity behind the badge, revealed on hover. */
+	function scopeTitle(entry: ConversationSummary): string {
+		return [entry.scope, entry.chat_name, entry.topic_name].filter(Boolean).join(' · ');
 	}
 
 	function startRename(item: ConversationSummary) {
@@ -488,10 +520,23 @@
 							{entry.title || entry.id.slice(0, 12)}
 						</span>
 					</span>
-					<span class="mt-0.5 block truncate text-[10px] text-muted-foreground">
-						{formatWhen(entry.updated_at)} · {t('myaaw.conversations.messages', {
-							count: entry.message_count
-						})}
+					<span
+						class="mt-0.5 flex min-w-0 flex-col items-start gap-0.5 text-[10px] text-muted-foreground"
+					>
+						{#if entry.scope}
+							<span
+								class="inline-flex max-w-full min-w-0 items-center gap-0.5 rounded bg-muted px-1 py-px font-medium text-foreground/70"
+								title={scopeTitle(entry)}
+							>
+								<Send class="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+								<span class="min-w-0 truncate">{scopeLabel(entry)}</span>
+							</span>
+						{/if}
+						<span class="block w-full truncate">
+							{formatWhen(entry.updated_at)} · {t('myaaw.conversations.messages', {
+								count: entry.message_count
+							})}
+						</span>
 					</span>
 				</button>
 				<div

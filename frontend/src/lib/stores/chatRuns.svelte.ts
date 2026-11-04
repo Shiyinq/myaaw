@@ -25,6 +25,10 @@ export interface ChatItem extends TimelineItem {
 	messageIndex?: number;
 	/** UTC timestamp shown next to user and answer rows. */
 	createdAt?: string;
+	/** Sender identity for user rows that came from a shared chat (group/topic). */
+	senderId?: string;
+	senderName?: string;
+	senderUsername?: string;
 	resolved?: string;
 	images?: string[];
 	uploads?: Upload[];

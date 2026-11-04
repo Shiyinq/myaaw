@@ -1645,6 +1645,16 @@
 		return text.replace(/\s+/g, ' ').trim();
 	}
 
+	/** Sender identity for group/topic bubbles, e.g. "Alice · @alice · #123456789". */
+	function senderLabel(item: Item): string {
+		const parts = [
+			item.senderName?.trim(),
+			item.senderUsername ? `@${item.senderUsername}` : '',
+			item.senderId ? `#${item.senderId}` : ''
+		];
+		return parts.filter(Boolean).join(' · ');
+	}
+
 	/** "list_directory /path", the shape the filesystem tool arguments take. */
 	function filesystemAction(args: Record<string, unknown>) {
 		if (typeof args.tool_name !== 'string') return '';
@@ -1787,7 +1797,10 @@
 						uploads: message.uploads,
 						localId: nextId(),
 						messageIndex,
-						createdAt: message.created_at
+						createdAt: message.created_at,
+						senderId: message.sender_id,
+						senderName: message.sender_name,
+						senderUsername: message.sender_username
 					});
 				}
 				continue;
@@ -2638,6 +2651,14 @@
 											<div
 												class="group/user flex w-full min-w-0 max-w-[80%] flex-col items-end gap-2 terminal:max-w-full terminal:items-start"
 											>
+												{#if senderLabel(item)}
+													<span
+														class="text-[10px] font-medium text-muted-foreground"
+														title={t('myaaw.chat.sender_label')}
+													>
+														{senderLabel(item)}
+													</span>
+												{/if}
 												{#if item.images?.length}
 													<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
 														{#each item.images as image, imageIndex (imageIndex)}
