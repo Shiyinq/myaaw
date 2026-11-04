@@ -1566,12 +1566,14 @@
 	}
 
 	/**
-	 * The agent prefixes a user turn that carries uploads with an <attached>
-	 * block of file paths, so the model can read them with its tools. The UI
-	 * lists those files as chips instead of showing the raw paths.
+	 * A user turn can carry <userinfo> (channel context) and <attached> (uploaded
+	 * file paths). Both are model-only; people see the text they typed.
 	 */
-	function withoutAttached(text: string): string {
-		return text.replace(/<attached>[\s\S]*?<\/attached>\s*/g, '').trim();
+	function withoutContext(text: string): string {
+		return text
+			.replace(/<userinfo>[\s\S]*?<\/userinfo>\s*/g, '')
+			.replace(/<attached>[\s\S]*?<\/attached>\s*/g, '')
+			.trim();
 	}
 
 	function messageImages(message: Message): string[] {
@@ -1787,7 +1789,7 @@
 
 			if (message.role === 'user') {
 				lastStep = -1;
-				const text = withoutAttached(messageText(message));
+				const text = withoutContext(messageText(message));
 				const images = messageImages(message);
 				if (text || images.length > 0 || (message.uploads?.length ?? 0) > 0) {
 					timeline.push({

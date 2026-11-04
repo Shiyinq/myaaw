@@ -27,6 +27,19 @@ type IncomingMessage struct {
 	// Scope groups conversations by chat target (for example a Telegram forum
 	// topic). Empty keeps the legacy per-user conversation behavior.
 	Scope string
+	// ChatType is the platform chat kind: "private"/"group"/"supergroup" for
+	// Telegram, "dm"/"guild" for Discord. Empty when the platform does not
+	// report one (CLI, API, A2A).
+	ChatType string
+	// IsThread marks a Discord thread or a Telegram forum topic.
+	IsThread bool
+	// ChatID is the platform id of the space this message came from: a Telegram
+	// chat id or a Discord channel/thread id. It is reference data for the
+	// model, not the routing key (that stays in RawMeta).
+	ChatID string
+	// TopicID is the Telegram message_thread_id for a forum topic. Empty for
+	// the General topic and for platforms without a separate topic id.
+	TopicID string
 	// ChatName/TopicName are display names for the scope (group name and forum
 	// topic). They are best-effort: a channel may know only one of them.
 	ChatName  string

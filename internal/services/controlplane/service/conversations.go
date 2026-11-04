@@ -324,7 +324,7 @@ func conversationTurns(messages []provider.Message) []ConversationTurn {
 		if message.Role != "user" {
 			continue
 		}
-		text := strings.Join(strings.Fields(provider.MessageText(message)), " ")
+		text := strings.Join(strings.Fields(provider.StripContextBlocks(provider.MessageText(message))), " ")
 		if runes := []rune(text); len(runes) > turnTextLimit {
 			text = string(runes[:turnTextLimit])
 		}

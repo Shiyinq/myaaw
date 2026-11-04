@@ -674,9 +674,9 @@ func convertProviderMessages(providerMsgs []provider.Message) []chatMessage_ {
 		switch msg.Role {
 		case "user":
 			flush()
-			// Uploaded files are listed as chips, not as raw paths, so the
-			// <attached> block stays out of a resumed transcript.
-			text := provider.StripAttachmentBlock(provider.MessageText(msg))
+			// Uploaded files are listed as chips, not as raw paths, and the
+			// per-turn <userinfo> block stays out of a resumed transcript.
+			text := provider.StripContextBlocks(provider.MessageText(msg))
 			if text == "" && len(msg.Uploads) > 0 {
 				names := make([]string, 0, len(msg.Uploads))
 				for _, upload := range msg.Uploads {

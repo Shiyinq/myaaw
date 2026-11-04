@@ -7868,7 +7868,7 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "sender_id": {
-                    "description": "Sender metadata for messages that arrive from a shared chat (a group or a\nforum topic). These are display fields: they are never sent to providers,\nunlike Name.",
+                    "description": "Sender metadata for messages that arrive from a shared chat (a group or a\nforum topic). These fields are display-only and are not sent to providers;\nthe model learns who is speaking from the \u003cuserinfo\u003e block at the top of\nthe message content instead.",
                     "type": "string"
                 },
                 "sender_name": {

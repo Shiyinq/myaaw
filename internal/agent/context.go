@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"myaaw/internal/agentdir"
 )
@@ -32,18 +31,17 @@ func EnsureMyaawConfig() (string, error) {
 const workspaceDirName = "workspace"
 
 type SystemPromptBuilder struct {
-	userID       int64
 	channelName  string
 	homeDir      string
 	workspaceDir string
 	currentDir   string
 }
 
-func NewSystemPromptBuilder(userID int64, channelName string) *SystemPromptBuilder {
-	return newSystemPromptBuilder(userID, channelName, os.Getwd, EnsureMyaawConfig)
+func NewSystemPromptBuilder(channelName string) *SystemPromptBuilder {
+	return newSystemPromptBuilder(channelName, os.Getwd, EnsureMyaawConfig)
 }
 
-func newSystemPromptBuilder(userID int64, channelName string, getwd func() (string, error), ensureConfig func() (string, error)) *SystemPromptBuilder {
+func newSystemPromptBuilder(channelName string, getwd func() (string, error), ensureConfig func() (string, error)) *SystemPromptBuilder {
 	myaawPath, err := ensureConfig()
 	homeDir := ""
 	workspaceDir := ""
@@ -71,7 +69,6 @@ func newSystemPromptBuilder(userID int64, channelName string, getwd func() (stri
 	}
 
 	return &SystemPromptBuilder{
-		userID:       userID,
 		channelName:  channelName,
 		homeDir:      homeDir,
 		workspaceDir: workspaceDir,
@@ -103,34 +100,19 @@ func (b *SystemPromptBuilder) Build() string {
 		sb.WriteString("\n\n")
 	}
 
-	// 2. User Info (Dynamic)
-	sb.WriteString("# User Info\n")
-	fmt.Fprintf(&sb, "User ID: %d\n", b.userID)
-	if b.channelName != "" {
-		fmt.Fprintf(&sb, "Channel Platform: %s\n", b.channelName)
-	}
-	sb.WriteString("\n")
-
-	// 3. Agent Home (Dynamic)
+	// 2. Agent Home (Dynamic)
 	if b.homeDir != "" {
 		sb.WriteString("## Agent Home\n")
 		fmt.Fprintf(&sb, "Agent home: %s\n\n", b.homeDir)
 	}
 
-	// 4. Date & Time
-	now := time.Now()
-	sb.WriteString("## Date & Time\n")
-	fmt.Fprintf(&sb, "Current Date: %s\n", now.Format("Monday, January 02, 2006"))
-	fmt.Fprintf(&sb, "Current Time: %s\n", now.Format("15:04:05 MST"))
-	sb.WriteString("\n")
-
-	// 5. Runtime
+	// 3. Runtime
 	sb.WriteString("## Runtime\n")
 	fmt.Fprintf(&sb, "OS: %s\n", runtime.GOOS)
 	fmt.Fprintf(&sb, "Arch: %s\n", runtime.GOARCH)
 	sb.WriteString("\n")
 
-	// 6. Workspace (Dynamic)
+	// 4. Workspace (Dynamic)
 	// Expose absolute paths so the agent never has to guess where the workspace
 	// is. The behavioral rules live in AGENTS.md.
 	if b.workspaceDir != "" {
@@ -143,14 +125,14 @@ func (b *SystemPromptBuilder) Build() string {
 		fmt.Fprintf(&sb, "- Downloads: %s/\n\n", downloadsDir)
 	}
 
-	// 6. Current Directory (Dynamic)
+	// 5. Current Directory (Dynamic)
 	// Only local CLI sessions have a meaningful project directory.
 	if b.currentDir != "" {
 		sb.WriteString("## Current Directory\n")
 		fmt.Fprintf(&sb, "Myaaw launch directory: %s\n\n", b.currentDir)
 	}
 
-	// 7. Workspace / Context Injection
+	// 6. Workspace / Context Injection
 	// Order: SOUL, TOOLS, USER
 	files := []string{"SOUL.md", "TOOLS.md", "USER.md"}
 

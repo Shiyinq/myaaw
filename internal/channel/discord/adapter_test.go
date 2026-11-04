@@ -180,6 +180,34 @@ func TestBuildMessagePayloadGuildChannel(t *testing.T) {
 	if got := lookup(t, data, "original_source"); got != "discord" {
 		t.Fatalf("original_source = %v, want discord", got)
 	}
+	if got := lookup(t, data, "message", "chat", "is_thread"); got != false {
+		t.Fatalf("chat.is_thread = %v, want false", got)
+	}
+}
+
+func TestBuildMessagePayloadThread(t *testing.T) {
+	msg := guildMessage()
+	msg.ChannelID = "999777"
+
+	raw := buildMessagePayload(
+		msg,
+		&discordgo.Channel{ID: "999777", Name: "bug-report", GuildID: "777", Type: discordgo.ChannelTypeGuildPublicThread},
+		&discordgo.Guild{ID: "777", Name: "Myaaw HQ"},
+		nil,
+	)
+	data := decodePayload(t, raw)
+
+	if got := lookup(t, data, "message", "chat", "is_thread"); got != true {
+		t.Fatalf("chat.is_thread = %v, want true", got)
+	}
+
+	parsed, err := (&DiscordAdapter{}).ParseIncoming(raw)
+	if err != nil {
+		t.Fatalf("ParseIncoming: %v", err)
+	}
+	if !parsed.IsThread || parsed.ChatID != "999777" {
+		t.Fatalf("parsed thread = %v / %q", parsed.IsThread, parsed.ChatID)
+	}
 }
 
 func TestBuildMessagePayloadDMHasNoChannelName(t *testing.T) {
@@ -236,6 +264,9 @@ func TestParseIncomingGuildMessage(t *testing.T) {
 	if msg.TopicName != "general" {
 		t.Fatalf("TopicName = %q, want general", msg.TopicName)
 	}
+	if msg.ChatType != "guild" || msg.ChatID != "999888" || msg.IsThread {
+		t.Fatalf("chat = %q / %q / thread %v", msg.ChatType, msg.ChatID, msg.IsThread)
+	}
 	if msg.SenderID != "456" || msg.SenderName != "Yin" || msg.SenderUsername != "yin" {
 		t.Fatalf("sender = %q/%q/%q, want 456/Yin/yin", msg.SenderID, msg.SenderName, msg.SenderUsername)
 	}
@@ -267,6 +298,9 @@ func TestParseIncomingDMMessageKeepsLegacyScope(t *testing.T) {
 	if parsed.ChatName != "" || parsed.TopicName != "" {
 		t.Fatalf("names = %q/%q, want both empty for a DM", parsed.ChatName, parsed.TopicName)
 	}
+	if parsed.ChatType != "dm" || parsed.ChatID != "999888" || parsed.IsThread {
+		t.Fatalf("chat = %q / %q / thread %v", parsed.ChatType, parsed.ChatID, parsed.IsThread)
+	}
 }
 
 func TestParseIncomingLegacyPayloadHasNoScope(t *testing.T) {
@@ -283,5 +317,8 @@ func TestParseIncomingLegacyPayloadHasNoScope(t *testing.T) {
 	}
 	if msg.SenderName != "yin" {
 		t.Fatalf("SenderName = %q, want yin", msg.SenderName)
+	}
+	if msg.ChatType != "" || msg.ChatID != "999888" || msg.IsThread {
+		t.Fatalf("legacy chat = %q / %q / thread %v", msg.ChatType, msg.ChatID, msg.IsThread)
 	}
 }

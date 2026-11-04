@@ -1075,8 +1075,9 @@ definitions:
       sender_id:
         description: |-
           Sender metadata for messages that arrive from a shared chat (a group or a
-          forum topic). These are display fields: they are never sent to providers,
-          unlike Name.
+          forum topic). These fields are display-only and are not sent to providers;
+          the model learns who is speaking from the <userinfo> block at the top of
+          the message content instead.
         type: string
       sender_name:
         type: string

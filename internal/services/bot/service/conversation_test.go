@@ -18,6 +18,7 @@ import (
 type fakeConversationRepo struct {
 	conversations map[string]*model.Conversation
 	updates       []conversationUpdate
+	scopeNames    map[string][2]string
 }
 
 type conversationUpdate struct {
@@ -26,7 +27,10 @@ type conversationUpdate struct {
 }
 
 func newFakeConversationRepo() *fakeConversationRepo {
-	return &fakeConversationRepo{conversations: make(map[string]*model.Conversation)}
+	return &fakeConversationRepo{
+		conversations: make(map[string]*model.Conversation),
+		scopeNames:    make(map[string][2]string),
+	}
 }
 
 func (f *fakeConversationRepo) GetConversationByUserId(int) ([]*model.Conversation, error) {
@@ -107,6 +111,14 @@ func (f *fakeConversationRepo) GetActiveConversationByScope(userId int, scope st
 }
 
 func (f *fakeConversationRepo) UpsertScopeNames(string, string, string, bool) error { return nil }
+
+func (f *fakeConversationRepo) GetScopeNames(scope string) (string, string, bool, error) {
+	names, ok := f.scopeNames[scope]
+	if !ok {
+		return "", "", false, nil
+	}
+	return names[0], names[1], false, nil
+}
 
 func TestBuildConversationMessagesCreatesA2AContext(t *testing.T) {
 	home := t.TempDir()
@@ -199,10 +211,10 @@ func TestBuildUserMessageTagsGroupSenders(t *testing.T) {
 		Scope:          "tg:-1001111:77",
 		SenderID:       "123456789",
 		SenderName:     "Alice",
-		SenderUsername: "Alice",
+		SenderUsername: "alice",
 		Text:           "hello",
 	}, nil)
-	if group.SenderID != "123456789" || group.SenderName != "Alice" || group.SenderUsername != "Alice" {
+	if group.SenderID != "123456789" || group.SenderName != "Alice" || group.SenderUsername != "alice" {
 		t.Fatalf("group sender = %+v", group)
 	}
 
@@ -411,7 +423,7 @@ func TestBuildConversationMessagesRewindsBeforeRunning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	if len(messages) != 2 || provider.MessageText(messages[1]) != "first, edited" {
+	if len(messages) != 2 || !strings.HasSuffix(provider.MessageText(messages[1]), "first, edited") {
 		t.Fatalf("messages = %+v", messages)
 	}
 	if messages[1].CreatedAt == nil {
@@ -429,8 +441,105 @@ func TestBuildConversationMessagesRewindsBeforeRunning(t *testing.T) {
 		t.Fatalf("send: %v", err)
 	}
 	last := messages[len(messages)-1]
-	if last.Role != "user" || provider.MessageText(last) != "third" || last.CreatedAt == nil {
+	if last.Role != "user" || !strings.HasSuffix(provider.MessageText(last), "third") || last.CreatedAt == nil {
 		t.Fatalf("last = %+v", last)
+	}
+}
+
+func TestRewindToUserMessagePreservesContextBlocks(t *testing.T) {
+	block := "<userinfo>\nPlatform: API · 2026-11-04 14:03\n</userinfo>"
+	attached := "<attached>\n[read them with the filesystem or bash tools]\n/a.txt\n</attached>"
+	original := block + "\n\n" + attached + "\n\nfirst question"
+
+	messages := []provider.Message{
+		{Role: "user", Content: original},
+		{Role: "assistant", Content: "answer"},
+		{Role: "user", Content: "second"},
+		{Role: "assistant", Content: "answer two"},
+	}
+
+	// Edit the first turn: only the text changes, the context and the uploaded
+	// file list stay exactly as they were.
+	kept, err := rewindToUserMessage(messages, 1, "first, edited")
+	if err != nil {
+		t.Fatalf("rewind: %v", err)
+	}
+	if len(kept) != 1 {
+		t.Fatalf("kept = %d messages, want 1", len(kept))
+	}
+	text := provider.MessageText(kept[0])
+	if !strings.HasPrefix(text, block) || !strings.Contains(text, attached) || !strings.HasSuffix(text, "first, edited") {
+		t.Fatalf("edited content = %q", text)
+	}
+}
+
+func TestRewindToUserMessagePreservesImageParts(t *testing.T) {
+	image := provider.ContentItem{Type: "image_url", ImageURL: &provider.ImageInfo{URL: "data:image/jpeg;base64,AAAA"}}
+	messages := []provider.Message{{
+		Role: "user",
+		Content: []provider.ContentItem{
+			{Type: "text", Text: "<userinfo>\nPlatform: API\n</userinfo>\n\nlook at this"},
+			image,
+		},
+	}}
+
+	kept, err := rewindToUserMessage(messages, 0, "look at this again")
+	if err != nil {
+		t.Fatalf("rewind: %v", err)
+	}
+	items := provider.MessageContentItems(kept[0])
+	if len(items) != 2 || items[0].Type != "text" || !strings.HasSuffix(items[0].Text, "look at this again") {
+		t.Fatalf("content items = %+v", items)
+	}
+	if !strings.HasPrefix(items[0].Text, "<userinfo>") {
+		t.Fatalf("context block lost: %q", items[0].Text)
+	}
+	if items[1].Type != "image_url" || items[1].ImageURL == nil {
+		t.Fatalf("image item lost: %+v", items[1])
+	}
+}
+
+func TestBuildConversationMessagesFillsScopeNamesFromStore(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	repo := newFakeConversationRepo()
+	// A normal forum message carries the topic id but not its name; the name was
+	// learned from a previous update and lives in chat_scopes.
+	repo.scopeNames["tg:-100:77"] = [2]string{"Tim Support", "Laporan Harian"}
+	service := &BotServiceImpl{conversationRepo: repo}
+
+	messages, err := service.buildConversationMessages(&model.User{UserId: 111}, &channel.IncomingMessage{
+		UserID:         111,
+		Text:           "hi",
+		Channel:        "telegram",
+		ChatType:       "supergroup",
+		ChatID:         "-100",
+		TopicID:        "77",
+		IsForum:        true,
+		IsThread:       true,
+		ChatName:       "Tim Support",
+		Scope:          "tg:-100:77",
+		SenderID:       "222",
+		SenderName:     "Andi",
+		SenderUsername: "andi",
+	})
+	if err != nil {
+		t.Fatalf("buildConversationMessages: %v", err)
+	}
+
+	content := provider.MessageText(messages[len(messages)-1])
+	if !strings.Contains(content, "Chat: Tim Support › Laporan Harian (forum topic, shared)") {
+		t.Fatalf("content = %q", content)
+	}
+	if !strings.Contains(content, "TopicID: 77") {
+		t.Fatalf("content = %q", content)
+	}
+	// A brand-new session gets its id before the user message is built, so even
+	// the first turn can name the session it belongs to.
+	if !strings.Contains(content, "Session: generated-1") {
+		t.Fatalf("new chat should carry its session id: %q", content)
 	}
 }
 

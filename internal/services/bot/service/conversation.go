@@ -254,7 +254,7 @@ func conversationAccessible(conv *model.Conversation, user *model.User, msg *cha
 }
 
 func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channel.IncomingMessage) ([]provider.Message, error) {
-	userSystem := agent.NewSystemPromptBuilder(int64(user.UserId), msg.Channel).Build()
+	userSystem := agent.NewSystemPromptBuilder(msg.Channel).Build()
 	userSystem += skills.GetSkillsInstruction()
 	messages := []provider.Message{
 		{
@@ -319,6 +319,22 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		}
 	}
 
+	// A normal forum message carries only the topic id, never the topic name.
+	// Fill the gaps from what the scope learned earlier so <userinfo> can name
+	// the topic instead of showing the group only.
+	if msg.Scope != "" && (strings.TrimSpace(msg.ChatName) == "" || strings.TrimSpace(msg.TopicName) == "") {
+		chatName, topicName, _, err := r.conversationRepo.GetScopeNames(msg.Scope)
+		if err != nil {
+			log.Printf("Failed to read chat scope names for %s: %v", msg.Scope, err)
+		}
+		if strings.TrimSpace(msg.ChatName) == "" {
+			msg.ChatName = chatName
+		}
+		if strings.TrimSpace(msg.TopicName) == "" {
+			msg.TopicName = topicName
+		}
+	}
+
 	// An edit or a regeneration rewrites the stored transcript instead of
 	// appending a user message: everything after the target turn is dropped.
 	if msg.RewindUserOffset != nil {
@@ -331,7 +347,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		if strings.TrimSpace(msg.Text) == "" {
 			for i := len(rewound) - 1; i >= 0; i-- {
 				if rewound[i].Role == "user" {
-					msg.Text = provider.MessageText(rewound[i])
+					msg.Text = provider.StripContextBlocks(provider.MessageText(rewound[i]))
 					break
 				}
 			}
@@ -426,7 +442,7 @@ func rewindToUserMessage(
 
 		kept := append([]provider.Message(nil), messages[:index+1]...)
 		if strings.TrimSpace(replacement) != "" {
-			kept[index].Content = replacement
+			kept[index].Content = replaceUserContent(kept[index].Content, replacement)
 			edited := time.Now().UTC()
 			kept[index].CreatedAt = &edited
 		}
@@ -434,6 +450,50 @@ func rewindToUserMessage(
 	}
 
 	return nil, fmt.Errorf("rewind target not found")
+}
+
+// replaceUserContent rewrites the text a person typed while preserving the
+// leading <userinfo>/<attached> blocks and any non-text parts (images). The
+// blocks were written once when the message arrived; keeping them byte-identical
+// is what lets provider prefix caching reuse the history.
+func replaceUserContent(content interface{}, replacement string) interface{} {
+	switch value := content.(type) {
+	case string:
+		blocks, _ := provider.SplitContextBlocks(value)
+		return provider.JoinContextBlocks(blocks, replacement)
+	case []provider.ContentItem:
+		blocks := ""
+		sawText := false
+		others := make([]provider.ContentItem, 0, len(value)+1)
+		for _, item := range value {
+			if item.Type == "text" {
+				if !sawText {
+					blocks, _ = provider.SplitContextBlocks(item.Text)
+					sawText = true
+				}
+				continue
+			}
+			others = append(others, item)
+		}
+		text := provider.JoinContextBlocks(blocks, replacement)
+		result := make([]provider.ContentItem, 0, len(others)+1)
+		if text != "" {
+			result = append(result, provider.ContentItem{Type: "text", Text: text})
+		}
+		return append(result, others...)
+	case provider.GeminiPart:
+		blocks, _ := provider.SplitContextBlocks(value.Text)
+		value.Text = provider.JoinContextBlocks(blocks, replacement)
+		return value
+	case *provider.GeminiPart:
+		if value != nil {
+			blocks, _ := provider.SplitContextBlocks(value.Text)
+			value.Text = provider.JoinContextBlocks(blocks, replacement)
+		}
+		return value
+	default:
+		return replacement
+	}
 }
 
 // buildUserMessage converts a generic IncomingMessage to a provider.Message.
@@ -466,6 +526,12 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage, uploads 
 			builder.WriteString(text)
 		}
 		text = builder.String()
+	}
+
+	// The channel context goes in front of everything so the system prompt stays
+	// static and provider prefix caching can reuse the whole history.
+	if info := agent.RenderUserInfo(msg, time.Now()); info != "" {
+		text = provider.JoinContextBlocks(info, text)
 	}
 
 	// Sender metadata is display-only and exists only for shared chats (groups,
@@ -614,8 +680,9 @@ func (r *BotServiceImpl) GenerateConversationTitle(user *model.User, messages []
 		if msg.Role != "user" {
 			continue
 		}
-		// Titles describe the conversation, not the uploaded file paths.
-		if text := provider.StripAttachmentBlock(provider.MessageText(msg)); text != "" {
+		// Titles describe the conversation, not the uploaded file paths or the
+		// per-turn channel context.
+		if text := provider.StripContextBlocks(provider.MessageText(msg)); text != "" {
 			firstUserMsg = text
 			break
 		}

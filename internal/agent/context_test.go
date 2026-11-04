@@ -54,7 +54,6 @@ func TestSystemPromptIncludesWorkspacePaths(t *testing.T) {
 	}
 
 	builder := &SystemPromptBuilder{
-		userID:       42,
 		channelName:  "test",
 		homeDir:      homeDir,
 		workspaceDir: workspaceDir,
@@ -119,7 +118,7 @@ func TestSystemPromptIncludesCurrentDirectory(t *testing.T) {
 func TestNewSystemPromptBuilderCapturesLocalDirectory(t *testing.T) {
 	myaawDir := t.TempDir()
 
-	builder := newSystemPromptBuilder(7, "cli", func() (string, error) {
+	builder := newSystemPromptBuilder("cli", func() (string, error) {
 		return "/Users/example/my-project", nil
 	}, func() (string, error) {
 		return myaawDir, nil
@@ -138,7 +137,7 @@ func TestNewSystemPromptBuilderCapturesLocalDirectory(t *testing.T) {
 func TestNewSystemPromptBuilderOmitsRemoteDirectory(t *testing.T) {
 	getwdCalled := false
 
-	builder := newSystemPromptBuilder(7, "telegram", func() (string, error) {
+	builder := newSystemPromptBuilder("telegram", func() (string, error) {
 		getwdCalled = true
 		return "/server/cwd", nil
 	}, func() (string, error) {
@@ -150,6 +149,17 @@ func TestNewSystemPromptBuilderOmitsRemoteDirectory(t *testing.T) {
 	}
 	if builder.currentDir != "" {
 		t.Errorf("currentDir = %q, want empty", builder.currentDir)
+	}
+}
+
+func TestSystemPromptHasNoPerTurnContext(t *testing.T) {
+	builder := &SystemPromptBuilder{channelName: "telegram", homeDir: t.TempDir()}
+
+	prompt := builder.Build()
+	for _, forbidden := range []string{"User ID", "Channel Platform", "Current Date", "Current Time", "Date & Time"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Errorf("system prompt must not contain %q\n\n%s", forbidden, prompt)
+		}
 	}
 }
 

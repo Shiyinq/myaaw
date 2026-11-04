@@ -35,8 +35,9 @@ type Message struct {
 	// uploaded with that message.
 	ID string `json:"id,omitempty" bson:"id,omitempty"`
 	// Sender metadata for messages that arrive from a shared chat (a group or a
-	// forum topic). These are display fields: they are never sent to providers,
-	// unlike Name.
+	// forum topic). These fields are display-only and are not sent to providers;
+	// the model learns who is speaking from the <userinfo> block at the top of
+	// the message content instead.
 	SenderID       string     `json:"sender_id,omitempty" bson:"sender_id,omitempty"`
 	SenderName     string     `json:"sender_name,omitempty" bson:"sender_name,omitempty"`
 	SenderUsername string     `json:"sender_username,omitempty" bson:"sender_username,omitempty"`

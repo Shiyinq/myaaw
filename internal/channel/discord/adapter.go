@@ -150,6 +150,7 @@ func buildMessagePayload(m *discordgo.MessageCreate, channelInfo *discordgo.Chan
 
 	guildID := m.GuildID
 	channelName := ""
+	isThread := false
 	if channelInfo != nil {
 		if chatType != "dm" {
 			channelName = channelInfo.Name
@@ -157,6 +158,7 @@ func buildMessagePayload(m *discordgo.MessageCreate, channelInfo *discordgo.Chan
 		if guildID == "" {
 			guildID = channelInfo.GuildID
 		}
+		isThread = channelInfo.IsThread()
 	}
 	guildName := ""
 	if guildInfo != nil {
@@ -177,9 +179,10 @@ func buildMessagePayload(m *discordgo.MessageCreate, channelInfo *discordgo.Chan
 				"username":   m.Author.Username,
 			},
 			"chat": map[string]interface{}{
-				"id":   m.ChannelID,
-				"type": chatType,
-				"name": channelName,
+				"id":        m.ChannelID,
+				"type":      chatType,
+				"name":      channelName,
+				"is_thread": isThread,
 			},
 			"guild": map[string]interface{}{
 				"id":   guildID,
@@ -213,9 +216,10 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 				Username  string `json:"username"`
 			} `json:"from"`
 			Chat struct {
-				ID   string `json:"id"`
-				Type string `json:"type"`
-				Name string `json:"name"`
+				ID       string `json:"id"`
+				Type     string `json:"type"`
+				Name     string `json:"name"`
+				IsThread bool   `json:"is_thread"`
 			} `json:"chat"`
 			Guild struct {
 				ID   string `json:"id"`
@@ -251,6 +255,9 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 		Text:           data.Message.Text,
 		Images:         data.Message.Images,
 		Channel:        "discord",
+		ChatType:       strings.TrimSpace(data.Message.Chat.Type),
+		IsThread:       data.Message.Chat.IsThread,
+		ChatID:         strings.TrimSpace(data.Message.Chat.ID),
 		Scope:          discordScope(data.Message.Chat.Type, data.Message.Chat.ID),
 		ChatName:       strings.TrimSpace(data.Message.Guild.Name),
 		TopicName:      strings.TrimSpace(data.Message.Chat.Name),

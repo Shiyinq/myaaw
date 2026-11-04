@@ -54,13 +54,19 @@ func (t *TelegramAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incom
 		SenderUsername: strings.TrimSpace(chat.Message.From.Username),
 		Channel:        "telegram",
 		ChatName:       strings.TrimSpace(chat.Message.Chat.Title),
+		ChatType:       strings.TrimSpace(chat.Message.Chat.Type),
+		ChatID:         strconv.Itoa(chat.Message.Chat.Id),
 		IsForum:        chat.Message.Chat.IsForum,
+		IsThread:       chat.Message.MessageThreadID >= 2,
 		RawMeta: TelegramMeta{
 			ChatID:    chat.Message.Chat.Id,
 			MessageID: chat.Message.MessageId,
 			ThreadID:  chat.Message.MessageThreadID,
 		},
 		Scope: telegramScope(chat.Message.Chat, chat.Message.MessageThreadID),
+	}
+	if chat.Message.MessageThreadID >= 2 {
+		msg.TopicID = strconv.Itoa(chat.Message.MessageThreadID)
 	}
 
 	if chat.Message.Voice != nil {

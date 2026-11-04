@@ -17,8 +17,8 @@ func TestRecordScopeNamesFromTopicReply(t *testing.T) {
 
 	payload := []byte(`{"update_id":549738754,"message":{
 		"message_id":44,
-		"from":{"id":123456789,"first_name":"Alice","username":"Alice"},
-		"chat":{"id":-1234567890,"title":"Example Group","is_forum":true,"type":"supergroup"},
+		"from":{"id":123456789,"first_name":"Alice","username":"alice"},
+		"chat":{"id":-1001234567890,"title":"Example Group","is_forum":true,"type":"supergroup"},
 		"message_thread_id":2,
 		"reply_to_message":{"message_id":2,"message_thread_id":2,"forum_topic_created":{"name":"Daily Report"}},
 		"text":"tadi aku ngomong apa"
@@ -30,7 +30,7 @@ func TestRecordScopeNamesFromTopicReply(t *testing.T) {
 		t.Fatalf("captured = %+v", *captured)
 	}
 	got := (*captured)[0]
-	want := ScopeNames{Scope: "tg:-1234567890:2", ChatName: "Example Group", TopicName: "Daily Report", IsForum: true}
+	want := ScopeNames{Scope: "tg:-1001234567890:2", ChatName: "Example Group", TopicName: "Daily Report", IsForum: true}
 	if got != want {
 		t.Fatalf("names = %+v, want %+v", got, want)
 	}

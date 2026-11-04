@@ -84,6 +84,24 @@ func TestUpsertScopeNames(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("scope rows = %d, want 1", count)
 	}
+
+	var err error
+	chat, topic, isForum, err = repo.GetScopeNames("tg:-100:77")
+	if err != nil {
+		t.Fatalf("GetScopeNames: %v", err)
+	}
+	if chat != "Renamed Group" || topic != "Daily Report" || !isForum {
+		t.Fatalf("names = %q / %q / %v", chat, topic, isForum)
+	}
+
+	// A scope with no row is not an error.
+	chat, topic, isForum, err = repo.GetScopeNames("tg:-100:99")
+	if err != nil {
+		t.Fatalf("GetScopeNames missing: %v", err)
+	}
+	if chat != "" || topic != "" || isForum {
+		t.Fatalf("missing names = %q / %q / %v", chat, topic, isForum)
+	}
 }
 
 func TestCreateConversationWithId(t *testing.T) {

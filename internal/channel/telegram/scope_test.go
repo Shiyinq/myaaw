@@ -30,7 +30,7 @@ func TestTelegramScope(t *testing.T) {
 func TestParseIncomingSetsThreadAndScope(t *testing.T) {
 	adapter := NewTelegramAdapter(nil)
 
-	payload := []byte(`{"update_id":1,"message":{"message_id":5,"message_thread_id":77,"text":"hi","chat":{"id":-1001111,"title":"Example Group","type":"supergroup","is_forum":true},"from":{"id":42,"first_name":"Alice","username":"Alice"}}}`)
+	payload := []byte(`{"update_id":1,"message":{"message_id":5,"message_thread_id":77,"text":"hi","chat":{"id":-1001111,"title":"Example Group","type":"supergroup","is_forum":true},"from":{"id":42,"first_name":"Alice","username":"alice"}}}`)
 	msg, err := adapter.ParseIncoming(payload)
 	if err != nil {
 		t.Fatalf("ParseIncoming: %v", err)
@@ -49,7 +49,7 @@ func TestParseIncomingSetsThreadAndScope(t *testing.T) {
 	if msg.Scope != "tg:-1001111:77" {
 		t.Fatalf("scope = %q", msg.Scope)
 	}
-	if msg.SenderID != "42" || msg.SenderName != "Alice" || msg.SenderUsername != "Alice" {
+	if msg.SenderID != "42" || msg.SenderName != "Alice" || msg.SenderUsername != "alice" {
 		t.Fatalf("sender = %q / %q / %q", msg.SenderID, msg.SenderName, msg.SenderUsername)
 	}
 	if msg.ChatName != "Example Group" {
@@ -57,6 +57,12 @@ func TestParseIncomingSetsThreadAndScope(t *testing.T) {
 	}
 	if !msg.IsForum {
 		t.Fatal("forum flag was not carried")
+	}
+	if msg.ChatType != "supergroup" || msg.ChatID != "-1001111" {
+		t.Fatalf("chat = %q / %q", msg.ChatType, msg.ChatID)
+	}
+	if msg.TopicID != "77" || !msg.IsThread {
+		t.Fatalf("topic = %q, thread = %v", msg.TopicID, msg.IsThread)
 	}
 
 	// A direct chat keeps the legacy empty scope.
@@ -66,6 +72,9 @@ func TestParseIncomingSetsThreadAndScope(t *testing.T) {
 	}
 	if dm.Scope != "" {
 		t.Fatalf("DM scope = %q, want empty", dm.Scope)
+	}
+	if dm.ChatType != "private" || dm.ChatID != "42" || dm.TopicID != "" || dm.IsThread {
+		t.Fatalf("DM chat = %q / %q / %q / %v", dm.ChatType, dm.ChatID, dm.TopicID, dm.IsThread)
 	}
 }
 
@@ -78,5 +87,8 @@ func TestParseIncomingGeneralTopicUsesChatScope(t *testing.T) {
 	}
 	if msg.Scope != "tg:-1001111" {
 		t.Fatalf("scope = %q, want chat-level scope", msg.Scope)
+	}
+	if msg.TopicID != "" || msg.IsThread {
+		t.Fatalf("General topic = %q / %v, want no topic id and no thread", msg.TopicID, msg.IsThread)
 	}
 }

@@ -30,6 +30,10 @@ type ConversationRepository interface {
 	// UpsertScopeNames records the display name of a chat target (for example a
 	// Telegram group and forum topic). Empty values keep the stored name.
 	UpsertScopeNames(scope, chatName, topicName string, isForum bool) error
+	// GetScopeNames returns the names already learned for a scope. A message that
+	// only carries the topic id (a normal forum message) uses this to render the
+	// topic name in the prompt.
+	GetScopeNames(scope string) (chatName, topicName string, isForum bool, err error)
 }
 
 type ConversationRepositoryImpl struct {
@@ -290,4 +294,26 @@ func (r *ConversationRepositoryImpl) UpsertScopeNames(scope, chatName, topicName
 		return fmt.Errorf("failed to upsert scope names: %w", err)
 	}
 	return nil
+}
+
+// GetScopeNames reads the names stored for a scope. A missing row is not an
+// error: the scope simply has no names learned yet.
+func (r *ConversationRepositoryImpl) GetScopeNames(scope string) (string, string, bool, error) {
+	if scope == "" {
+		return "", "", false, nil
+	}
+
+	var chatName, topicName string
+	var isForum bool
+	err := r.db.QueryRow(
+		`SELECT chat_name, topic_name, is_forum FROM chat_scopes WHERE scope = ?`,
+		scope,
+	).Scan(&chatName, &topicName, &isForum)
+	if err == sql.ErrNoRows {
+		return "", "", false, nil
+	}
+	if err != nil {
+		return "", "", false, fmt.Errorf("failed to read scope names: %w", err)
+	}
+	return chatName, topicName, isForum, nil
 }

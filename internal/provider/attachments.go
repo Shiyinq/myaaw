@@ -5,14 +5,27 @@ import (
 	"strings"
 )
 
-// Attachment tags wrap the file paths prepended to a user message. The model
-// reads the files itself; clients show them as chips instead of raw paths.
+// Context tags wrap data the agent adds in front of a user message:
+//
+//   - <attached> lists uploaded file paths so the model can read them with its
+//     tools; clients show them as chips instead of raw paths.
+//   - <userinfo> carries the per-turn channel context (platform, room, ids,
+//     speaker, time); clients hide it entirely.
+//
+// Both are stored with the message so the transcript stays byte-stable for
+// provider prefix caching.
 const (
 	AttachmentBlockOpen  = "<attached>"
 	AttachmentBlockClose = "</attached>"
+	UserInfoBlockOpen    = "<userinfo>"
+	UserInfoBlockClose   = "</userinfo>"
 )
 
-var attachmentBlockPattern = regexp.MustCompile(`(?s)<attached>.*?</attached>[ \t]*\n?`)
+var (
+	attachmentBlockPattern = regexp.MustCompile(`(?s)<attached>.*?</attached>[ \t]*\n?`)
+	userInfoBlockPattern   = regexp.MustCompile(`(?s)<userinfo>.*?</userinfo>[ \t]*\n?`)
+	leadingContextPattern  = regexp.MustCompile(`(?s)^\s*(<userinfo>.*?</userinfo>|<attached>.*?</attached>)`)
+)
 
 // StripAttachmentBlock removes the attachment block from message text so
 // derived text, such as a conversation title or a resumed transcript, only
@@ -22,4 +35,46 @@ func StripAttachmentBlock(text string) string {
 		return text
 	}
 	return strings.TrimSpace(attachmentBlockPattern.ReplaceAllString(text, ""))
+}
+
+// StripContextBlocks removes both context blocks. Use it wherever a message is
+// shown to a person: titles, previews, turn labels, and the CLI.
+func StripContextBlocks(text string) string {
+	if !strings.Contains(text, UserInfoBlockOpen) && !strings.Contains(text, AttachmentBlockOpen) {
+		return text
+	}
+	text = userInfoBlockPattern.ReplaceAllString(text, "")
+	text = attachmentBlockPattern.ReplaceAllString(text, "")
+	return strings.TrimSpace(text)
+}
+
+// SplitContextBlocks separates the leading <userinfo>/<attached> blocks from the
+// text the person typed. The blocks are returned in their original order, so an
+// edit can put them back exactly as they were.
+func SplitContextBlocks(text string) (blocks string, body string) {
+	rest := text
+	kept := make([]string, 0, 2)
+	for {
+		match := leadingContextPattern.FindStringSubmatch(rest)
+		if match == nil {
+			break
+		}
+		kept = append(kept, strings.TrimSpace(match[1]))
+		rest = rest[len(match[0]):]
+	}
+	return strings.Join(kept, "\n\n"), strings.TrimLeft(rest, "\n")
+}
+
+// JoinContextBlocks puts the blocks back in front of the message body.
+func JoinContextBlocks(blocks, body string) string {
+	blocks = strings.TrimSpace(blocks)
+	body = strings.TrimLeft(body, "\n")
+	switch {
+	case blocks == "":
+		return body
+	case body == "":
+		return blocks
+	default:
+		return blocks + "\n\n" + body
+	}
 }
