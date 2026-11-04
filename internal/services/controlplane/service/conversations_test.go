@@ -31,6 +31,7 @@ func setupConversationAgent(t *testing.T) string {
 		id TEXT PRIMARY KEY,
 		user_id INTEGER,
 		scope TEXT NOT NULL DEFAULT '',
+		channel TEXT NOT NULL DEFAULT '',
 		title TEXT,
 		messages TEXT,
 		active INTEGER,
@@ -76,6 +77,59 @@ func setupConversationAgent(t *testing.T) string {
 	}
 
 	return dbPath
+}
+
+func TestConversationListFiltersByChannel(t *testing.T) {
+	dbPath := setupConversationAgent(t)
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE conversations SET channel = 'telegram' WHERE id = 'conv-1'`); err != nil {
+		t.Fatalf("update conv-1: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE conversations SET channel = 'api' WHERE id = 'conv-2'`); err != nil {
+		t.Fatalf("update conv-2: %v", err)
+	}
+	now := time.Now().UTC()
+	if _, err := db.Exec(
+		`INSERT INTO conversations (id, user_id, channel, title, messages, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`,
+		"conv-tg", 7, "telegram", "Second telegram", "[]", 0, now, now,
+	); err != nil {
+		t.Fatalf("insert conv-tg: %v", err)
+	}
+	db.Close()
+
+	conversations := NewConversationService()
+	telegram, err := conversations.List("myfriend", 7, 10, 0, "", ConversationFilter{Channel: "telegram"})
+	if err != nil {
+		t.Fatalf("List telegram: %v", err)
+	}
+	if telegram.Total != 2 || len(telegram.Conversations) != 2 {
+		t.Fatalf("telegram page = %+v", telegram)
+	}
+	for _, conversation := range telegram.Conversations {
+		if conversation.Channel != "telegram" {
+			t.Fatalf("channel leaked into the filtered page: %+v", telegram.Conversations)
+		}
+	}
+
+	apiPage, err := conversations.List("myfriend", 7, 10, 0, "", ConversationFilter{Channel: "api"})
+	if err != nil {
+		t.Fatalf("List api: %v", err)
+	}
+	if apiPage.Total != 1 || len(apiPage.Conversations) != 1 || apiPage.Conversations[0].ID != "conv-2" {
+		t.Fatalf("api page = %+v", apiPage)
+	}
+
+	all, err := conversations.List("myfriend", 7, 10, 0, "", ConversationFilter{})
+	if err != nil {
+		t.Fatalf("List all: %v", err)
+	}
+	if all.Total != 3 {
+		t.Fatalf("all total = %d, want 3", all.Total)
+	}
 }
 
 func TestConversationServiceCarriesScope(t *testing.T) {

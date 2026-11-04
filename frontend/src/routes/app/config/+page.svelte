@@ -50,6 +50,9 @@
 	let hbActive = $state(false);
 	let hbChannel = $state('');
 	let hbTo = $state('');
+	let hbThread = $state('');
+	let hbSession = $state('');
+	let hbChatType = $state('guild');
 	let hbEvery = $state('30m');
 
 	let obsEnabled = $state(true);
@@ -68,6 +71,11 @@
 	let apDeny = $state('');
 
 	let agent = $derived(agentSelection.selected);
+
+	// Thread and chat type only apply to one platform each; the server drops the
+	// irrelevant one as well.
+	const hbIsTelegram = $derived(hbChannel === 'telegram');
+	const hbIsDiscord = $derived(hbChannel === 'discord');
 
 	const resettable = ['bot', 'heartbeat', 'observability', 'approvals'] as const;
 	type ResettableSection = (typeof resettable)[number];
@@ -94,6 +102,9 @@
 		hbActive = cfgValue.heartbeat.active;
 		hbChannel = cfgValue.heartbeat.channel;
 		hbTo = cfgValue.heartbeat.to;
+		hbThread = cfgValue.heartbeat.thread_id ?? '';
+		hbSession = cfgValue.heartbeat.session_id ?? '';
+		hbChatType = cfgValue.heartbeat.chat_type || 'guild';
 		hbEvery = cfgValue.heartbeat.every;
 
 		const obs = cfgValue.observability;
@@ -221,6 +232,9 @@
 					active: hbActive,
 					channel: hbChannel,
 					to: hbTo,
+					thread_id: hbIsTelegram ? hbThread.trim() : '',
+					session_id: hbSession.trim(),
+					chat_type: hbIsDiscord ? hbChatType : '',
 					every: hbEvery
 				},
 				observability: {
@@ -503,6 +517,46 @@
 						<div class="grid gap-1">
 							{@render fieldLabel('hb-to', 'myaaw.config.to', 'heartbeat', 'to')}
 							<Input id="hb-to" bind:value={hbTo} />
+						</div>
+						{#if hbIsTelegram}
+							<div class="grid gap-1">
+								{@render fieldLabel(
+									'hb-thread',
+									'myaaw.config.thread_id',
+									'heartbeat',
+									'thread_id'
+								)}
+								<Input id="hb-thread" bind:value={hbThread} placeholder="77" />
+								<p class="text-[11px] text-muted-foreground">{t('myaaw.config.thread_id_hint')}</p>
+							</div>
+						{:else if hbIsDiscord}
+							<div class="grid gap-1">
+								{@render fieldLabel(
+									'hb-chat-type',
+									'myaaw.config.chat_type',
+									'heartbeat',
+									'chat_type'
+								)}
+								<select
+									id="hb-chat-type"
+									bind:value={hbChatType}
+									class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+								>
+									<option value="guild">{t('myaaw.config.chat_type_guild')}</option>
+									<option value="dm">{t('myaaw.config.chat_type_dm')}</option>
+								</select>
+								<p class="text-[11px] text-muted-foreground">{t('myaaw.config.chat_type_hint')}</p>
+							</div>
+						{/if}
+						<div class="grid gap-1">
+							{@render fieldLabel(
+								'hb-session',
+								'myaaw.config.session_id',
+								'heartbeat',
+								'session_id'
+							)}
+							<Input id="hb-session" bind:value={hbSession} placeholder="0f4e8b3a-…" />
+							<p class="text-[11px] text-muted-foreground">{t('myaaw.config.session_id_hint')}</p>
 						</div>
 					</CardContent>
 				</Card>

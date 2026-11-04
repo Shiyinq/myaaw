@@ -78,6 +78,24 @@ func (s *CronService) Add(agentName string, in CronJobInput) (cron.Job, error) {
 	if in.Enabled != nil {
 		enabled = *in.Enabled
 	}
+
+	// A job must name a delivery target; the UI and CLI both require these, and a
+	// job without them could only fail when it runs.
+	channel := strings.ToLower(strings.TrimSpace(in.Channel))
+	switch channel {
+	case "telegram", "discord", "api", "cli":
+	default:
+		return cron.Job{}, fmt.Errorf("%w: channel must be telegram, discord, api, or cli", ErrInvalidConfig)
+	}
+	to := strings.TrimSpace(in.To)
+	if to == "" {
+		return cron.Job{}, fmt.Errorf("%w: to is required", ErrInvalidConfig)
+	}
+	sessionID := strings.TrimSpace(in.SessionID)
+	if (channel == "api" || channel == "cli") && sessionID == "" {
+		return cron.Job{}, fmt.Errorf("%w: session_id is required for api/cli targets", ErrInvalidConfig)
+	}
+
 	threadID := strings.TrimSpace(in.ThreadID)
 	if err := onboard.ValidateThreadID(threadID); err != nil {
 		return cron.Job{}, fmt.Errorf("%w: thread_id: %v", ErrInvalidConfig, err)
@@ -86,6 +104,14 @@ func (s *CronService) Add(agentName string, in CronJobInput) (cron.Job, error) {
 	if err := onboard.ValidateHeartbeatChatType(chatType); err != nil {
 		return cron.Job{}, fmt.Errorf("%w: chat_type: %v", ErrInvalidConfig, err)
 	}
+	// Keep only the fields that apply to the chosen channel, matching the CLI.
+	if channel != "telegram" {
+		threadID = ""
+	}
+	if channel != "discord" {
+		chatType = ""
+	}
+
 	now := time.Now().UTC()
 	job := cron.Job{
 		ID:      uuid.NewString(),
@@ -102,10 +128,10 @@ func (s *CronService) Add(agentName string, in CronJobInput) (cron.Job, error) {
 		},
 		Delivery: cron.Delivery{
 			Mode:      "announce",
-			Channel:   strings.TrimSpace(in.Channel),
-			To:        strings.TrimSpace(in.To),
+			Channel:   channel,
+			To:        to,
 			ThreadID:  threadID,
-			SessionID: strings.TrimSpace(in.SessionID),
+			SessionID: sessionID,
 			ChatType:  chatType,
 		},
 		Enabled:   enabled,

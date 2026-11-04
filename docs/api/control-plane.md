@@ -763,7 +763,7 @@ turning recording on: the trace database is opened once per process.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents/:name/conversations?search=&limit=&offset=` | paginated conversation list (`pinned`, `unfiled`, `folder` filters) |
+| `GET` | `/agents/:name/conversations?search=&limit=&offset=` | paginated conversation list (`pinned`, `unfiled`, `folder`, `channel` filters) |
 | `GET` | `/agents/:name/conversations/activity?from=&to=` | per-day conversation counts for the dashboard activity map |
 | `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages |
 | `PATCH` | `/agents/:name/conversations/:id` | rename `{title}` |
@@ -825,6 +825,12 @@ curl "http://localhost:9000/agents/myfriend/conversations?limit=20&search=report
 ```
 
 `limit` defaults to 50; values above 200 fall back to 50. `offset` defaults to 0.
+
+`channel=telegram|discord|api|cli` keeps only sessions owned by that platform.
+Each summary carries the same `channel` value, which lets a form offer past web
+sessions when it needs a `session_id`. Sessions created before the column existed
+have an empty `channel` and are omitted by the filter. Any other value is a
+`400`.
 
 ### Detail
 
@@ -1024,6 +1030,10 @@ conversation (required when `channel` is `api` or `cli`), and `chat_type`
 where the chat id already carries the room kind. `agent_id` is set from `:name`,
 so the job always lands in that agent's `cron/jobs.json`. See
 [Cron & Heartbeat](../agents/cron-heartbeat.md) for the target matrix.
+
+`channel` (one of `telegram`, `discord`, `api`, `cli`) and `to` are required.
+`thread_id` is kept only for Telegram and `chat_type` only for Discord, matching
+`myaaw cron add`, so a job never stores a field its channel cannot use.
 
 `schedule_kind` is `cron`, `every`, or `at`. Running a job requires the agent server to be up; results are written to the job history.
 
@@ -1276,7 +1286,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
-| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder` |
+| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder` |
 | Chat folders | `GET /chat-folders`, `POST /chat-folders`, `PATCH /chat-folders/:folder`, `DELETE /chat-folders/:folder` |
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |

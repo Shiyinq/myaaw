@@ -1039,6 +1039,17 @@ func applyHeartbeatPatch(hb *config.HeartbeatConfig, patch HeartbeatPatch) error
 		}
 		hb.Every = every
 	}
+	// A field that cannot apply to the saved channel is dropped instead of
+	// lingering in config.json and misleading the next run.
+	switch hb.Channel {
+	case "telegram":
+		hb.ChatType = ""
+	case "discord":
+		hb.ThreadID = ""
+	default:
+		hb.ThreadID = ""
+		hb.ChatType = ""
+	}
 	return nil
 }
 

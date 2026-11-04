@@ -33,9 +33,12 @@ type ConversationSummary struct {
 	Scope string `json:"scope,omitempty"`
 	// ChatName/TopicName are display names learned from the channel (group name
 	// and forum topic). Empty for CLI/API/DM sessions and unknown scopes.
-	ChatName     string     `json:"chat_name,omitempty"`
-	TopicName    string     `json:"topic_name,omitempty"`
-	IsForum      bool       `json:"is_forum,omitempty"`
+	ChatName  string `json:"chat_name,omitempty"`
+	TopicName string `json:"topic_name,omitempty"`
+	IsForum   bool   `json:"is_forum,omitempty"`
+	// Channel is the platform that owns the session (telegram, discord, api,
+	// cli). Empty for sessions created before the column existed.
+	Channel      string     `json:"channel,omitempty"`
 	Active       bool       `json:"active"`
 	MessageCount int        `json:"message_count"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -51,6 +54,9 @@ type ConversationFilter struct {
 	Pinned   bool
 	Unfiled  bool
 	FolderID string
+	// Channel keeps only sessions owned by one platform (telegram, discord,
+	// api, cli). Empty lists every platform.
+	Channel string
 }
 
 type ConversationPage struct {
@@ -79,6 +85,7 @@ type ConversationDetail struct {
 	ChatName      string             `json:"chat_name,omitempty"`
 	TopicName     string             `json:"topic_name,omitempty"`
 	IsForum       bool               `json:"is_forum,omitempty"`
+	Channel       string             `json:"channel,omitempty"`
 	Active        bool               `json:"active"`
 	CreatedAt     time.Time          `json:"created_at"`
 	UpdatedAt     time.Time          `json:"updated_at"`
@@ -230,6 +237,10 @@ func (s *ConversationService) List(
 		conditions = append(conditions, "folder_id = ?")
 		args = append(args, filter.FolderID)
 	}
+	if filter.Channel != "" {
+		conditions = append(conditions, "channel = ?")
+		args = append(args, filter.Channel)
+	}
 	if search != "" {
 		conditions = append(conditions, `title LIKE ? ESCAPE '\'`)
 		args = append(args, "%"+escapeLike(search)+"%")
@@ -250,7 +261,7 @@ func (s *ConversationService) List(
 	if filter.Pinned {
 		order = ` ORDER BY c.pinned_at DESC, c.updated_at DESC, c.created_at DESC`
 	}
-	query := `SELECT c.id, c.user_id, c.scope, c.title, c.active, c.created_at, c.updated_at,
+	query := `SELECT c.id, c.user_id, c.scope, c.channel, c.title, c.active, c.created_at, c.updated_at,
 			c.pinned_at, c.folder_id, c.messages,
 			COALESCE(s.chat_name, ''), COALESCE(s.topic_name, ''), COALESCE(s.is_forum, 0)
 		FROM conversations c
@@ -275,6 +286,7 @@ func (s *ConversationService) List(
 			&summary.ID,
 			&summary.UserID,
 			&summary.Scope,
+			&summary.Channel,
 			&summary.Title,
 			&summary.Active,
 			&summary.CreatedAt,
@@ -344,7 +356,7 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 	}
 	defer db.Close()
 
-	const query = `SELECT c.id, c.user_id, c.scope, c.title, c.messages, c.active, c.created_at, c.updated_at,
+	const query = `SELECT c.id, c.user_id, c.scope, c.channel, c.title, c.messages, c.active, c.created_at, c.updated_at,
 			c.pinned_at, c.folder_id, COALESCE(s.chat_name, ''), COALESCE(s.topic_name, ''), COALESCE(s.is_forum, 0)
 		FROM conversations c
 		LEFT JOIN chat_scopes s ON s.scope = c.scope
@@ -359,6 +371,7 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 		&detail.ID,
 		&detail.UserID,
 		&detail.Scope,
+		&detail.Channel,
 		&detail.Title,
 		&messagesJSON,
 		&detail.Active,

@@ -1080,7 +1080,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				if m.sessionCursor == 0 {
 					// Create New Session
-					newConv, err := m.convRepo.CreateConversation(0, "New Chat")
+					newConv, err := m.convRepo.CreateConversation(0, "cli", "New Chat")
 					if err == nil && newConv != nil {
 						m.activeConvID = newConv.Id
 					} else {

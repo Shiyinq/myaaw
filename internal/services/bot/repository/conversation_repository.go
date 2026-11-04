@@ -16,12 +16,12 @@ import (
 type ConversationRepository interface {
 	GetConversationByUserId(userId int) ([]*model.Conversation, error)
 	GetConversationById(id string) (*model.Conversation, error)
-	CreateConversation(userId int, title string) (*model.Conversation, error)
-	CreateConversationWithId(userId int, id, title string) (*model.Conversation, error)
+	CreateConversation(userId int, channel, title string) (*model.Conversation, error)
+	CreateConversationWithId(userId int, id, channel, title string) (*model.Conversation, error)
 	// CreateConversationInScope starts a new active conversation for a scope
 	// (a chat target such as a Telegram topic), deactivating the previous one.
 	// An empty scope keeps the legacy per-user behavior.
-	CreateConversationInScope(userId int, scope, title string) (*model.Conversation, error)
+	CreateConversationInScope(userId int, scope, channel, title string) (*model.Conversation, error)
 	UpdateConversationById(id string, messages []provider.Message, title string) error
 	UpdateConversationTitle(id string, title string) error
 	DeleteConversationById(id string) error
@@ -44,7 +44,7 @@ func NewConversationRepository(db *sql.DB) ConversationRepository {
 	return &ConversationRepositoryImpl{db: db}
 }
 
-const conversationColumns = `id, user_id, scope, title, messages, active, created_at, updated_at`
+const conversationColumns = `id, user_id, scope, channel, title, messages, active, created_at, updated_at`
 
 // rowScanner is implemented by both *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -58,7 +58,7 @@ func scanConversation(row rowScanner) (*model.Conversation, error) {
 		messagesJSON string
 	)
 	if err := row.Scan(
-		&conv.Id, &conv.UserId, &scope, &conv.Title, &messagesJSON, &conv.Active, &conv.CreatedAt, &conv.UpdatedAt,
+		&conv.Id, &conv.UserId, &scope, &conv.Channel, &conv.Title, &messagesJSON, &conv.Active, &conv.CreatedAt, &conv.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (r *ConversationRepositoryImpl) DeleteConversationById(id string) error {
 	return err
 }
 
-func (r *ConversationRepositoryImpl) CreateConversation(userId int, title string) (*model.Conversation, error) {
+func (r *ConversationRepositoryImpl) CreateConversation(userId int, channel, title string) (*model.Conversation, error) {
 	if title == "" {
 		title = "New Chat"
 	}
@@ -120,12 +120,12 @@ func (r *ConversationRepositoryImpl) CreateConversation(userId int, title string
 	updateQuery := `UPDATE conversations SET active = 0 WHERE user_id = ? AND scope = '' AND active = 1`
 	_, _ = r.db.Exec(updateQuery, userId)
 
-	return r.insertConversation(userId, "", title)
+	return r.insertConversation(userId, "", channel, title)
 }
 
 // CreateConversationWithId inserts a conversation with a caller-supplied ID.
 // A2A uses this to map an opaque contextId to a chat transcript.
-func (r *ConversationRepositoryImpl) CreateConversationWithId(userId int, id, title string) (*model.Conversation, error) {
+func (r *ConversationRepositoryImpl) CreateConversationWithId(userId int, id, channel, title string) (*model.Conversation, error) {
 	if id == "" {
 		return nil, errors.New("conversation id is required")
 	}
@@ -136,6 +136,7 @@ func (r *ConversationRepositoryImpl) CreateConversationWithId(userId int, id, ti
 	conversation := &model.Conversation{
 		Id:        id,
 		UserId:    userId,
+		Channel:   channel,
 		Title:     title,
 		Messages:  []provider.Message{},
 		Active:    true,
@@ -144,11 +145,11 @@ func (r *ConversationRepositoryImpl) CreateConversationWithId(userId int, id, ti
 	}
 
 	messagesJSON, _ := json.Marshal(conversation.Messages)
-	insertQuery := `INSERT INTO conversations (id, user_id, scope, title, messages, active, created_at, updated_at)
-	                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	insertQuery := `INSERT INTO conversations (id, user_id, scope, channel, title, messages, active, created_at, updated_at)
+	                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	if _, err := r.db.Exec(insertQuery,
-		conversation.Id, conversation.UserId, conversation.Scope, conversation.Title, messagesJSON, conversation.Active, conversation.CreatedAt, conversation.UpdatedAt,
+		conversation.Id, conversation.UserId, conversation.Scope, conversation.Channel, conversation.Title, messagesJSON, conversation.Active, conversation.CreatedAt, conversation.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -159,9 +160,9 @@ func (r *ConversationRepositoryImpl) CreateConversationWithId(userId int, id, ti
 // CreateConversationInScope rotates the active session for one scope: the
 // previous active row stays as history (active = 0) and a new row becomes the
 // current session. Only rows in this scope are touched.
-func (r *ConversationRepositoryImpl) CreateConversationInScope(userId int, scope, title string) (*model.Conversation, error) {
+func (r *ConversationRepositoryImpl) CreateConversationInScope(userId int, scope, channel, title string) (*model.Conversation, error) {
 	if scope == "" {
-		return r.CreateConversation(userId, title)
+		return r.CreateConversation(userId, channel, title)
 	}
 	if title == "" {
 		title = "New Chat"
@@ -174,14 +175,15 @@ func (r *ConversationRepositoryImpl) CreateConversationInScope(userId int, scope
 		return nil, fmt.Errorf("failed to deactivate scope: %w", err)
 	}
 
-	return r.insertConversation(userId, scope, title)
+	return r.insertConversation(userId, scope, channel, title)
 }
 
-func (r *ConversationRepositoryImpl) insertConversation(userId int, scope, title string) (*model.Conversation, error) {
+func (r *ConversationRepositoryImpl) insertConversation(userId int, scope, channel, title string) (*model.Conversation, error) {
 	conversation := &model.Conversation{
 		Id:        uuid.New().String(),
 		UserId:    userId,
 		Scope:     scope,
+		Channel:   channel,
 		Title:     title,
 		Messages:  []provider.Message{},
 		Active:    true,
@@ -190,11 +192,11 @@ func (r *ConversationRepositoryImpl) insertConversation(userId int, scope, title
 	}
 
 	messagesJSON, _ := json.Marshal(conversation.Messages)
-	insertQuery := `INSERT INTO conversations (id, user_id, scope, title, messages, active, created_at, updated_at)
-	                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	insertQuery := `INSERT INTO conversations (id, user_id, scope, channel, title, messages, active, created_at, updated_at)
+	                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	if _, err := r.db.Exec(insertQuery,
-		conversation.Id, conversation.UserId, conversation.Scope, conversation.Title, messagesJSON, conversation.Active, conversation.CreatedAt, conversation.UpdatedAt,
+		conversation.Id, conversation.UserId, conversation.Scope, conversation.Channel, conversation.Title, messagesJSON, conversation.Active, conversation.CreatedAt, conversation.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}

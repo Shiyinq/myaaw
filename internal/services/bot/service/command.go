@@ -54,7 +54,11 @@ func NewNewCommand(r *BotServiceImpl) CommandFactory {
 func (c *NewCommand) HandleCommand(ctx CommandContext, args string) (bool, string, error) {
 	// Scoped channels (Telegram topics) rotate the session for that scope only.
 	// An empty scope keeps the legacy per-user behavior.
-	_, err := c.r.conversationRepo.CreateConversationInScope(ctx.User.UserId, ctx.Scope, "")
+	channelName := ""
+	if ctx.Msg != nil {
+		channelName = ctx.Msg.Channel
+	}
+	_, err := c.r.conversationRepo.CreateConversationInScope(ctx.User.UserId, ctx.Scope, channelName, "")
 	if err != nil {
 		return true, common.CommandNewFailed(), nil
 	}

@@ -9,10 +9,19 @@ export interface CronPayload {
 	content: string;
 }
 
+/** Platform that receives the reply. */
+export type CronChannel = 'telegram' | 'discord' | 'api' | 'cli';
+
+/** Discord only: a DM recipient is a user id, a guild target is a channel id. */
+export type CronChatType = 'dm' | 'guild';
+
 export interface CronDelivery {
 	mode: string;
-	channel: string;
+	channel: CronChannel | string;
 	to: string;
+	thread_id?: string;
+	session_id?: string;
+	chat_type?: CronChatType | string;
 }
 
 export interface CronJob {
@@ -37,8 +46,14 @@ export interface CronJobInput {
 	expr: string;
 	tz?: string;
 	message: string;
-	channel?: string;
-	to?: string;
+	channel: CronChannel;
+	to: string;
+	/** Telegram forum message_thread_id. */
+	thread_id?: string;
+	/** Exact conversation id; required for api/cli. */
+	session_id?: string;
+	/** Discord only. */
+	chat_type?: CronChatType;
 	enabled?: boolean;
 }
 

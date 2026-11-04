@@ -19,6 +19,7 @@ func newTestConversationRepo(t *testing.T) *ConversationRepositoryImpl {
 		id TEXT PRIMARY KEY,
 		user_id INTEGER,
 		scope TEXT NOT NULL DEFAULT '',
+		channel TEXT NOT NULL DEFAULT '',
 		title TEXT,
 		messages TEXT,
 		active BOOLEAN,
@@ -107,11 +108,11 @@ func TestUpsertScopeNames(t *testing.T) {
 func TestCreateConversationWithId(t *testing.T) {
 	repo := newTestConversationRepo(t)
 
-	conversation, err := repo.CreateConversationWithId(-1, "ctx-abc", "")
+	conversation, err := repo.CreateConversationWithId(-1, "ctx-abc", "a2a", "")
 	if err != nil {
 		t.Fatalf("CreateConversationWithId: %v", err)
 	}
-	if conversation.Id != "ctx-abc" || conversation.UserId != -1 || conversation.Title != "New Chat" {
+	if conversation.Id != "ctx-abc" || conversation.UserId != -1 || conversation.Title != "New Chat" || conversation.Channel != "a2a" {
 		t.Fatalf("conversation = %+v", conversation)
 	}
 
@@ -127,15 +128,15 @@ func TestCreateConversationWithId(t *testing.T) {
 func TestCreateConversationInScopeRotatesOnlyItsScope(t *testing.T) {
 	repo := newTestConversationRepo(t)
 
-	firstPhoto, err := repo.CreateConversationInScope(1, "tg:-100:77", "")
+	firstPhoto, err := repo.CreateConversationInScope(1, "tg:-100:77", "telegram", "")
 	if err != nil {
 		t.Fatalf("CreateConversationInScope: %v", err)
 	}
-	notif, err := repo.CreateConversationInScope(1, "tg:-100:78", "")
+	notif, err := repo.CreateConversationInScope(1, "tg:-100:78", "telegram", "")
 	if err != nil {
 		t.Fatalf("CreateConversationInScope: %v", err)
 	}
-	secondPhoto, err := repo.CreateConversationInScope(2, "tg:-100:77", "")
+	secondPhoto, err := repo.CreateConversationInScope(2, "tg:-100:77", "telegram", "")
 	if err != nil {
 		t.Fatalf("CreateConversationInScope: %v", err)
 	}
@@ -168,7 +169,7 @@ func TestCreateConversationInScopeRotatesOnlyItsScope(t *testing.T) {
 func TestGetActiveConversationByScopeIsSharedAcrossUsers(t *testing.T) {
 	repo := newTestConversationRepo(t)
 
-	created, err := repo.CreateConversationInScope(111, "tg:-100:77", "")
+	created, err := repo.CreateConversationInScope(111, "tg:-100:77", "telegram", "")
 	if err != nil {
 		t.Fatalf("CreateConversationInScope: %v", err)
 	}
@@ -183,20 +184,50 @@ func TestGetActiveConversationByScopeIsSharedAcrossUsers(t *testing.T) {
 	}
 }
 
-func TestScopedSessionsDoNotTouchLegacyDMs(t *testing.T) {
+// The platform that owns a session is stored with it, so the dashboard can list
+// (for example) only web sessions when picking a cron target.
+func TestConversationRemembersChannel(t *testing.T) {
 	repo := newTestConversationRepo(t)
 
-	dm, err := repo.CreateConversation(1, "")
+	scoped, err := repo.CreateConversationInScope(1, "dc:222333444555666777", "discord", "")
+	if err != nil {
+		t.Fatalf("CreateConversationInScope: %v", err)
+	}
+	stored, err := repo.GetConversationById(scoped.Id)
+	if err != nil {
+		t.Fatalf("GetConversationById: %v", err)
+	}
+	if stored == nil || stored.Channel != "discord" {
+		t.Fatalf("scoped channel = %+v", stored)
+	}
+
+	dm, err := repo.CreateConversation(1, "telegram", "")
 	if err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
-	topic, err := repo.CreateConversationInScope(1, "tg:-100:77", "")
+	storedDM, err := repo.GetConversationById(dm.Id)
+	if err != nil {
+		t.Fatalf("GetConversationById: %v", err)
+	}
+	if storedDM == nil || storedDM.Channel != "telegram" {
+		t.Fatalf("dm channel = %+v", storedDM)
+	}
+}
+
+func TestScopedSessionsDoNotTouchLegacyDMs(t *testing.T) {
+	repo := newTestConversationRepo(t)
+
+	dm, err := repo.CreateConversation(1, "telegram", "")
+	if err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+	topic, err := repo.CreateConversationInScope(1, "tg:-100:77", "telegram", "")
 	if err != nil {
 		t.Fatalf("CreateConversationInScope: %v", err)
 	}
 
 	// A DM "new chat" must not deactivate the topic session.
-	if _, err := repo.CreateConversation(1, ""); err != nil {
+	if _, err := repo.CreateConversation(1, "telegram", ""); err != nil {
 		t.Fatalf("CreateConversation: %v", err)
 	}
 	active, err := repo.GetActiveConversationByScope(1, "tg:-100:77")

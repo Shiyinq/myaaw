@@ -8628,6 +8628,9 @@ const docTemplatecontrolplane = `{
                 "active": {
                     "type": "boolean"
                 },
+                "channel": {
+                    "type": "string"
+                },
                 "chat_name": {
                     "type": "string"
                 },
@@ -8720,6 +8723,10 @@ const docTemplatecontrolplane = `{
             "properties": {
                 "active": {
                     "type": "boolean"
+                },
+                "channel": {
+                    "description": "Channel is the platform that owns the session (telegram, discord, api,\ncli). Empty for sessions created before the column existed.",
+                    "type": "string"
                 },
                 "chat_name": {
                     "description": "ChatName/TopicName are display names learned from the channel (group name\nand forum topic). Empty for CLI/API/DM sessions and unknown scopes.",

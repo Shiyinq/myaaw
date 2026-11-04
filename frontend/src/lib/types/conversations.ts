@@ -57,6 +57,8 @@ export interface ConversationSummary {
 	topic_name?: string;
 	/** The chat has named topics; its chat-level scope is the default topic. */
 	is_forum?: boolean;
+	/** Platform that owns the session: telegram, discord, api, or cli. */
+	channel?: string;
 	active: boolean;
 	message_count: number;
 	created_at: string;
@@ -123,6 +125,8 @@ export interface ConversationDetail {
 	chat_name?: string;
 	topic_name?: string;
 	is_forum?: boolean;
+	/** Platform that owns the session: telegram, discord, api, or cli. */
+	channel?: string;
 	active: boolean;
 	created_at: string;
 	updated_at: string;

@@ -284,7 +284,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 			// An A2A contextId is caller-defined, so the first task that
 			// uses one may not have a transcript yet. Create it under that
 			// ID so later tasks continue the same conversation.
-			created, err := r.conversationRepo.CreateConversationWithId(user.UserId, msg.ConversationID, "")
+			created, err := r.conversationRepo.CreateConversationWithId(user.UserId, msg.ConversationID, msg.Channel, "")
 			if err != nil {
 				return nil, err
 			}
@@ -309,7 +309,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		convMessages = agent.MigrateLegacyTranscript(conv.Messages)
 		msg.ConversationID = conv.Id
 	} else {
-		created, err := r.conversationRepo.CreateConversationInScope(user.UserId, msg.Scope, "New Chat")
+		created, err := r.conversationRepo.CreateConversationInScope(user.UserId, msg.Scope, msg.Channel, "New Chat")
 		if err != nil {
 			return nil, err
 		}

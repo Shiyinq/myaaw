@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { cron as cronApi } from '$lib/apis/cron';
 	import { config as configApi } from '$lib/apis/config';
+	import { conversations as conversationsApi } from '$lib/apis/conversations';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { validate, type FieldErrors } from '$lib/utils/validation';
@@ -24,7 +25,13 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
 	import { CalendarClock, History, Play, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
-	import type { CronExecution, CronJob } from '$lib/types';
+	import type {
+		ConversationSummary,
+		CronChannel,
+		CronChatType,
+		CronExecution,
+		CronJob
+	} from '$lib/types';
 
 	const { t, locale } = useTranslation();
 
@@ -39,10 +46,24 @@
 	let expr = $state('0 7 * * *');
 	let tz = $state('Asia/Jakarta');
 	let message = $state('');
-	let channel = $state('telegram');
+	let channel = $state<CronChannel>('telegram');
 	let to = $state('');
+	let threadId = $state('');
+	let sessionId = $state('');
+	let chatType = $state<CronChatType>('guild');
 	let enabled = $state(true);
 	let errors = $state<FieldErrors>({});
+
+	// Session history for the picker. Only sessions of the selected channel are
+	// listed, so a web target never offers a Telegram DM transcript. Old rows
+	// without a channel are left out on purpose.
+	let sessionChoices = $state<ConversationSummary[]>([]);
+	let sessionChoicesLoading = $state(false);
+	let sessionsKey = '';
+
+	const isTelegram = $derived(channel === 'telegram');
+	const isDiscord = $derived(channel === 'discord');
+	const needsSession = $derived(channel === 'api' || channel === 'cli');
 
 	// The preset is a frontend convenience: it renders the cron expression the
 	// backend already understands, so nothing new is stored.
@@ -142,6 +163,58 @@
 		void load(currentAgent);
 	});
 
+	async function loadSessions(currentAgent: string, currentChannel: CronChannel) {
+		sessionChoicesLoading = true;
+		try {
+			const page = await conversationsApi.list(currentAgent, {
+				limit: 50,
+				channel: currentChannel
+			});
+			sessionChoices = page.conversations ?? [];
+		} catch {
+			sessionChoices = [];
+		} finally {
+			sessionChoicesLoading = false;
+		}
+	}
+
+	$effect(() => {
+		const currentAgent = agent;
+		const key = `${currentAgent}:${channel}`;
+		if (!currentAgent || key === sessionsKey) return;
+		sessionsKey = key;
+		void loadSessions(currentAgent, channel);
+	});
+
+	// A channel change starts a new target: stale room fields would point at the
+	// previous platform.
+	function changeChannel(next: CronChannel) {
+		channel = next;
+		to = '';
+		threadId = '';
+		sessionId = '';
+		chatType = 'guild';
+		errors = {};
+	}
+
+	// Picking a past session also fills what its scope already knows: a Telegram
+	// topic id, or whether a Discord target is a guild channel or a DM.
+	function pickSession(id: string) {
+		const choice = sessionChoices.find((candidate) => candidate.id === id);
+		if (!choice) {
+			sessionId = '';
+			return;
+		}
+		sessionId = choice.id;
+		if (isTelegram) {
+			const parts = (choice.scope ?? '').split(':');
+			threadId = parts.length >= 3 ? parts[2] : '';
+		}
+		if (isDiscord) {
+			chatType = (choice.scope ?? '').startsWith('dc:') ? 'guild' : 'dm';
+		}
+	}
+
 	async function create() {
 		if (!agent) return;
 		// A preset is converted to cron syntax here, so the backend only ever sees
@@ -154,7 +227,10 @@
 			tz,
 			message,
 			channel,
-			to
+			to,
+			thread_id: isTelegram ? threadId.trim() : '',
+			session_id: sessionId.trim(),
+			chat_type: isDiscord ? chatType : undefined
 		});
 		if (!result.ok) {
 			errors = result.errors;
@@ -169,13 +245,19 @@
 				expr: result.data.expr,
 				tz: result.data.tz,
 				message: result.data.message,
-				channel: result.data.channel || undefined,
-				to: result.data.to || undefined,
+				channel: result.data.channel,
+				to: result.data.to,
+				thread_id: isTelegram ? result.data.thread_id || undefined : undefined,
+				session_id: result.data.session_id || undefined,
+				chat_type: isDiscord ? result.data.chat_type : undefined,
 				enabled
 			});
 			name = '';
 			message = '';
 			to = '';
+			threadId = '';
+			sessionId = '';
+			chatType = 'guild';
 			toastStore.success(t('myaaw.cron.saved'));
 			await load(agent);
 		} catch (err) {
@@ -309,6 +391,16 @@
 									{#if job.delivery.channel || job.delivery.to}
 										<p class="text-[11px] text-muted-foreground">
 											{job.delivery.channel || '—'} → {job.delivery.to || '—'}
+											{#if job.delivery.thread_id}
+												· {t('myaaw.cron.delivery_topic')} {job.delivery.thread_id}
+											{/if}
+											{#if job.delivery.chat_type}
+												· {job.delivery.chat_type}
+											{/if}
+											{#if job.delivery.session_id}
+												· {t('myaaw.cron.delivery_session')}
+												<span class="font-mono">{job.delivery.session_id.slice(0, 8)}</span>
+											{/if}
 										</p>
 									{/if}
 								</div>
@@ -471,23 +563,81 @@
 							></textarea>
 							<FieldError code={errors.message} />
 						</div>
-						<div class="grid grid-cols-2 gap-2">
+						<div class="grid gap-1">
+							<Label for="cron-channel">{t('myaaw.cron.channel')}</Label>
+							<select
+								id="cron-channel"
+								value={channel}
+								onchange={(event) => changeChannel(event.currentTarget.value as CronChannel)}
+								class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+							>
+								<option value="telegram">telegram</option>
+								<option value="discord">discord</option>
+								<option value="api">api</option>
+								<option value="cli">cli</option>
+							</select>
+						</div>
+						<div class="grid gap-1">
+							<Label for="cron-to">{t('myaaw.cron.to')}</Label>
+							<Input id="cron-to" bind:value={to} placeholder="123456789" />
+							{#if isTelegram}
+								<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.to_telegram_hint')}</p>
+							{:else if isDiscord}
+								<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.to_discord_hint')}</p>
+							{:else}
+								<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.to_api_hint')}</p>
+							{/if}
+						</div>
+
+						{#if isTelegram}
 							<div class="grid gap-1">
-								<Label for="cron-channel">{t('myaaw.cron.channel')}</Label>
+								<Label for="cron-thread">{t('myaaw.cron.thread_id')}</Label>
+								<Input id="cron-thread" bind:value={threadId} placeholder="77" />
+								<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.thread_id_hint')}</p>
+								<FieldError code={errors.thread_id} />
+							</div>
+						{:else if isDiscord}
+							<div class="grid gap-1">
+								<Label for="cron-chat-type">{t('myaaw.cron.chat_type')}</Label>
 								<select
-									id="cron-channel"
-									bind:value={channel}
+									id="cron-chat-type"
+									bind:value={chatType}
 									class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 								>
-									<option value="telegram">telegram</option>
-									<option value="discord">discord</option>
-									<option value="">none</option>
+									<option value="guild">{t('myaaw.cron.chat_type_guild')}</option>
+									<option value="dm">{t('myaaw.cron.chat_type_dm')}</option>
 								</select>
+								<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.chat_type_hint')}</p>
 							</div>
-							<div class="grid gap-1">
-								<Label for="cron-to">{t('myaaw.cron.to')}</Label>
-								<Input id="cron-to" bind:value={to} placeholder="123456789" />
-							</div>
+						{/if}
+
+						<div class="grid gap-1">
+							<Label for="cron-session">{t('myaaw.cron.session_id')}</Label>
+							<select
+								id="cron-session-pick"
+								value={sessionChoices.some((choice) => choice.id === sessionId) ? sessionId : ''}
+								onchange={(event) => pickSession(event.currentTarget.value)}
+								disabled={sessionChoicesLoading}
+								class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+							>
+								<option value="">
+									{sessionChoices.length === 0
+										? t('myaaw.cron.session_none')
+										: t('myaaw.cron.session_history')}
+								</option>
+								{#each sessionChoices as choice (choice.id)}
+									<option value={choice.id}>
+										{choice.title || choice.id.slice(0, 8)} · {choice.id.slice(0, 8)}
+									</option>
+								{/each}
+							</select>
+							<Input id="cron-session" bind:value={sessionId} placeholder="0f4e8b3a-…" />
+							<p class="text-[11px] text-muted-foreground">
+								{needsSession
+									? t('myaaw.cron.session_id_required_hint')
+									: t('myaaw.cron.session_id_optional_hint')}
+							</p>
+							<FieldError code={errors.session_id} />
 						</div>
 						<label class="flex items-center gap-2 text-sm">
 							<input type="checkbox" bind:checked={enabled} class="h-4 w-4 accent-primary" />

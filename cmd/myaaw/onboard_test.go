@@ -54,7 +54,8 @@ func TestMergeOnboardConfigKeepsHeartbeatTargetDetails(t *testing.T) {
 	}
 
 	// Re-onboarding the same destination without the thread/session flags keeps
-	// what the operator configured earlier, because the wizard never asks.
+	// what the operator configured earlier, because the wizard never asks. A chat
+	// type that cannot apply to Telegram is dropped.
 	kept := mergeOnboardConfig(base, onboardInput{
 		Heartbeat:        true,
 		HeartbeatSet:     true,
@@ -62,8 +63,11 @@ func TestMergeOnboardConfigKeepsHeartbeatTargetDetails(t *testing.T) {
 		HeartbeatTo:      "-1001234567890",
 		HeartbeatEvery:   "1h",
 	})
-	if kept.Heartbeat.ThreadID != "77" || kept.Heartbeat.SessionID != "0f4e8b3a-1111-4222-8333-944455556666" || kept.Heartbeat.ChatType != "supergroup" {
+	if kept.Heartbeat.ThreadID != "77" || kept.Heartbeat.SessionID != "0f4e8b3a-1111-4222-8333-944455556666" {
 		t.Fatalf("target details dropped: %+v", kept.Heartbeat)
+	}
+	if kept.Heartbeat.ChatType != "" {
+		t.Fatalf("chat type kept for telegram: %+v", kept.Heartbeat)
 	}
 
 	// A different destination must not inherit a stale topic or session.
@@ -87,10 +91,22 @@ func TestMergeOnboardConfigKeepsHeartbeatTargetDetails(t *testing.T) {
 		HeartbeatEvery:     "1h",
 		HeartbeatThreadID:  "88",
 		HeartbeatSessionID: "1a2b3c4d-1111-4222-8333-944455556666",
-		HeartbeatChatType:  "guild",
 	})
-	if explicit.Heartbeat.ThreadID != "88" || explicit.Heartbeat.SessionID != "1a2b3c4d-1111-4222-8333-944455556666" || explicit.Heartbeat.ChatType != "guild" {
+	if explicit.Heartbeat.ThreadID != "88" || explicit.Heartbeat.SessionID != "1a2b3c4d-1111-4222-8333-944455556666" {
 		t.Fatalf("explicit target details ignored: %+v", explicit.Heartbeat)
+	}
+
+	// Discord keeps the chat type and drops the Telegram-only topic id.
+	discord := mergeOnboardConfig(base, onboardInput{
+		Heartbeat:         true,
+		HeartbeatSet:      true,
+		HeartbeatChannel:  "discord",
+		HeartbeatTo:       "222333444555666777",
+		HeartbeatEvery:    "1h",
+		HeartbeatChatType: "dm",
+	})
+	if discord.Heartbeat.ChatType != "dm" || discord.Heartbeat.ThreadID != "" {
+		t.Fatalf("discord target details = %+v", discord.Heartbeat)
 	}
 }
 

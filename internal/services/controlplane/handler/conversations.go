@@ -35,10 +35,20 @@ func (h *Handler) ListConversations(c fiber.Ctx) error {
 	offset, _ := strconv.Atoi(c.Query("offset"))
 	search := strings.TrimSpace(c.Query("search"))
 
+	channel := strings.ToLower(strings.TrimSpace(c.Query("channel")))
+	switch channel {
+	case "", "telegram", "discord", "api", "cli":
+	default:
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "channel must be telegram, discord, api, or cli",
+		})
+	}
+
 	filter := service.ConversationFilter{
 		Pinned:   queryBool(c.Query("pinned")),
 		Unfiled:  queryBool(c.Query("unfiled")),
 		FolderID: strings.TrimSpace(c.Query("folder")),
+		Channel:  channel,
 	}
 	sections := 0
 	for _, set := range []bool{filter.Pinned, filter.Unfiled, filter.FolderID != ""} {

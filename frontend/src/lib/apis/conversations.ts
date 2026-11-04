@@ -19,6 +19,8 @@ export interface ConversationFilters {
 	unfiled?: boolean;
 	/** Only conversations in this folder. */
 	folder?: string;
+	/** Only sessions owned by one platform (telegram, discord, api, cli). */
+	channel?: string;
 }
 
 export const conversations = {
@@ -30,6 +32,7 @@ export const conversations = {
 		if (params.pinned) query.set('pinned', '1');
 		if (params.unfiled) query.set('unfiled', '1');
 		if (params.folder) query.set('folder', params.folder);
+		if (params.channel) query.set('channel', params.channel);
 		const suffix = query.toString() ? `?${query.toString()}` : '';
 		return client<ConversationPage>(agentPath(agent, `/conversations${suffix}`));
 	},

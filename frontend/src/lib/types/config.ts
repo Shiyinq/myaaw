@@ -84,6 +84,12 @@ export interface HeartbeatConfig {
 	every: string;
 	to: string;
 	channel: string;
+	/** Telegram forum message_thread_id. */
+	thread_id?: string;
+	/** Exact conversation id. */
+	session_id?: string;
+	/** Discord only: dm or guild. */
+	chat_type?: string;
 }
 
 export interface CronConfig {

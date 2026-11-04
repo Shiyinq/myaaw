@@ -41,10 +41,11 @@ func (f *fakeConversationRepo) GetConversationById(id string) (*model.Conversati
 	return f.conversations[id], nil
 }
 
-func (f *fakeConversationRepo) CreateConversation(userId int, title string) (*model.Conversation, error) {
+func (f *fakeConversationRepo) CreateConversation(userId int, channel, title string) (*model.Conversation, error) {
 	conversation := &model.Conversation{
 		Id:       "generated-conversation",
 		UserId:   userId,
+		Channel:  channel,
 		Title:    title,
 		Messages: []provider.Message{},
 	}
@@ -52,10 +53,11 @@ func (f *fakeConversationRepo) CreateConversation(userId int, title string) (*mo
 	return conversation, nil
 }
 
-func (f *fakeConversationRepo) CreateConversationWithId(userId int, id, title string) (*model.Conversation, error) {
+func (f *fakeConversationRepo) CreateConversationWithId(userId int, id, channel, title string) (*model.Conversation, error) {
 	conversation := &model.Conversation{
 		Id:       id,
 		UserId:   userId,
+		Channel:  channel,
 		Title:    title,
 		Messages: []provider.Message{},
 	}
@@ -63,9 +65,9 @@ func (f *fakeConversationRepo) CreateConversationWithId(userId int, id, title st
 	return conversation, nil
 }
 
-func (f *fakeConversationRepo) CreateConversationInScope(userId int, scope, title string) (*model.Conversation, error) {
+func (f *fakeConversationRepo) CreateConversationInScope(userId int, scope, channel, title string) (*model.Conversation, error) {
 	if scope == "" {
-		return f.CreateConversation(userId, title)
+		return f.CreateConversation(userId, channel, title)
 	}
 	// Rotate the scope: only one conversation per scope stays active.
 	for _, conv := range f.conversations {
@@ -77,6 +79,7 @@ func (f *fakeConversationRepo) CreateConversationInScope(userId int, scope, titl
 		Id:       fmt.Sprintf("generated-%d", len(f.conversations)+1),
 		UserId:   userId,
 		Scope:    scope,
+		Channel:  channel,
 		Title:    title,
 		Messages: []provider.Message{},
 		Active:   true,

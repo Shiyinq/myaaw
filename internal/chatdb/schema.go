@@ -71,6 +71,9 @@ func EnsureSchema(db *sql.DB) error {
 		{"pinned_at", `ALTER TABLE conversations ADD COLUMN pinned_at DATETIME`},
 		{"folder_id", `ALTER TABLE conversations ADD COLUMN folder_id TEXT`},
 		{"scope", `ALTER TABLE conversations ADD COLUMN scope TEXT NOT NULL DEFAULT ''`},
+		// Channel records which platform owns a conversation (telegram, discord,
+		// api, cli). Rows created before the column existed stay empty.
+		{"channel", `ALTER TABLE conversations ADD COLUMN channel TEXT NOT NULL DEFAULT ''`},
 	} {
 		if columns[column.name] {
 			continue

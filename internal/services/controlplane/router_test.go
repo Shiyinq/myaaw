@@ -1041,6 +1041,9 @@ func TestRouterConversationManagement(t *testing.T) {
 		t.Fatalf("search miss = %+v", searchMiss)
 	}
 
+	// The channel filter only accepts a known platform.
+	doJSON(t, app, "GET", "/agents/myfriend/conversations?channel=slack", token, "", fiber.StatusBadRequest, nil)
+
 	var detail struct {
 		ID    string `json:"id"`
 		Title string `json:"title"`

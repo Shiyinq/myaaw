@@ -246,6 +246,13 @@ func MergeConfig(base *config.Config, in Input) *config.Config {
 					heartbeat.ChatType = cfg.Heartbeat.ChatType
 				}
 			}
+			// Keep only the fields that apply to the chosen channel.
+			if !strings.EqualFold(heartbeat.Channel, "telegram") {
+				heartbeat.ThreadID = ""
+			}
+			if !strings.EqualFold(heartbeat.Channel, "discord") {
+				heartbeat.ChatType = ""
+			}
 			cfg.Heartbeat = heartbeat
 		} else {
 			cfg.Heartbeat.Active = false
