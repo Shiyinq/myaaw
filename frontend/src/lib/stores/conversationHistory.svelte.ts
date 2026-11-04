@@ -3,6 +3,7 @@ import {
 	conversations as conversationsApi
 } from '$lib/apis/conversations';
 import { t } from '$lib/i18n';
+import { isAuthenticated } from '$lib/stores/authStatus.svelte';
 import { agentSelection } from '$lib/stores/selectedAgent.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
 import { getErrorMessage } from '$lib/utils/api';
@@ -205,10 +206,15 @@ export const conversationHistory = {
 	},
 	init() {
 		// A different agent or search starts the list over; the key keeps the
-		// effect from refetching on unrelated state changes.
+		// effect from refetching on unrelated state changes. A previous mount may
+		// have run before login (the client redirects to /login on 401), so the
+		// key is cleared here to make this mount fetch again.
+		key = '';
 		$effect(() => {
 			const agent = agentSelection.selected;
-			if (!agent) return;
+			// Wait for the session: the shell can mount briefly before the auth
+			// guard redirects, and a 401 there would blank the list.
+			if (!agent || !isAuthenticated.value) return;
 			const next = `${agent}:${query}`;
 			if (next === key) return;
 			key = next;
