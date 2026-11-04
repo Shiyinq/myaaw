@@ -1020,7 +1020,8 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 
 `thread_id` targets a Telegram forum topic, `session_id` pins an exact
 conversation (required when `channel` is `api` or `cli`), and `chat_type`
-(`dm`/`guild`) tells a Discord DM from a channel. `agent_id` is set from `:name`,
+(`dm`/`guild`) tells a Discord DM from a channel; it is ignored for Telegram,
+where the chat id already carries the room kind. `agent_id` is set from `:name`,
 so the job always lands in that agent's `cron/jobs.json`. See
 [Cron & Heartbeat](../agents/cron-heartbeat.md) for the target matrix.
 

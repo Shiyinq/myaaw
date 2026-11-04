@@ -319,12 +319,13 @@ func (r *BotServiceImpl) heartbeatMessage(prompt string, target HeartbeatTarget,
 		if err != nil {
 			return nil, fmt.Errorf("invalid telegram chat id %q", target.To)
 		}
-		if msg.ChatType == "" {
-			if chatID > 0 {
-				msg.ChatType = "private"
-			} else {
-				msg.ChatType = "supergroup"
-			}
+		// The chat id sign is the room kind: positive is a user (private), a
+		// negative id is a group. A chat_type inherited from the chat that
+		// created the job (for example a DM aimed at a group) must not win.
+		if chatID > 0 {
+			msg.ChatType = "private"
+		} else {
+			msg.ChatType = "supergroup"
 		}
 		threadID := 0
 		if target.ThreadID != "" {
@@ -338,7 +339,15 @@ func (r *BotServiceImpl) heartbeatMessage(prompt string, target HeartbeatTarget,
 		msg.TopicID = target.ThreadID
 		msg.RawMeta = telegram.TelegramMeta{ChatID: chatID, ThreadID: threadID}
 	case "discord":
-		if msg.ChatType == "" {
+		switch {
+		case strings.HasPrefix(msg.Scope, "dc:"):
+			// A pinned guild conversation has a dc: scope even when the job
+			// inherited chat_type from a DM it was created in. Guild rooms always
+			// carry that scope, so a pinned conversation without one is a DM.
+			msg.ChatType = "guild"
+		case pinned:
+			msg.ChatType = "dm"
+		case msg.ChatType == "":
 			msg.ChatType = "guild"
 		}
 		if msg.ChatType == "dm" {

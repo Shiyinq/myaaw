@@ -147,13 +147,23 @@ func (t *CronTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 		}
 
 		// Default the delivery target to the chat the model is talking in, so a
-		// simple "remind me in 5 minutes" needs no ids from the user.
+		// simple "remind me in 5 minutes" needs no ids from the user. A job for
+		// another chat must not inherit this room's thread, session, or chat type:
+		// those belong to the chat the request came from, not to the target.
 		channel := argString(args, "channel")
 		to := argString(args, "to")
 		threadID := argString(args, "thread_id")
 		sessionID := argString(args, "session_id")
 		chatType := argString(args, "chat_type")
+		explicitChatType := chatType != ""
+		sameChat := true
+		sameRoom := true
 		if ctx != nil {
+			if to != "" && to != ctx.ChatID && to != ctx.UserID {
+				sameChat = false
+			}
+			sameRoom = sameChat && (threadID == "" || threadID == ctx.TopicID) && (sessionID == "" || sessionID == ctx.ConversationID)
+
 			if channel == "" {
 				channel = ctx.Channel
 			}
@@ -164,13 +174,13 @@ func (t *CronTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 					to = ctx.UserID
 				}
 			}
-			if threadID == "" {
+			if threadID == "" && sameChat {
 				threadID = ctx.TopicID
 			}
-			if sessionID == "" {
+			if sessionID == "" && sameRoom {
 				sessionID = ctx.ConversationID
 			}
-			if chatType == "" {
+			if chatType == "" && sameChat {
 				chatType = ctx.ChatType
 			}
 			// A Discord DM is addressed by user id, but <userinfo> shows the DM
@@ -179,6 +189,14 @@ func (t *CronTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 			if strings.EqualFold(chatType, "dm") && to != "" && to == ctx.ChatID && ctx.UserID != "" {
 				to = ctx.UserID
 			}
+		}
+
+		// chat_type describes the *target*, not the chat this message came from.
+		// Telegram derives the room kind from the chat id, so only Discord needs
+		// it, and only for the room this request came from. An explicit value from
+		// the model is always kept.
+		if !explicitChatType && (!strings.EqualFold(channel, "discord") || !sameChat) {
+			chatType = ""
 		}
 
 		if channel != "" {

@@ -119,6 +119,79 @@ func TestCallToolRewritesDMChannelIDToUser(t *testing.T) {
 	}
 }
 
+// A reminder requested in one chat but aimed at another must not borrow the
+// source room: its topic, session, and chat type belong to the target instead.
+func TestCallToolDoesNotBorrowSourceRoomForAnotherChat(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := agentdir.SetActive("agent-b"); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+	t.Cleanup(func() { _ = agentdir.SetActive(agentdir.DefaultAgentName) })
+	fakeCLI(t)
+
+	out := NewCronTool().CallTool(`{
+		"action": "add",
+		"name": "Sapa group",
+		"message": "Hai semuanya",
+		"at": "2m",
+		"channel": "telegram",
+		"to": "-1001234567890"
+	}`, &tools.ToolsContext{
+		Channel:        "telegram",
+		ChatID:         "123456789",
+		ChatType:       "private",
+		UserID:         "123456789",
+		ConversationID: "0f4e8b3a-1111-4222-8333-944455556666",
+		Scope:          "",
+	})
+
+	fields := strings.Fields(out)
+	if !hasPair(fields, "--to", "-1001234567890") {
+		t.Errorf("target lost: %v", fields)
+	}
+	for i := 0; i < len(fields); i++ {
+		switch fields[i] {
+		case "--session-id", "--thread-id", "--chat-type":
+			t.Errorf("source room field %s leaked into a cross-chat job: %v", fields[i], fields)
+		}
+	}
+}
+
+// A Discord guild target is not a DM just because the request came from a DM.
+func TestCallToolDropsInheritedDiscordChatTypeForAnotherChannel(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := agentdir.SetActive("agent-b"); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+	t.Cleanup(func() { _ = agentdir.SetActive(agentdir.DefaultAgentName) })
+	fakeCLI(t)
+
+	out := NewCronTool().CallTool(`{
+		"action": "add",
+		"name": "Daily report",
+		"message": "Report time",
+		"every": "1h",
+		"channel": "discord",
+		"to": "222333444555666777"
+	}`, &tools.ToolsContext{
+		Channel:        "discord",
+		ChatID:         "111222333444555666",
+		ChatType:       "dm",
+		UserID:         "111222333444555666",
+		ConversationID: "0f4e8b3a-1111-4222-8333-944455556666",
+		Scope:          "",
+	})
+
+	fields := strings.Fields(out)
+	if hasPair(fields, "--chat-type", "dm") {
+		t.Errorf("DM chat type leaked into a guild target: %v", fields)
+	}
+}
+
 func TestCallToolUsesExplicitTargetOverContext(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

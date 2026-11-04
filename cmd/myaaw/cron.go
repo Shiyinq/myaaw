@@ -83,6 +83,14 @@ var cronAddCmd = &cobra.Command{
 			return
 		}
 
+		// chat_type only distinguishes a Discord DM from a channel. Telegram encodes
+		// the room kind in the chat id, so storing it there would only mislead the
+		// agent's <userinfo> block.
+		chatType = strings.TrimSpace(chatType)
+		if !strings.EqualFold(channel, "discord") {
+			chatType = ""
+		}
+
 		kind := "cron"
 		scheduleExpr := expr
 

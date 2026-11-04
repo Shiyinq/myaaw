@@ -10,6 +10,58 @@ import (
 	"myaaw/internal/cron"
 )
 
+// chat_type only distinguishes a Discord DM from a channel. Telegram encodes the
+// room kind in the chat id, so the CLI must not store a misleading value.
+func TestCronAddDropsChatTypeForNonDiscord(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := agentdir.SetActive(agentdir.DefaultAgentName); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+
+	flags := cronAddCmd.Flags()
+	values := map[string]string{
+		"name":      "Sapa group",
+		"message":   "Hai semuanya",
+		"channel":   "telegram",
+		"to":        "-1001234567890",
+		"at":        "10m",
+		"chat-type": "private",
+	}
+	for name, value := range values {
+		if err := flags.Set(name, value); err != nil {
+			t.Fatalf("set --%s: %v", name, err)
+		}
+	}
+	t.Cleanup(func() {
+		for name := range values {
+			_ = flags.Set(name, "")
+		}
+	})
+
+	cronAddCmd.Run(cronAddCmd, nil)
+
+	path := filepath.Join(home, ".myaaw", agentdir.DefaultAgentName, "cron", "jobs.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var jobs []cron.Job
+	if err := json.Unmarshal(data, &jobs); err != nil {
+		t.Fatalf("decode jobs: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(jobs))
+	}
+	if jobs[0].Delivery.ChatType != "" {
+		t.Fatalf("telegram chat_type = %q, want it dropped", jobs[0].Delivery.ChatType)
+	}
+	if jobs[0].Delivery.To != "-1001234567890" {
+		t.Fatalf("target changed: %+v", jobs[0].Delivery)
+	}
+}
+
 // A cron job must be written to the store of the agent named by --agent, even
 // when the process itself is running as a different agent. Otherwise a chat on
 // agent X could drop its job into the registry default's jobs.json.

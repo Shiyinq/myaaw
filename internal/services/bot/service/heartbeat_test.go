@@ -231,6 +231,98 @@ func TestHeartbeatMessagePinnedSession(t *testing.T) {
 	}
 }
 
+// The chat id sign is authoritative for Telegram: a job created in a DM but
+// aimed at a group must not tell the model it is talking in a direct message.
+func TestHeartbeatMessageTelegramDerivesChatTypeFromChatID(t *testing.T) {
+	withOwnerIDs(t, "123456789")
+	svc := &BotServiceImpl{conversationRepo: newFakeConversationRepo()}
+
+	group, err := svc.heartbeatMessage("Reminder", HeartbeatTarget{
+		Channel:  "telegram",
+		To:       "-1001234567890",
+		ChatType: "private",
+	}, "cron")
+	if err != nil {
+		t.Fatalf("heartbeatMessage: %v", err)
+	}
+	if group.ChatType != "supergroup" {
+		t.Errorf("group ChatType = %q, want supergroup", group.ChatType)
+	}
+
+	dm, err := svc.heartbeatMessage("Reminder", HeartbeatTarget{
+		Channel:  "telegram",
+		To:       "123456789",
+		ChatType: "supergroup",
+	}, "cron")
+	if err != nil {
+		t.Fatalf("heartbeatMessage: %v", err)
+	}
+	if dm.ChatType != "private" {
+		t.Errorf("dm ChatType = %q, want private", dm.ChatType)
+	}
+}
+
+// A pinned guild session is a guild room, even when the job inherited chat_type
+// "dm" from the DM that created it.
+func TestHeartbeatMessageDiscordPinnedSessionIsGuild(t *testing.T) {
+	withOwnerIDs(t, "123456789")
+	repo := newFakeConversationRepo()
+	repo.conversations["2b3c4d5e-1111-4222-8333-944455556666"] = &model.Conversation{
+		Id:     "2b3c4d5e-1111-4222-8333-944455556666",
+		UserId: 123456789,
+		Scope:  "dc:222333444555666777",
+		Active: true,
+	}
+	svc := &BotServiceImpl{conversationRepo: repo}
+
+	msg, err := svc.heartbeatMessage("Reminder", HeartbeatTarget{
+		Channel:   "discord",
+		To:        "222333444555666777",
+		SessionID: "2b3c4d5e-1111-4222-8333-944455556666",
+		ChatType:  "dm",
+	}, "cron")
+	if err != nil {
+		t.Fatalf("heartbeatMessage: %v", err)
+	}
+	if msg.ChatType != "guild" {
+		t.Errorf("ChatType = %q, want guild", msg.ChatType)
+	}
+	meta, ok := msg.RawMeta.(discord.DiscordMeta)
+	if !ok || meta.IsDM || meta.ChannelID != "222333444555666777" {
+		t.Fatalf("discord meta = %#v", msg.RawMeta)
+	}
+}
+
+// A pinned Discord conversation without a scope is a DM, even when the job says
+// guild: guild rooms always carry a dc:<channel> scope.
+func TestHeartbeatMessageDiscordPinnedSessionWithoutScopeIsDM(t *testing.T) {
+	withOwnerIDs(t, "123456789")
+	repo := newFakeConversationRepo()
+	repo.conversations["2b3c4d5e-1111-4222-8333-944455556666"] = &model.Conversation{
+		Id:     "2b3c4d5e-1111-4222-8333-944455556666",
+		UserId: 123456789,
+		Active: true,
+	}
+	svc := &BotServiceImpl{conversationRepo: repo}
+
+	msg, err := svc.heartbeatMessage("Reminder", HeartbeatTarget{
+		Channel:   "discord",
+		To:        "111222333444555666",
+		SessionID: "2b3c4d5e-1111-4222-8333-944455556666",
+		ChatType:  "guild",
+	}, "cron")
+	if err != nil {
+		t.Fatalf("heartbeatMessage: %v", err)
+	}
+	if msg.ChatType != "dm" {
+		t.Errorf("ChatType = %q, want dm", msg.ChatType)
+	}
+	meta, ok := msg.RawMeta.(discord.DiscordMeta)
+	if !ok || !meta.IsDM || meta.UserID != "111222333444555666" {
+		t.Fatalf("discord meta = %#v", msg.RawMeta)
+	}
+}
+
 // Multi-agent guard: a session id that this agent's database does not know is
 // rejected instead of silently starting a new conversation.
 func TestHeartbeatMessageRejectsForeignSession(t *testing.T) {

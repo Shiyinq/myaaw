@@ -29,6 +29,9 @@ func (f *fakeDMAPI) Channel(channelID string, _ ...discordgo.RequestOption) (*di
 	if f.channelErr != nil {
 		return nil, f.channelErr
 	}
+	if f.channel == nil {
+		return nil, errors.New("Unknown Channel")
+	}
 	return f.channel, nil
 }
 
@@ -74,17 +77,32 @@ func TestDMChannelAcceptsDMChannelID(t *testing.T) {
 	}
 }
 
-// A guild channel id has no DM to fall back to, and the original error has to
-// survive so the log still says why the DM could not be opened.
-func TestDMChannelKeepsErrorForNonDMChannel(t *testing.T) {
-	openErr := errors.New("Invalid Recipient(s)")
+// A guild channel id with a stale chat_type "dm" must still be delivered there:
+// that is the target the job names, and a user id never resolves as a channel.
+func TestDMChannelFallsBackToGuildChannel(t *testing.T) {
 	api := &fakeDMAPI{
-		createErr: openErr,
+		createErr: errors.New("Invalid Recipient(s)"),
 		channel:   &discordgo.Channel{ID: "333444555666777888", Type: discordgo.ChannelTypeGuildText},
 	}
 	d := &DiscordAdapter{dmResolver: api}
 
-	_, err := d.resolveChannel(DiscordMeta{UserID: "333444555666777888", IsDM: true})
+	got, err := d.resolveChannel(DiscordMeta{UserID: "333444555666777888", IsDM: true})
+	if err != nil {
+		t.Fatalf("resolveChannel: %v", err)
+	}
+	if got != "333444555666777888" {
+		t.Fatalf("channel = %q, want the guild channel", got)
+	}
+}
+
+// A target that is neither a DM-able user nor a channel keeps the original error
+// so the log still says why the reminder could not be delivered.
+func TestDMChannelKeepsErrorWhenTargetIsNotAChannel(t *testing.T) {
+	openErr := errors.New("Invalid Recipient(s)")
+	api := &fakeDMAPI{createErr: openErr}
+	d := &DiscordAdapter{dmResolver: api}
+
+	_, err := d.resolveChannel(DiscordMeta{UserID: "111222333444555666", IsDM: true})
 	if err == nil || !strings.Contains(err.Error(), "Invalid Recipient(s)") {
 		t.Fatalf("err = %v, want the original DM error", err)
 	}

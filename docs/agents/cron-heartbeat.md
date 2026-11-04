@@ -94,8 +94,8 @@ A target resolves to exactly one conversation session.
 | Telegram group | `telegram` | chat id (negative) | — | optional | — |
 | Telegram forum topic | `telegram` | chat id | topic id | optional | — |
 | Discord DM | `discord` | recipient user id | — | optional | `dm` |
-| Discord channel | `discord` | channel id | — | optional | `guild` |
-| Discord thread | `discord` | thread channel id | — | optional | `guild` |
+| Discord channel | `discord` | channel id | — | optional | `guild` (default) |
+| Discord thread | `discord` | thread channel id | — | optional | `guild` (default) |
 | Web (API) | `api` | user id | — | **required** | — |
 | Terminal (CLI) | `cli` | `0` or user id | — | **required** | — |
 
@@ -107,13 +107,39 @@ Rules:
   for `api`/`cli`, because a dashboard or terminal chat has no platform chat id.
   For Telegram/Discord it is optional and only needed to target a specific
   (for example older) conversation.
-- `chat_type` is only meaningful for Discord DMs: a DM needs the recipient's user
-  id, while a guild message needs a channel id, and both are snowflakes. For a
-  DM, `to` is the **user id**, not the DM channel id: the chat context shows both
-  (`ChatID` is the DM channel), and the adapter only accepts the channel id as a
-  fallback because Discord confirms it is a DM.
+- `chat_type` exists only for Discord. A user id and a channel id are both
+  17–19 digit snowflakes, and Discord needs a different API call for each: open a
+  DM channel for a user, or post into a channel. `dm` means `to` is a recipient
+  user id; `guild` (the default when omitted) means `to` is a channel or thread
+  id. For a DM, `to` is the **user id**, not the DM channel id: the chat context
+  shows both (`ChatID` is the DM channel). If the two are mixed up, the adapter
+  looks the id up and delivers to the channel it finds, logging a warning.
+- Telegram ignores `chat_type`: the room kind comes from the chat id (`-…` is a
+  group, a positive id is a DM) and the topic from `thread_id`. The `cron` tool
+  and `myaaw cron add` do not store it for Telegram, and a stale value in an old
+  job is overridden at run time.
 - Without `session_id`, the scope is derived exactly like an inbound message:
   `tg:<chat>`, `tg:<chat>:<thread>`, or `dc:<channel>`.
+
+### Scheduling across chats
+
+A job may target any chat on the same platform, not just the one it was created
+in. The caller supplies the target ids, because a model cannot discover another
+chat's id from the current conversation:
+
+| From → to | What to send |
+| :--- | :--- |
+| Telegram DM → group | `channel: telegram`, `to: <group chat id>` |
+| Telegram DM → forum topic | `channel: telegram`, `to: <group chat id>`, `thread_id: <topic id>` |
+| Any chat → a specific older session | add `session_id` (Telegram/Discord) |
+| Discord DM → guild channel/thread | `channel: discord`, `to: <channel or thread id>` |
+| Discord DM → another user's DM | `channel: discord`, `to: <user id>`, `chat_type: dm` |
+| Any chat → web/terminal session | `channel: api`/`cli`, `to: <user id>`, `session_id` (mandatory) |
+
+Room fields are **not** inherited when the target is a different chat: the tool
+only fills `thread_id`/`session_id`/`chat_type` from the current conversation
+when the job addresses that same conversation. Without a pinned session the run
+joins the target chat's active session, exactly like a live message.
 
 ---
 
@@ -162,10 +188,14 @@ becomes a job with:
 - `to` = the current chat id (or user id on DM/API/CLI),
 - `thread_id` = the current topic (Telegram),
 - `session_id` = the current conversation id,
+- `chat_type` = the current room type (Discord only),
 - `agent_id` = the active agent.
 
-Cross-surface requests ("send it to the Telegram group") need the target id from
-the user, because the model cannot know another chat's id from the current one.
+Cross-chat requests ("send it to the Telegram group", "greet the Discord
+general channel") need the target id from the user, because the model cannot
+know another chat's id from the current one. Give the ids and the job is
+created with exactly those; the current chat's topic, session, and chat type are
+not copied over (see §3).
 
 `myaaw cron add` exposes the same fields:
 

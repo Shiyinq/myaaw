@@ -358,7 +358,12 @@ func (d *DiscordAdapter) dmChannel(target string) (string, error) {
 	}
 	channel, err := api.UserChannelCreate(target)
 	if err != nil {
-		if existing, lookupErr := api.Channel(target); lookupErr == nil && existing != nil && existing.Type == discordgo.ChannelTypeDM {
+		// `to` may be a channel id even when chat_type says dm: a job created in
+		// one chat but aimed at another can inherit the wrong hint, and an
+		// operator can paste the channel id by hand. A user id never resolves as
+		// a channel, so whatever Discord returns is unambiguous.
+		if existing, lookupErr := api.Channel(target); lookupErr == nil && existing != nil {
+			log.Printf("discord: dm target %s is channel %s (type %d); delivering there instead", target, existing.ID, existing.Type)
 			d.dmChannels[target] = existing.ID
 			return existing.ID, nil
 		}
