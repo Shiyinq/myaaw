@@ -91,6 +91,14 @@ var cronAddCmd = &cobra.Command{
 			chatType = ""
 		}
 
+		// A web or terminal target has no platform room id, so an unpinned job
+		// could not resolve a session at run time. Reject it here instead of
+		// storing a job that can only fail.
+		if (strings.EqualFold(channel, "api") || strings.EqualFold(channel, "cli")) && strings.TrimSpace(sessionID) == "" {
+			fmt.Println(theme.RenderError("--session-id is required for api/cli targets"))
+			return
+		}
+
 		kind := "cron"
 		scheduleExpr := expr
 

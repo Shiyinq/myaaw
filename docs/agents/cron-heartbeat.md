@@ -141,6 +141,25 @@ only fills `thread_id`/`session_id`/`chat_type` from the current conversation
 when the job addresses that same conversation. Without a pinned session the run
 joins the target chat's active session, exactly like a live message.
 
+### Unpinned runs and sessions
+
+An empty `session_id` does **not** mean "start a new chat". The run resolves its
+conversation the same way a live message does:
+
+- the target scope already has an active conversation → the turn is appended to
+  it (same history, no new session);
+- the scope has no active conversation yet (a group, topic, or channel the bot
+  has never talked in, or a user with no open DM) → **one new session is
+  created** for that scope and reused from then on;
+- `/new` rotates the active conversation for that scope, so later unpinned runs
+  follow the newest one. Pin `session_id` only when a job must stay in one
+  specific conversation.
+
+The scope that is looked up is the one derived from the target: `tg:<chat>`,
+`tg:<chat>:<thread>`, `dc:<channel>`, or the per-user scope for DMs. A Telegram
+topic therefore has its own session, separate from the group's General topic,
+and a Discord thread has its own, separate from the parent channel.
+
 ---
 
 ## 4. What happens during a scheduled run
@@ -159,7 +178,8 @@ Details:
 
 - **Session join.** The run writes into the target chat's conversation, so the
   agent sees the same history as a live message and the dashboard shows one
-  session with the right badge.
+  session with the right badge. A new conversation is created only when the
+  target has no active one yet (see §3).
 - **Owner.** A pinned session keeps its owner. A DM belongs to the target user.
   A shared chat uses `bot.owner_ids[0]`, so no conversation row is created under
   a chat or channel id.
@@ -267,6 +287,8 @@ myaaw onboard --agent default \
 | Reminder lands in General instead of a topic | `thread_id` is missing; set `delivery.thread_id` (Telegram). |
 | Web/CLI reminder starts a new chat | `session_id` is missing; it is required for `api`/`cli`. |
 | Reminder appears under a fake user | the target resolved no owner; check `bot.owner_ids`. |
+| A scheduled run created a new session | the target scope had no active conversation yet (first message in that group, topic, or channel). Expected; later runs reuse it. |
+| A scheduled run landed in the newest session after `/new` | the job has no `session_id`, so it follows the active session. Pin `session_id` to keep it in one conversation. |
 | Job runs but no message | `HEARTBEAT_OK` was returned, the channel has no adapter (api/cli), or delivery failed (check the log). |
 | `agent_id` is `main` in `jobs.json` | older job written before the active-agent fix; recreate or edit it. |
 | Job runs on the wrong agent | `agent_id`/directory mismatch; recreate from the correct agent. Jobs created by a server that was running an older binary may sit in another agent's `jobs.json`; recreate them after restarting the agent. |

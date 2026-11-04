@@ -10,6 +10,50 @@ import (
 	"myaaw/internal/cron"
 )
 
+func TestCronAddRequiresSessionForAPITargets(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := agentdir.SetActive(agentdir.DefaultAgentName); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+
+	flags := cronAddCmd.Flags()
+	values := map[string]string{
+		"name":    "Web reminder",
+		"message": "Time to drink water",
+		"channel": "api",
+		"to":      "123456789",
+		"at":      "10m",
+	}
+	for name, value := range values {
+		if err := flags.Set(name, value); err != nil {
+			t.Fatalf("set --%s: %v", name, err)
+		}
+	}
+	t.Cleanup(func() {
+		for _, name := range []string{"name", "message", "channel", "to", "at", "session-id"} {
+			_ = flags.Set(name, "")
+		}
+	})
+
+	cronAddCmd.Run(cronAddCmd, nil)
+
+	path := filepath.Join(home, ".myaaw", agentdir.DefaultAgentName, "cron", "jobs.json")
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("an api job without a session id was stored: %v", err)
+	}
+
+	// The same command succeeds once the session is pinned.
+	if err := flags.Set("session-id", "0f4e8b3a-1111-4222-8333-944455556666"); err != nil {
+		t.Fatalf("set --session-id: %v", err)
+	}
+	cronAddCmd.Run(cronAddCmd, nil)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("api job with a session id was not stored: %v", err)
+	}
+}
+
 // chat_type only distinguishes a Discord DM from a channel. Telegram encodes the
 // room kind in the chat id, so the CLI must not store a misleading value.
 func TestCronAddDropsChatTypeForNonDiscord(t *testing.T) {

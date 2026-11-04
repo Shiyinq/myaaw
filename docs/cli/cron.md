@@ -40,7 +40,7 @@ myaaw cron add \
 | `--channel` | yes | Delivery channel: `telegram`, `discord`, `api`, or `cli`. |
 | `--to` | yes | Target id: user id (`api`/`cli`/Discord DM), chat id (Telegram), or channel id (Discord guild or thread). |
 | `--thread-id` | no | Telegram forum topic (`message_thread_id`). A topic needs both `--to` (chat id) and this. |
-| `--session-id` | no | Pin the exact conversation id. Required for `api`/`cli`, optional for Telegram/Discord. |
+| `--session-id` | no | Pin the exact conversation id. Required for `api`/`cli`, optional for Telegram/Discord; `cron add` rejects `api`/`cli` without it. |
 | `--chat-type` | no | `dm` or `guild` (Discord only). Tells a DM recipient user id from a guild channel id; ignored for other channels. |
 | `--cron` | one schedule | Standard cron expression, for example `0 7 * * *`. |
 | `--every` | one schedule | Interval, for example `30m` or `2h`. |
@@ -102,6 +102,7 @@ myaaw cron history <job-id> --limit 50
 - The agent **server must be running** for jobs to execute. See [Service Management](service.md).
 - A job runs an agent turn, then announces the result to the configured channel and target.
 - A job may target another chat than the one it was created in; pass that chat's ids. `--chat-type` is only written for Discord.
+- Without `--session-id` on Telegram/Discord, the job joins the target room's **active** session (a new one is created only if that room has none) and follows `/new` rotations. See [Cron & Heartbeat](../agents/cron-heartbeat.md#unpinned-runs-and-sessions).
 - `api`/`cli` targets have no outbound adapter: the turn is saved in the pinned session and appears the next time the dashboard or terminal reads it, so they require `--session-id`.
 - `--at` with a relative duration is converted to an absolute timestamp at creation time.
 
