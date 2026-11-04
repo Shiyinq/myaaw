@@ -57,6 +57,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | :--- | :--- |
 | [Channels](channels/README.md) | How each conversation channel handles incoming messages. |
 | [Telegram](channels/telegram.md) | Message flow, group/topic rules, sessions, implemented vs notes. |
+| [Discord](channels/discord.md) | Message flow, per-channel sessions, intents, permissions, implemented vs notes. |
 
 ## Generated references
 
