@@ -24,9 +24,18 @@ var (
 )
 
 type ConversationSummary struct {
-	ID           string     `json:"id"`
-	UserID       int        `json:"user_id"`
-	Title        string     `json:"title"`
+	ID     string `json:"id"`
+	UserID int    `json:"user_id"`
+	Title  string `json:"title"`
+	// Scope identifies the chat target the session belongs to, e.g. a Telegram
+	// topic ("tg:<chatID>:<threadID>"). Empty for CLI/API/DM sessions, so
+	// clients that do not know the field keep working unchanged.
+	Scope string `json:"scope,omitempty"`
+	// ChatName/TopicName are display names learned from the channel (group name
+	// and forum topic). Empty for CLI/API/DM sessions and unknown scopes.
+	ChatName     string     `json:"chat_name,omitempty"`
+	TopicName    string     `json:"topic_name,omitempty"`
+	IsForum      bool       `json:"is_forum,omitempty"`
 	Active       bool       `json:"active"`
 	MessageCount int        `json:"message_count"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -62,9 +71,14 @@ type ConversationTurn struct {
 }
 
 type ConversationDetail struct {
-	ID            string             `json:"id"`
-	UserID        int                `json:"user_id"`
-	Title         string             `json:"title"`
+	ID     string `json:"id"`
+	UserID int    `json:"user_id"`
+	Title  string `json:"title"`
+	// Scope identifies the chat target (see ConversationSummary.Scope).
+	Scope         string             `json:"scope,omitempty"`
+	ChatName      string             `json:"chat_name,omitempty"`
+	TopicName     string             `json:"topic_name,omitempty"`
+	IsForum       bool               `json:"is_forum,omitempty"`
 	Active        bool               `json:"active"`
 	CreatedAt     time.Time          `json:"created_at"`
 	UpdatedAt     time.Time          `json:"updated_at"`
@@ -232,11 +246,15 @@ func (s *ConversationService) List(
 		return page, nil
 	}
 
-	order := ` ORDER BY updated_at DESC, created_at DESC`
+	order := ` ORDER BY c.updated_at DESC, c.created_at DESC`
 	if filter.Pinned {
-		order = ` ORDER BY pinned_at DESC, updated_at DESC, created_at DESC`
+		order = ` ORDER BY c.pinned_at DESC, c.updated_at DESC, c.created_at DESC`
 	}
-	query := `SELECT id, user_id, title, active, created_at, updated_at, pinned_at, folder_id, messages FROM conversations` +
+	query := `SELECT c.id, c.user_id, c.scope, c.title, c.active, c.created_at, c.updated_at,
+			c.pinned_at, c.folder_id, c.messages,
+			COALESCE(s.chat_name, ''), COALESCE(s.topic_name, ''), COALESCE(s.is_forum, 0)
+		FROM conversations c
+		LEFT JOIN chat_scopes s ON s.scope = c.scope` +
 		where + order + ` LIMIT ? OFFSET ?`
 	queryArgs := append(append([]any{}, args...), limit, offset)
 
@@ -256,6 +274,7 @@ func (s *ConversationService) List(
 		if err := rows.Scan(
 			&summary.ID,
 			&summary.UserID,
+			&summary.Scope,
 			&summary.Title,
 			&summary.Active,
 			&summary.CreatedAt,
@@ -263,6 +282,9 @@ func (s *ConversationService) List(
 			&pinnedAt,
 			&folderID,
 			&messages,
+			&summary.ChatName,
+			&summary.TopicName,
+			&summary.IsForum,
 		); err != nil {
 			return page, err
 		}
@@ -322,7 +344,11 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 	}
 	defer db.Close()
 
-	const query = `SELECT id, user_id, title, messages, active, created_at, updated_at, pinned_at, folder_id FROM conversations WHERE id = ? LIMIT 1`
+	const query = `SELECT c.id, c.user_id, c.scope, c.title, c.messages, c.active, c.created_at, c.updated_at,
+			c.pinned_at, c.folder_id, COALESCE(s.chat_name, ''), COALESCE(s.topic_name, ''), COALESCE(s.is_forum, 0)
+		FROM conversations c
+		LEFT JOIN chat_scopes s ON s.scope = c.scope
+		WHERE c.id = ? LIMIT 1`
 	var (
 		detail       ConversationDetail
 		messagesJSON string
@@ -332,6 +358,7 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 	err = db.QueryRow(query, id).Scan(
 		&detail.ID,
 		&detail.UserID,
+		&detail.Scope,
 		&detail.Title,
 		&messagesJSON,
 		&detail.Active,
@@ -339,6 +366,9 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 		&detail.UpdatedAt,
 		&pinnedAt,
 		&folderID,
+		&detail.ChatName,
+		&detail.TopicName,
+		&detail.IsForum,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ConversationDetail{}, ErrConversationNotFound

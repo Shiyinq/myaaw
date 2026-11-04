@@ -30,6 +30,7 @@ func setupConversationAgent(t *testing.T) string {
 	if _, err := db.Exec(`CREATE TABLE conversations (
 		id TEXT PRIMARY KEY,
 		user_id INTEGER,
+		scope TEXT NOT NULL DEFAULT '',
 		title TEXT,
 		messages TEXT,
 		active INTEGER,
@@ -75,6 +76,76 @@ func setupConversationAgent(t *testing.T) string {
 	}
 
 	return dbPath
+}
+
+func TestConversationServiceCarriesScope(t *testing.T) {
+	dbPath := setupConversationAgent(t)
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	now := time.Now().UTC()
+	if _, err := db.Exec(
+		`INSERT INTO conversations (id, user_id, scope, title, messages, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`,
+		"conv-topic", 7, "tg:-1001111:77", "Topic session", "[]", 1, now, now,
+	); err != nil {
+		t.Fatalf("insert scoped conversation: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS chat_scopes (
+		scope TEXT PRIMARY KEY,
+		chat_name TEXT NOT NULL DEFAULT '',
+		topic_name TEXT NOT NULL DEFAULT '',
+		is_forum INTEGER NOT NULL DEFAULT 0,
+		updated_at DATETIME NOT NULL
+	)`); err != nil {
+		t.Fatalf("create chat_scopes: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO chat_scopes (scope, chat_name, topic_name, is_forum, updated_at) VALUES (?,?,?,?,?)`,
+		"tg:-1001111:77", "Example Group", "Daily Report", 1, now,
+	); err != nil {
+		t.Fatalf("insert scope names: %v", err)
+	}
+	db.Close()
+
+	conversations := NewConversationService()
+	page, err := conversations.List("myfriend", 7, 10, 0, "", ConversationFilter{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var found *ConversationSummary
+	for i := range page.Conversations {
+		if page.Conversations[i].ID == "conv-topic" {
+			found = &page.Conversations[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("scoped conversation missing from the list: %+v", page.Conversations)
+	}
+	if found.Scope != "tg:-1001111:77" {
+		t.Fatalf("summary scope = %q", found.Scope)
+	}
+	if found.ChatName != "Example Group" || found.TopicName != "Daily Report" {
+		t.Fatalf("summary names = %q / %q", found.ChatName, found.TopicName)
+	}
+	if !found.IsForum {
+		t.Fatal("summary should carry is_forum")
+	}
+
+	detail, err := conversations.Get("myfriend", "conv-topic", 7, 10, 0)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if detail.Scope != "tg:-1001111:77" {
+		t.Fatalf("detail scope = %q", detail.Scope)
+	}
+	if detail.ChatName != "Example Group" || detail.TopicName != "Daily Report" {
+		t.Fatalf("detail names = %q / %q", detail.ChatName, detail.TopicName)
+	}
+	if !detail.IsForum {
+		t.Fatal("detail should carry is_forum")
+	}
 }
 
 func TestConversationServiceList(t *testing.T) {

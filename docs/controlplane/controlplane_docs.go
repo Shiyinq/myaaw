@@ -7867,6 +7867,16 @@ const docTemplatecontrolplane = `{
                 "role": {
                     "type": "string"
                 },
+                "sender_id": {
+                    "description": "Sender metadata for messages that arrive from a shared chat (a group or a\nforum topic). These are display fields: they are never sent to providers,\nunlike Name.",
+                    "type": "string"
+                },
+                "sender_name": {
+                    "type": "string"
+                },
+                "sender_username": {
+                    "type": "string"
+                },
                 "stop_reason": {
                     "$ref": "#/definitions/provider.StopReason"
                 },
@@ -8597,6 +8607,9 @@ const docTemplatecontrolplane = `{
                 "active": {
                     "type": "boolean"
                 },
+                "chat_name": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -8608,6 +8621,9 @@ const docTemplatecontrolplane = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "is_forum": {
+                    "type": "boolean"
                 },
                 "limit": {
                     "type": "integer"
@@ -8627,7 +8643,14 @@ const docTemplatecontrolplane = `{
                 "pinned_at": {
                     "type": "string"
                 },
+                "scope": {
+                    "description": "Scope identifies the chat target (see ConversationSummary.Scope).",
+                    "type": "string"
+                },
                 "title": {
+                    "type": "string"
+                },
+                "topic_name": {
                     "type": "string"
                 },
                 "total_messages": {
@@ -8677,6 +8700,10 @@ const docTemplatecontrolplane = `{
                 "active": {
                     "type": "boolean"
                 },
+                "chat_name": {
+                    "description": "ChatName/TopicName are display names learned from the channel (group name\nand forum topic). Empty for CLI/API/DM sessions and unknown scopes.",
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -8685,6 +8712,9 @@ const docTemplatecontrolplane = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "is_forum": {
+                    "type": "boolean"
                 },
                 "message_count": {
                     "type": "integer"
@@ -8695,7 +8725,14 @@ const docTemplatecontrolplane = `{
                 "pinned_at": {
                     "type": "string"
                 },
+                "scope": {
+                    "description": "Scope identifies the chat target the session belongs to, e.g. a Telegram\ntopic (\"tg:\u003cchatID\u003e:\u003cthreadID\u003e\"). Empty for CLI/API/DM sessions, so\nclients that do not know the field keep working unchanged.",
+                    "type": "string"
+                },
                 "title": {
+                    "type": "string"
+                },
+                "topic_name": {
                     "type": "string"
                 },
                 "updated_at": {
