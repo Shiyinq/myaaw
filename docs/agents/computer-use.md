@@ -243,7 +243,7 @@ only logs a warning and never blocks a release.
 
    # MACOS_CERT_IDENTITY — exact name including Team ID
    security find-identity -v -p codesigning
-   # e.g. "Developer ID Application: Shiyinq (ABCDE12345)" — copy without quotes
+   # e.g. "Developer ID Application: Alice (ABCDE12345)" — copy without quotes
 
    # MACOS_CERT_PASSWORD is the export password from step 2 (no command)
    ```
