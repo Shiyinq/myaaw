@@ -1047,6 +1047,11 @@ of the job at run time (`name`, `message`, `channel`, `to`, `thread_id`,
 `session_id`, `chat_type`), so a one-time job that the scheduler removed after
 running stays readable.
 
+`GET /cron/:id/history` returns the same entry fields for a single job, capped by
+`limit` (default 20, max 200) and without a total. A run started with
+`POST /cron/:id/run` is recorded like a scheduled one; on success its `result`
+reads `Triggered manually from the dashboard`.
+
 ## 17. Observability
 
 | Method | Path | Purpose |

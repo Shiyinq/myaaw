@@ -98,7 +98,7 @@ myaaw cron history <job-id> --limit 50
 ## Behavior
 
 - Jobs live in `~/.myaaw/<agent>/cron/jobs.json`; `--agent` decides both the directory and the job's `agent_id`.
-- Run history is stored under `~/.myaaw/<agent>/cron/runs/` as JSONL files.
+- Run history is stored under `~/.myaaw/<agent>/cron/runs/` as JSONL files, one line per run: `ts`, `status`, `result`, and a snapshot of the job (name, prompt, channel, target, topic, session). The snapshot keeps the history readable after a one-time job is removed.
 - The agent **server must be running** for jobs to execute. See [Service Management](service.md).
 - A job runs an agent turn, then announces the result to the configured channel and target.
 - A job may target another chat than the one it was created in; pass that chat's ids. `--chat-type` is only written for Discord.

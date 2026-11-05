@@ -190,6 +190,14 @@ Details:
   - Discord uses the channel/thread id, or opens a DM channel for a user id.
   - API/CLI have no outbound adapter; the turn is saved in the pinned session
     and appears when the dashboard or terminal reads it.
+- **Run log.** Each run appends one line to `cron/runs/<job id>.jsonl` with
+  `ts`, `status`, `result`, and a snapshot of the job (`name`, `message`,
+  `channel`, `to`, `thread_id`, `session_id`, `chat_type`). A one-time job is
+  deleted right after it runs, so the snapshot is what lets
+  `myaaw cron history` and the dashboard's **Recent runs** tab name the job and
+  show where it went; entries written by older versions carry only the first
+  three fields. The control plane serves the log newest first in pages
+  (`GET /agents/:name/cron/history?limit=&offset=`).
 - **Errors.** A failed delivery is logged; it never fails the run itself.
 - **Heartbeat silence.** `HEARTBEAT_OK` is neither stored nor delivered.
 
