@@ -175,6 +175,7 @@ func (s *CronService) Run(agentName, id string) error {
 	if err != nil {
 		return ErrCronJobNotFound
 	}
+	logger := cron.NewHistoryLogger(cronDir)
 
 	baseURL, _, err := s.agents.BaseURL(agentName)
 	if err != nil {
@@ -202,19 +203,32 @@ func (s *CronService) Run(agentName, id string) error {
 
 	response, err := s.client.Do(request)
 	if err != nil {
+		// The run never reached the agent, but the user still asked for it, so it
+		// belongs in the history next to the runs that did happen.
+		_ = logger.Log(*job, "failed", fmt.Sprintf("Agent unreachable: %v", err))
 		return fmt.Errorf("%w: %v", ErrAgentUnavailable, err)
 	}
 	defer response.Body.Close()
 
 	body, _ := io.ReadAll(response.Body)
-	logger := cron.NewHistoryLogger(cronDir)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_ = logger.Log(job.ID, "failed", string(body))
-		return fmt.Errorf("%w: %s", ErrAgentUnavailable, strings.TrimSpace(string(body)))
+		detail := strings.TrimSpace(string(body))
+		if detail == "" {
+			detail = response.Status
+		}
+		_ = logger.Log(*job, "failed", detail)
+		return fmt.Errorf("%w: %s", ErrAgentUnavailable, detail)
 	}
-	_ = logger.Log(job.ID, "success", string(body))
+	_ = logger.Log(*job, "success", "Triggered manually from the dashboard")
 	return nil
 }
+
+// Page sizes for the run history. Both stay small because a page is rendered by
+// the dashboard next to the job list.
+const (
+	historyPageDefault = 20
+	historyPageMax     = 200
+)
 
 func (s *CronService) History(agentName, id string, limit int) ([]cron.ExecutionResult, error) {
 	store, cronDir, err := cronStore(agentName)
@@ -225,10 +239,47 @@ func (s *CronService) History(agentName, id string, limit int) ([]cron.Execution
 	if err != nil {
 		return nil, err
 	}
-	if limit <= 0 || limit > 200 {
-		limit = 20
+	if limit <= 0 || limit > historyPageMax {
+		limit = historyPageDefault
 	}
 	return cron.NewHistoryLogger(cronDir).GetHistory(fullID, limit)
+}
+
+// CronRunPage is one page of the agent-wide run history. It is not tied to a
+// job: runs of removed one-time jobs keep their entry.
+type CronRunPage struct {
+	History []cron.JobExecutionResult `json:"history"`
+	Total   int                       `json:"total"`
+	Limit   int                       `json:"limit"`
+	Offset  int                       `json:"offset"`
+	HasMore bool                      `json:"has_more"`
+}
+
+// HistoryAll returns the most recent runs across every job of the agent. Unlike
+// History it does not need the job to still exist, so one-time jobs that were
+// removed after running keep a readable history.
+func (s *CronService) HistoryAll(agentName string, limit, offset int) (CronRunPage, error) {
+	page := CronRunPage{History: []cron.JobExecutionResult{}}
+	_, cronDir, err := cronStore(agentName)
+	if err != nil {
+		return page, err
+	}
+	if limit <= 0 || limit > historyPageMax {
+		limit = historyPageDefault
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	runs, total, err := cron.NewHistoryLogger(cronDir).GetGlobalHistory(limit, offset)
+	if err != nil {
+		return page, err
+	}
+	page.History = runs
+	page.Total = total
+	page.Limit = limit
+	page.Offset = offset
+	page.HasMore = offset+len(runs) < total
+	return page, nil
 }
 
 func cronStore(agentName string) (*cron.Store, string, error) {

@@ -13,6 +13,16 @@ type ExecutionResult struct {
 	Timestamp time.Time `json:"ts"`
 	Status    string    `json:"status"` // success, failed
 	Result    string    `json:"result"`
+	// Snapshot of the job at run time. One-time jobs are removed after they
+	// run, so without this the history could not name the job or say what it
+	// delivered. Older lines simply have these fields empty.
+	Name      string `json:"name,omitempty"`
+	Message   string `json:"message,omitempty"`
+	Channel   string `json:"channel,omitempty"`
+	To        string `json:"to,omitempty"`
+	ThreadID  string `json:"thread_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	ChatType  string `json:"chat_type,omitempty"`
 }
 
 type HistoryLogger struct {
@@ -23,7 +33,7 @@ func NewHistoryLogger(basePath string) *HistoryLogger {
 	return &HistoryLogger{basePath: basePath}
 }
 
-func (h *HistoryLogger) Log(jobID string, status string, result string) error {
+func (h *HistoryLogger) Log(job Job, status string, result string) error {
 	dir := filepath.Join(h.basePath, "runs")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
@@ -33,6 +43,13 @@ func (h *HistoryLogger) Log(jobID string, status string, result string) error {
 		Timestamp: time.Now(),
 		Status:    status,
 		Result:    result,
+		Name:      job.Name,
+		Message:   job.Payload.Content,
+		Channel:   job.Delivery.Channel,
+		To:        job.Delivery.To,
+		ThreadID:  job.Delivery.ThreadID,
+		SessionID: job.Delivery.SessionID,
+		ChatType:  job.Delivery.ChatType,
 	}
 
 	data, err := json.Marshal(entry)
@@ -40,7 +57,7 @@ func (h *HistoryLogger) Log(jobID string, status string, result string) error {
 		return err
 	}
 
-	filename := filepath.Join(dir, fmt.Sprintf("%s.jsonl", jobID))
+	filename := filepath.Join(dir, fmt.Sprintf("%s.jsonl", job.ID))
 	f, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -105,20 +122,20 @@ func splitLines(data []byte) []string {
 }
 
 type JobExecutionResult struct {
-	JobID     string    `json:"job_id"`
-	Timestamp time.Time `json:"ts"`
-	Status    string    `json:"status"`
-	Result    string    `json:"result"`
+	JobID string `json:"job_id"`
+	ExecutionResult
 }
 
-func (h *HistoryLogger) GetGlobalHistory(limit int) ([]JobExecutionResult, error) {
+// GetGlobalHistory returns the newest runs across every job plus the total
+// number of entries, so a client can page through them.
+func (h *HistoryLogger) GetGlobalHistory(limit, offset int) ([]JobExecutionResult, int, error) {
 	dir := filepath.Join(h.basePath, "runs")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []JobExecutionResult{}, nil
+			return []JobExecutionResult{}, 0, nil
 		}
-		return nil, err
+		return nil, 0, err
 	}
 
 	var allResults []JobExecutionResult
@@ -146,10 +163,8 @@ func (h *HistoryLogger) GetGlobalHistory(limit int) ([]JobExecutionResult, error
 			var res ExecutionResult
 			if err := json.Unmarshal([]byte(line), &res); err == nil {
 				allResults = append(allResults, JobExecutionResult{
-					JobID:     jobID,
-					Timestamp: res.Timestamp,
-					Status:    res.Status,
-					Result:    res.Result,
+					JobID:           jobID,
+					ExecutionResult: res,
 				})
 			}
 		}
@@ -160,9 +175,16 @@ func (h *HistoryLogger) GetGlobalHistory(limit int) ([]JobExecutionResult, error
 		return allResults[i].Timestamp.After(allResults[j].Timestamp)
 	})
 
-	if limit > 0 && len(allResults) > limit {
-		return allResults[:limit], nil
+	total := len(allResults)
+	if offset < 0 {
+		offset = 0
 	}
-
-	return allResults, nil
+	if offset >= total {
+		return []JobExecutionResult{}, total, nil
+	}
+	end := total
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+	return allResults[offset:end], total, nil
 }

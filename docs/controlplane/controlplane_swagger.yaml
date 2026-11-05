@@ -214,10 +214,58 @@ definitions:
     type: object
   cron.ExecutionResult:
     properties:
+      channel:
+        type: string
+      chat_type:
+        type: string
+      message:
+        type: string
+      name:
+        description: |-
+          Snapshot of the job at run time. One-time jobs are removed after they
+          run, so without this the history could not name the job or say what it
+          delivered. Older lines simply have these fields empty.
+        type: string
       result:
+        type: string
+      session_id:
         type: string
       status:
         description: success, failed
+        type: string
+      thread_id:
+        type: string
+      to:
+        type: string
+      ts:
+        type: string
+    type: object
+  cron.JobExecutionResult:
+    properties:
+      channel:
+        type: string
+      chat_type:
+        type: string
+      job_id:
+        type: string
+      message:
+        type: string
+      name:
+        description: |-
+          Snapshot of the job at run time. One-time jobs are removed after they
+          run, so without this the history could not name the job or say what it
+          delivered. Older lines simply have these fields empty.
+        type: string
+      result:
+        type: string
+      session_id:
+        type: string
+      status:
+        description: success, failed
+        type: string
+      thread_id:
+        type: string
+      to:
         type: string
       ts:
         type: string
@@ -1732,6 +1780,21 @@ definitions:
     properties:
       active:
         type: boolean
+    type: object
+  service.CronRunPage:
+    properties:
+      has_more:
+        type: boolean
+      history:
+        items:
+          $ref: '#/definitions/cron.JobExecutionResult'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
     type: object
   service.CustomToolView:
     properties:
@@ -4057,6 +4120,42 @@ paths:
       security:
       - BearerAuth: []
       summary: Run cron job
+      tags:
+      - Cron
+  /agents/{name}/cron/history:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Page size (default 20, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Entries to skip
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.CronRunPage'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Cron history for every job
       tags:
       - Cron
   /agents/{name}/default:

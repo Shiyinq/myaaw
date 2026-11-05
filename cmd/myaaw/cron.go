@@ -256,7 +256,7 @@ var cronHistoryCmd = &cobra.Command{
 
 		// Case 1: Global History (No ID provided)
 		if len(args) == 0 {
-			results, err := history.GetGlobalHistory(limit)
+			results, _, err := history.GetGlobalHistory(limit, 0)
 			if err != nil {
 				fmt.Println(theme.RenderError(fmt.Sprintf("Failed to load global history: %v", err)))
 				return

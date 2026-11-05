@@ -1004,6 +1004,7 @@ The stream sends the last 64 KiB, then polls every 500 ms for new lines. File na
 |---|---|---|
 | `GET` | `/agents/:name/cron` | list jobs |
 | `POST` | `/agents/:name/cron` | create a job |
+| `GET` | `/agents/:name/cron/history?limit=&offset=` | recent runs across every job, including jobs that were removed after running |
 | `DELETE` | `/agents/:name/cron/:id` | delete (full ID or prefix) |
 | `POST` | `/agents/:name/cron/:id/run` | run now via `/heartbeat` |
 | `GET` | `/agents/:name/cron/:id/history?limit=` | execution history |
@@ -1036,6 +1037,15 @@ so the job always lands in that agent's `cron/jobs.json`. See
 `myaaw cron add`, so a job never stores a field its channel cannot use.
 
 `schedule_kind` is `cron`, `every`, or `at`. Running a job requires the agent server to be up; results are written to the job history.
+
+`GET /cron/history` returns the agent-wide run log, newest first, as one page:
+`{ "history": [...], "total": 128, "limit": 20, "offset": 0, "has_more": true }`.
+`limit` defaults to 20 (max 200) and `offset` skips that many entries, so the
+dashboard's **Recent runs** tab can page through the log instead of loading all
+of it. Each entry carries `job_id`, `ts`, `status`, and `result`, plus a snapshot
+of the job at run time (`name`, `message`, `channel`, `to`, `thread_id`,
+`session_id`, `chat_type`), so a one-time job that the scheduler removed after
+running stays readable.
 
 ## 17. Observability
 

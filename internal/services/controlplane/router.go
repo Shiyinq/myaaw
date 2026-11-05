@@ -165,6 +165,7 @@ func NewApp() (*fiber.App, error) {
 	app.Delete("/agents/:name/terminal/:id", h.CloseTerminal)
 	app.Get("/agents/:name/cron", h.ListCron)
 	app.Post("/agents/:name/cron", h.AddCron)
+	app.Get("/agents/:name/cron/history", h.CronHistoryAll)
 	app.Delete("/agents/:name/cron/:id", h.RemoveCron)
 	app.Post("/agents/:name/cron/:id/run", h.RunCron)
 	app.Get("/agents/:name/cron/:id/history", h.CronHistory)

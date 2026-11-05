@@ -89,6 +89,33 @@ func TestCronServiceAddListRunRemove(t *testing.T) {
 		t.Fatalf("history = %+v", history)
 	}
 
+	// The global history keeps runs of jobs that no longer exist, so a one-time
+	// job stays readable after the scheduler removes it.
+	page, err := cronSvc.HistoryAll("myfriend", 10, 0)
+	if err != nil {
+		t.Fatalf("HistoryAll: %v", err)
+	}
+	if page.Total != 1 || len(page.History) != 1 || page.HasMore {
+		t.Fatalf("global history = %+v", page)
+	}
+	if run := page.History[0]; run.JobID != job.ID || run.Status != "success" {
+		t.Fatalf("global run = %+v", run)
+	}
+	// The entry keeps a snapshot of the job, so a removed job can still explain
+	// what it delivered instead of only naming an id.
+	if run := page.History[0]; run.Name != "Reminder" || run.Message != "hello" || run.Channel != "telegram" || run.To != "-1001234567890" {
+		t.Fatalf("run snapshot = %+v", run)
+	}
+
+	// Paging is by offset into the newest-first run list.
+	empty, err := cronSvc.HistoryAll("myfriend", 10, 5)
+	if err != nil {
+		t.Fatalf("HistoryAll offset: %v", err)
+	}
+	if empty.Total != 1 || len(empty.History) != 0 || empty.Offset != 5 {
+		t.Fatalf("offset page = %+v", empty)
+	}
+
 	if err := cronSvc.Remove("myfriend", job.ID[:8]); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}

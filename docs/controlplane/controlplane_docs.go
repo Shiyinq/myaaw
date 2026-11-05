@@ -2462,6 +2462,63 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/cron/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cron"
+                ],
+                "summary": "Cron history for every job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 20, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Entries to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.CronRunPage"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/cron/{id}": {
             "delete": {
                 "security": [
@@ -6632,11 +6689,73 @@ const docTemplatecontrolplane = `{
         "cron.ExecutionResult": {
             "type": "object",
             "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "chat_type": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Snapshot of the job at run time. One-time jobs are removed after they\nrun, so without this the history could not name the job or say what it\ndelivered. Older lines simply have these fields empty.",
+                    "type": "string"
+                },
                 "result": {
+                    "type": "string"
+                },
+                "session_id": {
                     "type": "string"
                 },
                 "status": {
                     "description": "success, failed",
+                    "type": "string"
+                },
+                "thread_id": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "ts": {
+                    "type": "string"
+                }
+            }
+        },
+        "cron.JobExecutionResult": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "chat_type": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Snapshot of the job at run time. One-time jobs are removed after they\nrun, so without this the history could not name the job or say what it\ndelivered. Older lines simply have these fields empty.",
+                    "type": "string"
+                },
+                "result": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "success, failed",
+                    "type": "string"
+                },
+                "thread_id": {
+                    "type": "string"
+                },
+                "to": {
                     "type": "string"
                 },
                 "ts": {
@@ -8827,6 +8946,29 @@ const docTemplatecontrolplane = `{
             "properties": {
                 "active": {
                     "type": "boolean"
+                }
+            }
+        },
+        "service.CronRunPage": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean"
+                },
+                "history": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/cron.JobExecutionResult"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
