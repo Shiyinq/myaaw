@@ -196,7 +196,9 @@ Details:
   deleted right after it runs, so the snapshot is what lets
   `myaaw cron history` and the dashboard's **Recent runs** tab name the job and
   show where it went; entries written by older versions carry only the first
-  three fields. The control plane serves the log newest first in pages
+  three fields. `myaaw cron history <id>` resolves the id from the run files as
+  well as `jobs.json`, so a removed job's runs stay readable. The control plane
+  serves the log newest first in pages
   (`GET /agents/:name/cron/history?limit=&offset=`).
 - **Errors.** A failed delivery is logged; it never fails the run itself.
 - **Heartbeat silence.** `HEARTBEAT_OK` is neither stored nor delivered.
@@ -240,6 +242,15 @@ myaaw cron add \
 `--agent` defaults to the active agent. Its value also decides where the job is
 stored: `--agent myfriend` always writes `~/.myaaw/myfriend/cron/jobs.json`, never the
 registry default's file, so `agent_id` and the directory cannot disagree.
+
+The tool also reads back what it created. `list` with an `id` returns that job's
+definition — schedule, prompt, and delivery target — and `list` alone keeps the
+table. `history` on its own lists recent runs across every job, and `limit` pages
+that list; `history` with a `job_id` returns that job's runs in full — time,
+status, result, prompt, and delivery target — which is what lets the agent answer
+"did the reminder go out, and where?". A job id is not paged, so `limit` is
+dropped for it. All of it maps to `myaaw cron list` / `myaaw cron history`, so
+the CLI and the agent never disagree about what a job or run says.
 
 ---
 

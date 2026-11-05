@@ -14,7 +14,7 @@ const toolSchema = `{
     "type": "function",
     "function": {
         "name": "cron",
-        "description": "Manage scheduled jobs (cron) for the agent. You can list, add, remove, run, and view history of jobs. Jobs can restart generic prompts or messages on a schedule.",
+        "description": "Manage scheduled jobs (cron) for the agent. You can list, add, remove, run, and view the history of jobs. A history call without a job id lists recent runs; pass the job id to read that job's runs in full, including the prompt and where each one was delivered. Jobs can restart generic prompts or messages on a schedule.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -79,15 +79,15 @@ const toolSchema = `{
                 },
                 "id": {
                     "type": "string",
-                    "description": "Job ID (required for 'remove' and 'run')."
+                    "description": "Job ID (required for 'remove' and 'run'; optional for 'list' to show one job in full)."
                 },
                 "job_id": {
                     "type": "string",
-                    "description": "Job ID for history (optional for 'history', defaults to global)."
+                    "description": "Job ID for history. Omit it to list recent runs; pass it to read that job's runs in full (prompt, delivery target, topic, session)."
                 },
                 "limit": {
                     "type": "number",
-                    "description": "Limit number of history entries (optional)."
+                    "description": "Maximum runs to list. Only used when job_id is omitted; a job id always returns every run of that job."
                 }
             },
             "required": [
@@ -128,7 +128,10 @@ func (t *CronTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 
 	switch action {
 	case "list":
-		// No extra args needed
+		// With an id the CLI prints that job in full instead of the table.
+		if id := argString(args, "id"); id != "" {
+			cmdArgs = append(cmdArgs, id)
+		}
 	case "add":
 		if name, ok := args["name"].(string); ok && name != "" {
 			cmdArgs = append(cmdArgs, "--name", name)
@@ -229,10 +232,11 @@ func (t *CronTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 		}
 
 	case "history":
-		if jobID, ok := args["job_id"].(string); ok && jobID != "" {
+		// A job id is a detail request: the CLI returns every run of that job, so
+		// sending --limit there would only be ignored. Keep limit for the list.
+		if jobID := argString(args, "job_id"); jobID != "" {
 			cmdArgs = append(cmdArgs, jobID)
-		}
-		if limit, ok := args["limit"].(float64); ok && limit > 0 {
+		} else if limit, ok := args["limit"].(float64); ok && limit > 0 {
 			cmdArgs = append(cmdArgs, "--limit", fmt.Sprintf("%d", int(limit)))
 		}
 

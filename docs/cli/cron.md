@@ -5,7 +5,7 @@
 ## Commands
 
 ```bash
-myaaw cron list
+myaaw cron list [id]
 myaaw cron add ...
 myaaw cron remove <id>
 myaaw cron run <id>
@@ -18,9 +18,37 @@ Use the global `--agent` flag to manage another agent's jobs:
 myaaw --agent agent-b cron list
 ```
 
-## `cron list`
+## `cron list [id]`
 
-Prints every job with its ID, schedule, target channel, and status.
+Without an id it prints every job with its ID, schedule, target channel, and
+status. Pass a job id (or its prefix) to read every field the job stores, one per
+line:
+
+```bash
+myaaw cron list 33333333
+```
+
+```text
+ID        33333333-4444-4555-8666-777777777777
+Name      Water reminder
+Agent     default
+Schedule  at · 2026-11-05T15:13:10+07:00
+Payload   agentTurn
+Prompt    Time to drink water
+Mode      announce
+Channel   telegram
+To        -1001234567890
+Topic     77
+Session   0f4e8b3a-1111-4222-8333-944455556666
+Status    enabled
+Created   2026-11-05T14:13:00+07:00
+Updated   2026-11-05T14:13:00+07:00
+```
+
+The timestamps are printed as stored. Empty fields are left out, so a target
+without a topic simply has no `Topic` line, and `Chat type` only appears for a
+Discord job. A prefix that matches more than one job lists the candidates instead
+of guessing, and a job whose runs you want to read is `cron history <id>`.
 
 ## `cron add`
 
@@ -84,16 +112,49 @@ Triggers the job immediately without changing its schedule.
 
 ## `cron history [id]`
 
-Shows recent executions. Without an ID, shows history across jobs.
+Lists recent runs, newest first. Without an id it covers every job, including
+one-time jobs that were removed after they ran.
 
 ```bash
 myaaw cron history
-myaaw cron history <job-id> --limit 50
+myaaw cron history <job-id>
+myaaw cron history --limit 50
 ```
 
 | Flag | Default | Description |
 | :--- | :--- | :--- |
-| `--limit` | `10` | Number of entries to show. |
+| `--limit` | `10` | Number of runs in the list. A job id ignores it: that job's runs are always shown in full. |
+
+Without an id the output is one row per run: time, short job id, job name,
+status, and result. Pass a job id (or a prefix) to read every field the run
+stores, one per line:
+
+```text
+History for job: Water reminder (11111111-2222-4333-8444-555555555555)
+Time       2026-11-05T13:18:52.513049+07:00
+Job ID     11111111-2222-4333-8444-555555555555
+Job        Water reminder
+Status     success
+Result     Job executed successfully
+Prompt     Time to drink water.
+Channel    telegram
+To         -1001234567890
+Topic      77
+Session    0f4e8b3a-1111-4222-8333-944455556666
+```
+
+The block prints the timestamp exactly as the log stores it (RFC3339 with its
+original offset), so it can be matched to a line in `cron/runs/<job id>.jsonl`.
+Runs recorded before the log kept a job snapshot only show the time, status, and
+result, with a note saying so.
+
+An id still resolves after the job is gone: a one-time job is removed once it
+runs, but its run file stays, and the id is matched against the log as well as
+`jobs.json`.
+
+The agent's `cron` tool has the same split: `history` alone lists runs, and
+`history` with a `job_id` returns that job's runs in full. `limit` pages the list
+only; the tool never sends it alongside a `job_id`.
 
 ## Behavior
 

@@ -7,10 +7,8 @@ import (
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/cron"
-	"os"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,7 +23,12 @@ var cronCmd = &cobra.Command{
 
 var cronListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List all scheduled jobs",
+	Short: "List jobs, or show one job in full",
+	Long: `List every scheduled job with its id, schedule, and status.
+
+Pass a job id (or its prefix) to read that job in full: schedule, prompt,
+delivery target, and timestamps. Its runs live in 'myaaw cron history <id>'.`,
+	Args: cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		store := getStore(cronAgent(cmd))
 		jobs, err := store.Load()
@@ -38,8 +41,12 @@ var cronListCmd = &cobra.Command{
 			return
 		}
 
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, theme.RenderPrimary("ID\tName\tSchedule\tLast Updated\tEnabled"))
+		if len(args) == 1 {
+			showCronJob(store, jobs, args[0])
+			return
+		}
+
+		rows := make([][]string, 0, len(jobs))
 		for _, job := range jobs {
 			schedule := job.Schedule.Expr
 			if job.Schedule.Kind == "every" {
@@ -49,18 +56,38 @@ var cronListCmd = &cobra.Command{
 			if !job.Enabled {
 				enabled = theme.RenderError("No")
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-				job.ID[:8],
+			rows = append(rows, []string{
+				shortID(job.ID),
 				job.Name,
 				schedule,
 				job.UpdatedAt.Format("2006-01-02 15:04"),
 				enabled,
-			)
+			})
 		}
-		w.Flush()
+		fmt.Print(cron.AlignTable(headerCells("ID", "Name", "Schedule", "Last Updated", "Enabled"), rows))
 	},
 }
 
+// showCronJob prints one job in full, resolving an id or prefix against the store.
+func showCronJob(store *cron.Store, jobs []cron.Job, arg string) {
+	matches := cron.MatchJobIDs(jobs, arg)
+	switch len(matches) {
+	case 0:
+		fmt.Println(theme.RenderError(fmt.Sprintf("Job not found: %s", arg)))
+		return
+	case 1:
+		job, err := store.Get(matches[0])
+		if err != nil {
+			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to load job: %v", err)))
+			return
+		}
+		fmt.Print(cron.JobDetail(*job))
+	default:
+		reportAmbiguousID(arg, matches)
+	}
+}
+
+// reportAmbiguousID lists the candidates when a prefix matches more than one job.
 var cronAddCmd = &cobra.Command{
 	Use:   "add",
 	Short: "Add a new scheduled job",
@@ -246,115 +273,165 @@ var cronRunCmd = &cobra.Command{
 
 var cronHistoryCmd = &cobra.Command{
 	Use:   "history [id]",
-	Short: "View execution history of a job (or all jobs if no ID provided)",
-	Args:  cobra.RangeArgs(0, 1),
+	Short: "List recent runs, or show one job's runs in full",
+	Long: `Show recent runs, newest first.
+
+Without an id this is the agent-wide list, and it covers every job, including
+one-time jobs that were removed after they ran. --limit shapes that list.
+
+Pass a job id (or its prefix) to see each of that job's runs in full: timestamp,
+job, status, result, prompt, and delivery target. A job has no page: every run of
+it is shown, so --limit does not apply.`,
+	Args: cobra.RangeArgs(0, 1),
 	Run: func(cmd *cobra.Command, args []string) {
-		limit, _ := cmd.Flags().GetInt("limit")
 		agent := cronAgent(cmd)
 		store := getStore(agent)
 		history := getHistoryLogger(agent)
 
-		// Case 1: Global History (No ID provided)
 		if len(args) == 0 {
-			results, _, err := history.GetGlobalHistory(limit, 0)
-			if err != nil {
-				fmt.Println(theme.RenderError(fmt.Sprintf("Failed to load global history: %v", err)))
-				return
-			}
-
-			if len(results) == 0 {
-				fmt.Println(theme.RenderMuted("No execution history found."))
-				return
-			}
-
-			fmt.Println(theme.RenderPrimary(fmt.Sprintf("Recent History (Last %d runs):", limit)))
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-			fmt.Fprintln(w, theme.RenderSecondary("Time\tJob ID\tStatus\tResult"))
-
-			for _, res := range results {
-				status := res.Status
-				switch res.Status {
-				case "success":
-					status = theme.RenderSuccess(res.Status)
-				case "failed", "failed_schedule":
-					status = theme.RenderError(res.Status)
-				case "skipped":
-					status = theme.RenderWarning(res.Status)
-				}
-
-				// Short ID for display
-				displayID := res.JobID
-				if len(displayID) > 8 {
-					displayID = displayID[:8]
-				}
-
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-					res.Timestamp.Format("2006-01-02 15:04:05"),
-					displayID,
-					status,
-					res.Result,
-				)
-			}
-			w.Flush()
+			limit, _ := cmd.Flags().GetInt("limit")
+			showGlobalCronHistory(history, limit)
 			return
 		}
+		showJobCronHistory(store, history, args[0])
+	},
+}
 
-		// Case 2: Specific Job History
-		id := args[0]
+// showGlobalCronHistory prints the agent-wide run log: one row per run across
+// every job, including the one-time jobs that were removed after they ran.
+func showGlobalCronHistory(history *cron.HistoryLogger, limit int) {
+	runs, _, err := history.GetGlobalHistory(limit, 0)
+	if err != nil {
+		fmt.Println(theme.RenderError(fmt.Sprintf("Failed to load global history: %v", err)))
+		return
+	}
 
-		// If ID is short, try to find full ID
-		if len(id) < 36 {
-			jobs, _ := store.Load()
-			for _, j := range jobs {
-				if len(j.ID) >= len(id) && j.ID[:len(id)] == id {
-					id = j.ID
-					break
-				}
-			}
-		}
+	if len(runs) == 0 {
+		fmt.Println(theme.RenderMuted("No execution history found."))
+		return
+	}
 
-		// Check if job exists (optional, but good for UX)
-		job, err := store.Get(id)
-		if err != nil {
-			fmt.Println(theme.RenderError(fmt.Sprintf("Job not found: %s", id)))
-			return
-		}
+	fmt.Println(theme.RenderPrimary(fmt.Sprintf("Recent History (Last %d runs):", limit)))
+	rows := make([][]string, 0, len(runs))
+	for _, run := range runs {
+		rows = append(rows, []string{
+			run.Timestamp.Format("2006-01-02 15:04:05"),
+			cron.ShortID(run.JobID),
+			truncateValue(strings.TrimSpace(run.Name), 28),
+			renderCronStatus(run.Status),
+			run.Result,
+		})
+	}
+	fmt.Print(cron.AlignTable(headerCells("Time", "Job ID", "Job", "Status", "Result"), rows))
+	fmt.Println(theme.RenderMuted("Run 'myaaw cron history <job-id>' to read a job's runs in full."))
+}
 
-		// limit is already defined above
-		results, err := history.GetHistory(id, limit)
+// showJobCronHistory prints the runs of one job in full. The id is resolved
+// against jobs.json first and then against the run log, because a one-time job is
+// removed after it runs while its runs stay readable. Every run is shown: a
+// single job's log is small, and paging it would only hide older runs.
+func showJobCronHistory(store *cron.Store, history *cron.HistoryLogger, arg string) {
+	jobs, _ := store.Load()
+
+	id := ""
+	known := false
+	switch matches := cron.MatchJobIDs(jobs, arg); len(matches) {
+	case 1:
+		id, known = matches[0], true
+	case 0:
+		// A removed one-time job has no entry left in jobs.json but keeps its run
+		// files, so the log is the last place an id can still resolve.
+		ids, err := history.MatchRunIDs(arg)
 		if err != nil {
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to load history: %v", err)))
 			return
 		}
-
-		if len(results) == 0 {
-			fmt.Println(theme.RenderMuted(fmt.Sprintf("No history found for job: %s (%s)", job.Name, id)))
+		switch len(ids) {
+		case 0:
+			fmt.Println(theme.RenderError(fmt.Sprintf("Job not found: %s", arg)))
+			return
+		case 1:
+			id = ids[0]
+		default:
+			reportAmbiguousID(arg, ids)
 			return
 		}
+	default:
+		reportAmbiguousID(arg, matches)
+		return
+	}
 
-		fmt.Println(theme.RenderPrimary(fmt.Sprintf("History for job: %s (%s)", job.Name, id)))
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, theme.RenderSecondary("Time\tStatus\tResult"))
-
-		for _, res := range results {
-			status := res.Status
-			switch res.Status {
-			case "success":
-				status = theme.RenderSuccess(res.Status)
-			case "failed", "failed_schedule":
-				status = theme.RenderError(res.Status)
-			case "skipped":
-				status = theme.RenderWarning(res.Status)
-			}
-
-			fmt.Fprintf(w, "%s\t%s\t%s\n",
-				res.Timestamp.Format("2006-01-02 15:04:05"),
-				status,
-				res.Result,
-			)
+	jobName := ""
+	if known {
+		if job, err := store.Get(id); err == nil {
+			jobName = job.Name
 		}
-		w.Flush()
-	},
+	}
+
+	results, err := history.GetHistory(id, 0)
+	if err != nil {
+		fmt.Println(theme.RenderError(fmt.Sprintf("Failed to load history: %v", err)))
+		return
+	}
+
+	if len(results) == 0 {
+		name := jobName
+		if name == "" {
+			name = cron.ShortID(id)
+		}
+		fmt.Println(theme.RenderMuted(fmt.Sprintf("No history found for job: %s (%s)", name, id)))
+		return
+	}
+
+	// The log keeps the job name even after the job is removed, so the snapshot
+	// wins; the store covers entries written before runs kept one.
+	displayName := results[0].Name
+	if displayName == "" {
+		displayName = jobName
+	}
+	if displayName != "" {
+		fmt.Println(theme.RenderPrimary(fmt.Sprintf("History for job: %s (%s)", displayName, id)))
+	} else {
+		fmt.Println(theme.RenderPrimary(fmt.Sprintf("History for removed job: %s", cron.ShortID(id))))
+	}
+
+	for i, res := range results {
+		if i > 0 {
+			fmt.Println()
+		}
+		if res.Name == "" {
+			res.Name = displayName
+		}
+		fmt.Print(cron.RunDetail(cron.JobExecutionResult{JobID: id, ExecutionResult: res}))
+	}
+}
+
+// reportAmbiguousID lists the candidates when a prefix matches more than one job.
+func reportAmbiguousID(arg string, matches []string) {
+	fmt.Println(theme.RenderError(fmt.Sprintf("%s matches %d jobs; use a longer id:", arg, len(matches))))
+	for _, match := range matches {
+		fmt.Println("  " + cron.ShortID(match))
+	}
+}
+
+func renderCronStatus(status string) string {
+	switch status {
+	case "success":
+		return theme.RenderSuccess(status)
+	case "failed", "failed_schedule":
+		return theme.RenderError(status)
+	case "skipped":
+		return theme.RenderWarning(status)
+	}
+	return status
+}
+
+func headerCells(names ...string) []string {
+	cells := make([]string, 0, len(names))
+	for _, name := range names {
+		cells = append(cells, theme.RenderPrimary(name))
+	}
+	return cells
 }
 
 func init() {

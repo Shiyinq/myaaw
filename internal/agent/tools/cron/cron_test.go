@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -189,6 +190,94 @@ func TestCallToolDropsInheritedDiscordChatTypeForAnotherChannel(t *testing.T) {
 	fields := strings.Fields(out)
 	if hasPair(fields, "--chat-type", "dm") {
 		t.Errorf("DM chat type leaked into a guild target: %v", fields)
+	}
+}
+
+// History with a job id is how the model reads a run in full: the CLI prints
+// the prompt and delivery target for that job, so the id must be forwarded.
+func TestCallToolHistoryForwardsJobID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := agentdir.SetActive(agentdir.DefaultAgentName); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+	fakeCLI(t)
+
+	out := NewCronTool().CallTool(`{
+		"action": "history",
+		"job_id": "11111111",
+		"limit": 5
+	}`, nil)
+
+	fields := strings.Fields(out)
+	if !hasPair(fields, "cron", "history") {
+		t.Fatalf("wrong subcommand: %v", fields)
+	}
+	foundID := false
+	for _, field := range fields {
+		if field == "11111111" {
+			foundID = true
+		}
+	}
+	if !foundID {
+		t.Errorf("job id was not forwarded: %v", fields)
+	}
+	// A job id asks for the whole log of one job, so limit must not travel with
+	// it: the CLI would only ignore it.
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] == "--limit" {
+			t.Errorf("limit was sent with a job id: %v", fields)
+		}
+	}
+
+	// Without a job id the list is paged, so limit belongs there.
+	listOut := NewCronTool().CallTool(`{"action": "history", "limit": 5}`, nil)
+	listFields := strings.Fields(listOut)
+	if !hasPair(listFields, "--limit", "5") {
+		t.Errorf("limit was not forwarded to the list: %v", listFields)
+	}
+}
+
+// `list` without an id is the table; with one it shows that job's definition.
+func TestCallToolListForwardsID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if err := agentdir.SetActive(agentdir.DefaultAgentName); err != nil {
+		t.Fatalf("SetActive: %v", err)
+	}
+	fakeCLI(t)
+
+	out := NewCronTool().CallTool(`{"action": "list", "id": "33333333"}`, nil)
+	fields := strings.Fields(out)
+	if !hasPair(fields, "cron", "list") {
+		t.Fatalf("wrong subcommand: %v", fields)
+	}
+	foundID := false
+	for _, field := range fields {
+		if field == "33333333" {
+			foundID = true
+		}
+	}
+	if !foundID {
+		t.Errorf("job id was not forwarded: %v", fields)
+	}
+
+	// Without an id it stays the plain list.
+	plain := strings.Fields(NewCronTool().CallTool(`{"action": "list"}`, nil))
+	for _, field := range plain {
+		if field == "33333333" {
+			t.Errorf("unexpected id in the plain list: %v", plain)
+		}
+	}
+}
+
+// The schema is a hand-written string, so a typo would break every call.
+func TestToolDefinitionIsValidJSON(t *testing.T) {
+	var schema map[string]any
+	if err := json.Unmarshal(NewCronTool().ToolDefinition(), &schema); err != nil {
+		t.Fatalf("tool schema is not valid JSON: %v", err)
 	}
 }
 

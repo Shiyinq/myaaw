@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -104,6 +105,38 @@ func (h *HistoryLogger) GetHistory(jobID string, limit int) ([]ExecutionResult, 
 	}
 
 	return results, nil
+}
+
+// MatchRunIDs returns the run log ids that match a job id or prefix. The log
+// outlives its job: a one-time job is removed after it runs but keeps its file,
+// so a prefix may only be resolvable here and not in jobs.json.
+func (h *HistoryLogger) MatchRunIDs(idOrPrefix string) ([]string, error) {
+	prefix := strings.TrimSpace(idOrPrefix)
+	if prefix == "" {
+		return nil, nil
+	}
+
+	dir := filepath.Join(h.basePath, "runs")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	ids := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".jsonl" {
+			continue
+		}
+		id := strings.TrimSuffix(entry.Name(), ".jsonl")
+		if strings.HasPrefix(id, prefix) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids, nil
 }
 
 func splitLines(data []byte) []string {
