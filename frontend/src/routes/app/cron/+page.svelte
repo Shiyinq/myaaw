@@ -97,6 +97,8 @@
 	let runsLoading = $state(false);
 	let runDetail = $state<CronJobExecution | null>(null);
 	let runDetailOpen = $state(false);
+	let jobDetail = $state<CronJob | null>(null);
+	let jobDetailOpen = $state(false);
 	let jobTab = $state('jobs');
 	let runningId = $state('');
 
@@ -373,6 +375,12 @@
 		runDetailOpen = true;
 	}
 
+	// The card is a summary; the dialog repeats every field the job stores.
+	function showJob(job: CronJob) {
+		jobDetail = job;
+		jobDetailOpen = true;
+	}
+
 	// Runs keep their job id after the job row is gone, so a one-time job stays
 	// readable both by name (while it exists) and by a short id afterwards.
 	function jobLabel(id: string) {
@@ -457,7 +465,12 @@
 								{#each jobs as job (job.id)}
 									<div class="space-y-2 rounded-lg border p-3">
 										<div class="flex items-start justify-between gap-2">
-											<div class="min-w-0">
+											<button
+												type="button"
+												class="min-w-0 flex-1 rounded-md text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+												onclick={() => showJob(job)}
+												title={t('myaaw.cron.detail_desc')}
+											>
 												<div class="flex flex-wrap items-center gap-2">
 													<span class="font-medium">{job.name}</span>
 													<Badge variant={job.enabled ? 'secondary' : 'outline'}>
@@ -485,7 +498,7 @@
 														{/if}
 													</p>
 												{/if}
-											</div>
+											</button>
 											<div class="flex shrink-0 gap-1">
 												<Button
 													size="icon-sm"
@@ -849,6 +862,101 @@
 		</div>
 	{/if}
 
+	<!-- Every field the job stores. The card is only a summary, and a job created
+	     from chat can carry a topic or a session nobody typed here. -->
+	<Dialog.Root bind:open={jobDetailOpen}>
+		<Dialog.Content class="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
+			<Dialog.Header>
+				<Dialog.Title class="pr-6">{jobDetail?.name || ''}</Dialog.Title>
+				<Dialog.Description>{t('myaaw.cron.detail_desc')}</Dialog.Description>
+			</Dialog.Header>
+
+			{#if jobDetail}
+				<dl class="grid grid-cols-[minmax(0,6rem)_1fr] gap-x-3 gap-y-2 text-xs">
+					<dt class="text-muted-foreground">{t('myaaw.cron.field_id')}</dt>
+					<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.id}</dd>
+
+					{#if jobDetail.name}
+						<dt class="text-muted-foreground">{t('myaaw.cron.name')}</dt>
+						<dd class="min-w-0 break-words">{jobDetail.name}</dd>
+					{/if}
+
+					{#if jobDetail.agent_id}
+						<dt class="text-muted-foreground">{t('myaaw.cron.field_agent')}</dt>
+						<dd class="min-w-0 break-words">{jobDetail.agent_id}</dd>
+					{/if}
+
+					<dt class="text-muted-foreground">{t('myaaw.cron.kind')}</dt>
+					<dd class="min-w-0 font-mono text-[11px] break-words">
+						{jobDetail.schedule.kind} · {jobDetail.schedule.expr}
+						{#if jobDetail.schedule.tz}· {jobDetail.schedule.tz}{/if}
+					</dd>
+
+					{#if jobDetail.payload.kind}
+						<dt class="text-muted-foreground">{t('myaaw.cron.field_payload')}</dt>
+						<dd class="min-w-0 break-words">{jobDetail.payload.kind}</dd>
+					{/if}
+
+					{#if jobDetail.payload.content}
+						<dt class="text-muted-foreground">{t('myaaw.cron.message')}</dt>
+						<dd class="min-w-0 whitespace-pre-wrap break-words">{jobDetail.payload.content}</dd>
+					{/if}
+
+					{#if jobDetail.delivery.mode}
+						<dt class="text-muted-foreground">{t('myaaw.cron.field_mode')}</dt>
+						<dd class="min-w-0 break-words">{jobDetail.delivery.mode}</dd>
+					{/if}
+
+					{#if jobDetail.delivery.channel}
+						<dt class="text-muted-foreground">{t('myaaw.cron.channel')}</dt>
+						<dd class="min-w-0 break-words">{jobDetail.delivery.channel}</dd>
+					{/if}
+
+					{#if jobDetail.delivery.to}
+						<dt class="text-muted-foreground">{t('myaaw.cron.to')}</dt>
+						<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.delivery.to}</dd>
+					{/if}
+
+					{#if jobDetail.delivery.chat_type}
+						<dt class="text-muted-foreground">{t('myaaw.cron.field_chat_type')}</dt>
+						<dd class="min-w-0 break-words">{jobDetail.delivery.chat_type}</dd>
+					{/if}
+
+					{#if jobDetail.delivery.thread_id}
+						<dt class="text-muted-foreground">{t('myaaw.cron.thread_id')}</dt>
+						<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.delivery.thread_id}</dd>
+					{/if}
+
+					{#if jobDetail.delivery.session_id}
+						<dt class="text-muted-foreground">{t('myaaw.cron.session_id')}</dt>
+						<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.delivery.session_id}</dd>
+					{/if}
+
+					<dt class="text-muted-foreground">{t('myaaw.cron.field_status')}</dt>
+					<dd class="min-w-0 break-words">
+						{jobDetail.enabled ? t('myaaw.cron.enabled') : t('myaaw.cron.disabled')}
+					</dd>
+
+					{#if jobDetail.created_at}
+						<dt class="text-muted-foreground">{t('myaaw.cron.field_created')}</dt>
+						<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.created_at}</dd>
+					{/if}
+
+					{#if jobDetail.updated_at}
+						<dt class="text-muted-foreground">{t('myaaw.cron.field_updated')}</dt>
+						<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.updated_at}</dd>
+					{/if}
+				</dl>
+			{/if}
+
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (jobDetailOpen = false)}>
+					{t('myaaw.cron.run_close')}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
+
 	<!-- One run, opened from the Recent runs list. Each entry carries a snapshot of
 	     the job, so a run of a job that was since removed still says what it
 	     delivered; older entries only have the id and result. -->
@@ -873,34 +981,47 @@
 				<div class="space-y-3">
 					<dl class="grid grid-cols-[minmax(0,6rem)_1fr] gap-x-3 gap-y-2 text-xs">
 						<dt class="text-muted-foreground">{t('myaaw.cron.run_time')}</dt>
-						<dd class="min-w-0 break-words">{new Date(runDetail.ts).toLocaleString()}</dd>
+						<dd class="min-w-0 font-mono text-[11px] break-all">{runDetail.ts}</dd>
+
+						<dt class="text-muted-foreground">{t('myaaw.cron.run_job_id')}</dt>
+						<dd class="min-w-0 font-mono text-[11px] break-all">{runDetail.job_id}</dd>
 
 						{#if runDetail.name}
 							<dt class="text-muted-foreground">{t('myaaw.cron.name')}</dt>
 							<dd class="min-w-0 break-words">{runDetail.name}</dd>
 						{/if}
 
+						<dt class="text-muted-foreground">{t('myaaw.cron.run_status')}</dt>
+						<dd class="min-w-0 break-words">{runDetail.status}</dd>
+
 						{#if runDetail.message}
 							<dt class="text-muted-foreground">{t('myaaw.cron.message')}</dt>
 							<dd class="min-w-0 whitespace-pre-wrap break-words">{runDetail.message}</dd>
 						{/if}
 
-						{#if runDetail.channel || runDetail.to}
-							<dt class="text-muted-foreground">{t('myaaw.cron.section_delivery')}</dt>
-							<dd class="min-w-0 break-words font-mono text-[11px]">
-								{runDetail.channel || '—'} → {runDetail.to || '—'}
-								{#if runDetail.chat_type}· {runDetail.chat_type}{/if}
-							</dd>
+						{#if runDetail.channel}
+							<dt class="text-muted-foreground">{t('myaaw.cron.channel')}</dt>
+							<dd class="min-w-0 break-words">{runDetail.channel}</dd>
+						{/if}
+
+						{#if runDetail.to}
+							<dt class="text-muted-foreground">{t('myaaw.cron.to')}</dt>
+							<dd class="min-w-0 font-mono text-[11px] break-all">{runDetail.to}</dd>
+						{/if}
+
+						{#if runDetail.chat_type}
+							<dt class="text-muted-foreground">{t('myaaw.cron.field_chat_type')}</dt>
+							<dd class="min-w-0 break-words">{runDetail.chat_type}</dd>
 						{/if}
 
 						{#if runDetail.thread_id}
-							<dt class="text-muted-foreground">{t('myaaw.cron.run_topic')}</dt>
-							<dd class="font-mono text-[11px]">{runDetail.thread_id}</dd>
+							<dt class="text-muted-foreground">{t('myaaw.cron.thread_id')}</dt>
+							<dd class="min-w-0 font-mono text-[11px] break-all">{runDetail.thread_id}</dd>
 						{/if}
 
 						{#if runDetail.session_id}
-							<dt class="text-muted-foreground">{t('myaaw.cron.run_session')}</dt>
-							<dd class="min-w-0 break-all font-mono text-[11px]">{runDetail.session_id}</dd>
+							<dt class="text-muted-foreground">{t('myaaw.cron.session_id')}</dt>
+							<dd class="min-w-0 font-mono text-[11px] break-all">{runDetail.session_id}</dd>
 						{/if}
 
 						<dt class="text-muted-foreground">{t('myaaw.cron.run_result')}</dt>
