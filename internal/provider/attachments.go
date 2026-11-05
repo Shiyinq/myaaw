@@ -37,14 +37,18 @@ func StripAttachmentBlock(text string) string {
 	return strings.TrimSpace(attachmentBlockPattern.ReplaceAllString(text, ""))
 }
 
-// StripContextBlocks removes both context blocks. Use it wherever a message is
-// shown to a person: titles, previews, turn labels, and the CLI.
+// StripContextBlocks removes every block the agent adds for the model. Use it
+// wherever a message is shown to a person: titles, previews, turn labels, and the
+// CLI.
 func StripContextBlocks(text string) string {
-	if !strings.Contains(text, UserInfoBlockOpen) && !strings.Contains(text, AttachmentBlockOpen) {
+	if !strings.Contains(text, UserInfoBlockOpen) &&
+		!strings.Contains(text, AttachmentBlockOpen) &&
+		!HasTriggerBlock(text) {
 		return text
 	}
 	text = userInfoBlockPattern.ReplaceAllString(text, "")
 	text = attachmentBlockPattern.ReplaceAllString(text, "")
+	text = StripTriggerBlocks(text)
 	return strings.TrimSpace(text)
 }
 

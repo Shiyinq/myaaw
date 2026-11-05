@@ -29,6 +29,12 @@ export interface ChatItem extends TimelineItem {
 	senderId?: string;
 	senderName?: string;
 	senderUsername?: string;
+	/**
+	 * Set when the turn was started by the system rather than typed: a cron job, a
+	 * heartbeat tick, or a finished sub-agent. The stored text carries a
+	 * model-only <trigger> block; the row shows a badge and hides the block.
+	 */
+	trigger?: 'cron' | 'heartbeat' | 'subagent';
 	resolved?: string;
 	images?: string[];
 	uploads?: Upload[];

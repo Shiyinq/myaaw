@@ -118,7 +118,9 @@ func (s *HeartbeatService) process() error {
 		return nil
 	}
 
-	prompt := `SYSTEM: You are in HEARTBEAT checking mode.
+	// The trigger block already marks this turn as system work, so the prompt starts
+	// with the role instead of repeating a SYSTEM: header.
+	prompt := `You are in HEARTBEAT checking mode.
 
 INSTRUCTION:
 1. Read the file "HEARTBEAT.md".

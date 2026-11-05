@@ -108,7 +108,7 @@ func TestRunConversationSkipsCheckpointsForHeartbeat(t *testing.T) {
 	ag := &checkpointAgent{
 		transcript: []provider.Message{
 			{Role: "system", Content: "system prompt"},
-			{Role: "user", Content: "[SYSTEM TRIGGER: HEARTBEAT]\nHEARTBEAT_OK"},
+			{Role: "user", Content: provider.TriggerBlock(provider.TriggerHeartbeat, "HEARTBEAT_OK")},
 		},
 		final: provider.Message{Role: "assistant", Content: "HEARTBEAT_OK"},
 	}

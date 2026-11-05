@@ -38,7 +38,9 @@
 	import {
 		AlertTriangle,
 		ArrowDownToLine,
+		Bot,
 		Brain,
+		CalendarClock,
 		ChevronDown,
 		Clock,
 		Code,
@@ -49,6 +51,7 @@
 		FolderOpen,
 		Gauge,
 		Globe,
+		HeartPulse,
 		Loader2,
 		MessageSquarePlus,
 		Mic,
@@ -1576,6 +1579,35 @@
 			.trim();
 	}
 
+	type TriggerKind = 'cron' | 'heartbeat' | 'subagent';
+
+	/**
+	 * Cron, heartbeat, and sub-agent turns travel inside a model-only block:
+	 *
+	 *   <trigger kind="cron">…rules… the prompt…</trigger>
+	 *
+	 * People see a badge and nothing else. Turns stored before the block existed
+	 * have no marker and render as plain text.
+	 */
+	function splitTrigger(raw: string): { trigger: TriggerKind | null; text: string } {
+		const cleaned = withoutContext(raw);
+		const block = cleaned.match(
+			/^\s*<trigger\b[^>]*\bkind="(cron|heartbeat|subagent)"[^>]*>[\s\S]*?<\/trigger>\s*/i
+		);
+		if (!block) return { trigger: null, text: cleaned };
+
+		// The whole block is model-only, so the badge is the message.
+		return { trigger: block[1].toLowerCase() as TriggerKind, text: '' };
+	}
+
+	function triggerLabel(trigger: TriggerKind): string {
+		return t(`myaaw.chat.trigger_${trigger}`);
+	}
+
+	function triggerIcon(trigger: TriggerKind) {
+		return trigger === 'cron' ? CalendarClock : trigger === 'heartbeat' ? HeartPulse : Bot;
+	}
+
 	function messageImages(message: Message): string[] {
 		const urls: string[] = [];
 		if (Array.isArray(message.content)) {
@@ -1789,12 +1821,15 @@
 
 			if (message.role === 'user') {
 				lastStep = -1;
-				const text = withoutContext(messageText(message));
+				const { trigger, text } = splitTrigger(messageText(message));
 				const images = messageImages(message);
-				if (text || images.length > 0 || (message.uploads?.length ?? 0) > 0) {
+				// A trigger turn has no visible text: the badge is the message, so it still
+				// gets a row.
+				if (trigger || text || images.length > 0 || (message.uploads?.length ?? 0) > 0) {
 					timeline.push({
 						kind: 'user',
 						text,
+						trigger: trigger ?? undefined,
 						images: images.length > 0 ? images : undefined,
 						uploads: message.uploads,
 						localId: nextId(),
@@ -2711,7 +2746,23 @@
 														{/each}
 													</div>
 												{/if}
-												{#if item.text}
+												{#if item.trigger}
+													{@const TriggerIcon = triggerIcon(item.trigger)}
+													<div
+														class="flex w-full max-w-full flex-col items-end gap-1 terminal:items-start"
+													>
+														<!-- The block is model-only: the badge is the whole message. -->
+														<span
+															class="inline-flex items-center gap-1.5 rounded-full border border-(--chat-bubble-ring) bg-secondary px-2.5 py-1 text-[11px] font-medium text-secondary-foreground"
+														>
+															<TriggerIcon class="h-3.5 w-3.5" />
+															{triggerLabel(item.trigger)}
+														</span>
+														<div class="mt-0.5 flex items-center gap-1 text-muted-foreground">
+															<ChatTime at={item.createdAt ?? ''} />
+														</div>
+													</div>
+												{:else if item.text}
 													<div
 														class="flex w-full max-w-full flex-col items-end terminal:items-start"
 													>

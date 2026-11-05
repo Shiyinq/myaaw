@@ -508,13 +508,10 @@ func replaceUserContent(content interface{}, replacement string) interface{} {
 func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage, uploads []provider.Upload) provider.Message {
 	text := msg.Text
 	role := "user"
-	switch msg.TriggerType {
-	case "heartbeat":
-		text = "[SYSTEM TRIGGER: HEARTBEAT]\n" + text
-	case "cron":
-		text = "[SYSTEM TRIGGER: CRON JOB]\n(NOTE: The user does NOT see this trigger message. You must now deliver the reminder or perform the scheduled task for the user based on this prompt)\n\n" + text
-	case "subagent":
-		text = "[SYSTEM TRIGGER: SUB-AGENT RESULT]\n(NOTE: The user does NOT see this trigger message. A background sub-agent has completed its task. Review its report below, inform the user about the completion, and summarize the key findings/results. If you started multiple sub-agents, check the batch progress.)\n\n" + text
+	// A trigger turn is marked with a block the model reads and people never see;
+	// the block carries the kind, the rules, and the content itself.
+	if provider.IsTriggerKind(msg.TriggerType) {
+		text = provider.TriggerBlock(msg.TriggerType, text)
 	}
 
 	if len(uploads) > 0 {

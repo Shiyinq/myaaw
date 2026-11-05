@@ -241,6 +241,59 @@ func TestBuildUserMessageFallsBackToUserID(t *testing.T) {
 	}
 }
 
+// A trigger turn stores the whole prompt inside a marker block, so the model
+// knows why it woke up while people see only a badge and the prompt.
+func TestBuildUserMessageTagsTriggerTurns(t *testing.T) {
+	svc := &BotServiceImpl{llmProvider: provider.NewOpenAIProvider("http://127.0.0.1:1", "sk-test", "test-model")}
+
+	cron := svc.buildUserMessage(&channel.IncomingMessage{
+		UserID:      42,
+		Channel:     "telegram",
+		Scope:       "tg:-1001111:77",
+		Text:        "Time to drink water",
+		TriggerType: "cron",
+	}, nil)
+	content, _ := cron.Content.(string)
+	// The block sits after <userinfo> and wraps the prompt.
+	if !strings.Contains(content, `<trigger kind="cron">`) {
+		t.Fatalf("cron turn has no trigger block: %q", content)
+	}
+	if strings.Index(content, `<trigger kind="cron">`) > strings.Index(content, "Time to drink water") {
+		t.Fatalf("trigger block does not start before the prompt: %q", content)
+	}
+	if !strings.Contains(content, "\nTime to drink water\n</trigger>") {
+		t.Fatalf("prompt is not inside the block: %q", content)
+	}
+	if strings.Contains(content, "SYSTEM TRIGGER") {
+		t.Fatalf("cron turn kept the old header: %q", content)
+	}
+	if got := provider.StripContextBlocks(content); got != "Time to drink water" {
+		t.Fatalf("stripped = %q, want the prompt only", got)
+	}
+
+	// A heartbeat's prompt is all rules, so it folds into the rules and no part
+	// of the body is a message.
+	heartbeat := svc.buildUserMessage(&channel.IncomingMessage{
+		UserID:      42,
+		Channel:     "api",
+		Text:        "check the inbox",
+		TriggerType: "heartbeat",
+	}, nil)
+	heartbeatContent, _ := heartbeat.Content.(string)
+	if !strings.Contains(heartbeatContent, `<trigger kind="heartbeat">`) {
+		t.Fatalf("heartbeat block = %q", heartbeatContent)
+	}
+	if !strings.Contains(heartbeatContent, `<trigger kind="heartbeat">`+"\ncheck the inbox") {
+		t.Fatalf("tick prompt is not at the top of the block: %q", heartbeatContent)
+	}
+	if got := provider.StripContextBlocks(heartbeatContent); got != "" {
+		t.Fatalf("heartbeat stripped = %q, want empty", got)
+	}
+	if strings.Contains(heartbeatContent, "SYSTEM TRIGGER") {
+		t.Fatalf("heartbeat kept the old header: %q", heartbeatContent)
+	}
+}
+
 func TestBuildUserMessageWrapsUploadPathsInAttachedBlock(t *testing.T) {
 	svc := &BotServiceImpl{llmProvider: provider.NewOpenAIProvider("http://127.0.0.1:1", "sk-test", "test-model")}
 

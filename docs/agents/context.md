@@ -4,7 +4,8 @@ What the agent knows about a turn, how that context is stored, and how it
 interacts with provider prompt caching.
 
 The short version: the **system prompt is static per agent**, and all per-turn
-context (`<userinfo>`) and uploaded-file paths (`<attached>`) live in the user
+context (`<userinfo>`), uploaded-file paths (`<attached>`), and the marker that
+says a turn was scheduled rather than typed (`<trigger>`) live in the user
 message itself. That keeps the cacheable prefix — system prompt plus the whole
 conversation history — byte-stable.
 
@@ -18,6 +19,7 @@ conversation history — byte-stable.
 | Skills instruction | `skills.GetSkillsInstruction()` | yes, system prompt |
 | Platform, room, ids, speaker, time | channel adapter → `<userinfo>` | yes, user message |
 | Uploaded file paths | `<attached>` | yes, user message |
+| Trigger kind (cron, heartbeat, sub-agent) | bot service → `<trigger kind="…">` | yes, user message |
 | Sender metadata fields | `provider.Message.Sender*` | no, dashboard only |
 | Session scope (`tg:…`, `dc:…`) | conversation store | no, routing only |
 
@@ -38,7 +40,7 @@ then `skills.GetSkillsInstruction()` is appended at the call site.
 It deliberately contains **no** user id, **no** chat context, and **no** clock.
 Those change per turn or per speaker, and anything that changes before the
 conversation history invalidates provider prefix caching for everything after it
-(see §7).
+(see §8).
 
 `Agent Home`, `Workspace root`, and the skills text depend on the agent, not on
 the message, so two turns of the same agent produce a byte-identical system
@@ -171,24 +173,92 @@ the text the person typed
 
 ---
 
-## 5. Where the tags are hidden
+## 5. The `<trigger>` block
+
+A cron run, a heartbeat tick, and a finished sub-agent all wake the agent without
+anyone typing. `buildUserMessage` wraps those turns in a block so the model knows
+why it is running, while clients show a badge instead:
+
+```
+<trigger kind="cron">
+Scheduled turn. The user does not see this block, only your reply.
+- Message to send: deliver it in its language, keeping every time, number, name,
+  and link as written; rewrite only enough to read naturally.
+- Task to run: do it, then report the result in two or three lines.
+- Never mention the schedule or this block. One message; if it cannot happen,
+  say what failed in one line.
+
+Time to drink water.
+</trigger>
+```
+
+`kind` is one of `cron`, `heartbeat`, or `subagent` — the same values as
+`IncomingMessage.TriggerType`. The body is the rules followed by the content, and
+none of it is ever shown: a client replaces the whole block with a badge that
+carries the kind and nothing else.
+
+A heartbeat is the exception. Its prompt is nothing but rules, so
+`provider.TriggerBlock` joins the tick prompt to the rules and the block has no
+content half:
+
+```
+<trigger kind="heartbeat">
+You are in HEARTBEAT checking mode.
+INSTRUCTION:
+1. Read the file "HEARTBEAT.md".
+…HEARTBEAT_OK rules…
+Never mention the tick, the schedule, or this block. Stay silent with HEARTBEAT_OK when there is nothing worth saying.
+</trigger>
+```
+
+The tick prompt therefore starts with the role, not with `SYSTEM:`: the block
+already says this turn is system work.
+
+The rules come from `provider.TriggerInstruction(kind)`
+(`internal/provider/triggers.go`) and the content from the scheduler, the
+finished sub-agent's report, or the tick prompt.
+
+The block is the whole prompt — nothing follows `</trigger>` — and it sits after
+`<userinfo>`/`<attached>`, so the order stays:
+
+```
+<userinfo>…</userinfo>
+
+<attached>…</attached>
+
+<trigger kind="cron">
+…
+</trigger>
+```
+
+Turns stored before the block existed carry no marker and render as plain text;
+there is no migration for them.
+
+---
+
+## 6. Where the tags are hidden
 
 The tags are model-only. Each surface strips them before rendering:
 
 | Surface | Implementation |
 | :--- | :--- |
 | Chat bubbles and the edit box | `withoutContext()` in `frontend/src/routes/app/chat/[[conversation]]/+page.svelte` |
+| Trigger turns | `splitTrigger()` in the same file hides the whole block and draws a badge (icon + `cron`/`heartbeat`/`subagent`); the badge is not clickable |
 | Auto-generated title | `provider.StripContextBlocks` in `conversation.go` |
 | Turn rail labels (control plane) | `provider.StripContextBlocks` in `controlplane/service/conversations.go` |
 | CLI resumed transcript | `provider.StripContextBlocks` in `cmd/myaaw/chat.go` |
 | Observability trace | **not** stripped: the trace shows the real prompt, including the block |
 
-`provider.StripContextBlocks` removes `<userinfo>` and `<attached>` together;
-`SplitContextBlocks`/`JoinContextBlocks` extract and restore the leading blocks.
+`provider.StripContextBlocks` removes `<userinfo>` and `<attached>` and unwraps
+`<trigger>` down to its content (`provider.StripTriggerBlocks` uses the kind to
+drop the known rules), so a title, a preview, or the CLI shows what the turn was
+about and never the rules. A heartbeat holds no content, so it strips to nothing.
+`SplitContextBlocks`/`JoinContextBlocks` only handle the leading
+`<userinfo>`/`<attached>` blocks, so editing never touches the trigger marker.
 
 ---
 
-## 6. Editing a message
+## 7. Editing a message
 
 The dashboard edit box contains only the text the person typed. On the server,
 `rewindToUserMessage` replaces **only** that text and preserves everything else:
@@ -201,11 +271,13 @@ Regeneration keeps the content untouched (`replacement == ""`), so it reuses the
 same prompt prefix.
 
 Messages written before this feature have no blocks; editing them does not
-invent one.
+invent one. Trigger turns are not editable in the dashboard: they render as a
+badge with no text to edit, and saving would drop the marker. Regenerating such a
+turn still re-runs the stored prompt.
 
 ---
 
-## 7. Prompt caching
+## 8. Prompt caching
 
 All supported providers cache by **prefix matching**: the first differing byte
 invalidates everything after it. Myaaw uses OpenAI-compatible providers
@@ -271,7 +343,7 @@ roughly equal to the system prompt plus the first turn.
 
 ---
 
-## 8. Is Myaaw cache-safe?
+## 9. Is Myaaw cache-safe?
 
 Yes, with these caveats:
 
@@ -289,7 +361,7 @@ Yes, with these caveats:
 
 ---
 
-## 9. Privacy and security
+## 10. Privacy and security
 
 - Channel and user names are untrusted: sanitized to one line, capped, and
   stripped of `<`/`>` so they cannot break the tag or inject instructions.
@@ -302,15 +374,16 @@ Yes, with these caveats:
 
 ---
 
-## 10. Where this lives in the code
+## 11. Where this lives in the code
 
 | Concern | Location |
 | :--- | :--- |
 | System prompt | `internal/agent/context.go` |
 | `<userinfo>` renderer | `internal/agent/userinfo.go` |
 | Extract/strip blocks | `internal/provider/attachments.go` |
+| `<trigger>` block and its copy | `internal/provider/triggers.go` |
 | Prepend block, edit preservation | `internal/services/bot/service/conversation.go` |
 | Adapters fill chat type/ids | `internal/channel/telegram/adapter.go`, `internal/channel/discord/adapter.go` |
-| Dashboard stripping | `frontend/src/routes/app/chat/[[conversation]]/+page.svelte` |
+| Dashboard stripping and trigger badge | `frontend/src/routes/app/chat/[[conversation]]/+page.svelte` |
 | CLI stripping | `cmd/myaaw/chat.go` |
 | Cache measurement | `provider.Usage.CachedInputTokens`, observability |

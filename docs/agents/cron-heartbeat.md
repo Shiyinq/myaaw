@@ -200,6 +200,13 @@ Details:
   well as `jobs.json`, so a removed job's runs stay readable. The control plane
   serves the log newest first in pages
   (`GET /agents/:name/cron/history?limit=&offset=`).
+- **Trigger marker.** The turn is stored inside a model-only
+  `<trigger kind="cron">` block (`internal/provider/triggers.go`): the rules come
+  first, the scheduled content follows. The model reads the block as the reason it
+  woke up; the dashboard and CLI hide it and show a badge instead — the badge is
+  the whole message and cannot be expanded. A heartbeat has no content, so its
+  tick prompt is joined to the rules inside the same block. Turns stored before
+  the block existed have no marker and show as plain text.
 - **Errors.** A failed delivery is logged; it never fails the run itself.
 - **Heartbeat silence.** `HEARTBEAT_OK` is neither stored nor delivered.
 
