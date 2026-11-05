@@ -123,9 +123,23 @@ func (t *SubAgentTool) CallToolContext(ctx context.Context, arguments string, tc
 	// Background sub-agents are expected to outlive the originating request.
 	bgCtx := context.WithoutCancel(ctx)
 
+	// The completion notice must land in the chat that asked for the work, exactly
+	// like a cron run: a web/CLI chat has no room id, so it needs the pinned
+	// session, and Telegram keeps its topic while Discord keeps its DM/guild kind.
+	target := heartbeatTarget{
+		channel:   tctx.Channel,
+		to:        tctx.ChatID,
+		threadID:  tctx.TopicID,
+		sessionID: tctx.ConversationID,
+		chatType:  tctx.ChatType,
+	}
+	if target.to == "" {
+		target.to = tctx.UserID
+	}
+
 	// Spawn a goroutine for each task, bounded by maxConcurrentSubAgents.
 	for i, task := range args.Tasks {
-		go t.runSubAgent(bgCtx, task, tctx.Channel, tctx.UserID, tctx.BaseURL, batchID, i+1, totalTasks)
+		go t.runSubAgent(bgCtx, task, target, tctx.BaseURL, batchID, i+1, totalTasks)
 	}
 
 	return fmt.Sprintf("Successfully started %d sub-agents in background (Batch ID: %s). You will receive notifications as they complete. You do not need to wait or set a cron job.", totalTasks, batchID)
@@ -213,7 +227,17 @@ func (t *SubAgentTool) runTraced(
 	return result.Final, nil
 }
 
-func (t *SubAgentTool) runSubAgent(ctx context.Context, task SubAgentTask, channelName, userID, baseURL, batchID string, taskNum, totalTasks int) {
+// heartbeatTarget is the chat a finished task reports back to. It mirrors the
+// cron delivery fields so a sub-agent result resolves the same scope.
+type heartbeatTarget struct {
+	channel   string
+	to        string
+	threadID  string
+	sessionID string
+	chatType  string
+}
+
+func (t *SubAgentTool) runSubAgent(ctx context.Context, task SubAgentTask, target heartbeatTarget, baseURL, batchID string, taskNum, totalTasks int) {
 	ctx = approvals.WithSubagentNamed(ctx, task.Name)
 	select {
 	case subAgentSlots <- struct{}{}:
@@ -222,12 +246,12 @@ func (t *SubAgentTool) runSubAgent(ctx context.Context, task SubAgentTask, chann
 		log.Printf("[SubAgent %s] Canceled before start: %v", task.Name, ctx.Err())
 		return
 	}
-	log.Printf("[SubAgent %s] Starting task %d/%d for user %s", task.Name, taskNum, totalTasks, userID)
+	log.Printf("[SubAgent %s] Starting task %d/%d for user %s", task.Name, taskNum, totalTasks, target.to)
 
 	prov, err := provider.CreateLLMProvider(config.LLMProviderName, config.LLMProviderAPIKey)
 	if err != nil {
 		log.Printf("[SubAgent %s] Failed to create LLM provider: %v", task.Name, err)
-		t.sendHeartbeat(task, channelName, userID, baseURL, batchID, taskNum, totalTasks, fmt.Sprintf("Error: Failed to create LLM provider - %v", err))
+		t.sendHeartbeat(task, target, baseURL, batchID, taskNum, totalTasks, fmt.Sprintf("Error: Failed to create LLM provider - %v", err))
 		return
 	}
 
@@ -288,20 +312,25 @@ CRITICAL INSTRUCTIONS:
 	os.WriteFile(logPath, []byte(report), 0644)
 
 	// Send result via heartbeat
-	t.sendHeartbeat(task, channelName, userID, baseURL, batchID, taskNum, totalTasks, report)
+	t.sendHeartbeat(task, target, baseURL, batchID, taskNum, totalTasks, report)
 }
 
-func (t *SubAgentTool) sendHeartbeat(task SubAgentTask, channelName, userID, baseURL, batchID string, taskNum, totalTasks int, report string) {
+func (t *SubAgentTool) sendHeartbeat(task SubAgentTask, target heartbeatTarget, baseURL, batchID string, taskNum, totalTasks int, report string) {
 	client := resty.New()
 	client.SetTimeout(30 * time.Second)
 
 	formattedReport := fmt.Sprintf("[SUB-AGENT RESULT (%d/%d): %s]\n%s", taskNum, totalTasks, task.Name, report)
 
+	// Same delivery fields a cron job sends. Without the session id a web or CLI
+	// chat cannot be resolved, and /heartbeat answers 500.
 	payload := map[string]interface{}{
-		"prompt":  formattedReport,
-		"to":      userID,
-		"channel": channelName,
-		"trigger": "subagent",
+		"prompt":     formattedReport,
+		"to":         target.to,
+		"thread_id":  target.threadID,
+		"session_id": target.sessionID,
+		"chat_type":  target.chatType,
+		"channel":    target.channel,
+		"trigger":    "subagent",
 	}
 
 	resp, err := client.R().
@@ -312,7 +341,8 @@ func (t *SubAgentTool) sendHeartbeat(task SubAgentTask, channelName, userID, bas
 	if err != nil {
 		log.Printf("[SubAgent %s] Failed to send heartbeat: %v", task.Name, err)
 	} else if resp.IsError() {
-		log.Printf("[SubAgent %s] Heartbeat returned error: %s", task.Name, resp.Status())
+		// The body carries the server's reason (missing target, broken session, …).
+		log.Printf("[SubAgent %s] Heartbeat returned error: %s %s", task.Name, resp.Status(), resp.String())
 	} else {
 		log.Printf("[SubAgent %s] Result delivered successfully", task.Name)
 	}
