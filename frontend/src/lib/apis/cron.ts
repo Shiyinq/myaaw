@@ -1,5 +1,6 @@
 import { agentPath, client } from './client';
 import type {
+	CronGlobalHistoryResponse,
 	CronHistoryResponse,
 	CronJob,
 	CronJobInput,
@@ -20,5 +21,13 @@ export const cron = {
 	history: (agent: string, id: string, limit = 20) =>
 		client<CronHistoryResponse>(
 			agentPath(agent, `/cron/${encodeURIComponent(id)}/history?limit=${limit}`)
-		)
+		),
+	/** Runs across every job, including one-time jobs that were removed. */
+	historyAll: (agent: string, options: { limit?: number; offset?: number } = {}) => {
+		const limit = options.limit ?? 20;
+		const offset = options.offset ?? 0;
+		return client<CronGlobalHistoryResponse>(
+			agentPath(agent, `/cron/history?limit=${limit}&offset=${offset}`)
+		);
+	}
 };

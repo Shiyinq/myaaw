@@ -61,8 +61,32 @@ export interface CronExecution {
 	ts: string;
 	status: string;
 	result: string;
+	/**
+	 * Snapshot of the job at run time. Older entries predate these fields, so a
+	 * removed job can only be named by id there.
+	 */
+	name?: string;
+	message?: string;
+	channel?: string;
+	to?: string;
+	thread_id?: string;
+	session_id?: string;
+	chat_type?: string;
+}
+
+/** One run from the agent-wide history, including jobs that were removed. */
+export interface CronJobExecution extends CronExecution {
+	job_id: string;
 }
 
 export interface CronHistoryResponse {
 	history: CronExecution[] | null;
+}
+
+export interface CronGlobalHistoryResponse {
+	history: CronJobExecution[] | null;
+	total: number;
+	limit: number;
+	offset: number;
+	has_more: boolean;
 }

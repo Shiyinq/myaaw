@@ -23,14 +23,26 @@
 	} from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Separator } from '$lib/components/ui/separator';
-	import { CalendarClock, History, Play, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
+	import * as Tabs from '$lib/components/ui/tabs';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import {
+		CalendarClock,
+		ChevronLeft,
+		ChevronRight,
+		History,
+		Loader2,
+		Play,
+		Plus,
+		RefreshCw,
+		Trash2
+	} from 'lucide-svelte';
 	import type {
 		ConversationSummary,
 		CronChannel,
 		CronChatType,
 		CronExecution,
-		CronJob
+		CronJob,
+		CronJobExecution
 	} from '$lib/types';
 
 	const { t, locale } = useTranslation();
@@ -75,11 +87,33 @@
 
 	let historyFor = $state('');
 	let history = $state<CronExecution[]>([]);
+	// The run log grows forever, so the tab shows one page at a time. The list is
+	// capped in height for the same reason: a long history must not stretch the
+	// card or hide the form next to it.
+	const RUN_PAGE_SIZE = 10;
+	let recentRuns = $state<CronJobExecution[]>([]);
+	let runsTotal = $state(0);
+	let runsOffset = $state(0);
+	let runsLoading = $state(false);
+	let runDetail = $state<CronJobExecution | null>(null);
+	let runDetailOpen = $state(false);
+	let jobTab = $state('jobs');
+	let runningId = $state('');
 
 	let schedulerActive = $state(true);
 	let savingScheduler = $state(false);
 
 	let agent = $derived(agentSelection.selected);
+
+	const runsHasMore = $derived(runsOffset + recentRuns.length < runsTotal);
+	const runsRange = $derived.by(() => {
+		if (recentRuns.length === 0) return '';
+		return t('myaaw.cron.runs_range', {
+			from: runsOffset + 1,
+			to: runsOffset + recentRuns.length,
+			total: runsTotal
+		});
+	});
 
 	const weekdays = $derived(
 		Array.from({ length: 7 }, (_, index) => ({
@@ -126,12 +160,16 @@
 		loading = true;
 		error = '';
 		try {
-			const [result, cfg] = await Promise.all([
+			const [result, cfg, recent] = await Promise.all([
 				cronApi.list(currentAgent),
-				configApi.get(currentAgent).catch(() => null)
+				configApi.get(currentAgent).catch(() => null),
+				cronApi.historyAll(currentAgent, { limit: RUN_PAGE_SIZE, offset: 0 }).catch(() => null)
 			]);
 			jobs = result.jobs ?? [];
 			schedulerActive = cfg?.cron?.active ?? true;
+			recentRuns = recent?.history ?? [];
+			runsTotal = recent?.total ?? 0;
+			runsOffset = 0;
 		} catch (err) {
 			error = getErrorMessage(err);
 		} finally {
@@ -285,12 +323,18 @@
 	}
 
 	async function run(job: CronJob) {
-		if (!agent) return;
+		if (!agent || runningId) return;
+		runningId = job.id;
 		try {
 			await cronApi.run(agent, job.id);
 			toastStore.success(t('myaaw.cron.ran'));
+			// The agent writes the run entry before answering, so the newest page can
+			// be reloaded right away.
+			await loadRuns(0);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
+		} finally {
+			runningId = '';
 		}
 	}
 
@@ -303,6 +347,37 @@
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
+	}
+
+	// Paging runs through the agent-wide log, newest page first.
+	async function loadRuns(offset: number) {
+		if (!agent || runsLoading) return;
+		runsLoading = true;
+		try {
+			const page = await cronApi.historyAll(agent, {
+				limit: RUN_PAGE_SIZE,
+				offset: Math.max(0, offset)
+			});
+			recentRuns = page.history ?? [];
+			runsTotal = page.total ?? 0;
+			runsOffset = page.offset ?? Math.max(0, offset);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			runsLoading = false;
+		}
+	}
+
+	function showRun(entry: CronJobExecution) {
+		runDetail = entry;
+		runDetailOpen = true;
+	}
+
+	// Runs keep their job id after the job row is gone, so a one-time job stays
+	// readable both by name (while it exists) and by a short id afterwards.
+	function jobLabel(id: string) {
+		const known = jobs.find((job) => job.id === id);
+		return known ? known.name : t('myaaw.cron.removed_job', { id: id.slice(0, 8) });
 	}
 </script>
 
@@ -333,318 +408,438 @@
 			</div>
 		{/if}
 
-		<Card>
-			<CardHeader class="pb-2">
-				<CardTitle class="text-sm font-medium">{t('myaaw.cron.scheduler')}</CardTitle>
-				<CardDescription>{t('myaaw.cron.scheduler_desc')}</CardDescription>
-			</CardHeader>
-			<CardContent class="space-y-1">
-				<label class="flex items-center gap-2 text-sm">
-					<input
-						type="checkbox"
-						checked={schedulerActive}
-						disabled={savingScheduler}
-						onchange={(event) => setScheduler(event.currentTarget.checked)}
-						class="h-4 w-4 accent-primary"
-					/>
-					{t('myaaw.cron.scheduler_active')}
-				</label>
-				<p class="text-xs text-muted-foreground">{t('myaaw.cron.scheduler_hint')}</p>
-			</CardContent>
-		</Card>
+		<div class="grid items-start gap-4 lg:grid-cols-5">
+			<div class="min-w-0 space-y-4 lg:col-span-3">
+				<Card>
+					<CardHeader class="pb-2">
+						<CardTitle class="text-sm font-medium">{t('myaaw.cron.scheduler')}</CardTitle>
+						<CardDescription>{t('myaaw.cron.scheduler_desc')}</CardDescription>
+					</CardHeader>
+					<CardContent class="space-y-1">
+						<label class="flex items-center gap-2 text-sm">
+							<input
+								type="checkbox"
+								checked={schedulerActive}
+								disabled={savingScheduler}
+								onchange={(event) => setScheduler(event.currentTarget.checked)}
+								class="h-4 w-4 accent-primary"
+							/>
+							{t('myaaw.cron.scheduler_active')}
+						</label>
+						<p class="text-xs text-muted-foreground">{t('myaaw.cron.scheduler_hint')}</p>
+					</CardContent>
+				</Card>
 
-		<div class="grid gap-4 lg:grid-cols-5">
-			<Card class="self-start lg:col-span-3">
-				<CardHeader>
-					<CardTitle class="flex items-center gap-2">
-						<CalendarClock class="h-4 w-4" />
-						{t('myaaw.cron.jobs')}
-					</CardTitle>
-					<CardDescription>{t('myaaw.cron.jobs_desc')}</CardDescription>
-				</CardHeader>
-				<CardContent class="space-y-2">
-					{#if !loading && jobs.length === 0}
-						<EmptyState
-							title={t('myaaw.cron.empty')}
-							description={t('myaaw.cron.empty_desc')}
-							bloub="somnolent"
-							icon={CalendarClock}
-							class="min-h-55"
-						/>
-					{/if}
-					{#each jobs as job (job.id)}
-						<div class="space-y-2 rounded-lg border p-3">
-							<div class="flex items-start justify-between gap-2">
-								<div class="min-w-0">
-									<div class="flex flex-wrap items-center gap-2">
-										<span class="font-medium">{job.name}</span>
-										<Badge variant={job.enabled ? 'secondary' : 'outline'}>
-											{job.enabled ? t('myaaw.cron.enabled') : t('myaaw.cron.disabled')}
-										</Badge>
-										<Badge variant="outline" class="font-mono text-[10px]">
-											{job.schedule.kind} · {job.schedule.expr}
-										</Badge>
-									</div>
-									<p class="mt-1 truncate text-[11px] text-muted-foreground">
-										{job.payload.content}
-									</p>
-									{#if job.delivery.channel || job.delivery.to}
-										<p class="text-[11px] text-muted-foreground">
-											{job.delivery.channel || '—'} → {job.delivery.to || '—'}
-											{#if job.delivery.thread_id}
-												· {t('myaaw.cron.delivery_topic')} {job.delivery.thread_id}
-											{/if}
-											{#if job.delivery.chat_type}
-												· {job.delivery.chat_type}
-											{/if}
-											{#if job.delivery.session_id}
-												· {t('myaaw.cron.delivery_session')}
-												<span class="font-mono">{job.delivery.session_id.slice(0, 8)}</span>
-											{/if}
-										</p>
-									{/if}
-								</div>
-								<div class="flex shrink-0 gap-1">
-									<Button size="icon-sm" variant="outline" onclick={() => run(job)}>
-										<Play class="h-3.5 w-3.5" />
-									</Button>
-									<Button size="icon-sm" variant="ghost" onclick={() => showHistory(job)}>
-										<History class="h-3.5 w-3.5" />
-									</Button>
-									<Button size="icon-sm" variant="ghost" onclick={() => remove(job.id)}>
-										<Trash2 class="h-3.5 w-3.5 text-destructive" />
-									</Button>
-								</div>
-							</div>
-
-							{#if historyFor === job.id}
-								<div class="rounded-md bg-muted/30 p-2 text-[11px]">
-									{#if history.length === 0}
-										<p class="text-muted-foreground">{t('myaaw.cron.no_history')}</p>
-									{/if}
-									{#each history as entry, index (index)}
-										<div class="flex items-start gap-2 py-0.5">
-											<Badge
-												variant={entry.status === 'success' ? 'secondary' : 'destructive'}
-												class="text-[9px]"
-											>
-												{entry.status}
-											</Badge>
-											<span class="font-mono text-muted-foreground">
-												{new Date(entry.ts).toLocaleString()}
-											</span>
-											<span class="truncate">{entry.result}</span>
+				<Card>
+					<CardHeader>
+						<CardTitle class="flex items-center gap-2">
+							<CalendarClock class="h-4 w-4" />
+							{t('myaaw.cron.jobs')}
+						</CardTitle>
+						<CardDescription>{t('myaaw.cron.jobs_desc')}</CardDescription>
+					</CardHeader>
+					<CardContent>
+						<Tabs.Root bind:value={jobTab} class="space-y-3">
+							<Tabs.List variant="line" class="flex-wrap justify-start">
+								<Tabs.Trigger value="jobs">{t('myaaw.cron.tab_jobs')}</Tabs.Trigger>
+								<Tabs.Trigger value="history">{t('myaaw.cron.tab_history')}</Tabs.Trigger>
+							</Tabs.List>
+							<Tabs.Content value="jobs" class="space-y-2">
+								{#if !loading && jobs.length === 0}
+									<EmptyState
+										title={t('myaaw.cron.empty')}
+										description={t('myaaw.cron.empty_desc')}
+										bloub="somnolent"
+										icon={CalendarClock}
+										class="min-h-55"
+									/>
+								{/if}
+								{#each jobs as job (job.id)}
+									<div class="space-y-2 rounded-lg border p-3">
+										<div class="flex items-start justify-between gap-2">
+											<div class="min-w-0">
+												<div class="flex flex-wrap items-center gap-2">
+													<span class="font-medium">{job.name}</span>
+													<Badge variant={job.enabled ? 'secondary' : 'outline'}>
+														{job.enabled ? t('myaaw.cron.enabled') : t('myaaw.cron.disabled')}
+													</Badge>
+													<Badge variant="outline" class="font-mono text-[10px]">
+														{job.schedule.kind} · {job.schedule.expr}
+													</Badge>
+												</div>
+												<p class="mt-1 truncate text-[11px] text-muted-foreground">
+													{job.payload.content}
+												</p>
+												{#if job.delivery.channel || job.delivery.to}
+													<p class="text-[11px] text-muted-foreground">
+														{job.delivery.channel || '—'} → {job.delivery.to || '—'}
+														{#if job.delivery.thread_id}
+															· {t('myaaw.cron.delivery_topic')} {job.delivery.thread_id}
+														{/if}
+														{#if job.delivery.chat_type}
+															· {job.delivery.chat_type}
+														{/if}
+														{#if job.delivery.session_id}
+															· {t('myaaw.cron.delivery_session')}
+															<span class="font-mono">{job.delivery.session_id.slice(0, 8)}</span>
+														{/if}
+													</p>
+												{/if}
+											</div>
+											<div class="flex shrink-0 gap-1">
+												<Button
+													size="icon-sm"
+													variant="outline"
+													disabled={runningId !== '' && runningId !== job.id}
+													onclick={() => run(job)}
+													aria-label={t('myaaw.cron.run_now')}
+												>
+													{#if runningId === job.id}
+														<Loader2 class="h-3.5 w-3.5 animate-spin" />
+													{:else}
+														<Play class="h-3.5 w-3.5" />
+													{/if}
+												</Button>
+												<Button size="icon-sm" variant="ghost" onclick={() => showHistory(job)}>
+													<History class="h-3.5 w-3.5" />
+												</Button>
+												<Button size="icon-sm" variant="ghost" onclick={() => remove(job.id)}>
+													<Trash2 class="h-3.5 w-3.5 text-destructive" />
+												</Button>
+											</div>
 										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					{/each}
-				</CardContent>
-			</Card>
 
-			<Card class="lg:col-span-2">
+										{#if historyFor === job.id}
+											<div
+												class="max-h-48 space-y-0.5 overflow-y-auto rounded-md bg-muted/30 p-2 text-[11px]"
+											>
+												{#if history.length === 0}
+													<p class="text-muted-foreground">{t('myaaw.cron.no_history')}</p>
+												{/if}
+												{#each history as entry, index (index)}
+													<button
+														type="button"
+														class="flex w-full items-start gap-2 rounded-sm px-1 py-0.5 text-left hover:bg-background/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+														onclick={() => showRun({ ...entry, job_id: job.id })}
+													>
+														<Badge
+															variant={entry.status === 'success' ? 'secondary' : 'destructive'}
+															class="text-[9px]"
+														>
+															{entry.status}
+														</Badge>
+														<span class="shrink-0 font-mono text-muted-foreground">
+															{new Date(entry.ts).toLocaleString()}
+														</span>
+														<span class="min-w-0 truncate">{entry.result}</span>
+													</button>
+												{/each}
+											</div>
+										{/if}
+									</div>
+								{/each}
+							</Tabs.Content>
+
+							<Tabs.Content value="history" class="space-y-2">
+								{#if recentRuns.length === 0 && runsTotal === 0}
+									<EmptyState
+										title={t('myaaw.cron.recent_runs_empty')}
+										description={t('myaaw.cron.recent_runs_empty_desc')}
+										bloub="somnolent"
+										icon={History}
+										class="min-h-55"
+									/>
+								{:else}
+									<div class="max-h-80 overflow-y-auto overscroll-contain pr-1">
+										<div class="space-y-1">
+											{#each recentRuns as run (run.job_id + run.ts)}
+												<button
+													type="button"
+													class="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md border p-2 text-left text-[11px] transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+													onclick={() => showRun(run)}
+												>
+													<Badge
+														variant={run.status === 'success' ? 'secondary' : 'destructive'}
+														class="text-[9px]"
+													>
+														{run.status}
+													</Badge>
+													<span class="shrink-0 font-mono text-muted-foreground">
+														{new Date(run.ts).toLocaleString()}
+													</span>
+													<span class="min-w-0 flex-1 truncate font-medium">
+														{run.name || jobLabel(run.job_id)}
+													</span>
+													<span class="min-w-0 basis-full truncate text-muted-foreground">
+														{run.message || run.result}
+													</span>
+												</button>
+											{/each}
+										</div>
+									</div>
+									<div class="flex items-center justify-between gap-2">
+										<p class="text-[11px] text-muted-foreground">{runsRange}</p>
+										<div class="flex shrink-0 gap-1">
+											<Button
+												size="icon-sm"
+												variant="outline"
+												disabled={runsOffset === 0 || runsLoading}
+												onclick={() => loadRuns(runsOffset - RUN_PAGE_SIZE)}
+												aria-label={t('myaaw.cron.page_prev')}
+											>
+												<ChevronLeft class="h-3.5 w-3.5" />
+											</Button>
+											<Button
+												size="icon-sm"
+												variant="outline"
+												disabled={!runsHasMore || runsLoading}
+												onclick={() => loadRuns(runsOffset + RUN_PAGE_SIZE)}
+												aria-label={t('myaaw.cron.page_next')}
+											>
+												<ChevronRight class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+									</div>
+								{/if}
+							</Tabs.Content>
+						</Tabs.Root>
+					</CardContent>
+				</Card>
+			</div>
+
+			<Card class="min-w-0 lg:col-span-2">
 				<CardHeader>
 					<CardTitle>{t('myaaw.cron.create')}</CardTitle>
 					<CardDescription>{t('myaaw.cron.create_desc')}</CardDescription>
 				</CardHeader>
 				<CardContent>
 					<form
-						class="space-y-2"
+						id="cron-create-form"
+						class="space-y-5"
 						onsubmit={(event) => {
 							event.preventDefault();
 							void create();
 						}}
 					>
-						<div class="grid gap-1">
-							<Label for="cron-name">{t('myaaw.cron.name')}</Label>
-							<Input id="cron-name" bind:value={name} placeholder="Morning reminder" />
-							<FieldError code={errors.name} />
-						</div>
-						<div class="grid grid-cols-2 gap-2">
+						<section class="space-y-3">
+							<p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+								{t('myaaw.cron.section_schedule')}
+							</p>
 							<div class="grid gap-1">
-								<Label for="cron-kind">{t('myaaw.cron.kind')}</Label>
-								<select
-									id="cron-kind"
-									bind:value={kind}
-									class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-								>
-									<option value="cron">cron</option>
-									<option value="every">every</option>
-									<option value="at">at</option>
-								</select>
+								<Label for="cron-name">{t('myaaw.cron.name')}</Label>
+								<Input id="cron-name" bind:value={name} placeholder="Morning reminder" />
+								<FieldError code={errors.name} />
 							</div>
-							<div class="grid gap-1">
-								<Label for="cron-tz">{t('myaaw.cron.tz')}</Label>
-								<Input id="cron-tz" bind:value={tz} />
-							</div>
-						</div>
-						{#if kind === 'cron'}
-							<div class="grid gap-1">
-								<Label for="cron-preset">{t('myaaw.cron.preset')}</Label>
-								<select
-									id="cron-preset"
-									bind:value={preset}
-									class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-								>
-									<option value="custom">{t('myaaw.cron.preset_custom')}</option>
-									<option value="minutes">{t('myaaw.cron.preset_minutes')}</option>
-									<option value="hourly">{t('myaaw.cron.preset_hourly')}</option>
-									<option value="daily">{t('myaaw.cron.preset_daily')}</option>
-									<option value="weekdays">{t('myaaw.cron.preset_weekdays')}</option>
-									<option value="weekly">{t('myaaw.cron.preset_weekly')}</option>
-									<option value="monthly">{t('myaaw.cron.preset_monthly')}</option>
-								</select>
-							</div>
-
-							{#if preset === 'minutes'}
+							<div class="grid grid-cols-2 gap-2">
 								<div class="grid gap-1">
-									<Label for="cron-minutes">{t('myaaw.cron.minutes')}</Label>
-									<Input
-										id="cron-minutes"
-										type="number"
-										min="1"
-										max="59"
-										bind:value={presetMinutes}
-									/>
+									<Label for="cron-kind">{t('myaaw.cron.kind')}</Label>
+									<select
+										id="cron-kind"
+										bind:value={kind}
+										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+									>
+										<option value="cron">cron</option>
+										<option value="every">every</option>
+										<option value="at">at</option>
+									</select>
 								</div>
-							{:else if preset === 'daily' || preset === 'weekdays' || preset === 'weekly' || preset === 'monthly'}
-								<div class="grid grid-cols-2 gap-2">
+								<div class="grid gap-1">
+									<Label for="cron-tz">{t('myaaw.cron.tz')}</Label>
+									<Input id="cron-tz" bind:value={tz} />
+								</div>
+							</div>
+							{#if kind === 'cron'}
+								<div class="grid gap-1">
+									<Label for="cron-preset">{t('myaaw.cron.preset')}</Label>
+									<select
+										id="cron-preset"
+										bind:value={preset}
+										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+									>
+										<option value="custom">{t('myaaw.cron.preset_custom')}</option>
+										<option value="minutes">{t('myaaw.cron.preset_minutes')}</option>
+										<option value="hourly">{t('myaaw.cron.preset_hourly')}</option>
+										<option value="daily">{t('myaaw.cron.preset_daily')}</option>
+										<option value="weekdays">{t('myaaw.cron.preset_weekdays')}</option>
+										<option value="weekly">{t('myaaw.cron.preset_weekly')}</option>
+										<option value="monthly">{t('myaaw.cron.preset_monthly')}</option>
+									</select>
+								</div>
+
+								{#if preset === 'minutes'}
 									<div class="grid gap-1">
-										<Label for="cron-time">{t('myaaw.cron.time')}</Label>
-										<Input id="cron-time" type="time" bind:value={presetTime} />
+										<Label for="cron-minutes">{t('myaaw.cron.minutes')}</Label>
+										<Input
+											id="cron-minutes"
+											type="number"
+											min="1"
+											max="59"
+											bind:value={presetMinutes}
+										/>
 									</div>
-									{#if preset === 'weekly'}
+								{:else if preset === 'daily' || preset === 'weekdays' || preset === 'weekly' || preset === 'monthly'}
+									<div class="grid grid-cols-2 gap-2">
 										<div class="grid gap-1">
-											<Label for="cron-weekday">{t('myaaw.cron.weekday')}</Label>
-											<select
-												id="cron-weekday"
-												bind:value={presetWeekday}
-												class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-											>
-												{#each weekdays as day (day.value)}
-													<option value={day.value}>{day.label}</option>
-												{/each}
-											</select>
+											<Label for="cron-time">{t('myaaw.cron.time')}</Label>
+											<Input id="cron-time" type="time" bind:value={presetTime} />
 										</div>
-									{:else if preset === 'monthly'}
-										<div class="grid gap-1">
-											<Label for="cron-day">{t('myaaw.cron.day_of_month')}</Label>
-											<Input id="cron-day" type="number" min="1" max="31" bind:value={presetDay} />
-										</div>
+										{#if preset === 'weekly'}
+											<div class="grid gap-1">
+												<Label for="cron-weekday">{t('myaaw.cron.weekday')}</Label>
+												<select
+													id="cron-weekday"
+													bind:value={presetWeekday}
+													class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+												>
+													{#each weekdays as day (day.value)}
+														<option value={day.value}>{day.label}</option>
+													{/each}
+												</select>
+											</div>
+										{:else if preset === 'monthly'}
+											<div class="grid gap-1">
+												<Label for="cron-day">{t('myaaw.cron.day_of_month')}</Label>
+												<Input
+													id="cron-day"
+													type="number"
+													min="1"
+													max="31"
+													bind:value={presetDay}
+												/>
+											</div>
+										{/if}
+									</div>
+								{/if}
+
+								<div class="grid gap-1">
+									<Label for="cron-expr">{t('myaaw.cron.expr')}</Label>
+									{#if preset === 'custom'}
+										<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
+									{:else}
+										<Input id="cron-expr" value={presetCron} disabled />
+									{/if}
+									<FieldError code={errors.expr} />
+								</div>
+							{:else}
+								<div class="grid gap-1">
+									<Label for="cron-expr">{t('myaaw.cron.expr')}</Label>
+									<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
+									<FieldError code={errors.expr} />
+								</div>
+							{/if}
+						</section>
+
+						<section class="space-y-3">
+							<p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+								{t('myaaw.cron.section_message')}
+							</p>
+							<div class="grid gap-1">
+								<Label for="cron-message">{t('myaaw.cron.message')}</Label>
+								<textarea
+									id="cron-message"
+									bind:value={message}
+									rows="3"
+									placeholder="Good morning!"
+									class="w-full rounded-md border border-input bg-transparent p-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+								></textarea>
+								<FieldError code={errors.message} />
+							</div>
+						</section>
+
+						<section class="space-y-3">
+							<p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+								{t('myaaw.cron.section_delivery')}
+							</p>
+							<div class="grid items-start gap-2 sm:grid-cols-2">
+								<div class="grid gap-1">
+									<Label for="cron-channel">{t('myaaw.cron.channel')}</Label>
+									<select
+										id="cron-channel"
+										value={channel}
+										onchange={(event) => changeChannel(event.currentTarget.value as CronChannel)}
+										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+									>
+										<option value="telegram">{t('myaaw.cron.channel_telegram')}</option>
+										<option value="discord">{t('myaaw.cron.channel_discord')}</option>
+										<option value="api">{t('myaaw.cron.channel_api')}</option>
+										<option value="cli">{t('myaaw.cron.channel_cli')}</option>
+									</select>
+								</div>
+								<div class="grid gap-1">
+									<Label for="cron-to">{t('myaaw.cron.to')}</Label>
+									<Input id="cron-to" bind:value={to} placeholder="123456789" />
+									{#if isTelegram}
+										<p class="text-[11px] text-muted-foreground">
+											{t('myaaw.cron.to_telegram_hint')}
+										</p>
+									{:else if isDiscord}
+										<p class="text-[11px] text-muted-foreground">
+											{t('myaaw.cron.to_discord_hint')}
+										</p>
+									{:else}
+										<p class="text-[11px] text-muted-foreground">
+											{t('myaaw.cron.to_api_hint')}
+										</p>
 									{/if}
 								</div>
-							{/if}
+							</div>
 
-							<div class="grid gap-1">
-								<Label for="cron-expr">{t('myaaw.cron.expr')}</Label>
-								{#if preset === 'custom'}
-									<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
-								{:else}
-									<Input id="cron-expr" value={presetCron} disabled />
-								{/if}
-								<FieldError code={errors.expr} />
-							</div>
-						{:else}
-							<div class="grid gap-1">
-								<Label for="cron-expr">{t('myaaw.cron.expr')}</Label>
-								<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
-								<FieldError code={errors.expr} />
-							</div>
-						{/if}
-						<div class="grid gap-1">
-							<Label for="cron-message">{t('myaaw.cron.message')}</Label>
-							<textarea
-								id="cron-message"
-								bind:value={message}
-								rows="3"
-								placeholder="Good morning!"
-								class="w-full rounded-md border border-input bg-transparent p-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-							></textarea>
-							<FieldError code={errors.message} />
-						</div>
-						<div class="grid gap-1">
-							<Label for="cron-channel">{t('myaaw.cron.channel')}</Label>
-							<select
-								id="cron-channel"
-								value={channel}
-								onchange={(event) => changeChannel(event.currentTarget.value as CronChannel)}
-								class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-							>
-								<option value="telegram">telegram</option>
-								<option value="discord">discord</option>
-								<option value="api">api</option>
-								<option value="cli">cli</option>
-							</select>
-						</div>
-						<div class="grid gap-1">
-							<Label for="cron-to">{t('myaaw.cron.to')}</Label>
-							<Input id="cron-to" bind:value={to} placeholder="123456789" />
 							{#if isTelegram}
-								<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.to_telegram_hint')}</p>
+								<div class="grid gap-1">
+									<Label for="cron-thread">{t('myaaw.cron.thread_id')}</Label>
+									<Input id="cron-thread" bind:value={threadId} placeholder="77" />
+									<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.thread_id_hint')}</p>
+									<FieldError code={errors.thread_id} />
+								</div>
 							{:else if isDiscord}
-								<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.to_discord_hint')}</p>
-							{:else}
-								<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.to_api_hint')}</p>
+								<div class="grid gap-1">
+									<Label for="cron-chat-type">{t('myaaw.cron.chat_type')}</Label>
+									<select
+										id="cron-chat-type"
+										bind:value={chatType}
+										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+									>
+										<option value="guild">{t('myaaw.cron.chat_type_guild')}</option>
+										<option value="dm">{t('myaaw.cron.chat_type_dm')}</option>
+									</select>
+									<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.chat_type_hint')}</p>
+								</div>
 							{/if}
-						</div>
 
-						{#if isTelegram}
 							<div class="grid gap-1">
-								<Label for="cron-thread">{t('myaaw.cron.thread_id')}</Label>
-								<Input id="cron-thread" bind:value={threadId} placeholder="77" />
-								<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.thread_id_hint')}</p>
-								<FieldError code={errors.thread_id} />
-							</div>
-						{:else if isDiscord}
-							<div class="grid gap-1">
-								<Label for="cron-chat-type">{t('myaaw.cron.chat_type')}</Label>
+								<Label for="cron-session">{t('myaaw.cron.session_id')}</Label>
 								<select
-									id="cron-chat-type"
-									bind:value={chatType}
+									id="cron-session-pick"
+									value={sessionChoices.some((choice) => choice.id === sessionId) ? sessionId : ''}
+									onchange={(event) => pickSession(event.currentTarget.value)}
+									disabled={sessionChoicesLoading}
 									class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 								>
-									<option value="guild">{t('myaaw.cron.chat_type_guild')}</option>
-									<option value="dm">{t('myaaw.cron.chat_type_dm')}</option>
-								</select>
-								<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.chat_type_hint')}</p>
-							</div>
-						{/if}
-
-						<div class="grid gap-1">
-							<Label for="cron-session">{t('myaaw.cron.session_id')}</Label>
-							<select
-								id="cron-session-pick"
-								value={sessionChoices.some((choice) => choice.id === sessionId) ? sessionId : ''}
-								onchange={(event) => pickSession(event.currentTarget.value)}
-								disabled={sessionChoicesLoading}
-								class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-							>
-								<option value="">
-									{sessionChoices.length === 0
-										? t('myaaw.cron.session_none')
-										: t('myaaw.cron.session_history')}
-								</option>
-								{#each sessionChoices as choice (choice.id)}
-									<option value={choice.id}>
-										{choice.title || choice.id.slice(0, 8)} · {choice.id.slice(0, 8)}
+									<option value="">
+										{sessionChoices.length === 0
+											? t('myaaw.cron.session_none')
+											: t('myaaw.cron.session_history')}
 									</option>
-								{/each}
-							</select>
-							<Input id="cron-session" bind:value={sessionId} placeholder="0f4e8b3a-…" />
-							<p class="text-[11px] text-muted-foreground">
-								{needsSession
-									? t('myaaw.cron.session_id_required_hint')
-									: t('myaaw.cron.session_id_optional_hint')}
-							</p>
-							<FieldError code={errors.session_id} />
-						</div>
-						<label class="flex items-center gap-2 text-sm">
-							<input type="checkbox" bind:checked={enabled} class="h-4 w-4 accent-primary" />
-							{t('myaaw.cron.enabled')}
-						</label>
-						<Separator />
-						<Button type="submit" size="sm" loading={saving}>
+									{#each sessionChoices as choice (choice.id)}
+										<option value={choice.id}>
+											{choice.title || choice.id.slice(0, 8)} · {choice.id.slice(0, 8)}
+										</option>
+									{/each}
+								</select>
+								<Input id="cron-session" bind:value={sessionId} placeholder="0f4e8b3a-…" />
+								<p class="text-[11px] text-muted-foreground">
+									{needsSession
+										? t('myaaw.cron.session_id_required_hint')
+										: t('myaaw.cron.session_id_optional_hint')}
+								</p>
+								<FieldError code={errors.session_id} />
+							</div>
+							<label class="flex items-center gap-2 text-sm">
+								<input type="checkbox" bind:checked={enabled} class="h-4 w-4 accent-primary" />
+								{t('myaaw.cron.enabled')}
+							</label>
+						</section>
+						<Button type="submit" class="w-full" loading={saving}>
 							<Plus class="mr-2 h-4 w-4" />
 							{t('myaaw.cron.create')}
 						</Button>
@@ -653,4 +848,78 @@
 			</Card>
 		</div>
 	{/if}
+
+	<!-- One run, opened from the Recent runs list. Each entry carries a snapshot of
+	     the job, so a run of a job that was since removed still says what it
+	     delivered; older entries only have the id and result. -->
+	<Dialog.Root bind:open={runDetailOpen}>
+		<Dialog.Content class="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
+			<Dialog.Header>
+				<Dialog.Title class="flex flex-wrap items-center gap-2 pr-6">
+					{runDetail ? runDetail.name || jobLabel(runDetail.job_id) : ''}
+					{#if runDetail}
+						<Badge
+							variant={runDetail.status === 'success' ? 'secondary' : 'destructive'}
+							class="text-[10px]"
+						>
+							{runDetail.status}
+						</Badge>
+					{/if}
+				</Dialog.Title>
+				<Dialog.Description>{t('myaaw.cron.run_detail_desc')}</Dialog.Description>
+			</Dialog.Header>
+
+			{#if runDetail}
+				<div class="space-y-3">
+					<dl class="grid grid-cols-[minmax(0,6rem)_1fr] gap-x-3 gap-y-2 text-xs">
+						<dt class="text-muted-foreground">{t('myaaw.cron.run_time')}</dt>
+						<dd class="min-w-0 break-words">{new Date(runDetail.ts).toLocaleString()}</dd>
+
+						{#if runDetail.name}
+							<dt class="text-muted-foreground">{t('myaaw.cron.name')}</dt>
+							<dd class="min-w-0 break-words">{runDetail.name}</dd>
+						{/if}
+
+						{#if runDetail.message}
+							<dt class="text-muted-foreground">{t('myaaw.cron.message')}</dt>
+							<dd class="min-w-0 whitespace-pre-wrap break-words">{runDetail.message}</dd>
+						{/if}
+
+						{#if runDetail.channel || runDetail.to}
+							<dt class="text-muted-foreground">{t('myaaw.cron.section_delivery')}</dt>
+							<dd class="min-w-0 break-words font-mono text-[11px]">
+								{runDetail.channel || '—'} → {runDetail.to || '—'}
+								{#if runDetail.chat_type}· {runDetail.chat_type}{/if}
+							</dd>
+						{/if}
+
+						{#if runDetail.thread_id}
+							<dt class="text-muted-foreground">{t('myaaw.cron.run_topic')}</dt>
+							<dd class="font-mono text-[11px]">{runDetail.thread_id}</dd>
+						{/if}
+
+						{#if runDetail.session_id}
+							<dt class="text-muted-foreground">{t('myaaw.cron.run_session')}</dt>
+							<dd class="min-w-0 break-all font-mono text-[11px]">{runDetail.session_id}</dd>
+						{/if}
+
+						<dt class="text-muted-foreground">{t('myaaw.cron.run_result')}</dt>
+						<dd class="min-w-0 whitespace-pre-wrap break-words">{runDetail.result || '—'}</dd>
+					</dl>
+
+					{#if !runDetail.name && !runDetail.message && !runDetail.channel}
+						<p class="rounded-md bg-muted/40 p-2 text-[11px] text-muted-foreground">
+							{t('myaaw.cron.run_detail_old')}
+						</p>
+					{/if}
+				</div>
+			{/if}
+
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (runDetailOpen = false)}>
+					{t('myaaw.cron.run_close')}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 </div>
