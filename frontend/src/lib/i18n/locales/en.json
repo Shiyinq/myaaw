@@ -855,7 +855,7 @@
 			"tab_jobs": "Jobs",
 			"tab_history": "Recent runs",
 			"recent_runs_empty": "No runs yet",
-			"recent_runs_empty_desc": "Runs appear here after a job executes, even when the job is removed.",
+			"recent_runs_empty_desc": "Runs appear here after a job executes. Past runs stay listed even after the job is deleted.",
 			"removed_job": "removed job {id}",
 			"create": "Create job",
 			"create_desc": "Cron uses five fields; every uses a duration; at uses a timestamp.",

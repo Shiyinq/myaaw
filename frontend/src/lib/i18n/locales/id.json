@@ -794,7 +794,7 @@
 			"tab_jobs": "Job",
 			"tab_history": "Run terbaru",
 			"recent_runs_empty": "Belum ada run",
-			"recent_runs_empty_desc": "Run muncul di sini setelah job dijalankan, termasuk job yang sudah dihapus.",
+			"recent_runs_empty_desc": "Run muncul di sini setelah job dijalankan. Run lama tetap tercatat walau job-nya sudah dihapus.",
 			"removed_job": "job terhapus {id}",
 			"create": "Buat job",
 			"create_desc": "Cron memakai lima field; every memakai durasi; at memakai timestamp.",
