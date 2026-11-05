@@ -52,6 +52,7 @@ var coreContextFiles = []string{
 	"HEARTBEAT.md",
 	"IDENTITY.md",
 	"MEMORY.md",
+	"SECURITY.md",
 	"SOUL.md",
 	"TOOLS.md",
 	"USER.md",

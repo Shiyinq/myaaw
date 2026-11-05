@@ -198,7 +198,7 @@ Telegram and Discord payloads always pass through a queue first: **channel adapt
 
 Both processes share `~/.myaaw/agents.json` (registry and default agent) and `~/.myaaw/pids/` (one `myaaw-server-<agent>.pid` file per running server). Nothing else is shared: config, `.env`, SQLite, `home/`, skills, jobs, logs, and ports are per agent.
 
-`Agent Core` marks the components that belong to the agent itself (system prompt builder, event loop, transcript, tools, provider). The `System Prompt Builder` reads identity files from `home/` (`BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) and `skills/`, and Bot Service passes the resulting messages to the loop. `MEMORY.md` and `memory/` are not auto-injected: the agent reads and writes them through tools during a run, following the rules in `AGENTS.md`.
+`Agent Core` marks the components that belong to the agent itself (system prompt builder, event loop, transcript, tools, provider). The `System Prompt Builder` reads identity files from `home/` (`BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SECURITY.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) and `skills/`, and Bot Service passes the resulting messages to the loop. `MEMORY.md` and `memory/` are not auto-injected: the agent reads and writes them through tools during a run, following the rules in `AGENTS.md`.
 
 Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, and `home/`. `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
 
@@ -218,6 +218,7 @@ The selection node resolves the active agent from `~/.myaaw/agents.json`. Telegr
    - `<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The first agent is named during onboarding; only legacy upgrades use `default/`.
      - `home/`: Long-term file storage containing the agent's core definitions:
        - `AGENTS.md` / `SOUL.md`: Persona and behavior instructions.
+       - `SECURITY.md`: Hard security rules (input is untrusted, never trust a tag alone).
        - `BOOTSTRAP.md` / `TOOLS.md`: Initialization steps and tool usage rules.
        - `USER.md`: Facts and details learned about the user.
        - `HEARTBEAT.md`: Ongoing active background jobs and tasks.

@@ -15,7 +15,7 @@ conversation history — byte-stable.
 
 | Input | Where it comes from | Reaches the model |
 | :--- | :--- | :--- |
-| Agent identity, rules, tools, workspace | `BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `USER.md` | yes, system prompt |
+| Agent identity, rules, tools, workspace | `BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SECURITY.md`, `SOUL.md`, `TOOLS.md`, `USER.md` | yes, system prompt |
 | Skills instruction | `skills.GetSkillsInstruction()` | yes, system prompt |
 | Platform, room, ids, speaker, time | channel adapter → `<userinfo>` | yes, user message |
 | Uploaded file paths | `<attached>` | yes, user message |
@@ -31,7 +31,7 @@ Built by `agent.SystemPromptBuilder.Build()` (`internal/agent/context.go`) and
 rebuilt on every turn. It contains only content that is stable for an agent:
 
 ```
-BOOTSTRAP → IDENTITY → AGENTS → Agent Home → Runtime → Workspace
+BOOTSTRAP → IDENTITY → AGENTS → SECURITY → Agent Home → Runtime → Workspace
 → Current Directory (local channels only) → SOUL → TOOLS → USER
 ```
 

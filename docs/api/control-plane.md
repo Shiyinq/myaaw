@@ -384,7 +384,7 @@ Limits: reads and writes are capped at 2 MiB, binary files return `415`, and the
 Dedicated endpoints for the agent's identity and memory files. The only allowed root files are:
 
 ```text
-AGENTS.md  HEARTBEAT.md  IDENTITY.md  MEMORY.md  SOUL.md  TOOLS.md  USER.md
+AGENTS.md  HEARTBEAT.md  IDENTITY.md  MEMORY.md  SECURITY.md  SOUL.md  TOOLS.md  USER.md
 ```
 
 Any `.md` file under `home/memory/` (including nested folders) is also allowed. Other `.md` files, such as `BOOTSTRAP.md`, `NOTES.md`, `workspace/README.md`, or `notes/todo.md`, are never listed and cannot be read or updated through this API. Use `/fs` for arbitrary files.

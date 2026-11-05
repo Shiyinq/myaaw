@@ -100,6 +100,14 @@ func (b *SystemPromptBuilder) Build() string {
 		sb.WriteString("\n\n")
 	}
 
+	// Security rules load right after AGENTS.md so they sit next to the core
+	// instructions, ahead of the runtime and workspace details that follow.
+	security := b.readContent("SECURITY.md")
+	if security != "" {
+		sb.WriteString(security)
+		sb.WriteString("\n\n")
+	}
+
 	// 2. Agent Home (Dynamic)
 	if b.homeDir != "" {
 		sb.WriteString("## Agent Home\n")
