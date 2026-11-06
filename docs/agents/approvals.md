@@ -346,12 +346,13 @@ visible no matter which conversation (or page) is open at the time.
 
 **In the chat.** The prompt is a card pinned **above the message input**, not a
 row inside the transcript, so the answer never scrolls the model's reply away,
-and it is the only copy on screen. It shows the tool key, the sub-agent name when
-applicable, and the argument summary, with four buttons: **Allow once**,
-**Allow session**, **Always**, **Deny**. The summary is the 200-character
-preview; **Show arguments** expands the full raw JSON (pretty-printed, scrollable)
-so a long command is never cut off. Decisions go to
-`POST /agents/:name/approvals/:id/decision`.
+and it is the only copy on screen. It shows the tool key, the argument summary,
+and four buttons: **Allow once**, **Allow session**, **Always**, **Deny**. A prompt
+from a spawned sub-agent is labelled with a **Sub-agent** badge and a
+`From sub-agent <task>` line, so the task name never reads like part of the tool.
+The summary is the 200-character preview; **Show arguments** expands the full raw
+JSON (pretty-printed, scrollable) so a long command is never cut off. Decisions go
+to `POST /agents/:name/approvals/:id/decision`.
 
 **Outside the chat.** An approval that arrives while another conversation or
 another page is open:
@@ -359,13 +360,13 @@ another page is open:
 - plays the notification sound (`preferences.notifyEnabled` + sound/volume), and
 - shows a browser notification (`preferences.notifyBrowser`, permission
   required) reading `Needs approval: <tool>` — both follow the same preferences
-  as cron/sub-agent completion notices, and neither fires when the conversation
-  is on screen and the tab is visible.
+  as cron/sub-agent completion notices.
 
-An approval that arrives while its own chat is on screen (the card is right
-there) still rings **once the reader switches away** or hides the tab, so a
-prompt cannot go unnoticed just because it was raised while the chat was open.
-Each approval alerts once.
+The tone always rings, including when the approval's own chat is the one on
+screen: it is the same "something landed" cue a finished turn gives, and the
+card may be below the fold. The browser notification is the part that waits: it
+only fires when that conversation is not being read (another chat, another page,
+or a hidden tab). Each approval alerts once.
 
 **Sidebars.** Every sidebar — the advanced mode chat list, the classic mode
 list, and the focus panel's history tab — grows a **Need approval** group above

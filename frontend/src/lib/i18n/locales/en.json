@@ -407,6 +407,7 @@
 			"need_approval": "Need approval",
 			"show_args": "Show arguments",
 			"hide_args": "Hide arguments",
+			"from_subagent": "From sub-agent",
 			"unread": "New messages",
 			"yesterday": "Yesterday",
 			"pinned": "Pinned",

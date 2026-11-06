@@ -50,23 +50,21 @@ function titleKey(agent: string, id: string) {
 }
 
 /**
- * Rings and notifies once per approval, and only when the reader is not looking
- * at the chat that owns it. `onScreen` is passed by the caller when it comes from
- * a reactive read (the layout), so switching chats re-evaluates the condition;
- * a live event evaluates it at publish time.
+ * Announces a pending approval once. The tone belongs to the event itself, the way
+ * a finished turn rings even while its chat is open; the browser notification is
+ * only for a prompt the reader cannot see (another chat, another page, a hidden
+ * tab). Deduplicated per approval so no later re-check can ring twice.
  */
 function alertIfAway(entry: PendingApproval, onScreen?: boolean) {
 	if (!browser || alerted.has(entry.approvalId)) return;
-	// The card is on screen; no system alert for something the reader can answer.
 	const visible = onScreen ?? unreadChats.isOpen(entry.agent, entry.conversationId);
 	const hidden = document.visibilityState === 'hidden';
-	if (visible && !hidden) return;
 	alerted.add(entry.approvalId);
 
 	if (preferences.value.notifyEnabled) {
 		playNotification(preferences.value.notifySound, preferences.value.notifyVolume);
 	}
-	if (preferences.value.notifyBrowser) {
+	if (preferences.value.notifyBrowser && (!visible || hidden)) {
 		showApprovalNotification({
 			agent: entry.agent,
 			conversationId: entry.conversationId,

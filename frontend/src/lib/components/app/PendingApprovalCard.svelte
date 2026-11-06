@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ShieldAlert } from 'lucide-svelte';
+	import { CornerDownRight, ShieldAlert } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import type { ApprovalDecision, ApprovalPrompt } from '$lib/types';
@@ -41,11 +41,27 @@
 	<div class="flex flex-wrap items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
 		<ShieldAlert class="h-4 w-4 shrink-0" />
 		<span>{t('myaaw.chat.need_approval')}</span>
-		<span class="truncate font-mono text-foreground">{approval.tool_name}</span>
 		{#if approval.subagent}
-			<span class="text-muted-foreground">· {approval.subagent}</span>
+			<!-- The task name alone reads like part of the tool; say where it came from. -->
+			<span
+				class="rounded-full bg-amber-500/25 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-100"
+			>
+				{t('myaaw.chat.trigger_subagent')}
+			</span>
 		{/if}
+		<span class="truncate font-mono text-foreground">{approval.tool_name}</span>
 	</div>
+	{#if approval.subagent}
+		<p class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+			<CornerDownRight class="h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-300" />
+			<span class="text-amber-700 dark:text-amber-300">
+				{t('myaaw.chat.from_subagent')}
+			</span>
+			<span class="rounded bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+				{approval.subagent}
+			</span>
+		</p>
+	{/if}
 	{#if openArgs && fullArgs}
 		<pre
 			class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">{fullArgs}</pre>
