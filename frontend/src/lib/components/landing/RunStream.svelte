@@ -130,7 +130,7 @@
 			</span>
 		</div>
 
-		<div class="flex min-h-[21rem] flex-col gap-2.5 px-4 py-4" aria-hidden="true">
+		<div class="flex min-h-84 flex-col gap-2.5 px-4 py-4" aria-hidden="true">
 			<div class="entry" class:on={step >= 1}>
 				<p class="mono mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
 					{t('landing.stream.you')}

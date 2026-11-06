@@ -245,7 +245,7 @@
 							type="button"
 							aria-pressed={locale.value === option.code}
 							onclick={() => changeLocale(option.code)}
-							class="mono rounded px-1.5 py-0.5 text-[10px] tracking-[0.1em] uppercase transition-colors {locale.value ===
+							class="mono rounded px-1.5 py-0.5 text-[10px] tracking-widest uppercase transition-colors {locale.value ===
 							option.code
 								? 'bg-accent text-accent-foreground'
 								: 'text-muted-foreground hover:text-foreground'}"
@@ -269,9 +269,7 @@
 
 <main id="main" class="relative pt-14">
 	<section class="relative overflow-hidden border-b border-border/60">
-		<AgentField
-			class="[mask-image:radial-gradient(120%_105%_at_62%_18%,black_32%,transparent_82%)]"
-		/>
+		<AgentField class="mask-[radial-gradient(120%_105%_at_62%_18%,black_32%,transparent_82%)]" />
 
 		<div
 			class="relative mx-auto grid max-w-6xl gap-12 px-4 pt-12 pb-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-14 lg:pt-20 lg:pb-24"
@@ -743,12 +741,7 @@
 					/>
 				</DropdownMenuTrigger>
 
-				<DropdownMenuContent
-					side="top"
-					align="start"
-					sideOffset={8}
-					class="max-h-[22rem] w-[19rem] p-1.5"
-				>
+				<DropdownMenuContent side="top" align="start" sideOffset={8} class="max-h-88 w-76 p-1.5">
 					<DropdownMenuGroup>
 						<DropdownMenuGroupHeading
 							class="mono px-2 pt-1 pb-0.5 text-[10px] font-normal tracking-[0.16em] text-muted-foreground uppercase"
