@@ -1131,11 +1131,14 @@
 			"status_unknown": "Tidak diketahui",
 			"tab_history": "Riwayat",
 			"tab_context": "Konteks",
+			"tab_control": "Agen",
+			"control_hint": "Mulai, mulai ulang, atau hentikan server agen ini.",
 			"history_today": "Hari ini",
 			"history_yesterday": "Kemarin",
 			"history_empty": "Belum ada percakapan.",
 			"context_soul": "Soul",
 			"context_memory": "Memori",
+			"memory_history": "Memori per tanggal",
 			"context_empty": "Belum ditulis"
 		}
 	}

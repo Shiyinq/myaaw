@@ -1131,11 +1131,14 @@
 			"status_unknown": "Unknown",
 			"tab_history": "History",
 			"tab_context": "Context",
+			"tab_control": "Agent",
+			"control_hint": "Start, restart, or stop this agent's server.",
 			"history_today": "Today",
 			"history_yesterday": "Yesterday",
 			"history_empty": "No conversations yet.",
 			"context_soul": "Soul",
 			"context_memory": "Memory",
+			"memory_history": "Memory by date",
 			"context_empty": "Not written yet"
 		}
 	}

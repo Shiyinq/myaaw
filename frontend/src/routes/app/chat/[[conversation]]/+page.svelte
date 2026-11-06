@@ -2521,9 +2521,15 @@
 							class="pointer-events-none absolute inset-x-0 top-0 z-10 h-40 bg-linear-to-b from-background via-background/70 to-transparent backdrop-blur-[2px] mask-[linear-gradient(to_bottom,black,transparent)]"
 						></div>
 						<!-- Centred on the browser, not on the column: the 56px rail sits to
-						     the left of this box, so half of it is pulled back at md and up. -->
-						<div
-							class="pointer-events-none absolute top-3 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-0 md:-ml-7"
+						     the left of this box, so half of it is pulled back at md and up.
+						     The mark doubles as the panel toggle, since focus mode has no
+						     other affordance once the panel is closed. -->
+						<button
+							type="button"
+							class="pointer-events-auto absolute top-3 left-1/2 z-20 flex -translate-x-1/2 cursor-pointer flex-col items-center gap-0 rounded-3xl focus-visible:outline-none md:-ml-7"
+							onclick={toggleHistory}
+							aria-label={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
+							title={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
 						>
 							<Bloub
 								mood={markMood}
@@ -2546,7 +2552,7 @@
 							>
 								{agent}
 							</span>
-						</div>
+						</button>
 					{/if}
 					<div
 						bind:this={scroller}

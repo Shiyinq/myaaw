@@ -32,6 +32,44 @@
 	let missing = $state(false);
 	let error = $state('');
 	let loadKey = '';
+	/** Space kept free at the right so the actions never slide under the top bar. */
+	let gutter = $state(8);
+	let root = $state<HTMLElement | null>(null);
+
+	/**
+	 * The chat shell floats its own actions over the top-right of the page, and the
+	 * editor column can reach the viewport edge (small screens, or the panel hidden).
+	 * Keep the same distance from those buttons at every width instead of guessing a
+	 * padding that only works in one layout.
+	 */
+	function measureGutter() {
+		if (!root) return;
+		const bar = document.querySelector('header');
+		const columnRight = root.getBoundingClientRect().right;
+		if (!bar) {
+			gutter = 8;
+			return;
+		}
+		const edges = [...bar.querySelectorAll('button')]
+			.map((button) => button.getBoundingClientRect())
+			.filter((rect) => rect.width > 0 && rect.left > window.innerWidth / 2)
+			.map((rect) => rect.left);
+		const actionLeft = edges.length > 0 ? Math.min(...edges) : window.innerWidth;
+		gutter = Math.max(8, Math.round(columnRight - actionLeft + 8));
+	}
+
+	$effect(() => {
+		const element = root;
+		if (!element) return;
+		measureGutter();
+		const observer = new ResizeObserver(() => measureGutter());
+		observer.observe(element);
+		window.addEventListener('resize', measureGutter);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('resize', measureGutter);
+		};
+	});
 
 	const isSoul = $derived(path === 'SOUL.md');
 	const title = $derived(isSoul ? t('myaaw.focus.context_soul') : t('myaaw.focus.context_memory'));
@@ -84,10 +122,12 @@
 
 <!--
 	The context editor takes over the chat column in focus mode, so the panel's
-	file list stays visible while the file is read and edited.
+	file list stays visible while the file is read and edited. The chat shell floats
+	its own actions over the right edge, so this row keeps its controls next to the
+	title: they never sit under those buttons, at any width.
 -->
-<div class="flex h-full min-h-0 flex-col" data-focus-editor>
-	<div class="flex shrink-0 items-center gap-2 border-b p-2">
+<div class="flex h-full min-h-0 flex-col" data-focus-editor bind:this={root}>
+	<div class="flex shrink-0 items-center gap-2 border-b p-2" style:padding-right="{gutter}px">
 		<span
 			class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"
 		>
