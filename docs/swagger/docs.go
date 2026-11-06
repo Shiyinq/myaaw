@@ -306,6 +306,23 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/events": {
+            "get": {
+                "description": "A ` + "`" + `conversation.updated` + "`" + ` event is emitted when a cron, heartbeat, or sub-agent turn lands. The payload names the conversation; read it for the transcript. A ` + "`" + `HEARTBEAT_OK` + "`" + ` turn is not stored, so it emits nothing.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "API"
+                ],
+                "summary": "Conversation events",
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/heartbeat": {
             "post": {
                 "description": "To process heartbeat request from consumer",

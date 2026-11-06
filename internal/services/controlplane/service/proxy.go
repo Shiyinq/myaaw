@@ -54,6 +54,12 @@ func (p *ProxyService) ChatRunStream(c fiber.Ctx, agentName, requestID string) e
 	return p.forward(c, http.MethodGet, agentName, path, nil)
 }
 
+// Events relays the agent's conversation SSE stream: a client subscribes once per
+// agent and re-reads a transcript when a turn lands.
+func (p *ProxyService) Events(c fiber.Ctx, agentName string) error {
+	return p.forward(c, http.MethodGet, agentName, "/api/events"+queryString(c), nil)
+}
+
 func queryString(c fiber.Ctx) string {
 	values := c.Queries()
 	if len(values) == 0 {

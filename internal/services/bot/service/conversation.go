@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"myaaw/internal/agent"
@@ -15,6 +16,7 @@ import (
 	"myaaw/internal/config"
 	"myaaw/internal/obs/agenttrace"
 	"myaaw/internal/provider"
+	"myaaw/internal/services/bot/events"
 	"myaaw/internal/services/bot/model"
 	"strconv"
 
@@ -42,12 +44,47 @@ func (r *BotServiceImpl) conversationStreamContext(ctx context.Context, user *mo
 	return r.runConversation(ctx, user, msg, onChunk)
 }
 
+// lockConversation serializes turns that share a conversation, or the same chat
+// target while the conversation id is not known yet. A live chat and a cron job
+// must not read the same transcript and write it back concurrently.
+func (r *BotServiceImpl) lockConversation(msg *channel.IncomingMessage) func() {
+	value, _ := r.locks.LoadOrStore(conversationLockKey(msg), &sync.Mutex{})
+	mutex := value.(*sync.Mutex)
+	mutex.Lock()
+	return mutex.Unlock
+}
+
+// conversationLockKey prefers the conversation id and falls back to the chat
+// target, matching how a heartbeat chooses its delivery target.
+func conversationLockKey(msg *channel.IncomingMessage) string {
+	if id := strings.TrimSpace(msg.ConversationID); id != "" {
+		return "conversation:" + id
+	}
+	channel := strings.ToLower(strings.TrimSpace(msg.Channel))
+	return "target:" + channel + ":" + msg.ChatID + ":" + msg.TopicID
+}
+
+// publishTurnEvent tells SSE clients that a triggered turn was persisted.
+func (r *BotServiceImpl) publishTurnEvent(msg *channel.IncomingMessage) {
+	if msg.TriggerType == "" || msg.ConversationID == "" {
+		return
+	}
+	events.Default().Publish(events.TurnEvent{
+		ConversationID: msg.ConversationID,
+		Trigger:        msg.TriggerType,
+		At:             time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
 func (r *BotServiceImpl) runConversation(
 	ctx context.Context,
 	user *model.User,
 	msg *channel.IncomingMessage,
 	onChunk func(channel.StreamChunk),
 ) (*channel.OutgoingMessage, error) {
+	unlock := r.lockConversation(msg)
+	defer unlock()
+
 	if err := r.requireProvider(); err != nil {
 		return nil, err
 	}
@@ -222,6 +259,7 @@ func (r *BotServiceImpl) runConversation(
 		if err := r.saveConversation(user, msg, result.Transcript); err != nil {
 			return nil, err
 		}
+		r.publishTurnEvent(msg)
 	}
 
 	if runErr != nil {

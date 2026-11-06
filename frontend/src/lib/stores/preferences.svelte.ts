@@ -38,6 +38,7 @@ export interface Preferences {
 	speechVoice: string;
 	dictationLang: AudioLanguage;
 	notifyEnabled: boolean;
+	notifyBrowser: boolean;
 	notifySound: string;
 	notifyVolume: number;
 }
@@ -60,6 +61,7 @@ const DEFAULTS: Preferences = {
 	speechVoice: '',
 	dictationLang: 'app',
 	notifyEnabled: true,
+	notifyBrowser: false,
 	notifySound: 'chime',
 	notifyVolume: 0.7
 };
@@ -119,6 +121,7 @@ function load(): Preferences {
 			speechVoice: typeof parsed.speechVoice === 'string' ? parsed.speechVoice : '',
 			dictationLang: audioLanguage(parsed.dictationLang),
 			notifyEnabled: parsed.notifyEnabled !== false,
+			notifyBrowser: parsed.notifyBrowser === true,
 			notifySound:
 				typeof parsed.notifySound === 'string' && parsed.notifySound ? parsed.notifySound : 'chime',
 			notifyVolume: Math.min(

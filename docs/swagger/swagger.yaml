@@ -359,6 +359,19 @@ paths:
       summary: API Chat Stream
       tags:
       - API
+  /api/events:
+    get:
+      description: A `conversation.updated` event is emitted when a cron, heartbeat,
+        or sub-agent turn lands. The payload names the conversation; read it for the
+        transcript. A `HEARTBEAT_OK` turn is not stored, so it emits nothing.
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: OK
+      summary: Conversation events
+      tags:
+      - API
   /heartbeat:
     post:
       consumes:

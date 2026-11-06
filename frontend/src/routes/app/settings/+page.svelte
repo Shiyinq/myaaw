@@ -25,6 +25,12 @@
 	import { agentSelection } from '$lib/stores';
 	import { tts } from '$lib/speech/tts.svelte';
 	import { notificationSounds, playNotification } from '$lib/sound/notify.svelte';
+	import {
+		notificationStatus,
+		previewBrowserNotification,
+		requestNotificationPermission,
+		type NotificationStatus
+	} from '$lib/notifications/browser.svelte';
 	import type { Locale } from '$lib/i18n';
 
 	const { t, locale, changeLocale, availableLocales } = useTranslation();
@@ -97,6 +103,36 @@
 
 	const speechRate = $derived(preferences.value.speechRate.toFixed(2));
 	const notifyVolumePercent = $derived(Math.round(preferences.value.notifyVolume * 100));
+
+	// The browser permission is not reactive, so the page caches it and refreshes
+	// it when the reader comes back from the browser's site settings.
+	let browserNotifyStatus = $state<NotificationStatus>(notificationStatus());
+
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		const sync = () => (browserNotifyStatus = notificationStatus());
+		window.addEventListener('focus', sync);
+		return () => window.removeEventListener('focus', sync);
+	});
+
+	async function enableBrowserNotifications() {
+		browserNotifyStatus = notificationStatus();
+		if (browserNotifyStatus === 'granted') {
+			preferences.update({ notifyBrowser: true });
+			return;
+		}
+		browserNotifyStatus = await requestNotificationPermission();
+		preferences.update({ notifyBrowser: browserNotifyStatus === 'granted' });
+	}
+
+	// The Notification API has no delivery receipt, so a successful call only
+	// means the browser accepted it; the hint points at the OS layer that can
+	// still swallow it.
+	let browserTestSent = $state(false);
+
+	function testBrowserNotification() {
+		browserTestSent = previewBrowserNotification();
+	}
 
 	function previewSpeech() {
 		tts.speak('settings-preview', t('myaaw.settings.speech_sample'));
@@ -497,8 +533,56 @@
 							</Button>
 						</div>
 					</div>
+
+					<div class="grid gap-3 border-t pt-5">
+						{#if browserNotifyStatus === 'granted'}
+							{@render toggle(
+								t('myaaw.settings.notify_browser'),
+								t('myaaw.settings.notify_browser_desc'),
+								preferences.value.notifyBrowser,
+								(next) => preferences.update({ notifyBrowser: next })
+							)}
+							<div class="grid gap-2">
+								<Button variant="outline" size="sm" class="w-fit" onclick={testBrowserNotification}>
+									{t('myaaw.settings.notify_browser_test')}
+								</Button>
+								{#if browserTestSent}
+									<p class="max-w-md text-xs text-muted-foreground">
+										{t('myaaw.settings.notify_browser_test_sent')}
+									</p>
+								{/if}
+							</div>
+						{:else}
+							<div class="grid w-fit max-w-full gap-2 rounded-lg border border-border p-3">
+								<span class="grid gap-0.5">
+									<span class="text-sm font-medium">{t('myaaw.settings.notify_browser')}</span>
+									<span class="text-xs text-muted-foreground"
+										>{t('myaaw.settings.notify_browser_desc')}</span
+									>
+									{#if browserNotifyStatus === 'denied'}
+										<span class="text-xs text-muted-foreground"
+											>{t('myaaw.settings.notify_browser_denied')}</span
+										>
+									{:else if browserNotifyStatus === 'unsupported'}
+										<span class="text-xs text-muted-foreground"
+											>{t('myaaw.settings.notify_browser_unsupported')}</span
+										>
+									{/if}
+								</span>
+								<Button
+									variant="outline"
+									size="sm"
+									class="w-fit"
+									disabled={browserNotifyStatus === 'unsupported'}
+									onclick={() => void enableBrowserNotifications()}
+								>
+									{t('myaaw.settings.notify_browser_enable')}
+								</Button>
+							</div>
+						{/if}
+					</div>
 				</div>
-			</div>
-		</CardContent>
+			</div></CardContent
+		>
 	</Card>
 </div>

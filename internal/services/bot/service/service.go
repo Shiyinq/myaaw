@@ -50,6 +50,10 @@ type BotServiceImpl struct {
 	currentProviderID string
 	currentModel      string
 
+	// locks serializes turns that share a conversation. A live chat and a cron
+	// job must not read the same transcript and write it back concurrently.
+	locks sync.Map
+
 	// Trace recording. The store is opened lazily on the first run so commands
 	// and tests that never execute the agent do not create a database.
 	obsOnce     sync.Once

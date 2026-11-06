@@ -64,6 +64,8 @@
 	import { theme, userPrefersMode } from 'mode-watcher';
 	import { APPEARANCE, applyAppearance, isAppearanceActive } from '$lib/theme';
 	import { preferences } from '$lib/stores/preferences.svelte';
+	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
+	import { isAuthenticated } from '$lib/stores/authStatus.svelte';
 
 	interface Props {
 		children: import('svelte').Snippet;
@@ -92,6 +94,20 @@
 	// The chat list belongs to the shell, so the chat page's history panel and the
 	// classic-mode sidebar share one fetch (see stores/conversationHistory).
 	conversationHistory.init();
+
+	// Background turns (cron, heartbeat, sub-agent) are pushed over SSE. The
+	// connection is per agent and lives in the shell, so it keeps working on any
+	// page and while the reader switches agents.
+	$effect(() => {
+		if (!isAuthenticated.value) {
+			chatUpdates.stop();
+			return;
+		}
+		// Only running agents can emit events; a stopped one would answer 502
+		// behind the control plane and retry forever.
+		const names = agentSelection.agents.filter((agent) => agent.running).map((agent) => agent.name);
+		chatUpdates.sync(names);
+	});
 
 	// Focus mode is single-agent: whichever page is open, the chosen agent is the
 	// one that answers, so the chat, the panel, and the APIs stay in step.

@@ -152,6 +152,23 @@ func (h *Handler) ChatRunStream(c fiber.Ctx) error {
 	return nil
 }
 
+// Events streams conversation updates for the selected agent.
+// @Summary      Conversation events
+// @Description  Server-Sent Events: a `conversation.updated` event is emitted when a cron, heartbeat, or sub-agent turn lands. The client re-reads the transcript.
+// @Tags         Chat
+// @Produce      text/event-stream
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Success      200
+// @Failure      502 {object} common.ErrorResponse
+// @Router       /agents/{name}/events [get]
+func (h *Handler) Events(c fiber.Ctx) error {
+	if err := h.proxy.Events(c, c.Params("name")); err != nil {
+		return proxyError(c, err)
+	}
+	return nil
+}
+
 // ApprovalDecision proxies a tool approval decision to the selected agent.
 // @Summary      Resolve a tool approval
 // @Description  Forwards the decision to the agent that owns the pending run.

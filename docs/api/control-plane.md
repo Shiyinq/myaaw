@@ -274,6 +274,28 @@ curl -N "http://localhost:9000/agents/myfriend/chat/run/3f0c6b0e-9a51-4e7f-b2f4-
 
 `after` skips events the client already has. The replay buffer is capped, a finished run stays attachable for 15 minutes, and runs live in the agent process (restarting the agent drops them). Every run announces itself with a `run` event carrying its request id.
 
+### Conversation events: `GET /agents/:name/events`
+
+A cron, heartbeat, or sub-agent turn is started by the agent, so a client that
+only listens to its own chat stream would never see it. The agent publishes
+`conversation.updated` once such a turn is saved, and this route relays that
+stream:
+
+```bash
+curl -N "http://localhost:9000/agents/myfriend/events" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```text
+event: conversation.updated
+data: {"agent":"myfriend","conversation_id":"af53cc52-…","trigger":"cron","at":"2026-11-06T18:00:01Z"}
+```
+
+The event is a signal: read `GET /agents/:name/conversations/:id` for the
+transcript. A `HEARTBEAT_OK` turn is not stored and emits nothing. Open one
+stream per agent, keep it open across agent switches, and expect a
+`: keep-alive` comment every 20 seconds.
+
 `EventSource` cannot send a POST body, so use `fetch` with `ReadableStream`:
 
 ```js
@@ -1291,7 +1313,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 |---|---|
 | Auth | `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, `POST /auth/change-password`, `PUT /auth/username` |
 | Agents | `GET /agents`, `GET /capabilities`, `GET/DELETE /agents/:name`, `POST /agents/:name/onboard`, `POST /agents/:name/default` |
-| Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream`, `POST /agents/:name/chat/stop`, `GET /agents/:name/chat/runs`, `GET /agents/:name/chat/run/:id/stream` |
+| Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream`, `POST /agents/:name/chat/stop`, `GET /agents/:name/chat/runs`, `GET /agents/:name/chat/run/:id/stream`, `GET /agents/:name/events` |
 | Approvals | `GET /agents/:name/approvals`, `POST /agents/:name/approvals/:id/decision`, `DELETE /agents/:name/approvals/grants`, `DELETE /agents/:name/approvals/grants/:key`, `DELETE /agents/:name/approvals/grants/:key/sessions/:conversation` |
 | Files | `GET/DELETE /agents/:name/fs`, `GET /fs/raw`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |

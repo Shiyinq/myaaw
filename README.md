@@ -570,7 +570,7 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 
 | Document | Description |
 | :--- | :--- |
-| [API](docs/api/api.md) | Per-agent `/api/chat` and `/api/chat/stream`, timeline items, and SSE events. |
+| [API](docs/api/api.md) | Per-agent `/api/chat`, `/api/chat/stream`, `/api/events`, timeline items, and SSE events. |
 | [Control Plane API](docs/api/control-plane.md) | `myaaw api`: auth, agent switching, chat proxy, files, providers, channels, logs, and cron. |
 | [Web Terminal](docs/api/terminal.md) | A real shell on the API host from the browser: `--terminal`, session lifecycle, and security. |
 

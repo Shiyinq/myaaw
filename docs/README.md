@@ -49,7 +49,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 
 | Document | Description |
 | :--- | :--- |
-| [API](api/api.md) | Per-agent HTTP API for chat and SSE streaming. |
+| [API](api/api.md) | Per-agent HTTP API for chat, conversation events, and SSE streaming. |
 | [Control Plane API](api/control-plane.md) | Unified multi-agent API used by web, desktop, and mobile clients. |
 | [Web Terminal](api/terminal.md) | Browser shell into the API host: enablement, lifecycle, and security. |
 

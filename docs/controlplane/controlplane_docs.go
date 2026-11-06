@@ -2738,6 +2738,43 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Server-Sent Events: a ` + "`" + `conversation.updated` + "`" + ` event is emitted when a cron, heartbeat, or sub-agent turn lands. The client re-reads the transcript.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Conversation events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/fs": {
             "get": {
                 "security": [

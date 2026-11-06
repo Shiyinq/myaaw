@@ -25,6 +25,7 @@
 	import { agentSelection } from '$lib/stores';
 	import { chatRuns } from '$lib/stores/chatRuns.svelte';
 	import { conversationHistory } from '$lib/stores/conversationHistory.svelte';
+	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import type { ConversationSummary } from '$lib/types';
@@ -524,6 +525,13 @@
 						{/if}
 						{#if entry.pinned}
 							<Pin class="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+						{/if}
+						{#if unreadChats.has(agentSelection.selected, entry.id) && entry.id !== activeId}
+							<span
+								class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+								role="img"
+								aria-label={t('myaaw.chat.unread')}
+							></span>
 						{/if}
 						<span class="min-w-0 flex-1 truncate text-xs font-medium">
 							{entry.title || entry.id.slice(0, 12)}

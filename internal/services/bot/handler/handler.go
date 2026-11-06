@@ -13,7 +13,6 @@ import (
 	"myaaw/internal/services/bot/service"
 	"myaaw/internal/utils"
 	"strings"
-	"sync"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -26,6 +25,7 @@ type BotHandler interface {
 	APIChatStop(c fiber.Ctx) error
 	APIChatRuns(c fiber.Ctx) error
 	APIChatRunStream(c fiber.Ctx) error
+	APIEvents(c fiber.Ctx) error
 	ApprovalDecision(c fiber.Ctx) error
 }
 
@@ -128,10 +128,6 @@ func (s *BotHandlerImpl) Webhook(c fiber.Ctx) error {
 	})
 }
 
-var heartbeatLocks sync.Map
-
-// approvalContext attaches the channel-specific approval requester so gated
-// tool calls can prompt the user in the same conversation.
 func (s *BotHandlerImpl) approvalContext(ctx context.Context, adapter channel.Adapter, msg *channel.IncomingMessage) context.Context {
 	switch msg.Channel {
 	case "telegram":
@@ -146,21 +142,6 @@ func (s *BotHandlerImpl) approvalContext(ctx context.Context, adapter channel.Ad
 		}
 	}
 	return ctx
-}
-
-func getUserLock(userID string) *sync.Mutex {
-	val, _ := heartbeatLocks.LoadOrStore(userID, &sync.Mutex{})
-	return val.(*sync.Mutex)
-}
-
-// heartbeatLockKey keys the heartbeat lock by the session when one is pinned,
-// and by the delivery room otherwise (channel + chat + topic). Two topics in one
-// group, or a topic and its parent chat, never share a lock.
-func heartbeatLockKey(req HeartbeatRequest) string {
-	if session := strings.TrimSpace(req.SessionID); session != "" {
-		return "session:" + session
-	}
-	return "target:" + req.Channel + ":" + req.To + ":" + req.ThreadID
 }
 
 // Heartbeat
@@ -190,12 +171,6 @@ func (s *BotHandlerImpl) Heartbeat(c fiber.Ctx) error {
 			"error": "Prompt is required",
 		})
 	}
-
-	// Serialise turns that share a session, or the same target when no session
-	// is pinned. A job and a live channel message must not race.
-	lock := getUserLock(heartbeatLockKey(req))
-	lock.Lock()
-	defer lock.Unlock()
 
 	msg, out, err := s.botService.ProcessHeartbeat(req.Prompt, service.HeartbeatTarget{
 		Channel:   req.Channel,

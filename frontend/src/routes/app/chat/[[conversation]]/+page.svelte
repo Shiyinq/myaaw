@@ -12,6 +12,8 @@
 	import { agentSelection, conversationHistory, toastStore, topBarTitle } from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import { chatRuns, type ChatItem, type ChatRun } from '$lib/stores/chatRuns.svelte';
+	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
+	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { tts } from '$lib/speech/tts.svelte';
 	import { playNotification } from '$lib/sound/notify.svelte';
 	import { cn } from '$lib/utils';
@@ -604,6 +606,7 @@
 			chatRuns.settle(currentAgent, id);
 			const title = detail.title ?? '';
 			applyTitle(id, title);
+			unreadChats.clear(currentAgent, id);
 			if (isPlaceholderTitle(title)) pollTitle(currentAgent, id, 0);
 			storedUsage = null;
 		} catch (err) {
@@ -625,6 +628,51 @@
 			if (loadedOffset === before) break;
 		}
 		scrollToBottom();
+	}
+
+	/**
+	 * Appends a background turn without blanking the transcript: the tail page is
+	 * fetched, older rows the reader already loaded are kept, and the tail is
+	 * replaced. A finished run is dropped so its rows give way to the stored
+	 * transcript. The reader keeps their place unless they are at the bottom.
+	 */
+	let appending = false;
+	async function appendNew() {
+		const currentAgent = agent ?? '';
+		if (!currentAgent || !conversationId || appending) return;
+		// A streaming run owns the timeline; it picks the new turn up when it ends.
+		if (activeRun?.streaming) return;
+		appending = true;
+		const follow = preferences.value.autoScroll && stickToBottom;
+		try {
+			const detail = await conversationsApi.get(currentAgent, conversationId, {
+				limit: PAGE_SIZE,
+				offset: -1
+			});
+			if (conversationId === '' || detail.messages.length === 0) return;
+
+			// Keep the older pages the reader may have scrolled back to; the server's
+			// tail replaces everything from its offset on, so the background turn
+			// lands in order and a just-finished run's live rows are reconciled.
+			const kept = historyItems.filter(
+				(item) => item.messageIndex === undefined || item.messageIndex < detail.offset
+			);
+			const known = new Set(kept.map((item) => item.localId));
+			const tail = historyTimeline(detail.messages, detail.offset).filter(
+				(item) => !known.has(item.localId)
+			);
+			historyItems = [...kept, ...tail];
+			loadedOffset = Math.min(loadedOffset, detail.offset);
+			turns = detail.turns ?? turns;
+			chatRuns.settle(currentAgent, conversationId);
+			await tick();
+			measureTurns();
+			if (follow) scrollToBottom();
+		} catch {
+			// A failed tail fetch is not worth an error banner; the next event retries.
+		} finally {
+			appending = false;
+		}
 	}
 
 	/**
@@ -888,6 +936,20 @@
 		void loadConversation(currentAgent, currentConversation);
 	});
 
+	// Background turns (cron, heartbeat, sub-agent) arrive over SSE from the
+	// agent server. Append them to the open transcript instead of reloading it,
+	// and drop the unread marker once the turn is actually on screen.
+	$effect(() => {
+		if (!browser) return;
+		return chatUpdates.subscribe((event) => {
+			if (event.agent !== agent || event.conversation_id !== conversationId) return;
+			if (document.visibilityState === 'visible') {
+				unreadChats.clear(event.agent, event.conversation_id);
+			}
+			void appendNew();
+		});
+	});
+
 	// One draft per agent and conversation, so switching chats keeps what was typed
 	// and sending removes it. `draftKey` guards against writing the old text under
 	// the conversation that was just opened.
@@ -948,6 +1010,10 @@
 				if (!run.error && !run.resumed && preferences.value.notifyEnabled) {
 					playNotification(preferences.value.notifySound, preferences.value.notifyVolume);
 				}
+
+				// A background turn may have landed while this run held the timeline;
+				// reconcile the stored transcript now that the run is done.
+				void appendNew();
 
 				// Only an answer that was produced while the reader was here is read
 				// aloud: a restored run or a background tab stays quiet.

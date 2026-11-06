@@ -19,6 +19,7 @@ The port comes from `PORT` in `~/.myaaw/<agent>/.env`. There is no `agent` field
 |---|---|---|
 | `/api/chat` | `POST` | Chat, single JSON response |
 | `/api/chat/stream` | `POST` | Chat, Server-Sent Events |
+| `/api/events` | `GET` | Conversation updates (Server-Sent Events) |
 | `/api/approvals/:id` | `POST` | Answer a pending tool approval |
 | `/docs/index.html` | `GET` | Swagger UI |
 | `/webhook/telegram` | `POST` | Internal: Telegram webhook mode |
@@ -322,7 +323,29 @@ run is denied.
 
 See [Tool Approvals](../agents/approvals.md) for policy fields and grant scopes.
 
-## 6. Mapping to the terminal and Telegram timelines
+## 6. Conversation events: `GET /api/events`
+
+A cron run, a heartbeat tick, and a finished sub-agent are started by the agent
+itself, not by the client. Once such a turn is saved the server emits an event so
+a subscribed client can re-read the conversation instead of polling:
+
+```text
+: connected
+
+event: conversation.updated
+data: {"agent":"default","conversation_id":"af53cc52-…","trigger":"cron","at":"2026-11-06T18:00:01Z"}
+: keep-alive
+```
+
+- `trigger` is `cron`, `heartbeat`, or `subagent`.
+- The payload is a signal, not the transcript: fetch the conversation for the
+  messages. Nothing about the `<trigger>` rules or a sub-agent report is carried
+  here.
+- A heartbeat that answers `HEARTBEAT_OK` is not stored, so it emits nothing.
+- The stream is one per agent process and keeps a comment line alive every 20
+  seconds.
+
+## 7. Mapping to the terminal and Telegram timelines
 
 The API mirrors the channel timelines:
 
@@ -335,7 +358,7 @@ The API mirrors the channel timelines:
 
 There is no separate trace field. Tool lifecycle events already carry the action, arguments, and result.
 
-## 7. Errors
+## 8. Errors
 
 ### Non-streaming
 
@@ -358,7 +381,7 @@ data: {"ok":false}
 
 For streaming requests, an invalid `conversation_id` is reported as an `error` event because the HTTP status is already `200` once the stream starts.
 
-## 8. Limitations
+## 9. Limitations
 
 - No authentication or per-key rate limiting.
 - This per-agent API has no conversation listing endpoint; use the control plane API for history and pagination.

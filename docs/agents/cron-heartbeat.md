@@ -167,10 +167,11 @@ and a Discord thread has its own, separate from the parent channel.
 ```
 scheduler / heartbeat tick
   → POST /heartbeat {prompt, channel, to, thread_id, session_id, chat_type, trigger}
-  → lock by session_id (or channel:to:thread)
+  → lock the conversation (session id, or channel:to:thread)
   → ProcessHeartbeat resolves the session, owner, names, and RawMeta
   → the agent runs with the same system prompt and the <userinfo> block
   → the turn is saved into that conversation
+  → publish conversation.updated (SSE subscribers re-read the chat)
   → the reply is delivered through the channel adapter
 ```
 
@@ -207,6 +208,14 @@ Details:
   the whole message and cannot be expanded. A heartbeat has no content, so its
   tick prompt is joined to the rules inside the same block. Turns stored before
   the block existed have no marker and show as plain text.
+- **Serialized with live chats.** Every turn takes the same per-conversation
+  lock, whether it came from a chat request or a scheduled run. A cron that fires
+  while a chat is still generating waits for that chat to finish, so the two
+  turns cannot read the same transcript and overwrite each other.
+- **Live update.** Once the turn is persisted the agent publishes
+  `conversation.updated` (SSE, `GET /api/events`, proxied by the control plane at
+  `GET /agents/:name/events`). Clients re-read the conversation instead of
+  polling; `HEARTBEAT_OK` turns are not persisted, so they emit nothing.
 - **Errors.** A failed delivery is logged; it never fails the run itself.
 - **Heartbeat silence.** `HEARTBEAT_OK` is neither stored nor delivered.
 

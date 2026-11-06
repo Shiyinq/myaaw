@@ -4190,6 +4190,30 @@ paths:
       summary: Set default agent
       tags:
       - Agents
+  /agents/{name}/events:
+    get:
+      description: 'Server-Sent Events: a `conversation.updated` event is emitted
+        when a cron, heartbeat, or sub-agent turn lands. The client re-reads the transcript.'
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: OK
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Conversation events
+      tags:
+      - Chat
   /agents/{name}/fs:
     delete:
       parameters:
