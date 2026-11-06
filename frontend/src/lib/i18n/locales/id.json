@@ -1155,7 +1155,8 @@
 			"open": "Buka control plane",
 			"signin": "Masuk",
 			"language": "Bahasa",
-			"open_short": "Buka"
+			"open_short": "Buka",
+			"install": "pasang"
 		},
 		"hero": {
 			"eyebrow": "my AI agent well",
@@ -1240,7 +1241,7 @@
 			"item_6_body": "Telegram, Discord, terminal, suara, atau HTTP — setiap channel berakhir di agen dan riwayat yang sama."
 		},
 		"closing": {
-			"index": "bawa pulang",
+			"index": "pasang",
 			"title_1": "Pasang sekali.",
 			"title_2": "Kenalan dengan kucing pertamamu.",
 			"body": "Satu perintah mengunduh biner, memandumu onboarding, dan menyalakan control plane. Agenmu tetap di mesinmu.",
@@ -1259,6 +1260,12 @@
 			"license": "MIT © 2026 Myaaw",
 			"modes": "mode",
 			"themes": "tema"
+		},
+		"trail": {
+			"sections": "Bagian",
+			"label": "jejak",
+			"scroll": "Posisi gulir",
+			"drag": "Geser untuk menggulir"
 		}
 	}
 }

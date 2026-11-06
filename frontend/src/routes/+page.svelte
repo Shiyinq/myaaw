@@ -20,6 +20,7 @@
 	import SEO from '$lib/components/common/SEO.svelte';
 	import AgentField from '$lib/components/landing/AgentField.svelte';
 	import RunStream from '$lib/components/landing/RunStream.svelte';
+	import ScrollTrail from '$lib/components/landing/ScrollTrail.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import {
 		DropdownMenu,
@@ -31,6 +32,7 @@
 	} from '$lib/components/ui/dropdown-menu';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { isAuthenticated } from '$lib/stores';
+	import { preferences } from '$lib/stores/preferences.svelte';
 	import { APPEARANCE, applyAppearance, isAppearanceActive, MODES, THEMES } from '$lib/theme';
 
 	const { t, locale, availableLocales, changeLocale } = useTranslation();
@@ -157,6 +159,28 @@
 			isAppearanceActive(option, userPrefersMode.current ?? 'system', theme.current)
 		)
 	);
+	function handleNav(event: MouseEvent, id: string) {
+		event.preventDefault();
+		const el = document.getElementById(id);
+		if (!el) return;
+		el.scrollIntoView({
+			behavior: preferences.value.reduceMotion ? 'auto' : 'smooth',
+			block: 'start'
+		});
+		history.replaceState(null, '', `#${id}`);
+	}
+
+	function handleHome(event: MouseEvent) {
+		// The logo already points at `/`; on the landing page it should glide home
+		// instead of reloading the route.
+		if (window.location.pathname !== '/') return;
+		event.preventDefault();
+		window.scrollTo({
+			top: 0,
+			behavior: preferences.value.reduceMotion ? 'auto' : 'smooth'
+		});
+		history.replaceState(null, '', '/');
+	}
 </script>
 
 <SEO title={t('landing.meta.title')} description={t('landing.meta.description')} />
@@ -166,6 +190,7 @@
 		<div class="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:px-6">
 			<a
 				href="/"
+				onclick={handleHome}
 				class="flex items-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
 			>
 				<img src="/logo.png" alt="" width="24" height="24" class="size-6 rounded-md object-cover" />
@@ -177,17 +202,35 @@
 			>
 
 			<nav class="ml-auto hidden items-center gap-5 md:flex">
-				<a class="label text-muted-foreground transition-colors hover:text-foreground" href="#loop"
+				<a
+					class="label text-muted-foreground transition-colors hover:text-foreground"
+					href="#loop"
+					onclick={(event) => handleNav(event, 'loop')}
 					><span class="text-foreground/50">01</span> {t('landing.nav.loop')}</a
 				>
-				<a class="label text-muted-foreground transition-colors hover:text-foreground" href="#fleet"
+				<a
+					class="label text-muted-foreground transition-colors hover:text-foreground"
+					href="#fleet"
+					onclick={(event) => handleNav(event, 'fleet')}
 					><span class="text-foreground/50">02</span> {t('landing.nav.fleet')}</a
 				>
-				<a class="label text-muted-foreground transition-colors hover:text-foreground" href="#doors"
+				<a
+					class="label text-muted-foreground transition-colors hover:text-foreground"
+					href="#doors"
+					onclick={(event) => handleNav(event, 'doors')}
 					><span class="text-foreground/50">03</span> {t('landing.nav.doors')}</a
 				>
-				<a class="label text-muted-foreground transition-colors hover:text-foreground" href="#rules"
+				<a
+					class="label text-muted-foreground transition-colors hover:text-foreground"
+					href="#rules"
+					onclick={(event) => handleNav(event, 'rules')}
 					><span class="text-foreground/50">04</span> {t('landing.nav.rules')}</a
+				>
+				<a
+					class="label hidden text-muted-foreground transition-colors hover:text-foreground lg:inline"
+					href="#closing"
+					onclick={(event) => handleNav(event, 'closing')}
+					><span class="text-foreground/50">05</span> {t('landing.nav.install')}</a
 				>
 			</nav>
 
@@ -609,7 +652,7 @@
 		</div>
 	</section>
 
-	<section class="relative overflow-hidden">
+	<section id="closing" class="relative scroll-mt-20 overflow-hidden">
 		<div class="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-24">
 			<div class="grid items-center gap-10 lg:grid-cols-[1fr_auto]">
 				<div use:reveal>
@@ -766,6 +809,8 @@
 		</div>
 	</div>
 </footer>
+
+<ScrollTrail />
 
 <style>
 	.mono {

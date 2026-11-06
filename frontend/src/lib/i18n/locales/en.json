@@ -1155,7 +1155,8 @@
 			"open": "Open control plane",
 			"signin": "Sign in",
 			"language": "Language",
-			"open_short": "Open"
+			"open_short": "Open",
+			"install": "install"
 		},
 		"hero": {
 			"eyebrow": "my AI agent well",
@@ -1240,7 +1241,7 @@
 			"item_6_body": "Telegram, Discord, terminal, voice or HTTP — every channel ends in the same agent and the same history."
 		},
 		"closing": {
-			"index": "take it home",
+			"index": "install",
 			"title_1": "Install once.",
 			"title_2": "Meet your first cat.",
 			"body": "One command downloads the binary, walks you through onboarding and starts the control plane. Your agents stay on your machine.",
@@ -1259,6 +1260,12 @@
 			"license": "MIT © 2026 Myaaw",
 			"modes": "modes",
 			"themes": "themes"
+		},
+		"trail": {
+			"sections": "Sections",
+			"label": "trail",
+			"scroll": "Scroll position",
+			"drag": "Drag to scroll"
 		}
 	}
 }
