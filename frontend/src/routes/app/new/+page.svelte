@@ -7,7 +7,7 @@
 	import { server as serverApi } from '$lib/apis/server';
 	import { skills as skillsApi } from '$lib/apis/skills';
 	import { tools as toolsApi } from '$lib/apis/tools';
-	import { agentSelection, toastStore } from '$lib/stores';
+	import { agentSelection, toastStore, topBarTitle } from '$lib/stores';
 	import { BLOUB_DEFAULT_COLOR, colorOf, type BloubColor } from '$lib/bloub';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { hasErrors, validate, type FieldErrors } from '$lib/utils/validation';
@@ -113,6 +113,20 @@
 
 	let agentParam = $derived(page.url.searchParams.get('agent') ?? '');
 	let reconfigure = $derived(agentParam !== '');
+
+	// Editing an existing agent must not introduce itself as a new one. The shell
+	// reads this override on every page, and the cleanup drops it on the way out.
+	$effect(() => {
+		if (!reconfigure) {
+			topBarTitle.clear();
+			return;
+		}
+		topBarTitle.set(
+			t('myaaw.onboard.reconfigure_title', { name: name || agentParam }),
+			t('myaaw.onboard.reconfigure_subtitle')
+		);
+		return () => topBarTitle.clear();
+	});
 	// Presets that share a wire type (DeepSeek is OpenAI-compatible) are offered
 	// separately; the payload still sends the real type. These are also the
 	// fallback when an older control plane does not describe providers at all.
@@ -635,7 +649,7 @@
 				<Separator />
 
 				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-name">{t('myaaw.onboard.agent_name')}</Label>
 						<Input
 							id="onboard-name"
@@ -645,7 +659,7 @@
 						/>
 						<FieldError code={errors.name} />
 					</div>
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-provider-type">{t('myaaw.onboard.provider_type')}</Label>
 						<select
 							id="onboard-provider-type"
@@ -661,7 +675,7 @@
 				</div>
 
 				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-provider-name">{t('myaaw.onboard.provider_name')}</Label>
 						<Input
 							id="onboard-provider-name"
@@ -673,7 +687,7 @@
 						</p>
 						<FieldError code={errors.provider_name} />
 					</div>
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-base-url">{t('myaaw.providers.base_url')}</Label>
 						<Input
 							id="onboard-base-url"
@@ -686,7 +700,7 @@
 				</div>
 
 				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-api-key">{t('myaaw.providers.api_key')}</Label>
 						<Input
 							id="onboard-api-key"
@@ -697,7 +711,7 @@
 						/>
 						<FieldError code={errors.api_key} />
 					</div>
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-model">{t('myaaw.onboard.model')}</Label>
 						{#if discovered && discovered.models.length > 0 && !manualModel}
 							<select id="onboard-model" class={selectClass} bind:value={model}>
@@ -800,7 +814,7 @@
 
 			{#if wantsTelegram}
 				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-telegram-mode">{t('myaaw.onboard.telegram_mode')}</Label>
 						<select
 							id="onboard-telegram-mode"
@@ -812,7 +826,7 @@
 							<option value="webhook">{t('myaaw.onboard.webhook')}</option>
 						</select>
 					</div>
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-telegram-token">{t('myaaw.onboard.telegram_token')}</Label>
 						<Input
 							id="onboard-telegram-token"
@@ -824,7 +838,7 @@
 					</div>
 				</div>
 				{#if telegramMode === 'webhook'}
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-webhook-url">{t('myaaw.onboard.webhook_url')}</Label>
 						<Input
 							id="onboard-webhook-url"
@@ -860,7 +874,7 @@
 			bind:open={openAccess}
 		>
 			<div class="grid gap-4 sm:grid-cols-2">
-				<div class="grid gap-1.5">
+				<div class="grid content-start gap-1.5">
 					<Label for="onboard-bot-type">{t('myaaw.onboard.bot_type')}</Label>
 					<select
 						id="onboard-bot-type"
@@ -872,7 +886,7 @@
 						<option value="public">{t('myaaw.onboard.bot_public')}</option>
 					</select>
 				</div>
-				<div class="grid gap-1.5">
+				<div class="grid content-start gap-1.5">
 					<Label for="onboard-owner-ids">{t('myaaw.onboard.owner_ids')}</Label>
 					<Input id="onboard-owner-ids" bind:value={ownerIds} placeholder="123456789, 987654321" />
 					<p class="text-[11px] text-muted-foreground">
@@ -906,7 +920,7 @@
 			</label>
 			{#if heartbeatActive}
 				<div class="grid gap-4 sm:grid-cols-3">
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-heartbeat-channel">
 							{t('myaaw.onboard.heartbeat_channel')}
 						</Label>
@@ -925,12 +939,12 @@
 							{t('myaaw.onboard.heartbeat_channel_hint')}
 						</p>
 					</div>
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-heartbeat-to">{t('myaaw.onboard.heartbeat_to')}</Label>
 						<Input id="onboard-heartbeat-to" bind:value={heartbeatTo} placeholder="123456789" />
 						<FieldError code={errors.heartbeat_to} />
 					</div>
-					<div class="grid gap-1.5">
+					<div class="grid content-start gap-1.5">
 						<Label for="onboard-heartbeat-every">{t('myaaw.onboard.heartbeat_every')}</Label>
 						<Input id="onboard-heartbeat-every" bind:value={heartbeatEvery} placeholder="30m" />
 						<FieldError code={errors.heartbeat_every} />

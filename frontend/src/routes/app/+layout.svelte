@@ -696,26 +696,29 @@
 				<div class="min-w-0 flex-1">
 					{#if focusMode && isChat}
 						<!-- The chat screen has no title; the agent mark floats over it. -->
-					{:else if !focusMode}
-						{#if isChat && topBarTitle.value}
-							<h1 class="truncate text-sm font-semibold tracking-tight">
-								{topBarTitle.value}
-							</h1>
-						{:else}
-							<div class="flex items-center gap-2">
-								<h1 class="truncate text-sm font-semibold tracking-tight">
-									{t(current.label)}
-								</h1>
-								{#if isChat}
-									<Badge variant="outline" class="hidden shrink-0 sm:inline-flex">
-										{agentSelection.current?.name ?? agentSelection.selected ?? '—'}
-									</Badge>
-								{/if}
-							</div>
+					{:else if topBarTitle.value}
+						<!-- A page can name itself: the open conversation, or the agent being
+						     edited, instead of the route's static label. -->
+						<h1 class="truncate text-sm font-semibold tracking-tight">{topBarTitle.value}</h1>
+						{#if topBarTitle.description}
 							<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
-								{t(current.description)}
+								{topBarTitle.description}
 							</p>
 						{/if}
+					{:else if !focusMode}
+						<div class="flex items-center gap-2">
+							<h1 class="truncate text-sm font-semibold tracking-tight">
+								{t(current.label)}
+							</h1>
+							{#if isChat}
+								<Badge variant="outline" class="hidden shrink-0 sm:inline-flex">
+									{agentSelection.current?.name ?? agentSelection.selected ?? '—'}
+								</Badge>
+							{/if}
+						</div>
+						<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
+							{t(current.description)}
+						</p>
 					{:else}
 						<!-- Focus mode keeps the page header for every page except chat. -->
 						<h1 class="truncate text-sm font-semibold tracking-tight">{t(current.label)}</h1>
