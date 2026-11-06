@@ -1,77 +1,54 @@
 import { browser } from '$app/environment';
+import { conversations as conversationsApi } from '$lib/apis/conversations';
 
 /**
- * Conversations that gained a turn the reader has not looked at yet. The marker
- * is per agent, because an event can belong to another agent than the one shown,
- * and it must survive a closed tab: the server is the only record of what landed
- * while the dashboard was gone, so a per-conversation `updated_at` watermark
- * decides what is still unread on the next visit.
+ * Conversations with a turn the reader has not acknowledged yet.
+ *
+ * The marker is in memory only: `conversations.read_at` on the server is the
+ * single source of truth, and every list response recomputes the dots from it.
+ * That is what makes a reload, a closed tab, and another device agree without
+ * any local storage. The in-memory copy exists so a live event can paint a dot
+ * immediately, before the next list fetch.
  */
 type UnreadMap = Record<string, Record<string, true>>;
-
-/** The newest server timestamp the reader has acknowledged, per conversation. */
-interface SeenState {
-	/** Newest timestamp observed when this agent was last synced. */
-	baseline: Record<string, string>;
-	seen: Record<string, Record<string, string>>;
-}
 
 interface SummaryLike {
 	id: string;
 	updated_at?: string;
+	/** Newest turn this user acknowledged; null means never acknowledged. */
+	read_at?: string | null;
 }
 
-const UNREAD_KEY = 'myaaw_unread_chats';
-const SEEN_KEY = 'myaaw_chat_seen';
-
-function readJson<T>(key: string, fallback: T): T {
-	if (!browser) return fallback;
-	try {
-		const raw = localStorage.getItem(key);
-		if (!raw) return fallback;
-		const parsed = JSON.parse(raw) as T;
-		return parsed && typeof parsed === 'object' ? parsed : fallback;
-	} catch {
-		return fallback;
-	}
+// Keys of the earlier local-watermark implementation. The server owns this now,
+// so anything left in a browser from that version is dropped.
+if (browser) {
+	localStorage.removeItem('myaaw_unread_chats');
+	localStorage.removeItem('myaaw_chat_seen');
 }
 
-function writeJson(key: string, value: unknown) {
-	if (!browser) return;
-	try {
-		localStorage.setItem(key, JSON.stringify(value));
-	} catch {
-		// A full quota must not break the list; the marker simply does not survive.
-	}
-}
+let state = $state<UnreadMap>({});
+/** The conversation open in the chat route; not persisted, it is only "now". */
+let openAgent = '';
+let openId = '';
+/**
+ * Bumped whenever a live event marks a conversation unread. A list response that
+ * was already in flight when that happened must not clear the newer marker, so
+ * its revision is captured before the request.
+ */
+let revisions = 0;
 
 /** Milliseconds from a server timestamp, or 0 when it cannot be read. */
-function time(value?: string): number {
+function time(value?: string | null): number {
 	if (!value) return 0;
 	const parsed = Date.parse(value);
 	return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-let state = $state<UnreadMap>(readJson<UnreadMap>(UNREAD_KEY, {}));
-let seenState = $state<SeenState>(readJson<SeenState>(SEEN_KEY, { baseline: {}, seen: {} }));
-
-/** The conversation open in the chat route; not persisted, it is only "now". */
-let openAgent = '';
-let openId = '';
-
-function persistUnread() {
-	writeJson(UNREAD_KEY, state);
-}
-
-function persistSeen() {
-	writeJson(SEEN_KEY, seenState);
-}
-
 function mark(agent: string, id: string) {
 	if (!agent || !id) return;
+	revisions += 1;
 	if (state[agent]?.[id]) return;
 	state = { ...state, [agent]: { ...(state[agent] ?? {}), [id]: true } };
-	persistUnread();
 }
 
 function clear(agent: string, id: string): boolean {
@@ -79,101 +56,53 @@ function clear(agent: string, id: string): boolean {
 	const next = { ...state[agent] };
 	delete next[id];
 	state = { ...state, [agent]: next };
-	persistUnread();
 	return true;
 }
 
 /**
- * Records that the reader has seen a conversation up to `updatedAt` (the server
- * timestamp of the newest turn) and drops its unread marker.
+ * Records that the reader has seen a conversation up to `updatedAt` and pushes
+ * the watermark to the server, so the other devices agree. A live event has no
+ * precise timestamp to send, so it acknowledges "now" and lets the server clamp
+ * it to `updated_at`.
  */
 function ack(agent: string, id: string, updatedAt?: string) {
 	if (!agent || !id) return;
-	const at = time(updatedAt);
-	const current = time(seenState.seen[agent]?.[id]);
-	if (at > current) {
-		seenState = {
-			...seenState,
-			seen: { ...seenState.seen, [agent]: { ...(seenState.seen[agent] ?? {}), [id]: updatedAt! } }
-		};
-		persistSeen();
-	}
 	clear(agent, id);
+	// Best effort: the dot is already gone locally, and a failed request is
+	// corrected by the next list response.
+	void conversationsApi.markRead(agent, id, updatedAt).catch(() => {});
 }
 
 /**
- * Compares a page of conversation summaries with what the reader has seen. The
- * first sync of an agent only records where things stand; after that a newer
- * `updated_at` marks a conversation unread, and a conversation the reader has
- * never seen is unread only when it is newer than that first baseline (so paging
- * through old chats never floods the list).
+ * Recomputes the dots from one page of conversation summaries. `read_at` is the
+ * server's watermark: a conversation is unread when `updated_at` is newer, and a
+ * null watermark means it was never acknowledged. A conversation that is on
+ * screen is never dotted, and its watermark is pushed to the server when it lags.
  */
-function observe(agent: string, items: SummaryLike[]) {
+function observe(agent: string, items: SummaryLike[], revisionAtRequest = revisions) {
 	if (!browser || !agent || items.length === 0) return;
-
-	const firstSync = !seenState.baseline[agent];
-	const seenFor = { ...(seenState.seen[agent] ?? {}) };
-	let baseline: string | undefined = seenState.baseline[agent];
-	let baselineAt = time(baseline);
-	let seenChanged = false;
-	let unreadChanged = false;
-	let nextUnread = state;
 
 	for (const item of items) {
 		if (!item?.id) continue;
 		const at = time(item.updated_at);
-		if (at > baselineAt) {
-			baseline = item.updated_at;
-			baselineAt = at;
-			seenChanged = true;
-		}
 		if (!at) continue;
 
 		if (agent === openAgent && item.id === openId) {
-			// The reader is on this conversation right now; it is never unread.
-			if (at > time(seenFor[item.id])) {
-				seenFor[item.id] = item.updated_at!;
-				seenChanged = true;
-			}
-			if (nextUnread[agent]?.[item.id]) {
-				const kept = { ...nextUnread[agent] };
-				delete kept[item.id];
-				nextUnread = { ...nextUnread, [agent]: kept };
-				unreadChanged = true;
-			}
+			// On screen: never a dot. If the server is behind (a live turn, or a
+			// first open), acknowledge it so the other devices agree.
+			if (!item.read_at || at > time(item.read_at)) ack(agent, item.id);
+			else clear(agent, item.id);
 			continue;
 		}
 
-		if (firstSync) {
-			if (!seenFor[item.id]) {
-				seenFor[item.id] = item.updated_at!;
-				seenChanged = true;
-			}
-			continue;
+		const unreadNow = item.read_at ? at > time(item.read_at) : true;
+		if (unreadNow) {
+			mark(agent, item.id);
+		} else if (revisionAtRequest === revisions) {
+			// Another device read it, and no live event arrived while this
+			// response was in flight.
+			clear(agent, item.id);
 		}
-
-		const seenAt = time(seenFor[item.id]);
-		const advanced = seenAt ? at > seenAt : at > time(seenState.baseline[agent]);
-		if (advanced && !nextUnread[agent]?.[item.id]) {
-			nextUnread = {
-				...nextUnread,
-				[agent]: { ...(nextUnread[agent] ?? {}), [item.id]: true }
-			};
-			unreadChanged = true;
-		}
-	}
-
-	if (seenChanged) {
-		seenState = {
-			...seenState,
-			baseline: baseline ? { ...seenState.baseline, [agent]: baseline } : seenState.baseline,
-			seen: { ...seenState.seen, [agent]: seenFor }
-		};
-		persistSeen();
-	}
-	if (unreadChanged) {
-		state = nextUnread;
-		persistUnread();
 	}
 }
 
@@ -182,7 +111,6 @@ export const unreadChats = {
 		return !!(agent && id && state[agent]?.[id]);
 	},
 	mark,
-	clear,
 	ack,
 	observe,
 	/** True while that conversation is the one open in the chat route. */
@@ -194,12 +122,8 @@ export const unreadChats = {
 		openAgent = agent;
 		openId = id;
 	},
-	/** Clears every marker of one agent, e.g. when its list is fully read. */
-	clearAgent(agent: string) {
-		if (!agent || !state[agent]) return;
-		const next = { ...state };
-		delete next[agent];
-		state = next;
-		persistUnread();
+	/** Snapshot of the live-event counter, taken before a list request. */
+	revision(): number {
+		return revisions;
 	}
 };

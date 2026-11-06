@@ -3,8 +3,10 @@ package service
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -478,5 +480,110 @@ func TestEscapeLike(t *testing.T) {
 	want := `50\%\_off\\now`
 	if got != want {
 		t.Fatalf("escapeLike = %q, want %q", got, want)
+	}
+}
+
+// readAtOf reads the stored watermark straight from the database.
+func readAtOf(t *testing.T, dbPath, id string) time.Time {
+	t.Helper()
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	var at sql.NullTime
+	if err := db.QueryRow(`SELECT read_at FROM conversations WHERE id = ?`, id).Scan(&at); err != nil {
+		t.Fatalf("read read_at: %v", err)
+	}
+	if !at.Valid {
+		t.Fatalf("read_at for %s is null", id)
+	}
+	return at.Time
+}
+
+func TestConversationMarkReadIsMonotonic(t *testing.T) {
+	dbPath := setupConversationAgent(t)
+	conversations := NewConversationService()
+
+	// Rows that predate the column are backfilled as read, so an upgrade never
+	// paints the existing list unread.
+	page, err := conversations.List("myfriend", 7, 10, 0, "", ConversationFilter{})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, item := range page.Conversations {
+		if item.ReadAt == nil {
+			t.Fatalf("conversation %s has no read_at after the migration", item.ID)
+		}
+	}
+	raw, err := json.Marshal(page.Conversations[0])
+	if err != nil {
+		t.Fatalf("marshal summary: %v", err)
+	}
+	if !strings.Contains(string(raw), `"read_at"`) {
+		t.Fatalf("summary JSON has no read_at field: %s", raw)
+	}
+
+	// A conversation created after the column exists starts unread.
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	updated := time.Now().UTC().Truncate(time.Second)
+	if _, err := db.Exec(
+		`INSERT INTO conversations (id, user_id, title, messages, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
+		"conv-new", 7, "Fresh", "[]", 0, updated, updated,
+	); err != nil {
+		t.Fatalf("insert conv-new: %v", err)
+	}
+	db.Close()
+
+	page, err = conversations.List("myfriend", 7, 10, 0, "", ConversationFilter{})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	var fresh *ConversationSummary
+	for index := range page.Conversations {
+		if page.Conversations[index].ID == "conv-new" {
+			fresh = &page.Conversations[index]
+		}
+	}
+	if fresh == nil {
+		t.Fatal("conv-new missing from the list")
+	}
+	if fresh.ReadAt != nil {
+		t.Fatalf("conv-new already read: %v", fresh.ReadAt)
+	}
+
+	// A timestamp past the stored turn is clamped to updated_at.
+	future := updated.Add(24 * time.Hour)
+	if err := conversations.MarkRead("myfriend", "conv-new", 7, &future); err != nil {
+		t.Fatalf("mark read: %v", err)
+	}
+	if got := readAtOf(t, dbPath, "conv-new"); !got.Equal(updated) {
+		t.Fatalf("read_at = %v, want %v", got, updated)
+	}
+
+	// Replaying an older timestamp never moves the marker backwards.
+	past := updated.Add(-24 * time.Hour)
+	if err := conversations.MarkRead("myfriend", "conv-new", 7, &past); err != nil {
+		t.Fatalf("mark read backwards: %v", err)
+	}
+	if got := readAtOf(t, dbPath, "conv-new"); !got.Equal(updated) {
+		t.Fatalf("read_at moved backwards to %v", got)
+	}
+
+	// No timestamp means now, and now is still clamped to updated_at.
+	if err := conversations.MarkRead("myfriend", "conv-new", 7, nil); err != nil {
+		t.Fatalf("mark read now: %v", err)
+	}
+	if got := readAtOf(t, dbPath, "conv-new"); !got.Equal(updated) {
+		t.Fatalf("read_at = %v, want %v", got, updated)
+	}
+
+	// Another user cannot acknowledge it.
+	if err := conversations.MarkRead("myfriend", "conv-new", 8, nil); !errors.Is(err, ErrConversationForbidden) {
+		t.Fatalf("err = %v, want ErrConversationForbidden", err)
 	}
 }

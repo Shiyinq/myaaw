@@ -81,6 +81,9 @@ async function loadSection(
 	}
 	const current = generation;
 	const pageOffset = resetPage ? 0 : section.offset;
+	// A live event may mark a conversation unread while this response is in
+	// flight; the snapshot lets observe() avoid clearing that newer marker.
+	const revision = unreadChats.revision();
 	try {
 		const result = await conversationsApi.list(agent, {
 			...filter,
@@ -92,7 +95,7 @@ async function loadSection(
 		const pageItems = result.conversations ?? [];
 		// Every list response is a chance to notice a turn that landed while the
 		// dashboard was closed; the summaries carry the server's `updated_at`.
-		unreadChats.observe(agent, pageItems);
+		unreadChats.observe(agent, pageItems, revision);
 		if (resetPage) {
 			section.items = pageItems;
 		} else {

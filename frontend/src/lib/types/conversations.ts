@@ -63,6 +63,8 @@ export interface ConversationSummary {
 	message_count: number;
 	created_at: string;
 	updated_at: string;
+	/** Newest turn this user acknowledged; null when never opened. Shared by every device. */
+	read_at?: string | null;
 	pinned?: boolean;
 	pinned_at?: string | null;
 	folder_id?: string | null;

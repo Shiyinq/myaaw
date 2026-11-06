@@ -41,19 +41,26 @@ function handle(raw: ConversationUpdatedEvent, connectionAgent: string) {
 	// A dot is only for a conversation the reader is not looking at. When it is
 	// open, the event is acknowledged instead, which also records the watermark so
 	// a later list sync does not call the same turn unread.
-	if (unreadChats.isOpen(agent, id)) {
-		unreadChats.ack(agent, id, raw.at);
+	const onScreen = unreadChats.isOpen(agent, id);
+	if (onScreen) {
+		// No precise server timestamp here: the event's `at` is the publish time, and
+		// acknowledging with it can leave the watermark a fraction of a second behind
+		// the turn's updated_at, which would show up as unread again.
+		unreadChats.ack(agent, id);
 	} else {
 		unreadChats.mark(agent, id);
 	}
 	notify(event);
 
-	// Sound and browser notification are deliberately independent settings, and
-	// they fire for every agent, not only the one currently shown.
+	// The tone is independent of what is on screen, like a finished normal chat.
+	// The browser notification is not: it follows the same rule as a chat the
+	// reader left, so it only fires when that conversation is not being read
+	// (another menu or chat, or a hidden tab).
 	if (preferences.value.notifyEnabled) {
 		playNotification(preferences.value.notifySound, preferences.value.notifyVolume);
 	}
-	if (preferences.value.notifyBrowser) {
+	const hidden = document.visibilityState === 'hidden';
+	if (preferences.value.notifyBrowser && (!onScreen || hidden)) {
 		showChatNotification({ agent, conversationId: id, trigger: raw.trigger });
 	}
 

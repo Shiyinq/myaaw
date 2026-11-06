@@ -2356,6 +2356,88 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/conversations/{id}/read": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stores the read watermark shared by every device. ` + "`" + `at` + "`" + ` is optional (RFC3339); omitted means now. The value never moves backwards and is clamped to the conversation's own updated_at.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Mark conversation read",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User ID (defaults to the authenticated user)",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Newest acknowledged turn",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.MarkReadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/cron": {
             "get": {
                 "security": [
@@ -7199,6 +7281,16 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "handler.MarkReadRequest": {
+            "type": "object",
+            "properties": {
+                "at": {
+                    "description": "At is the newest turn being acknowledged, as RFC3339. Omitted means now.",
+                    "type": "string",
+                    "example": "2026-11-06T15:00:00Z"
+                }
+            }
+        },
         "handler.MkdirRequest": {
             "type": "object",
             "properties": {
@@ -8907,6 +8999,10 @@ const docTemplatecontrolplane = `{
                     "type": "boolean"
                 },
                 "pinned_at": {
+                    "type": "string"
+                },
+                "read_at": {
+                    "description": "ReadAt is the newest turn this user has acknowledged. Null means the\nconversation was created after read tracking shipped and was never opened;\na client can read that as unread. Shared by every device.",
                     "type": "string"
                 },
                 "scope": {

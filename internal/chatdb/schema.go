@@ -84,6 +84,36 @@ func EnsureSchema(db *sql.DB) error {
 		}
 	}
 
+	// read_at is the newest turn the dashboard has acknowledged, so "unread" is
+	// shared by every device instead of living in one browser's storage. A
+	// conversation that existed before the column must not suddenly turn unread,
+	// so everything stored so far is backfilled as already read.
+	if !columns["read_at"] {
+		if _, err := db.Exec(`ALTER TABLE conversations ADD COLUMN read_at DATETIME`); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column name") {
+			return err
+		}
+		if _, err := db.Exec(`UPDATE conversations SET read_at = updated_at WHERE read_at IS NULL`); err != nil {
+			return err
+		}
+	}
+
+	// Conversation timestamps used to be written in the daemon's local time.
+	// Store them in UTC like the transcript already does, so the list can order
+	// them as text and every client formats one representation in its own zone.
+	// Values that already end in +00:00 are left alone, which keeps this
+	// idempotent; malformed values are skipped rather than blanked.
+	for _, column := range []string{"created_at", "updated_at", "pinned_at", "read_at"} {
+		query := `UPDATE conversations
+			SET ` + column + ` = strftime('%Y-%m-%d %H:%M:%f', ` + column + `) || '+00:00'
+			WHERE ` + column + ` IS NOT NULL
+			  AND ` + column + ` NOT LIKE '%+00:00'
+			  AND strftime('%Y-%m-%d %H:%M:%f', ` + column + `) IS NOT NULL`
+		if _, err := db.Exec(query); err != nil {
+			return err
+		}
+	}
+
 	for _, index := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_conversations_folder ON conversations(user_id, folder_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_conversations_pinned ON conversations(user_id, pinned_at)`,

@@ -538,6 +538,14 @@ definitions:
           $ref: '#/definitions/service.LogFile'
         type: array
     type: object
+  handler.MarkReadRequest:
+    properties:
+      at:
+        description: At is the newest turn being acknowledged, as RFC3339. Omitted
+          means now.
+        example: "2026-11-06T15:00:00Z"
+        type: string
+    type: object
   handler.MkdirRequest:
     properties:
       path:
@@ -1726,6 +1734,12 @@ definitions:
       pinned:
         type: boolean
       pinned_at:
+        type: string
+      read_at:
+        description: |-
+          ReadAt is the newest turn this user has acknowledged. Null means the
+          conversation was created after read tracking shipped and was never opened;
+          a client can read that as unread. Shared by every device.
         type: string
       scope:
         description: |-
@@ -3903,6 +3917,61 @@ paths:
       security:
       - BearerAuth: []
       summary: Pin a conversation
+      tags:
+      - Conversations
+  /agents/{name}/conversations/{id}/read:
+    post:
+      consumes:
+      - application/json
+      description: Stores the read watermark shared by every device. `at` is optional
+        (RFC3339); omitted means now. The value never moves backwards and is clamped
+        to the conversation's own updated_at.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User ID (defaults to the authenticated user)
+        in: query
+        name: user_id
+        type: integer
+      - description: Newest acknowledged turn
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/handler.MarkReadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark conversation read
       tags:
       - Conversations
   /agents/{name}/conversations/activity:

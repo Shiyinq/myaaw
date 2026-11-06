@@ -140,8 +140,8 @@ func (r *ConversationRepositoryImpl) CreateConversationWithId(userId int, id, ch
 		Title:     title,
 		Messages:  []provider.Message{},
 		Active:    true,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	messagesJSON, _ := json.Marshal(conversation.Messages)
@@ -187,8 +187,8 @@ func (r *ConversationRepositoryImpl) insertConversation(userId int, scope, chann
 		Title:     title,
 		Messages:  []provider.Message{},
 		Active:    true,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
 	}
 
 	messagesJSON, _ := json.Marshal(conversation.Messages)
@@ -206,7 +206,7 @@ func (r *ConversationRepositoryImpl) insertConversation(userId int, scope, chann
 
 func (r *ConversationRepositoryImpl) UpdateConversationById(id string, messages []provider.Message, title string) error {
 	messagesJSON, _ := json.Marshal(messages)
-	updatedAt := time.Now()
+	updatedAt := time.Now().UTC()
 
 	var query string
 	var args []interface{}
@@ -230,7 +230,7 @@ func (r *ConversationRepositoryImpl) UpdateConversationById(id string, messages 
 func (r *ConversationRepositoryImpl) UpdateConversationTitle(id string, title string) error {
 	_, err := r.db.Exec(
 		`UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?`,
-		title, time.Now(), id,
+		title, time.Now().UTC(), id,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update conversation title: %w", err)

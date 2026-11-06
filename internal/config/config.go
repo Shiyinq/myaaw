@@ -1015,7 +1015,8 @@ func initSchema(db *sql.DB) {
 			messages TEXT,
 			active BOOLEAN,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			read_at DATETIME
 		);`,
 	}
 

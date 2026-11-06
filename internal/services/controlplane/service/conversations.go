@@ -38,14 +38,18 @@ type ConversationSummary struct {
 	IsForum   bool   `json:"is_forum,omitempty"`
 	// Channel is the platform that owns the session (telegram, discord, api,
 	// cli). Empty for sessions created before the column existed.
-	Channel      string     `json:"channel,omitempty"`
-	Active       bool       `json:"active"`
-	MessageCount int        `json:"message_count"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	Pinned       bool       `json:"pinned"`
-	PinnedAt     *time.Time `json:"pinned_at"`
-	FolderID     *string    `json:"folder_id"`
+	Channel      string    `json:"channel,omitempty"`
+	Active       bool      `json:"active"`
+	MessageCount int       `json:"message_count"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	// ReadAt is the newest turn this user has acknowledged. Null means the
+	// conversation was created after read tracking shipped and was never opened;
+	// a client can read that as unread. Shared by every device.
+	ReadAt   *time.Time `json:"read_at"`
+	Pinned   bool       `json:"pinned"`
+	PinnedAt *time.Time `json:"pinned_at"`
+	FolderID *string    `json:"folder_id"`
 }
 
 // ConversationFilter narrows a list to one section of the sidebar. The
@@ -262,7 +266,7 @@ func (s *ConversationService) List(
 		order = ` ORDER BY c.pinned_at DESC, c.updated_at DESC, c.created_at DESC`
 	}
 	query := `SELECT c.id, c.user_id, c.scope, c.channel, c.title, c.active, c.created_at, c.updated_at,
-			c.pinned_at, c.folder_id, c.messages,
+			c.read_at, c.pinned_at, c.folder_id, c.messages,
 			COALESCE(s.chat_name, ''), COALESCE(s.topic_name, ''), COALESCE(s.is_forum, 0)
 		FROM conversations c
 		LEFT JOIN chat_scopes s ON s.scope = c.scope` +
@@ -279,6 +283,7 @@ func (s *ConversationService) List(
 		var (
 			summary  ConversationSummary
 			messages string
+			readAt   sql.NullTime
 			pinnedAt sql.NullTime
 			folderID sql.NullString
 		)
@@ -291,6 +296,7 @@ func (s *ConversationService) List(
 			&summary.Active,
 			&summary.CreatedAt,
 			&summary.UpdatedAt,
+			&readAt,
 			&pinnedAt,
 			&folderID,
 			&messages,
@@ -299,6 +305,10 @@ func (s *ConversationService) List(
 			&summary.IsForum,
 		); err != nil {
 			return page, err
+		}
+		if readAt.Valid {
+			value := readAt.Time
+			summary.ReadAt = &value
 		}
 		summary.Pinned = pinnedAt.Valid
 		if pinnedAt.Valid {
@@ -474,6 +484,56 @@ func (s *ConversationService) Rename(agentName, id string, userID int, title str
 		return "", err
 	}
 	return title, nil
+}
+
+// MarkRead records the newest turn the reader has acknowledged, so "unread" is
+// shared by every device instead of living in one browser's storage. It is
+// monotonic and clamped to the conversation's own updated_at, so a replayed or
+// future timestamp can never move the marker past a turn that exists and hide
+// it. A nil `at` means "now".
+func (s *ConversationService) MarkRead(agentName, id string, userID int, at *time.Time) error {
+	db, err := openAgentDB(agentName)
+	if err != nil {
+		return err
+	}
+	if db == nil {
+		return ErrConversationNotFound
+	}
+	defer db.Close()
+
+	owner, err := conversationOwner(db, id)
+	if err != nil {
+		return err
+	}
+	if owner != userID {
+		return ErrConversationForbidden
+	}
+
+	var updatedAt, current sql.NullTime
+	if err := db.QueryRow(
+		`SELECT updated_at, read_at FROM conversations WHERE id = ? LIMIT 1`, id,
+	).Scan(&updatedAt, &current); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrConversationNotFound
+		}
+		return err
+	}
+
+	when := time.Now().UTC()
+	if at != nil {
+		when = *at
+	}
+	if updatedAt.Valid && when.After(updatedAt.Time) {
+		when = updatedAt.Time
+	}
+	if current.Valid && !when.After(current.Time) {
+		return nil
+	}
+
+	_, err = db.Exec(
+		`UPDATE conversations SET read_at = ? WHERE id = ? AND user_id = ?`, when, id, userID,
+	)
+	return err
 }
 
 // Delete removes a conversation. It only affects conversations owned by userID.

@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -244,5 +245,47 @@ func TestScopedSessionsDoNotTouchLegacyDMs(t *testing.T) {
 	}
 	if legacy == nil || legacy.Id == dm.Id {
 		t.Fatalf("legacy DM should have rotated: %+v", legacy)
+	}
+}
+
+// The transcript is stored in UTC and the dashboard formats it in the reader's
+// zone, so conversation timestamps must be UTC too: the list orders them as text.
+func TestConversationTimestampsAreUTC(t *testing.T) {
+	repo := newTestConversationRepo(t)
+
+	conversation, err := repo.CreateConversation(7, "api", "Title")
+	if err != nil {
+		t.Fatalf("CreateConversation: %v", err)
+	}
+
+	read := func(column string) string {
+		t.Helper()
+		var value string
+		if err := repo.db.QueryRow(
+			`SELECT CAST(`+column+` AS TEXT) FROM conversations WHERE id = ?`, conversation.Id,
+		).Scan(&value); err != nil {
+			t.Fatalf("read %s: %v", column, err)
+		}
+		return value
+	}
+
+	for _, column := range []string{"created_at", "updated_at"} {
+		if value := read(column); !strings.HasSuffix(value, "+00:00") {
+			t.Fatalf("%s = %q, want a UTC suffix", column, value)
+		}
+	}
+
+	if err := repo.UpdateConversationById(conversation.Id, nil, ""); err != nil {
+		t.Fatalf("UpdateConversationById: %v", err)
+	}
+	if value := read("updated_at"); !strings.HasSuffix(value, "+00:00") {
+		t.Fatalf("updated_at after update = %q, want a UTC suffix", value)
+	}
+
+	if err := repo.UpdateConversationTitle(conversation.Id, "Renamed"); err != nil {
+		t.Fatalf("UpdateConversationTitle: %v", err)
+	}
+	if value := read("updated_at"); !strings.HasSuffix(value, "+00:00") {
+		t.Fatalf("updated_at after rename = %q, want a UTC suffix", value)
 	}
 }

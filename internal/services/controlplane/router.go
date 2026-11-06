@@ -147,6 +147,7 @@ func NewApp() (*fiber.App, error) {
 	app.Delete("/agents/:name/conversations/:id", h.DeleteConversation)
 	app.Put("/agents/:name/conversations/:id/pin", h.PinConversation)
 	app.Put("/agents/:name/conversations/:id/folder", h.MoveConversation)
+	app.Post("/agents/:name/conversations/:id/read", h.MarkConversationRead)
 	app.Get("/agents/:name/logs", h.ListLogs)
 	app.Get("/agents/:name/logs/stream", h.StreamLogs)
 	app.Get("/agents/:name/server/status", h.GetServerStatus)

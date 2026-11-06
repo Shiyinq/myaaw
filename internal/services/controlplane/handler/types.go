@@ -175,6 +175,11 @@ type RenameConversationRequest struct {
 	Title string `json:"title" example:"Workspace cleanup"`
 }
 
+type MarkReadRequest struct {
+	// At is the newest turn being acknowledged, as RFC3339. Omitted means now.
+	At string `json:"at,omitempty" example:"2026-11-06T15:00:00Z"`
+}
+
 type RenameConversationResponse struct {
 	OK    bool   `json:"ok" example:"true"`
 	ID    string `json:"id"`

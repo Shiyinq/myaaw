@@ -792,6 +792,7 @@ turning recording on: the trace database is opened once per process.
 | `DELETE` | `/agents/:name/conversations/:id` | delete a conversation |
 | `PUT` | `/agents/:name/conversations/:id/pin` | pin or unpin `{pinned}` |
 | `PUT` | `/agents/:name/conversations/:id/folder` | move into a folder, or to Recents with `{"folder_id": null}` |
+| `POST` | `/agents/:name/conversations/:id/read` | record the newest acknowledged turn `{at}` (shared unread watermark) |
 | `GET` | `/agents/:name/chat-folders` | the user's chat folders with a chat count each |
 | `POST` | `/agents/:name/chat-folders` | create a folder `{name}` |
 | `PATCH` | `/agents/:name/chat-folders/:folder` | rename a folder `{name}` |
@@ -848,11 +849,22 @@ curl "http://localhost:9000/agents/myfriend/conversations?limit=20&search=report
 
 `limit` defaults to 50; values above 200 fall back to 50. `offset` defaults to 0.
 
+All timestamps in these responses (`created_at`, `updated_at`, `pinned_at`,
+`read_at`) are UTC, sent as RFC3339 with a `Z` offset; a client formats them in
+the reader's zone. The list orders by `updated_at`, so the stored column is kept
+in UTC too — that is what lets SQLite's text ordering match chronological order.
+
 `channel=telegram|discord|api|cli` keeps only sessions owned by that platform.
 Each summary carries the same `channel` value, which lets a form offer past web
 sessions when it needs a `session_id`. Sessions created before the column existed
 have an empty `channel` and are omitted by the filter. Any other value is a
 `400`.
+
+Every summary also carries `read_at`: the newest turn this user has acknowledged,
+stored on the server so the read state is shared by every device. It is `null` for
+a conversation created after read tracking shipped that was never opened, which a
+client reads as unread. `updated_at > read_at` is the unread rule — see
+[Mark read](#mark-read).
 
 ### Detail
 
@@ -920,6 +932,28 @@ curl -X PUT http://localhost:9000/agents/myfriend/conversations/conv-id/folder \
 ```
 
 `folder_id` must belong to the same user (`404` otherwise) and may not be empty (`400`). Send `{"folder_id":null}` to move the chat back to Recents. Moving leaves `pinned` alone, so a pinned chat can also live in a folder.
+
+### Mark read
+
+```bash
+curl -X POST http://localhost:9000/agents/myfriend/conversations/conv-id/read \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"at":"2026-11-06T15:00:00Z"}'
+```
+
+```json
+{"ok": true}
+```
+
+The body is optional; omitting `at` means "now". The stored value is monotonic
+and clamped to the conversation's own `updated_at`: a replayed or future
+timestamp never moves `read_at` past a turn that exists, so it cannot hide one.
+It never touches `updated_at`. Another user's conversation is `403`; an unknown
+id is `404`; a malformed `at` is `400`.
+
+Because the watermark lives in the database, reading a chat on one device clears
+the unread marker on the others the next time they load the list.
 
 ### Chat folders
 
@@ -1323,7 +1357,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
-| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder` |
+| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read` |
 | Chat folders | `GET /chat-folders`, `POST /chat-folders`, `PATCH /chat-folders/:folder`, `DELETE /chat-folders/:folder` |
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |

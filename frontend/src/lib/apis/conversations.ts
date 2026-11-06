@@ -66,6 +66,15 @@ export const conversations = {
 			method: 'PUT',
 			body: { folder_id: folderId }
 		}),
+	/**
+	 * Stores the newest turn the reader has acknowledged. Shared by every device,
+	 * so reading a chat on one clears the unread marker on the others.
+	 */
+	markRead: (agent: string, id: string, at?: string) =>
+		client<OKResponse>(agentPath(agent, `/conversations/${encodeURIComponent(id)}/read`), {
+			method: 'POST',
+			body: at ? { at } : {}
+		}),
 	activity: (agent: string, params: { from: number; to: number }) =>
 		client<ConversationActivity>(
 			agentPath(agent, `/conversations/activity?from=${params.from}&to=${params.to}`)

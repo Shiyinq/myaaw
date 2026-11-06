@@ -168,6 +168,50 @@ func (h *Handler) GetConversation(c fiber.Ctx) error {
 	return c.JSON(detail)
 }
 
+// MarkConversationRead stores the newest turn the reader has acknowledged.
+// @Summary      Mark conversation read
+// @Description  Stores the read watermark shared by every device. `at` is optional (RFC3339); omitted means now. The value never moves backwards and is clamped to the conversation's own updated_at.
+// @Tags         Conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        id path string true "Conversation ID"
+// @Param        user_id query int false "User ID (defaults to the authenticated user)"
+// @Param        request body MarkReadRequest false "Newest acknowledged turn"
+// @Success      200 {object} OKResponse
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      403 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /agents/{name}/conversations/{id}/read [post]
+func (h *Handler) MarkConversationRead(c fiber.Ctx) error {
+	var req MarkReadRequest
+	if len(c.Body()) > 0 {
+		if err := c.Bind().JSON(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "invalid JSON request body",
+			})
+		}
+	}
+
+	var at *time.Time
+	if raw := strings.TrimSpace(req.At); raw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "at must be an RFC3339 timestamp",
+			})
+		}
+		at = &parsed
+	}
+
+	if err := h.conversations.MarkRead(c.Params("name"), c.Params("id"), h.requestUserID(c), at); err != nil {
+		return conversationError(c, err)
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
 // RenameConversation updates a conversation title.
 // @Summary      Rename conversation
 // @Description  Only the owner can rename a conversation. Titles are trimmed and must not be empty.
