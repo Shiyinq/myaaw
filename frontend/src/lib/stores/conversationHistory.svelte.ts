@@ -6,6 +6,7 @@ import { t } from '$lib/i18n';
 import { isAuthenticated } from '$lib/stores/authStatus.svelte';
 import { agentSelection } from '$lib/stores/selectedAgent.svelte';
 import { toastStore } from '$lib/stores/toast.svelte';
+import { unreadChats } from '$lib/stores/unreadChats.svelte';
 import { getErrorMessage } from '$lib/utils/api';
 import type { ChatFolder, ChatFolderDelete, ConversationSummary } from '$lib/types';
 
@@ -89,6 +90,9 @@ async function loadSection(
 		});
 		if (current !== generation) return;
 		const pageItems = result.conversations ?? [];
+		// Every list response is a chance to notice a turn that landed while the
+		// dashboard was closed; the summaries carry the server's `updated_at`.
+		unreadChats.observe(agent, pageItems);
 		if (resetPage) {
 			section.items = pageItems;
 		} else {

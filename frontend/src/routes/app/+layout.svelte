@@ -65,6 +65,8 @@
 	import { APPEARANCE, applyAppearance, isAppearanceActive } from '$lib/theme';
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
+	import { chatRuns } from '$lib/stores/chatRuns.svelte';
+	import { runCompletion } from '$lib/stores/runCompletion.svelte';
 	import { isAuthenticated } from '$lib/stores/authStatus.svelte';
 
 	interface Props {
@@ -107,6 +109,17 @@
 		// behind the control plane and retry forever.
 		const names = agentSelection.agents.filter((agent) => agent.running).map((agent) => agent.name);
 		chatUpdates.sync(names);
+		// A run the reader started outlives its chat page, and a reload reattaches it
+		// from the agent server. Recover them on any route, so an answer that lands
+		// while the reader is elsewhere is still announced.
+		for (const name of names) void chatRuns.restore(name);
+	});
+
+	// Reading the run store here is what makes the watcher re-run on a finish; it
+	// turns a normal chat that ends into the same unread dot, tone, and browser
+	// notification a triggered turn gets.
+	$effect(() => {
+		runCompletion.watch();
 	});
 
 	// Focus mode is single-agent: whichever page is open, the chosen agent is the

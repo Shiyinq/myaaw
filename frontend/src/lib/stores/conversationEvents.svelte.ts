@@ -38,7 +38,14 @@ function handle(raw: ConversationUpdatedEvent, connectionAgent: string) {
 
 	const event: ConversationUpdatedEvent = { ...raw, agent, conversation_id: id };
 
-	unreadChats.mark(agent, id);
+	// A dot is only for a conversation the reader is not looking at. When it is
+	// open, the event is acknowledged instead, which also records the watermark so
+	// a later list sync does not call the same turn unread.
+	if (unreadChats.isOpen(agent, id)) {
+		unreadChats.ack(agent, id, raw.at);
+	} else {
+		unreadChats.mark(agent, id);
+	}
 	notify(event);
 
 	// Sound and browser notification are deliberately independent settings, and

@@ -400,6 +400,7 @@
 			"trigger_cron": "Cron",
 			"trigger_heartbeat": "Heartbeat",
 			"trigger_subagent": "Sub-agen",
+			"trigger_chat": "Balasan",
 			"notify_title": "Myaaw · {agent}",
 			"notify_body": "{trigger} selesai.\nBuka chat untuk membacanya.",
 			"unread": "Pesan baru",

@@ -95,6 +95,12 @@ export class ChatRun {
 	/** Step group that is still collecting rows, so its header keeps spinning. */
 	openGroup = $state('');
 	finishedAt = $state(0);
+	/**
+	 * Why the run ended. `done` means the answer landed, so it is worth announcing
+	 * to a reader who left; `error` and `stopped` are the reader's own doing or a
+	 * failure and stay quiet.
+	 */
+	finishReason = $state<'done' | 'error' | 'stopped' | null>(null);
 
 	/** Set by the mounted page; cleared when it unmounts. */
 	view: RunView | null = null;
@@ -343,6 +349,7 @@ export class ChatRun {
 				break;
 			case 'done': {
 				this.endRun();
+				this.finishReason = 'done';
 				this.streaming = false;
 				const next = data?.conversation_id;
 				if (typeof next === 'string' && next) this.bindConversation(next);
@@ -362,6 +369,7 @@ export class ChatRun {
 			}
 			case 'error': {
 				this.endRun();
+				this.finishReason = 'error';
 				this.streaming = false;
 				this.error = data?.error ?? 'Stream error';
 				this.push({ kind: 'error', text: this.error });
@@ -401,6 +409,7 @@ export class ChatRun {
 		this.controller?.abort();
 		this.controller = null;
 		this.endRun();
+		this.finishReason = 'stopped';
 		this.streaming = false;
 		this.finishedAt = Date.now();
 	}

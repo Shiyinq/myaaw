@@ -37,6 +37,8 @@ function triggerLabel(trigger: string): string {
 			return t('myaaw.chat.trigger_heartbeat');
 		case 'subagent':
 			return t('myaaw.chat.trigger_subagent');
+		case 'chat':
+			return t('myaaw.chat.trigger_chat');
 		default:
 			return trigger;
 	}

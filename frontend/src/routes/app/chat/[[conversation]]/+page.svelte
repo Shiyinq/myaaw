@@ -15,7 +15,6 @@
 	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
 	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { tts } from '$lib/speech/tts.svelte';
-	import { playNotification } from '$lib/sound/notify.svelte';
 	import { cn } from '$lib/utils';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -606,7 +605,7 @@
 			chatRuns.settle(currentAgent, id);
 			const title = detail.title ?? '';
 			applyTitle(id, title);
-			unreadChats.clear(currentAgent, id);
+			unreadChats.ack(currentAgent, id, detail.updated_at);
 			if (isPlaceholderTitle(title)) pollTitle(currentAgent, id, 0);
 			storedUsage = null;
 		} catch (err) {
@@ -937,17 +936,22 @@
 	});
 
 	// Background turns (cron, heartbeat, sub-agent) arrive over SSE from the
-	// agent server. Append them to the open transcript instead of reloading it,
-	// and drop the unread marker once the turn is actually on screen.
+	// agent server. Append them to the open transcript instead of reloading it;
+	// the unread marker is owned by conversationEvents, which knows this
+	// conversation is open and acknowledges instead of marking it.
 	$effect(() => {
 		if (!browser) return;
 		return chatUpdates.subscribe((event) => {
 			if (event.agent !== agent || event.conversation_id !== conversationId) return;
-			if (document.visibilityState === 'visible') {
-				unreadChats.clear(event.agent, event.conversation_id);
-			}
 			void appendNew();
 		});
+	});
+
+	// Tells the unread store which conversation is on screen, so a list sync never
+	// paints a dot on the chat the reader is already looking at.
+	$effect(() => {
+		unreadChats.setOpen(agent ?? '', conversationId);
+		return () => unreadChats.setOpen('', '');
 	});
 
 	// One draft per agent and conversation, so switching chats keeps what was typed
@@ -1005,11 +1009,8 @@
 				// The run may land in the trace store just after `done`.
 				setTimeout(() => void refreshStats(currentAgent, statsId), 1500);
 
-				// The completion tone is separate from read-aloud: a quiet answer
-				// still deserves a short cue that the agent has finished.
-				if (!run.error && !run.resumed && preferences.value.notifyEnabled) {
-					playNotification(preferences.value.notifySound, preferences.value.notifyVolume);
-				}
+				// The completion tone and the browser notification live in
+				// stores/runCompletion: they must also fire when this page is gone.
 
 				// A background turn may have landed while this run held the timeline;
 				// reconcile the stored transcript now that the run is done.

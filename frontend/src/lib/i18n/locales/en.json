@@ -400,6 +400,7 @@
 			"trigger_cron": "Cron job",
 			"trigger_heartbeat": "Heartbeat",
 			"trigger_subagent": "Sub-agent",
+			"trigger_chat": "Reply",
 			"notify_title": "Myaaw · {agent}",
 			"notify_body": "{trigger} finished.\nOpen the chat to read it.",
 			"unread": "New messages",
