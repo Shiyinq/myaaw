@@ -192,6 +192,26 @@ func fillActivityDays(activity ConversationActivity, counts map[string]int, from
 	return activity
 }
 
+// visibleMessageCount counts the rows a chat actually shows as bubbles: the
+// user's messages and the assistant answers that carry text. Tool calls, tool
+// results, and the empty assistant stubs that only hold `tool_calls` belong to a
+// step inside one answer, so counting them made the sidebar claim six messages
+// for a chat that reads as two.
+func visibleMessageCount(messages []provider.Message) int {
+	count := 0
+	for _, message := range messages {
+		switch strings.ToLower(message.Role) {
+		case "user":
+			count++
+		case "assistant":
+			if strings.TrimSpace(provider.MessageText(message)) != "" {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 // ConversationService reads and mutates conversations in an agent's SQLite database.
 type ConversationService struct{}
 
@@ -321,7 +341,7 @@ func (s *ConversationService) List(
 		}
 		var parsed []provider.Message
 		if json.Unmarshal([]byte(messages), &parsed) == nil {
-			summary.MessageCount = len(parsed)
+			summary.MessageCount = visibleMessageCount(parsed)
 		}
 		page.Conversations = append(page.Conversations, summary)
 	}

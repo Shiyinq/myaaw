@@ -204,6 +204,23 @@ func TestConversationServiceCarriesScope(t *testing.T) {
 	}
 }
 
+// The sidebar count is what the reader sees, not the transcript size: a tool
+// round stores three rows for one answer.
+func TestVisibleMessageCountSkipsToolRounds(t *testing.T) {
+	messages := []provider.Message{
+		{Role: "system", Content: "system"},
+		{Role: "user", Content: "hi"},
+		{Role: "assistant"},           // tool-call stub, no text
+		{Role: "tool", Content: "ok"}, // tool result
+		{Role: "assistant", Content: "done"},
+		{Role: "user", Content: "again"},
+		{Role: "assistant", Content: []provider.ContentItem{{Type: "text", Text: "answered"}}},
+	}
+	if got := visibleMessageCount(messages); got != 4 {
+		t.Fatalf("visible messages = %d, want 4", got)
+	}
+}
+
 func TestConversationServiceList(t *testing.T) {
 	setupConversationAgent(t)
 	conversations := NewConversationService()
@@ -218,8 +235,8 @@ func TestConversationServiceList(t *testing.T) {
 	if page.Conversations[0].ID != "conv-2" {
 		t.Fatalf("newest conversation should be first: %+v", page.Conversations)
 	}
-	if page.Conversations[1].MessageCount != 3 {
-		t.Fatalf("message count = %d, want 3", page.Conversations[1].MessageCount)
+	if page.Conversations[1].MessageCount != 2 {
+		t.Fatalf("message count = %d, want 2 (tool rows are not messages)", page.Conversations[1].MessageCount)
 	}
 
 	other, err := conversations.List("myfriend", 8, 10, 0, "", ConversationFilter{})
