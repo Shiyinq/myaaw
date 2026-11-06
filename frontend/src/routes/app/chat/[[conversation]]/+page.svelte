@@ -543,22 +543,6 @@
 		return () => window.removeEventListener('resize', onResize);
 	});
 
-	// A run that ends while another conversation (or menu) is open must not leave
-	// a stale spinner, title or message count in the sidebar. Refresh the list
-	// once, when a run of this agent stops running.
-	let runningCount = -1;
-	$effect(() => {
-		const running = chatRuns.all().filter((run) => run.agent === agent && run.streaming).length;
-		const previous = runningCount;
-		runningCount = running;
-		if (previous > running && previous >= 0) {
-			conversationHistory.refresh();
-			// The title comes from a background LLM call that runs after the answer,
-			// so the first refresh usually still shows "New Chat".
-			setTimeout(() => conversationHistory.refresh(), 4000);
-		}
-	});
-
 	// Follow only new timeline rows and the growing tail of a streamed answer.
 	// Expanding a step reassigns `items` with the same length, and that must not
 	// yank the view to the bottom. Neither must prepending an older page. A sent

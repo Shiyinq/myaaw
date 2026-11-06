@@ -165,9 +165,13 @@ function prepend(section: Section, item: ConversationSummary) {
 	section.items = [item, ...section.items.filter((existing) => existing.id !== item.id)];
 }
 
+/** Bumped on every `refresh()`, so other lists can reconcile against it. */
+let revision = $state(0);
+
 /** Reloads every opened section after a membership change, without a loading flash. */
 function refresh() {
 	generation += 1;
+	revision += 1;
 	// Keep the rows currently on screen; each section is replaced by its next
 	// response, so pin/move/delete never blanks the list.
 	const openFolders = Object.keys(folderSections);
@@ -270,6 +274,10 @@ export const conversationHistory = {
 	},
 	/** Reloads what is visible, e.g. after a run finished and the title changed. */
 	refresh,
+	/** Increases on every refresh; other lists reconcile their own copy against it. */
+	get revision() {
+		return revision;
+	},
 	/** Keeps the list in step with a title the server renamed in the background. */
 	update(id: string, title: string) {
 		patchTitle(pinned, id, title);

@@ -1999,6 +1999,16 @@ func TestRouterApprovalsManagement(t *testing.T) {
 		t.Fatalf("grants after revoke = %v", grants)
 	}
 	doJSON(t, app, "DELETE", "/agents/myfriend/approvals/grants/bash", token, "", fiber.StatusNotFound, nil)
+
+	// A key with an action separator reaches the route percent-encoded; the store
+	// key is "cron:add", never "cron%3Aadd".
+	if err := store.GrantAlways("cron:add", approvals.Scope{Channel: "api", UserID: "0"}); err != nil {
+		t.Fatal(err)
+	}
+	doJSON(t, app, "DELETE", "/agents/myfriend/approvals/grants/cron%3Aadd?channel=api&user=0", token, "", fiber.StatusOK, nil)
+	if grants := approvals.NewStore(path).Snapshot(); len(grants) != 0 {
+		t.Fatalf("grants after scoped revoke = %v", grants)
+	}
 }
 
 func TestRouterApprovalDecisionForwardsUserID(t *testing.T) {

@@ -116,6 +116,26 @@
 		for (const name of names) void chatRuns.restore(name);
 	});
 
+	// A run that ends while another conversation (or menu) is open must not leave a
+	// stale title or message count in either sidebar. This lives in the shell because
+	// the run outlives its chat page; the title itself comes from a background call
+	// after the answer, so a second refresh follows.
+	let runningCount = -1;
+	let runningAgent = '';
+	$effect(() => {
+		if (!isAuthenticated.value) return;
+		const agent = agentSelection.selected;
+		if (!agent) return;
+		const running = chatRuns.all().filter((run) => run.agent === agent && run.streaming).length;
+		const previous = runningCount;
+		const sameAgent = runningAgent === agent;
+		runningAgent = agent;
+		runningCount = running;
+		if (!sameAgent || previous < 0 || running >= previous) return;
+		conversationHistory.refresh();
+		setTimeout(() => conversationHistory.refresh(), 4000);
+	});
+
 	// Reading the run store here is what makes the watcher re-run on a finish; it
 	// turns a normal chat that ends into the same unread dot, tone, and browser
 	// notification a triggered turn gets.

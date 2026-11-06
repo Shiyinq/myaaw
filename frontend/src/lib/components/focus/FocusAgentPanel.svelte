@@ -18,6 +18,8 @@
 	import { server as serverApi } from '$lib/apis/server';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
+	import { conversationHistory } from '$lib/stores/conversationHistory.svelte';
+	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
 	import type { ContextFile, ConversationSummary } from '$lib/types';
@@ -112,6 +114,18 @@
 		});
 	});
 
+	// The shell refreshes the shared list when a run ends or a background turn
+	// lands. Mirror that here, so a chat created a moment ago picks up its generated
+	// title and message count instead of staying "New Chat".
+	let lastRevision = -1;
+	$effect(() => {
+		const revision = conversationHistory.revision;
+		if (revision === lastRevision) return;
+		lastRevision = revision;
+		if (!loaded || !agent) return;
+		untrack(() => void reconcile(agent));
+	});
+
 	// History keeps plain infinite scroll: while the end of the list is on screen,
 	// the next page loads. The sentinel stays mounted so the list never jumps.
 	$effect(() => {
@@ -162,6 +176,7 @@
 		if (!reset && (!loaded || !hasMore)) return;
 		const current = generation;
 		const pageOffset = reset ? 0 : offset;
+		const revision = unreadChats.revision();
 		loading = true;
 		try {
 			const result = await conversationsApi.list(name, { limit: PAGE, offset: pageOffset });
@@ -173,10 +188,35 @@
 			offset = pageOffset + page.length;
 			hasMore = page.length > 0 && result.has_more;
 			loaded = true;
+			unreadChats.observe(name, page, revision);
 		} catch (err) {
 			if (current === generation) toastStore.error(getErrorMessage(err));
 		} finally {
 			if (current === generation) loading = false;
+		}
+	}
+
+	/**
+	 * Re-reads the first page in place: a run that finished elsewhere changed a
+	 * title, a message count, or the order. Older pages stay where they are.
+	 */
+	async function reconcile(name: string) {
+		if (!name || loading) return;
+		const current = generation;
+		const revision = unreadChats.revision();
+		try {
+			const result = await conversationsApi.list(name, { limit: PAGE, offset: 0 });
+			if (current !== generation) return;
+			const page = result.conversations ?? [];
+			if (page.length === 0) return;
+			const fresh = new Set(page.map((item) => item.id));
+			items = [...page, ...items.filter((item) => !fresh.has(item.id))];
+			offset = Math.max(offset, page.length);
+			hasMore = hasMore || result.has_more;
+			loaded = true;
+			unreadChats.observe(name, page, revision);
+		} catch {
+			// Keep what is on screen; the next refresh tries again.
 		}
 	}
 
@@ -371,6 +411,12 @@
 								{t('myaaw.conversations.messages', { count: item.message_count })}
 							</span>
 						</span>
+						{#if (unreadChats.has(agent, item.id) || approvalQueue.has(agent, item.id)) && item.id !== activeId}
+							<span
+								class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+								aria-label={t('myaaw.chat.unread')}
+							></span>
+						{/if}
 					</button>
 				{/each}
 			{/each}
