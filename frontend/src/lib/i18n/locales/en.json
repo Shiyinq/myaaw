@@ -1141,5 +1141,124 @@
 			"memory_history": "Memory by date",
 			"context_empty": "Not written yet"
 		}
+	},
+	"landing": {
+		"meta": {
+			"title": "Myaaw — a home for personal AI agents",
+			"description": "Myaaw is a single Go binary that runs a fleet of personal AI agents. Each one owns a process, a SQLite memory, a workspace, tools and a way to reach you."
+		},
+		"nav": {
+			"loop": "the loop",
+			"fleet": "the fleet",
+			"doors": "the doors",
+			"rules": "the rules",
+			"open": "Open control plane",
+			"signin": "Sign in",
+			"language": "Language",
+			"open_short": "Open"
+		},
+		"hero": {
+			"eyebrow": "my AI agent well",
+			"lead": "Every agent gets",
+			"line_process": "its own process",
+			"line_memory": "its own memory",
+			"line_door": "its own door",
+			"body": "Myaaw is one Go binary that runs a fleet of personal AI agents. Each one owns a process, a SQLite memory, a workspace, tools, skills — and a way to reach you.",
+			"primary": "Open the control plane",
+			"secondary": "Read the source",
+			"meta": "MIT · Go + SvelteKit · SQLite",
+			"scroll": "scroll to inspect a run"
+		},
+		"stream": {
+			"description": "An animated preview of one Myaaw run: a message arrives, context is assembled, tools run, an approval is requested, and the answer streams back.",
+			"running": "running",
+			"waiting": "waiting",
+			"done": "done",
+			"thinking": "thinking",
+			"thought": "thought for 1.8s",
+			"you": "you",
+			"agent": "myaaw",
+			"prompt": "Tidy my workspace and summarise today.",
+			"approval": "delete 3 stale drafts in ~/workspace/projects/old?",
+			"allow": "allow",
+			"deny": "deny",
+			"approved": "approved",
+			"answer": "Done — 12 files organised, 3 stale drafts removed. The summary is in notes/today.md.",
+			"events": "7 events"
+		},
+		"loop": {
+			"index": "the loop",
+			"title": "A run is a conversation with consequences.",
+			"body": "Every message becomes a stream of events: context is assembled, the model thinks, tools run in a real workspace, and anything risky stops for your approval before it happens.",
+			"legend": "waterfall · one run",
+			"note_1_title": "Nothing happens in the dark.",
+			"note_1_body": "Tool calls, durations, tokens and approvals are recorded as run events you can replay.",
+			"note_2_title": "Memory is a file.",
+			"note_2_body": "The agent reads and writes MEMORY.md through tools — real files you can open, diff and delete.",
+			"note_3_title": "Approval is a feature.",
+			"note_3_body": "Destructive work waits for a human. The queue is one click away, not buried in logs."
+		},
+		"fleet": {
+			"index": "the fleet",
+			"title": "One machine. More than one cat.",
+			"body": "Agents share a registry and a PID directory, and nothing else. Each gets its own port, database, workspace, skills and channels. Kill one and the rest keep purring.",
+			"runs": "runs today",
+			"skills": "skills",
+			"uptime": "uptime",
+			"role_default": "primary · general work",
+			"role_myfriend": "companion · long talks",
+			"role_nightshift": "background · scheduled",
+			"process_note": "each line is a real process",
+			"process_caption": "ps aux | grep myaaw"
+		},
+		"doors": {
+			"index": "the doors",
+			"title": "The same agent, wherever you knock.",
+			"body": "A channel is just a door into the same memory. Talk to your agent from a phone, a terminal, a microphone, or your own code — it remembers the same you.",
+			"telegram": "Bot API — polling or webhook",
+			"discord": "Bot token — one agent per token",
+			"terminal": "TUI chat — myaaw chat",
+			"voice": "Gemini Live — speech in, speech out",
+			"api": "REST + SSE — your own client",
+			"heartbeat": "Wakes on a schedule to finish background work"
+		},
+		"rules": {
+			"index": "the rules",
+			"title": "Small enough to read. Yours to keep.",
+			"body": "Myaaw is a personal tool with a few opinions. These are the ones that shaped it.",
+			"item_1_title": "Single binary, zero config.",
+			"item_1_body": "SQLite, queues, schedulers and servers ship in one Go binary. No Docker, no Postgres, no YAML labyrinth.",
+			"item_2_title": "One process per agent.",
+			"item_2_body": "Isolation is a feature. A crash, a runaway tool or a bad prompt stays inside one agent.",
+			"item_3_title": "Your machine, your files.",
+			"item_3_body": "Everything lives in ~/.myaaw: config, database, memory, workspace and skills. Open it, diff it, delete it.",
+			"item_4_title": "Skills are just files.",
+			"item_4_body": "Drop a SKILL.md into the agent's folder and it can do more. No marketplace, no plugin runtime.",
+			"item_5_title": "Works while you sleep.",
+			"item_5_body": "A heartbeat wakes the agent on a schedule to check HEARTBEAT.md and finish what it started.",
+			"item_6_title": "Any door, same memory.",
+			"item_6_body": "Telegram, Discord, terminal, voice or HTTP — every channel ends in the same agent and the same history."
+		},
+		"closing": {
+			"index": "take it home",
+			"title_1": "Install once.",
+			"title_2": "Meet your first cat.",
+			"body": "One command downloads the binary, walks you through onboarding and starts the control plane. Your agents stay on your machine.",
+			"install_label": "install.sh",
+			"install_hint": "linux · macOS · windows",
+			"primary": "Open the control plane",
+			"secondary": "Browse the repository",
+			"signature": "Built quietly, for one loud mind."
+		},
+		"footer": {
+			"tagline": "my AI agent well",
+			"source": "Source",
+			"docs": "Docs",
+			"settings": "Settings",
+			"theme": "theme",
+			"license": "MIT © 2026 Myaaw",
+			"modes": "modes",
+			"themes": "themes"
+		}
 	}
 }

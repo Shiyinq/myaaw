@@ -1141,5 +1141,124 @@
 			"memory_history": "Memori per tanggal",
 			"context_empty": "Belum ditulis"
 		}
+	},
+	"landing": {
+		"meta": {
+			"title": "Myaaw — rumah untuk agen AI pribadi",
+			"description": "Myaaw adalah satu biner Go yang menjalankan armada agen AI pribadi. Masing-masing punya proses, memori SQLite, workspace, tools, dan jalur untuk menghubungimu."
+		},
+		"nav": {
+			"loop": "siklus",
+			"fleet": "armada",
+			"doors": "pintu",
+			"rules": "aturan",
+			"open": "Buka control plane",
+			"signin": "Masuk",
+			"language": "Bahasa",
+			"open_short": "Buka"
+		},
+		"hero": {
+			"eyebrow": "my AI agent well",
+			"lead": "Setiap agen dapat",
+			"line_process": "prosesnya sendiri",
+			"line_memory": "memorinya sendiri",
+			"line_door": "pintunya sendiri",
+			"body": "Myaaw adalah satu biner Go yang menjalankan armada agen AI pribadi. Masing-masing punya proses, memori SQLite, workspace, tools, skill — dan satu pintu untuk menghubungimu.",
+			"primary": "Buka control plane",
+			"secondary": "Lihat sumbernya",
+			"meta": "MIT · Go + SvelteKit · SQLite",
+			"scroll": "gulir untuk membedah satu run"
+		},
+		"stream": {
+			"description": "Pratinjau animasi satu run Myaaw: pesan masuk, konteks disusun, tools berjalan, persetujuan diminta, lalu jawaban mengalir kembali.",
+			"running": "berjalan",
+			"waiting": "menunggu",
+			"done": "selesai",
+			"thinking": "berpikir",
+			"thought": "berpikir 1,8 dtk",
+			"you": "kamu",
+			"agent": "myaaw",
+			"prompt": "Rapikan workspace-ku dan ringkas hari ini.",
+			"approval": "hapus 3 draft lama di ~/workspace/projects/old?",
+			"allow": "izinkan",
+			"deny": "tolak",
+			"approved": "disetujui",
+			"answer": "Selesai — 12 file dirapikan, 3 draft lama dihapus. Ringkasannya ada di notes/today.md.",
+			"events": "7 event"
+		},
+		"loop": {
+			"index": "siklus",
+			"title": "Satu run adalah percakapan yang punya akibat.",
+			"body": "Setiap pesan menjadi aliran event: konteks disusun, model berpikir, tools berjalan di workspace sungguhan, dan apa pun yang berisiko berhenti menunggu persetujuanmu.",
+			"legend": "waterfall · satu run",
+			"note_1_title": "Tidak ada yang terjadi dalam gelap.",
+			"note_1_body": "Panggilan tool, durasi, token, dan persetujuan tercatat sebagai run event yang bisa diputar ulang.",
+			"note_2_title": "Memori adalah file.",
+			"note_2_body": "Agen membaca dan menulis MEMORY.md lewat tools — file sungguhan yang bisa kamu buka, diff, dan hapus.",
+			"note_3_title": "Persetujuan itu fitur.",
+			"note_3_body": "Pekerjaan destruktif menunggu manusia. Antreannya satu klik, bukan terkubur di log."
+		},
+		"fleet": {
+			"index": "armada",
+			"title": "Satu mesin. Kucing lebih dari satu.",
+			"body": "Agen berbagi registry dan direktori PID, dan tidak berbagi apa pun lagi. Masing-masing punya port, database, workspace, skill, dan channel sendiri. Matikan satu, yang lain tetap mendengkur.",
+			"runs": "run hari ini",
+			"skills": "skill",
+			"uptime": "uptime",
+			"role_default": "utama · kerja umum",
+			"role_myfriend": "teman · percakapan panjang",
+			"role_nightshift": "latar · terjadwal",
+			"process_note": "tiap baris adalah proses sungguhan",
+			"process_caption": "ps aux | grep myaaw"
+		},
+		"doors": {
+			"index": "pintu",
+			"title": "Agen yang sama, di pintu mana pun kamu mengetuk.",
+			"body": "Channel hanyalah pintu menuju memori yang sama. Ngobrol lewat ponsel, terminal, mikrofon, atau kodemu sendiri — dia mengingat kamu yang sama.",
+			"telegram": "Bot API — polling atau webhook",
+			"discord": "Token bot — satu agen per token",
+			"terminal": "Chat TUI — myaaw chat",
+			"voice": "Gemini Live — suara masuk, suara keluar",
+			"api": "REST + SSE — klienmu sendiri",
+			"heartbeat": "Bangun terjadwal untuk menuntaskan kerja latar"
+		},
+		"rules": {
+			"index": "aturan",
+			"title": "Cukup kecil untuk dibaca. Sepenuhnya milikmu.",
+			"body": "Myaaw alat pribadi dengan beberapa pendirian. Ini yang membentuknya.",
+			"item_1_title": "Satu biner, tanpa konfigurasi.",
+			"item_1_body": "SQLite, antrean, penjadwal, dan server ikut dalam satu biner Go. Tanpa Docker, tanpa Postgres, tanpa labirin YAML.",
+			"item_2_title": "Satu proses per agen.",
+			"item_2_body": "Isolasi adalah fitur. Crash, tool yang liar, atau prompt buruk tetap di dalam satu agen.",
+			"item_3_title": "Mesinmu, filemu.",
+			"item_3_body": "Semua ada di ~/.myaaw: config, database, memori, workspace, dan skill. Buka, diff, hapus sesukamu.",
+			"item_4_title": "Skill hanyalah file.",
+			"item_4_body": "Taruh SKILL.md di folder agen dan kemampuannya bertambah. Tanpa marketplace, tanpa runtime plugin.",
+			"item_5_title": "Bekerja saat kamu tidur.",
+			"item_5_body": "Heartbeat membangunkan agen sesuai jadwal untuk memeriksa HEARTBEAT.md dan menuntaskan pekerjaannya.",
+			"item_6_title": "Pintu apa pun, memori yang sama.",
+			"item_6_body": "Telegram, Discord, terminal, suara, atau HTTP — setiap channel berakhir di agen dan riwayat yang sama."
+		},
+		"closing": {
+			"index": "bawa pulang",
+			"title_1": "Pasang sekali.",
+			"title_2": "Kenalan dengan kucing pertamamu.",
+			"body": "Satu perintah mengunduh biner, memandumu onboarding, dan menyalakan control plane. Agenmu tetap di mesinmu.",
+			"install_label": "install.sh",
+			"install_hint": "linux · macOS · windows",
+			"primary": "Buka control plane",
+			"secondary": "Lihat repositori",
+			"signature": "Dibangun diam-diam, untuk satu pikiran yang berisik."
+		},
+		"footer": {
+			"tagline": "my AI agent well",
+			"source": "Sumber",
+			"docs": "Dokumentasi",
+			"settings": "Pengaturan",
+			"theme": "tema",
+			"license": "MIT © 2026 Myaaw",
+			"modes": "mode",
+			"themes": "tema"
+		}
 	}
 }
