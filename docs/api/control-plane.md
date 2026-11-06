@@ -302,13 +302,14 @@ background sub-agent, or another conversation):
 
 ```text
 event: approval.required
-data: {"agent":"myfriend","approval_id":"5f1c…","run_id":"3f0c…","conversation_id":"af53cc52-…","tool_name":"bash","args_summary":"{\"command\":\"ls\"}","at":"2026-11-06T18:02:11.231Z"}
+data: {"agent":"myfriend","approval_id":"5f1c…","run_id":"3f0c…","conversation_id":"af53cc52-…","tool_name":"bash","args_summary":"{\"command\":\"ls\"}","args":"{\"command\":\"ls\"}","at":"2026-11-06T18:02:11.231Z"}
 
 event: approval.resolved
 data: {"agent":"myfriend","approval_id":"5f1c…","conversation_id":"af53cc52-…","decision":"allow_once","resolved":true,"at":"2026-11-06T18:02:19.004Z"}
 ```
 
-`subagent` is present when a spawned sub-agent made the call. Answer with
+`subagent` is present when a spawned sub-agent made the call. `args_summary` is
+the 200-character preview and `args` the full raw JSON. Answer with
 `POST /agents/:name/approvals/:id/decision`; the endpoint works for requests
 raised by a sub-agent even after the originating chat stream closed.
 

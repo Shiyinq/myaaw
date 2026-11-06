@@ -11,6 +11,22 @@
 
 	let { approval, onDecide }: Props = $props();
 	const { t } = useTranslation();
+
+	/** The arguments start collapsed, like the CLI prompt; this opens the full JSON. */
+	let openArgs = $state(false);
+
+	/** The summary is a 200-character preview, so the full JSON is what shows details. */
+	const fullArgs = $derived(pretty(approval.args));
+	const canExpand = $derived(fullArgs.length > 0 && fullArgs !== (approval.args_summary ?? ''));
+
+	function pretty(raw?: string): string {
+		if (!raw) return '';
+		try {
+			return JSON.stringify(JSON.parse(raw), null, 2);
+		} catch {
+			return raw;
+		}
+	}
 </script>
 
 <!--
@@ -30,9 +46,22 @@
 			<span class="text-muted-foreground">· {approval.subagent}</span>
 		{/if}
 	</div>
-	{#if approval.args_summary}
+	{#if openArgs && fullArgs}
+		<pre
+			class="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">{fullArgs}</pre>
+	{:else if approval.args_summary}
 		<pre
 			class="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground">{approval.args_summary}</pre>
+	{/if}
+	{#if canExpand}
+		<button
+			type="button"
+			class="mt-1 text-[10px] font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+			aria-expanded={openArgs}
+			onclick={() => (openArgs = !openArgs)}
+		>
+			{openArgs ? t('myaaw.chat.hide_args') : t('myaaw.chat.show_args')}
+		</button>
 	{/if}
 	<div class="mt-2 flex flex-wrap gap-2">
 		<Button size="xs" onclick={() => onDecide('allow_once')}>

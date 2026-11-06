@@ -49,6 +49,8 @@ export interface ApprovalPrompt {
 	tool_name: string;
 	action?: string;
 	args_summary?: string;
+	/** Full raw argument JSON, when the source carries it (the chat stream does). */
+	args?: string;
 	subagent?: string;
 }
 

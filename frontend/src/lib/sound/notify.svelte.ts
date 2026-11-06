@@ -91,6 +91,23 @@ export const notificationSounds = SOUNDS;
 
 let context: AudioContext | null = null;
 
+/**
+ * Browsers create an AudioContext suspended until the page has been interacted
+ * with, and a notification that arrives before that (a background cron, or a tab
+ * the reader just came back to) would otherwise be silent forever. Resuming on
+ * the next gesture fixes the context for every later tone too.
+ */
+if (browser) {
+	const resume = () => {
+		if (context?.state === 'suspended') void context.resume();
+	};
+	window.addEventListener('pointerdown', resume, { passive: true });
+	window.addEventListener('keydown', resume);
+	document.addEventListener('visibilitychange', () => {
+		if (document.visibilityState === 'visible') resume();
+	});
+}
+
 function ensureContext(): AudioContext | null {
 	if (!browser) return null;
 	const Constructor =

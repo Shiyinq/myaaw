@@ -27,9 +27,12 @@ if (browser) {
 }
 
 let state = $state<UnreadMap>({});
-/** The conversation open in the chat route; not persisted, it is only "now". */
-let openAgent = '';
-let openId = '';
+/**
+ * The conversation open in the chat route; not persisted, it is only "now". Runes
+ * so an approval alert re-evaluates when the reader switches chats.
+ */
+let openAgent = $state('');
+let openId = $state('');
 /**
  * Bumped whenever a live event marks a conversation unread. A list response that
  * was already in flight when that happened must not clear the newer marker, so

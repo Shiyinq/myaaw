@@ -35,7 +35,6 @@ export interface ChatItem extends TimelineItem {
 	 * model-only <trigger> block; the row shows a badge and hides the block.
 	 */
 	trigger?: 'cron' | 'heartbeat' | 'subagent';
-	resolved?: string;
 	images?: string[];
 	uploads?: Upload[];
 	running?: boolean;
@@ -327,25 +326,20 @@ export class ChatRun {
 				});
 				break;
 			case 'approval_required': {
-				const prompt: ApprovalPrompt = {
+				// Only the card above the composer renders it; a transcript row would
+				// duplicate the same prompt in two places.
+				this.pendingApproval = {
 					approval_id: data?.approval_id,
 					tool_name: data?.tool_name,
 					action: data?.action,
 					args_summary: data?.args_summary,
+					args: data?.args,
 					subagent: data?.subagent
 				};
-				this.pendingApproval = prompt;
-				this.push({
-					kind: 'approval',
-					id: prompt.approval_id,
-					name: prompt.tool_name,
-					arguments: prompt.args_summary,
-					subagent: prompt.subagent
-				});
 				break;
 			}
 			case 'approval_resolved':
-				this.resolveApproval(data?.approval_id ?? '', data?.decision ?? data?.reason ?? 'resolved');
+				this.resolveApproval(data?.approval_id ?? '');
 				break;
 			case 'done': {
 				this.endRun();
@@ -387,12 +381,9 @@ export class ChatRun {
 	}
 
 	/** Marks an approval resolved, whether decided here or on the server. */
-	resolveApproval(id: string, decision: string) {
+	resolveApproval(id: string) {
 		if (!id) return;
 		if (this.pendingApproval?.approval_id === id) this.pendingApproval = null;
-		this.items = this.items.map((item) =>
-			item.kind === 'approval' && item.id === id ? { ...item, resolved: decision } : item
-		);
 	}
 
 	/**

@@ -19,6 +19,8 @@ export interface PendingApproval {
 	conversationId: string;
 	toolName: string;
 	argsSummary?: string;
+	/** Full raw argument JSON; present on the event and on the chat stream. */
+	args?: string;
 	subAgent?: string;
 	runId?: string;
 }
@@ -31,6 +33,7 @@ export interface ApprovalEvent {
 	run_id?: string;
 	tool_name?: string;
 	args_summary?: string;
+	args?: string;
 	subagent?: string;
 	decision?: string;
 	resolved?: boolean;
@@ -39,17 +42,26 @@ export interface ApprovalEvent {
 let events = $state<Record<string, PendingApproval>>({});
 /** Titles learned from the chat page, so a chat that is not in the list yet still has a name. */
 let titles = $state<Record<string, string>>({});
+/** Approvals that already alerted this tab, so leaving and returning cannot ring twice. */
+const alerted = new Set<string>();
 
 function titleKey(agent: string, id: string) {
 	return `${agent}:${id}`;
 }
 
-function alertIfAway(entry: PendingApproval) {
-	if (!browser) return;
+/**
+ * Rings and notifies once per approval, and only when the reader is not looking
+ * at the chat that owns it. `onScreen` is passed by the caller when it comes from
+ * a reactive read (the layout), so switching chats re-evaluates the condition;
+ * a live event evaluates it at publish time.
+ */
+function alertIfAway(entry: PendingApproval, onScreen?: boolean) {
+	if (!browser || alerted.has(entry.approvalId)) return;
 	// The card is on screen; no system alert for something the reader can answer.
-	const onScreen = unreadChats.isOpen(entry.agent, entry.conversationId);
+	const visible = onScreen ?? unreadChats.isOpen(entry.agent, entry.conversationId);
 	const hidden = document.visibilityState === 'hidden';
-	if (onScreen && !hidden) return;
+	if (visible && !hidden) return;
+	alerted.add(entry.approvalId);
 
 	if (preferences.value.notifyEnabled) {
 		playNotification(preferences.value.notifySound, preferences.value.notifyVolume);
@@ -77,6 +89,7 @@ function required(connectionAgent: string, data: ApprovalEvent) {
 		conversationId,
 		toolName: data.tool_name || 'tool',
 		argsSummary: data.args_summary,
+		args: data.args,
 		subAgent: data.subagent,
 		runId: data.run_id
 	};
@@ -87,7 +100,9 @@ function required(connectionAgent: string, data: ApprovalEvent) {
 /** Removes a pending approval after a decision (or a timeout). */
 function resolved(data: ApprovalEvent) {
 	const approvalId = data?.approval_id;
-	if (!approvalId || !events[approvalId]) return;
+	if (!approvalId) return;
+	alerted.delete(approvalId);
+	if (!events[approvalId]) return;
 	const next = { ...events };
 	delete next[approvalId];
 	events = next;
@@ -105,6 +120,7 @@ function fromRuns(agent: string): PendingApproval[] {
 			conversationId: run.conversationId,
 			toolName: prompt.tool_name || 'tool',
 			argsSummary: prompt.args_summary,
+			args: prompt.args,
 			subAgent: prompt.subagent,
 			runId: run.requestId
 		});
@@ -125,6 +141,16 @@ export const approvalQueue = {
 	},
 	has(agent: string, conversationId: string): boolean {
 		return approvalQueue.list(agent).some((entry) => entry.conversationId === conversationId);
+	},
+	/**
+	 * Re-evaluates every parked approval. The layout calls this whenever the
+	 * selected agent, the parked list, or the open chat changes, so an approval
+	 * that was on screen and is no longer still rings once.
+	 */
+	syncAlerts(agent: string) {
+		for (const entry of approvalQueue.list(agent)) {
+			alertIfAway(entry, unreadChats.isOpen(entry.agent, entry.conversationId));
+		}
 	},
 	/** The pending approval of one conversation, for the in-chat card. */
 	pendingFor(agent: string, conversationId: string): PendingApproval | undefined {

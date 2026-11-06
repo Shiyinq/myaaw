@@ -67,6 +67,7 @@
 	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
 	import { chatRuns } from '$lib/stores/chatRuns.svelte';
 	import { runCompletion } from '$lib/stores/runCompletion.svelte';
+	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
 	import { isAuthenticated } from '$lib/stores/authStatus.svelte';
 
 	interface Props {
@@ -120,6 +121,22 @@
 	// notification a triggered turn gets.
 	$effect(() => {
 		runCompletion.watch();
+	});
+
+	// An approval can arrive while its chat is on screen — no alert then, the card
+	// is right there — and the reader can move on while it is still waiting. Read
+	// the open chat here so switching chats re-runs this and rings once, and listen
+	// for a hidden tab, where the answer is out of reach even on the right page.
+	$effect(() => {
+		if (!isAuthenticated.value) return;
+		const agent = agentSelection.selected;
+		if (!agent) return;
+		approvalQueue.syncAlerts(agent);
+		const onVisibility = () => {
+			if (document.visibilityState === 'hidden') approvalQueue.syncAlerts(agent);
+		};
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => document.removeEventListener('visibilitychange', onVisibility);
 	});
 
 	// Focus mode is single-agent: whichever page is open, the chosen agent is the

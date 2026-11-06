@@ -353,15 +353,15 @@ or a run started from another tab):
 
 ```text
 event: approval.required
-data: {"agent":"default","approval_id":"5f1c…","run_id":"3f0c…","conversation_id":"af53cc52-…","tool_name":"bash","args_summary":"{\"command\":\"ls\"}","at":"2026-11-06T18:02:11.231Z"}
+data: {"agent":"default","approval_id":"5f1c…","run_id":"3f0c…","conversation_id":"af53cc52-…","tool_name":"bash","args_summary":"{\"command\":\"ls\"}","args":"{\"command\":\"ls\"}","at":"2026-11-06T18:02:11.231Z"}
 
 event: approval.resolved
 data: {"agent":"default","approval_id":"5f1c…","run_id":"3f0c…","conversation_id":"af53cc52-…","decision":"allow_once","resolved":true,"at":"2026-11-06T18:02:19.004Z"}
 ```
 
 - `subagent` appears in `approval.required` when a spawned sub-agent made the
-  call; `args_summary` is the same 200-character preview used elsewhere (the
-  full arguments are only in the chat stream event and `approvals.jsonl`).
+  call. `args_summary` is the 200-character preview and `args` is the full raw
+  JSON, so a client that only holds this stream can still show the details.
 - `approval.resolved` also arrives with `decision: "deny"` when the run was
   cancelled or the client never answered.
 - Answer either event with `POST /api/approvals/:id` (see §4). The events are

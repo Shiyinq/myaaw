@@ -37,7 +37,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import { theme } from 'mode-watcher';
 	import { isFrosted } from '$lib/theme';
-	import { Badge } from '$lib/components/ui/badge';
 	import {
 		AlertTriangle,
 		ArrowDownToLine,
@@ -66,7 +65,6 @@
 		Pencil,
 		RotateCcw,
 		Send,
-		ShieldAlert,
 		Square,
 		SquareTerminal,
 		Users,
@@ -189,6 +187,7 @@
 					approval_id: entry.approvalId,
 					tool_name: entry.toolName,
 					args_summary: entry.argsSummary,
+					args: entry.args,
 					subagent: entry.subAgent
 				}
 			: null;
@@ -1197,7 +1196,6 @@
 		if (!last) return 'waiting';
 		if (last.kind === 'item') {
 			if (last.item.kind === 'text') return 'writing';
-			if (last.item.kind === 'approval') return 'approval';
 			if (last.item.kind === 'error') return 'error';
 			return 'waiting';
 		}
@@ -1551,7 +1549,7 @@
 			await chatApi.decide(agent, prompt.approval_id, decision);
 			// Drop it locally too, so the queue never waits for the resolved event.
 			approvalQueue.resolved({ approval_id: prompt.approval_id });
-			activeRun?.resolveApproval(prompt.approval_id, decision);
+			activeRun?.resolveApproval(prompt.approval_id);
 		} catch (err) {
 			error = getErrorMessage(err);
 			toastStore.error(error);
@@ -2946,23 +2944,6 @@
 												{/if}
 												<ChatTime at={item.createdAt ?? ''} />
 											</div>
-										</div>
-									{:else if item.kind === 'approval'}
-										<div class="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
-											<div
-												class="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300"
-											>
-												<ShieldAlert class="h-4 w-4" />
-												{t('myaaw.chat.waiting')}
-											</div>
-											<div class="mt-1 font-mono text-foreground">{item.name}</div>
-											{#if item.arguments}
-												<pre
-													class="mt-1 overflow-x-auto whitespace-pre-wrap break-all text-muted-foreground">{item.arguments}</pre>
-											{/if}
-											{#if item.resolved}
-												<Badge variant="outline" class="mt-2">{item.resolved}</Badge>
-											{/if}
 										</div>
 									{:else if item.kind === 'error'}
 										<div class="flex items-start gap-2 text-xs text-destructive">

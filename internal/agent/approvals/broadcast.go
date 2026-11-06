@@ -16,10 +16,13 @@ type Event struct {
 	ToolName       string `json:"tool_name,omitempty"`
 	Action         string `json:"action,omitempty"`
 	ArgsSummary    string `json:"args_summary,omitempty"`
-	SubAgent       string `json:"subagent,omitempty"`
-	Decision       string `json:"decision,omitempty"`
-	Resolved       bool   `json:"resolved"`
-	At             string `json:"at"`
+	// Args is the full raw JSON, so a client that only sees this stream can still
+	// render the details the chat stream would have carried.
+	Args     string `json:"args,omitempty"`
+	SubAgent string `json:"subagent,omitempty"`
+	Decision string `json:"decision,omitempty"`
+	Resolved bool   `json:"resolved"`
+	At       string `json:"at"`
 }
 
 // Broker fans approval events out to every subscriber without blocking the run.
@@ -87,6 +90,7 @@ func PublishRequired(req Request) {
 		ToolName:       req.ToolName,
 		Action:         req.Action,
 		ArgsSummary:    req.ArgsSummary,
+		Args:           req.Args,
 		SubAgent:       req.SubAgent,
 		At:             time.Now().UTC().Format(time.RFC3339Nano),
 	})
