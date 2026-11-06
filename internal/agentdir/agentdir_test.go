@@ -48,6 +48,62 @@ func TestRegistryRoundTrip(t *testing.T) {
 	}
 }
 
+// A registry that lost entries must not hide agents whose folders still exist:
+// that is how four agents became one while every config and database stayed put.
+func TestEnsureLayoutRebuildsRegistryFromDirectories(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	root := filepath.Join(home, ".myaaw")
+
+	for _, name := range []string{"main", "alpha", "beta"} {
+		if err := os.MkdirAll(filepath.Join(root, name, "config"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name, "config", "config.json"), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Shared runtime folders are not agents and must stay out of the registry.
+	for _, name := range []string{"pids", "logs", "database"} {
+		if err := os.MkdirAll(filepath.Join(root, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := SaveRegistry(&Registry{
+		Default: "main",
+		Agents:  map[string]AgentInfo{"main": {CreatedAt: "2026-01-01T00:00:00Z"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := EnsureLayout(); err != nil {
+		t.Fatal(err)
+	}
+
+	registry, err := LoadRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"main", "alpha", "beta"} {
+		if _, exists := registry.Agents[name]; !exists {
+			t.Fatalf("%s was not re-registered: %+v", name, registry.Agents)
+		}
+	}
+	for _, name := range []string{"pids", "logs", "database"} {
+		if _, exists := registry.Agents[name]; exists {
+			t.Fatalf("%s is not an agent but got registered", name)
+		}
+	}
+	if registry.Default != "main" {
+		t.Fatalf("default = %q", registry.Default)
+	}
+	if registry.Agents["main"].CreatedAt != "2026-01-01T00:00:00Z" {
+		t.Fatalf("existing entry was rewritten: %+v", registry.Agents["main"])
+	}
+}
+
 func TestRegisterAgentStoresUTCTimestamp(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

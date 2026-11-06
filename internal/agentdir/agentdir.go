@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -328,13 +329,38 @@ func SaveRegistry(registry *Registry) error {
 		return err
 	}
 
-	tempPath := path + ".tmp"
-	if err := os.WriteFile(tempPath, append(data, '\n'), 0o644); err != nil {
+	// A unique temp file keeps two processes from clobbering each other's write,
+	// and on Unix the rename replaces the target atomically. Removing the target
+	// first would leave a window where agents.json does not exist, and a reader in
+	// that window sees an empty registry — which is how agents disappear from the
+	// list while their directories are still there.
+	temp, err := os.CreateTemp(filepath.Dir(path), "agents-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	if _, err := temp.Write(append(data, '\n')); err != nil {
+		_ = temp.Close()
+		_ = os.Remove(tempPath)
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+	if err := os.Chmod(tempPath, 0o644); err != nil {
+		_ = os.Remove(tempPath)
 		return err
 	}
 	// Windows cannot reliably replace an existing file with Rename.
-	_ = os.Remove(path)
-	return os.Rename(tempPath, path)
+	if runtime.GOOS == "windows" {
+		_ = os.Remove(path)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+	return nil
 }
 
 // AgentNameTaken reports whether a name already belongs to an agent. A name is
@@ -520,7 +546,37 @@ func EnsureLayout() error {
 	if registry.Default == "" {
 		registry.Default = DefaultAgentName
 	}
+	registerExistingAgents(root, registry)
 	return SaveRegistry(registry)
+}
+
+// registerExistingAgents adds every initialized agent directory that the registry
+// does not know about. The directories are the source of truth: a registry that
+// was lost, truncated, or written before an agent existed must not hide agents
+// whose config and home are still on disk.
+func registerExistingAgents(root string, registry *Registry) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() || ValidateName(name) != nil {
+			continue
+		}
+		if _, exists := registry.Agents[name]; exists {
+			continue
+		}
+		agentRoot := filepath.Join(root, name)
+		if !agentInitialized(agentRoot) {
+			continue
+		}
+		created := CreatedAtUTC()
+		if info, statErr := entry.Info(); statErr == nil {
+			created = info.ModTime().UTC().Format(time.RFC3339)
+		}
+		registry.Agents[name] = AgentInfo{CreatedAt: created}
+	}
 }
 
 func migrateLegacyLayout(root, defaultRoot string) error {
