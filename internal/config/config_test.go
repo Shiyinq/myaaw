@@ -185,9 +185,15 @@ func TestValidateApprovals(t *testing.T) {
 		t.Fatalf("valid config rejected: %v", err)
 	}
 
+	// Zero means "no expiry" and is valid.
+	noExpiry := ApprovalsConfig{TimeoutSeconds: approvalsIntPtr(0)}
+	if err := ValidateApprovals(&noExpiry); err != nil {
+		t.Fatalf("zero timeout rejected: %v", err)
+	}
+
 	cases := []ApprovalsConfig{
 		{Mode: "maybe"},
-		{TimeoutSeconds: approvalsIntPtr(0)},
+		{TimeoutSeconds: approvalsIntPtr(-1)},
 		{TimeoutSeconds: approvalsIntPtr(3601)},
 		{Unattended: "maybe"},
 		{Subagents: "maybe"},
@@ -208,6 +214,9 @@ func TestMergeAndNormalizeApprovals(t *testing.T) {
 	}
 	if len(merged.Allow) == 0 {
 		t.Fatal("default allow list should not be empty")
+	}
+	if merged.TimeoutSeconds == nil || *merged.TimeoutSeconds != 0 {
+		t.Fatalf("default timeout = %v, want 0 (no expiry)", merged.TimeoutSeconds)
 	}
 
 	raw := &ApprovalsConfig{Mode: " OFF ", Allow: []string{" bash ", "", "bash", "filesystem:read_file"}}

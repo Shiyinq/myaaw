@@ -64,7 +64,7 @@
 	let obsToolPrices = $state('{}');
 
 	let apMode = $state('manual');
-	let apTimeout = $state(60);
+	let apTimeout = $state(0);
 	let apUnattended = $state('allow');
 	let apSubagents = $state('inherit');
 	let apAllow = $state('');
@@ -118,7 +118,7 @@
 
 		const approvals = cfgValue.approvals;
 		apMode = approvals?.mode ?? 'manual';
-		apTimeout = approvals?.timeout_seconds ?? 60;
+		apTimeout = approvals?.timeout_seconds ?? 0;
 		apUnattended = approvals?.unattended ?? 'allow';
 		apSubagents = approvals?.subagents ?? 'inherit';
 		apAllow = (approvals?.allow ?? []).join('\n');
@@ -677,7 +677,12 @@
 								'approvals',
 								'timeout_seconds'
 							)}
-							<Input id="ap-timeout" type="number" bind:value={apTimeout} />
+							<Input id="ap-timeout" type="number" min="0" max="3600" bind:value={apTimeout} />
+							<p class="text-[11px] text-muted-foreground">
+								{apTimeout === 0
+									? t('myaaw.approvals.timeout_none')
+									: t('myaaw.approvals.timeout_hint')}
+							</p>
 						</div>
 						<div class="grid gap-1">
 							{@render fieldLabel(

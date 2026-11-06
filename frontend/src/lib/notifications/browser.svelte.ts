@@ -68,6 +68,36 @@ export function previewBrowserNotification(): boolean {
 }
 
 /**
+ * Alerts the reader that a tool call is waiting for approval. Like the turn
+ * notification, the body is a signal only: the tool name, never its arguments.
+ */
+export function showApprovalNotification({
+	agent,
+	conversationId,
+	toolName,
+	subAgent
+}: {
+	agent: string;
+	conversationId: string;
+	toolName: string;
+	subAgent?: string;
+}) {
+	if (!browser || typeof Notification === 'undefined') return;
+	if (Notification.permission !== 'granted') return;
+
+	const tool = subAgent ? `${toolName} · ${subAgent}` : toolName;
+	try {
+		new Notification(t('myaaw.chat.notify_title', { agent: agent || 'Myaaw' }), {
+			body: t('myaaw.chat.notify_approval_body', { tool }),
+			tag: `myaaw-approval:${agent}:${conversationId}`,
+			silent: true
+		});
+	} catch {
+		// The in-chat card and the sidebar group still mark the conversation.
+	}
+}
+
+/**
  * Alerts the reader that a triggered turn produced a message. The body is a
  * signal only — agent name plus turn type — never the transcript: a system
  * notification is visible to anyone near the screen.

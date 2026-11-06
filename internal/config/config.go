@@ -97,7 +97,7 @@ var ComputerUseEnabled bool
 // interactive channel is attached); "off" allows every tool call except the
 // deny list and tool-level hard blocks.
 var ApprovalsMode = "manual"
-var ApprovalsTimeoutSeconds = 60
+var ApprovalsTimeoutSeconds = 0 // 0 = no expiry
 var ApprovalsAllow []string
 var ApprovalsDeny []string
 var ApprovalsUnattended = "allow"  // allow | deny
@@ -169,9 +169,10 @@ var defaultApprovalsAllow = []string{
 	"computer:list_windows",
 }
 
-// DefaultApprovals returns the shipped approval policy.
+// DefaultApprovals returns the shipped approval policy. A zero timeout means a
+// prompt waits until someone answers; a positive value expires it.
 func DefaultApprovals() ApprovalsConfig {
-	timeout := 60
+	timeout := 0
 	return ApprovalsConfig{
 		Mode:           "manual",
 		TimeoutSeconds: &timeout,
@@ -248,8 +249,8 @@ func ValidateApprovals(a *ApprovalsConfig) error {
 	default:
 		return fmt.Errorf("approvals.mode must be \"manual\" or \"off\"")
 	}
-	if a.TimeoutSeconds != nil && (*a.TimeoutSeconds < 1 || *a.TimeoutSeconds > 3600) {
-		return fmt.Errorf("approvals.timeout_seconds must be between 1 and 3600")
+	if a.TimeoutSeconds != nil && (*a.TimeoutSeconds < 0 || *a.TimeoutSeconds > 3600) {
+		return fmt.Errorf("approvals.timeout_seconds must be between 0 and 3600 (0 = no expiry)")
 	}
 	switch strings.ToLower(strings.TrimSpace(a.Unattended)) {
 	case "", "allow", "deny":

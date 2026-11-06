@@ -296,6 +296,22 @@ transcript. A `HEARTBEAT_OK` turn is not stored and emits nothing. Open one
 stream per agent, keep it open across agent switches, and expect a
 `: keep-alive` comment every 20 seconds.
 
+The same stream also relays `approval.required` and `approval.resolved`, so a
+dashboard can surface a tool approval raised outside the chat it is viewing (a
+background sub-agent, or another conversation):
+
+```text
+event: approval.required
+data: {"agent":"myfriend","approval_id":"5f1c…","run_id":"3f0c…","conversation_id":"af53cc52-…","tool_name":"bash","args_summary":"{\"command\":\"ls\"}","at":"2026-11-06T18:02:11.231Z"}
+
+event: approval.resolved
+data: {"agent":"myfriend","approval_id":"5f1c…","conversation_id":"af53cc52-…","decision":"allow_once","resolved":true,"at":"2026-11-06T18:02:19.004Z"}
+```
+
+`subagent` is present when a spawned sub-agent made the call. Answer with
+`POST /agents/:name/approvals/:id/decision`; the endpoint works for requests
+raised by a sub-agent even after the originating chat stream closed.
+
 `EventSource` cannot send a POST body, so use `fetch` with `ReadableStream`:
 
 ```js
@@ -352,6 +368,10 @@ curl -X POST http://localhost:9000/agents/myfriend/approvals/<id>/decision \
 The proxy adds `X-Myaaw-User-ID` from your login, so the agent only accepts the
 decision if it belongs to the user who started the chat (`403` otherwise).
 
+`approvals.timeout_seconds` defaults to `0`, which means a pending prompt never
+expires: it waits until it is answered or the run is stopped. Set a positive
+number (1–3600) to bound it.
+
 Management endpoints:
 
 | Method | Path | Purpose |
@@ -363,8 +383,10 @@ Management endpoints:
 | `DELETE` | `/agents/:name/approvals/grants` | clear all grants |
 
 `GET /agents/:name/approvals` now returns `always` as a list of
-`{channel,user_id}` scopes (it was a boolean before the hardening change),
-and session entries carry their `channel`/`user_id` too.
+`{channel,user_id}` scopes (it was a boolean before the hardening change), and
+session entries carry their `channel`/`user_id` plus `id` (the conversation) and
+`created_at`. Every field is always present, so an empty `grants` list means the
+file is empty rather than the response being incomplete.
 
 See [Tool Approvals](../agents/approvals.md) for fields, grant scopes, and per-channel behaviour.
 

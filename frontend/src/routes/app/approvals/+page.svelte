@@ -161,7 +161,7 @@
 							{/each}
 						</div>
 					</div>
-					{#if (view?.config.deny.length ?? 0) > 0}
+					{#if (view?.config.deny?.length ?? 0) > 0}
 						<div>
 							<p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
 								{t('myaaw.approvals.deny')}
@@ -218,15 +218,15 @@
 									{/each}
 								</p>
 							{/if}
-							{#each grant.sessions ?? [] as session (session.conversation)}
+							{#each grant.sessions ?? [] as session (session.id)}
 								<div class="flex items-center justify-between gap-2 text-[11px]">
 									<span class="truncate font-mono text-muted-foreground">
-										session {session.conversation.slice(0, 12)}…
+										session {session.id.slice(0, 12)}…
 									</span>
 									<Button
 										size="xs"
 										variant="ghost"
-										onclick={() => revokeSession(grant.key, session.conversation)}
+										onclick={() => revokeSession(grant.key, session.id)}
 									>
 										{t('myaaw.approvals.revoke')}
 									</Button>

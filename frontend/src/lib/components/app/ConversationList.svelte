@@ -12,6 +12,7 @@
 		Plus,
 		Search,
 		Send,
+		ShieldAlert,
 		Trash2,
 		X
 	} from 'lucide-svelte';
@@ -26,6 +27,7 @@
 	import { chatRuns } from '$lib/stores/chatRuns.svelte';
 	import { conversationHistory } from '$lib/stores/conversationHistory.svelte';
 	import { unreadChats } from '$lib/stores/unreadChats.svelte';
+	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import type { ConversationSummary } from '$lib/types';
@@ -59,6 +61,9 @@
 	const { t } = useTranslation();
 	const COLLAPSED_KEY = 'myaaw_chat_folders_collapsed';
 	const SECTIONS_KEY = 'myaaw_chat_sections_collapsed';
+
+	/** Chats whose run is waiting for a tool approval, newest first is unnecessary. */
+	let approvals = $derived(approvalQueue.list(agentSelection.selected));
 
 	let editingId = $state('');
 	let editingTitle = $state('');
@@ -526,7 +531,7 @@
 						{#if entry.pinned}
 							<Pin class="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
 						{/if}
-						{#if unreadChats.has(agentSelection.selected, entry.id) && entry.id !== activeId}
+						{#if (unreadChats.has(agentSelection.selected, entry.id) || approvalQueue.has(agentSelection.selected, entry.id)) && entry.id !== activeId}
 							<span
 								class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
 								role="img"
@@ -703,6 +708,32 @@
 			{/each}
 			{@render showMoreButton('results')}
 		{:else}
+			{#if approvals.length > 0}
+				<div class="mb-2">
+					<div
+						class="mb-1 flex w-full items-center gap-1 px-1 text-[10px] font-semibold tracking-widest text-amber-600 uppercase dark:text-amber-400"
+					>
+						<ShieldAlert class="h-3 w-3 shrink-0" />
+						{t('myaaw.chat.need_approval')}
+					</div>
+					{#each approvals as entry (entry.approvalId)}
+						<button
+							type="button"
+							class="mb-1 flex w-full items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-left transition-colors hover:bg-amber-500/15"
+							onclick={() => onOpen(entry.conversationId)}
+						>
+							<span class="min-w-0 flex-1 truncate text-xs font-medium">
+								{approvalQueue.titleOf(entry.agent, entry.conversationId) ||
+									`${entry.conversationId.slice(0, 12)}…`}
+							</span>
+							<span class="shrink-0 truncate text-[10px] text-muted-foreground">
+								{entry.toolName}
+							</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
+
 			{#if conversationHistory.pinned.items.length > 0}
 				<button
 					type="button"

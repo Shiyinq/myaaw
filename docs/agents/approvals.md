@@ -10,7 +10,7 @@ There are three separate concepts:
 |---|---|---|
 | **Policy** | Which tools are gated, which are exempt, timeout, unattended behaviour | `config/config.json` → `approvals` |
 | **Grants** | "Allow session" / "Always" decisions created while running | `config/approvals.json` |
-| **Pending decision** | An approval waiting for a live answer | in memory (per run) |
+| **Pending decision** | An approval waiting for a live answer | in memory (per run) + the `approval.required` event on `GET /api/events` |
 
 ---
 
@@ -19,7 +19,7 @@ There are three separate concepts:
 ```json
 "approvals": {
   "mode": "manual",
-  "timeout_seconds": 60,
+  "timeout_seconds": 0,
   "allow": [
     "filesystem:read_file",
     "filesystem:list_directory",
@@ -34,7 +34,7 @@ There are three separate concepts:
 | Key | Values | Meaning |
 |---|---|---|
 | `mode` | `manual` (default), `off` | `manual`: every tool needs approval unless it is listed in `allow`. `off`: no prompts at all (same as `MYAAW_YOLO=1`). |
-| `timeout_seconds` | 1–3600 (default 60) | How long **one prompt** waits before the call is denied. The clock starts when the prompt appears; the run itself has no separate approval deadline. |
+| `timeout_seconds` | `0` (default) or 1–3600 | How long **one prompt** waits before the call is denied. `0` means no expiry: the prompt waits until it is answered or the run is stopped. The clock is per prompt (see below), never a run limit. |
 | `allow` | list of keys | Whitelist. Never prompts, always runs (even in `manual`). |
 | `deny` | list of keys | Hard refusal. Never prompts and always wins, including over `mode: off`. |
 | `unattended` | `allow` (default), `deny` | Decision for runs with no interactive channel: cron, heartbeat, subagent notifications, headless, inbound A2A. |
@@ -60,7 +60,7 @@ explicit JSON value wins):
 
 ```env
 APPROVALS_MODE=manual
-APPROVALS_TIMEOUT_SECONDS=60
+APPROVALS_TIMEOUT_SECONDS=0
 APPROVALS_ALLOW=filesystem:read_file,computer:screenshot
 APPROVALS_DENY=
 APPROVALS_UNATTENDED=allow
@@ -82,8 +82,8 @@ For every tool call the gate decides in this order:
 5. Look for a grant (`always` > session).
 6. If this is an unattended run → `unattended` decision.
 7. If this is a spawned sub-agent → `subagents` policy.
-8. Otherwise ask the channel `Requester` (the user). No answer within
-   `timeout_seconds` → deny.
+8. Otherwise ask the channel `Requester` (the user). With `timeout_seconds > 0`,
+   no answer before the deadline denies the call; with `0` it waits indefinitely.
 
 When a call is refused, the model receives an error tool result and can try a
 different approach; the run does not terminate.
@@ -96,15 +96,31 @@ listed under `unattended` get an automatic decision.
 
 `timeout_seconds` is **per approval request**, not a run limit:
 
-- The clock starts when the prompt is delivered and restarts for every gated
-  call.
-- When it expires the call is denied (the model gets an error tool result and
-  continues). Interactive channels mark the outcome: a `⏱ Approval … timed out`
-  note in the CLI, an edited message in Telegram/Discord, and
-  `approval_resolved {decision: "deny", reason: "timed out"}` in the API.
+- The default is `0`: **no expiry**. The prompt stays until someone answers it
+  or the run is stopped, which is what you want for a dashboard or a chat window
+  you are not staring at. The CLI, Telegram, and Discord prompts behave the same
+  way.
+- Set `1`–`3600` to bound it. The clock then starts when the prompt is delivered
+  and restarts for every gated call. When it expires the call is denied (the
+  model gets an error tool result and continues). Interactive channels mark the
+  outcome: a `⏱ Approval … timed out` note in the CLI, an edited message in
+  Telegram/Discord, and `approval_resolved {decision: "deny", reason: "timed out"}`
+  in the API.
+- `MYAAW_YOLO=1` and `mode: off` bypass prompts entirely, so the timeout has no
+  effect there.
 - Sub-agent prompts inherited from the parent gate use the same value.
 - The run timeout is a different setting: `bot.run_timeout_seconds` (env
-  `AGENT_RUN_TIMEOUT_SECONDS`, default 900).
+  `AGENT_RUN_TIMEOUT_SECONDS`, default 900). With `timeout_seconds: 0` a prompt
+  can outlive a run that was stopped; when that happens the decision is
+  discarded because pending requests are removed with the run.
+
+Set it from the dashboard (**Config → Approvals → Timeout**, `0` = no expiry) or
+from the CLI:
+
+```bash
+myaaw config approvals set --timeout 0      # never expire (default)
+myaaw config approvals set --timeout 300    # deny after 5 minutes
+```
 
 ---
 
@@ -208,10 +224,10 @@ are shown once in the bottom status bar.
   returns to the normal input line.
 - If several sub-agents ask at once, the prompts are queued and shown one at a
   time; the keys always target the visible request.
-- If the run moves on without an answer (timeout, or the run finished while the
-  prompt was open), the prompt disappears and a `⏱ Approval … timed out` note is
-  appended. Decisions are bound to their approval ID, so a late key press can
-  never approve a different tool call.
+- If the run moves on without an answer (a configured timeout fired, or the run
+  finished while the prompt was open), the prompt disappears and a
+  `⏱ Approval … timed out` note is appended. Decisions are bound to their
+  approval ID, so a late key press can never approve a different tool call.
 
 ### CLI one-shot (`myaaw -p "..."`, non-TTY)
 
@@ -233,18 +249,19 @@ a short toast ("Only the user who started this chat can approve.").
   `/webhook/telegram` queue handler, so both Telegram modes work.
 - Callback data only carries a random 128-bit approval token; the chat ID must
   match the run's conversation.
-- After `timeout_seconds` without an answer the call is denied and the message
-  is marked as timed out. Button presses after that point are ignored (the
-  pending token is gone), so the message is the source of truth.
+- With a configured `timeout_seconds`, no answer within it denies the call and
+  the message is marked as timed out. Button presses after that point are
+  ignored (the pending token is gone), so the message is the source of truth.
+  With the default `0` the buttons stay live until the run ends.
 
 ### Discord
 
 Same four buttons as a message component. The `InteractionCreate` handler
 resolves the token and updates the message. Only the interaction's user and
 channel that match the run are accepted; anybody else gets an ephemeral
-"Only the user who started this chat can approve." reply. After the timeout the
-call is denied. Prompts raised by a sub-agent include a
-`↳ from sub-agent <name>` line.
+"Only the user who started this chat can approve." reply. With a configured
+`timeout_seconds` the call is denied after it expires. Prompts raised by a
+sub-agent include a `↳ from sub-agent <name>` line.
 
 ### HTTP API (agent server)
 
@@ -261,6 +278,11 @@ data: {"approval_id":"…","decision":"allow_once","reason":""}
 When the call comes from a sub-agent the `approval_required` data also carries
 `"subagent":"<task name>"`. `args` is the full raw JSON (the summary is the
 200-character preview).
+
+The same request is also published as `approval.required` on `GET /api/events`
+(and `approval.resolved` when it is answered), so a client that is not holding
+this chat stream open — another tab, the dashboard, a sub-agent that outlived
+the turn — can still see and answer it. See §3 Dashboard.
 
 Answer with the approval ID **and the user id that started the run**:
 
@@ -296,7 +318,8 @@ If a gated tool is reached, the run pauses and the endpoint returns:
 
 The decision call above then blocks until the resumed run finishes and returns
 the final `ChatResponse` (or the next `approval_required`). A caller that never
-answers sees the run denied after the timeout.
+answers waits until the run is stopped, or until `timeout_seconds` denies it
+when that is set.
 
 Unknown or already-expired IDs return `404`. Paused non-streaming runs are kept
 in memory, so a daemon restart drops them (the affected run is denied).
@@ -315,6 +338,41 @@ and adds management endpoints (see §5). The decision proxy injects the
 authenticated control-plane user id (`X-Myaaw-User-ID`), so the agent enforces
 "only the chat's user may approve" the same way it does for direct API callers.
 
+### Dashboard (web UI)
+
+The web UI is a channel of its own: it keeps one `GET /agents/:name/events`
+stream open per agent and renders approvals from that stream, so a request is
+visible no matter which conversation (or page) is open at the time.
+
+**In the chat.** The prompt is a card pinned **above the message input**, not a
+row inside the transcript, so the answer never scrolls the model's reply away.
+It shows the tool key, the sub-agent name when applicable, and the argument
+summary, with four buttons: **Allow once**, **Allow session**, **Always**,
+**Deny**. Decisions go to `POST /agents/:name/approvals/:id/decision`.
+
+**Outside the chat.** An approval that arrives while another conversation or
+another page is open:
+
+- plays the notification sound (`preferences.notifyEnabled` + sound/volume), and
+- shows a browser notification (`preferences.notifyBrowser`, permission
+  required) reading `Needs approval: <tool>` — both follow the same preferences
+  as cron/sub-agent completion notices, and neither fires when the conversation
+  is on screen and the tab is visible.
+
+**Sidebars.** Every sidebar — the advanced mode chat list, the classic mode
+list, and the focus panel's history tab — grows a **Need approval** group above
+**Pinned**, listing each waiting conversation with its tool (and sub-agent). It
+is driven by `approval.required`/`approval.resolved` plus the open run's own
+state, so it appears and disappears in real time with no refetch and no loading
+row: a sixth chat opened while five others are running will show any of those
+five the moment it blocks on a tool. The group only appears when something is
+waiting.
+
+**Unread dot.** A row's dot is `unread || pending approval`. The approval part is
+client-side (in memory), because the server's `read_at` tracks turns, not
+pending questions; it clears as soon as the approval is resolved or the chat is
+opened.
+
 ### Cron, heartbeat, subagent notifications, headless, inbound A2A
 
 These runs have no interactive channel, so gated tools use `unattended`
@@ -325,9 +383,14 @@ These runs have no interactive channel, so gated tools use `unattended`
 Spawned with the `subagent` tool (up to 4 parallel, background):
 
 - `inherit` (default): the child reuses the parent gate; prompts appear in the
-  parent channel labelled with the child task name, and grants are shared. The
-  same `timeout_seconds` applies. If the channel is gone (CLI closed) the
-  request times out → deny.
+  parent channel labelled with the child task name, and grants are shared. They
+  are published on the process-wide broadcast broker **and** on the parent
+  channel's prompt, so a sub-agent that outlives the `/chat/stream` response it
+  was spawned from is still answerable: the dashboard shows it in the chat card
+  and in the **Need approval** group, and the decision goes through the same
+  `POST /api/approvals/:id` endpoint. The same `timeout_seconds` applies. With
+  the default (`0`, no expiry) an unanswered sub-agent prompt stays open until a
+  client answers it or the sub-agent run is stopped.
 - `allow`: no gate is attached, so every child tool runs without prompting
   (tool-level hard blocks still apply).
 - `deny`: every child tool call is refused, including tools that are in
@@ -430,7 +493,7 @@ Returns the effective policy and every grant:
 {
   "config": {
     "mode": "manual",
-    "timeout_seconds": 60,
+    "timeout_seconds": 0,
     "allow": ["filesystem:read_file"],
     "deny": [],
     "unattended": "allow",
@@ -447,7 +510,7 @@ Returns the effective policy and every grant:
         {
           "channel": "telegram",
           "user_id": "111",
-          "conversation_id": "09e98570-...",
+          "id": "09e98570-...",
           "created_at": "2026-10-29T17:03:13+07:00"
         }
       ]
@@ -455,6 +518,11 @@ Returns the effective policy and every grant:
   ]
 }
 ```
+
+`config` is always the effective policy (defaults merged in), and `grants` is
+never `null`: an empty array means `config/approvals.json` has no entries. Each
+key appears once, with `always` and/or `sessions`; `sessions[].id` is the
+conversation id (the stored file calls it `conversation_id`).
 
 Read-only; never mutates files.
 
@@ -474,8 +542,9 @@ Read-only; never mutates files.
 ```
 
 Only provided fields change; `"allow": []` clears the list. Invalid values
-(unknown mode/enum, timeout outside 1–3600, a key in both lists) return 400.
-`GET /agents/:name/config` also includes the effective `approvals` block.
+(unknown mode/enum, timeout outside 0–3600, a key in both lists) return 400.
+`timeout_seconds: 0` turns expiry off. `GET /agents/:name/config` also includes
+the effective `approvals` block.
 
 Reset only the section with:
 
@@ -508,6 +577,10 @@ The control plane adds `X-Myaaw-User-ID` from the authenticated session, so the
 agent rejects decisions from a different user (`403`). Proxied to the agent that
 owns the paused run.
 
+The same endpoint answers a request that was published on the approval event
+stream instead of a chat stream (a sub-agent, or a chat handled by another tab).
+IDs are process-wide, so one decision clears the prompt everywhere.
+
 ---
 
 ## 6. Security notes
@@ -522,6 +595,9 @@ owns the paused run.
   a leaked token or a forwarded message cannot be used by another person.
 - Every decision is bound to its approval ID. A late answer for an expired
   prompt is discarded, so it can never approve a later tool call.
+- The default `timeout_seconds: 0` means a pending approval (and the run behind
+  it) waits indefinitely. Stop the run, or set a positive timeout, if an agent
+  may be left unattended for long periods.
 - Every decision is written to `<logs>/approvals.jsonl` with the full tool
   arguments, allowing an after-the-fact review. The file is `0600` and may
   contain secrets that appear in arguments (commands, tokens); treat it as
@@ -541,8 +617,11 @@ owns the paused run.
 | A grant does not apply | Keys are granular (`bash` ≠ `filesystem:read_file`); session grants are tied to one conversation ID. |
 | Grant missing after an update | It should be migrated to `config/approvals.json`; check that file (and that the process can write it). |
 | Unattended jobs are blocked | `unattended: deny`; change it to `allow` or add the tool to `allow`. |
-| Sub-agent prompts never arrive | `subagents: inherit` but the parent channel is gone; use `allow`/`deny` for background work. |
-| `⏱ Approval … timed out` appears too often | `timeout_seconds` is too short for your workflow; raise it with `myaaw config approvals set --timeout 300`. |
+| Sub-agent prompt never arrives | The request is published on the approval event stream and needs a connected dashboard (or CLI) with `subagents: inherit`. Check `GET /agents/:name/events` for `approval.required`; if the agent runs an old binary, the sub-agent prompt used to hang silently — upgrade it. |
+| `⏱ Approval … timed out` appears too often | `timeout_seconds` is set too short for your workflow. Use `0` for no expiry, or raise it with `myaaw config approvals set --timeout 300`. |
+| A prompt never times out | Expected with the default `timeout_seconds: 0`. Set a positive value if you want prompts to expire. |
+| Approvals page says "no grants" but `config/approvals.json` has keys | The agent process could not read the file (permissions) or the dashboard is on another agent — the page is agent-scoped. Check `myaaw config approvals grants list --json` and the selected agent in the header. |
+| Approval is waiting but no sound/notification | `Preferences → Notifications` controls the sound; the browser notification needs permission and only fires while the conversation is not on screen. The **Need approval** group and the unread dot show it regardless. |
 | A prompt from an earlier turn is still on screen | Its run already moved on (timeout) or expired; answering is safe because decisions are ID-bound. The next run replaces it. |
 | Main agent seems idle after a sub-agent finishes | Expected: the result arrives as a separate `subagent` triggered run/message; the original turn is not resumed. Check the channel timeline/log. |
 | `Myaaw is thinking... 0s` appears with a sub-agent prompt | Old binary; upgrade and restart `myaaw chat`. |

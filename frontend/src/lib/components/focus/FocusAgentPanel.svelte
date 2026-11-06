@@ -6,6 +6,7 @@
 		History,
 		Loader2,
 		MessagesSquare,
+		ShieldAlert,
 		Sparkles,
 		X
 	} from 'lucide-svelte';
@@ -16,6 +17,7 @@
 	import { context as contextApi } from '$lib/apis/context';
 	import { server as serverApi } from '$lib/apis/server';
 	import { agentSelection, toastStore } from '$lib/stores';
+	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
 	import type { ContextFile, ConversationSummary } from '$lib/types';
@@ -61,6 +63,8 @@
 	const soul = $derived(files[CONTEXT_SOUL]);
 	const memory = $derived(files[CONTEXT_MEMORY]);
 	const initial = $derived((agent || '?').slice(0, 1).toUpperCase());
+	/** Chats of this agent whose run is waiting for approval. */
+	const approvals = $derived(approvalQueue.list(agent));
 	/** The palette key this agent was saved with; ink for agents without one. */
 	const agentColor = $derived(
 		colorOf(agentSelection.agents.find((entry) => entry.name === agent)?.agent_color)
@@ -206,6 +210,14 @@
 		});
 	}
 
+	function conversationTitle(id: string) {
+		return (
+			items.find((item) => item.id === id)?.title ||
+			approvalQueue.titleOf(agent, id) ||
+			`${id.slice(0, 12)}…`
+		);
+	}
+
 	function formatSize(bytes: number) {
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -292,11 +304,41 @@
 		{#if tab === 'history'}
 			{#if loading && items.length === 0}
 				<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
-			{:else if items.length === 0}
+			{:else if items.length === 0 && approvals.length === 0}
 				<div class="flex flex-col items-center gap-2 px-2 py-4 text-center">
 					<Bloub mood="timide" size={40} tight color={agentColor} />
 					<p class="text-xs text-muted-foreground">{t('myaaw.focus.history_empty')}</p>
 				</div>
+			{/if}
+
+			{#if approvals.length > 0}
+				<p
+					class="flex items-center gap-1 px-2 pt-2 pb-1 text-[10px] font-semibold tracking-widest text-amber-600 uppercase dark:text-amber-400"
+				>
+					<ShieldAlert class="h-3 w-3 shrink-0" />
+					{t('myaaw.chat.need_approval')}
+				</p>
+				{#each approvals as entry (entry.approvalId)}
+					<button
+						type="button"
+						class="mb-1 flex w-full items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-left transition-colors hover:bg-amber-500/15"
+						onclick={() => onOpen(entry.conversationId)}
+					>
+						<span
+							class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300"
+						>
+							<ShieldAlert class="h-3.5 w-3.5" />
+						</span>
+						<span class="min-w-0 flex-1">
+							<span class="block truncate text-xs font-medium">
+								{conversationTitle(entry.conversationId)}
+							</span>
+							<span class="mt-0.5 block truncate text-[10px] text-muted-foreground">
+								{entry.toolName}{entry.subAgent ? ` · ${entry.subAgent}` : ''}
+							</span>
+						</span>
+					</button>
+				{/each}
 			{/if}
 
 			{#each groups as group (group.key)}

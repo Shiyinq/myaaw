@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"myaaw/internal/agent/approvals"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/services/bot/events"
 
@@ -42,6 +43,8 @@ func (s *BotHandlerImpl) APIEvents(c fiber.Ctx) error {
 	c.SendStreamWriter(func(w *bufio.Writer) {
 		ch, cancel := events.Default().Subscribe()
 		defer cancel()
+		approvalsCh, cancelApprovals := approvals.DefaultBroker().Subscribe()
+		defer cancelApprovals()
 
 		// An opening comment flushes the headers immediately.
 		if _, err := fmt.Fprint(w, ": connected\n\n"); err != nil {
@@ -70,6 +73,29 @@ func (s *BotHandlerImpl) APIEvents(c fiber.Ctx) error {
 					continue
 				}
 				if _, err := fmt.Fprintf(w, "event: conversation.updated\ndata: %s\n\n", data); err != nil {
+					return
+				}
+				if err := w.Flush(); err != nil {
+					return
+				}
+			case approval, ok := <-approvalsCh:
+				if !ok {
+					return
+				}
+				kind := "approval.required"
+				if approval.Resolved {
+					kind = "approval.resolved"
+				}
+				payload := struct {
+					Agent string `json:"agent"`
+					approvals.Event
+				}{Agent: agentName, Event: approval}
+
+				data, err := json.Marshal(payload)
+				if err != nil {
+					continue
+				}
+				if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", kind, data); err != nil {
 					return
 				}
 				if err := w.Flush(); err != nil {

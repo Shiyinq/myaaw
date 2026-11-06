@@ -157,7 +157,17 @@ func subagentApprovalGate(ctx context.Context) *approvals.Gate {
 	case "deny":
 		return approvals.DenyAll()
 	default:
-		return approvals.GateFromContext(ctx)
+		parent := approvals.GateFromContext(ctx)
+		if parent == nil {
+			return nil
+		}
+		// A sub-agent outlives the parent's stream, so the parent's requester would
+		// write the prompt to a closed connection and block forever. Reuse the
+		// policy and session, but route the prompt to the process-wide approval
+		// stream that any connected client can answer.
+		gate := *parent
+		gate.Requester = approvals.BroadcastRequester{}
+		return &gate
 	}
 }
 

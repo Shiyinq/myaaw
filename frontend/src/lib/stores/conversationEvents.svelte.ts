@@ -4,6 +4,7 @@ import {
 	type ConversationUpdatedEvent
 } from '$lib/apis/events';
 import { showChatNotification } from '$lib/notifications/browser.svelte';
+import { approvalQueue, type ApprovalEvent } from '$lib/stores/approvalQueue.svelte';
 import { playNotification } from '$lib/sound/notify.svelte';
 import { agentSelection } from '$lib/stores/selectedAgent.svelte';
 import { conversationHistory } from '$lib/stores/conversationHistory.svelte';
@@ -76,6 +77,14 @@ function connect(agent: string) {
 		.stream(
 			agent,
 			(sse) => {
+				if (sse.event === 'approval.required') {
+					approvalQueue.required(agent, sse.data as ApprovalEvent);
+					return;
+				}
+				if (sse.event === 'approval.resolved') {
+					approvalQueue.resolved(sse.data as ApprovalEvent);
+					return;
+				}
 				if (sse.event !== 'conversation.updated') return;
 				const data = sse.data as ConversationUpdatedEvent | null;
 				if (!data?.conversation_id) return;

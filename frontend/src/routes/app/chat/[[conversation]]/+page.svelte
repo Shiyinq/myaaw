@@ -14,12 +14,14 @@
 	import { chatRuns, type ChatItem, type ChatRun } from '$lib/stores/chatRuns.svelte';
 	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
 	import { unreadChats } from '$lib/stores/unreadChats.svelte';
+	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
 	import { tts } from '$lib/speech/tts.svelte';
 	import { cn } from '$lib/utils';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
+	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
 	import FocusAgentPanel from '$lib/components/focus/FocusAgentPanel.svelte';
 	import FocusContextEditor from '$lib/components/focus/FocusContextEditor.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
@@ -177,7 +179,20 @@
 	let draftArea = $state<HTMLTextAreaElement | null>(null);
 	let streaming = $derived(activeRun?.streaming ?? false);
 	let loading = $state(false);
-	let pendingApproval = $derived(activeRun?.pendingApproval ?? null);
+	// A pending approval can belong to this run, or to a detached one (a sub-agent)
+	// announced on the agent's approval stream, which has no run object here.
+	let pendingApproval = $derived.by(() => {
+		if (activeRun?.pendingApproval) return activeRun.pendingApproval;
+		const entry = approvalQueue.pendingFor(agent ?? '', conversationId);
+		return entry
+			? {
+					approval_id: entry.approvalId,
+					tool_name: entry.toolName,
+					args_summary: entry.argsSummary,
+					subagent: entry.subAgent
+				}
+			: null;
+	});
 	let storedUsage = $state<Usage | null>(null);
 	let usage = $derived(activeRun?.usage ?? storedUsage);
 	let runError = $derived(activeRun?.error ?? '');
@@ -742,6 +757,7 @@
 		topBarTitle.set(title);
 		// Keep the history entry in step with the bar without reloading the list.
 		conversationHistory.update(id, title);
+		approvalQueue.setTitle(agent ?? '', id, title);
 	}
 
 	function stopTitlePolling() {
@@ -1529,12 +1545,13 @@
 	}
 
 	async function decide(decision: ApprovalDecision) {
-		const run = activeRun;
-		const prompt = run?.pendingApproval;
-		if (!run || !prompt || !agent) return;
+		const prompt = pendingApproval;
+		if (!prompt || !agent) return;
 		try {
 			await chatApi.decide(agent, prompt.approval_id, decision);
-			run.resolveApproval(prompt.approval_id, decision);
+			// Drop it locally too, so the queue never waits for the resolved event.
+			approvalQueue.resolved({ approval_id: prompt.approval_id });
+			activeRun?.resolveApproval(prompt.approval_id, decision);
 		} catch (err) {
 			error = getErrorMessage(err);
 			toastStore.error(error);
@@ -2945,29 +2962,6 @@
 											{/if}
 											{#if item.resolved}
 												<Badge variant="outline" class="mt-2">{item.resolved}</Badge>
-											{:else if pendingApproval && pendingApproval.approval_id === item.id}
-												<div class="mt-2 flex flex-wrap gap-2">
-													<Button size="xs" onclick={() => decide('allow_once')}>
-														{t('myaaw.chat.allow_once')}
-													</Button>
-													<Button
-														size="xs"
-														variant="secondary"
-														onclick={() => decide('allow_session')}
-													>
-														{t('myaaw.chat.allow_session')}
-													</Button>
-													<Button
-														size="xs"
-														variant="secondary"
-														onclick={() => decide('allow_always')}
-													>
-														{t('myaaw.chat.allow_always')}
-													</Button>
-													<Button size="xs" variant="destructive" onclick={() => decide('deny')}>
-														{t('myaaw.chat.deny')}
-													</Button>
-												</div>
 											{/if}
 										</div>
 									{:else if item.kind === 'error'}
@@ -3100,6 +3094,14 @@
 									class="mx-auto max-w-4xl rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
 								>
 									{runError || error}
+								</div>
+							</div>
+						{/if}
+
+						{#if pendingApproval}
+							<div class="px-2 pt-2 sm:px-4">
+								<div class="mx-auto w-full max-w-4xl">
+									<PendingApprovalCard approval={pendingApproval} onDecide={decide} />
 								</div>
 							</div>
 						{/if}

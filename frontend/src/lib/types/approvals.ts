@@ -9,9 +9,10 @@ export interface ApprovalGrant {
 	key: string;
 	always?: GrantScope[];
 	sessions?: {
-		conversation: string;
+		id: string;
 		channel?: string;
 		user_id?: string;
+		created_at?: string;
 	}[];
 }
 
