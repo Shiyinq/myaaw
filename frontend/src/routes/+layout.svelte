@@ -99,7 +99,9 @@
 	});
 </script>
 
-<SEO />
+{#if page.url.pathname !== '/'}
+	<SEO />
+{/if}
 <ModeWatcher />
 <ReloadPrompt />
 

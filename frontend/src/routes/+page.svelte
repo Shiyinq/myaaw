@@ -4,7 +4,7 @@
 		Check,
 		ChevronDown,
 		HeartPulse,
-		Mic,
+		Monitor,
 		Palette,
 		PawPrint,
 		RadioTower,
@@ -56,38 +56,37 @@
 		'sse',
 		'telegram',
 		'discord',
-		'voice',
+		'mcp',
+		'a2a',
 		'rest api'
 	];
 
+	// Conceptual waterfall for the same scripted task as the chat preview, not telemetry.
 	const TRACE = [
-		{ label: 'message.received', detail: 'telegram · @you', start: 0, len: 4, dur: '2ms' },
+		{ label: 'message.received', detail: 'web · weekly report', start: 0, len: 4, dur: '2ms' },
+		{ label: 'context.assembled', detail: 'AGENTS.md · SOUL.md', start: 5, len: 8, dur: '18ms' },
+		{ label: 'model.stream', detail: 'plan · tools', start: 14, len: 20, dur: '1.4s' },
+		{ label: 'tool.bash', detail: 'find notes data reports', start: 35, len: 12, dur: '620ms' },
 		{
-			label: 'context.assembled',
-			detail: 'AGENTS.md · SOUL.md · 3 skills',
-			start: 5,
-			len: 13,
-			dur: '18ms'
+			label: 'tool.filesystem.read',
+			detail: 'notes/week.md · data/tasks.csv',
+			start: 48,
+			len: 8,
+			dur: '94ms'
 		},
+		{ label: 'tool.execute_python', detail: '6/8 · 75%', start: 57, len: 20, dur: '1.1s' },
 		{
-			label: 'model.stream',
-			detail: 'gemini-2.5-flash · 412 tokens',
-			start: 19,
-			len: 34,
-			dur: '1.4s'
-		},
-		{ label: 'tool.bash', detail: 'ls -la ~/workspace', start: 54, len: 18, dur: '620ms' },
-		{ label: 'tool.files', detail: 'read notes/today.md', start: 73, len: 11, dur: '94ms' },
-		{
-			label: 'approval.required',
-			detail: 'rm 3 stale drafts',
-			start: 84,
+			label: 'tool.filesystem.write',
+			detail: 'reports/weekly.md',
+			start: 78,
 			len: 12,
-			dur: '6.2s',
-			wait: true
+			dur: '80ms'
 		},
-		{ label: 'answer.sent', detail: 'telegram · @you', start: 97, len: 3, dur: '12ms' }
+		{ label: 'answer.sent', detail: 'web · reports/weekly.md', start: 91, len: 9, dur: '12ms' }
 	];
+
+	const CAPABILITIES = ['provider', 'tools', 'extensions', 'delegation', 'schedule', 'backup'];
+	const SETUP_STEPS = ['install', 'agent', 'api', 'dashboard'];
 
 	interface FleetAgent {
 		name: string;
@@ -274,12 +273,12 @@
 		<div
 			class="relative mx-auto grid max-w-6xl gap-12 px-4 pt-12 pb-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-14 lg:pt-20 lg:pb-24"
 		>
-			<div class="min-w-0">
+			<div class="hero-copy min-w-0">
 				<p class="label flex flex-wrap items-center gap-2 text-muted-foreground" use:reveal>
 					<span class="live-dot"></span>
 					{t('landing.hero.eyebrow')}
 					<span class="text-border">/</span>
-					<span class="tracking-normal normal-case">single binary</span>
+					<span class="tracking-normal normal-case">{t('landing.hero.backend_badge')}</span>
 				</p>
 
 				<h1 class="mt-6">
@@ -288,7 +287,7 @@
 						use:reveal={{ delay: 60 }}>{t('landing.hero.lead')}</span
 					>
 					<span
-						class="mt-2 block text-[2.3rem] leading-[1.06] font-bold tracking-[-0.045em] sm:text-6xl lg:text-7xl"
+						class="hero-heading mt-2 block text-[2.3rem] leading-[1.06] font-bold tracking-[-0.045em] sm:text-6xl xl:text-7xl"
 					>
 						<span class="hero-line" use:reveal={{ delay: 120 }}>
 							<span class="glyph" aria-hidden="true"><span class="glyph-node"></span></span>
@@ -401,7 +400,7 @@
 					<div class="{PANEL} overflow-hidden" data-slot="card">
 						<div class="flex items-center justify-between border-b border-border/70 px-4 py-2.5">
 							<span class="label text-muted-foreground">{t('landing.loop.legend')}</span>
-							<span class="mono text-[10px] text-muted-foreground">run_01HQ…7F</span>
+							<span class="mono text-[10px] text-muted-foreground">example_run</span>
 						</div>
 						<div class="divide-y divide-border/50">
 							{#each TRACE as row, index (row.label)}
@@ -415,7 +414,6 @@
 									<div class="trace-track order-3 col-span-2 sm:order-2 sm:col-span-1">
 										<div
 											class="trace-bar"
-											class:wait={row.wait}
 											style={`--start: ${row.start}%; --len: ${row.len}%; --delay: ${index * 90}ms`}
 										></div>
 									</div>
@@ -426,6 +424,9 @@
 							{/each}
 						</div>
 					</div>
+					<p class="mt-3 text-xs leading-relaxed text-muted-foreground">
+						{t('landing.loop.example_note')}
+					</p>
 				</div>
 			</div>
 		</div>
@@ -445,7 +446,10 @@
 				</div>
 			</div>
 
-			<div class="mt-10 grid gap-4 md:grid-cols-3">
+			<p class="mt-8 text-xs leading-relaxed text-muted-foreground" use:reveal>
+				{t('landing.fleet.example_note')}
+			</p>
+			<div class="mt-4 grid gap-4 md:grid-cols-3">
 				{#each FLEET as agent, index (agent.name)}
 					<div use:reveal={{ delay: index * 90 }}>
 						<article
@@ -512,12 +516,38 @@
 				<p
 					class="mono flex items-center gap-2 rounded-md border border-border/70 px-2.5 py-1.5 text-[11px]"
 				>
-					<span class="text-muted-foreground">$</span>
 					{t('landing.fleet.process_caption')}
 					<span class="shell-caret" aria-hidden="true"></span>
 				</p>
 				<p class="label text-muted-foreground">{t('landing.fleet.process_note')}</p>
 			</div>
+
+			<div class="mt-14 border-t border-border/70 pt-8" use:reveal>
+				<h3 class="max-w-2xl text-2xl font-semibold tracking-tight">
+					{t('landing.capabilities.title')}
+				</h3>
+				<p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+					{t('landing.capabilities.body')}
+				</p>
+			</div>
+			<div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+				{#each CAPABILITIES as capability, index (capability)}
+					<article class="{PANEL} min-w-0 p-5" data-slot="card" use:reveal={{ delay: index * 40 }}>
+						<p class="label text-muted-foreground">
+							{t(`landing.capabilities.${capability === 'backup' ? 'available' : 'configured'}`)}
+						</p>
+						<h4 class="mt-3 text-base font-semibold">
+							{t(`landing.capabilities.${capability}_title`)}
+						</h4>
+						<p class="mt-2 text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+							{t(`landing.capabilities.${capability}_body`)}
+						</p>
+					</article>
+				{/each}
+			</div>
+			<p class="mt-4 text-xs leading-relaxed text-muted-foreground" use:reveal>
+				{t('landing.capabilities.computer_note')}
+			</p>
 		</div>
 	</section>
 
@@ -576,14 +606,14 @@
 				</div>
 
 				<div class="{PANEL} group flex gap-3 p-4" data-slot="card" use:reveal={{ delay: 180 }}>
-					<span class="door-icon"><Mic class="size-4" /></span>
+					<span class="door-icon"><Monitor class="size-4" /></span>
 					<div class="min-w-0">
 						<div class="flex items-baseline justify-between gap-2">
-							<h3 class="text-sm font-semibold">Voice</h3>
-							<span class="label text-muted-foreground">live</span>
+							<h3 class="text-sm font-semibold">{t('landing.doors.web_title')}</h3>
+							<span class="label text-muted-foreground">web</span>
 						</div>
 						<p class="mt-1 text-xs leading-relaxed text-muted-foreground">
-							{t('landing.doors.voice')}
+							{t('landing.doors.web')}
 						</p>
 					</div>
 				</div>
@@ -688,10 +718,37 @@
 				<pre class="mono overflow-x-auto px-4 py-4 text-xs leading-relaxed"><code
 						><span class="text-muted-foreground">$</span> {INSTALL}</code
 					></pre>
-				<div class="border-t border-border/70 px-4 py-2">
-					<span class="label text-muted-foreground">{t('landing.closing.install_hint')}</span>
+				<div class="space-y-2 border-t border-border/70 px-4 py-3">
+					<p class="text-xs leading-relaxed text-muted-foreground">
+						{t('landing.closing.install_hint')}{' '}
+						<a
+							href={`${REPO}/releases/latest`}
+							target="_blank"
+							rel="noreferrer"
+							class="font-medium underline underline-offset-4 hover:text-foreground"
+							>{t('landing.closing.releases')}</a
+						>
+					</p>
 				</div>
 			</div>
+
+			<ol class="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+				{#each SETUP_STEPS as step, index (step)}
+					<li class="min-w-0 border-t border-border/70 pt-4" use:reveal={{ delay: index * 50 }}>
+						<p class="label text-muted-foreground">{String(index + 1).padStart(2, '0')}</p>
+						<h3 class="mt-2 text-sm font-semibold">{t(`landing.closing.steps.${step}_title`)}</h3>
+						<p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+							{t(`landing.closing.steps.${step}_body`)}
+						</p>
+					</li>
+				{/each}
+			</ol>
+			<a
+				class="mt-6 inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-4"
+				href={`${REPO}/blob/main/frontend/README.md`}
+				target="_blank"
+				rel="noreferrer">{t('landing.closing.guide')} <ArrowUpRight class="size-3.5" /></a
+			>
 		</div>
 	</section>
 </main>
@@ -831,6 +888,16 @@
 	.reveal.is-revealed {
 		opacity: 1;
 		transform: none;
+	}
+
+	.hero-copy {
+		container-type: inline-size;
+	}
+
+	/* Monospace themes need a smaller heading to keep each phrase on one line. */
+	:global(html[data-theme='terminal']) .hero-heading,
+	:global(html[data-theme='typewriter']) .hero-heading {
+		font-size: min(4.5rem, 10cqi);
 	}
 
 	.hero-line {
@@ -1048,14 +1115,6 @@
 
 	.is-revealed .trace-bar {
 		transform: scaleX(1);
-	}
-
-	.trace-bar.wait {
-		background: repeating-linear-gradient(
-			135deg,
-			color-mix(in oklab, var(--foreground) 34%, transparent) 0 4px,
-			transparent 4px 8px
-		);
 	}
 
 	.trace-row:hover .trace-bar {
