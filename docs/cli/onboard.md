@@ -46,7 +46,7 @@ default                  ⚠️  allowed, but keeps the generic folder name
 | Welcome | Intro screen. |
 | Agent | Name prompt (first run) or picker (agents exist). |
 | Initialize | Shows the target directory. Nothing is written yet. |
-| Provider | Type (OpenAI-compatible or Gemini), config name, base URL, API key, then a model picked from the live model list. |
+| Provider | OpenAI-compatible/Gemini with base URL and API key, or **ChatGPT Subscription** with local browser OAuth; then a model picked from live discovery. |
 | Skills | Multi-select built-in skills with a short description after each name. **Nothing is selected by default**, so no skill folder is created unless you choose it. |
 | Built-in tools | Multi-select built-in tools with a short description after each name. **All are enabled by default**; press `Space` on a tool to disable it. |
 | Channels | **Keep current** first, then Telegram, Discord, or Both. On an update, the next screen can also disable a saved channel. |
@@ -63,6 +63,8 @@ default                  ⚠️  allowed, but keeps the generic folder name
 
 Keys and tokens are masked while typing. `Esc` goes back one step so answers are kept; `Ctrl+C` cancels. The key hints at the bottom of every screen show this, so back navigation is always visible. **Nothing is written until you save from Review** — layout, `.env`, port, registry entry, A2A wiring, and `config.json` are all created at that point. Cancelling at any step (or **Cancel** on Review) leaves no agent behind.
 
+For **ChatGPT Subscription**, browser sign-in writes host-global credentials immediately; cancelling Review leaves no agent, but retains that credential for reuse. Browser login needs the browser on the same machine as Myaaw. Subscription model discovery does not offer fabricated/default or unauthenticated manual models. Headless setup uses `--provider openai_chatgpt --credential-id LOCAL_ID --model MODEL` instead of an API key. See the [setup, recovery, and privacy guide](chatgpt-subscription.md).
+
 ## Provider defaults
 
 The base URL prompt is prefilled with the public endpoint for the chosen type:
@@ -72,7 +74,9 @@ The base URL prompt is prefilled with the public endpoint for the chosen type:
 | OpenAI (or compatible) | `https://api.openai.com` |
 | Gemini | `https://generativelanguage.googleapis.com` |
 
-Override it for OpenAI-compatible gateways (`https://api.deepseek.com`, `https://openrouter.ai/api/v1`) or a local Ollama (`http://localhost:11434`). The model list is fetched from that endpoint; if the request fails you can type the model name manually. When no model is chosen, the built-in default for that provider type is stored instead.
+Override it for OpenAI-compatible gateways (`https://api.deepseek.com`, `https://openrouter.ai/api`) or a local Ollama (`http://localhost:11434`). Myaaw appends `/v1/models` and `/v1/chat/completions`; do not include a final `/v1` in that adapter's base URL. The model list is fetched from that endpoint; if the request fails you can type the model name manually. When no model is chosen, the built-in default for that API-key provider type is stored instead.
+
+For detailed integration behavior, model-ID formats, security, and limitations, see the [Provider Integration Guide](../provider/README.md), [Gemini](../provider/gemini.md), [OpenAI-compatible](../provider/openai-compatible.md), and [ChatGPT Subscription](../provider/chatgpt-subscription.md).
 
 ## Webhook mode
 
@@ -88,6 +92,8 @@ https://<your-domain>/webhook/telegram
 - Polling mode ignores this entirely and needs no public URL.
 
 ## Headless mode (CI, scripts)
+
+ChatGPT Subscription also accepts `--credential-id` for an already verified local host credential. It requires a model and rejects explicit API keys/custom endpoints; it does not open a browser in headless onboarding.
 
 Every wizard question has a flag. Passing `--yes` (or running without a TTY) skips the TUI:
 
@@ -107,7 +113,7 @@ myaaw onboard --yes \
 | :--- | :--- |
 | `--agent <name>` | Agent name (required in headless mode; `agent create <name>` supplies it) |
 | `--yes` | Skip every prompt (implied when stdin is not a TTY) |
-| `--provider openai\|gemini` | Provider type (required for a new agent; omit it, or pass `--keep-provider`, to leave the provider alone on an update) |
+| `--provider openai\|gemini\|openai_chatgpt` | Provider type (required for a new agent; omit it, or pass `--keep-provider`, to leave the provider alone on an update) |
 | `--keep-provider` | Keep the current provider, model, and API key (update only) |
 | `--provider-name` | Provider name stored in `config.json` |
 | `--base-url` | Provider base URL |

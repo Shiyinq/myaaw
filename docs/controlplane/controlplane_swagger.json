@@ -4088,6 +4088,191 @@
                 }
             }
         },
+        "/agents/{name}/providers/chatgpt/connect": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Requires loopback peer/host and local browser Origin/Referer, including through the frontend proxy. Authorization URLs are sensitive; never log them. The agent name may be new and is not persisted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Connect ChatGPT Subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional saved or pending credential ID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ChatGPTConnectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatGPTConnectView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/providers/chatgpt/connect/{session}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Requires same-machine access; browser GET requests without Origin need a local Referer. Status includes only pending/connected/failed/expired, credential_id, email, and sanitized error. Never includes tokens or authorization URLs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "ChatGPT Subscription sign-in status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sign-in session ID",
+                        "name": "session",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatGPTAttemptStatus"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Cancel ChatGPT Subscription sign-in",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sign-in session ID",
+                        "name": "session",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/providers/default": {
             "post": {
                 "security": [
@@ -4254,6 +4439,65 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/providers/{id}/disconnect": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Clears only this provider's credential reference. Does not delete shared host credentials or revoke the remote ChatGPT grant.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Disconnect ChatGPT Subscription provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Provider name",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "401": {
@@ -6966,6 +7210,14 @@
                 }
             }
         },
+        "handler.ChatGPTConnectRequest": {
+            "type": "object",
+            "properties": {
+                "credential_id": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.ChatRequest": {
             "type": "object",
             "properties": {
@@ -7126,9 +7378,15 @@
                 "api_key": {
                     "type": "string"
                 },
+                "auth_mode": {
+                    "type": "string"
+                },
                 "base_url": {
                     "type": "string",
                     "example": "https://api.openai.com"
+                },
+                "credential_id": {
+                    "type": "string"
                 },
                 "default_model": {
                     "type": "string",
@@ -7447,7 +7705,13 @@
                 "api_key": {
                     "type": "string"
                 },
+                "auth_mode": {
+                    "type": "string"
+                },
                 "base_url": {
+                    "type": "string"
+                },
+                "credential_id": {
                     "type": "string"
                 },
                 "default_model": {
@@ -8127,6 +8391,16 @@
                 "observation": {
                     "type": "string"
                 },
+                "provider_metadata": {
+                    "description": "ProviderMetadata holds opaque continuation state, not displayable reasoning.\nPreserve it when persisting or copying assistant turns. Other providers\ndeliberately do not serialize this field onto their wire requests.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    }
+                },
                 "role": {
                     "type": "string"
                 },
@@ -8636,6 +8910,37 @@
                     "items": {
                         "$ref": "#/definitions/service.ChatFolder"
                     }
+                }
+            }
+        },
+        "service.ChatGPTAttemptStatus": {
+            "type": "object",
+            "properties": {
+                "credential_id": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ChatGPTConnectView": {
+            "type": "object",
+            "properties": {
+                "authorization_url": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
                 }
             }
         },
@@ -9270,9 +9575,15 @@
                 "api_key": {
                     "type": "string"
                 },
+                "auth_mode": {
+                    "type": "string"
+                },
                 "base_url": {
                     "type": "string",
                     "example": "https://api.deepseek.com"
+                },
+                "credential_id": {
+                    "type": "string"
                 },
                 "type": {
                     "type": "string",
@@ -9392,9 +9703,15 @@
                 "api_key": {
                     "type": "string"
                 },
+                "auth_mode": {
+                    "type": "string"
+                },
                 "base_url": {
                     "type": "string",
                     "example": "https://api.deepseek.com"
+                },
+                "credential_id": {
+                    "type": "string"
                 },
                 "model": {
                     "type": "string",
@@ -9460,6 +9777,23 @@
                 }
             }
         },
+        "service.ProviderConnection": {
+            "type": "object",
+            "properties": {
+                "account_label": {
+                    "type": "string"
+                },
+                "configured": {
+                    "type": "boolean"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "service.ProviderOptionView": {
             "type": "object",
             "properties": {
@@ -9491,7 +9825,16 @@
                 "api_key": {
                     "$ref": "#/definitions/service.SecretState"
                 },
+                "auth_mode": {
+                    "type": "string"
+                },
                 "base_url": {
+                    "type": "string"
+                },
+                "connection": {
+                    "$ref": "#/definitions/service.ProviderConnection"
+                },
+                "credential_id": {
                     "type": "string"
                 },
                 "default_model": {

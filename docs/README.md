@@ -1,6 +1,6 @@
 # Myaaw Documentation
 
-Start with the [main README](../README.md) for installation and a feature overview. This directory is grouped by topic: agents, CLI, API, then generated references.
+Start with the [main README](../README.md) for installation and a feature overview. This directory is grouped by topic: agents, provider integrations, CLI, API, channels, then generated references.
 
 ## Agents
 
@@ -25,6 +25,15 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | [A2A Interop](agents/protocol/a2a-interop.md) | Local and cross-server connections, plus non-Myaaw peers. |
 | [A2A Spec Compliance](agents/protocol/a2a-spec-compliance.md) | Validation against the A2A v1.0 specification. |
 
+## Provider integrations
+
+| Document | Description |
+| :--- | :--- |
+| [Provider Integration Guide](provider/README.md) | Comparison, per-agent configuration, authentication/billing boundaries, model discovery, and security. |
+| [Gemini](provider/gemini.md) | Native REST chat, API keys, model filters, tools/thought signatures, images, and separate Live/STT/TTS configuration. |
+| [OpenAI-compatible](provider/openai-compatible.md) | OpenAI/DeepSeek/gateways/local servers, base URLs, Chat Completions, model discovery, and compatibility limits. |
+| [ChatGPT Subscription](provider/chatgpt-subscription.md) | OAuth lifecycle, credential rotation/storage, setup/API contracts, Responses streaming, limitations, quotas, and recovery. |
+
 ## CLI
 
 | Document | Description |
@@ -39,6 +48,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | [Cron](cli/cron.md) | Scheduled jobs: cron expressions, intervals, one-time runs, and history. |
 | [Backup & Restore](cli/backup.md) | Per-agent archives, database snapshots, and verified restore. |
 | [Providers](cli/provider.md) | LLM provider integrations and models. |
+| [ChatGPT Subscription](cli/chatgpt-subscription.md) | Local browser OAuth, headless credential references, reconnect/disconnect, privacy, and plan quotas. |
 | [Channels](cli/channel.md) | Telegram and Discord setup. |
 | [Webhook](cli/webhook.md) | Telegram webhook management. |
 | [Logs](cli/logs.md) | Interactive log viewer and filtering. |

@@ -109,8 +109,7 @@ func (a *Agent) RunEvents(
 		if cfg.OnCheckpoint == nil {
 			return
 		}
-		snapshot := make([]provider.Message, len(transcript))
-		copy(snapshot, transcript)
+		snapshot := CloneMessages(transcript)
 		safeCheckpoint(ctx, cfg.OnCheckpoint, snapshot)
 	}
 
@@ -179,7 +178,7 @@ func (a *Agent) RunEvents(
 		}
 		requestMessages = injectSystemWarning(requestMessages, warning)
 		if cfg.TransformContext != nil {
-			requestMessages = cfg.TransformContext(ctx, requestMessages)
+			requestMessages = transformMessages(ctx, requestMessages, cfg.TransformContext)
 		}
 		requestMessages = SanitizeImageDataURLs(requestMessages)
 		requestMessages = EvictTranscriptImages(requestMessages, cfg.MaxImageCount, cfg.MaxImageBytes)
@@ -191,11 +190,13 @@ func (a *Agent) RunEvents(
 			}
 		}
 
+		requestMessages = messagesForProvider(requestMessages, a.Provider.ProviderName())
+
 		// Hand the exact request transcript to observers before it is sent.
 		_ = emit(AgentEvent{
 			Type:     EventLLMRequestStart,
 			Model:    cfg.Model,
-			Messages: append([]provider.Message(nil), requestMessages...),
+			Messages: CloneMessages(requestMessages),
 		})
 
 		var (
@@ -248,7 +249,7 @@ func (a *Agent) RunEvents(
 				return emit(AgentEvent{Type: EventUsage, Usage: event.Usage})
 			case provider.StreamDone:
 				if event.Message != nil {
-					message := *event.Message
+					message := CloneMessages([]provider.Message{*event.Message})[0]
 					finalFromStream = &message
 				}
 				streamStop = event.StopReason
@@ -281,6 +282,7 @@ func (a *Agent) RunEvents(
 		final.Version = transcriptVersion
 		if provider.MessageText(final) == "" && streamedText.Len() > 0 {
 			final.Content = streamedText.String()
+			final.ProviderMetadata = nil
 		}
 		if final.Thought == "" && streamedThought.Len() > 0 {
 			final.Thought = streamedThought.String()
@@ -310,6 +312,7 @@ func (a *Agent) RunEvents(
 				final.ErrorMessage = streamErr.Error()
 				if provider.MessageText(final) == "" {
 					final.Content = "⚠️ Agent error: " + streamErr.Error()
+					final.ProviderMetadata = nil
 				}
 			}
 		}
@@ -318,6 +321,7 @@ func (a *Agent) RunEvents(
 		for i := range final.ToolCalls {
 			if final.ToolCalls[i].ID == "" {
 				final.ToolCalls[i].ID = fmt.Sprintf("call_%d_%d_%d", runSeq, iteration, i)
+				final.ProviderMetadata = nil
 			}
 		}
 

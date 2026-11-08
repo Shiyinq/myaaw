@@ -42,13 +42,14 @@ type HeartbeatTarget struct {
 }
 
 type BotServiceImpl struct {
-	userRepo          repository.UserRepository
-	conversationRepo  repository.ConversationRepository
-	llmProvider       provider.LLMProvider
-	transcriber       provider.Transcriber
-	agent             agent.AgentProvider
-	currentProviderID string
-	currentModel      string
+	userRepo              repository.UserRepository
+	conversationRepo      repository.ConversationRepository
+	llmProvider           provider.LLMProvider
+	transcriber           provider.Transcriber
+	agent                 agent.AgentProvider
+	currentProviderID     string
+	currentProviderConfig config.ProviderConfig
+	providerErr           error
 
 	// locks serializes turns that share a conversation. A live chat and a cron
 	// job must not read the same transcript and write it back concurrently.
@@ -63,14 +64,24 @@ type BotServiceImpl struct {
 	obsConfig   obs.Config
 }
 
+func selectedProviderConfig() config.ProviderConfig {
+	return config.ProviderConfig{
+		Type: config.LLMProviderName, BaseURL: config.LLMProviderBaseURL,
+		APIKey: config.LLMProviderAPIKey, DefaultModel: config.LLMDefaultModel,
+		AuthMode: config.LLMProviderAuthMode, CredentialID: config.LLMProviderCredentialID,
+	}
+}
+
 func NewBotService(userRepo repository.UserRepository, conversationRepo repository.ConversationRepository) BotService {
-	llmProvider, err := provider.CreateLLMProvider(config.LLMProviderName, config.LLMProviderAPIKey)
-	if err != nil {
+	selected := selectedProviderConfig()
+	llmProvider, providerErr := provider.CreateLLMProviderFromConfig(selected)
+	if providerErr != nil {
+		llmProvider = nil
 		// Not fatal: the supervisor would otherwise crash-loop the agent when a
 		// provider key is missing or a provider name is mistyped. Requests fail
 		// with a clear message instead, and a config fix is picked up by
 		// checkAndReloadProvider on the next message.
-		log.Printf("⚠️  Failed to create LLM provider %s: %v. Chat requests will fail until the provider is fixed.", config.LLMProviderName, err)
+		log.Printf("⚠️  Failed to create LLM provider %s: %v. Chat requests will fail until the provider is fixed.", config.LLMProviderName, providerErr)
 	}
 
 	transcriber, err := provider.CreateTranscriber(config.TranscriberProviderName, config.TranscriberAPIKey)
@@ -79,17 +90,16 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 	}
 
 	svc := &BotServiceImpl{
-		userRepo:         userRepo,
-		conversationRepo: conversationRepo,
-		llmProvider:      llmProvider,
-		transcriber:      transcriber,
+		userRepo:              userRepo,
+		conversationRepo:      conversationRepo,
+		llmProvider:           llmProvider,
+		transcriber:           transcriber,
+		currentProviderID:     config.CurrentProviderID,
+		currentProviderConfig: selected,
+		providerErr:           providerErr,
 	}
 	if llmProvider != nil {
 		svc.agent = agent.NewAgent(llmProvider)
-		// Leaving these empty when creation failed lets checkAndReloadProvider
-		// retry as soon as the configuration changes.
-		svc.currentProviderID = config.CurrentProviderID
-		svc.currentModel = config.LLMDefaultModel
 	}
 	return svc
 }
@@ -97,24 +107,34 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 // requireProvider reports whether chat requests can reach an LLM.
 func (r *BotServiceImpl) requireProvider() error {
 	if r.llmProvider == nil || r.agent == nil {
-		return errors.New("LLM provider is not configured: check the provider type and API key in config.json")
+		if r.providerErr != nil {
+			return fmt.Errorf("LLM provider is not configured: %w", r.providerErr)
+		}
+		return errors.New("LLM provider is not configured: check the provider type and API key or signed-in credential in config.json")
 	}
 	return nil
 }
 
 func (r *BotServiceImpl) checkAndReloadProvider() {
-	if (r.currentProviderID != config.CurrentProviderID || r.currentModel != config.LLMDefaultModel) && config.CurrentProviderID != "" {
-		llmProvider, err := provider.CreateLLMProvider(config.LLMProviderName, config.LLMProviderAPIKey)
-		if err == nil {
-			r.llmProvider = llmProvider
-			r.agent = agent.NewAgent(llmProvider)
-			r.currentProviderID = config.CurrentProviderID
-			r.currentModel = config.LLMDefaultModel
-			log.Printf("Successfully hot-reloaded LLM Provider to: %s (Model: %s)", config.CurrentProviderID, config.LLMDefaultModel)
-		} else {
-			log.Printf("Failed to hot-reload provider %s: %v", config.CurrentProviderID, err)
-		}
+	selected := selectedProviderConfig()
+	if r.currentProviderID == config.CurrentProviderID && r.currentProviderConfig == selected {
+		return
 	}
+
+	// Never keep the previous account/client when the selected configuration is
+	// invalid (notably a disconnected OAuth reference). A later reconnect is
+	// detected even if the provider ID and model have not changed.
+	r.currentProviderID = config.CurrentProviderID
+	r.currentProviderConfig = selected
+	r.llmProvider, r.providerErr = provider.CreateLLMProviderFromConfig(selected)
+	r.agent = nil
+	if r.providerErr != nil {
+		r.llmProvider = nil
+		log.Printf("Failed to hot-reload provider %s: %v", config.CurrentProviderID, r.providerErr)
+		return
+	}
+	r.agent = agent.NewAgent(r.llmProvider)
+	log.Printf("Successfully hot-reloaded LLM Provider to: %s (Model: %s)", config.CurrentProviderID, config.LLMDefaultModel)
 }
 
 func (r *BotServiceImpl) IsAllowed(userID int) bool {
@@ -184,6 +204,9 @@ func (r *BotServiceImpl) Bot(msg *channel.IncomingMessage) (*channel.OutgoingMes
 
 func (r *BotServiceImpl) BotContext(ctx context.Context, msg *channel.IncomingMessage) (*channel.OutgoingMessage, error) {
 	r.checkAndReloadProvider()
+	if err := r.requireProvider(); err != nil {
+		return nil, err
+	}
 
 	user, err := r.checkUser(msg)
 	if err != nil {
@@ -215,6 +238,9 @@ func (r *BotServiceImpl) BotStream(msg *channel.IncomingMessage, onChunk func(ch
 
 func (r *BotServiceImpl) BotStreamContext(ctx context.Context, msg *channel.IncomingMessage, onChunk func(channel.StreamChunk)) (*channel.OutgoingMessage, error) {
 	r.checkAndReloadProvider()
+	if err := r.requireProvider(); err != nil {
+		return nil, err
+	}
 
 	user, err := r.checkUser(msg)
 	if err != nil {
@@ -246,6 +272,9 @@ func (r *BotServiceImpl) BotStreamContext(ctx context.Context, msg *channel.Inco
 
 func (r *BotServiceImpl) ProcessHeartbeat(prompt string, target HeartbeatTarget, triggerType string) (*channel.IncomingMessage, *channel.OutgoingMessage, error) {
 	r.checkAndReloadProvider()
+	if err := r.requireProvider(); err != nil {
+		return nil, nil, err
+	}
 
 	msg, err := r.heartbeatMessage(prompt, target, triggerType)
 	if err != nil {

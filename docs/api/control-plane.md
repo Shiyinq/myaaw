@@ -720,7 +720,42 @@ curl http://localhost:9000/agents/myfriend/providers/openai/models \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-Both return `{"models": [...], "source": "live"|"default", "warning": "..."}`. If the live call fails or times out, `source` is `default`, `models` contains the built-in default model, and `warning` explains why — so the wizard can always continue.
+Both return `{"models": [...], "source": "live"|"default", "warning": "..."}`. For API-key providers, if the live call fails or times out, `source` is `default`, `models` contains the built-in default model, and `warning` explains why. ChatGPT Subscription instead requires a connected credential and live discovery; failures return an error, never a fabricated fallback model.
+
+### ChatGPT Subscription
+
+All routes below require the normal bearer authentication. Browser-login routes additionally require a loopback socket peer, raw Host, and (when supplied) loopback HTTP(S) Origin and Referer. The frontend proxy rewrites Host but preserves browser headers: POST/DELETE origins remain checked, and polling GETs with no Origin must have a local Referer. Browser-marked requests without either are rejected; native clients without browser metadata may omit both. Forwarded headers do not establish locality. Remote clients receive `403` with instructions to sign in on the API host. Responses use `Cache-Control: no-store`; never log authorization URLs, which can contain identity-token hints.
+
+| Method | Path | Request / response |
+|---|---|---|
+| `POST` | `/agents/:name/providers/chatgpt/connect` | `{ "credential_id"?: "local-id" }` → `{ "session_id", "authorization_url", "expires_at" }` |
+| `GET` | `/agents/:name/providers/chatgpt/connect/:session` | `{ "status": "pending"\|"connected"\|"failed"\|"expired", "credential_id", "email", "error" }` |
+| `DELETE` | `/agents/:name/providers/chatgpt/connect/:session` | Cancel; `{ "ok": true }` |
+| `POST` | `/agents/:name/providers/:id/disconnect` | Detach this provider only; `{ "ok": true }` |
+
+Sessions are scoped to a validated agent name, including a not-yet-created name for the onboarding wizard. Creating a session does not create the agent. An attempt lives at most ten minutes; its status is retained for two more minutes, after which it returns `404`. Unknown and cross-agent sessions both return `404`. One pending attempt per agent and at most 32 retained sessions per control-plane instance are allowed (`429` on limit). Restarting the control plane loses sessions, not saved host credentials or pending registration bindings.
+
+An empty credential ID starts a new registration. Pass a saved ID to reauthorize that exact binding. A failed initial attempt's status ID can resume its retained pending registration after restart; do not create another registration merely because token exchange failed. A pending-only ID cannot be saved as a provider reference until authorization succeeds.
+
+After status becomes `connected`, save a provider using the returned credential ID:
+
+```json
+{
+  "name": "personal",
+  "type": "openai_chatgpt",
+  "auth_mode": "oauth",
+  "credential_id": "verified-local-credential-id",
+  "default_model": "model-from-live-discovery"
+}
+```
+
+Create/update validates the credential exists locally. API keys and custom base URLs are rejected; only the fixed official endpoint is allowed, and its default need not be supplied. Switching from an API-key type to `openai_chatgpt` clears the old API key/endpoint and requires a credential. Switching to a non-OAuth type clears OAuth fields. Existing API-key DTOs and the empty-key-means-keep rule are unchanged.
+
+Provider views add `auth_mode`, `credential_id`, and a metadata-only `connection` object: `{ "configured", "status", "account_label", "expires_at" }`. Expiry is RFC3339 or `null`. Status values are `disconnected`, `unavailable`, `connected`, `refresh_required`, or `reauthorization_required`. These are local snapshots; status reads never refresh tokens or claim to detect remote revocation in real time. Token fields are never serialized.
+
+Use `POST /providers/models` with `{ "type": "openai_chatgpt", "auth_mode": "oauth", "credential_id": "..." }` before saving, or the saved-provider models route afterward. Both use config-aware OAuth discovery and return live models only. Onboard accepts the same auth fields in `provider`, with `model` rather than `default_model` as before; an explicit/saved subscription model is required.
+
+**Disconnect clears only the selected provider's reference.** It does not delete a host credential used by other providers or agents and does not revoke remote app access. Provider deletion also preserves the shared credential. Manage remote app grants in ChatGPT Settings. Host credentials live outside agent backups, so restored references on another host need a new local sign-in. Plan quotas apply; no API-key/account fallback is performed. See [ChatGPT Subscription setup and privacy](../cli/chatgpt-subscription.md).
 
 ## 11. Channels
 

@@ -247,6 +247,14 @@ type heartbeatTarget struct {
 	chatType  string
 }
 
+func createSubAgentProvider() (provider.LLMProvider, error) {
+	return provider.CreateLLMProviderFromConfig(config.ProviderConfig{
+		Type: config.LLMProviderName, BaseURL: config.LLMProviderBaseURL,
+		APIKey: config.LLMProviderAPIKey, DefaultModel: config.LLMDefaultModel,
+		AuthMode: config.LLMProviderAuthMode, CredentialID: config.LLMProviderCredentialID,
+	})
+}
+
 func (t *SubAgentTool) runSubAgent(ctx context.Context, task SubAgentTask, target heartbeatTarget, baseURL, batchID string, taskNum, totalTasks int) {
 	ctx = approvals.WithSubagentNamed(ctx, task.Name)
 	select {
@@ -258,7 +266,7 @@ func (t *SubAgentTool) runSubAgent(ctx context.Context, task SubAgentTask, targe
 	}
 	log.Printf("[SubAgent %s] Starting task %d/%d for user %s", task.Name, taskNum, totalTasks, target.to)
 
-	prov, err := provider.CreateLLMProvider(config.LLMProviderName, config.LLMProviderAPIKey)
+	prov, err := createSubAgentProvider()
 	if err != nil {
 		log.Printf("[SubAgent %s] Failed to create LLM provider: %v", task.Name, err)
 		t.sendHeartbeat(task, target, baseURL, batchID, taskNum, totalTasks, fmt.Sprintf("Error: Failed to create LLM provider - %v", err))

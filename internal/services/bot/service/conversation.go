@@ -487,7 +487,7 @@ func rewindToUserMessage(
 			continue
 		}
 
-		kept := append([]provider.Message(nil), messages[:index+1]...)
+		kept := agent.CloneMessages(messages[:index+1])
 		if strings.TrimSpace(replacement) != "" {
 			kept[index].Content = replaceUserContent(kept[index].Content, replacement)
 			edited := time.Now().UTC()
@@ -656,8 +656,7 @@ func (r *BotServiceImpl) saveConversation(user *model.User, msg *channel.Incomin
 	// Title generation is a second LLM call. Keep it off the response path so a
 	// slow provider cannot make the chat appear stuck after the answer is ready.
 	if conv.Title == "" || conv.Title == "New Chat" {
-		messagesCopy := make([]provider.Message, len(messages))
-		copy(messagesCopy, messages)
+		messagesCopy := agent.CloneMessages(messages)
 		go r.updateConversationTitle(user, conv.Id, messagesCopy)
 	}
 	return nil
@@ -688,8 +687,7 @@ func stripTranscript(transcript []provider.Message) []provider.Message {
 	if start >= len(transcript) {
 		return nil
 	}
-	messages := make([]provider.Message, len(transcript)-start)
-	copy(messages, transcript[start:])
+	messages := agent.CloneMessages(transcript[start:])
 	for i := range messages {
 		messages[i].Version = 2
 	}

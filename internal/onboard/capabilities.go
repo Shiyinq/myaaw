@@ -6,6 +6,7 @@ import (
 
 	myaaw "myaaw"
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/provider"
 
 	"gopkg.in/yaml.v3"
@@ -38,7 +39,7 @@ type Capabilities struct {
 }
 
 // providerOptions is the preset list the wizard shows, in order. Only
-// `openai` and `gemini` are valid wire types; the rest are shortcuts that keep
+// `openai`, `gemini`, and `openai_chatgpt` are wire types; other presets keep
 // the stored type but point the provider at another endpoint.
 var providerOptions = []ProviderOption{
 	{ID: "openai", Type: "openai", Label: "OpenAI (or compatible)"},
@@ -50,6 +51,7 @@ var providerOptions = []ProviderOption{
 		DefaultModel:   "deepseek-chat",
 	},
 	{ID: "gemini", Type: "gemini", Label: "Gemini"},
+	{ID: chatgpt.ProviderType, Type: chatgpt.ProviderType, Label: chatgpt.Label},
 }
 
 // BuiltinCapabilities lists the provider types, the embedded skills, and the
@@ -66,10 +68,10 @@ func BuiltinCapabilities() Capabilities {
 		Tools:     make([]Capability, 0, len(tools)),
 	}
 	for _, option := range providerOptions {
-		if option.DefaultBaseURL == "" {
+		if option.DefaultBaseURL == "" && option.Type != chatgpt.ProviderType {
 			option.DefaultBaseURL = provider.DefaultBaseURL(option.Type)
 		}
-		if option.DefaultModel == "" {
+		if option.DefaultModel == "" && option.Type != chatgpt.ProviderType {
 			option.DefaultModel = provider.DefaultModel(option.Type)
 		}
 		caps.Providers = append(caps.Providers, option)

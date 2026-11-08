@@ -1190,6 +1190,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									config.LLMDefaultModel = modelName
 									config.LLMProviderAPIKey = p.APIKey
 									config.LLMProviderBaseURL = p.BaseURL
+									config.LLMProviderAuthMode = p.AuthMode
+									config.LLMProviderCredentialID = p.CredentialID
 								}
 							}
 						}

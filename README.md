@@ -28,7 +28,13 @@
 
 ## 🤖 Supported Providers
 
-Myaaw currently focuses on delivering the best experience with **Google Gemini API**.
+Myaaw supports **Google Gemini API**, **OpenAI / OpenAI-compatible API-key providers**, and **ChatGPT Subscription** through official browser OAuth. See the [Provider Integration Guide](docs/provider/README.md) for detailed setup, protocol differences, capabilities, security, and troubleshooting for each integration.
+
+```sh
+myaaw --agent myfriend provider connect-chatgpt personal --default
+```
+
+ChatGPT Subscription requires a browser on the same machine as Myaaw. Host-global OAuth credentials stay outside agent backups; plan quotas apply and there is no automatic API-key fallback. See the [ChatGPT Subscription setup and privacy guide](docs/cli/chatgpt-subscription.md).
 
 
 ## 📡 Supported Channels
@@ -545,6 +551,15 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | [A2A Protocol](docs/agents/protocol/a2a-protocol.md) | Agent Card discovery, task lifecycle, methods, streaming, and storage. |
 | [A2A Interop](docs/agents/protocol/a2a-interop.md) | Local, cross-server, and non-Myaaw peer connections. |
 | [A2A Spec Compliance](docs/agents/protocol/a2a-spec-compliance.md) | Validation against the A2A v1.0 specification. |
+
+### 🤖 Provider integrations
+
+| Document | Description |
+| :--- | :--- |
+| [Provider Integration Guide](docs/provider/README.md) | Compare integrations, per-agent settings, model discovery, authentication, and billing boundaries. |
+| [Gemini](docs/provider/gemini.md) | Native chat, tools, images, and separate Live/STT/TTS configuration. |
+| [OpenAI-compatible](docs/provider/openai-compatible.md) | OpenAI API keys, DeepSeek/gateways/local servers, endpoint construction, and Chat Completions compatibility. |
+| [ChatGPT Subscription](docs/provider/chatgpt-subscription.md) | Browser OAuth, credential lifecycle, Responses streaming, quotas, recovery, and security. |
 
 ### 🖥 CLI
 

@@ -1,3 +1,5 @@
+import type { ProviderConnection } from './providers';
+
 export interface SecretState {
 	configured: boolean;
 	masked?: string;
@@ -40,6 +42,9 @@ export interface ProviderView {
 	base_url?: string;
 	default_model?: string;
 	api_key: SecretState;
+	auth_mode?: 'oauth';
+	credential_id?: string;
+	connection?: ProviderConnection;
 }
 
 export interface ProvidersView {

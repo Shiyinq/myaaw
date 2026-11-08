@@ -24,29 +24,31 @@ import (
 // fields mean "leave the current value alone", matching the wizard's keep
 // semantics.
 type Input struct {
-	ProviderName       string
-	ProviderType       string
-	ProviderBaseURL    string
-	ProviderAPIKey     string
-	ProviderModel      string
-	TelegramToken      string
-	TelegramMode       string
-	TelegramWebhookURL string
-	DiscordToken       string
-	DisableTelegram    bool
-	DisableDiscord     bool
-	BotType            string
-	Heartbeat          bool
-	HeartbeatSet       bool
-	HeartbeatChannel   string
-	HeartbeatTo        string
-	HeartbeatThreadID  string
-	HeartbeatSessionID string
-	HeartbeatChatType  string
-	HeartbeatEvery     string
-	OwnerIDs           []string
-	OwnersSet          bool
-	Skills             []string
+	ProviderName         string
+	ProviderType         string
+	ProviderBaseURL      string
+	ProviderAPIKey       string
+	ProviderAuthMode     string
+	ProviderCredentialID string
+	ProviderModel        string
+	TelegramToken        string
+	TelegramMode         string
+	TelegramWebhookURL   string
+	DiscordToken         string
+	DisableTelegram      bool
+	DisableDiscord       bool
+	BotType              string
+	Heartbeat            bool
+	HeartbeatSet         bool
+	HeartbeatChannel     string
+	HeartbeatTo          string
+	HeartbeatThreadID    string
+	HeartbeatSessionID   string
+	HeartbeatChatType    string
+	HeartbeatEvery       string
+	OwnerIDs             []string
+	OwnersSet            bool
+	Skills               []string
 	// SkillsSet means the caller managed the skills step: selected skills are
 	// installed, and installed built-in skills left unselected are disabled.
 	SkillsSet     bool
@@ -122,6 +124,13 @@ func Apply(name string, in Input, port int) (*config.Config, []string, error) {
 	SanitizeConfig(cfg)
 
 	merged := MergeConfig(cfg, in)
+	if in.ProviderName != "" {
+		p := merged.Providers[in.ProviderName]
+		if err := NormalizeProviderAuth(&p); err != nil {
+			return nil, nil, err
+		}
+		merged.Providers[in.ProviderName] = p
+	}
 	if err := SaveConfig(configPath, merged); err != nil {
 		return nil, nil, fmt.Errorf("write config.json: %w", err)
 	}
@@ -186,6 +195,8 @@ func MergeConfig(base *config.Config, in Input) *config.Config {
 			Type:         in.ProviderType,
 			BaseURL:      in.ProviderBaseURL,
 			APIKey:       in.ProviderAPIKey,
+			AuthMode:     in.ProviderAuthMode,
+			CredentialID: in.ProviderCredentialID,
 			DefaultModel: in.ProviderModel,
 		}
 		cfg.DefaultProvider = in.ProviderName
@@ -706,7 +717,7 @@ func SaveConfig(path string, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	return WriteFileAtomic(path, append(data, '\n'))
+	return config.WriteConfigAtomic(path, append(data, '\n'))
 }
 
 func setupHome(targetDir string) error {

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"myaaw/internal/agentdir"
+	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
@@ -33,6 +34,7 @@ var providerCreateCmd = &cobra.Command{
 					Options(
 						huh.NewOption("OpenAI (or OpenAI Compatible)", "openai"),
 						huh.NewOption("Gemini", "gemini"),
+						huh.NewOption(chatgpt.Label, chatgpt.ProviderType),
 					).
 					Value(&pType),
 
@@ -45,15 +47,6 @@ var providerCreateCmd = &cobra.Command{
 						}
 						return nil
 					}),
-
-				huh.NewInput().
-					Title("Base URL (Leave empty for default API)").
-					Value(&pBaseURL),
-
-				huh.NewInput().
-					Title("API Key").
-					EchoMode(huh.EchoModePassword).
-					Value(&pAPIKey),
 			),
 		).Run()
 
@@ -63,6 +56,22 @@ var providerCreateCmd = &cobra.Command{
 		}
 
 		pName = strings.TrimSpace(pName)
+		if pType == chatgpt.ProviderType {
+			connect := newConnectChatGPTCmd()
+			connect.SetContext(cmd.Context())
+			if err := connect.RunE(connect, []string{pName}); err != nil {
+				fmt.Println(theme.RenderError(err.Error()))
+			}
+			return
+		}
+		err = huh.NewForm(huh.NewGroup(
+			huh.NewInput().Title("Base URL (Leave empty for default API)").Value(&pBaseURL),
+			huh.NewInput().Title("API Key").EchoMode(huh.EchoModePassword).Value(&pAPIKey),
+		)).Run()
+		if err != nil {
+			fmt.Println(theme.RenderError("Setup cancelled."))
+			return
+		}
 		pBaseURL = strings.TrimSpace(pBaseURL)
 		pAPIKey = strings.TrimSpace(pAPIKey)
 		if pBaseURL == "" {
@@ -71,9 +80,7 @@ var providerCreateCmd = &cobra.Command{
 
 		fmt.Println(theme.RenderSecondary("\nFetching available models..."))
 
-		// Temporarily override config to initialize provider
-		config.LLMProviderBaseURL = pBaseURL
-		llm, err := provider.CreateLLMProvider(pType, pAPIKey)
+		llm, err := provider.CreateLLMProviderFromConfig(config.ProviderConfig{Type: pType, BaseURL: pBaseURL, APIKey: pAPIKey})
 		if err != nil {
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to create provider: %v", err)))
 			return
@@ -319,18 +326,17 @@ var providerSetModelCmd = &cobra.Command{
 
 		fmt.Println(theme.RenderSecondary(fmt.Sprintf("\nFetching available models for %s...", name)))
 
-		// Temporarily override config to initialize provider
-		config.LLMProviderBaseURL = pConfig.BaseURL
-		if config.LLMProviderBaseURL == "" {
-			config.LLMProviderBaseURL = provider.DefaultBaseURL(pConfig.Type)
-		}
-		llm, err := provider.CreateLLMProvider(pConfig.Type, pConfig.APIKey)
+		llm, err := provider.CreateLLMProviderFromConfig(pConfig)
 		if err != nil {
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to create provider: %v", err)))
 			return
 		}
 
 		models, err := llm.Models()
+		if pConfig.Type == chatgpt.ProviderType && (err != nil || len(models) == 0) {
+			fmt.Println(theme.RenderError("ChatGPT Subscription model discovery failed; reconnect and retry. No API fallback is used."))
+			return
+		}
 		if err != nil {
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to fetch models: %v", err)))
 			fmt.Print("Enter default model manually: ")

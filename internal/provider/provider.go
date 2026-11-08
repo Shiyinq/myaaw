@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/config"
 	"strings"
 	"time"
@@ -44,6 +45,10 @@ type Message struct {
 	Uploads        []Upload   `json:"uploads,omitempty" bson:"uploads,omitempty"`
 	ToolCalls      []ToolCall `json:"tool_calls,omitempty" bson:"tool_calls,omitempty"`
 	ToolCallID     string     `json:"tool_call_id,omitempty" bson:"tool_call_id,omitempty"`
+	// ProviderMetadata holds opaque continuation state, not displayable reasoning.
+	// Preserve it when persisting or copying assistant turns. Other providers
+	// deliberately do not serialize this field onto their wire requests.
+	ProviderMetadata map[string]json.RawMessage `json:"provider_metadata,omitempty" bson:"provider_metadata,omitempty"`
 	// ReAct Trace Fields (UI metadata; not sent to providers)
 	Thought     string `json:"thought,omitempty" bson:"thought,omitempty"`
 	Action      string `json:"action,omitempty" bson:"action,omitempty"`
@@ -165,8 +170,11 @@ func DefaultModel(providerName string) string {
 	return defaultLLMModels[providerName]
 }
 
-// IsKnownLLMProvider reports whether a provider factory is registered.
+// IsKnownLLMProvider includes credential-backed providers without API-key factories.
 func IsKnownLLMProvider(providerName string) bool {
+	if providerName == chatgpt.ProviderType {
+		return true
+	}
 	_, ok := LLMproviderFactories[providerName]
 	return ok
 }
@@ -177,6 +185,9 @@ func IsKnownLLMProvider(providerName string) bool {
 // API) cannot race on that global.
 func ModelsFor(providerType, baseURL, apiKey string) ([]string, error) {
 	providerType = strings.ToLower(strings.TrimSpace(providerType))
+	if providerType == chatgpt.ProviderType {
+		return nil, errors.New("ChatGPT Subscription requires a signed-in credential; use ModelsForConfig with auth_mode oauth and credential_id")
+	}
 	factory, exists := LLMproviderFactories[providerType]
 	if !exists {
 		return nil, fmt.Errorf("unknown llm provider %q", providerType)
@@ -198,7 +209,7 @@ func ModelsFor(providerType, baseURL, apiKey string) ([]string, error) {
 // value must not include a trailing slash.
 func DefaultBaseURL(providerName string) string {
 	switch providerName {
-	case "openai":
+	case "openai", chatgpt.ProviderType:
 		return "https://api.openai.com"
 	case "gemini":
 		return "https://generativelanguage.googleapis.com"
@@ -229,7 +240,51 @@ var defaultSynthesizerModels = map[string]string{
 	"gemini": "gemini-2.5-flash-preview-tts",
 }
 
+// CreateLLMProviderFromConfig uses explicit credentials without changing globals.
+func CreateLLMProviderFromConfig(cfg config.ProviderConfig) (LLMProvider, error) {
+	cfg.Type = strings.ToLower(strings.TrimSpace(cfg.Type))
+	if cfg.Type == chatgpt.ProviderType {
+		return NewChatGPTProvider(cfg)
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.AuthMode), "oauth") {
+		return nil, errors.New("OAuth credentials require provider type openai_chatgpt (ChatGPT Subscription)")
+	}
+	factory, exists := LLMproviderFactories[cfg.Type]
+	if !exists {
+		return nil, errors.New("unknown llm provider")
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	if baseURL == "" {
+		baseURL = DefaultBaseURL(cfg.Type)
+	}
+	model := cfg.DefaultModel
+	if model == "" {
+		model = DefaultModel(cfg.Type)
+	}
+	return factory(baseURL, cfg.APIKey, model), nil
+}
+
+// ModelsForConfig supports account-specific OAuth discovery as well as API keys.
+func ModelsForConfig(cfg config.ProviderConfig) ([]string, error) {
+	if strings.ToLower(strings.TrimSpace(cfg.Type)) != chatgpt.ProviderType &&
+		!strings.EqualFold(strings.TrimSpace(cfg.AuthMode), "oauth") {
+		return ModelsFor(cfg.Type, cfg.BaseURL, cfg.APIKey)
+	}
+	p, err := CreateLLMProviderFromConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return p.Models()
+}
+
 func CreateLLMProvider(providerName string, apiKey string) (LLMProvider, error) {
+	if providerName == chatgpt.ProviderType {
+		return CreateLLMProviderFromConfig(config.ProviderConfig{
+			Type: providerName, BaseURL: config.LLMProviderBaseURL, APIKey: apiKey,
+			DefaultModel: config.LLMDefaultModel, AuthMode: config.LLMProviderAuthMode,
+			CredentialID: config.LLMProviderCredentialID,
+		})
+	}
 	factory, exists := LLMproviderFactories[providerName]
 	if !exists {
 		return nil, errors.New("unknown llm provider")
