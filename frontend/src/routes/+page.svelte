@@ -20,6 +20,7 @@
 	import SEO from '$lib/components/common/SEO.svelte';
 	import AgentField from '$lib/components/landing/AgentField.svelte';
 	import RunStream from '$lib/components/landing/RunStream.svelte';
+	import RunPreview from '$lib/components/landing/RunPreview.svelte';
 	import ScrollTrail from '$lib/components/landing/ScrollTrail.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -61,30 +62,6 @@
 		'rest api'
 	];
 
-	// Conceptual waterfall for the same scripted task as the chat preview, not telemetry.
-	const TRACE = [
-		{ label: 'message.received', detail: 'web · weekly report', start: 0, len: 4, dur: '2ms' },
-		{ label: 'context.assembled', detail: 'AGENTS.md · SOUL.md', start: 5, len: 8, dur: '18ms' },
-		{ label: 'model.stream', detail: 'plan · tools', start: 14, len: 20, dur: '1.4s' },
-		{ label: 'tool.bash', detail: 'find notes data reports', start: 35, len: 12, dur: '620ms' },
-		{
-			label: 'tool.filesystem.read',
-			detail: 'notes/week.md · data/tasks.csv',
-			start: 48,
-			len: 8,
-			dur: '94ms'
-		},
-		{ label: 'tool.execute_python', detail: '6/8 · 75%', start: 57, len: 20, dur: '1.1s' },
-		{
-			label: 'tool.filesystem.write',
-			detail: 'reports/weekly.md',
-			start: 78,
-			len: 12,
-			dur: '80ms'
-		},
-		{ label: 'answer.sent', detail: 'web · reports/weekly.md', start: 91, len: 9, dur: '12ms' }
-	];
-
 	const CAPABILITIES = ['provider', 'tools', 'extensions', 'delegation', 'schedule', 'backup'];
 	const SETUP_STEPS = ['install', 'agent', 'api', 'dashboard'];
 
@@ -104,7 +81,7 @@
 
 	const FLEET: FleetAgent[] = [
 		{
-			name: 'default',
+			name: 'Myaaw',
 			role: 'default',
 			color: 'encre',
 			mood: 'attentif',
@@ -117,7 +94,7 @@
 			channels: ['telegram', 'web']
 		},
 		{
-			name: 'myfriend',
+			name: 'Myfriend',
 			role: 'myfriend',
 			color: 'violet',
 			mood: 'heureux',
@@ -130,7 +107,7 @@
 			channels: ['discord', 'cli']
 		},
 		{
-			name: 'nightshift',
+			name: 'Nightshift',
 			role: 'nightshift',
 			color: 'bleu',
 			mood: 'somnolent',
@@ -397,33 +374,7 @@
 				</div>
 
 				<div use:reveal={{ delay: 100 }}>
-					<div class="{PANEL} overflow-hidden" data-slot="card">
-						<div class="flex items-center justify-between border-b border-border/70 px-4 py-2.5">
-							<span class="label text-muted-foreground">{t('landing.loop.legend')}</span>
-							<span class="mono text-[10px] text-muted-foreground">example_run</span>
-						</div>
-						<div class="divide-y divide-border/50">
-							{#each TRACE as row, index (row.label)}
-								<div
-									class="trace-row grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1.5 px-4 py-2.5 transition-colors hover:bg-muted/40 sm:grid-cols-[10rem_1fr_3.5rem] sm:gap-y-0"
-								>
-									<div class="order-1 min-w-0">
-										<p class="mono truncate text-[11px]">{row.label}</p>
-										<p class="mono truncate text-[10px] text-muted-foreground">{row.detail}</p>
-									</div>
-									<div class="trace-track order-3 col-span-2 sm:order-2 sm:col-span-1">
-										<div
-											class="trace-bar"
-											style={`--start: ${row.start}%; --len: ${row.len}%; --delay: ${index * 90}ms`}
-										></div>
-									</div>
-									<span class="mono order-2 text-right text-[10px] text-muted-foreground sm:order-3"
-										>{row.dur}</span
-									>
-								</div>
-							{/each}
-						</div>
-					</div>
+					<RunPreview />
 					<p class="mt-3 text-xs leading-relaxed text-muted-foreground">
 						{t('landing.loop.example_note')}
 					</p>
@@ -1090,35 +1041,6 @@
 		to {
 			transform: translateX(-50%);
 		}
-	}
-
-	.trace-track {
-		position: relative;
-		height: 0.5rem;
-		overflow: hidden;
-		border-radius: 9999px;
-		background: color-mix(in oklab, var(--muted) 60%, transparent);
-	}
-
-	.trace-bar {
-		position: absolute;
-		top: 0;
-		bottom: 0;
-		left: var(--start);
-		width: var(--len);
-		border-radius: 9999px;
-		background: color-mix(in oklab, var(--foreground) 38%, transparent);
-		transform: scaleX(0);
-		transform-origin: left center;
-		transition: transform 0.75s cubic-bezier(0.22, 1, 0.36, 1) var(--delay);
-	}
-
-	.is-revealed .trace-bar {
-		transform: scaleX(1);
-	}
-
-	.trace-row:hover .trace-bar {
-		background: var(--foreground);
 	}
 
 	.status-led {

@@ -7,6 +7,7 @@
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
+	import RunTrajectory from '$lib/components/common/RunTrajectory.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -16,7 +17,6 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
-	import { Separator } from '$lib/components/ui/separator';
 	import { Activity, ChevronLeft, ChevronRight, RefreshCw, Trash2 } from 'lucide-svelte';
 	import type {
 		ObservabilitySummary,
@@ -24,7 +24,6 @@
 		RunSummary,
 		SessionDetail,
 		SessionSummary,
-		Span,
 		StepStat
 	} from '$lib/types';
 
@@ -50,32 +49,6 @@
 	let highlightKey = '';
 
 	let agent = $derived(agentSelection.selected);
-
-	interface SpanRow {
-		span: Span;
-		depth: number;
-	}
-
-	/** Flattens spans into indented rows, oldest first, without following cycles. */
-	function spanRows(spans: Span[] | null | undefined): SpanRow[] {
-		const list = spans ?? [];
-		const byId = new Map(list.map((span) => [span.id, span]));
-		return [...list]
-			.sort((left, right) => (left.started_at ?? 0) - (right.started_at ?? 0))
-			.map((span) => {
-				let depth = 0;
-				let parent = span.parent_id ?? null;
-				const seen = new Set<string>();
-				while (parent && byId.has(parent) && !seen.has(parent) && depth < 8) {
-					seen.add(parent);
-					depth += 1;
-					parent = byId.get(parent)?.parent_id ?? null;
-				}
-				return { span, depth };
-			});
-	}
-
-	let rows = $derived(spanRows(detail?.spans));
 
 	interface HighlightCard {
 		label: string;
@@ -402,128 +375,7 @@
 			minute: '2-digit'
 		});
 	}
-
-	interface SpanPart {
-		label: string;
-		text: string;
-	}
-
-	/** Splits an LLM payload into its thinking and answer, instead of one blob. */
-	function spanParts(span: Span): SpanPart[] {
-		if (span.kind === 'llm') {
-			if (!span.output_json) return [];
-			try {
-				const parsed = JSON.parse(span.output_json) as {
-					content?: unknown;
-					thought?: unknown;
-					tool_calls?: { function?: { name?: string } }[];
-				};
-				const parts: SpanPart[] = [];
-				const thought = typeof parsed.thought === 'string' ? parsed.thought.trim() : '';
-				const content = textFromContent(parsed.content).trim();
-				if (thought) parts.push({ label: 'thinking', text: thought });
-				if (content) parts.push({ label: 'text', text: content });
-				if (parts.length > 0) return parts;
-				if (parsed.tool_calls?.length) {
-					const names = parsed.tool_calls
-						.map((call) => call.function?.name)
-						.filter(Boolean)
-						.join(', ');
-					return names ? [{ label: 'tool call', text: names }] : [];
-				}
-				return [];
-			} catch {
-				return [];
-			}
-		}
-		const raw = truncate(span.input_json ?? span.output_json ?? '');
-		return raw ? [{ label: '', text: raw }] : [];
-	}
-
-	/** Model content arrives as a string or as typed content parts. */
-	function textFromContent(value: unknown): string {
-		if (typeof value === 'string') return value;
-		if (Array.isArray(value)) {
-			return value
-				.map((part) =>
-					part && typeof part === 'object' && 'text' in part
-						? String((part as { text?: unknown }).text ?? '')
-						: ''
-				)
-				.filter(Boolean)
-				.join('\n');
-		}
-		return '';
-	}
-
-	/** The last non-empty assistant answer in a run or a session turn. */
-	function answerOf(spans: Span[] | null | undefined): string {
-		const ordered = [...(spans ?? [])].sort(
-			(left, right) => (right.started_at ?? 0) - (left.started_at ?? 0)
-		);
-		for (const span of ordered) {
-			if (span.kind !== 'llm' || !span.output_json) continue;
-			try {
-				const parsed = JSON.parse(span.output_json) as { content?: unknown };
-				const text = textFromContent(parsed.content).trim();
-				if (text) return text;
-			} catch {
-				// Not JSON; skip this span.
-			}
-		}
-		return '';
-	}
-
-	function truncate(value: string) {
-		const oneLine = value.replace(/\s+/g, ' ').trim();
-		return oneLine.length > 220 ? `${oneLine.slice(0, 220)}…` : oneLine;
-	}
 </script>
-
-{#snippet answerBlock(text: string)}
-	{#if text}
-		<div class="rounded-md border bg-muted/40 p-2 text-[11px]">
-			<div class="mb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-				{t('myaaw.observability.answer')}
-			</div>
-			<p class="whitespace-pre-wrap wrap-break-word">{text}</p>
-		</div>
-	{/if}
-{/snippet}
-
-{#snippet spanRow(row: SpanRow)}
-	<div
-		class="flex items-start gap-2 rounded-md border p-2 text-[11px]"
-		style={`margin-left: ${row.depth * 16}px`}
-	>
-		<Badge variant="outline" class="shrink-0 font-mono text-[9px]">
-			{row.span.kind}
-		</Badge>
-		<div class="min-w-0 flex-1">
-			<div class="flex items-center justify-between gap-2">
-				<span class="truncate font-medium">{row.span.name ?? row.span.kind}</span>
-				<span class="shrink-0 text-muted-foreground">
-					{formatMs(row.span.duration_ms)}
-					{#if row.span.cost_usd}
-						· {formatCost(row.span.cost_usd)}{/if}
-				</span>
-			</div>
-			{#if row.span.input_tokens || row.span.output_tokens}
-				<div class="text-[10px] text-muted-foreground">
-					in {formatTokens(row.span.input_tokens)} · out {formatTokens(row.span.output_tokens)}
-				</div>
-			{/if}
-			{#each spanParts(row.span) as part, index (index)}
-				<p class="mt-1 wrap-break-word text-muted-foreground">
-					{#if part.label}
-						<span class="font-medium text-foreground/80">{part.label}:</span>
-					{/if}
-					{truncate(part.text)}
-				</p>
-			{/each}
-		</div>
-	</div>
-{/snippet}
 
 {#snippet summaryTable(title: string, headers: string[], rows: string[][])}
 	<div>
@@ -1263,18 +1115,7 @@
 											{/if}
 										</div>
 										<div class="space-y-1 border-t p-2">
-											{#if answerOf(turn.spans)}
-												<div class="mb-2">
-													{@render answerBlock(answerOf(turn.spans))}
-												</div>
-											{/if}
-											{#each spanRows(turn.spans) as row (row.span.id)}
-												{@render spanRow(row)}
-											{:else}
-												<p class="text-[10px] text-muted-foreground">
-													{t('myaaw.observability.no_spans')}
-												</p>
-											{/each}
+											<RunTrajectory spans={turn.spans} showCount={false} />
 										</div>
 									</div>
 								{/each}
@@ -1286,18 +1127,7 @@
 						{:else if detailLoading}
 							<p class="text-sm text-muted-foreground">{t('common.loading')}</p>
 						{:else if detail}
-							{#if answerOf(detail.spans)}
-								<div class="mb-2">
-									{@render answerBlock(answerOf(detail.spans))}
-								</div>
-							{/if}
-							{#each rows as row (row.span.id)}
-								{@render spanRow(row)}
-							{/each}
-							<Separator class="my-2" />
-							<p class="text-[10px] text-muted-foreground">
-								{t('myaaw.observability.spans', { count: rows.length })}
-							</p>
+							<RunTrajectory spans={detail.spans} />
 						{:else}
 							<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
 								{t('myaaw.observability.select_run')}
