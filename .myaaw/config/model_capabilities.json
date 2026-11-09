@@ -42,7 +42,8 @@
         "This file catalogs provider capabilities, not Myaaw adapter capabilities. The current runtime uses its own provider logic; this update adds no loader or runtime code changes.",
         "Models outside the price catalog, such as embeddings, moderation, media-only models without text output prices, and managed agents, are not added to this catalog.",
         "Anthropic coverage lists models that remain callable on the first-party Claude API. Retired models, including Claude Opus 4.1, Claude Opus 4, and Claude Sonnet 4, are excluded even where historical price tables still show them. Claude Sonnet 4.5 is included as deprecated because it remains callable until 2026-11-30.",
-        "Anthropic's provider-hosted web_search, web_fetch, and code_execution tools are represented in builtin_tools; web_fetch is explicitly mapped to the generic url_context field. Anthropic computer use, browser use, bash, and text editor are client-executed tools, so they are described in notes rather than marked as provider-hosted builtins."
+        "Anthropic's provider-hosted web_search, web_fetch, and code_execution tools are represented in builtin_tools; web_fetch is explicitly mapped to the generic url_context field. Anthropic computer use, browser use, bash, and text editor are client-executed tools, so they are described in notes rather than marked as provider-hosted builtins.",
+        "Context window limits were filled from official provider pages on 2026-11-10: Gemini model pages state the input token limit (which is the context window), and the DeepSeek pricing table states a 1M context, stored as 1048576 to match its 384K = 393216 convention."
     ],
     "deepseek-flash": {
         "provider": "deepseek",
@@ -84,7 +85,7 @@
             "url_context": null
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": null,
             "max_output_tokens": 393216
         },
@@ -105,7 +106,7 @@
         ],
         "notes": [
             "Official public documentation checked 2026-11-09. deepseek-flash is currently served by DeepSeek-V4.1-Flash-1017. The version name is not substituted for the documented API model ID.",
-            "The feature table advertises a 1M context, but does not give an exact integer in the fetched specifications; context_window_tokens and max_input_tokens remain null rather than assuming decimal or binary units. Chat Completions explicitly defines 384K output as 393216 tokens; input plus generated tokens must fit the context. Output includes reasoning and final-answer tokens.",
+            "The feature table advertises a 1M context without publishing an exact decimal integer. context_window_tokens stores 1048576, following the same binary convention the table uses for its 384K output (393216). max_input_tokens stays null because the API only states that input plus generated tokens must fit the context. Output includes reasoning and final-answer tokens.",
             "Parallel function calling is explicitly always enabled in Responses; parallel_tool_calls is ignored. Support does not imply that the caller can disable parallel calls or that every API format exposes the same control.",
             "JSON mode guarantees JSON syntax, not adherence to an arbitrary response schema. Chat Completions enumerates text/json_object only. Responses says text.format is fully supported without enumerating schema constraints in that guide, so structured_outputs remains null. Beta strict=true function argument schemas are supported in both thinking modes, but are not equated to schema-constrained final responses.",
             "When tools are present in Chat Completions, preserve all prior reasoning_content in subsequent assistant messages, including turns without a tool call. Missing reasoning_content can cause HTTP 400. Forced required/named tool_choice is unsupported while thinking is enabled; disable thinking to use it.",
@@ -153,7 +154,7 @@
             "url_context": null
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": null,
             "max_output_tokens": 393216
         },
@@ -173,7 +174,7 @@
         ],
         "notes": [
             "Official public documentation checked 2026-11-09. deepseek-v4-pro is currently served by DeepSeek-V4-Pro-0813; this version name is not a documented replacement API model ID.",
-            "The feature table advertises a 1M context, but does not give an exact integer in the fetched specifications; context_window_tokens and max_input_tokens remain null rather than assuming decimal or binary units. Chat Completions explicitly defines 384K output as 393216 tokens; input plus generated tokens must fit the context. Output includes reasoning and final-answer tokens.",
+            "The feature table advertises a 1M context without publishing an exact decimal integer. context_window_tokens stores 1048576, following the same binary convention the table uses for its 384K output (393216). max_input_tokens stays null because the API only states that input plus generated tokens must fit the context. Output includes reasoning and final-answer tokens.",
             "Parallel function calling is explicitly always enabled in Responses; parallel_tool_calls is ignored. Support does not imply that the caller can disable parallel calls or that every API format exposes the same control.",
             "JSON mode guarantees JSON syntax, not adherence to an arbitrary response schema. Chat Completions enumerates text/json_object only. Responses says text.format is fully supported without enumerating schema constraints in that guide, so structured_outputs remains null. Beta strict=true function argument schemas are supported in both thinking modes, but are not equated to schema-constrained final responses.",
             "When tools are present in Chat Completions, preserve all prior reasoning_content in subsequent assistant messages, including turns without a tool call. Missing reasoning_content can cause HTTP 400. Forced required/named tool_choice is unsupported while thinking is enabled; disable thinking to use it.",
@@ -222,7 +223,7 @@
             "url_context": null
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": null,
             "max_output_tokens": 393216
         },
@@ -244,7 +245,7 @@
         "notes": [
             "Legacy API name remains accepted but its original model has retired. The official feature table routes this ID to the current deepseek-flash model. This expanded profile describes the routed service, not the retired original model. Deprecated here classifies the legacy name; no further shutdown date is inferred.",
             "Official public documentation checked 2026-11-09. deepseek-flash is currently served by DeepSeek-V4.1-Flash-1017. The version name is not substituted for the documented API model ID.",
-            "The feature table advertises a 1M context, but does not give an exact integer in the fetched specifications; context_window_tokens and max_input_tokens remain null rather than assuming decimal or binary units. Chat Completions explicitly defines 384K output as 393216 tokens; input plus generated tokens must fit the context. Output includes reasoning and final-answer tokens.",
+            "The feature table advertises a 1M context without publishing an exact decimal integer. context_window_tokens stores 1048576, following the same binary convention the table uses for its 384K output (393216). max_input_tokens stays null because the API only states that input plus generated tokens must fit the context. Output includes reasoning and final-answer tokens.",
             "Parallel function calling is explicitly always enabled in Responses; parallel_tool_calls is ignored. Support does not imply that the caller can disable parallel calls or that every API format exposes the same control.",
             "JSON mode guarantees JSON syntax, not adherence to an arbitrary response schema. Chat Completions enumerates text/json_object only. Responses says text.format is fully supported without enumerating schema constraints in that guide, so structured_outputs remains null. Beta strict=true function argument schemas are supported in both thinking modes, but are not equated to schema-constrained final responses.",
             "When tools are present in Chat Completions, preserve all prior reasoning_content in subsequent assistant messages, including turns without a tool call. Missing reasoning_content can cause HTTP 400. Forced required/named tool_choice is unsupported while thinking is enabled; disable thinking to use it.",
@@ -294,7 +295,7 @@
             "url_context": null
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": null,
             "max_output_tokens": 393216
         },
@@ -316,7 +317,7 @@
         "notes": [
             "Legacy API name remains accepted but its original model has retired. The official feature table routes this ID to the current deepseek-flash model. This expanded profile describes the routed service, not the retired original model. Deprecated here classifies the legacy name; no further shutdown date is inferred.",
             "Official public documentation checked 2026-11-09. deepseek-flash is currently served by DeepSeek-V4.1-Flash-1017. The version name is not substituted for the documented API model ID.",
-            "The feature table advertises a 1M context, but does not give an exact integer in the fetched specifications; context_window_tokens and max_input_tokens remain null rather than assuming decimal or binary units. Chat Completions explicitly defines 384K output as 393216 tokens; input plus generated tokens must fit the context. Output includes reasoning and final-answer tokens.",
+            "The feature table advertises a 1M context without publishing an exact decimal integer. context_window_tokens stores 1048576, following the same binary convention the table uses for its 384K output (393216). max_input_tokens stays null because the API only states that input plus generated tokens must fit the context. Output includes reasoning and final-answer tokens.",
             "Parallel function calling is explicitly always enabled in Responses; parallel_tool_calls is ignored. Support does not imply that the caller can disable parallel calls or that every API format exposes the same control.",
             "JSON mode guarantees JSON syntax, not adherence to an arbitrary response schema. Chat Completions enumerates text/json_object only. Responses says text.format is fully supported without enumerating schema constraints in that guide, so structured_outputs remains null. Beta strict=true function argument schemas are supported in both thinking modes, but are not equated to schema-constrained final responses.",
             "When tools are present in Chat Completions, preserve all prior reasoning_content in subsequent assistant messages, including turns without a tool call. Missing reasoning_content can cause HTTP 400. Forced required/named tool_choice is unsupported while thinking is enabled; disable thinking to use it.",
@@ -5116,7 +5117,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -5194,7 +5195,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -5276,7 +5277,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -5354,7 +5355,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -5435,7 +5436,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -5513,7 +5514,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -5591,7 +5592,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -5664,7 +5665,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -5744,7 +5745,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -5822,7 +5823,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -5901,7 +5902,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -5979,7 +5980,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 1048576,
             "max_input_tokens": 1048576,
             "max_output_tokens": 65536
         },
@@ -6059,7 +6060,7 @@
             "url_context": true
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 131072,
             "max_input_tokens": 131072,
             "max_output_tokens": 65536
         },
@@ -6129,7 +6130,7 @@
             "url_context": false
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 131072,
             "max_input_tokens": 131072,
             "max_output_tokens": 65536
         },
@@ -6199,7 +6200,7 @@
             "url_context": false
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 131072,
             "max_input_tokens": 131072,
             "max_output_tokens": 32768
         },
@@ -6269,7 +6270,7 @@
             "url_context": false
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 131072,
             "max_input_tokens": 131072,
             "max_output_tokens": 32768
         },
@@ -6341,7 +6342,7 @@
             "url_context": false
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 65536,
             "max_input_tokens": 65536,
             "max_output_tokens": 4096
         },
@@ -6407,7 +6408,7 @@
             "url_context": false
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 65536,
             "max_input_tokens": 65536,
             "max_output_tokens": 32768
         },
@@ -6472,7 +6473,7 @@
             "url_context": false
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 65536,
             "max_input_tokens": 65536,
             "max_output_tokens": 32768
         },
@@ -6540,7 +6541,7 @@
             "url_context": null
         },
         "limits": {
-            "context_window_tokens": null,
+            "context_window_tokens": 131072,
             "max_input_tokens": 131072,
             "max_output_tokens": 65536
         },
