@@ -261,6 +261,29 @@ If you just want to use Myaaw without worrying about code, use our interactive i
     myaaw status
     ```
 
+### 🖥 Optional Dashboard (WebUI)
+
+The dashboard is optional and can be installed with or without the binary. It is a Node.js app that talks to the control plane (`myaaw api`).
+
+**Install the dashboard without the binary (WebUI-first):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.sh | bash
+```
+
+On Windows: `powershell -ExecutionPolicy Bypass -File .\webui-install.ps1`. With the unified installer: `... | bash -s -- --webui-only` (dashboard only) or `--webui` (binary + dashboard).
+
+**Or, if the binary is already installed:**
+```bash
+myaaw api start          # control plane on 127.0.0.1:9000
+myaaw webui install      # download the WebUI bundle
+myaaw webui start
+myaaw webui open         # http://127.0.0.1:5050
+```
+
+On a host without the binary, open `/setup` from the dashboard to download and install it, then continue to sign in. First-time logins are sent to the profile page to change the seeded password before continuing.
+
+Requirements: Node.js 20+. The dashboard and the control plane bind to loopback by default. To reach a remote binary, use a tunnel (Tailscale, Cloudflare, ngrok) or SSH port-forward — see [Remote WebUI Connection](docs/webui/remote-connection.md) and [WebUI Security](docs/webui/security.md).
+
 
 
 ## 🛠 Development
@@ -485,7 +508,8 @@ Myaaw runs as a unified background service daemon.
 | Command | Subcommands | Description |
 | :--- | :--- | :--- |
 | **`server`** | `run`, `start`, `stop`, `status` | Manage the Myaaw Server (API + Background Workers) daemon. |
-| **`api`** | `run`, `start`, `stop`, `status`, `restart` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000). `--terminal` also allows the dashboard to open a shell on that host. |
+| **`api`** | `run`, `start`, `stop`, `status`, `restart` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000, `--host` defaults to loopback). `--terminal` also allows the dashboard to open a shell on that host. |
+| **`webui`** | `install`, `run`, `start`, `stop`, `restart`, `status`, `update`, `uninstall`, `open` | Install and manage the optional dashboard (Node.js) separately from the binary. |
 | **`webhook`** | `set`, `info`, `delete` | Manage Telegram bot webhook configuration easily. |
 
 > [!TIP]
@@ -571,7 +595,8 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | [Chat](docs/cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
 | [Voice](docs/cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |
 | [Service Management](docs/cli/service.md) | `server` daemon lifecycle, status, logs, and ports. |
-| [API](docs/cli/api.md) | `api run/start/stop/restart/status`, daemon name, and port handling. |
+| [API](docs/cli/api.md) | `api run/start/stop/restart/status`, `--host`, daemon name, and port handling. |
+| [WebUI](docs/cli/webui.md) | `webui install/run/start/stop/update/uninstall/open`, port, and control-plane URL. |
 | [Cron](docs/cli/cron.md) | Scheduled jobs: cron expressions, intervals, one-time runs, and history. |
 | [Backup & Restore](docs/cli/backup.md) | Per-agent archives, database snapshots, venv recipes, and verified restore. |
 | [Providers](docs/cli/provider.md) | LLM provider integrations and default models. |
@@ -588,6 +613,13 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | [API](docs/api/api.md) | Per-agent `/api/chat`, `/api/chat/stream`, `/api/events`, timeline items, and SSE events. |
 | [Control Plane API](docs/api/control-plane.md) | `myaaw api`: auth, agent switching, chat proxy, files, providers, channels, logs, and cron. |
 | [Web Terminal](docs/api/terminal.md) | A real shell on the API host from the browser: `--terminal`, session lifecycle, and security. |
+
+### 🖥 WebUI
+
+| Document | Description |
+| :--- | :--- |
+| [Security](docs/webui/security.md) | Threat model, loopback, transport, tokens, CORS, terminal, and tunnel vs SSH. |
+| [Remote Connection](docs/webui/remote-connection.md) | Server URL, Tailscale/Cloudflare/ngrok/SSH, and the direct (Option A) connection. |
 
 ### 📚 Generated references
 

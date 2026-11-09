@@ -6,6 +6,40 @@ REPO="Shiyinq/myaaw"
 BIN_NAME="myaaw"
 INSTALL_DIR="$HOME/.local/bin"
 
+WEBUI=0
+WEBUI_ONLY=0
+NO_ONBOARD=0
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --webui) WEBUI=1; shift ;;
+        --webui-only) WEBUI_ONLY=1; shift ;;
+        --no-onboard) NO_ONBOARD=1; shift ;;
+        -h|--help)
+            echo "Usage: install.sh [--webui] [--webui-only] [--no-onboard]"
+            echo ""
+            echo "  (no flags)     Install the binary and run onboarding"
+            echo "  --webui        Install the binary, then the dashboard"
+            echo "  --webui-only   Install only the dashboard (no binary)"
+            echo "  --no-onboard   Skip the onboarding wizard"
+            exit 0
+            ;;
+        *)
+            echo "❌ Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+install_webui() {
+    curl -fsSL https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.sh | bash
+}
+
+if [ "$WEBUI_ONLY" -eq 1 ]; then
+    install_webui
+    exit 0
+fi
+
 echo "================================================="
 echo "🐈 Welcome to MyAAW (Personal AI Assistant) Setup"
 echo "================================================="
@@ -88,8 +122,17 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]] && [ "$OS_NAME" != "windows" ]; then
     echo "export PATH=\"\$HOME/.local/bin:\$PATH\""
 fi
 
-echo ""
-echo "🚀 Launching onboarding process..."
-echo ""
+if [ "$NO_ONBOARD" -eq 0 ]; then
+    echo ""
+    echo "🚀 Launching onboarding process..."
+    echo ""
 
-"${INSTALL_DIR}/${BIN_NAME}${EXT}" onboard
+    "${INSTALL_DIR}/${BIN_NAME}${EXT}" onboard
+fi
+
+if [ "$WEBUI" -eq 1 ]; then
+    echo ""
+    echo "🖥  Installing the optional dashboard..."
+    echo ""
+    install_webui
+fi
