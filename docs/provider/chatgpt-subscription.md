@@ -423,7 +423,7 @@ Each request has the following invariants:
 This is an explanatory wire-body example, not an invitation to copy OAuth tokens into an external client.
 
 - `input` is an array containing all context needed for that request. The agent may first apply its normal context transformation, image eviction, and local transcript compaction; this does not mean every historical turn is sent forever.
-- `system` messages are mapped to `developer`. Supported message roles are developer, user, and assistant, with tool results represented separately.
+- `system` messages are mapped to `developer`. Supported message roles are developer, user, and assistant, with tool results represented separately. Developer/user text uses `input_text`; assistant history without native continuation metadata uses `output_text`, including turns imported from another provider and previously stored error messages.
 - There is no `previous_response_id` or remote `conversation` linkage. Each tool-loop step resends the required context and continuation items.
 - User/tool images become `input_image`: HTTP(S) URLs or PNG/JPEG/WebP/GIF base64 data URLs. Legacy image arrays can be normalized from recognized base64 encodings. Images on developer/assistant messages and unsupported content shapes/types are rejected.
 
@@ -499,6 +499,8 @@ Limits are controlled by OpenAI and can apply to the account or app registration
 | `refresh_required` | Run discovery/inference to refresh when permitted; status itself will not do so. |
 | `reauthorization_required` / confirmed unusable refresh token | Reauthorize the saved registration using the local browser. |
 | `unavailable` after restore or service-user change | Sign in under the intended host OS account and update the provider reference. |
+| `model_not_found` naming a previous provider's model | Confirm the selected provider's `default_model` is a slug available to the ChatGPT account. Changing provider type clears the dashboard model field; select a model for the new type before saving. An ordinary Telegram turn synchronizes its user's model to the loaded agent default. |
+| `invalid_value` for `input_text` in assistant history | Update the Myaaw binary and restart the agent. Assistant text must be serialized as `output_text`; older Telegram or imported-provider history can expose this converter bug even when a new dashboard conversation works. No transcript deletion or OAuth reconnect is required for this serialization fix. |
 | Login `403` | Check socket peer, raw Host, browser Origin/Referer, and whether the browser actually runs on the API host. |
 | EOF without completion | Treat the partial response as interrupted. Check connectivity/timeout; retry intentionally, not as a continuation success. |
 

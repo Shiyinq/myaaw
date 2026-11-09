@@ -1,15 +1,21 @@
 import { z } from 'zod';
-import { nameSchema, optionalTextSchema, optionalUrlSchema } from './primitives';
+import { nameSchema, optionalTextSchema, optionalUrlSchema, required } from './primitives';
 
-export const providerSchema = z.object({
-	name: nameSchema,
-	type: z.enum(['openai', 'gemini', 'openai_chatgpt']),
-	base_url: optionalUrlSchema.optional(),
-	default_model: optionalTextSchema.optional(),
-	api_key: z.string().optional(),
-	auth_mode: z.literal('oauth').optional(),
-	credential_id: z.string().trim().min(1).optional()
-});
+export const providerSchema = z
+	.object({
+		name: nameSchema,
+		type: z.enum(['openai', 'gemini', 'openai_chatgpt']),
+		base_url: optionalUrlSchema.optional(),
+		default_model: optionalTextSchema.optional(),
+		api_key: z.string().optional(),
+		auth_mode: z.literal('oauth').optional(),
+		credential_id: z.string().trim().min(1).optional()
+	})
+	.superRefine((data, ctx) => {
+		if (data.type === 'openai_chatgpt' && !data.default_model) {
+			ctx.addIssue({ code: 'custom', path: ['default_model'], message: required });
+		}
+	});
 
 export type ProviderForm = z.infer<typeof providerSchema>;
 

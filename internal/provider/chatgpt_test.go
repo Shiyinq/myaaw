@@ -252,6 +252,103 @@ func TestChatGPTOAuthToolLoop(t *testing.T) {
 	}
 }
 
+func TestChatGPTImportedAssistantHistoryUsesOutputText(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content interface{}
+	}{
+		{"plain text", "Previous provider answer"},
+		{"typed blocks", []ContentItem{{Type: "text", Text: "Previous provider answer"}}},
+		{"persisted blocks", []interface{}{map[string]interface{}{"type": "text", "text": "Previous provider answer"}}},
+		{"stored error", "⚠️ Agent error: model_not_found"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			history := []Message{
+				{Role: "system", Content: "Be helpful"},
+				{Role: "user", Content: "Previous question"},
+				{Role: "assistant", Content: tc.content},
+				{Role: "user", Content: "Continue"},
+			}
+			input, err := chatGPTInput(history)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, item := range input {
+				message := item.(map[string]interface{})
+				want := "input_text"
+				if message["role"] == "assistant" {
+					want = "output_text"
+				}
+				for _, block := range message["content"].([]map[string]interface{}) {
+					if block["type"] != want {
+						t.Errorf("input[%d] role %s content type = %v, want %s", i, message["role"], block["type"], want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestChatGPTContinuesMixedProviderHistory(t *testing.T) {
+	requests := 0
+	p := chatGPTTestProvider(t, func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Input []struct {
+				Role    string `json:"role"`
+				Content []struct {
+					Type string `json:"type"`
+				} `json:"content"`
+			} `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		requests++
+		for i, message := range request.Input {
+			for _, block := range message.Content {
+				if message.Role == "assistant" && block.Type != "output_text" && block.Type != "refusal" {
+					w.WriteHeader(http.StatusBadRequest)
+					fmt.Fprintf(w, `{"error":{"code":"invalid_value","param":"input[%d].content[0]","message":"Assistant history requires output_text or refusal"}}`, i)
+					return
+				}
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		chatGPTTestCompleted(w, chatGPTTestOutput("Hello from the selected GPT model."))
+	})
+	history := []Message{
+		{Role: "system", Content: "You are a helpful Telegram assistant."},
+		{Role: "user", Content: "Earlier question"},
+		{Role: "assistant", Content: "Answer from the previous API-key provider"},
+		{Role: "user", Content: "hi"},
+		{Role: "assistant", Content: "⚠️ Agent error: model_not_found", IsError: true},
+		{Role: "user", Content: "hi again"},
+	}
+	// Match a persisted Telegram transcript rather than only fresh in-memory messages.
+	data, err := json.Marshal(history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &history); err != nil {
+		t.Fatal(err)
+	}
+	for turn := 0; turn < 2; turn++ {
+		answer, err := p.Chat("", history, nil)
+		if err != nil {
+			t.Fatalf("turn %d: mixed history failed: %v", turn, err)
+		}
+		if MessageText(answer) != "Hello from the selected GPT model." || len(answer.ProviderMetadata) == 0 {
+			t.Fatalf("turn %d: missing answer or native continuation", turn)
+		}
+		history = append(history, answer, Message{Role: "user", Content: "Next turn"})
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+}
+
 func TestChatGPTRedirectDoesNotForwardToken(t *testing.T) {
 	forwarded := false
 	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { forwarded = true }))

@@ -16,6 +16,7 @@ import (
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
+	"myaaw/internal/services/bot/model"
 )
 
 func setRuntimeProvider(cfg config.ProviderConfig) {
@@ -95,6 +96,58 @@ func TestLegacyAPIKeyRuntimeReloadsEffectiveConfig(t *testing.T) {
 	svc.checkAndReloadProvider()
 	if svc.requireProvider() == nil || svc.llmProvider != nil || svc.agent != nil {
 		t.Fatal("invalid auth-mode switch retained API-key client")
+	}
+}
+
+type providerSwitchUserRepo struct {
+	user model.User
+}
+
+func (r *providerSwitchUserRepo) CreateUser(*model.User) (*model.User, error) {
+	return nil, fmt.Errorf("unexpected user creation")
+}
+func (r *providerSwitchUserRepo) GetUserById(int) (*model.User, error) {
+	user := r.user
+	return &user, nil
+}
+func (r *providerSwitchUserRepo) UpdateModel(_ int, name string) error {
+	r.user.Model = name
+	return nil
+}
+func (r *providerSwitchUserRepo) UpdateProvider(_ int, name string) error {
+	r.user.Provider = name
+	return nil
+}
+
+func TestTelegramProviderSwitchSynchronizesStoredUserModel(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%t", stream), func(t *testing.T) {
+			preserveRuntimeProvider(t)
+			config.CurrentProviderID = "subscription"
+			setRuntimeProvider(config.ProviderConfig{
+				Type: "openai_chatgpt", AuthMode: "oauth", CredentialID: "selected-account",
+				DefaultModel: "selected-gpt-model",
+			})
+			repo := &providerSwitchUserRepo{user: model.User{
+				UserId: 42, Name: "Telegram user", Provider: "openai", Model: "deepseek-v4-flash",
+			}}
+			svc := NewBotService(repo, nil).(*BotServiceImpl)
+			// /me follows the normal user/provider synchronization path without
+			// contacting OpenAI or changing a real Telegram conversation.
+			msg := &channel.IncomingMessage{UserID: 42, Channel: "telegram", ChatID: "42", Text: "/me"}
+			var err error
+			if stream {
+				_, err = svc.BotStreamContext(context.Background(), msg, nil)
+			} else {
+				_, err = svc.BotContext(context.Background(), msg)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if repo.user.Provider != "openai_chatgpt" || repo.user.Model != "selected-gpt-model" {
+				t.Fatalf("Telegram retained previous provider/model: %s / %s", repo.user.Provider, repo.user.Model)
+			}
+		})
 	}
 }
 

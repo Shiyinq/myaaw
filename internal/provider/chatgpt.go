@@ -322,7 +322,11 @@ func chatGPTInput(messages []Message) ([]interface{}, error) {
 			}
 			pending[call.ID], seen[call.ID] = true, true
 		}
-		content, err := chatGPTContent(m, "input_text")
+		textType := "input_text"
+		if role == "assistant" {
+			textType = "output_text"
+		}
+		content, err := chatGPTContent(m, textType)
 		if err != nil {
 			return nil, err
 		}

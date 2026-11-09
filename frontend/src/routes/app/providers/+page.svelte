@@ -164,6 +164,7 @@
 
 	function changeType() {
 		formVersion += 1;
+		defaultModel = '';
 		credentialId = '';
 		connection = undefined;
 		connecting = false;
@@ -492,6 +493,7 @@
 								/>
 							</div>
 						{/if}
+						<FieldError code={errors.default_model} />
 
 						<Separator />
 						<div class="flex flex-wrap gap-2">
