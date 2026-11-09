@@ -696,7 +696,7 @@
 			</ol>
 			<a
 				class="mt-6 inline-flex items-center gap-1.5 text-sm font-medium underline underline-offset-4"
-				href={`${REPO}/blob/main/frontend/README.md`}
+				href={`${REPO}/blob/main/webui/README.md`}
 				target="_blank"
 				rel="noreferrer">{t('landing.closing.guide')} <ArrowUpRight class="size-3.5" /></a
 			>

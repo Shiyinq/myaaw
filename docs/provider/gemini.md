@@ -355,6 +355,6 @@ These project-relative links are the basis for this guide; defaults and behavior
 - [Live voice command](../../cmd/myaaw/voice.go) and [classic voice command/WAV conversion](../../cmd/myaaw/voice_classic.go)
 - [Per-agent provider and speech configuration loading](../../internal/config/config.go)
 - [Control-plane model discovery/fallback](../../internal/services/controlplane/service/models.go) and [provider persistence/secret views](../../internal/services/controlplane/service/config.go)
-- [Dashboard provider management](../../frontend/src/routes/app/providers/+page.svelte) and [agent setup](../../frontend/src/routes/app/new/+page.svelte)
+- [Dashboard provider management](../../webui/src/routes/app/providers/+page.svelte) and [agent setup](../../webui/src/routes/app/new/+page.svelte)
 - [REST retry policy](../../internal/provider/retry.go) and [stream retry/idle policy](../../internal/provider/stream_retry.go)
 - [Pinned SDK dependency](../../go.mod)

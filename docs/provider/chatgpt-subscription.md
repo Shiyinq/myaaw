@@ -133,7 +133,7 @@ myaaw --agent myfriend provider connect-chatgpt personal \
 
 `--retry-credential-id` calls browser authorization with the retained binding; it is mutually exclusive with `--credential-id`. It accepts saved accounts or pending registrations, including after a restart. Keep the recovery ID printed by the CLI or exposed in attempt status. An ID is assigned before a registration is persisted, so an early failure before a valid issued-client callback may leave nothing recoverable under that ID.
 
-Sources: [CLI commands](../../cmd/myaaw/provider_chatgpt.go), [onboarding browser adapter](../../cmd/myaaw/onboard_chatgpt.go), [CLI onboarding](../../cmd/myaaw/onboard.go), [connection UI](../../frontend/src/lib/components/common/ChatGPTConnection.svelte).
+Sources: [CLI commands](../../cmd/myaaw/provider_chatgpt.go), [onboarding browser adapter](../../cmd/myaaw/onboard_chatgpt.go), [CLI onboarding](../../cmd/myaaw/onboard.go), [connection UI](../../webui/src/lib/components/common/ChatGPTConnection.svelte).
 
 ## 3. Configuration contains references, not tokens
 
@@ -385,7 +385,7 @@ For a new agent, use `POST /agents/:name/onboard` after sign-in, with the same a
 
 Onboarding requires an explicit or saved subscription model and validates before initialization. See the [Control Plane API](../api/control-plane.md#chatgpt-subscription) for the surrounding auth, onboarding, and config contracts.
 
-Sources: [routes](../../internal/services/controlplane/router.go), [login handlers](../../internal/services/controlplane/handler/chatgpt.go), [provider write handlers](../../internal/services/controlplane/handler/config_write.go), [model service](../../internal/services/controlplane/service/models.go), [onboarding service](../../internal/services/controlplane/service/onboard.go), [frontend API helper](../../frontend/src/lib/apis/providers.ts), [frontend DTOs](../../frontend/src/lib/types/providers.ts).
+Sources: [routes](../../internal/services/controlplane/router.go), [login handlers](../../internal/services/controlplane/handler/chatgpt.go), [provider write handlers](../../internal/services/controlplane/handler/config_write.go), [model service](../../internal/services/controlplane/service/models.go), [onboarding service](../../internal/services/controlplane/service/onboard.go), [frontend API helper](../../webui/src/lib/apis/providers.ts), [frontend DTOs](../../webui/src/lib/types/providers.ts).
 
 ## 8. Model discovery and picker behavior
 
@@ -552,7 +552,7 @@ See [Backup & Restore](../cli/backup.md), [Observability](../agents/observabilit
 | SSE terminal validation and continuation | [ChatGPT stream](../../internal/provider/chatgpt_stream.go) |
 | Connection status, session lifecycle, detach | [Control-plane service](../../internal/services/controlplane/service/chatgpt.go), [handlers](../../internal/services/controlplane/handler/chatgpt.go) |
 | CLI and onboarding | [Provider commands](../../cmd/myaaw/provider_chatgpt.go), [auth normalization](../../internal/onboard/chatgpt.go), [onboarding service](../../internal/services/controlplane/service/onboard.go) |
-| Dashboard contracts | [Connection component](../../frontend/src/lib/components/common/ChatGPTConnection.svelte), [Providers page](../../frontend/src/routes/app/providers/+page.svelte), [new-agent page](../../frontend/src/routes/app/new/+page.svelte), [API helper](../../frontend/src/lib/apis/providers.ts) |
+| Dashboard contracts | [Connection component](../../webui/src/lib/components/common/ChatGPTConnection.svelte), [Providers page](../../webui/src/routes/app/providers/+page.svelte), [new-agent page](../../webui/src/routes/app/new/+page.svelte), [API helper](../../webui/src/lib/apis/providers.ts) |
 | Local regression coverage | [Auth tests](../../internal/auth/chatgpt/chatgpt_test.go), [recovery tests](../../internal/auth/chatgpt/recovery_test.go), [provider tests](../../internal/provider/chatgpt_test.go), [stream tests](../../internal/provider/chatgpt_stream_test.go), [handler tests](../../internal/services/controlplane/handler/chatgpt_test.go) |
 
 The auth/provider regression tests use local test issuers, signed JWTs, and HTTP/SSE fixtures. They are not evidence of a successful live OpenAI login, current account eligibility, or live inference. This reference does not claim such a test.

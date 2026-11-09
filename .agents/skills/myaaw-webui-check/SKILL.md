@@ -1,13 +1,13 @@
 ---
-name: myaaw-frontend-check
-description: 'Verify any Myaaw dashboard (frontend/) change in a real browser, not just one feature. Use when a UI change or fix needs proving: start/check the dev server and control plane, log in headlessly, drive Chrome (desktop + true phone emulation) and Firefox with Selenium, assert computed geometry (overflow, scroll, rects), take screenshots, and run the svelte-check / prettier / eslint / build gates before reporting or committing.'
+name: myaaw-webui-check
+description: 'Verify any Myaaw dashboard (webui/) change in a real browser, not just one feature. Use when a UI change or fix needs proving: start/check the dev server and control plane, log in headlessly, drive Chrome (desktop + true phone emulation) and Firefox with Selenium, assert computed geometry (overflow, scroll, rects), take screenshots, and run the svelte-check / prettier / eslint / build gates before reporting or committing.'
 ---
 
 # Myaaw dashboard verification
 
-The dashboard lives in `frontend/` (SvelteKit 2, Svelte 5 runes, Tailwind 4).
+The dashboard lives in `webui/` (SvelteKit 2, Svelte 5 runes, Tailwind 4).
 It talks to the Go control plane through the same-origin `/api` proxy in
-`frontend/src/hooks.server.ts`, so the browser only ever sees `:5173`.
+`webui/src/hooks.server.ts`, so the browser only ever sees `:5173`.
 
 This skill is the whole loop for any UI work — a layout tweak, a new page, a
 mobile bug, a form, a modal. It is not tied to one page or one feature.
@@ -20,7 +20,7 @@ curl -s -o /dev/null -w 'api: %{http_code}\n'  http://localhost:9000/health
 ```
 
 - Both must be `200`.
-- Dashboard: `cd frontend && npm run dev` (Vite on `:5173`).
+- Dashboard: `cd webui && npm run dev` (Vite on `:5173`).
 - Control plane: it normally runs from the installed CLI (`myaaw api start`);
   do not start a second copy if `:9000` already answers.
 - Never leave a stuck Vite HMR build: if a page renders unstyled, reload it
@@ -28,7 +28,7 @@ curl -s -o /dev/null -w 'api: %{http_code}\n'  http://localhost:9000/health
 
 ## 2. Read the code first, then measure
 
-1. Open the page component **and** `frontend/src/routes/app/+layout.svelte`.
+1. Open the page component **and** `webui/src/routes/app/+layout.svelte`.
    The shell decides height (`isFullHeight`), the header, the sidebar/drawer and
    the mobile breakpoints, so half of a layout bug is usually in the layout.
 2. Find the classes that own the geometry (`h-[45vh]`, `flex-1`, `min-h-0`,
@@ -83,7 +83,7 @@ plus a horizontal-overflow report.
   to have none; for a split layout the opposite.
 - **Selection**: click a row, then check the panel moved into view
   (`scrollTop` changed, panel `top` near 0) — `revealPane()` in
-  `frontend/src/lib/utils/scroll.ts` does this below `lg`.
+  `webui/src/lib/utils/scroll.ts` does this below `lg`.
 - **Drawers/overlays**: assert `inert`/`translate-x` and that a scrim tap, `Esc`
   and a navigation all close it.
 - **Keyboard**: one `ActionChains` per press (`key_down` … `perform()`);
@@ -94,7 +94,7 @@ plus a horizontal-overflow report.
 ## 6. The gates, in this order
 
 ```bash
-cd frontend
+cd webui
 npx prettier --write <touched files>   # keeps the diff formatting-clean
 npx eslint <touched files>
 npm run check                          # svelte-check: 0 errors, 0 warnings
@@ -134,7 +134,7 @@ snippet/`bind:` errors) — never skip it, and quote its actual line in the repo
 - [ ] The changed routes checked at 1440×900 **and** 375×812 (Chrome emulation),
       plus 768–1024 if the change touches a `md:`/`lg:` boundary.
 - [ ] Overflow and scroll numbers collected, not just screenshots.
-- [ ] New copy added to **both** `frontend/src/lib/i18n/locales/en.json` and
+- [ ] New copy added to **both** `webui/src/lib/i18n/locales/en.json` and
       `id.json`.
 - [ ] Agent daemons, tool/skill toggles, theme and locale restored to what they
       were before the test.
@@ -147,4 +147,4 @@ snippet/`bind:` errors) — never skip it, and quote its actual line in the repo
 - It never commits, pushes or tags. That stays with the user, or with the
   `myaaw-pull-requests` / `myaaw-release` skills.
 - Do not add dependencies to the dashboard just to make a check pass; the
-  Selenium harness lives outside `frontend/` for that reason.
+  Selenium harness lives outside `webui/` for that reason.

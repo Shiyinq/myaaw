@@ -242,7 +242,7 @@ The tags are model-only. Each surface strips them before rendering:
 
 | Surface | Implementation |
 | :--- | :--- |
-| Chat bubbles and the edit box | `withoutContext()` in `frontend/src/routes/app/chat/[[conversation]]/+page.svelte` |
+| Chat bubbles and the edit box | `withoutContext()` in `webui/src/routes/app/chat/[[conversation]]/+page.svelte` |
 | Trigger turns | `splitTrigger()` in the same file hides the whole block and draws a badge (icon + `cron`/`heartbeat`/`subagent`); the badge is not clickable |
 | Auto-generated title | `provider.StripContextBlocks` in `conversation.go` |
 | Turn rail labels (control plane) | `provider.StripContextBlocks` in `controlplane/service/conversations.go` |
@@ -384,6 +384,6 @@ Yes, with these caveats:
 | `<trigger>` block and its copy | `internal/provider/triggers.go` |
 | Prepend block, edit preservation | `internal/services/bot/service/conversation.go` |
 | Adapters fill chat type/ids | `internal/channel/telegram/adapter.go`, `internal/channel/discord/adapter.go` |
-| Dashboard stripping and trigger badge | `frontend/src/routes/app/chat/[[conversation]]/+page.svelte` |
+| Dashboard stripping and trigger badge | `webui/src/routes/app/chat/[[conversation]]/+page.svelte` |
 | CLI stripping | `cmd/myaaw/chat.go` |
 | Cache measurement | `provider.Usage.CachedInputTokens`, observability |

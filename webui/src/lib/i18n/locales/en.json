@@ -1310,7 +1310,7 @@
 				"api_title": "Start the control plane API",
 				"api_body": "Run myaaw api start separately for dashboard access. The installer does not start this API.",
 				"dashboard_title": "Build the web dashboard",
-				"dashboard_body": "Use a source checkout and Node.js 20+. In frontend/, run npm install, npm run build, then node build. See the setup guide for API connection settings."
+				"dashboard_body": "Use a source checkout and Node.js 20+. In webui/, run npm install, npm run build, then node build. See the setup guide for API connection settings."
 			},
 			"secondary": "Browse the repository",
 			"signature": "Built quietly, for one loud mind."
