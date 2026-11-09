@@ -376,6 +376,7 @@
 			"context_window": "{count} ctx",
 			"thinking_level": "Thinking level",
 			"thinking_default": "Model default",
+			"thinking_default_short": "Default",
 			"thinking_off": "Off",
 			"approval_picker": "Approval mode",
 			"approval_full_access": "Full Access",

@@ -1001,9 +1001,9 @@
 	}
 
 	function thinkingLabel(value: string) {
-		return value === 'none' || value === 'off'
-			? t('myaaw.chat.thinking_off')
-			: value.charAt(0).toUpperCase() + value.slice(1);
+		if (value === 'none' || value === 'off') return t('myaaw.chat.thinking_off');
+		if (value === 'xhigh') return 'XHigh';
+		return value.charAt(0).toUpperCase() + value.slice(1);
 	}
 
 	function thinkingKey(provider: string, model: string) {
@@ -1036,6 +1036,21 @@
 		const providers = providerInfo?.providers;
 		if (!modelMenuOpen || !currentAgent || !providers?.length) return;
 		untrack(() => void loadModelGroups());
+	});
+
+	// The thinking control lives in the composer footer, so the capability catalog
+	// must arrive without the model menu being opened first.
+	$effect(() => {
+		if (!agent) return;
+		untrack(() => {
+			loadModelCapabilities()
+				.then((caps) => {
+					if (caps) modelCapabilities = caps;
+				})
+				.catch(() => {
+					// Without the catalog the footer hides the thinking control.
+				});
+		});
 	});
 
 	function readLastConversations(): Record<string, string> {
@@ -3431,7 +3446,7 @@
 															{:else}
 																<Cpu class="h-3.5 w-3.5 shrink-0" />
 															{/if}
-															<span class="max-w-16 truncate sm:max-w-56">
+															<span class="hidden truncate sm:inline sm:max-w-56">
 																{activeModel
 																	? modelDisplayName(activeModel)
 																	: t('myaaw.chat.model_label')}
@@ -3534,32 +3549,62 @@
 															</DropdownMenu.Group>
 														{/each}
 													{/if}
-													{#if activeThinkingOptions.length > 0}
-														<DropdownMenu.Separator />
-														<div class="sticky bottom-0 z-10 -mx-1 border-t bg-popover px-3 py-2">
-															<label
-																class="mb-1 flex items-center gap-1 text-[10px] tracking-wide text-muted-foreground uppercase"
-																for="chat-thinking-level"
-															>
-																<Brain class="h-3 w-3 shrink-0" />
-																{t('myaaw.chat.thinking_level')}
-															</label>
-															<select
-																id="chat-thinking-level"
-																class="h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-																value={thinkingLevels[activeThinkingKey] ?? ''}
-																onchange={(event) =>
-																	setThinkingLevel(activeThinkingKey, event.currentTarget.value)}
-															>
-																<option value="">{t('myaaw.chat.thinking_default')}</option>
-																{#each activeThinkingOptions as value (value)}
-																	<option {value}>{thinkingLabel(value)}</option>
-																{/each}
-															</select>
-														</div>
-													{/if}
 												</DropdownMenu.Content>
 											</DropdownMenu.Root>
+											{#if activeThinkingOptions.length > 0}
+												<DropdownMenu.Root>
+													<DropdownMenu.Trigger>
+														{#snippet child({ props })}
+															<button
+																{...props}
+																type="button"
+																class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none"
+																title={t('myaaw.chat.thinking_level')}
+																aria-label={t('myaaw.chat.thinking_level')}
+															>
+																<Brain class="h-3.5 w-3.5 shrink-0" />
+																<span class="hidden whitespace-nowrap sm:inline">
+																	{thinkingLevels[activeThinkingKey]
+																		? thinkingLabel(thinkingLevels[activeThinkingKey])
+																		: t('myaaw.chat.thinking_default_short')}
+																</span>
+																<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+															</button>
+														{/snippet}
+													</DropdownMenu.Trigger>
+													<DropdownMenu.Content align="end" side="top" class="w-44">
+														<DropdownMenu.Item
+															class="items-start gap-2"
+															onclick={() => setThinkingLevel(activeThinkingKey, '')}
+														>
+															<Check
+																class={cn(
+																	'mt-0.5 h-3.5 w-3.5 shrink-0',
+																	thinkingLevels[activeThinkingKey] ? 'opacity-0' : 'opacity-100'
+																)}
+															/>
+															{t('myaaw.chat.thinking_default')}
+														</DropdownMenu.Item>
+														<DropdownMenu.Separator />
+														{#each activeThinkingOptions as value (value)}
+															<DropdownMenu.Item
+																class="items-start gap-2"
+																onclick={() => setThinkingLevel(activeThinkingKey, value)}
+															>
+																<Check
+																	class={cn(
+																		'mt-0.5 h-3.5 w-3.5 shrink-0',
+																		thinkingLevels[activeThinkingKey] === value
+																			? 'opacity-100'
+																			: 'opacity-0'
+																	)}
+																/>
+																{thinkingLabel(value)}
+															</DropdownMenu.Item>
+														{/each}
+													</DropdownMenu.Content>
+												</DropdownMenu.Root>
+											{/if}
 											<DropdownMenu.Root>
 												<DropdownMenu.Trigger>
 													{#snippet child({ props })}
