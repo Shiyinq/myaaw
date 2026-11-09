@@ -68,6 +68,15 @@ func isCodesignCommand(cmd *cobra.Command) bool {
 	return false
 }
 
+func isWebUICommand(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if current.Name() == "webui" {
+			return true
+		}
+	}
+	return false
+}
+
 func startAgentBackgroundLoaders() {
 	tools.ConfigureLogging()
 	skills.ConfigureLogging()
@@ -123,9 +132,10 @@ func init() {
 			"backup":  true,
 			"restore": true,
 			"doctor":  true,
+			"webui":   true,
 		}
 
-		if metaCommands[cmd.Name()] || isAgentCommand(cmd) || isAPISubcommand(cmd) || isCodesignCommand(cmd) {
+		if metaCommands[cmd.Name()] || isAgentCommand(cmd) || isAPISubcommand(cmd) || isCodesignCommand(cmd) || isWebUICommand(cmd) {
 			return nil
 		}
 
@@ -212,7 +222,7 @@ func init() {
 					{name: "Monitoring & Diagnostics", cmdNames: []string{"status", "logs", "observability", "doctor"}},
 					{name: "Settings & Desktop", cmdNames: []string{"config", "computer", "codesign"}},
 					{name: "Maintenance", cmdNames: []string{"backup", "restore", "update", "version", "completion"}},
-					{name: "Service Management", cmdNames: []string{"server", "start", "stop", "restart", "api"}},
+					{name: "Service Management", cmdNames: []string{"server", "start", "stop", "restart", "api", "webui"}},
 				}
 
 				findCmd := func(name string) *cobra.Command {

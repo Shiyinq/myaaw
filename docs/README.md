@@ -44,7 +44,8 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | [Chat](cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
 | [Voice](cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |
 | [Service Management](cli/service.md) | Server daemon lifecycle, status, logs, and ports. |
-| [API](cli/api.md) | `api run/start/stop/restart/status`, `--terminal`, daemon name, and ports. |
+| [API](cli/api.md) | `api run/start/stop/restart/status`, `--host`, `--terminal`, daemon name, and ports. |
+| [WebUI](cli/webui.md) | `webui install/run/start/stop/update/uninstall/open`, port, and control-plane URL. |
 | [Cron](cli/cron.md) | Scheduled jobs: cron expressions, intervals, one-time runs, and history. |
 | [Backup & Restore](cli/backup.md) | Per-agent archives, database snapshots, and verified restore. |
 | [Providers](cli/provider.md) | LLM provider integrations and models. |
@@ -60,8 +61,15 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | Document | Description |
 | :--- | :--- |
 | [API](api/api.md) | Per-agent HTTP API for chat, conversation events, and SSE streaming. |
-| [Control Plane API](api/control-plane.md) | Unified multi-agent API used by web, desktop, and mobile clients. |
+| [Control Plane API](api/control-plane.md) | Unified multi-agent API used by web, desktop, and mobile clients (`--host` defaults to loopback). |
 | [Web Terminal](api/terminal.md) | Browser shell into the API host: enablement, lifecycle, and security. |
+
+## WebUI
+
+| Document | Description |
+| :--- | :--- |
+| [Security](webui/security.md) | Threat model, loopback, transport, tokens, CORS, terminal, and tunnel vs SSH. |
+| [Remote Connection](webui/remote-connection.md) | Server URL, Tailscale/Cloudflare/ngrok/SSH, and the direct (Option A) connection. |
 
 ## Channels
 

@@ -96,7 +96,8 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 | `server stop` | Stop and unregister the daemon | [Service](service.md) |
 | `server restart` | Restart the daemon | [Service](service.md) |
 | `server status` | Check daemon status | [Service](service.md) |
-| `api` | Unified control plane API | [API Command](api.md) |
+| `api` | Unified control plane API (`--host` defaults to loopback) | [API Command](api.md) |
+| `webui` | Install and manage the optional dashboard | [WebUI Command](webui.md) |
 
 `start`, `stop`, and `restart` are aliases for `server start`, `server stop`, and `server restart`.
 
@@ -116,6 +117,7 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
   agents.json               # registry
   controlplane.json         # control plane credentials
   pids/                     # daemon pid files (shared)
+  webui/                    # optional dashboard bundle
   <agent>/
     .env
     config/config.json

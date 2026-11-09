@@ -91,9 +91,43 @@ jobs:
           name: myaaw-${{ matrix.goos }}-${{ matrix.goarch }}
           path: bin/myaaw-*
 
+  webui:
+    name: Build WebUI bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Build WebUI
+        working-directory: webui
+        run: |
+          npm ci
+          npm run build
+          # Keep only runtime dependencies in the shipped bundle.
+          rm -rf node_modules
+          npm ci --omit=dev
+
+      - name: Package WebUI
+        run: |
+          tar -czf "myaaw-webui-${{ github.ref_name }}.tar.gz" \
+            -C webui build node_modules package.json package-lock.json
+
+      - name: Upload WebUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: myaaw-webui
+          path: myaaw-webui-${{ github.ref_name }}.tar.gz
+
   release:
     name: Create GitHub Release
-    needs: build
+    needs: [build, webui]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
