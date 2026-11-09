@@ -34,10 +34,12 @@ Sign in with the credentials seeded on the control plane's first launch:
 
 ## Configuration
 
-`.env.example` contains a single server-side variable:
+`.env.example` contains the server-side variables:
 
 ```bash
 MYAAW_API_BASE_URL=http://localhost:9000
+# Public hosting: /setup returns 404, and the login host hints are hidden.
+# MYAAW_WEBUI_PUBLIC=1
 ```
 
 `src/hooks.server.ts` forwards `/api/*` to that origin through the same-origin

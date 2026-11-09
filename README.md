@@ -272,6 +272,22 @@ curl -fsSL https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.sh
 
 On Windows: `powershell -ExecutionPolicy Bypass -File .\webui-install.ps1`. With the unified installer: `... | bash -s -- --webui-only` (dashboard only) or `--webui` (binary + dashboard).
 
+Flags go after `bash -s --`. For example, a frontend-only dashboard served to other people, pointed at a remote control plane through a tunnel:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.sh \
+  | bash -s -- --connect https://control.example.com --public
+```
+
+| Flag | Meaning |
+| :--- | :--- |
+| `--connect <url>` | Control-plane URL to seed on the login page (alias: `--api-url`). |
+| `--port <port>` | Dashboard port (default `5050`). |
+| `--version <tag>` | Release tag to install (default: latest). |
+| `--public` | Public hosting: `/setup` returns `404`, and the default-credentials hint and the setup link are hidden on the login page. |
+
+The unified installer takes the same options: `... | bash -s -- --webui-only --connect https://control.example.com --public` (dashboard port and tag use `--webui-port` and `--webui-version`). On Windows: `.\webui-install.ps1 -Connect https://control.example.com -Public`. With the binary installed, `myaaw webui install --public` / `myaaw webui start --public` enable the same mode; visitor-facing details are in [WebUI Security](docs/webui/security.md).
+
 **Or, if the binary is already installed:**
 ```bash
 myaaw api start          # control plane on 127.0.0.1:9000
@@ -282,7 +298,7 @@ myaaw webui open         # http://127.0.0.1:5050
 
 On a host without the binary, open `/setup` from the dashboard to download and install it, then continue to sign in. First-time logins are sent to the profile page to change the seeded password before continuing.
 
-Requirements: Node.js 20+. The dashboard and the control plane bind to loopback by default. To reach a remote binary, use a tunnel (Tailscale, Cloudflare, ngrok) or SSH port-forward — see [Remote WebUI Connection](docs/webui/remote-connection.md) and [WebUI Security](docs/webui/security.md).
+Requirements: Node.js 20+. The dashboard and the control plane bind to loopback by default. To reach a remote binary, use a tunnel (Tailscale, Cloudflare, ngrok) or SSH port-forward — see [Remote WebUI Connection](docs/webui/remote-connection.md) and [WebUI Security](docs/webui/security.md). The `/setup` binary download currently supports **linux/amd64** and **darwin/arm64** only; on other platforms, install `myaaw` manually.
 
 
 
@@ -509,7 +525,7 @@ Myaaw runs as a unified background service daemon.
 | :--- | :--- | :--- |
 | **`server`** | `run`, `start`, `stop`, `status` | Manage the Myaaw Server (API + Background Workers) daemon. |
 | **`api`** | `run`, `start`, `stop`, `status`, `restart` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000, `--host` defaults to loopback). `--terminal` also allows the dashboard to open a shell on that host. |
-| **`webui`** | `install`, `run`, `start`, `stop`, `restart`, `status`, `update`, `uninstall`, `open` | Install and manage the optional dashboard (Node.js) separately from the binary. |
+| **`webui`** | `install`, `run`, `start`, `stop`, `restart`, `status`, `update`, `rollback`, `uninstall`, `open` | Install and manage the optional dashboard (Node.js) separately from the binary. |
 | **`webhook`** | `set`, `info`, `delete` | Manage Telegram bot webhook configuration easily. |
 
 > [!TIP]

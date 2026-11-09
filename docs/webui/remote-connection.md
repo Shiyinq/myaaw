@@ -83,9 +83,14 @@ Then set Server URL to `http://localhost:9000` in the WebUI login (the default).
 
 ## 5. UX (login & settings)
 
-- **Implemented**: the login page has an optional **Server URL** field (pre-filled from the saved value).
-- **Implemented**: the settings page has a **Connection** card that saves the URL and reconnects.
-- **Implemented**: `/setup` reports whether the binary and control plane are available, and can install the binary on this host. For a remote control plane, sign in and set the Server URL instead of installing locally.
+- **Implemented**: the login page and the settings **Connection** card share a connection picker:
+  - a dropdown of saved control-plane URLs (multiple tunnels are supported),
+  - a **Local** entry when the binary is installed on this host (cannot be removed),
+  - **Custom URL…** to add a tunnel (e.g. `https://abc.ngrok-free.app`),
+  - a remove action for saved entries.
+- On first run the picker is seeded from `~/.myaaw/webui/config.json` (`api_url`, written by `--connect` / `--api-url`) and from the installed binary. Later choices are stored in `localStorage`.
+- **Implemented**: `/setup` reports whether the binary and control plane are available, and can install the binary on this host.
+- **Public hosting**: run the dashboard with `MYAAW_WEBUI_PUBLIC=1` (or `--public`) when it is served to other people. `/setup` and its endpoints then answer `404`, and the login page hides both the default-credentials hint and the setup link; visitors only need the tunnel URL, username, and password. See [WebUI security](security.md).
 
 ---
 
@@ -115,11 +120,12 @@ Then set Server URL to `http://localhost:9000` in the WebUI login (the default).
 {
   "port": 5050,
   "api_url": "http://localhost:9000",
-  "version": "v2026.11.9"
+  "version": "v2026.11.9",
+  "public": true
 }
 ```
 
-`api_url` is the initial/default value. User changes are stored in browser `localStorage` (simpler, avoids writing the file on every change).
+`api_url` is the initial/default value. User changes are stored in browser `localStorage` (simpler, avoids writing the file on every change). `public` mirrors `MYAAW_WEBUI_PUBLIC=1` and is written by `myaaw webui install --public` / `start --public`.
 
 ---
 
