@@ -19,7 +19,7 @@ func setupApprovalsCLI(t *testing.T) {
 	if err := agentdir.SetActive("myfriend"); err != nil {
 		t.Fatalf("SetActive: %v", err)
 	}
-	dir := filepath.Join(home, ".myaaw", "myfriend", "config")
+	dir := filepath.Join(home, ".myaaw", "agents", "myfriend", "config")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

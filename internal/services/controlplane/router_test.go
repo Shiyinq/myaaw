@@ -271,7 +271,7 @@ func TestRouterRawFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	agentHome := filepath.Join(home, ".myaaw", "myfriend", "home")
+	agentHome := filepath.Join(home, ".myaaw", "agents", "myfriend", "home")
 
 	// Smallest valid PNG (1x1, transparent).
 	png := []byte{
@@ -517,7 +517,7 @@ func TestRouterContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	agentHome := filepath.Join(home, ".myaaw", "myfriend", "home")
+	agentHome := filepath.Join(home, ".myaaw", "agents", "myfriend", "home")
 	if err := os.MkdirAll(filepath.Join(agentHome, "memory", "daily"), 0o755); err != nil {
 		t.Fatalf("mkdir memory: %v", err)
 	}
@@ -597,7 +597,7 @@ func TestRouterSkillsAndTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	skillsDir := filepath.Join(agentRoot, "skills")
 	if err := os.MkdirAll(filepath.Join(skillsDir, "weather"), 0o755); err != nil {
 		t.Fatalf("mkdir skill: %v", err)
@@ -850,7 +850,7 @@ func TestRouterReadOnlyManagement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 
 	agentConfig := `{
 		"default_provider":"openai",
@@ -962,7 +962,7 @@ func TestRouterConversationManagement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	dbDir := filepath.Join(agentRoot, "database")
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {
 		t.Fatalf("mkdir database: %v", err)
@@ -1087,7 +1087,7 @@ func TestRouterConversationActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	dbDir := filepath.Join(home, ".myaaw", "myfriend", "database")
+	dbDir := filepath.Join(home, ".myaaw", "agents", "myfriend", "database")
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {
 		t.Fatalf("mkdir database: %v", err)
 	}
@@ -1189,7 +1189,7 @@ func TestRouterUsesConfiguredUserID(t *testing.T) {
 		t.Fatalf("write credentials: %v", err)
 	}
 
-	dbDir := filepath.Join(home, ".myaaw", "myfriend", "database")
+	dbDir := filepath.Join(home, ".myaaw", "agents", "myfriend", "database")
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {
 		t.Fatalf("mkdir database: %v", err)
 	}
@@ -1728,7 +1728,7 @@ func setupTestAgent(t *testing.T, baseURL string) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	for _, dir := range []string{
 		filepath.Join(agentRoot, "home"),
 		filepath.Join(agentRoot, "config"),

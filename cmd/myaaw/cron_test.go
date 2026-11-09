@@ -41,7 +41,7 @@ func TestCronAddRequiresSessionForAPITargets(t *testing.T) {
 
 	cronAddCmd.Run(cronAddCmd, nil)
 
-	path := filepath.Join(home, ".myaaw", agentdir.DefaultAgentName, "cron", "jobs.json")
+	path := filepath.Join(home, ".myaaw", "agents", agentdir.DefaultAgentName, "cron", "jobs.json")
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("an api job without a session id was stored: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestCronAddDropsChatTypeForNonDiscord(t *testing.T) {
 
 	cronAddCmd.Run(cronAddCmd, nil)
 
-	path := filepath.Join(home, ".myaaw", agentdir.DefaultAgentName, "cron", "jobs.json")
+	path := filepath.Join(home, ".myaaw", "agents", agentdir.DefaultAgentName, "cron", "jobs.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
@@ -143,7 +143,7 @@ func TestCronAddWritesToFlaggedAgent(t *testing.T) {
 
 	cronAddCmd.Run(cronAddCmd, nil)
 
-	path := filepath.Join(home, ".myaaw", "agent-b", "cron", "jobs.json")
+	path := filepath.Join(home, ".myaaw", "agents", "agent-b", "cron", "jobs.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
@@ -163,7 +163,7 @@ func TestCronAddWritesToFlaggedAgent(t *testing.T) {
 		t.Errorf("delivery target lost: %+v", job.Delivery)
 	}
 
-	defaultStore := filepath.Join(home, ".myaaw", agentdir.DefaultAgentName, "cron", "jobs.json")
+	defaultStore := filepath.Join(home, ".myaaw", "agents", agentdir.DefaultAgentName, "cron", "jobs.json")
 	if _, err := os.Stat(defaultStore); !os.IsNotExist(err) {
 		t.Errorf("default agent store was touched: %v", err)
 	}

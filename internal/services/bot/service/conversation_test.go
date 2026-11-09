@@ -349,7 +349,7 @@ func TestBuildConversationMessagesStoresUploads(t *testing.T) {
 	}
 
 	upload := last.Uploads[0]
-	wantDir := filepath.Join(home, ".myaaw", "myfriend", "user", "uploads", "conv-1", last.ID)
+	wantDir := filepath.Join(home, ".myaaw", "agents", "myfriend", "user", "uploads", "conv-1", last.ID)
 	if filepath.Dir(upload.Path) != wantDir {
 		t.Fatalf("upload dir = %q, want %q", filepath.Dir(upload.Path), wantDir)
 	}

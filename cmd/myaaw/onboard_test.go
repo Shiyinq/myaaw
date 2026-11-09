@@ -292,7 +292,7 @@ func TestInitialOnboardModelAgentName(t *testing.T) {
 	if m.agentName != "agent-b" {
 		t.Fatalf("agentName = %q", m.agentName)
 	}
-	want := filepath.Join("/tmp/onboard-home", ".myaaw", "agent-b")
+	want := filepath.Join("/tmp/onboard-home", ".myaaw", "agents", "agent-b")
 	if m.myaawHome != want {
 		t.Fatalf("myaawHome = %q, want %q", m.myaawHome, want)
 	}

@@ -103,7 +103,7 @@ func TestScreenshotDeliverAddsAttachment(t *testing.T) {
 	if len(result.Attachments) != 1 || result.Attachments[0].FileName != "screenshot-frame01.png" {
 		t.Fatalf("attachments = %+v", result.Attachments)
 	}
-	path := filepath.Join(home, ".myaaw", "default", "jobs", "captures", "screenshot-frame01.png")
+	path := filepath.Join(home, ".myaaw", "agents", "default", "jobs", "captures", "screenshot-frame01.png")
 	if data, err := os.ReadFile(path); err != nil || string(data) != "PNGDATA" {
 		t.Fatalf("saved capture = %q, err=%v", data, err)
 	}

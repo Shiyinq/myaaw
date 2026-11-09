@@ -27,7 +27,7 @@ import (
 var onboardCmd = &cobra.Command{
 	Use:   "onboard",
 	Short: "Interactive setup for first-time use",
-	Long:  "Create or configure an agent: choose its name, provider, channels, and heartbeat, then write ~/.myaaw/<agent>.",
+	Long:  "Create or configure an agent: choose its name, provider, channels, and heartbeat, then write ~/.myaaw/agents/<agent>.",
 	Run:   runOnboard,
 }
 
@@ -529,7 +529,7 @@ func (m onboardModel) existingProvider(name string) (config.ProviderConfig, bool
 // setAgent pins the agent name and recomputes every derived path.
 func (m *onboardModel) setAgent(name string) {
 	m.agentName = name
-	m.myaawHome = filepath.Join(m.homeDir, ".myaaw", name)
+	m.myaawHome = filepath.Join(m.homeDir, ".myaaw", "agents", name)
 	m.envFile = filepath.Join(m.myaawHome, ".env")
 	m.configFile = filepath.Join(m.myaawHome, "config", "config.json")
 }

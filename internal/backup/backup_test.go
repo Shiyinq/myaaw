@@ -28,7 +28,7 @@ func setupHome(t *testing.T, agents ...string) string {
 	registry := &agentdir.Registry{Default: agents[0], Agents: map[string]agentdir.AgentInfo{}}
 	for _, name := range agents {
 		registry.Agents[name] = agentdir.AgentInfo{CreatedAt: "2026-01-01"}
-		if err := os.MkdirAll(filepath.Join(root, name), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, "agents", name), 0o755); err != nil {
 			t.Fatalf("mkdir agent: %v", err)
 		}
 	}
@@ -51,7 +51,7 @@ func writeFile(t *testing.T, path, content string, mode os.FileMode) {
 // createAgentFixture builds a representative agent tree.
 func createAgentFixture(t *testing.T, root, name string) {
 	t.Helper()
-	base := filepath.Join(root, name)
+	base := filepath.Join(root, "agents", name)
 	writeFile(t, filepath.Join(base, "config", "config.json"), `{
   "default_provider": "deepseek",
   "providers": {"deepseek": {"type": "openai", "api_key": "SECRET-KEY", "base_url": "https://x"}}
@@ -137,7 +137,7 @@ func TestCreateSnapshotsObservabilityDatabase(t *testing.T) {
 	root := setupHome(t, "default")
 	createAgentFixture(t, root, "default")
 
-	dbPath := filepath.Join(root, "default", "database", "observability.db")
+	dbPath := filepath.Join(root, "agents", "default", "database", "observability.db")
 	store, err := obs.Open(dbPath, obs.Options{})
 	if err != nil {
 		t.Fatalf("open observability db: %v", err)
@@ -194,7 +194,7 @@ func TestCreateSnapshotsObservabilityDatabase(t *testing.T) {
 func TestCreateAgentCoreAndExcludes(t *testing.T) {
 	root := setupHome(t, "default")
 	createAgentFixture(t, root, "default")
-	db := createTestDatabase(t, filepath.Join(root, "default", "database", "myaaw.db"))
+	db := createTestDatabase(t, filepath.Join(root, "agents", "default", "database", "myaaw.db"))
 	defer db.Close()
 
 	outDir := t.TempDir()
@@ -394,7 +394,7 @@ func TestCreateAllNoSecretsSkipsControlplane(t *testing.T) {
 func TestCreateSkipsOutputDirInsideAgent(t *testing.T) {
 	root := setupHome(t, "default")
 	createAgentFixture(t, root, "default")
-	outDir := filepath.Join(root, "default", "backups")
+	outDir := filepath.Join(root, "agents", "default", "backups")
 
 	results, err := Create(Options{Agents: []string{"default"}, OutputDir: outDir})
 	if err != nil {

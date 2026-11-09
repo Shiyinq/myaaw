@@ -56,7 +56,7 @@ func writeTarGz(t *testing.T, path string, entries []tarEntry) {
 func TestRestoreAgent(t *testing.T) {
 	root := setupHome(t, "default")
 	createAgentFixture(t, root, "default")
-	db := createTestDatabase(t, filepath.Join(root, "default", "database", "myaaw.db"))
+	db := createTestDatabase(t, filepath.Join(root, "agents", "default", "database", "myaaw.db"))
 	db.Close()
 
 	archives, err := Create(Options{Agents: []string{"default"}, OutputDir: t.TempDir()})
@@ -65,7 +65,7 @@ func TestRestoreAgent(t *testing.T) {
 	}
 	archive := archives[0].Path
 
-	if err := os.RemoveAll(filepath.Join(root, "default")); err != nil {
+	if err := os.RemoveAll(filepath.Join(root, "agents", "default")); err != nil {
 		t.Fatalf("remove agent: %v", err)
 	}
 
@@ -78,11 +78,11 @@ func TestRestoreAgent(t *testing.T) {
 	}
 
 	for _, rel := range []string{".env", "home/AGENTS.md", "config/config.json", "database/myaaw.db"} {
-		if _, err := os.Stat(filepath.Join(root, "default", filepath.FromSlash(rel))); err != nil {
+		if _, err := os.Stat(filepath.Join(root, "agents", "default", filepath.FromSlash(rel))); err != nil {
 			t.Errorf("restored file %s: %v", rel, err)
 		}
 	}
-	info, err := os.Stat(filepath.Join(root, "default", ".env"))
+	info, err := os.Stat(filepath.Join(root, "agents", "default", ".env"))
 	if err != nil {
 		t.Fatalf(".env: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestRestoreAgent(t *testing.T) {
 		t.Errorf(".env mode = %o, want 600", info.Mode().Perm())
 	}
 
-	restored, err := sql.Open("sqlite3", filepath.Join(root, "default", "database", "myaaw.db"))
+	restored, err := sql.Open("sqlite3", filepath.Join(root, "agents", "default", "database", "myaaw.db"))
 	if err != nil {
 		t.Fatalf("open restored db: %v", err)
 	}
@@ -120,12 +120,12 @@ func TestRestoreRefusesExistingWithoutForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	writeFile(t, filepath.Join(root, "default", ".env"), "CHANGED=1\n", 0o600)
+	writeFile(t, filepath.Join(root, "agents", "default", ".env"), "CHANGED=1\n", 0o600)
 
 	if _, err := Restore(RestoreOptions{Archive: archives[0].Path}); err == nil {
 		t.Fatal("Restore should refuse to overwrite an existing agent")
 	}
-	data, err := os.ReadFile(filepath.Join(root, "default", ".env"))
+	data, err := os.ReadFile(filepath.Join(root, "agents", "default", ".env"))
 	if err != nil {
 		t.Fatalf("read .env: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestRestoreForceCreatesPreRestoreBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	writeFile(t, filepath.Join(root, "default", ".env"), "CHANGED=1\n", 0o600)
+	writeFile(t, filepath.Join(root, "agents", "default", ".env"), "CHANGED=1\n", 0o600)
 
 	result, err := Restore(RestoreOptions{Archive: archives[0].Path, Force: true})
 	if err != nil {
@@ -154,7 +154,7 @@ func TestRestoreForceCreatesPreRestoreBackup(t *testing.T) {
 	if _, err := os.Stat(result.PreRestoreBackup); err != nil {
 		t.Fatalf("pre-restore backup: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "default", ".env"))
+	data, err := os.ReadFile(filepath.Join(root, "agents", "default", ".env"))
 	if err != nil {
 		t.Fatalf("read .env: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestRestoreForceCreatesPreRestoreBackup(t *testing.T) {
 
 func TestRestoreRejectsPathTraversal(t *testing.T) {
 	root := setupHome(t, "default")
-	writeFile(t, filepath.Join(root, "default", "config", "config.json"), "{}", 0o600)
+	writeFile(t, filepath.Join(root, "agents", "default", "config", "config.json"), "{}", 0o600)
 
 	archive := filepath.Join(t.TempDir(), "evil.tar.gz")
 	writeTarGz(t, archive, []tarEntry{{name: "../evil.txt", data: []byte("x")}})
@@ -180,7 +180,7 @@ func TestRestoreRejectsPathTraversal(t *testing.T) {
 
 func TestRestoreRejectsChecksumMismatch(t *testing.T) {
 	root := setupHome(t, "default")
-	writeFile(t, filepath.Join(root, "default", "config", "config.json"), "{}", 0o600)
+	writeFile(t, filepath.Join(root, "agents", "default", "config", "config.json"), "{}", 0o600)
 
 	manifest := Manifest{
 		Format: FormatVersion,
@@ -209,7 +209,7 @@ func TestRestoreRejectsChecksumMismatch(t *testing.T) {
 
 func TestRestoreRejectsUnlistedFile(t *testing.T) {
 	root := setupHome(t, "default")
-	writeFile(t, filepath.Join(root, "default", "config", "config.json"), "{}", 0o600)
+	writeFile(t, filepath.Join(root, "agents", "default", "config", "config.json"), "{}", 0o600)
 
 	content := []byte("abc")
 	sum := sha256.Sum256(content)
@@ -306,18 +306,18 @@ func TestRestoreReplacesInertLogsDirWithoutForce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := os.RemoveAll(filepath.Join(root, "default")); err != nil {
+	if err := os.RemoveAll(filepath.Join(root, "agents", "default")); err != nil {
 		t.Fatalf("remove agent: %v", err)
 	}
-	writeFile(t, filepath.Join(root, "default", "logs", "tools.log"), "old log\n", 0o644)
-	if err := os.MkdirAll(filepath.Join(root, "default", "tools"), 0o755); err != nil {
+	writeFile(t, filepath.Join(root, "agents", "default", "logs", "tools.log"), "old log\n", 0o644)
+	if err := os.MkdirAll(filepath.Join(root, "agents", "default", "tools"), 0o755); err != nil {
 		t.Fatalf("mkdir tools: %v", err)
 	}
 
 	if _, err := Restore(RestoreOptions{Archive: archives[0].Path}); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "default", "home", "AGENTS.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "agents", "default", "home", "AGENTS.md")); err != nil {
 		t.Fatalf("restored agent: %v", err)
 	}
 }
@@ -330,7 +330,7 @@ func TestRestoreAgentOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := os.RemoveAll(filepath.Join(root, "default")); err != nil {
+	if err := os.RemoveAll(filepath.Join(root, "agents", "default")); err != nil {
 		t.Fatalf("remove agent: %v", err)
 	}
 
@@ -341,7 +341,7 @@ func TestRestoreAgentOverride(t *testing.T) {
 	if result.Agent != "renamed" {
 		t.Fatalf("agent = %q", result.Agent)
 	}
-	if _, err := os.Stat(filepath.Join(root, "renamed", "home", "AGENTS.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "agents", "renamed", "home", "AGENTS.md")); err != nil {
 		t.Fatalf("renamed agent: %v", err)
 	}
 	registry, err := agentdir.LoadRegistry()

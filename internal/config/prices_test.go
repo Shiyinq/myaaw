@@ -52,7 +52,7 @@ func TestLoadBaseConfigReadsPriceFiles(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	dir := filepath.Join(home, ".myaaw", "default", "config")
+	dir := filepath.Join(home, ".myaaw", "agents", "default", "config")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -28,7 +28,7 @@ func TestLoadBaseConfigRedactNoneDisables(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("OBS_REDACT_PATTERNS", "none")
 
-	dir := filepath.Join(home, ".myaaw", "default", "config")
+	dir := filepath.Join(home, ".myaaw", "agents", "default", "config")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir config: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestLoadBaseConfigHonorsZeroRetention(t *testing.T) {
 	// starting value even when the repository has a .env file.
 	t.Setenv("OBS_RETENTION_DAYS", "30")
 
-	dir := filepath.Join(home, ".myaaw", "default", "config")
+	dir := filepath.Join(home, ".myaaw", "agents", "default", "config")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir config: %v", err)
 	}

@@ -158,7 +158,7 @@ func Create(opts Options) ([]Result, error) {
 
 	results := make([]Result, 0, len(agents)+1)
 	for _, name := range agents {
-		result, err := createAgent(root, outDir, toStdout, name, opts, now)
+		result, err := createAgent(outDir, toStdout, name, opts, now)
 		if err != nil {
 			return results, fmt.Errorf("backup %s: %w", name, err)
 		}
@@ -205,8 +205,11 @@ func expandHome(path string) (string, error) {
 	return filepath.Abs(path)
 }
 
-func createAgent(root, outDir string, toStdout bool, name string, opts Options, now time.Time) (Result, error) {
-	agentRoot := filepath.Join(root, name)
+func createAgent(outDir string, toStdout bool, name string, opts Options, now time.Time) (Result, error) {
+	agentRoot, err := agentdir.AgentRoot(name)
+	if err != nil {
+		return Result{}, err
+	}
 	info, err := os.Stat(agentRoot)
 	if err != nil {
 		return Result{}, errors.New("agent directory not found")

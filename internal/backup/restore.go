@@ -174,7 +174,7 @@ func Restore(opts RestoreOptions) (result RestoreResult, err error) {
 	result.Agent = name
 	result.Files = len(manifest.Files)
 	result.Note = note
-	result.PortWarning = portConflict(root, name, targetDir)
+	result.PortWarning = portConflict(name, targetDir)
 
 	entry := readRegistryEntry(staging)
 	if registerErr := registerAgent(name, entry); registerErr != nil {
@@ -452,7 +452,7 @@ func registerAgent(name string, entry registryEntryFile) error {
 	return agentdir.SaveRegistry(registry)
 }
 
-func portConflict(root, name, agentRoot string) string {
+func portConflict(name, agentRoot string) string {
 	port := envPort(filepath.Join(agentRoot, ".env"))
 	if port == "" {
 		return ""
@@ -465,7 +465,11 @@ func portConflict(root, name, agentRoot string) string {
 		if other == name {
 			continue
 		}
-		otherPort := envPort(filepath.Join(root, other, ".env"))
+		otherRoot, err := agentdir.AgentRoot(other)
+		if err != nil {
+			continue
+		}
+		otherPort := envPort(filepath.Join(otherRoot, ".env"))
 		if otherPort != "" && otherPort == port {
 			return fmt.Sprintf("PORT %s is also configured for agent %q", port, other)
 		}

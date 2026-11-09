@@ -14,7 +14,7 @@ func setupFileAgent(t *testing.T) (string, string) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	for _, dir := range []string{
 		filepath.Join(agentRoot, "home", "notes"),
 		filepath.Join(agentRoot, "user", "uploads", "conv-1", "msg-1"),
