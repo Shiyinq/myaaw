@@ -214,12 +214,34 @@ func chatGPTHTTPError(res *http.Response) error {
 }
 
 type chatGPTRequest struct {
-	Model   string                   `json:"model"`
-	Input   []interface{}            `json:"input"`
-	Store   bool                     `json:"store"`
-	Stream  bool                     `json:"stream"`
-	Include []string                 `json:"include"`
-	Tools   []map[string]interface{} `json:"tools,omitempty"`
+	Model     string                   `json:"model"`
+	Input     []interface{}            `json:"input"`
+	Store     bool                     `json:"store"`
+	Stream    bool                     `json:"stream"`
+	Include   []string                 `json:"include"`
+	Tools     []map[string]interface{} `json:"tools,omitempty"`
+	Reasoning *chatGPTReasoning        `json:"reasoning,omitempty"`
+}
+
+type chatGPTReasoning struct {
+	Summary string `json:"summary"`
+}
+
+var chatGPTReasoningFamily = regexp.MustCompile(`^gpt-[56]([.-]|$)`)
+
+func chatGPTReasoningForModel(model string) *chatGPTReasoning {
+	model = strings.ToLower(strings.TrimSpace(model))
+	// Older/non-reasoning models reject this parameter. Keep their request
+	// unchanged, and leave effort at the model's default rather than forcing it.
+	if strings.Contains(model, "-chat") {
+		return nil
+	}
+	if chatGPTReasoningFamily.MatchString(model) ||
+		model == "o3" || (strings.HasPrefix(model, "o3-") && !strings.HasPrefix(model, "o3-mini")) ||
+		model == "o4-mini" || strings.HasPrefix(model, "o4-mini-") {
+		return &chatGPTReasoning{Summary: "auto"}
+	}
+	return nil
 }
 
 var chatGPTToolName = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)

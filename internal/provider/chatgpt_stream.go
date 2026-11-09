@@ -69,6 +69,8 @@ type chatGPTStreamEvent struct {
 	Type         string             `json:"type"`
 	OutputIndex  int                `json:"output_index"`
 	ContentIndex int                `json:"content_index"`
+	SummaryIndex int                `json:"summary_index"`
+	Part         json.RawMessage    `json:"part"`
 	ItemID       string             `json:"item_id"`
 	Item         *chatGPTOutputItem `json:"item"`
 	Delta        string             `json:"delta"`
@@ -115,7 +117,7 @@ func (p *ChatGPTProvider) ChatStreamEvents(ctx context.Context, model string, me
 		return err
 	}
 	body, err := json.Marshal(chatGPTRequest{Model: model, Input: input, Store: false, Stream: true,
-		Include: []string{"reasoning.encrypted_content"}, Tools: wireTools})
+		Include: []string{"reasoning.encrypted_content"}, Tools: wireTools, Reasoning: chatGPTReasoningForModel(model)})
 	if err != nil {
 		return fmt.Errorf("cannot encode ChatGPT request: %w", err)
 	}
@@ -139,6 +141,7 @@ func (p *ChatGPTProvider) ChatStreamEvents(ctx context.Context, model string, me
 func chatGPTMessage(output []chatGPTOutputItem, names map[string]string, validateTools bool) (Message, error) {
 	m := Message{Role: "assistant", Version: 2}
 	var text strings.Builder
+	var summaries []string
 	seen := map[string]bool{}
 	for i := range output {
 		item := &output[i]
@@ -193,12 +196,22 @@ func chatGPTMessage(output []chatGPTOutputItem, names map[string]string, validat
 				empty := []json.RawMessage{}
 				item.Summary = &empty
 			}
-			// Encrypted content is opaque; never expose it as displayable thought.
+			for _, raw := range *item.Summary {
+				summary, err := chatGPTSummaryText(raw)
+				if err != nil {
+					return m, err
+				}
+				if summary != "" {
+					summaries = append(summaries, summary)
+				}
+			}
+			// Encrypted content is opaque; only explicit summaries are displayable.
 		default:
 			return m, fmt.Errorf("unsupported ChatGPT output item %q", item.Type)
 		}
 	}
 	m.Content = text.String()
+	m.Thought = strings.Join(summaries, "\n\n")
 	if len(output) > 0 {
 		metadata, err := json.Marshal(chatGPTContinuation{Output: output})
 		if err != nil {
@@ -209,11 +222,104 @@ func chatGPTMessage(output []chatGPTOutputItem, names map[string]string, validat
 	return m, nil
 }
 
+func chatGPTSummaryText(raw json.RawMessage) (string, error) {
+	var part struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &part); err != nil {
+		return "", errors.New("invalid ChatGPT reasoning summary part")
+	}
+	if part.Type != "summary_text" {
+		return "", nil
+	}
+	return part.Text, nil
+}
+
+func chatGPTSetSummary(item *chatGPTOutputItem, index int, text string, raw json.RawMessage) error {
+	if item.Summary == nil {
+		parts := []json.RawMessage{}
+		item.Summary = &parts
+	}
+	for len(*item.Summary) <= index {
+		*item.Summary = append(*item.Summary, json.RawMessage(`{"type":"summary_text","text":""}`))
+	}
+	part := map[string]interface{}{}
+	if len(raw) == 0 {
+		raw = (*item.Summary)[index]
+	}
+	if err := json.Unmarshal(raw, &part); err != nil || part == nil {
+		return errors.New("invalid ChatGPT reasoning summary part")
+	}
+	part["type"], part["text"] = "summary_text", text
+	encoded, err := json.Marshal(part)
+	if err != nil {
+		return errors.New("cannot preserve ChatGPT reasoning summary part")
+	}
+	(*item.Summary)[index] = encoded
+	return nil
+}
+
 func consumeChatGPTSSE(r io.Reader, names map[string]string, requestID string, onEvent func(StreamEvent) error) (final Message, err error) {
 	final = Message{Role: "assistant", Version: 2}
 	items := map[int]*chatGPTOutputItem{}
 	completedItems := map[string]chatGPTOutputItem{}
 	var streamedText, thought strings.Builder
+	// Track identities, not text equality: two different parts may legitimately
+	// say the same thing, while done/item/completed snapshots repeat one part.
+	type summaryKey struct {
+		output, part int
+		raw          bool
+	}
+	summaries := map[summaryKey]string{}
+	var lastSummary summaryKey
+	updateSummary := func(key summaryKey, text string, snapshot bool) error {
+		if key.output < 0 || key.output > 10000 || key.part < 0 || key.part > 10000 {
+			return errors.New("invalid ChatGPT reasoning summary index")
+		}
+		if text == "" {
+			return nil
+		}
+		previous := summaries[key]
+		if snapshot {
+			if strings.HasPrefix(previous, text) {
+				return nil
+			}
+			if !strings.HasPrefix(text, previous) {
+				return errors.New("ChatGPT reasoning summary changed after streaming")
+			}
+			summaries[key] = text
+		} else {
+			summaries[key] = previous + text
+		}
+		delta := summaries[key][len(previous):]
+		// Raw-content and summary indices belong to different arrays. Keep both
+		// identities and stream delivery order, even if their events interleave.
+		if thought.Len() > 0 && lastSummary != key {
+			delta = "\n\n" + delta
+		}
+		lastSummary = key
+		thought.WriteString(delta)
+		if delta != "" {
+			return onEvent(StreamEvent{Type: StreamThinkingDelta, Thought: delta})
+		}
+		return nil
+	}
+	summarySnapshot := func(index int, item *chatGPTOutputItem) error {
+		if item.Type != "reasoning" || item.Summary == nil {
+			return nil
+		}
+		for part, raw := range *item.Summary {
+			text, err := chatGPTSummaryText(raw)
+			if err != nil {
+				return err
+			}
+			if err := updateSummary(summaryKey{output: index, part: part}, text, true); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	var usage Usage
 	defer func() {
 		if err != nil {
@@ -269,6 +375,9 @@ func consumeChatGPTSSE(r io.Reader, names map[string]string, requestID string, o
 			if ev.Type == "response.output_item.done" && ev.Item.ID != "" {
 				completedItems[ev.Item.ID] = *ev.Item
 			}
+			if err := summarySnapshot(ev.OutputIndex, ev.Item); err != nil {
+				return err
+			}
 		case "response.output_text.delta", "response.refusal.delta":
 			item, err := getItem(ev)
 			if err != nil {
@@ -317,10 +426,47 @@ func consumeChatGPTSSE(r io.Reader, names map[string]string, requestID string, o
 			} else {
 				item.Arguments += ev.Delta
 			}
-		case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
-			thought.WriteString(ev.Delta)
-			if ev.Delta != "" {
-				return onEvent(StreamEvent{Type: StreamThinkingDelta, Thought: ev.Delta})
+		case "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done",
+			"response.reasoning_summary_part.added", "response.reasoning_summary_part.done",
+			"response.reasoning_text.delta", "response.reasoning_text.done":
+			part := ev.SummaryIndex
+			rawReasoning := strings.HasPrefix(ev.Type, "response.reasoning_text.")
+			if rawReasoning {
+				part = ev.ContentIndex
+			}
+			key := summaryKey{output: ev.OutputIndex, part: part, raw: rawReasoning}
+			if key.output < 0 || key.output > 10000 || key.part < 0 || key.part > 10000 {
+				return errors.New("invalid ChatGPT reasoning summary index")
+			}
+			item := items[ev.OutputIndex]
+			if ev.ItemID != "" && (item == nil || item.ID != ev.ItemID || item.Type != "reasoning") {
+				return errors.New("ChatGPT reasoning summary has no matching output item")
+			}
+			text := ev.Text
+			snapshot := !strings.HasSuffix(ev.Type, ".delta")
+			if !snapshot {
+				text = ev.Delta
+			} else if strings.HasPrefix(ev.Type, "response.reasoning_summary_part.") {
+				var summaryPart struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}
+				if err := json.Unmarshal(ev.Part, &summaryPart); err != nil {
+					return errors.New("invalid ChatGPT reasoning summary part")
+				}
+				if summaryPart.Type != "summary_text" {
+					return nil
+				}
+				text = summaryPart.Text
+			}
+			if err := updateSummary(key, text, snapshot); err != nil {
+				return err
+			}
+			if item != nil && item.Type == "reasoning" && !strings.HasPrefix(ev.Type, "response.reasoning_text.") {
+				// Keep replayable summary parts when a terminal response omits output.
+				if err := chatGPTSetSummary(item, part, summaries[key], ev.Part); err != nil {
+					return err
+				}
 			}
 		case "response.completed":
 			if ev.Response == nil {
@@ -344,6 +490,9 @@ func consumeChatGPTSSE(r io.Reader, names map[string]string, requestID string, o
 					if done, ok := completedItems[item.ID]; ok {
 						item.EncryptedContent = done.EncryptedContent
 					}
+				}
+				if err := summarySnapshot(i, item); err != nil {
+					return err
 				}
 			}
 			message, err := chatGPTMessage(output, names, true)

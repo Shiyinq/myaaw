@@ -435,11 +435,21 @@ A model's completed `function_call` is mapped to a local Myaaw tool call. The ag
 
 Local shell, MCP, or computer tools exposed as supported function schemas are distinct from OpenAI-hosted Responses tools. This provider does not turn them into hosted MCP, Code Interpreter, or native computer-use calls.
 
+### Visible thinking summaries
+
+For recognized reasoning families, Myaaw requests `reasoning: {"summary": "auto"}`. It does not set `reasoning.effort`, so the model's default effort remains unchanged. The current conservative name check covers GPT-5/GPT-6 families except `-chat` variants, `o3`/its non-mini variants, and `o4-mini` variants. Older/non-reasoning and unrecognized model names receive no `reasoning` parameter. This local heuristic is not a guarantee of upstream capability or account eligibility; new naming families may require an adapter update.
+
+Visible summary text is read from `response.reasoning_summary_text.delta`/`.done`, `response.reasoning_summary_part.added`/`.done`, reasoning output-item snapshots, and the final `response.completed.output[].summary`. Explicit `response.reasoning_text` deltas/done events remain accepted for compatible streams. Thinking chunks become `Message.Thought` and the normal agent/channel `thought` events, including when the summary appears only at completion. Summary parts are tracked by output/part index, so a repeated terminal snapshot is not displayed twice and two distinct parts with identical text are not collapsed.
+
+The adapter preserves replayable raw summary fields separately from their display projection. Raw-content indices and summary-part indices are tracked separately, and visible chunks preserve stream delivery order even when those event families interleave. A malformed identity/index or a contradictory summary snapshot is rejected instead of appending misleading duplicate text. Partial thinking remains available when a stream is interrupted, but incomplete tool calls are never executed.
+
+A reasoning summary is not the model's raw hidden reasoning. Encrypted continuation bytes and reasoning-token counters are never converted to thinking text. Even with summary enabled, an upstream model/request can return no summary; Myaaw does not fabricate one or increase effort to force its appearance. See [OpenAI reasoning summaries](https://developers.openai.com/api/docs/guides/reasoning#reasoning-summaries).
+
 ### Encrypted reasoning continuation
 
 The provider requests `reasoning.encrypted_content` and stores supported output items in assistant `provider_metadata.openai_chatgpt`. Reasoning item IDs, summary arrays, encrypted content when returned, assistant output, and function-call data are preserved for replay. If the terminal snapshot omits ciphertext, the parser can recover it from the corresponding completed output item, not an unfinished added item.
 
-Encrypted content is opaque continuation state, **not displayable thought**. Explicit reasoning text/summary deltas may be surfaced as thinking events separately. Preserve an original assistant turn and its metadata together; the adapter rejects metadata that no longer matches the turn's text/tool calls. Agent request copies filter metadata to the selected provider type, and transformations that change the paired payload discard stale metadata. Local persistence retains continuation state so it can be resumed; `store: false` is not a ban on local conversation storage.
+Encrypted content is opaque continuation state, **not displayable thought**. Only explicit visible reasoning text/summaries are surfaced as thinking events separately. Preserve an original assistant turn and its metadata together; the adapter rejects metadata that no longer matches the turn's text/tool calls. Agent request copies filter metadata to the selected provider type, and transformations that change the paired payload discard stale metadata. Local persistence retains continuation state so it can be resumed; `store: false` is not a ban on local conversation storage.
 
 Sources: [request/input/tool mapping](../../internal/provider/chatgpt.go), [stream and continuation parser](../../internal/provider/chatgpt_stream.go), [agent message isolation](../../internal/agent/messages.go), [agent loop](../../internal/agent/engine.go), [agent-loop reference](../agents/agent-loop.md).
 
@@ -462,7 +472,7 @@ OpenAI's ChatGPT plan-usage preview is not the complete paid API surface, and My
 
 For local attachment behavior, see [Control Plane chat attachments](../api/control-plane.md#attaching-files) and [Agent Context](../agents/context.md).
 
-The current official preview requires omission of `background`, `conversation`, `max_output_tokens`, `max_tool_calls`, `metadata`, `moderation`, `multi_agent`, `prompt`, `prompt_cache_retention`, `safety_identifier`, `temperature`, `top_logprobs`, `top_p`, `truncation`, and `user`. It also requires omitting `previous_response_id` over HTTP and avoiding explicit system message items. Myaaw's request struct sends only model, input, store, stream, include, and optional namespaced tools; it is not a generic Responses-parameter pass-through. Local `provider_metadata` is not the unsupported top-level wire `metadata` field. Top-level `programmatic_tool_calling` tools are not supported either.
+The current official preview requires omission of `background`, `conversation`, `max_output_tokens`, `max_tool_calls`, `metadata`, `moderation`, `multi_agent`, `prompt`, `prompt_cache_retention`, `safety_identifier`, `temperature`, `top_logprobs`, `top_p`, `truncation`, and `user`. It also requires omitting `previous_response_id` over HTTP and avoiding explicit system message items. Myaaw's request struct sends model, input, store, stream, include, optional namespaced tools, and the optional summary-only reasoning configuration described above; it is not a generic Responses-parameter pass-through. Local `provider_metadata` is not the unsupported top-level wire `metadata` field. Top-level `programmatic_tool_calling` tools are not supported either.
 
 See OpenAI's [Models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference) and [Preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations) for upstream policy. Changes upstream do not automatically add serialization or parsing support to Myaaw.
 
@@ -496,6 +506,7 @@ Limits are controlled by OpenAI and can apply to the account or app registration
 | `subscription_sharing_usage_unavailable` | Keep the credential and try later; this is not proof that the registration must be deleted. |
 | `subscription_sharing_user_not_eligible` | Check account/workspace eligibility and policy; explicitly choose an eligible registration or another provider. |
 | `subscription_sharing_unsupported_capability` | Check model, content, and tool types against the implemented subset and preview restrictions. |
+| No Thinking text while reasoning-token usage is nonzero | Install the updated adapter and check that the selected model supports reasoning summaries. Recognized reasoning models request `summary: "auto"`, but tokens/ciphertext alone are not visible summaries and an upstream empty summary stays empty. |
 | `refresh_required` | Run discovery/inference to refresh when permitted; status itself will not do so. |
 | `reauthorization_required` / confirmed unusable refresh token | Reauthorize the saved registration using the local browser. |
 | `unavailable` after restore or service-user change | Sign in under the intended host OS account and update the provider reference. |
