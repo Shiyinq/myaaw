@@ -291,7 +291,7 @@ Notes:
 
 Onboarding also joins the agent to the local A2A mesh, the same way `myaaw agent create` does:
 
-- registers the agent in `agents.json` (and fixes the default when it pointed at a non-initialized folder),
+- registers the agent in `~/.myaaw/config/agents.json` (and fixes the default when it pointed at a non-initialized folder),
 - generates `A2A_TOKEN` in `.env` if it is missing, and never rotates an existing token,
 - adds every other agent to this agent's `contacts.json`,
 - adds this agent to every other agent's `contacts.json`,

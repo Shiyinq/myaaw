@@ -183,7 +183,10 @@ var webuiUninstallCmd = &cobra.Command{
 		}
 
 		if webuiPurge {
-			credentials := filepath.Join(filepath.Dir(root), "controlplane.json")
+			credentials, pathErr := agentdir.GlobalConfigPath("controlplane.json")
+			if pathErr != nil {
+				log.Fatalf("Could not resolve control-plane credentials: %v", pathErr)
+			}
 			if askYesNo("Also remove control-plane credentials ("+credentials+")?", false) {
 				if err := os.Remove(credentials); err != nil && !os.IsNotExist(err) {
 					log.Fatalf("Could not remove %s: %v", credentials, err)

@@ -17,7 +17,9 @@
 	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
 	import {
+		capabilityFor,
 		loadModelGroups as loadCachedModelGroups,
+		loadModelCapabilities,
 		type ModelGroup
 	} from '$lib/stores/modelCatalog';
 	import { tts } from '$lib/speech/tts.svelte';
@@ -85,6 +87,7 @@
 		Attachment,
 		ConversationTurn,
 		Message,
+		ModelCapabilitiesView,
 		Upload,
 		Usage
 	} from '$lib/types';
@@ -233,6 +236,10 @@
 	let modelGroupsKey = '';
 	let modelMenuOpen = $state(false);
 	let loadingModels = $state(false);
+	let modelCapabilities = $state<ModelCapabilitiesView | null>(null);
+	// Thinking level is UI-only until the agent loop supports it. Keyed by
+	// provider:model so switching models does not lose the pending choice.
+	let thinkingLevels = $state<Record<string, string>>({});
 	let providerInfoLoaded = $state(false);
 	let switchingModel = $state(false);
 	// Approvals mode for the next message: "off" is Full access, "manual" asks.
@@ -871,10 +878,14 @@
 		if (providers.length === 0) return;
 		loadingModels = true;
 		try {
-			const groups = await loadCachedModelGroups(currentAgent, providers);
+			const [groups, caps] = await Promise.all([
+				loadCachedModelGroups(currentAgent, providers),
+				loadModelCapabilities().catch(() => null)
+			]);
 			if (agent !== currentAgent) return;
 			modelGroups = groups;
 			modelGroupsKey = currentAgent;
+			if (caps) modelCapabilities = caps;
 		} finally {
 			loadingModels = false;
 		}
@@ -942,6 +953,69 @@
 	function modelDisplayName(model: string) {
 		return model.startsWith('models/') ? model.slice('models/'.length) : model;
 	}
+
+	const CAPABILITY_CHIPS = [
+		['thinking', 'myaaw.chat.model_cap_thinking'],
+		['vision', 'myaaw.chat.model_cap_vision'],
+		['function_calling', 'myaaw.chat.model_cap_tools'],
+		['parallel_function_calling', 'myaaw.chat.model_cap_parallel'],
+		['structured_outputs', 'myaaw.chat.model_cap_structured'],
+		['json_mode', 'myaaw.chat.model_cap_json'],
+		['streaming', 'myaaw.chat.model_cap_streaming'],
+		['prompt_caching', 'myaaw.chat.model_cap_cache'],
+		['batch_api', 'myaaw.chat.model_cap_batch']
+	] as const;
+
+	function capabilityChips(model: string) {
+		const flags = capabilityFor(modelCapabilities, model)?.capabilities;
+		if (!flags) return [];
+		return CAPABILITY_CHIPS.filter(([key]) => flags[key] === true);
+	}
+
+	function contextWindowLabel(model: string) {
+		const tokens = capabilityFor(modelCapabilities, model)?.context_window_tokens;
+		if (!tokens) return '';
+		if (tokens >= 1_000_000) return `${Number((tokens / 1_000_000).toFixed(1))}M`;
+		if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+		return String(tokens);
+	}
+
+	function modelStatusLabel(status?: string) {
+		if (!status || status === 'active') return '';
+		if (status === 'preview') return t('myaaw.chat.model_status_preview');
+		if (status === 'deprecated') return t('myaaw.chat.model_status_deprecated');
+		return t('myaaw.chat.model_status_unknown');
+	}
+
+	function thinkingOptions(model: string) {
+		const entry = capabilityFor(modelCapabilities, model);
+		if (entry?.capabilities?.thinking !== true) return [];
+		const values = [...(entry.thinking?.effort_values ?? [])];
+		if (
+			entry.thinking?.can_disable === true &&
+			!values.some((value) => value === 'none' || value === 'off')
+		) {
+			values.unshift('off');
+		}
+		return values;
+	}
+
+	function thinkingLabel(value: string) {
+		return value === 'none' || value === 'off'
+			? t('myaaw.chat.thinking_off')
+			: value.charAt(0).toUpperCase() + value.slice(1);
+	}
+
+	function thinkingKey(provider: string, model: string) {
+		return `${provider}:${model}`;
+	}
+
+	function setThinkingLevel(key: string, value: string) {
+		thinkingLevels = { ...thinkingLevels, [key]: value };
+	}
+
+	let activeThinkingKey = $derived(thinkingKey(activeProvider, activeModel));
+	let activeThinkingOptions = $derived(thinkingOptions(activeModel));
 
 	let providerKey = '';
 	$effect(() => {
@@ -3395,19 +3469,54 @@
 																	{/if}
 																</DropdownMenu.Label>
 																{#each group.models as model (model)}
+																	{@const capability = capabilityFor(modelCapabilities, model)}
+																	{@const chips = capabilityChips(model)}
 																	<DropdownMenu.Item
-																		class="gap-2 font-mono text-xs"
+																		class="items-start gap-2 py-1.5"
 																		onclick={() => void switchModel(group.name, model)}
 																	>
 																		<Check
 																			class={cn(
-																				'h-3.5 w-3.5 shrink-0',
+																				'mt-0.5 h-3.5 w-3.5 shrink-0',
 																				group.name === activeProvider && model === activeModel
 																					? 'opacity-100'
 																					: 'opacity-0'
 																			)}
 																		/>
-																		<span class="truncate">{modelDisplayName(model)}</span>
+																		<span class="min-w-0 flex-1">
+																			<span class="flex items-center gap-1.5">
+																				<span class="truncate font-mono text-xs">
+																					{modelDisplayName(model)}
+																				</span>
+																				{#if modelStatusLabel(capability?.status)}
+																					<span
+																						class="shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
+																					>
+																						{modelStatusLabel(capability?.status)}
+																					</span>
+																				{/if}
+																				{#if contextWindowLabel(model)}
+																					<span
+																						class="ml-auto shrink-0 text-[9px] text-muted-foreground"
+																					>
+																						{t('myaaw.chat.context_window', {
+																							count: contextWindowLabel(model)
+																						})}
+																					</span>
+																				{/if}
+																			</span>
+																			{#if chips.length > 0}
+																				<span class="mt-1 flex flex-wrap gap-1">
+																					{#each chips as [key, labelKey] (key)}
+																						<span
+																							class="rounded bg-muted px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground"
+																						>
+																							{t(labelKey)}
+																						</span>
+																					{/each}
+																				</span>
+																			{/if}
+																		</span>
 																	</DropdownMenu.Item>
 																{/each}
 																{#if group.models.length === 0}
@@ -3424,6 +3533,30 @@
 																{/if}
 															</DropdownMenu.Group>
 														{/each}
+													{/if}
+													{#if activeThinkingOptions.length > 0}
+														<DropdownMenu.Separator />
+														<div class="sticky bottom-0 z-10 -mx-1 border-t bg-popover px-3 py-2">
+															<label
+																class="mb-1 flex items-center gap-1 text-[10px] tracking-wide text-muted-foreground uppercase"
+																for="chat-thinking-level"
+															>
+																<Brain class="h-3 w-3 shrink-0" />
+																{t('myaaw.chat.thinking_level')}
+															</label>
+															<select
+																id="chat-thinking-level"
+																class="h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+																value={thinkingLevels[activeThinkingKey] ?? ''}
+																onchange={(event) =>
+																	setThinkingLevel(activeThinkingKey, event.currentTarget.value)}
+															>
+																<option value="">{t('myaaw.chat.thinking_default')}</option>
+																{#each activeThinkingOptions as value (value)}
+																	<option {value}>{thinkingLabel(value)}</option>
+																{/each}
+															</select>
+														</div>
 													{/if}
 												</DropdownMenu.Content>
 											</DropdownMenu.Root>

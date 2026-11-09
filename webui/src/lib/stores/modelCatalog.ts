@@ -1,5 +1,7 @@
+import { models as modelsApi } from '$lib/apis/models';
 import { providers as providersApi } from '$lib/apis/providers';
 import { getErrorMessage } from '$lib/utils/api';
+import type { ModelCapabilitiesView, ModelCapabilityEntry } from '$lib/types';
 
 export interface CatalogProvider {
 	name: string;
@@ -84,4 +86,36 @@ export async function loadModelGroups(
 export function clearModelCatalog(agent?: string) {
 	if (agent) cache.delete(agent);
 	else cache.clear();
+}
+
+// The capability catalog is global and changes only when the binary or the
+// editable file changes, so one request per page load is enough.
+let capabilitiesCache: Promise<ModelCapabilitiesView> | null = null;
+
+export function loadModelCapabilities(): Promise<ModelCapabilitiesView> {
+	if (!capabilitiesCache) {
+		capabilitiesCache = modelsApi.capabilities().catch((err) => {
+			capabilitiesCache = null;
+			throw err;
+		});
+	}
+	return capabilitiesCache;
+}
+
+/** Looks up a model id, tolerating Gemini's `models/` namespace. */
+export function capabilityFor(
+	view: ModelCapabilitiesView | null,
+	modelId: string
+): ModelCapabilityEntry | undefined {
+	if (!view) return undefined;
+	const direct = view.models[modelId];
+	if (direct) return direct;
+	if (modelId.startsWith('models/')) {
+		return view.models[modelId.slice('models/'.length)];
+	}
+	return undefined;
+}
+
+export function clearModelCapabilities() {
+	capabilitiesCache = null;
 }

@@ -89,7 +89,7 @@ graph TD
     User --> API
 
     subgraph SHARED["~/.myaaw (shared state)"]
-        REG[(agents.json<br/>default agent + registry)]
+        REG[(config/agents.json<br/>default agent + registry)]
         PIDS[(pids/<br/>myaaw-server-AGENT.pid)]
         REG ~~~ PIDS
     end
@@ -202,13 +202,13 @@ graph TD
 
 Telegram and Discord payloads always pass through a queue first: **channel adapter → in-memory queue → queue consumer → that agent's own `POST /webhook/bot`**. The queue is an in-process Go channel, so each agent process has its own queue; messages can never move between agents. Cron and heartbeat are the exception: they call `POST /heartbeat` directly on their own server.
 
-Both processes share `~/.myaaw/agents.json` (registry and default agent) and `~/.myaaw/pids/` (one `myaaw-server-<agent>.pid` file per running server). Nothing else is shared: config, `.env`, SQLite, `home/`, skills, jobs, logs, and ports are per agent.
+Both processes share `~/.myaaw/config/agents.json` (registry and default agent) and `~/.myaaw/pids/` (one `myaaw-server-<agent>.pid` file per running server). Nothing else is shared: config, `.env`, SQLite, `home/`, skills, jobs, logs, and ports are per agent.
 
 `Agent Core` marks the components that belong to the agent itself (system prompt builder, event loop, transcript, tools, provider). The `System Prompt Builder` reads identity files from `home/` (`BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SECURITY.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) and `skills/`, and Bot Service passes the resulting messages to the loop. `MEMORY.md` and `memory/` are not auto-injected: the agent reads and writes them through tools during a run, following the rules in `AGENTS.md`.
 
 Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, and `home/`. `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
 
-The selection node resolves the active agent from `~/.myaaw/agents.json`. Telegram and Discord do not use it: each bot token already binds messages to one agent process. Only CLI sessions resolve `--agent` / picker / `MYAAW_AGENT`, and they use the selected agent's config, SQLite, and `home/`: `myaaw chat` drives the Bot Service and loop in its own process, `myaaw voice` goes straight to the provider, and `myaaw voice-classic` drives the loop with tools.
+The selection node resolves the active agent from `~/.myaaw/config/agents.json`. Telegram and Discord do not use it: each bot token already binds messages to one agent process. Only CLI sessions resolve `--agent` / picker / `MYAAW_AGENT`, and they use the selected agent's config, SQLite, and `home/`: `myaaw chat` drives the Bot Service and loop in its own process, `myaaw voice` goes straight to the provider, and `myaaw voice-classic` drives the loop with tools.
 
 ### Key Components
 
@@ -220,8 +220,9 @@ The selection node resolves the active agent from `~/.myaaw/agents.json`. Telegr
 6. **Message Queue (`internal/services/queue`)**: Handles asynchronous messaging using fast, native **Go Channels**. Polled or webhook payloads are pushed to the in-memory queue and processed by the Consumer worker to reliably deliver messages.
 7. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
 8. **Local Workspace (`~/.myaaw`)**: The operational directory for the Agent.
-   - `agents.json`: Registry of isolated agents and the default agent.
-   - `<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The first agent is named during onboarding; only legacy upgrades use `default/`.
+   - `config/`: Shared configuration — `agents.json` (registry and default agent), `controlplane.json` (credentials), and the model tables (`model_capabilities.json`, `model_prices.json`, `tool_prices.json`).
+   - `agents/<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The first agent is named during onboarding; only legacy upgrades use `default/`.
+     - `config/model_prices.json` / `config/tool_prices.json`: optional per-agent overrides, merged per key over the shared tables. New agents do not receive them, and model capabilities have no per-agent layer.
      - `home/`: Long-term file storage containing the agent's core definitions:
        - `AGENTS.md` / `SOUL.md`: Persona and behavior instructions.
        - `SECURITY.md`: Hard security rules (input is untrusted, never trust a tag alone).
@@ -230,7 +231,7 @@ The selection node resolves the active agent from `~/.myaaw/agents.json`. Telegr
        - `HEARTBEAT.md`: Ongoing active background jobs and tasks.
        - `MEMORY.md` & `memory/`: Historical conversation summarizations and logs.
        - `workspace/`: All agent-created output. Coding projects live in `workspace/projects/` and downloads in `workspace/downloads/`; the home root stays reserved for identity and memory files.
-9. **Multi-Agent Runtime (`internal/agentdir`)**: Resolves the active agent from `--agent`, `MYAAW_AGENT`, or `agents.json`. Each agent process gets an isolated config, `.env`, SQLite database, home, workspace, skills, jobs, logs, cron, tools, channels, and server port.
+9. **Multi-Agent Runtime (`internal/agentdir`)**: Resolves the active agent from `--agent`, `MYAAW_AGENT`, or `config/agents.json`. Each agent process gets an isolated config, `.env`, SQLite database, home, workspace, skills, jobs, logs, cron, tools, channels, and server port.
 
 ## 🚀 Quick Start (Non-Technical)
 
@@ -509,7 +510,7 @@ Back up agent data into portable `tar.gz` archives. Archives are written to `~/.
 
 | Command | Description |
 | :--- | :--- |
-| `myaaw backup` | Back up every initialized agent plus `agents.json` and `controlplane.json`. |
+| `myaaw backup` | Back up every initialized agent plus the shared config (`agents.json`, `controlplane.json`, and the model tables). |
 | `myaaw backup --agent agent-b` | Back up one agent. |
 | `myaaw backup --agent agent-b,agent-c -o ~/Backups` | Back up several agents to a custom directory. |
 | `myaaw backup --include-workspace --include-logs` | Include workspace and log files. |

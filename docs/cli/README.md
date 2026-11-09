@@ -105,7 +105,7 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 
 - **Per-agent everything.** Config, `.env`, database, memory, skills, logs, and the server port belong to one agent under `~/.myaaw/agents/<agent>/`. Use `--agent` or `agent use` to switch.
 - **Daemons are per agent.** Each agent runs `myaaw-server-<agent>` on its own `PORT`. Rebuilding the binary does not change a running daemon; restart each agent to pick up new code.
-- **Secrets stay local.** `.env`, `config/config.json`, `contacts.json`, and `controlplane.json` contain credentials. They are never printed unmasked by `config dump`.
+- **Secrets stay local.** `.env`, `config/config.json`, `contacts.json`, and `config/controlplane.json` contain credentials. They are never printed unmasked by `config dump`.
 - **Exit codes.** Success is `0`. Command errors print a single `Error: ...` line and exit non-zero.
 - **Machine-readable output.** `backup` and `restore` accept `--json`.
 - **Shell completion.** `myaaw completion bash|zsh|fish|powershell`.
@@ -114,23 +114,36 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 
 ```text
 ~/.myaaw/
-  agents.json               # registry
-  controlplane.json         # control plane credentials
+  config/                   # shared configuration
+    agents.json             # registry
+    controlplane.json       # control plane credentials
+    model_capabilities.json # model capability catalog
+    model_prices.json       # shared model prices
+    tool_prices.json        # shared tool prices
   pids/                     # daemon pid files (shared)
   webui/                    # optional dashboard bundle
-  <agent>/
-    .env
-    config/config.json
-    contacts.json
-    database/myaaw.db
-    database/observability.db
-    home/
-    skills/
-    tools/
-    cron/
-    jobs/
-    logs/
-    user/uploads/            # files attached in chat
+  agents/
+    <agent>/
+      .env
+      config/config.json
+      config/approvals.json
+      config/model_prices.json   # optional per-agent override
+      config/tool_prices.json    # optional per-agent override
+      contacts.json
+      database/myaaw.db
+      database/observability.db
+      home/
+      skills/
+      tools/
+      cron/
+      jobs/
+      logs/
+      user/uploads/          # files attached in chat
 ```
+
+The two per-agent price files are optional: when present they override the shared
+tables per key for that agent only, and new agents do not receive them. Model
+capabilities are global only. See
+[Overriding prices](../agents/observability.md#overriding-prices).
 
 See [Multi-Agent](../agents/multi-agent.md) for the full directory reference.

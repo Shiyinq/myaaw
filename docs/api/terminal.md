@@ -103,7 +103,7 @@ The agent name only selects the starting directory. It is **not** a sandbox: `cd
 The terminal is remote code execution by design. It is the same power as an SSH login as the user running `myaaw api`, so treat the control plane token as a host credential.
 
 - **Same OS user, no sandbox.** The shell runs as the user that started `myaaw api`. Agent tool approvals, allowlists, and path restrictions apply to the *agent's tools*, not to this PTY.
-- **A dashboard token is now root-equivalent** for that user: whoever holds it can read `~/.ssh`, `~/.myaaw/controlplane.json`, every agent's memory, and can start anything. Keep the gate off on any host you would not hand a shell to.
+- **A dashboard token is now root-equivalent** for that user: whoever holds it can read `~/.ssh`, `~/.myaaw/config/controlplane.json`, every agent's memory, and can start anything. Keep the gate off on any host you would not hand a shell to.
 - **Keep it on loopback.** The default bind is `localhost:9000`. If you must expose the control plane, put it behind TLS and a reverse proxy that terminates HTTPS, and restrict `ALLOWED_ORIGINS` — the browser will happily attach the bearer token to a chunked stream.
 - **No output is stored.** The server does not log keystrokes or terminal output. The scrollback lives in the browser tab (and in that tab's `sessionStorage`, on the same machine), never in `~/.myaaw`. There is no audit trail beyond process start/stop; use OS-level accounting if you need one.
 - **Bounded blast radius.** Two shells per agent, a five minute grace window after the last heartbeat, and every shell dies with the control plane. Nothing is daemonised or written to disk.

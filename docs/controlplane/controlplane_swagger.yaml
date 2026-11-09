@@ -1956,6 +1956,44 @@ definitions:
       name:
         type: string
     type: object
+  service.ModelCapabilitiesView:
+    properties:
+      models:
+        additionalProperties:
+          $ref: '#/definitions/service.ModelCapabilityEntry'
+        type: object
+      version:
+        type: integer
+      warning:
+        type: string
+    type: object
+  service.ModelCapabilityEntry:
+    properties:
+      builtin_tools:
+        additionalProperties:
+          type: boolean
+        type: object
+      capabilities:
+        additionalProperties:
+          type: boolean
+        type: object
+      context_window_tokens:
+        type: integer
+      input_modalities:
+        items:
+          type: string
+        type: array
+      output_modalities:
+        items:
+          type: string
+        type: array
+      provider:
+        type: string
+      status:
+        type: string
+      thinking:
+        $ref: '#/definitions/service.ThinkingEntry'
+    type: object
   service.ModelListView:
     properties:
       models:
@@ -2473,6 +2511,15 @@ definitions:
         type: integer
       shell:
         type: string
+    type: object
+  service.ThinkingEntry:
+    properties:
+      can_disable:
+        type: boolean
+      effort_values:
+        items:
+          type: string
+        type: array
     type: object
   service.ToolsView:
     properties:
@@ -6769,6 +6816,24 @@ paths:
       summary: Health check
       tags:
       - System
+  /models/capabilities:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ModelCapabilitiesView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get model capabilities
+      tags:
+      - Providers
   /providers/models:
     post:
       consumes:

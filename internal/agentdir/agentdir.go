@@ -6,7 +6,9 @@ package agentdir
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -14,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"myaaw"
 )
 
 const (
@@ -76,7 +80,7 @@ func AgentColorOrDefault(key string) string {
 	return DefaultAgentColor
 }
 
-// Registry is stored in ~/.myaaw/agents.json.
+// Registry is stored in ~/.myaaw/config/agents.json.
 type Registry struct {
 	Default string               `json:"default"`
 	Agents  map[string]AgentInfo `json:"agents"`
@@ -269,8 +273,32 @@ func PIDDir() (string, error) {
 	return filepath.Join(root, "pids"), nil
 }
 
-// RegistryPath returns ~/.myaaw/agents.json.
+// GlobalConfigDir returns ~/.myaaw/config, the shared folder for registry,
+// control-plane credentials, and the model data tables.
+func GlobalConfigDir() (string, error) {
+	root, err := MyaawRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "config"), nil
+}
+
+// GlobalConfigPath returns ~/.myaaw/config/<elem>.
+func GlobalConfigPath(elem string) (string, error) {
+	dir, err := GlobalConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, elem), nil
+}
+
+// RegistryPath returns ~/.myaaw/config/agents.json.
 func RegistryPath() (string, error) {
+	return GlobalConfigPath("agents.json")
+}
+
+// legacyRegistryPath is where agents.json lived before the global config folder.
+func legacyRegistryPath() (string, error) {
 	root, err := MyaawRoot()
 	if err != nil {
 		return "", err
@@ -279,32 +307,46 @@ func RegistryPath() (string, error) {
 }
 
 // LoadRegistry reads agents.json, returning an initialized registry when the
-// file does not exist yet.
+// file does not exist yet. A registry left in the old root location is still
+// read so the first command after an upgrade does not see an empty fleet.
 func LoadRegistry() (*Registry, error) {
-	path, err := RegistryPath()
-	if err != nil {
-		return nil, err
+	paths := make([]string, 0, 2)
+	if path, err := RegistryPath(); err == nil {
+		paths = append(paths, path)
+	}
+	if path, err := legacyRegistryPath(); err == nil {
+		paths = append(paths, path)
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &Registry{Default: DefaultAgentName, Agents: map[string]AgentInfo{}}, nil
+	var firstErr error
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
-		return nil, err
-	}
 
-	var registry Registry
-	if err := json.Unmarshal(data, &registry); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		var registry Registry
+		if err := json.Unmarshal(data, &registry); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+		if registry.Agents == nil {
+			registry.Agents = map[string]AgentInfo{}
+		}
+		if registry.Default == "" {
+			registry.Default = DefaultAgentName
+		}
+		return &registry, nil
 	}
-	if registry.Agents == nil {
-		registry.Agents = map[string]AgentInfo{}
+	if firstErr != nil {
+		return nil, firstErr
 	}
-	if registry.Default == "" {
-		registry.Default = DefaultAgentName
-	}
-	return &registry, nil
+	return &Registry{Default: DefaultAgentName, Agents: map[string]AgentInfo{}}, nil
 }
 
 // SaveRegistry writes agents.json atomically.
@@ -517,14 +559,33 @@ func AgentInitialized(name string) bool {
 	return agentInitialized(root)
 }
 
-// EnsureLayout creates ~/.myaaw/agents and registers the agent directories that
-// already exist. It never creates an agent itself: onboarding names the first
-// one and the registry default points at it. It is safe to call repeatedly.
+// EnsureLayout creates ~/.myaaw/agents and the shared ~/.myaaw/config folder,
+// migrates global state from the old root layout, seeds the model data tables,
+// and registers the agent directories that already exist. It never creates an
+// agent itself: onboarding names the first one and the registry default points
+// at it. It is safe to call repeatedly.
 func EnsureLayout() error {
 	root, err := MyaawRoot()
 	if err != nil {
 		return err
 	}
+
+	configDir, err := GlobalConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		return err
+	}
+
+	// The registry and credentials must exist before any reader looks for them.
+	if err := migrateGlobalState(root, configDir); err != nil {
+		return err
+	}
+	if err := seedGlobalDataFiles(configDir); err != nil {
+		log.Printf("Warning: could not seed global model data: %v", err)
+	}
+
 	agentsRoot := filepath.Join(root, "agents")
 	if err := os.MkdirAll(agentsRoot, 0o755); err != nil {
 		return err
@@ -540,6 +601,97 @@ func EnsureLayout() error {
 	}
 	registerExistingAgents(agentsRoot, registry)
 	return SaveRegistry(registry)
+}
+
+// SeedGlobalDataFiles copies the embedded model data into the global config
+// folder when a file is missing. It is exported so onboarding can ensure the
+// folder exists even when EnsureLayout is not part of the flow.
+func SeedGlobalDataFiles() error {
+	dir, err := GlobalConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return seedGlobalDataFiles(dir)
+}
+
+var globalDataFiles = []string{
+	"model_capabilities.json",
+	"model_prices.json",
+	"tool_prices.json",
+}
+
+// migrateGlobalState moves agents.json and controlplane.json into the global
+// config folder when the new file is missing. A file already in the new place
+// always wins; the old copy is left untouched. The same filesystem rename is
+// preferred, with a copy fallback for exotic layouts.
+func migrateGlobalState(root, configDir string) error {
+	for _, name := range []string{"agents.json", "controlplane.json"} {
+		target := filepath.Join(configDir, name)
+		if _, err := os.Stat(target); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+
+		legacy := filepath.Join(root, name)
+		if _, err := os.Stat(legacy); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		if err := moveGlobalFile(legacy, target); err != nil {
+			return fmt.Errorf("move %s: %w", name, err)
+		}
+		log.Printf("Moved %s to %s", name, target)
+	}
+	return nil
+}
+
+func moveGlobalFile(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(dst, data, info.Mode().Perm()); err != nil {
+		return err
+	}
+	return os.Remove(src)
+}
+
+// seedGlobalDataFiles copies the embedded model tables without overwriting an
+// existing global file, so edits survive upgrades.
+func seedGlobalDataFiles(dir string) error {
+	for _, name := range globalDataFiles {
+		target := filepath.Join(dir, name)
+		if _, err := os.Stat(target); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		data, err := myaaw.DefaultMyaawDir.ReadFile(path.Join(".myaaw", "config", name))
+		if err != nil {
+			return fmt.Errorf("read embedded %s: %w", name, err)
+		}
+		if err := os.WriteFile(target, data, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // registerExistingAgents adds every initialized agent directory under the

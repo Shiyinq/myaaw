@@ -258,8 +258,8 @@ func TestRestoreGlobalArchive(t *testing.T) {
 		t.Fatal("global archive was not created")
 	}
 
-	writeFile(t, filepath.Join(root, "agents.json"), `{"changed":true}`, 0o600)
-	writeFile(t, filepath.Join(root, "controlplane.json"), `{"changed":true}`, 0o600)
+	writeFile(t, filepath.Join(root, "config", "agents.json"), `{"changed":true}`, 0o600)
+	writeFile(t, filepath.Join(root, "config", "controlplane.json"), `{"changed":true}`, 0o600)
 
 	result, err := Restore(RestoreOptions{Archive: globalArchive, Force: true})
 	if err != nil {
@@ -269,14 +269,14 @@ func TestRestoreGlobalArchive(t *testing.T) {
 		t.Fatalf("agent = %q", result.Agent)
 	}
 
-	data, err := os.ReadFile(filepath.Join(root, "agents.json"))
+	data, err := os.ReadFile(filepath.Join(root, "config", "agents.json"))
 	if err != nil {
 		t.Fatalf("read agents.json: %v", err)
 	}
 	if strings.Contains(string(data), "changed") {
 		t.Fatalf("agents.json was not restored: %s", data)
 	}
-	previous, err := filepath.Glob(filepath.Join(root, "agents.json.pre-restore-*"))
+	previous, err := filepath.Glob(filepath.Join(root, "config", "agents.json.pre-restore-*"))
 	if err != nil || len(previous) == 0 {
 		t.Fatalf("pre-restore copy of agents.json was not created: %v", err)
 	}

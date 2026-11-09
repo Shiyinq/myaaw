@@ -126,6 +126,7 @@ func NewApp() (*fiber.App, error) {
 	app.Delete("/agents/:name/providers/chatgpt/connect/:session", h.CancelChatGPT)
 	app.Post("/agents/:name/providers/:id/disconnect", h.DisconnectProvider)
 	app.Post("/providers/models", h.ListModels)
+	app.Get("/models/capabilities", h.GetModelCapabilities)
 	app.Get("/agents/:name/providers/:id/models", h.GetProviderModels)
 	app.Put("/agents/:name/providers/:id", h.UpdateProvider)
 	app.Delete("/agents/:name/providers/:id", h.DeleteProvider)

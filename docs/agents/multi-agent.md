@@ -59,7 +59,12 @@ invalid: my friend, ../admin, my.friend, my/friend, -agent, _agent, pids
 
 ```text
 ~/.myaaw/
-├── agents.json            # registry (stays here)
+├── config/                # shared configuration
+│   ├── agents.json        # registry
+│   ├── controlplane.json  # control-plane credentials
+│   ├── model_capabilities.json
+│   ├── model_prices.json
+│   └── tool_prices.json
 ├── pids/                  # global daemon PID files
 ├── logs/                  # global logs (control plane, webui, daemons)
 ├── credentials/           # host-level credentials (ChatGPT)
@@ -67,6 +72,7 @@ invalid: my friend, ../admin, my.friend, my/friend, -agent, _agent, pids
 └── agents/
     ├── default/
     │   ├── config/config.json
+    │   ├── config/approvals.json
     │   ├── .env
     │   ├── home/
     │   │   ├── AGENTS.md
@@ -95,7 +101,14 @@ invalid: my friend, ../admin, my.friend, my/friend, -agent, _agent, pids
         └── ...same structure
 ```
 
-`~/.myaaw/agents.json` stores the registry:
+An agent may add `config/model_prices.json` or `config/tool_prices.json` to override the shared
+tables. New agents do not receive those files; the shared tables under `~/.myaaw/config/` apply
+by default. The merge is per key, so an override only replaces the entries it names and can add
+new ones. It applies to that agent alone: the runtime reads the active agent's config directory.
+`model_capabilities.json` has no per-agent layer; a copy inside an agent folder is ignored.
+See [Overriding prices](observability.md#overriding-prices) for the full precedence.
+
+`~/.myaaw/config/agents.json` stores the registry:
 
 ```json
 {
@@ -145,9 +158,9 @@ mkdir -p ~/.myaaw/agents
 mv ~/.myaaw/myfriend ~/.myaaw/agents/myfriend
 ```
 
-Keep `~/.myaaw/agents.json` where it is; the registry entries do not change.
-After moving, run any `myaaw` command to register the directories again, and
-check that `myaaw agent list` shows every agent.
+The registry is migrated automatically to `~/.myaaw/config/agents.json`, together with
+`controlplane.json`. After moving an old agent directory, run any `myaaw` command to register the
+directories again, and check that `myaaw agent list` shows every agent.
 
 ## 5. Selecting an agent
 
@@ -422,7 +435,7 @@ Server logs:
 | SQLite | `~/.myaaw/agents/<agent>/database/myaaw.db` |
 | Skill data | `~/.myaaw/agents/<agent>/database/<skill>/` (skills may also write under `config/`) |
 | PID files | `~/.myaaw/pids/` (shared directory, per-agent files) |
-| Registry | `~/.myaaw/agents.json` (shared) |
+| Registry | `~/.myaaw/config/agents.json` (shared) |
 
 Back up an agent with `myaaw backup --agent <name>`; the archive includes `config/*` and `database/*` generically, so data from any skill is covered. Restore it with `myaaw restore <archive>`. See the [Backup Guide](../cli/backup.md).
 
@@ -539,7 +552,7 @@ The current directory is registered only for local `myaaw chat` and `myaaw voice
 - Bash and Python are not OS-sandboxed. They can access other paths according to OS permissions. Filesystem-tool isolation does not restrict Bash/Python.
 - Migration moves data; it does not create a full backup.
 - The agent picker is used for interactive `myaaw chat`; one-shot messages use the default agent unless `--agent` is passed.
-- `agents.json` writes are atomic, but concurrent `agent create/use/delete` operations are not file-locked.
+- `~/.myaaw/config/agents.json` writes are atomic, but concurrent `agent create/use/delete` operations are not file-locked.
 - Skills that use hardcoded global paths may need to be updated to use `MYAAW_AGENT_ROOT`.
 
 ## 16. Command reference

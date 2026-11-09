@@ -730,67 +730,55 @@ func setupHome(targetDir string) error {
 		configReady = true
 	}
 	if homeReady && configReady {
-		return ensurePriceFiles(targetDir)
+		return ensureInlinePriceOverrides(targetDir)
 	}
 	// Skills are opt-in: the template copy skips them and onboarding installs
-	// only the selected ones.
-	if err := extractEmbedDirExcept(myaaw.DefaultMyaawDir, ".myaaw", targetDir, "skills"); err != nil {
+	// only the selected ones. Shared model data lives in the global config folder,
+	// so new agents do not receive their own copies.
+	if err := extractEmbedDirExcept(myaaw.DefaultMyaawDir, ".myaaw", targetDir, "skills",
+		"config/model_prices.json", "config/tool_prices.json", "config/model_capabilities.json"); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Join(targetDir, "skills"), 0o755); err != nil {
 		return err
 	}
-	return ensurePriceFiles(targetDir)
-}
-
-// ensurePriceFiles adds the price tables to an agent that does not have them
-// yet. New agents are seeded from the embedded template; older agents with
-// inline prices get their own values written to the files so nothing is lost.
-// Existing files are never overwritten.
-func ensurePriceFiles(targetDir string) error {
-	dir := filepath.Join(targetDir, "config")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := agentdir.SeedGlobalDataFiles(); err != nil {
 		return err
 	}
+	return ensureInlinePriceOverrides(targetDir)
+}
 
-	var inline *config.Config
-	if data, err := os.ReadFile(filepath.Join(dir, "config.json")); err == nil {
-		var cfg config.Config
-		if json.Unmarshal(data, &cfg) == nil {
-			inline = &cfg
-		}
+// ensureInlinePriceOverrides preserves price maps that older agents kept inline
+// in config.json by writing them once as per-agent override files. New agents
+// have no inline prices and inherit the shared tables from ~/.myaaw/config.
+func ensureInlinePriceOverrides(targetDir string) error {
+	dir := filepath.Join(targetDir, "config")
+	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return nil
+	}
+	var cfg config.Config
+	if json.Unmarshal(data, &cfg) != nil || cfg.Observability == nil {
+		return nil
 	}
 
-	modelPath := filepath.Join(dir, "model_prices.json")
-	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
-		if inline != nil && inline.Observability != nil && len(inline.Observability.ModelPrices) > 0 {
-			if err := config.WriteModelPricesFile(dir, inline.Observability.ModelPrices); err != nil {
+	if len(cfg.Observability.ModelPrices) > 0 {
+		path := filepath.Join(dir, config.ModelPricesFile)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := config.WriteModelPricesFile(dir, cfg.Observability.ModelPrices); err != nil {
 				return err
 			}
-		} else if err := writeEmbeddedPriceFile(dir, "model_prices.json"); err != nil {
-			return err
 		}
 	}
-
-	toolPath := filepath.Join(dir, "tool_prices.json")
-	if _, err := os.Stat(toolPath); os.IsNotExist(err) {
-		if inline != nil && inline.Observability != nil && len(inline.Observability.ToolPrices) > 0 {
-			if err := config.WriteToolPricesFile(dir, inline.Observability.ToolPrices); err != nil {
+	if len(cfg.Observability.ToolPrices) > 0 {
+		path := filepath.Join(dir, config.ToolPricesFile)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := config.WriteToolPricesFile(dir, cfg.Observability.ToolPrices); err != nil {
 				return err
 			}
-		} else if err := writeEmbeddedPriceFile(dir, "tool_prices.json"); err != nil {
-			return err
 		}
 	}
 	return nil
-}
-
-func writeEmbeddedPriceFile(dir, name string) error {
-	data, err := myaaw.DefaultMyaawDir.ReadFile(".myaaw/config/" + name)
-	if err != nil {
-		return err
-	}
-	return WriteFileAtomic(filepath.Join(dir, name), data)
 }
 
 func ensureEnvFile(path string) (bool, error) {
@@ -884,26 +872,33 @@ func extractEmbedDir(embeddedFS embed.FS, src string, dest string) error {
 func extractEmbedDirExcept(embeddedFS embed.FS, src string, dest string, skip ...string) error {
 	skipSet := make(map[string]bool, len(skip))
 	for _, name := range skip {
-		skipSet[name] = true
+		skipSet[path.Clean(name)] = true
 	}
+	return extractEmbedTree(embeddedFS, src, dest, "", skipSet)
+}
 
+// extractEmbedTree copies an embedded directory recursively. rel is the path
+// relative to the extraction root, so callers can skip individual nested files
+// (for example config/model_prices.json) without skipping the whole folder.
+func extractEmbedTree(embeddedFS embed.FS, src, dest, rel string, skip map[string]bool) error {
 	entries, err := embeddedFS.ReadDir(src)
 	if err != nil {
 		return err
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() && skipSet[entry.Name()] {
+		childRel := path.Join(rel, entry.Name())
+		if skip[childRel] {
 			continue
 		}
-		srcPath := filepath.Join(src, entry.Name())
+		srcPath := path.Join(src, entry.Name())
 		destPath := filepath.Join(dest, entry.Name())
 
 		if entry.IsDir() {
 			if err := os.MkdirAll(destPath, 0o755); err != nil {
 				return err
 			}
-			if err := extractEmbedDir(embeddedFS, srcPath, destPath); err != nil {
+			if err := extractEmbedTree(embeddedFS, srcPath, destPath, childRel, skip); err != nil {
 				return err
 			}
 			continue

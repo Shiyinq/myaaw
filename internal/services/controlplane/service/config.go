@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -227,8 +228,10 @@ func loadAgentConfig(agentName string) (*config.Config, error) {
 		return nil, err
 	}
 
-	// Model and tool prices live in their own files next to config.json. Merge
-	// them over any inline values so views and patches see the effective table.
+	// Model and tool prices for this agent live next to config.json. The shared
+	// tables under ~/.myaaw/config are a separate layer applied by the runtime; the
+	// config view keeps only the agent's own inline/override values so saving an
+	// unrelated setting cannot copy the whole shared table into the agent folder.
 	models, tools, warnings := config.LoadPriceFiles(filepath.Dir(path))
 	for _, warning := range warnings {
 		log.Printf("Warning: %s", warning)
@@ -555,21 +558,15 @@ func agentConfigDir(agentName string) (string, error) {
 	return filepath.Dir(path), nil
 }
 
-// resetPriceFiles restores the embedded price templates for one agent.
+// resetPriceFiles removes an agent's price overrides so the shared tables under
+// ~/.myaaw/config apply again.
 func resetPriceFiles(agentName string) error {
 	dir, err := agentConfigDir(agentName)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	for _, name := range []string{config.ModelPricesFile, config.ToolPricesFile} {
-		data, err := myaaw.DefaultMyaawDir.ReadFile(".myaaw/config/" + name)
-		if err != nil {
-			return err
-		}
-		if err := writeFileAtomic(filepath.Join(dir, name), data); err != nil {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
@@ -752,26 +749,65 @@ func (s *ConfigService) Patch(agentName string, patch ConfigPatch) (ConfigView, 
 	if err := applyConfigPatch(cfg, patch); err != nil {
 		return ConfigView{}, err
 	}
+	if err := saveAgentConfig(agentName, cfg); err != nil {
+		return ConfigView{}, err
+	}
 	if patch.Observability != nil {
 		dir, err := agentConfigDir(agentName)
 		if err != nil {
 			return ConfigView{}, err
 		}
 		if patch.Observability.ModelPrices != nil {
-			if err := config.WriteModelPricesFile(dir, cfg.Observability.ModelPrices); err != nil {
+			overrides := modelPriceOverrides(cfg.Observability.ModelPrices)
+			path := filepath.Join(dir, config.ModelPricesFile)
+			if len(overrides) == 0 {
+				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+					return ConfigView{}, err
+				}
+			} else if err := config.WriteModelPricesFile(dir, overrides); err != nil {
 				return ConfigView{}, err
 			}
 		}
 		if patch.Observability.ToolPrices != nil {
-			if err := config.WriteToolPricesFile(dir, cfg.Observability.ToolPrices); err != nil {
+			overrides := toolPriceOverrides(cfg.Observability.ToolPrices)
+			path := filepath.Join(dir, config.ToolPricesFile)
+			if len(overrides) == 0 {
+				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+					return ConfigView{}, err
+				}
+			} else if err := config.WriteToolPricesFile(dir, overrides); err != nil {
 				return ConfigView{}, err
 			}
 		}
 	}
-	if err := saveAgentConfig(agentName, cfg); err != nil {
-		return ConfigView{}, err
-	}
 	return configView(cfg), nil
+}
+
+// modelPriceOverrides keeps only entries that differ from the shared table, so
+// editing one price in the dashboard does not duplicate the whole catalog into
+// an agent folder.
+func modelPriceOverrides(effective map[string]config.ModelPriceConfig) map[string]config.ModelPriceConfig {
+	global, _, _ := config.LoadGlobalPriceFiles()
+	overrides := make(map[string]config.ModelPriceConfig)
+	for name, price := range effective {
+		if base, ok := global[name]; ok && reflect.DeepEqual(price, base) {
+			continue
+		}
+		overrides[name] = price
+	}
+	return overrides
+}
+
+func toolPriceOverrides(effective map[string]config.ToolPriceConfig) map[string]config.ToolPriceConfig {
+	_, global, _ := config.LoadGlobalPriceFiles()
+	overrides := make(map[string]config.ToolPriceConfig)
+	for name, price := range effective {
+		if base, ok := global[name]; ok && reflect.DeepEqual(price, base) {
+			continue
+		}
+		overrides[name] = price
+	}
+	return overrides
 }
 
 // ResetFields restores only the requested sections and bot fields.
@@ -802,7 +838,7 @@ func (s *ConfigService) ResetFields(agentName string, req ConfigResetRequest) (C
 	}
 	if fields, ok := requestedFields(req.Observability); ok {
 		resetObservabilityFields(cfg, tmpl, fields)
-		if err := resetPriceFields(agentName, cfg, fields); err != nil {
+		if err := resetPriceFields(agentName, fields); err != nil {
 			return ConfigView{}, err
 		}
 	}
@@ -1247,26 +1283,29 @@ func resetApprovalsFields(cfg, tmpl *config.Config, fields []string) {
 	}
 }
 
-// resetPriceFields restores the price files that live next to config.json. A
-// field-level reset only rewrites the file it names.
-func resetPriceFields(agentName string, cfg *config.Config, fields []string) error {
+// resetPriceFields removes the per-agent override file named by the reset. A
+// field-level reset falls back to the global table, not to a copied template.
+func resetPriceFields(agentName string, fields []string) error {
 	if len(fields) == 0 {
 		return resetPriceFiles(agentName)
-	}
-	if cfg.Observability == nil {
-		return nil
 	}
 	dir, err := agentConfigDir(agentName)
 	if err != nil {
 		return err
 	}
+	remove := func(name string) error {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
 	if sectionsContain(fields, "model_prices") {
-		if err := config.WriteModelPricesFile(dir, cfg.Observability.ModelPrices); err != nil {
+		if err := remove(config.ModelPricesFile); err != nil {
 			return err
 		}
 	}
 	if sectionsContain(fields, "tool_prices") {
-		if err := config.WriteToolPricesFile(dir, cfg.Observability.ToolPrices); err != nil {
+		if err := remove(config.ToolPricesFile); err != nil {
 			return err
 		}
 	}

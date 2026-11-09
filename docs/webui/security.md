@@ -37,7 +37,7 @@ Primary threats:
 
 ## 3. Credentials & login
 
-- The control plane seeds default credentials `myaaw` / `myaawadmin` in `~/.myaaw/controlplane.json` (bcrypt) — see `internal/services/controlplane/service/auth.go`.
+- The control plane seeds default credentials `myaaw` / `myaawadmin` in `~/.myaaw/config/controlplane.json` (bcrypt) — see `internal/services/controlplane/service/auth.go`.
 - **Required**: force a password change on first login (especially before connecting remotely).
 - **Implemented**: `/auth/login` and `/auth/me` return `must_change_password`; the dashboard keeps the reader on the profile page (route guard) until the seeded password is changed.
 - The password is sent via `POST /auth/login`; ensure the path is encrypted (see §4).
@@ -113,7 +113,7 @@ This mode removes every host-management surface, so a visitor cannot install or 
 | Surface | Default | With `MYAAW_WEBUI_PUBLIC=1` |
 | :--- | :--- | :--- |
 | `/setup` (install the binary on this host) | available | **404**, and the same for `/setup/status` and `/setup/install` |
-| "Default credentials come from `~/.myaaw/controlplane.json`." | shown | hidden |
+| "Default credentials come from `~/.myaaw/config/controlplane.json`." | shown | hidden |
 | "First run? Set up Myaaw" link | shown | hidden |
 
 The block runs in `webui/src/hooks.server.ts` before any route is resolved, so nothing under `/setup` can be reached and the 404 does not reveal that the page ever existed.

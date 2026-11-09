@@ -521,7 +521,10 @@ the sum of its `llm` spans.
 Tools do not report token usage, so they are priced per **successful call**. A
 failed or blocked call is not charged.
 
-Prices live in `config/tool_prices.json` next to `config.json`:
+Prices live in the shared `~/.myaaw/config/tool_prices.json`. An agent can add
+`~/.myaaw/agents/<agent>/config/tool_prices.json` as an override; new agents do not
+receive that file. The merge is per tool and only affects that agent — see
+[Overriding prices](#overriding-prices) for the full precedence.
 
 ```json
 {
@@ -529,10 +532,10 @@ Prices live in `config/tool_prices.json` next to `config.json`:
 }
 ```
 
-Legacy `observability.tool_prices` in `config.json` still works, but a matching
-entry in the file wins. `OBS_TOOL_PRICES="tavily_search=0.008;image_gen=0.04"`
-(semicolon-separated) is the lowest config layer: inline config and the file
-override it. Tool spend is stored separately from model spend:
+Legacy `observability.tool_prices` in `config.json` still works, but the files win.
+`OBS_TOOL_PRICES="tavily_search=0.008;image_gen=0.04"` (semicolon-separated) is the
+lowest config layer: inline config and the files override it. Tool spend is stored
+separately from model spend:
 `runs.tool_cost_usd` and the `cost_usd` of `tool` spans. The summary reports
 both totals, `Per tool` gets a COST column, and `Per trigger` gets a TOOLS
 column.
@@ -561,12 +564,11 @@ Windows are parsed as `Day-Day HH:MM-HH:MM UTC`. A window that cannot be parsed
 is treated as peak, so an estimate can only be too high. Chinese public holidays
 are not modelled; a holiday is billed as peak.
 
-The built-in table covers `deepseek-flash`, `deepseek-chat`,
-`deepseek-v4-flash` (same rates as the flash tier), and `deepseek-v4-pro`, plus
-a few `gpt-*` and `gemini-*-flash` models. Anything else — preview Gemini ids
-and Groq models, for example — has no entry. A model without an entry is
-reported as `unpriced` in the CLI and costs `0`; add its numbers under
-`model_prices` to start collecting cost.
+The shared table under `~/.myaaw/config/model_prices.json` is the source of truth.
+The former Go built-in table is no longer part of the runtime path: it covered only a
+handful of models and could lag behind the maintained JSON table. A model without an
+entry is reported as `unpriced` in the CLI and costs `0`; add its numbers to the JSON
+table to start collecting cost.
 
 Because `0` would otherwise read as "free", the summary marks how much could
 not be priced: `cost_complete`, `unpriced_runs`, `unpriced_input_tokens`,
@@ -578,9 +580,27 @@ after the entry is added; the flags describe recorded cost, not today's table.
 
 ### Overriding prices
 
-Add or replace entries in `config/model_prices.json` (same folder as
-`config.json`). The map is keyed by model name and an entry replaces the whole
-model price:
+The shared tables are the base. Any agent can add its own file to change or extend
+them for that agent only. Layers are applied in this order, the later one winning:
+
+| Layer | Location | Scope |
+|---|---|---|
+| `OBS_MODEL_PRICES` / `OBS_TOOL_PRICES` | environment | process |
+| `observability.model_prices` / `tool_prices` | `agents/<agent>/config/config.json` | agent |
+| Shared table | `~/.myaaw/config/model_prices.json`, `tool_prices.json` | every agent |
+| Per-agent override | `~/.myaaw/agents/<agent>/config/model_prices.json`, `tool_prices.json` | one agent |
+
+The merge is **per key**. An entry in the per-agent file replaces only that model
+(or tool); every key it does not name keeps the shared value, so an override does
+not need to repeat the whole table and can add a model the shared table lacks. An
+override file containing `{}` is a no-op, which is why a leftover empty copy is
+harmless.
+
+The per-agent layer is read from the **active** agent's config directory, so an
+override only changes billing for the agent that runs with it; the other agents keep
+using the shared table.
+
+The map is keyed by model name and an entry replaces the whole model price:
 
 ```json
 {
@@ -588,15 +608,38 @@ model price:
 }
 ```
 
-Legacy `observability.model_prices` in `config.json` still works, but the file
-wins per key. Missing files are ignored; invalid JSON logs a warning and keeps
-the lower layer, so a bad price file cannot break a run. Keys starting with `_`
-are ignored, so a file can carry `"_comment"` metadata. The built-in table is
-only a default; unknown models cost `0` and are logged once.
+Missing files are skipped; invalid JSON logs a warning and keeps the lower layer, so
+a bad price file cannot break a run. Keys starting with `_` are ignored, so a file
+can carry `"_comment"` metadata. There is no Go built-in price table: when the file
+layers produce no entries at all, the embedded JSON template is parsed as a
+bootstrap, and unknown models still cost `0` and are logged once.
+
+Prices are the only shared data with a per-agent layer. `model_capabilities.json`
+is global only — a `config/model_capabilities.json` inside an agent folder is
+ignored (see [Model capabilities](../api/control-plane.md#model-capabilities)).
+
+**Writing prices through the control plane.** `PATCH /agents/<name>/config` with
+`model_prices` or `tool_prices` writes the per-agent override and keeps only the
+entries that differ from the shared table. A table copied from the dashboard
+therefore cannot pin the whole catalog into the agent folder: values equal to the
+shared table are dropped, and the file is deleted once no override remains.
+Resetting those fields also removes the override and falls back to the shared table.
+
+**Writing prices by hand.** Create `~/.myaaw/agents/<agent>/config/model_prices.json`
+(or `tool_prices.json`) containing only the keys to change, then restart that agent's
+server so the process reloads it: `myaaw server restart --agent <name>`. Price files
+are read at startup, so an edit is not picked up while the agent keeps running.
+
+**Where it is in the dashboard.** The editors live in **Config → Observability**, in
+the two textareas labelled "Model prices (JSON)" and "Tool prices (JSON)". They show
+only that agent's inline and override entries, never the shared table, so a key
+missing from the box means "use the shared price", not "free".
 
 #### Price file format
 
-`config/model_prices.json` — USD per one million tokens:
+`~/.myaaw/config/model_prices.json` (shared) or
+`~/.myaaw/agents/<agent>/config/model_prices.json` (override) — USD per one million
+tokens:
 
 | Field | Required | Meaning |
 |---|---|---|
@@ -607,7 +650,9 @@ only a default; unknown models cost `0` and are logged once.
 | `off_peak` | no | Object with `input`/`cache_hit`/`output` used outside peak windows |
 | `peak_windows` | no | `["Mon-Fri 01:00-04:00 UTC", …]`; used together with `off_peak` |
 
-`config/tool_prices.json` — USD per successful call:
+`~/.myaaw/config/tool_prices.json` (shared) or
+`~/.myaaw/agents/<agent>/config/tool_prices.json` (override) — USD per successful
+call:
 
 | Field | Required | Meaning |
 |---|---|---|
@@ -615,7 +660,7 @@ only a default; unknown models cost `0` and are logged once.
 
 Full examples:
 
-`config/model_prices.json`:
+`~/.myaaw/config/model_prices.json`:
 
 ```json
 {
@@ -631,7 +676,7 @@ Full examples:
 }
 ```
 
-`config/tool_prices.json`:
+`~/.myaaw/config/tool_prices.json`:
 
 ```json
 {
@@ -660,19 +705,24 @@ so a typo cannot break the agent.
 }
 ```
 
-Price tables live beside `config.json` and are optional:
+Price tables live in the shared global folder and may be overridden per agent:
 
 ```text
-config/
+~/.myaaw/config/
+├── model_prices.json      # shared table
+└── tool_prices.json       # shared table
+
+~/.myaaw/agents/<agent>/config/
 ├── config.json
-├── model_prices.json
-└── tool_prices.json
+├── model_prices.json      # optional override
+└── tool_prices.json       # optional override
 ```
 
-`PATCH /agents/<name>/config` with `model_prices` or `tool_prices` writes these
-files, so `config.json` stays free of price data. New agents get both files from
-the onboarding template; existing agents get them on the next
-initialize/onboard, seeded from their inline prices when present.
+`PATCH /agents/<name>/config` with `model_prices` or `tool_prices` writes only the
+entries that differ from the shared table, so an agent folder is not filled with
+copies of the global catalog. Resetting those fields removes the override.
+New agents do not receive either file; they use the shared tables. Existing
+agents with inline prices get a per-agent override once, so nothing is lost.
 
 `.env` (takes effect when the key is not set in `config.json`):
 

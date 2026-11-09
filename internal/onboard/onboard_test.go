@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"myaaw/internal/agentdir"
 	"myaaw/internal/config"
 )
 
@@ -64,20 +65,40 @@ func TestSetupHomeMigratesInlinePricesToFiles(t *testing.T) {
 	}
 }
 
-func TestSetupHomeSeedsTemplateWhenNoInlinePrices(t *testing.T) {
+func TestSetupHomeLeavesSharedDataGlobal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
 	dir := setupExistingAgentDir(t, `{}`)
 	if err := setupHome(dir); err != nil {
 		t.Fatalf("setupHome: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "config", "model_prices.json"))
+
+	// New agents do not receive copies of the shared tables.
+	if _, err := os.Stat(filepath.Join(dir, "config", "model_prices.json")); !os.IsNotExist(err) {
+		t.Fatalf("per-agent model prices should not be created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "config", "tool_prices.json")); !os.IsNotExist(err) {
+		t.Fatalf("per-agent tool prices should not be created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "config", "model_capabilities.json")); !os.IsNotExist(err) {
+		t.Fatalf("per-agent capabilities should not be created: %v", err)
+	}
+
+	// The shared files are seeded once in the global folder.
+	if err := agentdir.SeedGlobalDataFiles(); err != nil {
+		t.Fatalf("SeedGlobalDataFiles: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".myaaw", "config", "model_prices.json"))
 	if err != nil {
-		t.Fatalf("model prices file missing: %v", err)
+		t.Fatalf("global model prices missing: %v", err)
 	}
 	if !strings.Contains(string(data), "deepseek-chat") {
 		t.Fatalf("template model prices not copied: %s", data)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "config", "tool_prices.json")); err != nil {
-		t.Fatalf("tool prices file missing: %v", err)
+	if _, err := os.Stat(filepath.Join(home, ".myaaw", "config", "tool_prices.json")); err != nil {
+		t.Fatalf("global tool prices missing: %v", err)
 	}
 }
 

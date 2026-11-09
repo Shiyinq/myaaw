@@ -203,7 +203,13 @@ func restoreGlobal(root, staging string, manifest Manifest, opts RestoreOptions)
 	if strings.TrimSpace(opts.Agent) != "" {
 		return RestoreResult{}, errors.New("--agent cannot be used with a global archive")
 	}
-	allowed := map[string]bool{"agents.json": true, "controlplane.json": true}
+	allowed := map[string]bool{
+		"agents.json":                    true,
+		"controlplane.json":              true,
+		"config/model_capabilities.json": true,
+		"config/model_prices.json":       true,
+		"config/tool_prices.json":        true,
+	}
 	for _, file := range manifest.Files {
 		if !allowed[file.Path] {
 			return RestoreResult{}, fmt.Errorf("unexpected file %q in global archive", file.Path)
@@ -211,7 +217,7 @@ func restoreGlobal(root, staging string, manifest Manifest, opts RestoreOptions)
 	}
 	if !opts.Force {
 		for _, file := range manifest.Files {
-			if _, err := os.Stat(filepath.Join(root, file.Path)); err == nil {
+			if _, err := os.Stat(globalRestorePath(root, file.Path)); err == nil {
 				return RestoreResult{}, fmt.Errorf("%s already exists; use --force to replace it", file.Path)
 			}
 		}
@@ -220,7 +226,10 @@ func restoreGlobal(root, staging string, manifest Manifest, opts RestoreOptions)
 	stamp := time.Now().Format("20060102-150405")
 	for _, file := range manifest.Files {
 		src := filepath.Join(staging, filepath.FromSlash(file.Path))
-		dst := filepath.Join(root, file.Path)
+		dst := globalRestorePath(root, file.Path)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+			return RestoreResult{}, err
+		}
 		if _, err := os.Stat(dst); err == nil {
 			if err := copyFile(dst, dst+".pre-restore-"+stamp); err != nil {
 				return RestoreResult{}, fmt.Errorf("save previous %s: %w", file.Path, err)
@@ -235,6 +244,15 @@ func restoreGlobal(root, staging string, manifest Manifest, opts RestoreOptions)
 		Files: len(manifest.Files),
 		Note:  "restart the control plane API to load the restored configuration",
 	}, nil
+}
+
+// globalRestorePath maps an archive entry to its on-disk location. Flat
+// agents.json/controlplane.json entries from older archives land in config/.
+func globalRestorePath(root, archiveName string) string {
+	if archiveName == "agents.json" || archiveName == "controlplane.json" {
+		return filepath.Join(root, "config", archiveName)
+	}
+	return filepath.Join(root, filepath.FromSlash(archiveName))
 }
 
 func loadManifest(staging string) (Manifest, error) {

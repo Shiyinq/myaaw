@@ -3,6 +3,7 @@ package agentdir
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -272,5 +273,87 @@ func TestApprovalsPathMigratesLegacyFile(t *testing.T) {
 	}
 	if data, err := os.ReadFile(want); err != nil || string(data) != string(content) {
 		t.Fatalf("second resolve changed the file: %q, err=%v", data, err)
+	}
+}
+
+func TestEnsureLayoutCreatesGlobalConfigAndMigratesState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	root := filepath.Join(home, ".myaaw")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(`{"default":"legacy"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "controlplane.json"), []byte(`{"username":"admin"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	agentConfig := filepath.Join(root, "agents", "alpha", "config")
+	if err := os.MkdirAll(agentConfig, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentConfig, "config.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := EnsureLayout(); err != nil {
+		t.Fatalf("EnsureLayout: %v", err)
+	}
+
+	configDir := filepath.Join(root, "config")
+	if info, err := os.Stat(configDir); err != nil {
+		t.Fatalf("global config dir: %v", err)
+	} else if runtime.GOOS != "windows" && info.Mode().Perm() != 0o700 {
+		t.Fatalf("config dir mode = %o, want 700", info.Mode().Perm())
+	}
+	for _, name := range []string{"agents.json", "controlplane.json"} {
+		if _, err := os.Stat(filepath.Join(configDir, name)); err != nil {
+			t.Fatalf("migrated %s: %v", name, err)
+		}
+		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
+			t.Fatalf("legacy %s still exists", name)
+		}
+	}
+	for _, name := range globalDataFiles {
+		if _, err := os.Stat(filepath.Join(configDir, name)); err != nil {
+			t.Fatalf("seeded %s: %v", name, err)
+		}
+	}
+
+	path, err := RegistryPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != filepath.Join(configDir, "agents.json") {
+		t.Fatalf("RegistryPath = %q", path)
+	}
+	registry, err := LoadRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registry.Default != "legacy" {
+		t.Fatalf("default = %q, want legacy", registry.Default)
+	}
+}
+
+func TestLoadRegistryReadsLegacyPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	root := filepath.Join(home, ".myaaw")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(`{"default":"legacy"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := LoadRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registry.Default != "legacy" {
+		t.Fatalf("default = %q, want legacy", registry.Default)
 	}
 }

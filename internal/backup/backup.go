@@ -360,18 +360,24 @@ func createGlobal(root, outDir string, opts Options, now time.Time) (Result, err
 		Agent:        "global",
 		CreatedAt:    now.UTC().Format(time.RFC3339),
 		Hostname:     hostname(),
-		Includes:     []string{"agents.json"},
+		Includes:     []string{"agents.json", "config/model_capabilities.json", "config/model_prices.json", "config/tool_prices.json"},
 	}
 	if !opts.NoSecrets {
 		manifest.Includes = append(manifest.Includes, "controlplane.json")
 	}
 
 	build := func(tw *tar.Writer) (Manifest, error) {
-		for _, name := range []string{"agents.json", "controlplane.json"} {
+		for _, name := range []string{
+			"agents.json",
+			"controlplane.json",
+			"config/model_capabilities.json",
+			"config/model_prices.json",
+			"config/tool_prices.json",
+		} {
 			if opts.NoSecrets && name == "controlplane.json" {
 				continue
 			}
-			path := filepath.Join(root, name)
+			path := globalDiskPath(root, name)
 			if _, err := os.Stat(path); err != nil {
 				continue
 			}
@@ -389,6 +395,24 @@ func createGlobal(root, outDir string, opts Options, now time.Time) (Result, err
 		return Result{}, err
 	}
 	return Result{Agent: "global", Path: path, Files: len(manifest.Files) + 1, Bytes: bytes}, nil
+}
+
+// globalDiskPath maps an archive entry to its location on disk. The registry and
+// credentials use flat archive names for compatibility with older backups but
+// live under config/ on disk.
+func globalDiskPath(root, archiveName string) string {
+	if archiveName == "agents.json" || archiveName == "controlplane.json" {
+		target := filepath.Join(root, "config", archiveName)
+		if _, err := os.Stat(target); err == nil {
+			return target
+		}
+		legacy := filepath.Join(root, archiveName)
+		if _, err := os.Stat(legacy); err == nil {
+			return legacy
+		}
+		return target
+	}
+	return filepath.Join(root, filepath.FromSlash(archiveName))
 }
 
 // writeArchive writes to a temp file and renames it into place, or streams to

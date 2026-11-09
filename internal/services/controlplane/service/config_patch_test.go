@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -529,5 +530,57 @@ func TestConfigResetSectionFields(t *testing.T) {
 	}
 	if view.Heartbeat.To != "999" {
 		t.Fatalf("false reset changed the section: %+v", view.Heartbeat)
+	}
+}
+
+func TestConfigPatchWritesOnlyPriceOverrides(t *testing.T) {
+	dir := setupConfigAgent(t, testConfig())
+	globalDir := filepath.Join(os.Getenv("HOME"), ".myaaw", "config")
+	if err := os.MkdirAll(globalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.WriteModelPricesFile(globalDir, map[string]config.ModelPriceConfig{
+		"base": {Input: 1, Output: 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewConfigService()
+	effective := map[string]config.ModelPriceConfig{
+		"base":   {Input: 1, Output: 2},
+		"custom": {Input: 5, Output: 6},
+	}
+	if _, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{ModelPrices: effective},
+	}); err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+
+	overridePath := filepath.Join(dir, "config", config.ModelPricesFile)
+	data, err := os.ReadFile(overridePath)
+	if err != nil {
+		t.Fatalf("override file: %v", err)
+	}
+	var written map[string]config.ModelPriceConfig
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := written["base"]; ok {
+		t.Fatalf("shared entry was copied into the override: %+v", written)
+	}
+	if written["custom"].Input != 5 {
+		t.Fatalf("edited entry missing: %+v", written)
+	}
+
+	// A patch that only contains shared values must remove the override file.
+	if _, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{ModelPrices: map[string]config.ModelPriceConfig{
+			"base": {Input: 1, Output: 2},
+		}},
+	}); err != nil {
+		t.Fatalf("Patch reset: %v", err)
+	}
+	if _, err := os.Stat(overridePath); !os.IsNotExist(err) {
+		t.Fatalf("override file should be removed: %v", err)
 	}
 }

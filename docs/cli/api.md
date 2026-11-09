@@ -130,7 +130,7 @@ myaaw api restart
 - **Loopback by default.** `--host` defaults to `127.0.0.1`, so the control plane is only reachable from the same machine. Expose it with a tunnel or SSH rather than binding `0.0.0.0` directly; see [Remote WebUI Connection](../webui/remote-connection.md).
 - **Port must match.** `start`, `stop`, `restart`, and `status` each read `--port` independently. Use the same value you started with, otherwise `status` reports the wrong endpoint.
 - **Agents must be running.** Chat is proxied, so the selected agent needs its own `myaaw server --agent <name> start`.
-- **Authentication is not optional.** Credentials live in `~/.myaaw/controlplane.json` (bcrypt hash, never plaintext) and clients send `Authorization: Bearer <token>`.
+- **Authentication is not optional.** Credentials live in `~/.myaaw/config/controlplane.json` (bcrypt hash, never plaintext) and clients send `Authorization: Bearer <token>`.
 - **`--terminal` is a host credential.** Whoever can log into the dashboard can run anything as the user that started the daemon. Leave it off unless the control plane stays on loopback.
 - **Daemon ports are independent.** The control plane on `9000` and agent servers on `8080`, `8081`, ... are separate processes with separate logs.
 

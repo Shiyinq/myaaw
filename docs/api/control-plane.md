@@ -57,7 +57,7 @@ Store the returned `token` and send it on every other request:
 Authorization: Bearer <token>
 ```
 
-Credentials live in `~/.myaaw/controlplane.json` with a bcrypt hash and the agent `user_id`, never plaintext:
+Credentials live in `~/.myaaw/config/controlplane.json` with a bcrypt hash and the agent `user_id`, never plaintext:
 
 ```json
 {
@@ -178,7 +178,7 @@ curl -X POST http://localhost:9000/agents/myfriend/chat \
   -d '{"text":"Check my workspace"}'
 ```
 
-`user_id` is ignored in the request body. The control plane always sends the ID from `~/.myaaw/controlplane.json` (default `0`), so chat and conversation endpoints stay in the same scope. Direct calls to the agent server's `/api/chat` still default a missing `user_id` to `0`.
+`user_id` is ignored in the request body. The control plane always sends the ID from `~/.myaaw/config/controlplane.json` (default `0`), so chat and conversation endpoints stay in the same scope. Direct calls to the agent server's `/api/chat` still default a missing `user_id` to `0`.
 
 To continue an existing conversation, pass its `conversation_id`. Omit it to start a **new conversation** every time; `"NEW"` also forces a new conversation. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
 
@@ -692,6 +692,7 @@ curl -X POST http://localhost:9000/agents/myfriend/contacts \
 | `POST` | `/agents/:name/providers/default` | set default `{name}` |
 | `POST` | `/providers/models` | list models for a provider that is not saved yet |
 | `GET` | `/agents/:name/providers/:id/models` | list models for a saved provider (uses its stored key) |
+| `GET` | `/models/capabilities` | global model capability catalog |
 
 ```json
 {
@@ -725,6 +726,16 @@ curl http://localhost:9000/agents/myfriend/providers/openai/models \
 ```
 
 Both return `{"models": [...], "source": "live"|"default", "warning": "..."}`. For API-key providers, if the live call fails or times out, `source` is `default`, `models` contains the built-in default model, and `warning` explains why. ChatGPT Subscription instead requires a connected credential and live discovery; failures return an error, never a fabricated fallback model.
+
+### Model capabilities
+
+`GET /models/capabilities` returns the global catalog read from `~/.myaaw/config/model_capabilities.json`. The endpoint is not agent-scoped and has no per-agent override: the embedded template seeds the global file once, then the dashboard reads that file. Each model entry carries `provider`, `status`, `capabilities` (boolean or `null` when unverified), `thinking` (`can_disable`, `effort_values`), modalities, `context_window_tokens`, and `builtin_tools`.
+
+```bash
+curl http://localhost:9000/models/capabilities -H "Authorization: Bearer $TOKEN"
+```
+
+The response shape is `{"version": 1, "models": {"<model-id>": {...}}, "warning": "..."}`. Gemini API ids use the `models/` prefix while catalog keys do not; clients should try the exact key first and then the id without the prefix.
 
 ### ChatGPT Subscription
 
@@ -821,12 +832,20 @@ plane and are not reflected.
 | `max_content_chars` | Byte cap for every stored content blob (default 16384). |
 | `store_content` | Store prompts, answers, and tool payloads. `false` keeps metadata and token counts only. |
 | `redact_patterns` | Regular expressions masked as `[redacted]` before content is stored or exported. An empty list disables redaction. |
-| `tool_prices` | Per-call prices for tools, as `{"<tool>": {"per_call": 0.008}}`. Failed calls are not charged. Persisted to `config/tool_prices.json`. |
-| `model_prices` | Per-model prices that override the built-in table. Persisted to `config/model_prices.json`. |
+| `tool_prices` | Per-call prices for tools, as `{"<tool>": {"per_call": 0.008}}`. Failed calls are not charged. Merged per tool over the shared `~/.myaaw/config/tool_prices.json`; persisted as a per-agent override in `agents/<name>/config/tool_prices.json`. |
+| `model_prices` | Per-model prices. Merged per model over the shared table in `~/.myaaw/config/model_prices.json`; persisted as a per-agent override in `agents/<name>/config/model_prices.json`. |
 
-Price maps are written to those files, never back into `config.json`. `GET`
-merges the file values over any legacy inline map, so clients always see the
-effective table.
+Price maps are written to those files, never back into `config.json`. `GET` merges
+the per-agent file over any legacy inline map, so the response shows that agent's
+own entries only: the shared `~/.myaaw/config/` tables are **not** merged into the
+view, they are applied by the runtime on top of it.
+
+`PATCH` keeps only the entries that differ from the shared table, so a value
+identical to `~/.myaaw/config/model_prices.json` is not persisted as an override. A
+table copied from the shared file is therefore pruned back to the real differences,
+and sending `{}` (or only shared values) removes the override file. The override
+applies to that agent alone; `model_capabilities.json` is global only and has no
+per-agent layer.
 
 ```bash
 curl -X PATCH http://localhost:9000/agents/myfriend/config \
@@ -860,7 +879,7 @@ turning recording on: the trace database is opened once per process.
 | `PATCH` | `/agents/:name/chat-folders/:folder` | rename a folder `{name}` |
 | `DELETE` | `/agents/:name/chat-folders/:folder` | delete a folder and every chat inside it |
 
-**User scoping.** List, detail, rename, delete, pin, move, and every folder route use the `user_id` from `~/.myaaw/controlplane.json` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
+**User scoping.** List, detail, rename, delete, pin, move, and every folder route use the `user_id` from `~/.myaaw/config/controlplane.json` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
 
 **Search.** `search` matches the **title only**, case-insensitive for ASCII, and is applied before pagination. `total` reflects the filtered count.
 
@@ -1416,7 +1435,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Skills | `GET /agents/:name/skills`, `POST /skills/:skill/install`, `GET /skills/builtin/:skill`, `GET /skills/builtin/:skill/file?path=`, `GET /skills/:skill`, `GET /skills/:skill/file?path=`, `PATCH /skills/:skill`, `DELETE /skills/:skill`, `DELETE /skills/:skill/config` |
 | Tools | `GET /agents/:name/tools`, `POST /tools/custom`, `POST /tools/mcp`, `PATCH /tools/builtin/:tool`, `PATCH /tools/custom/:tool`, `PATCH /tools/mcp/:tool`, `DELETE /tools/custom/:tool`, `DELETE /tools/mcp/:tool` |
 | Contacts | `GET/POST /agents/:name/contacts`, `PATCH/DELETE /contacts/:contact` |
-| Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models` |
+| Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models`, `GET /models/capabilities` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
 | Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read` |
@@ -1428,7 +1447,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Backups | `GET/POST /backups`, `GET/DELETE /backups/:name`, `POST /backups/:name/restore` |
 | System | `GET /health`, `GET /docs/*` |
 
-All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, `POST /providers/models`, `/skills/builtin/*` and `/backups` are the routes outside an agent: the first two let a dashboard build and check an agent before it exists, the built-in skills are embedded in the binary, and `/backups` is host-level because one archive can hold every agent plus the registry.
+All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, `GET /models/capabilities`, `POST /providers/models`, `/skills/builtin/*` and `/backups` are the routes outside an agent: the first three let a dashboard build and check an agent before it exists or render the model picker, the built-in skills are embedded in the binary, and `/backups` is host-level because one archive can hold every agent plus the registry.
 
 ## 19. Errors
 

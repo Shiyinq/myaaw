@@ -6581,6 +6581,36 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/models/capabilities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Get model capabilities",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ModelCapabilitiesView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/providers/models": {
             "post": {
                 "security": [
@@ -9567,6 +9597,64 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ModelCapabilitiesView": {
+            "type": "object",
+            "properties": {
+                "models": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/service.ModelCapabilityEntry"
+                    }
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "warning": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ModelCapabilityEntry": {
+            "type": "object",
+            "properties": {
+                "builtin_tools": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
+                "capabilities": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
+                "context_window_tokens": {
+                    "type": "integer"
+                },
+                "input_modalities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "output_modalities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "thinking": {
+                    "$ref": "#/definitions/service.ThinkingEntry"
+                }
+            }
+        },
         "service.ModelListView": {
             "type": "object",
             "properties": {
@@ -10329,6 +10417,20 @@ const docTemplatecontrolplane = `{
                 },
                 "shell": {
                     "type": "string"
+                }
+            }
+        },
+        "service.ThinkingEntry": {
+            "type": "object",
+            "properties": {
+                "can_disable": {
+                    "type": "boolean"
+                },
+                "effort_values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

@@ -191,7 +191,7 @@ func TestSystemPrompt(t *testing.T) {
 
 func TestTraceRoundTripsThroughContext(t *testing.T) {
 	store := newStore(t)
-	trace := Start(store, obs.NewPricer(nil), obs.Config{StoreContent: true}, obs.RunStart{Channel: "cli"})
+	trace := Start(store, obs.NewPricer(obs.DefaultPrices()), obs.Config{StoreContent: true}, obs.RunStart{Channel: "cli"})
 	defer trace.Close()
 
 	ctx := WithTrace(context.Background(), trace)
@@ -205,7 +205,7 @@ func TestTraceRoundTripsThroughContext(t *testing.T) {
 
 func TestStartChildNestsSubagentRun(t *testing.T) {
 	store := newStore(t)
-	parent := Start(store, obs.NewPricer(nil), obs.Config{StoreContent: true}, obs.RunStart{
+	parent := Start(store, obs.NewPricer(obs.DefaultPrices()), obs.Config{StoreContent: true}, obs.RunStart{
 		Channel: "telegram", Agent: "default", Model: "deepseek-flash",
 		UserMessage: "research this",
 	})

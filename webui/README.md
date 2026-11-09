@@ -30,7 +30,7 @@ npm run dev          # http://localhost:5173
 
 Sign in with the credentials seeded on the control plane's first launch:
 `myaaw` / `myaawadmin`. They are stored as a bcrypt hash in
-`~/.myaaw/controlplane.json` — change them after logging in.
+`~/.myaaw/config/controlplane.json` — change them after logging in.
 
 ## Configuration
 

@@ -51,13 +51,43 @@ type AuthService struct {
 	now      func() time.Time
 }
 
-// NewAuthService loads (or creates) credentials under ~/.myaaw.
+// NewAuthService loads (or creates) credentials under ~/.myaaw/config.
 func NewAuthService() (*AuthService, error) {
-	root, err := agentdir.MyaawRoot()
+	path, err := agentdir.GlobalConfigPath(credentialsFileName)
 	if err != nil {
 		return nil, err
 	}
-	return NewAuthServiceAt(filepath.Join(root, credentialsFileName))
+	migrateLegacyCredentials(path)
+	return NewAuthServiceAt(path)
+}
+
+// migrateLegacyCredentials moves the pre-global-config credentials file once, so
+// the auth service always writes the file it actually loaded.
+func migrateLegacyCredentials(target string) {
+	if _, err := os.Stat(target); err == nil || !os.IsNotExist(err) {
+		return
+	}
+	root, err := agentdir.MyaawRoot()
+	if err != nil {
+		return
+	}
+	legacy := filepath.Join(root, credentialsFileName)
+	if _, err := os.Stat(legacy); err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return
+	}
+	if err := os.Rename(legacy, target); err == nil {
+		return
+	}
+	data, err := os.ReadFile(legacy)
+	if err != nil {
+		return
+	}
+	if err := os.WriteFile(target, data, 0o600); err == nil {
+		_ = os.Remove(legacy)
+	}
 }
 
 // NewAuthServiceAt is the testable constructor.
