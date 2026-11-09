@@ -57,10 +57,10 @@ func TestEnsureLayoutRebuildsRegistryFromDirectories(t *testing.T) {
 	root := filepath.Join(home, ".myaaw")
 
 	for _, name := range []string{"main", "alpha", "beta"} {
-		if err := os.MkdirAll(filepath.Join(root, name, "config"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, "agents", name, "config"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, name, "config", "config.json"), []byte("{}"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, "agents", name, "config", "config.json"), []byte("{}"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -157,79 +157,12 @@ func TestSetActiveExportsAgentEnv(t *testing.T) {
 	}
 }
 
-func TestEnsureLayoutMigratesLegacyLayout(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-
-	myaawRoot := filepath.Join(home, ".myaaw")
-	legacyHome := filepath.Join(myaawRoot, "home")
-	if err := os.MkdirAll(legacyHome, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	agentsPath := filepath.Join(legacyHome, "AGENTS.md")
-	if err := os.WriteFile(agentsPath, []byte("Home: ~/.myaaw/home\nSkills: ~/.myaaw/skills\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(myaawRoot, "skills", "notes"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// Simulate package-init loggers creating default/logs before migration runs.
-	if err := os.MkdirAll(filepath.Join(myaawRoot, "default", "logs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(myaawRoot, "default", "logs", "tools.log"), []byte("init"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(myaawRoot, "logs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(myaawRoot, "logs", "tools.log"), []byte("legacy"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := EnsureLayout(); err != nil {
-		t.Fatal(err)
-	}
-
-	migrated := filepath.Join(myaawRoot, "default", "home", "AGENTS.md")
-	data, err := os.ReadFile(migrated)
-	if err != nil {
-		t.Fatalf("migrated AGENTS.md missing: %v", err)
-	}
-	content := string(data)
-	if !strings.Contains(content, "~/.myaaw/default/home") {
-		t.Errorf("legacy home path was not rewritten:\n%s", content)
-	}
-	if !strings.Contains(content, "~/.myaaw/default/skills") {
-		t.Errorf("legacy skills path was not rewritten:\n%s", content)
-	}
-
-	registry, err := LoadRegistry()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if registry.Default != DefaultAgentName {
-		t.Errorf("Default = %q, want %q", registry.Default, DefaultAgentName)
-	}
-	if _, exists := registry.Agents[DefaultAgentName]; !exists {
-		t.Error("default agent not registered")
-	}
-
-	legacyLog := filepath.Join(myaawRoot, "default", "logs", "tools.log.legacy")
-	if content, err := os.ReadFile(legacyLog); err != nil {
-		t.Errorf("legacy duplicate log was not preserved: %v", err)
-	} else if string(content) != "legacy" {
-		t.Errorf("legacy duplicate log = %q, want legacy", content)
-	}
-}
-
 func TestRewriteLegacyPathsForNewAgent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	if err := os.MkdirAll(filepath.Join(agentRoot, "home"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +186,7 @@ func TestRewriteLegacyPathsForNewAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "~/.myaaw/myfriend/home/MEMORY.md") {
+	if !strings.Contains(string(data), "~/.myaaw/agents/myfriend/home/MEMORY.md") {
 		t.Errorf("path was not rewritten: %s", data)
 	}
 
@@ -261,7 +194,7 @@ func TestRewriteLegacyPathsForNewAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(scriptData), `".myaaw", "myfriend", "database"`) {
+	if !strings.Contains(string(scriptData), `".myaaw", "agents", "myfriend", "database"`) {
 		t.Errorf("python skill path was not rewritten: %s", scriptData)
 	}
 }
@@ -274,10 +207,10 @@ func TestSuggestedPort(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, ".myaaw"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(home, ".myaaw", "default"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".myaaw", "agents", "default"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(home, ".myaaw", "alpha"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".myaaw", "agents", "alpha"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := RegisterAgent(DefaultAgentName); err != nil {
@@ -286,10 +219,10 @@ func TestSuggestedPort(t *testing.T) {
 	if err := RegisterAgent("alpha"); err != nil {
 		t.Fatal(err)
 	}
-	if err := UpsertEnvValue(filepath.Join(home, ".myaaw", "default", ".env"), "PORT", "8080"); err != nil {
+	if err := UpsertEnvValue(filepath.Join(home, ".myaaw", "agents", "default", ".env"), "PORT", "8080"); err != nil {
 		t.Fatal(err)
 	}
-	if err := UpsertEnvValue(filepath.Join(home, ".myaaw", "alpha", ".env"), "PORT", "8081"); err != nil {
+	if err := UpsertEnvValue(filepath.Join(home, ".myaaw", "agents", "alpha", ".env"), "PORT", "8081"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -303,7 +236,7 @@ func TestApprovalsPathMigratesLegacyFile(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	if err := os.MkdirAll(agentRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}

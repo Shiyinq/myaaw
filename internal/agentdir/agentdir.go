@@ -161,7 +161,7 @@ func MyaawRoot() (string, error) {
 	return filepath.Join(home, ".myaaw"), nil
 }
 
-// AgentRoot returns ~/.myaaw/<name>.
+// AgentRoot returns ~/.myaaw/agents/<name>.
 func AgentRoot(name string) (string, error) {
 	if err := ValidateName(name); err != nil {
 		return "", err
@@ -170,7 +170,7 @@ func AgentRoot(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, name), nil
+	return filepath.Join(root, "agents", name), nil
 }
 
 // ActiveRoot returns the root directory of the active agent.
@@ -517,14 +517,16 @@ func AgentInitialized(name string) bool {
 	return agentInitialized(root)
 }
 
-// EnsureLayout creates ~/.myaaw and migrates a legacy single-agent layout into
-// ~/.myaaw/default. It is safe to call repeatedly.
+// EnsureLayout creates ~/.myaaw/agents and registers the agent directories that
+// already exist. It never creates an agent itself: onboarding names the first
+// one and the registry default points at it. It is safe to call repeatedly.
 func EnsureLayout() error {
 	root, err := MyaawRoot()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	agentsRoot := filepath.Join(root, "agents")
+	if err := os.MkdirAll(agentsRoot, 0o755); err != nil {
 		return err
 	}
 
@@ -533,29 +535,19 @@ func EnsureLayout() error {
 		return err
 	}
 
-	defaultRoot := filepath.Join(root, DefaultAgentName)
-	if legacyLayoutExists(root) && !agentInitialized(defaultRoot) {
-		if err := migrateLegacyLayout(root, defaultRoot); err != nil {
-			return err
-		}
-	}
-
-	if _, exists := registry.Agents[DefaultAgentName]; !exists {
-		registry.Agents[DefaultAgentName] = AgentInfo{CreatedAt: CreatedAtUTC()}
-	}
 	if registry.Default == "" {
 		registry.Default = DefaultAgentName
 	}
-	registerExistingAgents(root, registry)
+	registerExistingAgents(agentsRoot, registry)
 	return SaveRegistry(registry)
 }
 
-// registerExistingAgents adds every initialized agent directory that the registry
-// does not know about. The directories are the source of truth: a registry that
-// was lost, truncated, or written before an agent existed must not hide agents
-// whose config and home are still on disk.
-func registerExistingAgents(root string, registry *Registry) {
-	entries, err := os.ReadDir(root)
+// registerExistingAgents adds every initialized agent directory under the
+// agents folder that the registry does not know about. The directories are the
+// source of truth: a registry that was lost, truncated, or written before an
+// agent existed must not hide agents whose config and home are still on disk.
+func registerExistingAgents(agentsRoot string, registry *Registry) {
+	entries, err := os.ReadDir(agentsRoot)
 	if err != nil {
 		return
 	}
@@ -567,7 +559,7 @@ func registerExistingAgents(root string, registry *Registry) {
 		if _, exists := registry.Agents[name]; exists {
 			continue
 		}
-		agentRoot := filepath.Join(root, name)
+		agentRoot := filepath.Join(agentsRoot, name)
 		if !agentInitialized(agentRoot) {
 			continue
 		}
@@ -577,54 +569,6 @@ func registerExistingAgents(root string, registry *Registry) {
 		}
 		registry.Agents[name] = AgentInfo{CreatedAt: created}
 	}
-}
-
-func migrateLegacyLayout(root, defaultRoot string) error {
-	legacyDirs := []string{"home", "config", "database", "skills", "logs", "jobs", "cron", "tools"}
-
-	if err := os.MkdirAll(defaultRoot, 0o755); err != nil {
-		return err
-	}
-
-	for _, name := range legacyDirs {
-		src := filepath.Join(root, name)
-		if _, err := os.Stat(src); os.IsNotExist(err) {
-			continue
-		}
-		dst := filepath.Join(defaultRoot, name)
-		if err := moveOrMergeDir(src, dst); err != nil {
-			return fmt.Errorf("migrate %s: %w", src, err)
-		}
-	}
-
-	legacyEnv := filepath.Join(root, ".env")
-	if _, err := os.Stat(legacyEnv); err == nil {
-		dstEnv := filepath.Join(defaultRoot, ".env")
-		if _, err := os.Stat(dstEnv); os.IsNotExist(err) {
-			if err := os.Rename(legacyEnv, dstEnv); err != nil {
-				return fmt.Errorf("migrate %s: %w", legacyEnv, err)
-			}
-		} else {
-			if err := os.Rename(legacyEnv, filepath.Join(defaultRoot, ".env.legacy")); err != nil {
-				return fmt.Errorf("migrate %s: %w", legacyEnv, err)
-			}
-		}
-	}
-
-	return RewriteLegacyPaths(defaultRoot, DefaultAgentName)
-}
-
-func legacyLayoutExists(root string) bool {
-	legacyDirs := []string{"home", "config", "database", "skills", "logs", "jobs", "cron", "tools"}
-	for _, name := range legacyDirs {
-		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
-			return true
-		}
-	}
-	if _, err := os.Stat(filepath.Join(root, ".env")); err == nil {
-		return true
-	}
-	return false
 }
 
 func agentInitialized(root string) bool {
@@ -637,48 +581,10 @@ func agentInitialized(root string) bool {
 	return false
 }
 
-func moveOrMergeDir(src, dst string) error {
-	if _, err := os.Stat(dst); os.IsNotExist(err) {
-		return os.Rename(src, dst)
-	}
-
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-		if _, err := os.Stat(dstPath); os.IsNotExist(err) {
-			if err := os.Rename(srcPath, dstPath); err != nil {
-				return err
-			}
-			continue
-		}
-		if entry.IsDir() {
-			if err := moveOrMergeDir(srcPath, dstPath); err != nil {
-				return err
-			}
-			continue
-		}
-		// Preserve legacy duplicates instead of silently dropping them.
-		legacyPath := dstPath + ".legacy"
-		if _, err := os.Stat(legacyPath); os.IsNotExist(err) {
-			if err := os.Rename(srcPath, legacyPath); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Remove src when all contents have been moved.
-	if remaining, err := os.ReadDir(src); err == nil && len(remaining) == 0 {
-		return os.Remove(src)
-	}
-	return nil
-}
-
 // RewriteLegacyPaths updates text files under agentRoot so references to the
-// old shared ~/.myaaw paths point at the agent-specific location.
+// shared ~/.myaaw paths (as written in the embedded template) point at the
+// agent's own folder under ~/.myaaw/agents/<name>. It runs for every new agent,
+// which is what keeps the template files free of per-agent edits.
 func RewriteLegacyPaths(agentRoot, name string) error {
 	if err := ValidateName(name); err != nil {
 		return err
@@ -692,15 +598,15 @@ func RewriteLegacyPaths(agentRoot, name string) error {
 	replacements := make([][2]string, 0, len(components)*4+2)
 	for _, component := range components {
 		replacements = append(replacements,
-			[2]string{"~/.myaaw/" + component, "~/.myaaw/" + name + "/" + component},
-			[2]string{filepath.Join(root, component), filepath.Join(root, name, component)},
-			[2]string{`".myaaw", "` + component + `"`, `".myaaw", "` + name + `", "` + component + `"`},
-			[2]string{`'.myaaw', '` + component + `'`, `'.myaaw', '` + name + `', '` + component + `'`},
+			[2]string{"~/.myaaw/" + component, "~/.myaaw/agents/" + name + "/" + component},
+			[2]string{filepath.Join(root, component), filepath.Join(root, "agents", name, component)},
+			[2]string{`".myaaw", "` + component + `"`, `".myaaw", "agents", "` + name + `", "` + component + `"`},
+			[2]string{`'.myaaw', '` + component + `'`, `'.myaaw', 'agents', '` + name + `', '` + component + `'`},
 		)
 	}
 	replacements = append(replacements,
-		[2]string{"~/.myaaw/.env", "~/.myaaw/" + name + "/.env"},
-		[2]string{filepath.Join(root, ".env"), filepath.Join(root, name, ".env")},
+		[2]string{"~/.myaaw/.env", "~/.myaaw/agents/" + name + "/.env"},
+		[2]string{filepath.Join(root, ".env"), filepath.Join(root, "agents", name, ".env")},
 	)
 
 	return filepath.WalkDir(agentRoot, func(path string, entry os.DirEntry, walkErr error) error {
