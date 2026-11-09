@@ -15,6 +15,7 @@
 		Cpu,
 		Radio,
 		Server,
+		Globe,
 		Settings2,
 		LogOut,
 		Wrench,
@@ -34,6 +35,7 @@
 	} from 'lucide-svelte';
 	import {
 		agentSelection,
+		apiBase,
 		authStore,
 		commandPalette,
 		conversationHistory,
@@ -93,6 +95,19 @@
 	let compactSidebar = $derived(sidebar.collapsed && wide);
 	let activeConversation = $derived(page.params.conversation ?? '');
 	let classicSearchInput = $state<HTMLInputElement | null>(null);
+
+	// The header badge says which host this dashboard is driving, so nobody
+	// mistakes a remote control plane for the machine in front of them. It can be
+	// turned off in Settings; the default is on.
+	let showHostBadge = $derived(preferences.value.showHostBadge);
+	let connectionHost = $derived.by(() => {
+		if (!apiBase.isCustom) return 'localhost';
+		try {
+			return new URL(apiBase.value).host;
+		} catch {
+			return apiBase.value;
+		}
+	});
 
 	// The chat list belongs to the shell, so the chat page's history panel and the
 	// classic-mode sidebar share one fetch (see stores/conversationHistory).
@@ -728,7 +743,33 @@
 					{/if}
 				</div>
 
-				<div class="pointer-events-auto flex shrink-0 items-center gap-2">
+				<div class="pointer-events-auto flex min-w-0 shrink-0 items-center gap-2">
+					{#if showHostBadge}
+						<a
+							href="/app/settings"
+							class="inline-flex max-w-none items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:max-w-36"
+							title={apiBase.isCustom
+								? t('myaaw.settings.connection_remote', { url: apiBase.value })
+								: t('myaaw.settings.connection_local')}
+							aria-label={apiBase.isCustom
+								? t('myaaw.settings.connection_remote', { url: apiBase.value })
+								: t('myaaw.settings.connection_local')}
+						>
+							{#if apiBase.isCustom}
+								<Globe class="size-3 shrink-0" />
+							{:else}
+								<Server class="size-3 shrink-0" />
+							{/if}
+							<!-- Phones get the short word, desktop the host: a tunnel host is too
+							     long for a 375 px header and would squeeze the page title. -->
+							<span class="truncate sm:hidden">
+								{apiBase.isCustom
+									? t('myaaw.settings.host_badge_remote')
+									: t('myaaw.settings.host_badge_local')}
+							</span>
+							<span class="hidden truncate sm:inline">{connectionHost}</span>
+						</a>
+					{/if}
 					{#if topBarSlot.current}
 						{@render topBarSlot.current.content()}
 					{/if}

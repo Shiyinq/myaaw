@@ -41,6 +41,8 @@ export interface Preferences {
 	notifyBrowser: boolean;
 	notifySound: string;
 	notifyVolume: number;
+	/** Show which control-plane host the header is talking to. */
+	showHostBadge: boolean;
 }
 
 const STORAGE_KEY = 'myaaw_prefs';
@@ -63,7 +65,8 @@ const DEFAULTS: Preferences = {
 	notifyEnabled: true,
 	notifyBrowser: false,
 	notifySound: 'chime',
-	notifyVolume: 0.7
+	notifyVolume: 0.7,
+	showHostBadge: true
 };
 
 function audioLanguage(value: unknown): AudioLanguage {
@@ -127,7 +130,8 @@ function load(): Preferences {
 			notifyVolume: Math.min(
 				1,
 				Math.max(0, Math.round((Number(parsed.notifyVolume) || 0.7) * 100) / 100)
-			)
+			),
+			showHostBadge: parsed.showHostBadge !== false
 		};
 	} catch {
 		return { ...DEFAULTS };

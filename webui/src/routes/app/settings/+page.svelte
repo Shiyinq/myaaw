@@ -374,6 +374,15 @@
 					(next) => preferences.update({ reduceMotion: next })
 				)}
 			</div>
+
+			<div class="grid gap-2">
+				{@render toggle(
+					t('myaaw.settings.host_badge'),
+					t('myaaw.settings.host_badge_desc'),
+					preferences.value.showHostBadge,
+					(next) => preferences.update({ showHostBadge: next })
+				)}
+			</div>
 		</CardContent>
 	</Card>
 
