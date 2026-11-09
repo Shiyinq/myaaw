@@ -299,7 +299,7 @@
 				<div class="flex justify-end">
 					<div class="flex min-w-0 max-w-[80%] flex-col items-end gap-2">
 						<div
-							class="max-w-full rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm whitespace-pre-wrap text-secondary-foreground ring-1 ring-(--chat-bubble-ring) [overflow-wrap:anywhere]"
+							class="max-w-full rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm whitespace-pre-wrap text-secondary-foreground ring-1 ring-(--chat-bubble-ring) wrap-anywhere"
 						>
 							{t('landing.stream.report_prompt')}
 						</div>
@@ -391,7 +391,7 @@
 														aria-label={`${tool.name}: ${t('landing.stream.tool_input')}, ${t('landing.stream.tool_output')}`}
 													>
 														<pre
-															class="p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]"><span
+															class="p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap wrap-anywhere"><span
 																class="text-zinc-500 select-none"
 																>$ </span>{invocation(tool)}</pre>
 														<div class="border-t border-white/10 p-3">
@@ -399,7 +399,7 @@
 																{t('landing.stream.tool_input')} · {tool.name}
 															</p>
 															<pre
-																class="font-mono text-[11px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(
+																class="font-mono text-[11px] leading-relaxed whitespace-pre-wrap wrap-anywhere">{JSON.stringify(
 																	tool.args,
 																	null,
 																	2
@@ -410,7 +410,7 @@
 																{t('landing.stream.tool_output')}
 															</p>
 															<pre
-																class="font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-zinc-300 [overflow-wrap:anywhere]">{complete
+																class="font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-zinc-300 wrap-anywhere">{complete
 																	? tool.result
 																	: status}</pre>
 														</div>
@@ -421,7 +421,7 @@
 														class="flex items-start gap-1.5 pl-6 text-[11px] leading-relaxed text-muted-foreground"
 													>
 														<Check class="mt-0.5 h-3 w-3 shrink-0" />
-														<span class="min-w-0 [overflow-wrap:anywhere]">{tool.outcome}</span>
+														<span class="min-w-0 wrap-anywhere">{tool.outcome}</span>
 													</p>
 												{/if}
 											</div>
@@ -433,7 +433,7 @@
 					</div>
 
 					{#if !busy}
-						<div class="min-w-0 text-sm [overflow-wrap:anywhere]">
+						<div class="min-w-0 text-sm wrap-anywhere">
 							<Markdown content={t('landing.stream.report_answer', stats)} />
 						</div>
 					{/if}

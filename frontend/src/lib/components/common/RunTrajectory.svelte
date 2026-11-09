@@ -135,7 +135,7 @@
 			<div class="mb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
 				{t('myaaw.observability.answer')}
 			</div>
-			<p class="whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</p>
+			<p class="whitespace-pre-wrap wrap-anywhere">{text}</p>
 		</div>
 	{/if}
 {/snippet}
@@ -150,11 +150,11 @@
 	>
 		<Badge
 			variant="outline"
-			class="max-w-1/2 shrink-0 font-mono text-[9px] whitespace-normal [overflow-wrap:anywhere]"
+			class="max-w-1/2 shrink-0 font-mono text-[9px] whitespace-normal wrap-anywhere"
 		>
 			{row.span.kind}
 		</Badge>
-		<div class="min-w-0 flex-1 [overflow-wrap:anywhere]">
+		<div class="min-w-0 flex-1 wrap-anywhere">
 			<div class="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
 				<span class="min-w-0 flex-1 truncate font-medium">{row.span.name ?? row.span.kind}</span>
 				<span class="max-w-full shrink-0 text-muted-foreground">

@@ -144,7 +144,7 @@
 			{t('myaaw.observability.trajectory')}
 			<Badge variant="outline" class="text-[10px]">{t('landing.loop.legend')}</Badge>
 		</CardTitle>
-		<CardDescription class="text-xs [overflow-wrap:anywhere]">
+		<CardDescription class="text-xs wrap-anywhere">
 			example_run · {model} · 14.00s · $0.0015
 		</CardDescription>
 	</CardHeader>

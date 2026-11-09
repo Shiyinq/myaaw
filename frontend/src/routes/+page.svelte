@@ -490,7 +490,7 @@
 						<h4 class="mt-3 text-base font-semibold">
 							{t(`landing.capabilities.${capability}_title`)}
 						</h4>
-						<p class="mt-2 text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+						<p class="mt-2 text-sm leading-relaxed text-muted-foreground wrap-anywhere">
 							{t(`landing.capabilities.${capability}_body`)}
 						</p>
 					</article>
