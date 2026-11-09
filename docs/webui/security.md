@@ -69,7 +69,7 @@ Primary threats:
 ## 6. CORS (Option A only)
 
 - Because the browser fetches the control plane directly (cross-origin), the control plane must allow the WebUI origin via CORS.
-- Default: loopback origins (`localhost`, `127.0.0.1`, `::1`) are allowed, so a local dashboard works out of the box. Any other origin (a remote dashboard or a tunnel domain) must be listed in `ALLOWED_ORIGINS`; `ALLOWED_ORIGINS=*` restores the permissive behavior for development.
+- Default: loopback origins (`localhost`, `127.0.0.1`, `::1`) are allowed, so a local dashboard works out of the box. Any other origin (a remote dashboard or a tunnel domain) must be listed in `ALLOWED_ORIGINS`; `ALLOWED_ORIGINS=*` restores the permissive behavior for development. Because daemon units carry no environment, use `myaaw api start --allowed-origins https://panel.example.com` when the control plane runs as a daemon.
 - Native desktop/mobile clients do not send an `Origin` and are unaffected by this default.
 
 ---

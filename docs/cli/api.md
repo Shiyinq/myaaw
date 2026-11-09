@@ -15,17 +15,19 @@ myaaw api restart
 myaaw api status
 ```
 
-All subcommands accept two persistent flags:
+All subcommands accept these persistent flags:
 
 | Flag | Default | Meaning |
 | :--- | :--- | :--- |
 | `--port` | `9000` | Port the control plane listens on. |
 | `--host` | `127.0.0.1` | Interface to bind. Loopback by default; use `0.0.0.0` only behind a tunnel or reverse proxy. |
 | `--terminal` | `false` | Allow the dashboard to open a shell on this host (sets `MYAAW_TERMINAL=1`). |
+| `--allowed-origins` | loopback only | Comma-separated browser origins allowed to call the API (sets `ALLOWED_ORIGINS`). Needed when the dashboard runs on another origin, such as a tunnel domain. |
 
 ```bash
 myaaw api start --port 9100
 myaaw api start --host 127.0.0.1 --port 9000
+myaaw api start --allowed-origins https://panel.example.com
 ```
 
 ## Web terminal
@@ -45,6 +47,22 @@ MYAAW_TERMINAL=1 myaaw api run
 ```
 
 It grants a full shell as the user running the API, so read the [Web Terminal guide](../api/terminal.md) before enabling it.
+
+## Remote dashboard (tunnel)
+
+The control plane stays on loopback; the tunnel only forwards to that port. A
+browser dashboard on another origin must be allowed explicitly, otherwise its
+requests fail the CORS preflight:
+
+```bash
+myaaw api start --allowed-origins https://panel.example.com
+myaaw api restart --allowed-origins https://panel.example.com
+```
+
+The flag is passed on to the daemon (`myaaw api run ... --allowed-origins ...`),
+because daemon units carry no environment. An exported `ALLOWED_ORIGINS` is
+forwarded for `api start` too, and `api run` reads it directly. Use
+`ALLOWED_ORIGINS=*` only for local development.
 
 ## `api run` (and bare `api`)
 

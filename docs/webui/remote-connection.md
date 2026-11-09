@@ -41,7 +41,7 @@ browser → http://localhost:9000 (control plane, loopback)
 browser (laptop) → tunnel/SSH URL → control plane (server A, loopback)
 ```
 
-The browser always fetches `api_url` directly. The control plane must allow the WebUI origin via CORS.
+The browser always fetches `api_url` directly. The control plane must allow the WebUI origin via CORS — with the default loopback policy that means listing the dashboard's origin, e.g. `myaaw api start --allowed-origins https://panel.example.com` (see §4.5).
 
 ---
 
@@ -78,6 +78,23 @@ ssh -L 9000:localhost:9000 user@server
 ```
 
 Then set Server URL to `http://localhost:9000` in the WebUI login (the default).
+
+### 4.5 Allow the dashboard origin (CORS)
+
+When the dashboard is served from a non-loopback origin (a tunnel domain or
+another host), the control plane has to allow that origin explicitly. The
+default policy only accepts loopback origins:
+
+```bash
+# on the machine running the control plane
+myaaw api start --allowed-origins https://dash.example.com
+# or, for more than one dashboard / tunnel
+myaaw api start --allowed-origins https://dash.example.com,https://backup.example.com
+```
+
+It is the **dashboard's** URL, not the control plane's tunnel URL: the browser
+sends the origin of the page it runs on. `--allowed-origins` also works with
+`api restart`; `api run` accepts `ALLOWED_ORIGINS` in its environment.
 
 ---
 
@@ -131,7 +148,7 @@ Then set Server URL to `http://localhost:9000` in the WebUI login (the default).
 
 ## 9. End-to-end flow (remote example)
 
-1. On server A: `myaaw api start` (loopback) + `myaaw server --agent <name> start`.
+1. On server A: `myaaw api start --allowed-origins https://<dashboard-origin>` (loopback; the tunnel forwards to it) and `myaaw server --agent <name> start`.
 2. On server A: run a tunnel (`tailscale`/`cloudflared`/`ngrok`).
 3. On the laptop: install the WebUI (`webui-install.sh` or `myaaw webui install`).
 4. Open the dashboard → choose "Connect to a remote control plane".

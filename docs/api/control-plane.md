@@ -1449,7 +1449,7 @@ All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, 
 - The control plane binds `127.0.0.1` by default (`--host`). To reach it remotely, use a tunnel or SSH port-forward instead of binding `0.0.0.0`. See [Remote WebUI Connection](../webui/remote-connection.md) and [WebUI Security](../webui/security.md).
 - `/api/*` on the agent servers still has no auth; only the control plane protects access. Do not expose agent ports directly.
 - Tools can run Bash, filesystem, and Python operations, so control-plane access is privileged.
-- CORS defaults to loopback origins (`localhost` / `127.0.0.1` / `::1`). Set `ALLOWED_ORIGINS` (comma-separated) for a remote dashboard, or `ALLOWED_ORIGINS=*` for development. The control plane allows `Authorization` in CORS preflight requests.
+- CORS defaults to loopback origins (`localhost` / `127.0.0.1` / `::1`). Set `ALLOWED_ORIGINS` (comma-separated) for a remote dashboard, or `ALLOWED_ORIGINS=*` for development. The control plane allows `Authorization` in CORS preflight requests. Daemon units carry no environment, so `myaaw api start --allowed-origins https://panel.example.com` is how the value reaches `api start`/`api restart`.
 - The optional terminal (section 21) hands out a full shell; keep it off unless the control plane stays on loopback.
 
 ## 21. Terminal
