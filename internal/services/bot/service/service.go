@@ -84,9 +84,16 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 		log.Printf("⚠️  Failed to create LLM provider %s: %v. Chat requests will fail until the provider is fixed.", config.LLMProviderName, providerErr)
 	}
 
-	transcriber, err := provider.CreateTranscriber(config.TranscriberProviderName, config.TranscriberAPIKey)
-	if err != nil {
-		log.Printf("Warning: Error creating Transcriber provider %s: %v. Transcriber functionality might be affected or disabled depending on message handling logic.", config.TranscriberProviderName, err)
+	// A transcriber is optional: without one, voice notes are skipped instead of
+	// crashing the agent. Only warn when a provider is configured but unusable.
+	var transcriber provider.Transcriber
+	if name := strings.TrimSpace(config.TranscriberProviderName); name != "" {
+		created, err := provider.CreateTranscriber(name, config.TranscriberAPIKey)
+		if err != nil {
+			log.Printf("Warning: Error creating Transcriber provider %s: %v. Transcriber functionality might be affected or disabled depending on message handling logic.", name, err)
+		} else {
+			transcriber = created
+		}
 	}
 
 	svc := &BotServiceImpl{

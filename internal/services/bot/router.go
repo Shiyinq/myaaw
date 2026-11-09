@@ -14,6 +14,7 @@ import (
 	"myaaw/internal/services/bot/handler"
 	"myaaw/internal/services/bot/repository"
 	"myaaw/internal/services/bot/service"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -35,9 +36,13 @@ func BotRouter(router fiber.Router) {
 	registry := channel.NewRegistry()
 
 	var transcriber provider.Transcriber
-	transcriber, err := provider.CreateTranscriber(config.TranscriberProviderName, config.TranscriberAPIKey)
-	if err != nil {
-		log.Printf("Warning: Transcriber provider not available for Telegram adapter: %v", err)
+	if name := strings.TrimSpace(config.TranscriberProviderName); name != "" {
+		created, err := provider.CreateTranscriber(name, config.TranscriberAPIKey)
+		if err != nil {
+			log.Printf("Warning: Transcriber provider not available for Telegram adapter: %v", err)
+		} else {
+			transcriber = created
+		}
 	}
 	telegramAdapter := telegram.NewTelegramAdapter(transcriber)
 	registry.Register(telegramAdapter)
