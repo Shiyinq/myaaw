@@ -123,7 +123,7 @@ When editing, a blank API-key field **keeps the stored key**; it does not clear 
 
 ### Per-agent configuration
 
-Merge this fragment into `~/.myaaw/personal/config/config.json`; do not overwrite unrelated channels, approvals, speech settings, or other providers:
+Merge this fragment into `~/.myaaw/agents/personal/config/config.json`; do not overwrite unrelated channels, approvals, speech settings, or other providers:
 
 ```json
 {

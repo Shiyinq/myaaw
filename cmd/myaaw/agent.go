@@ -18,7 +18,7 @@ var agentDeleteYes bool
 var agentCmd = &cobra.Command{
 	Use:   "agent",
 	Short: "Manage isolated Myaaw agents",
-	Long:  "Create, list, select, and delete isolated agents stored under ~/.myaaw/<name>.",
+	Long:  "Create, list, select, and delete isolated agents stored under ~/.myaaw/agents/<name>.",
 }
 
 var agentListCmd = &cobra.Command{

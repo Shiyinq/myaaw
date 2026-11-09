@@ -46,7 +46,7 @@ If `-o` points inside the agent being backed up, that directory is skipped and r
 
 ## What is included
 
-Everything under `~/.myaaw/<agent>/` by default, except the deny-list below:
+Everything under `~/.myaaw/agents/<agent>/` by default, except the deny-list below:
 
 ```text
 .env
@@ -224,9 +224,9 @@ If you need to inspect or extract an archive by hand:
 
 ```bash
 myaaw --agent default server stop
-tar -xzf myaaw-backup-default-20261027-003000.tar.gz -C ~/.myaaw default/
-chmod 600 ~/.myaaw/default/.env ~/.myaaw/default/contacts.json
-sqlite3 ~/.myaaw/default/database/myaaw.db "PRAGMA integrity_check;"
+tar -xzf myaaw-backup-default-20261027-003000.tar.gz -C ~/.myaaw/agents default/
+chmod 600 ~/.myaaw/agents/default/.env ~/.myaaw/agents/default/contacts.json
+sqlite3 ~/.myaaw/agents/default/database/myaaw.db "PRAGMA integrity_check;"
 myaaw --agent default server start
 ```
 

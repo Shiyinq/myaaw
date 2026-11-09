@@ -42,7 +42,7 @@ Myaaw loads skills with progressive disclosure:
 Skills are **per agent**:
 
 ```text
-~/.myaaw/<agent>/skills/<skill-name>/
+~/.myaaw/agents/<agent>/skills/<skill-name>/
 ```
 
 The exact absolute path is already in your prompt, in the `# Agent Skills`

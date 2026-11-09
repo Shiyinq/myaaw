@@ -200,10 +200,10 @@ prompts, sub-agents, A2A, and API endpoints.
 
 | Path | Contents |
 | :--- | :--- |
-| `~/.myaaw/<agent>/.env` | Port, base URL, tokens, API keys. |
-| `~/.myaaw/<agent>/config/config.json` | Providers, channels, bot settings, heartbeat, cron defaults, approvals policy. |
-| `~/.myaaw/<agent>/config/approvals.json` | Runtime approval grants (allow session / always). |
-| `~/.myaaw/<agent>/database/myaaw.db` | Conversations and runtime state. |
+| `~/.myaaw/agents/<agent>/.env` | Port, base URL, tokens, API keys. |
+| `~/.myaaw/agents/<agent>/config/config.json` | Providers, channels, bot settings, heartbeat, cron defaults, approvals policy. |
+| `~/.myaaw/agents/<agent>/config/approvals.json` | Runtime approval grants (allow session / always). |
+| `~/.myaaw/agents/<agent>/database/myaaw.db` | Conversations and runtime state. |
 
 ## Examples
 

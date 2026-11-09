@@ -27,7 +27,7 @@ Implemented:
 Set a bearer token in the agent's `.env` and restart the server:
 
 ```bash
-# ~/.myaaw/<agent>/.env
+# ~/.myaaw/agents/<agent>/.env
 A2A_TOKEN=change-me-to-a-random-string
 
 # Optional: one shared token per caller
@@ -59,11 +59,11 @@ Plain `A2A_TOKEN` / `A2A_TOKENS` entries get delegate access under the shared `d
 Generate an Ed25519 key and point the agent at it:
 
 ```bash
-openssl genpkey -algorithm ED25519 -out ~/.myaaw/<agent>/a2a_key.pem
-chmod 600 ~/.myaaw/<agent>/a2a_key.pem
+openssl genpkey -algorithm ED25519 -out ~/.myaaw/agents/<agent>/a2a_key.pem
+chmod 600 ~/.myaaw/agents/<agent>/a2a_key.pem
 
-# ~/.myaaw/<agent>/.env
-A2A_SIGNING_KEY=/Users/you/.myaaw/<agent>/a2a_key.pem
+# ~/.myaaw/agents/<agent>/.env
+A2A_SIGNING_KEY=/Users/you/.myaaw/agents/<agent>/a2a_key.pem
 ```
 
 The Agent Card then publishes a `signatures` array. To trust a peer, copy its key (the peer's public key is `base64url`-encoded; you can derive it from the same `a2a_key.pem`, or the peer can give it to you):
@@ -219,12 +219,12 @@ The existing `contextId` is reused, so the agent continues the same conversation
 Before each run, the message receives a note with the task output directory:
 
 ```text
-[A2A] Save files for the caller under ~/.myaaw/<agent>/jobs/a2a/<taskId>/output; they will be returned as artifacts.
+[A2A] Save files for the caller under ~/.myaaw/agents/<agent>/jobs/a2a/<taskId>/output; they will be returned as artifacts.
 ```
 
 Files written there are returned as artifacts, together with the text artifact. Small files (≤ 1 MiB) are inlined as `raw` parts (base64); larger files are returned as `url` parts pointing to `GET /tasks/{id}/artifacts?path=<name>` and streamed on demand, so a large file (for example a video) does not have to fit in a single JSON response. Limits: 10 files per task, up to 1 GiB per file. Symlinks are skipped.
 
-The `contact` tool downloads file artifacts (both `raw` and `url` parts) into the caller's `~/.myaaw/<agent>/home/workspace/downloads/<taskId>/` and reports each saved path and size.
+The `contact` tool downloads file artifacts (both `raw` and `url` parts) into the caller's `~/.myaaw/agents/<agent>/home/workspace/downloads/<taskId>/` and reports each saved path and size.
 
 ### File parts
 
@@ -237,7 +237,7 @@ The `contact` tool downloads file artifacts (both `raw` and `url` parts) into th
 ```
 
 - `mediaType: image/*` parts are passed to the model as images.
-- Other `raw` parts are written to `~/.myaaw/<agent>/jobs/a2a/<taskId>/` and their absolute path is appended to the message text, so the agent can read them with its filesystem tool.
+- Other `raw` parts are written to `~/.myaaw/agents/<agent>/jobs/a2a/<taskId>/` and their absolute path is appended to the message text, so the agent can read them with its filesystem tool.
 - `url` parts are passed through as file references; `data` parts are encoded as JSON.
 - Limits: 10 files per message, 5 MiB per file, and 8 MiB of inline file bytes per message (base64 inflates the raw bytes by about 4/3). Larger payloads must use `url` parts.
 - The HTTP request body limit defaults to 32 MiB (`A2A_MAX_REQUEST_BYTES`) and is sized to carry the inline budget plus the JSON envelope; it also covers base64 chat attachments.
@@ -353,7 +353,7 @@ REST errors use the `google.rpc.Status` shape (`error.code`, `error.status`, `er
 A gRPC server exposing `lf.a2a.v1.A2AService` (the official proto, all 11 operations) is available when you set a port:
 
 ```bash
-# ~/.myaaw/<agent>/.env
+# ~/.myaaw/agents/<agent>/.env
 A2A_GRPC_PORT=8082
 # optional: full bind address (overrides A2A_GRPC_PORT)
 # A2A_GRPC_ADDR=0.0.0.0:8082
@@ -369,7 +369,7 @@ Clients send the `a2a-version: 1.0` metadata header and, when auth is configured
 A contact is another agent this agent may call. Contacts live in:
 
 ```text
-~/.myaaw/<agent>/contacts.json
+~/.myaaw/agents/<agent>/contacts.json
 ```
 
 ```json

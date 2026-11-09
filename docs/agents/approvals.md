@@ -136,7 +136,7 @@ applies to another user or to another channel.
 | **Allow session** (`s`) | that key in the same conversation of that channel/user | stored with the conversation ID |
 | **Always** (`a`) | that key for that channel + user, in every conversation | stored until revoked |
 
-Grants live in `~/.myaaw/<agent>/config/approvals.json`:
+Grants live in `~/.myaaw/agents/<agent>/config/approvals.json`:
 
 ```json
 {
@@ -167,7 +167,7 @@ Notes:
 - The store is read **before every mutation** (read-modify-write) and written
   atomically, so an agent run and the control plane cannot silently drop each
   other's grants.
-- A legacy root-level `~/.myaaw/<agent>/approvals.json` is renamed into
+- A legacy root-level `~/.myaaw/agents/<agent>/approvals.json` is renamed into
   `config/` on first use, preserving the exact contents.
 - **Legacy files**: an older grants file (global `always: true`, sessions as a
   map) is still read. Its global `always` entries are **dropped** (the author is

@@ -10,7 +10,7 @@ import (
 
 // ListContacts returns the agent's A2A contacts with tokens masked.
 // @Summary      List contacts
-// @Description  Contacts live in ~/.myaaw/<agent>/contacts.json and reference other A2A agents.
+// @Description  Contacts live in ~/.myaaw/agents/<agent>/contacts.json and reference other A2A agents.
 // @Tags         Contacts
 // @Produce      json
 // @Security     BearerAuth

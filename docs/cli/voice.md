@@ -50,7 +50,7 @@ myaaw voice --video screen,camera --video-interval 5
 | :--- | :--- | :--- |
 | `--video` | `none` | Video source: `none`, `screen`, `camera`, or `screen,camera`. |
 | `--video-interval` | `3` | Seconds between captured frames. |
-| `--save-frames` | `false` | Save captured frames to `~/.myaaw/<agent>/logs/frames/`. |
+| `--save-frames` | `false` | Save captured frames to `~/.myaaw/agents/<agent>/logs/frames/`. |
 
 Requirements:
 
@@ -77,7 +77,7 @@ myaaw voice-classic --video camera --save-audio
 Requirements:
 
 ```env
-# ~/.myaaw/<agent>/.env
+# ~/.myaaw/agents/<agent>/.env
 TRANSCRIBER_PROVIDER_NAME=<provider>
 TRANSCRIBER_API_KEY=<key>
 SYNTHESIZER_PROVIDER_NAME=<provider>

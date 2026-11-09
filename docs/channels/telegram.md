@@ -351,7 +351,7 @@ Related tests live in `internal/channel/telegram/*_test.go`,
 ## 8. Verifying the database
 
 Database per agent: `<agent home>/database/myaaw.db`
-(for example `~/.myaaw/default/database/myaaw.db`).
+(for example `~/.myaaw/agents/default/database/myaaw.db`).
 
 Inspect sessions per topic:
 

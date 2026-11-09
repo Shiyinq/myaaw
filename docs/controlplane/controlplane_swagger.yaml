@@ -154,6 +154,8 @@ definitions:
         items:
           type: string
         type: array
+      provider:
+        type: string
     type: object
   config.ObservabilityConfig:
     properties:
@@ -533,6 +535,9 @@ definitions:
       expires_at:
         example: "2026-10-20T20:00:00Z"
         type: string
+      must_change_password:
+        example: false
+        type: boolean
       token:
         example: a1b2c3
         type: string
@@ -684,6 +689,9 @@ definitions:
     type: object
   handler.UsernameResponse:
     properties:
+      must_change_password:
+        example: false
+        type: boolean
       user_id:
         example: 0
         type: integer
@@ -3396,8 +3404,8 @@ paths:
       - Config
   /agents/{name}/contacts:
     get:
-      description: Contacts live in ~/.myaaw/<agent>/contacts.json and reference other
-        A2A agents.
+      description: Contacts live in ~/.myaaw/agents/<agent>/contacts.json and reference
+        other A2A agents.
       parameters:
       - description: Agent name
         in: path

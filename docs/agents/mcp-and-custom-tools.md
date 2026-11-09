@@ -2,7 +2,7 @@
 
 Myaaw provides an extensible, modular tooling system that empowers AI agents with custom capabilities. You can seamlessly extend Myaaw with **Model Context Protocol (MCP) servers**, **Custom CLI tools**, and configure **Built-in tools** through a single configuration file with **zero-downtime hot-reloading**.
 
-> Paths such as `~/.myaaw/tools/` in this guide refer to the active agent's directory: `~/.myaaw/<agent>/tools/`. The default agent uses `~/.myaaw/default/tools/`.
+> Paths such as `~/.myaaw/tools/` in this guide refer to the active agent's directory: `~/.myaaw/agents/<agent>/tools/`. The default agent uses `~/.myaaw/agents/default/tools/`.
 
 > **Looking for on-demand agent skills?** Check out the [Agent Skills Guide](skills.md) for dynamic `SKILL.md` workflows.
 

@@ -1397,7 +1397,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Contacts live in ~/.myaaw/\u003cagent\u003e/contacts.json and reference other A2A agents.",
+                "description": "Contacts live in ~/.myaaw/agents/\u003cagent\u003e/contacts.json and reference other A2A agents.",
                 "produces": [
                     "application/json"
                 ],
@@ -6972,6 +6972,9 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "provider": {
+                    "type": "string"
                 }
             }
         },
@@ -7518,6 +7521,10 @@ const docTemplatecontrolplane = `{
                     "type": "string",
                     "example": "2026-10-20T20:00:00Z"
                 },
+                "must_change_password": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "token": {
                     "type": "string",
                     "example": "a1b2c3"
@@ -7745,6 +7752,10 @@ const docTemplatecontrolplane = `{
         "handler.UsernameResponse": {
             "type": "object",
             "properties": {
+                "must_change_password": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "user_id": {
                     "type": "integer",
                     "example": 0

@@ -74,7 +74,7 @@ myaaw cron add \
 | `--every` | one schedule | Interval, for example `30m` or `2h`. |
 | `--at` | one schedule | Absolute time (`2026-10-27T10:00:00`) or relative (`10m`). |
 | `--tz` | no | Timezone, for example `Asia/Jakarta`. |
-| `--agent` | no | Agent that owns the job (defaults to the active agent). It also selects the store, so `--agent myfriend` always writes `~/.myaaw/myfriend/cron/jobs.json` and sets `agent_id` to `myfriend`. |
+| `--agent` | no | Agent that owns the job (defaults to the active agent). It also selects the store, so `--agent myfriend` always writes `~/.myaaw/agents/myfriend/cron/jobs.json` and sets `agent_id` to `myfriend`. |
 
 Exactly one of `--cron`, `--every`, or `--at` must be provided. The command prints the job ID after creation.
 
@@ -158,8 +158,8 @@ only; the tool never sends it alongside a `job_id`.
 
 ## Behavior
 
-- Jobs live in `~/.myaaw/<agent>/cron/jobs.json`; `--agent` decides both the directory and the job's `agent_id`.
-- Run history is stored under `~/.myaaw/<agent>/cron/runs/` as JSONL files, one line per run: `ts`, `status`, `result`, and a snapshot of the job (name, prompt, channel, target, topic, session). The snapshot keeps the history readable after a one-time job is removed.
+- Jobs live in `~/.myaaw/agents/<agent>/cron/jobs.json`; `--agent` decides both the directory and the job's `agent_id`.
+- Run history is stored under `~/.myaaw/agents/<agent>/cron/runs/` as JSONL files, one line per run: `ts`, `status`, `result`, and a snapshot of the job (name, prompt, channel, target, topic, session). The snapshot keeps the history readable after a one-time job is removed.
 - The agent **server must be running** for jobs to execute. See [Service Management](service.md).
 - A job runs an agent turn, then announces the result to the configured channel and target.
 - A job may target another chat than the one it was created in; pass that chat's ids. `--chat-type` is only written for Discord.

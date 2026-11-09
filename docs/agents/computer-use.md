@@ -394,7 +394,7 @@ Limitations to keep in mind:
 - The result text tells the model the frame size and, when known, the
   logical desktop size: `Screen is 1440x900 points.`
 - `deliver: true` additionally saves the PNG to
-  `~/.myaaw/<agent>/jobs/captures/screenshot-<frame>.png` (newest 20 kept)
+  `~/.myaaw/agents/<agent>/jobs/captures/screenshot-<frame>.png` (newest 20 kept)
   and attaches it to the user's chat — Telegram photo, Discord attachment,
   CLI/API attachment.
 

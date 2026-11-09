@@ -49,7 +49,7 @@ These values have different jobs:
 Each agent keeps its configuration at:
 
 ```text
-~/.myaaw/<agent>/config/config.json
+~/.myaaw/agents/<agent>/config/config.json
 ```
 
 For example, one agent can have all three integrations available:

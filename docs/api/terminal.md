@@ -77,7 +77,7 @@ All of them live under the authenticated control plane API; see [Control Plane A
 | Setting | Value |
 | :--- | :--- |
 | Process | `$SHELL -l`, falling back to `/bin/sh` |
-| Working directory | `~/.myaaw/<agent>/home`, or the agent root when that directory does not exist |
+| Working directory | `~/.myaaw/agents/<agent>/home`, or the agent root when that directory does not exist |
 | `TERM` | `xterm-256color` |
 | `MYAAW_AGENT` | the agent name from the path |
 

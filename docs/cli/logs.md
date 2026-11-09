@@ -39,7 +39,7 @@ On macOS/Linux, `-f=false` disables following. Press Ctrl+C to stop a followed s
 ## Log directory
 
 ```text
-~/.myaaw/<agent>/logs/
+~/.myaaw/agents/<agent>/logs/
 ```
 
 Typical files:

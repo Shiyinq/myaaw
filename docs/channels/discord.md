@@ -295,7 +295,7 @@ The conversation list renders the scope stored on each session:
 ## 8. Verifying the database
 
 Database per agent: `<agent home>/database/myaaw.db`
-(for example `~/.myaaw/default/database/myaaw.db`).
+(for example `~/.myaaw/agents/default/database/myaaw.db`).
 
 Inspect Discord sessions per channel:
 

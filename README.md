@@ -245,7 +245,7 @@ If you just want to use Myaaw without worrying about code, use our interactive i
     ```bash
     myaaw onboard
     ```
-    On a fresh install the wizard asks for an **agent name** first — that name becomes the folder `~/.myaaw/<agent>/`, so you are not stuck with a generic `default/` agent. You can add more agents later with `myaaw agent create <name>` or `myaaw onboard` again.
+    On a fresh install the wizard asks for an **agent name** first — that name becomes the folder `~/.myaaw/agents/<agent>/`, so you are not stuck with a generic `default/` agent. You can add more agents later with `myaaw agent create <name>` or `myaaw onboard` again.
 
     For servers and CI, every wizard question has a flag, so the same setup can run headless:
     ```bash
@@ -447,25 +447,25 @@ The `myaaw` CLI is your control center for managing the AI assistant, infrastruc
 | `voice` | Start a real-time voice conversation (Gemini Live). Use `--video=screen,camera` to stream vision. |
 | `voice-classic` | Voice chat using STT → Agent → TTS pipeline. Supports tools. Use `--video=screen,camera` to stream vision.|
 | `status` | Check the health of SQLite and channel configs. |
-| `logs` | Interactive TUI to select and stream logs from `~/.myaaw/<agent>/logs/`. |
+| `logs` | Interactive TUI to select and stream logs from `~/.myaaw/agents/<agent>/logs/`. |
 
 ### CLI Project Context
 When `myaaw chat` or `myaaw voice-classic` starts, Myaaw treats the directory it was launched from as the active project and injects it as `## Current Directory` in the system prompt. The filesystem tool also registers that directory as an allowed project root, even when it has no marker files, so the agent can work on it in place without copying it into `workspace/`.
 
-Telegram and Discord sessions do not receive the server's working directory. New projects and downloads always go to `~/.myaaw/<agent>/home/workspace/`.
+Telegram and Discord sessions do not receive the server's working directory. New projects and downloads always go to `~/.myaaw/agents/<agent>/home/workspace/`.
 
-Agent data lives under `~/.myaaw/<agent>/`, for example:
+Agent data lives under `~/.myaaw/agents/<agent>/`, for example:
 
 ```text
-~/.myaaw/myfriend/config/config.json
-~/.myaaw/myfriend/.env
-~/.myaaw/myfriend/database/myaaw.db
+~/.myaaw/agents/myfriend/config/config.json
+~/.myaaw/agents/myfriend/.env
+~/.myaaw/agents/myfriend/database/myaaw.db
 ```
 
 For the complete guide, see [docs/agents/multi-agent.md](docs/agents/multi-agent.md).
 
 ### 🧩 Multiple Agents
-Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/<agent>/`. The first agent is named during `myaaw onboard`; names may contain letters, numbers, `_`, and `-`.
+Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/agents/<agent>/`. The first agent is named during `myaaw onboard`; names may contain letters, numbers, `_`, and `-`.
 
 Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent guide](docs/agents/multi-agent.md#6-managing-agents).
 
@@ -476,7 +476,7 @@ Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent gu
 | **`chat`** | `--agent <name>`, `-m "text"` | Interactive chat shows an agent picker when more than one initialized agent exists. |
 | **`onboard`** | `--agent <name>` | Configure providers and channels for a specific agent. |
 | **`server`** | `start`, `stop`, `restart`, `status` | Each agent runs its own daemon (`myaaw-server-<agent>`) on its own `PORT`. |
-| **`provider`** | `create`, `list`, `default <name>`, `delete` | Providers are stored in `~/.myaaw/<agent>/config/config.json`. |
+| **`provider`** | `create`, `list`, `default <name>`, `delete` | Providers are stored in `~/.myaaw/agents/<agent>/config/config.json`. |
 | **`channel`** | `create`, `list`, `edit`, `delete` | Channel tokens are per agent; use a different Telegram/Discord token for each running agent. |
 
 **Examples:**

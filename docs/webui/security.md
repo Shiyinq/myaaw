@@ -12,7 +12,7 @@ What we protect:
 
 1. **Control-plane credentials** (username/password) and the **bearer token** — must not be sniffed or stolen.
 2. **The binary host** (server A) — no unauthorized person should get a shell or file access.
-3. **Agent data** (`~/.myaaw/<agent>`: chats, files, config, backups) — must not leak to outsiders.
+3. **Agent data** (`~/.myaaw/agents/<agent>`: chats, files, config, backups) — must not leak to outsiders.
 
 Primary threats:
 

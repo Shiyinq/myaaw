@@ -134,7 +134,7 @@ func (s *TerminalService) Enabled() bool {
 	return s != nil && s.enabled
 }
 
-// Open starts a login shell for the agent in ~/.myaaw/<agent>/home.
+// Open starts a login shell for the agent in ~/.myaaw/agents/<agent>/home.
 func (s *TerminalService) Open(agentName string, cols, rows uint16) (TerminalInfo, error) {
 	if !s.Enabled() {
 		return TerminalInfo{}, ErrTerminalDisabled

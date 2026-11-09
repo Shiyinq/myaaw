@@ -198,7 +198,7 @@ curl -X POST http://localhost:9000/agents/myfriend/chat \
   -d '{"text":"Summarize the report","files":[{"name":"report.csv","mime_type":"text/csv","data_base64":"cmV2ZW51ZQoxMDAK"}]}'
 ```
 
-`files` accepts `name`, `mime_type`, and `data_base64`: up to 8 documents per request, 10 MB each and 20 MB in total (base64-encoded). The agent writes them to `~/.myaaw/<agent>/user/uploads/<conversation_id>/<message_id>/` and prepends their absolute paths to the user turn inside an `<attached>` block, so the model reads the files with its tools instead of receiving their bytes. The dashboard hides that block and renders the files as chips; `GET /agents/:name/fs?path=/user` browses the same folder.
+`files` accepts `name`, `mime_type`, and `data_base64`: up to 8 documents per request, 10 MB each and 20 MB in total (base64-encoded). The agent writes them to `~/.myaaw/agents/<agent>/user/uploads/<conversation_id>/<message_id>/` and prepends their absolute paths to the user turn inside an `<attached>` block, so the model reads the files with its tools instead of receiving their bytes. The dashboard hides that block and renders the files as chips; `GET /agents/:name/fs?path=/user` browses the same folder.
 
 Response:
 
@@ -496,7 +496,7 @@ The same 2 MiB limit applies. Reads still reject binary content with `415`.
 
 ## 7. Skills
 
-Skills live in `~/.myaaw/<agent>/skills/<skill>/SKILL.md`. The enabled state follows `skills.json`, then the `SKILL.md` frontmatter, then defaults to enabled. The list is read fresh from disk on every request, so skills added or removed through the terminal appear immediately.
+Skills live in `~/.myaaw/agents/<agent>/skills/<skill>/SKILL.md`. The enabled state follows `skills.json`, then the `SKILL.md` frontmatter, then defaults to enabled. The list is read fresh from disk on every request, so skills added or removed through the terminal appear immediately.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -600,7 +600,7 @@ Text files return as plain text. Binary files (images, compiled scripts) return 
 
 ## 8. Tools
 
-Tools are configured in `~/.myaaw/<agent>/tools/tools.json` with three sections: `builtin_tools`, `custom_tools`, and `mcp_servers`. This API manages only the `tools.json` entries, and their command may point anywhere on disk. Note: the agent server also has a zero-config loader that auto-registers executable files placed directly in the tools folder; those files are not listed or managed by this API. The agent server hot-reloads `tools.json` via a file watcher.
+Tools are configured in `~/.myaaw/agents/<agent>/tools/tools.json` with three sections: `builtin_tools`, `custom_tools`, and `mcp_servers`. This API manages only the `tools.json` entries, and their command may point anywhere on disk. Note: the agent server also has a zero-config loader that auto-registers executable files placed directly in the tools folder; those files are not listed or managed by this API. The agent server hot-reloads `tools.json` via a file watcher.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -661,7 +661,7 @@ Rules:
 
 ## 9. Contacts (A2A)
 
-Contacts are other A2A agents this agent may delegate tasks to. They live in `~/.myaaw/<agent>/contacts.json`; tokens are masked in responses. See [A2A Guide](../agents/protocol/a2a.md) for the protocol details.
+Contacts are other A2A agents this agent may delegate tasks to. They live in `~/.myaaw/agents/<agent>/contacts.json`; tokens are masked in responses. See [A2A Guide](../agents/protocol/a2a.md) for the protocol details.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -1475,7 +1475,7 @@ The flag exists because the launchd/systemd units carry no environment of their 
 | `POST` | `/agents/:name/terminal/:id/heartbeat` | refresh the idle clock while the tab is open |
 | `DELETE` | `/agents/:name/terminal/:id` | kill the shell (idempotent) |
 
-The session is a real PTY running `$SHELL` as the **same OS user as `myaaw api`**, with `TERM=xterm-256color`, `MYAAW_AGENT=<name>`, and the working directory set to `~/.myaaw/<agent>/home`. It is not sandboxed by the agent's tool approvals. Sessions live in memory, are capped at two per agent, and survive a dropped stream: the shell keeps running for a **five minute grace window** so a reload or a trip to another page can reattach with `GET /agents/:name/terminal/:id`. One goroutine reads the PTY and fans out to at most one stream, so attaching again supersedes the reader a dead page left behind, and up to 256 KiB printed while no stream was attached is replayed on the next attach. Anything untouched for the whole window is reaped, a detached shell yields its slot to a new connection, and `DELETE` kills one immediately.
+The session is a real PTY running `$SHELL` as the **same OS user as `myaaw api`**, with `TERM=xterm-256color`, `MYAAW_AGENT=<name>`, and the working directory set to `~/.myaaw/agents/<agent>/home`. It is not sandboxed by the agent's tool approvals. Sessions live in memory, are capped at two per agent, and survive a dropped stream: the shell keeps running for a **five minute grace window** so a reload or a trip to another page can reattach with `GET /agents/:name/terminal/:id`. One goroutine reads the PTY and fans out to at most one stream, so attaching again supersedes the reader a dead page left behind, and up to 256 KiB printed while no stream was attached is replayed on the next attach. Anything untouched for the whole window is reaped, a detached shell yields its slot to a new connection, and `DELETE` kills one immediately.
 
 ```bash
 # Open, then read the stream in one terminal and type into it from another
@@ -1500,7 +1500,7 @@ Host-level archives on disk: `~/.myaaw-backups` by default, overridable with `MY
 
 - `:name` must be an archive the server produced. Anything that is not `myaaw-backup-<agent>-<stamp>.tar.gz` inside the backup directory answers `404`, so the routes cannot read or delete arbitrary files.
 - SQLite databases are copied with `VACUUM INTO`, so a running daemon does not produce a torn archive.
-- Restoring stops the agent daemon when it is running, writes a pre-restore archive, then replaces `~/.myaaw/<agent>`. Without `force`, an existing agent is refused with `400`.
+- Restoring stops the agent daemon when it is running, writes a pre-restore archive, then replaces `~/.myaaw/agents/<agent>`. Without `force`, an existing agent is refused with `400`.
 - `start: true` starts the daemon again after a successful restore; it defaults to `false`.
 - Restore rewrites an agent directory, so the control plane token is as powerful here as on the CLI. Keep the API on loopback.
 

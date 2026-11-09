@@ -1,6 +1,6 @@
 # Onboarding
 
-`myaaw onboard` is the interactive setup for one agent. On a fresh install it also asks for the agent name, so the data lands in `~/.myaaw/<name>/` instead of a generic `default/` folder.
+`myaaw onboard` is the interactive setup for one agent. On a fresh install it also asks for the agent name, so the data lands in `~/.myaaw/agents/<name>/` instead of a generic `default/` folder.
 
 ## Usage
 
@@ -21,12 +21,12 @@ Without `--agent`:
 
 ## Agent name
 
-The name becomes the folder `~/.myaaw/<name>/` and must match `[A-Za-z0-9][A-Za-z0-9_-]*`, start with a letter or number, and be at most 64 characters. `pids` is reserved.
+The name becomes the folder `~/.myaaw/agents/<name>/` and must match `[A-Za-z0-9][A-Za-z0-9_-]*`, start with a letter or number, and be at most 64 characters. `pids` is reserved.
 
 A name is rejected when it is already taken. “Taken” means:
 
 - the agent is already initialized,
-- the directory `~/.myaaw/<name>/` exists (even a leftover from an interrupted run),
+- the directory `~/.myaaw/agents/<name>/` exists (even a leftover from an interrupted run),
 - another agent differs only by case (`agent-b` vs `Agent-B`), because the filesystem on macOS/Windows is case-insensitive and A2A contacts are matched case-insensitively.
 
 Use `--agent <name> onboard` to reconfigure an existing agent instead of creating a new one.
@@ -147,7 +147,7 @@ Rules:
 - `--port` is rejected if another agent already uses it or another process is listening on it.
 - Missing required values exit non-zero with a message that names the flag, instead of hanging on a prompt.
 - Re-running without `--force` on an initialized agent is refused.
-- A leftover `~/.myaaw/<name>/` directory also requires `--force`, so a failed run cannot silently overwrite data.
+- A leftover `~/.myaaw/agents/<name>/` directory also requires `--force`, so a failed run cannot silently overwrite data.
 
 ```bash
 # Docker / CI
@@ -187,7 +187,7 @@ The global install question only appears for the **first agent** on the machine.
 
 Both lists come from the binary, so there is nothing to download. Each entry shows the skill or tool name followed by a short description, taken from the `SKILL.md` frontmatter or the tool schema.
 
-- **Skills default to none.** Only the ones you select are copied to `~/.myaaw/<agent>/skills/<name>/`, and an unselected skill is not created at all. The folder is what enables a skill, so you can also add or remove skills later by copying a folder.
+- **Skills default to none.** Only the ones you select are copied to `~/.myaaw/agents/<agent>/skills/<name>/`, and an unselected skill is not created at all. The folder is what enables a skill, so you can also add or remove skills later by copying a folder.
 - **Tools default to all enabled.** Deselecting one writes `false` for it in `tools/tools.json` (`builtin_tools`); the rest stay `true`. Custom tools and MCP servers in the same file are preserved.
 - On a reconfigure, the wizard pre-selects the skills already installed and the tools currently enabled, so pressing Enter through those steps keeps the current state. This also applies when you start `myaaw onboard` without `--agent` and pick the existing agent from the welcome list.
 - Headless updates behave the same way: omitting `--disable-tools` keeps the tools that are already disabled, while passing it explicitly (even empty) rewrites the set. Omitting `--skills` installs nothing and never removes an installed skill.
@@ -269,12 +269,12 @@ Notes:
 - The interactive wizard cannot produce this error: skills and tools are toggled from the built-in list, not typed.
 - Headless mode always requires `--provider`, and it rewrites the default provider entry with the values you pass. To keep the provider exactly as it is, use the interactive wizard and press Enter through the provider steps; there, skills and tools can be changed on their own.
 - Adding a skill that is already installed is a no-op; existing folders are never overwritten.
-- There is no flag to remove a skill. Delete `~/.myaaw/<agent>/skills/<name>/` manually, because onboarding will not delete user data.
+- There is no flag to remove a skill. Delete `~/.myaaw/agents/<agent>/skills/<name>/` manually, because onboarding will not delete user data.
 
 ## Files written
 
 ```text
-~/.myaaw/<agent>/
+~/.myaaw/agents/<agent>/
   .env                    # PORT, MYAAW_BASE_URL, ALLOWED_ORIGINS, A2A_TOKEN, tuning keys
   config/config.json      # providers (base_url + default_model), channels, heartbeat, bot.owner_ids
   contacts.json           # A2A contacts for the other agents (never the agent itself)

@@ -141,7 +141,7 @@ The dashboard talks to Myaaw's control plane, which makes the Google request ser
 
 ### Per-agent JSON
 
-Merge the following fields into `~/.myaaw/personal/config/config.json`; do not replace an existing file and lose its channels, tools, or other settings. Replace the key placeholder locally, and use a model available to your project:
+Merge the following fields into `~/.myaaw/agents/personal/config/config.json`; do not replace an existing file and lose its channels, tools, or other settings. Replace the key placeholder locally, and use a model available to your project:
 
 ```json
 {
@@ -293,7 +293,7 @@ The `provider` values here are factory types (`gemini`), not an integration ID s
 The supported `.env` alternative is:
 
 ```dotenv
-# ~/.myaaw/personal/.env — replace these placeholders locally
+# ~/.myaaw/agents/personal/.env — replace these placeholders locally
 TRANSCRIBER_PROVIDER_NAME=gemini
 TRANSCRIBER_API_KEY=REPLACE_WITH_YOUR_GEMINI_TRANSCRIBER_KEY
 SYNTHESIZER_PROVIDER_NAME=gemini
@@ -318,7 +318,7 @@ The factory chooses the transcription and TTS defaults listed earlier. Transcrip
 - **Treat REST URLs as secrets.** The handwritten adapter puts the API key in the query string. HTTPS protects transport to the endpoint, but reverse proxies, access logs, tracing, and copied errors can expose the URL. Redact query keys before sharing diagnostics. Avoid logging full request URLs and avoid untrusted gateways.
 - **Protect local credentials.** Provider and speech keys are stored in per-agent configuration or `.env`; masking in the dashboard/config output is not encryption at rest. Restrict file access, keep secrets out of Git and shared backups, rotate exposed keys, and apply appropriate Google API restrictions.
 - **Understand what leaves the host.** Chat history, system/context text, inline images, and tool outputs can be sent to the chosen endpoint. Live sends microphone audio continuously while the session runs and sends screen/camera frames when enabled. Speech clients send audio or response text directly through their SDK clients, independently of the chat gateway.
-- **Review local artifacts too.** Voice commands write transcripts and operational logs under `~/.myaaw/<agent>/logs/`. `--save-frames` adds captured frames; `voice-classic --save-audio` adds per-turn audio. These optional recordings are off by default, but transcripts are not controlled by those flags. Limit permissions and retention and obtain consent before capturing others.
+- **Review local artifacts too.** Voice commands write transcripts and operational logs under `~/.myaaw/agents/<agent>/logs/`. `--save-frames` adds captured frames; `voice-classic --save-audio` adds per-turn audio. These optional recordings are off by default, but transcripts are not controlled by those flags. Limit permissions and retention and obtain consent before capturing others.
 - **Protect the management surface.** Use authenticated control-plane access, HTTPS for remote use, and trusted endpoint configuration. Do not confuse a masked API response with protection against an attacker who can read the host's files or change the provider URL.
 
 ## Troubleshooting

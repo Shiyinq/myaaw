@@ -13,7 +13,7 @@ myaaw --agent default server start     → http://localhost:8080
 myaaw --agent myfriend server start    → http://localhost:8081
 ```
 
-The port comes from `PORT` in `~/.myaaw/<agent>/.env`. There is no `agent` field in requests: the port determines the agent.
+The port comes from `PORT` in `~/.myaaw/agents/<agent>/.env`. There is no `agent` field in requests: the port determines the agent.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
@@ -63,7 +63,7 @@ Anyone who can reach the port can run the agent and its tools. Keep the server o
 
 `user_id` maps to a row in the agent's SQLite database. Omit `conversation_id` and every request starts a **new conversation**. To continue a session, pass the `conversation_id` returned by the previous response. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
 
-Uploaded files are written to `~/.myaaw/<agent>/user/uploads/<conversation_id>/<message_id>/` and their absolute paths are prepended to the user turn inside an `<attached>` block, so the model reads them with its tools instead of receiving their bytes. Images are copied to the same folder as `image-1.jpg` (or `.png`/`.webp`/`.gif`, following their signature) while still travelling inline to the model, so everything a person uploads is browsable under `/user` in the Files page.
+Uploaded files are written to `~/.myaaw/agents/<agent>/user/uploads/<conversation_id>/<message_id>/` and their absolute paths are prepended to the user turn inside an `<attached>` block, so the model reads them with its tools instead of receiving their bytes. Images are copied to the same folder as `image-1.jpg` (or `.png`/`.webp`/`.gif`, following their signature) while still travelling inline to the model, so everything a person uploads is browsable under `/user` in the Files page.
 
 ## 4. Non-streaming: `POST /api/chat`
 

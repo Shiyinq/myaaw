@@ -110,7 +110,7 @@ needs.
 Traces live in a separate SQLite database per agent:
 
 ```text
-~/.myaaw/<agent>/database/observability.db
+~/.myaaw/agents/<agent>/database/observability.db
 ```
 
 It is independent of `myaaw.db`, so deleting traces never touches users or

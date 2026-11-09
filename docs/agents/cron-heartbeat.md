@@ -256,7 +256,7 @@ myaaw cron add \
 ```
 
 `--agent` defaults to the active agent. Its value also decides where the job is
-stored: `--agent myfriend` always writes `~/.myaaw/myfriend/cron/jobs.json`, never the
+stored: `--agent myfriend` always writes `~/.myaaw/agents/myfriend/cron/jobs.json`, never the
 registry default's file, so `agent_id` and the directory cannot disagree.
 
 The tool also reads back what it created. `list` with an `id` returns that job's

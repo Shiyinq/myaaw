@@ -167,7 +167,7 @@ func isLocalChannel(channelName string) bool {
 	}
 }
 
-// EnsureWorkspace prepares the agent workspace under ~/.myaaw/home and returns
+// EnsureWorkspace prepares the agent workspace under ~/.myaaw/agents/<agent>/home and returns
 // its absolute path. It is safe to call repeatedly, so onboarding and command
 // startup can use it to make the workspace visible before the first request.
 func EnsureWorkspace() (string, error) {

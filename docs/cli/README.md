@@ -103,7 +103,7 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 
 ## Conventions
 
-- **Per-agent everything.** Config, `.env`, database, memory, skills, logs, and the server port belong to one agent under `~/.myaaw/<agent>/`. Use `--agent` or `agent use` to switch.
+- **Per-agent everything.** Config, `.env`, database, memory, skills, logs, and the server port belong to one agent under `~/.myaaw/agents/<agent>/`. Use `--agent` or `agent use` to switch.
 - **Daemons are per agent.** Each agent runs `myaaw-server-<agent>` on its own `PORT`. Rebuilding the binary does not change a running daemon; restart each agent to pick up new code.
 - **Secrets stay local.** `.env`, `config/config.json`, `contacts.json`, and `controlplane.json` contain credentials. They are never printed unmasked by `config dump`.
 - **Exit codes.** Success is `0`. Command errors print a single `Error: ...` line and exit non-zero.

@@ -137,7 +137,7 @@ Sources: [CLI commands](../../cmd/myaaw/provider_chatgpt.go), [onboarding browse
 
 ## 3. Configuration contains references, not tokens
 
-The selected agent's `~/.myaaw/<agent>/config/config.json` contains a provider reference and model selection:
+The selected agent's `~/.myaaw/agents/<agent>/config/config.json` contains a provider reference and model selection:
 
 ```json
 {

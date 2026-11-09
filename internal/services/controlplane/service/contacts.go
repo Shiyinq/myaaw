@@ -18,7 +18,7 @@ var (
 	ErrInvalidContact   = errors.New("invalid contact")
 )
 
-// ContactEntry is stored in ~/.myaaw/<agent>/contacts.json.
+// ContactEntry is stored in ~/.myaaw/agents/<agent>/contacts.json.
 type ContactEntry struct {
 	Name        string `json:"name"`
 	URL         string `json:"url"`

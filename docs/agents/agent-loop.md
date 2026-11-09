@@ -501,7 +501,7 @@ Neither channel adds new configuration. Both use:
 
 ### 10.6 System prompt context
 
-`agent.SystemPromptBuilder` rebuilds the system message for each request from the active agent's `home/` directory (`~/.myaaw/<agent>/home`):
+`agent.SystemPromptBuilder` rebuilds the system message for each request from the active agent's `home/` directory (`~/.myaaw/agents/<agent>/home`):
 
 - It always injects the absolute `workspace/` paths.
 - For local sessions (`cli`, `voice-classic`), it injects the launch directory as `## Current Directory`, and the filesystem tool registers that directory as an allowed project root even when no marker files are present.

@@ -1,6 +1,6 @@
 # Providers
 
-LLM provider integrations are stored per agent in `~/.myaaw/<agent>/config/config.json`.
+LLM provider integrations are stored per agent in `~/.myaaw/agents/<agent>/config/config.json`.
 
 For protocol, authentication, endpoint, capability, and troubleshooting details, see the [Provider Integration Guide](../provider/README.md): [Gemini](../provider/gemini.md), [OpenAI-compatible](../provider/openai-compatible.md), and [ChatGPT Subscription](../provider/chatgpt-subscription.md).
 
