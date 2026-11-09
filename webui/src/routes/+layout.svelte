@@ -71,7 +71,8 @@
 	let isPublicPage = $derived(
 		page.url.pathname === '/' ||
 			page.url.pathname === '/login' ||
-			page.url.pathname.startsWith('/offline')
+			page.url.pathname.startsWith('/offline') ||
+			page.url.pathname.startsWith('/setup')
 	);
 
 	let isGuestRoute = $derived(page.url.pathname === '/login');
@@ -103,6 +104,17 @@
 			}
 		} else if (!isPublicPage) {
 			void goto('/login');
+		}
+	});
+
+	// A fresh install still uses the seeded password. Keep the reader on the
+	// profile page until it is changed; the login redirect is only a hint, this
+	// is the actual guard for direct navigation and reloads.
+	$effect(() => {
+		if (!mounted || !isAuthenticated.value) return;
+		if (!authStore.mustChangePassword) return;
+		if (page.url.pathname !== '/app/profile') {
+			void goto('/app/profile?force=1');
 		}
 	});
 </script>
