@@ -14,11 +14,12 @@ GET  /agents/myfriend/logs/stream     → tail that agent's logs
 ```text
 myaaw server --agent default     → agent server :8080
 myaaw server --agent myfriend    → agent server :8081
-myaaw api start --port 9000     → control plane :9000 (daemon)
+myaaw api start --host 127.0.0.1 --port 9000  → control plane :9000 (daemon)
 ```
 
 - Agent servers keep running chat, tools, SQLite, channels, and the agent loop.
 - The control plane handles auth, management, filesystem, logs, and proxies chat to the agent server.
+- `--host` defaults to `127.0.0.1` (loopback). Use a tunnel or SSH to reach it remotely; see [Remote WebUI Connection](../webui/remote-connection.md).
 - Swagger UI: `http://localhost:9000/docs/`.
 
 ## 2. Quick start
@@ -73,8 +74,8 @@ New installs seed `user_id` as `0`. Existing credential files without the field 
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/auth/login` | `{username, password}` → `{token, expires_at, user_id}` |
-| `GET` | `/auth/me` | current `{username, user_id}` |
+| `POST` | `/auth/login` | `{username, password}` → `{token, expires_at, user_id, must_change_password}` |
+| `GET` | `/auth/me` | current `{username, user_id, must_change_password}` |
 | `POST` | `/auth/logout` | invalidate the current token |
 | `POST` | `/auth/change-password` | `{current_password, new_password}` |
 | `PUT` | `/auth/username` | `{password, new_username}` |
@@ -87,9 +88,12 @@ The login response includes `user_id` (default `0`):
 {
   "token": "...",
   "expires_at": "2026-10-20T20:00:00Z",
-  "user_id": 0
+  "user_id": 0,
+  "must_change_password": false
 }
 ```
+
+`must_change_password` is `true` on a fresh install until the seeded `myaaw` / `myaawadmin` password is changed. The dashboard routes first-time logins to the profile page when it is set.
 
 Chat and conversation endpoints use this ID automatically. Clients do not need to send `user_id` at all.
 
@@ -1442,6 +1446,7 @@ All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, 
 ## 20. Security notes
 
 - There is no rate limiting in the first version.
+- The control plane binds `127.0.0.1` by default (`--host`). To reach it remotely, use a tunnel or SSH port-forward instead of binding `0.0.0.0`. See [Remote WebUI Connection](../webui/remote-connection.md) and [WebUI Security](../webui/security.md).
 - `/api/*` on the agent servers still has no auth; only the control plane protects access. Do not expose agent ports directly.
 - Tools can run Bash, filesystem, and Python operations, so control-plane access is privileged.
 - Keep `ALLOWED_ORIGINS` restrictive before serving a browser UI. The control plane reads it directly and allows `Authorization` in CORS preflight requests.

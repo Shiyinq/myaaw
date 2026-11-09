@@ -14,14 +14,16 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Token     string `json:"token" example:"a1b2c3"`
-	ExpiresAt string `json:"expires_at" example:"2026-10-20T20:00:00Z"`
-	UserID    int    `json:"user_id" example:"0"`
+	Token              string `json:"token" example:"a1b2c3"`
+	ExpiresAt          string `json:"expires_at" example:"2026-10-20T20:00:00Z"`
+	UserID             int    `json:"user_id" example:"0"`
+	MustChangePassword bool   `json:"must_change_password" example:"false"`
 }
 
 type UsernameResponse struct {
-	Username string `json:"username" example:"myaaw"`
-	UserID   int    `json:"user_id" example:"0"`
+	Username           string `json:"username" example:"myaaw"`
+	UserID             int    `json:"user_id" example:"0"`
+	MustChangePassword bool   `json:"must_change_password" example:"false"`
 }
 
 type ChangePasswordRequest struct {

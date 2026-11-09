@@ -35,10 +35,11 @@ var (
 )
 
 type credentials struct {
-	Username     string `json:"username"`
-	PasswordHash string `json:"password_hash"`
-	UserID       int    `json:"user_id"`
-	CreatedAt    string `json:"created_at"`
+	Username        string `json:"username"`
+	PasswordHash    string `json:"password_hash"`
+	UserID          int    `json:"user_id"`
+	PasswordChanged bool   `json:"password_changed"`
+	CreatedAt       string `json:"created_at"`
 }
 
 // AuthService stores the single control-plane user and its active sessions.
@@ -84,6 +85,13 @@ func (s *AuthService) UserID() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.creds.UserID
+}
+
+// MustChangePassword reports whether the account still uses the seeded password.
+func (s *AuthService) MustChangePassword() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.creds.PasswordChanged
 }
 
 // Login validates credentials and returns a new session token.
@@ -148,6 +156,7 @@ func (s *AuthService) ChangePassword(currentPassword, newPassword string) error 
 		return err
 	}
 	s.creds.PasswordHash = string(hash)
+	s.creds.PasswordChanged = true
 	s.sessions = make(map[string]time.Time)
 	return s.saveLocked()
 }
@@ -178,10 +187,11 @@ func (s *AuthService) load() error {
 	}
 
 	var raw struct {
-		Username     string `json:"username"`
-		PasswordHash string `json:"password_hash"`
-		UserID       *int   `json:"user_id"`
-		CreatedAt    string `json:"created_at"`
+		Username        string `json:"username"`
+		PasswordHash    string `json:"password_hash"`
+		UserID          *int   `json:"user_id"`
+		PasswordChanged *bool  `json:"password_changed"`
+		CreatedAt       string `json:"created_at"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("parse %s: %w", s.path, err)
@@ -194,6 +204,11 @@ func (s *AuthService) load() error {
 		Username:     raw.Username,
 		PasswordHash: raw.PasswordHash,
 		CreatedAt:    raw.CreatedAt,
+		// Legacy credential files predate the flag; never force them to change.
+		PasswordChanged: true,
+	}
+	if raw.PasswordChanged != nil {
+		s.creds.PasswordChanged = *raw.PasswordChanged
 	}
 	if raw.UserID != nil {
 		s.creds.UserID = *raw.UserID
@@ -215,10 +230,11 @@ func (s *AuthService) seed() error {
 		return err
 	}
 	s.creds = credentials{
-		Username:     DefaultUsername,
-		PasswordHash: string(hash),
-		UserID:       0,
-		CreatedAt:    s.now().UTC().Format(time.RFC3339),
+		Username:        DefaultUsername,
+		PasswordHash:    string(hash),
+		UserID:          0,
+		PasswordChanged: false,
+		CreatedAt:       s.now().UTC().Format(time.RFC3339),
 	}
 	return s.saveLocked()
 }
