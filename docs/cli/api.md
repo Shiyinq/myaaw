@@ -20,10 +20,12 @@ All subcommands accept two persistent flags:
 | Flag | Default | Meaning |
 | :--- | :--- | :--- |
 | `--port` | `9000` | Port the control plane listens on. |
+| `--host` | `127.0.0.1` | Interface to bind. Loopback by default; use `0.0.0.0` only behind a tunnel or reverse proxy. |
 | `--terminal` | `false` | Allow the dashboard to open a shell on this host (sets `MYAAW_TERMINAL=1`). |
 
 ```bash
 myaaw api start --port 9100
+myaaw api start --host 127.0.0.1 --port 9000
 ```
 
 ## Web terminal
@@ -107,6 +109,7 @@ myaaw api restart
 ## Notes
 
 - **Global, not per agent.** `myaaw api` is the only daemon that is not tied to one agent; `--agent` has no effect on it. The target agent comes from the request path.
+- **Loopback by default.** `--host` defaults to `127.0.0.1`, so the control plane is only reachable from the same machine. Expose it with a tunnel or SSH rather than binding `0.0.0.0` directly; see [Remote WebUI Connection](../webui/remote-connection.md).
 - **Port must match.** `start`, `stop`, `restart`, and `status` each read `--port` independently. Use the same value you started with, otherwise `status` reports the wrong endpoint.
 - **Agents must be running.** Chat is proxied, so the selected agent needs its own `myaaw server --agent <name> start`.
 - **Authentication is not optional.** Credentials live in `~/.myaaw/controlplane.json` (bcrypt hash, never plaintext) and clients send `Authorization: Bearer <token>`.
@@ -117,6 +120,8 @@ myaaw api restart
 
 - [Control Plane API guide](../api/control-plane.md)
 - [Web Terminal](../api/terminal.md)
+- [WebUI Command](webui.md)
+- [Remote WebUI Connection](../webui/remote-connection.md)
 - [Service Management](service.md)
 - [Agent Command](agent.md)
 - [Logs](logs.md)

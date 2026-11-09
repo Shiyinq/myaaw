@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 var (
 	apiPort     string
+	apiHost     string
 	apiTerminal bool
 )
 
@@ -121,7 +123,7 @@ func enableTerminalFromFlag() {
 
 func runAPI() {
 	enableTerminalFromFlag()
-	if err := controlplane.Run(":" + apiPort); err != nil {
+	if err := controlplane.Run(net.JoinHostPort(apiHost, apiPort)); err != nil {
 		log.Fatalf("API server error: %v", err)
 	}
 }
@@ -131,7 +133,7 @@ func apiDaemonName() string {
 }
 
 func apiRunArgs() []string {
-	args := []string{"api", "run", "--port", apiPort}
+	args := []string{"api", "run", "--port", apiPort, "--host", apiHost}
 	if apiTerminal {
 		// Daemon units carry no environment, so the flag is how `api start` and
 		// `api restart` remember that the terminal is enabled.
@@ -142,6 +144,7 @@ func apiRunArgs() []string {
 
 func init() {
 	apiCmd.PersistentFlags().StringVar(&apiPort, "port", "9000", "port to listen on")
+	apiCmd.PersistentFlags().StringVar(&apiHost, "host", "127.0.0.1", "host/interface to bind (use 0.0.0.0 to expose)")
 	apiCmd.PersistentFlags().BoolVar(&apiTerminal, "terminal", false, "allow the dashboard to open a shell on this host (enables MYAAW_TERMINAL)")
 	apiCmd.AddCommand(apiRunCmd)
 	apiCmd.AddCommand(apiStartCmd)
