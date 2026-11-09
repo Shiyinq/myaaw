@@ -714,10 +714,6 @@ func LoadBaseConfig() {
 		StreamResponse = true // Default to true
 	}
 
-	if AllowedOrigins == "" {
-		AllowedOrigins = "*"
-	}
-
 	jsonConfig, err := loadJSONConfig()
 	if err != nil {
 		log.Printf("Warning: Failed to load JSON config: %v", err)

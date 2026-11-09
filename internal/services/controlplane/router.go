@@ -1,7 +1,6 @@
 package controlplane
 
 import (
-	"net/url"
 	"os"
 	"strings"
 
@@ -11,6 +10,7 @@ import (
 	"myaaw/internal/services/controlplane/handler"
 	cpMiddleware "myaaw/internal/services/controlplane/middleware"
 	"myaaw/internal/services/controlplane/service"
+	"myaaw/internal/utils"
 
 	"github.com/gofiber/contrib/v3/swaggo"
 	"github.com/gofiber/fiber/v3"
@@ -214,36 +214,9 @@ func corsConfig() cors.Config {
 	case raw == "*":
 		cfg.AllowOrigins = []string{"*"}
 	case raw != "":
-		cfg.AllowOrigins = splitOrigins(raw)
+		cfg.AllowOrigins = utils.ParseAllowedOrigins(raw)
 	default:
-		cfg.AllowOriginsFunc = isLoopbackOrigin
+		cfg.AllowOriginsFunc = utils.IsLoopbackOrigin
 	}
 	return cfg
-}
-
-func splitOrigins(raw string) []string {
-	parts := strings.Split(raw, ",")
-	origins := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if origin := strings.TrimSpace(part); origin != "" {
-			origins = append(origins, origin)
-		}
-	}
-	if len(origins) == 0 {
-		return []string{"*"}
-	}
-	return origins
-}
-
-func isLoopbackOrigin(origin string) bool {
-	u, err := url.Parse(origin)
-	if err != nil {
-		return false
-	}
-	switch u.Hostname() {
-	case "localhost", "127.0.0.1", "::1":
-		return true
-	default:
-		return false
-	}
 }

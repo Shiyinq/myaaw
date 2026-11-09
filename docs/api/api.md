@@ -34,7 +34,7 @@ The `/api/*` routes have **no authentication**:
 
 - no API key, no Bearer token, no owner allowlist;
 - `BOT_TYPE=private` and `OWNER_IDS` are enforced only for Telegram/Discord webhooks;
-- CORS is configurable through `ALLOWED_ORIGINS`, but CORS does not protect the endpoint;
+- CORS allows loopback origins (`localhost`, `127.0.0.1`, `::1`) by default; list any other browser origin in `ALLOWED_ORIGINS` (comma-separated) or set `ALLOWED_ORIGINS=*` for development. CORS does not protect the endpoint;
 - the server listens on `:PORT` (all interfaces), not only loopback.
 
 Anyone who can reach the port can run the agent and its tools. Keep the server on a trusted network, bind it behind a reverse proxy with authentication, or firewall the port.
