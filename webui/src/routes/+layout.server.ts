@@ -1,6 +1,6 @@
 import type { LayoutServerLoad } from './$types';
 import { detectLocale } from '$lib/i18n/server';
-import { isBinaryInstalled, webuiConfigApiUrl } from '$lib/server/setup';
+import { isBinaryInstalled, publicMode, webuiConfigApiUrl } from '$lib/server/setup';
 
 export const load: LayoutServerLoad = async (event) => {
 	const locale = detectLocale(event.request, event.cookies, event.url);
@@ -8,6 +8,7 @@ export const load: LayoutServerLoad = async (event) => {
 	return {
 		locale,
 		apiUrl: webuiConfigApiUrl(),
-		binaryInstalled: isBinaryInstalled()
+		binaryInstalled: isBinaryInstalled(),
+		publicMode: publicMode()
 	};
 };

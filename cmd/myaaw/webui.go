@@ -41,6 +41,9 @@ type webUIConfig struct {
 	Port    string `json:"port"`
 	APIURL  string `json:"api_url"`
 	Version string `json:"version"`
+	// Public disables /setup and the host hints on the login page, for a
+	// dashboard served to other people through a tunnel.
+	Public bool `json:"public,omitempty"`
 }
 
 var (
@@ -49,6 +52,7 @@ var (
 	webuiPort           string
 	webuiAPIURL         string
 	webuiPurge          bool
+	webuiPublic         bool
 )
 
 var webuiCmd = &cobra.Command{
@@ -129,6 +133,9 @@ var webuiStatusCmd = &cobra.Command{
 		if running {
 			fmt.Printf("%s (PID: %d)\n", theme.RenderSuccess("✅ WebUI is running"), pid)
 			fmt.Printf("   http://127.0.0.1:%s\n", cfg.Port)
+			if cfg.Public {
+				fmt.Println(theme.RenderMuted("   public hosting: /setup is disabled"))
+			}
 		} else {
 			fmt.Println(theme.RenderError("❌ WebUI is stopped"))
 		}
@@ -213,6 +220,7 @@ var webuiOpenCmd = &cobra.Command{
 func init() {
 	webuiCmd.PersistentFlags().StringVar(&webuiPort, "port", "", "port to listen on (default "+webuiDefaultPort+")")
 	webuiCmd.PersistentFlags().StringVar(&webuiAPIURL, "api-url", "", "control-plane URL (default "+webuiDefaultAPIURL+")")
+	webuiCmd.PersistentFlags().BoolVar(&webuiPublic, "public", false, "public hosting: disable /setup and hide host hints")
 	webuiInstallCmd.Flags().StringVar(&webuiVersion, "version", "", "install a specific release tag (default: latest)")
 	webuiUpdateCmd.Flags().StringVar(&webuiVersion, "version", "", "update to a specific release tag (default: latest)")
 	webuiRollbackCmd.Flags().StringVar(&webuiRollbackTarget, "version", "", "release tag to restore (default: list available versions)")
@@ -297,6 +305,11 @@ func effectiveWebUIConfig() webUIConfig {
 	}
 	if webuiAPIURL != "" {
 		cfg.APIURL = webuiAPIURL
+	}
+	// Only override the saved value when the flag was actually passed, so
+	// `--public=false` can turn the mode off again.
+	if webuiCmd.PersistentFlags().Changed("public") {
+		cfg.Public = webuiPublic
 	}
 	return cfg
 }
@@ -391,6 +404,9 @@ func runWebUI() error {
 		"HOST=127.0.0.1",
 		"MYAAW_API_BASE_URL="+cfg.APIURL,
 	)
+	if cfg.Public {
+		env = append(env, "MYAAW_WEBUI_PUBLIC=1")
+	}
 
 	if err := os.Chdir(filepath.Dir(filepath.Dir(entry))); err != nil {
 		return err

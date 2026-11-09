@@ -96,7 +96,38 @@ Primary threats:
 
 ---
 
-## 9. Downloads & verification
+## 9. Public (FE-only) hosting
+
+When the dashboard is the only thing you publish — the frontend on a small VPS, the binary on another machine — run it with:
+
+```bash
+MYAAW_WEBUI_PUBLIC=1 node build/index.js
+# or: webui-install.sh --public
+# or: myaaw webui start --public   (persisted in ~/.myaaw/webui/config.json)
+```
+
+An explicit `MYAAW_WEBUI_PUBLIC` wins; when it is unset, the dashboard falls back to `"public": true` in `~/.myaaw/webui/config.json`, so a later manual `node build/index.js` stays in public mode. `MYAAW_WEBUI_PUBLIC=0` turns the mode off.
+
+This mode removes every host-management surface, so a visitor cannot install or inspect anything on the machine that serves the dashboard:
+
+| Surface | Default | With `MYAAW_WEBUI_PUBLIC=1` |
+| :--- | :--- | :--- |
+| `/setup` (install the binary on this host) | available | **404**, and the same for `/setup/status` and `/setup/install` |
+| "Default credentials come from `~/.myaaw/controlplane.json`." | shown | hidden |
+| "First run? Set up Myaaw" link | shown | hidden |
+
+The block runs in `webui/src/hooks.server.ts` before any route is resolved, so nothing under `/setup` can be reached and the 404 does not reveal that the page ever existed.
+
+What it does **not** do:
+
+- It does not change the bind address: `HOST` stays `127.0.0.1`. Exposure is still the tunnel's job (§11).
+- It does not protect the control plane. Visitors still reach it through the WebUI's `/api` proxy (or directly, Option A), so change the default password (§3) and keep `ALLOWED_ORIGINS` tight (§6).
+
+Typical layout: the dashboard and the control plane each sit behind their own tunnel. Visitors open the dashboard URL, paste the control-plane tunnel URL into the **Server URL** field on the login page, and sign in.
+
+---
+
+## 10. Downloads & verification
 
 - Binaries and WebUI artifacts are downloaded from GitHub Releases (HTTPS).
 - Verify the checksum (`*.sha256`) when available.
@@ -105,7 +136,7 @@ Primary threats:
 
 ---
 
-## 10. Tunnel vs SSH
+## 11. Tunnel vs SSH
 
 | Aspect | SSH port-forward | Tailscale | Cloudflare/ngrok |
 | :--- | :--- | :--- | :--- |
@@ -116,13 +147,14 @@ Primary threats:
 
 ---
 
-## 11. Security checklist before shipping the feature
+## 12. Security checklist before shipping the feature
 
 - [ ] `myaaw api` defaults to loopback (`--host 127.0.0.1`).
 - [ ] The WebUI binds `127.0.0.1`.
 - [ ] Forced password change on first login.
 - [ ] Production CORS is restricted (not `*`).
 - [ ] Setup endpoints are CSRF-protected and URL-validated.
+- [ ] Public hosting disables `/setup` and the login host hints (`MYAAW_WEBUI_PUBLIC=1`).
 - [ ] Downloads use HTTPS + checksums.
 - [ ] `--terminal` defaults off and its risk is documented.
 - [ ] This document is linked from the README.

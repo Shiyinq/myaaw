@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { arch, homedir, platform } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { env } from '$env/dynamic/private';
 
 const execFileAsync = promisify(execFile);
 
@@ -99,6 +100,20 @@ export function binaryPath(): string {
 
 export function isBinaryInstalled(): boolean {
 	return existsSync(binaryPath());
+}
+
+// Public hosting mode (MYAAW_WEBUI_PUBLIC=1) is for a dashboard served to other
+// people, usually through a tunnel: it removes every host-management surface so
+// a visitor cannot install or inspect anything on this machine. It does not
+// touch the bind address or open a port; exposure still comes from the tunnel.
+// An explicit environment value wins; otherwise the saved config decides, so a
+// manual `node build/index.js` keeps the mode too.
+export function publicMode(): boolean {
+	const value = (env.MYAAW_WEBUI_PUBLIC || '').trim().toLowerCase();
+	if (value !== '') {
+		return value === '1' || value === 'true' || value === 'yes';
+	}
+	return readWebUIConfig()?.public === true;
 }
 
 // The dashboard's own config, written by the CLI and `webui-install.sh`.

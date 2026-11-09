@@ -99,3 +99,32 @@ func TestExtractTarGzRejectsAbsolute(t *testing.T) {
 		t.Fatal("expected absolute entry to be rejected")
 	}
 }
+
+func TestWebUIConfigPersistsPublicMode(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cfg := webUIConfig{Port: "5050", APIURL: "http://localhost:9000", Version: "v1", Public: true}
+	if err := saveWebUIConfig(cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	got, err := loadWebUIConfig()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if !got.Public {
+		t.Fatal("public mode was not persisted")
+	}
+
+	// Turning it off must also stick.
+	cfg.Public = false
+	if err := saveWebUIConfig(cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	got, err = loadWebUIConfig()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if got.Public {
+		t.Fatal("public mode should be off")
+	}
+}

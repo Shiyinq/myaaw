@@ -134,9 +134,11 @@
 				</form>
 			</CardContent>
 		</Card>
-		<p class="mt-4 text-center text-xs text-muted-foreground">{t('myaaw.login.hint')}</p>
-		<p class="mt-2 text-center text-xs text-muted-foreground">
-			<a class="underline" href="/setup">{t('myaaw.login.setup_link')}</a>
-		</p>
+		{#if !data.publicMode}
+			<p class="mt-4 text-center text-xs text-muted-foreground">{t('myaaw.login.hint')}</p>
+			<p class="mt-2 text-center text-xs text-muted-foreground">
+				<a class="underline" href="/setup">{t('myaaw.login.setup_link')}</a>
+			</p>
+		{/if}
 	</div>
 </div>

@@ -1,6 +1,8 @@
 import type { Handle } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { detectLocale } from '$lib/i18n/server';
+import { publicMode } from '$lib/server/setup';
 
 // Same-origin proxy: the browser talks to /api on this app, and the server
 // forwards it to the control plane. That keeps tokens out of CORS preflights
@@ -10,6 +12,13 @@ const CONTROL_PLANE = (env.MYAAW_API_BASE_URL || 'http://localhost:9000').replac
 export const handle: Handle = async ({ event, resolve }) => {
 	if (event.url.pathname === '/health') {
 		return new Response('OK', { status: 200 });
+	}
+
+	// Public hosting: /setup can install a binary on this host, so it must not
+	// exist for visitors at all (the page and both of its endpoints).
+	const { pathname } = event.url;
+	if (publicMode() && (pathname === '/setup' || pathname.startsWith('/setup/'))) {
+		error(404, 'Not Found');
 	}
 
 	const locale = detectLocale(event.request, event.cookies, event.url);
