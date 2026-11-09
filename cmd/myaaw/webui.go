@@ -2,7 +2,10 @@ package main
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,10 +44,11 @@ type webUIConfig struct {
 }
 
 var (
-	webuiVersion string
-	webuiPort    string
-	webuiAPIURL  string
-	webuiPurge   bool
+	webuiVersion        string
+	webuiRollbackTarget string
+	webuiPort           string
+	webuiAPIURL         string
+	webuiPurge          bool
 )
 
 var webuiCmd = &cobra.Command{
@@ -147,6 +152,16 @@ var webuiUpdateCmd = &cobra.Command{
 	},
 }
 
+var webuiRollbackCmd = &cobra.Command{
+	Use:   "rollback",
+	Short: "Restore a previously installed WebUI bundle",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := rollbackWebUI(webuiRollbackTarget); err != nil {
+			log.Fatalf("%s: %v", theme.RenderError("Rollback failed"), err)
+		}
+	},
+}
+
 var webuiUninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Stop and remove the WebUI bundle",
@@ -200,6 +215,7 @@ func init() {
 	webuiCmd.PersistentFlags().StringVar(&webuiAPIURL, "api-url", "", "control-plane URL (default "+webuiDefaultAPIURL+")")
 	webuiInstallCmd.Flags().StringVar(&webuiVersion, "version", "", "install a specific release tag (default: latest)")
 	webuiUpdateCmd.Flags().StringVar(&webuiVersion, "version", "", "update to a specific release tag (default: latest)")
+	webuiRollbackCmd.Flags().StringVar(&webuiRollbackTarget, "version", "", "release tag to restore (default: list available versions)")
 	webuiUninstallCmd.Flags().BoolVar(&webuiPurge, "purge", false, "also remove control-plane credentials")
 
 	webuiCmd.AddCommand(webuiInstallCmd)
@@ -209,6 +225,7 @@ func init() {
 	webuiCmd.AddCommand(webuiRestartCmd)
 	webuiCmd.AddCommand(webuiStatusCmd)
 	webuiCmd.AddCommand(webuiUpdateCmd)
+	webuiCmd.AddCommand(webuiRollbackCmd)
 	webuiCmd.AddCommand(webuiUninstallCmd)
 	webuiCmd.AddCommand(webuiOpenCmd)
 
@@ -382,6 +399,10 @@ func runWebUI() error {
 }
 
 func installWebUI(version string) error {
+	if _, err := exec.LookPath("node"); err != nil {
+		return fmt.Errorf("Node.js 20+ is required but was not found in PATH")
+	}
+
 	root, err := webUIRoot()
 	if err != nil {
 		return err
@@ -390,11 +411,11 @@ func installWebUI(version string) error {
 		return err
 	}
 
-	tag, downloadURL, err := webuiRelease(version)
+	rel, err := webuiRelease(version)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s %s\n", theme.RenderSecondary("Downloading WebUI"), tag)
+	fmt.Printf("%s %s\n", theme.RenderSecondary("Downloading WebUI"), rel.Tag)
 
 	tmpFile, err := os.CreateTemp(root, "webui-*.tar.gz")
 	if err != nil {
@@ -404,7 +425,10 @@ func installWebUI(version string) error {
 	_ = tmpFile.Close()
 	defer os.Remove(tmpName)
 
-	if err := downloadFile(downloadURL, tmpName); err != nil {
+	if err := downloadFile(rel.DownloadURL, tmpName); err != nil {
+		return err
+	}
+	if err := verifyBundleChecksum(tmpName, rel); err != nil {
 		return err
 	}
 
@@ -422,33 +446,38 @@ func installWebUI(version string) error {
 	}
 
 	current := filepath.Join(root, "current")
-	old := current + ".old"
-	_ = os.RemoveAll(old)
-	if _, err := os.Stat(current); err == nil {
-		if err := os.Rename(current, old); err != nil {
-			return err
-		}
-	}
-	if err := os.Rename(extractDir, current); err != nil {
-		_ = os.Rename(old, current)
+	oldCfg, _ := loadWebUIConfig()
+	backup, err := backupCurrentBundle(current, oldCfg.Version)
+	if err != nil {
 		return err
 	}
-	_ = os.RemoveAll(old)
+	if err := os.Rename(extractDir, current); err != nil {
+		_ = restoreBundle(current, backup)
+		return err
+	}
 
 	cfg := effectiveWebUIConfig()
-	cfg.Version = tag
+	cfg.Version = rel.Tag
 	if err := saveWebUIConfig(cfg); err != nil {
 		return err
 	}
+	pruneVersionBackups()
 
-	fmt.Printf("%s %s\n", theme.RenderSuccess("✅ WebUI installed"), tag)
+	fmt.Printf("%s %s\n", theme.RenderSuccess("✅ WebUI installed"), rel.Tag)
 	fmt.Printf("   %s\n", current)
 	return nil
 }
 
+type webuiReleaseInfo struct {
+	Tag         string
+	AssetName   string
+	DownloadURL string
+	ChecksumURL string
+}
+
 // webuiRelease resolves the WebUI bundle asset for a release. The bundle is
 // platform-independent (pure JS), so there is exactly one asset per release.
-func webuiRelease(version string) (tag string, downloadURL string, err error) {
+func webuiRelease(version string) (webuiReleaseInfo, error) {
 	api := githubAPI
 	if v := strings.TrimSpace(version); v != "" && v != "latest" {
 		api = "https://api.github.com/repos/Shiyinq/myaaw/releases/tags/" + v
@@ -465,21 +494,226 @@ func webuiRelease(version string) (tag string, downloadURL string, err error) {
 
 	resp, err := client.R().SetResult(&result).Get(api)
 	if err != nil {
-		return "", "", err
+		return webuiReleaseInfo{}, err
 	}
 	if resp.StatusCode() != http.StatusOK {
 		if resp.StatusCode() == http.StatusNotFound {
-			return "", "", fmt.Errorf("no release found at %s", api)
+			return webuiReleaseInfo{}, fmt.Errorf("no release found at %s", api)
 		}
-		return "", "", fmt.Errorf("GitHub API returned status %d", resp.StatusCode())
+		return webuiReleaseInfo{}, fmt.Errorf("GitHub API returned status %d", resp.StatusCode())
 	}
 
+	info := webuiReleaseInfo{Tag: result.TagName}
 	for _, asset := range result.Assets {
-		if strings.HasPrefix(asset.Name, webuiAssetPrefix) && strings.HasSuffix(asset.Name, webuiAssetSuffix) {
-			return result.TagName, asset.BrowserDownloadURL, nil
+		switch {
+		case strings.HasPrefix(asset.Name, webuiAssetPrefix) && strings.HasSuffix(asset.Name, webuiAssetSuffix):
+			info.AssetName = asset.Name
+			info.DownloadURL = asset.BrowserDownloadURL
+		case asset.Name == "SHA256SUMS":
+			info.ChecksumURL = asset.BrowserDownloadURL
 		}
 	}
-	return "", "", fmt.Errorf("no WebUI bundle found in release %s (expected %s*%s)", result.TagName, webuiAssetPrefix, webuiAssetSuffix)
+	if info.DownloadURL == "" {
+		return webuiReleaseInfo{}, fmt.Errorf("no WebUI bundle found in release %s (expected %s*%s)", result.TagName, webuiAssetPrefix, webuiAssetSuffix)
+	}
+	return info, nil
+}
+
+func verifyBundleChecksum(filePath string, rel webuiReleaseInfo) error {
+	if rel.ChecksumURL == "" {
+		return nil
+	}
+	expected, err := fetchChecksum(rel.ChecksumURL, rel.AssetName)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	sum := sha256.New()
+	if _, err := io.Copy(sum, f); err != nil {
+		return err
+	}
+	actual := hex.EncodeToString(sum.Sum(nil))
+	if !strings.EqualFold(actual, expected) {
+		return fmt.Errorf("checksum mismatch for %s", rel.AssetName)
+	}
+	return nil
+}
+
+func fetchChecksum(url, assetName string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("checksum download failed with status %d", resp.StatusCode)
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 && strings.TrimPrefix(fields[1], "*") == assetName {
+			return fields[0], nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+	return "", fmt.Errorf("SHA256SUMS does not list %s", assetName)
+}
+
+func webUIVersionsDir() (string, error) {
+	root, err := webUIRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "versions"), nil
+}
+
+func sanitizeVersion(version string) string {
+	v := strings.TrimSpace(version)
+	v = strings.ReplaceAll(v, "/", "_")
+	v = strings.ReplaceAll(v, "\\", "_")
+	if v == "" || v == "." || v == ".." {
+		return ""
+	}
+	return v
+}
+
+// backupCurrentBundle moves the installed bundle into versions/<version> so it
+// can be restored with `webui rollback`. It returns the backup path (empty when
+// there was nothing to back up).
+func backupCurrentBundle(current, version string) (string, error) {
+	if _, err := os.Stat(current); err != nil {
+		return "", nil
+	}
+	versions, err := webUIVersionsDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(versions, 0o755); err != nil {
+		return "", err
+	}
+
+	name := sanitizeVersion(version)
+	if name == "" {
+		name = "previous"
+	}
+	target := filepath.Join(versions, name)
+	_ = os.RemoveAll(target)
+	if err := os.Rename(current, target); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+func restoreBundle(current, backup string) error {
+	_ = os.RemoveAll(current)
+	if backup == "" {
+		return nil
+	}
+	return os.Rename(backup, current)
+}
+
+func listWebUIVersions() ([]string, error) {
+	versions, err := webUIVersionsDir()
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(versions)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+func pruneVersionBackups() {
+	names, err := listWebUIVersions()
+	if err != nil || len(names) <= 3 {
+		return
+	}
+	versions, err := webUIVersionsDir()
+	if err != nil {
+		return
+	}
+	for _, name := range names[:len(names)-3] {
+		_ = os.RemoveAll(filepath.Join(versions, name))
+	}
+}
+
+func rollbackWebUI(version string) error {
+	names, err := listWebUIVersions()
+	if err != nil {
+		return err
+	}
+	if len(names) == 0 {
+		return fmt.Errorf("no previous versions available")
+	}
+	if version == "" {
+		fmt.Println(theme.RenderPrimary("Available versions:"))
+		for _, name := range names {
+			fmt.Println("  " + name)
+		}
+		return nil
+	}
+
+	target := sanitizeVersion(version)
+	versions, err := webUIVersionsDir()
+	if err != nil {
+		return err
+	}
+	backup := filepath.Join(versions, target)
+	if _, err := os.Stat(backup); err != nil {
+		return fmt.Errorf("version %q is not available", version)
+	}
+
+	current, err := webUICurrentDir()
+	if err != nil {
+		return err
+	}
+	cfg, _ := loadWebUIConfig()
+	if _, err := os.Stat(current); err == nil {
+		keep := sanitizeVersion(cfg.Version)
+		if keep == "" || keep == target {
+			keep = "current-" + time.Now().Format("20060102-150405")
+		}
+		keepPath := filepath.Join(versions, keep)
+		_ = os.RemoveAll(keepPath)
+		if err := os.Rename(current, keepPath); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(backup, current); err != nil {
+		return err
+	}
+
+	cfg.Version = target
+	if err := saveWebUIConfig(cfg); err != nil {
+		return err
+	}
+
+	fmt.Printf("%s %s\n", theme.RenderSuccess("✅ Rolled back to"), target)
+	if isWebUIRunning() {
+		return restartWebUI(cfg)
+	}
+	return nil
 }
 
 func downloadFile(url, dest string) error {
