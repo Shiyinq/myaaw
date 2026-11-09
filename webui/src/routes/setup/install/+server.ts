@@ -3,9 +3,12 @@ import { env } from '$env/dynamic/private';
 import {
 	checkSetupToken,
 	consumeSetupToken,
+	failInstallProgress,
+	finishInstallProgress,
 	installBinary,
 	isBinaryInstalled,
-	startControlPlane
+	startControlPlane,
+	startControlPlaneProgress
 } from '$lib/server/setup';
 
 export async function POST({ request, url }) {
@@ -29,10 +32,14 @@ export async function POST({ request, url }) {
 	const apiUrl = env.MYAAW_API_BASE_URL || 'http://localhost:9000';
 	try {
 		const binary = await installBinary();
+		startControlPlaneProgress();
 		consumeSetupToken(token);
 		await startControlPlane(apiUrl);
+		finishInstallProgress();
 		return json({ ok: true, binary });
 	} catch (cause) {
-		error(500, cause instanceof Error ? cause.message : 'Install failed');
+		const message = cause instanceof Error ? cause.message : 'Install failed';
+		failInstallProgress(message);
+		error(500, message);
 	}
 }

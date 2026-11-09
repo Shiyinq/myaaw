@@ -179,12 +179,34 @@ function parseChecksums(text: string): Map<string, string> {
 	return sums;
 }
 
-async function download(url: string): Promise<Buffer> {
+async function download(
+	url: string,
+	onProgress?: (received: number, total: number) => void
+): Promise<Buffer> {
 	const response = await fetch(url);
 	if (!response.ok) {
 		throw new Error(`Download failed (${response.status})`);
 	}
-	return Buffer.from(await response.arrayBuffer());
+
+	const total = Number(response.headers.get('content-length') ?? 0);
+	if (!response.body) {
+		const data = Buffer.from(await response.arrayBuffer());
+		onProgress?.(data.length, data.length || total);
+		return data;
+	}
+
+	const reader = response.body.getReader();
+	const chunks: Buffer[] = [];
+	let received = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		if (!value) continue;
+		chunks.push(Buffer.from(value));
+		received += value.byteLength;
+		onProgress?.(received, total);
+	}
+	return Buffer.concat(chunks);
 }
 
 async function verifyChecksum(release: Release, asset: ReleaseAsset, data: Buffer): Promise<void> {
@@ -215,15 +237,23 @@ export async function installBinary(): Promise<string> {
 		throw new Error(`Unsupported platform: ${platform()}/${arch()}`);
 	}
 
+	setInstallProgress('release', 3);
 	const release = await fetchRelease();
 	const asset = release.assets?.find((entry) => entry.name === assetName);
 	if (!asset) {
 		throw new Error(`No ${assetName} binary in the latest release`);
 	}
 
-	const data = await download(asset.browser_download_url);
+	setInstallProgress('download', 5);
+	const data = await download(asset.browser_download_url, (received, total) => {
+		const ratio = total > 0 ? Math.min(received / total, 1) : 0;
+		setInstallProgress('download', 5 + Math.round(ratio * 65));
+	});
+
+	setInstallProgress('verify', 75);
 	await verifyChecksum(release, asset, data);
 
+	setInstallProgress('write', 88);
 	const target = binaryPath();
 	mkdirSync(dirname(target), { recursive: true });
 	const temp = `${target}.tmp`;
@@ -233,6 +263,46 @@ export async function installBinary(): Promise<string> {
 	}
 	renameSync(temp, target);
 	return target;
+}
+
+// Install progress lives in process memory: the setup page polls it while the
+// POST is in flight, so the long download shows a real bar instead of a spinner.
+export interface InstallProgress {
+	phase: InstallPhase;
+	percent: number;
+	error?: string;
+}
+
+export type InstallPhase =
+	| 'idle'
+	| 'release'
+	| 'download'
+	| 'verify'
+	| 'write'
+	| 'start'
+	| 'done'
+	| 'error';
+
+let installProgress: InstallProgress = { phase: 'idle', percent: 0 };
+
+export function currentInstallProgress(): InstallProgress {
+	return installProgress;
+}
+
+function setInstallProgress(phase: InstallPhase, percent: number, error?: string): void {
+	installProgress = { phase, percent, error };
+}
+
+export function startControlPlaneProgress(): void {
+	setInstallProgress('start', 93);
+}
+
+export function finishInstallProgress(): void {
+	setInstallProgress('done', 100);
+}
+
+export function failInstallProgress(message: string): void {
+	setInstallProgress('error', installProgress.percent, message);
 }
 
 export async function startControlPlane(apiUrl = DEFAULT_API): Promise<void> {
