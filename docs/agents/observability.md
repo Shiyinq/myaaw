@@ -584,7 +584,7 @@ model price:
 
 ```json
 {
-  "gemini-3.1-pro-preview": {"input": 1.25, "output": 10.0}
+  "gemini-3.1-pro-preview": {"provider": "gemini", "input": 1.25, "output": 10.0}
 }
 ```
 
@@ -600,6 +600,7 @@ only a default; unknown models cost `0` and are logged once.
 
 | Field | Required | Meaning |
 |---|---|---|
+| `provider` | no | Catalog metadata (`openai`, `gemini`, `deepseek`, `anthropic`); preserved across writes but not used for billing or routing |
 | `input` | yes | Cache-miss prompt price |
 | `cache_hit` | no | Cached prompt price (`0` when omitted) |
 | `output` | yes | Completion price |
@@ -618,14 +619,15 @@ Full examples:
 
 ```json
 {
-  "deepseek-chat": {
+  "deepseek-flash": {
+    "provider": "deepseek",
     "input": 0.3,
     "cache_hit": 0.006,
     "output": 1.2,
     "off_peak": { "input": 0.15, "cache_hit": 0.003, "output": 0.6 },
     "peak_windows": ["Mon-Fri 01:00-04:00 UTC", "Mon-Fri 06:00-10:00 UTC"]
   },
-  "gemini-3.1-pro-preview": { "input": 1.25, "cache_hit": 0.31, "output": 10.0 }
+  "gemini-3.1-pro-preview": { "provider": "gemini", "input": 1.25, "cache_hit": 0.2, "output": 12.0 }
 }
 ```
 

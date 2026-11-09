@@ -330,7 +330,11 @@ type ToolPriceConfig struct {
 // Input is the cache-miss price and CacheHit the discounted price for prompt
 // tokens served from the provider cache. OffPeak replaces the triplet outside
 // every PeakWindows entry; only models that declare both get peak pricing.
+// Provider is optional metadata; it is not used for billing or routing, but
+// preserving it keeps a price file's catalog aligned with model capabilities
+// when the control plane rewrites the file.
 type ModelPriceConfig struct {
+	Provider    string            `json:"provider,omitempty"`
 	Input       float64           `json:"input"`
 	CacheHit    float64           `json:"cache_hit,omitempty"`
 	Output      float64           `json:"output"`
