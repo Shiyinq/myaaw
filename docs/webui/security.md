@@ -39,7 +39,7 @@ Primary threats:
 
 - The control plane seeds default credentials `myaaw` / `myaawadmin` in `~/.myaaw/controlplane.json` (bcrypt) — see `internal/services/controlplane/service/auth.go`.
 - **Required**: force a password change on first login (especially before connecting remotely).
-- **Implemented**: `/auth/login` and `/auth/me` return `must_change_password`; the dashboard routes first-time logins to the profile page until the seeded password is changed.
+- **Implemented**: `/auth/login` and `/auth/me` return `must_change_password`; the dashboard keeps the reader on the profile page (route guard) until the seeded password is changed.
 - The password is sent via `POST /auth/login`; ensure the path is encrypted (see §4).
 
 ---
@@ -92,7 +92,7 @@ Primary threats:
   - Require a one-time token/confirmation (rendered by the setup page and sent back).
   - Disable the endpoint once the binary is installed.
   - Validate the download URL: `https://` to allowed hosts (GitHub releases) only, and verify the checksum.
-- **Implemented**: the install endpoint rejects cross-origin requests via the `Origin` header, and the binary is downloaded from the GitHub release API. A one-time token, disable-after-install, and checksum verification are still open.
+- **Implemented**: the install endpoint rejects cross-origin requests (`Origin`), requires a one-time token issued by the setup page (10-minute TTL, consumed on success), refuses to run once the binary is installed, and verifies the release `SHA256SUMS` when present.
 
 ---
 

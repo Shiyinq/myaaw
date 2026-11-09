@@ -136,6 +136,10 @@ jobs:
           path: bin/
           merge-multiple: true
 
+      - name: Generate checksums
+        working-directory: bin
+        run: sha256sum * > SHA256SUMS
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:

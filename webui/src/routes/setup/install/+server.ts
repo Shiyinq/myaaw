@@ -1,6 +1,12 @@
 import { error, json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { installBinary, startControlPlane } from '$lib/server/setup';
+import {
+	checkSetupToken,
+	consumeSetupToken,
+	installBinary,
+	isBinaryInstalled,
+	startControlPlane
+} from '$lib/server/setup';
 
 export async function POST({ request, url }) {
 	// The dashboard is loopback-only, but a malicious page could still POST here.
@@ -10,9 +16,20 @@ export async function POST({ request, url }) {
 		error(403, 'Cross-origin install is not allowed');
 	}
 
+	// Installing twice is a no-op at best and a re-download at worst.
+	if (isBinaryInstalled()) {
+		error(409, 'Myaaw is already installed');
+	}
+
+	const token = request.headers.get('x-setup-token');
+	if (!checkSetupToken(token)) {
+		error(403, 'Invalid or expired setup token');
+	}
+
 	const apiUrl = env.MYAAW_API_BASE_URL || 'http://localhost:9000';
 	try {
 		const binary = await installBinary();
+		consumeSetupToken(token);
 		await startControlPlane(apiUrl);
 		return json({ ok: true, binary });
 	} catch (cause) {

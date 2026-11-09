@@ -1,4 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { arch, homedir, platform } from 'node:os';
 import { execFile } from 'node:child_process';
@@ -8,6 +9,7 @@ const execFileAsync = promisify(execFile);
 
 const REPO = 'Shiyinq/myaaw';
 const DEFAULT_API = 'http://localhost:9000';
+const SETUP_TOKEN_TTL_MS = 10 * 60 * 1000;
 
 export interface SetupStatus {
 	binaryInstalled: boolean;
@@ -22,6 +24,38 @@ interface ReleaseAsset {
 
 interface Release {
 	assets?: ReleaseAsset[];
+}
+
+// A one-time token ties the install POST to the setup page that rendered it.
+// It lives in process memory because the dashboard is a single local process.
+let setupToken: { value: string; expiresAt: number } | null = null;
+
+export function issueSetupToken(): string {
+	if (setupToken && Date.now() <= setupToken.expiresAt) {
+		return setupToken.value;
+	}
+	setupToken = {
+		value: randomBytes(24).toString('hex'),
+		expiresAt: Date.now() + SETUP_TOKEN_TTL_MS
+	};
+	return setupToken.value;
+}
+
+export function checkSetupToken(token: string | null | undefined): boolean {
+	if (!setupToken || !token) return false;
+	if (Date.now() > setupToken.expiresAt) {
+		setupToken = null;
+		return false;
+	}
+	const expected = Buffer.from(setupToken.value);
+	const provided = Buffer.from(token);
+	return expected.length === provided.length && timingSafeEqual(expected, provided);
+}
+
+export function consumeSetupToken(token: string | null | undefined): void {
+	if (checkSetupToken(token)) {
+		setupToken = null;
+	}
 }
 
 function goos(): string | null {
@@ -99,6 +133,47 @@ async function fetchRelease(): Promise<Release> {
 	return (await response.json()) as Release;
 }
 
+function parseChecksums(text: string): Map<string, string> {
+	const sums = new Map<string, string>();
+	for (const line of text.split('\n')) {
+		const match = line.trim().match(/^([0-9a-fA-F]{64})\s+\*?(.+)$/);
+		if (match) {
+			sums.set(match[2].trim(), match[1].toLowerCase());
+		}
+	}
+	return sums;
+}
+
+async function download(url: string): Promise<Buffer> {
+	const response = await fetch(url);
+	if (!response.ok) {
+		throw new Error(`Download failed (${response.status})`);
+	}
+	return Buffer.from(await response.arrayBuffer());
+}
+
+async function verifyChecksum(release: Release, asset: ReleaseAsset, data: Buffer): Promise<void> {
+	const sumsAsset = release.assets?.find((entry) => entry.name === 'SHA256SUMS');
+	if (!sumsAsset) {
+		// Releases before the checksum file existed are installed as-is.
+		return;
+	}
+
+	const response = await fetch(sumsAsset.browser_download_url);
+	if (!response.ok) {
+		throw new Error(`Checksum download failed (${response.status})`);
+	}
+	const expected = parseChecksums(await response.text()).get(asset.name);
+	if (!expected) {
+		throw new Error(`SHA256SUMS does not list ${asset.name}`);
+	}
+
+	const actual = createHash('sha256').update(data).digest('hex');
+	if (actual !== expected) {
+		throw new Error(`Checksum mismatch for ${asset.name}`);
+	}
+}
+
 export async function installBinary(): Promise<string> {
 	const assetName = binaryAssetName();
 	if (!assetName) {
@@ -111,15 +186,13 @@ export async function installBinary(): Promise<string> {
 		throw new Error(`No ${assetName} binary in the latest release`);
 	}
 
-	const response = await fetch(asset.browser_download_url);
-	if (!response.ok) {
-		throw new Error(`Binary download failed (${response.status})`);
-	}
+	const data = await download(asset.browser_download_url);
+	await verifyChecksum(release, asset, data);
 
 	const target = binaryPath();
 	mkdirSync(dirname(target), { recursive: true });
 	const temp = `${target}.tmp`;
-	writeFileSync(temp, Buffer.from(await response.arrayBuffer()));
+	writeFileSync(temp, data);
 	if (platform() !== 'win32') {
 		chmodSync(temp, 0o755);
 	}
