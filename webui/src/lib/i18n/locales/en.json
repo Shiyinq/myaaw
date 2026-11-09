@@ -163,6 +163,10 @@
 		},
 		"login": {
 			"subtitle": "Sign in to the Myaaw control plane.",
+			"server_url": "Server URL (optional)",
+			"server_url_placeholder": "http://localhost:9000 or a tunnel URL",
+			"server_url_hint": "Leave empty to use the control plane on this machine.",
+			"setup_link": "First run? Set up Myaaw",
 			"submit": "Sign in",
 			"submitting": "Signing in...",
 			"hint": "Default credentials come from ~/.myaaw/controlplane.json."
@@ -470,6 +474,7 @@
 			"title": "Profile",
 			"subtitle": "Your account, password, and username.",
 			"credentials_note": "Credentials are stored in ~/.myaaw/controlplane.json.",
+			"force_password": "Change the default password before continuing.",
 			"password": "Change password",
 			"password_desc": "Changing the password signs out every session.",
 			"current_password": "Current password",
@@ -488,6 +493,12 @@
 		"settings": {
 			"title": "Settings",
 			"subtitle": "Preferences for this browser.",
+			"connection": "Connection",
+			"connection_desc": "Control plane this browser talks to.",
+			"server_url": "Server URL",
+			"server_url_placeholder": "http://localhost:9000 or a tunnel URL",
+			"server_url_hint": "Leave empty to use this machine's control plane.",
+			"save_reconnect": "Save & reconnect",
 			"app_settings": "App Settings",
 			"app_settings_desc": "Language and appearance for this browser.",
 			"language": "Language",

@@ -10,7 +10,8 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Button } from '$lib/components/ui/button';
-	import { Accessibility, Check, MessageSquare, Palette } from 'lucide-svelte';
+	import { Input } from '$lib/components/ui/input';
+	import { Accessibility, Check, MessageSquare, Palette, Server } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { theme, userPrefersMode } from 'mode-watcher';
 	import {
@@ -22,7 +23,7 @@
 	} from '$lib/theme';
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import type { AudioLanguage, ShellMode, SpeechLanguage } from '$lib/stores/preferences.svelte';
-	import { agentSelection } from '$lib/stores';
+	import { agentSelection, apiBase } from '$lib/stores';
 	import { tts } from '$lib/speech/tts.svelte';
 	import { notificationSounds, playNotification } from '$lib/sound/notify.svelte';
 	import {
@@ -71,10 +72,21 @@
 	// The synthesiser list is empty until the browser announces it, so the card
 	// waits for the mount before claiming support.
 	let speechSupported = $state(false);
+
+	// WebUI connection. Empty means the same-origin proxy; an absolute URL makes
+	// the browser talk to a remote control plane (tunnel/SSH).
+	let serverUrl = $state('');
+
 	onMount(() => {
 		speechSupported = tts.supported;
 		tts.refreshVoices();
+		serverUrl = apiBase.isCustom ? apiBase.value : '';
 	});
+
+	function applyServerUrl() {
+		apiBase.set(serverUrl);
+		if (typeof window !== 'undefined') window.location.reload();
+	}
 
 	const speechLanguageOptions = $derived([
 		{ value: 'auto', label: t('myaaw.settings.speech_language_auto') },
@@ -213,6 +225,31 @@
 {/snippet}
 
 <div class="mx-auto w-full max-w-4xl space-y-4">
+	<Card>
+		<CardHeader>
+			<CardTitle class="flex items-center gap-2">
+				<Server class="h-4 w-4" />
+				{t('myaaw.settings.connection')}
+			</CardTitle>
+			<CardDescription>{t('myaaw.settings.connection_desc')}</CardDescription>
+		</CardHeader>
+		<CardContent class="space-y-4">
+			<div class="grid gap-2 sm:max-w-md">
+				<Label for="server-url">{t('myaaw.settings.server_url')}</Label>
+				<Input
+					id="server-url"
+					type="text"
+					inputmode="url"
+					placeholder={t('myaaw.settings.server_url_placeholder')}
+					bind:value={serverUrl}
+				/>
+				<p class="text-xs text-muted-foreground">{t('myaaw.settings.server_url_hint')}</p>
+			</div>
+			<Button variant="outline" size="sm" class="w-fit" onclick={applyServerUrl}>
+				{t('myaaw.settings.save_reconnect')}
+			</Button>
+		</CardContent>
+	</Card>
 	<Card>
 		<CardHeader>
 			<CardTitle class="flex items-center gap-2">

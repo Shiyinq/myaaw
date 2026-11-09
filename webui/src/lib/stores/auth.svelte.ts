@@ -24,6 +24,9 @@ export const authStore = {
 	get profile() {
 		return profile;
 	},
+	get mustChangePassword() {
+		return profile?.must_change_password === true;
+	},
 
 	async login(credentials: LoginRequest) {
 		isLoading = true;

@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { authStore } from '$lib/stores';
+	import { authStore, apiBase } from '$lib/stores';
 	import { goto } from '$app/navigation';
 	import { fade } from 'svelte/transition';
+	import { onMount } from 'svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
@@ -20,6 +21,12 @@
 
 	let username = $state('');
 	let password = $state('');
+	let serverUrl = $state('');
+
+	// Read the saved connection on the client only so SSR and hydration agree.
+	onMount(() => {
+		serverUrl = apiBase.isCustom ? apiBase.value : '';
+	});
 
 	let loading = $derived(authStore.isLoading);
 	let error = $derived(authStore.error);
@@ -27,8 +34,14 @@
 	async function handleLogin() {
 		if (loading) return;
 		try {
-			await authStore.login({ username, password });
-			await goto('/app');
+			// Point the API clients at the chosen control plane before logging in.
+			apiBase.set(serverUrl);
+			const result = await authStore.login({ username, password });
+			if (result.must_change_password) {
+				await goto('/app/profile?force=1');
+			} else {
+				await goto('/app');
+			}
 		} catch (err) {
 			logger.error('Login failed', err, { context: 'login' });
 		}
@@ -73,6 +86,21 @@
 					{/if}
 
 					<div class="grid gap-2">
+						<Label for="server-url">{t('myaaw.login.server_url')}</Label>
+						<Input
+							id="server-url"
+							name="server-url"
+							type="text"
+							inputmode="url"
+							autocomplete="url"
+							placeholder={t('myaaw.login.server_url_placeholder')}
+							bind:value={serverUrl}
+							onkeydown={submitOnEnter}
+						/>
+						<p class="text-xs text-muted-foreground">{t('myaaw.login.server_url_hint')}</p>
+					</div>
+
+					<div class="grid gap-2">
 						<Label for="username">{t('common.username')}</Label>
 						<Input
 							id="username"
@@ -111,5 +139,8 @@
 			</CardContent>
 		</Card>
 		<p class="mt-4 text-center text-xs text-muted-foreground">{t('myaaw.login.hint')}</p>
+		<p class="mt-2 text-center text-xs text-muted-foreground">
+			<a class="underline" href="/setup">{t('myaaw.login.setup_link')}</a>
+		</p>
 	</div>
 </div>

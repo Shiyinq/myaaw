@@ -163,6 +163,10 @@
 		},
 		"login": {
 			"subtitle": "Masuk ke control plane Myaaw.",
+			"server_url": "Server URL (opsional)",
+			"server_url_placeholder": "http://localhost:9000 atau URL tunnel",
+			"server_url_hint": "Biarkan kosong untuk memakai control plane di mesin ini.",
+			"setup_link": "Pertama kali? Siapkan Myaaw",
 			"submit": "Masuk",
 			"submitting": "Sedang masuk...",
 			"hint": "Kredensial default ada di ~/.myaaw/controlplane.json."
@@ -470,6 +474,7 @@
 			"title": "Profil",
 			"subtitle": "Akun, kata sandi, dan nama pengguna.",
 			"credentials_note": "Kredensial disimpan di ~/.myaaw/controlplane.json.",
+			"force_password": "Ganti password default sebelum melanjutkan.",
 			"password": "Ganti kata sandi",
 			"password_desc": "Mengganti kata sandi mengeluarkan semua sesi.",
 			"current_password": "Kata sandi saat ini",
@@ -488,6 +493,12 @@
 		"settings": {
 			"title": "Pengaturan",
 			"subtitle": "Preferensi untuk browser ini.",
+			"connection": "Koneksi",
+			"connection_desc": "Control plane yang dipakai browser ini.",
+			"server_url": "Server URL",
+			"server_url_placeholder": "http://localhost:9000 atau URL tunnel",
+			"server_url_hint": "Biarkan kosong untuk memakai control plane di mesin ini.",
+			"save_reconnect": "Simpan & sambungkan ulang",
 			"app_settings": "Pengaturan Aplikasi",
 			"app_settings_desc": "Bahasa dan tampilan untuk browser ini.",
 			"language": "Bahasa",

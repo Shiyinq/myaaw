@@ -1,4 +1,4 @@
-import { API_BASE } from '$lib/constants';
+import { getApiBase } from '$lib/constants';
 import { accessToken } from '$lib/stores/accessToken.svelte';
 import { client } from './client';
 import type {
@@ -29,7 +29,7 @@ export const backups = {
 		const query = new URLSearchParams();
 		if (accessToken.value) query.set('token', accessToken.value);
 		const suffix = query.toString();
-		return `${API_BASE}${archivePath(name)}${suffix ? `?${suffix}` : ''}`;
+		return `${getApiBase()}${archivePath(name)}${suffix ? `?${suffix}` : ''}`;
 	},
 	download: (name: string) => {
 		const anchor = document.createElement('a');

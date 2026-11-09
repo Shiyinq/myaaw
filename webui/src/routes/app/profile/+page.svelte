@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { authStore, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -30,6 +31,8 @@
 	let newUsername = $state('');
 	let usernameLoading = $state(false);
 	let usernameError = $state('');
+
+	const forcePasswordChange = $derived(page.url.searchParams.get('force') === '1');
 
 	async function changePassword() {
 		passwordError = '';
@@ -91,6 +94,13 @@
 </TopBarActions>
 
 <div class="space-y-4">
+	{#if forcePasswordChange}
+		<div
+			class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+		>
+			{t('myaaw.profile.force_password')}
+		</div>
+	{/if}
 	<Card>
 		<CardHeader>
 			<CardTitle class="flex items-center gap-2">

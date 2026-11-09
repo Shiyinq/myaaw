@@ -1,4 +1,4 @@
-import { API_BASE } from '$lib/constants';
+import { getApiBase } from '$lib/constants';
 import { accessToken } from '$lib/stores/accessToken.svelte';
 import { toApiError } from '$lib/apis/client';
 
@@ -66,7 +66,7 @@ export async function streamSSE(path: string, options: StreamOptions): Promise<v
 
 async function readStream(path: string, options: StreamOptions): Promise<void> {
 	const token = accessToken.value;
-	const response = await fetch(`${API_BASE}${path}`, {
+	const response = await fetch(`${getApiBase()}${path}`, {
 		method: options.method ?? 'POST',
 		headers: {
 			'Content-Type': 'application/json',

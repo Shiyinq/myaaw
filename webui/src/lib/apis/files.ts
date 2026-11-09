@@ -1,4 +1,4 @@
-import { API_BASE } from '$lib/constants';
+import { getApiBase } from '$lib/constants';
 import { accessToken } from '$lib/stores/accessToken.svelte';
 import { agentPath, client } from './client';
 import type { FileContent, FileListResponse, OKResponse, SearchResponse } from '$lib/types';
@@ -38,7 +38,7 @@ export const files = {
 		const query = new URLSearchParams({ path });
 		if (accessToken.value) query.set('token', accessToken.value);
 		if (options.download) query.set('download', '1');
-		return `${API_BASE}${agentPath(agent, `/fs/raw?${query.toString()}`)}`;
+		return `${getApiBase()}${agentPath(agent, `/fs/raw?${query.toString()}`)}`;
 	},
 	download: (agent: string, path: string) => {
 		const anchor = document.createElement('a');

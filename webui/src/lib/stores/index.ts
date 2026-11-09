@@ -1,4 +1,5 @@
 export * from './accessToken.svelte';
+export * from './apiBase.svelte';
 export * from './authStatus.svelte';
 export * from './auth.svelte';
 export * from './commandPalette.svelte';

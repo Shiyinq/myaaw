@@ -1,6 +1,6 @@
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
-import { API_BASE } from '$lib/constants';
+import { getApiBase } from '$lib/constants';
 import { accessToken } from '$lib/stores/accessToken.svelte';
 import { isAuthenticated } from '$lib/stores/authStatus.svelte';
 import type { ApiError } from '$lib/types';
@@ -63,7 +63,7 @@ export async function request(path: string, options: ClientOptions = {}): Promis
 		payload = JSON.stringify(body);
 	}
 
-	const response = await fetch(`${API_BASE}${path}`, {
+	const response = await fetch(`${getApiBase()}${path}`, {
 		method: options.method,
 		headers,
 		body: payload,
