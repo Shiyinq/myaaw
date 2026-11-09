@@ -1,8 +1,10 @@
 <script lang="ts">
-	import { authStore, apiBase } from '$lib/stores';
+	import { authStore, apiBase, connections } from '$lib/stores';
 	import { goto } from '$app/navigation';
 	import { fade } from 'svelte/transition';
 	import { onMount } from 'svelte';
+	import ConnectionPicker from '$lib/components/common/ConnectionPicker.svelte';
+	import type { PageData } from './$types';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
@@ -19,12 +21,16 @@
 
 	const { t } = useTranslation();
 
+	let { data }: { data: PageData } = $props();
+
 	let username = $state('');
 	let password = $state('');
 	let serverUrl = $state('');
 
-	// Read the saved connection on the client only so SSR and hydration agree.
+	// Seed the saved connections from config.json / the installed binary, then
+	// mirror the active one into the field. Client-only so SSR and hydration agree.
 	onMount(() => {
+		connections.seedFromServer(data.apiUrl ?? '', data.binaryInstalled ?? false);
 		serverUrl = apiBase.isCustom ? apiBase.value : '';
 	});
 
@@ -87,17 +93,7 @@
 
 					<div class="grid gap-2">
 						<Label for="server-url">{t('myaaw.login.server_url')}</Label>
-						<Input
-							id="server-url"
-							name="server-url"
-							type="text"
-							inputmode="url"
-							autocomplete="url"
-							placeholder={t('myaaw.login.server_url_placeholder')}
-							bind:value={serverUrl}
-							onkeydown={submitOnEnter}
-						/>
-						<p class="text-xs text-muted-foreground">{t('myaaw.login.server_url_hint')}</p>
+						<ConnectionPicker bind:value={serverUrl} inputId="server-url" />
 					</div>
 
 					<div class="grid gap-2">

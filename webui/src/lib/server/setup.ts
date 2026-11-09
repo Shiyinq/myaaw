@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { arch, homedir, platform } from 'node:os';
@@ -99,6 +99,26 @@ export function binaryPath(): string {
 
 export function isBinaryInstalled(): boolean {
 	return existsSync(binaryPath());
+}
+
+// The dashboard's own config, written by the CLI and `webui-install.sh`.
+function readWebUIConfig(): Record<string, unknown> | null {
+	try {
+		const path = join(homedir(), '.myaaw', 'webui', 'config.json');
+		const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+		return typeof parsed === 'object' && parsed !== null
+			? (parsed as Record<string, unknown>)
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+// webuiConfigApiUrl reads the control-plane URL written by `myaaw webui install
+// --api-url` / `webui-install.sh --connect`, so the dashboard can pre-fill it.
+export function webuiConfigApiUrl(): string {
+	const parsed = readWebUIConfig();
+	return typeof parsed?.api_url === 'string' ? parsed.api_url : '';
 }
 
 async function controlPlaneReachable(apiUrl: string): Promise<boolean> {

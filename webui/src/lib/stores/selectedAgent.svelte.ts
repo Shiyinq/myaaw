@@ -8,6 +8,7 @@ import type { AgentInfo } from '$lib/types';
 let agents = $state<AgentInfo[]>([]);
 let selected = $state(browser ? (localStorage.getItem(SELECTED_AGENT_KEY) ?? '') : '');
 let loading = $state(false);
+let loaded = $state(false);
 let error = $state('');
 
 function select(name: string) {
@@ -31,6 +32,9 @@ export const agentSelection = {
 	get loading() {
 		return loading;
 	},
+	get loaded() {
+		return loaded;
+	},
 	get error() {
 		return error;
 	},
@@ -49,6 +53,7 @@ export const agentSelection = {
 	},
 	setAgents(next: AgentInfo[]) {
 		agents = next;
+		loaded = true;
 		const exists = next.some((agent) => agent.name === selected);
 		if (!exists) {
 			const fallback = next.find((agent) => agent.default) ?? next[0];
@@ -72,6 +77,7 @@ export const agentSelection = {
 			error = getErrorMessage(err);
 		} finally {
 			loading = false;
+			loaded = true;
 		}
 	}
 };

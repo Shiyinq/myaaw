@@ -171,6 +171,34 @@
 			"submitting": "Signing in...",
 			"hint": "Default credentials come from ~/.myaaw/controlplane.json."
 		},
+		"setup": {
+			"title": "Myaaw setup",
+			"subtitle": "Install the Myaaw binary on this host, or connect to a remote control plane.",
+			"binary": "Binary",
+			"installed": "installed",
+			"not_installed": "not installed",
+			"control_plane": "Control plane",
+			"reachable": "reachable",
+			"not_reachable": "not reachable",
+			"checking": "Checking this host…",
+			"install": "Download & install Myaaw",
+			"installing": "Installing…",
+			"installed_note": "Binary installed. The control plane may take a moment to start.",
+			"continue": "Continue to sign in",
+			"already_have": "Already have a control plane?",
+			"sign_in": "Sign in",
+			"server_url_suffix": "and enter its Server URL.",
+			"no_token": "Reload this page to get a fresh setup token.",
+			"failed": "Install failed"
+		},
+		"connection": {
+			"local": "localhost",
+			"custom": "Custom URL…",
+			"add": "Save connection",
+			"remove": "Remove connection",
+			"placeholder": "http://localhost:9000 or a tunnel URL",
+			"hint": "Pick a connection or add a tunnel URL."
+		},
 		"fleet": {
 			"title": "Fleet",
 			"subtitle": "Every agent on this control plane.",
@@ -499,6 +527,8 @@
 			"server_url_placeholder": "http://localhost:9000 or a tunnel URL",
 			"server_url_hint": "Leave empty to use this machine's control plane.",
 			"save_reconnect": "Save & reconnect",
+			"connection_local": "This dashboard uses the control plane on this machine.",
+			"connection_remote": "This dashboard controls {url}.",
 			"app_settings": "App Settings",
 			"app_settings_desc": "Language and appearance for this browser.",
 			"language": "Language",

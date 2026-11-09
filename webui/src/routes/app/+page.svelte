@@ -232,6 +232,15 @@
 		void goto('/app/new');
 	}
 
+	// First run: nothing to show until an agent exists, so go straight to the
+	// creation form instead of leaving an empty fleet.
+	$effect(() => {
+		if (!agentSelection.loaded || agentSelection.loading || agentSelection.error) return;
+		if (agentSelection.agents.length === 0) {
+			void goto('/app/new');
+		}
+	});
+
 	function reconfigureAgent(name: string) {
 		void goto(`/app/new?agent=${encodeURIComponent(name)}`);
 	}

@@ -8,6 +8,7 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card';
+	import { useTranslation } from '$lib/i18n/useTranslation';
 	import type { PageData } from './$types';
 
 	interface Status {
@@ -22,6 +23,7 @@
 	}
 
 	let { data }: { data: PageData } = $props();
+	const { t } = useTranslation();
 
 	// A null token means the server already found an installed binary.
 	let installed = $state(false);
@@ -54,12 +56,14 @@
 			});
 			const payload = (await response.json().catch(() => ({}))) as InstallResponse;
 			if (!response.ok) {
-				throw new Error(payload.message || payload.detail || `Install failed (${response.status})`);
+				throw new Error(
+					payload.message || payload.detail || `${t('myaaw.setup.failed')} (${response.status})`
+				);
 			}
 			installed = true;
 			await refresh();
 		} catch (cause) {
-			error = cause instanceof Error ? cause.message : 'Install failed';
+			error = cause instanceof Error ? cause.message : t('myaaw.setup.failed');
 		} finally {
 			installing = false;
 		}
@@ -71,50 +75,51 @@
 </script>
 
 <svelte:head>
-	<title>Myaaw setup</title>
+	<title>{t('myaaw.setup.title')}</title>
 </svelte:head>
 
 <div class="min-h-screen flex items-center justify-center p-6 bg-background">
 	<div class="w-full max-w-lg space-y-4">
 		<Card>
 			<CardHeader>
-				<CardTitle>Myaaw setup</CardTitle>
-				<CardDescription>
-					Install the Myaaw binary on this host, or connect to a remote control plane.
-				</CardDescription>
+				<CardTitle>{t('myaaw.setup.title')}</CardTitle>
+				<CardDescription>{t('myaaw.setup.subtitle')}</CardDescription>
 			</CardHeader>
 			<CardContent class="space-y-4">
 				{#if status}
 					<div class="space-y-1 text-sm">
 						<p>
-							Binary:
-							{status.binaryInstalled ? `installed (${status.binaryPath})` : 'not installed'}
+							{t('myaaw.setup.binary')}:
+							{status.binaryInstalled
+								? `${t('myaaw.setup.installed')} (${status.binaryPath})`
+								: t('myaaw.setup.not_installed')}
 						</p>
-						<p>Control plane: {status.controlPlaneReachable ? 'reachable' : 'not reachable'}</p>
+						<p>
+							{t('myaaw.setup.control_plane')}:
+							{status.controlPlaneReachable
+								? t('myaaw.setup.reachable')
+								: t('myaaw.setup.not_reachable')}
+						</p>
 					</div>
 				{:else}
-					<p class="text-sm text-muted-foreground">Checking this host…</p>
+					<p class="text-sm text-muted-foreground">{t('myaaw.setup.checking')}</p>
 				{/if}
 
 				{#if binaryReady}
-					<p class="text-sm text-green-600">
-						Binary installed. The control plane may take a moment to start.
-					</p>
+					<p class="text-sm text-green-600">{t('myaaw.setup.installed_note')}</p>
 					<Button
 						onclick={() => {
 							window.location.href = '/login';
 						}}
 					>
-						Continue to sign in
+						{t('myaaw.setup.continue')}
 					</Button>
 				{:else}
 					<Button onclick={install} loading={installing} disabled={!data.token}>
-						{installing ? 'Installing…' : 'Download & install Myaaw'}
+						{installing ? t('myaaw.setup.installing') : t('myaaw.setup.install')}
 					</Button>
 					{#if !data.token}
-						<p class="text-xs text-muted-foreground">
-							Reload this page to get a fresh setup token.
-						</p>
+						<p class="text-xs text-muted-foreground">{t('myaaw.setup.no_token')}</p>
 					{/if}
 				{/if}
 
@@ -123,8 +128,9 @@
 				{/if}
 
 				<p class="text-xs text-muted-foreground">
-					Already have a control plane? <a class="underline" href="/login">Sign in</a> and enter its Server
-					URL.
+					{t('myaaw.setup.already_have')}
+					<a class="underline" href="/login">{t('myaaw.setup.sign_in')}</a>
+					{t('myaaw.setup.server_url_suffix')}
 				</p>
 			</CardContent>
 		</Card>

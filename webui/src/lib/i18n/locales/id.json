@@ -171,6 +171,34 @@
 			"submitting": "Sedang masuk...",
 			"hint": "Kredensial default ada di ~/.myaaw/controlplane.json."
 		},
+		"setup": {
+			"title": "Penyiapan Myaaw",
+			"subtitle": "Instal binary Myaaw di host ini, atau hubungkan ke control plane remote.",
+			"binary": "Binary",
+			"installed": "terpasang",
+			"not_installed": "belum terpasang",
+			"control_plane": "Control plane",
+			"reachable": "terjangkau",
+			"not_reachable": "tidak terjangkau",
+			"checking": "Memeriksa host ini…",
+			"install": "Unduh & instal Myaaw",
+			"installing": "Menginstal…",
+			"installed_note": "Binary terpasang. Control plane mungkin butuh beberapa saat untuk mulai.",
+			"continue": "Lanjut masuk",
+			"already_have": "Sudah punya control plane?",
+			"sign_in": "Masuk",
+			"server_url_suffix": "lalu isi Server URL-nya.",
+			"no_token": "Muat ulang halaman ini untuk mendapatkan token setup baru.",
+			"failed": "Instalasi gagal"
+		},
+		"connection": {
+			"local": "localhost",
+			"custom": "URL kustom…",
+			"add": "Simpan koneksi",
+			"remove": "Hapus koneksi",
+			"placeholder": "http://localhost:9000 atau URL tunnel",
+			"hint": "Pilih koneksi atau tambah URL tunnel."
+		},
 		"fleet": {
 			"title": "Armada",
 			"subtitle": "Semua agen di control plane ini.",
@@ -499,6 +527,8 @@
 			"server_url_placeholder": "http://localhost:9000 atau URL tunnel",
 			"server_url_hint": "Biarkan kosong untuk memakai control plane di mesin ini.",
 			"save_reconnect": "Simpan & sambungkan ulang",
+			"connection_local": "Dashboard ini memakai control plane di mesin ini.",
+			"connection_remote": "Dashboard ini mengelola {url}.",
 			"app_settings": "Pengaturan Aplikasi",
 			"app_settings_desc": "Bahasa dan tampilan untuk browser ini.",
 			"language": "Bahasa",

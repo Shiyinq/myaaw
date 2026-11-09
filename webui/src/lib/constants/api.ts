@@ -15,6 +15,19 @@ export function normalizeApiBase(value: string): string {
 	return trimmed === '' ? DEFAULT_API_BASE : trimmed;
 }
 
+// True for the same-origin proxy and for any loopback origin. Used to decide
+// whether a configured URL needs its own saved connection entry.
+export function isLoopbackApiBase(value: string): boolean {
+	const normalized = normalizeApiBase(value);
+	if (normalized === DEFAULT_API_BASE) return true;
+	try {
+		const { hostname } = new URL(normalized);
+		return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+	} catch {
+		return false;
+	}
+}
+
 let currentApiBase = browser
 	? normalizeApiBase(localStorage.getItem(API_BASE_KEY) ?? '')
 	: DEFAULT_API_BASE;

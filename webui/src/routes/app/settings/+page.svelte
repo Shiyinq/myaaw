@@ -10,7 +10,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
+	import ConnectionPicker from '$lib/components/common/ConnectionPicker.svelte';
 	import { Accessibility, Check, MessageSquare, Palette, Server } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { theme, userPrefersMode } from 'mode-watcher';
@@ -23,7 +23,7 @@
 	} from '$lib/theme';
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import type { AudioLanguage, ShellMode, SpeechLanguage } from '$lib/stores/preferences.svelte';
-	import { agentSelection, apiBase } from '$lib/stores';
+	import { agentSelection, apiBase, connections } from '$lib/stores';
 	import { tts } from '$lib/speech/tts.svelte';
 	import { notificationSounds, playNotification } from '$lib/sound/notify.svelte';
 	import {
@@ -33,8 +33,11 @@
 		type NotificationStatus
 	} from '$lib/notifications/browser.svelte';
 	import type { Locale } from '$lib/i18n';
+	import type { PageData } from './$types';
 
 	const { t, locale, changeLocale, availableLocales } = useTranslation();
+
+	let { data }: { data: PageData } = $props();
 
 	function changeLanguage(event: Event) {
 		changeLocale((event.currentTarget as HTMLSelectElement).value as Locale);
@@ -80,6 +83,7 @@
 	onMount(() => {
 		speechSupported = tts.supported;
 		tts.refreshVoices();
+		connections.seedFromServer(data.apiUrl ?? '', data.binaryInstalled ?? false);
 		serverUrl = apiBase.isCustom ? apiBase.value : '';
 	});
 
@@ -236,18 +240,18 @@
 		<CardContent class="space-y-4">
 			<div class="grid gap-2 sm:max-w-md">
 				<Label for="server-url">{t('myaaw.settings.server_url')}</Label>
-				<Input
-					id="server-url"
-					type="text"
-					inputmode="url"
-					placeholder={t('myaaw.settings.server_url_placeholder')}
-					bind:value={serverUrl}
-				/>
-				<p class="text-xs text-muted-foreground">{t('myaaw.settings.server_url_hint')}</p>
+				<ConnectionPicker bind:value={serverUrl} inputId="server-url" />
 			</div>
 			<Button variant="outline" size="sm" class="w-fit" onclick={applyServerUrl}>
 				{t('myaaw.settings.save_reconnect')}
 			</Button>
+			<p class="text-xs text-muted-foreground">
+				{#if apiBase.isCustom}
+					{t('myaaw.settings.connection_remote', { url: apiBase.value })}
+				{:else}
+					{t('myaaw.settings.connection_local')}
+				{/if}
+			</p>
 		</CardContent>
 	</Card>
 	<Card>

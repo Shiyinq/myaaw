@@ -5,3 +5,5 @@ export const SELECTED_AGENT_KEY = 'myaaw_agent';
 // Control-plane base URL chosen on the login/settings page. Empty means the
 // same-origin /api proxy; an absolute URL means the browser calls it directly.
 export const API_BASE_KEY = 'myaaw_api_base';
+// Saved control-plane URLs shown in the connection picker.
+export const API_CONNECTIONS_KEY = 'myaaw_connections';
