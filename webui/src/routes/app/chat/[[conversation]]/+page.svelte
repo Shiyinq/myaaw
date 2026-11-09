@@ -8,6 +8,7 @@
 	import { config as configApi } from '$lib/apis/config';
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
 	import { files as filesApi } from '$lib/apis/files';
+	import { providers as providersApi } from '$lib/apis/providers';
 	import { observability as observabilityApi } from '$lib/apis/observability';
 	import { agentSelection, conversationHistory, toastStore, topBarTitle } from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences.svelte';
@@ -15,6 +16,10 @@
 	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
 	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
+	import {
+		loadModelGroups as loadCachedModelGroups,
+		type ModelGroup
+	} from '$lib/stores/modelCatalog';
 	import { tts } from '$lib/speech/tts.svelte';
 	import { cn } from '$lib/utils';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
@@ -35,6 +40,7 @@
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { colorOf, cycleSrc, moodSrc, type BloubCycle, type BloubMood } from '$lib/bloub';
 	import { Button } from '$lib/components/ui/button';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { theme } from 'mode-watcher';
 	import { isFrosted } from '$lib/theme';
 	import {
@@ -43,6 +49,7 @@
 		Bot,
 		Brain,
 		CalendarClock,
+		Check,
 		ChevronDown,
 		Clock,
 		Code,
@@ -65,6 +72,8 @@
 		Pencil,
 		RotateCcw,
 		Send,
+		ShieldCheck,
+		ShieldOff,
 		Square,
 		SquareTerminal,
 		Users,
@@ -217,6 +226,18 @@
 		default: string;
 		providers: { name: string; type: string; model: string }[];
 	} | null>(null);
+	// The composer's quick switches. The model menu lists every model of every
+	// configured provider; the list is fetched the first time the menu opens and
+	// cached for the rest of the page load.
+	let modelGroups = $state<ModelGroup[] | null>(null);
+	let modelGroupsKey = '';
+	let modelMenuOpen = $state(false);
+	let loadingModels = $state(false);
+	let providerInfoLoaded = $state(false);
+	let switchingModel = $state(false);
+	// Approvals mode for the next message: "off" is Full access, "manual" asks.
+	let approvalMode = $state<'manual' | 'off'>('manual');
+	let switchingApproval = $state(false);
 	let attachments = $derived<Attachment[]>(activeRun?.attachments ?? []);
 	let pending = $state<PendingImage[]>([]);
 	let pendingFiles = $state<PendingFile[]>([]);
@@ -829,9 +850,97 @@
 					model: provider.default_model ?? ''
 				}))
 			};
+			approvalMode = config.approvals?.mode === 'off' ? 'off' : 'manual';
 		} catch {
 			providerInfo = null;
+		} finally {
+			providerInfoLoaded = true;
 		}
+	}
+
+	/**
+	 * Every model of every configured provider, grouped per provider. The store
+	 * caches live discovery for the rest of the page load, so only the first open
+	 * after a refresh (or after the provider set changes) reaches the API.
+	 */
+	async function loadModelGroups() {
+		const currentAgent = agent;
+		if (!currentAgent) return;
+		if (modelGroupsKey === currentAgent && modelGroups) return;
+		const providers = providerInfo?.providers ?? [];
+		if (providers.length === 0) return;
+		loadingModels = true;
+		try {
+			const groups = await loadCachedModelGroups(currentAgent, providers);
+			if (agent !== currentAgent) return;
+			modelGroups = groups;
+			modelGroupsKey = currentAgent;
+		} finally {
+			loadingModels = false;
+		}
+	}
+
+	/** Points the agent at one provider and model; the next message uses it. */
+	async function switchModel(provider: string, model: string) {
+		const currentAgent = agent;
+		if (!currentAgent || !provider) return;
+		const isCurrent =
+			providerInfo?.default === provider &&
+			providerInfo.providers.find((entry) => entry.name === provider)?.model === model;
+		if (isCurrent) return;
+		switchingModel = true;
+		try {
+			if (providerInfo?.providers.find((entry) => entry.name === provider)?.model !== model) {
+				await providersApi.update(currentAgent, provider, { default_model: model });
+			}
+			if (providerInfo?.default !== provider) {
+				await providersApi.setDefault(currentAgent, provider);
+			}
+			if (agent !== currentAgent) return;
+			if (providerInfo) {
+				providerInfo = {
+					default: provider,
+					providers: providerInfo.providers.map((entry) =>
+						entry.name === provider ? { ...entry, model } : entry
+					)
+				};
+			}
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			switchingModel = false;
+		}
+	}
+
+	/** Full access turns the approval gate off; approval keeps it manual. */
+	async function switchApproval(mode: 'manual' | 'off') {
+		const currentAgent = agent;
+		if (!currentAgent || approvalMode === mode) return;
+		const previous = approvalMode;
+		approvalMode = mode;
+		switchingApproval = true;
+		try {
+			const config = await configApi.patch(currentAgent, { approvals: { mode } });
+			if (agent !== currentAgent) return;
+			approvalMode = config.approvals?.mode === 'off' ? 'off' : 'manual';
+		} catch (err) {
+			approvalMode = previous;
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			switchingApproval = false;
+		}
+	}
+
+	// The configured pair the menu and its trigger show, not the last run's pair:
+	// this is what the next message will use.
+	let activeProvider = $derived(providerInfo?.default ?? '');
+	let activeModel = $derived(
+		providerInfo?.providers.find((provider) => provider.name === providerInfo?.default)?.model ?? ''
+	);
+
+	/** Gemini ids carry a `models/` namespace that the picker hides. */
+	function modelDisplayName(model: string) {
+		return model.startsWith('models/') ? model.slice('models/'.length) : model;
 	}
 
 	let providerKey = '';
@@ -840,7 +949,19 @@
 		if (!currentAgent || currentAgent === providerKey) return;
 		providerKey = currentAgent;
 		providerInfo = null;
+		providerInfoLoaded = false;
+		modelGroups = null;
+		modelGroupsKey = '';
 		void loadProviderInfo(currentAgent);
+	});
+
+	// Opening the menu before the config has arrived must not leave it empty: the
+	// effect retries as soon as the provider list is available.
+	$effect(() => {
+		const currentAgent = agent;
+		const providers = providerInfo?.providers;
+		if (!modelMenuOpen || !currentAgent || !providers?.length) return;
+		untrack(() => void loadModelGroups());
 	});
 
 	function readLastConversations(): Record<string, string> {
@@ -3213,29 +3334,199 @@
 												</span>
 											{/if}
 										</div>
-										{#if streaming}
-											<Button
-												size="icon"
-												variant="destructive"
-												class="rounded-full"
-												onclick={stop}
-												aria-label={t('myaaw.chat.stop')}
+										<div class="flex shrink-0 items-center gap-1">
+											<DropdownMenu.Root
+												onOpenChange={(open) => {
+													modelMenuOpen = open;
+												}}
 											>
-												<Square class="h-4 w-4" />
-											</Button>
-										{:else}
-											<Button
-												size="icon"
-												class="rounded-full"
-												onclick={send}
-												disabled={!input.trim() &&
-													pending.length === 0 &&
-													pendingFiles.length === 0}
-												aria-label={t('myaaw.chat.send')}
-											>
-												<Send class="h-4 w-4" />
-											</Button>
-										{/if}
+												<DropdownMenu.Trigger>
+													{#snippet child({ props })}
+														<button
+															{...props}
+															type="button"
+															class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+															disabled={switchingModel}
+															title={activeProvider
+																? `${activeProvider} · ${modelDisplayName(activeModel)}`
+																: t('myaaw.chat.model_picker')}
+															aria-label={t('myaaw.chat.model_picker')}
+														>
+															{#if switchingModel}
+																<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+															{:else}
+																<Cpu class="h-3.5 w-3.5 shrink-0" />
+															{/if}
+															<span class="max-w-16 truncate sm:max-w-56">
+																{activeModel
+																	? modelDisplayName(activeModel)
+																	: t('myaaw.chat.model_label')}
+															</span>
+															<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+														</button>
+													{/snippet}
+												</DropdownMenu.Trigger>
+												<DropdownMenu.Content align="end" side="top" class="max-h-80 w-72">
+													{#if (!providerInfoLoaded || loadingModels) && !modelGroups}
+														<div
+															class="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground"
+														>
+															<Loader2 class="h-3.5 w-3.5 animate-spin" />
+															{t('myaaw.chat.model_loading')}
+														</div>
+													{:else if !modelGroups || modelGroups.length === 0}
+														<p class="px-2 py-1 text-xs text-muted-foreground">
+															{t('myaaw.chat.model_none')}
+														</p>
+													{:else}
+														{#each modelGroups as group, index (group.name)}
+															{#if index > 0}<DropdownMenu.Separator />{/if}
+															<DropdownMenu.Group>
+																<DropdownMenu.Label
+																	class="flex items-center gap-1.5 text-[10px] tracking-wide uppercase"
+																>
+																	<span class="truncate">{group.name}</span>
+																	{#if group.name === activeProvider}
+																		<span
+																			class="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary normal-case"
+																		>
+																			{t('myaaw.chat.model_active')}
+																		</span>
+																	{/if}
+																</DropdownMenu.Label>
+																{#each group.models as model (model)}
+																	<DropdownMenu.Item
+																		class="gap-2 font-mono text-xs"
+																		onclick={() => void switchModel(group.name, model)}
+																	>
+																		<Check
+																			class={cn(
+																				'h-3.5 w-3.5 shrink-0',
+																				group.name === activeProvider && model === activeModel
+																					? 'opacity-100'
+																					: 'opacity-0'
+																			)}
+																		/>
+																		<span class="truncate">{modelDisplayName(model)}</span>
+																	</DropdownMenu.Item>
+																{/each}
+																{#if group.models.length === 0}
+																	<p class="px-2 py-1 text-[11px] text-muted-foreground">
+																		{t('myaaw.chat.model_none')}
+																	</p>
+																{/if}
+																{#if group.warning}
+																	<p
+																		class="px-2 pb-1 text-[10px] break-words text-amber-600 dark:text-amber-400"
+																	>
+																		{group.warning}
+																	</p>
+																{/if}
+															</DropdownMenu.Group>
+														{/each}
+													{/if}
+												</DropdownMenu.Content>
+											</DropdownMenu.Root>
+											<DropdownMenu.Root>
+												<DropdownMenu.Trigger>
+													{#snippet child({ props })}
+														<button
+															{...props}
+															type="button"
+															class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+															disabled={switchingApproval}
+															title={approvalMode === 'off'
+																? t('myaaw.chat.approval_full_access')
+																: t('myaaw.chat.approval_manual')}
+															aria-label={t('myaaw.chat.approval_picker')}
+														>
+															{#if switchingApproval}
+																<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+															{:else if approvalMode === 'off'}
+																<ShieldOff class="h-3.5 w-3.5 shrink-0" />
+															{:else}
+																<ShieldCheck class="h-3.5 w-3.5 shrink-0" />
+															{/if}
+															<span class="hidden whitespace-nowrap sm:inline">
+																{approvalMode === 'off'
+																	? t('myaaw.chat.approval_full_access')
+																	: t('myaaw.chat.approval_manual')}
+															</span>
+															<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+														</button>
+													{/snippet}
+												</DropdownMenu.Trigger>
+												<DropdownMenu.Content align="end" side="top" class="w-56">
+													<DropdownMenu.Item
+														class="items-start gap-2"
+														onclick={() => void switchApproval('off')}
+													>
+														<ShieldOff class="mt-0.5 h-4 w-4 shrink-0" />
+														<span class="min-w-0 flex-1">
+															<span class="block">
+																{t('myaaw.chat.approval_full_access')}
+															</span>
+															<span
+																class="block text-[10px] whitespace-normal text-muted-foreground"
+															>
+																{t('myaaw.chat.approval_full_access_desc')}
+															</span>
+														</span>
+														<Check
+															class={cn(
+																'mt-0.5 h-3.5 w-3.5 shrink-0',
+																approvalMode === 'off' ? 'opacity-100' : 'opacity-0'
+															)}
+														/>
+													</DropdownMenu.Item>
+													<DropdownMenu.Item
+														class="items-start gap-2"
+														onclick={() => void switchApproval('manual')}
+													>
+														<ShieldCheck class="mt-0.5 h-4 w-4 shrink-0" />
+														<span class="min-w-0 flex-1">
+															<span class="block">
+																{t('myaaw.chat.approval_manual')}
+															</span>
+															<span
+																class="block text-[10px] whitespace-normal text-muted-foreground"
+															>
+																{t('myaaw.chat.approval_manual_desc')}
+															</span>
+														</span>
+														<Check
+															class={cn(
+																'mt-0.5 h-3.5 w-3.5 shrink-0',
+																approvalMode === 'manual' ? 'opacity-100' : 'opacity-0'
+															)}
+														/>
+													</DropdownMenu.Item>
+												</DropdownMenu.Content>
+											</DropdownMenu.Root>
+											{#if streaming}
+												<Button
+													size="icon"
+													variant="destructive"
+													class="rounded-full"
+													onclick={stop}
+													aria-label={t('myaaw.chat.stop')}
+												>
+													<Square class="h-4 w-4" />
+												</Button>
+											{:else}
+												<Button
+													size="icon"
+													class="rounded-full"
+													onclick={send}
+													disabled={!input.trim() &&
+														pending.length === 0 &&
+														pendingFiles.length === 0}
+													aria-label={t('myaaw.chat.send')}
+												>
+													<Send class="h-4 w-4" />
+												</Button>
+											{/if}
+										</div>
 									</div>
 									<div
 										class={cn(
