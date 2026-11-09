@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"net/url"
 	"os"
 	"strings"
 
@@ -45,11 +46,7 @@ func NewApp() (*fiber.App, error) {
 	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api", BodyLimit: config.A2AMaxRequestBytes})
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: allowedOrigins(),
-		AllowMethods: []string{"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"},
-		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
-	}))
+	app.Use(cors.New(corsConfig()))
 
 	app.Get("/health", h.Health)
 	app.Get("/docs", func(c fiber.Ctx) error {
@@ -203,12 +200,28 @@ func Run(addr string) error {
 	return app.Listen(addr)
 }
 
-func allowedOrigins() []string {
-	raw := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS"))
-	if raw == "" || raw == "*" {
-		return []string{"*"}
+// corsConfig allows the local dashboards by default. A browser on another
+// origin (a remote dashboard or a tunnel) must opt in through ALLOWED_ORIGINS;
+// native desktop/mobile clients do not send an Origin and are unaffected.
+func corsConfig() cors.Config {
+	cfg := cors.Config{
+		AllowMethods: []string{"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"},
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
 	}
 
+	raw := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS"))
+	switch {
+	case raw == "*":
+		cfg.AllowOrigins = []string{"*"}
+	case raw != "":
+		cfg.AllowOrigins = splitOrigins(raw)
+	default:
+		cfg.AllowOriginsFunc = isLoopbackOrigin
+	}
+	return cfg
+}
+
+func splitOrigins(raw string) []string {
 	parts := strings.Split(raw, ",")
 	origins := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -220,4 +233,17 @@ func allowedOrigins() []string {
 		return []string{"*"}
 	}
 	return origins
+}
+
+func isLoopbackOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
 }

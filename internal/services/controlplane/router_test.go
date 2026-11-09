@@ -1485,16 +1485,29 @@ func TestRouterDocsRedirectsToIndex(t *testing.T) {
 	}
 }
 
-func TestAllowedOrigins(t *testing.T) {
+func TestCORSConfig(t *testing.T) {
 	t.Setenv("ALLOWED_ORIGINS", "")
-	if got := allowedOrigins(); len(got) != 1 || got[0] != "*" {
-		t.Fatalf("origins = %v, want *", got)
+	cfg := corsConfig()
+	if len(cfg.AllowOrigins) != 0 || cfg.AllowOriginsFunc == nil {
+		t.Fatalf("default should use the loopback func, got origins=%v", cfg.AllowOrigins)
+	}
+	if !cfg.AllowOriginsFunc("http://localhost:5050") {
+		t.Fatal("localhost should be allowed by default")
+	}
+	if cfg.AllowOriginsFunc("https://evil.example") {
+		t.Fatal("a remote origin must opt in through ALLOWED_ORIGINS")
 	}
 
 	t.Setenv("ALLOWED_ORIGINS", "https://a.example, https://b.example")
-	got := allowedOrigins()
-	if len(got) != 2 || got[0] != "https://a.example" || got[1] != "https://b.example" {
+	cfg = corsConfig()
+	if got := cfg.AllowOrigins; len(got) != 2 || got[0] != "https://a.example" || got[1] != "https://b.example" {
 		t.Fatalf("origins = %v", got)
+	}
+
+	t.Setenv("ALLOWED_ORIGINS", "*")
+	cfg = corsConfig()
+	if got := cfg.AllowOrigins; len(got) != 1 || got[0] != "*" {
+		t.Fatalf("origins = %v, want *", got)
 	}
 }
 

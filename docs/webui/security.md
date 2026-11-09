@@ -69,8 +69,8 @@ Primary threats:
 ## 6. CORS (Option A only)
 
 - Because the browser fetches the control plane directly (cross-origin), the control plane must allow the WebUI origin via CORS.
-- Today `allowedOrigins()` defaults to `*` (`router.go`). For production, restrict it to the known dashboard origin.
-- Note: auth uses the `Authorization` header (not cookies), so `*` plus header auth does not add cookie-session risk. Restricting is still preferable.
+- Default: loopback origins (`localhost`, `127.0.0.1`, `::1`) are allowed, so a local dashboard works out of the box. Any other origin (a remote dashboard or a tunnel domain) must be listed in `ALLOWED_ORIGINS`; `ALLOWED_ORIGINS=*` restores the permissive behavior for development.
+- Native desktop/mobile clients do not send an `Origin` and are unaffected by this default.
 
 ---
 
