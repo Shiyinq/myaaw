@@ -14,6 +14,7 @@ import (
 
 	myaaw "myaaw"
 	"myaaw/internal/agentdir"
+	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/config"
 	"myaaw/internal/obs"
 	"myaaw/internal/onboard"
@@ -31,6 +32,8 @@ type ProviderInput struct {
 	Type         string
 	BaseURL      string
 	APIKey       string
+	AuthMode     string
+	CredentialID string
 	DefaultModel string
 }
 
@@ -38,6 +41,8 @@ type ProviderPatch struct {
 	Type         *string
 	BaseURL      *string
 	APIKey       *string
+	AuthMode     *string
+	CredentialID *string
 	DefaultModel *string
 }
 
@@ -55,11 +60,14 @@ type SecretState struct {
 }
 
 type ProviderView struct {
-	Name         string      `json:"name"`
-	Type         string      `json:"type"`
-	BaseURL      string      `json:"base_url,omitempty"`
-	DefaultModel string      `json:"default_model,omitempty"`
-	APIKey       SecretState `json:"api_key"`
+	Name         string              `json:"name"`
+	Type         string              `json:"type"`
+	BaseURL      string              `json:"base_url,omitempty"`
+	DefaultModel string              `json:"default_model,omitempty"`
+	APIKey       SecretState         `json:"api_key"`
+	AuthMode     string              `json:"auth_mode,omitempty"`
+	CredentialID string              `json:"credential_id,omitempty"`
+	Connection   *ProviderConnection `json:"connection,omitempty"`
 }
 
 type ProvidersView struct {
@@ -99,7 +107,9 @@ type ConfigView struct {
 }
 
 // ConfigService reads per-agent configuration with secrets masked.
-type ConfigService struct{}
+type ConfigService struct {
+	chatGPT chatGPTSessions
+}
 
 func NewConfigService() *ConfigService {
 	return &ConfigService{}
@@ -261,13 +271,7 @@ func providerViews(cfg *config.Config) []ProviderView {
 	views := make([]ProviderView, 0, len(names))
 	for _, name := range names {
 		provider := cfg.Providers[name]
-		views = append(views, ProviderView{
-			Name:         name,
-			Type:         provider.Type,
-			BaseURL:      provider.BaseURL,
-			DefaultModel: provider.DefaultModel,
-			APIKey:       secretState(provider.APIKey),
-		})
+		views = append(views, providerView(name, provider))
 	}
 	return views
 }
@@ -322,7 +326,12 @@ func (s *ConfigService) CreateProvider(agentName string, in ProviderInput) (Prov
 		Type:         strings.TrimSpace(in.Type),
 		BaseURL:      strings.TrimSpace(in.BaseURL),
 		APIKey:       strings.TrimSpace(in.APIKey),
+		AuthMode:     strings.TrimSpace(in.AuthMode),
+		CredentialID: strings.TrimSpace(in.CredentialID),
 		DefaultModel: strings.TrimSpace(in.DefaultModel),
+	}
+	if err := onboard.NormalizeProviderAuth(&providerConfig); err != nil {
+		return ProviderView{}, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
 	cfg.Providers[name] = providerConfig
 	if cfg.DefaultProvider == "" {
@@ -332,13 +341,7 @@ func (s *ConfigService) CreateProvider(agentName string, in ProviderInput) (Prov
 		return ProviderView{}, err
 	}
 
-	return ProviderView{
-		Name:         name,
-		Type:         providerConfig.Type,
-		BaseURL:      providerConfig.BaseURL,
-		DefaultModel: providerConfig.DefaultModel,
-		APIKey:       secretState(providerConfig.APIKey),
-	}, nil
+	return providerView(name, providerConfig), nil
 }
 
 func (s *ConfigService) UpdateProvider(agentName, id string, patch ProviderPatch) (ProviderView, error) {
@@ -352,7 +355,15 @@ func (s *ConfigService) UpdateProvider(agentName, id string, patch ProviderPatch
 	}
 
 	if patch.Type != nil {
-		providerConfig.Type = strings.TrimSpace(*patch.Type)
+		nextType := strings.TrimSpace(*patch.Type)
+		if nextType != providerConfig.Type {
+			// Authentication material never crosses provider types.
+			providerConfig.AuthMode, providerConfig.CredentialID = "", ""
+			if strings.EqualFold(nextType, chatgpt.ProviderType) {
+				providerConfig.APIKey, providerConfig.BaseURL = "", ""
+			}
+		}
+		providerConfig.Type = nextType
 	}
 	if patch.BaseURL != nil {
 		providerConfig.BaseURL = strings.TrimSpace(*patch.BaseURL)
@@ -363,19 +374,22 @@ func (s *ConfigService) UpdateProvider(agentName, id string, patch ProviderPatch
 	if patch.DefaultModel != nil {
 		providerConfig.DefaultModel = strings.TrimSpace(*patch.DefaultModel)
 	}
+	if patch.AuthMode != nil {
+		providerConfig.AuthMode = strings.TrimSpace(*patch.AuthMode)
+	}
+	if patch.CredentialID != nil {
+		providerConfig.CredentialID = strings.TrimSpace(*patch.CredentialID)
+	}
+	if err := onboard.NormalizeProviderAuth(&providerConfig); err != nil {
+		return ProviderView{}, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+	}
 
 	cfg.Providers[id] = providerConfig
 	if err := saveAgentConfig(agentName, cfg); err != nil {
 		return ProviderView{}, err
 	}
 
-	return ProviderView{
-		Name:         id,
-		Type:         providerConfig.Type,
-		BaseURL:      providerConfig.BaseURL,
-		DefaultModel: providerConfig.DefaultModel,
-		APIKey:       secretState(providerConfig.APIKey),
-	}, nil
+	return providerView(id, providerConfig), nil
 }
 
 func (s *ConfigService) DeleteProvider(agentName, id string) error {
@@ -530,7 +544,7 @@ func saveAgentConfig(agentName string, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path, append(data, '\n'))
+	return config.WriteConfigAtomic(path, append(data, '\n'))
 }
 
 func agentConfigDir(agentName string) (string, error) {

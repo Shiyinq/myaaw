@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"myaaw/internal/agentdir"
+	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/config"
 	"myaaw/internal/onboard"
 	"myaaw/internal/provider"
@@ -17,6 +18,8 @@ type OnboardProviderInput struct {
 	Type         string `json:"type" example:"openai"`
 	BaseURL      string `json:"base_url,omitempty" example:"https://api.deepseek.com"`
 	APIKey       string `json:"api_key,omitempty"`
+	AuthMode     string `json:"auth_mode,omitempty"`
+	CredentialID string `json:"credential_id,omitempty"`
 	DefaultModel string `json:"model,omitempty" example:"deepseek-chat"`
 }
 
@@ -129,8 +132,8 @@ func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
 	if req.Provider != nil {
 		p := req.Provider
 		providerType := strings.ToLower(strings.TrimSpace(p.Type))
-		if providerType != "openai" && providerType != "gemini" {
-			return in, fmt.Errorf("%w: provider.type must be openai or gemini", ErrInvalidConfig)
+		if providerType != "openai" && providerType != "gemini" && providerType != chatgpt.ProviderType {
+			return in, fmt.Errorf("%w: provider.type must be openai, gemini, or openai_chatgpt", ErrInvalidConfig)
 		}
 		providerName := strings.TrimSpace(p.Name)
 		if providerName == "" {
@@ -142,44 +145,64 @@ func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
 			saved = existing.Providers[providerName]
 		}
 
-		baseURL := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
-		if baseURL == "" {
-			baseURL = saved.BaseURL
-		}
-		if baseURL == "" {
-			baseURL = provider.DefaultBaseURL(providerType)
-		}
-		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-			return in, fmt.Errorf("%w: provider base_url must start with http:// or https://", ErrInvalidConfig)
-		}
+		if providerType == chatgpt.ProviderType {
+			credentialID := strings.TrimSpace(p.CredentialID)
+			if credentialID == "" && saved.Type == providerType {
+				credentialID = saved.CredentialID
+			}
+			pc := config.ProviderConfig{Type: providerType, AuthMode: p.AuthMode, CredentialID: credentialID, APIKey: p.APIKey, BaseURL: p.BaseURL}
+			if err := onboard.NormalizeProviderAuth(&pc); err != nil {
+				return in, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+			}
+			model := strings.TrimSpace(p.DefaultModel)
+			if model == "" && saved.Type == providerType {
+				model = saved.DefaultModel
+			}
+			if model == "" {
+				return in, fmt.Errorf("%w: select a ChatGPT Subscription model from live discovery", ErrInvalidConfig)
+			}
+			in.ProviderName, in.ProviderType, in.ProviderModel = providerName, providerType, model
+			in.ProviderAuthMode, in.ProviderCredentialID = pc.AuthMode, pc.CredentialID
+		} else {
+			baseURL := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
+			if baseURL == "" {
+				baseURL = saved.BaseURL
+			}
+			if baseURL == "" {
+				baseURL = provider.DefaultBaseURL(providerType)
+			}
+			if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+				return in, fmt.Errorf("%w: provider base_url must start with http:// or https://", ErrInvalidConfig)
+			}
 
-		apiKey := strings.TrimSpace(p.APIKey)
-		if apiKey == "" {
-			apiKey = saved.APIKey
-		}
-		if onboard.IsTemplateValue(apiKey) {
-			apiKey = ""
-		}
-		if apiKey == "" {
-			return in, fmt.Errorf("%w: provider api_key is required", ErrInvalidConfig)
-		}
+			apiKey := strings.TrimSpace(p.APIKey)
+			if apiKey == "" {
+				apiKey = saved.APIKey
+			}
+			if onboard.IsTemplateValue(apiKey) {
+				apiKey = ""
+			}
+			if apiKey == "" {
+				return in, fmt.Errorf("%w: provider api_key is required", ErrInvalidConfig)
+			}
 
-		model := strings.TrimSpace(p.DefaultModel)
-		if model == "" {
-			model = saved.DefaultModel
-		}
-		if model == "" {
-			model = provider.DefaultModel(providerType)
-		}
-		if model == "" {
-			return in, fmt.Errorf("%w: provider model is required", ErrInvalidConfig)
-		}
+			model := strings.TrimSpace(p.DefaultModel)
+			if model == "" {
+				model = saved.DefaultModel
+			}
+			if model == "" {
+				model = provider.DefaultModel(providerType)
+			}
+			if model == "" {
+				return in, fmt.Errorf("%w: provider model is required", ErrInvalidConfig)
+			}
 
-		in.ProviderName = providerName
-		in.ProviderType = providerType
-		in.ProviderBaseURL = baseURL
-		in.ProviderAPIKey = apiKey
-		in.ProviderModel = model
+			in.ProviderName = providerName
+			in.ProviderType = providerType
+			in.ProviderBaseURL = baseURL
+			in.ProviderAPIKey = apiKey
+			in.ProviderModel = model
+		}
 	}
 
 	if req.Channels != nil {

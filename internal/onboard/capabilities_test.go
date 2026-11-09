@@ -5,13 +5,14 @@ import "testing"
 func TestBuiltinCapabilitiesDescribeEveryEntry(t *testing.T) {
 	caps := BuiltinCapabilities()
 
-	if len(caps.Providers) != 3 {
-		t.Fatalf("providers = %d, want 3", len(caps.Providers))
+	if len(caps.Providers) != 4 {
+		t.Fatalf("providers = %d, want 4", len(caps.Providers))
 	}
 	wantPresets := []struct{ ID, Type string }{
 		{"openai", "openai"},
 		{"deepseek", "openai"},
 		{"gemini", "gemini"},
+		{"openai_chatgpt", "openai_chatgpt"},
 	}
 	for i, want := range wantPresets {
 		preset := caps.Providers[i]
@@ -20,6 +21,12 @@ func TestBuiltinCapabilitiesDescribeEveryEntry(t *testing.T) {
 		}
 		if preset.Label == "" {
 			t.Fatalf("provider[%d] has no label", i)
+		}
+		if preset.Type == "openai_chatgpt" {
+			if preset.Label != "ChatGPT Subscription" || preset.DefaultModel != "" || preset.DefaultBaseURL != "" {
+				t.Fatalf("subscription must use live models and no custom endpoint: %+v", preset)
+			}
+			continue
 		}
 		if preset.DefaultBaseURL == "" {
 			t.Fatalf("provider[%d] has no default base URL", i)

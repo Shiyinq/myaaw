@@ -148,7 +148,7 @@ func TestApplyPriceFilesInvalidJSONWarns(t *testing.T) {
 
 func TestWriteModelPricesFileRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	want := map[string]ModelPriceConfig{"m": {Input: 1, Output: 2}}
+	want := map[string]ModelPriceConfig{"m": {Provider: "anthropic", Input: 1, Output: 2}}
 	if err := WriteModelPricesFile(dir, want); err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestWriteModelPricesFileRoundTrip(t *testing.T) {
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v", warnings)
 	}
-	if got["m"].Output != 2 {
+	if got["m"].Output != 2 || got["m"].Provider != "anthropic" {
 		t.Fatalf("round trip = %+v", got)
 	}
 }

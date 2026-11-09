@@ -1,5 +1,7 @@
 import { agentPath, client } from './client';
 import type {
+	ChatGPTConnectSession,
+	ChatGPTConnectStatus,
 	CreateProviderRequest,
 	ModelListView,
 	ModelLookupRequest,
@@ -9,6 +11,25 @@ import type {
 } from '$lib/types';
 
 export const providers = {
+	connectChatGPT: (agent: string, credentialId?: string) =>
+		client<ChatGPTConnectSession>(agentPath(agent, '/providers/chatgpt/connect'), {
+			method: 'POST',
+			body: credentialId ? { credential_id: credentialId } : {}
+		}),
+	chatGPTStatus: (agent: string, session: string, signal?: AbortSignal) =>
+		client<ChatGPTConnectStatus>(
+			agentPath(agent, `/providers/chatgpt/connect/${encodeURIComponent(session)}`),
+			{ signal }
+		),
+	cancelChatGPT: (agent: string, session: string) =>
+		client<OKResponse>(
+			agentPath(agent, `/providers/chatgpt/connect/${encodeURIComponent(session)}`),
+			{ method: 'DELETE', keepalive: true }
+		),
+	disconnect: (agent: string, name: string) =>
+		client<OKResponse>(agentPath(agent, `/providers/${encodeURIComponent(name)}/disconnect`), {
+			method: 'POST'
+		}),
 	list: (agent: string) => client<ProvidersView>(agentPath(agent, '/providers')),
 	create: (agent: string, payload: CreateProviderRequest) =>
 		client<OKResponse>(agentPath(agent, '/providers'), { method: 'POST', body: payload }),

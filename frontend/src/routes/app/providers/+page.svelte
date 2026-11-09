@@ -10,6 +10,7 @@
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import FieldError from '$lib/components/common/FieldError.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
+	import ChatGPTConnection from '$lib/components/common/ChatGPTConnection.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -23,7 +24,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Cpu, Pencil, Plus, RefreshCw, Star, Trash2, Wand2 } from 'lucide-svelte';
-	import type { ModelListView, ProviderView } from '$lib/types';
+	import type { ModelListView, ProviderView, ProviderConnection } from '$lib/types';
 
 	const { t } = useTranslation();
 
@@ -43,6 +44,16 @@
 	let discovered = $state<ModelListView | null>(null);
 	let errors = $state<FieldErrors>({});
 	let editing = $state('');
+	let credentialId = $state('');
+	let connection = $state<ProviderConnection | undefined>();
+	let connecting = $state(false);
+	let formVersion = $state(0);
+	let isChatGPT = $derived(type === 'openai_chatgpt');
+	let connected = $derived(
+		!!credentialId &&
+			!!connection?.configured &&
+			['connected', 'refresh_required'].includes(connection.status)
+	);
 
 	let agent = $derived(agentSelection.selected);
 
@@ -51,6 +62,7 @@
 		error = '';
 		try {
 			const view = await providersApi.list(currentAgent);
+			if (currentAgent !== agentSelection.selected) return;
 			providers = view.providers ?? [];
 			defaultProvider = view.default_provider;
 		} catch (err) {
@@ -62,26 +74,35 @@
 
 	$effect(() => {
 		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
+		if (currentAgent === loadKey) return;
+		loadKey = currentAgent;
+		resetForm();
+		providers = [];
+		if (currentAgent) void load(currentAgent);
 	});
 
 	async function discover() {
-		if (!agent) return;
+		if (!agent || connecting || (isChatGPT && !connected)) return;
+		const version = formVersion;
+		const currentAgent = agent;
 		discovering = true;
 		discovered = null;
 		try {
 			// Editing with a blank key can reuse the stored secret.
-			discovered =
-				editing && !apiKey
+			const view = isChatGPT
+				? await providersApi.modelsForCredentials({
+						type: 'openai_chatgpt',
+						credential_id: credentialId
+					})
+				: editing && !apiKey
 					? await providersApi.models(agent, editing)
 					: await providersApi.modelsForCredentials({
 							type,
 							base_url: baseUrl || undefined,
 							api_key: apiKey || undefined
 						});
+			if (version !== formVersion || currentAgent !== agent) return;
+			discovered = view;
 			if (!defaultModel && discovered.models.length > 0) {
 				defaultModel = discovered.models[0];
 			}
@@ -92,10 +113,33 @@
 		}
 	}
 
+	function connectionStatusKey(connection?: ProviderConnection) {
+		const status = connection?.status ?? 'disconnected';
+		return [
+			'connected',
+			'refresh_required',
+			'reauthorization_required',
+			'unavailable',
+			'expired',
+			'failed'
+		].includes(status)
+			? status
+			: 'disconnected';
+	}
+
 	function startEdit(provider: ProviderView) {
+		formVersion += 1;
+		credentialId = provider.credential_id ?? '';
+		connection = provider.connection;
+		connecting = false;
 		editing = provider.name;
 		name = provider.name;
-		type = provider.type === 'gemini' ? 'gemini' : 'openai';
+		type =
+			provider.type === 'openai_chatgpt'
+				? 'openai_chatgpt'
+				: provider.type === 'gemini'
+					? 'gemini'
+					: 'openai';
 		baseUrl = provider.base_url ?? '';
 		defaultModel = provider.default_model ?? '';
 		apiKey = '';
@@ -104,6 +148,10 @@
 	}
 
 	function resetForm() {
+		formVersion += 1;
+		credentialId = '';
+		connection = undefined;
+		connecting = false;
 		editing = '';
 		name = '';
 		type = 'openai';
@@ -114,13 +162,31 @@
 		errors = {};
 	}
 
+	function changeType() {
+		formVersion += 1;
+		defaultModel = '';
+		credentialId = '';
+		connection = undefined;
+		connecting = false;
+		discovered = null;
+		errors = {};
+	}
+
 	async function save() {
-		if (!agent) return;
+		if (!agent || connecting) return;
+		const saveAgent = agent;
+		const version = formVersion;
+		if (isChatGPT && !connected) {
+			toastStore.error(t('myaaw.chatgpt.connect_required'));
+			return;
+		}
 		const result = validate(providerSchema, {
 			name,
 			type,
-			base_url: baseUrl,
-			api_key: apiKey,
+			base_url: isChatGPT ? undefined : baseUrl,
+			api_key: isChatGPT ? undefined : apiKey,
+			auth_mode: isChatGPT ? 'oauth' : undefined,
+			credential_id: isChatGPT ? credentialId : undefined,
 			default_model: defaultModel
 		});
 		if (!result.ok) {
@@ -130,7 +196,16 @@
 		errors = {};
 		saving = true;
 		try {
-			if (editing) {
+			if (isChatGPT) {
+				const payload = {
+					type: 'openai_chatgpt',
+					auth_mode: 'oauth' as const,
+					credential_id: credentialId,
+					default_model: result.data.default_model ?? ''
+				};
+				if (editing) await providersApi.update(agent, editing, payload);
+				else await providersApi.create(agent, { ...payload, name: result.data.name });
+			} else if (editing) {
 				// An empty key keeps the stored secret; empty strings clear the
 				// endpoint and model instead of leaving the old values in place.
 				await providersApi.update(agent, editing, {
@@ -149,8 +224,9 @@
 				});
 			}
 			toastStore.success(t('myaaw.providers.saved'));
+			if (saveAgent !== agent || version !== formVersion) return;
 			resetForm();
-			await load(agent);
+			await load(saveAgent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -239,9 +315,13 @@
 							class="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
 						>
 							<div class="min-w-0 space-y-1">
-								<div class="flex items-center gap-2">
-									<span class="font-medium">{provider.name}</span>
-									<Badge variant="outline">{provider.type}</Badge>
+								<div class="flex flex-wrap items-center gap-2">
+									<span class="font-medium wrap-anywhere">{provider.name}</span>
+									<Badge variant="outline"
+										>{provider.type === 'openai_chatgpt'
+											? t('myaaw.chatgpt.title')
+											: provider.type}</Badge
+									>
 									{#if provider.name === defaultProvider}
 										<Badge variant="secondary">{t('myaaw.providers.default')}</Badge>
 									{/if}
@@ -250,12 +330,19 @@
 									{#if provider.default_model}
 										<span class="font-mono">{provider.default_model}</span>
 									{/if}
-									<span
-										>{provider.api_key.configured
-											? provider.api_key.masked
-											: t('myaaw.providers.no_key')}</span
-									>
-									{#if provider.base_url}
+									{#if provider.type === 'openai_chatgpt'}
+										<span>{t(`myaaw.chatgpt.${connectionStatusKey(provider.connection)}`)}</span>
+										{#if provider.connection?.account_label}<span class="wrap-anywhere"
+												>{provider.connection.account_label}</span
+											>{/if}
+									{:else}
+										<span
+											>{provider.api_key.configured
+												? provider.api_key.masked
+												: t('myaaw.providers.no_key')}</span
+										>
+									{/if}
+									{#if provider.type !== 'openai_chatgpt' && provider.base_url}
 										<span class="truncate">{provider.base_url}</span>
 									{/if}
 								</div>
@@ -294,7 +381,11 @@
 						{editing ? t('myaaw.providers.edit') : t('myaaw.providers.create')}
 					</CardTitle>
 					<CardDescription>
-						{editing ? t('myaaw.providers.edit_desc') : t('myaaw.providers.create_desc')}
+						{isChatGPT
+							? t('myaaw.chatgpt.description')
+							: editing
+								? t('myaaw.providers.edit_desc')
+								: t('myaaw.providers.create_desc')}
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -320,31 +411,48 @@
 							<select
 								id="provider-type"
 								bind:value={type}
+								onchange={changeType}
 								class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 							>
 								<option value="openai">openai</option>
 								<option value="gemini">gemini</option>
+								<option value="openai_chatgpt">{t('myaaw.chatgpt.title')}</option>
 							</select>
 						</div>
-						<div class="grid gap-1">
-							<Label for="provider-base-url">{t('myaaw.providers.base_url')}</Label>
-							<Input
-								id="provider-base-url"
-								bind:value={baseUrl}
-								placeholder="https://api.deepseek.com"
-							/>
-							<FieldError code={errors.base_url} />
-						</div>
-						<div class="grid gap-1">
-							<Label for="provider-api-key">{t('myaaw.providers.api_key')}</Label>
-							<Input
-								id="provider-api-key"
-								type="password"
-								bind:value={apiKey}
-								placeholder={editing ? t('myaaw.providers.api_key_keep') : 'sk-...'}
-							/>
-						</div>
-
+						{#if isChatGPT}
+							{#key `${agent}:${formVersion}`}
+								<ChatGPTConnection
+									{agent}
+									providerId={editing || undefined}
+									bind:credentialId
+									bind:connection
+									bind:busy={connecting}
+									ondisconnect={() => void load(agent)}
+									onchange={() => {
+										discovered = null;
+									}}
+								/>
+							{/key}
+						{:else}
+							<div class="grid gap-1">
+								<Label for="provider-base-url">{t('myaaw.providers.base_url')}</Label>
+								<Input
+									id="provider-base-url"
+									bind:value={baseUrl}
+									placeholder="https://api.deepseek.com"
+								/>
+								<FieldError code={errors.base_url} />
+							</div>
+							<div class="grid gap-1">
+								<Label for="provider-api-key">{t('myaaw.providers.api_key')}</Label>
+								<Input
+									id="provider-api-key"
+									type="password"
+									bind:value={apiKey}
+									placeholder={editing ? t('myaaw.providers.api_key_keep') : 'sk-...'}
+								/>
+							</div>
+						{/if}
 						<div class="flex gap-2">
 							<Button
 								type="button"
@@ -352,16 +460,17 @@
 								size="sm"
 								onclick={discover}
 								loading={discovering}
+								disabled={connecting || (isChatGPT && !connected)}
 							>
 								<Wand2 class="mr-2 h-4 w-4" />
 								{t('myaaw.providers.discover')}
 							</Button>
 						</div>
 
-						{#if discovered}
-							{#if discovered.warning}
-								<p class="text-[11px] text-amber-600 dark:text-amber-400">{discovered.warning}</p>
-							{/if}
+						{#if discovered?.warning}
+							<p class="text-[11px] text-amber-600 dark:text-amber-400">{discovered.warning}</p>
+						{/if}
+						{#if discovered && discovered.models.length > 0}
 							<div class="grid gap-1">
 								<Label for="provider-model">{t('myaaw.providers.model')}</Label>
 								<select
@@ -380,14 +489,20 @@
 								<Input
 									id="provider-model-manual"
 									bind:value={defaultModel}
-									placeholder="deepseek-chat"
+									placeholder={isChatGPT ? t('myaaw.chatgpt.model_hint') : 'deepseek-chat'}
 								/>
 							</div>
 						{/if}
+						<FieldError code={errors.default_model} />
 
 						<Separator />
 						<div class="flex flex-wrap gap-2">
-							<Button type="submit" size="sm" loading={saving}>
+							<Button
+								type="submit"
+								size="sm"
+								loading={saving}
+								disabled={connecting || (isChatGPT && !connected)}
+							>
 								{#if editing}
 									{t('common.save')}
 								{:else}
@@ -395,7 +510,7 @@
 									{t('myaaw.providers.create')}
 								{/if}
 							</Button>
-							{#if editing}
+							{#if editing || isChatGPT}
 								<Button type="button" size="sm" variant="ghost" onclick={resetForm}>
 									{t('common.cancel')}
 								</Button>

@@ -204,6 +204,8 @@ type CreateProviderRequest struct {
 	Type         string `json:"type" example:"openai"`
 	BaseURL      string `json:"base_url,omitempty" example:"https://api.openai.com"`
 	APIKey       string `json:"api_key,omitempty"`
+	AuthMode     string `json:"auth_mode,omitempty"`
+	CredentialID string `json:"credential_id,omitempty"`
 	DefaultModel string `json:"default_model,omitempty" example:"gpt-4o"`
 }
 
@@ -211,6 +213,8 @@ type UpdateProviderRequest struct {
 	Type         *string `json:"type,omitempty"`
 	BaseURL      *string `json:"base_url,omitempty"`
 	APIKey       *string `json:"api_key,omitempty"`
+	AuthMode     *string `json:"auth_mode,omitempty"`
+	CredentialID *string `json:"credential_id,omitempty"`
 	DefaultModel *string `json:"default_model,omitempty"`
 }
 

@@ -18,6 +18,8 @@ export interface AgentsResponse {
 
 export interface OnboardProvider {
 	type: string;
+	auth_mode?: 'oauth';
+	credential_id?: string;
 	name?: string;
 	base_url?: string;
 	api_key?: string;

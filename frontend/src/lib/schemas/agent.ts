@@ -55,13 +55,13 @@ const durationSchema = z
  */
 export const agentSetupSchema = z.object({
 	name: nameSchema,
-	provider_type: z.enum(['openai', 'gemini']),
+	provider_type: z.enum(['openai', 'gemini', 'openai_chatgpt']),
 	provider_name: z
 		.string()
 		.trim()
 		.max(64, tooLong)
 		.refine((value) => !/\s/.test(value), 'provider_name'),
-	base_url: optionalUrlSchema,
+	base_url: optionalUrlSchema.optional(),
 	api_key: z.string().optional(),
 	model: z.string().trim().min(1, required).max(256, tooLong),
 	telegram_token: telegramTokenSchema,

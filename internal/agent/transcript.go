@@ -19,6 +19,7 @@ const transcriptVersion = 2
 //
 // Entries already marked with Version >= 2 are returned unchanged.
 func MigrateLegacyTranscript(messages []provider.Message) []provider.Message {
+	messages = CloneMessages(messages)
 	needsExpansion := false
 	for _, msg := range messages {
 		if msg.Version < transcriptVersion && msg.Role == "assistant" && len(msg.Trace) > 0 {
@@ -161,6 +162,11 @@ func EstimateTokens(messages []provider.Message) int {
 				total += imageTokenCost
 			}
 		}
+		// Encrypted continuation items also occupy request context, even though
+		// they must never be rendered as thought text.
+		for _, raw := range msg.ProviderMetadata {
+			total += estimateText(string(raw))
+		}
 		for _, tc := range msg.ToolCalls {
 			total += estimateText(tc.Function.Name)
 			total += estimateText(argsToString(tc.Function.Arguments))
@@ -277,6 +283,7 @@ func stripMessageImages(msg *provider.Message) (count, bytes int) {
 	}
 	kept = append(kept, provider.ContentItem{Type: "text", Text: imagePlaceholder})
 	msg.Content = kept
+	msg.ProviderMetadata = nil
 	return count, bytes
 }
 
@@ -328,6 +335,7 @@ func SanitizeImageDataURLs(messages []provider.Message) []provider.Message {
 			out = append([]provider.Message(nil), messages...)
 		}
 		out[i].Content = repaired
+		out[i].ProviderMetadata = nil
 	}
 
 	if out == nil {

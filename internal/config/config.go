@@ -33,6 +33,8 @@ var DiscordBotToken string
 var LLMProviderBaseURL string
 var LLMProviderName string
 var LLMProviderAPIKey string
+var LLMProviderAuthMode string
+var LLMProviderCredentialID string
 var LLMDefaultModel string
 var StreamResponse bool
 var A2AToken string
@@ -328,7 +330,11 @@ type ToolPriceConfig struct {
 // Input is the cache-miss price and CacheHit the discounted price for prompt
 // tokens served from the provider cache. OffPeak replaces the triplet outside
 // every PeakWindows entry; only models that declare both get peak pricing.
+// Provider is optional metadata; it is not used for billing or routing, but
+// preserving it keeps a price file's catalog aligned with model capabilities
+// when the control plane rewrites the file.
 type ModelPriceConfig struct {
+	Provider    string            `json:"provider,omitempty"`
 	Input       float64           `json:"input"`
 	CacheHit    float64           `json:"cache_hit,omitempty"`
 	Output      float64           `json:"output"`
@@ -413,6 +419,8 @@ type ProviderConfig struct {
 	Type         string `json:"type"`
 	BaseURL      string `json:"base_url,omitempty"`
 	APIKey       string `json:"api_key,omitempty"`
+	AuthMode     string `json:"auth_mode,omitempty"`
+	CredentialID string `json:"credential_id,omitempty"`
 	DefaultModel string `json:"default_model,omitempty"`
 }
 
@@ -533,7 +541,35 @@ func SaveConfig(config *Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return WriteConfigAtomic(path, data)
+}
+
+// WriteConfigAtomic keeps API keys private and never leaves a truncated config
+// behind when a write fails. OAuth tokens live in a separate credential store.
+func WriteConfigAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(dir, ".config-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+	if err := file.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), path)
 }
 
 func LoadJSONConfigOnly() (*Config, error) {
@@ -612,6 +648,9 @@ func LoadBaseConfig() {
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
+	LLMProviderAuthMode = ""
+	LLMProviderCredentialID = ""
+	CurrentProviderID = ""
 	LLMDefaultModel = ""
 
 	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")
@@ -790,6 +829,8 @@ func LoadBaseConfig() {
 			if provider, exists := jsonConfig.Providers[jsonConfig.DefaultProvider]; exists {
 				LLMProviderName = provider.Type
 				LLMProviderAPIKey = provider.APIKey
+				LLMProviderAuthMode = provider.AuthMode
+				LLMProviderCredentialID = provider.CredentialID
 				LLMProviderBaseURL = provider.BaseURL
 				LLMDefaultModel = provider.DefaultModel
 			}

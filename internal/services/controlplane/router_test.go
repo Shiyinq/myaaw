@@ -62,10 +62,10 @@ func TestRouterListsOnboardingCapabilities(t *testing.T) {
 	}
 	doJSON(t, app, "GET", "/capabilities", token, "", fiber.StatusOK, &caps)
 
-	if len(caps.Providers) != 3 {
+	if len(caps.Providers) != 4 {
 		t.Fatalf("providers = %+v", caps.Providers)
 	}
-	if caps.Providers[0].ID != "openai" || caps.Providers[1].ID != "deepseek" || caps.Providers[2].ID != "gemini" {
+	if caps.Providers[0].ID != "openai" || caps.Providers[1].ID != "deepseek" || caps.Providers[2].ID != "gemini" || caps.Providers[3].ID != "openai_chatgpt" {
 		t.Fatalf("providers = %+v", caps.Providers)
 	}
 	if caps.Providers[1].Type != "openai" || caps.Providers[1].DefaultBaseURL != "https://api.deepseek.com" {

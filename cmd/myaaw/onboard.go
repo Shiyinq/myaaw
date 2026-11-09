@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"myaaw/internal/agentdir"
+	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/daemon"
@@ -40,6 +42,7 @@ type onboardOptions struct {
 	provName        string
 	baseURL         string
 	apiKey          string
+	credentialID    string
 	model           string
 	channel         string
 	tgMode          string
@@ -86,10 +89,11 @@ func registerOnboardFlags(cmd *cobra.Command) {
 	f.BoolVar(&onboardOpts.json, "json", false, "print a machine-readable summary (implies --yes)")
 	f.BoolVar(&onboardOpts.force, "force", false, "reconfigure an agent that already exists")
 	f.BoolVar(&onboardOpts.install, "install", false, "copy the binary to ~/.local/bin")
-	f.StringVar(&onboardOpts.provider, "provider", "", "provider type: openai or gemini")
+	f.StringVar(&onboardOpts.provider, "provider", "", "provider type: openai, gemini, or openai_chatgpt (ChatGPT Subscription)")
 	f.StringVar(&onboardOpts.provName, "provider-name", "", "provider name stored in config.json (default: the type)")
 	f.StringVar(&onboardOpts.baseURL, "base-url", "", "provider base URL (default: the public endpoint)")
 	f.StringVar(&onboardOpts.apiKey, "api-key", "", "provider API key (prefer MYAAW_API_KEY)")
+	f.StringVar(&onboardOpts.credentialID, "credential-id", "", "existing local ChatGPT Subscription credential ID (no API key)")
 	f.StringVar(&onboardOpts.model, "model", "", "default model (default: the provider default)")
 	f.StringVar(&onboardOpts.channel, "channel", "", "channels: telegram, discord, both, or skip")
 	f.StringVar(&onboardOpts.tgMode, "telegram-mode", "polling", "telegram mode: polling or webhook")
@@ -161,7 +165,7 @@ func newOnboardingModel(agentName string, createNow bool) onboardModel {
 	}
 	m.step = stepProviderType
 	m.cursor = 0
-	m.choices = []string{"OpenAI (or compatible)", "Gemini"}
+	m.choices = []string{"OpenAI (or compatible)", "Gemini", chatgpt.Label}
 	return m
 }
 
@@ -246,6 +250,8 @@ type onboardModel struct {
 	providerBaseURL string
 	providerModel   string
 	llmKey          string
+	credentialID    string
+	chatGPTCancel   context.CancelFunc
 	models          []string
 	modelsLoading   bool
 	modelsErr       error
@@ -536,6 +542,17 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case chatGPTSignedInMsg:
+		m.credentialID = msg.credentialID
+		m.chatGPTCancel = nil
+		if msg.err != nil {
+			m.modelsLoading = false
+			m.modelsErr = msg.err
+			m.choices = []string{"Retry browser sign-in"}
+			m.cursor = 0
+			return m, nil
+		}
+		return m, fetchChatGPTModels(m.credentialID)
 	case modelsFetchedMsg:
 		return m.handleModels(msg), nil
 
@@ -558,6 +575,9 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.isRunning || m.modelsLoading {
 			if msg.String() == "ctrl+c" {
+				if m.chatGPTCancel != nil {
+					m.chatGPTCancel()
+				}
 				return m, tea.Quit
 			}
 			return m, nil
@@ -844,6 +864,8 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch choice {
+		case chatgpt.Label:
+			m.providerType = chatgpt.ProviderType
 		case "Gemini":
 			m.providerType = "gemini"
 		case "OpenAI (or compatible)":
@@ -870,6 +892,14 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.providerName = name
+		if m.providerType == chatgpt.ProviderType {
+			m.providerBaseURL, m.llmKey, m.providerModel, m.credentialID = "", "", "", ""
+			if saved, ok := m.existingProvider(name); ok && saved.Type == chatgpt.ProviderType {
+				m.credentialID, m.providerModel = saved.CredentialID, saved.DefaultModel
+			}
+			return m.startChatGPTSignIn()
+		}
+		m.credentialID = ""
 		m.providerBaseURL = provider.DefaultBaseURL(m.providerType)
 		m.providerModel = ""
 		// Reconfiguring an existing provider keeps its endpoint and model, so
@@ -922,6 +952,9 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, fetchProviderModels(m.providerType, m.providerBaseURL, m.llmKey)
 
 	case stepProviderModel:
+		if m.providerType == chatgpt.ProviderType && !m.modelsLoading && (m.modelsErr != nil || len(m.models) == 0) {
+			return m.startChatGPTSignIn()
+		}
 		if m.modelsLoading {
 			return m, nil
 		}
@@ -1267,29 +1300,31 @@ func (m onboardModel) input() onboardInput {
 		skills = nil
 	}
 	return onboardInput{
-		ProviderName:       providerName,
-		ProviderType:       m.providerType,
-		ProviderBaseURL:    m.providerBaseURL,
-		ProviderAPIKey:     m.llmKey,
-		ProviderModel:      m.providerModel,
-		TelegramToken:      m.telegramToken,
-		TelegramMode:       m.telegramMode,
-		TelegramWebhookURL: m.telegramWebhookURL,
-		DiscordToken:       m.discordToken,
-		DisableTelegram:    m.disableTelegram && m.telegramToken == "",
-		DisableDiscord:     m.disableDiscord && m.discordToken == "",
-		BotType:            m.botType,
-		Heartbeat:          m.heartbeat,
-		HeartbeatSet:       m.heartbeatSet,
-		HeartbeatChannel:   m.heartbeatChannel,
-		HeartbeatTo:        m.heartbeatTo,
-		HeartbeatEvery:     m.heartbeatEvery,
-		OwnerIDs:           m.ownerIDsAll(),
-		OwnersSet:          m.ownersAsked,
-		Skills:             skills,
-		SkillsSet:          !m.skipSkills,
-		DisabledTools:      m.disabledTools(),
-		UpdateTools:        !m.skipTools,
+		ProviderName:         providerName,
+		ProviderType:         m.providerType,
+		ProviderBaseURL:      m.providerBaseURL,
+		ProviderAPIKey:       m.llmKey,
+		ProviderCredentialID: m.credentialID,
+		ProviderAuthMode:     chatGPTAuthMode(m.providerType),
+		ProviderModel:        m.providerModel,
+		TelegramToken:        m.telegramToken,
+		TelegramMode:         m.telegramMode,
+		TelegramWebhookURL:   m.telegramWebhookURL,
+		DiscordToken:         m.discordToken,
+		DisableTelegram:      m.disableTelegram && m.telegramToken == "",
+		DisableDiscord:       m.disableDiscord && m.discordToken == "",
+		BotType:              m.botType,
+		Heartbeat:            m.heartbeat,
+		HeartbeatSet:         m.heartbeatSet,
+		HeartbeatChannel:     m.heartbeatChannel,
+		HeartbeatTo:          m.heartbeatTo,
+		HeartbeatEvery:       m.heartbeatEvery,
+		OwnerIDs:             m.ownerIDsAll(),
+		OwnersSet:            m.ownersAsked,
+		Skills:               skills,
+		SkillsSet:            !m.skipSkills,
+		DisabledTools:        m.disabledTools(),
+		UpdateTools:          !m.skipTools,
 	}
 }
 
@@ -1315,14 +1350,16 @@ func (m *onboardModel) setupOwnerInputs() {
 // providerTypeChoices adds an explicit keep-current option when updating.
 func (m onboardModel) providerTypeChoices() []string {
 	if m.agentExistedAtStart {
-		return []string{keepProviderOption, "OpenAI (or compatible)", "Gemini"}
+		return []string{keepProviderOption, "OpenAI (or compatible)", "Gemini", chatgpt.Label}
 	}
-	return []string{"OpenAI (or compatible)", "Gemini"}
+	return []string{"OpenAI (or compatible)", "Gemini", chatgpt.Label}
 }
 
 func (m onboardModel) providerTypeCursor() int {
 	if m.agentExistedAtStart {
 		switch m.providerType {
+		case chatgpt.ProviderType:
+			return 3
 		case "gemini":
 			return 2
 		case "openai":
@@ -1330,6 +1367,9 @@ func (m onboardModel) providerTypeCursor() int {
 		default:
 			return 0
 		}
+	}
+	if m.providerType == chatgpt.ProviderType {
+		return 2
 	}
 	if m.providerType == "gemini" {
 		return 1
@@ -1591,6 +1631,13 @@ func (m onboardModel) handleModels(msg modelsFetchedMsg) onboardModel {
 	m.models = msg.models
 
 	if msg.err != nil || len(msg.models) == 0 {
+		if m.providerType == chatgpt.ProviderType {
+			m.modelManual = false
+			m.modelsErr = fmt.Errorf("ChatGPT Subscription model discovery failed; reconnect and retry (no API fallback)")
+			m.choices = []string{"Retry browser sign-in"}
+			m.cursor = 0
+			return m
+		}
 		m.modelManual = true
 		m.choices = nil
 		m.resetInput("e.g. gpt-4o", false)
@@ -1600,7 +1647,10 @@ func (m onboardModel) handleModels(msg modelsFetchedMsg) onboardModel {
 		return m
 	}
 	m.modelManual = false
-	m.choices = append(append([]string{}, msg.models...), manualModelOption)
+	m.choices = append([]string{}, msg.models...)
+	if m.providerType != chatgpt.ProviderType {
+		m.choices = append(m.choices, manualModelOption)
+	}
 	m.cursor = 0
 	// Start on the model that is already configured, if the provider still
 	// offers it.
@@ -1726,6 +1776,12 @@ func (m onboardModel) previousStep() onboardModel {
 		m.textInput.SetValue(m.providerBaseURL)
 
 	case stepProviderModel:
+		if m.providerType == chatgpt.ProviderType {
+			m.step = stepProviderName
+			m.resetInput(m.providerName, false)
+			m.textInput.SetValue(m.providerName)
+			break
+		}
 		m.step = stepProviderKey
 		m.resetInput("API key", true)
 		m.textInput.SetValue(m.llmKey)
@@ -1744,6 +1800,10 @@ func (m onboardModel) previousStep() onboardModel {
 			break
 		}
 		m.step = stepProviderModel
+		if m.providerType == chatgpt.ProviderType {
+			m = m.handleModels(modelsFetchedMsg{models: m.models, err: m.modelsErr})
+			break
+		}
 		if m.modelManual || len(m.models) == 0 {
 			m.modelManual = true
 			m.choices = nil
@@ -1939,7 +1999,13 @@ func (m onboardModel) renderContent() string {
 		b.WriteString(titleStyle.Render("Default Model"))
 		switch {
 		case m.modelsLoading:
-			b.WriteString("\n\n" + theme.SecondaryStyle.Render("Fetching available models from "+m.providerName+"..."))
+			if m.providerType == chatgpt.ProviderType {
+				b.WriteString("\n\nChatGPT Subscription: complete sign-in in the browser on this machine. Then fetching available models...\nCtrl+C cancels.")
+			} else {
+				b.WriteString("\n\n" + theme.SecondaryStyle.Render("Fetching available models from "+m.providerName+"..."))
+			}
+		case m.providerType == chatgpt.ProviderType && m.modelsErr != nil:
+			b.WriteString("\n\n" + m.modelsErr.Error() + "\nRecovery credential ID: " + m.credentialID + "\n\n" + m.renderChoices())
 		case m.modelManual:
 			b.WriteString("\n\n")
 			if m.modelsErr != nil {
@@ -2119,8 +2185,13 @@ func (m onboardModel) renderSummary() string {
 	if m.skipProvider {
 		row("Provider", "unchanged (current)")
 	} else {
-		row("Provider", fmt.Sprintf("%s [%s]", m.providerName, m.providerType))
-		row("Base URL", m.providerBaseURL)
+		if m.providerType == chatgpt.ProviderType {
+			row("Provider", fmt.Sprintf("%s [%s]", m.providerName, chatgpt.Label))
+			row("Credential ID", m.credentialID)
+		} else {
+			row("Provider", fmt.Sprintf("%s [%s]", m.providerName, m.providerType))
+			row("Base URL", m.providerBaseURL)
+		}
 		row("Model", m.providerModel)
 	}
 	if m.skipSkills {
@@ -2560,8 +2631,8 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 		}
 	} else {
 		providerType := strings.ToLower(strings.TrimSpace(opts.provider))
-		if providerType != "openai" && providerType != "gemini" {
-			return in, fmt.Errorf("--provider must be openai or gemini")
+		if providerType != "openai" && providerType != "gemini" && providerType != chatgpt.ProviderType {
+			return in, fmt.Errorf("--provider must be openai, gemini, or openai_chatgpt")
 		}
 
 		providerName := strings.TrimSpace(opts.provName)
@@ -2574,45 +2645,69 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 			return in, fmt.Errorf("--provider-name cannot contain spaces")
 		}
 
-		baseURL := strings.TrimRight(strings.TrimSpace(opts.baseURL), "/")
-		if baseURL == "" && existing != nil {
-			// Keep the saved endpoint of the provider being updated.
-			baseURL = strings.TrimRight(existing.Providers[providerName].BaseURL, "/")
-		}
-		if baseURL == "" {
-			baseURL = provider.DefaultBaseURL(providerType)
-		}
-		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-			return in, fmt.Errorf("--base-url must start with http:// or https://")
-		}
+		if providerType == chatgpt.ProviderType {
+			id := strings.TrimSpace(opts.credentialID)
+			var saved config.ProviderConfig
+			if existing != nil {
+				saved = existing.Providers[providerName]
+			}
+			if id == "" && saved.Type == providerType {
+				id = saved.CredentialID
+			}
+			pc := config.ProviderConfig{Type: providerType, AuthMode: "oauth", CredentialID: id, APIKey: opts.apiKey, BaseURL: opts.baseURL}
+			if err := onboard.NormalizeProviderAuth(&pc); err != nil {
+				return in, err
+			}
+			model := strings.TrimSpace(opts.model)
+			if model == "" && saved.Type == providerType {
+				model = saved.DefaultModel
+			}
+			if model == "" {
+				return in, fmt.Errorf("--model is required for headless ChatGPT Subscription setup; discover models after connecting")
+			}
+			in.ProviderName, in.ProviderType, in.ProviderModel = providerName, providerType, model
+			in.ProviderAuthMode, in.ProviderCredentialID = "oauth", pc.CredentialID
+		} else {
+			baseURL := strings.TrimRight(strings.TrimSpace(opts.baseURL), "/")
+			if baseURL == "" && existing != nil {
+				// Keep the saved endpoint of the provider being updated.
+				baseURL = strings.TrimRight(existing.Providers[providerName].BaseURL, "/")
+			}
+			if baseURL == "" {
+				baseURL = provider.DefaultBaseURL(providerType)
+			}
+			if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+				return in, fmt.Errorf("--base-url must start with http:// or https://")
+			}
 
-		apiKey := firstNonEmpty(opts.apiKey, os.Getenv("MYAAW_API_KEY"))
-		if apiKey == "" && existing != nil {
-			apiKey = existing.Providers[providerName].APIKey
-		}
-		if isTemplateValue(apiKey) {
-			apiKey = ""
-		}
-		if apiKey == "" {
-			return in, fmt.Errorf("--api-key or MYAAW_API_KEY is required")
-		}
+			apiKey := firstNonEmpty(opts.apiKey, os.Getenv("MYAAW_API_KEY"))
+			if apiKey == "" && existing != nil {
+				apiKey = existing.Providers[providerName].APIKey
+			}
+			if isTemplateValue(apiKey) {
+				apiKey = ""
+			}
+			if apiKey == "" {
+				return in, fmt.Errorf("--api-key or MYAAW_API_KEY is required")
+			}
 
-		model := strings.TrimSpace(opts.model)
-		if model == "" && existing != nil {
-			model = existing.Providers[providerName].DefaultModel
-		}
-		if model == "" {
-			model = provider.DefaultModel(providerType)
-		}
-		if model == "" {
-			return in, fmt.Errorf("--model is required")
-		}
+			model := strings.TrimSpace(opts.model)
+			if model == "" && existing != nil {
+				model = existing.Providers[providerName].DefaultModel
+			}
+			if model == "" {
+				model = provider.DefaultModel(providerType)
+			}
+			if model == "" {
+				return in, fmt.Errorf("--model is required")
+			}
 
-		in.ProviderName = providerName
-		in.ProviderType = providerType
-		in.ProviderBaseURL = baseURL
-		in.ProviderAPIKey = apiKey
-		in.ProviderModel = model
+			in.ProviderName = providerName
+			in.ProviderType = providerType
+			in.ProviderBaseURL = baseURL
+			in.ProviderAPIKey = apiKey
+			in.ProviderModel = model
+		}
 	}
 
 	channel := strings.ToLower(strings.TrimSpace(opts.channel))

@@ -20,6 +20,7 @@
 	import AgentColorPicker from '$lib/components/onboard/AgentColorPicker.svelte';
 	import Section from '$lib/components/onboard/Section.svelte';
 	import FieldError from '$lib/components/common/FieldError.svelte';
+	import ChatGPTConnection from '$lib/components/common/ChatGPTConnection.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -40,7 +41,8 @@
 		CapabilitiesView,
 		ModelListView,
 		OnboardRequest,
-		ProviderOption
+		ProviderOption,
+		ProviderConnection
 	} from '$lib/types';
 
 	const { t } = useTranslation();
@@ -71,6 +73,16 @@
 	let apiKey = $state('');
 	let model = $state('');
 	let savedProvider = $state<{ name: string; keyConfigured: boolean } | null>(null);
+	let credentialId = $state('');
+	let connection = $state<ProviderConnection | undefined>();
+	let connecting = $state(false);
+	let connectionVersion = $state(0);
+	let isChatGPT = $derived(providerType === 'openai_chatgpt');
+	let connected = $derived(
+		!!credentialId &&
+			!!connection?.configured &&
+			['connected', 'refresh_required'].includes(connection.status)
+	);
 
 	let discovered = $state<ModelListView | null>(null);
 	let discovering = $state(false);
@@ -139,6 +151,11 @@
 			default_model: 'gpt-4o'
 		},
 		{
+			id: 'openai_chatgpt',
+			type: 'openai_chatgpt',
+			label: 'ChatGPT Subscription'
+		},
+		{
 			id: 'deepseek',
 			type: 'openai',
 			label: 'DeepSeek',
@@ -156,6 +173,7 @@
 	let providerChoices = $derived.by(() => {
 		const presets = (capabilities?.providers ?? []).map((option, index) => ({
 			...option,
+			label: option.type === 'openai_chatgpt' ? 'ChatGPT Subscription' : option.label,
 			// Older control planes omit `id`; fall back to the wire type so every
 			// option stays unique and the select keeps working.
 			id: option.id || option.type || `preset-${index}`
@@ -181,7 +199,10 @@
 			savedProvider.keyConfigured &&
 			providerName.trim() === savedProvider.name
 	);
-	let canDiscover = $derived(baseUrl.trim() !== '' && (apiKey.trim() !== '' || useSavedKey));
+	let canDiscover = $derived(
+		!connecting &&
+			(isChatGPT ? connected : baseUrl.trim() !== '' && (apiKey.trim() !== '' || useSavedKey))
+	);
 
 	// The heartbeat can only use channels this agent has, like the terminal's
 	// heartbeat step, which lists configured channels only.
@@ -214,9 +235,14 @@
 	);
 
 	let snapshot = $derived<SetupSnapshot>({
-		provider: [providerType, providerName.trim(), baseUrl.trim(), model.trim(), apiKey.trim()].join(
-			'|'
-		),
+		provider: [
+			providerType,
+			providerName.trim(),
+			baseUrl.trim(),
+			model.trim(),
+			apiKey.trim(),
+			credentialId
+		].join('|'),
 		skills: selectedSkills.join(','),
 		tools: disabledTools.join(','),
 		channels: [
@@ -283,7 +309,17 @@
 		}
 	});
 
+	function clearConnection() {
+		connectionVersion += 1;
+		credentialId = '';
+		connection = undefined;
+		connecting = false;
+		clearDiscovered();
+	}
+
 	async function initialise() {
+		const target = agentParam;
+		clearConnection();
 		loading = true;
 		loadError = '';
 		errors = {};
@@ -296,8 +332,9 @@
 				loadError = `${t('myaaw.onboard.load_failed')} ${getErrorMessage(err)}`;
 			}
 
-			if (agentParam) {
-				await prefill(agentParam);
+			if (target !== agentParam) return;
+			if (target) {
+				await prefill(target);
 			} else {
 				resetForm();
 			}
@@ -309,6 +346,11 @@
 	/** Mirrors the wizard defaults: no skills, every built-in tool enabled. */
 	function resetForm() {
 		name = '';
+		credentialId = '';
+		connection = undefined;
+		connecting = false;
+		connectionVersion += 1;
+		savedProvider = null;
 		presetId = '';
 		providerName = '';
 		apiKey = '';
@@ -341,6 +383,10 @@
 
 	/** Applies a provider preset: wire type, endpoint and default model. */
 	function applyPreset(id: string, resetName = false) {
+		connectionVersion += 1;
+		credentialId = '';
+		connection = undefined;
+		connecting = false;
 		const previous = providerChoices.find((option) => option.id === presetId);
 		const next = providerChoices.find((option) => option.id === id) ?? providerChoices[0];
 		presetId = next.id;
@@ -365,6 +411,7 @@
 				agentsApi.get(target)
 			]);
 
+			if (target !== agentParam) return;
 			name = target;
 			serverRunning = info.running;
 			agentColor = colorOf(info.agent_color);
@@ -372,7 +419,15 @@
 			const provider =
 				config.providers.find((item) => item.name === config.default_provider) ??
 				config.providers[0];
-			providerType = provider?.type === 'gemini' ? 'gemini' : 'openai';
+			providerType =
+				provider?.type === 'openai_chatgpt'
+					? 'openai_chatgpt'
+					: provider?.type === 'gemini'
+						? 'gemini'
+						: 'openai';
+			credentialId = provider?.credential_id ?? '';
+			connection = provider?.connection;
+			connectionVersion += 1;
 			providerName = provider?.name ?? '';
 			baseUrl = provider?.base_url ?? '';
 			model = provider?.default_model ?? '';
@@ -380,7 +435,7 @@
 			discovered = null;
 			manualModel = false;
 			savedProvider = provider
-				? { name: provider.name, keyConfigured: provider.api_key.configured }
+				? { name: provider.name, keyConfigured: provider.api_key?.configured ?? false }
 				: null;
 
 			// Match the stored endpoint to a preset so the select shows the right
@@ -436,16 +491,25 @@
 
 	async function discover() {
 		if (!canDiscover) return;
+		const discoveryKey = [agentParam, name, providerType, baseUrl, apiKey, credentialId].join('|');
 		discovering = true;
 		try {
-			const view =
-				useSavedKey && savedProvider
+			const view = isChatGPT
+				? await providersApi.modelsForCredentials({
+						type: 'openai_chatgpt',
+						credential_id: credentialId
+					})
+				: useSavedKey && savedProvider
 					? await providersApi.models(agentParam, savedProvider.name)
 					: await providersApi.modelsForCredentials({
 							type: providerType,
 							base_url: baseUrl.trim() || undefined,
 							api_key: apiKey.trim() || undefined
 						});
+			if (
+				discoveryKey !== [agentParam, name, providerType, baseUrl, apiKey, credentialId].join('|')
+			)
+				return;
 			discovered = view;
 			manualModel = false;
 			if (view.models.length > 0 && !view.models.includes(model)) {
@@ -478,8 +542,9 @@
 			payload.provider = {
 				type: data.provider_type,
 				name: data.provider_name || undefined,
-				base_url: data.base_url || undefined,
-				api_key: data.api_key?.trim() || undefined,
+				...(isChatGPT
+					? { auth_mode: 'oauth' as const, credential_id: credentialId }
+					: { base_url: data.base_url || undefined, api_key: data.api_key?.trim() || undefined }),
 				model: data.model
 			};
 		}
@@ -528,13 +593,18 @@
 	}
 
 	async function submit() {
+		if (connecting) return;
+		if (isChatGPT && !connected) {
+			toastStore.error(t('myaaw.chatgpt.connect_required'));
+			return;
+		}
 		const target = (agentParam || name).trim();
 		const result = validate(agentSetupSchema, {
 			name: target,
 			provider_type: providerType,
 			provider_name: providerName,
-			base_url: baseUrl,
-			api_key: apiKey,
+			base_url: isChatGPT ? undefined : baseUrl,
+			api_key: isChatGPT ? undefined : apiKey,
 			model,
 			telegram_token: telegramToken,
 			webhook_url: webhookUrl,
@@ -548,7 +618,7 @@
 		}
 
 		const fieldErrors: FieldErrors = {};
-		if (!initial && apiKey.trim() === '') fieldErrors.api_key = 'api_key_required';
+		if (!isChatGPT && !initial && apiKey.trim() === '') fieldErrors.api_key = 'api_key_required';
 		if (wantsTelegram && telegramToken.trim() === '' && !telegramConfigured) {
 			fieldErrors.telegram_token = 'required';
 		}
@@ -609,7 +679,7 @@
 			onclick={() => void submit()}
 			variant="default"
 			loading={saving}
-			disabled={loading}
+			disabled={loading || connecting || (isChatGPT && !connected)}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -654,6 +724,7 @@
 						<Input
 							id="onboard-name"
 							bind:value={name}
+							oninput={clearConnection}
 							placeholder="research"
 							disabled={reconfigure}
 						/>
@@ -687,30 +758,48 @@
 						</p>
 						<FieldError code={errors.provider_name} />
 					</div>
-					<div class="grid content-start gap-1.5">
-						<Label for="onboard-base-url">{t('myaaw.providers.base_url')}</Label>
-						<Input
-							id="onboard-base-url"
-							bind:value={baseUrl}
-							placeholder={activePreset?.default_base_url ?? 'https://api.openai.com'}
-							oninput={clearDiscovered}
-						/>
-						<FieldError code={errors.base_url} />
-					</div>
+					{#if !isChatGPT}
+						<div class="grid content-start gap-1.5">
+							<Label for="onboard-base-url">{t('myaaw.providers.base_url')}</Label>
+							<Input
+								id="onboard-base-url"
+								bind:value={baseUrl}
+								placeholder={activePreset?.default_base_url ?? 'https://api.openai.com'}
+								oninput={clearDiscovered}
+							/>
+							<FieldError code={errors.base_url} />
+						</div>
+					{/if}
 				</div>
+				{#if isChatGPT}
+					{#key `${agentParam}:${name.trim()}:${connectionVersion}`}
+						<ChatGPTConnection
+							agent={(agentParam || name).trim()}
+							providerId={reconfigure && savedProvider?.name === providerName.trim()
+								? savedProvider.name
+								: undefined}
+							bind:credentialId
+							bind:connection
+							bind:busy={connecting}
+							onchange={clearDiscovered}
+						/>
+					{/key}
+				{/if}
 
 				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="grid content-start gap-1.5">
-						<Label for="onboard-api-key">{t('myaaw.providers.api_key')}</Label>
-						<Input
-							id="onboard-api-key"
-							type="password"
-							bind:value={apiKey}
-							placeholder={reconfigure ? t('myaaw.onboard.api_key_saved') : 'sk-...'}
-							oninput={clearDiscovered}
-						/>
-						<FieldError code={errors.api_key} />
-					</div>
+					{#if !isChatGPT}
+						<div class="grid content-start gap-1.5">
+							<Label for="onboard-api-key">{t('myaaw.providers.api_key')}</Label>
+							<Input
+								id="onboard-api-key"
+								type="password"
+								bind:value={apiKey}
+								placeholder={reconfigure ? t('myaaw.onboard.api_key_saved') : 'sk-...'}
+								oninput={clearDiscovered}
+							/>
+							<FieldError code={errors.api_key} />
+						</div>
+					{/if}
 					<div class="grid content-start gap-1.5">
 						<Label for="onboard-model">{t('myaaw.onboard.model')}</Label>
 						{#if discovered && discovered.models.length > 0 && !manualModel}
@@ -723,7 +812,9 @@
 							<Input
 								id="onboard-model"
 								bind:value={model}
-								placeholder={activePreset?.default_model ?? 'gpt-4o'}
+								placeholder={isChatGPT
+									? t('myaaw.chatgpt.model_hint')
+									: (activePreset?.default_model ?? 'gpt-4o')}
 							/>
 						{/if}
 						<FieldError code={errors.model} />
@@ -744,7 +835,11 @@
 						{t('myaaw.onboard.model_discover')}
 					</Button>
 					{#if !canDiscover}
-						<span>{t('myaaw.onboard.model_discover_hint')}</span>
+						<span
+							>{t(
+								isChatGPT ? 'myaaw.chatgpt.connect_required' : 'myaaw.onboard.model_discover_hint'
+							)}</span
+						>
 					{:else if discovered}
 						<span>
 							{discovered.source === 'live'

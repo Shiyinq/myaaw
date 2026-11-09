@@ -122,12 +122,7 @@ func (t *ProviderTool) CallTool(arguments string, ctx *tools.ToolsContext) strin
 			return fmt.Sprintf("Error: Provider '%s' not found.", name)
 		}
 
-		// Save global base url state
-		oldBaseURL := config.LLMProviderBaseURL
-		config.LLMProviderBaseURL = pConfig.BaseURL
-		defer func() { config.LLMProviderBaseURL = oldBaseURL }()
-
-		llm, err := baseProvider.CreateLLMProvider(pConfig.Type, pConfig.APIKey)
+		llm, err := baseProvider.CreateLLMProviderFromConfig(pConfig)
 		if err != nil {
 			return fmt.Sprintf("Error: Failed to create provider API client: %v", err)
 		}

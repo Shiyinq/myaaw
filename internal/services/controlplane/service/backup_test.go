@@ -1,11 +1,19 @@
 package service
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"myaaw/internal/agentdir"
+	"myaaw/internal/auth/chatgpt"
+	"myaaw/internal/config"
 )
 
 func newTestBackupService(t *testing.T) *BackupService {
@@ -66,6 +74,86 @@ func TestBackupServiceCreateListDelete(t *testing.T) {
 	// Deleting twice stays harmless.
 	if err := backups.Delete(name); err != nil {
 		t.Fatalf("Delete twice: %v", err)
+	}
+}
+
+func TestDefaultBackupExcludesHostChatGPTCredentials(t *testing.T) {
+	setupConfigAgent(t, &config.Config{
+		DefaultProvider: "subscription",
+		Providers:       map[string]config.ProviderConfig{"subscription": {Type: chatgpt.ProviderType, AuthMode: "oauth", CredentialID: testChatGPTID}},
+	})
+	if err := agentdir.RegisterAgent("myfriend"); err != nil {
+		t.Fatal(err)
+	}
+	writeChatGPTCredential(t, time.Now().Add(time.Hour))
+	credentialRoot := filepath.Join(os.Getenv("HOME"), ".myaaw", "credentials", "chatgpt")
+	pending := []byte(`{"id":"pending-registration-marker","client_id":"private-registration-marker"}`)
+	if err := os.WriteFile(filepath.Join(credentialRoot, "registrations", "pending.json"), pending, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Empty request is the default all-agents backup, including the global
+	// archive and secrets normally held inside agent roots. No --no-secrets.
+	created, err := newTestBackupService(t).Create(BackupRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created.Archives) != 2 {
+		t.Fatalf("archives = %d, want agent and global", len(created.Archives))
+	}
+	seenGlobal, seenReference, seenRegistry := false, false, false
+	for _, archive := range created.Archives {
+		if archive.Agent == "global" {
+			seenGlobal = true
+		}
+		file, err := os.Open(archive.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+		gz, err := gzip.NewReader(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer gz.Close()
+		reader := tar.NewReader(gz)
+		for {
+			header, err := reader.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(header.Name, "credentials") {
+				t.Fatalf("host credential path archived: %q", header.Name)
+			}
+			data, err := io.ReadAll(reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, secret := range []string{"secret-access", "secret-refresh", "secret-identity", "oaiapp_test", "account@example.test", "pending-registration-marker", "private-registration-marker"} {
+				if strings.Contains(string(data), secret) {
+					t.Fatalf("host credential material archived in %q", header.Name)
+				}
+			}
+			if header.Name == "agents.json" {
+				seenRegistry = true
+			}
+			if header.Name == "myfriend/config/config.json" {
+				seenReference = strings.Contains(string(data), testChatGPTID)
+			}
+		}
+	}
+	if !seenGlobal || !seenRegistry || !seenReference {
+		t.Fatalf("backup omitted expected non-secret data: global=%v registry=%v provider-reference=%v", seenGlobal, seenRegistry, seenReference)
+	}
+	// Exclusion must not be implemented by removing or changing the host store.
+	manager, err := chatgpt.DefaultManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Get(testChatGPTID); err != nil {
+		t.Fatal("backup changed host credential", err)
 	}
 }
 
