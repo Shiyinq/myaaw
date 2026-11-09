@@ -10,6 +10,7 @@
 #   --port <port>     WebUI port (default: 5050)
 #   --api-url <url>   Control-plane URL (default: http://localhost:9000)
 #   --connect <url>   Alias for --api-url (remote control plane)
+#   --public          Public hosting: disable /setup and hide host hints
 #   -h, --help        Show this help
 
 set -e
@@ -19,6 +20,7 @@ WEBUI_DIR="$HOME/.myaaw/webui"
 PORT="5050"
 API_URL="http://localhost:9000"
 VERSION=""
+PUBLIC=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -26,8 +28,9 @@ while [ "$#" -gt 0 ]; do
         --port) PORT="$2"; shift 2 ;;
         --api-url) API_URL="$2"; shift 2 ;;
         --connect) API_URL="$2"; shift 2 ;;
+        --public) PUBLIC=1; shift ;;
         		-h|--help)
-            			echo "Usage: webui-install.sh [--version TAG] [--port PORT] [--api-url URL] [--connect URL]"
+            			echo "Usage: webui-install.sh [--version TAG] [--port PORT] [--api-url URL] [--connect URL] [--public]"
             			exit 0
             			;;
         *)
@@ -73,11 +76,17 @@ rm -rf "$WEBUI_DIR/current"
 mkdir -p "$WEBUI_DIR/current"
 tar -xzf "$TMP_DIR/webui.tar.gz" -C "$WEBUI_DIR/current"
 
+PUBLIC_JSON="false"
+if [ "$PUBLIC" -eq 1 ]; then
+    PUBLIC_JSON="true"
+fi
+
 cat > "$WEBUI_DIR/config.json" <<EOF
 {
   "port": "${PORT}",
   "api_url": "${API_URL}",
-  "version": "${VERSION:-latest}"
+  "version": "${VERSION:-latest}",
+  "public": ${PUBLIC_JSON}
 }
 EOF
 
@@ -85,15 +94,21 @@ echo "✅ WebUI installed at ${WEBUI_DIR}/current"
 echo "🚀 Starting on http://127.0.0.1:${PORT} (control plane: ${API_URL})"
 
 cd "$WEBUI_DIR/current"
-nohup env PORT="$PORT" HOST=127.0.0.1 MYAAW_API_BASE_URL="$API_URL" \
-    node build/index.js > "$WEBUI_DIR/webui.log" 2>&1 &
+ENV_ARGS=(PORT="$PORT" HOST=127.0.0.1 MYAAW_API_BASE_URL="$API_URL")
+if [ "$PUBLIC" -eq 1 ]; then
+    ENV_ARGS+=(MYAAW_WEBUI_PUBLIC=1)
+fi
+nohup env "${ENV_ARGS[@]}" node build/index.js > "$WEBUI_DIR/webui.log" 2>&1 &
 
 echo "✅ WebUI started (PID: $!)"
 echo "📄 Logs: ${WEBUI_DIR}/webui.log"
 echo ""
 echo "Open http://127.0.0.1:${PORT} in your browser."
 
-if [ "$API_URL" = "http://localhost:9000" ]; then
+if [ "$PUBLIC" -eq 1 ]; then
+    echo "ℹ️  Public hosting: /setup and the login host hints are disabled."
+    echo "   Visitors only need the tunnel URL, username, and password."
+elif [ "$API_URL" = "http://localhost:9000" ]; then
     echo ""
     echo "ℹ️  No myaaw binary detected in this flow? The dashboard's /setup page"
     echo "   can download and install it, or connect to a remote control plane."

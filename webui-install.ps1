@@ -9,12 +9,14 @@
 #   -Port <port>     WebUI port (default: 5050)
 #   -ApiUrl <url>    Control-plane URL (default: http://localhost:9000)
 #   -Connect <url>   Alias for -ApiUrl (remote control plane)
+#   -Public          Public hosting: disable /setup and hide host hints
 
 param(
     [string]$Version = "",
     [int]$Port = 5050,
     [string]$ApiUrl = "http://localhost:9000",
-    [string]$Connect = ""
+    [string]$Connect = "",
+    [switch]$Public
 )
 
 $ErrorActionPreference = "Stop"
@@ -70,6 +72,7 @@ $Config = @{
     port    = "$Port"
     api_url = $ApiUrl
     version = $(if ($Version) { $Version } else { "latest" })
+    public  = [bool]$Public
 } | ConvertTo-Json
 Set-Content -Path (Join-Path $WebUIDir "config.json") -Value $Config -Encoding UTF8
 
@@ -78,6 +81,7 @@ Write-Host "WebUI installed at $Current" -ForegroundColor Green
 $env:PORT = "$Port"
 $env:HOST = "127.0.0.1"
 $env:MYAAW_API_BASE_URL = $ApiUrl
+if ($Public) { $env:MYAAW_WEBUI_PUBLIC = "1" }
 $Log = Join-Path $WebUIDir "webui.log"
 $ErrLog = Join-Path $WebUIDir "webui.err.log"
 
@@ -88,3 +92,6 @@ Write-Host "WebUI started on http://127.0.0.1:$Port (control plane: $ApiUrl)" -F
 Write-Host "Logs: $Log"
 Write-Host ""
 Write-Host "Open http://127.0.0.1:$Port in your browser."
+if ($Public) {
+    Write-Host "Public hosting: /setup and the login host hints are disabled."
+}

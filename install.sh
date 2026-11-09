@@ -9,19 +9,38 @@ INSTALL_DIR="$HOME/.local/bin"
 WEBUI=0
 WEBUI_ONLY=0
 NO_ONBOARD=0
+WEBUI_ARGS=()
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --webui) WEBUI=1; shift ;;
         --webui-only) WEBUI_ONLY=1; shift ;;
         --no-onboard) NO_ONBOARD=1; shift ;;
+        --public) WEBUI_ARGS+=("--public"); shift ;;
+        --connect|--webui-port|--webui-version)
+            if [ "$#" -lt 2 ]; then
+                echo "❌ $1 requires a value"
+                exit 1
+            fi
+            case "$1" in
+                --connect) WEBUI_ARGS+=("--connect" "$2") ;;
+                --webui-port) WEBUI_ARGS+=("--port" "$2") ;;
+                --webui-version) WEBUI_ARGS+=("--version" "$2") ;;
+            esac
+            shift 2
+            ;;
         -h|--help)
-            echo "Usage: install.sh [--webui] [--webui-only] [--no-onboard]"
+            echo "Usage: install.sh [--webui] [--webui-only] [--no-onboard] [--public]"
+            echo "                   [--connect URL] [--webui-port PORT] [--webui-version TAG]"
             echo ""
-            echo "  (no flags)     Install the binary and run onboarding"
-            echo "  --webui        Install the binary, then the dashboard"
-            echo "  --webui-only   Install only the dashboard (no binary)"
-            echo "  --no-onboard   Skip the onboarding wizard"
+            echo "  (no flags)       Install the binary and run onboarding"
+            echo "  --webui          Install the binary, then the dashboard"
+            echo "  --webui-only     Install only the dashboard (no binary)"
+            echo "  --no-onboard     Skip the onboarding wizard"
+            echo "  --connect URL    Dashboard: use a remote control plane URL"
+            echo "  --webui-port N   Dashboard port (default 5050)"
+            echo "  --webui-version  Dashboard release tag (default: latest)"
+            echo "  --public         Dashboard: disable /setup and host hints (public hosting)"
             exit 0
             ;;
         *)
@@ -32,7 +51,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 install_webui() {
-    curl -fsSL https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.sh \
+        | bash -s -- "${WEBUI_ARGS[@]}"
 }
 
 if [ "$WEBUI_ONLY" -eq 1 ]; then
