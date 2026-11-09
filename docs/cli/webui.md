@@ -29,8 +29,11 @@ curl -fsSL https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.sh
 ```
 
 ```powershell
-# Windows (PowerShell)
+# Windows (PowerShell): download, then run
+irm https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.ps1 -OutFile webui-install.ps1
 powershell -ExecutionPolicy Bypass -File .\webui-install.ps1
+# with a remote control plane / public hosting
+powershell -ExecutionPolicy Bypass -File .\webui-install.ps1 -Connect https://control.example.com -Public
 ```
 
 Or use the unified installer:

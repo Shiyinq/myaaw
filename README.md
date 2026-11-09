@@ -270,7 +270,14 @@ The dashboard is optional and can be installed with or without the binary. It is
 curl -fsSL https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.sh | bash
 ```
 
-On Windows: `powershell -ExecutionPolicy Bypass -File .\webui-install.ps1`. With the unified installer: `... | bash -s -- --webui-only` (dashboard only) or `--webui` (binary + dashboard).
+On Windows (PowerShell), download the script and run it:
+
+```powershell
+irm https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.ps1 -OutFile webui-install.ps1
+powershell -ExecutionPolicy Bypass -File .\webui-install.ps1
+```
+
+With the unified installer: `... | bash -s -- --webui-only` (dashboard only) or `--webui` (binary + dashboard).
 
 Flags go after `bash -s --`. For example, a frontend-only dashboard served to other people, pointed at a remote control plane through a tunnel:
 
@@ -286,7 +293,7 @@ curl -fsSL https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.sh
 | `--version <tag>` | Release tag to install (default: latest). |
 | `--public` | Public hosting: `/setup` returns `404`, and the default-credentials hint and the setup link are hidden on the login page. |
 
-The unified installer takes the same options: `... | bash -s -- --webui-only --connect https://control.example.com --public` (dashboard port and tag use `--webui-port` and `--webui-version`). On Windows: `.\webui-install.ps1 -Connect https://control.example.com -Public`. With the binary installed, `myaaw webui install --public` / `myaaw webui start --public` enable the same mode; visitor-facing details are in [WebUI Security](docs/webui/security.md).
+The unified installer takes the same options: `... | bash -s -- --webui-only --connect https://control.example.com --public` (dashboard port and tag use `--webui-port` and `--webui-version`). On Windows, run the downloaded script with the same options: `.\webui-install.ps1 -Connect https://control.example.com -Public`. With the binary installed, `myaaw webui install --public` / `myaaw webui start --public` enable the same mode; visitor-facing details are in [WebUI Security](docs/webui/security.md).
 
 **Or, if the binary is already installed:**
 ```bash

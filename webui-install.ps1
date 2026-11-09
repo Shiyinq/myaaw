@@ -1,8 +1,10 @@
 # Install the Myaaw WebUI (dashboard) without the myaaw binary (Windows).
 #
 # Usage (PowerShell):
+#   irm https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.ps1 -OutFile webui-install.ps1
 #   powershell -ExecutionPolicy Bypass -File .\webui-install.ps1
 #   powershell -ExecutionPolicy Bypass -File .\webui-install.ps1 -Connect https://abc.ngrok-free.app
+#   powershell -ExecutionPolicy Bypass -File .\webui-install.ps1 -Connect https://abc.ngrok-free.app -Public
 #
 # Options:
 #   -Version <tag>   Install a specific release tag (default: latest)
