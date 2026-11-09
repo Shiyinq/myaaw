@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 	import { fade } from 'svelte/transition';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import SEO from '$lib/components/common/SEO.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -43,8 +42,6 @@
 		void handleLogin();
 	}
 </script>
-
-<SEO title="Myaaw | {t('common.login')}" description={t('myaaw.login.subtitle')} />
 
 <div class="min-h-screen flex items-center justify-center p-6 bg-background page-clear relative">
 	<div class="w-full max-w-md" in:fade={{ duration: 200 }}>

@@ -15,6 +15,7 @@
 	import OfflinePage from './offline/+page.svelte';
 	import ReloadPrompt from '$lib/components/ReloadPrompt.svelte';
 	import { modeForTheme } from '$lib/theme';
+	import { documentDescription, documentTitle } from '$lib/utils/pageTitle';
 
 	interface Props {
 		data: { locale: string };
@@ -75,6 +76,13 @@
 
 	let isGuestRoute = $derived(page.url.pathname === '/login');
 
+	// The tab follows the route, so it names the page instead of keeping the
+	// title of whichever page was rendered last (e.g. "Myaaw | Login").
+	let documentMeta = $derived({
+		title: documentTitle(page.url.pathname),
+		description: documentDescription(page.url.pathname)
+	});
+
 	async function fetchInitialData() {
 		if (isInitialDataLoaded.value) return;
 		try {
@@ -99,9 +107,7 @@
 	});
 </script>
 
-{#if page.url.pathname !== '/'}
-	<SEO />
-{/if}
+<SEO title={documentMeta.title} description={documentMeta.description} />
 <ModeWatcher />
 <ReloadPrompt />
 
