@@ -267,3 +267,20 @@ func TestFindNodeReportsMissingPATH(t *testing.T) {
 		t.Fatalf("error does not report the searched PATH: %v", err)
 	}
 }
+
+func TestStartWebUIConfigKeepsStoredVersion(t *testing.T) {
+	stored := webUIConfig{Port: "5050", APIURL: "http://localhost:9000", Version: "v2"}
+	desired := webUIConfig{Port: "6000", APIURL: "http://api.internal", Version: "v1", Public: true}
+
+	got := startWebUIConfig(stored, desired, "/opt/node/bin/node")
+
+	if got.Version != "v2" {
+		t.Fatalf("version = %q, want the stored v2", got.Version)
+	}
+	if got.Port != "6000" || got.APIURL != "http://api.internal" || !got.Public {
+		t.Fatalf("start values not applied: %+v", got)
+	}
+	if got.NodePath != "/opt/node/bin/node" {
+		t.Fatalf("node path = %q", got.NodePath)
+	}
+}

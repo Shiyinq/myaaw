@@ -428,11 +428,17 @@ func startWebUI(cfg webUIConfig) error {
 		return err
 	}
 
-	// Keep the config in sync with what is actually running so `status` and the
-	// next start agree on the port and control-plane URL, and pin the Node.js
-	// binary resolved here: the service manager starts the daemon with a minimal
-	// PATH, where an nvm or asdf node is not reachable.
-	cfg.NodePath = node
+	// Merge into the config on disk instead of overwriting it: `webui update`
+	// records the new bundle version before restarting, and the copy captured
+	// before that install would revert it. Version also names the rollback
+	// backup, so a stale value corrupts the version history. The merge pins the
+	// Node.js binary resolved above as well, because the service manager starts
+	// the daemon with a minimal PATH where an nvm or asdf node is unreachable.
+	stored, err := loadWebUIConfig()
+	if err != nil {
+		stored = cfg
+	}
+	cfg = startWebUIConfig(stored, cfg, node)
 	if err := saveWebUIConfig(cfg); err != nil {
 		return fmt.Errorf("could not save the WebUI config: %w", err)
 	}
@@ -465,6 +471,17 @@ func waitWebUIRunning(timeout time.Duration) bool {
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
+}
+
+// startWebUIConfig overlays the values `webui start` owns onto the config read
+// from disk, keeping fields written by another command such as the bundle
+// version recorded by `webui update`.
+func startWebUIConfig(stored, desired webUIConfig, nodePath string) webUIConfig {
+	stored.Port = desired.Port
+	stored.APIURL = desired.APIURL
+	stored.Public = desired.Public
+	stored.NodePath = nodePath
+	return stored
 }
 
 func restartWebUI(cfg webUIConfig) error {
