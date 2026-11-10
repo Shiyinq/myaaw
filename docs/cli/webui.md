@@ -47,14 +47,14 @@ curl -fsSL .../install.sh | bash -s -- --webui       # binary + dashboard
 
 | Command | Description |
 | :--- | :--- |
-| `webui install` | Download and install the WebUI bundle. |
+| `webui install` | Download and install the WebUI bundle. Always downloads, even when that tag is already installed. |
 | `webui run` | Run the WebUI in the foreground. |
 | `webui start` | Start the WebUI as a background daemon. |
 | `webui stop` | Stop the WebUI daemon. |
 | `webui restart` | Restart the WebUI daemon. |
 | `webui status` | Check daemon status and print the URL. |
 | `webui version` | Print the installed bundle version, paths, and stored config. `--json` dumps them for scripts. |
-| `webui update` | Update to the latest bundle (restarts if running). |
+| `webui update` | Update to the latest bundle. Reports `already up to date` and skips the download when the installed tag matches; otherwise it restarts a running daemon. |
 | `webui rollback` | List or restore a previous bundle (`--version <tag>`). |
 | `webui uninstall` | Stop and remove the bundle. |
 | `webui open` | Open `http://127.0.0.1:5050` (starts it if needed). |
