@@ -21,6 +21,12 @@ func PingSQLite() error {
 		}
 	}
 
+	return PingSQLiteAt(dbPath)
+}
+
+// PingSQLiteAt checks one database file without touching the active agent's
+// globals, so status can inspect several agents in one process.
+func PingSQLiteAt(dbPath string) error {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
