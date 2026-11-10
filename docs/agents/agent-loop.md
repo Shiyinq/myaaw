@@ -89,6 +89,7 @@ flowchart TD
 1. **Defaults**
    - Empty `RunConfig` fields are filled from `DefaultRunConfig` and global configuration.
    - `MaxIterations`, `WarningThreshold`, timeouts, tool output limits, context budget, and repeat limit are applied.
+   - `ThinkingLevel` is copied from the active provider config and carried to the provider request, where the capability catalog decides what to send.
 
 2. **Run timeout**
    - If `RunTimeout > 0`, the engine wraps the context with `context.WithTimeout`.

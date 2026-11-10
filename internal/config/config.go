@@ -657,7 +657,7 @@ func LoadBaseConfig() {
 	LLMProviderCredentialID = ""
 	CurrentProviderID = ""
 	LLMDefaultModel = ""
-	LLMProviderThinkingLevel = ""
+	LLMProviderThinkingLevel = strings.TrimSpace(os.Getenv("LLM_THINKING_LEVEL"))
 
 	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")
 	TranscriberAPIKey = os.Getenv("TRANSCRIBER_API_KEY")

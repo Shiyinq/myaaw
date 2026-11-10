@@ -52,9 +52,9 @@ flowchart TD
 ```
 
 The runtime reloads provider config on a `config.json` change (`WatchConfig` →
-`LoadBaseConfig`), and `checkAndReloadProvider` recreates the provider because the
-level is part of `ProviderConfig`. A level change therefore applies to the next
-message without restarting the agent.
+`LoadBaseConfig`), so the next message reads the new level. The level is applied
+per request, not when the provider client is built, so no provider restart is
+needed.
 
 ## 4. Source of truth: the capability catalog
 
@@ -262,6 +262,12 @@ curl -X PUT http://localhost:9000/agents/default/providers/openai \
 Send `""` (or omit the level from the picker) to fall back to the model default.
 The provider view returns `thinking_level` so the dashboard restores the choice on
 reload.
+
+`.env` (lowest precedence; the provider config wins when it sets a level):
+
+| Variable | Meaning |
+|---|---|
+| `LLM_THINKING_LEVEL` | Default reasoning level for the active provider when `config.json` has none. |
 
 ## 10. Limitations
 
