@@ -245,6 +245,7 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | `approval_required` | `{"approval_id","tool_name","action","args_summary","subagent"?}` — a gated tool is waiting; `subagent` names the child task when relevant |
 | `approval_resolved` | `{"approval_id","decision","reason"}` |
 | `compaction` | `{"tokens_before","tokens_after","dropped_messages"}` — the transcript was trimmed |
+| `context` | `{"tokens","window","system_tokens","tool_tokens","message_tokens"}` — the newest request against the model's context window |
 | `done` | `{"ok":true,"text","conversation_id"?,"run_id"?,"usage"?,"attachments"?,"stopped"?}` |
 | `error` | `{"error":"..."}` followed by `done {"ok":false}` |
 
@@ -1375,7 +1376,9 @@ no run or span is loaded — so it also stays correct for sessions longer than t
 
 Only `llm.input_json`, `llm.output_json`, and `compaction.input_json` are written
 as JSON by the recorder. `system`, `user`, and `tool` blobs are raw text, so parse
-them only when the tool's own schema says its arguments are JSON.
+them only when the tool's own schema says its arguments are JSON. An `llm` span
+also carries `system_tokens`, `tool_tokens`, and `message_tokens` (the context
+breakdown estimate); `input_tokens` is the exact count from the provider usage.
 
 ### Thinking and text previews
 

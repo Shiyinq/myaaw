@@ -119,7 +119,7 @@ conversations. Tables:
 | Table | Contents |
 | :--- | :--- |
 | `runs` | One row per agent run: channel, user, conversation, model, trigger, status, totals, and the parent run for a subagent. |
-| `spans` | The trace tree: kind, parent, timing, tokens, cost, and the captured content. |
+| `spans` | The trace tree: kind, parent, timing, tokens (including the context breakdown on `llm` spans), cost, and the captured content. |
 | `checks` | Reserved for eval checks. |
 
 Writes happen on a background writer, batched, and flushed without blocking the
@@ -167,9 +167,11 @@ stay small. Periodic pruning inside the daemon is not implemented yet.
 The schema carries a `PRAGMA user_version`. A newer build upgrades an older
 database in place on open; version 2 added `parent_run_id` / `parent_span_id` for
 nested subagent runs, version 3 renamed `turn_index` to `step_index`, version 5
-added `trigger_type`, and version 6 added `tool_cost_usd`. Runs recorded before
-version 5 keep an empty trigger and are shown as `-`; the upgrade labels nested
-runs as `subagent` but does not guess between `user` and `cron` for the rest.
+added `trigger_type`, version 6 added `tool_cost_usd`, and version 7 added the
+context breakdown on `spans` (`system_tokens`, `tool_tokens`, `message_tokens`).
+Runs recorded before version 5 keep an empty trigger and are shown as `-`; the
+upgrade labels nested runs as `subagent` but does not guess between `user` and
+`cron` for the rest.
 
 Opening also reconciles the actual shape rather than trusting the version alone.
 If a database was opened by a build whose vocabulary differed — for example one
@@ -473,9 +475,11 @@ context breakdown are estimates (from `EstimateTokens`).**
 | **TTFT** | Time to first token: from sending the request until the first streamed delta. Includes queueing and prompt processing. Absent when no delta was streamed, for example a tool-call-only response. |
 | **generation** | Time from the first token to the end of the stream. Stored in `generation_ms`; not printed in the tree. |
 | **throughput** | `output_tokens ÷ (generation_ms ÷ 1000)`, in tokens per second. Derived, not stored. |
-| **input tokens** | Every token sent to the model: system prompt, history, tool results, and the new message. |
+| **input tokens** | Every token sent to the model on one request: system prompt, history, tool results, and the new message. Counted per request, so earlier turns are billed again on every call. |
 | **output tokens** | Tokens the model produced, including reasoning tokens when the provider reports them. |
 | **cached tokens** | Part of the input served from the provider's prompt cache; billed at `cache_hit` instead of `input`. |
+| **context tokens** | The `input_tokens` of the newest request: how full the window is now. Distinct from the cumulative session total. |
+| **context window** | The maximum tokens one request can hold (input + output) for a model. Not a cumulative budget: the limit applies to the transcript size, not to the session total. |
 | **cost** | `(miss × input + cached × cache_hit + output × output) ÷ 1,000,000`, using the price in force at request time. |
 | **p50 / p95** | Median and 95th percentile. Half the runs are faster than p50; 95% are faster than p95. Computed over finished runs only. |
 | **error rate** | Finished runs whose status is `error` or `interrupted`, divided by finished runs. |
@@ -944,7 +948,7 @@ All endpoints require the control plane bearer token.
 | `GET` | `/agents/:name/observability/summary?days=7` | Totals, percentiles, breakdowns, badges, cost-completeness flags, and `database_bytes`. |
 | `GET` | `/agents/:name/observability/sessions?limit` | Sessions with turn count, tokens, and cost. |
 | `GET` | `/agents/:name/observability/sessions/:id` | One session with every turn, **oldest first**, its step count, and its full spans (prompts, thinking, answers, tool payloads). Add `?spans=false` for metadata only. |
-| `GET` | `/agents/:name/observability/sessions/:id/stats` | Aggregate totals only: `turns`, `steps`, `input_tokens`, `output_tokens`, `cache_hit_tokens`, `total_tokens`, `uncached_input_tokens`, `cache_hit_rate`, `llm_ms`, `tool_ms`, `ttft_ms`, `tok_per_sec`, the newest run's `provider` and `model`, and `error_count`. |
+| `GET` | `/agents/:name/observability/sessions/:id/stats` | Aggregate totals only: `turns`, `steps`, `input_tokens`, `output_tokens`, `cache_hit_tokens`, `total_tokens`, `uncached_input_tokens`, `cache_hit_rate`, `llm_ms`, `tool_ms`, `ttft_ms`, `tok_per_sec`, the newest run's `provider` and `model`, `error_count`, and a `context` object for the newest request. |
 | `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&model&trigger&from&to` | List runs, newest first. `trigger` is `user`, `cron`, or `subagent`. |
 | `GET` | `/agents/:name/observability/runs/:id` | One run with flat `spans` and a nested `tree`. |
 | `DELETE` | `/agents/:name/observability/runs?before=<unix ms>` | Delete runs; without `before` deletes everything. |
@@ -979,7 +983,14 @@ sessions; `stats` has no such page and never loads a span.
   "tok_per_sec": 182,
   "llm_ms": 22700,
   "tool_ms": 13700,
-  "ttft_ms": 1600
+  "ttft_ms": 1600,
+  "context": {
+    "tokens": 9430,
+    "window": 1048576,
+    "system_tokens": 1400,
+    "tool_tokens": 7100,
+    "message_tokens": 930
+  }
 }
 ```
 
@@ -994,6 +1005,14 @@ are left out of the average rather than counted as zero). `tok_per_sec` covers
 the newest run only. `provider` is the provider **type** of the newest run
 (`openai`, `gemini`); the configured provider name (for example `deepseek`) lives
 in the agent config and is what the dashboard prints.
+
+`context` covers the **newest** request only, not the session sum. `tokens` is the
+exact `input_tokens` of the last `llm` span, `window` is the model's catalog
+limit, and `system_tokens` / `tool_tokens` / `message_tokens` are the pre-request
+estimate (shown with a `~`). It is omitted when the session has no model request
+yet. The cumulative `input_tokens` above is much larger because every request
+re-sends the transcript; see
+[Why the session total is larger than the context](#why-the-session-total-is-larger-than-the-context).
 
 An agent that has never recorded a run returns an empty summary rather than an
 error, so a dashboard can render before the first message.

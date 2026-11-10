@@ -160,6 +160,9 @@ data: <json>
 | `tool_result` | `{"id","name","result","is_error"}` | tool execution finished |
 | `approval_required` | `{"approval_id","tool_name","action","args_summary","args","subagent"?}` — a gated tool is waiting; `args` is the full JSON and `subagent` names the child task when relevant |
 | `approval_resolved` | `{"approval_id","decision","reason"}` | the decision was applied (or the request timed out) |
+| `retry` | `{"attempt":2}` | the provider request was retried |
+| `compaction` | `{"tokens_before","tokens_after","dropped_messages"}` | the transcript was trimmed before this request |
+| `context` | `{"tokens","window","system_tokens","tool_tokens","message_tokens"}` | the newest request against the model's context window; emitted at each model request |
 | `done` | `{"ok":true,"text":"...","conversation_id":"...","run_id":"...","usage":{...},"attachments":[{...}],"stopped":true}` | run finished; `conversation_id`, `run_id`, `usage`, `attachments`, and `stopped` are optional |
 | `error` | `{"error":"..."}` | run failed; followed by `done` with `ok:false` |
 

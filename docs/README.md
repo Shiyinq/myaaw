@@ -13,7 +13,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | [Cron & Heartbeat](agents/cron-heartbeat.md) | Scheduled jobs, heartbeat ticks, delivery targets, session pinning, and multi-agent isolation. |
 | [Agent Skills](agents/skills.md) | `SKILL.md` skills, discovery, prompt injection, and data isolation. |
 | [MCP & Custom Tools](agents/mcp-and-custom-tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
-| [Observability](agents/observability.md) | Traces, token usage, model cost, retention, and OTLP export. |
+| [Observability](agents/observability.md) | Traces, token and context usage, model cost, retention, and OTLP export. |
 | [Tool Approvals](agents/approvals.md) | Approval policy, grants, channel/API flows, and CLI/control-plane management. |
 | [Computer Use](agents/computer-use.md) | macOS desktop automation: screenshots, mouse/keyboard, permissions, and safety. |
 
