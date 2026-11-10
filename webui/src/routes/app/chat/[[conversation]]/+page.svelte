@@ -3604,7 +3604,7 @@
 																{/if}
 																{#if group.warning}
 																	<p
-																		class="px-2 pb-1 text-[10px] break-words text-amber-600 dark:text-amber-400"
+																		class="px-2 pb-1 text-[10px] wrap-break-word text-amber-600 dark:text-amber-400"
 																	>
 																		{group.warning}
 																	</p>
