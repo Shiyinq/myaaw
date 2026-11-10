@@ -28,7 +28,7 @@ var webhookInfoCmd = &cobra.Command{
 		config.LoadBaseConfig()
 		token := config.TelegramBotToken
 		if token == "" {
-			fmt.Println(theme.RenderError("❌ Telegram bot token not configured"))
+			fmt.Println(theme.RenderError("Telegram bot token not configured"))
 			return
 		}
 		getWebhookInfo(token)
@@ -42,7 +42,7 @@ var webhookSetCmd = &cobra.Command{
 		config.LoadBaseConfig()
 		token := config.TelegramBotToken
 		if token == "" {
-			fmt.Println(theme.RenderError("❌ Telegram bot token not configured"))
+			fmt.Println(theme.RenderError("Telegram bot token not configured"))
 			return
 		}
 
@@ -65,7 +65,7 @@ var webhookDeleteCmd = &cobra.Command{
 		config.LoadBaseConfig()
 		token := config.TelegramBotToken
 		if token == "" {
-			fmt.Println(theme.RenderError("❌ Telegram bot token not configured"))
+			fmt.Println(theme.RenderError("Telegram bot token not configured"))
 			return
 		}
 		deleteWebhookURL(token)
@@ -82,7 +82,7 @@ func setWebhookURL(botToken string, url string) {
 	if err := registerTelegramWebhook(botToken, url); err != nil {
 		log.Fatalf("Error setting webhook: %v", err)
 	}
-	fmt.Println(theme.RenderSuccess("✅ Webhook set successfully!"))
+	fmt.Println(theme.RenderSuccess("Webhook set successfully!"))
 }
 
 // registerTelegramWebhook points Telegram at https://<baseURL>/webhook/telegram.
@@ -109,7 +109,7 @@ func getWebhookInfo(botToken string) {
 	if err != nil {
 		log.Fatalf("Error formatting JSON: %v", err)
 	}
-	fmt.Println(theme.RenderPrimary("📡 Webhook Info:"))
+	fmt.Println(theme.RenderPrimary("Webhook Info:"))
 	fmt.Println(string(jsonData))
 }
 
@@ -121,5 +121,5 @@ func deleteWebhookURL(botToken string) {
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("%s Response status: %s\n", theme.RenderSuccess("✅ Webhook deleted successfully!"), resp.Status)
+	fmt.Printf("%s Response status: %s\n", theme.RenderSuccess("Webhook deleted successfully!"), resp.Status)
 }

@@ -27,7 +27,7 @@ var checkCmd = &cobra.Command{
 	Use:   "check",
 	Short: "Validate environment variables and config files",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(theme.RenderSecondary("🔍 Loading configuration..."))
+		fmt.Println(theme.RenderSecondary("Loading configuration..."))
 		config.LoadBaseConfig()
 		fmt.Println(theme.RenderMuted(fmt.Sprintf("Agent: %s", agentdir.Active())))
 
@@ -97,7 +97,7 @@ var checkCmd = &cobra.Command{
 			fmt.Printf("%-25s : %s\n", theme.RenderPrimary("Channel: Discord"), theme.RenderMuted("[INACTIVE]"))
 		}
 
-		fmt.Println("\n✨ System health check completed!")
+		fmt.Println("\nSystem health check completed.")
 	},
 }
 

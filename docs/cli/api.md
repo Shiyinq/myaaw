@@ -102,11 +102,11 @@ Stops the daemon, waits one second, then starts it again with the same port. Use
 Prints whether the daemon is running and, when it is, the Swagger UI URL:
 
 ```text
-✅ API is running (PID: 48213)
+API is running (PID: 48213)
    http://localhost:9000/docs/
 ```
 
-Otherwise it prints `❌ API is stopped`.
+Otherwise it prints `API is stopped`.
 
 ## Examples
 

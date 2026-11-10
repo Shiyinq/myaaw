@@ -89,8 +89,8 @@ func startLinux(m *Manager, args []string) error {
 		return fmt.Errorf("failed to start systemd service: %w", err)
 	}
 
-	fmt.Printf("✅ %s registered and started via Systemd\n", m.Name)
-	fmt.Printf("📄 Logs: %s\n", m.LogFile)
+	fmt.Printf("%s registered and started via Systemd\n", m.Name)
+	fmt.Printf("Logs: %s\n", m.LogFile)
 
 	return nil
 }
@@ -114,7 +114,7 @@ func stopLinux(m *Manager) error {
 
 	exec.Command("systemctl", "--user", "daemon-reload").Run()
 
-	fmt.Printf("🛑 %s stopped and unregistered from Systemd\n", m.Name)
+	fmt.Printf("%s stopped and unregistered from Systemd\n", m.Name)
 	return nil
 }
 

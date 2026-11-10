@@ -175,7 +175,7 @@ func runObservabilitySummary(cmd *cobra.Command, args []string) error {
 		formatMillis(summary.DurationP95), formatMillis(summary.FirstTokenP50))
 	if !summary.CostComplete {
 		fmt.Printf("%s\n", theme.RenderMuted(fmt.Sprintf(
-			"⚠ %d run(s) have tokens but no recorded cost (%s in / %s out) — add missing models to observability.model_prices",
+			"Warning: %d run(s) have tokens but no recorded cost (%s in / %s out) — add missing models to observability.model_prices",
 			summary.UnpricedRuns, formatTokens(summary.UnpricedInputTokens),
 			formatTokens(summary.UnpricedOutputTokens))))
 	}
@@ -526,7 +526,7 @@ func runObservabilitySession(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\n")
 	if unpriced > 0 {
 		fmt.Printf("%s\n", theme.RenderMuted(fmt.Sprintf(
-			"⚠ %d of %d turn(s) have no recorded cost — the total is not the full spend", unpriced, len(runs))))
+			"Warning: %d of %d turn(s) have no recorded cost — the total is not the full spend", unpriced, len(runs))))
 	}
 	example := formatTurnRef(conversationID, runs[0].Channel, 1)
 	fmt.Printf("Open a turn:  %s  or  %s\n",

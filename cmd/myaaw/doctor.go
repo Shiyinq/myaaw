@@ -21,24 +21,24 @@ var doctorCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		config.LoadBaseConfig()
 
-		fmt.Println(theme.RenderPrimary("🩺 Myaaw Doctor"))
+		fmt.Println(theme.RenderPrimary("Myaaw Doctor"))
 		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
 
 		fmt.Println(theme.RenderMuted("Computer use (desktop automation)"))
 		fmt.Printf("  %-30s %s\n", "Launched from", theme.RenderMuted(launchContext()))
 		if config.ComputerUseEnabled {
-			fmt.Printf("  %-30s %s\n", "Feature enabled", theme.RenderSuccess("✅ ON"))
+			fmt.Printf("  %-30s %s\n", "Feature enabled", theme.RenderSuccess("ON"))
 		} else {
-			fmt.Printf("  %-30s %s\n", "Feature enabled", theme.RenderWarning("⚠️  OFF"))
+			fmt.Printf("  %-30s %s\n", "Feature enabled", theme.RenderWarning("OFF"))
 			fmt.Printf("    %s\n", theme.RenderMuted("Enable with MYAAW_COMPUTER_USE=true or bot.computer_use.enabled in config.json."))
 		}
 
 		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 		defer cancel()
 		for _, result := range computer.Probe(ctx) {
-			status := theme.RenderSuccess("✅ OK")
+			status := theme.RenderSuccess("OK")
 			if !result.OK {
-				status = theme.RenderError("❌ FAIL")
+				status = theme.RenderError("FAIL")
 			}
 			fmt.Printf("  %-30s %s\n", result.Name, status)
 			if result.Detail != "" {

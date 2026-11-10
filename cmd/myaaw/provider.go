@@ -151,7 +151,7 @@ var providerCreateCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✨ Provider '%s' created and saved for agent '%s'!", pName, agentdir.Active())))
+		fmt.Println(theme.RenderSuccess(fmt.Sprintf("Provider '%s' created and saved for agent '%s'.", pName, agentdir.Active())))
 	},
 }
 
@@ -220,7 +220,7 @@ var providerDefaultCmd = &cobra.Command{
 
 		cfg.DefaultProvider = name
 		config.SaveConfig(cfg)
-		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✨ Default provider set to '%s'", name)))
+		fmt.Println(theme.RenderSuccess(fmt.Sprintf("Default provider set to '%s'", name)))
 	},
 }
 
@@ -278,7 +278,7 @@ var providerDeleteCmd = &cobra.Command{
 		}
 
 		config.SaveConfig(cfg)
-		fmt.Println(theme.RenderSuccess(fmt.Sprintf("🗑️  Provider '%s' deleted.", name)))
+		fmt.Println(theme.RenderSuccess(fmt.Sprintf("Provider '%s' deleted.", name)))
 	},
 }
 
@@ -385,7 +385,7 @@ var providerSetModelCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✨ Model for provider '%s' updated to '%s'", name, defaultModel)))
+		fmt.Println(theme.RenderSuccess(fmt.Sprintf("Model for provider '%s' updated to '%s'", name, defaultModel)))
 	},
 }
 

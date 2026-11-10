@@ -568,7 +568,7 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.globalPathDone = true
 		m.cmdOutput = []string{theme.SuccessStyle.Render("Installed myaaw at " + msg.path)}
 		if msg.pathHint != "" {
-			m.cmdOutput = append(m.cmdOutput, theme.WarningStyle.Render("⚠  "+msg.pathHint))
+			m.cmdOutput = append(m.cmdOutput, theme.WarningStyle.Render("!  "+msg.pathHint))
 		}
 		return m, nil
 
@@ -630,7 +630,7 @@ func (m onboardModel) View() string {
 	timeline := m.renderTimeline()
 	content := m.renderContent()
 	if m.err != nil {
-		content += "\n\n" + theme.ErrorStyle.Render("⚠  "+m.err.Error())
+		content += "\n\n" + theme.ErrorStyle.Render("!  "+m.err.Error())
 	}
 
 	mainStyle := lipgloss.NewStyle().Margin(1, 1)
@@ -2009,7 +2009,7 @@ func (m onboardModel) renderContent() string {
 		case m.modelManual:
 			b.WriteString("\n\n")
 			if m.modelsErr != nil {
-				b.WriteString(theme.WarningStyle.Render("⚠  Could not fetch models: "+m.modelsErr.Error()) + "\n\n")
+				b.WriteString(theme.WarningStyle.Render("!  Could not fetch models: "+m.modelsErr.Error()) + "\n\n")
 			}
 			b.WriteString("Enter the model name manually:\n\n")
 			b.WriteString(m.textInput.View())
@@ -2153,12 +2153,12 @@ func (m onboardModel) renderContent() string {
 		b.WriteString(titleStyle.Render("Restart Server"))
 		b.WriteString("\n\nThe daemon for this agent is running. Restart it to load the new config?\n\n")
 		if m.restartWarning != nil {
-			b.WriteString(theme.ErrorStyle.Render("⚠  "+m.restartWarning.Error()) + "\n\n")
+			b.WriteString(theme.ErrorStyle.Render("!  "+m.restartWarning.Error()) + "\n\n")
 		}
 		b.WriteString(m.renderChoices())
 
 	case stepDone:
-		b.WriteString(theme.SuccessStyle.Render("✨ Onboarding Complete!"))
+		b.WriteString(theme.SuccessStyle.Render("Onboarding Complete!"))
 		b.WriteString(fmt.Sprintf("\n\nAgent: %s\nConfig: %s\n\n", m.agentName, m.configFile))
 		if m.restartMsg != "" {
 			b.WriteString(theme.SuccessStyle.Render("↻ "+m.restartMsg) + "\n\n")
@@ -2239,14 +2239,14 @@ func (m onboardModel) renderSummary() string {
 	}
 
 	if len(m.ownerIDsAll()) == 0 && m.botType == "private" && (m.channelConfigured("telegram") || m.channelConfigured("discord")) {
-		b.WriteString("\n" + theme.WarningStyle.Render("⚠  No owner IDs: with bot.type \"private\", Telegram and Discord ignore every message.") +
+		b.WriteString("\n" + theme.WarningStyle.Render("!  No owner IDs: with bot.type \"private\", Telegram and Discord ignore every message.") +
 			"\n" + theme.MutedStyle.Render("   Terminal (`myaaw chat`), the REST API, and A2A are not filtered by owner IDs."))
 	}
 	if m.providerType != "gemini" {
 		b.WriteString("\n" + theme.MutedStyle.Render("ℹ  `myaaw voice` (real-time) needs Gemini; `voice-classic` works with any provider."))
 	}
 	if m.a2aWarning != nil {
-		b.WriteString("\n" + theme.WarningStyle.Render("⚠  A2A contacts were not seeded: "+m.a2aWarning.Error()))
+		b.WriteString("\n" + theme.WarningStyle.Render("!  A2A contacts were not seeded: "+m.a2aWarning.Error()))
 	}
 	return b.String()
 }
@@ -2265,10 +2265,10 @@ func (m onboardModel) renderWarnings() string {
 	var b strings.Builder
 	b.WriteString("\n")
 	for _, warning := range m.warnings {
-		b.WriteString(theme.WarningStyle.Render("⚠  "+warning) + "\n")
+		b.WriteString(theme.WarningStyle.Render("!  "+warning) + "\n")
 	}
 	if m.a2aWarning != nil {
-		b.WriteString(theme.WarningStyle.Render("⚠  A2A contacts were not seeded: "+m.a2aWarning.Error()) + "\n")
+		b.WriteString(theme.WarningStyle.Render("!  A2A contacts were not seeded: "+m.a2aWarning.Error()) + "\n")
 	}
 	b.WriteString("\n")
 	return b.String()
@@ -2303,7 +2303,7 @@ func (m onboardModel) renderMultiSelect(selected map[string]bool) string {
 		cursor := "  "
 		style := theme.BaseStyle
 		if m.cursor == i {
-			cursor = "👉"
+			cursor = ">"
 			style = theme.HighlightStyle
 		}
 		box := "[ ]"
@@ -2334,7 +2334,7 @@ func (m onboardModel) renderChoices() string {
 		cursor := "  "
 		style := theme.BaseStyle
 		if m.cursor == i {
-			cursor = "👉"
+			cursor = ">"
 			style = theme.HighlightStyle
 		}
 		s += fmt.Sprintf("%s %s\n", cursor, style.Render(choice))
