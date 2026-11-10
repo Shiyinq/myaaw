@@ -1620,7 +1620,7 @@
 	let contextDash = $derived(`${((contextPercent / 100) * 94.25).toFixed(2)} 94.25`);
 	let contextTokenText = $derived(
 		contextKnown
-			? t('myaaw.chat.context_window', {
+			? t('myaaw.chat.context_usage_ratio', {
 					used: formatTokens(contextTokens),
 					window: formatTokens(contextWindow)
 				})

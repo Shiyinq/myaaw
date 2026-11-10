@@ -404,7 +404,7 @@
 			"stats_cached_input": "Input dari cache",
 			"stats_output": "Output",
 			"context_used": "{percent}% context terpakai",
-			"context_window": "{used} / {window}",
+			"context_usage_ratio": "{used} / {window}",
 			"context_system": "System prompt",
 			"context_tools": "Definisi tool",
 			"context_messages": "Pesan",

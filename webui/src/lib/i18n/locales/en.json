@@ -404,7 +404,7 @@
 			"stats_cached_input": "Cached input",
 			"stats_output": "Output",
 			"context_used": "{percent}% of context used",
-			"context_window": "{used} / {window}",
+			"context_usage_ratio": "{used} / {window}",
 			"context_system": "System prompt",
 			"context_tools": "Tool definitions",
 			"context_messages": "Messages",
