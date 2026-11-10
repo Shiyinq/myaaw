@@ -130,16 +130,18 @@ func init() {
 
 		// Commands that don't require .myaaw configuration
 		metaCommands := map[string]bool{
-			"onboard": true,
-			"version": true,
-			"help":    true,
-			"update":  true,
-			"agent":   true,
-			"api":     true,
-			"backup":  true,
-			"restore": true,
-			"doctor":  true,
-			"webui":   true,
+			"onboard":   true,
+			"version":   true,
+			"help":      true,
+			"update":    true,
+			"upgrade":   true,
+			"uninstall": true,
+			"agent":     true,
+			"api":       true,
+			"backup":    true,
+			"restore":   true,
+			"doctor":    true,
+			"webui":     true,
 		}
 
 		if metaCommands[cmd.Name()] || isAgentCommand(cmd) || isAPISubcommand(cmd) || isCodesignCommand(cmd) || isWebUICommand(cmd) {
@@ -228,7 +230,7 @@ func init() {
 					{name: "Channels & Integrations", cmdNames: []string{"channel", "provider", "webhook"}},
 					{name: "Monitoring & Diagnostics", cmdNames: []string{"status", "logs", "observability", "doctor"}},
 					{name: "Settings & Desktop", cmdNames: []string{"config", "computer", "codesign"}},
-					{name: "Maintenance", cmdNames: []string{"backup", "restore", "update", "version", "completion"}},
+					{name: "Maintenance", cmdNames: []string{"backup", "restore", "update", "upgrade", "version", "completion", "uninstall"}},
 					{name: "Service Management", cmdNames: []string{"server", "start", "stop", "restart", "api", "webui"}},
 				}
 

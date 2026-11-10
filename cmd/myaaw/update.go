@@ -29,7 +29,7 @@ func init() {
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Check for and install updates",
+	Short: "Update the CLI binary to the latest release",
 	Run: func(cmd *cobra.Command, args []string) {
 		if !autoConfirm {
 			fmt.Printf("%s %s...\n", theme.RenderSecondary("Checking for updates at"), githubRepo)
