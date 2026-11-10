@@ -8614,9 +8614,6 @@ const docTemplatecontrolplane = `{
         "provider.MessageAttachment": {
             "type": "object",
             "properties": {
-                "data_base64": {
-                    "type": "string"
-                },
                 "file_name": {
                     "type": "string"
                 },

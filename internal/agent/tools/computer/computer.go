@@ -238,6 +238,9 @@ func (t *ComputerTool) screenshot(ctx context.Context, args toolArgs) tools.Stru
 			FileName: name,
 			MimeType: "image/png",
 			Data:     frame.PNG,
+			// Job captures live under the /jobs root, so the API surface can
+			// stream the file instead of base64-ing it into the response.
+			Path: "/jobs/captures/" + name,
 		}}
 		result.Text += " Saved as " + name + "."
 	}

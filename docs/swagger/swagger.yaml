@@ -85,8 +85,6 @@ definitions:
     type: object
   handler.AttachmentResponse:
     properties:
-      data_base64:
-        type: string
       file_name:
         type: string
       kind:

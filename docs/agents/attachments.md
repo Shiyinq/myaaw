@@ -163,10 +163,9 @@ channel.OutgoingMessage.Attachments
         └─ agent transcript  → Message.Attachments (path metadata only)
 ```
 
-On the API surface, files up to **5 MB** also carry `data_base64` for older
-clients; larger files are path-only and never enter the event stream. On
-messaging surfaces, files above **20 MB** are skipped (the platform uploads
-bytes, so the file is read into memory).
+The API surface only carries **fetchable paths**; no file bytes enter the event
+stream or the API response. On messaging surfaces, files above **20 MB** are
+skipped (the platform uploads bytes, so the file is read into memory).
 
 ---
 
@@ -178,7 +177,7 @@ Internal (`internal/channel/message.go`):
 type Attachment struct {
     FileName string
     MimeType string
-    Data     []byte // messaging / small legacy attachments
+    Data     []byte // messaging uploads (bytes); never serialized to the API
     Path     string // virtual path for /fs/raw (API/WebUI)
     Kind     string // image | video | audio | pdf | file
     Size     int64
@@ -197,18 +196,14 @@ SSE `done` event (`internal/channel/api/timeline.go`):
 }
 ```
 
-Small tool attachments keep the legacy shape:
-
-```json
-{
-  "file_name": "shot.png",
-  "mime_type": "image/png",
-  "data_base64": "iVBORw0KGgo..."
-}
-```
-
 The non-streaming API response (`internal/services/bot/handler/api_handler.go`)
-uses the same fields on `AttachmentResponse`.
+uses the same fields on `AttachmentResponse`. Tool attachments that live on disk
+also set `Path` (for example the `computer` tool's
+`/jobs/captures/shot.png`), so screenshots are streamed instead of embedded.
+
+> Screenshot bytes used by the **model** are a separate path:
+> `StructuredResult.Images` becomes a provider `image_url` content item. Removing
+> delivery bytes does not affect the agent's ability to see tool output.
 
 ---
 
@@ -274,7 +269,6 @@ the reader was already there.
 
 | Limit | Value | Scope |
 | :--- | :--- | :--- |
-| Inline base64 for API clients | 5 MB | per file |
 | Messaging upload | 20 MB | per file; larger files are skipped and logged |
 | Attachment count | unbounded | metadata only; no per-response cap |
 

@@ -103,9 +103,11 @@ curl -X POST http://localhost:8080/api/chat \
   },
   "attachments": [
     {
-      "file_name": "shot.png",
-      "mime_type": "image/png",
-      "data_base64": "iVBORw0KGgo..."
+      "file_name": "clip.mp4",
+      "mime_type": "video/mp4",
+      "path": "/home/workspace/clip.mp4",
+      "kind": "video",
+      "size": 1048576
     }
   ]
 }
@@ -117,7 +119,7 @@ curl -X POST http://localhost:8080/api/chat \
 | `conversation_id` | conversation used for this run; pass it to continue the session |
 | `timeline` | ordered steps: `thought`, `tool`, `text` |
 | `usage` | token usage; omitted when `total_tokens` is 0 |
-| `attachments` | files produced by the run (for example a delivered screenshot), base64-encoded; omitted when empty |
+| `attachments` | files produced by the run; each carries a virtual `path` the client fetches through `/fs/raw`, plus `kind` and `size`; omitted when empty |
 
 ### Timeline items
 

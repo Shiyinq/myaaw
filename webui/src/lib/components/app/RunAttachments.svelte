@@ -21,10 +21,9 @@
 		return 'file';
 	}
 
-	/** Path-based files stream through `/fs/raw`; older attachments are inline bytes. */
+	/** Path-based files stream through `/fs/raw`. */
 	function srcOf(attachment: Attachment, download = false): string {
-		if (attachment.path) return filesApi.rawUrl(agent, attachment.path, { download });
-		return `data:${attachment.mime_type || 'application/octet-stream'};base64,${attachment.data_base64 ?? ''}`;
+		return attachment.path ? filesApi.rawUrl(agent, attachment.path, { download }) : '';
 	}
 
 	function sizeLabel(bytes?: number): string {

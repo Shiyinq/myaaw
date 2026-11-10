@@ -58,10 +58,6 @@ func TestDeliverAttachmentsAPIUsesVirtualPath(t *testing.T) {
 	if item.Size != 3 {
 		t.Errorf("size = %d", item.Size)
 	}
-	// Small files also carry bytes so older API clients keep working.
-	if string(item.Data) != "MP4" {
-		t.Errorf("data = %q", item.Data)
-	}
 }
 
 func TestDeliverAttachmentsAPIAutoPromotesBarePath(t *testing.T) {
@@ -78,23 +74,20 @@ func TestDeliverAttachmentsAPIAutoPromotesBarePath(t *testing.T) {
 	}
 }
 
-func TestDeliverAttachmentsAPILargeFileIsPathOnly(t *testing.T) {
+func TestDeliverAttachmentsAPICarriesNoBytes(t *testing.T) {
 	roots := attachRoots(t)
-	video := attachFile(t, filepath.Join(roots.Home, "workspace", "big.mp4"), "")
-	if err := os.Truncate(video, inlineAttachmentMaxBytes+1); err != nil {
-		t.Fatal(err)
-	}
+	video := attachFile(t, filepath.Join(roots.Home, "workspace", "clip.mp4"), "MP4")
 
 	_, attachments := attachmentsForChannel("api", "@attach("+video+")", roots)
 
 	if len(attachments) != 1 {
 		t.Fatalf("attachments = %+v", attachments)
 	}
-	if attachments[0].Path != "/home/workspace/big.mp4" {
+	if attachments[0].Path != "/home/workspace/clip.mp4" {
 		t.Errorf("path = %q", attachments[0].Path)
 	}
 	if len(attachments[0].Data) != 0 {
-		t.Errorf("large file should not carry bytes, got %d", len(attachments[0].Data))
+		t.Errorf("API attachments must not carry bytes, got %d", len(attachments[0].Data))
 	}
 }
 

@@ -16,11 +16,6 @@ import (
 // are skipped rather than failing the whole turn.
 const messagingAttachmentMaxBytes = 20 << 20
 
-// inlineAttachmentMaxBytes keeps small API attachments base64-encoded as well as
-// path-based, so clients that only understand the older shape keep working.
-// Larger files are path-only and never enter the event stream.
-const inlineAttachmentMaxBytes = 5 << 20
-
 func attachmentRoots() attachment.Roots {
 	name := agentdir.Active()
 	home, _ := agentdir.Home(name)
@@ -50,21 +45,13 @@ func attachmentsForChannel(channelName, text string, roots attachment.Roots) (st
 		items := attachment.Collect(text, roots)
 		atts := make([]channel.Attachment, 0, len(items))
 		for _, item := range items {
-			att := channel.Attachment{
+			atts = append(atts, channel.Attachment{
 				FileName: item.Name,
 				MimeType: item.Mime,
 				Path:     item.Virtual,
 				Kind:     string(item.Kind),
 				Size:     item.Size,
-			}
-			// Small files also carry their bytes for older API clients. The
-			// WebUI ignores them and streams through the path instead.
-			if item.Size <= inlineAttachmentMaxBytes {
-				if data, err := os.ReadFile(item.AbsPath); err == nil {
-					att.Data = data
-				}
-			}
-			atts = append(atts, att)
+			})
 		}
 		return text, atts
 	case "telegram", "discord":

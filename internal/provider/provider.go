@@ -78,12 +78,11 @@ type Message struct {
 // presentation metadata: persisted with the transcript so a reopened chat
 // renders the same previews, and never sent to a provider.
 type MessageAttachment struct {
-	FileName   string `json:"file_name"`
-	MimeType   string `json:"mime_type,omitempty"`
-	Path       string `json:"path,omitempty"`
-	Kind       string `json:"kind,omitempty"`
-	Size       int64  `json:"size,omitempty"`
-	DataBase64 string `json:"data_base64,omitempty"`
+	FileName string `json:"file_name"`
+	MimeType string `json:"mime_type,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Kind     string `json:"kind,omitempty"`
+	Size     int64  `json:"size,omitempty"`
 }
 
 type UsageDetail struct {

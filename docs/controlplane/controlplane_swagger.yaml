@@ -1295,8 +1295,6 @@ definitions:
     type: object
   provider.MessageAttachment:
     properties:
-      data_base64:
-        type: string
       file_name:
         type: string
       kind:

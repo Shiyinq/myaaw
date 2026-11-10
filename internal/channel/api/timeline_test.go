@@ -22,7 +22,7 @@ func eventNames(events []SSEEvent) []string {
 	return names
 }
 
-func TestTimelineDoneIncludesAttachments(t *testing.T) {
+func TestTimelineDoneSkipsBytesOnlyAttachment(t *testing.T) {
 	timeline, events := collectTimeline()
 	timeline.Done(&channel.OutgoingMessage{
 		Text: "ok",
@@ -46,12 +46,8 @@ func TestTimelineDoneIncludesAttachments(t *testing.T) {
 	if !ok {
 		t.Fatalf("done data type = %T", done.Data)
 	}
-	attachments, ok := data["attachments"].([]map[string]any)
-	if !ok || len(attachments) != 1 {
-		t.Fatalf("attachments = %#v", data["attachments"])
-	}
-	if attachments[0]["file_name"] != "shot.png" || attachments[0]["data_base64"] != "UE5HREFUQQ==" {
-		t.Fatalf("attachment = %#v", attachments[0])
+	if attachments, ok := data["attachments"]; ok {
+		t.Fatalf("byte-only attachments must not enter the API timeline: %#v", attachments)
 	}
 }
 

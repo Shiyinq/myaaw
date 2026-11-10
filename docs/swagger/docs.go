@@ -582,9 +582,6 @@ const docTemplate = `{
         "handler.AttachmentResponse": {
             "type": "object",
             "properties": {
-                "data_base64": {
-                    "type": "string"
-                },
                 "file_name": {
                     "type": "string"
                 },

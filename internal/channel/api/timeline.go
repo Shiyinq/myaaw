@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/base64"
 	"myaaw/internal/channel"
 )
 
@@ -170,24 +169,25 @@ func (t *Timeline) Done(out *channel.OutgoingMessage) {
 	if len(out.Attachments) > 0 {
 		list := make([]map[string]any, 0, len(out.Attachments))
 		for _, att := range out.Attachments {
+			if att.Path == "" {
+				// Byte-only attachments belong to messaging surfaces, which upload
+				// them natively; the API timeline only carries fetchable paths.
+				continue
+			}
 			entry := map[string]any{
 				"file_name": att.FileName,
 				"mime_type": att.MimeType,
+				"path":      att.Path,
+				"kind":      att.Kind,
 			}
-			if att.Path != "" {
-				// Path-based attachment: the client fetches the bytes itself,
-				// so large files never enter the event stream.
-				entry["path"] = att.Path
-				entry["kind"] = att.Kind
-				if att.Size > 0 {
-					entry["size"] = att.Size
-				}
-			} else if len(att.Data) > 0 {
-				entry["data_base64"] = base64.StdEncoding.EncodeToString(att.Data)
+			if att.Size > 0 {
+				entry["size"] = att.Size
 			}
 			list = append(list, entry)
 		}
-		data["attachments"] = list
+		if len(list) > 0 {
+			data["attachments"] = list
+		}
 	}
 	t.emit(SSEEvent{Name: "done", Data: data})
 }

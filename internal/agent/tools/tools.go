@@ -59,11 +59,15 @@ type StructuredResult struct {
 	Attachments []FileAttachment
 }
 
-// FileAttachment is a file a tool wants delivered to the user.
+// FileAttachment is a file a tool wants delivered to the user. A tool that
+// saved the file on disk sets Path to its virtual path (for example
+// /jobs/captures/shot.png), so the API/WebUI can stream it instead of carrying
+// bytes. Data stays available for messaging channels, which upload bytes.
 type FileAttachment struct {
 	FileName string
 	MimeType string
 	Data     []byte
+	Path     string
 }
 
 // StructuredTool is an optional interface for tools that return images. Tools
