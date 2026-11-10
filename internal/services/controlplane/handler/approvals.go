@@ -2,12 +2,25 @@ package handler
 
 import (
 	"errors"
+	"net/url"
 	"strings"
 
 	"myaaw/internal/services/controlplane/service"
 
 	"github.com/gofiber/fiber/v3"
 )
+
+// pathParam returns a route parameter with its percent-escapes decoded. Fiber
+// hands back the raw segment, so a key like `cron:add` would otherwise arrive as
+// `cron%3Aadd` and never match the one stored in config/approvals.json.
+func pathParam(c fiber.Ctx, name string) string {
+	raw := c.Params(name)
+	decoded, err := url.PathUnescape(raw)
+	if err != nil {
+		return raw
+	}
+	return decoded
+}
 
 // GetApprovals returns the effective approval policy and the current grants.
 // @Summary      Get approvals
@@ -44,7 +57,7 @@ func (h *Handler) GetApprovals(c fiber.Ctx) error {
 // @Failure      404 {object} common.ErrorResponse
 // @Router       /agents/{name}/approvals/grants/{key} [delete]
 func (h *Handler) RevokeApprovalGrant(c fiber.Ctx) error {
-	name, key := c.Params("name"), c.Params("key")
+	name, key := c.Params("name"), pathParam(c, "key")
 	channel := strings.TrimSpace(c.Query("channel"))
 	userID := strings.TrimSpace(c.Query("user"))
 	if channel != "" || userID != "" {
@@ -77,8 +90,8 @@ func (h *Handler) RevokeApprovalGrant(c fiber.Ctx) error {
 func (h *Handler) RevokeApprovalGrantSession(c fiber.Ctx) error {
 	if err := h.approvals.RevokeSession(
 		c.Params("name"),
-		c.Params("key"),
-		c.Params("conversation"),
+		pathParam(c, "key"),
+		pathParam(c, "conversation"),
 		strings.TrimSpace(c.Query("channel")),
 		strings.TrimSpace(c.Query("user")),
 	); err != nil {

@@ -17,8 +17,14 @@ type User struct {
 }
 
 type Conversation struct {
-	Id        string             `json:"id"`
-	UserId    int                `json:"userId"`
+	Id     string `json:"id"`
+	UserId int    `json:"userId"`
+	// Scope groups conversations by chat target, for example a Telegram
+	// topic. Empty means the legacy per-user DM/CLI/API scope.
+	Scope string `json:"scope,omitempty"`
+	// Channel is the platform that owns the conversation (telegram, discord,
+	// api, cli). Empty for rows created before the column existed.
+	Channel   string             `json:"channel,omitempty"`
 	Title     string             `json:"title"`
 	Messages  []provider.Message `json:"messages"`
 	Active    bool               `json:"active"`

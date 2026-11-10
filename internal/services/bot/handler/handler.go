@@ -7,29 +7,25 @@ import (
 	"myaaw/internal/agent/approvals"
 	"myaaw/internal/channel"
 	"myaaw/internal/channel/discord"
-	telegram "myaaw/internal/channel/telegram"
+	"myaaw/internal/channel/telegram"
 	_ "myaaw/internal/common"
 	"myaaw/internal/config"
 	"myaaw/internal/services/bot/service"
 	"myaaw/internal/utils"
 	"strings"
-	"sync"
 
 	"github.com/gofiber/fiber/v3"
 )
-
-func telegramMeta(userID int) telegram.TelegramMeta {
-	return telegram.TelegramMeta{
-		ChatID:    userID,
-		MessageID: 0,
-	}
-}
 
 type BotHandler interface {
 	Webhook(c fiber.Ctx) error
 	Heartbeat(c fiber.Ctx) error
 	APIChat(c fiber.Ctx) error
 	APIChatStream(c fiber.Ctx) error
+	APIChatStop(c fiber.Ctx) error
+	APIChatRuns(c fiber.Ctx) error
+	APIChatRunStream(c fiber.Ctx) error
+	APIEvents(c fiber.Ctx) error
 	ApprovalDecision(c fiber.Ctx) error
 }
 
@@ -39,10 +35,13 @@ type BotHandlerImpl struct {
 }
 
 type HeartbeatRequest struct {
-	Prompt  string `json:"prompt"`
-	To      string `json:"to"`
-	Channel string `json:"channel"`
-	Trigger string `json:"trigger"`
+	Prompt    string `json:"prompt"`
+	To        string `json:"to"`
+	ThreadID  string `json:"thread_id"`
+	SessionID string `json:"session_id"`
+	ChatType  string `json:"chat_type"`
+	Channel   string `json:"channel"`
+	Trigger   string `json:"trigger"`
 }
 
 func NewBotHandler(botService service.BotService, channelRegistry *channel.Registry) BotHandler {
@@ -129,15 +128,11 @@ func (s *BotHandlerImpl) Webhook(c fiber.Ctx) error {
 	})
 }
 
-var heartbeatLocks sync.Map
-
-// approvalContext attaches the channel-specific approval requester so gated
-// tool calls can prompt the user in the same conversation.
 func (s *BotHandlerImpl) approvalContext(ctx context.Context, adapter channel.Adapter, msg *channel.IncomingMessage) context.Context {
 	switch msg.Channel {
 	case "telegram":
 		if meta, ok := msg.RawMeta.(telegram.TelegramMeta); ok {
-			return approvals.WithRequester(ctx, telegram.NewApprovalRequester(meta.ChatID, meta.MessageID))
+			return approvals.WithRequester(ctx, telegram.NewApprovalRequester(meta.ChatID, meta.ThreadID, meta.MessageID))
 		}
 	case "discord":
 		if meta, ok := msg.RawMeta.(discord.DiscordMeta); ok {
@@ -147,11 +142,6 @@ func (s *BotHandlerImpl) approvalContext(ctx context.Context, adapter channel.Ad
 		}
 	}
 	return ctx
-}
-
-func getUserLock(userID string) *sync.Mutex {
-	val, _ := heartbeatLocks.LoadOrStore(userID, &sync.Mutex{})
-	return val.(*sync.Mutex)
 }
 
 // Heartbeat
@@ -182,29 +172,22 @@ func (s *BotHandlerImpl) Heartbeat(c fiber.Ctx) error {
 		})
 	}
 
-	// Use per-user lock to prevent race conditions during concurrent heartbeats (e.g., from sub-agents)
-	lock := getUserLock(req.To)
-	lock.Lock()
-	defer lock.Unlock()
-
-	msg, out, err := s.botService.ProcessHeartbeat(req.Prompt, req.To, req.Channel, req.Trigger)
+	msg, out, err := s.botService.ProcessHeartbeat(req.Prompt, service.HeartbeatTarget{
+		Channel:   req.Channel,
+		To:        req.To,
+		ThreadID:  req.ThreadID,
+		SessionID: req.SessionID,
+		ChatType:  req.ChatType,
+	}, req.Trigger)
 	if err != nil {
 		return utils.ErrorInternalServer(c, "failed to process heartbeat: "+err.Error())
 	}
 
-	if out != nil && req.Channel != "" && strings.TrimSpace(out.Text) != "HEARTBEAT_OK" {
+	// Only the chat platforms have an outbound adapter. API/CLI turns are saved
+	// in their pinned session and surface when the client reads it.
+	if out != nil && (req.Channel == "telegram" || req.Channel == "discord") && strings.TrimSpace(out.Text) != "HEARTBEAT_OK" {
 		adapter := s.channelRegistry.Get(req.Channel)
 		if adapter != nil {
-			if msg.RawMeta == nil {
-				switch req.Channel {
-				case "telegram":
-					msg.RawMeta = telegramMeta(msg.UserID)
-				case "discord":
-					msg.RawMeta = discord.DiscordMeta{
-						ChannelID: req.To,
-					}
-				}
-			}
 			if deliverErr := adapter.Send(msg, out); deliverErr != nil {
 				log.Printf("Failed to deliver heartbeat response: %v", deliverErr)
 			}

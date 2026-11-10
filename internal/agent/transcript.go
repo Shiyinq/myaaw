@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"myaaw/internal/provider"
@@ -17,6 +19,7 @@ const transcriptVersion = 2
 //
 // Entries already marked with Version >= 2 are returned unchanged.
 func MigrateLegacyTranscript(messages []provider.Message) []provider.Message {
+	messages = CloneMessages(messages)
 	needsExpansion := false
 	for _, msg := range messages {
 		if msg.Version < transcriptVersion && msg.Role == "assistant" && len(msg.Trace) > 0 {
@@ -159,6 +162,11 @@ func EstimateTokens(messages []provider.Message) int {
 				total += imageTokenCost
 			}
 		}
+		// Encrypted continuation items also occupy request context, even though
+		// they must never be rendered as thought text.
+		for _, raw := range msg.ProviderMetadata {
+			total += estimateText(string(raw))
+		}
 		for _, tc := range msg.ToolCalls {
 			total += estimateText(tc.Function.Name)
 			total += estimateText(argsToString(tc.Function.Arguments))
@@ -170,6 +178,21 @@ func EstimateTokens(messages []provider.Message) int {
 // imageTokenCost is the flat estimate for one image, aligned with the per-image
 // accounting used by computer-use agents.
 const imageTokenCost = 1500
+
+// EstimateToolSchemas returns a rough token estimate for the tool definitions
+// sent with a request. It uses the same provider-agnostic heuristic as
+// EstimateTokens (~4 bytes per token).
+func EstimateToolSchemas(schemas []map[string]any) int {
+	total := 0
+	for _, schema := range schemas {
+		data, err := json.Marshal(schema)
+		if err != nil {
+			continue
+		}
+		total += estimateText(string(data))
+	}
+	return total
+}
 
 // imagePlaceholder replaces evicted image items while keeping the message
 // structure and its text intact.
@@ -275,7 +298,130 @@ func stripMessageImages(msg *provider.Message) (count, bytes int) {
 	}
 	kept = append(kept, provider.ContentItem{Type: "text", Text: imagePlaceholder})
 	msg.Content = kept
+	msg.ProviderMetadata = nil
 	return count, bytes
+}
+
+// brokenImagePlaceholder stands in for an image whose payload cannot be
+// repaired, so the rest of the request still goes out.
+const brokenImagePlaceholder = "[image data was invalid and has been removed]"
+
+// SanitizeImageDataURLs repairs image items before they are sent. Older MCP tool
+// results embedded raw image bytes after ";base64," instead of the encoded text,
+// which makes providers reject the entire request with "Invalid base64 data".
+// A payload that is already base64 is left untouched, raw image bytes are
+// re-encoded, and anything unrecognisable becomes a text placeholder.
+func SanitizeImageDataURLs(messages []provider.Message) []provider.Message {
+	if len(messages) == 0 {
+		return messages
+	}
+
+	var out []provider.Message
+	for i, msg := range messages {
+		items := provider.MessageContentItems(msg)
+		if len(items) == 0 {
+			continue
+		}
+
+		repaired := make([]provider.ContentItem, 0, len(items))
+		changed := false
+		for _, item := range items {
+			if item.Type != "image_url" || item.ImageURL == nil || item.ImageURL.URL == "" {
+				repaired = append(repaired, item)
+				continue
+			}
+			url, ok := sanitizeImageDataURL(item.ImageURL.URL)
+			if !ok {
+				changed = true
+				repaired = append(repaired, provider.ContentItem{Type: "text", Text: brokenImagePlaceholder})
+				continue
+			}
+			if url != item.ImageURL.URL {
+				changed = true
+				item.ImageURL = &provider.ImageInfo{URL: url}
+			}
+			repaired = append(repaired, item)
+		}
+
+		if !changed {
+			continue
+		}
+		if out == nil {
+			out = append([]provider.Message(nil), messages...)
+		}
+		out[i].Content = repaired
+		out[i].ProviderMetadata = nil
+	}
+
+	if out == nil {
+		return messages
+	}
+	return out
+}
+
+// sanitizeImageDataURL returns a safe URL and whether the item may be sent.
+// Plain (http) URLs and non-base64 data URLs are passed through.
+func sanitizeImageDataURL(raw string) (string, bool) {
+	const prefix = "data:"
+	if !strings.HasPrefix(raw, prefix) {
+		return raw, true
+	}
+	comma := strings.IndexByte(raw, ',')
+	if comma < 0 || !strings.Contains(raw[len(prefix):comma], ";base64") {
+		return raw, true
+	}
+	payload := raw[comma+1:]
+	if isBase64Payload(payload) {
+		return raw, true
+	}
+	if looksLikeImage(payload) {
+		return raw[:comma+1] + base64.StdEncoding.EncodeToString([]byte(payload)), true
+	}
+	return "", false
+}
+
+// isBase64Payload reports whether s can be decoded as standard base64. It only
+// scans the bytes, so a broken multi-megabyte payload costs one pass.
+func isBase64Payload(s string) bool {
+	if len(s) < 4 {
+		return false
+	}
+	padding := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '+', c == '/':
+			if padding > 0 {
+				return false
+			}
+		case c == '=':
+			padding++
+			if padding > 2 {
+				return false
+			}
+		case c == '\r' || c == '\n':
+			// MIME-style line breaks are ignored by decoders.
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// looksLikeImage reports whether s starts with a known image signature, which
+// distinguishes raw bytes from base64 text.
+func looksLikeImage(s string) bool {
+	switch {
+	case strings.HasPrefix(s, "\x89PNG\r\n\x1a\n"):
+		return true
+	case strings.HasPrefix(s, "\xff\xd8\xff"):
+		return true
+	case strings.HasPrefix(s, "GIF87a"), strings.HasPrefix(s, "GIF89a"):
+		return true
+	case len(s) >= 12 && strings.HasPrefix(s, "RIFF") && s[8:12] == "WEBP":
+		return true
+	}
+	return false
 }
 
 func estimateText(s string) int {

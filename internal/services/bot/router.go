@@ -14,6 +14,7 @@ import (
 	"myaaw/internal/services/bot/handler"
 	"myaaw/internal/services/bot/repository"
 	"myaaw/internal/services/bot/service"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -21,14 +22,27 @@ import (
 func BotRouter(router fiber.Router) {
 	userRepo := repository.NewUserRepository(config.DB)
 	convRepo := repository.NewConversationRepository(config.DB)
+
+	// Chat display names (group/topic) are learned from Telegram updates that
+	// never reach the agent; the channel layer hands them to this sink.
+	telegram.SetScopeNameSink(func(names telegram.ScopeNames) {
+		if err := convRepo.UpsertScopeNames(names.Scope, names.ChatName, names.TopicName, names.IsForum); err != nil {
+			log.Printf("Failed to store chat scope names for %s: %v", names.Scope, err)
+		}
+	})
+
 	serv := service.NewBotService(userRepo, convRepo)
 
 	registry := channel.NewRegistry()
 
 	var transcriber provider.Transcriber
-	transcriber, err := provider.CreateTranscriber(config.TranscriberProviderName, config.TranscriberAPIKey)
-	if err != nil {
-		log.Printf("Warning: Transcriber provider not available for Telegram adapter: %v", err)
+	if name := strings.TrimSpace(config.TranscriberProviderName); name != "" {
+		created, err := provider.CreateTranscriber(name, config.TranscriberAPIKey)
+		if err != nil {
+			log.Printf("Warning: Transcriber provider not available for Telegram adapter: %v", err)
+		} else {
+			transcriber = created
+		}
 	}
 	telegramAdapter := telegram.NewTelegramAdapter(transcriber)
 	registry.Register(telegramAdapter)
@@ -54,6 +68,10 @@ func BotRouter(router fiber.Router) {
 	api := router.Group("/api")
 	api.Post("/chat", hand.APIChat)
 	api.Post("/chat/stream", hand.APIChatStream)
+	api.Post("/chat/stop", hand.APIChatStop)
+	api.Get("/chat/runs", hand.APIChatRuns)
+	api.Get("/chat/run/:id/stream", hand.APIChatRunStream)
+	api.Get("/events", hand.APIEvents)
 	api.Post("/approvals/:id", hand.ApprovalDecision)
 
 	if service := a2a.SetupService(serv); service != nil {

@@ -43,7 +43,7 @@ var checkCmd = &cobra.Command{
 			val := os.Getenv(key)
 			if val == "" {
 				if key == "DB_PATH" {
-					fmt.Printf("%-25s : %s (Default: ~/.myaaw/<agent>/database/myaaw.db)\n", theme.RenderPrimary(key), theme.RenderMuted("[EMPTY]"))
+					fmt.Printf("%-25s : %s (Default: ~/.myaaw/agents/<agent>/database/myaaw.db)\n", theme.RenderPrimary(key), theme.RenderMuted("[EMPTY]"))
 				} else {
 					fmt.Printf("%-25s : %s\n", theme.RenderPrimary(key), theme.RenderMuted("[EMPTY]"))
 				}
@@ -118,7 +118,7 @@ var dumpCmd = &cobra.Command{
 
 			if val == "" {
 				if key == "DB_PATH" {
-					fmt.Printf("%-25s: <EMPTY> (Default: ~/.myaaw/<agent>/database/myaaw.db)\n", key)
+					fmt.Printf("%-25s: <EMPTY> (Default: ~/.myaaw/agents/<agent>/database/myaaw.db)\n", key)
 				} else {
 					fmt.Printf("%-25s: <EMPTY>\n", key)
 				}

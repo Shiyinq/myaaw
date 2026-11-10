@@ -95,6 +95,10 @@ func (t *Timeline) HandleChunk(chunk channel.StreamChunk) {
 	case "retry":
 		t.items = append(t.items, TimelineItem{Kind: "retry", Attempt: chunk.Attempt})
 		t.emitEvent("retry", map[string]any{"attempt": chunk.Attempt})
+	case "conversation":
+		// Sent as soon as the conversation exists, so a client can address the
+		// transcript even if the run is stopped before "done".
+		t.emitEvent("conversation", map[string]any{"conversation_id": chunk.ConversationID})
 	case "compaction":
 		t.items = append(t.items, TimelineItem{
 			Kind:            "compaction",
@@ -107,6 +111,16 @@ func (t *Timeline) HandleChunk(chunk channel.StreamChunk) {
 			"tokens_after":     chunk.TokensAfter,
 			"dropped_messages": chunk.DroppedMessages,
 		})
+	case "context":
+		if chunk.Context != nil {
+			t.emitEvent("context", map[string]any{
+				"tokens":         chunk.Context.Tokens,
+				"window":         chunk.Context.WindowTokens,
+				"system_tokens":  chunk.Context.SystemTokens,
+				"tool_tokens":    chunk.Context.ToolTokens,
+				"message_tokens": chunk.Context.MessageTokens,
+			})
+		}
 	default:
 		// Backwards compatible with providers that only populate fields.
 		if chunk.Thought != "" {
@@ -142,6 +156,9 @@ func (t *Timeline) Done(out *channel.OutgoingMessage) {
 	}
 	if out.RunID != "" {
 		data["run_id"] = out.RunID
+	}
+	if out.Stopped {
+		data["stopped"] = true
 	}
 	if out.Usage.TotalTokens > 0 {
 		data["usage"] = map[string]int{

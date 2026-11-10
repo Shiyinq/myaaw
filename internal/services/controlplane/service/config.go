@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -14,8 +15,10 @@ import (
 
 	myaaw "myaaw"
 	"myaaw/internal/agentdir"
+	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/config"
 	"myaaw/internal/obs"
+	"myaaw/internal/onboard"
 )
 
 var (
@@ -26,18 +29,24 @@ var (
 )
 
 type ProviderInput struct {
-	Name         string
-	Type         string
-	BaseURL      string
-	APIKey       string
-	DefaultModel string
+	Name          string
+	Type          string
+	BaseURL       string
+	APIKey        string
+	AuthMode      string
+	CredentialID  string
+	DefaultModel  string
+	ThinkingLevel string
 }
 
 type ProviderPatch struct {
-	Type         *string
-	BaseURL      *string
-	APIKey       *string
-	DefaultModel *string
+	Type          *string
+	BaseURL       *string
+	APIKey        *string
+	AuthMode      *string
+	CredentialID  *string
+	DefaultModel  *string
+	ThinkingLevel *string
 }
 
 type ChannelInput struct {
@@ -54,11 +63,15 @@ type SecretState struct {
 }
 
 type ProviderView struct {
-	Name         string      `json:"name"`
-	Type         string      `json:"type"`
-	BaseURL      string      `json:"base_url,omitempty"`
-	DefaultModel string      `json:"default_model,omitempty"`
-	APIKey       SecretState `json:"api_key"`
+	Name          string              `json:"name"`
+	Type          string              `json:"type"`
+	BaseURL       string              `json:"base_url,omitempty"`
+	DefaultModel  string              `json:"default_model,omitempty"`
+	APIKey        SecretState         `json:"api_key"`
+	AuthMode      string              `json:"auth_mode,omitempty"`
+	CredentialID  string              `json:"credential_id,omitempty"`
+	ThinkingLevel string              `json:"thinking_level,omitempty"`
+	Connection    *ProviderConnection `json:"connection,omitempty"`
 }
 
 type ProvidersView struct {
@@ -98,7 +111,9 @@ type ConfigView struct {
 }
 
 // ConfigService reads per-agent configuration with secrets masked.
-type ConfigService struct{}
+type ConfigService struct {
+	chatGPT chatGPTSessions
+}
 
 func NewConfigService() *ConfigService {
 	return &ConfigService{}
@@ -216,8 +231,10 @@ func loadAgentConfig(agentName string) (*config.Config, error) {
 		return nil, err
 	}
 
-	// Model and tool prices live in their own files next to config.json. Merge
-	// them over any inline values so views and patches see the effective table.
+	// Model and tool prices for this agent live next to config.json. The shared
+	// tables under ~/.myaaw/config are a separate layer applied by the runtime; the
+	// config view keeps only the agent's own inline/override values so saving an
+	// unrelated setting cannot copy the whole shared table into the agent folder.
 	models, tools, warnings := config.LoadPriceFiles(filepath.Dir(path))
 	for _, warning := range warnings {
 		log.Printf("Warning: %s", warning)
@@ -260,13 +277,7 @@ func providerViews(cfg *config.Config) []ProviderView {
 	views := make([]ProviderView, 0, len(names))
 	for _, name := range names {
 		provider := cfg.Providers[name]
-		views = append(views, ProviderView{
-			Name:         name,
-			Type:         provider.Type,
-			BaseURL:      provider.BaseURL,
-			DefaultModel: provider.DefaultModel,
-			APIKey:       secretState(provider.APIKey),
-		})
+		views = append(views, providerView(name, provider))
 	}
 	return views
 }
@@ -318,10 +329,16 @@ func (s *ConfigService) CreateProvider(agentName string, in ProviderInput) (Prov
 	}
 
 	providerConfig := config.ProviderConfig{
-		Type:         strings.TrimSpace(in.Type),
-		BaseURL:      strings.TrimSpace(in.BaseURL),
-		APIKey:       strings.TrimSpace(in.APIKey),
-		DefaultModel: strings.TrimSpace(in.DefaultModel),
+		Type:          strings.TrimSpace(in.Type),
+		BaseURL:       strings.TrimSpace(in.BaseURL),
+		APIKey:        strings.TrimSpace(in.APIKey),
+		AuthMode:      strings.TrimSpace(in.AuthMode),
+		CredentialID:  strings.TrimSpace(in.CredentialID),
+		DefaultModel:  strings.TrimSpace(in.DefaultModel),
+		ThinkingLevel: strings.TrimSpace(in.ThinkingLevel),
+	}
+	if err := onboard.NormalizeProviderAuth(&providerConfig); err != nil {
+		return ProviderView{}, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
 	cfg.Providers[name] = providerConfig
 	if cfg.DefaultProvider == "" {
@@ -331,13 +348,7 @@ func (s *ConfigService) CreateProvider(agentName string, in ProviderInput) (Prov
 		return ProviderView{}, err
 	}
 
-	return ProviderView{
-		Name:         name,
-		Type:         providerConfig.Type,
-		BaseURL:      providerConfig.BaseURL,
-		DefaultModel: providerConfig.DefaultModel,
-		APIKey:       secretState(providerConfig.APIKey),
-	}, nil
+	return providerView(name, providerConfig), nil
 }
 
 func (s *ConfigService) UpdateProvider(agentName, id string, patch ProviderPatch) (ProviderView, error) {
@@ -351,7 +362,15 @@ func (s *ConfigService) UpdateProvider(agentName, id string, patch ProviderPatch
 	}
 
 	if patch.Type != nil {
-		providerConfig.Type = strings.TrimSpace(*patch.Type)
+		nextType := strings.TrimSpace(*patch.Type)
+		if nextType != providerConfig.Type {
+			// Authentication material never crosses provider types.
+			providerConfig.AuthMode, providerConfig.CredentialID = "", ""
+			if strings.EqualFold(nextType, chatgpt.ProviderType) {
+				providerConfig.APIKey, providerConfig.BaseURL = "", ""
+			}
+		}
+		providerConfig.Type = nextType
 	}
 	if patch.BaseURL != nil {
 		providerConfig.BaseURL = strings.TrimSpace(*patch.BaseURL)
@@ -362,19 +381,25 @@ func (s *ConfigService) UpdateProvider(agentName, id string, patch ProviderPatch
 	if patch.DefaultModel != nil {
 		providerConfig.DefaultModel = strings.TrimSpace(*patch.DefaultModel)
 	}
+	if patch.ThinkingLevel != nil {
+		providerConfig.ThinkingLevel = strings.ToLower(strings.TrimSpace(*patch.ThinkingLevel))
+	}
+	if patch.AuthMode != nil {
+		providerConfig.AuthMode = strings.TrimSpace(*patch.AuthMode)
+	}
+	if patch.CredentialID != nil {
+		providerConfig.CredentialID = strings.TrimSpace(*patch.CredentialID)
+	}
+	if err := onboard.NormalizeProviderAuth(&providerConfig); err != nil {
+		return ProviderView{}, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+	}
 
 	cfg.Providers[id] = providerConfig
 	if err := saveAgentConfig(agentName, cfg); err != nil {
 		return ProviderView{}, err
 	}
 
-	return ProviderView{
-		Name:         id,
-		Type:         providerConfig.Type,
-		BaseURL:      providerConfig.BaseURL,
-		DefaultModel: providerConfig.DefaultModel,
-		APIKey:       secretState(providerConfig.APIKey),
-	}, nil
+	return providerView(id, providerConfig), nil
 }
 
 func (s *ConfigService) DeleteProvider(agentName, id string) error {
@@ -529,7 +554,7 @@ func saveAgentConfig(agentName string, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path, append(data, '\n'))
+	return config.WriteConfigAtomic(path, append(data, '\n'))
 }
 
 func agentConfigDir(agentName string) (string, error) {
@@ -540,21 +565,15 @@ func agentConfigDir(agentName string) (string, error) {
 	return filepath.Dir(path), nil
 }
 
-// resetPriceFiles restores the embedded price templates for one agent.
+// resetPriceFiles removes an agent's price overrides so the shared tables under
+// ~/.myaaw/config apply again.
 func resetPriceFiles(agentName string) error {
 	dir, err := agentConfigDir(agentName)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	for _, name := range []string{config.ModelPricesFile, config.ToolPricesFile} {
-		data, err := myaaw.DefaultMyaawDir.ReadFile(".myaaw/config/" + name)
-		if err != nil {
-			return err
-		}
-		if err := writeFileAtomic(filepath.Join(dir, name), data); err != nil {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
@@ -661,10 +680,13 @@ type ComputerUsePatch struct {
 }
 
 type HeartbeatPatch struct {
-	Active  *bool   `json:"active,omitempty"`
-	Channel *string `json:"channel,omitempty"`
-	To      *string `json:"to,omitempty"`
-	Every   *string `json:"every,omitempty"`
+	Active    *bool   `json:"active,omitempty"`
+	Channel   *string `json:"channel,omitempty"`
+	To        *string `json:"to,omitempty"`
+	ThreadID  *string `json:"thread_id,omitempty"`
+	SessionID *string `json:"session_id,omitempty"`
+	ChatType  *string `json:"chat_type,omitempty"`
+	Every     *string `json:"every,omitempty"`
 }
 
 type CronPatch struct {
@@ -677,15 +699,52 @@ type SecretPatch struct {
 }
 
 // ConfigResetRequest names the sections and bot fields to restore to their
-// template defaults. It is used by PATCH /config/reset.
+// template defaults. It is used by PATCH /config/reset. A section accepts `true`
+// (reset the whole section), a list of field names (reset only those), or false
+// to leave it alone; an empty list also means the whole section.
 type ConfigResetRequest struct {
-	Bot           []string `json:"bot,omitempty"`       // bot field names; an empty list resets the whole bot section
-	Heartbeat     *bool    `json:"heartbeat,omitempty"` // true resets the whole section
-	Cron          *bool    `json:"cron,omitempty"`
-	Transcriber   *bool    `json:"transcriber,omitempty"`
-	Synthesizer   *bool    `json:"synthesizer,omitempty"`
-	Observability *bool    `json:"observability,omitempty"`
-	Approvals     *bool    `json:"approvals,omitempty"`
+	Bot           []string      `json:"bot,omitempty"`
+	Heartbeat     *SectionReset `json:"heartbeat,omitempty"`
+	Cron          *SectionReset `json:"cron,omitempty"`
+	Transcriber   *SectionReset `json:"transcriber,omitempty"`
+	Synthesizer   *SectionReset `json:"synthesizer,omitempty"`
+	Observability *SectionReset `json:"observability,omitempty"`
+	Approvals     *SectionReset `json:"approvals,omitempty"`
+}
+
+// SectionReset is a reset selector for a config section. `true` and `[]` reset
+// the whole section, a non-empty list resets only the named fields, and false
+// or null means "leave this section alone".
+type SectionReset []string
+
+func (s *SectionReset) UnmarshalJSON(data []byte) error {
+	switch strings.TrimSpace(string(data)) {
+	case "true":
+		*s = []string{}
+		return nil
+	case "false", "null":
+		*s = nil
+		return nil
+	}
+
+	var fields []string
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if fields == nil {
+		fields = []string{}
+	}
+	*s = fields
+	return nil
+}
+
+// requestedFields reports whether a section reset was requested, and which
+// fields it names. An empty list means the whole section.
+func requestedFields(section *SectionReset) ([]string, bool) {
+	if section == nil || *section == nil {
+		return nil, false
+	}
+	return *section, true
 }
 
 // Patch applies a partial update and returns the resulting config view.
@@ -697,26 +756,65 @@ func (s *ConfigService) Patch(agentName string, patch ConfigPatch) (ConfigView, 
 	if err := applyConfigPatch(cfg, patch); err != nil {
 		return ConfigView{}, err
 	}
+	if err := saveAgentConfig(agentName, cfg); err != nil {
+		return ConfigView{}, err
+	}
 	if patch.Observability != nil {
 		dir, err := agentConfigDir(agentName)
 		if err != nil {
 			return ConfigView{}, err
 		}
 		if patch.Observability.ModelPrices != nil {
-			if err := config.WriteModelPricesFile(dir, cfg.Observability.ModelPrices); err != nil {
+			overrides := modelPriceOverrides(cfg.Observability.ModelPrices)
+			path := filepath.Join(dir, config.ModelPricesFile)
+			if len(overrides) == 0 {
+				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+					return ConfigView{}, err
+				}
+			} else if err := config.WriteModelPricesFile(dir, overrides); err != nil {
 				return ConfigView{}, err
 			}
 		}
 		if patch.Observability.ToolPrices != nil {
-			if err := config.WriteToolPricesFile(dir, cfg.Observability.ToolPrices); err != nil {
+			overrides := toolPriceOverrides(cfg.Observability.ToolPrices)
+			path := filepath.Join(dir, config.ToolPricesFile)
+			if len(overrides) == 0 {
+				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+					return ConfigView{}, err
+				}
+			} else if err := config.WriteToolPricesFile(dir, overrides); err != nil {
 				return ConfigView{}, err
 			}
 		}
 	}
-	if err := saveAgentConfig(agentName, cfg); err != nil {
-		return ConfigView{}, err
-	}
 	return configView(cfg), nil
+}
+
+// modelPriceOverrides keeps only entries that differ from the shared table, so
+// editing one price in the dashboard does not duplicate the whole catalog into
+// an agent folder.
+func modelPriceOverrides(effective map[string]config.ModelPriceConfig) map[string]config.ModelPriceConfig {
+	global, _, _ := config.LoadGlobalPriceFiles()
+	overrides := make(map[string]config.ModelPriceConfig)
+	for name, price := range effective {
+		if base, ok := global[name]; ok && reflect.DeepEqual(price, base) {
+			continue
+		}
+		overrides[name] = price
+	}
+	return overrides
+}
+
+func toolPriceOverrides(effective map[string]config.ToolPriceConfig) map[string]config.ToolPriceConfig {
+	_, global, _ := config.LoadGlobalPriceFiles()
+	overrides := make(map[string]config.ToolPriceConfig)
+	for name, price := range effective {
+		if base, ok := global[name]; ok && reflect.DeepEqual(price, base) {
+			continue
+		}
+		overrides[name] = price
+	}
+	return overrides
 }
 
 // ResetFields restores only the requested sections and bot fields.
@@ -733,26 +831,26 @@ func (s *ConfigService) ResetFields(agentName string, req ConfigResetRequest) (C
 	if req.Bot != nil {
 		resetBotFields(cfg, tmpl, req.Bot)
 	}
-	if req.Heartbeat != nil && *req.Heartbeat {
-		cfg.Heartbeat = tmpl.Heartbeat
+	if fields, ok := requestedFields(req.Heartbeat); ok {
+		resetHeartbeatFields(cfg, tmpl, fields)
 	}
-	if req.Cron != nil && *req.Cron {
-		cfg.Cron = tmpl.Cron
+	if fields, ok := requestedFields(req.Cron); ok {
+		resetCronFields(cfg, tmpl, fields)
 	}
-	if req.Transcriber != nil && *req.Transcriber {
-		cfg.Transcriber = tmpl.Transcriber
+	if fields, ok := requestedFields(req.Transcriber); ok {
+		resetTranscriberFields(cfg, tmpl, fields)
 	}
-	if req.Synthesizer != nil && *req.Synthesizer {
-		cfg.Synthesizer = tmpl.Synthesizer
+	if fields, ok := requestedFields(req.Synthesizer); ok {
+		resetSynthesizerFields(cfg, tmpl, fields)
 	}
-	if req.Observability != nil && *req.Observability {
-		cfg.Observability = tmpl.Observability
-		if err := resetPriceFiles(agentName); err != nil {
+	if fields, ok := requestedFields(req.Observability); ok {
+		resetObservabilityFields(cfg, tmpl, fields)
+		if err := resetPriceFields(agentName, fields); err != nil {
 			return ConfigView{}, err
 		}
 	}
-	if req.Approvals != nil && *req.Approvals {
-		cfg.Approvals = tmpl.Approvals
+	if fields, ok := requestedFields(req.Approvals); ok {
+		resetApprovalsFields(cfg, tmpl, fields)
 	}
 
 	if err := saveAgentConfig(agentName, cfg); err != nil {
@@ -974,12 +1072,40 @@ func applyHeartbeatPatch(hb *config.HeartbeatConfig, patch HeartbeatPatch) error
 	if patch.To != nil {
 		hb.To = strings.TrimSpace(*patch.To)
 	}
+	if patch.ThreadID != nil {
+		threadID := strings.TrimSpace(*patch.ThreadID)
+		if err := onboard.ValidateThreadID(threadID); err != nil {
+			return ErrInvalidConfig
+		}
+		hb.ThreadID = threadID
+	}
+	if patch.SessionID != nil {
+		hb.SessionID = strings.TrimSpace(*patch.SessionID)
+	}
+	if patch.ChatType != nil {
+		chatType := strings.ToLower(strings.TrimSpace(*patch.ChatType))
+		if err := onboard.ValidateHeartbeatChatType(chatType); err != nil {
+			return ErrInvalidConfig
+		}
+		hb.ChatType = chatType
+	}
 	if patch.Every != nil {
 		every := strings.TrimSpace(*patch.Every)
 		if d, err := time.ParseDuration(every); err != nil || d <= 0 {
 			return ErrInvalidConfig
 		}
 		hb.Every = every
+	}
+	// A field that cannot apply to the saved channel is dropped instead of
+	// lingering in config.json and misleading the next run.
+	switch hb.Channel {
+	case "telegram":
+		hb.ChatType = ""
+	case "discord":
+		hb.ThreadID = ""
+	default:
+		hb.ThreadID = ""
+		hb.ChatType = ""
 	}
 	return nil
 }
@@ -1036,6 +1162,170 @@ func resetBotFields(cfg, tmpl *config.Config, fields []string) {
 			cfg.Bot.ComputerUse = tmpl.Bot.ComputerUse
 		}
 	}
+}
+
+func resetHeartbeatFields(cfg, tmpl *config.Config, fields []string) {
+	if len(fields) == 0 {
+		cfg.Heartbeat = tmpl.Heartbeat
+		return
+	}
+	for _, field := range fields {
+		switch field {
+		case "active":
+			cfg.Heartbeat.Active = tmpl.Heartbeat.Active
+		case "every":
+			cfg.Heartbeat.Every = tmpl.Heartbeat.Every
+		case "to":
+			cfg.Heartbeat.To = tmpl.Heartbeat.To
+		case "thread_id":
+			cfg.Heartbeat.ThreadID = tmpl.Heartbeat.ThreadID
+		case "session_id":
+			cfg.Heartbeat.SessionID = tmpl.Heartbeat.SessionID
+		case "chat_type":
+			cfg.Heartbeat.ChatType = tmpl.Heartbeat.ChatType
+		case "channel":
+			cfg.Heartbeat.Channel = tmpl.Heartbeat.Channel
+		}
+	}
+}
+
+func resetCronFields(cfg, tmpl *config.Config, fields []string) {
+	if len(fields) == 0 {
+		cfg.Cron = tmpl.Cron
+		return
+	}
+	for _, field := range fields {
+		if field == "active" {
+			cfg.Cron.Active = tmpl.Cron.Active
+		}
+	}
+}
+
+func resetTranscriberFields(cfg, tmpl *config.Config, fields []string) {
+	if len(fields) == 0 {
+		cfg.Transcriber = tmpl.Transcriber
+		return
+	}
+	for _, field := range fields {
+		switch field {
+		case "provider":
+			cfg.Transcriber.Provider = tmpl.Transcriber.Provider
+		case "api_key":
+			cfg.Transcriber.APIKey = tmpl.Transcriber.APIKey
+		}
+	}
+}
+
+func resetSynthesizerFields(cfg, tmpl *config.Config, fields []string) {
+	if len(fields) == 0 {
+		cfg.Synthesizer = tmpl.Synthesizer
+		return
+	}
+	for _, field := range fields {
+		switch field {
+		case "provider":
+			cfg.Synthesizer.Provider = tmpl.Synthesizer.Provider
+		case "api_key":
+			cfg.Synthesizer.APIKey = tmpl.Synthesizer.APIKey
+		}
+	}
+}
+
+func resetObservabilityFields(cfg, tmpl *config.Config, fields []string) {
+	if len(fields) == 0 {
+		cfg.Observability = tmpl.Observability
+		return
+	}
+	if cfg.Observability == nil || tmpl.Observability == nil {
+		return
+	}
+	for _, field := range fields {
+		switch field {
+		case "enabled":
+			cfg.Observability.Enabled = tmpl.Observability.Enabled
+		case "retention_days":
+			cfg.Observability.RetentionDays = tmpl.Observability.RetentionDays
+		case "max_content_chars":
+			cfg.Observability.MaxContentChars = tmpl.Observability.MaxContentChars
+		case "store_content":
+			cfg.Observability.StoreContent = tmpl.Observability.StoreContent
+		case "redact_patterns":
+			if tmpl.Observability.RedactPatterns == nil {
+				cfg.Observability.RedactPatterns = nil
+				continue
+			}
+			patterns := append([]string{}, (*tmpl.Observability.RedactPatterns)...)
+			cfg.Observability.RedactPatterns = &patterns
+		case "model_prices":
+			cfg.Observability.ModelPrices = tmpl.Observability.ModelPrices
+		case "tool_prices":
+			cfg.Observability.ToolPrices = tmpl.Observability.ToolPrices
+		}
+	}
+}
+
+func resetApprovalsFields(cfg, tmpl *config.Config, fields []string) {
+	if len(fields) == 0 {
+		cfg.Approvals = tmpl.Approvals
+		return
+	}
+	if cfg.Approvals == nil || tmpl.Approvals == nil {
+		return
+	}
+	for _, field := range fields {
+		switch field {
+		case "mode":
+			cfg.Approvals.Mode = tmpl.Approvals.Mode
+		case "timeout_seconds":
+			cfg.Approvals.TimeoutSeconds = tmpl.Approvals.TimeoutSeconds
+		case "allow":
+			cfg.Approvals.Allow = append([]string{}, tmpl.Approvals.Allow...)
+		case "deny":
+			cfg.Approvals.Deny = append([]string{}, tmpl.Approvals.Deny...)
+		case "unattended":
+			cfg.Approvals.Unattended = tmpl.Approvals.Unattended
+		case "subagents":
+			cfg.Approvals.Subagents = tmpl.Approvals.Subagents
+		}
+	}
+}
+
+// resetPriceFields removes the per-agent override file named by the reset. A
+// field-level reset falls back to the global table, not to a copied template.
+func resetPriceFields(agentName string, fields []string) error {
+	if len(fields) == 0 {
+		return resetPriceFiles(agentName)
+	}
+	dir, err := agentConfigDir(agentName)
+	if err != nil {
+		return err
+	}
+	remove := func(name string) error {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	if sectionsContain(fields, "model_prices") {
+		if err := remove(config.ModelPricesFile); err != nil {
+			return err
+		}
+	}
+	if sectionsContain(fields, "tool_prices") {
+		if err := remove(config.ToolPricesFile); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sectionsContain(fields []string, name string) bool {
+	for _, field := range fields {
+		if field == name {
+			return true
+		}
+	}
+	return false
 }
 
 // templateConfig reads the embedded config template, which doubles as the

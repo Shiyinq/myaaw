@@ -4,10 +4,23 @@ definitions:
     properties:
       conversation_id:
         type: string
+      files:
+        items:
+          $ref: '#/definitions/channel.FileUpload'
+        type: array
       images:
         items:
           type: string
         type: array
+      request_id:
+        description: RequestID lets the client stop this run with POST /api/chat/stop.
+        type: string
+      rewind_user_offset:
+        description: |-
+          RewindUserOffset rewinds the transcript before this turn. 0 keeps the
+          transcript up to the last user message (regenerate); N keeps it up to the
+          user message N turns earlier (edit that message with `text`).
+        type: integer
       text:
         type: string
       user_id:
@@ -46,6 +59,15 @@ definitions:
       tokens_before:
         type: integer
     type: object
+  channel.FileUpload:
+    properties:
+      data_base64:
+        type: string
+      mime_type:
+        type: string
+      name:
+        type: string
+    type: object
   channel.QueueEnvelope:
     properties:
       channel:
@@ -70,16 +92,40 @@ definitions:
       mime_type:
         type: string
     type: object
+  handler.ChatStopRequest:
+    properties:
+      request_id:
+        type: string
+    type: object
   handler.HeartbeatRequest:
     properties:
       channel:
         type: string
+      chat_type:
+        type: string
       prompt:
+        type: string
+      session_id:
+        type: string
+      thread_id:
         type: string
       to:
         type: string
       trigger:
         type: string
+    type: object
+  handler.RunInfo:
+    properties:
+      conversation_id:
+        type: string
+      finished_at:
+        type: string
+      request_id:
+        type: string
+      started_at:
+        type: string
+      streaming:
+        type: boolean
     type: object
   myaaw_internal_services_bot_handler.ChatResponse:
     properties:
@@ -197,6 +243,86 @@ paths:
       summary: API Chat
       tags:
       - API
+  /api/chat/run/{id}/stream:
+    get:
+      description: Streams the events of a running (or recently finished) run, replaying
+        everything after `after`. The run keeps going when this connection drops.
+      parameters:
+      - description: Request id of the run
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 0
+        description: Skip events before this index
+        in: query
+        name: after
+        type: integer
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      summary: Attach to a run
+      tags:
+      - API
+  /api/chat/runs:
+    get:
+      description: Lists the runs a client can attach to, newest first. Finished runs
+        stay listed for a short while so a reconnecting tab can read their tail.
+      parameters:
+      - description: Only runs of this conversation
+        in: query
+        name: conversation_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/handler.RunInfo'
+              type: array
+            type: object
+      summary: List runs
+      tags:
+      - API
+  /api/chat/stop:
+    post:
+      consumes:
+      - application/json
+      description: Cancels the run started with the same request_id. Whatever the
+        model produced is kept in the transcript, and the run stops spending provider
+        tokens.
+      parameters:
+      - description: Request id of the run to stop
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.ChatStopRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      summary: Stop a running chat
+      tags:
+      - API
   /api/chat/stream:
     post:
       consumes:
@@ -231,6 +357,19 @@ paths:
           schema:
             $ref: '#/definitions/common.ErrorResponse'
       summary: API Chat Stream
+      tags:
+      - API
+  /api/events:
+    get:
+      description: A `conversation.updated` event is emitted when a cron, heartbeat,
+        or sub-agent turn lands. The payload names the conversation; read it for the
+        transcript. A `HEARTBEAT_OK` turn is not stored, so it emits nothing.
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: OK
+      summary: Conversation events
       tags:
       - API
   /heartbeat:

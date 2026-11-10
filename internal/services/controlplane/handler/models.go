@@ -32,6 +32,23 @@ func (h *Handler) ListModels(c fiber.Ctx) error {
 	return c.JSON(view)
 }
 
+// GetModelCapabilities returns the global model capability catalog used by the
+// dashboard's model picker.
+// @Summary      Get model capabilities
+// @Tags         Providers
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} service.ModelCapabilitiesView
+// @Failure      401 {object} common.ErrorResponse
+// @Router       /models/capabilities [get]
+func (h *Handler) GetModelCapabilities(c fiber.Ctx) error {
+	view, err := h.config.ModelCapabilities()
+	if err != nil {
+		return configWriteError(c, err)
+	}
+	return c.JSON(view)
+}
+
 // GetProviderModels lists models for an already saved provider, using the
 // stored API key.
 // @Summary      List models for a saved provider

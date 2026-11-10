@@ -39,7 +39,7 @@ func ListArchives(dir string) ([]ArchiveInfo, error) {
 		if err != nil {
 			continue
 		}
-		created, err := time.ParseInLocation("20060102-150405", match[2], time.Local)
+		created, err := time.ParseInLocation("20060102-150405", match[2], time.UTC)
 		if err != nil {
 			created = info.ModTime()
 		}

@@ -3,16 +3,25 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
+	"os"
+	"strings"
 	"time"
 
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/daemon"
 	"myaaw/internal/services/controlplane"
+	"myaaw/internal/utils"
 
 	"github.com/spf13/cobra"
 )
 
-var apiPort string
+var (
+	apiPort           string
+	apiHost           string
+	apiTerminal       bool
+	apiAllowedOrigins string
+)
 
 var apiCmd = &cobra.Command{
 	Use:   "api",
@@ -105,8 +114,21 @@ var apiStatusCmd = &cobra.Command{
 	},
 }
 
+// applyAPIFlags turns flags into the environment variables the control plane
+// reads at startup. The flags exist because daemon units carry no environment
+// of their own.
+func applyAPIFlags() {
+	if apiTerminal {
+		_ = os.Setenv("MYAAW_TERMINAL", "1")
+	}
+	if origins := effectiveAllowedOrigins(); origins != "" {
+		_ = os.Setenv("ALLOWED_ORIGINS", origins)
+	}
+}
+
 func runAPI() {
-	if err := controlplane.Run(":" + apiPort); err != nil {
+	applyAPIFlags()
+	if err := controlplane.Run(net.JoinHostPort(apiHost, apiPort)); err != nil {
 		log.Fatalf("API server error: %v", err)
 	}
 }
@@ -115,12 +137,35 @@ func apiDaemonName() string {
 	return "myaaw-api"
 }
 
+// effectiveAllowedOrigins prefers the flag, then the environment, so both
+// `myaaw api start --allowed-origins ...` and an exported ALLOWED_ORIGINS reach
+// the daemon.
+func effectiveAllowedOrigins() string {
+	if origins := strings.TrimSpace(apiAllowedOrigins); origins != "" {
+		return origins
+	}
+	return strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS"))
+}
+
 func apiRunArgs() []string {
-	return []string{"api", "run", "--port", apiPort}
+	args := []string{"api", "run", "--port", apiPort, "--host", apiHost}
+	if apiTerminal {
+		// Daemon units carry no environment, so the flag is how `api start` and
+		// `api restart` remember that the terminal is enabled.
+		args = append(args, "--terminal")
+	}
+	if origins := effectiveAllowedOrigins(); origins != "" {
+		// The systemd unit joins args with spaces, so keep the list tight.
+		args = append(args, "--allowed-origins", strings.Join(utils.ParseAllowedOrigins(origins), ","))
+	}
+	return args
 }
 
 func init() {
 	apiCmd.PersistentFlags().StringVar(&apiPort, "port", "9000", "port to listen on")
+	apiCmd.PersistentFlags().StringVar(&apiHost, "host", "127.0.0.1", "host/interface to bind (use 0.0.0.0 to expose)")
+	apiCmd.PersistentFlags().BoolVar(&apiTerminal, "terminal", false, "allow the dashboard to open a shell on this host (enables MYAAW_TERMINAL)")
+	apiCmd.PersistentFlags().StringVar(&apiAllowedOrigins, "allowed-origins", "", "comma-separated browser origins allowed to call the API (sets ALLOWED_ORIGINS)")
 	apiCmd.AddCommand(apiRunCmd)
 	apiCmd.AddCommand(apiStartCmd)
 	apiCmd.AddCommand(apiStopCmd)

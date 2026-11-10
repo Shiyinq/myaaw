@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="%lang%">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.png" type="image/png" sizes="128x128" />
+		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+		<meta name="apple-mobile-web-app-title" content="Myaaw" />
+		<meta name="application-name" content="Myaaw" />
+		<meta name="theme-color" content="#ffffff" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+			rel="stylesheet"
+		/>
+		<script>
+			// A first visit gets the house theme; any explicit choice is persisted and
+			// wins from then on (an empty stored theme still counts as a choice).
+			try {
+				if (
+					localStorage.getItem('mode-watcher-theme') === null &&
+					localStorage.getItem('mode-watcher-mode') === null
+				) {
+					localStorage.setItem('mode-watcher-theme', 'siamese');
+					localStorage.setItem('mode-watcher-mode', 'light');
+				}
+			} catch {
+				// Storage can be refused (private mode); the app still works on defaults.
+			}
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

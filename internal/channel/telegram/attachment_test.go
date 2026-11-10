@@ -27,6 +27,9 @@ func TestSendTelegramPhotoMultipart(t *testing.T) {
 		if got := r.FormValue("reply_to_message_id"); got != "7" {
 			t.Errorf("reply_to_message_id = %q", got)
 		}
+		if got := r.FormValue("message_thread_id"); got != "99" {
+			t.Errorf("message_thread_id = %q", got)
+		}
 		file, header, err := r.FormFile("photo")
 		if err != nil {
 			t.Errorf("photo part: %v", err)
@@ -47,7 +50,7 @@ func TestSendTelegramPhotoMultipart(t *testing.T) {
 	telegramAPIBaseURL = server.URL
 	t.Cleanup(func() { telegramAPIBaseURL = oldBase })
 
-	err := sendTelegramPhoto(42, 7, channel.Attachment{
+	err := sendTelegramPhoto(42, 99, 7, channel.Attachment{
 		FileName: "shot.png",
 		MimeType: "image/png",
 		Data:     []byte("PNGDATA"),

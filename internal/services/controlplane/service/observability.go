@@ -188,6 +188,32 @@ func (s *ObservabilityService) Session(agentName, conversationID string, include
 	return detail, nil
 }
 
+// SessionStats aggregates one session without loading its runs, so the chat
+// status line stays correct for conversations with hundreds of turns.
+func (s *ObservabilityService) SessionStats(agentName, conversationID string) (obs.SessionTotals, error) {
+	if conversationID == "" {
+		return obs.SessionTotals{}, ErrObservabilityNotFound
+	}
+
+	store, err := s.open(agentName)
+	if err != nil {
+		return obs.SessionTotals{}, err
+	}
+	if store == nil {
+		return obs.SessionTotals{}, ErrObservabilityNotFound
+	}
+	defer store.Close()
+
+	totals, found, err := store.SessionTotals(conversationID)
+	if err != nil {
+		return obs.SessionTotals{}, err
+	}
+	if !found {
+		return obs.SessionTotals{}, ErrObservabilityNotFound
+	}
+	return totals, nil
+}
+
 // Run returns one run and its span tree.
 func (s *ObservabilityService) Run(agentName, runID string) (RunDetail, error) {
 	store, err := s.open(agentName)

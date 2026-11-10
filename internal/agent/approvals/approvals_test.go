@@ -569,3 +569,36 @@ func TestStoreClear(t *testing.T) {
 		t.Fatalf("grants after clear = %v", grants)
 	}
 }
+
+// A zero timeout means "wait until answered": the request context must not carry
+// a deadline, while a positive one still bounds the wait.
+type deadlineRequester struct{ sawDeadline bool }
+
+func (d *deadlineRequester) Request(ctx context.Context, _ Request) (Decision, error) {
+	_, d.sawDeadline = ctx.Deadline()
+	return AllowOnce, nil
+}
+
+func TestGateZeroTimeoutHasNoDeadline(t *testing.T) {
+	gate, _ := newGate(t)
+
+	gate.Policy.Timeout = 0
+	open := &deadlineRequester{}
+	gate.Requester = open
+	if out := gate.Check(context.Background(), "bash", nil); !out.Allowed {
+		t.Fatalf("expected allow, got %+v", out)
+	}
+	if open.sawDeadline {
+		t.Fatal("a zero timeout must not set a deadline")
+	}
+
+	gate.Policy.Timeout = time.Second
+	bounded := &deadlineRequester{}
+	gate.Requester = bounded
+	if out := gate.Check(context.Background(), "bash", nil); !out.Allowed {
+		t.Fatalf("expected allow, got %+v", out)
+	}
+	if !bounded.sawDeadline {
+		t.Fatal("a positive timeout must set a deadline")
+	}
+}

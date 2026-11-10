@@ -101,9 +101,9 @@ type skillEntry struct {
 	description string
 }
 
-// GetSkillsInstruction scans ~/.myaaw/skills/ and returns a compact summary of
+// GetSkillsInstruction scans ~/.myaaw/agents/<agent>/skills/ and returns a compact summary of
 // all enabled skills for injection into the agent's system prompt. Skills
-// disabled via ~/.myaaw/skills/skills.json or the SKILL.md frontmatter
+// disabled via ~/.myaaw/agents/<agent>/skills/skills.json or the SKILL.md frontmatter
 // (`enabled: false`) are skipped.
 func GetSkillsInstruction() string {
 	myaawPath, err := agent.EnsureMyaawConfig()
@@ -216,7 +216,7 @@ func isSkillEnabled(name string, filter map[string]bool, frontmatterEnabled *boo
 }
 
 // IsSkillEnabled reports whether the named skill is enabled according to
-// ~/.myaaw/skills/skills.json. Used by callers that need to validate a skill
+// ~/.myaaw/agents/<agent>/skills/skills.json. Used by callers that need to validate a skill
 // independently of prompt generation.
 func IsSkillEnabled(name string) bool {
 	myaawPath, err := agent.EnsureMyaawConfig()

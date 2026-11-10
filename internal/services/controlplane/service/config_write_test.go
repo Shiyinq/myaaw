@@ -12,17 +12,21 @@ func TestConfigServiceProviderWrites(t *testing.T) {
 	configSvc := NewConfigService()
 
 	created, err := configSvc.CreateProvider("myfriend", ProviderInput{
-		Name:         "openai",
-		Type:         "openai",
-		BaseURL:      "https://api.openai.com",
-		APIKey:       "sk-secret",
-		DefaultModel: "gpt-4o",
+		Name:          "openai",
+		Type:          "openai",
+		BaseURL:       "https://api.openai.com",
+		APIKey:        "sk-secret",
+		DefaultModel:  "gpt-4o",
+		ThinkingLevel: "high",
 	})
 	if err != nil {
 		t.Fatalf("CreateProvider: %v", err)
 	}
 	if !created.APIKey.Configured {
 		t.Fatalf("provider = %+v", created)
+	}
+	if created.ThinkingLevel != "high" {
+		t.Fatalf("thinking level = %q", created.ThinkingLevel)
 	}
 
 	cfg, err := loadAgentConfig("myfriend")
@@ -34,12 +38,16 @@ func TestConfigServiceProviderWrites(t *testing.T) {
 	}
 
 	model := "gpt-4o-mini"
-	updated, err := configSvc.UpdateProvider("myfriend", "openai", ProviderPatch{DefaultModel: &model})
+	level := "max"
+	updated, err := configSvc.UpdateProvider("myfriend", "openai", ProviderPatch{DefaultModel: &model, ThinkingLevel: &level})
 	if err != nil {
 		t.Fatalf("UpdateProvider: %v", err)
 	}
 	if updated.DefaultModel != model {
 		t.Fatalf("model = %q", updated.DefaultModel)
+	}
+	if updated.ThinkingLevel != level {
+		t.Fatalf("thinking level = %q", updated.ThinkingLevel)
 	}
 	cfg, _ = loadAgentConfig("myfriend")
 	if cfg.Providers["openai"].APIKey != "sk-secret" {

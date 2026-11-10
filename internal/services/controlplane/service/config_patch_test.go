@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -363,7 +364,7 @@ func TestConfigResetObservabilityRestoresTheTemplate(t *testing.T) {
 		t.Fatalf("Patch: %v", err)
 	}
 
-	view, err := svc.ResetFields("myfriend", ConfigResetRequest{Observability: cpBoolPtr(true)})
+	view, err := svc.ResetFields("myfriend", ConfigResetRequest{Observability: wholeSection()})
 	if err != nil {
 		t.Fatalf("ResetFields: %v", err)
 	}
@@ -385,7 +386,7 @@ func TestConfigResetFields(t *testing.T) {
 
 	view, err := svc.ResetFields("myfriend", ConfigResetRequest{
 		Bot:       []string{"type"},
-		Heartbeat: cpBoolPtr(true),
+		Heartbeat: wholeSection(),
 	})
 	if err != nil {
 		t.Fatalf("ResetFields: %v", err)
@@ -442,3 +443,144 @@ func TestConfigResetFull(t *testing.T) {
 }
 
 func cpStrPtr(v string) *string { return &v }
+
+// wholeSection asks for a full section reset, the JSON `true` form.
+func wholeSection() *SectionReset {
+	fields := SectionReset{}
+	return &fields
+}
+
+// sectionFields asks for a field-level reset, the JSON `["field"]` form.
+func sectionFields(fields ...string) *SectionReset {
+	value := SectionReset(append([]string{}, fields...))
+	return &value
+}
+
+func TestConfigResetSectionFields(t *testing.T) {
+	setupConfigAgent(t, testConfig())
+	svc := NewConfigService()
+
+	// Heartbeat: two edits, reset only `every`.
+	if _, err := svc.Patch("myfriend", ConfigPatch{Heartbeat: &HeartbeatPatch{
+		Every: cpStrPtr("5m"),
+		To:    cpStrPtr("999"),
+	}}); err != nil {
+		t.Fatalf("Patch heartbeat: %v", err)
+	}
+	view, err := svc.ResetFields("myfriend", ConfigResetRequest{Heartbeat: sectionFields("every")})
+	if err != nil {
+		t.Fatalf("ResetFields heartbeat: %v", err)
+	}
+	if view.Heartbeat.Every == "5m" {
+		t.Fatalf("every was not reset: %+v", view.Heartbeat)
+	}
+	if view.Heartbeat.To != "999" {
+		t.Fatalf("reset touched `to`: %+v", view.Heartbeat)
+	}
+
+	// Observability: two edits, reset only the retention.
+	retention := 5
+	chars := 2048
+	if _, err := svc.Patch("myfriend", ConfigPatch{Observability: &ObservabilityPatch{
+		RetentionDays:   &retention,
+		MaxContentChars: &chars,
+	}}); err != nil {
+		t.Fatalf("Patch observability: %v", err)
+	}
+	view, err = svc.ResetFields("myfriend", ConfigResetRequest{Observability: sectionFields("retention_days")})
+	if err != nil {
+		t.Fatalf("ResetFields observability: %v", err)
+	}
+	if view.Observability == nil {
+		t.Fatal("observability disappeared")
+	}
+	if view.Observability.RetentionDays != nil && *view.Observability.RetentionDays == retention {
+		t.Fatalf("retention_days was not reset: %+v", view.Observability)
+	}
+	if view.Observability.MaxContentChars != chars {
+		t.Fatalf("reset touched max_content_chars: %+v", view.Observability)
+	}
+
+	// Approvals: two edits, reset only the mode.
+	if _, err := svc.Patch("myfriend", ConfigPatch{Approvals: &ApprovalsPatch{
+		Mode:           cpStrPtr("off"),
+		TimeoutSeconds: cpIntPtr(5),
+	}}); err != nil {
+		t.Fatalf("Patch approvals: %v", err)
+	}
+	view, err = svc.ResetFields("myfriend", ConfigResetRequest{Approvals: sectionFields("mode")})
+	if err != nil {
+		t.Fatalf("ResetFields approvals: %v", err)
+	}
+	if view.Approvals == nil {
+		t.Fatal("approvals disappeared")
+	}
+	if view.Approvals.Mode == "off" {
+		t.Fatalf("mode was not reset: %+v", view.Approvals)
+	}
+	if view.Approvals.TimeoutSeconds == nil || *view.Approvals.TimeoutSeconds != 5 {
+		t.Fatalf("reset touched timeout_seconds: %+v", view.Approvals)
+	}
+
+	// `false` means "leave this section alone".
+	inactive := SectionReset(nil)
+	view, err = svc.ResetFields("myfriend", ConfigResetRequest{Heartbeat: &inactive})
+	if err != nil {
+		t.Fatalf("ResetFields false: %v", err)
+	}
+	if view.Heartbeat.To != "999" {
+		t.Fatalf("false reset changed the section: %+v", view.Heartbeat)
+	}
+}
+
+func TestConfigPatchWritesOnlyPriceOverrides(t *testing.T) {
+	dir := setupConfigAgent(t, testConfig())
+	globalDir := filepath.Join(os.Getenv("HOME"), ".myaaw", "config")
+	if err := os.MkdirAll(globalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.WriteModelPricesFile(globalDir, map[string]config.ModelPriceConfig{
+		"base": {Input: 1, Output: 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewConfigService()
+	effective := map[string]config.ModelPriceConfig{
+		"base":   {Input: 1, Output: 2},
+		"custom": {Input: 5, Output: 6},
+	}
+	if _, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{ModelPrices: effective},
+	}); err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+
+	overridePath := filepath.Join(dir, "config", config.ModelPricesFile)
+	data, err := os.ReadFile(overridePath)
+	if err != nil {
+		t.Fatalf("override file: %v", err)
+	}
+	var written map[string]config.ModelPriceConfig
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := written["base"]; ok {
+		t.Fatalf("shared entry was copied into the override: %+v", written)
+	}
+	if written["custom"].Input != 5 {
+		t.Fatalf("edited entry missing: %+v", written)
+	}
+
+	// A patch that only contains shared values must remove the override file.
+	if _, err := svc.Patch("myfriend", ConfigPatch{
+		Observability: &ObservabilityPatch{ModelPrices: map[string]config.ModelPriceConfig{
+			"base": {Input: 1, Output: 2},
+		}},
+	}); err != nil {
+		t.Fatalf("Patch reset: %v", err)
+	}
+	if _, err := os.Stat(overridePath); !os.IsNotExist(err) {
+		t.Fatalf("override file should be removed: %v", err)
+	}
+}

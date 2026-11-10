@@ -75,11 +75,12 @@ type Policy struct {
 	Subagents  string   // inherit | allow | deny
 }
 
-// PolicyFromConfig builds a Policy from the process configuration.
+// PolicyFromConfig builds a Policy from the process configuration. A zero
+// timeout means the prompt has no deadline.
 func PolicyFromConfig() Policy {
 	timeout := time.Duration(config.ApprovalsTimeoutSeconds) * time.Second
-	if timeout <= 0 {
-		timeout = 60 * time.Second
+	if timeout < 0 {
+		timeout = 0
 	}
 	unattended := AllowOnce
 	if strings.EqualFold(config.ApprovalsUnattended, "deny") {
@@ -205,10 +206,15 @@ func (g *Gate) Check(ctx context.Context, toolName string, args json.RawMessage)
 	}
 
 	timeout := p.Timeout
-	if timeout <= 0 {
-		timeout = 60 * time.Second
+	// A zero timeout means "wait until answered": no deadline, but the parent
+	// context still cancels the wait when the run is stopped.
+	var reqCtx context.Context
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		reqCtx, cancel = context.WithTimeout(ctx, timeout)
+	} else {
+		reqCtx, cancel = context.WithCancel(ctx)
 	}
-	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	requestID = NewToken()

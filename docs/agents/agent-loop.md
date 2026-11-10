@@ -89,6 +89,7 @@ flowchart TD
 1. **Defaults**
    - Empty `RunConfig` fields are filled from `DefaultRunConfig` and global configuration.
    - `MaxIterations`, `WarningThreshold`, timeouts, tool output limits, context budget, and repeat limit are applied.
+   - `ThinkingLevel` is copied from the active provider config and carried to the provider request, where the capability catalog decides what to send.
 
 2. **Run timeout**
    - If `RunTimeout > 0`, the engine wraps the context with `context.WithTimeout`.
@@ -170,13 +171,13 @@ AgentEnd
 | `EventToolExecutionEnd` | `ToolResult` | Tool finished/errored/timed out |
 | `EventTraceUpdate` | `Trace` | Latest ReAct trace |
 | `EventUsage` | `Usage` | Per-request usage |
-| `EventLLMRequestStart` | `Model`, `Messages` | About to call the provider; carries the exact transcript being sent |
+| `EventLLMRequestStart` | `Model`, `Messages`, `Context` | About to call the provider; carries the exact transcript being sent and the request's estimated size against the model's context window |
 | `EventLLMRetry` | `Attempt`, `Err` | The previous attempt failed and the request is retried; `Attempt` is 1-based |
 | `EventContextCompacted` | `Compact` | The transcript was trimmed to fit `ContextMaxTokens`, with tokens before/after and how many messages were dropped |
 
 Every event also carries `RunID`, `Time`, and `StepIndex`, filled by the engine, so a consumer can group events without reconstructing run state. `RunResult` exposes the same `RunID` plus `StartedAt` / `EndedAt`. Set `RunConfig.RunID` when the caller already owns an identifier (for example a trace recorder), and the engine will reuse it instead of generating one.
 
-`EventLLMRequestStart` is what trace recording uses to capture the prompt that was actually sent, after context injection and compaction. `EventContextCompacted` fires just before it whenever compaction actually removed messages, so a trace can show why the model stopped seeing older turns. See [Observability](observability.md).
+`EventLLMRequestStart` is what trace recording uses to capture the prompt that was actually sent, after context injection and compaction. Its `Context` field splits that request into `system`/`tool`/`message` tokens (a pre-request estimate using the same `EstimateTokens` heuristic as compaction) and carries the model's context window; the exact input count arrives later in `EventUsage`. `EventContextCompacted` fires just before it whenever compaction actually removed messages, so a trace can show why the model stopped seeing older turns. See [Observability](observability.md).
 
 All other fields in `AgentEvent` are only valid for the matching event type. Consumers must treat events as a discriminated union keyed by `Type`.
 
@@ -231,7 +232,26 @@ Important fields:
 | `Usage` | Token usage |
 | `Version` | Transcript version (`2`) |
 
-### 5.2 Legacy migration
+### 5.2 Turns that were stopped while thinking
+
+A run can end while the model is still producing reasoning (the user pressed Stop, pressed Esc, or the run was aborted). The engine keeps that turn in the transcript as `Thought` with no `Content` and no tool calls:
+
+```text
+user "write a 2500-word essay"
+assistant (thought only, stop_reason=aborted)
+```
+
+Clients rely on that shape: the dashboard renders the reasoning as a Thinking block, so it survives a reload instead of disappearing with the live stream. Providers, however, reject an assistant message with neither `content` nor `tool_calls` (DeepSeek: `Invalid assistant message: content or tool_calls must be set`).
+
+So the transcript keeps `Thought` and the payload layer adapts it:
+
+- OpenAI-compatible providers receive `content` = `[stopped while thinking]\n<reasoning>` with `reasoning_content` cleared, so the request is valid and the model does not lose the plan it had started; the reasoning is not sent twice.
+- Gemini already sends reasoning as a `thought: true` part, so nothing changes there.
+- A turn with no text, no reasoning and no tool calls has nothing to send and is skipped.
+
+This means the transcript is the source of truth for the UI, while each provider adapter owns whatever shape the provider accepts. Clients never see the promoted text as an answer.
+
+### 5.3 Legacy migration
 
 `MigrateLegacyTranscript`:
 
@@ -245,7 +265,7 @@ Important fields:
 
 Migration is idempotent: v2 transcripts are never expanded again.
 
-### 5.3 Persistence
+### 5.4 Persistence
 
 `runConversation` calls `saveConversation` with `result.Transcript`.
 
@@ -260,11 +280,19 @@ Migration is idempotent: v2 transcripts are never expanded again.
 
 `CompactTranscript` limits transcript size before a provider request.
 
-- Token estimate: roughly 4 bytes per token plus per-message overhead; images count as 1000 tokens.
+- Token estimate: roughly 4 bytes per token plus per-message overhead; images count as 1500 tokens.
 - The system prefix is always kept.
 - The newest turn is always kept.
 - Turns are grouped by `user` messages and never split, so assistant tool calls and tool results stay together.
 - Old turns are removed from the front until the budget is satisfied.
+
+This estimate (`EstimateTokens`) is a **pre-request approximation** used only to
+decide whether to trim. It is not the token count the provider reports, and it is
+not what observability records: the exact `prompt_tokens` / `completion_tokens`
+from the provider's `usage` are stored on the `llm` span after the response
+arrives (see [Observability](observability.md)). The estimate exists only because
+the trim decision must be made *before* sending the request, when the real count
+is not yet known.
 
 Configuration:
 
@@ -477,12 +505,12 @@ TUI features:
 
 Neither channel adds new configuration. Both use:
 
-- `bot.stream` / `STREAM_RESPONSE` to select streaming;
+- `bot.stream` / `STREAM_RESPONSE` to select streaming for webhook channels and one-shot CLI runs (the dashboard always streams);
 - `bot.watermark` for the final-answer watermark.
 
 ### 10.6 System prompt context
 
-`agent.SystemPromptBuilder` rebuilds the system message for each request from the active agent's `home/` directory (`~/.myaaw/<agent>/home`):
+`agent.SystemPromptBuilder` rebuilds the system message for each request from the active agent's `home/` directory (`~/.myaaw/agents/<agent>/home`):
 
 - It always injects the absolute `workspace/` paths.
 - For local sessions (`cli`, `voice-classic`), it injects the launch directory as `## Current Directory`, and the filesystem tool registers that directory as an allowed project root even when no marker files are present.
@@ -514,10 +542,32 @@ Neither channel adds new configuration. Both use:
 |---|---|---:|---|
 | — | `max_iterations` | `100` | Agent iteration limit |
 | — | `warning_iterations` | `90` | Start warning when steps remain |
-| `STREAM_RESPONSE` | `stream` | `true` | Streaming vs non-streaming |
+| `STREAM_RESPONSE` | `stream` | `true` | Streaming vs non-streaming for webhook channels and one-shot CLI runs; dashboard chat always streams |
 | — | `watermark` | `false` | Final-answer watermark |
 
 Per-agent tool exclusion does not use global config; use `Agent.WithExcludedTools(...)` in code.
+
+#### `stream` does not cover the dashboard
+
+`bot.stream` (env `STREAM_RESPONSE`) is read once when the agent process starts and only affects the paths that send a message through the channel abstraction:
+
+- **Webhook channels** (`POST /webhook/bot`, i.e. Telegram and Discord): streaming edits one bubble per item; non-streaming sends the bubbles from the finished `Trace`.
+- **One-shot CLI** (`myaaw chat -p "..."`): streaming prints tokens as they arrive; non-streaming waits and prints the answer once. The TUI status line reads the same flag.
+
+It has no effect on the dashboard or on the REST chat endpoints. The dashboard renders a live timeline fed by `POST /agents/{name}/chat/stream`, and every chat feature added on top of that timeline is built from the events:
+
+| Dashboard behaviour | What it depends on |
+|---|---|
+| Thinking blocks and tool steps appear while the run is working | `thought`, `tool` and `tool_result` events; the non-streaming response only carries the finished `timeline` |
+| The answer grows token by token | `chunk` deltas |
+| Stop button and Esc interrupt the answer mid-way | a run in flight plus `POST /chat/stop`; the partial text you interrupt only exists because it was streamed |
+| Opening another conversation or another menu leaves the answer running, and coming back shows it still streaming | one attach stream per run (`/chat/run/{id}/stream`), which the chat page keeps outside the component and re-binds when it returns |
+| A loading spinner on conversations that are still answering | the same live run registry the attach streams feed |
+| Reloading the page, closing the tab or logging out and resuming later | the buffered events are replayed when the client attaches again, so the timeline is rebuilt from the start |
+
+With `stream: false` the run still exists on the agent (it is registered by `request_id`, so `POST /chat/stop` still works), but the client receives **nothing** until it finishes: no thinking block, no growing answer to interrupt, no partial transcript to come back to, and no events to rebuild after a reload. The flag can only choose how a channel delivers a finished answer, not replace the transport this page is built on.
+
+A client that wants the non-streaming shape asks for it per request: `POST /api/chat` returns the finished answer plus the timeline in one JSON body. Because the flag is read at startup, editing it in the dashboard takes effect only after the agent server is restarted (`myaaw server restart --agent <name>`).
 
 ### 11.3 Configuration precedence
 

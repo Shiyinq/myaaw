@@ -16,7 +16,7 @@ func setupConfigAgent(t *testing.T, cfg *config.Config) string {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	if err := os.MkdirAll(filepath.Join(agentRoot, "home"), 0o755); err != nil {
 		t.Fatalf("mkdir home: %v", err)
 	}

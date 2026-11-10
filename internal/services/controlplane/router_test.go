@@ -38,6 +38,50 @@ func TestRouterRequiresAuth(t *testing.T) {
 	}
 }
 
+func TestRouterListsOnboardingCapabilities(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var caps struct {
+		Providers []struct {
+			ID             string `json:"id"`
+			Type           string `json:"type"`
+			Label          string `json:"label"`
+			DefaultBaseURL string `json:"default_base_url"`
+			DefaultModel   string `json:"default_model"`
+		} `json:"providers"`
+		Skills []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"skills"`
+		Tools []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"tools"`
+	}
+	doJSON(t, app, "GET", "/capabilities", token, "", fiber.StatusOK, &caps)
+
+	if len(caps.Providers) != 4 {
+		t.Fatalf("providers = %+v", caps.Providers)
+	}
+	if caps.Providers[0].ID != "openai" || caps.Providers[1].ID != "deepseek" || caps.Providers[2].ID != "gemini" || caps.Providers[3].ID != "openai_chatgpt" {
+		t.Fatalf("providers = %+v", caps.Providers)
+	}
+	if caps.Providers[1].Type != "openai" || caps.Providers[1].DefaultBaseURL != "https://api.deepseek.com" {
+		t.Fatalf("deepseek preset = %+v", caps.Providers[1])
+	}
+	if caps.Providers[0].DefaultBaseURL == "" || caps.Providers[0].DefaultModel == "" {
+		t.Fatalf("provider defaults = %+v", caps.Providers[0])
+	}
+	if len(caps.Skills) < 9 || len(caps.Tools) < 9 {
+		t.Fatalf("skills = %d, tools = %d", len(caps.Skills), len(caps.Tools))
+	}
+	if caps.Skills[0].Description == "" {
+		t.Fatalf("skill descriptions are missing: %+v", caps.Skills[0])
+	}
+}
+
 func TestRouterRejectsWrongPassword(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	app := mustNewApp(t)
@@ -126,6 +170,22 @@ func TestRouterProxiesChatStream(t *testing.T) {
 	}
 }
 
+func TestRouterProxiesChatStop(t *testing.T) {
+	upstream := newUpstream(t)
+	setupTestAgent(t, upstream.URL)
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var got struct {
+		Stopped   bool   `json:"stopped"`
+		RequestID string `json:"request_id"`
+	}
+	doJSON(t, app, "POST", "/agents/myfriend/chat/stop", token, `{"request_id":"req-42"}`, fiber.StatusOK, &got)
+	if !got.Stopped || got.RequestID != "req-42" {
+		t.Fatalf("stop response = %+v", got)
+	}
+}
+
 func TestRouterServesControlPlaneSwagger(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	app := mustNewApp(t)
@@ -175,7 +235,7 @@ func TestRouterFilesystem(t *testing.T) {
 		} `json:"entries"`
 	}
 	doJSON(t, app, "GET", "/agents/myfriend/fs", token, "", fiber.StatusOK, &roots)
-	if len(roots.Entries) != 3 || roots.Entries[0].Path != "/home" {
+	if len(roots.Entries) != 4 || roots.Entries[0].Path != "/home" || roots.Entries[1].Path != "/user" {
 		t.Fatalf("roots = %+v", roots)
 	}
 
@@ -205,13 +265,259 @@ func TestRouterFilesystem(t *testing.T) {
 	doJSON(t, app, "DELETE", "/agents/myfriend/fs?path=/home", token, "", fiber.StatusBadRequest, nil)
 }
 
+func TestRouterRawFiles(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	agentHome := filepath.Join(home, ".myaaw", "agents", "myfriend", "home")
+
+	// Smallest valid PNG (1x1, transparent).
+	png := []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+		0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41,
+		0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+		0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00,
+		0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+	}
+	if err := os.WriteFile(filepath.Join(agentHome, "pixel.png"), png, 0o644); err != nil {
+		t.Fatalf("write png: %v", err)
+	}
+
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	request := func(path, authorization string) *http.Response {
+		t.Helper()
+		req := httptest.NewRequest("GET", path, nil)
+		if authorization != "" {
+			req.Header.Set("Authorization", "Bearer "+authorization)
+		}
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		return resp
+	}
+
+	resp := request("/agents/myfriend/fs/raw?path=/home/pixel.png", token)
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, body = %s", resp.StatusCode, body)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "image/png" {
+		t.Fatalf("content-type = %q", got)
+	}
+	if nonstandard := resp.Header.Get("X-Content-Type-Options"); nonstandard != "nosniff" {
+		t.Fatalf("nosniff = %q", nonstandard)
+	}
+	if len(body) != len(png) {
+		t.Fatalf("body length = %d, want %d", len(body), len(png))
+	}
+
+	// A range request must return 206 so <video> can seek.
+	rangeReq := httptest.NewRequest("GET", "/agents/myfriend/fs/raw?path=/home/pixel.png", nil)
+	rangeReq.Header.Set("Authorization", "Bearer "+token)
+	rangeReq.Header.Set("Range", "bytes=0-7")
+	rangeResp, err := app.Test(rangeReq)
+	if err != nil {
+		t.Fatalf("range request: %v", err)
+	}
+	rangeResp.Body.Close()
+	if rangeResp.StatusCode != fiber.StatusPartialContent {
+		t.Fatalf("range status = %d", rangeResp.StatusCode)
+	}
+
+	// The query token keeps <img>/<video>/<a download> working.
+	queryResp := request("/agents/myfriend/fs/raw?path=/home/pixel.png&token="+token, "")
+	queryResp.Body.Close()
+	if queryResp.StatusCode != fiber.StatusOK {
+		t.Fatalf("token query status = %d", queryResp.StatusCode)
+	}
+
+	download := request("/agents/myfriend/fs/raw?path=/home/pixel.png&download=1", token)
+	download.Body.Close()
+	if disposition := download.Header.Get("Content-Disposition"); !strings.Contains(disposition, "attachment") {
+		t.Fatalf("content-disposition = %q", disposition)
+	}
+
+	missing := request("/agents/myfriend/fs/raw?path=/home/missing.png", token)
+	missing.Body.Close()
+	if missing.StatusCode != fiber.StatusNotFound {
+		t.Fatalf("missing status = %d", missing.StatusCode)
+	}
+
+	directory := request("/agents/myfriend/fs/raw?path=/home", token)
+	directory.Body.Close()
+	if directory.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("directory status = %d", directory.StatusCode)
+	}
+
+	outOfSandbox := request("/agents/myfriend/fs/raw?path=/etc/passwd", token)
+	outOfSandbox.Body.Close()
+	if outOfSandbox.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("sandbox status = %d", outOfSandbox.StatusCode)
+	}
+}
+
+func TestRouterTerminal(t *testing.T) {
+	t.Setenv("MYAAW_TERMINAL", "1")
+	t.Setenv("SHELL", "/bin/sh")
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var status struct {
+		Enabled bool `json:"enabled"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/terminal", token, "", fiber.StatusOK, &status)
+	if !status.Enabled {
+		t.Fatal("terminal should be enabled")
+	}
+
+	var opened struct {
+		ID    string `json:"id"`
+		Shell string `json:"shell"`
+		Cwd   string `json:"cwd"`
+	}
+	doJSON(t, app, "POST", "/agents/myfriend/terminal", token, `{"cols":100,"rows":30}`,
+		fiber.StatusOK, &opened)
+	if opened.ID == "" {
+		t.Fatalf("open = %+v", opened)
+	}
+	if !strings.HasSuffix(opened.Cwd, string(filepath.Separator)+"home") {
+		t.Fatalf("cwd = %q", opened.Cwd)
+	}
+
+	doJSON(t, app, "POST", "/agents/myfriend/terminal/"+opened.ID+"/resize", token,
+		`{"cols":120,"rows":40}`, fiber.StatusOK, nil)
+	doJSON(t, app, "POST", "/agents/myfriend/terminal/"+opened.ID+"/input", token,
+		"echo hi\n", fiber.StatusOK, nil)
+	doJSON(t, app, "POST", "/agents/myfriend/terminal/"+opened.ID+"/heartbeat", token,
+		"", fiber.StatusOK, nil)
+
+	var described struct {
+		ID    string `json:"id"`
+		Shell string `json:"shell"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/terminal/"+opened.ID, token, "",
+		fiber.StatusOK, &described)
+	if described.ID != opened.ID {
+		t.Fatalf("describe = %+v, want id %s", described, opened.ID)
+	}
+
+	// Sessions are scoped to the agent in the URL.
+	doJSON(t, app, "POST", "/agents/other/terminal/"+opened.ID+"/input", token,
+		"x", fiber.StatusNotFound, nil)
+	doJSON(t, app, "POST", "/agents/other/terminal/"+opened.ID+"/heartbeat", token,
+		"", fiber.StatusNotFound, nil)
+	doJSON(t, app, "GET", "/agents/other/terminal/"+opened.ID, token, "",
+		fiber.StatusNotFound, nil)
+
+	doJSON(t, app, "DELETE", "/agents/myfriend/terminal/"+opened.ID, token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/terminal/"+opened.ID, token, "", fiber.StatusOK, nil)
+}
+
+func TestRouterTerminalDisabled(t *testing.T) {
+	t.Setenv("MYAAW_TERMINAL", "")
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var status struct {
+		Enabled bool `json:"enabled"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/terminal", token, "", fiber.StatusOK, &status)
+	if status.Enabled {
+		t.Fatal("terminal should be disabled without MYAAW_TERMINAL=1")
+	}
+
+	doJSON(t, app, "POST", "/agents/myfriend/terminal", token, `{}`, fiber.StatusNotFound, nil)
+}
+
+func TestRouterBackups(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var empty struct {
+		Dir      string `json:"dir"`
+		Archives []any  `json:"archives"`
+	}
+	doJSON(t, app, "GET", "/backups", token, "", fiber.StatusOK, &empty)
+	if empty.Dir == "" {
+		t.Fatal("backup dir is empty")
+	}
+
+	var created struct {
+		Dir      string `json:"dir"`
+		Archives []struct {
+			Agent string `json:"agent"`
+			Path  string `json:"path"`
+		} `json:"archives"`
+	}
+	doJSON(t, app, "POST", "/backups", token, `{"agents":["myfriend"]}`, fiber.StatusOK, &created)
+	if len(created.Archives) != 1 || created.Archives[0].Agent != "myfriend" {
+		t.Fatalf("create = %+v", created)
+	}
+	name := filepath.Base(created.Archives[0].Path)
+
+	req := httptest.NewRequest("GET", "/backups/"+name, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read download: %v", err)
+	}
+	if resp.StatusCode != fiber.StatusOK || len(body) == 0 {
+		t.Fatalf("download status = %d, bytes = %d", resp.StatusCode, len(body))
+	}
+	if got := resp.Header.Get("Content-Disposition"); !strings.Contains(got, "attachment") {
+		t.Fatalf("disposition = %q", got)
+	}
+
+	// The dashboard downloads through <a download>, which cannot send headers, so
+	// the same archive must also be reachable with ?token=.
+	queryResp, err := app.Test(httptest.NewRequest("GET", "/backups/"+name+"?token="+token, nil))
+	if err != nil {
+		t.Fatalf("download with query token: %v", err)
+	}
+	queryResp.Body.Close()
+	if queryResp.StatusCode != fiber.StatusOK {
+		t.Fatalf("query token status = %d", queryResp.StatusCode)
+	}
+
+	// Traversal attempts and unknown names are reported as not found.
+	doJSON(t, app, "GET", "/backups/..%2F..%2Fetc%2Fpasswd", token, "", fiber.StatusNotFound, nil)
+	doJSON(t, app, "POST", "/backups/myaaw-backup-gone-20260101-000000.tar.gz/restore", token,
+		`{}`, fiber.StatusNotFound, nil)
+
+	// A bad agent name is the client's mistake, not a server error.
+	doJSON(t, app, "POST", "/backups", token, `{"agents":["../escape"]}`, fiber.StatusBadRequest, nil)
+
+	doJSON(t, app, "DELETE", "/backups/"+name, token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "GET", "/backups/"+name, token, "", fiber.StatusNotFound, nil)
+}
+
 func TestRouterContext(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	agentHome := filepath.Join(home, ".myaaw", "myfriend", "home")
+	agentHome := filepath.Join(home, ".myaaw", "agents", "myfriend", "home")
 	if err := os.MkdirAll(filepath.Join(agentHome, "memory", "daily"), 0o755); err != nil {
 		t.Fatalf("mkdir memory: %v", err)
 	}
@@ -291,7 +597,7 @@ func TestRouterSkillsAndTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	skillsDir := filepath.Join(agentRoot, "skills")
 	if err := os.MkdirAll(filepath.Join(skillsDir, "weather"), 0o755); err != nil {
 		t.Fatalf("mkdir skill: %v", err)
@@ -358,6 +664,41 @@ func TestRouterSkillsAndTools(t *testing.T) {
 	doJSON(t, app, "GET", "/agents/myfriend/skills/weather/file?path=../secret", token, "", fiber.StatusBadRequest, nil)
 	doJSON(t, app, "GET", "/agents/myfriend/skills/weather/file?path=missing.md", token, "", fiber.StatusNotFound, nil)
 	doJSON(t, app, "PATCH", "/agents/myfriend/skills/missing", token, `{"enabled":true}`, fiber.StatusNotFound, nil)
+
+	// Installing an embedded built-in skill copies it and records the flag.
+	var installedSkill struct {
+		Name    string `json:"name"`
+		Enabled bool   `json:"enabled"`
+	}
+	doJSON(t, app, "POST", "/agents/myfriend/skills/time/install", token, "", fiber.StatusOK, &installedSkill)
+	if installedSkill.Name != "time" || !installedSkill.Enabled {
+		t.Fatalf("installed skill = %+v", installedSkill)
+	}
+	doJSON(t, app, "POST", "/agents/myfriend/skills/not-a-skill/install", token, "", fiber.StatusBadRequest, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/skills/time", token, "", fiber.StatusOK, nil)
+
+	// A built-in template can be inspected before it is installed.
+	var builtinDetail struct {
+		Name    string `json:"name"`
+		Content string `json:"content"`
+		Files   []struct {
+			Path string `json:"path"`
+		} `json:"files"`
+	}
+	doJSON(t, app, "GET", "/skills/builtin/time", token, "", fiber.StatusOK, &builtinDetail)
+	if builtinDetail.Name != "time" || builtinDetail.Content == "" || len(builtinDetail.Files) == 0 {
+		t.Fatalf("builtin preview = %+v", builtinDetail)
+	}
+	var builtinFile struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	doJSON(t, app, "GET", "/skills/builtin/time/file?path=SKILL.md", token, "", fiber.StatusOK, &builtinFile)
+	if builtinFile.Path != "SKILL.md" || builtinFile.Content == "" {
+		t.Fatalf("builtin file = %+v", builtinFile)
+	}
+	doJSON(t, app, "GET", "/skills/builtin/not-a-skill", token, "", fiber.StatusNotFound, nil)
+	doJSON(t, app, "GET", "/skills/builtin/time/file?path=../secret", token, "", fiber.StatusBadRequest, nil)
 
 	// Simulate a terminal deletion: the list must update without any cache.
 	if err := os.RemoveAll(filepath.Join(skillsDir, "weather")); err != nil {
@@ -483,8 +824,24 @@ func TestRouterContacts(t *testing.T) {
 		t.Fatalf("token should be masked: %+v", list.Contacts[0].Token)
 	}
 
-	doJSON(t, app, "DELETE", "/agents/myfriend/contacts/remote", token, "", fiber.StatusOK, nil)
-	doJSON(t, app, "DELETE", "/agents/myfriend/contacts/remote", token, "", fiber.StatusNotFound, nil)
+	// Editing keeps the token unless one is supplied, and can rename.
+	doJSON(t, app, "PATCH", "/agents/myfriend/contacts/remote", token,
+		`{"url":"https://updated.example/a2a","name":"remote-2"}`, fiber.StatusOK, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/contacts", token, "", fiber.StatusOK, &list)
+	if len(list.Contacts) != 1 || list.Contacts[0].Name != "remote-2" || list.Contacts[0].URL != "https://updated.example/a2a" {
+		t.Fatalf("contacts after update = %+v", list.Contacts)
+	}
+	if !list.Contacts[0].Token.Configured {
+		t.Fatal("update without a token must keep the stored one")
+	}
+
+	doJSON(t, app, "PATCH", "/agents/myfriend/contacts/remote-2", token,
+		`{"url":"not-a-url"}`, fiber.StatusBadRequest, nil)
+	doJSON(t, app, "PATCH", "/agents/myfriend/contacts/gone", token,
+		`{"description":"x"}`, fiber.StatusNotFound, nil)
+
+	doJSON(t, app, "DELETE", "/agents/myfriend/contacts/remote-2", token, "", fiber.StatusOK, nil)
+	doJSON(t, app, "DELETE", "/agents/myfriend/contacts/remote-2", token, "", fiber.StatusNotFound, nil)
 }
 
 func TestRouterReadOnlyManagement(t *testing.T) {
@@ -493,7 +850,7 @@ func TestRouterReadOnlyManagement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 
 	agentConfig := `{
 		"default_provider":"openai",
@@ -605,7 +962,7 @@ func TestRouterConversationManagement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("home dir: %v", err)
 	}
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	dbDir := filepath.Join(agentRoot, "database")
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {
 		t.Fatalf("mkdir database: %v", err)
@@ -684,6 +1041,9 @@ func TestRouterConversationManagement(t *testing.T) {
 		t.Fatalf("search miss = %+v", searchMiss)
 	}
 
+	// The channel filter only accepts a known platform.
+	doJSON(t, app, "GET", "/agents/myfriend/conversations?channel=slack", token, "", fiber.StatusBadRequest, nil)
+
 	var detail struct {
 		ID    string `json:"id"`
 		Title string `json:"title"`
@@ -721,6 +1081,82 @@ func TestRouterConversationManagement(t *testing.T) {
 	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine", token, "", fiber.StatusNotFound, nil)
 }
 
+func TestRouterConversationActivity(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	dbDir := filepath.Join(home, ".myaaw", "agents", "myfriend", "database")
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatalf("mkdir database: %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", filepath.Join(dbDir, "myaaw.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE conversations (
+		id TEXT PRIMARY KEY, user_id INTEGER, title TEXT, messages TEXT, active INTEGER, created_at DATETIME, updated_at DATETIME
+	)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	now := time.Now()
+	from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	to := from.AddDate(0, 0, 1)
+	seed := []struct {
+		id      string
+		userID  int
+		created time.Time
+	}{
+		{"conv-a", 0, from.Add(10 * time.Hour)},
+		{"conv-b", 0, from.Add(15 * time.Hour)},
+		{"conv-c", 0, to.Add(10 * time.Hour)},
+		{"conv-other", 7, from.Add(11 * time.Hour)},
+	}
+	for _, row := range seed {
+		if _, err := db.Exec(
+			`INSERT INTO conversations (id, user_id, title, messages, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
+			row.id, row.userID, row.id, `[{"role":"user","content":"hello"}]`, 1, row.created, row.created,
+		); err != nil {
+			t.Fatalf("insert %s: %v", row.id, err)
+		}
+	}
+	db.Close()
+
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	path := fmt.Sprintf("/agents/myfriend/conversations/activity?from=%d&to=%d",
+		from.UnixMilli(), to.UnixMilli())
+
+	var activity struct {
+		Total int `json:"total"`
+		Days  []struct {
+			Date  string `json:"date"`
+			Count int    `json:"count"`
+		} `json:"days"`
+	}
+	// The static activity route must win over /conversations/:id.
+	doJSON(t, app, "GET", path, token, "", fiber.StatusOK, &activity)
+
+	if len(activity.Days) != 2 {
+		t.Fatalf("days = %+v", activity.Days)
+	}
+	if activity.Days[0].Count != 2 || activity.Days[1].Count != 1 {
+		t.Fatalf("days = %+v", activity.Days)
+	}
+	if activity.Total != 3 {
+		t.Fatalf("total = %d, want 3", activity.Total)
+	}
+
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/activity?from=abc", token, "",
+		fiber.StatusBadRequest, nil)
+	doJSON(t, app, "GET", fmt.Sprintf("/agents/myfriend/conversations/activity?from=%d&to=%d",
+		to.UnixMilli(), from.UnixMilli()), token, "", fiber.StatusBadRequest, nil)
+}
+
 func TestRouterUsesConfiguredUserID(t *testing.T) {
 	gotUser := make(chan int, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -753,7 +1189,7 @@ func TestRouterUsesConfiguredUserID(t *testing.T) {
 		t.Fatalf("write credentials: %v", err)
 	}
 
-	dbDir := filepath.Join(home, ".myaaw", "myfriend", "database")
+	dbDir := filepath.Join(home, ".myaaw", "agents", "myfriend", "database")
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {
 		t.Fatalf("mkdir database: %v", err)
 	}
@@ -1049,16 +1485,29 @@ func TestRouterDocsRedirectsToIndex(t *testing.T) {
 	}
 }
 
-func TestAllowedOrigins(t *testing.T) {
+func TestCORSConfig(t *testing.T) {
 	t.Setenv("ALLOWED_ORIGINS", "")
-	if got := allowedOrigins(); len(got) != 1 || got[0] != "*" {
-		t.Fatalf("origins = %v, want *", got)
+	cfg := corsConfig()
+	if len(cfg.AllowOrigins) != 0 || cfg.AllowOriginsFunc == nil {
+		t.Fatalf("default should use the loopback func, got origins=%v", cfg.AllowOrigins)
+	}
+	if !cfg.AllowOriginsFunc("http://localhost:5050") {
+		t.Fatal("localhost should be allowed by default")
+	}
+	if cfg.AllowOriginsFunc("https://evil.example") {
+		t.Fatal("a remote origin must opt in through ALLOWED_ORIGINS")
 	}
 
 	t.Setenv("ALLOWED_ORIGINS", "https://a.example, https://b.example")
-	got := allowedOrigins()
-	if len(got) != 2 || got[0] != "https://a.example" || got[1] != "https://b.example" {
+	cfg = corsConfig()
+	if got := cfg.AllowOrigins; len(got) != 2 || got[0] != "https://a.example" || got[1] != "https://b.example" {
 		t.Fatalf("origins = %v", got)
+	}
+
+	t.Setenv("ALLOWED_ORIGINS", "*")
+	cfg = corsConfig()
+	if got := cfg.AllowOrigins; len(got) != 1 || got[0] != "*" {
+		t.Fatalf("origins = %v, want *", got)
 	}
 }
 
@@ -1100,6 +1549,41 @@ func login(t *testing.T, app *fiber.App) string {
 		t.Fatal("login returned an empty token")
 	}
 	return out.Token
+}
+
+func TestRouterOnboardSkillsSync(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	// Selecting a built-in installs it and records the enabled flag.
+	doJSON(t, app, "POST", "/agents/myfriend/onboard", token, `{"skills":["time"]}`, fiber.StatusOK, nil)
+
+	readSkills := func() map[string]bool {
+		t.Helper()
+		var view struct {
+			Skills []struct {
+				Name    string `json:"name"`
+				Enabled bool   `json:"enabled"`
+			} `json:"skills"`
+		}
+		doJSON(t, app, "GET", "/agents/myfriend/skills", token, "", fiber.StatusOK, &view)
+		byName := make(map[string]bool, len(view.Skills))
+		for _, skill := range view.Skills {
+			byName[skill.Name] = skill.Enabled
+		}
+		return byName
+	}
+
+	if enabled, ok := readSkills()["time"]; !ok || !enabled {
+		t.Fatalf("time should be installed and enabled, got enabled=%v exists=%v", enabled, ok)
+	}
+
+	// An empty selection disables it through skills.json without deleting the folder.
+	doJSON(t, app, "POST", "/agents/myfriend/onboard", token, `{"skills":[]}`, fiber.StatusOK, nil)
+	if enabled, ok := readSkills()["time"]; !ok || enabled {
+		t.Fatalf("time should stay installed but disabled, got enabled=%v exists=%v", enabled, ok)
+	}
 }
 
 func doJSON(t *testing.T, app *fiber.App, method, path, token, body string, wantStatus int, out any) {
@@ -1244,7 +1728,7 @@ func setupTestAgent(t *testing.T, baseURL string) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	for _, dir := range []string{
 		filepath.Join(agentRoot, "home"),
 		filepath.Join(agentRoot, "config"),
@@ -1295,6 +1779,15 @@ func newUpstream(t *testing.T) *httptest.Server {
 			flusher.Flush()
 		}
 	})
+	mux.HandleFunc("/api/chat/stop", func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			RequestID string `json:"request_id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		w.Header().Set("Content-Type", "application/json")
+		// Echo the request id so the test can prove the body was forwarded.
+		_, _ = fmt.Fprintf(w, `{"stopped":true,"request_id":%q}`, payload.RequestID)
+	})
 
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
@@ -1329,7 +1822,8 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 		run := obs.Run{
 			ID: turn.id, StartedAt: turn.startedAt, ConversationID: "conv-session",
 			Channel: "cli", Model: "deepseek-flash", Status: obs.StatusCompleted,
-			TotalMs: 1200, InputTokens: 1000, OutputTokens: 100, ModelCostUSD: 0.001,
+			TotalMs: 1200, InputTokens: 1000, OutputTokens: 100,
+			CacheHitTokens: 400, ModelCostUSD: 0.001,
 		}
 		if err := store.UpsertRun(run); err != nil {
 			t.Fatalf("upsert run: %v", err)
@@ -1353,6 +1847,7 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 			{
 				ID: turn.id + "_llm", RunID: turn.id, Kind: obs.KindLLM, Name: "deepseek-flash",
 				StepIndex: 1, RequestIndex: 1, StartedAt: turn.startedAt, Status: obs.StatusCompleted,
+				DurationMs: 900, FirstTokenMs: 200, GenerationMs: 500, OutputTokens: 100,
 				InputJSON:  `{"messages":[{"role":"user","content":"hi"}]}`,
 				OutputJSON: `{"role":"assistant","content":"hello"}`,
 			},
@@ -1425,7 +1920,46 @@ func TestRouterObservabilitySessionDetail(t *testing.T) {
 		t.Fatalf("cost = %v", detail.CostUSD)
 	}
 
+	var stats struct {
+		Turns               int    `json:"turns"`
+		Steps               int    `json:"steps"`
+		InputTokens         int    `json:"input_tokens"`
+		OutputTokens        int    `json:"output_tokens"`
+		CacheHitTokens      int    `json:"cache_hit_tokens"`
+		TotalTokens         int    `json:"total_tokens"`
+		UncachedInputTokens int    `json:"uncached_input_tokens"`
+		CacheHitRate        int    `json:"cache_hit_rate"`
+		Model               string `json:"model"`
+		TokPerSec           int    `json:"tok_per_sec"`
+		LlmMs               int64  `json:"llm_ms"`
+		ToolMs              int64  `json:"tool_ms"`
+		TtftMs              int64  `json:"ttft_ms"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/conv-session/stats", token, "", fiber.StatusOK, &stats)
+	if stats.Turns != 2 || stats.Steps != 4 {
+		t.Fatalf("session stats = %+v", stats)
+	}
+	if stats.InputTokens != 2000 || stats.OutputTokens != 200 {
+		t.Fatalf("session stats tokens = %+v", stats)
+	}
+	if stats.CacheHitTokens != 800 {
+		t.Fatalf("session stats cache hits = %+v", stats)
+	}
+	if stats.TotalTokens != 2200 || stats.UncachedInputTokens != 1200 || stats.CacheHitRate != 40 {
+		t.Fatalf("session stats derived tokens = %+v", stats)
+	}
+	if stats.Model != "deepseek-flash" {
+		t.Fatalf("session stats model = %+v", stats)
+	}
+	if stats.TokPerSec != 200 {
+		t.Fatalf("session stats tok/s = %+v", stats)
+	}
+	if stats.LlmMs != 1800 || stats.ToolMs != 0 || stats.TtftMs != 200 {
+		t.Fatalf("session stats timing = %+v", stats)
+	}
+
 	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/missing", token, "", fiber.StatusNotFound, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/observability/sessions/missing/stats", token, "", fiber.StatusNotFound, nil)
 }
 
 func TestRouterApprovalsManagement(t *testing.T) {
@@ -1478,6 +2012,16 @@ func TestRouterApprovalsManagement(t *testing.T) {
 		t.Fatalf("grants after revoke = %v", grants)
 	}
 	doJSON(t, app, "DELETE", "/agents/myfriend/approvals/grants/bash", token, "", fiber.StatusNotFound, nil)
+
+	// A key with an action separator reaches the route percent-encoded; the store
+	// key is "cron:add", never "cron%3Aadd".
+	if err := store.GrantAlways("cron:add", approvals.Scope{Channel: "api", UserID: "0"}); err != nil {
+		t.Fatal(err)
+	}
+	doJSON(t, app, "DELETE", "/agents/myfriend/approvals/grants/cron%3Aadd?channel=api&user=0", token, "", fiber.StatusOK, nil)
+	if grants := approvals.NewStore(path).Snapshot(); len(grants) != 0 {
+		t.Fatalf("grants after scoped revoke = %v", grants)
+	}
 }
 
 func TestRouterApprovalDecisionForwardsUserID(t *testing.T) {

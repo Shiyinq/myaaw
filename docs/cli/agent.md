@@ -1,6 +1,6 @@
 # Agent Command
 
-`myaaw agent` manages the isolated agents stored under `~/.myaaw/<agent>/`. This page covers the command surface only; the registry, directory layout, per-agent ports, and isolation rules are in the [Multi-Agent Guide](../agents/multi-agent.md).
+`myaaw agent` manages the isolated agents stored under `~/.myaaw/agents/<agent>/`. This page covers the command surface only; the registry, directory layout, per-agent ports, and isolation rules are in the [Multi-Agent Guide](../agents/multi-agent.md).
 
 ## Commands
 
@@ -53,7 +53,7 @@ What happens:
 1. Validates the name and refuses names that are already taken (existing agent, leftover directory, or case-only duplicate).
 2. Opens the onboarding wizard **starting at the provider step** — no name prompt, no picker.
 3. Asks for provider, model, skills, built-in tools, channels, access type, heartbeat, and owner.
-3. When you save the **Review** step, it creates `~/.myaaw/<name>/` from the embedded template, assigns a unique port, writes `.env`, registers the agent in `agents.json`, wires A2A (`A2A_TOKEN`, contacts in both directions, self excluded), and writes `config.json`.
+3. When you save the **Review** step, it creates `~/.myaaw/agents/<name>/` from the embedded template, assigns a unique port, writes `.env`, registers the agent in `~/.myaaw/config/agents.json`, wires A2A (`A2A_TOKEN`, contacts in both directions, self excluded), and writes `config.json`.
 
 The global install question is only shown for the **first agent** on the machine; later agents skip it.
 
@@ -92,8 +92,8 @@ Steps performed:
 
 1. Refuses `default` and the current default agent. Switch first with `myaaw agent use <name>`.
 2. Stops the agent daemon (`myaaw-server-<agent>`) if it is running, so it cannot recreate `tools/` or `logs/` during deletion.
-3. Removes `~/.myaaw/<agent>/`, retrying briefly while the stopped daemon releases files.
-4. Unregisters the name from `~/.myaaw/agents.json`.
+3. Removes `~/.myaaw/agents/<agent>/`, retrying briefly while the stopped daemon releases files.
+4. Unregisters the name from `~/.myaaw/config/agents.json`.
 
 Deletion is not reversible and does not create an archive. Back up first:
 

@@ -139,7 +139,7 @@ func (s *Scheduler) Reload() error {
 			targetTime, err := parseAtTime(j.Schedule.Expr, j.Schedule.Tz)
 			if err != nil {
 				log.Printf("Failed to parse time for job %s: %v", j.Name, err)
-				s.history.Log(j.ID, "failed_schedule", fmt.Sprintf("Failed to parse time: %v", err))
+				s.history.Log(j, "failed_schedule", fmt.Sprintf("Failed to parse time: %v", err))
 				continue
 			}
 
@@ -148,7 +148,7 @@ func (s *Scheduler) Reload() error {
 				log.Printf("Job %s is in the past detailed from %s. Skipping execution and removing...", j.Name, targetTime.Format(time.RFC3339))
 
 				// Log to history as skipped
-				if err := s.history.Log(j.ID, "skipped", fmt.Sprintf("Job expired (scheduled at %s)", targetTime.Format(time.RFC3339))); err != nil {
+				if err := s.history.Log(j, "skipped", fmt.Sprintf("Job expired (scheduled at %s)", targetTime.Format(time.RFC3339))); err != nil {
 					log.Printf("Failed to log history for skipped job %s: %v", j.Name, err)
 				}
 
@@ -194,7 +194,7 @@ func (s *Scheduler) Reload() error {
 
 		if err != nil {
 			log.Printf("Failed to schedule job %s: %v", j.Name, err)
-			s.history.Log(j.ID, "failed_schedule", fmt.Sprintf("Failed to schedule: %v", err))
+			s.history.Log(j, "failed_schedule", fmt.Sprintf("Failed to schedule: %v", err))
 		} else {
 			log.Printf("Scheduled job: %s (%s)", j.Name, spec)
 		}
@@ -211,10 +211,13 @@ func (s *Scheduler) executeJob(job Job) {
 
 	// Construct HeartbeatRequest
 	payload := map[string]interface{}{
-		"prompt":  job.Payload.Content,
-		"to":      job.Delivery.To,
-		"channel": job.Delivery.Channel,
-		"trigger": "cron",
+		"prompt":     job.Payload.Content,
+		"to":         job.Delivery.To,
+		"thread_id":  job.Delivery.ThreadID,
+		"session_id": job.Delivery.SessionID,
+		"chat_type":  job.Delivery.ChatType,
+		"channel":    job.Delivery.Channel,
+		"trigger":    "cron",
 	}
 
 	resp, err := client.R().
@@ -237,7 +240,7 @@ func (s *Scheduler) executeJob(job Job) {
 		log.Printf("Job %s executed successfully", job.Name)
 	}
 
-	if err := s.history.Log(job.ID, status, result); err != nil {
+	if err := s.history.Log(job, status, result); err != nil {
 		log.Printf("Failed to log history for job %s: %v", job.Name, err)
 	}
 }

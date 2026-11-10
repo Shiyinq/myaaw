@@ -38,8 +38,10 @@ func decisionUserID(raw json.RawMessage, header string) string {
 // to finish (or to ask for another approval).
 const approvalDecisionTimeout = 10 * time.Minute
 
-// apiApprovals tracks pending approval decisions for the direct API channel.
-var apiApprovals = approvals.NewRegistry()
+// apiApprovals tracks pending approval decisions for the direct API channel. It
+// is the process-wide registry, so a sub-agent approval published on the event
+// stream can be resolved through the same decision endpoint.
+var apiApprovals = approvals.DefaultRegistry()
 
 // apiRun is one non-streaming chat run that may pause for approvals.
 type apiRun struct {
@@ -102,6 +104,7 @@ func (r *sseApprovalRequester) Request(ctx context.Context, req approvals.Reques
 		Args:        req.Args,
 		SubAgent:    req.SubAgent,
 	})
+	approvals.PublishRequired(req)
 
 	select {
 	case decision := <-decisions:
@@ -110,6 +113,7 @@ func (r *sseApprovalRequester) Request(ctx context.Context, req approvals.Reques
 			ApprovalID: req.ID,
 			Decision:   string(decision),
 		})
+		approvals.PublishResolved(req, string(decision))
 		return decision, nil
 	case <-ctx.Done():
 		r.emit(channel.StreamChunk{
@@ -118,6 +122,7 @@ func (r *sseApprovalRequester) Request(ctx context.Context, req approvals.Reques
 			Decision:   string(approvals.Deny),
 			Reason:     "timed out",
 		})
+		approvals.PublishResolved(req, string(approvals.Deny))
 		return approvals.Deny, ctx.Err()
 	}
 }
@@ -132,16 +137,21 @@ func (r *blockingApprovalRequester) Request(ctx context.Context, req approvals.R
 	decisions := apiApprovals.Register(req.ID, approvals.Actor{Channel: "api", UserID: req.UserID})
 	defer apiApprovals.Remove(req.ID)
 
+	approvals.PublishRequired(req)
+
 	select {
 	case r.run.first <- req:
 	case <-ctx.Done():
+		approvals.PublishResolved(req, string(approvals.Deny))
 		return approvals.Deny, ctx.Err()
 	}
 
 	select {
 	case decision := <-decisions:
+		approvals.PublishResolved(req, string(decision))
 		return decision, nil
 	case <-ctx.Done():
+		approvals.PublishResolved(req, string(approvals.Deny))
 		return approvals.Deny, ctx.Err()
 	}
 }

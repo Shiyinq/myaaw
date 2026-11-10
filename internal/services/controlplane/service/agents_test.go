@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -107,5 +108,68 @@ func TestAgentServiceOnboardAndDelete(t *testing.T) {
 	}
 	if err := agents.Delete("default"); !errors.Is(err, ErrDefaultAgent) {
 		t.Fatalf("err = %v, want ErrDefaultAgent", err)
+	}
+}
+
+func TestAgentServiceDeleteRemovesContacts(t *testing.T) {
+	agents := setupAgentService(t)
+
+	if _, err := agents.Onboard("alpha", OnboardRequest{}); err != nil {
+		t.Fatalf("Onboard alpha: %v", err)
+	}
+	if _, err := agents.Onboard("beta", OnboardRequest{}); err != nil {
+		t.Fatalf("Onboard beta: %v", err)
+	}
+
+	alphaPath, err := agentdir.ContactsPath("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contactsContain(t, alphaPath, "beta") {
+		t.Fatal("alpha should reference beta before the delete")
+	}
+
+	if err := agents.Delete("beta"); err != nil {
+		t.Fatalf("Delete beta: %v", err)
+	}
+	if contactsContain(t, alphaPath, "beta") {
+		t.Fatal("alpha still references beta after the delete")
+	}
+}
+
+func contactsContain(t *testing.T, path, name string) bool {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var entries []map[string]any
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry["name"] == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCreatedAtRFC3339NormalizesDates(t *testing.T) {
+	registry := &agentdir.Registry{Agents: map[string]agentdir.AgentInfo{
+		"old": {CreatedAt: "2026-01-02"},
+		"new": {CreatedAt: "2026-01-02T03:04:05+07:00"},
+		"utc": {CreatedAt: "2026-01-02T03:04:05Z"},
+	}}
+
+	cases := map[string]string{
+		"old": "2026-01-02T00:00:00Z",
+		"new": "2026-01-01T20:04:05Z",
+		"utc": "2026-01-02T03:04:05Z",
+	}
+	for name, want := range cases {
+		if got := createdAtRFC3339(registry, name); got != want {
+			t.Errorf("createdAtRFC3339(%q) = %q, want %q", name, got, want)
+		}
 	}
 }

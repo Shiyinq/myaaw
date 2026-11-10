@@ -90,7 +90,7 @@ func TestRunRecordsTraceEndToEnd(t *testing.T) {
 	}}}
 
 	agentUnderTest := agent.NewAgent(providerStub)
-	trace := agenttrace.Start(store, obs.NewPricer(nil), obs.Config{StoreContent: true, MaxContentChars: 2048}, obs.RunStart{
+	trace := agenttrace.Start(store, obs.NewPricer(obs.DefaultPrices()), obs.Config{StoreContent: true, MaxContentChars: 2048}, obs.RunStart{
 		Channel: "telegram", UserID: "42", Provider: "deepseek",
 		Model: "deepseek-flash", Agent: "default",
 		UserMessage: "hello", SystemPrompt: "be nice",

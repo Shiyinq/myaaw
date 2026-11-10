@@ -25,7 +25,7 @@ func assertCost(t *testing.T, label string, got, want float64) {
 }
 
 func TestCostUsesFlatPrices(t *testing.T) {
-	pricer := NewPricer(nil)
+	pricer := NewPricer(DefaultPrices())
 	// Tuesday noon UTC is outside every DeepSeek window, but gpt-6.1-sol has no
 	// off-peak price, so the flat table applies.
 	at := mustTime(t, "2026-10-27T12:00:00Z")
@@ -39,7 +39,7 @@ func TestCostUsesFlatPrices(t *testing.T) {
 }
 
 func TestCostAppliesCacheHitPrice(t *testing.T) {
-	pricer := NewPricer(nil)
+	pricer := NewPricer(DefaultPrices())
 	at := mustTime(t, "2026-10-27T12:00:00Z") // off-peak
 
 	got := pricer.Cost("deepseek-flash", provider.Usage{
@@ -53,7 +53,7 @@ func TestCostAppliesCacheHitPrice(t *testing.T) {
 }
 
 func TestCostAppliesPeakWindows(t *testing.T) {
-	pricer := NewPricer(nil)
+	pricer := NewPricer(DefaultPrices())
 	usage := provider.Usage{
 		PromptTokens:      1_000_000,
 		CachedInputTokens: 800_000,
@@ -94,13 +94,13 @@ func TestCostKeepsPeakWhenOnlyOffPeakIsConfigured(t *testing.T) {
 }
 
 func TestCostUnknownModelIsFree(t *testing.T) {
-	pricer := NewPricer(nil)
+	pricer := NewPricer(DefaultPrices())
 	got := pricer.Cost("totally-unknown", provider.Usage{PromptTokens: 1000, CompletionTokens: 1000}, time.Now())
 	assertCost(t, "unknown model", got, 0)
 }
 
 func TestCostResolvesProviderPrefixedModels(t *testing.T) {
-	pricer := NewPricer(nil)
+	pricer := NewPricer(DefaultPrices())
 	at := mustTime(t, "2026-10-26T02:00:00Z") // peak
 
 	got := pricer.Cost("deepseek/deepseek-chat", provider.Usage{PromptTokens: 1_000_000}, at)
@@ -108,7 +108,7 @@ func TestCostResolvesProviderPrefixedModels(t *testing.T) {
 }
 
 func TestCostFallsBackToTotalTokens(t *testing.T) {
-	pricer := NewPricer(nil)
+	pricer := NewPricer(DefaultPrices())
 	at := mustTime(t, "2026-10-27T12:00:00Z") // off-peak
 
 	got := pricer.Cost("deepseek-flash", provider.Usage{
@@ -160,9 +160,16 @@ func TestPercentile(t *testing.T) {
 }
 
 func TestCostResolvesVersionedDeepSeekFlash(t *testing.T) {
-	pricer := NewPricer(nil)
+	pricer := NewPricer(DefaultPrices())
 	at := mustTime(t, "2026-10-26T02:00:00Z") // Monday 02:00 UTC is peak
 
 	got := pricer.Cost("deepseek-v4-flash", provider.Usage{PromptTokens: 1_000_000}, at)
 	assertCost(t, "deepseek-v4-flash", got, 0.30)
+}
+
+func TestNewPricerHasNoBuiltInFallback(t *testing.T) {
+	pricer := NewPricer(nil)
+	if _, ok := pricer.PriceAt("deepseek-flash", time.Now()); ok {
+		t.Fatal("the retired Go built-in table must not price models")
+	}
 }

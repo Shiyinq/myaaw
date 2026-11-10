@@ -61,7 +61,9 @@ func TestToolCallIDFromContextIsEmptyWithoutACall(t *testing.T) {
 	if got := ToolCallIDFromContext(context.Background()); got != "" {
 		t.Fatalf("call id = %q, want empty", got)
 	}
-	if got := ToolCallIDFromContext(nil); got != "" {
+	// A nil context is intentional: the helper must tolerate callers that pass one.
+	var nilContext context.Context
+	if got := ToolCallIDFromContext(nilContext); got != "" {
 		t.Fatalf("call id = %q, want empty", got)
 	}
 }

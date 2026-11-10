@@ -79,7 +79,7 @@ func runVoiceClassic() {
 	modelName := llmProvider.DefaultModel("")
 
 	// Build system prompt
-	systemPrompt := agent.NewSystemPromptBuilder(0, "voice-classic").Build()
+	systemPrompt := agent.NewSystemPromptBuilder("voice-classic").Build()
 
 	// In-memory conversation history
 	var conversationHistory []provider.Message

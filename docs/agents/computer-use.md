@@ -243,7 +243,7 @@ only logs a warning and never blocks a release.
 
    # MACOS_CERT_IDENTITY — exact name including Team ID
    security find-identity -v -p codesigning
-   # e.g. "Developer ID Application: Shiyinq (ABCDE12345)" — copy without quotes
+   # e.g. "Developer ID Application: Alice (ABCDE12345)" — copy without quotes
 
    # MACOS_CERT_PASSWORD is the export password from step 2 (no command)
    ```
@@ -394,7 +394,7 @@ Limitations to keep in mind:
 - The result text tells the model the frame size and, when known, the
   logical desktop size: `Screen is 1440x900 points.`
 - `deliver: true` additionally saves the PNG to
-  `~/.myaaw/<agent>/jobs/captures/screenshot-<frame>.png` (newest 20 kept)
+  `~/.myaaw/agents/<agent>/jobs/captures/screenshot-<frame>.png` (newest 20 kept)
   and attaches it to the user's chat — Telegram photo, Discord attachment,
   CLI/API attachment.
 

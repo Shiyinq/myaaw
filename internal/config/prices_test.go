@@ -52,7 +52,7 @@ func TestLoadBaseConfigReadsPriceFiles(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	dir := filepath.Join(home, ".myaaw", "default", "config")
+	dir := filepath.Join(home, ".myaaw", "agents", "default", "config")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestApplyPriceFilesInvalidJSONWarns(t *testing.T) {
 
 func TestWriteModelPricesFileRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	want := map[string]ModelPriceConfig{"m": {Input: 1, Output: 2}}
+	want := map[string]ModelPriceConfig{"m": {Provider: "anthropic", Input: 1, Output: 2}}
 	if err := WriteModelPricesFile(dir, want); err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,48 @@ func TestWriteModelPricesFileRoundTrip(t *testing.T) {
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v", warnings)
 	}
-	if got["m"].Output != 2 {
+	if got["m"].Output != 2 || got["m"].Provider != "anthropic" {
 		t.Fatalf("round trip = %+v", got)
+	}
+}
+
+func TestLoadEffectivePriceFilesUsesGlobalThenOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	globalDir := filepath.Join(home, ".myaaw", "config")
+	overrideDir := filepath.Join(home, ".myaaw", "agents", "alpha", "config")
+	if err := os.MkdirAll(globalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(overrideDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, globalDir, ModelPricesFile, `{"global-model":{"input":1,"output":2},"shared":{"input":1,"output":1}}`)
+	writeFile(t, overrideDir, ModelPricesFile, `{"shared":{"input":9,"output":9}}`)
+
+	models, _, warnings := LoadEffectivePriceFiles(overrideDir)
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v", warnings)
+	}
+	if models["global-model"].Input != 1 {
+		t.Fatalf("global model = %+v", models["global-model"])
+	}
+	if models["shared"].Input != 9 {
+		t.Fatalf("override did not win: %+v", models["shared"])
+	}
+}
+
+func TestLoadEffectivePriceFilesFallsBackToEmbedded(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	models, _, _ := LoadEffectivePriceFiles("")
+	if len(models) == 0 {
+		t.Fatal("embedded fallback returned no model prices")
+	}
+	if _, ok := models["deepseek-flash"]; !ok {
+		t.Fatal("embedded fallback is missing deepseek-flash")
 	}
 }

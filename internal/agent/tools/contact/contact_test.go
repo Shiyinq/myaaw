@@ -27,7 +27,7 @@ func setupContactAgent(t *testing.T, entries string) {
 	if err := agentdir.SetActive("myfriend"); err != nil {
 		t.Fatalf("SetActive: %v", err)
 	}
-	dir := filepath.Join(home, ".myaaw", "myfriend")
+	dir := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir agent: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestContactToolDownloadsURLAritfact(t *testing.T) {
 	}
 
 	home := os.Getenv("HOME")
-	saved := filepath.Join(home, ".myaaw", "myfriend", "home", "workspace", "downloads", "t1", "video.mp4")
+	saved := filepath.Join(home, ".myaaw", "agents", "myfriend", "home", "workspace", "downloads", "t1", "video.mp4")
 	data, err := os.ReadFile(saved)
 	if err != nil {
 		t.Fatalf("read saved artifact: %v", err)
@@ -274,7 +274,7 @@ func TestContactToolSavesRawArtifact(t *testing.T) {
 	}
 
 	home := os.Getenv("HOME")
-	saved := filepath.Join(home, ".myaaw", "myfriend", "home", "workspace", "downloads", "t2", "notes.txt")
+	saved := filepath.Join(home, ".myaaw", "agents", "myfriend", "home", "workspace", "downloads", "t2", "notes.txt")
 	data, err := os.ReadFile(saved)
 	if err != nil {
 		t.Fatalf("read saved artifact: %v", err)

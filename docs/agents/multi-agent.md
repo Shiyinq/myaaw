@@ -10,8 +10,9 @@ Myaaw supports multiple isolated agents under a single home directory:
 ~/.myaaw/
 ├── agents.json
 ├── pids/
-├── default/
-└── myfriend/
+└── agents/
+    ├── default/
+    └── myfriend/
 ```
 
 Each agent has its own:
@@ -58,38 +59,56 @@ invalid: my friend, ../admin, my.friend, my/friend, -agent, _agent, pids
 
 ```text
 ~/.myaaw/
-├── agents.json
-├── pids/
-│   ├── myaaw-server-default.pid
-│   └── myaaw-server-myfriend.pid
-├── default/
-│   ├── config/config.json
-│   ├── .env
-│   ├── home/
-│   │   ├── AGENTS.md
-│   │   ├── MEMORY.md
-│   │   ├── SOUL.md
-│   │   ├── TOOLS.md
-│   │   ├── USER.md
-│   │   ├── memory/
-│   │   └── workspace/
-│   │       ├── projects/
-│   │       └── downloads/
-│   ├── skills/
-│   ├── logs/
-│   ├── jobs/
-│   ├── cron/
-│   ├── tools/
-│   └── database/
-│       ├── myaaw.db
-│       ├── calendar/
-│       ├── cashflow/
-│       └── notes/
-└── myfriend/
-    └── ...same structure
+├── config/                # shared configuration
+│   ├── agents.json        # registry
+│   ├── controlplane.json  # control-plane credentials
+│   ├── model_capabilities.json
+│   ├── model_prices.json
+│   └── tool_prices.json
+├── pids/                  # global daemon PID files
+├── logs/                  # global logs (control plane, webui, daemons)
+├── credentials/           # host-level credentials (ChatGPT)
+├── webui/                 # optional dashboard bundle
+└── agents/
+    ├── default/
+    │   ├── config/config.json
+    │   ├── config/approvals.json
+    │   ├── .env
+    │   ├── home/
+    │   │   ├── AGENTS.md
+    │   │   ├── SECURITY.md
+    │   │   ├── MEMORY.md
+    │   │   ├── SOUL.md
+    │   │   ├── TOOLS.md
+    │   │   ├── USER.md
+    │   │   ├── memory/
+    │   │   └── workspace/
+    │   │       ├── projects/
+    │   │       └── downloads/
+    │   ├── skills/
+    │   ├── logs/
+    │   ├── jobs/
+    │   ├── user/
+    │   │   └── uploads/
+    │   ├── cron/
+    │   ├── tools/
+    │   └── database/
+    │       ├── myaaw.db
+    │       ├── calendar/
+    │       ├── cashflow/
+    │       └── notes/
+    └── myfriend/
+        └── ...same structure
 ```
 
-`~/.myaaw/agents.json` stores the registry:
+An agent may add `config/model_prices.json` or `config/tool_prices.json` to override the shared
+tables. New agents do not receive those files; the shared tables under `~/.myaaw/config/` apply
+by default. The merge is per key, so an override only replaces the entries it names and can add
+new ones. It applies to that agent alone: the runtime reads the active agent's config directory.
+`model_capabilities.json` has no per-agent layer; a copy inside an agent folder is ignored.
+See [Overriding prices](observability.md#overriding-prices) for the full precedence.
+
+`~/.myaaw/config/agents.json` stores the registry:
 
 ```json
 {
@@ -116,7 +135,7 @@ myaaw onboard
 On a fresh install the wizard asks for an agent name first, so the data lands under the name you choose:
 
 ```text
-~/.myaaw/<name>/
+~/.myaaw/agents/<name>/
 ```
 
 That agent becomes the registry default. Only legacy upgrades keep the name `default`.
@@ -127,31 +146,21 @@ To initialize a specific agent directly (no name prompt):
 myaaw --agent myfriend onboard
 ```
 
-### Legacy layout migration
+### Moving an older layout
 
-On the first command after upgrading, Myaaw migrates the old single-agent layout:
+Older builds kept each agent directly under `~/.myaaw/<name>/` and even migrated
+a single shared layout automatically. That automatic migration is gone: new
+installs only use `~/.myaaw/agents/<name>/`, and existing data has to be moved
+by hand once:
 
-```text
-~/.myaaw/home
-~/.myaaw/config
-~/.myaaw/database
-~/.myaaw/skills
-~/.myaaw/logs
-~/.myaaw/jobs
-~/.myaaw/cron
-~/.myaaw/tools
-~/.myaaw/.env
+```bash
+mkdir -p ~/.myaaw/agents
+mv ~/.myaaw/myfriend ~/.myaaw/agents/myfriend
 ```
 
-into:
-
-```text
-~/.myaaw/default/
-```
-
-Legacy path references in text files and skill scripts are rewritten to the new agent-specific paths. Duplicate log files are preserved as `.legacy`.
-
-The migration moves directories; it does not create a full backup. Back up `~/.myaaw` before the first run of a new binary if the data matters.
+The registry is migrated automatically to `~/.myaaw/config/agents.json`, together with
+`controlplane.json`. After moving an old agent directory, run any `myaaw` command to register the
+directories again, and check that `myaaw agent list` shows every agent.
 
 ## 5. Selecting an agent
 
@@ -220,7 +229,7 @@ myaaw agent list
 myaaw agent create myfriend
 ```
 
-This is the onboarding wizard for a new agent, starting at the provider step. It asks for the provider and model, then the skills to install (**none by default**), the built-in tools to keep (**all by default**), channels, heartbeat, and owner. Nothing is written until you save the **Review** step; at that point Myaaw creates `~/.myaaw/myfriend/` from the embedded template, assigns a unique port, writes `.env`, installs only the selected skills under `skills/<name>/`, writes `tools/tools.json`, rewrites legacy paths, registers the agent, and wires A2A. Cancelling with `Ctrl+C` before Review leaves nothing behind.
+This is the onboarding wizard for a new agent, starting at the provider step. It asks for the provider and model, then the skills to install (**none by default**), the built-in tools to keep (**all by default**), channels, heartbeat, and owner. Nothing is written until you save the **Review** step; at that point Myaaw creates `~/.myaaw/agents/myfriend/` from the embedded template, assigns a unique port, writes `.env`, installs only the selected skills under `skills/<name>/`, writes `tools/tools.json`, rewrites legacy paths, registers the agent, and wires A2A. Cancelling with `Ctrl+C` before Review leaves nothing behind.
 
 It also **auto-wires A2A contacts**: the new agent gets a generated `A2A_TOKEN`, its `contacts.json` is populated with every other initialized agent (name, URL, and that agent's `A2A_TOKEN`), and the new agent is added to each other agent's `contacts.json` with the new token. The agent is never added to its own contacts. Agents can therefore delegate to each other immediately after restart — no manual `contacts.json` edits. Agents without an `A2A_TOKEN` (open mode) are added as contacts without a token.
 
@@ -266,14 +275,14 @@ myaaw agent delete myfriend --yes
 myaaw --agent myfriend onboard
 ```
 
-This loads or creates `~/.myaaw/myfriend/` and runs the provider/channel setup wizard for that agent.
+This loads or creates `~/.myaaw/agents/myfriend/` and runs the provider/channel setup wizard for that agent.
 
 ## 7. Providers per agent
 
 Provider configuration is stored in:
 
 ```text
-~/.myaaw/<agent>/config/config.json
+~/.myaaw/agents/<agent>/config/config.json
 ```
 
 Commands:
@@ -368,7 +377,7 @@ Without `--agent`, the registry default is used.
 Ports are read from `PORT` in:
 
 ```text
-~/.myaaw/<agent>/.env
+~/.myaaw/agents/<agent>/.env
 ```
 
 New agents receive the lowest port that is not used by another registered agent. The first agent gets `8080` whatever it is called:
@@ -406,27 +415,27 @@ PID files:
 Server logs:
 
 ```text
-~/.myaaw/myfriend/logs/
+~/.myaaw/agents/myfriend/logs/
 ```
 
 ## 10. Per-agent resources
 
 | Resource | Path |
 |---|---|
-| Config | `~/.myaaw/<agent>/config/config.json` |
-| Environment | `~/.myaaw/<agent>/.env` |
-| Home / identity | `~/.myaaw/<agent>/home` |
-| Memory | `~/.myaaw/<agent>/home/MEMORY.md` and `memory/` |
-| Workspace | `~/.myaaw/<agent>/home/workspace` |
-| Skills | `~/.myaaw/<agent>/skills` |
-| Jobs | `~/.myaaw/<agent>/jobs` |
-| Logs | `~/.myaaw/<agent>/logs` |
-| Cron | `~/.myaaw/<agent>/cron` |
-| Tools | `~/.myaaw/<agent>/tools` |
-| SQLite | `~/.myaaw/<agent>/database/myaaw.db` |
-| Skill data | `~/.myaaw/<agent>/database/<skill>/` (skills may also write under `config/`) |
+| Config | `~/.myaaw/agents/<agent>/config/config.json` |
+| Environment | `~/.myaaw/agents/<agent>/.env` |
+| Home / identity | `~/.myaaw/agents/<agent>/home` |
+| Memory | `~/.myaaw/agents/<agent>/home/MEMORY.md` and `memory/` |
+| Workspace | `~/.myaaw/agents/<agent>/home/workspace` |
+| Skills | `~/.myaaw/agents/<agent>/skills` |
+| Jobs | `~/.myaaw/agents/<agent>/jobs` |
+| Logs | `~/.myaaw/agents/<agent>/logs` |
+| Cron | `~/.myaaw/agents/<agent>/cron` |
+| Tools | `~/.myaaw/agents/<agent>/tools` |
+| SQLite | `~/.myaaw/agents/<agent>/database/myaaw.db` |
+| Skill data | `~/.myaaw/agents/<agent>/database/<skill>/` (skills may also write under `config/`) |
 | PID files | `~/.myaaw/pids/` (shared directory, per-agent files) |
-| Registry | `~/.myaaw/agents.json` (shared) |
+| Registry | `~/.myaaw/config/agents.json` (shared) |
 
 Back up an agent with `myaaw backup --agent <name>`; the archive includes `config/*` and `database/*` generically, so data from any skill is covered. Restore it with `myaaw restore <archive>`. See the [Backup Guide](../cli/backup.md).
 
@@ -435,9 +444,9 @@ Back up an agent with `myaaw backup --agent <name>`; the archive includes `confi
 The filesystem tool for an active agent allows:
 
 ```text
-~/.myaaw/<active-agent>/home
-~/.myaaw/<active-agent>/skills
-~/.myaaw/<active-agent>/jobs
+~/.myaaw/agents/<active-agent>/home
+~/.myaaw/agents/<active-agent>/skills
+~/.myaaw/agents/<active-agent>/jobs
 + the current project directory (local CLI sessions only)
 ```
 
@@ -457,13 +466,13 @@ MYAAW_AGENT_ROOT=<absolute-agent-root>
 Built-in skills such as `calendar`, `cashflow`, and `notes` use `MYAAW_AGENT_ROOT` to store data:
 
 ```text
-~/.myaaw/<agent>/database/<skill>/
+~/.myaaw/agents/<agent>/database/<skill>/
 ```
 
 If the environment variable is absent, scripts fall back to:
 
 ```text
-~/.myaaw/default/database/<skill>/
+~/.myaaw/agents/default/database/<skill>/
 ```
 
 `MYAAW_AGENT` is available for custom skills and debugging. Agent identity variables are applied last, so Bash tool arguments cannot override them.
@@ -527,7 +536,7 @@ myaaw --agent <name> config check
 Check the config path:
 
 ```text
-~/.myaaw/<agent>/config/config.json
+~/.myaaw/agents/<agent>/config/config.json
 ```
 
 ### Wrong calendar/cashflow/notes data
@@ -543,7 +552,7 @@ The current directory is registered only for local `myaaw chat` and `myaaw voice
 - Bash and Python are not OS-sandboxed. They can access other paths according to OS permissions. Filesystem-tool isolation does not restrict Bash/Python.
 - Migration moves data; it does not create a full backup.
 - The agent picker is used for interactive `myaaw chat`; one-shot messages use the default agent unless `--agent` is passed.
-- `agents.json` writes are atomic, but concurrent `agent create/use/delete` operations are not file-locked.
+- `~/.myaaw/config/agents.json` writes are atomic, but concurrent `agent create/use/delete` operations are not file-locked.
 - Skills that use hardcoded global paths may need to be updated to use `MYAAW_AGENT_ROOT`.
 
 ## 16. Command reference

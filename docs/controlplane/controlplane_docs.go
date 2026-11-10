@@ -684,6 +684,424 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/chat-folders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Folders are scoped to the authenticated user (or the user_id query).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat folders"
+                ],
+                "summary": "List chat folders",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatFolderList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Names are trimmed, unique per user ignoring case, and limited to 64 characters. A user may keep up to 100 folders.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat folders"
+                ],
+                "summary": "Create a chat folder",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Folder name",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.folderNameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatFolder"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/chat-folders/{folder}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the folder and its conversations in one transaction. deleted_ids lets a client leave an open transcript.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat folders"
+                ],
+                "summary": "Delete a chat folder",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Folder ID",
+                        "name": "folder",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatFolderDelete"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat folders"
+                ],
+                "summary": "Rename a chat folder",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Folder ID",
+                        "name": "folder",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New folder name",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.folderNameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatFolder"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/chat/run/{id}/stream": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Streams the events of a running (or recently finished) run, replaying everything after ` + "`" + `after` + "`" + `. The run keeps going when this connection drops.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Attach to a chat run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Request id of the run",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Skip events before this index",
+                        "name": "after",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/chat/runs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists the runs of the agent, newest first. Finished runs stay listed for a while so a reloaded tab can still replay their tail.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "List chat runs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only runs of this conversation",
+                        "name": "conversation_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/chat/stop": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Cancels the run started with the same request_id. The partial transcript is kept and the run stops spending provider tokens.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Stop a running chat",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Request id: {\\",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/chat/stream": {
             "post": {
                 "security": [
@@ -979,7 +1397,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Contacts live in ~/.myaaw/\u003cagent\u003e/contacts.json and reference other A2A agents.",
+                "description": "Contacts live in ~/.myaaw/agents/\u003cagent\u003e/contacts.json and reference other A2A agents.",
                 "produces": [
                     "application/json"
                 ],
@@ -1137,6 +1555,81 @@ const docTemplatecontrolplane = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Omitted fields keep their value. A non-empty token replaces the stored one; clear_token removes it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "Update a contact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Contact name",
+                        "name": "contact",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to change",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.ContactUpdate"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ContactView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -1366,6 +1859,24 @@ const docTemplatecontrolplane = `{
                         "in": "query"
                     },
                     {
+                        "type": "boolean",
+                        "description": "Only pinned conversations",
+                        "name": "pinned",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Only Recents: not pinned and not in a folder",
+                        "name": "unfiled",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only conversations in this folder id",
+                        "name": "folder",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "Page size (default 50, max 200)",
                         "name": "limit",
@@ -1383,6 +1894,76 @@ const docTemplatecontrolplane = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/service.ConversationPage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/conversations/activity": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Per-day count of conversations created by the authenticated user. Defaults to the current month.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Conversation activity",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window start, unix milliseconds (default: first day of this month)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Window end, unix milliseconds (default: now)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ConversationActivity"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "401": {
@@ -1444,7 +2025,7 @@ const docTemplatecontrolplane = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Message offset (default 0)",
+                        "description": "Message offset (default 0, negative starts from the end)",
                         "name": "offset",
                         "in": "query"
                     }
@@ -1621,6 +2202,242 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/conversations/{id}/folder": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "folder_id must belong to the same user; null moves the chat out of its folder.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Move a conversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Target folder (null for Recents)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.moveRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/conversations/{id}/pin": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Pinning sets pinned_at to now; unpinning clears it. It never changes updated_at.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Pin a conversation",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pinned state",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.pinRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/conversations/{id}/read": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stores the read watermark shared by every device. ` + "`" + `at` + "`" + ` is optional (RFC3339); omitted means now. The value never moves backwards and is clamped to the conversation's own updated_at.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Mark conversation read",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User ID (defaults to the authenticated user)",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Newest acknowledged turn",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.MarkReadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/cron": {
             "get": {
                 "security": [
@@ -1710,6 +2527,63 @@ const docTemplatecontrolplane = `{
                         "description": "Bad Request",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/cron/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Cron"
+                ],
+                "summary": "Cron history for every job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 20, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Entries to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.CronRunPage"
                         }
                     },
                     "401": {
@@ -1946,6 +2820,43 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Server-Sent Events: a ` + "`" + `conversation.updated` + "`" + ` event is emitted when a cron, heartbeat, or sub-agent turn lands. The client re-reads the transcript.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Conversation events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/fs": {
             "get": {
                 "security": [
@@ -1953,7 +2864,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Lists the virtual roots (/home, /skills, /jobs) or the entries of one directory.",
+                "description": "Lists the virtual roots (/home, /user, /skills, /jobs) or the entries of one directory.",
                 "produces": [
                     "application/json"
                 ],
@@ -2107,6 +3018,78 @@ const docTemplatecontrolplane = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/fs/raw": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Serves the raw bytes with the extension's content type and range support. Pass download=1 to force a save dialog.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Stream an agent file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "default": "/home/AGENTS.md",
+                        "description": "Virtual path",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Send Content-Disposition: attachment",
+                        "name": "download",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "206": {
+                        "description": "Partial content",
+                        "schema": {
+                            "type": "file"
                         }
                     },
                     "400": {
@@ -2833,6 +3816,58 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/observability/sessions/{id}/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Observability"
+                ],
+                "summary": "Get session totals",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/obs.SessionTotals"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/observability/summary": {
             "get": {
                 "security": [
@@ -3059,6 +4094,191 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/providers/chatgpt/connect": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Requires loopback peer/host and local browser Origin/Referer, including through the frontend proxy. Authorization URLs are sensitive; never log them. The agent name may be new and is not persisted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Connect ChatGPT Subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional saved or pending credential ID",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ChatGPTConnectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatGPTConnectView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/providers/chatgpt/connect/{session}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Requires same-machine access; browser GET requests without Origin need a local Referer. Status includes only pending/connected/failed/expired, credential_id, email, and sanitized error. Never includes tokens or authorization URLs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "ChatGPT Subscription sign-in status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sign-in session ID",
+                        "name": "session",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ChatGPTAttemptStatus"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Cancel ChatGPT Subscription sign-in",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sign-in session ID",
+                        "name": "session",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/providers/default": {
             "post": {
                 "security": [
@@ -3225,6 +4445,65 @@ const docTemplatecontrolplane = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/providers/{id}/disconnect": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Clears only this provider's credential reference. Does not delete shared host credentials or revoke the remote ChatGPT grant.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Disconnect ChatGPT Subscription provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Provider name",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     },
                     "401": {
@@ -3842,6 +5121,479 @@ const docTemplatecontrolplane = `{
                     },
                     "413": {
                         "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/skills/{skill}/install": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Copies the embedded template into the agent's skills directory and records it as enabled in skills.json. An existing folder is never overwritten, so the call is idempotent.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Skills"
+                ],
+                "summary": "Install a built-in skill",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Skill directory name",
+                        "name": "skill",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.SkillDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/terminal": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Terminal"
+                ],
+                "summary": "Terminal status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Runs a real PTY on the API host, in the agent's home directory. Disabled unless the API was started with MYAAW_TERMINAL=1 (myaaw api restart --terminal).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Terminal"
+                ],
+                "summary": "Open a terminal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Initial size",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.terminalSizeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.TerminalInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/terminal/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Terminal"
+                ],
+                "summary": "Get a terminal session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.TerminalInfo"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Terminal"
+                ],
+                "summary": "Close a terminal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/terminal/{id}/heartbeat": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Refreshes the idle clock. A session is reaped after two minutes without input, resize, or heartbeat.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Terminal"
+                ],
+                "summary": "Terminal heartbeat",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/terminal/{id}/input": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/octet-stream"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Terminal"
+                ],
+                "summary": "Send terminal input",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/terminal/{id}/resize": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Terminal"
+                ],
+                "summary": "Resize terminal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{name}/terminal/{id}/stream": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Terminal"
+                ],
+                "summary": "Stream terminal output",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "raw PTY output",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -4557,6 +6309,259 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/backups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "List backups",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.BackupList"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Writes a tar.gz archive per agent into the backup directory. An empty agent list backs up every initialized agent and adds the global registry.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Create backups",
+                "parameters": [
+                    {
+                        "description": "What to include",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/service.BackupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.BackupCreated"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/gzip"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Download a backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Archive name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "tar.gz archive",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Delete a backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Archive name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/{name}/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stops the agent if it is running, then rewrites its directory from the archive. force replaces an agent that already exists.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Restore a backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Archive name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Restore options",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/service.RestoreRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.RestoreResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/capabilities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Onboarding capabilities",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.CapabilitiesView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "produces": [
@@ -4571,6 +6576,36 @@ const docTemplatecontrolplane = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handler.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/models/capabilities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Providers"
+                ],
+                "summary": "Get model capabilities",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ModelCapabilitiesView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
                         }
                     }
                 }
@@ -4625,6 +6660,117 @@ const docTemplatecontrolplane = `{
                     }
                 }
             }
+        },
+        "/skills/builtin/{skill}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Reads the template embedded in the binary, including SKILL.md and every file in it. Nothing is written to the agent.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Skills"
+                ],
+                "summary": "Preview a built-in skill",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Skill directory name",
+                        "name": "skill",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.SkillDetail"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/skills/builtin/{skill}/file": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Text files return as plain text; binary files return base64 with binary:true. Paths are relative to the template directory.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Skills"
+                ],
+                "summary": "Read a built-in skill file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Skill directory name",
+                        "name": "skill",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File path relative to the skill directory",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.SkillFileContent"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -4672,6 +6818,78 @@ const docTemplatecontrolplane = `{
                 },
                 "tokens_before": {
                     "type": "integer"
+                }
+            }
+        },
+        "backup.Result": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string"
+                },
+                "bytes": {
+                    "type": "integer"
+                },
+                "files": {
+                    "type": "integer"
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
+        "capabilities.Entry": {
+            "type": "object",
+            "properties": {
+                "builtin_tools": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
+                "capabilities": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
+                "context_window_tokens": {
+                    "type": "integer"
+                },
+                "input_modalities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "output_modalities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "thinking": {
+                    "$ref": "#/definitions/capabilities.Thinking"
+                }
+            }
+        },
+        "capabilities.Thinking": {
+            "type": "object",
+            "properties": {
+                "can_disable": {
+                    "type": "boolean"
+                },
+                "effort_values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -4802,7 +7020,16 @@ const docTemplatecontrolplane = `{
                 "channel": {
                     "type": "string"
                 },
+                "chat_type": {
+                    "type": "string"
+                },
                 "every": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "thread_id": {
                     "type": "string"
                 },
                 "to": {
@@ -4830,6 +7057,9 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "provider": {
+                    "type": "string"
                 }
             }
         },
@@ -4882,15 +7112,27 @@ const docTemplatecontrolplane = `{
             "type": "object",
             "properties": {
                 "channel": {
-                    "description": "telegram, discord",
+                    "description": "telegram, discord, api, cli",
+                    "type": "string"
+                },
+                "chat_type": {
+                    "description": "ChatType distinguishes a Discord DM from a guild channel (\"dm\" vs\n\"guild\"). Telegram derives it from the sign of To.",
                     "type": "string"
                 },
                 "mode": {
                     "description": "announce",
                     "type": "string"
                 },
+                "session_id": {
+                    "description": "SessionID pins the exact conversation (required for api/cli targets).",
+                    "type": "string"
+                },
+                "thread_id": {
+                    "description": "ThreadID is the Telegram message_thread_id for a forum topic.",
+                    "type": "string"
+                },
                 "to": {
-                    "description": "chat_id",
+                    "description": "user id (dm/api/cli), chat id (telegram), channel id (discord)",
                     "type": "string"
                 }
             }
@@ -4898,11 +7140,73 @@ const docTemplatecontrolplane = `{
         "cron.ExecutionResult": {
             "type": "object",
             "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "chat_type": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Snapshot of the job at run time. One-time jobs are removed after they\nrun, so without this the history could not name the job or say what it\ndelivered. Older lines simply have these fields empty.",
+                    "type": "string"
+                },
                 "result": {
+                    "type": "string"
+                },
+                "session_id": {
                     "type": "string"
                 },
                 "status": {
                     "description": "success, failed",
+                    "type": "string"
+                },
+                "thread_id": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                },
+                "ts": {
+                    "type": "string"
+                }
+            }
+        },
+        "cron.JobExecutionResult": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "chat_type": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Snapshot of the job at run time. One-time jobs are removed after they\nrun, so without this the history could not name the job or say what it\ndelivered. Older lines simply have these fields empty.",
+                    "type": "string"
+                },
+                "result": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "success, failed",
+                    "type": "string"
+                },
+                "thread_id": {
+                    "type": "string"
+                },
+                "to": {
                     "type": "string"
                 },
                 "ts": {
@@ -4986,6 +7290,28 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "handler.ChatFile": {
+            "type": "object",
+            "properties": {
+                "data_base64": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.ChatGPTConnectRequest": {
+            "type": "object",
+            "properties": {
+                "credential_id": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.ChatRequest": {
             "type": "object",
             "properties": {
@@ -4993,11 +7319,22 @@ const docTemplatecontrolplane = `{
                     "type": "string",
                     "example": "conv-id or NEW"
                 },
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.ChatFile"
+                    }
+                },
                 "images": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
+                },
+                "request_id": {
+                    "description": "RequestID lets the client stop this run with POST /agents/{name}/chat/stop.",
+                    "type": "string",
+                    "example": "3f0c6b0e-9a51-4e7f-b2f4-4f0f2c1f9a11"
                 },
                 "text": {
                     "type": "string",
@@ -5135,9 +7472,15 @@ const docTemplatecontrolplane = `{
                 "api_key": {
                     "type": "string"
                 },
+                "auth_mode": {
+                    "type": "string"
+                },
                 "base_url": {
                     "type": "string",
                     "example": "https://api.openai.com"
+                },
+                "credential_id": {
+                    "type": "string"
                 },
                 "default_model": {
                     "type": "string",
@@ -5146,6 +7489,10 @@ const docTemplatecontrolplane = `{
                 "name": {
                     "type": "string",
                     "example": "openai"
+                },
+                "thinking_level": {
+                    "type": "string",
+                    "example": "medium"
                 },
                 "type": {
                     "type": "string",
@@ -5263,6 +7610,10 @@ const docTemplatecontrolplane = `{
                     "type": "string",
                     "example": "2026-10-20T20:00:00Z"
                 },
+                "must_change_password": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "token": {
                     "type": "string",
                     "example": "a1b2c3"
@@ -5281,6 +7632,16 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.LogFile"
                     }
+                }
+            }
+        },
+        "handler.MarkReadRequest": {
+            "type": "object",
+            "properties": {
+                "at": {
+                    "description": "At is the newest turn being acknowledged, as RFC3339. Omitted means now.",
+                    "type": "string",
+                    "example": "2026-11-06T15:00:00Z"
                 }
             }
         },
@@ -5446,11 +7807,21 @@ const docTemplatecontrolplane = `{
                 "api_key": {
                     "type": "string"
                 },
+                "auth_mode": {
+                    "type": "string"
+                },
                 "base_url": {
+                    "type": "string"
+                },
+                "credential_id": {
                     "type": "string"
                 },
                 "default_model": {
                     "type": "string"
+                },
+                "thinking_level": {
+                    "type": "string",
+                    "example": "medium"
                 },
                 "type": {
                     "type": "string"
@@ -5474,6 +7845,10 @@ const docTemplatecontrolplane = `{
         "handler.UsernameResponse": {
             "type": "object",
             "properties": {
+                "must_change_password": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "user_id": {
                     "type": "integer",
                     "example": 0
@@ -5507,6 +7882,41 @@ const docTemplatecontrolplane = `{
                 "path": {
                     "type": "string",
                     "example": "/home/AGENTS.md"
+                }
+            }
+        },
+        "handler.folderNameRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.moveRequest": {
+            "type": "object",
+            "properties": {
+                "folder_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.pinRequest": {
+            "type": "object",
+            "properties": {
+                "pinned": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handler.terminalSizeRequest": {
+            "type": "object",
+            "properties": {
+                "cols": {
+                    "type": "integer"
+                },
+                "rows": {
+                    "type": "integer"
                 }
             }
         },
@@ -5699,6 +8109,101 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "obs.SessionContext": {
+            "type": "object",
+            "properties": {
+                "message_tokens": {
+                    "type": "integer"
+                },
+                "system_tokens": {
+                    "type": "integer"
+                },
+                "tokens": {
+                    "type": "integer"
+                },
+                "tool_tokens": {
+                    "type": "integer"
+                },
+                "window": {
+                    "type": "integer"
+                }
+            }
+        },
+        "obs.SessionTotals": {
+            "type": "object",
+            "properties": {
+                "cache_hit_rate": {
+                    "type": "integer"
+                },
+                "cache_hit_tokens": {
+                    "description": "CacheHitTokens is the part of InputTokens served from the prompt cache.",
+                    "type": "integer"
+                },
+                "channel": {
+                    "type": "string"
+                },
+                "context": {
+                    "description": "Context describes the newest request against the model's context window.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/obs.SessionContext"
+                        }
+                    ]
+                },
+                "conversation_id": {
+                    "type": "string"
+                },
+                "error_count": {
+                    "type": "integer"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "last_active_at": {
+                    "type": "integer"
+                },
+                "llm_ms": {
+                    "description": "LlmMs and ToolMs are the wall time spent in provider requests and tool\nexecutions across the session. TtftMs is the mean first-token latency of\nthe requests that streamed a first token.",
+                    "type": "integer"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "provider": {
+                    "description": "Provider is the provider type of the newest run, Model its model.",
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "integer"
+                },
+                "steps": {
+                    "type": "integer"
+                },
+                "tok_per_sec": {
+                    "description": "TokPerSec is the generation throughput of the newest run.",
+                    "type": "integer"
+                },
+                "tool_ms": {
+                    "type": "integer"
+                },
+                "total_tokens": {
+                    "description": "TotalTokens is input + output. UncachedInputTokens is InputTokens minus\nthe cache hits, and CacheHitRate is the rounded share served from cache.\nThey are computed here so clients never re-derive the arithmetic.",
+                    "type": "integer"
+                },
+                "ttft_ms": {
+                    "type": "integer"
+                },
+                "turns": {
+                    "type": "integer"
+                },
+                "uncached_input_tokens": {
+                    "type": "integer"
+                }
+            }
+        },
         "obs.Span": {
             "type": "object",
             "properties": {
@@ -5735,6 +8240,9 @@ const docTemplatecontrolplane = `{
                 "kind": {
                     "$ref": "#/definitions/obs.SpanKind"
                 },
+                "message_tokens": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -5760,6 +8268,13 @@ const docTemplatecontrolplane = `{
                     "$ref": "#/definitions/obs.Status"
                 },
                 "step_index": {
+                    "type": "integer"
+                },
+                "system_tokens": {
+                    "description": "SystemTokens, ToolTokens, and MessageTokens split the request estimate\ninto its parts. They are recorded on the llm span from the pre-request\nevent; InputTokens is the exact total from the provider usage.",
+                    "type": "integer"
+                },
+                "tool_tokens": {
                     "type": "integer"
                 }
             }
@@ -5994,10 +8509,18 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "content": {},
+                "created_at": {
+                    "description": "CreatedAt is when the message entered the transcript, stored in UTC. A nil\ntimestamp means the message predates per-message times.",
+                    "type": "string"
+                },
                 "duration_ms": {
                     "type": "integer"
                 },
                 "error_message": {
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the stable transcript-entry id, used to address the files a user\nuploaded with that message.",
                     "type": "string"
                 },
                 "images": {
@@ -6016,7 +8539,27 @@ const docTemplatecontrolplane = `{
                 "observation": {
                     "type": "string"
                 },
+                "provider_metadata": {
+                    "description": "ProviderMetadata holds opaque continuation state, not displayable reasoning.\nPreserve it when persisting or copying assistant turns. Other providers\ndeliberately do not serialize this field onto their wire requests.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    }
+                },
                 "role": {
+                    "type": "string"
+                },
+                "sender_id": {
+                    "description": "Sender metadata for messages that arrive from a shared chat (a group or a\nforum topic). These fields are display-only and are not sent to providers;\nthe model learns who is speaking from the \u003cuserinfo\u003e block at the top of\nthe message content instead.",
+                    "type": "string"
+                },
+                "sender_name": {
+                    "type": "string"
+                },
+                "sender_username": {
                     "type": "string"
                 },
                 "stop_reason": {
@@ -6040,6 +8583,12 @@ const docTemplatecontrolplane = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/provider.ReactStep"
+                    }
+                },
+                "uploads": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.Upload"
                     }
                 },
                 "usage": {
@@ -6112,6 +8661,23 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "provider.Upload": {
+            "type": "object",
+            "properties": {
+                "mime_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                }
+            }
+        },
         "provider.Usage": {
             "type": "object",
             "properties": {
@@ -6150,10 +8716,30 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ActivityDay": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "date": {
+                    "type": "string",
+                    "example": "2026-10-02"
+                }
+            }
+        },
         "service.AgentInfo": {
             "type": "object",
             "properties": {
+                "agent_color": {
+                    "description": "AgentColor is always resolved: an agent registered before colours existed\nreads back as the palette default, so clients never have to know it.",
+                    "type": "string"
+                },
                 "base_url": {
+                    "type": "string"
+                },
+                "created_at": {
                     "type": "string"
                 },
                 "default": {
@@ -6210,6 +8796,78 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.GrantView"
                     }
+                }
+            }
+        },
+        "service.BackupArchive": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.BackupCreated": {
+            "type": "object",
+            "properties": {
+                "archives": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backup.Result"
+                    }
+                },
+                "dir": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.BackupList": {
+            "type": "object",
+            "properties": {
+                "archives": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.BackupArchive"
+                    }
+                },
+                "dir": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.BackupRequest": {
+            "type": "object",
+            "properties": {
+                "agents": {
+                    "description": "Agents is empty to back up every initialized agent.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "include_caches": {
+                    "type": "boolean"
+                },
+                "include_logs": {
+                    "type": "boolean"
+                },
+                "include_venv": {
+                    "type": "boolean"
+                },
+                "include_workspace": {
+                    "type": "boolean"
+                },
+                "no_secrets": {
+                    "type": "boolean"
                 }
             }
         },
@@ -6286,6 +8944,41 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.CapabilitiesView": {
+            "type": "object",
+            "properties": {
+                "providers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ProviderOptionView"
+                    }
+                },
+                "skills": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.CapabilityView"
+                    }
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.CapabilityView"
+                    }
+                }
+            }
+        },
+        "service.CapabilityView": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "weather"
+                }
+            }
+        },
         "service.ChannelView": {
             "type": "object",
             "properties": {
@@ -6317,6 +9010,85 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.ChannelView"
                     }
+                }
+            }
+        },
+        "service.ChatFolder": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ChatFolderDelete": {
+            "type": "object",
+            "properties": {
+                "deleted_chats": {
+                    "type": "integer"
+                },
+                "deleted_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "ok": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "service.ChatFolderList": {
+            "type": "object",
+            "properties": {
+                "folders": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ChatFolder"
+                    }
+                }
+            }
+        },
+        "service.ChatGPTAttemptStatus": {
+            "type": "object",
+            "properties": {
+                "credential_id": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ChatGPTConnectView": {
+            "type": "object",
+            "properties": {
+                "authorization_url": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
                 }
             }
         },
@@ -6358,30 +9130,46 @@ const docTemplatecontrolplane = `{
             "type": "object",
             "properties": {
                 "approvals": {
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "bot": {
-                    "description": "bot field names; an empty list resets the whole bot section",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
                 "cron": {
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "heartbeat": {
-                    "description": "true resets the whole section",
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "observability": {
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "synthesizer": {
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "transcriber": {
-                    "type": "boolean"
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -6423,6 +9211,26 @@ const docTemplatecontrolplane = `{
                 },
                 "transcriber": {
                     "$ref": "#/definitions/service.ServiceSecretView"
+                }
+            }
+        },
+        "service.ContactUpdate": {
+            "type": "object",
+            "properties": {
+                "clear_token": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
                 }
             }
         },
@@ -6486,13 +9294,45 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ConversationActivity": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ActivityDay"
+                    }
+                },
+                "from": {
+                    "type": "integer",
+                    "example": 1730419200000
+                },
+                "to": {
+                    "type": "integer",
+                    "example": 1733011199999
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 42
+                }
+            }
+        },
         "service.ConversationDetail": {
             "type": "object",
             "properties": {
                 "active": {
                     "type": "boolean"
                 },
+                "channel": {
+                    "type": "string"
+                },
+                "chat_name": {
+                    "type": "string"
+                },
                 "created_at": {
+                    "type": "string"
+                },
+                "folder_id": {
                     "type": "string"
                 },
                 "has_more": {
@@ -6500,6 +9340,9 @@ const docTemplatecontrolplane = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "is_forum": {
+                    "type": "boolean"
                 },
                 "limit": {
                     "type": "integer"
@@ -6513,11 +9356,31 @@ const docTemplatecontrolplane = `{
                 "offset": {
                     "type": "integer"
                 },
+                "pinned": {
+                    "type": "boolean"
+                },
+                "pinned_at": {
+                    "type": "string"
+                },
+                "scope": {
+                    "description": "Scope identifies the chat target (see ConversationSummary.Scope).",
+                    "type": "string"
+                },
                 "title": {
+                    "type": "string"
+                },
+                "topic_name": {
                     "type": "string"
                 },
                 "total_messages": {
                     "type": "integer"
+                },
+                "turns": {
+                    "description": "Turns covers the whole conversation, not only the returned messages, because\nthe client draws one tick per question. It is not paginated: every detail\nresponse carries the full list. If improvement is needed (thousands of turns,\nor a payload that starts to hurt), either ship the indexes only and fetch\nlabels per window, cap the list with a ` + "`" + `turns_truncated` + "`" + ` flag, or lower\nturnTextLimit.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ConversationTurn"
+                    }
                 },
                 "updated_at": {
                     "type": "string"
@@ -6556,16 +9419,47 @@ const docTemplatecontrolplane = `{
                 "active": {
                     "type": "boolean"
                 },
+                "channel": {
+                    "description": "Channel is the platform that owns the session (telegram, discord, api,\ncli). Empty for sessions created before the column existed.",
+                    "type": "string"
+                },
+                "chat_name": {
+                    "description": "ChatName/TopicName are display names learned from the channel (group name\nand forum topic). Empty for CLI/API/DM sessions and unknown scopes.",
+                    "type": "string"
+                },
                 "created_at": {
+                    "type": "string"
+                },
+                "folder_id": {
                     "type": "string"
                 },
                 "id": {
                     "type": "string"
                 },
+                "is_forum": {
+                    "type": "boolean"
+                },
                 "message_count": {
                     "type": "integer"
                 },
+                "pinned": {
+                    "type": "boolean"
+                },
+                "pinned_at": {
+                    "type": "string"
+                },
+                "read_at": {
+                    "description": "ReadAt is the newest turn this user has acknowledged. Null means the\nconversation was created after read tracking shipped and was never opened;\na client can read that as unread. Shared by every device.",
+                    "type": "string"
+                },
+                "scope": {
+                    "description": "Scope identifies the chat target the session belongs to, e.g. a Telegram\ntopic (\"tg:\u003cchatID\u003e:\u003cthreadID\u003e\"). Empty for CLI/API/DM sessions, so\nclients that do not know the field keep working unchanged.",
+                    "type": "string"
+                },
                 "title": {
+                    "type": "string"
+                },
+                "topic_name": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -6576,10 +9470,25 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ConversationTurn": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "description": "Index is the position of the question in the stored transcript.",
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
         "service.CronJobInput": {
             "type": "object",
             "properties": {
                 "channel": {
+                    "type": "string"
+                },
+                "chat_type": {
                     "type": "string"
                 },
                 "enabled": {
@@ -6598,6 +9507,12 @@ const docTemplatecontrolplane = `{
                     "description": "cron, every, at",
                     "type": "string"
                 },
+                "session_id": {
+                    "type": "string"
+                },
+                "thread_id": {
+                    "type": "string"
+                },
                 "to": {
                     "type": "string"
                 },
@@ -6611,6 +9526,29 @@ const docTemplatecontrolplane = `{
             "properties": {
                 "active": {
                     "type": "boolean"
+                }
+            }
+        },
+        "service.CronRunPage": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean"
+                },
+                "history": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/cron.JobExecutionResult"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
@@ -6706,7 +9644,16 @@ const docTemplatecontrolplane = `{
                 "channel": {
                     "type": "string"
                 },
+                "chat_type": {
+                    "type": "string"
+                },
                 "every": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "thread_id": {
                     "type": "string"
                 },
                 "to": {
@@ -6751,6 +9698,23 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ModelCapabilitiesView": {
+            "type": "object",
+            "properties": {
+                "models": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/capabilities.Entry"
+                    }
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "warning": {
+                    "type": "string"
+                }
+            }
+        },
         "service.ModelListView": {
             "type": "object",
             "properties": {
@@ -6776,9 +9740,15 @@ const docTemplatecontrolplane = `{
                 "api_key": {
                     "type": "string"
                 },
+                "auth_mode": {
+                    "type": "string"
+                },
                 "base_url": {
                     "type": "string",
                     "example": "https://api.deepseek.com"
+                },
+                "credential_id": {
+                    "type": "string"
                 },
                 "type": {
                     "type": "string",
@@ -6870,9 +9840,21 @@ const docTemplatecontrolplane = `{
                     "type": "string",
                     "example": "telegram"
                 },
+                "chat_type": {
+                    "type": "string",
+                    "example": "dm"
+                },
                 "every": {
                     "type": "string",
                     "example": "30m"
+                },
+                "session_id": {
+                    "type": "string",
+                    "example": "0f4e8b3a-1111-4222-8333-944455556666"
+                },
+                "thread_id": {
+                    "type": "string",
+                    "example": "77"
                 },
                 "to": {
                     "type": "string",
@@ -6886,9 +9868,15 @@ const docTemplatecontrolplane = `{
                 "api_key": {
                     "type": "string"
                 },
+                "auth_mode": {
+                    "type": "string"
+                },
                 "base_url": {
                     "type": "string",
                     "example": "https://api.deepseek.com"
+                },
+                "credential_id": {
+                    "type": "string"
                 },
                 "model": {
                     "type": "string",
@@ -6907,6 +9895,10 @@ const docTemplatecontrolplane = `{
         "service.OnboardRequest": {
             "type": "object",
             "properties": {
+                "agent_color": {
+                    "description": "AgentColor is the palette key the dashboard draws this agent with. Omitted\nkeeps whatever the registry already holds, so a reconfigure never resets\na colour the user picked earlier.",
+                    "type": "string"
+                },
                 "bot": {
                     "$ref": "#/definitions/service.OnboardBotInput"
                 },
@@ -6950,19 +9942,73 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ProviderConnection": {
+            "type": "object",
+            "properties": {
+                "account_label": {
+                    "type": "string"
+                },
+                "configured": {
+                    "type": "boolean"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ProviderOptionView": {
+            "type": "object",
+            "properties": {
+                "default_base_url": {
+                    "type": "string",
+                    "example": "https://api.openai.com"
+                },
+                "default_model": {
+                    "type": "string",
+                    "example": "gpt-4o"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "deepseek"
+                },
+                "label": {
+                    "type": "string",
+                    "example": "OpenAI (or compatible)"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "openai"
+                }
+            }
+        },
         "service.ProviderView": {
             "type": "object",
             "properties": {
                 "api_key": {
                     "$ref": "#/definitions/service.SecretState"
                 },
+                "auth_mode": {
+                    "type": "string"
+                },
                 "base_url": {
+                    "type": "string"
+                },
+                "connection": {
+                    "$ref": "#/definitions/service.ProviderConnection"
+                },
+                "credential_id": {
                     "type": "string"
                 },
                 "default_model": {
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "thinking_level": {
                     "type": "string"
                 },
                 "type": {
@@ -6981,6 +10027,44 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.ProviderView"
                     }
+                }
+            }
+        },
+        "service.RestoreRequest": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "description": "Agent renames the agent on restore. Empty keeps the archived name.",
+                    "type": "string"
+                },
+                "force": {
+                    "type": "boolean"
+                },
+                "restore_packages": {
+                    "type": "boolean"
+                },
+                "start": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "service.RestoreResult": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string"
+                },
+                "files": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "port_warning": {
+                    "type": "string"
+                },
+                "pre_restore_backup": {
+                    "type": "string"
                 }
             }
         },
@@ -7350,6 +10434,9 @@ const docTemplatecontrolplane = `{
                 "kind": {
                     "$ref": "#/definitions/obs.SpanKind"
                 },
+                "message_tokens": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -7376,6 +10463,33 @@ const docTemplatecontrolplane = `{
                 },
                 "step_index": {
                     "type": "integer"
+                },
+                "system_tokens": {
+                    "description": "SystemTokens, ToolTokens, and MessageTokens split the request estimate\ninto its parts. They are recorded on the llm span from the pre-request\nevent; InputTokens is the exact total from the provider usage.",
+                    "type": "integer"
+                },
+                "tool_tokens": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.TerminalInfo": {
+            "type": "object",
+            "properties": {
+                "cols": {
+                    "type": "integer"
+                },
+                "cwd": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "rows": {
+                    "type": "integer"
+                },
+                "shell": {
+                    "type": "string"
                 }
             }
         },

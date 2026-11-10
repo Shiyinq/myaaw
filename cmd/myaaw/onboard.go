@@ -1,17 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"myaaw"
-	"myaaw/internal/agent/tools"
 	"myaaw/internal/agentdir"
+	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 	"myaaw/internal/daemon"
+	"myaaw/internal/onboard"
 	"myaaw/internal/provider"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -22,13 +22,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var onboardCmd = &cobra.Command{
 	Use:   "onboard",
 	Short: "Interactive setup for first-time use",
-	Long:  "Create or configure an agent: choose its name, provider, channels, and heartbeat, then write ~/.myaaw/<agent>.",
+	Long:  "Create or configure an agent: choose its name, provider, channels, and heartbeat, then write ~/.myaaw/agents/<agent>.",
 	Run:   runOnboard,
 }
 
@@ -43,6 +42,7 @@ type onboardOptions struct {
 	provName        string
 	baseURL         string
 	apiKey          string
+	credentialID    string
 	model           string
 	channel         string
 	tgMode          string
@@ -51,6 +51,9 @@ type onboardOptions struct {
 	dcToken         string
 	hbChannel       string
 	hbTo            string
+	hbThread        string
+	hbSession       string
+	hbChatType      string
 	hbEvery         string
 	owner           string
 	tgOwner         string
@@ -66,6 +69,9 @@ type onboardOptions struct {
 	// disableToolsSet reports whether --disable-tools was passed, so an
 	// update without the flag can preserve the current disabled set.
 	disableToolsSet bool
+	// skillsSet reports whether --skills was passed, so an update without the
+	// flag can leave the installed skills and their enabled state untouched.
+	skillsSet bool
 }
 
 var onboardOpts onboardOptions
@@ -83,10 +89,11 @@ func registerOnboardFlags(cmd *cobra.Command) {
 	f.BoolVar(&onboardOpts.json, "json", false, "print a machine-readable summary (implies --yes)")
 	f.BoolVar(&onboardOpts.force, "force", false, "reconfigure an agent that already exists")
 	f.BoolVar(&onboardOpts.install, "install", false, "copy the binary to ~/.local/bin")
-	f.StringVar(&onboardOpts.provider, "provider", "", "provider type: openai or gemini")
+	f.StringVar(&onboardOpts.provider, "provider", "", "provider type: openai, gemini, or openai_chatgpt (ChatGPT Subscription)")
 	f.StringVar(&onboardOpts.provName, "provider-name", "", "provider name stored in config.json (default: the type)")
 	f.StringVar(&onboardOpts.baseURL, "base-url", "", "provider base URL (default: the public endpoint)")
 	f.StringVar(&onboardOpts.apiKey, "api-key", "", "provider API key (prefer MYAAW_API_KEY)")
+	f.StringVar(&onboardOpts.credentialID, "credential-id", "", "existing local ChatGPT Subscription credential ID (no API key)")
 	f.StringVar(&onboardOpts.model, "model", "", "default model (default: the provider default)")
 	f.StringVar(&onboardOpts.channel, "channel", "", "channels: telegram, discord, both, or skip")
 	f.StringVar(&onboardOpts.tgMode, "telegram-mode", "polling", "telegram mode: polling or webhook")
@@ -95,6 +102,9 @@ func registerOnboardFlags(cmd *cobra.Command) {
 	f.StringVar(&onboardOpts.dcToken, "discord-token", "", "discord bot token (prefer DISCORD_BOT_TOKEN)")
 	f.StringVar(&onboardOpts.hbChannel, "heartbeat-channel", "", "heartbeat channel: telegram, discord, off, or skip")
 	f.StringVar(&onboardOpts.hbTo, "heartbeat-to", "", "heartbeat destination chat/channel ID")
+	f.StringVar(&onboardOpts.hbThread, "heartbeat-thread", "", "heartbeat Telegram forum topic id")
+	f.StringVar(&onboardOpts.hbSession, "heartbeat-session", "", "heartbeat conversation id to append to")
+	f.StringVar(&onboardOpts.hbChatType, "heartbeat-chat-type", "", "heartbeat Discord chat type: dm or guild")
 	f.StringVar(&onboardOpts.hbEvery, "heartbeat-every", "", "heartbeat interval, e.g. 30m or 1h")
 	f.StringVar(&onboardOpts.owner, "owner", "", "owner IDs for any channel, comma separated")
 	f.StringVar(&onboardOpts.tgOwner, "telegram-owner", "", "Telegram owner user IDs, comma separated (optional)")
@@ -111,6 +121,7 @@ func registerOnboardFlags(cmd *cobra.Command) {
 
 func runOnboard(cmd *cobra.Command, args []string) {
 	onboardOpts.disableToolsSet = cmd.Flags().Changed("disable-tools")
+	onboardOpts.skillsSet = cmd.Flags().Changed("skills")
 	runOnboarding(strings.TrimSpace(agentFlag), false)
 }
 
@@ -154,7 +165,7 @@ func newOnboardingModel(agentName string, createNow bool) onboardModel {
 	}
 	m.step = stepProviderType
 	m.cursor = 0
-	m.choices = []string{"OpenAI (or compatible)", "Gemini"}
+	m.choices = []string{"OpenAI (or compatible)", "Gemini", chatgpt.Label}
 	return m
 }
 
@@ -239,6 +250,8 @@ type onboardModel struct {
 	providerBaseURL string
 	providerModel   string
 	llmKey          string
+	credentialID    string
+	chatGPTCancel   context.CancelFunc
 	models          []string
 	modelsLoading   bool
 	modelsErr       error
@@ -516,7 +529,7 @@ func (m onboardModel) existingProvider(name string) (config.ProviderConfig, bool
 // setAgent pins the agent name and recomputes every derived path.
 func (m *onboardModel) setAgent(name string) {
 	m.agentName = name
-	m.myaawHome = filepath.Join(m.homeDir, ".myaaw", name)
+	m.myaawHome = filepath.Join(m.homeDir, ".myaaw", "agents", name)
 	m.envFile = filepath.Join(m.myaawHome, ".env")
 	m.configFile = filepath.Join(m.myaawHome, "config", "config.json")
 }
@@ -529,6 +542,17 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case chatGPTSignedInMsg:
+		m.credentialID = msg.credentialID
+		m.chatGPTCancel = nil
+		if msg.err != nil {
+			m.modelsLoading = false
+			m.modelsErr = msg.err
+			m.choices = []string{"Retry browser sign-in"}
+			m.cursor = 0
+			return m, nil
+		}
+		return m, fetchChatGPTModels(m.credentialID)
 	case modelsFetchedMsg:
 		return m.handleModels(msg), nil
 
@@ -551,6 +575,9 @@ func (m onboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.isRunning || m.modelsLoading {
 			if msg.String() == "ctrl+c" {
+				if m.chatGPTCancel != nil {
+					m.chatGPTCancel()
+				}
 				return m, tea.Quit
 			}
 			return m, nil
@@ -694,48 +721,11 @@ func (m onboardModel) disabledTools() []string {
 // builtinSkillNames lists the skill templates embedded in the binary.
 // builtinSkillDescriptions reads the description from each bundled SKILL.md.
 func builtinSkillDescriptions() map[string]string {
-	descriptions := make(map[string]string)
-	for _, name := range builtinSkillNames() {
-		data, err := myaaw.DefaultMyaawDir.ReadFile(path.Join(".myaaw", "skills", name, "SKILL.md"))
-		if err != nil {
-			continue
-		}
-		if description := frontmatterDescription(string(data)); description != "" {
-			descriptions[name] = description
-		}
-	}
-	return descriptions
+	return onboardSkillDescriptions()
 }
 
 func builtinToolDescriptions() map[string]string {
-	descriptions := make(map[string]string)
-	for _, info := range tools.GetBuiltinTools() {
-		if info.Description != "" {
-			descriptions[info.Name] = info.Description
-		}
-	}
-	return descriptions
-}
-
-// frontmatterDescription extracts a single-line description from a SKILL.md
-// frontmatter block.
-func frontmatterDescription(content string) string {
-	content = strings.ReplaceAll(content, "\r\n", "\n")
-	if !strings.HasPrefix(content, "---") {
-		return ""
-	}
-	rest := strings.TrimPrefix(content, "---")
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
-		return ""
-	}
-	var meta struct {
-		Description string `yaml:"description"`
-	}
-	if err := yaml.Unmarshal([]byte(rest[:end]), &meta); err != nil {
-		return ""
-	}
-	return strings.Join(strings.Fields(meta.Description), " ")
+	return onboardToolDescriptions()
 }
 
 // truncateOneLine shortens a description so it fits next to a skill or tool
@@ -768,22 +758,20 @@ type capabilitiesSummary struct {
 }
 
 // builtinCapabilities lists the embedded skills and the built-in tools with
-// their descriptions, in registry order.
+// their descriptions, in registry order. The catalog itself lives in the
+// shared onboard core so the control-plane API serves the same list.
 func builtinCapabilities() capabilitiesSummary {
-	skills := builtinSkillNames()
-	skillDescriptions := builtinSkillDescriptions()
-	tools := builtinToolNames()
-	toolDescriptions := builtinToolDescriptions()
+	caps := onboardBuiltinCapabilities()
 
 	summary := capabilitiesSummary{
-		Skills: make([]capabilityEntry, 0, len(skills)),
-		Tools:  make([]capabilityEntry, 0, len(tools)),
+		Skills: make([]capabilityEntry, 0, len(caps.Skills)),
+		Tools:  make([]capabilityEntry, 0, len(caps.Tools)),
 	}
-	for _, name := range skills {
-		summary.Skills = append(summary.Skills, capabilityEntry{Name: name, Description: skillDescriptions[name]})
+	for _, entry := range caps.Skills {
+		summary.Skills = append(summary.Skills, capabilityEntry{Name: entry.Name, Description: entry.Description})
 	}
-	for _, name := range tools {
-		summary.Tools = append(summary.Tools, capabilityEntry{Name: name, Description: toolDescriptions[name]})
+	for _, entry := range caps.Tools {
+		summary.Tools = append(summary.Tools, capabilityEntry{Name: entry.Name, Description: entry.Description})
 	}
 	return summary
 }
@@ -876,6 +864,8 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch choice {
+		case chatgpt.Label:
+			m.providerType = chatgpt.ProviderType
 		case "Gemini":
 			m.providerType = "gemini"
 		case "OpenAI (or compatible)":
@@ -902,6 +892,14 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.providerName = name
+		if m.providerType == chatgpt.ProviderType {
+			m.providerBaseURL, m.llmKey, m.providerModel, m.credentialID = "", "", "", ""
+			if saved, ok := m.existingProvider(name); ok && saved.Type == chatgpt.ProviderType {
+				m.credentialID, m.providerModel = saved.CredentialID, saved.DefaultModel
+			}
+			return m.startChatGPTSignIn()
+		}
+		m.credentialID = ""
 		m.providerBaseURL = provider.DefaultBaseURL(m.providerType)
 		m.providerModel = ""
 		// Reconfiguring an existing provider keeps its endpoint and model, so
@@ -954,6 +952,9 @@ func (m onboardModel) nextStep(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, fetchProviderModels(m.providerType, m.providerBaseURL, m.llmKey)
 
 	case stepProviderModel:
+		if m.providerType == chatgpt.ProviderType && !m.modelsLoading && (m.modelsErr != nil || len(m.models) == 0) {
+			return m.startChatGPTSignIn()
+		}
 		if m.modelsLoading {
 			return m, nil
 		}
@@ -1299,28 +1300,31 @@ func (m onboardModel) input() onboardInput {
 		skills = nil
 	}
 	return onboardInput{
-		ProviderName:       providerName,
-		ProviderType:       m.providerType,
-		ProviderBaseURL:    m.providerBaseURL,
-		ProviderAPIKey:     m.llmKey,
-		ProviderModel:      m.providerModel,
-		TelegramToken:      m.telegramToken,
-		TelegramMode:       m.telegramMode,
-		TelegramWebhookURL: m.telegramWebhookURL,
-		DiscordToken:       m.discordToken,
-		DisableTelegram:    m.disableTelegram && m.telegramToken == "",
-		DisableDiscord:     m.disableDiscord && m.discordToken == "",
-		BotType:            m.botType,
-		Heartbeat:          m.heartbeat,
-		HeartbeatSet:       m.heartbeatSet,
-		HeartbeatChannel:   m.heartbeatChannel,
-		HeartbeatTo:        m.heartbeatTo,
-		HeartbeatEvery:     m.heartbeatEvery,
-		OwnerIDs:           m.ownerIDsAll(),
-		OwnersSet:          m.ownersAsked,
-		Skills:             skills,
-		DisabledTools:      m.disabledTools(),
-		UpdateTools:        !m.skipTools,
+		ProviderName:         providerName,
+		ProviderType:         m.providerType,
+		ProviderBaseURL:      m.providerBaseURL,
+		ProviderAPIKey:       m.llmKey,
+		ProviderCredentialID: m.credentialID,
+		ProviderAuthMode:     chatGPTAuthMode(m.providerType),
+		ProviderModel:        m.providerModel,
+		TelegramToken:        m.telegramToken,
+		TelegramMode:         m.telegramMode,
+		TelegramWebhookURL:   m.telegramWebhookURL,
+		DiscordToken:         m.discordToken,
+		DisableTelegram:      m.disableTelegram && m.telegramToken == "",
+		DisableDiscord:       m.disableDiscord && m.discordToken == "",
+		BotType:              m.botType,
+		Heartbeat:            m.heartbeat,
+		HeartbeatSet:         m.heartbeatSet,
+		HeartbeatChannel:     m.heartbeatChannel,
+		HeartbeatTo:          m.heartbeatTo,
+		HeartbeatEvery:       m.heartbeatEvery,
+		OwnerIDs:             m.ownerIDsAll(),
+		OwnersSet:            m.ownersAsked,
+		Skills:               skills,
+		SkillsSet:            !m.skipSkills,
+		DisabledTools:        m.disabledTools(),
+		UpdateTools:          !m.skipTools,
 	}
 }
 
@@ -1346,14 +1350,16 @@ func (m *onboardModel) setupOwnerInputs() {
 // providerTypeChoices adds an explicit keep-current option when updating.
 func (m onboardModel) providerTypeChoices() []string {
 	if m.agentExistedAtStart {
-		return []string{keepProviderOption, "OpenAI (or compatible)", "Gemini"}
+		return []string{keepProviderOption, "OpenAI (or compatible)", "Gemini", chatgpt.Label}
 	}
-	return []string{"OpenAI (or compatible)", "Gemini"}
+	return []string{"OpenAI (or compatible)", "Gemini", chatgpt.Label}
 }
 
 func (m onboardModel) providerTypeCursor() int {
 	if m.agentExistedAtStart {
 		switch m.providerType {
+		case chatgpt.ProviderType:
+			return 3
 		case "gemini":
 			return 2
 		case "openai":
@@ -1361,6 +1367,9 @@ func (m onboardModel) providerTypeCursor() int {
 		default:
 			return 0
 		}
+	}
+	if m.providerType == chatgpt.ProviderType {
+		return 2
 	}
 	if m.providerType == "gemini" {
 		return 1
@@ -1622,6 +1631,13 @@ func (m onboardModel) handleModels(msg modelsFetchedMsg) onboardModel {
 	m.models = msg.models
 
 	if msg.err != nil || len(msg.models) == 0 {
+		if m.providerType == chatgpt.ProviderType {
+			m.modelManual = false
+			m.modelsErr = fmt.Errorf("ChatGPT Subscription model discovery failed; reconnect and retry (no API fallback)")
+			m.choices = []string{"Retry browser sign-in"}
+			m.cursor = 0
+			return m
+		}
 		m.modelManual = true
 		m.choices = nil
 		m.resetInput("e.g. gpt-4o", false)
@@ -1631,7 +1647,10 @@ func (m onboardModel) handleModels(msg modelsFetchedMsg) onboardModel {
 		return m
 	}
 	m.modelManual = false
-	m.choices = append(append([]string{}, msg.models...), manualModelOption)
+	m.choices = append([]string{}, msg.models...)
+	if m.providerType != chatgpt.ProviderType {
+		m.choices = append(m.choices, manualModelOption)
+	}
 	m.cursor = 0
 	// Start on the model that is already configured, if the provider still
 	// offers it.
@@ -1757,6 +1776,12 @@ func (m onboardModel) previousStep() onboardModel {
 		m.textInput.SetValue(m.providerBaseURL)
 
 	case stepProviderModel:
+		if m.providerType == chatgpt.ProviderType {
+			m.step = stepProviderName
+			m.resetInput(m.providerName, false)
+			m.textInput.SetValue(m.providerName)
+			break
+		}
 		m.step = stepProviderKey
 		m.resetInput("API key", true)
 		m.textInput.SetValue(m.llmKey)
@@ -1775,6 +1800,10 @@ func (m onboardModel) previousStep() onboardModel {
 			break
 		}
 		m.step = stepProviderModel
+		if m.providerType == chatgpt.ProviderType {
+			m = m.handleModels(modelsFetchedMsg{models: m.models, err: m.modelsErr})
+			break
+		}
 		if m.modelManual || len(m.models) == 0 {
 			m.modelManual = true
 			m.choices = nil
@@ -1970,7 +1999,13 @@ func (m onboardModel) renderContent() string {
 		b.WriteString(titleStyle.Render("Default Model"))
 		switch {
 		case m.modelsLoading:
-			b.WriteString("\n\n" + theme.SecondaryStyle.Render("Fetching available models from "+m.providerName+"..."))
+			if m.providerType == chatgpt.ProviderType {
+				b.WriteString("\n\nChatGPT Subscription: complete sign-in in the browser on this machine. Then fetching available models...\nCtrl+C cancels.")
+			} else {
+				b.WriteString("\n\n" + theme.SecondaryStyle.Render("Fetching available models from "+m.providerName+"..."))
+			}
+		case m.providerType == chatgpt.ProviderType && m.modelsErr != nil:
+			b.WriteString("\n\n" + m.modelsErr.Error() + "\nRecovery credential ID: " + m.credentialID + "\n\n" + m.renderChoices())
 		case m.modelManual:
 			b.WriteString("\n\n")
 			if m.modelsErr != nil {
@@ -2150,8 +2185,13 @@ func (m onboardModel) renderSummary() string {
 	if m.skipProvider {
 		row("Provider", "unchanged (current)")
 	} else {
-		row("Provider", fmt.Sprintf("%s [%s]", m.providerName, m.providerType))
-		row("Base URL", m.providerBaseURL)
+		if m.providerType == chatgpt.ProviderType {
+			row("Provider", fmt.Sprintf("%s [%s]", m.providerName, chatgpt.Label))
+			row("Credential ID", m.credentialID)
+		} else {
+			row("Provider", fmt.Sprintf("%s [%s]", m.providerName, m.providerType))
+			row("Base URL", m.providerBaseURL)
+		}
 		row("Model", m.providerModel)
 	}
 	if m.skipSkills {
@@ -2591,8 +2631,8 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 		}
 	} else {
 		providerType := strings.ToLower(strings.TrimSpace(opts.provider))
-		if providerType != "openai" && providerType != "gemini" {
-			return in, fmt.Errorf("--provider must be openai or gemini")
+		if providerType != "openai" && providerType != "gemini" && providerType != chatgpt.ProviderType {
+			return in, fmt.Errorf("--provider must be openai, gemini, or openai_chatgpt")
 		}
 
 		providerName := strings.TrimSpace(opts.provName)
@@ -2605,45 +2645,69 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 			return in, fmt.Errorf("--provider-name cannot contain spaces")
 		}
 
-		baseURL := strings.TrimRight(strings.TrimSpace(opts.baseURL), "/")
-		if baseURL == "" && existing != nil {
-			// Keep the saved endpoint of the provider being updated.
-			baseURL = strings.TrimRight(existing.Providers[providerName].BaseURL, "/")
-		}
-		if baseURL == "" {
-			baseURL = provider.DefaultBaseURL(providerType)
-		}
-		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-			return in, fmt.Errorf("--base-url must start with http:// or https://")
-		}
+		if providerType == chatgpt.ProviderType {
+			id := strings.TrimSpace(opts.credentialID)
+			var saved config.ProviderConfig
+			if existing != nil {
+				saved = existing.Providers[providerName]
+			}
+			if id == "" && saved.Type == providerType {
+				id = saved.CredentialID
+			}
+			pc := config.ProviderConfig{Type: providerType, AuthMode: "oauth", CredentialID: id, APIKey: opts.apiKey, BaseURL: opts.baseURL}
+			if err := onboard.NormalizeProviderAuth(&pc); err != nil {
+				return in, err
+			}
+			model := strings.TrimSpace(opts.model)
+			if model == "" && saved.Type == providerType {
+				model = saved.DefaultModel
+			}
+			if model == "" {
+				return in, fmt.Errorf("--model is required for headless ChatGPT Subscription setup; discover models after connecting")
+			}
+			in.ProviderName, in.ProviderType, in.ProviderModel = providerName, providerType, model
+			in.ProviderAuthMode, in.ProviderCredentialID = "oauth", pc.CredentialID
+		} else {
+			baseURL := strings.TrimRight(strings.TrimSpace(opts.baseURL), "/")
+			if baseURL == "" && existing != nil {
+				// Keep the saved endpoint of the provider being updated.
+				baseURL = strings.TrimRight(existing.Providers[providerName].BaseURL, "/")
+			}
+			if baseURL == "" {
+				baseURL = provider.DefaultBaseURL(providerType)
+			}
+			if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+				return in, fmt.Errorf("--base-url must start with http:// or https://")
+			}
 
-		apiKey := firstNonEmpty(opts.apiKey, os.Getenv("MYAAW_API_KEY"))
-		if apiKey == "" && existing != nil {
-			apiKey = existing.Providers[providerName].APIKey
-		}
-		if isTemplateValue(apiKey) {
-			apiKey = ""
-		}
-		if apiKey == "" {
-			return in, fmt.Errorf("--api-key or MYAAW_API_KEY is required")
-		}
+			apiKey := firstNonEmpty(opts.apiKey, os.Getenv("MYAAW_API_KEY"))
+			if apiKey == "" && existing != nil {
+				apiKey = existing.Providers[providerName].APIKey
+			}
+			if isTemplateValue(apiKey) {
+				apiKey = ""
+			}
+			if apiKey == "" {
+				return in, fmt.Errorf("--api-key or MYAAW_API_KEY is required")
+			}
 
-		model := strings.TrimSpace(opts.model)
-		if model == "" && existing != nil {
-			model = existing.Providers[providerName].DefaultModel
-		}
-		if model == "" {
-			model = provider.DefaultModel(providerType)
-		}
-		if model == "" {
-			return in, fmt.Errorf("--model is required")
-		}
+			model := strings.TrimSpace(opts.model)
+			if model == "" && existing != nil {
+				model = existing.Providers[providerName].DefaultModel
+			}
+			if model == "" {
+				model = provider.DefaultModel(providerType)
+			}
+			if model == "" {
+				return in, fmt.Errorf("--model is required")
+			}
 
-		in.ProviderName = providerName
-		in.ProviderType = providerType
-		in.ProviderBaseURL = baseURL
-		in.ProviderAPIKey = apiKey
-		in.ProviderModel = model
+			in.ProviderName = providerName
+			in.ProviderType = providerType
+			in.ProviderBaseURL = baseURL
+			in.ProviderAPIKey = apiKey
+			in.ProviderModel = model
+		}
 	}
 
 	channel := strings.ToLower(strings.TrimSpace(opts.channel))
@@ -2753,10 +2817,21 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 		if d, err := time.ParseDuration(every); err != nil || d <= 0 {
 			return in, fmt.Errorf("--heartbeat-every must be a positive duration such as 30m or 1h")
 		}
+		threadID := strings.TrimSpace(opts.hbThread)
+		if err := onboard.ValidateThreadID(threadID); err != nil {
+			return in, fmt.Errorf("--heartbeat-thread: %v", err)
+		}
+		chatType := strings.ToLower(strings.TrimSpace(opts.hbChatType))
+		if err := onboard.ValidateHeartbeatChatType(chatType); err != nil {
+			return in, fmt.Errorf("--heartbeat-chat-type: %v", err)
+		}
 		in.Heartbeat = true
 		in.HeartbeatSet = true
 		in.HeartbeatChannel = hbChannel
 		in.HeartbeatTo = strings.TrimSpace(opts.hbTo)
+		in.HeartbeatThreadID = threadID
+		in.HeartbeatSessionID = strings.TrimSpace(opts.hbSession)
+		in.HeartbeatChatType = chatType
 		in.HeartbeatEvery = every
 	}
 
@@ -2782,6 +2857,9 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 		return in, err
 	}
 	in.Skills = skills
+	// Only a run that mentions skills may change the selection; a plain update
+	// leaves installed skills and their enabled state alone.
+	in.SkillsSet = opts.skillsSet || strings.TrimSpace(opts.skills) != ""
 
 	disabledTools, err := parseOnboardSelection(opts.noTools, builtinToolNames(), "--disable-tools")
 	if err != nil {

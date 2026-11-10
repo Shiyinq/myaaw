@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"myaaw/internal/agentdir"
+	"myaaw/internal/chatdb"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
@@ -32,7 +33,10 @@ var DiscordBotToken string
 var LLMProviderBaseURL string
 var LLMProviderName string
 var LLMProviderAPIKey string
+var LLMProviderAuthMode string
+var LLMProviderCredentialID string
 var LLMDefaultModel string
+var LLMProviderThinkingLevel string
 var StreamResponse bool
 var A2AToken string
 var A2ATokens []string
@@ -53,9 +57,10 @@ var A2AGRPCTLSCert string
 var A2AGRPCTLSKey string
 
 // A2AMaxRequestBytes is the server-wide HTTP request body limit. It must be
-// large enough to carry the maximum inline file payload (base64 inflates raw
-// bytes by roughly 4/3).
-var A2AMaxRequestBytes int = 16 << 20
+// large enough to carry the maximum inline payload: the control plane accepts
+// 20 MiB of chat attachments per request, and base64 inflates raw bytes by
+// roughly 4/3.
+var A2AMaxRequestBytes int = 32 << 20
 
 // A2AContactTimeoutSeconds bounds a contact tool call. It must exceed the
 // remote agent's run timeout, otherwise the caller gives up while the task is
@@ -95,7 +100,7 @@ var ComputerUseEnabled bool
 // interactive channel is attached); "off" allows every tool call except the
 // deny list and tool-level hard blocks.
 var ApprovalsMode = "manual"
-var ApprovalsTimeoutSeconds = 60
+var ApprovalsTimeoutSeconds = 0 // 0 = no expiry
 var ApprovalsAllow []string
 var ApprovalsDeny []string
 var ApprovalsUnattended = "allow"  // allow | deny
@@ -167,9 +172,10 @@ var defaultApprovalsAllow = []string{
 	"computer:list_windows",
 }
 
-// DefaultApprovals returns the shipped approval policy.
+// DefaultApprovals returns the shipped approval policy. A zero timeout means a
+// prompt waits until someone answers; a positive value expires it.
 func DefaultApprovals() ApprovalsConfig {
-	timeout := 60
+	timeout := 0
 	return ApprovalsConfig{
 		Mode:           "manual",
 		TimeoutSeconds: &timeout,
@@ -246,8 +252,8 @@ func ValidateApprovals(a *ApprovalsConfig) error {
 	default:
 		return fmt.Errorf("approvals.mode must be \"manual\" or \"off\"")
 	}
-	if a.TimeoutSeconds != nil && (*a.TimeoutSeconds < 1 || *a.TimeoutSeconds > 3600) {
-		return fmt.Errorf("approvals.timeout_seconds must be between 1 and 3600")
+	if a.TimeoutSeconds != nil && (*a.TimeoutSeconds < 0 || *a.TimeoutSeconds > 3600) {
+		return fmt.Errorf("approvals.timeout_seconds must be between 0 and 3600 (0 = no expiry)")
 	}
 	switch strings.ToLower(strings.TrimSpace(a.Unattended)) {
 	case "", "allow", "deny":
@@ -325,7 +331,11 @@ type ToolPriceConfig struct {
 // Input is the cache-miss price and CacheHit the discounted price for prompt
 // tokens served from the provider cache. OffPeak replaces the triplet outside
 // every PeakWindows entry; only models that declare both get peak pricing.
+// Provider is optional metadata; it is not used for billing or routing, but
+// preserving it keeps a price file's catalog aligned with model capabilities
+// when the control plane rewrites the file.
 type ModelPriceConfig struct {
+	Provider    string            `json:"provider,omitempty"`
 	Input       float64           `json:"input"`
 	CacheHit    float64           `json:"cache_hit,omitempty"`
 	Output      float64           `json:"output"`
@@ -410,7 +420,13 @@ type ProviderConfig struct {
 	Type         string `json:"type"`
 	BaseURL      string `json:"base_url,omitempty"`
 	APIKey       string `json:"api_key,omitempty"`
+	AuthMode     string `json:"auth_mode,omitempty"`
+	CredentialID string `json:"credential_id,omitempty"`
 	DefaultModel string `json:"default_model,omitempty"`
+	// ThinkingLevel is the reasoning effort for this provider, empty for the
+	// model default. It is resolved against the capability catalog at request
+	// time, so an unknown value degrades instead of failing.
+	ThinkingLevel string `json:"thinking_level,omitempty"`
 }
 
 type TranscriberConfig struct {
@@ -465,10 +481,13 @@ type ChannelConfig struct {
 }
 
 type HeartbeatConfig struct {
-	Active  bool   `json:"active"`
-	Every   string `json:"every"`
-	To      string `json:"to"`
-	Channel string `json:"channel"`
+	Active    bool   `json:"active"`
+	Every     string `json:"every"`
+	To        string `json:"to"`
+	ThreadID  string `json:"thread_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
+	ChatType  string `json:"chat_type,omitempty"`
+	Channel   string `json:"channel"`
 }
 
 var CronActive bool
@@ -527,7 +546,35 @@ func SaveConfig(config *Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return WriteConfigAtomic(path, data)
+}
+
+// WriteConfigAtomic keeps API keys private and never leaves a truncated config
+// behind when a write fails. OAuth tokens live in a separate credential store.
+func WriteConfigAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(dir, ".config-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+	if err := file.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), path)
 }
 
 func LoadJSONConfigOnly() (*Config, error) {
@@ -606,7 +653,11 @@ func LoadBaseConfig() {
 	LLMProviderBaseURL = os.Getenv("LLM_PROVIDER_BASE_URL")
 	LLMProviderName = os.Getenv("LLM_PROVIDER_NAME")
 	LLMProviderAPIKey = os.Getenv("LLM_PROVIDER_API_KEY")
+	LLMProviderAuthMode = ""
+	LLMProviderCredentialID = ""
+	CurrentProviderID = ""
 	LLMDefaultModel = ""
+	LLMProviderThinkingLevel = strings.TrimSpace(os.Getenv("LLM_THINKING_LEVEL"))
 
 	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")
 	TranscriberAPIKey = os.Getenv("TRANSCRIBER_API_KEY")
@@ -667,10 +718,6 @@ func LoadBaseConfig() {
 		StreamResponse = false
 	} else {
 		StreamResponse = true // Default to true
-	}
-
-	if AllowedOrigins == "" {
-		AllowedOrigins = "*"
 	}
 
 	jsonConfig, err := loadJSONConfig()
@@ -784,8 +831,11 @@ func LoadBaseConfig() {
 			if provider, exists := jsonConfig.Providers[jsonConfig.DefaultProvider]; exists {
 				LLMProviderName = provider.Type
 				LLMProviderAPIKey = provider.APIKey
+				LLMProviderAuthMode = provider.AuthMode
+				LLMProviderCredentialID = provider.CredentialID
 				LLMProviderBaseURL = provider.BaseURL
 				LLMDefaultModel = provider.DefaultModel
+				LLMProviderThinkingLevel = provider.ThinkingLevel
 			}
 		}
 
@@ -948,7 +998,7 @@ func validateAgentConfig() {
 		AgentRunTimeoutSeconds = 900
 	}
 	if A2AMaxRequestBytes <= 0 {
-		A2AMaxRequestBytes = 16 << 20
+		A2AMaxRequestBytes = 32 << 20
 	}
 	if A2AContactTimeoutSeconds <= 0 {
 		A2AContactTimeoutSeconds = 960
@@ -1004,11 +1054,14 @@ func initSchema(db *sql.DB) {
 		`CREATE TABLE IF NOT EXISTS conversations (
 			id TEXT PRIMARY KEY,
 			user_id INTEGER,
+			scope TEXT NOT NULL DEFAULT '',
+			channel TEXT NOT NULL DEFAULT '',
 			title TEXT,
 			messages TEXT,
 			active BOOLEAN,
 			created_at DATETIME,
-			updated_at DATETIME
+			updated_at DATETIME,
+			read_at DATETIME
 		);`,
 	}
 
@@ -1016,6 +1069,13 @@ func initSchema(db *sql.DB) {
 		if _, err := db.Exec(q); err != nil {
 			log.Fatalf("Failed to execute schema query: %v", err)
 		}
+	}
+
+	// Chat folders and their conversation columns are additive; the control
+	// plane runs the same helper so a DB created by an older build is upgraded
+	// even before this process starts.
+	if err := chatdb.EnsureSchema(db); err != nil {
+		log.Fatalf("Failed to ensure chat schema: %v", err)
 	}
 }
 

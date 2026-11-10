@@ -16,6 +16,10 @@ func CommandNew() string {
 	return "✅ A new chat session has been started."
 }
 
+func CommandNewTopic() string {
+	return "✅ A new chat session has been started for this topic."
+}
+
 func CommandNewFailed() string {
 	return "❌ Failed to start a new chat session. Please try again later."
 }

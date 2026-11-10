@@ -13,6 +13,7 @@ import (
 
 	"myaaw/internal/agentdir"
 	"myaaw/internal/cron"
+	"myaaw/internal/onboard"
 
 	"github.com/google/uuid"
 )
@@ -27,6 +28,9 @@ type CronJobInput struct {
 	Message      string `json:"message"`
 	Channel      string `json:"channel,omitempty"`
 	To           string `json:"to,omitempty"`
+	ThreadID     string `json:"thread_id,omitempty"`
+	SessionID    string `json:"session_id,omitempty"`
+	ChatType     string `json:"chat_type,omitempty"`
 	Enabled      *bool  `json:"enabled,omitempty"`
 }
 
@@ -74,6 +78,40 @@ func (s *CronService) Add(agentName string, in CronJobInput) (cron.Job, error) {
 	if in.Enabled != nil {
 		enabled = *in.Enabled
 	}
+
+	// A job must name a delivery target; the UI and CLI both require these, and a
+	// job without them could only fail when it runs.
+	channel := strings.ToLower(strings.TrimSpace(in.Channel))
+	switch channel {
+	case "telegram", "discord", "api", "cli":
+	default:
+		return cron.Job{}, fmt.Errorf("%w: channel must be telegram, discord, api, or cli", ErrInvalidConfig)
+	}
+	to := strings.TrimSpace(in.To)
+	if to == "" {
+		return cron.Job{}, fmt.Errorf("%w: to is required", ErrInvalidConfig)
+	}
+	sessionID := strings.TrimSpace(in.SessionID)
+	if (channel == "api" || channel == "cli") && sessionID == "" {
+		return cron.Job{}, fmt.Errorf("%w: session_id is required for api/cli targets", ErrInvalidConfig)
+	}
+
+	threadID := strings.TrimSpace(in.ThreadID)
+	if err := onboard.ValidateThreadID(threadID); err != nil {
+		return cron.Job{}, fmt.Errorf("%w: thread_id: %v", ErrInvalidConfig, err)
+	}
+	chatType := strings.ToLower(strings.TrimSpace(in.ChatType))
+	if err := onboard.ValidateHeartbeatChatType(chatType); err != nil {
+		return cron.Job{}, fmt.Errorf("%w: chat_type: %v", ErrInvalidConfig, err)
+	}
+	// Keep only the fields that apply to the chosen channel, matching the CLI.
+	if channel != "telegram" {
+		threadID = ""
+	}
+	if channel != "discord" {
+		chatType = ""
+	}
+
 	now := time.Now().UTC()
 	job := cron.Job{
 		ID:      uuid.NewString(),
@@ -89,9 +127,12 @@ func (s *CronService) Add(agentName string, in CronJobInput) (cron.Job, error) {
 			Content: message,
 		},
 		Delivery: cron.Delivery{
-			Mode:    "announce",
-			Channel: strings.TrimSpace(in.Channel),
-			To:      strings.TrimSpace(in.To),
+			Mode:      "announce",
+			Channel:   channel,
+			To:        to,
+			ThreadID:  threadID,
+			SessionID: sessionID,
+			ChatType:  chatType,
 		},
 		Enabled:   enabled,
 		CreatedAt: now,
@@ -134,6 +175,7 @@ func (s *CronService) Run(agentName, id string) error {
 	if err != nil {
 		return ErrCronJobNotFound
 	}
+	logger := cron.NewHistoryLogger(cronDir)
 
 	baseURL, _, err := s.agents.BaseURL(agentName)
 	if err != nil {
@@ -141,10 +183,13 @@ func (s *CronService) Run(agentName, id string) error {
 	}
 
 	payload, err := json.Marshal(map[string]string{
-		"prompt":  job.Payload.Content,
-		"to":      job.Delivery.To,
-		"channel": job.Delivery.Channel,
-		"trigger": "cron",
+		"prompt":     job.Payload.Content,
+		"to":         job.Delivery.To,
+		"thread_id":  job.Delivery.ThreadID,
+		"session_id": job.Delivery.SessionID,
+		"chat_type":  job.Delivery.ChatType,
+		"channel":    job.Delivery.Channel,
+		"trigger":    "cron",
 	})
 	if err != nil {
 		return err
@@ -158,19 +203,32 @@ func (s *CronService) Run(agentName, id string) error {
 
 	response, err := s.client.Do(request)
 	if err != nil {
+		// The run never reached the agent, but the user still asked for it, so it
+		// belongs in the history next to the runs that did happen.
+		_ = logger.Log(*job, "failed", fmt.Sprintf("Agent unreachable: %v", err))
 		return fmt.Errorf("%w: %v", ErrAgentUnavailable, err)
 	}
 	defer response.Body.Close()
 
 	body, _ := io.ReadAll(response.Body)
-	logger := cron.NewHistoryLogger(cronDir)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		_ = logger.Log(job.ID, "failed", string(body))
-		return fmt.Errorf("%w: %s", ErrAgentUnavailable, strings.TrimSpace(string(body)))
+		detail := strings.TrimSpace(string(body))
+		if detail == "" {
+			detail = response.Status
+		}
+		_ = logger.Log(*job, "failed", detail)
+		return fmt.Errorf("%w: %s", ErrAgentUnavailable, detail)
 	}
-	_ = logger.Log(job.ID, "success", string(body))
+	_ = logger.Log(*job, "success", "Triggered manually from the dashboard")
 	return nil
 }
+
+// Page sizes for the run history. Both stay small because a page is rendered by
+// the dashboard next to the job list.
+const (
+	historyPageDefault = 20
+	historyPageMax     = 200
+)
 
 func (s *CronService) History(agentName, id string, limit int) ([]cron.ExecutionResult, error) {
 	store, cronDir, err := cronStore(agentName)
@@ -181,10 +239,47 @@ func (s *CronService) History(agentName, id string, limit int) ([]cron.Execution
 	if err != nil {
 		return nil, err
 	}
-	if limit <= 0 || limit > 200 {
-		limit = 20
+	if limit <= 0 || limit > historyPageMax {
+		limit = historyPageDefault
 	}
 	return cron.NewHistoryLogger(cronDir).GetHistory(fullID, limit)
+}
+
+// CronRunPage is one page of the agent-wide run history. It is not tied to a
+// job: runs of removed one-time jobs keep their entry.
+type CronRunPage struct {
+	History []cron.JobExecutionResult `json:"history"`
+	Total   int                       `json:"total"`
+	Limit   int                       `json:"limit"`
+	Offset  int                       `json:"offset"`
+	HasMore bool                      `json:"has_more"`
+}
+
+// HistoryAll returns the most recent runs across every job of the agent. Unlike
+// History it does not need the job to still exist, so one-time jobs that were
+// removed after running keep a readable history.
+func (s *CronService) HistoryAll(agentName string, limit, offset int) (CronRunPage, error) {
+	page := CronRunPage{History: []cron.JobExecutionResult{}}
+	_, cronDir, err := cronStore(agentName)
+	if err != nil {
+		return page, err
+	}
+	if limit <= 0 || limit > historyPageMax {
+		limit = historyPageDefault
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	runs, total, err := cron.NewHistoryLogger(cronDir).GetGlobalHistory(limit, offset)
+	if err != nil {
+		return page, err
+	}
+	page.History = runs
+	page.Total = total
+	page.Limit = limit
+	page.Offset = offset
+	page.HasMore = offset+len(runs) < total
+	return page, nil
 }
 
 func cronStore(agentName string) (*cron.Store, string, error) {

@@ -18,7 +18,7 @@ var agentDeleteYes bool
 var agentCmd = &cobra.Command{
 	Use:   "agent",
 	Short: "Manage isolated Myaaw agents",
-	Long:  "Create, list, select, and delete isolated agents stored under ~/.myaaw/<name>.",
+	Long:  "Create, list, select, and delete isolated agents stored under ~/.myaaw/agents/<name>.",
 }
 
 var agentListCmd = &cobra.Command{
@@ -210,6 +210,11 @@ var agentDeleteCmd = &cobra.Command{
 					return
 				}
 			}
+		}
+
+		// Drop the deleted agent from every remaining agent's contacts.
+		if err := agentdir.RemoveA2AContacts(name); err != nil {
+			fmt.Println(theme.RenderWarning(fmt.Sprintf("Agent deleted, but contacts were not fully cleaned up: %v", err)))
 		}
 
 		if err := removeAgentDir(root); err != nil {

@@ -71,12 +71,47 @@ func (o *OllamaProvider) buildRequest(modelName string, messages []Message, stre
 	req := OllamaRequest{
 		Model:    o.DefaultModel(modelName),
 		Stream:   stream,
-		Messages: messages,
+		Messages: ollamaMessages(messages),
 	}
 	if len(toolsList) > 0 {
 		req.Tools = toolsList
 	}
 	return req
+}
+
+// ollamaMessages decodes tool arguments into the object form Ollama expects;
+// OpenAI-compatible transcripts store them as a JSON string.
+func ollamaMessages(messages []Message) []Message {
+	out := make([]Message, len(messages))
+	copy(out, messages)
+
+	for i := range out {
+		if len(out[i].ToolCalls) == 0 {
+			continue
+		}
+		calls := make([]ToolCall, len(out[i].ToolCalls))
+		copy(calls, out[i].ToolCalls)
+		for j := range calls {
+			calls[j].Function.Arguments = ollamaArguments(calls[j].Function.Arguments)
+		}
+		out[i].ToolCalls = calls
+	}
+	return out
+}
+
+func ollamaArguments(args interface{}) interface{} {
+	text, ok := args.(string)
+	if !ok {
+		return args
+	}
+	if strings.TrimSpace(text) == "" {
+		return map[string]interface{}{}
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+		return args
+	}
+	return decoded
 }
 
 func (o *OllamaProvider) Chat(modelName string, messages []Message, toolsList []map[string]interface{}) (Message, error) {

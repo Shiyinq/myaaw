@@ -65,12 +65,21 @@ type AgentEvent struct {
 	// Compact is set on EventContextCompacted.
 	Compact CompactStats
 
+	// Context is set on EventLLMRequestStart. It describes the request's size
+	// against the model's context window.
+	Context ContextUsage
+
 	Trace []provider.ReactStep // EventTraceUpdate / tool execution
 
 	Usage      provider.Usage      // EventUsage / EventAgentEnd (aggregated)
 	StopReason provider.StopReason // EventAgentEnd
 	Err        error               // EventAgentEnd
 }
+
+// ContextUsage describes how full the model's context window is for one
+// request. It aliases the channel transport type so a stream chunk needs no
+// conversion.
+type ContextUsage = channel.ContextUsage
 
 // RunResult is the final state of one agent run.
 type RunResult struct {

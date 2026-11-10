@@ -32,10 +32,12 @@ type Pricer struct {
 	warned map[string]bool
 }
 
-// NewPricer builds a pricer from the built-in table plus configuration
-// overrides. Overrides are keyed by model name and replace the whole entry.
+// NewPricer builds a pricer from the configured price table. Overrides are
+// keyed by model name and replace the whole entry. The retired Go built-in
+// table is intentionally not used: the maintained JSON tables under
+// ~/.myaaw/config are the source of truth.
 func NewPricer(overrides map[string]Price) *Pricer {
-	prices := DefaultPrices()
+	prices := make(map[string]Price, len(overrides))
 	for model, price := range overrides {
 		key := normalizeModel(model)
 		if key == "" {

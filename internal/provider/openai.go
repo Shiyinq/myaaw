@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-resty/resty/v2"
 )
@@ -78,6 +79,17 @@ type OpenAIRequest struct {
 	Tools         []map[string]interface{} `json:"tools,omitempty"`
 	ToolChoice    string                   `json:"tool_choice,omitempty"`
 	StreamOptions *OpenAIStreamOptions     `json:"stream_options,omitempty"`
+	// ReasoningEffort is the documented effort token (including "none" to
+	// disable). Omitted for models the capability catalog does not mark as
+	// reasoning-capable.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// Thinking is DeepSeek's explicit enable/disable switch on Chat Completions.
+	Thinking *OpenAIThinking `json:"thinking,omitempty"`
+}
+
+// OpenAIThinking is the DeepSeek Chat Completions reasoning switch.
+type OpenAIThinking struct {
+	Type string `json:"type"`
 }
 
 type OpenAIStreamOptions struct {
@@ -87,16 +99,84 @@ type OpenAIStreamOptions struct {
 func messagesToOpenAIMessages(messages []Message) []OpenAIMessage {
 	openAIMessages := make([]OpenAIMessage, 0, len(messages))
 	for _, m := range messages {
+		if emptyAssistantTurn(m) && strings.TrimSpace(m.Thought) == "" {
+			// Nothing to send: no text, no reasoning, no tool calls.
+			continue
+		}
+
+		content := m.Content
+		reasoning := m.Thought
+		if thoughtOnlyTurn(m) {
+			// A run stopped while the model was still thinking is stored with its
+			// reasoning and nothing else. Providers reject such a turn, and the
+			// reasoning is the only thing the model produced, so send it as the
+			// message text instead of dropping the turn (which would make the
+			// model forget what it was planning). It still reaches clients as a
+			// thought block, not as an answer.
+			content = thinkingOnlyText(m.Thought)
+			reasoning = ""
+		}
+
 		openAIMessages = append(openAIMessages, OpenAIMessage{
 			Role:             m.Role,
 			Name:             m.Name,
-			Content:          m.Content,
-			ReasoningContent: m.Thought,
-			ToolCalls:        m.ToolCalls,
+			Content:          content,
+			ReasoningContent: reasoning,
+			ToolCalls:        openAIToolCalls(m.ToolCalls),
 			ToolCallID:       m.ToolCallID,
 		})
 	}
 	return openAIMessages
+}
+
+// thinkingOnlyText labels reasoning that became the message text, so the model
+// understands the turn was interrupted rather than answered.
+func thinkingOnlyText(thought string) string {
+	return "[stopped while thinking]\n" + strings.TrimSpace(thought)
+}
+
+// thoughtOnlyTurn reports an assistant message whose only payload is reasoning.
+func thoughtOnlyTurn(m Message) bool {
+	return emptyAssistantTurn(m) && strings.TrimSpace(m.Thought) != ""
+}
+
+// emptyAssistantTurn reports an assistant message that carries nothing a
+// provider accepts: no text, no tool calls, no images.
+func emptyAssistantTurn(m Message) bool {
+	if m.Role != "assistant" || len(m.ToolCalls) > 0 || len(m.Images) > 0 {
+		return false
+	}
+	switch content := m.Content.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(content) == ""
+	}
+	return false
+}
+
+// openAIToolCalls keeps the OpenAI wire shape: arguments is a JSON string and
+// provider-specific extras such as Gemini thought signatures are dropped.
+// Transcripts written by another provider can hold decoded argument objects,
+// which strict servers answer with a 422 instead of running the tool.
+func openAIToolCalls(calls []ToolCall) []ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+
+	out := make([]ToolCall, 0, len(calls))
+	for _, call := range calls {
+		out = append(out, ToolCall{
+			Index: call.Index,
+			ID:    call.ID,
+			Type:  call.Type,
+			Function: FunctionCall{
+				Name:      call.Function.Name,
+				Arguments: ToolCallArgumentsString(call.Function.Arguments),
+			},
+		})
+	}
+	return out
 }
 
 func openAIMessageToMessage(o OpenAIMessage) Message {
@@ -152,6 +232,7 @@ func (o *OpenAIProvider) config() openAICompatConfig {
 		baseURL:      o.baseURL,
 		apiKey:       o.apiKey,
 		defaultModel: o.defaultModel,
+		variant:      compatVariant(o.baseURL),
 		includeUsage: true,
 	}
 }

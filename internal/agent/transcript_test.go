@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -13,6 +14,23 @@ func TestEstimateTokensCountsImagesFlat(t *testing.T) {
 	}}}
 	if got := EstimateTokens([]provider.Message{msg}); got < imageTokenCost {
 		t.Fatalf("tokens = %d; want at least %d", got, imageTokenCost)
+	}
+}
+
+func TestEstimateToolSchemasCountsEverySchema(t *testing.T) {
+	one := EstimateToolSchemas([]map[string]any{{"name": "bash", "description": "Run a command"}})
+	two := EstimateToolSchemas([]map[string]any{
+		{"name": "bash", "description": "Run a command"},
+		{"name": "filesystem", "description": "Read and write files"},
+	})
+	if one <= 0 {
+		t.Fatalf("single schema estimate = %d, want positive", one)
+	}
+	if two <= one {
+		t.Fatalf("two schemas = %d; want more than one (%d)", two, one)
+	}
+	if EstimateToolSchemas(nil) != 0 {
+		t.Fatal("nil schemas should estimate to 0")
 	}
 }
 
@@ -249,5 +267,77 @@ func TestCompactTranscriptNeverSplitsToolPairs(t *testing.T) {
 	}
 	if seenTool != seenCall {
 		t.Fatalf("compaction split a tool call/result pair: %+v", compacted)
+	}
+}
+
+func TestSanitizeImageDataURLsReencodesRawBytes(t *testing.T) {
+	// A transcript written by the old MCP bridge stored decoded PNG bytes where
+	// base64 text belongs, which providers reject as "Invalid base64 data".
+	png := "\x89PNG\r\n\x1a\n" + strings.Repeat("\x00", 8)
+	messages := []provider.Message{{
+		Role: "tool",
+		Content: []provider.ContentItem{
+			{Type: "text", Text: "captured"},
+			{Type: "image_url", ImageURL: &provider.ImageInfo{URL: "data:image/png;base64," + png}},
+		},
+	}}
+
+	got := SanitizeImageDataURLs(messages)
+	items := got[0].Content.([]provider.ContentItem)
+	want := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte(png))
+	if items[1].ImageURL == nil || items[1].ImageURL.URL != want {
+		t.Fatalf("url = %+v; want %q", items[1].ImageURL, want)
+	}
+
+	// The stored transcript itself is left untouched, so a retry is repeatable.
+	original := messages[0].Content.([]provider.ContentItem)[1].ImageURL.URL
+	if !strings.HasSuffix(original, png) {
+		t.Fatalf("input mutated: %q", original)
+	}
+}
+
+func TestSanitizeImageDataURLsLeavesValidPayloads(t *testing.T) {
+	messages := []provider.Message{
+		{Role: "user", Content: "hi"},
+		imageToolMessage(16),
+	}
+
+	got := SanitizeImageDataURLs(messages)
+	if len(got) != len(messages) {
+		t.Fatalf("len = %d; want %d", len(got), len(messages))
+	}
+	before := messages[1].Content.([]provider.ContentItem)[1].ImageURL.URL
+	after := got[1].Content.([]provider.ContentItem)[1].ImageURL.URL
+	if after != before {
+		t.Fatalf("valid payload changed: %q -> %q", before, after)
+	}
+}
+
+func TestSanitizeImageDataURLsDropsUnrecognisableImage(t *testing.T) {
+	messages := []provider.Message{{
+		Role: "tool",
+		Content: []provider.ContentItem{
+			{Type: "text", Text: "captured"},
+			{Type: "image_url", ImageURL: &provider.ImageInfo{URL: "data:image/png;base64,\x00\x01garbage"}},
+		},
+	}}
+
+	items := SanitizeImageDataURLs(messages)[0].Content.([]provider.ContentItem)
+	if len(items) != 2 || items[1].Type != "text" || items[1].Text != brokenImagePlaceholder {
+		t.Fatalf("items = %+v", items)
+	}
+}
+
+func TestSanitizeImageDataURLsKeepsPlainURLs(t *testing.T) {
+	messages := []provider.Message{{
+		Role: "user",
+		Content: []provider.ContentItem{
+			{Type: "image_url", ImageURL: &provider.ImageInfo{URL: "https://example.test/a.png"}},
+		},
+	}}
+
+	items := SanitizeImageDataURLs(messages)[0].Content.([]provider.ContentItem)
+	if items[0].ImageURL == nil || items[0].ImageURL.URL != "https://example.test/a.png" {
+		t.Fatalf("url = %+v", items[0].ImageURL)
 	}
 }

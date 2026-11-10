@@ -674,7 +674,16 @@ func convertProviderMessages(providerMsgs []provider.Message) []chatMessage_ {
 		switch msg.Role {
 		case "user":
 			flush()
-			text := provider.MessageText(msg)
+			// Uploaded files are listed as chips, not as raw paths, and the
+			// per-turn <userinfo> block stays out of a resumed transcript.
+			text := provider.StripContextBlocks(provider.MessageText(msg))
+			if text == "" && len(msg.Uploads) > 0 {
+				names := make([]string, 0, len(msg.Uploads))
+				for _, upload := range msg.Uploads {
+					names = append(names, upload.Name)
+				}
+				text = "[files: " + strings.Join(names, ", ") + "]"
+			}
 			if text == "" && len(msg.Images) == 0 {
 				continue
 			}
@@ -1071,7 +1080,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				if m.sessionCursor == 0 {
 					// Create New Session
-					newConv, err := m.convRepo.CreateConversation(0, "New Chat")
+					newConv, err := m.convRepo.CreateConversation(0, "cli", "New Chat")
 					if err == nil && newConv != nil {
 						m.activeConvID = newConv.Id
 					} else {
@@ -1181,6 +1190,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									config.LLMDefaultModel = modelName
 									config.LLMProviderAPIKey = p.APIKey
 									config.LLMProviderBaseURL = p.BaseURL
+									config.LLMProviderAuthMode = p.AuthMode
+									config.LLMProviderCredentialID = p.CredentialID
 								}
 							}
 						}

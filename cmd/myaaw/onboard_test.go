@@ -40,6 +40,76 @@ func TestMergeOnboardConfigFresh(t *testing.T) {
 	}
 }
 
+func TestMergeOnboardConfigKeepsHeartbeatTargetDetails(t *testing.T) {
+	base := &config.Config{
+		Heartbeat: config.HeartbeatConfig{
+			Active:    true,
+			Channel:   "telegram",
+			To:        "-1001234567890",
+			Every:     "30m",
+			ThreadID:  "77",
+			SessionID: "0f4e8b3a-1111-4222-8333-944455556666",
+			ChatType:  "supergroup",
+		},
+	}
+
+	// Re-onboarding the same destination without the thread/session flags keeps
+	// what the operator configured earlier, because the wizard never asks. A chat
+	// type that cannot apply to Telegram is dropped.
+	kept := mergeOnboardConfig(base, onboardInput{
+		Heartbeat:        true,
+		HeartbeatSet:     true,
+		HeartbeatChannel: "telegram",
+		HeartbeatTo:      "-1001234567890",
+		HeartbeatEvery:   "1h",
+	})
+	if kept.Heartbeat.ThreadID != "77" || kept.Heartbeat.SessionID != "0f4e8b3a-1111-4222-8333-944455556666" {
+		t.Fatalf("target details dropped: %+v", kept.Heartbeat)
+	}
+	if kept.Heartbeat.ChatType != "" {
+		t.Fatalf("chat type kept for telegram: %+v", kept.Heartbeat)
+	}
+
+	// A different destination must not inherit a stale topic or session.
+	moved := mergeOnboardConfig(base, onboardInput{
+		Heartbeat:        true,
+		HeartbeatSet:     true,
+		HeartbeatChannel: "telegram",
+		HeartbeatTo:      "-1009999999999",
+		HeartbeatEvery:   "1h",
+	})
+	if moved.Heartbeat.ThreadID != "" || moved.Heartbeat.SessionID != "" || moved.Heartbeat.ChatType != "" {
+		t.Fatalf("stale target details kept: %+v", moved.Heartbeat)
+	}
+
+	// An explicit value always wins.
+	explicit := mergeOnboardConfig(base, onboardInput{
+		Heartbeat:          true,
+		HeartbeatSet:       true,
+		HeartbeatChannel:   "telegram",
+		HeartbeatTo:        "-1001234567890",
+		HeartbeatEvery:     "1h",
+		HeartbeatThreadID:  "88",
+		HeartbeatSessionID: "1a2b3c4d-1111-4222-8333-944455556666",
+	})
+	if explicit.Heartbeat.ThreadID != "88" || explicit.Heartbeat.SessionID != "1a2b3c4d-1111-4222-8333-944455556666" {
+		t.Fatalf("explicit target details ignored: %+v", explicit.Heartbeat)
+	}
+
+	// Discord keeps the chat type and drops the Telegram-only topic id.
+	discord := mergeOnboardConfig(base, onboardInput{
+		Heartbeat:         true,
+		HeartbeatSet:      true,
+		HeartbeatChannel:  "discord",
+		HeartbeatTo:       "222333444555666777",
+		HeartbeatEvery:    "1h",
+		HeartbeatChatType: "dm",
+	})
+	if discord.Heartbeat.ChatType != "dm" || discord.Heartbeat.ThreadID != "" {
+		t.Fatalf("discord target details = %+v", discord.Heartbeat)
+	}
+}
+
 func TestMergeOnboardConfigHonorsHeartbeatChannel(t *testing.T) {
 	cfg := mergeOnboardConfig(nil, onboardInput{
 		ProviderName:     "openai",
@@ -222,7 +292,7 @@ func TestInitialOnboardModelAgentName(t *testing.T) {
 	if m.agentName != "agent-b" {
 		t.Fatalf("agentName = %q", m.agentName)
 	}
-	want := filepath.Join("/tmp/onboard-home", ".myaaw", "agent-b")
+	want := filepath.Join("/tmp/onboard-home", ".myaaw", "agents", "agent-b")
 	if m.myaawHome != want {
 		t.Fatalf("myaawHome = %q, want %q", m.myaawHome, want)
 	}

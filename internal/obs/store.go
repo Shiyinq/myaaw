@@ -11,7 +11,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const schemaVersion = 6
+const schemaVersion = 7
 
 // schemaMigrations upgrades an existing database one version at a time. Version
 // 1 is the initial schema, so its statements live in schemaStatements only.
@@ -40,6 +40,12 @@ var schemaMigrations = map[int][]string{
 	// Version 6 separates tool spend from model spend.
 	6: {
 		`ALTER TABLE runs ADD COLUMN tool_cost_usd REAL DEFAULT 0`,
+	},
+	// Version 7 records the context-breakdown estimate on the llm span.
+	7: {
+		`ALTER TABLE spans ADD COLUMN system_tokens INTEGER DEFAULT 0`,
+		`ALTER TABLE spans ADD COLUMN tool_tokens INTEGER DEFAULT 0`,
+		`ALTER TABLE spans ADD COLUMN message_tokens INTEGER DEFAULT 0`,
 	},
 }
 
@@ -86,6 +92,9 @@ var schemaStatements = []string{
 		input_tokens     INTEGER DEFAULT 0,
 		output_tokens    INTEGER DEFAULT 0,
 		cache_hit_tokens INTEGER DEFAULT 0,
+		system_tokens    INTEGER DEFAULT 0,
+		tool_tokens      INTEGER DEFAULT 0,
+		message_tokens   INTEGER DEFAULT 0,
 		cost_usd         REAL    DEFAULT 0,
 		status           TEXT,
 		error            TEXT,
@@ -247,6 +256,15 @@ func (s *Store) alignSchema() error {
 		return fmt.Errorf("normalise span kinds: %w", err)
 	}
 
+	for _, column := range []string{"system_tokens", "tool_tokens", "message_tokens"} {
+		if spanColumns[column] {
+			continue
+		}
+		if _, err := s.db.Exec(`ALTER TABLE spans ADD COLUMN ` + column + ` INTEGER DEFAULT 0`); err != nil {
+			return fmt.Errorf("add spans.%s: %w", column, err)
+		}
+	}
+
 	runColumns, err := s.tableColumns("runs")
 	if err != nil {
 		return err
@@ -337,9 +355,11 @@ func (s *Store) UpsertRun(run Run) error {
 const upsertSpanSQL = `INSERT INTO spans (
 		id, run_id, parent_id, kind, name, step_index, request_index,
 		started_at, ended_at, duration_ms, first_token_ms, generation_ms,
-		input_tokens, output_tokens, cache_hit_tokens, cost_usd, status, error,
+		input_tokens, output_tokens, cache_hit_tokens,
+		system_tokens, tool_tokens, message_tokens,
+		cost_usd, status, error,
 		input_json, output_json
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 	ON CONFLICT(id) DO UPDATE SET
 		ended_at = excluded.ended_at,
 		duration_ms = excluded.duration_ms,
@@ -348,6 +368,9 @@ const upsertSpanSQL = `INSERT INTO spans (
 		input_tokens = excluded.input_tokens,
 		output_tokens = excluded.output_tokens,
 		cache_hit_tokens = excluded.cache_hit_tokens,
+		system_tokens = excluded.system_tokens,
+		tool_tokens = excluded.tool_tokens,
+		message_tokens = excluded.message_tokens,
 		cost_usd = excluded.cost_usd,
 		status = excluded.status,
 		error = excluded.error,
@@ -376,6 +399,7 @@ func (s *Store) UpsertSpans(spans []Span) error {
 			span.StepIndex, span.RequestIndex, span.StartedAt, span.EndedAt,
 			span.DurationMs, span.FirstTokenMs, span.GenerationMs,
 			span.InputTokens, span.OutputTokens, span.CacheHitTokens,
+			span.SystemTokens, span.ToolTokens, span.MessageTokens,
 			span.CostUSD, string(span.Status), span.Error,
 			span.InputJSON, span.OutputJSON,
 		); err != nil {
@@ -406,7 +430,9 @@ const spanColumns = `id, COALESCE(run_id, ''), COALESCE(parent_id, ''), COALESCE
 	started_at, COALESCE(ended_at, 0), COALESCE(duration_ms, 0),
 	COALESCE(first_token_ms, 0), COALESCE(generation_ms, 0),
 	COALESCE(input_tokens, 0), COALESCE(output_tokens, 0),
-	COALESCE(cache_hit_tokens, 0), COALESCE(cost_usd, 0), COALESCE(status, ''),
+	COALESCE(cache_hit_tokens, 0), COALESCE(system_tokens, 0),
+	COALESCE(tool_tokens, 0), COALESCE(message_tokens, 0),
+	COALESCE(cost_usd, 0), COALESCE(status, ''),
 	COALESCE(error, ''), COALESCE(input_json, ''), COALESCE(output_json, '')`
 
 type scanner interface {
@@ -435,6 +461,7 @@ func scanSpan(row scanner) (Span, error) {
 		&span.StepIndex, &span.RequestIndex, &span.StartedAt, &span.EndedAt,
 		&span.DurationMs, &span.FirstTokenMs, &span.GenerationMs,
 		&span.InputTokens, &span.OutputTokens, &span.CacheHitTokens,
+		&span.SystemTokens, &span.ToolTokens, &span.MessageTokens,
 		&span.CostUSD, &status, &span.Error, &span.InputJSON, &span.OutputJSON,
 	)
 	span.Kind = SpanKind(kind)

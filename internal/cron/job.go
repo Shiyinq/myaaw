@@ -15,8 +15,15 @@ type Payload struct {
 
 type Delivery struct {
 	Mode    string `json:"mode"`    // announce
-	Channel string `json:"channel"` // telegram, discord
-	To      string `json:"to"`      // chat_id
+	Channel string `json:"channel"` // telegram, discord, api, cli
+	To      string `json:"to"`      // user id (dm/api/cli), chat id (telegram), channel id (discord)
+	// ThreadID is the Telegram message_thread_id for a forum topic.
+	ThreadID string `json:"thread_id,omitempty"`
+	// SessionID pins the exact conversation (required for api/cli targets).
+	SessionID string `json:"session_id,omitempty"`
+	// ChatType distinguishes a Discord DM from a guild channel ("dm" vs
+	// "guild"). Telegram derives it from the sign of To.
+	ChatType string `json:"chat_type,omitempty"`
 }
 
 type Job struct {

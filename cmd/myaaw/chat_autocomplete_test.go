@@ -16,7 +16,7 @@ func newChatAutocompleteModel(value string, cursor int) *model {
 // A path typed into chat starts with "/", so moving the cursor to position 0
 // used to slice val[1:0] and panic, killing the whole TUI.
 func TestUpdateAutocompleteAtStartOfAbsolutePathDoesNotPanic(t *testing.T) {
-	m := newChatAutocompleteModel("/Users/shiyinq/.myaaw/default/home/workspace/downloads", 0)
+	m := newChatAutocompleteModel("/Users/alice/.myaaw/default/home/workspace/downloads", 0)
 
 	m.updateAutocomplete()
 

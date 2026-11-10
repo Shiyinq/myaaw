@@ -143,6 +143,26 @@ func (h *Handler) ObservabilitySession(c fiber.Ctx) error {
 	return c.JSON(detail)
 }
 
+// ObservabilitySessionStats returns the totals of one session: how many turns
+// it has, how many steps they ran and what they spent.
+// @Summary      Get session totals
+// @Tags         Observability
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        id path string true "Conversation id"
+// @Success      200 {object} obs.SessionTotals
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /agents/{name}/observability/sessions/{id}/stats [get]
+func (h *Handler) ObservabilitySessionStats(c fiber.Ctx) error {
+	totals, err := h.observability.SessionStats(c.Params("name"), c.Params("id"))
+	if err != nil {
+		return observabilityError(c, err)
+	}
+	return c.JSON(totals)
+}
+
 // ObservabilityRun returns one run with its spans and nested tree.
 // @Summary      Get run trace
 // @Tags         Observability

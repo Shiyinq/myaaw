@@ -2,7 +2,10 @@ package obs
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"math"
+	"myaaw/internal/capabilities"
 	"sort"
 )
 
@@ -456,4 +459,159 @@ func (s *Store) ListSessions(limit int) ([]Session, error) {
 		sessions = append(sessions, session)
 	}
 	return sessions, rows.Err()
+}
+
+// SessionContext is how full the model's context window is for the newest
+// request of a conversation. Tokens is exact (the provider's input_tokens);
+// the breakdown is the pre-request estimate the engine recorded alongside it,
+// and Window is the catalog limit for the model that served the request.
+type SessionContext struct {
+	Tokens        int `json:"tokens"`
+	Window        int `json:"window"`
+	SystemTokens  int `json:"system_tokens"`
+	ToolTokens    int `json:"tool_tokens"`
+	MessageTokens int `json:"message_tokens"`
+}
+
+// SessionTotals are the aggregate numbers for one conversation: how many runs
+// it has, how many step spans all of them produced, and what they spent. They
+// are computed in SQL so long sessions are not truncated by a run page size.
+type SessionTotals struct {
+	ConversationID string `json:"conversation_id"`
+	Channel        string `json:"channel,omitempty"`
+	Turns          int    `json:"turns"`
+	Steps          int    `json:"steps"`
+	StartedAt      int64  `json:"started_at"`
+	LastActiveAt   int64  `json:"last_active_at"`
+	InputTokens    int    `json:"input_tokens"`
+	OutputTokens   int    `json:"output_tokens"`
+	// CacheHitTokens is the part of InputTokens served from the prompt cache.
+	CacheHitTokens int `json:"cache_hit_tokens"`
+	// TotalTokens is input + output. UncachedInputTokens is InputTokens minus
+	// the cache hits, and CacheHitRate is the rounded share served from cache.
+	// They are computed here so clients never re-derive the arithmetic.
+	TotalTokens         int `json:"total_tokens"`
+	UncachedInputTokens int `json:"uncached_input_tokens"`
+	CacheHitRate        int `json:"cache_hit_rate"`
+	// Provider is the provider type of the newest run, Model its model.
+	Provider   string `json:"provider,omitempty"`
+	Model      string `json:"model,omitempty"`
+	ErrorCount int    `json:"error_count"`
+	// TokPerSec is the generation throughput of the newest run.
+	TokPerSec int `json:"tok_per_sec"`
+	// LlmMs and ToolMs are the wall time spent in provider requests and tool
+	// executions across the session. TtftMs is the mean first-token latency of
+	// the requests that streamed a first token.
+	LlmMs  int64 `json:"llm_ms"`
+	ToolMs int64 `json:"tool_ms"`
+	TtftMs int64 `json:"ttft_ms"`
+	// Context describes the newest request against the model's context window.
+	Context *SessionContext `json:"context,omitempty"`
+}
+
+// SessionTotals aggregates one conversation. The boolean is false when the
+// conversation has no recorded runs.
+func (s *Store) SessionTotals(conversationID string) (SessionTotals, bool, error) {
+	totals := SessionTotals{ConversationID: conversationID}
+	if conversationID == "" {
+		return totals, false, nil
+	}
+
+	row := s.db.QueryRow(`SELECT COALESCE(MAX(channel), ''), COUNT(*),
+			COALESCE(MIN(started_at), 0), COALESCE(MAX(started_at), 0),
+			COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+			COALESCE(SUM(cache_hit_tokens), 0),
+			COALESCE(SUM(CASE WHEN status IN ('error', 'interrupted') THEN 1 ELSE 0 END), 0)
+		FROM runs WHERE conversation_id = ?`, conversationID)
+	if err := row.Scan(&totals.Channel, &totals.Turns, &totals.StartedAt, &totals.LastActiveAt,
+		&totals.InputTokens, &totals.OutputTokens, &totals.CacheHitTokens, &totals.ErrorCount); err != nil {
+		return totals, false, fmt.Errorf("summarise session: %w", err)
+	}
+	if totals.Turns == 0 {
+		return totals, false, nil
+	}
+
+	totals.TotalTokens = totals.InputTokens + totals.OutputTokens
+	totals.UncachedInputTokens = totals.InputTokens - totals.CacheHitTokens
+	if totals.UncachedInputTokens < 0 {
+		totals.UncachedInputTokens = 0
+	}
+	if totals.InputTokens > 0 {
+		rate := math.Round(float64(totals.CacheHitTokens) / float64(totals.InputTokens) * 100)
+		// A provider occasionally reports a few more cached tokens than it sent;
+		// a rate above 100% is not a rate.
+		totals.CacheHitRate = int(math.Min(100, rate))
+	}
+
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM spans s
+		JOIN runs r ON r.id = s.run_id
+		WHERE r.conversation_id = ? AND s.kind = 'step'`, conversationID).
+		Scan(&totals.Steps); err != nil {
+		return totals, false, fmt.Errorf("count session steps: %w", err)
+	}
+
+	var ttft float64
+	if err := s.db.QueryRow(`SELECT
+			COALESCE(SUM(CASE WHEN s.kind = 'llm' THEN s.duration_ms ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN s.kind = 'tool' THEN s.duration_ms ELSE 0 END), 0),
+			COALESCE(AVG(CASE WHEN s.kind = 'llm' AND s.first_token_ms > 0
+				THEN s.first_token_ms END), 0)
+		FROM spans s JOIN runs r ON r.id = s.run_id
+		WHERE r.conversation_id = ?`, conversationID).
+		Scan(&totals.LlmMs, &totals.ToolMs, &ttft); err != nil {
+		return totals, false, fmt.Errorf("summarise session timing: %w", err)
+	}
+	totals.TtftMs = int64(math.Round(ttft))
+
+	var latestRunID string
+	if err := s.db.QueryRow(`SELECT id, COALESCE(provider, ''), COALESCE(model, '') FROM runs
+		WHERE conversation_id = ? ORDER BY started_at DESC LIMIT 1`, conversationID).
+		Scan(&latestRunID, &totals.Provider, &totals.Model); err != nil {
+		return totals, false, fmt.Errorf("latest session run: %w", err)
+	}
+
+	var generatedTokens, generationMs int64
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(output_tokens), 0), COALESCE(SUM(generation_ms), 0)
+		FROM spans WHERE run_id = ? AND kind = 'llm'`, latestRunID).
+		Scan(&generatedTokens, &generationMs); err != nil {
+		return totals, false, fmt.Errorf("session throughput: %w", err)
+	}
+	if generatedTokens > 0 && generationMs > 0 {
+		totals.TokPerSec = int(math.Round(float64(generatedTokens) / (float64(generationMs) / 1000)))
+	}
+
+	// The context view is the newest request, not the sum of every request. The
+	// exact total lives on the llm span; the breakdown is the estimate the
+	// engine recorded with it, and the window comes from the catalog.
+	var (
+		ctxTokens, ctxSystem, ctxTool, ctxMessage int
+		ctxModel                                  string
+	)
+	err := s.db.QueryRow(`SELECT COALESCE(s.input_tokens, 0), COALESCE(s.system_tokens, 0),
+			COALESCE(s.tool_tokens, 0), COALESCE(s.message_tokens, 0),
+			COALESCE(r.model, '')
+		FROM spans s JOIN runs r ON r.id = s.run_id
+		WHERE r.conversation_id = ? AND s.kind = 'llm'
+		ORDER BY s.started_at DESC, s.step_index DESC, s.request_index DESC
+		LIMIT 1`, conversationID).
+		Scan(&ctxTokens, &ctxSystem, &ctxTool, &ctxMessage, &ctxModel)
+	switch {
+	case err == nil:
+		context := &SessionContext{
+			Tokens:        ctxTokens,
+			SystemTokens:  ctxSystem,
+			ToolTokens:    ctxTool,
+			MessageTokens: ctxMessage,
+		}
+		if entry, ok := capabilities.Lookup(ctxModel); ok && entry.ContextWindow != nil {
+			context.Window = *entry.ContextWindow
+		}
+		totals.Context = context
+	case errors.Is(err, sql.ErrNoRows):
+		// No model request yet; the caller falls back to the cumulative view.
+	default:
+		return totals, false, fmt.Errorf("latest session context: %w", err)
+	}
+
+	return totals, true, nil
 }

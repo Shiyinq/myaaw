@@ -6,9 +6,11 @@ import (
 
 	_ "myaaw/docs/controlplane"
 	"myaaw/internal/agentdir"
+	"myaaw/internal/config"
 	"myaaw/internal/services/controlplane/handler"
 	cpMiddleware "myaaw/internal/services/controlplane/middleware"
 	"myaaw/internal/services/controlplane/service"
+	"myaaw/internal/utils"
 
 	"github.com/gofiber/contrib/v3/swaggo"
 	"github.com/gofiber/fiber/v3"
@@ -39,14 +41,12 @@ func NewApp() (*fiber.App, error) {
 	contactsSvc := service.NewContactService()
 	observabilitySvc := service.NewObservabilityService()
 	approvalsSvc := service.NewApprovalsService()
-	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc)
+	terminals := service.NewTerminalService()
+	backups := service.NewBackupService(serverSvc)
+	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups)
 
-	app := fiber.New(fiber.Config{AppName: "myaaw api"})
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: allowedOrigins(),
-		AllowMethods: []string{"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"},
-		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
-	}))
+	app := fiber.New(fiber.Config{AppName: "myaaw api", BodyLimit: config.A2AMaxRequestBytes})
+	app.Use(cors.New(corsConfig()))
 
 	app.Get("/health", h.Health)
 	app.Get("/docs", func(c fiber.Ctx) error {
@@ -66,12 +66,17 @@ func NewApp() (*fiber.App, error) {
 	app.Put("/auth/username", h.ChangeUsername)
 
 	app.Get("/agents", h.ListAgents)
+	app.Get("/capabilities", h.GetCapabilities)
 	app.Post("/agents/:name/onboard", h.OnboardAgent)
 	app.Get("/agents/:name", h.GetAgent)
 	app.Delete("/agents/:name", h.DeleteAgent)
 	app.Post("/agents/:name/default", h.SetDefaultAgent)
 	app.Post("/agents/:name/chat", h.Chat)
 	app.Post("/agents/:name/chat/stream", h.ChatStream)
+	app.Post("/agents/:name/chat/stop", h.ChatStop)
+	app.Get("/agents/:name/chat/runs", h.ChatRuns)
+	app.Get("/agents/:name/chat/run/:id/stream", h.ChatRunStream)
+	app.Get("/agents/:name/events", h.Events)
 	app.Post("/agents/:name/approvals/:id/decision", h.ApprovalDecision)
 	app.Get("/agents/:name/approvals", h.GetApprovals)
 	app.Delete("/agents/:name/approvals/grants/:key", h.RevokeApprovalGrant)
@@ -79,6 +84,7 @@ func NewApp() (*fiber.App, error) {
 	app.Delete("/agents/:name/approvals/grants", h.ClearApprovalGrants)
 
 	app.Get("/agents/:name/fs", h.ListFiles)
+	app.Get("/agents/:name/fs/raw", h.RawFile)
 	app.Get("/agents/:name/fs/read", h.ReadFile)
 	app.Get("/agents/:name/fs/search", h.SearchFiles)
 	app.Get("/agents/:name/context", h.ListContextFiles)
@@ -86,6 +92,9 @@ func NewApp() (*fiber.App, error) {
 	app.Put("/agents/:name/context/file", h.WriteContextFile)
 
 	app.Get("/agents/:name/skills", h.ListSkills)
+	app.Post("/agents/:name/skills/:skill/install", h.InstallSkill)
+	app.Get("/skills/builtin/:skill", h.GetBuiltinSkill)
+	app.Get("/skills/builtin/:skill/file", h.GetBuiltinSkillFile)
 	app.Get("/agents/:name/skills/:skill", h.GetSkill)
 	app.Get("/agents/:name/skills/:skill/file", h.GetSkillFile)
 	app.Patch("/agents/:name/skills/:skill", h.ToggleSkill)
@@ -103,6 +112,7 @@ func NewApp() (*fiber.App, error) {
 
 	app.Get("/agents/:name/contacts", h.ListContacts)
 	app.Post("/agents/:name/contacts", h.CreateContact)
+	app.Patch("/agents/:name/contacts/:contact", h.UpdateContact)
 	app.Delete("/agents/:name/contacts/:contact", h.DeleteContact)
 	app.Post("/agents/:name/fs/write", h.WriteFile)
 	app.Post("/agents/:name/fs/mkdir", h.Mkdir)
@@ -111,7 +121,12 @@ func NewApp() (*fiber.App, error) {
 
 	app.Get("/agents/:name/providers", h.ListProviders)
 	app.Post("/agents/:name/providers", h.CreateProvider)
+	app.Post("/agents/:name/providers/chatgpt/connect", h.ConnectChatGPT)
+	app.Get("/agents/:name/providers/chatgpt/connect/:session", h.ChatGPTStatus)
+	app.Delete("/agents/:name/providers/chatgpt/connect/:session", h.CancelChatGPT)
+	app.Post("/agents/:name/providers/:id/disconnect", h.DisconnectProvider)
 	app.Post("/providers/models", h.ListModels)
+	app.Get("/models/capabilities", h.GetModelCapabilities)
 	app.Get("/agents/:name/providers/:id/models", h.GetProviderModels)
 	app.Put("/agents/:name/providers/:id", h.UpdateProvider)
 	app.Delete("/agents/:name/providers/:id", h.DeleteProvider)
@@ -124,17 +139,37 @@ func NewApp() (*fiber.App, error) {
 	app.Post("/agents/:name/config/reset", h.ResetConfig)
 	app.Patch("/agents/:name/config/reset", h.ResetConfigFields)
 	app.Get("/agents/:name/conversations", h.ListConversations)
+	app.Get("/agents/:name/conversations/activity", h.ConversationActivity)
+	app.Get("/agents/:name/chat-folders", h.ListChatFolders)
+	app.Post("/agents/:name/chat-folders", h.CreateChatFolder)
+	app.Patch("/agents/:name/chat-folders/:folder", h.RenameChatFolder)
+	app.Delete("/agents/:name/chat-folders/:folder", h.DeleteChatFolder)
 	app.Get("/agents/:name/conversations/:id", h.GetConversation)
 	app.Patch("/agents/:name/conversations/:id", h.RenameConversation)
 	app.Delete("/agents/:name/conversations/:id", h.DeleteConversation)
+	app.Put("/agents/:name/conversations/:id/pin", h.PinConversation)
+	app.Put("/agents/:name/conversations/:id/folder", h.MoveConversation)
+	app.Post("/agents/:name/conversations/:id/read", h.MarkConversationRead)
 	app.Get("/agents/:name/logs", h.ListLogs)
 	app.Get("/agents/:name/logs/stream", h.StreamLogs)
 	app.Get("/agents/:name/server/status", h.GetServerStatus)
 	app.Post("/agents/:name/server/start", h.StartServer)
 	app.Post("/agents/:name/server/stop", h.StopServer)
 	app.Post("/agents/:name/server/restart", h.RestartServer)
+
+	// A real PTY on the API host. Off unless MYAAW_TERMINAL=1; the status route
+	// lets the UI explain why it is unavailable.
+	app.Get("/agents/:name/terminal", h.TerminalStatus)
+	app.Post("/agents/:name/terminal", h.OpenTerminal)
+	app.Get("/agents/:name/terminal/:id", h.GetTerminal)
+	app.Get("/agents/:name/terminal/:id/stream", h.StreamTerminal)
+	app.Post("/agents/:name/terminal/:id/input", h.TerminalInput)
+	app.Post("/agents/:name/terminal/:id/resize", h.ResizeTerminal)
+	app.Post("/agents/:name/terminal/:id/heartbeat", h.TouchTerminal)
+	app.Delete("/agents/:name/terminal/:id", h.CloseTerminal)
 	app.Get("/agents/:name/cron", h.ListCron)
 	app.Post("/agents/:name/cron", h.AddCron)
+	app.Get("/agents/:name/cron/history", h.CronHistoryAll)
 	app.Delete("/agents/:name/cron/:id", h.RemoveCron)
 	app.Post("/agents/:name/cron/:id/run", h.RunCron)
 	app.Get("/agents/:name/cron/:id/history", h.CronHistory)
@@ -142,9 +177,18 @@ func NewApp() (*fiber.App, error) {
 	app.Get("/agents/:name/observability/summary", h.ObservabilitySummary)
 	app.Get("/agents/:name/observability/sessions", h.ObservabilitySessions)
 	app.Get("/agents/:name/observability/sessions/:id", h.ObservabilitySession)
+	app.Get("/agents/:name/observability/sessions/:id/stats", h.ObservabilitySessionStats)
 	app.Get("/agents/:name/observability/runs", h.ObservabilityRuns)
 	app.Get("/agents/:name/observability/runs/:id", h.ObservabilityRun)
 	app.Delete("/agents/:name/observability/runs", h.DeleteObservabilityRuns)
+
+	// Host-level archives live outside the agent roots, so these routes are not
+	// scoped to an agent: one archive can hold every agent plus the registry.
+	app.Get("/backups", h.ListBackups)
+	app.Post("/backups", h.CreateBackup)
+	app.Get("/backups/:name", h.DownloadBackup)
+	app.Delete("/backups/:name", h.DeleteBackup)
+	app.Post("/backups/:name/restore", h.RestoreBackup)
 
 	return app, nil
 }
@@ -157,21 +201,23 @@ func Run(addr string) error {
 	return app.Listen(addr)
 }
 
-func allowedOrigins() []string {
-	raw := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS"))
-	if raw == "" || raw == "*" {
-		return []string{"*"}
+// corsConfig allows the local dashboards by default. A browser on another
+// origin (a remote dashboard or a tunnel) must opt in through ALLOWED_ORIGINS;
+// native desktop/mobile clients do not send an Origin and are unaffected.
+func corsConfig() cors.Config {
+	cfg := cors.Config{
+		AllowMethods: []string{"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "OPTIONS"},
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
 	}
 
-	parts := strings.Split(raw, ",")
-	origins := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if origin := strings.TrimSpace(part); origin != "" {
-			origins = append(origins, origin)
-		}
+	raw := strings.TrimSpace(os.Getenv("ALLOWED_ORIGINS"))
+	switch {
+	case raw == "*":
+		cfg.AllowOrigins = []string{"*"}
+	case raw != "":
+		cfg.AllowOrigins = utils.ParseAllowedOrigins(raw)
+	default:
+		cfg.AllowOriginsFunc = utils.IsLoopbackOrigin
 	}
-	if len(origins) == 0 {
-		return []string{"*"}
-	}
-	return origins
+	return cfg
 }

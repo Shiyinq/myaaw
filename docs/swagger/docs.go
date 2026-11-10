@@ -135,6 +135,122 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/chat/run/{id}/stream": {
+            "get": {
+                "description": "Streams the events of a running (or recently finished) run, replaying everything after ` + "`" + `after` + "`" + `. The run keeps going when this connection drops.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "API"
+                ],
+                "summary": "Attach to a run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Request id of the run",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Skip events before this index",
+                        "name": "after",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/chat/runs": {
+            "get": {
+                "description": "Lists the runs a client can attach to, newest first. Finished runs stay listed for a short while so a reconnecting tab can read their tail.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API"
+                ],
+                "summary": "List runs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Only runs of this conversation",
+                        "name": "conversation_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/handler.RunInfo"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/chat/stop": {
+            "post": {
+                "description": "Cancels the run started with the same request_id. Whatever the model produced is kept in the transcript, and the run stops spending provider tokens.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API"
+                ],
+                "summary": "Stop a running chat",
+                "parameters": [
+                    {
+                        "description": "Request id of the run to stop",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.ChatStopRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/chat/stream": {
             "post": {
                 "description": "Direct REST API chat endpoint with Server-Sent Events streaming",
@@ -186,6 +302,23 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
+                    }
+                }
+            }
+        },
+        "/api/events": {
+            "get": {
+                "description": "A ` + "`" + `conversation.updated` + "`" + ` event is emitted when a cron, heartbeat, or sub-agent turn lands. The payload names the conversation; read it for the transcript. A ` + "`" + `HEARTBEAT_OK` + "`" + ` turn is not stored, so it emits nothing.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "API"
+                ],
+                "summary": "Conversation events",
+                "responses": {
+                    "200": {
+                        "description": "OK"
                     }
                 }
             }
@@ -334,11 +467,25 @@ const docTemplate = `{
                 "conversation_id": {
                     "type": "string"
                 },
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/channel.FileUpload"
+                    }
+                },
                 "images": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
+                },
+                "request_id": {
+                    "description": "RequestID lets the client stop this run with POST /api/chat/stop.",
+                    "type": "string"
+                },
+                "rewind_user_offset": {
+                    "description": "RewindUserOffset rewinds the transcript before this turn. 0 keeps the\ntranscript up to the last user message (regenerate); N keeps it up to the\nuser message N turns earlier (edit that message with ` + "`" + `text` + "`" + `).",
+                    "type": "integer"
                 },
                 "text": {
                     "type": "string"
@@ -395,6 +542,20 @@ const docTemplate = `{
                 }
             }
         },
+        "channel.FileUpload": {
+            "type": "object",
+            "properties": {
+                "data_base64": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "channel.QueueEnvelope": {
             "type": "object",
             "properties": {
@@ -432,13 +593,30 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.ChatStopRequest": {
+            "type": "object",
+            "properties": {
+                "request_id": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.HeartbeatRequest": {
             "type": "object",
             "properties": {
                 "channel": {
                     "type": "string"
                 },
+                "chat_type": {
+                    "type": "string"
+                },
                 "prompt": {
+                    "type": "string"
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "thread_id": {
                     "type": "string"
                 },
                 "to": {
@@ -446,6 +624,26 @@ const docTemplate = `{
                 },
                 "trigger": {
                     "type": "string"
+                }
+            }
+        },
+        "handler.RunInfo": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "streaming": {
+                    "type": "boolean"
                 }
             }
         },

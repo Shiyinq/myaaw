@@ -2,6 +2,8 @@
 
 `myaaw backup` writes one portable `tar.gz` archive per agent, and `myaaw restore` verifies and restores it. An archive mirrors the on-disk layout (`<agent>/...`), so it can also be extracted by hand under `~/.myaaw`.
 
+The dashboard exposes the same operations on the **Backups** page (`/app/backups`): list the archive directory, create an archive for one agent or the whole fleet, download it, and restore or delete an archive. The routes are documented in the [Control Plane API guide](../api/control-plane.md#22-backups).
+
 ## Quick start
 
 ```bash
@@ -44,7 +46,7 @@ If `-o` points inside the agent being backed up, that directory is skipped and r
 
 ## What is included
 
-Everything under `~/.myaaw/<agent>/` by default, except the deny-list below:
+Everything under `~/.myaaw/agents/<agent>/` by default, except the deny-list below:
 
 ```text
 .env
@@ -127,11 +129,15 @@ default/
 
 ```text
 myaaw-backup-global-<timestamp>.tar.gz
-  agents.json
-  controlplane.json
+  agents.json                 # restored to config/agents.json
+  controlplane.json           # restored to config/controlplane.json
+  config/model_capabilities.json
+  config/model_prices.json
+  config/tool_prices.json
 ```
 
-`controlplane.json` contains a password hash and is treated as a secret.
+`controlplane.json` contains a password hash and is treated as a secret. Older archives that only
+contain the two flat files still restore into the new `~/.myaaw/config/` folder.
 
 ## Manifest
 
@@ -173,7 +179,7 @@ What it does:
 2. Verifies every file against `manifest.json` (size and SHA-256) and rejects unlisted files.
 3. Refuses to replace an existing agent unless `--force` is given. A directory that only contains runtime logs (from an earlier CLI run) is replaced without `--force`.
 4. With `--force`: stops the agent daemon, writes a pre-restore backup to `~/.myaaw-backups`, replaces the agent directory, and sets `.env`, `contacts.json`, and `config/config.json` to mode `0600`.
-5. Registers the agent in `agents.json`, warns when its `PORT` is already used by another agent, and starts the daemon unless `--no-start` is given.
+5. Registers the agent in `~/.myaaw/config/agents.json`, warns when its `PORT` is already used by another agent, and starts the daemon unless `--no-start` is given.
 
 Examples:
 
@@ -214,7 +220,7 @@ Restore flags:
 myaaw restore myaaw-backup-global-20261027-002704.tar.gz --force
 ```
 
-Restores `agents.json` and `controlplane.json` into `~/.myaaw`. Existing files are copied to `<name>.pre-restore-<timestamp>` first. Restart the control plane API afterwards.
+Restores `agents.json` and `controlplane.json` into `~/.myaaw/config/`, plus the model tables. Existing files are copied to `<name>.pre-restore-<timestamp>` first. Restart the control plane API afterwards.
 
 ### Manual extraction
 
@@ -222,9 +228,9 @@ If you need to inspect or extract an archive by hand:
 
 ```bash
 myaaw --agent default server stop
-tar -xzf myaaw-backup-default-20261027-003000.tar.gz -C ~/.myaaw default/
-chmod 600 ~/.myaaw/default/.env ~/.myaaw/default/contacts.json
-sqlite3 ~/.myaaw/default/database/myaaw.db "PRAGMA integrity_check;"
+tar -xzf myaaw-backup-default-20261027-003000.tar.gz -C ~/.myaaw/agents default/
+chmod 600 ~/.myaaw/agents/default/.env ~/.myaaw/agents/default/contacts.json
+sqlite3 ~/.myaaw/agents/default/database/myaaw.db "PRAGMA integrity_check;"
 myaaw --agent default server start
 ```
 
@@ -253,5 +259,5 @@ Every `files[]` entry in `manifest.json` has the expected `sha256`.
 - `--include-venv` is platform-specific and may not work across machines.
 - `--restore-packages` needs network access and a local `python3`.
 - Backups are a point-in-time snapshot of files; JSON files written concurrently (for example cron config) are copied as they are.
-- A global restore only updates `agents.json` and `controlplane.json`; restart the control plane API afterwards.
+- A global restore updates `agents.json`, `controlplane.json`, and the model tables under `~/.myaaw/config/`; restart the control plane API afterwards.
 - No automatic retention/pruning yet. Archive names are timestamped; delete old files manually.

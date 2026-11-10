@@ -14,15 +14,19 @@ func setupFileAgent(t *testing.T) (string, string) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	agentRoot := filepath.Join(home, ".myaaw", "myfriend")
+	agentRoot := filepath.Join(home, ".myaaw", "agents", "myfriend")
 	for _, dir := range []string{
 		filepath.Join(agentRoot, "home", "notes"),
+		filepath.Join(agentRoot, "user", "uploads", "conv-1", "msg-1"),
 		filepath.Join(agentRoot, "skills"),
 		filepath.Join(agentRoot, "jobs"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
+	}
+	if err := os.WriteFile(filepath.Join(agentRoot, "user", "uploads", "conv-1", "msg-1", "notes.txt"), []byte("uploaded"), 0o600); err != nil {
+		t.Fatalf("write notes.txt: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(agentRoot, "home", "AGENTS.md"), []byte("# Agents"), 0o644); err != nil {
 		t.Fatalf("write AGENTS.md: %v", err)
@@ -42,11 +46,49 @@ func TestFileServiceListsVirtualRoots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List roots: %v", err)
 	}
-	if len(entries) != 3 {
+	if len(entries) != 4 {
 		t.Fatalf("roots = %+v", entries)
 	}
-	if entries[0].Path != "/home" || entries[1].Path != "/skills" || entries[2].Path != "/jobs" {
+	if entries[0].Path != "/home" || entries[1].Path != "/user" || entries[2].Path != "/skills" || entries[3].Path != "/jobs" {
 		t.Fatalf("roots = %+v", entries)
+	}
+}
+
+func TestFileServiceListsUserUploads(t *testing.T) {
+	setupFileAgent(t)
+	files := NewFileService()
+
+	uploads, err := files.List("myfriend", "/user/uploads")
+	if err != nil {
+		t.Fatalf("List /user/uploads: %v", err)
+	}
+	if len(uploads) != 1 || uploads[0].Name != "conv-1" || !uploads[0].IsDir {
+		t.Fatalf("uploads = %+v", uploads)
+	}
+
+	file, err := files.Read("myfriend", "/user/uploads/conv-1/msg-1/notes.txt")
+	if err != nil {
+		t.Fatalf("Read upload: %v", err)
+	}
+	if file.Content != "uploaded" {
+		t.Fatalf("content = %q", file.Content)
+	}
+}
+
+func TestFileServiceListsMissingRootAsEmpty(t *testing.T) {
+	_, agentRoot := setupFileAgent(t)
+
+	// Remove the user dir so the root exists only virtually.
+	if err := os.RemoveAll(filepath.Join(agentRoot, "user")); err != nil {
+		t.Fatalf("remove user dir: %v", err)
+	}
+
+	entries, err := NewFileService().List("myfriend", "/user")
+	if err != nil {
+		t.Fatalf("List /user: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("entries = %+v, want empty", entries)
 	}
 }
 
@@ -131,6 +173,9 @@ func TestFileServiceProtectsRoots(t *testing.T) {
 	}
 	if err := files.Rename("myfriend", "/home", "/home2"); !errors.Is(err, ErrRootProtected) {
 		t.Fatalf("rename root err = %v, want ErrRootProtected", err)
+	}
+	if err := files.Delete("myfriend", "/user", true); !errors.Is(err, ErrRootProtected) {
+		t.Fatalf("delete /user err = %v, want ErrRootProtected", err)
 	}
 }
 

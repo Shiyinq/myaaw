@@ -1,0 +1,4 @@
+# Myaaw is a private control plane, not a public site: every path is closed to
+# every crawler, so nothing here is indexed or scraped.
+User-agent: *
+Disallow: /

@@ -12,14 +12,16 @@ import (
 )
 
 type fakeSend struct {
-	chatID  int
-	replyTo int
-	text    string
-	mode    string
+	chatID   int
+	threadID int
+	replyTo  int
+	text     string
+	mode     string
 }
 
 type fakeEdit struct {
 	chatID    int
+	threadID  int
 	messageID int
 	text      string
 	mode      string
@@ -31,19 +33,19 @@ type fakeTransport struct {
 	edits  []fakeEdit
 }
 
-func (f *fakeTransport) Send(chatID, replyTo int, text, parseMode string) (int, error) {
+func (f *fakeTransport) Send(chatID, threadID, replyTo int, text, parseMode string) (int, error) {
 	f.nextID++
-	f.sends = append(f.sends, fakeSend{chatID: chatID, replyTo: replyTo, text: text, mode: parseMode})
+	f.sends = append(f.sends, fakeSend{chatID: chatID, threadID: threadID, replyTo: replyTo, text: text, mode: parseMode})
 	return f.nextID, nil
 }
 
-func (f *fakeTransport) Edit(chatID, messageID int, text, parseMode string) error {
-	f.edits = append(f.edits, fakeEdit{chatID: chatID, messageID: messageID, text: text, mode: parseMode})
+func (f *fakeTransport) Edit(chatID, threadID, messageID int, text, parseMode string) error {
+	f.edits = append(f.edits, fakeEdit{chatID: chatID, threadID: threadID, messageID: messageID, text: text, mode: parseMode})
 	return nil
 }
 
 func newTestTimeline(transport telegramTransport, placeholderID int) *telegramTimeline {
-	tl := newTelegramTimeline(transport, 1, 10, placeholderID)
+	tl := newTelegramTimeline(transport, 1, 0, 10, placeholderID)
 	tl.editThreshold = 0
 	tl.editInterval = 0
 	tl.now = func() time.Time { return time.Unix(100, 0) }
@@ -383,5 +385,26 @@ func TestTelegramSendBuildsTimelineFromTrace(t *testing.T) {
 	}
 	if !strings.Contains(transport.sends[2].text, "final answer") {
 		t.Fatalf("final answer bubble missing: %+v", transport.sends[2])
+	}
+}
+
+func TestTelegramSendForwardsTopicThread(t *testing.T) {
+	transport := &fakeTransport{}
+	adapter := &TelegramAdapter{transport: transport}
+	msg := &channel.IncomingMessage{RawMeta: TelegramMeta{ChatID: -1001111, ThreadID: 77, MessageID: 10}}
+
+	if err := adapter.Send(msg, &channel.OutgoingMessage{Text: "answer"}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if len(transport.sends) == 0 {
+		t.Fatal("no sends recorded")
+	}
+	for _, send := range transport.sends {
+		if send.threadID != 77 {
+			t.Fatalf("send thread = %d, want 77: %+v", send.threadID, send)
+		}
+	}
+	if len(transport.edits) > 0 && transport.edits[0].threadID != 77 {
+		t.Fatalf("edit thread = %d, want 77", transport.edits[0].threadID)
 	}
 }

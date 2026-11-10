@@ -5,7 +5,9 @@ import datetime
 import time
 
 # Constants
-AGENT_ROOT = os.environ.get("MYAAW_AGENT_ROOT") or os.path.join(os.path.expanduser("~"), ".myaaw", "default")
+AGENT_ROOT = os.environ.get("MYAAW_AGENT_ROOT")
+if not AGENT_ROOT:
+    sys.exit("MYAAW_AGENT_ROOT is not set; run this script through the agent")
 DATA_DIR = os.path.join(AGENT_ROOT, "database", "cashflow")
 DATA_FILE = os.path.join(DATA_DIR, "cashflow.json")
 

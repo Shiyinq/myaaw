@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"myaaw/internal/agent/approvals"
 
@@ -30,11 +31,45 @@ func NewProxyService(agents *AgentService) *ProxyService {
 }
 
 func (p *ProxyService) Chat(c fiber.Ctx, agentName string, userID int) error {
-	return p.forward(c, agentName, "/api/chat", userID)
+	return p.forward(c, http.MethodPost, agentName, "/api/chat", injectUserID(c.Body(), userID))
 }
 
 func (p *ProxyService) ChatStream(c fiber.Ctx, agentName string, userID int) error {
-	return p.forward(c, agentName, "/api/chat/stream", userID)
+	return p.forward(c, http.MethodPost, agentName, "/api/chat/stream", injectUserID(c.Body(), userID))
+}
+
+// ChatStop cancels the run a client started with the same request id.
+func (p *ProxyService) ChatStop(c fiber.Ctx, agentName string, userID int) error {
+	return p.forward(c, http.MethodPost, agentName, "/api/chat/stop", injectUserID(c.Body(), userID))
+}
+
+// ChatRuns lists the runs a reconnecting client can attach to.
+func (p *ProxyService) ChatRuns(c fiber.Ctx, agentName string) error {
+	return p.forward(c, http.MethodGet, agentName, "/api/chat/runs"+queryString(c), nil)
+}
+
+// ChatRunStream relays the events of one run, replaying what the client missed.
+func (p *ProxyService) ChatRunStream(c fiber.Ctx, agentName, requestID string) error {
+	path := "/api/chat/run/" + url.PathEscape(requestID) + "/stream" + queryString(c)
+	return p.forward(c, http.MethodGet, agentName, path, nil)
+}
+
+// Events relays the agent's conversation SSE stream: a client subscribes once per
+// agent and re-reads a transcript when a turn lands.
+func (p *ProxyService) Events(c fiber.Ctx, agentName string) error {
+	return p.forward(c, http.MethodGet, agentName, "/api/events"+queryString(c), nil)
+}
+
+func queryString(c fiber.Ctx) string {
+	values := c.Queries()
+	if len(values) == 0 {
+		return ""
+	}
+	params := url.Values{}
+	for key, value := range values {
+		params.Set(key, value)
+	}
+	return "?" + params.Encode()
 }
 
 // ApprovalDecision forwards a tool approval decision to the agent that owns the
@@ -70,18 +105,23 @@ func (p *ProxyService) ApprovalDecision(c fiber.Ctx, agentName, approvalID strin
 	return c.Send(body)
 }
 
-func (p *ProxyService) forward(c fiber.Ctx, agentName, path string, userID int) error {
+func (p *ProxyService) forward(c fiber.Ctx, method, agentName, path string, body []byte) error {
 	baseURL, _, err := p.agents.BaseURL(agentName)
 	if err != nil {
 		return err
 	}
 
-	body := injectUserID(c.Body(), userID)
-	req, err := http.NewRequestWithContext(c.Context(), http.MethodPost, baseURL+path, bytes.NewReader(body))
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(c.Context(), method, baseURL+path, reader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	if accept := c.Get("Accept"); accept != "" {
 		req.Header.Set("Accept", accept)
 	}
@@ -102,10 +142,10 @@ func (p *ProxyService) forward(c fiber.Ctx, agentName, path string, userID int) 
 		c.Set("Cache-Control", cacheControl)
 	}
 
-	if path == "/api/chat/stream" {
+	// Streams (chat and run attach) must stay open while the body is relayed;
+	// buffering them would empty the response.
+	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 		c.Set("Cache-Control", "no-cache")
-		// The body must stay open until the stream writer finishes; closing it
-		// here would empty the SSE response.
 		return c.SendStreamWriter(func(w *bufio.Writer) {
 			defer resp.Body.Close()
 			buf := make([]byte, 32*1024)

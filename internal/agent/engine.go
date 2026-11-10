@@ -7,14 +7,17 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"myaaw/internal/agent/approvals"
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/capabilities"
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
+	"myaaw/internal/thinking"
 )
 
 // MaxIterationsMessage is returned when the loop hits its safety cap.
@@ -108,8 +111,7 @@ func (a *Agent) RunEvents(
 		if cfg.OnCheckpoint == nil {
 			return
 		}
-		snapshot := make([]provider.Message, len(transcript))
-		copy(snapshot, transcript)
+		snapshot := CloneMessages(transcript)
 		safeCheckpoint(ctx, cfg.OnCheckpoint, snapshot)
 	}
 
@@ -128,6 +130,13 @@ func (a *Agent) RunEvents(
 
 	for {
 		if err := ctx.Err(); err != nil {
+			if StoppedByClient(ctx) {
+				// The client stopped the run: keep what was produced instead of
+				// appending an abort marker the user never asked for.
+				stopReason = provider.StopAborted
+				runErr = err
+				break
+			}
 			text := "⚠️ Request aborted."
 			if errors.Is(err, context.DeadlineExceeded) {
 				text = fmt.Sprintf("⚠️ Agent run timed out after %s. Task may be incomplete.", cfg.RunTimeout)
@@ -171,8 +180,9 @@ func (a *Agent) RunEvents(
 		}
 		requestMessages = injectSystemWarning(requestMessages, warning)
 		if cfg.TransformContext != nil {
-			requestMessages = cfg.TransformContext(ctx, requestMessages)
+			requestMessages = transformMessages(ctx, requestMessages, cfg.TransformContext)
 		}
+		requestMessages = SanitizeImageDataURLs(requestMessages)
 		requestMessages = EvictTranscriptImages(requestMessages, cfg.MaxImageCount, cfg.MaxImageBytes)
 		if cfg.ContextMaxTokens > 0 {
 			var compactStats CompactStats
@@ -182,11 +192,14 @@ func (a *Agent) RunEvents(
 			}
 		}
 
+		requestMessages = messagesForProvider(requestMessages, a.Provider.ProviderName())
+
 		// Hand the exact request transcript to observers before it is sent.
 		_ = emit(AgentEvent{
 			Type:     EventLLMRequestStart,
 			Model:    cfg.Model,
-			Messages: append([]provider.Message(nil), requestMessages...),
+			Messages: CloneMessages(requestMessages),
+			Context:  requestContextUsage(requestMessages, schemas, cfg.Model),
 		})
 
 		var (
@@ -210,7 +223,7 @@ func (a *Agent) RunEvents(
 			_ = emit(AgentEvent{Type: EventMessageStart, Message: &partial})
 		}
 
-		providerErr := a.Provider.ChatStreamEvents(ctx, cfg.Model, requestMessages, schemas, func(event provider.StreamEvent) error {
+		providerErr := a.Provider.ChatStreamEvents(thinking.WithLevel(ctx, cfg.ThinkingLevel), cfg.Model, requestMessages, schemas, func(event provider.StreamEvent) error {
 			switch event.Type {
 			case provider.StreamTextDelta:
 				if event.Text == "" {
@@ -239,7 +252,7 @@ func (a *Agent) RunEvents(
 				return emit(AgentEvent{Type: EventUsage, Usage: event.Usage})
 			case provider.StreamDone:
 				if event.Message != nil {
-					message := *event.Message
+					message := CloneMessages([]provider.Message{*event.Message})[0]
 					finalFromStream = &message
 				}
 				streamStop = event.StopReason
@@ -272,6 +285,7 @@ func (a *Agent) RunEvents(
 		final.Version = transcriptVersion
 		if provider.MessageText(final) == "" && streamedText.Len() > 0 {
 			final.Content = streamedText.String()
+			final.ProviderMetadata = nil
 		}
 		if final.Thought == "" && streamedThought.Len() > 0 {
 			final.Thought = streamedThought.String()
@@ -291,10 +305,18 @@ func (a *Agent) RunEvents(
 		addUsage(&usage, turnTokens)
 
 		if streamErr != nil {
-			final.IsError = true
-			final.ErrorMessage = streamErr.Error()
-			if provider.MessageText(final) == "" {
-				final.Content = "⚠️ Agent error: " + streamErr.Error()
+			if StoppedByClient(ctx) {
+				// A user stop keeps the partial answer as normal text, so a
+				// refreshed transcript does not look like a failure.
+				final.IsError = false
+				final.ErrorMessage = ""
+			} else {
+				final.IsError = true
+				final.ErrorMessage = streamErr.Error()
+				if provider.MessageText(final) == "" {
+					final.Content = "⚠️ Agent error: " + streamErr.Error()
+					final.ProviderMetadata = nil
+				}
 			}
 		}
 
@@ -302,6 +324,7 @@ func (a *Agent) RunEvents(
 		for i := range final.ToolCalls {
 			if final.ToolCalls[i].ID == "" {
 				final.ToolCalls[i].ID = fmt.Sprintf("call_%d_%d_%d", runSeq, iteration, i)
+				final.ProviderMetadata = nil
 			}
 		}
 
@@ -608,16 +631,7 @@ func addUsage(dst *provider.Usage, src provider.Usage) {
 }
 
 func extractToolsContext(messages []provider.Message) tools.ToolsContext {
-	baseURL := config.MYAAWBaseURL
-	if baseURL == "" {
-		port := strings.TrimPrefix(config.PORT, ":")
-		if port == "" {
-			port = "8080"
-		}
-		baseURL = "http://localhost:" + port
-	}
-
-	ctx := tools.ToolsContext{BaseURL: baseURL}
+	ctx := tools.ToolsContext{BaseURL: toolsBaseURL()}
 	for _, message := range messages {
 		if message.Role != "system" {
 			continue
@@ -637,6 +651,36 @@ func extractToolsContext(messages []provider.Message) tools.ToolsContext {
 	return ctx
 }
 
+// ToolsContextFor builds the tool context from the message the run is handling.
+// Unlike extractToolsContext it does not parse the prompt, so it still works now
+// that the system prompt is static.
+func ToolsContextFor(msg *channel.IncomingMessage) tools.ToolsContext {
+	ctx := tools.ToolsContext{BaseURL: toolsBaseURL()}
+	if msg == nil {
+		return ctx
+	}
+	ctx.UserID = strconv.Itoa(msg.UserID)
+	ctx.Channel = msg.Channel
+	ctx.ConversationID = msg.ConversationID
+	ctx.ChatID = msg.ChatID
+	ctx.TopicID = msg.TopicID
+	ctx.ChatType = msg.ChatType
+	ctx.Scope = msg.Scope
+	return ctx
+}
+
+func toolsBaseURL() string {
+	baseURL := config.MYAAWBaseURL
+	if baseURL == "" {
+		port := strings.TrimPrefix(config.PORT, ":")
+		if port == "" {
+			port = "8080"
+		}
+		baseURL = "http://localhost:" + port
+	}
+	return baseURL
+}
+
 func argsToString(value interface{}) string {
 	if text, ok := value.(string); ok {
 		return text
@@ -646,4 +690,34 @@ func argsToString(value interface{}) string {
 		return fmt.Sprintf("%v", value)
 	}
 	return string(data)
+}
+
+// requestContextUsage estimates the request's size against the model's context
+// window. The total is a pre-request estimate; the provider's usage block later
+// supplies the exact input count, and the breakdown splits that total into the
+// system prefix, the tool definitions, and the conversation messages.
+func requestContextUsage(messages []provider.Message, schemas []map[string]any, model string) ContextUsage {
+	systemTokens := 0
+	for _, message := range messages {
+		if message.Role != "system" {
+			break
+		}
+		systemTokens += EstimateTokens([]provider.Message{message})
+	}
+	messageTokens := EstimateTokens(messages) - systemTokens
+	if messageTokens < 0 {
+		messageTokens = 0
+	}
+	toolTokens := EstimateToolSchemas(schemas)
+
+	usage := ContextUsage{
+		SystemTokens:  systemTokens,
+		ToolTokens:    toolTokens,
+		MessageTokens: messageTokens,
+		Tokens:        systemTokens + messageTokens + toolTokens,
+	}
+	if entry, ok := capabilities.Lookup(model); ok && entry.ContextWindow != nil {
+		usage.WindowTokens = *entry.ContextWindow
+	}
+	return usage
 }

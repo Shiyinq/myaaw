@@ -9,7 +9,7 @@ This guide covers how to connect agents in practice:
 
 For protocol concepts and internals, see [a2a-protocol.md](a2a-protocol.md). For the day-to-day guide, see [a2a.md](a2a.md).
 
-> In this document, "Myaaw agent" means an agent server built from this project: `myaaw --agent <name> server start`, with its own `~/.myaaw/<name>/` directory, database, tools, and skills.
+> In this document, "Myaaw agent" means an agent server built from this project: `myaaw --agent <name> server start`, with its own `~/.myaaw/agents/<name>/` directory, database, tools, and skills.
 
 ## 0. The four cases at a glance
 
@@ -31,7 +31,7 @@ Every A2A connection needs the same four things.
 | **A credential** | A bearer token in the receiver's `.env`; optionally a named caller with scopes. If every credential variable is empty, the endpoint is **open** and should only be used locally. |
 | **A configured agent** | The receiver must have a working LLM provider, because it runs its own agent loop to answer. |
 
-Ports come from `PORT` in `~/.myaaw/<agent>/.env`. In the examples below, the receiver is **B** and the caller is **A**. All JSON-RPC requests need the `A2A-Version: 1.0` header.
+Ports come from `PORT` in `~/.myaaw/agents/<agent>/.env`. In the examples below, the receiver is **B** and the caller is **A**. All JSON-RPC requests need the `A2A-Version: 1.0` header.
 
 ## 2. Myaaw ↔ Myaaw on the same machine
 
@@ -488,7 +488,7 @@ Input file parts use a `raw` part (base64) with `filename` and `mediaType`:
 ```
 
 - Maximum 10 file parts per message.
-- Maximum 5 MiB per decoded file, and 8 MiB of inline file bytes per message. Base64 inflates raw bytes by about 4/3, so the server body limit defaults to 16 MiB (`A2A_MAX_REQUEST_BYTES`). Use `url` parts for larger payloads.
+- Maximum 5 MiB per decoded file, and 8 MiB of inline file bytes per message. Base64 inflates raw bytes by about 4/3, so the server body limit defaults to 32 MiB (`A2A_MAX_REQUEST_BYTES`), leaving room for chat attachments too. Use `url` parts for larger payloads.
 - `image/*` is passed to the model as an image.
 - Other files are written to the task directory and referenced by path.
 
@@ -602,20 +602,20 @@ REST errors use `google.rpc.Status` (`error.code`, `error.status`, `error.detail
 Logs:
 
 ```bash
-tail -f ~/.myaaw/<agent>/logs/myaaw-server-<agent>.log
+tail -f ~/.myaaw/agents/<agent>/logs/myaaw-server-<agent>.log
 ```
 
 Inspect tasks:
 
 ```bash
-sqlite3 ~/.myaaw/<agent>/database/myaaw.db \
+sqlite3 ~/.myaaw/agents/<agent>/database/myaaw.db \
   "select id, caller, status, context_id from a2a_tasks order by created_at desc limit 10;"
 ```
 
 ## 8. Security checklist
 
 - Use one token per caller (`A2A_CALLERS`) instead of one shared `A2A_TOKEN`.
-- Never commit `~/.myaaw/<agent>/.env` or `contacts.json`.
+- Never commit `~/.myaaw/agents/<agent>/.env` or `contacts.json`.
 - Keep `contacts.json` and signing keys at mode `0600`.
 - Use HTTPS across hosts; bearer tokens are plaintext over HTTP.
 - Pin peer public keys with `A2A_TRUSTED_KEYS` to verify signed Agent Cards.

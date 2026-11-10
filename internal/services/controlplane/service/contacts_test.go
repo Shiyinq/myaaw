@@ -81,6 +81,100 @@ func TestContactServiceCRUD(t *testing.T) {
 	}
 }
 
+func TestContactServiceUpdate(t *testing.T) {
+	setupConfigAgent(t, nil)
+	svc := NewContactService()
+
+	if _, err := svc.Create("myfriend", ContactInput{
+		Name:        "remote",
+		URL:         "https://example.com/a2a",
+		Token:       "secret-token",
+		Description: "Remote agent",
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Only the fields in the body change; the token stays configured.
+	newURL := "https://other.example/a2a"
+	description := "Updated agent"
+	view, err := svc.Update("myfriend", "remote", ContactUpdate{URL: &newURL, Description: &description})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if view.URL != newURL || view.Description != description {
+		t.Fatalf("view = %+v", view)
+	}
+	if !view.Token.Configured {
+		t.Fatal("update without a token must keep the stored one")
+	}
+
+	// A non-empty token replaces it, an empty one leaves it alone.
+	replacement := "new-token"
+	empty := ""
+	if _, err := svc.Update("myfriend", "remote", ContactUpdate{Token: &empty}); err != nil {
+		t.Fatalf("Update empty token: %v", err)
+	}
+	stored := readContactsFile(t)
+	if len(stored) != 1 || stored[0].Token != "secret-token" {
+		t.Fatalf("stored after empty token = %+v", stored)
+	}
+	if _, err := svc.Update("myfriend", "remote", ContactUpdate{Token: &replacement}); err != nil {
+		t.Fatalf("Update token: %v", err)
+	}
+	if stored := readContactsFile(t); stored[0].Token != "new-token" {
+		t.Fatalf("stored = %+v", stored)
+	}
+
+	// clear_token removes it.
+	if _, err := svc.Update("myfriend", "remote", ContactUpdate{ClearToken: true}); err != nil {
+		t.Fatalf("Update clear token: %v", err)
+	}
+	if stored := readContactsFile(t); stored[0].Token != "" {
+		t.Fatalf("stored after clear = %+v", stored)
+	}
+
+	// Renaming is allowed, and colliding with another contact is not.
+	renamed := "remote-renamed"
+	if _, err := svc.Update("myfriend", "remote", ContactUpdate{Name: &renamed}); err != nil {
+		t.Fatalf("Update name: %v", err)
+	}
+	if view, err := svc.Update("myfriend", "remote-renamed", ContactUpdate{Name: &renamed}); err != nil || view.Name != "remote-renamed" {
+		t.Fatalf("case-only rename = %+v, %v", view, err)
+	}
+	if _, err := svc.Create("myfriend", ContactInput{Name: "other", URL: "https://other.example/a2a"}); err != nil {
+		t.Fatalf("Create other: %v", err)
+	}
+	if _, err := svc.Update("myfriend", "other", ContactUpdate{Name: &renamed}); !errors.Is(err, ErrContactNameTaken) {
+		t.Fatalf("err = %v, want ErrContactNameTaken", err)
+	}
+
+	// Invalid input and a missing contact are reported as such.
+	badURL := "not-a-url"
+	if _, err := svc.Update("myfriend", "other", ContactUpdate{URL: &badURL}); !errors.Is(err, ErrInvalidContact) {
+		t.Fatalf("err = %v, want ErrInvalidContact", err)
+	}
+	if _, err := svc.Update("myfriend", "gone", ContactUpdate{}); !errors.Is(err, ErrContactNotFound) {
+		t.Fatalf("err = %v, want ErrContactNotFound", err)
+	}
+}
+
+func readContactsFile(t *testing.T) []ContactEntry {
+	t.Helper()
+	path, err := agentdir.ContactsPath("myfriend")
+	if err != nil {
+		t.Fatalf("ContactsPath: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read contacts: %v", err)
+	}
+	var stored []ContactEntry
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatalf("unmarshal contacts: %v", err)
+	}
+	return stored
+}
+
 func TestContactServiceInvalidFile(t *testing.T) {
 	agentRoot := setupConfigAgent(t, nil)
 	path := filepath.Join(agentRoot, "contacts.json")

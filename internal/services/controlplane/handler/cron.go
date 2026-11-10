@@ -111,6 +111,29 @@ func (h *Handler) CronHistory(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"history": history})
 }
 
+// CronHistoryAll returns the most recent runs across every job, including jobs
+// that were removed after their last run.
+// @Summary      Cron history for every job
+// @Tags         Cron
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        limit query int false "Page size (default 20, max 200)"
+// @Param        offset query int false "Entries to skip"
+// @Success      200 {object} service.CronRunPage
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /agents/{name}/cron/history [get]
+func (h *Handler) CronHistoryAll(c fiber.Ctx) error {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	page, err := h.cron.HistoryAll(c.Params("name"), limit, offset)
+	if err != nil {
+		return cronError(c, err)
+	}
+	return c.JSON(page)
+}
+
 func cronError(c fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, service.ErrCronJobNotFound):

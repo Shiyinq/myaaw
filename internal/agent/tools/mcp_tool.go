@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -118,7 +119,14 @@ func formatMCPResult(toolName string, result *mcp.CallToolResult) StructuredResu
 			text.WriteString(c.Text)
 			text.WriteString("\n")
 		case *mcp.ImageContent:
-			images = append(images, ImageResult{MimeType: c.MIMEType, Data: string(c.Data)})
+			if len(c.Data) == 0 {
+				continue
+			}
+			// c.Data holds the decoded bytes; a data: URL needs base64 text.
+			images = append(images, ImageResult{
+				MimeType: c.MIMEType,
+				Data:     base64.StdEncoding.EncodeToString(c.Data),
+			})
 		default:
 			fmt.Fprintf(&text, "[%T content]\n", c)
 		}

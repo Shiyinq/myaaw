@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"myaaw/internal/thinking"
+
 	"github.com/go-resty/resty/v2"
 )
 
@@ -19,7 +21,38 @@ type openAICompatConfig struct {
 	baseURL      string
 	apiKey       string
 	defaultModel string
+	// variant selects provider-specific wire fields. "" and "openai" share the
+	// standard shape; "deepseek" adds thinking.type.
+	variant      string
 	includeUsage bool
+}
+
+// compatVariant derives the wire variant from the endpoint host.
+func compatVariant(baseURL string) string {
+	if strings.Contains(strings.ToLower(baseURL), "deepseek") {
+		return "deepseek"
+	}
+	return "openai"
+}
+
+// applyThinking writes the resolved reasoning spec onto a chat completions
+// request. It is a no-op when the catalog does not mark the model as reasoning
+// capable (ok=false), which keeps non-thinking models on a clean request.
+func applyThinking(req *OpenAIRequest, cfg openAICompatConfig, model string, spec thinking.Spec) {
+	if cfg.variant == "deepseek" {
+		if !spec.Enabled {
+			req.Thinking = &OpenAIThinking{Type: "disabled"}
+			return
+		}
+		req.Thinking = &OpenAIThinking{Type: "enabled"}
+		req.ReasoningEffort = spec.Level
+		return
+	}
+	if !spec.Enabled {
+		req.ReasoningEffort = "none"
+		return
+	}
+	req.ReasoningEffort = spec.Level
 }
 
 func (c openAICompatConfig) model(modelName string) string {
@@ -61,6 +94,9 @@ func streamOpenAICompatible(
 	}
 	if cfg.includeUsage {
 		req.StreamOptions = &OpenAIStreamOptions{IncludeUsage: true}
+	}
+	if spec, ok := thinking.Resolve(req.Model, thinking.Level(ctx), false); ok {
+		applyThinking(&req, cfg, req.Model, spec)
 	}
 
 	timeout := streamRequestTimeout()
@@ -278,6 +314,9 @@ func chatOpenAICompatible(
 	req := OpenAIRequest{
 		Model:    cfg.model(modelName),
 		Messages: messagesToOpenAIMessages(messages),
+	}
+	if spec, ok := thinking.Resolve(req.Model, thinking.Level(ctx), false); ok {
+		applyThinking(&req, cfg, req.Model, spec)
 	}
 	if len(tools) > 0 {
 		req.Tools = tools

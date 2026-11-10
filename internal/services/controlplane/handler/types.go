@@ -14,14 +14,16 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Token     string `json:"token" example:"a1b2c3"`
-	ExpiresAt string `json:"expires_at" example:"2026-10-20T20:00:00Z"`
-	UserID    int    `json:"user_id" example:"0"`
+	Token              string `json:"token" example:"a1b2c3"`
+	ExpiresAt          string `json:"expires_at" example:"2026-10-20T20:00:00Z"`
+	UserID             int    `json:"user_id" example:"0"`
+	MustChangePassword bool   `json:"must_change_password" example:"false"`
 }
 
 type UsernameResponse struct {
-	Username string `json:"username" example:"myaaw"`
-	UserID   int    `json:"user_id" example:"0"`
+	Username           string `json:"username" example:"myaaw"`
+	UserID             int    `json:"user_id" example:"0"`
+	MustChangePassword bool   `json:"must_change_password" example:"false"`
 }
 
 type ChangePasswordRequest struct {
@@ -104,10 +106,20 @@ type PatchMCPRequest struct {
 
 // ChatRequest mirrors the agent chat request for documentation purposes.
 type ChatRequest struct {
-	UserID         int      `json:"user_id" example:"0"`
-	Text           string   `json:"text" example:"Check my workspace"`
-	Images         []string `json:"images,omitempty"`
-	ConversationID string   `json:"conversation_id,omitempty" example:"conv-id or NEW"`
+	UserID int    `json:"user_id" example:"0"`
+	Text   string `json:"text" example:"Check my workspace"`
+	// RequestID lets the client stop this run with POST /agents/{name}/chat/stop.
+	RequestID      string     `json:"request_id,omitempty" example:"3f0c6b0e-9a51-4e7f-b2f4-4f0f2c1f9a11"`
+	Images         []string   `json:"images,omitempty"`
+	Files          []ChatFile `json:"files,omitempty"`
+	ConversationID string     `json:"conversation_id,omitempty" example:"conv-id or NEW"`
+}
+
+// ChatFile is one uploaded document in a chat request.
+type ChatFile struct {
+	Name       string `json:"name"`
+	MimeType   string `json:"mime_type,omitempty"`
+	DataBase64 string `json:"data_base64"`
 }
 
 // ChatResponse mirrors the agent server response for documentation purposes.
@@ -165,6 +177,11 @@ type RenameConversationRequest struct {
 	Title string `json:"title" example:"Workspace cleanup"`
 }
 
+type MarkReadRequest struct {
+	// At is the newest turn being acknowledged, as RFC3339. Omitted means now.
+	At string `json:"at,omitempty" example:"2026-11-06T15:00:00Z"`
+}
+
 type RenameConversationResponse struct {
 	OK    bool   `json:"ok" example:"true"`
 	ID    string `json:"id"`
@@ -185,18 +202,24 @@ type LogsResponse struct {
 }
 
 type CreateProviderRequest struct {
-	Name         string `json:"name" example:"openai"`
-	Type         string `json:"type" example:"openai"`
-	BaseURL      string `json:"base_url,omitempty" example:"https://api.openai.com"`
-	APIKey       string `json:"api_key,omitempty"`
-	DefaultModel string `json:"default_model,omitempty" example:"gpt-4o"`
+	Name          string `json:"name" example:"openai"`
+	Type          string `json:"type" example:"openai"`
+	BaseURL       string `json:"base_url,omitempty" example:"https://api.openai.com"`
+	APIKey        string `json:"api_key,omitempty"`
+	AuthMode      string `json:"auth_mode,omitempty"`
+	CredentialID  string `json:"credential_id,omitempty"`
+	DefaultModel  string `json:"default_model,omitempty" example:"gpt-4o"`
+	ThinkingLevel string `json:"thinking_level,omitempty" example:"medium"`
 }
 
 type UpdateProviderRequest struct {
-	Type         *string `json:"type,omitempty"`
-	BaseURL      *string `json:"base_url,omitempty"`
-	APIKey       *string `json:"api_key,omitempty"`
-	DefaultModel *string `json:"default_model,omitempty"`
+	Type          *string `json:"type,omitempty"`
+	BaseURL       *string `json:"base_url,omitempty"`
+	APIKey        *string `json:"api_key,omitempty"`
+	AuthMode      *string `json:"auth_mode,omitempty"`
+	CredentialID  *string `json:"credential_id,omitempty"`
+	DefaultModel  *string `json:"default_model,omitempty"`
+	ThinkingLevel *string `json:"thinking_level,omitempty" example:"medium"`
 }
 
 type SetDefaultProviderRequest struct {

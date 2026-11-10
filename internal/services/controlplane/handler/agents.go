@@ -92,6 +92,83 @@ func (h *Handler) ChatStream(c fiber.Ctx) error {
 	return nil
 }
 
+// ChatStop proxies a stop request to the selected agent.
+// @Summary      Stop a running chat
+// @Description  Cancels the run started with the same request_id. The partial transcript is kept and the run stops spending provider tokens.
+// @Tags         Chat
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        request body object true "Request id: {\"request_id\":\"...\"}"
+// @Success      200 {object} map[string]bool
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Failure      502 {object} common.ErrorResponse
+// @Router       /agents/{name}/chat/stop [post]
+func (h *Handler) ChatStop(c fiber.Ctx) error {
+	if err := h.proxy.ChatStop(c, c.Params("name"), h.auth.UserID()); err != nil {
+		return proxyError(c, err)
+	}
+	return nil
+}
+
+// ChatRuns proxies the list of runs a client can attach to.
+// @Summary      List chat runs
+// @Description  Lists the runs of the agent, newest first. Finished runs stay listed for a while so a reloaded tab can still replay their tail.
+// @Tags         Chat
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        conversation_id query string false "Only runs of this conversation"
+// @Success      200 {object} map[string]interface{}
+// @Failure      404 {object} common.ErrorResponse
+// @Failure      502 {object} common.ErrorResponse
+// @Router       /agents/{name}/chat/runs [get]
+func (h *Handler) ChatRuns(c fiber.Ctx) error {
+	if err := h.proxy.ChatRuns(c, c.Params("name")); err != nil {
+		return proxyError(c, err)
+	}
+	return nil
+}
+
+// ChatRunStream attaches to one run and relays its events.
+// @Summary      Attach to a chat run
+// @Description  Streams the events of a running (or recently finished) run, replaying everything after `after`. The run keeps going when this connection drops.
+// @Tags         Chat
+// @Produce      text/event-stream
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        id   path string true "Request id of the run"
+// @Param        after query int false "Skip events before this index" default(0)
+// @Success      200
+// @Failure      404 {object} common.ErrorResponse
+// @Failure      502 {object} common.ErrorResponse
+// @Router       /agents/{name}/chat/run/{id}/stream [get]
+func (h *Handler) ChatRunStream(c fiber.Ctx) error {
+	if err := h.proxy.ChatRunStream(c, c.Params("name"), c.Params("id")); err != nil {
+		return proxyError(c, err)
+	}
+	return nil
+}
+
+// Events streams conversation updates for the selected agent.
+// @Summary      Conversation events
+// @Description  Server-Sent Events: a `conversation.updated` event is emitted when a cron, heartbeat, or sub-agent turn lands. The client re-reads the transcript.
+// @Tags         Chat
+// @Produce      text/event-stream
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Success      200
+// @Failure      502 {object} common.ErrorResponse
+// @Router       /agents/{name}/events [get]
+func (h *Handler) Events(c fiber.Ctx) error {
+	if err := h.proxy.Events(c, c.Params("name")); err != nil {
+		return proxyError(c, err)
+	}
+	return nil
+}
+
 // ApprovalDecision proxies a tool approval decision to the selected agent.
 // @Summary      Resolve a tool approval
 // @Description  Forwards the decision to the agent that owns the pending run.

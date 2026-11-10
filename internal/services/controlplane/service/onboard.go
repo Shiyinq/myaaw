@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"myaaw/internal/agentdir"
+	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/config"
 	"myaaw/internal/onboard"
 	"myaaw/internal/provider"
@@ -17,6 +18,8 @@ type OnboardProviderInput struct {
 	Type         string `json:"type" example:"openai"`
 	BaseURL      string `json:"base_url,omitempty" example:"https://api.deepseek.com"`
 	APIKey       string `json:"api_key,omitempty"`
+	AuthMode     string `json:"auth_mode,omitempty"`
+	CredentialID string `json:"credential_id,omitempty"`
 	DefaultModel string `json:"model,omitempty" example:"deepseek-chat"`
 }
 
@@ -32,10 +35,13 @@ type OnboardChannelsInput struct {
 
 // OnboardHeartbeatInput configures the periodic self-check.
 type OnboardHeartbeatInput struct {
-	Active  bool   `json:"active"`
-	Channel string `json:"channel,omitempty" example:"telegram"`
-	To      string `json:"to,omitempty" example:"123456789"`
-	Every   string `json:"every,omitempty" example:"30m"`
+	Active    bool   `json:"active"`
+	Channel   string `json:"channel,omitempty" example:"telegram"`
+	To        string `json:"to,omitempty" example:"123456789"`
+	ThreadID  string `json:"thread_id,omitempty" example:"77"`
+	SessionID string `json:"session_id,omitempty" example:"0f4e8b3a-1111-4222-8333-944455556666"`
+	ChatType  string `json:"chat_type,omitempty" example:"dm"`
+	Every     string `json:"every,omitempty" example:"30m"`
 }
 
 // OnboardBotInput configures access and owner IDs.
@@ -54,6 +60,10 @@ type OnboardRequest struct {
 	Channels     *OnboardChannelsInput  `json:"channels,omitempty"`
 	Heartbeat    *OnboardHeartbeatInput `json:"heartbeat,omitempty"`
 	Bot          *OnboardBotInput       `json:"bot,omitempty"`
+	// AgentColor is the palette key the dashboard draws this agent with. Omitted
+	// keeps whatever the registry already holds, so a reconfigure never resets
+	// a colour the user picked earlier.
+	AgentColor *string `json:"agent_color,omitempty"`
 }
 
 // OnboardResult reports what was written.
@@ -71,6 +81,16 @@ func (s *AgentService) Onboard(name string, req OnboardRequest) (OnboardResult, 
 	}
 	existed := agentdir.AgentInitialized(name)
 
+	// The palette key is validated before anything is created: a bad one must not
+	// leave a half-made agent behind while the call reports a failure.
+	iconColor := ""
+	if req.AgentColor != nil {
+		iconColor = strings.TrimSpace(*req.AgentColor)
+		if !agentdir.ValidAgentColor(iconColor) {
+			return OnboardResult{}, fmt.Errorf("%w: agent_color %q is not in the palette", ErrInvalidConfig, iconColor)
+		}
+	}
+
 	input, err := buildOnboardInput(name, req)
 	if err != nil {
 		return OnboardResult{}, err
@@ -78,18 +98,31 @@ func (s *AgentService) Onboard(name string, req OnboardRequest) (OnboardResult, 
 
 	// setActive is false: the API always targets an explicit agent and must not
 	// change the control-plane process's active agent.
-	if _, err := onboard.Initialize(name, false); err != nil {
+	a2aWarning, err := onboard.Initialize(name, false)
+	if err != nil {
 		return OnboardResult{}, err
 	}
-	if _, warnings, err := onboard.Apply(name, input, 0); err != nil {
+	_, warnings, err := onboard.Apply(name, input, 0)
+	if err != nil {
 		return OnboardResult{}, err
-	} else {
-		view, viewErr := NewConfigService().Config(name)
-		if viewErr != nil {
-			return OnboardResult{}, viewErr
+	}
+	// The registry entry exists only after Initialize, and the colour is written
+	// last: a failed apply must not leave a colour saved for a config that was
+	// never written.
+	if iconColor != "" {
+		if err := agentdir.SetAgentColor(name, iconColor); err != nil {
+			return OnboardResult{}, err
 		}
-		return OnboardResult{Created: !existed, Config: view, Warnings: warnings}, nil
 	}
+	if a2aWarning != nil {
+		warnings = append(warnings, "A2A contacts were not updated: "+a2aWarning.Error())
+	}
+
+	view, err := NewConfigService().Config(name)
+	if err != nil {
+		return OnboardResult{}, err
+	}
+	return OnboardResult{Created: !existed, Config: view, Warnings: warnings}, nil
 }
 
 func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
@@ -99,8 +132,8 @@ func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
 	if req.Provider != nil {
 		p := req.Provider
 		providerType := strings.ToLower(strings.TrimSpace(p.Type))
-		if providerType != "openai" && providerType != "gemini" {
-			return in, fmt.Errorf("%w: provider.type must be openai or gemini", ErrInvalidConfig)
+		if providerType != "openai" && providerType != "gemini" && providerType != chatgpt.ProviderType {
+			return in, fmt.Errorf("%w: provider.type must be openai, gemini, or openai_chatgpt", ErrInvalidConfig)
 		}
 		providerName := strings.TrimSpace(p.Name)
 		if providerName == "" {
@@ -112,44 +145,64 @@ func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
 			saved = existing.Providers[providerName]
 		}
 
-		baseURL := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
-		if baseURL == "" {
-			baseURL = saved.BaseURL
-		}
-		if baseURL == "" {
-			baseURL = provider.DefaultBaseURL(providerType)
-		}
-		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-			return in, fmt.Errorf("%w: provider base_url must start with http:// or https://", ErrInvalidConfig)
-		}
+		if providerType == chatgpt.ProviderType {
+			credentialID := strings.TrimSpace(p.CredentialID)
+			if credentialID == "" && saved.Type == providerType {
+				credentialID = saved.CredentialID
+			}
+			pc := config.ProviderConfig{Type: providerType, AuthMode: p.AuthMode, CredentialID: credentialID, APIKey: p.APIKey, BaseURL: p.BaseURL}
+			if err := onboard.NormalizeProviderAuth(&pc); err != nil {
+				return in, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+			}
+			model := strings.TrimSpace(p.DefaultModel)
+			if model == "" && saved.Type == providerType {
+				model = saved.DefaultModel
+			}
+			if model == "" {
+				return in, fmt.Errorf("%w: select a ChatGPT Subscription model from live discovery", ErrInvalidConfig)
+			}
+			in.ProviderName, in.ProviderType, in.ProviderModel = providerName, providerType, model
+			in.ProviderAuthMode, in.ProviderCredentialID = pc.AuthMode, pc.CredentialID
+		} else {
+			baseURL := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
+			if baseURL == "" {
+				baseURL = saved.BaseURL
+			}
+			if baseURL == "" {
+				baseURL = provider.DefaultBaseURL(providerType)
+			}
+			if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+				return in, fmt.Errorf("%w: provider base_url must start with http:// or https://", ErrInvalidConfig)
+			}
 
-		apiKey := strings.TrimSpace(p.APIKey)
-		if apiKey == "" {
-			apiKey = saved.APIKey
-		}
-		if onboard.IsTemplateValue(apiKey) {
-			apiKey = ""
-		}
-		if apiKey == "" {
-			return in, fmt.Errorf("%w: provider api_key is required", ErrInvalidConfig)
-		}
+			apiKey := strings.TrimSpace(p.APIKey)
+			if apiKey == "" {
+				apiKey = saved.APIKey
+			}
+			if onboard.IsTemplateValue(apiKey) {
+				apiKey = ""
+			}
+			if apiKey == "" {
+				return in, fmt.Errorf("%w: provider api_key is required", ErrInvalidConfig)
+			}
 
-		model := strings.TrimSpace(p.DefaultModel)
-		if model == "" {
-			model = saved.DefaultModel
-		}
-		if model == "" {
-			model = provider.DefaultModel(providerType)
-		}
-		if model == "" {
-			return in, fmt.Errorf("%w: provider model is required", ErrInvalidConfig)
-		}
+			model := strings.TrimSpace(p.DefaultModel)
+			if model == "" {
+				model = saved.DefaultModel
+			}
+			if model == "" {
+				model = provider.DefaultModel(providerType)
+			}
+			if model == "" {
+				return in, fmt.Errorf("%w: provider model is required", ErrInvalidConfig)
+			}
 
-		in.ProviderName = providerName
-		in.ProviderType = providerType
-		in.ProviderBaseURL = baseURL
-		in.ProviderAPIKey = apiKey
-		in.ProviderModel = model
+			in.ProviderName = providerName
+			in.ProviderType = providerType
+			in.ProviderBaseURL = baseURL
+			in.ProviderAPIKey = apiKey
+			in.ProviderModel = model
+		}
 	}
 
 	if req.Channels != nil {
@@ -200,8 +253,19 @@ func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
 			if d, err := time.ParseDuration(every); err != nil || d <= 0 {
 				return in, fmt.Errorf("%w: heartbeat.every must be a positive duration", ErrInvalidConfig)
 			}
+			threadID := strings.TrimSpace(h.ThreadID)
+			if err := onboard.ValidateThreadID(threadID); err != nil {
+				return in, fmt.Errorf("%w: heartbeat.thread_id: %v", ErrInvalidConfig, err)
+			}
+			chatType := strings.ToLower(strings.TrimSpace(h.ChatType))
+			if err := onboard.ValidateHeartbeatChatType(chatType); err != nil {
+				return in, fmt.Errorf("%w: heartbeat.chat_type: %v", ErrInvalidConfig, err)
+			}
 			in.HeartbeatChannel = channel
 			in.HeartbeatTo = to
+			in.HeartbeatThreadID = threadID
+			in.HeartbeatSessionID = strings.TrimSpace(h.SessionID)
+			in.HeartbeatChatType = chatType
 			in.HeartbeatEvery = every
 		}
 	}
@@ -219,12 +283,15 @@ func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
 		}
 	}
 
-	if len(req.Skills) > 0 {
+	if req.Skills != nil {
 		skills, err := onboard.ParseOnboardSelection(strings.Join(req.Skills, ","), onboard.BuiltinSkillNames(), "skills")
 		if err != nil {
 			return in, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 		}
 		in.Skills = skills
+		// An empty list is meaningful: it disables installed built-in skills
+		// without deleting their folders.
+		in.SkillsSet = true
 	}
 
 	if req.DisableTools != nil {

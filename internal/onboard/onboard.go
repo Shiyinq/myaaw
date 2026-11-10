@@ -24,28 +24,36 @@ import (
 // fields mean "leave the current value alone", matching the wizard's keep
 // semantics.
 type Input struct {
-	ProviderName       string
-	ProviderType       string
-	ProviderBaseURL    string
-	ProviderAPIKey     string
-	ProviderModel      string
-	TelegramToken      string
-	TelegramMode       string
-	TelegramWebhookURL string
-	DiscordToken       string
-	DisableTelegram    bool
-	DisableDiscord     bool
-	BotType            string
-	Heartbeat          bool
-	HeartbeatSet       bool
-	HeartbeatChannel   string
-	HeartbeatTo        string
-	HeartbeatEvery     string
-	OwnerIDs           []string
-	OwnersSet          bool
-	Skills             []string
-	DisabledTools      []string
-	UpdateTools        bool
+	ProviderName         string
+	ProviderType         string
+	ProviderBaseURL      string
+	ProviderAPIKey       string
+	ProviderAuthMode     string
+	ProviderCredentialID string
+	ProviderModel        string
+	TelegramToken        string
+	TelegramMode         string
+	TelegramWebhookURL   string
+	DiscordToken         string
+	DisableTelegram      bool
+	DisableDiscord       bool
+	BotType              string
+	Heartbeat            bool
+	HeartbeatSet         bool
+	HeartbeatChannel     string
+	HeartbeatTo          string
+	HeartbeatThreadID    string
+	HeartbeatSessionID   string
+	HeartbeatChatType    string
+	HeartbeatEvery       string
+	OwnerIDs             []string
+	OwnersSet            bool
+	Skills               []string
+	// SkillsSet means the caller managed the skills step: selected skills are
+	// installed, and installed built-in skills left unselected are disabled.
+	SkillsSet     bool
+	DisabledTools []string
+	UpdateTools   bool
 }
 
 // Initialize creates the agent layout, registers it, assigns a port, and wires
@@ -116,11 +124,22 @@ func Apply(name string, in Input, port int) (*config.Config, []string, error) {
 	SanitizeConfig(cfg)
 
 	merged := MergeConfig(cfg, in)
+	if in.ProviderName != "" {
+		p := merged.Providers[in.ProviderName]
+		if err := NormalizeProviderAuth(&p); err != nil {
+			return nil, nil, err
+		}
+		merged.Providers[in.ProviderName] = p
+	}
 	if err := SaveConfig(configPath, merged); err != nil {
 		return nil, nil, fmt.Errorf("write config.json: %w", err)
 	}
 
-	if err := InstallSkills(name, in.Skills); err != nil {
+	if in.SkillsSet {
+		if err := SyncSkills(name, in.Skills); err != nil {
+			return nil, nil, err
+		}
+	} else if err := InstallSkills(name, in.Skills); err != nil {
 		return nil, nil, err
 	}
 	if in.UpdateTools {
@@ -176,6 +195,8 @@ func MergeConfig(base *config.Config, in Input) *config.Config {
 			Type:         in.ProviderType,
 			BaseURL:      in.ProviderBaseURL,
 			APIKey:       in.ProviderAPIKey,
+			AuthMode:     in.ProviderAuthMode,
+			CredentialID: in.ProviderCredentialID,
 			DefaultModel: in.ProviderModel,
 		}
 		cfg.DefaultProvider = in.ProviderName
@@ -214,12 +235,36 @@ func MergeConfig(base *config.Config, in Input) *config.Config {
 
 	if in.HeartbeatSet {
 		if in.Heartbeat {
-			cfg.Heartbeat = config.HeartbeatConfig{
-				Active:  true,
-				Channel: in.HeartbeatChannel,
-				To:      in.HeartbeatTo,
-				Every:   in.HeartbeatEvery,
+			heartbeat := config.HeartbeatConfig{
+				Active:    true,
+				Channel:   in.HeartbeatChannel,
+				To:        in.HeartbeatTo,
+				Every:     in.HeartbeatEvery,
+				ThreadID:  in.HeartbeatThreadID,
+				SessionID: in.HeartbeatSessionID,
+				ChatType:  in.HeartbeatChatType,
 			}
+			// The wizard never asks for these, so keep the saved values when the
+			// destination has not moved and the caller did not override them.
+			if heartbeat.Channel == cfg.Heartbeat.Channel && heartbeat.To == cfg.Heartbeat.To {
+				if heartbeat.ThreadID == "" {
+					heartbeat.ThreadID = cfg.Heartbeat.ThreadID
+				}
+				if heartbeat.SessionID == "" {
+					heartbeat.SessionID = cfg.Heartbeat.SessionID
+				}
+				if heartbeat.ChatType == "" {
+					heartbeat.ChatType = cfg.Heartbeat.ChatType
+				}
+			}
+			// Keep only the fields that apply to the chosen channel.
+			if !strings.EqualFold(heartbeat.Channel, "telegram") {
+				heartbeat.ThreadID = ""
+			}
+			if !strings.EqualFold(heartbeat.Channel, "discord") {
+				heartbeat.ChatType = ""
+			}
+			cfg.Heartbeat = heartbeat
 		} else {
 			cfg.Heartbeat.Active = false
 		}
@@ -333,6 +378,30 @@ func ValidateChatID(value string) error {
 	return nil
 }
 
+// ValidateThreadID checks a Telegram forum message_thread_id.
+func ValidateThreadID(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return fmt.Errorf("thread ID %q must be numeric", value)
+		}
+	}
+	return nil
+}
+
+// ValidateHeartbeatChatType checks the optional dm/guild hint. Empty means the
+// channel default is used.
+func ValidateHeartbeatChatType(value string) error {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "dm", "guild":
+		return nil
+	}
+	return fmt.Errorf("chat type %q must be dm or guild", value)
+}
+
 // ParseOwnerIDs splits a comma-separated owner list, de-duplicating entries.
 func ParseOwnerIDs(raw string) ([]string, error) {
 	raw = strings.TrimSpace(raw)
@@ -414,8 +483,9 @@ func MergeOwnerIDs(groups ...[]string) []string {
 	return merged
 }
 
-// InstallSkills copies only the chosen skill templates. Existing folders are
-// never overwritten, and unselected skills are not created.
+// InstallSkills copies only the chosen skill templates and records them as
+// enabled in skills.json. Existing folders are never overwritten and unselected
+// skills are not created.
 func InstallSkills(name string, selected []string) error {
 	skillsDir, err := agentdir.SkillsDir(name)
 	if err != nil {
@@ -430,10 +500,12 @@ func InstallSkills(name string, selected []string) error {
 		known[skill] = true
 	}
 
+	updates := make(map[string]bool, len(selected))
 	for _, skill := range selected {
 		if !known[skill] {
 			return fmt.Errorf("unknown skill %q", skill)
 		}
+		updates[skill] = true
 		dest := filepath.Join(skillsDir, skill)
 		if _, statErr := os.Stat(dest); statErr == nil {
 			continue
@@ -446,7 +518,81 @@ func InstallSkills(name string, selected []string) error {
 			return fmt.Errorf("install skill %q: %w", skill, err)
 		}
 	}
-	return nil
+	return updateSkillsFilter(skillsDir, updates)
+}
+
+// SyncSkills applies a managed skills selection: the selected built-in skills
+// are installed and enabled, while installed built-in skills that are no longer
+// selected are disabled in skills.json. Folders are never deleted, so a skill
+// removed from the wizard can be enabled again without reinstalling it.
+func SyncSkills(name string, selected []string) error {
+	if err := InstallSkills(name, selected); err != nil {
+		return err
+	}
+
+	skillsDir, err := agentdir.SkillsDir(name)
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	builtin := make(map[string]bool)
+	for _, skill := range BuiltinSkillNames() {
+		builtin[skill] = true
+	}
+	chosen := make(map[string]bool, len(selected))
+	for _, skill := range selected {
+		chosen[skill] = true
+	}
+
+	updates := make(map[string]bool)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		skill := entry.Name()
+		// Leave user-authored skills alone: the wizard only manages built-ins.
+		if !builtin[skill] || chosen[skill] {
+			continue
+		}
+		updates[skill] = false
+	}
+	return updateSkillsFilter(skillsDir, updates)
+}
+
+// updateSkillsFilter merges enabled flags into skills.json, preserving every
+// other key. Nothing is written when there is nothing to change.
+func updateSkillsFilter(skillsDir string, updates map[string]bool) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	path := filepath.Join(skillsDir, "skills.json")
+	filter := map[string]bool{}
+	if data, err := os.ReadFile(path); err == nil {
+		if unmarshalErr := json.Unmarshal(data, &filter); unmarshalErr != nil {
+			filter = map[string]bool{}
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if filter == nil {
+		filter = map[string]bool{}
+	}
+	for skill, enabled := range updates {
+		filter[skill] = enabled
+	}
+
+	data, err := json.MarshalIndent(filter, "", "  ")
+	if err != nil {
+		return err
+	}
+	return WriteFileAtomic(path, append(data, '\n'))
 }
 
 // SaveToolSelection writes builtin_tools to tools/tools.json while preserving
@@ -571,7 +717,7 @@ func SaveConfig(path string, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	return WriteFileAtomic(path, append(data, '\n'))
+	return config.WriteConfigAtomic(path, append(data, '\n'))
 }
 
 func setupHome(targetDir string) error {
@@ -584,67 +730,55 @@ func setupHome(targetDir string) error {
 		configReady = true
 	}
 	if homeReady && configReady {
-		return ensurePriceFiles(targetDir)
+		return ensureInlinePriceOverrides(targetDir)
 	}
 	// Skills are opt-in: the template copy skips them and onboarding installs
-	// only the selected ones.
-	if err := extractEmbedDirExcept(myaaw.DefaultMyaawDir, ".myaaw", targetDir, "skills"); err != nil {
+	// only the selected ones. Shared model data lives in the global config folder,
+	// so new agents do not receive their own copies.
+	if err := extractEmbedDirExcept(myaaw.DefaultMyaawDir, ".myaaw", targetDir, "skills",
+		"config/model_prices.json", "config/tool_prices.json", "config/model_capabilities.json"); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Join(targetDir, "skills"), 0o755); err != nil {
 		return err
 	}
-	return ensurePriceFiles(targetDir)
-}
-
-// ensurePriceFiles adds the price tables to an agent that does not have them
-// yet. New agents are seeded from the embedded template; older agents with
-// inline prices get their own values written to the files so nothing is lost.
-// Existing files are never overwritten.
-func ensurePriceFiles(targetDir string) error {
-	dir := filepath.Join(targetDir, "config")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := agentdir.SeedGlobalDataFiles(); err != nil {
 		return err
 	}
+	return ensureInlinePriceOverrides(targetDir)
+}
 
-	var inline *config.Config
-	if data, err := os.ReadFile(filepath.Join(dir, "config.json")); err == nil {
-		var cfg config.Config
-		if json.Unmarshal(data, &cfg) == nil {
-			inline = &cfg
-		}
+// ensureInlinePriceOverrides preserves price maps that older agents kept inline
+// in config.json by writing them once as per-agent override files. New agents
+// have no inline prices and inherit the shared tables from ~/.myaaw/config.
+func ensureInlinePriceOverrides(targetDir string) error {
+	dir := filepath.Join(targetDir, "config")
+	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return nil
+	}
+	var cfg config.Config
+	if json.Unmarshal(data, &cfg) != nil || cfg.Observability == nil {
+		return nil
 	}
 
-	modelPath := filepath.Join(dir, "model_prices.json")
-	if _, err := os.Stat(modelPath); os.IsNotExist(err) {
-		if inline != nil && inline.Observability != nil && len(inline.Observability.ModelPrices) > 0 {
-			if err := config.WriteModelPricesFile(dir, inline.Observability.ModelPrices); err != nil {
+	if len(cfg.Observability.ModelPrices) > 0 {
+		path := filepath.Join(dir, config.ModelPricesFile)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := config.WriteModelPricesFile(dir, cfg.Observability.ModelPrices); err != nil {
 				return err
 			}
-		} else if err := writeEmbeddedPriceFile(dir, "model_prices.json"); err != nil {
-			return err
 		}
 	}
-
-	toolPath := filepath.Join(dir, "tool_prices.json")
-	if _, err := os.Stat(toolPath); os.IsNotExist(err) {
-		if inline != nil && inline.Observability != nil && len(inline.Observability.ToolPrices) > 0 {
-			if err := config.WriteToolPricesFile(dir, inline.Observability.ToolPrices); err != nil {
+	if len(cfg.Observability.ToolPrices) > 0 {
+		path := filepath.Join(dir, config.ToolPricesFile)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := config.WriteToolPricesFile(dir, cfg.Observability.ToolPrices); err != nil {
 				return err
 			}
-		} else if err := writeEmbeddedPriceFile(dir, "tool_prices.json"); err != nil {
-			return err
 		}
 	}
 	return nil
-}
-
-func writeEmbeddedPriceFile(dir, name string) error {
-	data, err := myaaw.DefaultMyaawDir.ReadFile(".myaaw/config/" + name)
-	if err != nil {
-		return err
-	}
-	return WriteFileAtomic(filepath.Join(dir, name), data)
 }
 
 func ensureEnvFile(path string) (bool, error) {
@@ -738,26 +872,33 @@ func extractEmbedDir(embeddedFS embed.FS, src string, dest string) error {
 func extractEmbedDirExcept(embeddedFS embed.FS, src string, dest string, skip ...string) error {
 	skipSet := make(map[string]bool, len(skip))
 	for _, name := range skip {
-		skipSet[name] = true
+		skipSet[path.Clean(name)] = true
 	}
+	return extractEmbedTree(embeddedFS, src, dest, "", skipSet)
+}
 
+// extractEmbedTree copies an embedded directory recursively. rel is the path
+// relative to the extraction root, so callers can skip individual nested files
+// (for example config/model_prices.json) without skipping the whole folder.
+func extractEmbedTree(embeddedFS embed.FS, src, dest, rel string, skip map[string]bool) error {
 	entries, err := embeddedFS.ReadDir(src)
 	if err != nil {
 		return err
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() && skipSet[entry.Name()] {
+		childRel := path.Join(rel, entry.Name())
+		if skip[childRel] {
 			continue
 		}
-		srcPath := filepath.Join(src, entry.Name())
+		srcPath := path.Join(src, entry.Name())
 		destPath := filepath.Join(dest, entry.Name())
 
 		if entry.IsDir() {
 			if err := os.MkdirAll(destPath, 0o755); err != nil {
 				return err
 			}
-			if err := extractEmbedDir(embeddedFS, srcPath, destPath); err != nil {
+			if err := extractEmbedTree(embeddedFS, srcPath, destPath, childRel, skip); err != nil {
 				return err
 			}
 			continue

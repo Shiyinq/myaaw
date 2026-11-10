@@ -1,7 +1,7 @@
 # 🔗 Myaaw (My AI Agent Well)
 
 <div align="center">
-  <img src="docs/images/mascot/myaaw.png" alt="Myaaw Mascot" width="200" />
+  <img src="docs/images/mascot/bloub-cat-idle2-encre-cycle.gif" alt="Myaaw Mascot" width="200" />
 
   [![Go Report Card](https://goreportcard.com/badge/github.com/Shiyinq/myaaw)](https://goreportcard.com/report/github.com/Shiyinq/myaaw)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -28,7 +28,13 @@
 
 ## 🤖 Supported Providers
 
-Myaaw currently focuses on delivering the best experience with **Google Gemini API**.
+Myaaw supports **Google Gemini API**, **OpenAI / OpenAI-compatible API-key providers**, and **ChatGPT Subscription** through official browser OAuth. See the [Provider Integration Guide](docs/provider/README.md) for detailed setup, protocol differences, capabilities, security, and troubleshooting for each integration.
+
+```sh
+myaaw --agent myfriend provider connect-chatgpt personal --default
+```
+
+ChatGPT Subscription requires a browser on the same machine as Myaaw. Host-global OAuth credentials stay outside agent backups; plan quotas apply and there is no automatic API-key fallback. See the [ChatGPT Subscription setup and privacy guide](docs/cli/chatgpt-subscription.md).
 
 
 ## 📡 Supported Channels
@@ -83,7 +89,7 @@ graph TD
     User --> API
 
     subgraph SHARED["~/.myaaw (shared state)"]
-        REG[(agents.json<br/>default agent + registry)]
+        REG[(config/agents.json<br/>default agent + registry)]
         PIDS[(pids/<br/>myaaw-server-AGENT.pid)]
         REG ~~~ PIDS
     end
@@ -196,13 +202,13 @@ graph TD
 
 Telegram and Discord payloads always pass through a queue first: **channel adapter → in-memory queue → queue consumer → that agent's own `POST /webhook/bot`**. The queue is an in-process Go channel, so each agent process has its own queue; messages can never move between agents. Cron and heartbeat are the exception: they call `POST /heartbeat` directly on their own server.
 
-Both processes share `~/.myaaw/agents.json` (registry and default agent) and `~/.myaaw/pids/` (one `myaaw-server-<agent>.pid` file per running server). Nothing else is shared: config, `.env`, SQLite, `home/`, skills, jobs, logs, and ports are per agent.
+Both processes share `~/.myaaw/config/agents.json` (registry and default agent) and `~/.myaaw/pids/` (one `myaaw-server-<agent>.pid` file per running server). Nothing else is shared: config, `.env`, SQLite, `home/`, skills, jobs, logs, and ports are per agent.
 
-`Agent Core` marks the components that belong to the agent itself (system prompt builder, event loop, transcript, tools, provider). The `System Prompt Builder` reads identity files from `home/` (`BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) and `skills/`, and Bot Service passes the resulting messages to the loop. `MEMORY.md` and `memory/` are not auto-injected: the agent reads and writes them through tools during a run, following the rules in `AGENTS.md`.
+`Agent Core` marks the components that belong to the agent itself (system prompt builder, event loop, transcript, tools, provider). The `System Prompt Builder` reads identity files from `home/` (`BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SECURITY.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) and `skills/`, and Bot Service passes the resulting messages to the loop. `MEMORY.md` and `memory/` are not auto-injected: the agent reads and writes them through tools during a run, following the rules in `AGENTS.md`.
 
 Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, and `home/`. `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
 
-The selection node resolves the active agent from `~/.myaaw/agents.json`. Telegram and Discord do not use it: each bot token already binds messages to one agent process. Only CLI sessions resolve `--agent` / picker / `MYAAW_AGENT`, and they use the selected agent's config, SQLite, and `home/`: `myaaw chat` drives the Bot Service and loop in its own process, `myaaw voice` goes straight to the provider, and `myaaw voice-classic` drives the loop with tools.
+The selection node resolves the active agent from `~/.myaaw/config/agents.json`. Telegram and Discord do not use it: each bot token already binds messages to one agent process. Only CLI sessions resolve `--agent` / picker / `MYAAW_AGENT`, and they use the selected agent's config, SQLite, and `home/`: `myaaw chat` drives the Bot Service and loop in its own process, `myaaw voice` goes straight to the provider, and `myaaw voice-classic` drives the loop with tools.
 
 ### Key Components
 
@@ -214,16 +220,18 @@ The selection node resolves the active agent from `~/.myaaw/agents.json`. Telegr
 6. **Message Queue (`internal/services/queue`)**: Handles asynchronous messaging using fast, native **Go Channels**. Polled or webhook payloads are pushed to the in-memory queue and processed by the Consumer worker to reliably deliver messages.
 7. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
 8. **Local Workspace (`~/.myaaw`)**: The operational directory for the Agent.
-   - `agents.json`: Registry of isolated agents and the default agent.
-   - `<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The first agent is named during onboarding; only legacy upgrades use `default/`.
+   - `config/`: Shared configuration — `agents.json` (registry and default agent), `controlplane.json` (credentials), and the model tables (`model_capabilities.json`, `model_prices.json`, `tool_prices.json`).
+   - `agents/<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The first agent is named during onboarding; only legacy upgrades use `default/`.
+     - `config/model_prices.json` / `config/tool_prices.json`: optional per-agent overrides, merged per key over the shared tables. New agents do not receive them, and model capabilities have no per-agent layer.
      - `home/`: Long-term file storage containing the agent's core definitions:
        - `AGENTS.md` / `SOUL.md`: Persona and behavior instructions.
+       - `SECURITY.md`: Hard security rules (input is untrusted, never trust a tag alone).
        - `BOOTSTRAP.md` / `TOOLS.md`: Initialization steps and tool usage rules.
        - `USER.md`: Facts and details learned about the user.
        - `HEARTBEAT.md`: Ongoing active background jobs and tasks.
        - `MEMORY.md` & `memory/`: Historical conversation summarizations and logs.
        - `workspace/`: All agent-created output. Coding projects live in `workspace/projects/` and downloads in `workspace/downloads/`; the home root stays reserved for identity and memory files.
-9. **Multi-Agent Runtime (`internal/agentdir`)**: Resolves the active agent from `--agent`, `MYAAW_AGENT`, or `agents.json`. Each agent process gets an isolated config, `.env`, SQLite database, home, workspace, skills, jobs, logs, cron, tools, channels, and server port.
+9. **Multi-Agent Runtime (`internal/agentdir`)**: Resolves the active agent from `--agent`, `MYAAW_AGENT`, or `config/agents.json`. Each agent process gets an isolated config, `.env`, SQLite database, home, workspace, skills, jobs, logs, cron, tools, channels, and server port.
 
 ## 🚀 Quick Start (Non-Technical)
 
@@ -238,7 +246,7 @@ If you just want to use Myaaw without worrying about code, use our interactive i
     ```bash
     myaaw onboard
     ```
-    On a fresh install the wizard asks for an **agent name** first — that name becomes the folder `~/.myaaw/<agent>/`, so you are not stuck with a generic `default/` agent. You can add more agents later with `myaaw agent create <name>` or `myaaw onboard` again.
+    On a fresh install the wizard asks for an **agent name** first — that name becomes the folder `~/.myaaw/agents/<agent>/`, so you are not stuck with a generic `default/` agent. You can add more agents later with `myaaw agent create <name>` or `myaaw onboard` again.
 
     For servers and CI, every wizard question has a flag, so the same setup can run headless:
     ```bash
@@ -253,6 +261,52 @@ If you just want to use Myaaw without worrying about code, use our interactive i
     ```bash
     myaaw status
     ```
+
+### 🖥 Optional Dashboard (WebUI)
+
+The dashboard is optional and can be installed with or without the binary. It is a Node.js app that talks to the control plane (`myaaw api`).
+
+**Install the dashboard without the binary (WebUI-first):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.sh | bash
+```
+
+On Windows (PowerShell), download the script and run it:
+
+```powershell
+irm https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.ps1 -OutFile webui-install.ps1
+powershell -ExecutionPolicy Bypass -File .\webui-install.ps1
+```
+
+With the unified installer: `... | bash -s -- --webui-only` (dashboard only) or `--webui` (binary + dashboard).
+
+Flags go after `bash -s --`. For example, a frontend-only dashboard served to other people, pointed at a remote control plane through a tunnel:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Shiyinq/myaaw/main/webui-install.sh \
+  | bash -s -- --connect https://control.example.com --public
+```
+
+| Flag | Meaning |
+| :--- | :--- |
+| `--connect <url>` | Control-plane URL to seed on the login page (alias: `--api-url`). |
+| `--port <port>` | Dashboard port (default `5050`). |
+| `--version <tag>` | Release tag to install (default: latest). |
+| `--public` | Public hosting: `/setup` returns `404`, and the default-credentials hint and the setup link are hidden on the login page. |
+
+The unified installer takes the same options: `... | bash -s -- --webui-only --connect https://control.example.com --public` (dashboard port and tag use `--webui-port` and `--webui-version`). On Windows, run the downloaded script with the same options: `.\webui-install.ps1 -Connect https://control.example.com -Public`. With the binary installed, `myaaw webui install --public` / `myaaw webui start --public` enable the same mode; visitor-facing details are in [WebUI Security](docs/webui/security.md).
+
+**Or, if the binary is already installed:**
+```bash
+myaaw api start          # control plane on 127.0.0.1:9000
+myaaw webui install      # download the WebUI bundle
+myaaw webui start
+myaaw webui open         # http://127.0.0.1:5050
+```
+
+On a host without the binary, open `/setup` from the dashboard to download and install it, then continue to sign in. First-time logins are sent to the profile page to change the seeded password before continuing.
+
+Requirements: Node.js 20+. The dashboard and the control plane bind to loopback by default. To reach a remote binary, use a tunnel (Tailscale, Cloudflare, ngrok) or SSH port-forward — see [Remote WebUI Connection](docs/webui/remote-connection.md) and [WebUI Security](docs/webui/security.md). The `/setup` binary download currently supports **linux/amd64** and **darwin/arm64** only; on other platforms, install `myaaw` manually.
 
 
 
@@ -394,25 +448,25 @@ The `myaaw` CLI is your control center for managing the AI assistant, infrastruc
 | `voice` | Start a real-time voice conversation (Gemini Live). Use `--video=screen,camera` to stream vision. |
 | `voice-classic` | Voice chat using STT → Agent → TTS pipeline. Supports tools. Use `--video=screen,camera` to stream vision.|
 | `status` | Check the health of SQLite and channel configs. |
-| `logs` | Interactive TUI to select and stream logs from `~/.myaaw/<agent>/logs/`. |
+| `logs` | Interactive TUI to select and stream logs from `~/.myaaw/agents/<agent>/logs/`. |
 
 ### CLI Project Context
 When `myaaw chat` or `myaaw voice-classic` starts, Myaaw treats the directory it was launched from as the active project and injects it as `## Current Directory` in the system prompt. The filesystem tool also registers that directory as an allowed project root, even when it has no marker files, so the agent can work on it in place without copying it into `workspace/`.
 
-Telegram and Discord sessions do not receive the server's working directory. New projects and downloads always go to `~/.myaaw/<agent>/home/workspace/`.
+Telegram and Discord sessions do not receive the server's working directory. New projects and downloads always go to `~/.myaaw/agents/<agent>/home/workspace/`.
 
-Agent data lives under `~/.myaaw/<agent>/`, for example:
+Agent data lives under `~/.myaaw/agents/<agent>/`, for example:
 
 ```text
-~/.myaaw/myfriend/config/config.json
-~/.myaaw/myfriend/.env
-~/.myaaw/myfriend/database/myaaw.db
+~/.myaaw/agents/myfriend/config/config.json
+~/.myaaw/agents/myfriend/.env
+~/.myaaw/agents/myfriend/database/myaaw.db
 ```
 
 For the complete guide, see [docs/agents/multi-agent.md](docs/agents/multi-agent.md).
 
 ### 🧩 Multiple Agents
-Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/<agent>/`. The first agent is named during `myaaw onboard`; names may contain letters, numbers, `_`, and `-`.
+Myaaw runs one isolated process per agent. Each agent has its own config, `.env`, database, memory, workspace, skills, logs, channels, and port under `~/.myaaw/agents/<agent>/`. The first agent is named during `myaaw onboard`; names may contain letters, numbers, `_`, and `-`.
 
 Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent guide](docs/agents/multi-agent.md#6-managing-agents).
 
@@ -423,7 +477,7 @@ Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent gu
 | **`chat`** | `--agent <name>`, `-m "text"` | Interactive chat shows an agent picker when more than one initialized agent exists. |
 | **`onboard`** | `--agent <name>` | Configure providers and channels for a specific agent. |
 | **`server`** | `start`, `stop`, `restart`, `status` | Each agent runs its own daemon (`myaaw-server-<agent>`) on its own `PORT`. |
-| **`provider`** | `create`, `list`, `default <name>`, `delete` | Providers are stored in `~/.myaaw/<agent>/config/config.json`. |
+| **`provider`** | `create`, `list`, `default <name>`, `delete` | Providers are stored in `~/.myaaw/agents/<agent>/config/config.json`. |
 | **`channel`** | `create`, `list`, `edit`, `delete` | Channel tokens are per agent; use a different Telegram/Discord token for each running agent. |
 
 **Examples:**
@@ -456,7 +510,7 @@ Back up agent data into portable `tar.gz` archives. Archives are written to `~/.
 
 | Command | Description |
 | :--- | :--- |
-| `myaaw backup` | Back up every initialized agent plus `agents.json` and `controlplane.json`. |
+| `myaaw backup` | Back up every initialized agent plus the shared config (`agents.json`, `controlplane.json`, and the model tables). |
 | `myaaw backup --agent agent-b` | Back up one agent. |
 | `myaaw backup --agent agent-b,agent-c -o ~/Backups` | Back up several agents to a custom directory. |
 | `myaaw backup --include-workspace --include-logs` | Include workspace and log files. |
@@ -478,7 +532,8 @@ Myaaw runs as a unified background service daemon.
 | Command | Subcommands | Description |
 | :--- | :--- | :--- |
 | **`server`** | `run`, `start`, `stop`, `status` | Manage the Myaaw Server (API + Background Workers) daemon. |
-| **`api`** | `run`, `start`, `stop`, `status`, `restart` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000). |
+| **`api`** | `run`, `start`, `stop`, `status`, `restart` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000, `--host` defaults to loopback). `--terminal` also allows the dashboard to open a shell on that host. |
+| **`webui`** | `install`, `run`, `start`, `stop`, `restart`, `status`, `update`, `rollback`, `uninstall`, `open` | Install and manage the optional dashboard (Node.js) separately from the binary. |
 | **`webhook`** | `set`, `info`, `delete` | Manage Telegram bot webhook configuration easily. |
 
 > [!TIP]
@@ -518,6 +573,15 @@ myaaw cron add --name "Meeting Remind" --at "30m" --message "Meeting in 30 mins"
 | **`update`** | - | Automatically check for and install the latest version via GitHub Releases. |
 | **`version`** | - | Show build version, commit hash, and system info. |
 
+## 🐱 Mascot
+
+The **Bloub** mascot — the monochrome cat, its expressions and its cycles — was
+drawn with [bloub](https://github.com/jeremy-prt/bloub), a study of the visual
+behaviour of the x.ai bot avatar (MIT, © Jérémy Perret). The cat shape is our own;
+the animation approach follows that project. Myaaw is not affiliated with, endorsed
+by or connected to x.ai, and “Grok” and “x.ai” belong to their owners. The MIT
+licence of this repository covers the code, not the mascot artwork.
+
 ## 📚 Documentation
 
 All guides are grouped by topic. Start with the [Documentation Index](docs/README.md).
@@ -528,6 +592,7 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | :--- | :--- |
 | [Multi-Agent Guide](docs/agents/multi-agent.md) | Registry, agent commands, per-agent config, channels, ports, and servers. |
 | [Agent Loop](docs/agents/agent-loop.md) | Event-driven `RunEvents` engine, transcript v2, compaction, and retries. |
+| [Thinking Levels](docs/agents/thinking.md) | Reasoning effort per provider: catalog data, resolver rules, and wire shapes for Gemini, OpenAI, DeepSeek, and ChatGPT. |
 | [Tool Approvals](docs/agents/approvals.md) | Approval policy, grants, and flows across CLI, Telegram, Discord, API, sub-agents, and A2A. |
 | [Agent Skills](docs/agents/skills.md) | `SKILL.md` skills: discovery, prompt injection, execution, and data isolation. |
 | [MCP & Custom Tools](docs/agents/mcp-and-custom-tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
@@ -535,6 +600,15 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | [A2A Protocol](docs/agents/protocol/a2a-protocol.md) | Agent Card discovery, task lifecycle, methods, streaming, and storage. |
 | [A2A Interop](docs/agents/protocol/a2a-interop.md) | Local, cross-server, and non-Myaaw peer connections. |
 | [A2A Spec Compliance](docs/agents/protocol/a2a-spec-compliance.md) | Validation against the A2A v1.0 specification. |
+
+### 🤖 Provider integrations
+
+| Document | Description |
+| :--- | :--- |
+| [Provider Integration Guide](docs/provider/README.md) | Compare integrations, per-agent settings, model discovery, authentication, and billing boundaries. |
+| [Gemini](docs/provider/gemini.md) | Native chat, tools, images, and separate Live/STT/TTS configuration. |
+| [OpenAI-compatible](docs/provider/openai-compatible.md) | OpenAI API keys, DeepSeek/gateways/local servers, endpoint construction, and Chat Completions compatibility. |
+| [ChatGPT Subscription](docs/provider/chatgpt-subscription.md) | Browser OAuth, credential lifecycle, Responses streaming, quotas, recovery, and security. |
 
 ### 🖥 CLI
 
@@ -546,7 +620,8 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | [Chat](docs/cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
 | [Voice](docs/cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |
 | [Service Management](docs/cli/service.md) | `server` daemon lifecycle, status, logs, and ports. |
-| [API](docs/cli/api.md) | `api run/start/stop/restart/status`, daemon name, and port handling. |
+| [API](docs/cli/api.md) | `api run/start/stop/restart/status`, `--host`, daemon name, and port handling. |
+| [WebUI](docs/cli/webui.md) | `webui install/run/start/stop/update/uninstall/open`, port, and control-plane URL. |
 | [Cron](docs/cli/cron.md) | Scheduled jobs: cron expressions, intervals, one-time runs, and history. |
 | [Backup & Restore](docs/cli/backup.md) | Per-agent archives, database snapshots, venv recipes, and verified restore. |
 | [Providers](docs/cli/provider.md) | LLM provider integrations and default models. |
@@ -560,8 +635,16 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 
 | Document | Description |
 | :--- | :--- |
-| [API](docs/api/api.md) | Per-agent `/api/chat` and `/api/chat/stream`, timeline items, and SSE events. |
+| [API](docs/api/api.md) | Per-agent `/api/chat`, `/api/chat/stream`, `/api/events`, timeline items, and SSE events. |
 | [Control Plane API](docs/api/control-plane.md) | `myaaw api`: auth, agent switching, chat proxy, files, providers, channels, logs, and cron. |
+| [Web Terminal](docs/api/terminal.md) | A real shell on the API host from the browser: `--terminal`, session lifecycle, and security. |
+
+### 🖥 WebUI
+
+| Document | Description |
+| :--- | :--- |
+| [Security](docs/webui/security.md) | Threat model, loopback, transport, tokens, CORS, terminal, and tunnel vs SSH. |
+| [Remote Connection](docs/webui/remote-connection.md) | Server URL, Tailscale/Cloudflare/ngrok/SSH, and the direct (Option A) connection. |
 
 ### 📚 Generated references
 

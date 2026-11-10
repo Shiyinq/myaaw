@@ -21,12 +21,13 @@ const approvalCallbackPrefix = "apv:"
 // ApprovalRequester sends approval prompts to a Telegram chat and waits for a
 // button press.
 type ApprovalRequester struct {
-	ChatID  int
-	ReplyTo int
+	ChatID   int
+	ThreadID int
+	ReplyTo  int
 }
 
-func NewApprovalRequester(chatID, replyTo int) *ApprovalRequester {
-	return &ApprovalRequester{ChatID: chatID, ReplyTo: replyTo}
+func NewApprovalRequester(chatID, threadID, replyTo int) *ApprovalRequester {
+	return &ApprovalRequester{ChatID: chatID, ThreadID: threadID, ReplyTo: replyTo}
 }
 
 func (r *ApprovalRequester) Request(ctx context.Context, req approvals.Request) (approvals.Decision, error) {
@@ -81,10 +82,11 @@ func (r *ApprovalRequester) send(req approvals.Request) (int, error) {
 	body := &TelegramSendMessage{
 		Text:             text,
 		ChatID:           r.ChatID,
+		MessageThreadID:  r.ThreadID,
 		ReplyToMessageID: r.ReplyTo,
 		ReplyMarkup:      keyboard,
 	}
-	status, err := SendTelegramRequest("sendMessage", body, r.ChatID)
+	status, err := SendTelegramRequest("sendMessage", body, r.ChatID, r.ThreadID)
 	if err != nil {
 		return 0, err
 	}
@@ -106,7 +108,7 @@ func (r *ApprovalRequester) finish(messageID int, req approvals.Request, decisio
 	if reason != "" {
 		text += " (" + reason + ")"
 	}
-	_, _ = EditTelegramMessage(r.ChatID, 0, messageID, text, "")
+	_, _ = EditTelegramMessage(r.ChatID, r.ThreadID, 0, messageID, text, "")
 }
 
 func decisionLabel(decision approvals.Decision) string {

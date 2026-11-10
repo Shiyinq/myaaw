@@ -66,8 +66,7 @@ func TestConfigResetApprovals(t *testing.T) {
 		t.Fatalf("Patch: %v", err)
 	}
 
-	reset := true
-	view, err := svc.ResetFields("myfriend", ConfigResetRequest{Approvals: &reset})
+	view, err := svc.ResetFields("myfriend", ConfigResetRequest{Approvals: wholeSection()})
 	if err != nil {
 		t.Fatalf("ResetFields: %v", err)
 	}

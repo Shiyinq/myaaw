@@ -145,15 +145,18 @@ func ConfigureForActiveAgent(cwd string) error {
 }
 
 // configureAllowedDirectories sets the sandbox roots for the filesystem tool.
-// It always allows the agent home, skills, and job-log directories, and adds the
-// detected project root when the process was launched from one.
+// It always allows the agent home, skills, job-log, and user-data directories,
+// and adds the detected project root when the process was launched from one.
 func configureAllowedDirectories(agentRoot, cwd string) string {
 	agentHome := filepath.Join(agentRoot, "home")
 	agentSkills := filepath.Join(agentRoot, "skills")
 	agentJobs := filepath.Join(agentRoot, "jobs")
+	// Files the user attaches in chat land under <root>/user/uploads; the tool
+	// must be able to read them, not just the bash tool.
+	agentUser := filepath.Join(agentRoot, "user")
 
 	defaultBaseDir = agentHome
-	allowedDirectories = []string{agentHome, agentSkills, agentJobs}
+	allowedDirectories = []string{agentHome, agentUser, agentSkills, agentJobs}
 
 	projectRoot := detectProjectRoot(cwd)
 	if homeDir, err := os.UserHomeDir(); err == nil && filepath.Clean(projectRoot) == filepath.Clean(homeDir) {

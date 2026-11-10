@@ -215,7 +215,7 @@ Service parameters are carried in gRPC metadata: `a2a-version` (required, `1.0`)
 
 ## 6. Contact registry and the `contact` tool
 
-Contacts live in `~/.myaaw/<agent>/contacts.json`:
+Contacts live in `~/.myaaw/agents/<agent>/contacts.json`:
 
 ```json
 [

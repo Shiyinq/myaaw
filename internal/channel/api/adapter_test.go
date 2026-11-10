@@ -1,6 +1,39 @@
 package api
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestParseIncomingImages(t *testing.T) {
+	adapter := NewAPIAdapter()
+
+	// One 1x1 PNG, base64 as the dashboard sends it.
+	const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+	// Images alone are a valid message; text is optional when images are present.
+	msg, err := adapter.ParseIncoming([]byte(`{"images":["` + png + `","` + png + `"]}`))
+	if err != nil {
+		t.Fatalf("ParseIncoming images: %v", err)
+	}
+	if len(msg.Images) != 2 || msg.Images[0] != png || msg.Text != "" {
+		t.Fatalf("message = %+v", msg)
+	}
+
+	if _, err := adapter.ParseIncoming([]byte(`{}`)); err == nil {
+		t.Fatal("a message without text or images should be rejected")
+	}
+
+	// Only image data is accepted, so a video or arbitrary blob never gets through.
+	if _, err := adapter.ParseIncoming([]byte(`{"images":["AAAA"]}`)); err == nil {
+		t.Fatal("non-image data should be rejected")
+	}
+
+	tooMany := `{"images":["` + strings.Repeat(png+`","`, 6) + png + `"]}`
+	if _, err := adapter.ParseIncoming([]byte(tooMany)); err == nil {
+		t.Fatal("more than six images should be rejected")
+	}
+}
 
 func TestParseIncomingMapsConversationID(t *testing.T) {
 	adapter := NewAPIAdapter()
@@ -38,5 +71,37 @@ func TestParseIncomingMapsConversationID(t *testing.T) {
 	}
 	if msg.ConversationID != "NEW" {
 		t.Fatalf("missing conversation id should start a new session, got %q", msg.ConversationID)
+	}
+}
+
+func TestParseIncomingRewind(t *testing.T) {
+	adapter := NewAPIAdapter()
+
+	// Regenerating sends no text: the stored last user message is the prompt.
+	msg, err := adapter.ParseIncoming([]byte(`{"conversation_id":"conv-1","rewind_user_offset":0}`))
+	if err != nil {
+		t.Fatalf("ParseIncoming regenerate: %v", err)
+	}
+	if msg.RewindUserOffset == nil || *msg.RewindUserOffset != 0 {
+		t.Fatalf("rewind = %v", msg.RewindUserOffset)
+	}
+	if msg.Text != "" || msg.TriggerType != "regenerate" {
+		t.Fatalf("message = %+v", msg)
+	}
+
+	// Editing an earlier turn carries the replacement text.
+	msg, err = adapter.ParseIncoming([]byte(`{"conversation_id":"conv-1","text":"fixed","rewind_user_offset":2}`))
+	if err != nil {
+		t.Fatalf("ParseIncoming edit: %v", err)
+	}
+	if msg.RewindUserOffset == nil || *msg.RewindUserOffset != 2 || msg.Text != "fixed" {
+		t.Fatalf("message = %+v", msg)
+	}
+	if msg.TriggerType != "edit" {
+		t.Fatalf("trigger = %q", msg.TriggerType)
+	}
+
+	if _, err := adapter.ParseIncoming([]byte(`{"conversation_id":"conv-1","rewind_user_offset":-1}`)); err == nil {
+		t.Fatal("a negative rewind offset should be rejected")
 	}
 }

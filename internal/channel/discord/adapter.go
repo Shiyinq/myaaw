@@ -21,12 +21,20 @@ import (
 type DiscordMeta struct {
 	ChannelID string
 	MessageID string
+	// UserID is the DM recipient. When ChannelID is empty and IsDM is set, Send
+	// opens (or reuses) the DM channel for this user.
+	UserID string
+	IsDM   bool
 }
 
 type DiscordAdapter struct {
 	session     *discordgo.Session
 	transport   discordTransport
+	dmResolver  dmAPI
 	handlerOnce sync.Once
+
+	dmMu       sync.Mutex
+	dmChannels map[string]string
 }
 
 func NewDiscordAdapter(token string) (*DiscordAdapter, error) {
@@ -34,9 +42,14 @@ func NewDiscordAdapter(token string) (*DiscordAdapter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error creating Discord session: %w", err)
 	}
+	// Guild channel messages carry no content unless the privileged Message
+	// Content intent is requested; the Developer Portal toggle alone is not
+	// enough. DMs work without it, which is why a bot can look half-broken.
+	session.Identify.Intents |= discordgo.IntentMessageContent
 	return &DiscordAdapter{
-		session:   session,
-		transport: newRetryingTransport(discordAPI{session: session}),
+		session:    session,
+		transport:  newRetryingTransport(discordAPI{session: session}),
+		dmChannels: map[string]string{},
 	}, nil
 }
 
@@ -95,9 +108,7 @@ func handleDiscordMessage(s *discordgo.Session, m *discordgo.MessageCreate, queu
 		return
 	}
 
-	userID, _ := strconv.Atoi(m.Author.ID)
-
-	var images []string
+	images := []string{}
 	for _, attachment := range m.Attachments {
 		if attachment.ContentType != "" && utils.IsImage(attachment.ContentType) {
 			base64Img, err := utils.DownloadFileToBase64(attachment.URL)
@@ -109,26 +120,21 @@ func handleDiscordMessage(s *discordgo.Session, m *discordgo.MessageCreate, queu
 		}
 	}
 
-	payload := map[string]interface{}{
-		"message": map[string]interface{}{
-			"from": map[string]interface{}{
-				"id": userID,
-			},
-			"chat": map[string]interface{}{
-				"id": m.ChannelID, // ChannelID is string
-			},
-			"message_id": m.ID,
-			"text":       m.Content,
-			"images":     images,
-		},
-		"original_source": "discord",
-		"discord_author": map[string]interface{}{
-			"id":       m.Author.ID,
-			"username": m.Author.Username,
-		},
+	// Name lookups are best-effort: a thread may not be cached by the state.
+	var (
+		channelInfo *discordgo.Channel
+		guildInfo   *discordgo.Guild
+	)
+	if cached, err := s.State.Channel(m.ChannelID); err == nil {
+		channelInfo = cached
+	}
+	if m.GuildID != "" {
+		if cached, err := s.State.Guild(m.GuildID); err == nil {
+			guildInfo = cached
+		}
 	}
 
-	rawPayload, _ := json.Marshal(payload)
+	rawPayload := buildMessagePayload(m, channelInfo, guildInfo, images)
 	envelope := &channel.QueueEnvelope{
 		Channel: "discord",
 		Payload: rawPayload,
@@ -142,6 +148,71 @@ func handleDiscordMessage(s *discordgo.Session, m *discordgo.MessageCreate, queu
 	}
 }
 
+// buildMessagePayload wraps a Discord message in the queue payload that
+// ParseIncoming reads back. Guild/channel names are best-effort: the gateway
+// state may not have a thread cached.
+func buildMessagePayload(m *discordgo.MessageCreate, channelInfo *discordgo.Channel, guildInfo *discordgo.Guild, images []string) []byte {
+	chatType := "guild"
+	if m.GuildID == "" {
+		chatType = "dm"
+	}
+
+	guildID := m.GuildID
+	channelName := ""
+	isThread := false
+	if channelInfo != nil {
+		if chatType != "dm" {
+			channelName = channelInfo.Name
+		}
+		if guildID == "" {
+			guildID = channelInfo.GuildID
+		}
+		isThread = channelInfo.IsThread()
+	}
+	guildName := ""
+	if guildInfo != nil {
+		guildName = guildInfo.Name
+	}
+
+	displayName := strings.TrimSpace(m.Author.GlobalName)
+	if displayName == "" {
+		displayName = strings.TrimSpace(m.Author.Username)
+	}
+
+	userID, _ := strconv.Atoi(m.Author.ID)
+	payload := map[string]interface{}{
+		"message": map[string]interface{}{
+			"from": map[string]interface{}{
+				"id":         userID,
+				"first_name": displayName,
+				"username":   m.Author.Username,
+			},
+			"chat": map[string]interface{}{
+				"id":        m.ChannelID,
+				"type":      chatType,
+				"name":      channelName,
+				"is_thread": isThread,
+			},
+			"guild": map[string]interface{}{
+				"id":   guildID,
+				"name": guildName,
+			},
+			"message_id": m.ID,
+			"text":       m.Content,
+			"images":     images,
+		},
+		"original_source": "discord",
+		"discord_author": map[string]interface{}{
+			"id":          m.Author.ID,
+			"username":    m.Author.Username,
+			"global_name": m.Author.GlobalName,
+		},
+	}
+
+	raw, _ := json.Marshal(payload)
+	return raw
+}
+
 func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMessage, error) {
 	// We construct a custom map structure in the listener, so we parse it back here.
 	var data struct {
@@ -149,13 +220,25 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 			Text      string   `json:"text"`
 			Images    []string `json:"images"`
 			MessageID string   `json:"message_id"`
-			Chat      struct {
-				ID string `json:"id"`
+			From      struct {
+				FirstName string `json:"first_name"`
+				Username  string `json:"username"`
+			} `json:"from"`
+			Chat struct {
+				ID       string `json:"id"`
+				Type     string `json:"type"`
+				Name     string `json:"name"`
+				IsThread bool   `json:"is_thread"`
 			} `json:"chat"`
+			Guild struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"guild"`
 		} `json:"message"`
 		DiscordAuthor struct {
-			ID       string `json:"id"`
-			Username string `json:"username"`
+			ID         string `json:"id"`
+			Username   string `json:"username"`
+			GlobalName string `json:"global_name"`
 		} `json:"discord_author"`
 	}
 
@@ -165,11 +248,28 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 
 	userID, _ := strconv.Atoi(data.DiscordAuthor.ID)
 
+	senderName := strings.TrimSpace(data.DiscordAuthor.GlobalName)
+	if senderName == "" {
+		senderName = strings.TrimSpace(data.Message.From.FirstName)
+	}
+	if senderName == "" {
+		senderName = strings.TrimSpace(data.DiscordAuthor.Username)
+	}
+
 	return &channel.IncomingMessage{
-		UserID:  userID,
-		Text:    data.Message.Text,
-		Images:  data.Message.Images,
-		Channel: "discord",
+		UserID:         userID,
+		SenderID:       strings.TrimSpace(data.DiscordAuthor.ID),
+		SenderName:     senderName,
+		SenderUsername: strings.TrimSpace(data.DiscordAuthor.Username),
+		Text:           data.Message.Text,
+		Images:         data.Message.Images,
+		Channel:        "discord",
+		ChatType:       strings.TrimSpace(data.Message.Chat.Type),
+		IsThread:       data.Message.Chat.IsThread,
+		ChatID:         strings.TrimSpace(data.Message.Chat.ID),
+		Scope:          discordScope(data.Message.Chat.Type, data.Message.Chat.ID),
+		ChatName:       strings.TrimSpace(data.Message.Guild.Name),
+		TopicName:      strings.TrimSpace(data.Message.Chat.Name),
 		RawMeta: DiscordMeta{
 			ChannelID: data.Message.Chat.ID,
 			MessageID: data.Message.MessageID,
@@ -179,12 +279,16 @@ func (d *DiscordAdapter) ParseIncoming(payload json.RawMessage) (*channel.Incomi
 
 func (d *DiscordAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMessage) error {
 	meta := msg.RawMeta.(DiscordMeta)
+	channelID, err := d.resolveChannel(meta)
+	if err != nil {
+		return err
+	}
 	items := buildDiscordTimeline(out.Trace, out.Text, out.Thought)
 	var sendErr error
 	if len(items) > 0 {
 		timeline := &discordTimeline{
 			transport: d.transportOrAPI(),
-			channelID: meta.ChannelID,
+			channelID: channelID,
 			replyTo:   meta.MessageID,
 			tools:     map[string]*discordTimelineItem{},
 			now:       time.Now,
@@ -200,10 +304,73 @@ func (d *DiscordAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoin
 		sendErr = timeline.err
 	}
 
-	if err := d.sendAttachments(meta.ChannelID, out.Attachments); err != nil && sendErr == nil {
+	if err := d.sendAttachments(channelID, out.Attachments); err != nil && sendErr == nil {
 		sendErr = err
 	}
 	return sendErr
+}
+
+// resolveChannel returns the channel to send to, opening a DM channel for a
+// user-targeted heartbeat or cron job when needed.
+func (d *DiscordAdapter) resolveChannel(meta DiscordMeta) (string, error) {
+	if meta.ChannelID != "" {
+		return meta.ChannelID, nil
+	}
+	if !meta.IsDM || meta.UserID == "" {
+		return "", fmt.Errorf("discord: no target channel")
+	}
+	return d.dmChannel(meta.UserID)
+}
+
+// dmAPI is the part of the Discord REST API needed to resolve a DM channel. It
+// is an interface so the fallback can be tested without a gateway connection.
+type dmAPI interface {
+	UserChannelCreate(recipientID string, options ...discordgo.RequestOption) (*discordgo.Channel, error)
+	Channel(channelID string, options ...discordgo.RequestOption) (*discordgo.Channel, error)
+}
+
+func (d *DiscordAdapter) dmAPIOrNil() dmAPI {
+	if d.dmResolver != nil {
+		return d.dmResolver
+	}
+	if d.session == nil {
+		return nil
+	}
+	return d.session
+}
+
+// dmChannel opens (or reuses) the direct-message channel for a user id. The
+// target may also be a DM channel id: a model reading the chat context can copy
+// ChatID instead of the speaker's UserID, so a confirmed DM channel is accepted
+// instead of failing with "Invalid Recipient(s)".
+func (d *DiscordAdapter) dmChannel(target string) (string, error) {
+	api := d.dmAPIOrNil()
+	if api == nil {
+		return "", fmt.Errorf("discord session is not available")
+	}
+	d.dmMu.Lock()
+	defer d.dmMu.Unlock()
+	if d.dmChannels == nil {
+		d.dmChannels = map[string]string{}
+	}
+	if id, ok := d.dmChannels[target]; ok {
+		return id, nil
+	}
+	channel, err := api.UserChannelCreate(target)
+	if err != nil {
+		// `to` may be a channel id even when chat_type says dm: a job created in
+		// one chat but aimed at another can inherit the wrong hint, and an
+		// operator can paste the channel id by hand. A user id never resolves as
+		// a channel, so whatever Discord returns is unambiguous.
+		if existing, lookupErr := api.Channel(target); lookupErr == nil && existing != nil {
+			log.Printf("discord: dm target %s is channel %s (type %d); delivering there instead", target, existing.ID, existing.Type)
+			d.dmChannels[target] = existing.ID
+			return existing.ID, nil
+		}
+		return "", fmt.Errorf("open discord dm: %w", err)
+	}
+	d.dmChannels[target] = channel.ID
+	return channel.ID, nil
 }
 
 func (d *DiscordAdapter) sendAttachments(channelID string, attachments []channel.Attachment) error {
@@ -245,19 +412,23 @@ func (d *DiscordAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(
 	if transport == nil {
 		return nil, fmt.Errorf("discord transport is not configured")
 	}
-
-	initialID, err := transport.SendReply(meta.ChannelID, meta.MessageID, "✨ Typing...")
+	channelID, err := d.resolveChannel(meta)
 	if err != nil {
 		return nil, err
 	}
 
-	timeline := newDiscordTimeline(transport, meta.ChannelID, meta.MessageID, initialID)
+	initialID, err := transport.SendReply(channelID, meta.MessageID, "✨ Typing...")
+	if err != nil {
+		return nil, err
+	}
+
+	timeline := newDiscordTimeline(transport, channelID, meta.MessageID, initialID)
 	err = streamFn(timeline.handleChunk)
 	timeline.finish()
 	if err != nil {
 		return nil, err
 	}
-	if err := d.sendAttachments(meta.ChannelID, timeline.attachments); err != nil {
+	if err := d.sendAttachments(channelID, timeline.attachments); err != nil {
 		return nil, err
 	}
 
@@ -278,7 +449,11 @@ func (d *DiscordAdapter) SendError(msg *channel.IncomingMessage, errText string)
 	if transport == nil {
 		return fmt.Errorf("discord transport is not configured")
 	}
-	_, err := transport.Send(meta.ChannelID, "❌ "+errText)
+	channelID, err := d.resolveChannel(meta)
+	if err != nil {
+		return err
+	}
+	_, err = transport.Send(channelID, "❌ "+errText)
 	return err
 }
 

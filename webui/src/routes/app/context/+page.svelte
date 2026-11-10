@@ -1,0 +1,221 @@
+<script lang="ts">
+	import { context as contextApi } from '$lib/apis/context';
+	import { agentSelection, toastStore } from '$lib/stores';
+	import { getErrorMessage } from '$lib/utils/api';
+	import { revealPane } from '$lib/utils/scroll';
+	import { useTranslation } from '$lib/i18n/useTranslation';
+	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
+	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import Markdown from '$lib/components/common/Markdown.svelte';
+	import { Eye, Pencil, Save } from 'lucide-svelte';
+	import type { ContextFile } from '$lib/types';
+
+	const { t } = useTranslation();
+
+	// Below lg the list and the editor share one scrolling page, so the editor is
+	// brought into view whenever a file further up is picked.
+	let detail = $state<HTMLElement | null>(null);
+
+	let files = $state<ContextFile[]>([]);
+	let path = $state('');
+	let content = $state('');
+	let loading = $state(false);
+	let saving = $state(false);
+	let error = $state('');
+	let editing = $state(false);
+	let loadKey = '';
+
+	let agent = $derived(agentSelection.selected);
+
+	async function load(currentAgent: string) {
+		loading = true;
+		error = '';
+		try {
+			const result = await contextApi.list(currentAgent);
+			files = result.files ?? [];
+			const next = files.find((file) => file.path === path) ?? files[0];
+			if (next) {
+				await open(currentAgent, next.path);
+			} else {
+				path = '';
+				content = '';
+				editing = false;
+			}
+		} catch (err) {
+			error = getErrorMessage(err);
+		} finally {
+			loading = false;
+		}
+	}
+
+	async function open(currentAgent: string, nextPath: string) {
+		const file = await contextApi.read(currentAgent, nextPath);
+		path = file.path;
+		content = file.content;
+		editing = false;
+	}
+
+	$effect(() => {
+		const currentAgent = agentSelection.selected;
+		const key = `${currentAgent}`;
+		if (!currentAgent || key === loadKey) return;
+		loadKey = key;
+		void load(currentAgent);
+	});
+
+	async function save() {
+		if (!agent || !path) return;
+		saving = true;
+		try {
+			await contextApi.write(agent, path, content);
+			toastStore.success(t('myaaw.context.saved'));
+			editing = false;
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			saving = false;
+		}
+	}
+
+	function groups() {
+		const map = new Map<string, ContextFile[]>();
+		for (const file of files) {
+			const list = map.get(file.folder) ?? [];
+			list.push(file);
+			map.set(file.folder, list);
+		}
+		return [...map.entries()];
+	}
+</script>
+
+<TopBarActions id="context-save">
+	{#snippet children()}
+		<TopBarButton
+			label={t('common.save')}
+			icon={Save}
+			onclick={save}
+			loading={saving}
+			disabled={!path}
+			variant="default"
+		/>
+	{/snippet}
+</TopBarActions>
+
+<div class="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+	{#if !agent}
+		<div class="w-full p-4 lg:p-6">
+			<Card>
+				<CardContent class="py-10 text-center text-sm text-muted-foreground">
+					{t('myaaw.agent.none')}
+				</CardContent>
+			</Card>
+		</div>
+	{:else}
+		<!-- Context files: a second sidebar nested inside the main one. -->
+		<aside
+			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+		>
+			<div class="shrink-0 border-b px-3 py-2.5">
+				<p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+					{t('myaaw.context.files')}
+				</p>
+			</div>
+			<div class="space-y-3 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+				{#if loading}
+					<p class="px-1 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
+				{:else if files.length === 0}
+					<p class="px-1 py-2 text-sm text-muted-foreground">{t('myaaw.context.empty')}</p>
+				{/if}
+				{#each groups() as [folder, list] (folder)}
+					<div class="space-y-1">
+						<p
+							class="px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+						>
+							{folder}
+						</p>
+						{#each list as file (file.path)}
+							<button
+								class={[
+									'block w-full truncate rounded-md px-2 py-1 text-left text-sm transition-colors list-row',
+									file.path === path
+										? 'bg-accent font-medium text-accent-foreground'
+										: 'hover:bg-muted'
+								]}
+								aria-current={file.path === path ? 'true' : undefined}
+								onclick={() => {
+									if (!agent) return;
+									revealPane(detail);
+									void open(agent, file.path);
+								}}
+							>
+								{file.name}
+							</button>
+						{/each}
+					</div>
+				{/each}
+			</div>
+		</aside>
+
+		<section bind:this={detail} class="flex flex-col p-4 lg:min-h-0 lg:flex-1 lg:p-6">
+			{#if error}
+				<div
+					class="mb-3 shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+				>
+					{error}
+				</div>
+			{/if}
+
+			<Card class="mx-auto flex w-full max-w-5xl flex-col max-lg:h-[60vh] lg:min-h-0 lg:flex-1">
+				<CardHeader class="flex shrink-0 flex-row items-center justify-between">
+					<div class="flex min-w-0 items-center gap-1">
+						<CardTitle class="truncate text-sm font-medium">
+							{path || t('myaaw.context.editor')}
+						</CardTitle>
+						{#if path}
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								class="shrink-0 text-muted-foreground"
+								onclick={() => (editing = !editing)}
+								title={editing ? t('myaaw.context.preview') : t('myaaw.context.edit')}
+								aria-label={editing ? t('myaaw.context.preview') : t('myaaw.context.edit')}
+							>
+								{#if editing}
+									<Eye class="h-3.5 w-3.5" />
+								{:else}
+									<Pencil class="h-3.5 w-3.5" />
+								{/if}
+							</Button>
+						{/if}
+					</div>
+					<Badge variant="outline">
+						{editing ? t('myaaw.context.editing') : t('myaaw.context.markdown')}
+					</Badge>
+				</CardHeader>
+				<CardContent class="min-h-0 flex-1">
+					{#if path}
+						{#if editing}
+							<textarea
+								bind:value={content}
+								class="h-full w-full resize-none rounded-md border border-input bg-transparent p-3 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+							></textarea>
+						{:else}
+							<div
+								class="h-full overflow-y-auto rounded-md border border-input bg-muted/20 px-4 py-3"
+							>
+								<Markdown {content} />
+							</div>
+						{/if}
+					{:else}
+						<p class="flex h-full items-center justify-center text-sm text-muted-foreground">
+							{t('myaaw.context.select_file')}
+						</p>
+					{/if}
+				</CardContent>
+			</Card>
+		</section>
+	{/if}
+</div>

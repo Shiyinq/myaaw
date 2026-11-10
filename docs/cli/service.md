@@ -40,9 +40,9 @@ myaaw --agent agent-b server restart
 
 ## Ports and logs
 
-- `PORT` comes from `~/.myaaw/<agent>/.env`. Each agent must use a different port.
+- `PORT` comes from `~/.myaaw/agents/<agent>/.env`. Each agent must use a different port.
 - Daemon name: `myaaw-server-<agent>`.
-- Logs: `~/.myaaw/<agent>/logs/myaaw-server-<agent>.log`.
+- Logs: `~/.myaaw/agents/<agent>/logs/myaaw-server-<agent>.log`.
 - PID files: `~/.myaaw/pids/`.
 - The agent data directory must exist and be initialized before `server start`.
 
@@ -77,7 +77,7 @@ myaaw --agent agent-b server restart
 | Symptom | Check |
 | :--- | :--- |
 | `Agent "x" is not initialized` | Run `myaaw onboard` or `myaaw agent create <name>`. |
-| Server exits immediately | Read `~/.myaaw/<agent>/logs/myaaw-server-<agent>.log`; usually a missing provider key or an occupied port. |
+| Server exits immediately | Read `~/.myaaw/agents/<agent>/logs/myaaw-server-<agent>.log`; usually a missing provider key or an occupied port. |
 | Port already in use | Change `PORT` in the agent's `.env`, then restart. |
 | Changes not applied | Restart the specific agent; only one agent may have been restarted. |
 | `agents.json` race after parallel restarts | Retry the failed restart sequentially. |

@@ -43,6 +43,12 @@ type Event struct {
 	DroppedMessages int
 	DroppedTokens   int
 
+	// SystemTokens, ToolTokens, and MessageTokens are the request breakdown
+	// carried by EventLLMRequestStart.
+	SystemTokens  int
+	ToolTokens    int
+	MessageTokens int
+
 	Usage      provider.Usage
 	StopReason provider.StopReason
 	IsError    bool

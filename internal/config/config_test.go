@@ -9,6 +9,30 @@ import (
 
 // LoadBaseConfig must apply an explicit 0 from config.json instead of falling
 // back to the default retention.
+func TestLoadBaseConfigReadsThinkingLevelEnv(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("LLM_THINKING_LEVEL", " high ")
+
+	dir := filepath.Join(home, ".myaaw", "agents", "default", "config")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	previous := LLMProviderThinkingLevel
+	t.Cleanup(func() { LLMProviderThinkingLevel = previous })
+	LLMProviderThinkingLevel = ""
+
+	LoadBaseConfig()
+	if LLMProviderThinkingLevel != "high" {
+		t.Fatalf("thinking level = %q, want high", LLMProviderThinkingLevel)
+	}
+}
+
 func TestParseToolPrices(t *testing.T) {
 	prices := parseToolPrices("tavily_search=0.008; image_gen=0.04; bad; negative=-1")
 	if len(prices) != 2 {
@@ -28,7 +52,7 @@ func TestLoadBaseConfigRedactNoneDisables(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("OBS_REDACT_PATTERNS", "none")
 
-	dir := filepath.Join(home, ".myaaw", "default", "config")
+	dir := filepath.Join(home, ".myaaw", "agents", "default", "config")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir config: %v", err)
 	}
@@ -57,7 +81,7 @@ func TestLoadBaseConfigHonorsZeroRetention(t *testing.T) {
 	// starting value even when the repository has a .env file.
 	t.Setenv("OBS_RETENTION_DAYS", "30")
 
-	dir := filepath.Join(home, ".myaaw", "default", "config")
+	dir := filepath.Join(home, ".myaaw", "agents", "default", "config")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir config: %v", err)
 	}
@@ -185,9 +209,15 @@ func TestValidateApprovals(t *testing.T) {
 		t.Fatalf("valid config rejected: %v", err)
 	}
 
+	// Zero means "no expiry" and is valid.
+	noExpiry := ApprovalsConfig{TimeoutSeconds: approvalsIntPtr(0)}
+	if err := ValidateApprovals(&noExpiry); err != nil {
+		t.Fatalf("zero timeout rejected: %v", err)
+	}
+
 	cases := []ApprovalsConfig{
 		{Mode: "maybe"},
-		{TimeoutSeconds: approvalsIntPtr(0)},
+		{TimeoutSeconds: approvalsIntPtr(-1)},
 		{TimeoutSeconds: approvalsIntPtr(3601)},
 		{Unattended: "maybe"},
 		{Subagents: "maybe"},
@@ -208,6 +238,9 @@ func TestMergeAndNormalizeApprovals(t *testing.T) {
 	}
 	if len(merged.Allow) == 0 {
 		t.Fatal("default allow list should not be empty")
+	}
+	if merged.TimeoutSeconds == nil || *merged.TimeoutSeconds != 0 {
+		t.Fatalf("default timeout = %v, want 0 (no expiry)", merged.TimeoutSeconds)
 	}
 
 	raw := &ApprovalsConfig{Mode: " OFF ", Allow: []string{" bash ", "", "bash", "filesystem:read_file"}}

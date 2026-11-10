@@ -83,7 +83,7 @@ func TestSetComputerUseInConfig(t *testing.T) {
 func TestToolsJSONGate(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	dir := filepath.Join(home, ".myaaw", "agent-x", "tools")
+	dir := filepath.Join(home, ".myaaw", "agents", "agent-x", "tools")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

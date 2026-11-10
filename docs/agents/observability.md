@@ -110,7 +110,7 @@ needs.
 Traces live in a separate SQLite database per agent:
 
 ```text
-~/.myaaw/<agent>/database/observability.db
+~/.myaaw/agents/<agent>/database/observability.db
 ```
 
 It is independent of `myaaw.db`, so deleting traces never touches users or
@@ -119,7 +119,7 @@ conversations. Tables:
 | Table | Contents |
 | :--- | :--- |
 | `runs` | One row per agent run: channel, user, conversation, model, trigger, status, totals, and the parent run for a subagent. |
-| `spans` | The trace tree: kind, parent, timing, tokens, cost, and the captured content. |
+| `spans` | The trace tree: kind, parent, timing, tokens (including the context breakdown on `llm` spans), cost, and the captured content. |
 | `checks` | Reserved for eval checks. |
 
 Writes happen on a background writer, batched, and flushed without blocking the
@@ -167,9 +167,11 @@ stay small. Periodic pruning inside the daemon is not implemented yet.
 The schema carries a `PRAGMA user_version`. A newer build upgrades an older
 database in place on open; version 2 added `parent_run_id` / `parent_span_id` for
 nested subagent runs, version 3 renamed `turn_index` to `step_index`, version 5
-added `trigger_type`, and version 6 added `tool_cost_usd`. Runs recorded before
-version 5 keep an empty trigger and are shown as `-`; the upgrade labels nested
-runs as `subagent` but does not guess between `user` and `cron` for the rest.
+added `trigger_type`, version 6 added `tool_cost_usd`, and version 7 added the
+context breakdown on `spans` (`system_tokens`, `tool_tokens`, `message_tokens`).
+Runs recorded before version 5 keep an empty trigger and are shown as `-`; the
+upgrade labels nested runs as `subagent` but does not guess between `user` and
+`cron` for the rest.
 
 Opening also reconciles the actual shape rather than trusting the version alone.
 If a database was opened by a build whose vocabulary differed — for example one
@@ -305,6 +307,67 @@ with similar input can differ several-fold in cost. The tree prints only the
 combined input, so read `cache_hit_tokens` from `--json` or the `spans` table
 when the cost looks surprising.
 
+#### Cache hit rate
+
+Every provider reports its cache hits differently — `prompt_cache_hit_tokens`
+(DeepSeek), `prompt_tokens_details.cached_tokens` (OpenAI), or
+`cached_content_token_count` (Gemini) — but all of them mean the same thing on
+the wire: the share of `prompt_tokens` served from cache. Myaaw normalises it
+into `cache_hit_tokens` on the `llm` span and rolls it up to the run, so the
+rate is a plain ratio:
+
+```text
+cache hit rate = cache_hit_tokens / input_tokens × 100
+```
+
+The denominator matters:
+
+| Denominator | Result |
+| :--- | :--- |
+| `input_tokens` (`prompt_tokens`) | correct — cached tokens are a subset of it |
+| `total_tokens` (`prompt + completion`) | understates the rate, because the completion is never cached |
+| `input_tokens − cache_hit_tokens` | overstates it — this is the miss count, not the prompt |
+
+Rules the number follows everywhere it is shown:
+
+- Capped at 100% and rounded to a whole percent. Providers occasionally report
+  a cached count a few tokens above the prompt they sent, which must not turn
+  into "103%".
+- Hidden when `cache_hit_tokens` is zero or `input_tokens` is zero. A provider
+  that does not report caching would otherwise show a misleading `0%`, and a
+  session with no prompt has no rate at all.
+- A session rate is weighted, not averaged:
+  `SUM(runs.cache_hit_tokens) / SUM(runs.input_tokens)`. Averaging per-turn
+  percentages would let a tiny turn outvote a large one.
+
+The dashboard status line shows this together with the rest of the session
+totals:
+
+```text
+3 turns · 8 steps · 182 tok/s      195K tok · Cache hit 91% · deepseek · deepseek-v4-flash
+```
+
+What each piece counts:
+
+| Field | Definition |
+| :--- | :--- |
+| `turns` | recorded runs in the session (one user message = one run) |
+| `steps` | `step` spans across every run, not an `llm` or `tool` count |
+| `tok/s` | `SUM(llm.output_tokens) / (SUM(llm.generation_ms) / 1000)` for the **newest run**: decode speed, so it moves per turn |
+| `tok` | session total, `SUM(input_tokens) + SUM(output_tokens)` |
+| provider · model | the newest run's provider and model, so a mid-chat model switch is reflected on the next turn |
+
+Clicking either group opens a panel for the same session. The left one breaks the
+run down into **LLM time** (`SUM(llm.duration_ms)`), **tool time**
+(`SUM(tool.duration_ms)`), **average TTFT** (mean `first_token_ms` over the `llm`
+spans that streamed a first token) and tok/s. The right one splits the tokens into
+**cache hit**, **uncached input** (`input − cached`), **cached input** and
+**output** — those three add up to the session total exactly.
+
+The session totals come from `GET /agents/:name/observability/sessions/:id/stats`,
+which aggregates in SQL (see [HTTP API](#7-http-api)) instead of loading the
+runs, so they stay correct for sessions longer than one page.
+
 One consequence of this layout: a **tool-call-only response has no `ttft`**.
 TTFT starts at the first streamed text or thinking delta. A model that answers
 with `tool_calls` and nothing else streams no delta, so the field is empty even
@@ -312,6 +375,33 @@ though the request is billed.
 
 A retried request gets its own `llm` row per attempt, marked with `request N`, so
 a single step can show more than one `llm` line.
+
+#### Why the session total is larger than the context
+
+`tok` (and the composer's "Token usage") is the **sum of every request's full
+prompt**, not the size of the conversation. Each model call sends the whole
+transcript again, so a turn that adds ~100 tokens still re-sends the ~3000 tokens
+that were already there — and they are billed and counted again.
+
+Example, one request per turn:
+
+| Turn | Prompt sent | Input counted |
+| :--- | :--- | :--- |
+| 1 | S + U1 | 1000 |
+| 2 | S + U1 + A1 + U2 | 2500 |
+| 3 | S + U1 + A1 + U2 + A2 + U3 | 3000 |
+| 4 | turns 1–3 + U4 | 3100 |
+
+The context after turn 4 is **3100** — the union, where each message appears once.
+The cumulative total is `1000 + 2500 + 3000 + 3100 = 9600`, because every request
+already contains the earlier turns and is charged for them again. The snapshots
+overlap, so their sum is not the conversation size.
+
+That is why the composer shows both numbers: the context ring is the **latest
+request** (how full the window is), while "Token usage" is the **cumulative
+billing** history. A large cumulative total with a low context percentage is
+expected — most of it is the same transcript re-sent, which the prompt cache
+makes cheap.
 
 #### Worked example: three steps, two tool calls
 
@@ -347,6 +437,32 @@ thinking/text, Step 2 produced only a tool call. The cost difference between
 Step 1 and Step 3 despite similar input comes from prompt-cache hits, which are
 stored but not printed (see above).
 
+### Exact vs estimated tokens
+
+Two different numbers both get called "tokens", and they must not be mixed:
+
+| Kind | Source | When | Used for |
+| :--- | :--- | :--- | :--- |
+| **Exact** | the provider's `usage` block in the response (`prompt_tokens`, `completion_tokens`, cached tokens) | after the response arrives | `llm.input_tokens` / `output_tokens` / `cache_hit_tokens`, session totals, cost |
+| **Estimated** | `EstimateTokens`, a provider-agnostic heuristic (~4 bytes per token + 1500 per image) | before the request is sent | compaction (trim decision) and the context-window breakdown (`system` / `tool` / `message`, labelled `~`) |
+
+The exact counts are what the provider actually billed: they are stored verbatim on
+the `llm` span and rolled up to the run, and every cumulative number in this
+document (session `tok`, cache-hit rate, cost) is computed from them — never from
+the estimate.
+
+The estimate exists for one reason only: the trim decision must be made *before*
+sending the request, when the real count does not yet exist. It is deliberately
+provider-agnostic (it does not run `tiktoken` or any per-model tokenizer), so it is
+only approximate and is labelled `~` wherever it is shown. The context-window
+breakdown splits the single exact total the API returns into `system` / `tool` /
+`message` using the same heuristic, because the API reports only a total and never
+a per-role split; those three rows are therefore estimates even though the total
+they sum toward is exact.
+
+In short: **cumulative totals and cost are exact (from `usage`); compaction and the
+context breakdown are estimates (from `EstimateTokens`).**
+
 ### Glossary
 
 | Term | Meaning |
@@ -359,9 +475,11 @@ stored but not printed (see above).
 | **TTFT** | Time to first token: from sending the request until the first streamed delta. Includes queueing and prompt processing. Absent when no delta was streamed, for example a tool-call-only response. |
 | **generation** | Time from the first token to the end of the stream. Stored in `generation_ms`; not printed in the tree. |
 | **throughput** | `output_tokens ÷ (generation_ms ÷ 1000)`, in tokens per second. Derived, not stored. |
-| **input tokens** | Every token sent to the model: system prompt, history, tool results, and the new message. |
+| **input tokens** | Every token sent to the model on one request: system prompt, history, tool results, and the new message. Counted per request, so earlier turns are billed again on every call. |
 | **output tokens** | Tokens the model produced, including reasoning tokens when the provider reports them. |
 | **cached tokens** | Part of the input served from the provider's prompt cache; billed at `cache_hit` instead of `input`. |
+| **context tokens** | The `input_tokens` of the newest request: how full the window is now. Distinct from the cumulative session total. |
+| **context window** | The maximum tokens one request can hold (input + output) for a model. Not a cumulative budget: the limit applies to the transcript size, not to the session total. |
 | **cost** | `(miss × input + cached × cache_hit + output × output) ÷ 1,000,000`, using the price in force at request time. |
 | **p50 / p95** | Median and 95th percentile. Half the runs are faster than p50; 95% are faster than p95. Computed over finished runs only. |
 | **error rate** | Finished runs whose status is `error` or `interrupted`, divided by finished runs. |
@@ -460,7 +578,10 @@ the sum of its `llm` spans.
 Tools do not report token usage, so they are priced per **successful call**. A
 failed or blocked call is not charged.
 
-Prices live in `config/tool_prices.json` next to `config.json`:
+Prices live in the shared `~/.myaaw/config/tool_prices.json`. An agent can add
+`~/.myaaw/agents/<agent>/config/tool_prices.json` as an override; new agents do not
+receive that file. The merge is per tool and only affects that agent — see
+[Overriding prices](#overriding-prices) for the full precedence.
 
 ```json
 {
@@ -468,10 +589,10 @@ Prices live in `config/tool_prices.json` next to `config.json`:
 }
 ```
 
-Legacy `observability.tool_prices` in `config.json` still works, but a matching
-entry in the file wins. `OBS_TOOL_PRICES="tavily_search=0.008;image_gen=0.04"`
-(semicolon-separated) is the lowest config layer: inline config and the file
-override it. Tool spend is stored separately from model spend:
+Legacy `observability.tool_prices` in `config.json` still works, but the files win.
+`OBS_TOOL_PRICES="tavily_search=0.008;image_gen=0.04"` (semicolon-separated) is the
+lowest config layer: inline config and the files override it. Tool spend is stored
+separately from model spend:
 `runs.tool_cost_usd` and the `cost_usd` of `tool` spans. The summary reports
 both totals, `Per tool` gets a COST column, and `Per trigger` gets a TOOLS
 column.
@@ -500,12 +621,11 @@ Windows are parsed as `Day-Day HH:MM-HH:MM UTC`. A window that cannot be parsed
 is treated as peak, so an estimate can only be too high. Chinese public holidays
 are not modelled; a holiday is billed as peak.
 
-The built-in table covers `deepseek-flash`, `deepseek-chat`,
-`deepseek-v4-flash` (same rates as the flash tier), and `deepseek-v4-pro`, plus
-a few `gpt-*` and `gemini-*-flash` models. Anything else — preview Gemini ids
-and Groq models, for example — has no entry. A model without an entry is
-reported as `unpriced` in the CLI and costs `0`; add its numbers under
-`model_prices` to start collecting cost.
+The shared table under `~/.myaaw/config/model_prices.json` is the source of truth.
+The former Go built-in table is no longer part of the runtime path: it covered only a
+handful of models and could lag behind the maintained JSON table. A model without an
+entry is reported as `unpriced` in the CLI and costs `0`; add its numbers to the JSON
+table to start collecting cost.
 
 Because `0` would otherwise read as "free", the summary marks how much could
 not be priced: `cost_complete`, `unpriced_runs`, `unpriced_input_tokens`,
@@ -517,35 +637,79 @@ after the entry is added; the flags describe recorded cost, not today's table.
 
 ### Overriding prices
 
-Add or replace entries in `config/model_prices.json` (same folder as
-`config.json`). The map is keyed by model name and an entry replaces the whole
-model price:
+The shared tables are the base. Any agent can add its own file to change or extend
+them for that agent only. Layers are applied in this order, the later one winning:
+
+| Layer | Location | Scope |
+|---|---|---|
+| `OBS_MODEL_PRICES` / `OBS_TOOL_PRICES` | environment | process |
+| `observability.model_prices` / `tool_prices` | `agents/<agent>/config/config.json` | agent |
+| Shared table | `~/.myaaw/config/model_prices.json`, `tool_prices.json` | every agent |
+| Per-agent override | `~/.myaaw/agents/<agent>/config/model_prices.json`, `tool_prices.json` | one agent |
+
+The merge is **per key**. An entry in the per-agent file replaces only that model
+(or tool); every key it does not name keeps the shared value, so an override does
+not need to repeat the whole table and can add a model the shared table lacks. An
+override file containing `{}` is a no-op, which is why a leftover empty copy is
+harmless.
+
+The per-agent layer is read from the **active** agent's config directory, so an
+override only changes billing for the agent that runs with it; the other agents keep
+using the shared table.
+
+The map is keyed by model name and an entry replaces the whole model price:
 
 ```json
 {
-  "gemini-3.1-pro-preview": {"input": 1.25, "output": 10.0}
+  "gemini-3.1-pro-preview": {"provider": "gemini", "input": 1.25, "output": 10.0}
 }
 ```
 
-Legacy `observability.model_prices` in `config.json` still works, but the file
-wins per key. Missing files are ignored; invalid JSON logs a warning and keeps
-the lower layer, so a bad price file cannot break a run. Keys starting with `_`
-are ignored, so a file can carry `"_comment"` metadata. The built-in table is
-only a default; unknown models cost `0` and are logged once.
+Missing files are skipped; invalid JSON logs a warning and keeps the lower layer, so
+a bad price file cannot break a run. Keys starting with `_` are ignored, so a file
+can carry `"_comment"` metadata. There is no Go built-in price table: when the file
+layers produce no entries at all, the embedded JSON template is parsed as a
+bootstrap, and unknown models still cost `0` and are logged once.
+
+Prices are the only shared data with a per-agent layer. `model_capabilities.json`
+is global only — a `config/model_capabilities.json` inside an agent folder is
+ignored (see [Model capabilities](../api/control-plane.md#model-capabilities)).
+
+**Writing prices through the control plane.** `PATCH /agents/<name>/config` with
+`model_prices` or `tool_prices` writes the per-agent override and keeps only the
+entries that differ from the shared table. A table copied from the dashboard
+therefore cannot pin the whole catalog into the agent folder: values equal to the
+shared table are dropped, and the file is deleted once no override remains.
+Resetting those fields also removes the override and falls back to the shared table.
+
+**Writing prices by hand.** Create `~/.myaaw/agents/<agent>/config/model_prices.json`
+(or `tool_prices.json`) containing only the keys to change, then restart that agent's
+server so the process reloads it: `myaaw server restart --agent <name>`. Price files
+are read at startup, so an edit is not picked up while the agent keeps running.
+
+**Where it is in the dashboard.** The editors live in **Config → Observability**, in
+the two textareas labelled "Model prices (JSON)" and "Tool prices (JSON)". They show
+only that agent's inline and override entries, never the shared table, so a key
+missing from the box means "use the shared price", not "free".
 
 #### Price file format
 
-`config/model_prices.json` — USD per one million tokens:
+`~/.myaaw/config/model_prices.json` (shared) or
+`~/.myaaw/agents/<agent>/config/model_prices.json` (override) — USD per one million
+tokens:
 
 | Field | Required | Meaning |
 |---|---|---|
+| `provider` | no | Catalog metadata (`openai`, `gemini`, `deepseek`, `anthropic`); preserved across writes but not used for billing or routing |
 | `input` | yes | Cache-miss prompt price |
 | `cache_hit` | no | Cached prompt price (`0` when omitted) |
 | `output` | yes | Completion price |
 | `off_peak` | no | Object with `input`/`cache_hit`/`output` used outside peak windows |
 | `peak_windows` | no | `["Mon-Fri 01:00-04:00 UTC", …]`; used together with `off_peak` |
 
-`config/tool_prices.json` — USD per successful call:
+`~/.myaaw/config/tool_prices.json` (shared) or
+`~/.myaaw/agents/<agent>/config/tool_prices.json` (override) — USD per successful
+call:
 
 | Field | Required | Meaning |
 |---|---|---|
@@ -553,22 +717,23 @@ only a default; unknown models cost `0` and are logged once.
 
 Full examples:
 
-`config/model_prices.json`:
+`~/.myaaw/config/model_prices.json`:
 
 ```json
 {
-  "deepseek-chat": {
+  "deepseek-flash": {
+    "provider": "deepseek",
     "input": 0.3,
     "cache_hit": 0.006,
     "output": 1.2,
     "off_peak": { "input": 0.15, "cache_hit": 0.003, "output": 0.6 },
     "peak_windows": ["Mon-Fri 01:00-04:00 UTC", "Mon-Fri 06:00-10:00 UTC"]
   },
-  "gemini-3.1-pro-preview": { "input": 1.25, "cache_hit": 0.31, "output": 10.0 }
+  "gemini-3.1-pro-preview": { "provider": "gemini", "input": 1.25, "cache_hit": 0.2, "output": 12.0 }
 }
 ```
 
-`config/tool_prices.json`:
+`~/.myaaw/config/tool_prices.json`:
 
 ```json
 {
@@ -597,19 +762,24 @@ so a typo cannot break the agent.
 }
 ```
 
-Price tables live beside `config.json` and are optional:
+Price tables live in the shared global folder and may be overridden per agent:
 
 ```text
-config/
+~/.myaaw/config/
+├── model_prices.json      # shared table
+└── tool_prices.json       # shared table
+
+~/.myaaw/agents/<agent>/config/
 ├── config.json
-├── model_prices.json
-└── tool_prices.json
+├── model_prices.json      # optional override
+└── tool_prices.json       # optional override
 ```
 
-`PATCH /agents/<name>/config` with `model_prices` or `tool_prices` writes these
-files, so `config.json` stays free of price data. New agents get both files from
-the onboarding template; existing agents get them on the next
-initialize/onboard, seeded from their inline prices when present.
+`PATCH /agents/<name>/config` with `model_prices` or `tool_prices` writes only the
+entries that differ from the shared table, so an agent folder is not filled with
+copies of the global catalog. Resetting those fields removes the override.
+New agents do not receive either file; they use the shared tables. Existing
+agents with inline prices get a per-agent override once, so nothing is lost.
 
 `.env` (takes effect when the key is not set in `config.json`):
 
@@ -778,6 +948,7 @@ All endpoints require the control plane bearer token.
 | `GET` | `/agents/:name/observability/summary?days=7` | Totals, percentiles, breakdowns, badges, cost-completeness flags, and `database_bytes`. |
 | `GET` | `/agents/:name/observability/sessions?limit` | Sessions with turn count, tokens, and cost. |
 | `GET` | `/agents/:name/observability/sessions/:id` | One session with every turn, **oldest first**, its step count, and its full spans (prompts, thinking, answers, tool payloads). Add `?spans=false` for metadata only. |
+| `GET` | `/agents/:name/observability/sessions/:id/stats` | Aggregate totals only: `turns`, `steps`, `input_tokens`, `output_tokens`, `cache_hit_tokens`, `total_tokens`, `uncached_input_tokens`, `cache_hit_rate`, `llm_ms`, `tool_ms`, `ttft_ms`, `tok_per_sec`, the newest run's `provider` and `model`, `error_count`, and a `context` object for the newest request. |
 | `GET` | `/agents/:name/observability/runs?limit&offset&status&channel&conversation&model&trigger&from&to` | List runs, newest first. `trigger` is `user`, `cron`, or `subagent`. |
 | `GET` | `/agents/:name/observability/runs/:id` | One run with flat `spans` and a nested `tree`. |
 | `DELETE` | `/agents/:name/observability/runs?before=<unix ms>` | Delete runs; without `before` deletes everything. |
@@ -786,6 +957,62 @@ The session endpoint is what a trajectory UI needs: one request returns Turn 1..
 and every turn carries its spans (`system`, `user`, `step`, `compaction`, `llm`,
 `tool`, and nested subagent runs). See the mapping table in the
 [control plane guide](../api/control-plane.md#mapping-the-response-to-a-trajectory-ui).
+
+The `stats` endpoint is the cheap sibling: it aggregates the same session in SQL
+and returns only the numbers a status line or badge needs. The detail endpoint
+pages runs at 500, so totals derived from it can be short for very long
+sessions; `stats` has no such page and never loads a span.
+
+```json
+{
+  "conversation_id": "4e7371da-c190-434e-90d3-e1902f309c82",
+  "channel": "cli",
+  "turns": 2,
+  "steps": 6,
+  "started_at": 1761674469000,
+  "last_active_at": 1761674512000,
+  "input_tokens": 19300,
+  "output_tokens": 224,
+  "cache_hit_tokens": 17400,
+  "total_tokens": 19524,
+  "uncached_input_tokens": 1900,
+  "cache_hit_rate": 90,
+  "provider": "openai",
+  "model": "deepseek-v4-flash",
+  "error_count": 0,
+  "tok_per_sec": 182,
+  "llm_ms": 22700,
+  "tool_ms": 13700,
+  "ttft_ms": 1600,
+  "context": {
+    "tokens": 9430,
+    "window": 1048576,
+    "system_tokens": 1400,
+    "tool_tokens": 7100,
+    "message_tokens": 930
+  }
+}
+```
+
+`cache_hit_tokens` is part of `input_tokens`, so the hit rate is
+`cache_hit_tokens / input_tokens` (see [Cache hit rate](#cache-hit-rate)).
+`total_tokens`, `uncached_input_tokens` and `cache_hit_rate` are that arithmetic
+already done by the API (rounded and capped at 100%), so a client only formats
+numbers. `llm_ms` and `tool_ms` are the wall time spent inside `llm` and `tool`
+spans, `ttft_ms` is the mean first-token latency of the `llm` spans that
+streamed a first token (requests that only returned tool calls have none, and
+are left out of the average rather than counted as zero). `tok_per_sec` covers
+the newest run only. `provider` is the provider **type** of the newest run
+(`openai`, `gemini`); the configured provider name (for example `deepseek`) lives
+in the agent config and is what the dashboard prints.
+
+`context` covers the **newest** request only, not the session sum. `tokens` is the
+exact `input_tokens` of the last `llm` span, `window` is the model's catalog
+limit, and `system_tokens` / `tool_tokens` / `message_tokens` are the pre-request
+estimate (shown with a `~`). It is omitted when the session has no model request
+yet. The cumulative `input_tokens` above is much larger because every request
+re-sends the transcript; see
+[Why the session total is larger than the context](#why-the-session-total-is-larger-than-the-context).
 
 An agent that has never recorded a run returns an empty summary rather than an
 error, so a dashboard can render before the first message.

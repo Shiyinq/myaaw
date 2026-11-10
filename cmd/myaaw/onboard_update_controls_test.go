@@ -521,6 +521,45 @@ func TestHeadlessUpdateWithoutProviderKeepsIt(t *testing.T) {
 	}
 }
 
+func TestHeadlessHeartbeatTargetDetails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := agentdir.EnsureLayout(); err != nil {
+		t.Fatal(err)
+	}
+	writeRawConfig(t, "agent-headless-target", updateControlConfig)
+
+	opts := onboardOptions{
+		hbChannel: "telegram",
+		hbTo:      "-1001234567890",
+		hbThread:  "77",
+		hbSession: "0f4e8b3a-1111-4222-8333-944455556666",
+		hbEvery:   "30m",
+	}
+	in, err := headlessInput("agent-headless-target", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.HeartbeatThreadID != "77" || in.HeartbeatSessionID != "0f4e8b3a-1111-4222-8333-944455556666" {
+		t.Fatalf("--heartbeat-thread/--heartbeat-session not applied: %+v", in)
+	}
+
+	merged := mergeOnboardConfig(loadAgentConfig("agent-headless-target"), in)
+	if merged.Heartbeat.ThreadID != "77" || merged.Heartbeat.SessionID != "0f4e8b3a-1111-4222-8333-944455556666" {
+		t.Fatalf("heartbeat target details not written: %+v", merged.Heartbeat)
+	}
+
+	opts.hbThread = "topic-one"
+	if _, err := headlessInput("agent-headless-target", opts); err == nil {
+		t.Fatal("non-numeric --heartbeat-thread was accepted")
+	}
+
+	opts.hbThread = ""
+	opts.hbChatType = "channel"
+	if _, err := headlessInput("agent-headless-target", opts); err == nil {
+		t.Fatal("unknown --heartbeat-chat-type was accepted")
+	}
+}
+
 func TestHeadlessHeartbeatAndChannelSwitches(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	if err := agentdir.EnsureLayout(); err != nil {

@@ -17,7 +17,7 @@ func TestStartTraceNestsUnderTheParentRun(t *testing.T) {
 	}
 	defer store.Close()
 
-	parent := agenttrace.Start(store, obs.NewPricer(nil), obs.Config{StoreContent: true}, obs.RunStart{
+	parent := agenttrace.Start(store, obs.NewPricer(obs.DefaultPrices()), obs.Config{StoreContent: true}, obs.RunStart{
 		Channel: "telegram", Agent: "default", UserMessage: "delegate this",
 	})
 	defer parent.Close()

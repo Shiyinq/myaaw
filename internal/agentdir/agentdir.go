@@ -6,13 +6,18 @@ package agentdir
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"myaaw"
 )
 
 const (
@@ -29,9 +34,53 @@ var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 type AgentInfo struct {
 	CreatedAt string `json:"created_at"`
 	Path      string `json:"path,omitempty"`
+	// AgentColor is the palette key the dashboard draws the agent with. It is an
+	// id from AgentColors, never an asset path: the registry stays unaware of how
+	// the frontend renders it.
+	AgentColor string `json:"agent_color,omitempty"`
 }
 
-// Registry is stored in ~/.myaaw/agents.json.
+// AgentColors are the Bloub palette keys, in the order the picker shows them.
+// They match the file names the dashboard ships, and `encre` is the ink default.
+var AgentColors = []string{
+	"encre",
+	"brun",
+	"rouge",
+	"orange",
+	"ambre",
+	"vert",
+	"turquoise",
+	"bleu",
+	"violet",
+	"rose",
+	"gris",
+	"creme",
+}
+
+// DefaultAgentColor is used whenever an agent has no colour of its own: agents
+// registered before colours existed stay untouched on disk and read as ink.
+const DefaultAgentColor = "encre"
+
+// ValidAgentColor reports whether key is one of the palette ids.
+func ValidAgentColor(key string) bool {
+	for _, color := range AgentColors {
+		if color == key {
+			return true
+		}
+	}
+	return false
+}
+
+// AgentColorOrDefault resolves a stored value, folding empty and unknown keys
+// back onto DefaultAgentColor so callers never have to guess.
+func AgentColorOrDefault(key string) string {
+	if ValidAgentColor(key) {
+		return key
+	}
+	return DefaultAgentColor
+}
+
+// Registry is stored in ~/.myaaw/config/agents.json.
 type Registry struct {
 	Default string               `json:"default"`
 	Agents  map[string]AgentInfo `json:"agents"`
@@ -73,13 +122,16 @@ func Active() string {
 	return activeName
 }
 
-// SetActive validates and selects the current process agent.
+// SetActive validates and selects the current process agent. It also exports
+// MYAAW_AGENT so child processes (tool subprocesses, shell commands) resolve the
+// same agent instead of falling back to the registry default.
 func SetActive(name string) error {
 	if err := ValidateName(name); err != nil {
 		return err
 	}
 	activeName = name
 	activeSet = true
+	_ = os.Setenv("MYAAW_AGENT", name)
 	return nil
 }
 
@@ -113,7 +165,7 @@ func MyaawRoot() (string, error) {
 	return filepath.Join(home, ".myaaw"), nil
 }
 
-// AgentRoot returns ~/.myaaw/<name>.
+// AgentRoot returns ~/.myaaw/agents/<name>.
 func AgentRoot(name string) (string, error) {
 	if err := ValidateName(name); err != nil {
 		return "", err
@@ -122,7 +174,7 @@ func AgentRoot(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, name), nil
+	return filepath.Join(root, "agents", name), nil
 }
 
 // ActiveRoot returns the root directory of the active agent.
@@ -142,7 +194,12 @@ func activePath(elem string) (string, error) {
 	return agentPath(Active(), elem)
 }
 
-func Home(name string) (string, error)      { return agentPath(name, "home") }
+func Home(name string) (string, error) { return agentPath(name, "home") }
+
+// UserDir is the root for content owned by the person using the agent, such as
+// files they upload from chat. It is separate from home so agent-authored
+// context never mixes with user-provided data.
+func UserDir(name string) (string, error)   { return agentPath(name, "user") }
 func ConfigDir(name string) (string, error) { return agentPath(name, "config") }
 func ConfigPath(name string) (string, error) {
 	return agentPath(name, filepath.Join("config", "config.json"))
@@ -169,6 +226,7 @@ func ObservabilityPath(name string) (string, error) {
 }
 
 func ActiveHome() (string, error)         { return activePath("home") }
+func ActiveUserDir() (string, error)      { return activePath("user") }
 func ActiveConfigPath() (string, error)   { return activePath(filepath.Join("config", "config.json")) }
 func ActiveEnvPath() (string, error)      { return activePath(".env") }
 func ActiveSkillsDir() (string, error)    { return activePath("skills") }
@@ -215,8 +273,32 @@ func PIDDir() (string, error) {
 	return filepath.Join(root, "pids"), nil
 }
 
-// RegistryPath returns ~/.myaaw/agents.json.
+// GlobalConfigDir returns ~/.myaaw/config, the shared folder for registry,
+// control-plane credentials, and the model data tables.
+func GlobalConfigDir() (string, error) {
+	root, err := MyaawRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "config"), nil
+}
+
+// GlobalConfigPath returns ~/.myaaw/config/<elem>.
+func GlobalConfigPath(elem string) (string, error) {
+	dir, err := GlobalConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, elem), nil
+}
+
+// RegistryPath returns ~/.myaaw/config/agents.json.
 func RegistryPath() (string, error) {
+	return GlobalConfigPath("agents.json")
+}
+
+// legacyRegistryPath is where agents.json lived before the global config folder.
+func legacyRegistryPath() (string, error) {
 	root, err := MyaawRoot()
 	if err != nil {
 		return "", err
@@ -225,32 +307,46 @@ func RegistryPath() (string, error) {
 }
 
 // LoadRegistry reads agents.json, returning an initialized registry when the
-// file does not exist yet.
+// file does not exist yet. A registry left in the old root location is still
+// read so the first command after an upgrade does not see an empty fleet.
 func LoadRegistry() (*Registry, error) {
-	path, err := RegistryPath()
-	if err != nil {
-		return nil, err
+	paths := make([]string, 0, 2)
+	if path, err := RegistryPath(); err == nil {
+		paths = append(paths, path)
+	}
+	if path, err := legacyRegistryPath(); err == nil {
+		paths = append(paths, path)
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &Registry{Default: DefaultAgentName, Agents: map[string]AgentInfo{}}, nil
+	var firstErr error
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
-		return nil, err
-	}
 
-	var registry Registry
-	if err := json.Unmarshal(data, &registry); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		var registry Registry
+		if err := json.Unmarshal(data, &registry); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+		if registry.Agents == nil {
+			registry.Agents = map[string]AgentInfo{}
+		}
+		if registry.Default == "" {
+			registry.Default = DefaultAgentName
+		}
+		return &registry, nil
 	}
-	if registry.Agents == nil {
-		registry.Agents = map[string]AgentInfo{}
+	if firstErr != nil {
+		return nil, firstErr
 	}
-	if registry.Default == "" {
-		registry.Default = DefaultAgentName
-	}
-	return &registry, nil
+	return &Registry{Default: DefaultAgentName, Agents: map[string]AgentInfo{}}, nil
 }
 
 // SaveRegistry writes agents.json atomically.
@@ -275,13 +371,38 @@ func SaveRegistry(registry *Registry) error {
 		return err
 	}
 
-	tempPath := path + ".tmp"
-	if err := os.WriteFile(tempPath, append(data, '\n'), 0o644); err != nil {
+	// A unique temp file keeps two processes from clobbering each other's write,
+	// and on Unix the rename replaces the target atomically. Removing the target
+	// first would leave a window where agents.json does not exist, and a reader in
+	// that window sees an empty registry — which is how agents disappear from the
+	// list while their directories are still there.
+	temp, err := os.CreateTemp(filepath.Dir(path), "agents-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	if _, err := temp.Write(append(data, '\n')); err != nil {
+		_ = temp.Close()
+		_ = os.Remove(tempPath)
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+	if err := os.Chmod(tempPath, 0o644); err != nil {
+		_ = os.Remove(tempPath)
 		return err
 	}
 	// Windows cannot reliably replace an existing file with Rename.
-	_ = os.Remove(path)
-	return os.Rename(tempPath, path)
+	if runtime.GOOS == "windows" {
+		_ = os.Remove(path)
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+	return nil
 }
 
 // AgentNameTaken reports whether a name already belongs to an agent. A name is
@@ -326,6 +447,12 @@ func AgentNameTaken(name string) (bool, error) {
 	return false, nil
 }
 
+// CreatedAtUTC returns the current instant as an RFC3339 UTC timestamp, the
+// format stored for a newly created agent's registry entry.
+func CreatedAtUTC() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}
+
 // RegisterAgent adds an agent to the registry if missing.
 func RegisterAgent(name string) error {
 	if err := ValidateName(name); err != nil {
@@ -336,7 +463,7 @@ func RegisterAgent(name string) error {
 		return err
 	}
 	if _, exists := registry.Agents[name]; !exists {
-		registry.Agents[name] = AgentInfo{CreatedAt: time.Now().Format("2006-01-02")}
+		registry.Agents[name] = AgentInfo{CreatedAt: CreatedAtUTC()}
 	}
 	if registry.Default == "" {
 		registry.Default = name
@@ -376,6 +503,29 @@ func SetDefault(name string) error {
 	return SaveRegistry(registry)
 }
 
+// SetAgentColor stores the palette key an agent is drawn with. A key that is not
+// in AgentColors is rejected rather than coerced, so a typo cannot silently ship
+// as ink.
+func SetAgentColor(name, color string) error {
+	if err := ValidateName(name); err != nil {
+		return err
+	}
+	if !ValidAgentColor(color) {
+		return fmt.Errorf("agent colour %q is not in the palette", color)
+	}
+	registry, err := LoadRegistry()
+	if err != nil {
+		return err
+	}
+	entry, exists := registry.Agents[name]
+	if !exists {
+		return fmt.Errorf("agent %q is not registered", name)
+	}
+	entry.AgentColor = color
+	registry.Agents[name] = entry
+	return SaveRegistry(registry)
+}
+
 // UnregisterAgent removes an agent from the registry. It does not delete files.
 func UnregisterAgent(name string) error {
 	registry, err := LoadRegistry()
@@ -409,14 +559,35 @@ func AgentInitialized(name string) bool {
 	return agentInitialized(root)
 }
 
-// EnsureLayout creates ~/.myaaw and migrates a legacy single-agent layout into
-// ~/.myaaw/default. It is safe to call repeatedly.
+// EnsureLayout creates ~/.myaaw/agents and the shared ~/.myaaw/config folder,
+// migrates global state from the old root layout, seeds the model data tables,
+// and registers the agent directories that already exist. It never creates an
+// agent itself: onboarding names the first one and the registry default points
+// at it. It is safe to call repeatedly.
 func EnsureLayout() error {
 	root, err := MyaawRoot()
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+
+	configDir, err := GlobalConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		return err
+	}
+
+	// The registry and credentials must exist before any reader looks for them.
+	if err := migrateGlobalState(root, configDir); err != nil {
+		return err
+	}
+	if err := seedGlobalDataFiles(configDir); err != nil {
+		log.Printf("Warning: could not seed global model data: %v", err)
+	}
+
+	agentsRoot := filepath.Join(root, "agents")
+	if err := os.MkdirAll(agentsRoot, 0o755); err != nil {
 		return err
 	}
 
@@ -425,68 +596,131 @@ func EnsureLayout() error {
 		return err
 	}
 
-	defaultRoot := filepath.Join(root, DefaultAgentName)
-	if legacyLayoutExists(root) && !agentInitialized(defaultRoot) {
-		if err := migrateLegacyLayout(root, defaultRoot); err != nil {
-			return err
-		}
-	}
-
-	if _, exists := registry.Agents[DefaultAgentName]; !exists {
-		registry.Agents[DefaultAgentName] = AgentInfo{CreatedAt: time.Now().Format("2006-01-02")}
-	}
 	if registry.Default == "" {
 		registry.Default = DefaultAgentName
 	}
+	registerExistingAgents(agentsRoot, registry)
 	return SaveRegistry(registry)
 }
 
-func migrateLegacyLayout(root, defaultRoot string) error {
-	legacyDirs := []string{"home", "config", "database", "skills", "logs", "jobs", "cron", "tools"}
-
-	if err := os.MkdirAll(defaultRoot, 0o755); err != nil {
+// SeedGlobalDataFiles copies the embedded model data into the global config
+// folder when a file is missing. It is exported so onboarding can ensure the
+// folder exists even when EnsureLayout is not part of the flow.
+func SeedGlobalDataFiles() error {
+	dir, err := GlobalConfigDir()
+	if err != nil {
 		return err
 	}
-
-	for _, name := range legacyDirs {
-		src := filepath.Join(root, name)
-		if _, err := os.Stat(src); os.IsNotExist(err) {
-			continue
-		}
-		dst := filepath.Join(defaultRoot, name)
-		if err := moveOrMergeDir(src, dst); err != nil {
-			return fmt.Errorf("migrate %s: %w", src, err)
-		}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
 	}
-
-	legacyEnv := filepath.Join(root, ".env")
-	if _, err := os.Stat(legacyEnv); err == nil {
-		dstEnv := filepath.Join(defaultRoot, ".env")
-		if _, err := os.Stat(dstEnv); os.IsNotExist(err) {
-			if err := os.Rename(legacyEnv, dstEnv); err != nil {
-				return fmt.Errorf("migrate %s: %w", legacyEnv, err)
-			}
-		} else {
-			if err := os.Rename(legacyEnv, filepath.Join(defaultRoot, ".env.legacy")); err != nil {
-				return fmt.Errorf("migrate %s: %w", legacyEnv, err)
-			}
-		}
-	}
-
-	return RewriteLegacyPaths(defaultRoot, DefaultAgentName)
+	return seedGlobalDataFiles(dir)
 }
 
-func legacyLayoutExists(root string) bool {
-	legacyDirs := []string{"home", "config", "database", "skills", "logs", "jobs", "cron", "tools"}
-	for _, name := range legacyDirs {
-		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
-			return true
+var globalDataFiles = []string{
+	"model_capabilities.json",
+	"model_prices.json",
+	"tool_prices.json",
+}
+
+// migrateGlobalState moves agents.json and controlplane.json into the global
+// config folder when the new file is missing. A file already in the new place
+// always wins; the old copy is left untouched. The same filesystem rename is
+// preferred, with a copy fallback for exotic layouts.
+func migrateGlobalState(root, configDir string) error {
+	for _, name := range []string{"agents.json", "controlplane.json"} {
+		target := filepath.Join(configDir, name)
+		if _, err := os.Stat(target); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+
+		legacy := filepath.Join(root, name)
+		if _, err := os.Stat(legacy); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		if err := moveGlobalFile(legacy, target); err != nil {
+			return fmt.Errorf("move %s: %w", name, err)
+		}
+		log.Printf("Moved %s to %s", name, target)
+	}
+	return nil
+}
+
+func moveGlobalFile(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+		return err
+	}
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(dst, data, info.Mode().Perm()); err != nil {
+		return err
+	}
+	return os.Remove(src)
+}
+
+// seedGlobalDataFiles copies the embedded model tables without overwriting an
+// existing global file, so edits survive upgrades.
+func seedGlobalDataFiles(dir string) error {
+	for _, name := range globalDataFiles {
+		target := filepath.Join(dir, name)
+		if _, err := os.Stat(target); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		data, err := myaaw.DefaultMyaawDir.ReadFile(path.Join(".myaaw", "config", name))
+		if err != nil {
+			return fmt.Errorf("read embedded %s: %w", name, err)
+		}
+		if err := os.WriteFile(target, data, 0o644); err != nil {
+			return err
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, ".env")); err == nil {
-		return true
+	return nil
+}
+
+// registerExistingAgents adds every initialized agent directory under the
+// agents folder that the registry does not know about. The directories are the
+// source of truth: a registry that was lost, truncated, or written before an
+// agent existed must not hide agents whose config and home are still on disk.
+func registerExistingAgents(agentsRoot string, registry *Registry) {
+	entries, err := os.ReadDir(agentsRoot)
+	if err != nil {
+		return
 	}
-	return false
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() || ValidateName(name) != nil {
+			continue
+		}
+		if _, exists := registry.Agents[name]; exists {
+			continue
+		}
+		agentRoot := filepath.Join(agentsRoot, name)
+		if !agentInitialized(agentRoot) {
+			continue
+		}
+		created := CreatedAtUTC()
+		if info, statErr := entry.Info(); statErr == nil {
+			created = info.ModTime().UTC().Format(time.RFC3339)
+		}
+		registry.Agents[name] = AgentInfo{CreatedAt: created}
+	}
 }
 
 func agentInitialized(root string) bool {
@@ -499,48 +733,10 @@ func agentInitialized(root string) bool {
 	return false
 }
 
-func moveOrMergeDir(src, dst string) error {
-	if _, err := os.Stat(dst); os.IsNotExist(err) {
-		return os.Rename(src, dst)
-	}
-
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-		if _, err := os.Stat(dstPath); os.IsNotExist(err) {
-			if err := os.Rename(srcPath, dstPath); err != nil {
-				return err
-			}
-			continue
-		}
-		if entry.IsDir() {
-			if err := moveOrMergeDir(srcPath, dstPath); err != nil {
-				return err
-			}
-			continue
-		}
-		// Preserve legacy duplicates instead of silently dropping them.
-		legacyPath := dstPath + ".legacy"
-		if _, err := os.Stat(legacyPath); os.IsNotExist(err) {
-			if err := os.Rename(srcPath, legacyPath); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Remove src when all contents have been moved.
-	if remaining, err := os.ReadDir(src); err == nil && len(remaining) == 0 {
-		return os.Remove(src)
-	}
-	return nil
-}
-
 // RewriteLegacyPaths updates text files under agentRoot so references to the
-// old shared ~/.myaaw paths point at the agent-specific location.
+// shared ~/.myaaw paths (as written in the embedded template) point at the
+// agent's own folder under ~/.myaaw/agents/<name>. It runs for every new agent,
+// which is what keeps the template files free of per-agent edits.
 func RewriteLegacyPaths(agentRoot, name string) error {
 	if err := ValidateName(name); err != nil {
 		return err
@@ -554,15 +750,15 @@ func RewriteLegacyPaths(agentRoot, name string) error {
 	replacements := make([][2]string, 0, len(components)*4+2)
 	for _, component := range components {
 		replacements = append(replacements,
-			[2]string{"~/.myaaw/" + component, "~/.myaaw/" + name + "/" + component},
-			[2]string{filepath.Join(root, component), filepath.Join(root, name, component)},
-			[2]string{`".myaaw", "` + component + `"`, `".myaaw", "` + name + `", "` + component + `"`},
-			[2]string{`'.myaaw', '` + component + `'`, `'.myaaw', '` + name + `', '` + component + `'`},
+			[2]string{"~/.myaaw/" + component, "~/.myaaw/agents/" + name + "/" + component},
+			[2]string{filepath.Join(root, component), filepath.Join(root, "agents", name, component)},
+			[2]string{`".myaaw", "` + component + `"`, `".myaaw", "agents", "` + name + `", "` + component + `"`},
+			[2]string{`'.myaaw', '` + component + `'`, `'.myaaw', 'agents', '` + name + `', '` + component + `'`},
 		)
 	}
 	replacements = append(replacements,
-		[2]string{"~/.myaaw/.env", "~/.myaaw/" + name + "/.env"},
-		[2]string{filepath.Join(root, ".env"), filepath.Join(root, name, ".env")},
+		[2]string{"~/.myaaw/.env", "~/.myaaw/agents/" + name + "/.env"},
+		[2]string{filepath.Join(root, ".env"), filepath.Join(root, "agents", name, ".env")},
 	)
 
 	return filepath.WalkDir(agentRoot, func(path string, entry os.DirEntry, walkErr error) error {

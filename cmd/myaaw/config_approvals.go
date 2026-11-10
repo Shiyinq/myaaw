@@ -189,7 +189,7 @@ func init() {
 	approvalsGrantsListCmd.Flags().Bool("json", false, "print machine-readable JSON")
 
 	approvalsSetCmd.Flags().String("mode", "", "manual or off")
-	approvalsSetCmd.Flags().Int("timeout", 0, "seconds to wait for a decision (1-3600)")
+	approvalsSetCmd.Flags().Int("timeout", 0, "seconds to wait for a decision (0 = no expiry, 1-3600)")
 	approvalsSetCmd.Flags().String("unattended", "", "allow or deny")
 	approvalsSetCmd.Flags().String("subagents", "", "inherit, allow, or deny")
 
@@ -363,7 +363,7 @@ func loadApprovalGrants() (map[string]approvals.Grant, error) {
 }
 
 func printEffectiveApprovals(a config.ApprovalsConfig) {
-	timeout := 60
+	timeout := 0
 	if a.TimeoutSeconds != nil {
 		timeout = *a.TimeoutSeconds
 	}

@@ -21,7 +21,7 @@ func newRecorderFixture(t *testing.T, cfg Config) recorderFixture {
 	store := newTestStore(t, Options{})
 	base := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 	cfg.Now = func() time.Time { return base }
-	recorder := New(store, NewPricer(nil), cfg)
+	recorder := New(store, NewPricer(DefaultPrices()), cfg)
 	t.Cleanup(func() { _ = recorder.Close() })
 	return recorderFixture{store: store, rec: recorder, base: base}
 }

@@ -345,16 +345,19 @@ func (r *Recorder) startLLMLocked(ev Event, at time.Time) {
 
 	r.requestIndex++
 	llm := &Span{
-		ID:           NewID("sp"),
-		RunID:        r.run.ID,
-		ParentID:     r.step.ID,
-		Kind:         KindLLM,
-		Name:         ev.Model,
-		StepIndex:    r.step.StepIndex,
-		RequestIndex: r.requestIndex,
-		StartedAt:    at.UnixMilli(),
-		Status:       StatusRunning,
-		InputJSON:    encodeMessages(ev.Messages, r.maxChars, r.storeContent, r.redactContent),
+		ID:            NewID("sp"),
+		RunID:         r.run.ID,
+		ParentID:      r.step.ID,
+		Kind:          KindLLM,
+		Name:          ev.Model,
+		StepIndex:     r.step.StepIndex,
+		RequestIndex:  r.requestIndex,
+		StartedAt:     at.UnixMilli(),
+		Status:        StatusRunning,
+		InputJSON:     encodeMessages(ev.Messages, r.maxChars, r.storeContent, r.redactContent),
+		SystemTokens:  ev.SystemTokens,
+		ToolTokens:    ev.ToolTokens,
+		MessageTokens: ev.MessageTokens,
 	}
 	r.addSpanLocked(llm)
 	r.llm = llm

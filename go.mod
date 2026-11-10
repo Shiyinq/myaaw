@@ -21,6 +21,7 @@ require (
 require (
 	github.com/a2aproject/a2a-go/v2 v2.7.0
 	github.com/charmbracelet/huh v1.0.0
+	github.com/creack/pty v1.1.24
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gofiber/contrib/v3/swaggo v1.0.0
@@ -48,8 +49,10 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/gen2brain/shm v0.1.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/swag/conv v0.25.4 // indirect
@@ -142,7 +145,7 @@ require (
 	golang.org/x/crypto v0.55.0
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0
 	golang.org/x/tools v0.48.0 // indirect
 	google.golang.org/protobuf v1.36.11

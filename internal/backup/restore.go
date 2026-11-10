@@ -174,7 +174,7 @@ func Restore(opts RestoreOptions) (result RestoreResult, err error) {
 	result.Agent = name
 	result.Files = len(manifest.Files)
 	result.Note = note
-	result.PortWarning = portConflict(root, name, targetDir)
+	result.PortWarning = portConflict(name, targetDir)
 
 	entry := readRegistryEntry(staging)
 	if registerErr := registerAgent(name, entry); registerErr != nil {
@@ -203,7 +203,13 @@ func restoreGlobal(root, staging string, manifest Manifest, opts RestoreOptions)
 	if strings.TrimSpace(opts.Agent) != "" {
 		return RestoreResult{}, errors.New("--agent cannot be used with a global archive")
 	}
-	allowed := map[string]bool{"agents.json": true, "controlplane.json": true}
+	allowed := map[string]bool{
+		"agents.json":                    true,
+		"controlplane.json":              true,
+		"config/model_capabilities.json": true,
+		"config/model_prices.json":       true,
+		"config/tool_prices.json":        true,
+	}
 	for _, file := range manifest.Files {
 		if !allowed[file.Path] {
 			return RestoreResult{}, fmt.Errorf("unexpected file %q in global archive", file.Path)
@@ -211,7 +217,7 @@ func restoreGlobal(root, staging string, manifest Manifest, opts RestoreOptions)
 	}
 	if !opts.Force {
 		for _, file := range manifest.Files {
-			if _, err := os.Stat(filepath.Join(root, file.Path)); err == nil {
+			if _, err := os.Stat(globalRestorePath(root, file.Path)); err == nil {
 				return RestoreResult{}, fmt.Errorf("%s already exists; use --force to replace it", file.Path)
 			}
 		}
@@ -220,7 +226,10 @@ func restoreGlobal(root, staging string, manifest Manifest, opts RestoreOptions)
 	stamp := time.Now().Format("20060102-150405")
 	for _, file := range manifest.Files {
 		src := filepath.Join(staging, filepath.FromSlash(file.Path))
-		dst := filepath.Join(root, file.Path)
+		dst := globalRestorePath(root, file.Path)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+			return RestoreResult{}, err
+		}
 		if _, err := os.Stat(dst); err == nil {
 			if err := copyFile(dst, dst+".pre-restore-"+stamp); err != nil {
 				return RestoreResult{}, fmt.Errorf("save previous %s: %w", file.Path, err)
@@ -235,6 +244,15 @@ func restoreGlobal(root, staging string, manifest Manifest, opts RestoreOptions)
 		Files: len(manifest.Files),
 		Note:  "restart the control plane API to load the restored configuration",
 	}, nil
+}
+
+// globalRestorePath maps an archive entry to its on-disk location. Flat
+// agents.json/controlplane.json entries from older archives land in config/.
+func globalRestorePath(root, archiveName string) string {
+	if archiveName == "agents.json" || archiveName == "controlplane.json" {
+		return filepath.Join(root, "config", archiveName)
+	}
+	return filepath.Join(root, filepath.FromSlash(archiveName))
 }
 
 func loadManifest(staging string) (Manifest, error) {
@@ -442,7 +460,7 @@ func registerAgent(name string, entry registryEntryFile) error {
 	if _, exists := registry.Agents[name]; !exists {
 		created := strings.TrimSpace(entry.CreatedAt)
 		if created == "" {
-			created = time.Now().Format("2006-01-02")
+			created = agentdir.CreatedAtUTC()
 		}
 		registry.Agents[name] = agentdir.AgentInfo{CreatedAt: created}
 	}
@@ -452,7 +470,7 @@ func registerAgent(name string, entry registryEntryFile) error {
 	return agentdir.SaveRegistry(registry)
 }
 
-func portConflict(root, name, agentRoot string) string {
+func portConflict(name, agentRoot string) string {
 	port := envPort(filepath.Join(agentRoot, ".env"))
 	if port == "" {
 		return ""
@@ -465,7 +483,11 @@ func portConflict(root, name, agentRoot string) string {
 		if other == name {
 			continue
 		}
-		otherPort := envPort(filepath.Join(root, other, ".env"))
+		otherRoot, err := agentdir.AgentRoot(other)
+		if err != nil {
+			continue
+		}
+		otherPort := envPort(filepath.Join(otherRoot, ".env"))
 		if otherPort != "" && otherPort == port {
 			return fmt.Sprintf("PORT %s is also configured for agent %q", port, other)
 		}

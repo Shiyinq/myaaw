@@ -22,7 +22,7 @@ myaaw --agent agent-b chat
 - **Interactive mode** (no `-m`) opens a TUI with streaming responses, tool call status, and a session picker.
 - If no `--agent` is given, no message is sent, and more than one agent exists, chat shows an arrow-key picker before starting.
 - **One-shot mode** (`-m`) prints the answer and exits. It uses streaming when `STREAM_RESPONSE` is enabled.
-- The directory you launch `chat` from is registered as the active project for that session. The agent can read and edit files there directly, in addition to `~/.myaaw/<agent>/home`.
+- The directory you launch `chat` from is registered as the active project for that session. The agent can read and edit files there directly, in addition to `~/.myaaw/agents/<agent>/home`.
 - Conversations are stored in the agent's SQLite database and can be reopened with `/sessions`.
 
 ## Slash commands
