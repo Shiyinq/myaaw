@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { providers as providersApi } from '$lib/apis/providers';
 	import { agentSelection, toastStore } from '$lib/stores';
+	import { capabilityFor, loadModelCapabilities } from '$lib/stores/modelCatalog';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { validate, type FieldErrors } from '$lib/utils/validation';
 	import { providerSchema } from '$lib/schemas';
@@ -24,7 +25,12 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
 	import { Cpu, Pencil, Plus, RefreshCw, Star, Trash2, Wand2 } from 'lucide-svelte';
-	import type { ModelListView, ProviderView, ProviderConnection } from '$lib/types';
+	import type {
+		ModelCapabilitiesView,
+		ModelListView,
+		ProviderView,
+		ProviderConnection
+	} from '$lib/types';
 
 	const { t } = useTranslation();
 
@@ -41,6 +47,8 @@
 	let baseUrl = $state('');
 	let apiKey = $state('');
 	let defaultModel = $state('');
+	let thinkingLevel = $state('');
+	let modelCapabilities = $state<ModelCapabilitiesView | null>(null);
 	let discovered = $state<ModelListView | null>(null);
 	let errors = $state<FieldErrors>({});
 	let editing = $state('');
@@ -56,6 +64,46 @@
 	);
 
 	let agent = $derived(agentSelection.selected);
+
+	// The catalog decides whether the selected model can reason at all. Without an
+	// entry the thinking field stays hidden instead of offering levels the model
+	// would reject.
+	let capability = $derived(capabilityFor(modelCapabilities, defaultModel));
+	let thinkingSupported = $derived(capability?.capabilities?.thinking === true);
+	let thinkingChoices = $derived.by(() => {
+		if (!thinkingSupported) return [];
+		const values = [...(capability?.thinking?.effort_values ?? [])];
+		if (
+			capability?.thinking?.can_disable === true &&
+			!values.some((value) => value === 'none' || value === 'off')
+		) {
+			values.unshift('off');
+		}
+		return values;
+	});
+
+	$effect(() => {
+		if (modelCapabilities) return;
+		void loadModelCapabilities()
+			.then((view) => {
+				modelCapabilities = view;
+			})
+			.catch(() => {
+				// The catalog is optional: the thinking field simply stays hidden.
+			});
+	});
+
+	// Only a value that the selected model documents is saved; switching models
+	// keeps the pending choice in the form until it is saved.
+	let effectiveThinking = $derived(
+		thinkingSupported && thinkingChoices.includes(thinkingLevel) ? thinkingLevel : ''
+	);
+
+	function thinkingLabel(value: string) {
+		if (value === 'none' || value === 'off') return t('myaaw.chat.thinking_off');
+		if (value === 'xhigh') return 'XHigh';
+		return value.charAt(0).toUpperCase() + value.slice(1);
+	}
 
 	async function load(currentAgent: string) {
 		loading = true;
@@ -142,6 +190,7 @@
 					: 'openai';
 		baseUrl = provider.base_url ?? '';
 		defaultModel = provider.default_model ?? '';
+		thinkingLevel = provider.thinking_level ?? '';
 		apiKey = '';
 		discovered = null;
 		errors = {};
@@ -158,6 +207,7 @@
 		baseUrl = '';
 		apiKey = '';
 		defaultModel = '';
+		thinkingLevel = '';
 		discovered = null;
 		errors = {};
 	}
@@ -165,6 +215,7 @@
 	function changeType() {
 		formVersion += 1;
 		defaultModel = '';
+		thinkingLevel = '';
 		credentialId = '';
 		connection = undefined;
 		connecting = false;
@@ -187,7 +238,8 @@
 			api_key: isChatGPT ? undefined : apiKey,
 			auth_mode: isChatGPT ? 'oauth' : undefined,
 			credential_id: isChatGPT ? credentialId : undefined,
-			default_model: defaultModel
+			default_model: defaultModel,
+			thinking_level: effectiveThinking
 		});
 		if (!result.ok) {
 			errors = result.errors;
@@ -201,7 +253,8 @@
 					type: 'openai_chatgpt',
 					auth_mode: 'oauth' as const,
 					credential_id: credentialId,
-					default_model: result.data.default_model ?? ''
+					default_model: result.data.default_model ?? '',
+					thinking_level: effectiveThinking
 				};
 				if (editing) await providersApi.update(agent, editing, payload);
 				else await providersApi.create(agent, { ...payload, name: result.data.name });
@@ -212,7 +265,8 @@
 					type: result.data.type,
 					base_url: result.data.base_url ?? '',
 					api_key: result.data.api_key?.trim() || undefined,
-					default_model: result.data.default_model ?? ''
+					default_model: result.data.default_model ?? '',
+					thinking_level: effectiveThinking
 				});
 			} else {
 				await providersApi.create(agent, {
@@ -220,7 +274,8 @@
 					type: result.data.type,
 					base_url: result.data.base_url || undefined,
 					api_key: result.data.api_key || undefined,
-					default_model: result.data.default_model || undefined
+					default_model: result.data.default_model || undefined,
+					thinking_level: effectiveThinking || undefined
 				});
 			}
 			toastStore.success(t('myaaw.providers.saved'));
@@ -329,6 +384,13 @@
 								<div class="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
 									{#if provider.default_model}
 										<span class="font-mono">{provider.default_model}</span>
+									{/if}
+									{#if provider.thinking_level}
+										<span
+											>{t('myaaw.providers.thinking')}: {thinkingLabel(
+												provider.thinking_level
+											)}</span
+										>
 									{/if}
 									{#if provider.type === 'openai_chatgpt'}
 										<span>{t(`myaaw.chatgpt.${connectionStatusKey(provider.connection)}`)}</span>
@@ -494,6 +556,25 @@
 							</div>
 						{/if}
 						<FieldError code={errors.default_model} />
+
+						{#if thinkingSupported}
+							<div class="grid gap-1">
+								<Label for="provider-thinking">{t('myaaw.providers.thinking')}</Label>
+								<select
+									id="provider-thinking"
+									bind:value={thinkingLevel}
+									class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+								>
+									<option value="">{t('myaaw.chat.thinking_default')}</option>
+									{#each thinkingChoices as value (value)}
+										<option {value}>{thinkingLabel(value)}</option>
+									{/each}
+								</select>
+								<p class="text-[11px] text-muted-foreground">
+									{t('myaaw.providers.thinking_hint')}
+								</p>
+							</div>
+						{/if}
 
 						<Separator />
 						<div class="flex flex-wrap gap-2">

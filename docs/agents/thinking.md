@@ -10,7 +10,9 @@ exact wire shape for every supported provider.
 ## 1. Where it lives
 
 - **Dashboard:** the chat composer footer, between the model picker and the
-  approval picker. On phones the three controls are icon-only.
+  approval picker. On phones the three controls are icon-only. The **Providers**
+  page exposes the same field in the create and edit forms, shown only when the
+  selected model supports reasoning.
 - **Config:** `providers.<name>.thinking_level` in the agent's `config.json`.
 - **Runtime:** `agent.RunConfig.ThinkingLevel` → provider context → adapter.
 

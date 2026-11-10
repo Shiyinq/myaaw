@@ -780,6 +780,8 @@
 			"base_url": "Base URL",
 			"api_key": "API key",
 			"model": "Default model",
+			"thinking": "Thinking level",
+			"thinking_hint": "Only models that support reasoning show levels.",
 			"discover": "Discover models",
 			"set_default": "Set default",
 			"saved": "Provider saved",

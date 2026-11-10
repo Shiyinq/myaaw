@@ -7,6 +7,7 @@ export const providerSchema = z
 		type: z.enum(['openai', 'gemini', 'openai_chatgpt']),
 		base_url: optionalUrlSchema.optional(),
 		default_model: optionalTextSchema.optional(),
+		thinking_level: optionalTextSchema.optional(),
 		api_key: z.string().optional(),
 		auth_mode: z.literal('oauth').optional(),
 		credential_id: z.string().trim().min(1).optional()

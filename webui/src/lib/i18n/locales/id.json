@@ -780,6 +780,8 @@
 			"base_url": "Base URL",
 			"api_key": "API key",
 			"model": "Model default",
+			"thinking": "Tingkat berpikir",
+			"thinking_hint": "Hanya model yang mendukung reasoning yang menampilkan level.",
 			"discover": "Temukan model",
 			"set_default": "Jadikan default",
 			"saved": "Penyedia disimpan",
