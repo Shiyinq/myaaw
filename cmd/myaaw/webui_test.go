@@ -284,3 +284,12 @@ func TestStartWebUIConfigKeepsStoredVersion(t *testing.T) {
 		t.Fatalf("node path = %q", got.NodePath)
 	}
 }
+
+func TestWebuiBundleVersion(t *testing.T) {
+	if got := webuiBundleVersion(webUIConfig{Version: "v2026.11.10.2"}); got != "v2026.11.10.2" {
+		t.Fatalf("version = %q", got)
+	}
+	if got := webuiBundleVersion(webUIConfig{}); got != "unknown" {
+		t.Fatalf("empty version = %q, want unknown", got)
+	}
+}

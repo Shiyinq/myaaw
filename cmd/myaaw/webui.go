@@ -107,7 +107,7 @@ type webUIConfig struct {
 	NodePath string `json:"node_path,omitempty"`
 	// Public disables /setup and the host hints on the login page, for a
 	// dashboard served to other people through a tunnel.
-	Public bool `json:"public,omitempty"`
+	Public bool `json:"public"`
 }
 
 var (
@@ -206,6 +206,59 @@ var webuiStatusCmd = &cobra.Command{
 	},
 }
 
+var webuiVersionJSON bool
+
+var webuiVersionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Show the installed WebUI bundle version and its config",
+	Run: func(cmd *cobra.Command, args []string) {
+		cfg, err := loadWebUIConfig()
+		if err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+		entry, err := webuiEntryPath()
+		if err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+		if _, err := os.Stat(entry); err != nil {
+			fmt.Println(theme.RenderError("❌ WebUI is not installed"))
+			fmt.Println(theme.RenderMuted("   run 'myaaw webui install' first"))
+			return
+		}
+		installPath := filepath.Dir(filepath.Dir(entry))
+		configPath, _ := webUIConfigPath()
+
+		if webuiVersionJSON {
+			// Marshal the stored config itself, so a field added later shows up
+			// without touching this command.
+			out := struct {
+				Version     string      `json:"version"`
+				InstallPath string      `json:"install_path"`
+				ConfigPath  string      `json:"config_path"`
+				Config      webUIConfig `json:"config"`
+			}{webuiBundleVersion(cfg), installPath, configPath, cfg}
+			data, err := json.MarshalIndent(out, "", "  ")
+			if err != nil {
+				log.Fatalf("Error: %v", err)
+			}
+			fmt.Println(string(data))
+			return
+		}
+
+		node := cfg.NodePath
+		if node == "" {
+			node = "(not pinned, resolved from PATH)"
+		}
+		fmt.Printf("%s %s\n", theme.RenderSecondary("WebUI bundle:"), webuiBundleVersion(cfg))
+		fmt.Printf("%s %s\n", theme.RenderSecondary("Install path:"), installPath)
+		fmt.Printf("%s %s\n", theme.RenderSecondary("Config:"), configPath)
+		fmt.Printf("%s %s\n", theme.RenderSecondary("Port:"), cfg.Port)
+		fmt.Printf("%s %s\n", theme.RenderSecondary("API URL:"), cfg.APIURL)
+		fmt.Printf("%s %s\n", theme.RenderSecondary("Node.js:"), node)
+		fmt.Printf("%s %t\n", theme.RenderSecondary("Public:"), cfg.Public)
+	},
+}
+
 var webuiUpdateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Update the WebUI bundle to the latest release",
@@ -293,12 +346,15 @@ func init() {
 	webuiRollbackCmd.Flags().StringVar(&webuiRollbackTarget, "version", "", "release tag to restore (default: list available versions)")
 	webuiUninstallCmd.Flags().BoolVar(&webuiPurge, "purge", false, "also remove control-plane credentials")
 
+	webuiVersionCmd.Flags().BoolVar(&webuiVersionJSON, "json", false, "print the config as JSON")
+
 	webuiCmd.AddCommand(webuiInstallCmd)
 	webuiCmd.AddCommand(webuiRunCmd)
 	webuiCmd.AddCommand(webuiStartCmd)
 	webuiCmd.AddCommand(webuiStopCmd)
 	webuiCmd.AddCommand(webuiRestartCmd)
 	webuiCmd.AddCommand(webuiStatusCmd)
+	webuiCmd.AddCommand(webuiVersionCmd)
 	webuiCmd.AddCommand(webuiUpdateCmd)
 	webuiCmd.AddCommand(webuiRollbackCmd)
 	webuiCmd.AddCommand(webuiUninstallCmd)
@@ -471,6 +527,15 @@ func waitWebUIRunning(timeout time.Duration) bool {
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
+}
+
+// webuiBundleVersion reports the installed bundle tag, or "unknown" for a
+// config written before the version was tracked.
+func webuiBundleVersion(cfg webUIConfig) string {
+	if v := strings.TrimSpace(cfg.Version); v != "" {
+		return v
+	}
+	return "unknown"
 }
 
 // startWebUIConfig overlays the values `webui start` owns onto the config read
