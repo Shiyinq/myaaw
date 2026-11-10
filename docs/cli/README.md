@@ -63,7 +63,7 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 
 | Command | Description | Document |
 | :--- | :--- | :--- |
-| `status` | Health summary for the active agent | [Utilities](utilities.md#myaaw-status) |
+| `status` | API, WebUI, and agent health summary (`--all-agent` for every agent) | [Service](service.md#status) |
 | `logs` | Interactive log viewer or filtered stream | [Logs](logs.md) |
 | `observability` | Inspect traces, token usage, and cost | [Observability](../agents/observability.md#6-cli) |
 | `doctor` | Check environment readiness (permissions, dependencies) | [Utilities](utilities.md#myaaw-doctor) |
@@ -91,6 +91,9 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 
 | Command | Description | Document |
 | :--- | :--- | :--- |
+| `start` | Start the selected agent servers, the API, and the WebUI | [Service](service.md#whole-stack-commands) |
+| `stop` | Stop the same targets | [Service](service.md#whole-stack-commands) |
+| `restart` | Stop, wait, and start the same targets | [Service](service.md#whole-stack-commands) |
 | `server run` | Run the agent server in the foreground | [Service](service.md) |
 | `server start` | Start the agent daemon | [Service](service.md) |
 | `server stop` | Stop and unregister the daemon | [Service](service.md) |
@@ -99,7 +102,14 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 | `api` | Unified control plane API (`--host` defaults to loopback) | [API Command](api.md) |
 | `webui` | Install and manage the optional dashboard | [WebUI Command](webui.md) |
 
-`start`, `stop`, and `restart` are aliases for `server start`, `server stop`, and `server restart`.
+`start`, `stop`, and `restart` operate on the whole stack: the selected agent servers,
+the control plane API, and the dashboard when installed. Without flags they target the
+default agent; `--agent <name>` picks one agent, and `--all-agent` targets every agent.
+The API and the WebUI are always included.
+
+`server start`, `server stop`, `server restart`, and `server status` also accept
+`--all-agent`, which reports and acts on every registered agent and names each agent
+in the output. `server run` stays a single-agent foreground process.
 
 ## Conventions
 

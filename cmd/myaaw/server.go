@@ -14,6 +14,7 @@ import (
 	"myaaw/internal/middleware"
 	"myaaw/internal/services/queue/repository"
 	"myaaw/internal/services/queue/service"
+	"os"
 	"time"
 
 	_ "myaaw/docs/swagger"
@@ -25,8 +26,8 @@ import (
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "Manage the web server",
-	Long:  "Manage the Fiber web server (run, start, stop, status).",
+	Short: "Manage the agent server",
+	Long:  "Manage the per-agent Fiber server (run, start, stop, status).",
 }
 
 var serverRunCmd = &cobra.Command{
@@ -41,15 +42,20 @@ var serverStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the bot as a persistent background service",
 	Run: func(cmd *cobra.Command, args []string) {
-		dm, err := daemon.NewManager(serverDaemonName())
+		targets, err := serverAgentTargets()
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		runArgs := serverRunArgs()
-		if err := dm.Start(runArgs); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+		fmt.Println(theme.RenderPrimary("Starting agent servers"))
+		failed := 0
+		for _, target := range targets {
+			if err := startServiceTarget(target); err != nil {
+				failed++
+				printTargetError(target, "start", err)
+			}
 		}
+		finishService(failed, "agents", "started")
 	},
 }
 
@@ -57,14 +63,20 @@ var serverStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop and unregister the background service",
 	Run: func(cmd *cobra.Command, args []string) {
-		dm, err := daemon.NewManager(serverDaemonName())
+		targets, err := serverAgentTargets()
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		if err := dm.Stop(); err != nil {
-			log.Fatalf("Failed to stop server: %v", err)
+		fmt.Println(theme.RenderSecondary("Stopping agent servers"))
+		failed := 0
+		for _, target := range reverseTargets(targets) {
+			if err := stopServiceTarget(target); err != nil {
+				failed++
+				printTargetError(target, "stop", err)
+			}
 		}
+		finishService(failed, "agents", "stopped")
 	},
 }
 
@@ -72,23 +84,27 @@ var serverRestartCmd = &cobra.Command{
 	Use:   "restart",
 	Short: "Restart the background service",
 	Run: func(cmd *cobra.Command, args []string) {
-		dm, err := daemon.NewManager(serverDaemonName())
+		targets, err := serverAgentTargets()
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		fmt.Println(theme.RenderSecondary("🔄 Stopping server..."))
-		if err := dm.Stop(); err != nil {
-			fmt.Printf("%s: %v\n", theme.RenderError("⚠️  Stop warning"), err)
+		fmt.Println(theme.RenderPrimary("Restarting agent servers"))
+		failed := 0
+		for _, target := range reverseTargets(targets) {
+			if err := stopServiceTarget(target); err != nil {
+				failed++
+				printTargetError(target, "stop", err)
+			}
 		}
-
 		time.Sleep(1 * time.Second)
-
-		fmt.Println(theme.RenderPrimary("🚀 Starting server..."))
-		runArgs := serverRunArgs()
-		if err := dm.Start(runArgs); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+		for _, target := range targets {
+			if err := startServiceTarget(target); err != nil {
+				failed++
+				printTargetError(target, "start", err)
+			}
 		}
+		finishService(failed, "agents", "restarted")
 	},
 }
 
@@ -96,20 +112,35 @@ var serverStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check server status",
 	Run: func(cmd *cobra.Command, args []string) {
-		dm, err := daemon.NewManager(serverDaemonName())
+		targets, err := serverAgentTargets()
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
 
-		pid, running, err := dm.Status()
-		if err != nil {
-			log.Fatalf("Error checking status: %v", err)
+		fmt.Println(theme.RenderPrimary("Agent server status"))
+		width := 0
+		for _, target := range targets {
+			if len(target.name) > width {
+				width = len(target.name)
+			}
 		}
-
-		if running {
-			fmt.Printf("%s (PID: %d)\n", theme.RenderSuccess("✅ Server is running"), pid)
-		} else {
-			fmt.Println(theme.RenderError("❌ Server is stopped"))
+		failed := 0
+		for _, target := range targets {
+			label := fmt.Sprintf("%q", target.name)
+			pid, running, err := agentDaemonStatus(target.name)
+			if err != nil {
+				failed++
+				fmt.Printf("  agent %-*s  error: %v\n", width+2, label, err)
+				continue
+			}
+			if running {
+				fmt.Printf("  agent %-*s  running (PID: %d, Port: %s)\n", width+2, label, pid, agentPort(target.name))
+			} else {
+				fmt.Printf("  agent %-*s  stopped\n", width+2, label)
+			}
+		}
+		if failed > 0 {
+			os.Exit(1)
 		}
 	},
 }
@@ -120,14 +151,49 @@ func init() {
 	serverCmd.AddCommand(serverStopCmd)
 	serverCmd.AddCommand(serverRestartCmd)
 	serverCmd.AddCommand(serverStatusCmd)
+
+	for _, cmd := range []*cobra.Command{serverStartCmd, serverStopCmd, serverRestartCmd, serverStatusCmd} {
+		cmd.Flags().BoolVar(&serviceAllAgents, "all-agent", false, "operate on every registered agent")
+	}
 }
 
-func serverDaemonName() string {
-	return "myaaw-server-" + agentdir.Active()
+// serverAgentTargets lists the agents a `server` command operates on: every
+// registered agent with --all-agent, otherwise the selected (or default) one.
+func serverAgentTargets() ([]serviceTarget, error) {
+	if serviceAllAgents {
+		names, err := agentdir.ListAgents()
+		if err != nil {
+			return nil, err
+		}
+		targets := make([]serviceTarget, 0, len(names))
+		for _, name := range names {
+			targets = append(targets, serviceTarget{kind: targetAgent, name: name})
+		}
+		return targets, nil
+	}
+	return []serviceTarget{{kind: targetAgent, name: agentdir.Active()}}, nil
 }
 
-func serverRunArgs() []string {
-	return []string{"--agent", agentdir.Active(), "server", "run"}
+// agentRunArgs is the command line the supervisor runs for one agent.
+func agentRunArgs(agentName string) []string {
+	return []string{"--agent", agentName, "server", "run"}
+}
+
+// stopAgent stops and unregisters one agent's server daemon.
+func stopAgent(agentName string) error {
+	dm, err := daemon.NewAgentManager(agentName)
+	if err != nil {
+		return err
+	}
+	return dm.Stop()
+}
+
+func agentDaemonStatus(agentName string) (int, bool, error) {
+	dm, err := daemon.NewAgentManager(agentName)
+	if err != nil {
+		return 0, false, err
+	}
+	return dm.Status()
 }
 
 func startServer(ctx context.Context) {

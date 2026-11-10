@@ -44,11 +44,7 @@ var apiStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the API as a background daemon",
 	Run: func(cmd *cobra.Command, args []string) {
-		manager, err := daemon.NewGlobalManager(apiDaemonName())
-		if err != nil {
-			log.Fatalf("Error: %v", err)
-		}
-		if err := manager.Start(apiRunArgs()); err != nil {
+		if err := startAPIDaemon(); err != nil {
 			log.Fatalf("Failed to start API: %v", err)
 		}
 	},
@@ -58,11 +54,7 @@ var apiStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the API daemon",
 	Run: func(cmd *cobra.Command, args []string) {
-		manager, err := daemon.NewGlobalManager(apiDaemonName())
-		if err != nil {
-			log.Fatalf("Error: %v", err)
-		}
-		if err := manager.Stop(); err != nil {
+		if err := stopAPIDaemon(); err != nil {
 			log.Fatalf("Failed to stop API: %v", err)
 		}
 	},
@@ -72,20 +64,15 @@ var apiRestartCmd = &cobra.Command{
 	Use:   "restart",
 	Short: "Restart the API daemon",
 	Run: func(cmd *cobra.Command, args []string) {
-		manager, err := daemon.NewGlobalManager(apiDaemonName())
-		if err != nil {
-			log.Fatalf("Error: %v", err)
-		}
-
-		fmt.Println(theme.RenderSecondary("🔄 Stopping API..."))
-		if err := manager.Stop(); err != nil {
-			fmt.Printf("%s: %v\n", theme.RenderError("⚠️  Stop warning"), err)
+		fmt.Println(theme.RenderSecondary("Stopping API..."))
+		if err := stopAPIDaemon(); err != nil {
+			fmt.Printf("%s: %v\n", theme.RenderError("Stop warning"), err)
 		}
 
 		time.Sleep(1 * time.Second)
 
-		fmt.Println(theme.RenderPrimary("🚀 Starting API..."))
-		if err := manager.Start(apiRunArgs()); err != nil {
+		fmt.Println(theme.RenderPrimary("Starting API..."))
+		if err := startAPIDaemon(); err != nil {
 			log.Fatalf("Failed to start API: %v", err)
 		}
 	},
@@ -95,21 +82,16 @@ var apiStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check API daemon status",
 	Run: func(cmd *cobra.Command, args []string) {
-		manager, err := daemon.NewGlobalManager(apiDaemonName())
-		if err != nil {
-			log.Fatalf("Error: %v", err)
-		}
-
-		pid, running, err := manager.Status()
+		pid, running, err := apiDaemonStatus()
 		if err != nil {
 			log.Fatalf("Error checking status: %v", err)
 		}
 
 		if running {
-			fmt.Printf("%s (PID: %d)\n", theme.RenderSuccess("✅ API is running"), pid)
+			fmt.Printf("%s (PID: %d)\n", theme.RenderSuccess("API is running"), pid)
 			fmt.Printf("   http://localhost:%s/docs/\n", apiPort)
 		} else {
-			fmt.Println(theme.RenderError("❌ API is stopped"))
+			fmt.Println(theme.RenderError("API is stopped"))
 		}
 	},
 }
@@ -135,6 +117,30 @@ func runAPI() {
 
 func apiDaemonName() string {
 	return "myaaw-api"
+}
+
+func startAPIDaemon() error {
+	manager, err := daemon.NewGlobalManager(apiDaemonName())
+	if err != nil {
+		return err
+	}
+	return manager.Start(apiRunArgs())
+}
+
+func stopAPIDaemon() error {
+	manager, err := daemon.NewGlobalManager(apiDaemonName())
+	if err != nil {
+		return err
+	}
+	return manager.Stop()
+}
+
+func apiDaemonStatus() (int, bool, error) {
+	manager, err := daemon.NewGlobalManager(apiDaemonName())
+	if err != nil {
+		return 0, false, err
+	}
+	return manager.Status()
 }
 
 // effectiveAllowedOrigins prefers the flag, then the environment, so both

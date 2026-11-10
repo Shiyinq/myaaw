@@ -4,22 +4,27 @@ Small commands for health, build info, updates, and shell integration.
 
 ## `myaaw status`
 
-Prints a health summary for the active agent:
+Prints the API and WebUI status first, then a health block for one agent:
 
 | Section | What it shows |
 | :--- | :--- |
+| Services | Whether `myaaw-api` and `myaaw-webui` are running, their PIDs and URLs. |
 | Gateway / Server | Whether `myaaw-server-<agent>` is running, its PID and port. |
-| SQLite DB | Whether the database file is reachable, and its path. |
+| SQLite DB | Whether the agent's database file is reachable, and its path. |
 | Channels | Telegram (and mode) and Discord configured state. |
 | Heartbeat | Whether the scheduled self-check is active, its interval and target. |
 | LLM Provider | Active provider and streaming setting. |
 
 ```bash
-myaaw status
-myaaw --agent agent-b status
+myaaw status                  # default agent
+myaaw --agent agent-b status  # one agent
+myaaw status --all-agent      # every registered agent, full block each
 ```
 
-This is a read-only summary. For daemon control, use [Service Management](service.md).
+Each agent block is read from that agent's own `.env` and `config.json`, so `--all-agent`
+reports several agents in one process. `--all-agent` takes precedence over `--agent`.
+
+This is a read-only summary. For daemon control, use [Service Management](service.md#whole-stack-commands).
 
 ## `myaaw computer`
 
