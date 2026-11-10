@@ -75,7 +75,7 @@ curl -fsSL .../install.sh | bash -s -- --webui       # binary + dashboard
   webui/
     current/             # extracted bundle (build/, node_modules/, package.json)
     versions/<tag>/      # previous bundles kept for rollback (last three)
-    config.json          # {"port":"5050","api_url":"http://localhost:9000","version":"..."}
+    config.json          # {"port":"5050","api_url":"http://localhost:9000","version":"...","node_path":"/path/to/node"}
   pids/myaaw-webui.pid
   logs/myaaw-webui.log
 ```
@@ -92,6 +92,13 @@ executes `node build/index.js` with:
 
 On Unix the process is replaced with Node (`exec`), so the daemon's PID is the
 Node server and `webui stop` terminates it cleanly.
+
+`webui start` also resolves the Node.js binary in your shell and saves its
+absolute path as `node_path` in `config.json`. launchd and systemd start the
+daemon with a minimal `PATH`, so a Node installed by nvm, asdf, or another
+version manager would otherwise be invisible to `webui run`. Re-run
+`webui start` after switching Node versions; the pinned path is validated on
+every start and `webui run` falls back to `PATH` when it is gone.
 
 ## Rollback
 

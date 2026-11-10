@@ -41,13 +41,17 @@ const (
 // against; Node 20 is end-of-life and has no global `navigator`.
 const minNodeMajor = 22
 
-// findNode locates node and rejects versions older than minNodeMajor. It returns
-// the resolved path so callers do not look it up twice.
+// findNode locates node in PATH and rejects versions older than minNodeMajor.
 func findNode() (string, error) {
 	path, err := exec.LookPath("node")
 	if err != nil {
-		return "", fmt.Errorf("Node.js %d+ is required but was not found in PATH", minNodeMajor)
+		return "", fmt.Errorf("node was not found in PATH (%s); Node.js %d+ is required, install it or start the daemon from a shell that has it", os.Getenv("PATH"), minNodeMajor)
 	}
+	return checkNode(path)
+}
+
+// checkNode verifies that path is a usable Node.js binary of a supported version.
+func checkNode(path string) (string, error) {
 	out, err := exec.Command(path, "--version").Output()
 	if err != nil {
 		return "", fmt.Errorf("could not read the Node.js version from %q: %w", path, err)
@@ -61,6 +65,20 @@ func findNode() (string, error) {
 		return "", fmt.Errorf("Node.js %d+ is required, found %s", minNodeMajor, strings.TrimSpace(string(out)))
 	}
 	return path, nil
+}
+
+// nodeForConfig prefers the binary pinned when the daemon was registered.
+// launchd and systemd start the daemon without the shell PATH, so a node
+// installed by nvm or asdf is invisible to `webui run` unless its absolute
+// path is saved. The PATH lookup remains the fallback for a direct
+// `webui run` and for a pinned binary that a Node upgrade removed.
+func nodeForConfig(cfg webUIConfig) (string, error) {
+	if pinned := strings.TrimSpace(cfg.NodePath); pinned != "" {
+		if node, err := checkNode(pinned); err == nil {
+			return node, nil
+		}
+	}
+	return findNode()
 }
 
 // parseNodeMajor reads the major version from `node --version` output (`v22.14.0`).
@@ -77,12 +95,16 @@ func parseNodeMajor(out string) (int, bool) {
 	return major, true
 }
 
-// webUIConfig is stored in ~/.myaaw/webui/config.json. It only holds the
-// defaults; the browser keeps the user's last choice in localStorage.
+// webUIConfig is stored in ~/.myaaw/webui/config.json. It holds the settings the
+// daemon starts with; the browser keeps the user's last choice in localStorage.
 type webUIConfig struct {
 	Port    string `json:"port"`
 	APIURL  string `json:"api_url"`
 	Version string `json:"version"`
+	// NodePath pins the Node.js binary resolved when the daemon was started.
+	// Service managers do not inherit the shell PATH, so an nvm or asdf node is
+	// otherwise unreachable from `webui run`.
+	NodePath string `json:"node_path,omitempty"`
 	// Public disables /setup and the host hints on the login page, for a
 	// dashboard served to other people through a tunnel.
 	Public bool `json:"public,omitempty"`
@@ -396,19 +418,53 @@ func startWebUI(cfg webUIConfig) error {
 		return fmt.Errorf("WebUI is not installed; run 'myaaw webui install' first")
 	}
 
+	node, err := findNode()
+	if err != nil {
+		return err
+	}
+
 	dm, err := daemon.NewGlobalManager(webuiDaemonName)
 	if err != nil {
 		return err
 	}
+
+	// Keep the config in sync with what is actually running so `status` and the
+	// next start agree on the port and control-plane URL, and pin the Node.js
+	// binary resolved here: the service manager starts the daemon with a minimal
+	// PATH, where an nvm or asdf node is not reachable.
+	cfg.NodePath = node
+	if err := saveWebUIConfig(cfg); err != nil {
+		return fmt.Errorf("could not save the WebUI config: %w", err)
+	}
+
 	args := []string{"webui", "run", "--port", cfg.Port, "--api-url", cfg.APIURL}
 	if err := dm.Start(args); err != nil {
 		return err
 	}
-	// Keep the config in sync with what is actually running so `status` and the
-	// next start agree on the port and control-plane URL.
-	_ = saveWebUIConfig(cfg)
+
+	// Registering the service succeeds even when the child exits immediately
+	// (KeepAlive then retries every few seconds), so wait for a live process
+	// before reporting success.
+	if !waitWebUIRunning(3 * time.Second) {
+		return fmt.Errorf("WebUI exited right after starting; check %s", dm.LogFile)
+	}
+
 	fmt.Printf("%s http://127.0.0.1:%s\n", theme.RenderSuccess("✅ WebUI started"), cfg.Port)
 	return nil
+}
+
+// waitWebUIRunning polls the daemon until it reports a live process.
+func waitWebUIRunning(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if isWebUIRunning() {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
 }
 
 func restartWebUI(cfg webUIConfig) error {
@@ -436,7 +492,7 @@ func runWebUI() error {
 		return fmt.Errorf("WebUI is not installed; run 'myaaw webui install' first")
 	}
 
-	node, err := findNode()
+	node, err := nodeForConfig(cfg)
 	if err != nil {
 		return err
 	}
@@ -794,7 +850,15 @@ func downloadFile(url, dest string) error {
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, resp.Body)
+	// The bundle is several MB and GitHub redirects the asset to a CDN, so show
+	// the same percentage line `myaaw update` uses instead of staying silent
+	// until the file is complete. Content-Length may be missing; progressWriter
+	// then reports bytes instead.
+	pw := &progressWriter{Total: resp.ContentLength}
+	_, err = io.Copy(out, io.TeeReader(resp.Body, pw))
+	if pw.Downloaded > 0 {
+		fmt.Println() // Newline after the progress line
+	}
 	return err
 }
 
