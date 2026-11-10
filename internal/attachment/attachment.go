@@ -50,6 +50,24 @@ type Item struct {
 // @attach('path'). A bare path ends at whitespace or a closing parenthesis.
 var directiveRE = regexp.MustCompile(`(?i)@attach\(\s*(?:"([^"]+)"|'([^']+)'|([^)\s]+))\s*\)`)
 
+// bareAtRE matches the short form @/absolute/path (and @~/home/path) that the
+// model sometimes writes instead of the full directive. It deliberately requires
+// a slash after @ so mentions such as @username are untouched.
+var bareAtRE = regexp.MustCompile(`@((?:~/|/|~)[^\s"'<>()]+)`)
+
+// resolveLoose resolves a path, retrying without sentence punctuation so a path
+// followed by a period or comma still resolves.
+func resolveLoose(raw string, roots Roots) (Item, bool) {
+	if item, ok := Resolve(raw, roots); ok {
+		return item, true
+	}
+	trimmed := strings.TrimRight(raw, ".,;:!?")
+	if trimmed != raw {
+		return Resolve(trimmed, roots)
+	}
+	return Item{}, false
+}
+
 var imageExt = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true,
 	".bmp": true, ".svg": true, ".avif": true, ".apng": true, ".ico": true,
@@ -73,58 +91,55 @@ var deniedNames = map[string]bool{
 	"id_ecdsa":         true,
 }
 
-// Extract removes every resolved @attach(...) directive from text and returns
-// the items that resolved to a readable file inside one of the roots. A
-// directive that does not resolve (a directory, a missing file, a denied path)
-// is left in the text so the reader still sees what the model referenced.
-// Directives inside a fenced code block are documentation, not delivery.
-func Extract(text string, roots Roots) (string, []Item) {
-	if !directiveRE.MatchString(text) {
-		return text, nil
+// Collect finds attachment references in text without changing it: resolved
+// @attach(...) directives plus bare previewable media paths. Directives and
+// paths inside a fenced code block are documentation, not delivery. The caller
+// decides how the text is presented, so a surface can keep the directive and
+// render it its own way.
+func Collect(text string, roots Roots) []Item {
+	if !directiveRE.MatchString(text) && !bareAtRE.MatchString(text) && !mediaPathRE.MatchString(text) {
+		return nil
 	}
 
-	lines := strings.Split(text, "\n")
-	kept := make([]string, 0, len(lines))
-	seenVirtual := make(map[string]bool)
-	var items []Item
-	fence := ""
+	items := make([]Item, 0, 2)
+	seen := make(map[string]bool)
+	add := func(raw string) {
+		if raw == "" {
+			return
+		}
+		item, ok := resolveLoose(raw, roots)
+		if !ok || seen[item.Virtual] {
+			return
+		}
+		seen[item.Virtual] = true
+		items = append(items, item)
+	}
 
-	for _, line := range lines {
+	fence := ""
+	for _, line := range strings.Split(text, "\n") {
 		if isFence, next := fenceState(line, fence); isFence {
 			fence = next
-			kept = append(kept, line)
 			continue
 		}
-		if fence != "" || !directiveRE.MatchString(line) {
-			kept = append(kept, line)
+		if fence != "" {
 			continue
 		}
-
-		hadResolved := false
-		without := directiveRE.ReplaceAllStringFunc(line, func(match string) string {
-			sub := directiveRE.FindStringSubmatch(match)
-			raw := firstNonEmpty(sub[1], sub[2], sub[3])
-			if raw == "" {
-				return match
-			}
-			item, ok := Resolve(raw, roots)
-			if !ok {
-				return match
-			}
-			hadResolved = true
-			if !seenVirtual[item.Virtual] {
-				seenVirtual[item.Virtual] = true
-				items = append(items, item)
-			}
-			return ""
-		})
-		if hadResolved && strings.TrimSpace(without) == "" {
-			continue
+		for _, match := range directiveRE.FindAllStringSubmatch(line, -1) {
+			add(firstNonEmpty(match[1], match[2], match[3]))
 		}
-		kept = append(kept, strings.TrimRight(without, " \t"))
+		for _, match := range bareAtRE.FindAllStringSubmatch(line, -1) {
+			add(match[1])
+		}
 	}
 
-	return strings.TrimSpace(strings.Join(kept, "\n")), items
+	for _, item := range Promote(text, roots) {
+		if seen[item.Virtual] {
+			continue
+		}
+		seen[item.Virtual] = true
+		items = append(items, item)
+	}
+	return items
 }
 
 // fenceState reports whether the line is a code-fence marker and what the fence
@@ -148,20 +163,40 @@ func fenceState(line, open string) (bool, string) {
 }
 
 // Substitute replaces each resolved @attach(...) directive with the absolute
-// path it references, for surfaces that cannot render an attachment. Unresolved
-// directives are left untouched.
+// path it references, for surfaces that cannot hide the directive themselves.
+// Unresolved directives and directives inside a fenced code block are left
+// untouched.
 func Substitute(text string, roots Roots) string {
-	if !directiveRE.MatchString(text) {
+	if !directiveRE.MatchString(text) && !bareAtRE.MatchString(text) {
 		return text
 	}
-	return directiveRE.ReplaceAllStringFunc(text, func(match string) string {
-		sub := directiveRE.FindStringSubmatch(match)
-		raw := firstNonEmpty(sub[1], sub[2], sub[3])
-		if item, ok := Resolve(raw, roots); ok {
-			return item.AbsPath
+	lines := strings.Split(text, "\n")
+	fence := ""
+	for i, line := range lines {
+		if isFence, next := fenceState(line, fence); isFence {
+			fence = next
+			continue
 		}
-		return match
-	})
+		if fence != "" || (!directiveRE.MatchString(line) && !bareAtRE.MatchString(line)) {
+			continue
+		}
+		lines[i] = directiveRE.ReplaceAllStringFunc(line, func(match string) string {
+			sub := directiveRE.FindStringSubmatch(match)
+			raw := firstNonEmpty(sub[1], sub[2], sub[3])
+			if item, ok := resolveLoose(raw, roots); ok {
+				return item.AbsPath
+			}
+			return match
+		})
+		lines[i] = bareAtRE.ReplaceAllStringFunc(lines[i], func(match string) string {
+			sub := bareAtRE.FindStringSubmatch(match)
+			if item, ok := resolveLoose(sub[1], roots); ok {
+				return item.AbsPath
+			}
+			return match
+		})
+	}
+	return strings.Join(lines, "\n")
 }
 
 // mediaPathRE matches an absolute or ~ path ending in a previewable media
@@ -177,7 +212,7 @@ func Promote(text string, roots Roots) []Item {
 	var items []Item
 	seen := make(map[string]bool)
 	for _, match := range mediaPathRE.FindAllStringSubmatch(stripFencedBlocks(text), -1) {
-		item, ok := Resolve(match[1], roots)
+		item, ok := resolveLoose(match[1], roots)
 		if !ok || item.Kind == KindFile {
 			continue
 		}

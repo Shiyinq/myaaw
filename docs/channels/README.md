@@ -11,3 +11,4 @@ Related:
 
 - Channel setup via CLI: [Channels](../cli/channel.md)
 - Webhook management: [Webhook](../cli/webhook.md)
+- File delivery to the user: [Agent Attachments](../agents/attachments.md)

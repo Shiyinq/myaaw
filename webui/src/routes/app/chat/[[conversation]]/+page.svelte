@@ -1909,6 +1909,20 @@
 	}
 
 	/**
+	 * A delivery directive is backend syntax. Readers see the path it names, so
+	 * `@attach(/a/b.png)` renders as `/a/b.png` without the wrapper.
+	 */
+	const ATTACH_DIRECTIVE_RE = /@attach\(\s*(?:"([^"]+)"|'([^']+)'|([^)\s]+))\s*\)/gi;
+	/** Short form the model sometimes writes: `@/absolute/path`. */
+	const BARE_ATTACH_RE = /@((?:~\/?|\/)[^\s"'<>()]+)/g;
+
+	function displayText(text: string): string {
+		return text
+			.replace(ATTACH_DIRECTIVE_RE, (_match, ...groups) => groups.find((group) => group) ?? '')
+			.replace(BARE_ATTACH_RE, '$1');
+	}
+
+	/**
 	 * Uploads live under <agent>/user/uploads/<conversation>/<message>/ and the
 	 * transcript stores their absolute path. The Files API addresses them through
 	 * the /user virtual root, so keep the path from that folder on.
@@ -2931,7 +2945,7 @@
 												{#each phaseRows(group) as phase, index (phase.kind === 'group' ? phase.group.key : (phase.item.localId ?? index))}
 													{#if phase.kind === 'text'}
 														<div class="px-1 text-sm">
-															<Markdown content={phase.item.text ?? ''} />
+															<Markdown content={displayText(phase.item.text ?? '')} />
 														</div>
 													{:else}
 														{@const phaseGroup = phase.group}
@@ -3190,7 +3204,7 @@
 										<div
 											class="group/message wrap-break-word text-sm terminal:border-l terminal:pl-3"
 										>
-											<Markdown content={item.text ?? ''} />
+											<Markdown content={displayText(item.text ?? '')} />
 											{#if (item.attachments?.length ?? 0) > 0}
 												<RunAttachments {agent} attachments={item.attachments ?? []} />
 											{/if}
@@ -3200,9 +3214,12 @@
 													item.localId === latestAnswerKey && 'opacity-100'
 												)}
 											>
-												<CopyButton text={item.text ?? ''} />
+												<CopyButton text={displayText(item.text ?? '')} />
 												{#if !(streaming && item.localId === latestAnswerKey)}
-													<SpeakButton id={item.localId ?? ''} text={item.text ?? ''} />
+													<SpeakButton
+														id={item.localId ?? ''}
+														text={displayText(item.text ?? '')}
+													/>
 												{/if}
 												{#if !streaming && conversationId}
 													<button

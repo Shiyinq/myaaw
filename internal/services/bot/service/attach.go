@@ -45,7 +45,9 @@ func (r *BotServiceImpl) deliverAttachments(msg *channel.IncomingMessage, text s
 func attachmentsForChannel(channelName, text string, roots attachment.Roots) (string, []channel.Attachment) {
 	switch strings.ToLower(strings.TrimSpace(channelName)) {
 	case "api":
-		cleaned, items := collectItems(text, roots)
+		// Keep the directive in the text: the WebUI renders it as its path, while
+		// the transcript keeps exactly what the model wrote.
+		items := attachment.Collect(text, roots)
 		atts := make([]channel.Attachment, 0, len(items))
 		for _, item := range items {
 			att := channel.Attachment{
@@ -64,7 +66,7 @@ func attachmentsForChannel(channelName, text string, roots attachment.Roots) (st
 			}
 			atts = append(atts, att)
 		}
-		return cleaned, atts
+		return text, atts
 	case "telegram", "discord":
 		return messagingAttachments(text, roots)
 	default:
@@ -74,26 +76,11 @@ func attachmentsForChannel(channelName, text string, roots attachment.Roots) (st
 	}
 }
 
-// collectItems gathers both explicit @attach(...) directives and bare media
-// paths, deduplicating by virtual path.
-func collectItems(text string, roots attachment.Roots) (string, []attachment.Item) {
-	cleaned, items := attachment.Extract(text, roots)
-	seen := make(map[string]bool, len(items))
-	for _, item := range items {
-		seen[item.Virtual] = true
-	}
-	for _, item := range attachment.Promote(cleaned, roots) {
-		if seen[item.Virtual] {
-			continue
-		}
-		seen[item.Virtual] = true
-		items = append(items, item)
-	}
-	return cleaned, items
-}
-
 func messagingAttachments(text string, roots attachment.Roots) (string, []channel.Attachment) {
-	cleaned, items := collectItems(text, roots)
+	// Messaging surfaces cannot hide the directive, so it is replaced by the
+	// plain path; the file still travels as a native attachment.
+	cleaned := attachment.Substitute(text, roots)
+	items := attachment.Collect(text, roots)
 	atts := make([]channel.Attachment, 0, len(items))
 	for _, item := range items {
 		if item.Size > messagingAttachmentMaxBytes {

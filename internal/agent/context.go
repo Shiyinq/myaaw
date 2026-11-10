@@ -167,7 +167,15 @@ func (b *SystemPromptBuilder) Build() string {
 // deliveryInstruction has to stay identical for every channel. The prompt is
 // cached by prefix, so a surface-specific sentence would invalidate the cache
 // whenever a session switches between the terminal and a chat surface.
-const deliveryInstruction = "To hand a file to the user, write @attach(/absolute/path) in your final answer and it will appear in the chat; never base64-encode the file or paste its contents into the reply."
+const deliveryInstruction = "Deliver the files that answer the user's request. " +
+	"Whenever you create, generate, download, export, or modify a file, document, image, " +
+	"audio/video, archive, report, or project the user asked for, always attach it by writing " +
+	"@attach(/absolute/path) in your final answer (one directive per file). " +
+	"For a project, attach the relevant source files or the packaged output the user needs, " +
+	"not its dependencies or build caches. " +
+	"Do not attach files you created only as temporary helpers, debug scripts, probes, logs, " +
+	"caches, or scratch files. " +
+	"Use absolute paths, and never base64-encode a file or paste its contents into the reply."
 
 // isLocalChannel reports whether the channel runs in the user's local working
 // directory and should therefore receive current-directory context.

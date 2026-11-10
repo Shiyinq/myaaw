@@ -3,7 +3,6 @@ package attachment
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -35,15 +34,12 @@ func writeFile(t *testing.T, path string) string {
 	return path
 }
 
-func TestExtractResolvesFile(t *testing.T) {
+func TestCollectResolvesFile(t *testing.T) {
 	roots := testRoots(t)
 	image := writeFile(t, filepath.Join(roots.Home, "workspace", "chart.png"))
 
-	cleaned, items := Extract("Here is the chart.\n@attach("+image+")\nDone.", roots)
+	items := Collect("Here is the chart.\n@attach("+image+")\nDone.", roots)
 
-	if cleaned != "Here is the chart.\nDone." {
-		t.Fatalf("cleaned = %q", cleaned)
-	}
 	if len(items) != 1 {
 		t.Fatalf("items = %d, want 1", len(items))
 	}
@@ -62,21 +58,18 @@ func TestExtractResolvesFile(t *testing.T) {
 	}
 }
 
-func TestExtractMultipleKinds(t *testing.T) {
+func TestCollectMultipleKinds(t *testing.T) {
 	roots := testRoots(t)
 	video := writeFile(t, filepath.Join(roots.Home, "out", "clip.mp4"))
 	audio := writeFile(t, filepath.Join(roots.Home, "out", "voice.mp3"))
 	doc := writeFile(t, filepath.Join(roots.Home, "out", "report.pdf"))
 	zip := writeFile(t, filepath.Join(roots.Home, "out", "bundle.zip"))
 
-	cleaned, items := Extract(
+	items := Collect(
 		"Files: @attach("+video+") @attach("+audio+") @attach("+doc+") @attach("+zip+")",
 		roots,
 	)
 
-	if cleaned != "Files:" {
-		t.Fatalf("cleaned = %q", cleaned)
-	}
 	kinds := map[string]Kind{}
 	for _, item := range items {
 		kinds[item.Name] = item.Kind
@@ -95,78 +88,116 @@ func TestExtractMultipleKinds(t *testing.T) {
 	}
 }
 
-func TestExtractQuotedPathWithSpaces(t *testing.T) {
+func TestCollectQuotedPathWithSpaces(t *testing.T) {
 	roots := testRoots(t)
 	file := writeFile(t, filepath.Join(roots.Home, "workspace", "my chart.png"))
 
-	cleaned, items := Extract(`@attach("`+file+`")`, roots)
+	items := Collect(`@attach("`+file+`")`, roots)
 
-	if cleaned != "" {
-		t.Errorf("cleaned = %q", cleaned)
-	}
 	if len(items) != 1 || items[0].Name != "my chart.png" {
 		t.Fatalf("items = %+v", items)
 	}
 }
 
-func TestExtractDeduplicates(t *testing.T) {
+func TestCollectDeduplicates(t *testing.T) {
 	roots := testRoots(t)
 	file := writeFile(t, filepath.Join(roots.Home, "a.png"))
 
-	_, items := Extract("@attach("+file+")\n@attach("+file+")", roots)
+	items := Collect("@attach("+file+")\n@attach("+file+")", roots)
 
 	if len(items) != 1 {
 		t.Fatalf("items = %d, want 1", len(items))
 	}
 }
 
-func TestExtractKeepsUnresolvedDirective(t *testing.T) {
+func TestCollectKeepsUnresolved(t *testing.T) {
 	roots := testRoots(t)
 	dir := filepath.Join(roots.Home, "workspace", "site")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	cleaned, items := Extract("@attach("+dir+")", roots)
-
-	if len(items) != 0 {
+	if items := Collect("@attach("+dir+")", roots); len(items) != 0 {
 		t.Fatalf("items = %+v, want none for a directory", items)
-	}
-	if !strings.Contains(cleaned, "@attach(") {
-		t.Errorf("unresolved directive should stay in text, got %q", cleaned)
 	}
 }
 
-func TestExtractOutsideRootsKept(t *testing.T) {
+func TestCollectOutsideRoots(t *testing.T) {
 	roots := testRoots(t)
 	outside := writeFile(t, filepath.Join(t.TempDir(), "secret.txt"))
 
-	cleaned, items := Extract("@attach("+outside+")", roots)
-
-	if len(items) != 0 {
+	if items := Collect("@attach("+outside+")", roots); len(items) != 0 {
 		t.Fatalf("items = %+v, want none", items)
-	}
-	if !strings.Contains(cleaned, "@attach(") {
-		t.Errorf("directive should stay in text, got %q", cleaned)
 	}
 }
 
-func TestExtractIgnoresFencedDirective(t *testing.T) {
+func TestCollectBareAtPath(t *testing.T) {
 	roots := testRoots(t)
-	file := writeFile(t, filepath.Join(roots.Home, "workspace", "a.png"))
+	file := writeFile(t, filepath.Join(roots.Home, "workspace", "poem.md"))
 
-	text := "Real:\n@attach(" + file + ")\n\n```\n@attach(" + file + ")\n```\n"
-	cleaned, items := Extract(text, roots)
+	items := Collect("Ini filenya\n@"+file, roots)
 
 	if len(items) != 1 {
 		t.Fatalf("items = %+v", items)
 	}
-	// The directive inside the fence is documentation and must stay visible.
-	if strings.Count(cleaned, "@attach(") != 1 {
-		t.Fatalf("cleaned = %q", cleaned)
+	if items[0].Kind != KindFile {
+		t.Errorf("kind = %q", items[0].Kind)
 	}
-	if !strings.Contains(cleaned, "```") {
-		t.Fatalf("fenced block was removed: %q", cleaned)
+}
+
+func TestCollectBareAtPathWithPunctuation(t *testing.T) {
+	roots := testRoots(t)
+	file := writeFile(t, filepath.Join(roots.Home, "workspace", "poem.md"))
+
+	items := Collect("Lihat @"+file+".", roots)
+
+	if len(items) != 1 {
+		t.Fatalf("items = %+v", items)
+	}
+}
+
+func TestSubstituteBareAtPath(t *testing.T) {
+	roots := testRoots(t)
+	file := writeFile(t, filepath.Join(roots.Home, "workspace", "poem.md"))
+
+	got := Substitute("Ini filenya\n@"+file, roots)
+
+	if got != "Ini filenya\n"+file {
+		t.Fatalf("Substitute = %q", got)
+	}
+}
+
+func TestCollectListItem(t *testing.T) {
+	roots := testRoots(t)
+	file := writeFile(t, filepath.Join(roots.Home, "workspace", "a.md"))
+
+	items := Collect("1. @attach("+file+")", roots)
+
+	if len(items) != 1 {
+		t.Fatalf("items = %+v", items)
+	}
+}
+
+func TestCollectIgnoresFencedDirective(t *testing.T) {
+	roots := testRoots(t)
+	file := writeFile(t, filepath.Join(roots.Home, "workspace", "a.png"))
+
+	text := "Real:\n@attach(" + file + ")\n\n```\n@attach(" + file + ")\n```\n"
+	items := Collect(text, roots)
+
+	if len(items) != 1 {
+		t.Fatalf("items = %+v", items)
+	}
+}
+
+func TestSubstituteListItem(t *testing.T) {
+	roots := testRoots(t)
+	file := writeFile(t, filepath.Join(roots.Home, "workspace", "a.md"))
+
+	got := Substitute("1. @attach("+file+")", roots)
+
+	if got != "1. "+file {
+		t.Fatalf("Substitute = %q", got)
 	}
 }
 

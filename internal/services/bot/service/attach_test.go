@@ -41,7 +41,8 @@ func TestDeliverAttachmentsAPIUsesVirtualPath(t *testing.T) {
 
 	cleaned, attachments := attachmentsForChannel("api", "Here is the clip.\n@attach("+video+")\n", roots)
 
-	if cleaned != "Here is the clip." {
+	// The directive stays in the text; the WebUI renders it as its path.
+	if cleaned != "Here is the clip.\n@attach("+video+")\n" {
 		t.Fatalf("cleaned = %q", cleaned)
 	}
 	if len(attachments) != 1 {
@@ -103,7 +104,8 @@ func TestDeliverAttachmentsMessagingReadsBytes(t *testing.T) {
 
 	cleaned, attachments := attachmentsForChannel("telegram", "@attach("+image+")", roots)
 
-	if cleaned != "" {
+	// Messaging surfaces cannot hide the directive, so it becomes the path.
+	if cleaned != image {
 		t.Errorf("cleaned = %q", cleaned)
 	}
 	if len(attachments) != 1 || string(attachments[0].Data) != "PNG" {
