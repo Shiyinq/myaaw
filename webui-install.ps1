@@ -34,7 +34,15 @@ Write-Host "Welcome to Myaaw WebUI Setup"
 Write-Host "================================================="
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    Write-Host "Node.js 20+ is required but was not found in PATH." -ForegroundColor Red
+    Write-Host "Node.js 22+ is required but was not found in PATH." -ForegroundColor Red
+    Write-Host "Install it from https://nodejs.org and re-run this script."
+    exit 1
+}
+$NodeVersion = (& node --version 2>$null)
+$NodeMajor = 0
+if ($NodeVersion) { $NodeMajor = [int]($NodeVersion.TrimStart('v') -split '\.')[0] }
+if ($NodeMajor -lt 22) {
+    Write-Host "Node.js 22+ is required, found $NodeVersion." -ForegroundColor Red
     Write-Host "Install it from https://nodejs.org and re-run this script."
     exit 1
 }

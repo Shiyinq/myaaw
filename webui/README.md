@@ -9,7 +9,7 @@ shadcn-svelte + bits-ui, xterm.js, and `@vite-pwa/sveltekit` for offline support
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 22+
 - A running control plane: `myaaw api start --port 9000`
 
 Agents are not served by this app. Chat is proxied to the control plane, so the

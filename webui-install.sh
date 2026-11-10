@@ -45,7 +45,14 @@ echo "🐈 Welcome to Myaaw WebUI Setup"
 echo "================================================="
 
 if ! command -v node >/dev/null 2>&1; then
-    echo "❌ Node.js 20+ is required but was not found in PATH."
+    echo "❌ Node.js 22+ is required but was not found in PATH."
+    echo "   Install it from https://nodejs.org and re-run this script."
+    exit 1
+fi
+
+NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null)
+if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 22 ]; then
+    echo "❌ Node.js 22+ is required, found $(node --version 2>/dev/null)."
     echo "   Install it from https://nodejs.org and re-run this script."
     exit 1
 fi

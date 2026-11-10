@@ -4,7 +4,7 @@
 
 ## Requirements
 
-- Node.js 20+ (the dashboard's only extra runtime dependency).
+- Node.js 22+ (the dashboard's only extra runtime dependency).
 - A control plane: `myaaw api start` (default `http://localhost:9000`).
 
 ## Install

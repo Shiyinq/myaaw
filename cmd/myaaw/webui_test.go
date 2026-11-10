@@ -128,3 +128,25 @@ func TestWebUIConfigPersistsPublicMode(t *testing.T) {
 		t.Fatal("public mode should be off")
 	}
 }
+
+func TestParseNodeMajor(t *testing.T) {
+	tests := []struct {
+		in    string
+		want  int
+		valid bool
+	}{
+		{"v22.14.0\n", 22, true},
+		{"v24.14.1\n", 24, true},
+		{"v20.20.2\n", 20, true},
+		{"22.0.0", 22, true},
+		{"v22", 0, false},
+		{"", 0, false},
+		{"not-a-version", 0, false},
+	}
+	for _, tt := range tests {
+		got, ok := parseNodeMajor(tt.in)
+		if ok != tt.valid || got != tt.want {
+			t.Errorf("parseNodeMajor(%q) = (%d, %v), want (%d, %v)", tt.in, got, ok, tt.want, tt.valid)
+		}
+	}
+}

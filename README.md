@@ -306,7 +306,7 @@ myaaw webui open         # http://127.0.0.1:5050
 
 On a host without the binary, open `/setup` from the dashboard to download and install it, then continue to sign in. First-time logins are sent to the profile page to change the seeded password before continuing.
 
-Requirements: Node.js 20+. The dashboard and the control plane bind to loopback by default. To reach a remote binary, use a tunnel (Tailscale, Cloudflare, ngrok) or SSH port-forward — see [Remote WebUI Connection](docs/webui/remote-connection.md) and [WebUI Security](docs/webui/security.md). The `/setup` binary download currently supports **linux/amd64** and **darwin/arm64** only; on other platforms, install `myaaw` manually.
+Requirements: Node.js 22+. The dashboard and the control plane bind to loopback by default. To reach a remote binary, use a tunnel (Tailscale, Cloudflare, ngrok) or SSH port-forward — see [Remote WebUI Connection](docs/webui/remote-connection.md) and [WebUI Security](docs/webui/security.md). The `/setup` binary download currently supports **linux/amd64** and **darwin/arm64** only; on other platforms, install `myaaw` manually.
 
 
 
