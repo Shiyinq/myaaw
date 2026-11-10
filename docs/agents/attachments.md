@@ -200,7 +200,8 @@ The non-streaming API response (`internal/services/bot/handler/api_handler.go`)
 uses the same fields on `AttachmentResponse`. Tool attachments that live on disk
 also set `Path` (for example the `computer` tool's
 `/home/workspace/screenshots/shot.png`), so screenshots are streamed instead of
-embedded.
+embedded. A byte-only tool attachment has no path and is omitted from the API
+payload; those bytes are for messaging uploads only.
 
 MCP servers run with `/home/workspace/mcp` as their working directory, so files
 they write with a relative name (Playwright screenshots, downloads) land there
@@ -301,6 +302,7 @@ by the WebUI and replaced by the path on messaging/terminal surfaces.
 | :--- | :--- |
 | Directive parsing, path resolution, kinds, auto-promotion | `internal/attachment/attachment.go` |
 | Per-surface delivery and transcript persistence | `internal/services/bot/service/attach.go` |
+| Tool-emitted attachments (`StructuredResult.Attachments`) | `internal/agent/tool.go`, `internal/agent/tools/computer/computer.go` |
 | Run integration (final text, transcript cleanup) | `internal/services/bot/service/conversation.go` |
 | Static prompt instruction | `internal/agent/context.go` |
 | Attachment struct | `internal/channel/message.go` |

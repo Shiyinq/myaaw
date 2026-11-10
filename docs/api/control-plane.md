@@ -249,7 +249,7 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | `done` | `{"ok":true,"text","conversation_id"?,"run_id"?,"usage"?,"attachments"?,"stopped"?}` |
 | `error` | `{"error":"..."}` followed by `done {"ok":false}` |
 
-Merge consecutive deltas per kind. On `done`, use `done.text` as the authoritative final answer; it can differ from the accumulated deltas when the run stops without normal output.
+Merge consecutive deltas per kind. On `done`, use `done.text` as the authoritative final answer; it can differ from the accumulated deltas when the run stops without normal output. `done.attachments` entries are `{file_name, mime_type, path, kind, size}` and carry only a virtual path: fetch the bytes with `GET /agents/:name/fs/raw?path=...`. See [Agent Attachments](../agents/attachments.md) for the delivery contract and per-surface behavior.
 
 For streaming requests, an invalid `conversation_id` is reported as an `error` event because the HTTP status is already `200` once the stream starts.
 

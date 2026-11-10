@@ -26,8 +26,9 @@ func attachmentRoots() attachment.Roots {
 }
 
 // deliverAttachments converts @attach(...) directives in the model's final
-// answer into attachments the surface can show, and returns the text with the
-// resolved directives removed.
+// answer into attachments the surface can show. The API surface keeps the text
+// untouched and lets the WebUI hide the directive; messaging and terminal
+// surfaces replace it with the plain path, because they cannot render it.
 //
 // The API/WebUI surface receives a virtual path it can fetch (and stream with
 // Range). Messaging surfaces receive the bytes, because their adapters upload
@@ -89,8 +90,8 @@ func messagingAttachments(text string, roots attachment.Roots) (string, []channe
 }
 
 // attachToFinalAssistant persists path-based attachments with the assistant
-// turn so a reopened chat renders them again. Byte-only attachments (tool
-// screenshots, messaging uploads) are not stored.
+// turn so a reopened chat renders them again. Byte-only attachments (messaging
+// uploads) are not stored.
 func attachToFinalAssistant(transcript []provider.Message, attachments []channel.Attachment) {
 	items := make([]provider.MessageAttachment, 0, len(attachments))
 	for _, att := range attachments {
