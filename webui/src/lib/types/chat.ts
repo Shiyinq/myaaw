@@ -28,6 +28,14 @@ export interface Attachment {
 	size?: number;
 }
 
+/** One image opened in the full-screen lightbox. */
+export interface LightboxImage {
+	src: string;
+	name: string;
+	/** URL used by the download button; falls back to `src` (data URLs work). */
+	downloadSrc?: string;
+}
+
 export interface ChatRequest {
 	text: string;
 	/** Lets the client stop this run with `POST /chat/stop`. */

@@ -1,7 +1,15 @@
 <script lang="ts">
-	import { ArrowDownToLine, ChevronLeft, ChevronRight, File as FileIcon } from 'lucide-svelte';
+	import {
+		ArrowDownToLine,
+		ChevronLeft,
+		ChevronRight,
+		Download,
+		File as FileIcon
+	} from 'lucide-svelte';
 	import { files as filesApi } from '$lib/apis/files';
-	import type { Attachment } from '$lib/types';
+	import { useTranslation } from '$lib/i18n/useTranslation';
+	import type { Attachment, LightboxImage } from '$lib/types';
+	import ImageLightbox from './ImageLightbox.svelte';
 
 	interface Props {
 		agent: string;
@@ -9,6 +17,8 @@
 	}
 
 	let { agent, attachments }: Props = $props();
+
+	const { t } = useTranslation();
 
 	/** Falls back to the MIME type for attachments produced before `kind` existed. */
 	function kindOf(attachment: Attachment): string {
@@ -42,6 +52,52 @@
 	// everything else (audio, PDF, opaque files) keeps its own row below.
 	let media = $derived(attachments.filter((a) => ['image', 'video'].includes(kindOf(a))));
 	let others = $derived(attachments.filter((a) => !['image', 'video'].includes(kindOf(a))));
+	let images = $derived(media.filter((a) => kindOf(a) === 'image'));
+
+	// Clicking a photo opens the shared lightbox with the whole image set, so the
+	// reader can zoom and step through the answer's pictures without going back.
+	let lightboxOpen = $state(false);
+	let lightboxIndex = $state(0);
+	let lightboxItems = $derived<LightboxImage[]>(
+		images.map((attachment) => ({
+			src: srcOf(attachment),
+			name: attachment.file_name,
+			downloadSrc: srcOf(attachment, true)
+		}))
+	);
+
+	/** Suppresses the click that ends a horizontal swipe on the carousel. */
+	let pressX = 0;
+	let pressY = 0;
+
+	function notePress(event: PointerEvent) {
+		pressX = event.clientX;
+		pressY = event.clientY;
+	}
+
+	function openImage(event: MouseEvent, attachment: Attachment) {
+		if (Math.hypot(event.clientX - pressX, event.clientY - pressY) > 8) return;
+		const found = images.findIndex((item) => item === attachment);
+		lightboxIndex = found < 0 ? 0 : found;
+		lightboxOpen = true;
+	}
+
+	/** The thumbnail's own button saves the photo without opening the lightbox. */
+	function downloadImage(attachment: Attachment) {
+		if (attachment.path) {
+			filesApi.download(agent, attachment.path);
+			return;
+		}
+		const src = srcOf(attachment);
+		if (!src) return;
+		const link = document.createElement('a');
+		link.href = src;
+		link.download = attachment.file_name;
+		link.rel = 'noopener';
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+	}
 
 	let track = $state<HTMLDivElement | null>(null);
 	let active = $state(0);
@@ -97,14 +153,34 @@
 
 {#snippet mediaItem(attachment: Attachment, carousel: boolean)}
 	{#if kindOf(attachment) === 'image'}
-		<img
-			src={srcOf(attachment)}
-			alt={attachment.file_name}
-			loading="lazy"
-			class={carousel
-				? 'h-72 w-auto max-w-none rounded-xl border'
-				: 'max-h-72 max-w-full rounded-xl border'}
-		/>
+		<div class="relative inline-block max-w-full">
+			<button
+				type="button"
+				class="block cursor-zoom-in rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2"
+				aria-label={attachment.file_name}
+				onpointerdown={notePress}
+				onclick={(event) => openImage(event, attachment)}
+			>
+				<img
+					src={srcOf(attachment)}
+					alt={attachment.file_name}
+					loading="lazy"
+					draggable="false"
+					class={carousel
+						? 'h-72 w-auto max-w-none rounded-xl border'
+						: 'max-h-72 max-w-full rounded-xl border'}
+				/>
+			</button>
+			<button
+				type="button"
+				class="absolute right-1.5 bottom-1.5 grid size-7 place-items-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+				title={t('myaaw.chat.download_file')}
+				aria-label={t('myaaw.chat.download_file')}
+				onclick={() => downloadImage(attachment)}
+			>
+				<Download class="h-3.5 w-3.5" />
+			</button>
+		</div>
 	{:else}
 		<!-- Agent-produced clips have no caption track to attach. -->
 		<!-- svelte-ignore a11y_media_has_caption -->
@@ -201,3 +277,5 @@
 		{/each}
 	</div>
 {/if}
+
+<ImageLightbox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />

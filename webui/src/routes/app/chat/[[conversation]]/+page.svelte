@@ -30,6 +30,7 @@
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
 	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
 	import RunAttachments from '$lib/components/app/RunAttachments.svelte';
+	import ImageLightbox from '$lib/components/app/ImageLightbox.svelte';
 	import FocusAgentPanel from '$lib/components/focus/FocusAgentPanel.svelte';
 	import FocusContextEditor from '$lib/components/focus/FocusContextEditor.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
@@ -86,6 +87,7 @@
 		ApprovalDecision,
 		ContextUsage,
 		ConversationTurn,
+		LightboxImage,
 		Message,
 		ModelCapabilitiesView,
 		Upload,
@@ -250,6 +252,36 @@
 	let switchingApproval = $state(false);
 	let pending = $state<PendingImage[]>([]);
 	let pendingFiles = $state<PendingFile[]>([]);
+	// Photos from user turns use this shared viewer; agent attachments mount their
+	// own instance inside RunAttachments.
+	let lightboxOpen = $state(false);
+	let lightboxIndex = $state(0);
+	let lightboxItems = $state<LightboxImage[]>([]);
+
+	/** Opens the photos of one user turn with the clicked image selected. */
+	function openImageLightbox(sources: string[], startIndex: number) {
+		lightboxItems = sources.map((src, index) => ({ src, name: imageFileName(src, index) }));
+		lightboxIndex = Math.min(Math.max(startIndex, 0), Math.max(0, sources.length - 1));
+		lightboxOpen = true;
+	}
+
+	/** User uploads arrive as data URLs, so the download name comes from the MIME type. */
+	function imageFileName(src: string, index: number): string {
+		const mime = /^data:image\/([a-z0-9.+-]+)/i.exec(src)?.[1]?.toLowerCase() ?? 'jpeg';
+		const ext = mime === 'jpeg' ? 'jpg' : mime.replace(/[^a-z0-9]/g, '') || 'jpg';
+		return `image-${index + 1}.${ext}`;
+	}
+
+	/** Data-URL photos have no virtual path, so the browser saves them directly. */
+	function downloadImage(src: string, name: string) {
+		const link = document.createElement('a');
+		link.href = src;
+		link.download = name;
+		link.rel = 'noopener';
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+	}
 	let dragOver = $state(false);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let groupOpen = $state<Record<string, boolean>>({});
@@ -3065,11 +3097,31 @@
 												{#if item.images?.length}
 													<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
 														{#each item.images as image, imageIndex (imageIndex)}
-															<img
-																src={image}
-																alt=""
-																class="max-h-48 rounded-2xl border object-contain"
-															/>
+															<div class="relative inline-block max-w-full">
+																<button
+																	type="button"
+																	class="block cursor-zoom-in rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2"
+																	aria-label={t('myaaw.chat.lightbox_open')}
+																	onclick={() => openImageLightbox(item.images ?? [], imageIndex)}
+																>
+																	<img
+																		src={image}
+																		alt=""
+																		draggable="false"
+																		class="max-h-48 rounded-2xl border object-contain"
+																	/>
+																</button>
+																<button
+																	type="button"
+																	class="absolute right-1.5 bottom-1.5 grid size-7 place-items-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+																	title={t('myaaw.chat.download_file')}
+																	aria-label={t('myaaw.chat.download_file')}
+																	onclick={() =>
+																		downloadImage(image, imageFileName(image, imageIndex))}
+																>
+																	<Download class="h-3.5 w-3.5" />
+																</button>
+															</div>
 														{/each}
 													</div>
 												{/if}
@@ -4061,4 +4113,6 @@
 			/>
 		</aside>
 	{/if}
+
+	<ImageLightbox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />
 </div>
