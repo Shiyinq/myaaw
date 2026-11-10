@@ -4,6 +4,7 @@ export interface CreateProviderRequest {
 	base_url?: string;
 	api_key?: string;
 	default_model?: string;
+	thinking_level?: string;
 	auth_mode?: 'oauth';
 	credential_id?: string;
 }
@@ -13,6 +14,7 @@ export interface UpdateProviderRequest {
 	base_url?: string;
 	api_key?: string;
 	default_model?: string;
+	thinking_level?: string;
 	auth_mode?: 'oauth';
 	credential_id?: string;
 }

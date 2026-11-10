@@ -43,7 +43,10 @@ type RunConfig struct {
 	// also record a trace pass the same id so logs and traces correlate.
 	RunID string
 
-	Model            string
+	Model string
+	// ThinkingLevel is the requested reasoning effort for this run, empty for the
+	// model default. Providers resolve it against the capability catalog.
+	ThinkingLevel    string
 	MaxIterations    int
 	WarningThreshold int
 
@@ -95,6 +98,7 @@ type RunConfig struct {
 func DefaultRunConfig(model string) RunConfig {
 	cfg := RunConfig{
 		Model:               model,
+		ThinkingLevel:       config.LLMProviderThinkingLevel,
 		MaxIterations:       config.AgentMaxIterations,
 		WarningThreshold:    config.AgentWarningIterations,
 		MaxToolOutputBytes:  config.AgentMaxToolOutputBytes,

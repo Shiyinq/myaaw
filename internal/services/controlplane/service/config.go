@@ -29,22 +29,24 @@ var (
 )
 
 type ProviderInput struct {
-	Name         string
-	Type         string
-	BaseURL      string
-	APIKey       string
-	AuthMode     string
-	CredentialID string
-	DefaultModel string
+	Name          string
+	Type          string
+	BaseURL       string
+	APIKey        string
+	AuthMode      string
+	CredentialID  string
+	DefaultModel  string
+	ThinkingLevel string
 }
 
 type ProviderPatch struct {
-	Type         *string
-	BaseURL      *string
-	APIKey       *string
-	AuthMode     *string
-	CredentialID *string
-	DefaultModel *string
+	Type          *string
+	BaseURL       *string
+	APIKey        *string
+	AuthMode      *string
+	CredentialID  *string
+	DefaultModel  *string
+	ThinkingLevel *string
 }
 
 type ChannelInput struct {
@@ -61,14 +63,15 @@ type SecretState struct {
 }
 
 type ProviderView struct {
-	Name         string              `json:"name"`
-	Type         string              `json:"type"`
-	BaseURL      string              `json:"base_url,omitempty"`
-	DefaultModel string              `json:"default_model,omitempty"`
-	APIKey       SecretState         `json:"api_key"`
-	AuthMode     string              `json:"auth_mode,omitempty"`
-	CredentialID string              `json:"credential_id,omitempty"`
-	Connection   *ProviderConnection `json:"connection,omitempty"`
+	Name          string              `json:"name"`
+	Type          string              `json:"type"`
+	BaseURL       string              `json:"base_url,omitempty"`
+	DefaultModel  string              `json:"default_model,omitempty"`
+	APIKey        SecretState         `json:"api_key"`
+	AuthMode      string              `json:"auth_mode,omitempty"`
+	CredentialID  string              `json:"credential_id,omitempty"`
+	ThinkingLevel string              `json:"thinking_level,omitempty"`
+	Connection    *ProviderConnection `json:"connection,omitempty"`
 }
 
 type ProvidersView struct {
@@ -326,12 +329,13 @@ func (s *ConfigService) CreateProvider(agentName string, in ProviderInput) (Prov
 	}
 
 	providerConfig := config.ProviderConfig{
-		Type:         strings.TrimSpace(in.Type),
-		BaseURL:      strings.TrimSpace(in.BaseURL),
-		APIKey:       strings.TrimSpace(in.APIKey),
-		AuthMode:     strings.TrimSpace(in.AuthMode),
-		CredentialID: strings.TrimSpace(in.CredentialID),
-		DefaultModel: strings.TrimSpace(in.DefaultModel),
+		Type:          strings.TrimSpace(in.Type),
+		BaseURL:       strings.TrimSpace(in.BaseURL),
+		APIKey:        strings.TrimSpace(in.APIKey),
+		AuthMode:      strings.TrimSpace(in.AuthMode),
+		CredentialID:  strings.TrimSpace(in.CredentialID),
+		DefaultModel:  strings.TrimSpace(in.DefaultModel),
+		ThinkingLevel: strings.TrimSpace(in.ThinkingLevel),
 	}
 	if err := onboard.NormalizeProviderAuth(&providerConfig); err != nil {
 		return ProviderView{}, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
@@ -376,6 +380,9 @@ func (s *ConfigService) UpdateProvider(agentName, id string, patch ProviderPatch
 	}
 	if patch.DefaultModel != nil {
 		providerConfig.DefaultModel = strings.TrimSpace(*patch.DefaultModel)
+	}
+	if patch.ThinkingLevel != nil {
+		providerConfig.ThinkingLevel = strings.ToLower(strings.TrimSpace(*patch.ThinkingLevel))
 	}
 	if patch.AuthMode != nil {
 		providerConfig.AuthMode = strings.TrimSpace(*patch.AuthMode)

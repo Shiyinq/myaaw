@@ -16,6 +16,7 @@ import (
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
+	"myaaw/internal/thinking"
 )
 
 // MaxIterationsMessage is returned when the loop hits its safety cap.
@@ -220,7 +221,7 @@ func (a *Agent) RunEvents(
 			_ = emit(AgentEvent{Type: EventMessageStart, Message: &partial})
 		}
 
-		providerErr := a.Provider.ChatStreamEvents(ctx, cfg.Model, requestMessages, schemas, func(event provider.StreamEvent) error {
+		providerErr := a.Provider.ChatStreamEvents(thinking.WithLevel(ctx, cfg.ThinkingLevel), cfg.Model, requestMessages, schemas, func(event provider.StreamEvent) error {
 			switch event.Type {
 			case provider.StreamTextDelta:
 				if event.Text == "" {

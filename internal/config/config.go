@@ -36,6 +36,7 @@ var LLMProviderAPIKey string
 var LLMProviderAuthMode string
 var LLMProviderCredentialID string
 var LLMDefaultModel string
+var LLMProviderThinkingLevel string
 var StreamResponse bool
 var A2AToken string
 var A2ATokens []string
@@ -422,6 +423,10 @@ type ProviderConfig struct {
 	AuthMode     string `json:"auth_mode,omitempty"`
 	CredentialID string `json:"credential_id,omitempty"`
 	DefaultModel string `json:"default_model,omitempty"`
+	// ThinkingLevel is the reasoning effort for this provider, empty for the
+	// model default. It is resolved against the capability catalog at request
+	// time, so an unknown value degrades instead of failing.
+	ThinkingLevel string `json:"thinking_level,omitempty"`
 }
 
 type TranscriberConfig struct {
@@ -652,6 +657,7 @@ func LoadBaseConfig() {
 	LLMProviderCredentialID = ""
 	CurrentProviderID = ""
 	LLMDefaultModel = ""
+	LLMProviderThinkingLevel = ""
 
 	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")
 	TranscriberAPIKey = os.Getenv("TRANSCRIBER_API_KEY")
@@ -829,6 +835,7 @@ func LoadBaseConfig() {
 				LLMProviderCredentialID = provider.CredentialID
 				LLMProviderBaseURL = provider.BaseURL
 				LLMDefaultModel = provider.DefaultModel
+				LLMProviderThinkingLevel = provider.ThinkingLevel
 			}
 		}
 

@@ -41,6 +41,7 @@ export interface ProviderView {
 	type: string;
 	base_url?: string;
 	default_model?: string;
+	thinking_level?: string;
 	api_key: SecretState;
 	auth_mode?: 'oauth';
 	credential_id?: string;

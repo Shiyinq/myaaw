@@ -592,6 +592,7 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | :--- | :--- |
 | [Multi-Agent Guide](docs/agents/multi-agent.md) | Registry, agent commands, per-agent config, channels, ports, and servers. |
 | [Agent Loop](docs/agents/agent-loop.md) | Event-driven `RunEvents` engine, transcript v2, compaction, and retries. |
+| [Thinking Levels](docs/agents/thinking.md) | Reasoning effort per provider: catalog data, resolver rules, and wire shapes for Gemini, OpenAI, DeepSeek, and ChatGPT. |
 | [Tool Approvals](docs/agents/approvals.md) | Approval policy, grants, and flows across CLI, Telegram, Discord, API, sub-agents, and A2A. |
 | [Agent Skills](docs/agents/skills.md) | `SKILL.md` skills: discovery, prompt injection, execution, and data isolation. |
 | [MCP & Custom Tools](docs/agents/mcp-and-custom-tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |

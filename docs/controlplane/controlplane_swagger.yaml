@@ -44,6 +44,42 @@ definitions:
       path:
         type: string
     type: object
+  capabilities.Entry:
+    properties:
+      builtin_tools:
+        additionalProperties:
+          type: boolean
+        type: object
+      capabilities:
+        additionalProperties:
+          type: boolean
+        type: object
+      context_window_tokens:
+        type: integer
+      input_modalities:
+        items:
+          type: string
+        type: array
+      output_modalities:
+        items:
+          type: string
+        type: array
+      provider:
+        type: string
+      status:
+        type: string
+      thinking:
+        $ref: '#/definitions/capabilities.Thinking'
+    type: object
+  capabilities.Thinking:
+    properties:
+      can_disable:
+        type: boolean
+      effort_values:
+        items:
+          type: string
+        type: array
+    type: object
   common.ErrorResponse:
     properties:
       error:
@@ -458,6 +494,9 @@ definitions:
       name:
         example: openai
         type: string
+      thinking_level:
+        example: medium
+        type: string
       type:
         example: openai
         type: string
@@ -674,6 +713,9 @@ definitions:
       credential_id:
         type: string
       default_model:
+        type: string
+      thinking_level:
+        example: medium
         type: string
       type:
         type: string
@@ -1960,39 +2002,12 @@ definitions:
     properties:
       models:
         additionalProperties:
-          $ref: '#/definitions/service.ModelCapabilityEntry'
+          $ref: '#/definitions/capabilities.Entry'
         type: object
       version:
         type: integer
       warning:
         type: string
-    type: object
-  service.ModelCapabilityEntry:
-    properties:
-      builtin_tools:
-        additionalProperties:
-          type: boolean
-        type: object
-      capabilities:
-        additionalProperties:
-          type: boolean
-        type: object
-      context_window_tokens:
-        type: integer
-      input_modalities:
-        items:
-          type: string
-        type: array
-      output_modalities:
-        items:
-          type: string
-        type: array
-      provider:
-        type: string
-      status:
-        type: string
-      thinking:
-        $ref: '#/definitions/service.ThinkingEntry'
     type: object
   service.ModelListView:
     properties:
@@ -2195,6 +2210,8 @@ definitions:
       default_model:
         type: string
       name:
+        type: string
+      thinking_level:
         type: string
       type:
         type: string
@@ -2511,15 +2528,6 @@ definitions:
         type: integer
       shell:
         type: string
-    type: object
-  service.ThinkingEntry:
-    properties:
-      can_disable:
-        type: boolean
-      effort_values:
-        items:
-          type: string
-        type: array
     type: object
   service.ToolsView:
     properties:

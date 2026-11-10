@@ -1,9 +1,9 @@
 {
-    "_comment": "Model API capability catalog template, researched from official documentation as of 2026-11-09. Model keys match model_prices.json. The Myaaw runtime does NOT read this file yet; it does not automatically change requests, routing, tool handling, or thinking settings.",
+    "_comment": "Model API capability catalog template, researched from official documentation as of 2026-11-09. Model keys match model_prices.json. The Myaaw runtime reads this file for reasoning: capabilities.thinking, thinking.effort_values, and thinking.can_disable drive the dashboard thinking picker and the request parameter. Other flags remain descriptive and do not change requests, routing, or tool handling.",
     "_schema": {
         "version": 1,
         "verified_at": "2026-11-09",
-        "runtime_integration": false,
+        "runtime_integration": true,
         "key_format": "Exact provider model ID; all keys starting with _ are metadata, not models. Aliases and snapshots have fully expanded entries; alias_of/snapshot_of are informational, not inheritance mechanisms to execute.",
         "value_semantics": {
             "true": "Support is documented for this model on at least one endpoint/configuration described in notes. This does not guarantee support across all endpoints, regions, accounts, or feature combinations.",

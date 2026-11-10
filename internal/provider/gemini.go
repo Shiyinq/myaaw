@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"myaaw/internal/thinking"
+
 	"github.com/go-resty/resty/v2"
 )
 
@@ -84,6 +86,9 @@ type GemeniGenerationConfig struct {
 type GeminiThinkingConfig struct {
 	IncludeThoughts bool   `json:"includeThoughts"`
 	ThinkingLevel   string `json:"thinkingLevel,omitempty"`
+	// ThinkingBudget is the Gemini 2.5 switch: 0 disables thinking, -1 keeps it
+	// dynamic. Gemini 3/4 use ThinkingLevel instead, and sending both is a 400.
+	ThinkingBudget *int `json:"thinkingBudget,omitempty"`
 }
 
 type ToolConfig struct {
@@ -359,7 +364,65 @@ func (g *GeminiProvider) DefaultModel(modelName string) string {
 	return modelName
 }
 
-func (g *GeminiProvider) isThinkingModel(modelName string) bool {
+// isGemini25Model reports the Gemini 2.5 family, which uses thinkingBudget on
+// generateContent instead of thinkingLevel.
+func isGemini25Model(model string) bool {
+	name := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(model)), "models/")
+	return strings.HasPrefix(name, "gemini-2.5")
+}
+
+// gemini25ThinkingBudget maps an effort level to a thinkingBudget value.
+//
+// The Gemini 2.5 series accepts thinkingBudget, not thinkingLevel. Google does
+// not publish a level-to-budget mapping, so the numbers below are this app's
+// choice inside each model's documented range:
+//
+//   - 2.5 Pro:      128 to 32768, cannot disable
+//   - 2.5 Flash:      0 to 24576, 0 disables
+//   - 2.5 Flash-Lite: 512 to 24576, 0 disables, default is "does not think"
+//
+// An empty level keeps the model default (omit the budget). "dynamic" maps to
+// -1, the documented dynamic-thinking value.
+func gemini25ThinkingBudget(model, level string) *int {
+	level = strings.ToLower(strings.TrimSpace(level))
+	if level == "" {
+		return nil
+	}
+	budget := 0
+	switch level {
+	case "dynamic":
+		budget = -1
+	case "minimal":
+		budget = 512
+	case "low":
+		budget = 1024
+	case "medium":
+		budget = 8192
+	case "high", "xhigh", "max":
+		budget = gemini25MaxBudget(model)
+	default:
+		return nil
+	}
+	return &budget
+}
+
+func gemini25MaxBudget(model string) int {
+	name := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(model)), "models/")
+	if strings.Contains(name, "gemini-2.5-pro") {
+		return 32768
+	}
+	return 24576
+}
+
+func thinkingBudgetZero() *int {
+	zero := 0
+	return &zero
+}
+
+// legacyThinkingModel is a compatibility predicate for IDs the capability
+// catalog does not describe yet (hot-swapping aliases and retired snapshots).
+// Models present in the catalog never consult it; add new models there instead.
+func (g *GeminiProvider) legacyThinkingModel(modelName string) bool {
 	name := strings.TrimPrefix(modelName, "models/")
 	thinkingModels := map[string]bool{
 		"gemini-flash-latest":                   true,
@@ -413,7 +476,7 @@ func (g *GeminiProvider) supportsSystemInstruction(modelName string) bool {
 	return g.supportsTools(modelName)
 }
 
-func (g *GeminiProvider) buildRequest(modelName string, messages []Message, toolsList []map[string]interface{}) GemeniRequest {
+func (g *GeminiProvider) buildRequest(ctx context.Context, modelName string, messages []Message, toolsList []map[string]interface{}) GemeniRequest {
 	fullModel := g.DefaultModel(modelName)
 	request := GemeniRequest{
 		Contents: MessagesToContents(messages),
@@ -440,11 +503,31 @@ func (g *GeminiProvider) buildRequest(modelName string, messages []Message, tool
 		}
 	}
 
-	if g.isThinkingModel(fullModel) {
-		request.GenerationConfig = &GemeniGenerationConfig{
-			ThinkingConfig: &GeminiThinkingConfig{
-				IncludeThoughts: true,
-			},
+	if spec, ok := thinking.Resolve(fullModel, thinking.Level(ctx), g.legacyThinkingModel(fullModel)); ok {
+		switch {
+		case !spec.Enabled && isGemini25Model(fullModel):
+			// Gemini 2.5 Flash/Flash-Lite disable reasoning with budget 0.
+			request.GenerationConfig = &GemeniGenerationConfig{
+				ThinkingConfig: &GeminiThinkingConfig{ThinkingBudget: thinkingBudgetZero()},
+			}
+		case !spec.Enabled:
+			// Gemini 3/4 cannot switch thinking off; keep the model default.
+			log.Printf("thinking: %s cannot disable reasoning; keeping the model default", fullModel)
+		case isGemini25Model(fullModel):
+			// 2.5 uses thinkingBudget instead of thinkingLevel. Named levels are
+			// translated to a budget inside the model's documented range.
+			tc := &GeminiThinkingConfig{IncludeThoughts: true}
+			if budget := gemini25ThinkingBudget(fullModel, spec.Level); budget != nil {
+				tc.ThinkingBudget = budget
+			}
+			request.GenerationConfig = &GemeniGenerationConfig{ThinkingConfig: tc}
+		default:
+			request.GenerationConfig = &GemeniGenerationConfig{
+				ThinkingConfig: &GeminiThinkingConfig{
+					IncludeThoughts: true,
+					ThinkingLevel:   spec.Level,
+				},
+			}
 		}
 	}
 
@@ -473,7 +556,7 @@ func (g *GeminiProvider) buildRequest(modelName string, messages []Message, tool
 func (g *GeminiProvider) Chat(modelName string, messages []Message, toolsList []map[string]interface{}) (Message, error) {
 	client := resty.New().SetTimeout(120 * time.Second)
 
-	request := g.buildRequest(modelName, messages, toolsList)
+	request := g.buildRequest(context.Background(), modelName, messages, toolsList)
 
 	var response GeminiGenerateContent
 	res, err := doWithRetry(func() (*resty.Response, error) {
@@ -527,7 +610,7 @@ func (g *GeminiProvider) ChatStreamEvents(
 
 	client := resty.New().SetTimeout(timeout)
 
-	request := g.buildRequest(modelName, messages, toolsList)
+	request := g.buildRequest(ctx, modelName, messages, toolsList)
 
 	return streamWithRetry(ctx,
 		func(reqCtx context.Context) (*resty.Response, error) {

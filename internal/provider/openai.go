@@ -79,6 +79,17 @@ type OpenAIRequest struct {
 	Tools         []map[string]interface{} `json:"tools,omitempty"`
 	ToolChoice    string                   `json:"tool_choice,omitempty"`
 	StreamOptions *OpenAIStreamOptions     `json:"stream_options,omitempty"`
+	// ReasoningEffort is the documented effort token (including "none" to
+	// disable). Omitted for models the capability catalog does not mark as
+	// reasoning-capable.
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// Thinking is DeepSeek's explicit enable/disable switch on Chat Completions.
+	Thinking *OpenAIThinking `json:"thinking,omitempty"`
+}
+
+// OpenAIThinking is the DeepSeek Chat Completions reasoning switch.
+type OpenAIThinking struct {
+	Type string `json:"type"`
 }
 
 type OpenAIStreamOptions struct {
@@ -221,6 +232,7 @@ func (o *OpenAIProvider) config() openAICompatConfig {
 		baseURL:      o.baseURL,
 		apiKey:       o.apiKey,
 		defaultModel: o.defaultModel,
+		variant:      compatVariant(o.baseURL),
 		includeUsage: true,
 	}
 }

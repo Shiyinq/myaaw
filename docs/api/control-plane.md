@@ -700,7 +700,8 @@ curl -X POST http://localhost:9000/agents/myfriend/contacts \
   "type": "openai",
   "base_url": "https://api.openai.com",
   "api_key": "sk-...",
-  "default_model": "gpt-4o"
+  "default_model": "gpt-4o",
+  "thinking_level": "high"
 }
 ```
 
@@ -709,6 +710,7 @@ Rules:
 - API keys are write-only. Responses contain `{"configured": true, "masked": "********"}`.
 - An empty `api_key` on update keeps the existing key.
 - Deleting the default provider moves the default to another provider when one remains.
+- `thinking_level` is the reasoning effort for this provider: `low`, `medium`, `high`, `xhigh`, `max`, `off`, or empty for the model default. It is resolved against `~/.myaaw/config/model_capabilities.json` at request time, so an unsupported value degrades to the model default instead of failing. See [Thinking Levels](../agents/thinking.md).
 
 ### Discovering models
 

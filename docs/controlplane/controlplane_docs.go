@@ -6838,6 +6838,61 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "capabilities.Entry": {
+            "type": "object",
+            "properties": {
+                "builtin_tools": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
+                "capabilities": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
+                "context_window_tokens": {
+                    "type": "integer"
+                },
+                "input_modalities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "output_modalities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "thinking": {
+                    "$ref": "#/definitions/capabilities.Thinking"
+                }
+            }
+        },
+        "capabilities.Thinking": {
+            "type": "object",
+            "properties": {
+                "can_disable": {
+                    "type": "boolean"
+                },
+                "effort_values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "common.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -7435,6 +7490,10 @@ const docTemplatecontrolplane = `{
                     "type": "string",
                     "example": "openai"
                 },
+                "thinking_level": {
+                    "type": "string",
+                    "example": "medium"
+                },
                 "type": {
                     "type": "string",
                     "example": "openai"
@@ -7759,6 +7818,10 @@ const docTemplatecontrolplane = `{
                 },
                 "default_model": {
                     "type": "string"
+                },
+                "thinking_level": {
+                    "type": "string",
+                    "example": "medium"
                 },
                 "type": {
                     "type": "string"
@@ -9603,7 +9666,7 @@ const docTemplatecontrolplane = `{
                 "models": {
                     "type": "object",
                     "additionalProperties": {
-                        "$ref": "#/definitions/service.ModelCapabilityEntry"
+                        "$ref": "#/definitions/capabilities.Entry"
                     }
                 },
                 "version": {
@@ -9611,47 +9674,6 @@ const docTemplatecontrolplane = `{
                 },
                 "warning": {
                     "type": "string"
-                }
-            }
-        },
-        "service.ModelCapabilityEntry": {
-            "type": "object",
-            "properties": {
-                "builtin_tools": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "boolean"
-                    }
-                },
-                "capabilities": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "boolean"
-                    }
-                },
-                "context_window_tokens": {
-                    "type": "integer"
-                },
-                "input_modalities": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "output_modalities": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "provider": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "thinking": {
-                    "$ref": "#/definitions/service.ThinkingEntry"
                 }
             }
         },
@@ -9946,6 +9968,9 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "thinking_level": {
                     "type": "string"
                 },
                 "type": {
@@ -10417,20 +10442,6 @@ const docTemplatecontrolplane = `{
                 },
                 "shell": {
                     "type": "string"
-                }
-            }
-        },
-        "service.ThinkingEntry": {
-            "type": "object",
-            "properties": {
-                "can_disable": {
-                    "type": "boolean"
-                },
-                "effort_values": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },

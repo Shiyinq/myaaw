@@ -16,6 +16,7 @@ import (
 
 	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/config"
+	"myaaw/internal/thinking"
 )
 
 const chatGPTBaseURL = "https://api.openai.com"
@@ -224,24 +225,41 @@ type chatGPTRequest struct {
 }
 
 type chatGPTReasoning struct {
-	Summary string `json:"summary"`
+	Summary string `json:"summary,omitempty"`
+	Effort  string `json:"effort,omitempty"`
 }
 
 var chatGPTReasoningFamily = regexp.MustCompile(`^gpt-[56]([.-]|$)`)
 
-func chatGPTReasoningForModel(model string) *chatGPTReasoning {
+// legacyChatGPTThinking is a compatibility predicate for model IDs the
+// capability catalog does not describe yet. Models present in the catalog never
+// consult it; add new models there instead.
+func legacyChatGPTThinking(model string) bool {
 	model = strings.ToLower(strings.TrimSpace(model))
-	// Older/non-reasoning models reject this parameter. Keep their request
-	// unchanged, and leave effort at the model's default rather than forcing it.
+	// Older/non-reasoning models reject this parameter.
 	if strings.Contains(model, "-chat") {
+		return false
+	}
+	return chatGPTReasoningFamily.MatchString(model) ||
+		model == "o3" || (strings.HasPrefix(model, "o3-") && !strings.HasPrefix(model, "o3-mini")) ||
+		model == "o4-mini" || strings.HasPrefix(model, "o4-mini-")
+}
+
+// chatGPTReasoningFor resolves the reasoning object for one request.
+// It returns nil when the model should receive no reasoning parameters at all.
+func chatGPTReasoningFor(ctx context.Context, model string) *chatGPTReasoning {
+	spec, ok := thinking.Resolve(model, thinking.Level(ctx), legacyChatGPTThinking(model))
+	if !ok {
 		return nil
 	}
-	if chatGPTReasoningFamily.MatchString(model) ||
-		model == "o3" || (strings.HasPrefix(model, "o3-") && !strings.HasPrefix(model, "o3-mini")) ||
-		model == "o4-mini" || strings.HasPrefix(model, "o4-mini-") {
-		return &chatGPTReasoning{Summary: "auto"}
+	reasoning := &chatGPTReasoning{}
+	if spec.Enabled {
+		reasoning.Summary = "auto"
+		reasoning.Effort = spec.Level
+	} else {
+		reasoning.Effort = "none"
 	}
-	return nil
+	return reasoning
 }
 
 var chatGPTToolName = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)

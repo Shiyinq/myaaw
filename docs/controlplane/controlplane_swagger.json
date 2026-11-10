@@ -6832,6 +6832,61 @@
                 }
             }
         },
+        "capabilities.Entry": {
+            "type": "object",
+            "properties": {
+                "builtin_tools": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
+                "capabilities": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
+                "context_window_tokens": {
+                    "type": "integer"
+                },
+                "input_modalities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "output_modalities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "thinking": {
+                    "$ref": "#/definitions/capabilities.Thinking"
+                }
+            }
+        },
+        "capabilities.Thinking": {
+            "type": "object",
+            "properties": {
+                "can_disable": {
+                    "type": "boolean"
+                },
+                "effort_values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "common.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -7429,6 +7484,10 @@
                     "type": "string",
                     "example": "openai"
                 },
+                "thinking_level": {
+                    "type": "string",
+                    "example": "medium"
+                },
                 "type": {
                     "type": "string",
                     "example": "openai"
@@ -7753,6 +7812,10 @@
                 },
                 "default_model": {
                     "type": "string"
+                },
+                "thinking_level": {
+                    "type": "string",
+                    "example": "medium"
                 },
                 "type": {
                     "type": "string"
@@ -9597,7 +9660,7 @@
                 "models": {
                     "type": "object",
                     "additionalProperties": {
-                        "$ref": "#/definitions/service.ModelCapabilityEntry"
+                        "$ref": "#/definitions/capabilities.Entry"
                     }
                 },
                 "version": {
@@ -9605,47 +9668,6 @@
                 },
                 "warning": {
                     "type": "string"
-                }
-            }
-        },
-        "service.ModelCapabilityEntry": {
-            "type": "object",
-            "properties": {
-                "builtin_tools": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "boolean"
-                    }
-                },
-                "capabilities": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "boolean"
-                    }
-                },
-                "context_window_tokens": {
-                    "type": "integer"
-                },
-                "input_modalities": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "output_modalities": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "provider": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "thinking": {
-                    "$ref": "#/definitions/service.ThinkingEntry"
                 }
             }
         },
@@ -9940,6 +9962,9 @@
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "thinking_level": {
                     "type": "string"
                 },
                 "type": {
@@ -10411,20 +10436,6 @@
                 },
                 "shell": {
                     "type": "string"
-                }
-            }
-        },
-        "service.ThinkingEntry": {
-            "type": "object",
-            "properties": {
-                "can_disable": {
-                    "type": "boolean"
-                },
-                "effort_values": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },

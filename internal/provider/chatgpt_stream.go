@@ -117,7 +117,7 @@ func (p *ChatGPTProvider) ChatStreamEvents(ctx context.Context, model string, me
 		return err
 	}
 	body, err := json.Marshal(chatGPTRequest{Model: model, Input: input, Store: false, Stream: true,
-		Include: []string{"reasoning.encrypted_content"}, Tools: wireTools, Reasoning: chatGPTReasoningForModel(model)})
+		Include: []string{"reasoning.encrypted_content"}, Tools: wireTools, Reasoning: chatGPTReasoningFor(ctx, model)})
 	if err != nil {
 		return fmt.Errorf("cannot encode ChatGPT request: %w", err)
 	}

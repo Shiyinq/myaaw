@@ -24,7 +24,8 @@ type ProviderConnection struct {
 func providerView(name string, p config.ProviderConfig) ProviderView {
 	view := ProviderView{Name: name, Type: p.Type, BaseURL: p.BaseURL,
 		DefaultModel: p.DefaultModel, APIKey: secretState(p.APIKey),
-		AuthMode: p.AuthMode, CredentialID: p.CredentialID}
+		AuthMode: p.AuthMode, CredentialID: p.CredentialID,
+		ThinkingLevel: p.ThinkingLevel}
 	if p.Type != chatgpt.ProviderType {
 		return view
 	}

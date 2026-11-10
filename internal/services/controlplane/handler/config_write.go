@@ -28,13 +28,14 @@ func (h *Handler) CreateProvider(c fiber.Ctx) error {
 	}
 
 	view, err := h.config.CreateProvider(c.Params("name"), service.ProviderInput{
-		Name:         req.Name,
-		Type:         req.Type,
-		AuthMode:     req.AuthMode,
-		CredentialID: req.CredentialID,
-		BaseURL:      req.BaseURL,
-		APIKey:       req.APIKey,
-		DefaultModel: req.DefaultModel,
+		Name:          req.Name,
+		Type:          req.Type,
+		AuthMode:      req.AuthMode,
+		CredentialID:  req.CredentialID,
+		BaseURL:       req.BaseURL,
+		APIKey:        req.APIKey,
+		DefaultModel:  req.DefaultModel,
+		ThinkingLevel: req.ThinkingLevel,
 	})
 	if err != nil {
 		return configWriteError(c, err)
@@ -63,12 +64,13 @@ func (h *Handler) UpdateProvider(c fiber.Ctx) error {
 	}
 
 	view, err := h.config.UpdateProvider(c.Params("name"), c.Params("id"), service.ProviderPatch{
-		Type:         req.Type,
-		AuthMode:     req.AuthMode,
-		CredentialID: req.CredentialID,
-		BaseURL:      req.BaseURL,
-		APIKey:       req.APIKey,
-		DefaultModel: req.DefaultModel,
+		Type:          req.Type,
+		AuthMode:      req.AuthMode,
+		CredentialID:  req.CredentialID,
+		BaseURL:       req.BaseURL,
+		APIKey:        req.APIKey,
+		DefaultModel:  req.DefaultModel,
+		ThinkingLevel: req.ThinkingLevel,
 	})
 	if err != nil {
 		return configWriteError(c, err)

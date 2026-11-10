@@ -227,7 +227,7 @@
 	// Configured provider and its default model, as the terminal status line shows.
 	let providerInfo = $state<{
 		default: string;
-		providers: { name: string; type: string; model: string }[];
+		providers: { name: string; type: string; model: string; thinkingLevel: string }[];
 	} | null>(null);
 	// The composer's quick switches. The model menu lists every model of every
 	// configured provider; the list is fetched the first time the menu opens and
@@ -237,11 +237,13 @@
 	let modelMenuOpen = $state(false);
 	let loadingModels = $state(false);
 	let modelCapabilities = $state<ModelCapabilitiesView | null>(null);
-	// Thinking level is UI-only until the agent loop supports it. Keyed by
-	// provider:model so switching models does not lose the pending choice.
+	// Thinking level is persisted per provider (the agent only ever runs the
+	// active provider). Keyed by provider:model so a pending choice survives a
+	// model switch within the same page load.
 	let thinkingLevels = $state<Record<string, string>>({});
 	let providerInfoLoaded = $state(false);
 	let switchingModel = $state(false);
+	let switchingThinking = $state(false);
 	// Approvals mode for the next message: "off" is Full access, "manual" asks.
 	let approvalMode = $state<'manual' | 'off'>('manual');
 	let switchingApproval = $state(false);
@@ -854,9 +856,18 @@
 				providers: (config.providers ?? []).map((provider) => ({
 					name: provider.name,
 					type: provider.type ?? '',
-					model: provider.default_model ?? ''
+					model: provider.default_model ?? '',
+					thinkingLevel: provider.thinking_level ?? ''
 				}))
 			};
+			// Restore the persisted level for each configured provider/model pair.
+			const restored: Record<string, string> = {};
+			for (const provider of providerInfo.providers) {
+				if (provider.model) {
+					restored[thinkingKey(provider.name, provider.model)] = provider.thinkingLevel;
+				}
+			}
+			thinkingLevels = restored;
 			approvalMode = config.approvals?.mode === 'off' ? 'off' : 'manual';
 		} catch {
 			providerInfo = null;
@@ -915,6 +926,10 @@
 						entry.name === provider ? { ...entry, model } : entry
 					)
 				};
+				// The new model inherits the provider's persisted level.
+				const level =
+					providerInfo.providers.find((entry) => entry.name === provider)?.thinkingLevel ?? '';
+				thinkingLevels = { ...thinkingLevels, [thinkingKey(provider, model)]: level };
 			}
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -1010,12 +1025,45 @@
 		return `${provider}:${model}`;
 	}
 
-	function setThinkingLevel(key: string, value: string) {
+	/** Persists the reasoning level for the active provider and updates the picker. */
+	async function switchThinkingLevel(value: string) {
+		const currentAgent = agent;
+		const provider = activeProvider;
+		if (!currentAgent || !provider) return;
+		const key = activeThinkingKey;
+		const previous = activeThinkingValue;
+		if (previous === value) return;
 		thinkingLevels = { ...thinkingLevels, [key]: value };
+		switchingThinking = true;
+		try {
+			await providersApi.update(currentAgent, provider, { thinking_level: value });
+			if (agent !== currentAgent) return;
+			if (providerInfo) {
+				providerInfo = {
+					...providerInfo,
+					providers: providerInfo.providers.map((entry) =>
+						entry.name === provider ? { ...entry, thinkingLevel: value } : entry
+					)
+				};
+			}
+		} catch (err) {
+			thinkingLevels = { ...thinkingLevels, [key]: previous };
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			switchingThinking = false;
+		}
 	}
 
 	let activeThinkingKey = $derived(thinkingKey(activeProvider, activeModel));
 	let activeThinkingOptions = $derived(thinkingOptions(activeModel));
+	// A persisted value may predate a catalog change (for example a Gemini 2.5
+	// level the adapter can no longer send). Treat it as the model default until
+	// the user picks again.
+	let activeThinkingValue = $derived(
+		activeThinkingOptions.includes(thinkingLevels[activeThinkingKey] ?? '')
+			? (thinkingLevels[activeThinkingKey] ?? '')
+			: ''
+	);
 
 	let providerKey = '';
 	$effect(() => {
@@ -3558,14 +3606,15 @@
 															<button
 																{...props}
 																type="button"
-																class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none"
+																class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+																disabled={switchingThinking}
 																title={t('myaaw.chat.thinking_level')}
 																aria-label={t('myaaw.chat.thinking_level')}
 															>
 																<Brain class="h-3.5 w-3.5 shrink-0" />
 																<span class="hidden whitespace-nowrap sm:inline">
-																	{thinkingLevels[activeThinkingKey]
-																		? thinkingLabel(thinkingLevels[activeThinkingKey])
+																	{activeThinkingValue
+																		? thinkingLabel(activeThinkingValue)
 																		: t('myaaw.chat.thinking_default_short')}
 																</span>
 																<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
@@ -3575,12 +3624,12 @@
 													<DropdownMenu.Content align="end" side="top" class="w-44">
 														<DropdownMenu.Item
 															class="items-start gap-2"
-															onclick={() => setThinkingLevel(activeThinkingKey, '')}
+															onclick={() => void switchThinkingLevel('')}
 														>
 															<Check
 																class={cn(
 																	'mt-0.5 h-3.5 w-3.5 shrink-0',
-																	thinkingLevels[activeThinkingKey] ? 'opacity-0' : 'opacity-100'
+																	activeThinkingValue ? 'opacity-0' : 'opacity-100'
 																)}
 															/>
 															{t('myaaw.chat.thinking_default')}
@@ -3589,14 +3638,12 @@
 														{#each activeThinkingOptions as value (value)}
 															<DropdownMenu.Item
 																class="items-start gap-2"
-																onclick={() => setThinkingLevel(activeThinkingKey, value)}
+																onclick={() => void switchThinkingLevel(value)}
 															>
 																<Check
 																	class={cn(
 																		'mt-0.5 h-3.5 w-3.5 shrink-0',
-																		thinkingLevels[activeThinkingKey] === value
-																			? 'opacity-100'
-																			: 'opacity-0'
+																		activeThinkingValue === value ? 'opacity-100' : 'opacity-0'
 																	)}
 																/>
 																{thinkingLabel(value)}
