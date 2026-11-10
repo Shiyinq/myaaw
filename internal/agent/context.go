@@ -126,11 +126,15 @@ func (b *SystemPromptBuilder) Build() string {
 	if b.workspaceDir != "" {
 		projectsDir := filepath.Join(b.workspaceDir, "projects")
 		downloadsDir := filepath.Join(b.workspaceDir, "downloads")
+		mcpDir := filepath.Join(b.workspaceDir, "mcp")
+		screenshotsDir := filepath.Join(b.workspaceDir, "screenshots")
 
 		sb.WriteString("## Workspace\n")
 		fmt.Fprintf(&sb, "Workspace root: %s\n", b.workspaceDir)
 		fmt.Fprintf(&sb, "- Projects: %s/<project-name>/\n", projectsDir)
-		fmt.Fprintf(&sb, "- Downloads: %s/\n\n", downloadsDir)
+		fmt.Fprintf(&sb, "- Downloads: %s/\n", downloadsDir)
+		fmt.Fprintf(&sb, "- Screenshots: %s/\n", screenshotsDir)
+		fmt.Fprintf(&sb, "- MCP outputs: %s/ (working directory of MCP servers)\n\n", mcpDir)
 	}
 
 	// 4b. File delivery

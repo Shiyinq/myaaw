@@ -12,7 +12,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -21,13 +20,11 @@ import (
 	"myaaw/internal/agentdir"
 )
 
-const captureCacheLimit = 20
-
 const toolSchema = `{
   "type": "function",
   "function": {
     "name": "computer",
-    "description": "Control the local desktop. Use one typed action per call. Screenshots are returned as images; set deliver=true to also send the PNG to the user.",
+    "description": "Control the local desktop. Use one typed action per call. Screenshots are returned as images; set deliver=true to save the PNG in the agent workspace and send it to the user.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -229,20 +226,19 @@ func (t *ComputerTool) screenshot(ctx context.Context, args toolArgs) tools.Stru
 	}
 
 	if args.Deliver && len(frame.PNG) > 0 {
-		path, err := saveCapture(frame)
+		name, err := saveDeliveredCapture(frame)
 		if err != nil {
 			return errorResult("COMPUTER_DELIVERY_FAILED", err)
 		}
-		name := filepath.Base(path)
 		result.Attachments = []tools.FileAttachment{{
 			FileName: name,
 			MimeType: "image/png",
 			Data:     frame.PNG,
-			// Job captures live under the /jobs root, so the API surface can
-			// stream the file instead of base64-ing it into the response.
-			Path: "/jobs/captures/" + name,
+			// Delivered screenshots are workspace artifacts the chat still
+			// references, so the API surface streams them through /fs/raw.
+			Path: "/home/workspace/screenshots/" + name,
 		}}
-		result.Text += " Saved as " + name + "."
+		result.Text += " Saved as /home/workspace/screenshots/" + name + "."
 	}
 	return result
 }
@@ -286,51 +282,38 @@ func errorResult(code string, err error) tools.StructuredResult {
 	return tools.StructuredResult{Text: fmt.Sprintf("Error [%s]: %v", code, err)}
 }
 
-// saveCapture writes the frame into the agent's capture cache and prunes it to
-// the newest captureCacheLimit files.
-func saveCapture(frame Frame) (string, error) {
-	jobsDir, err := agentdir.ActiveJobsDir()
+// saveDeliveredCapture writes a screenshot the user asked for into the
+// workspace and returns its file name. The name carries a timestamp because
+// frame ids restart with every backend, so "screenshot-frame01.png" would
+// overwrite a file the chat transcript still references.
+func saveDeliveredCapture(frame Frame) (string, error) {
+	home, err := agentdir.ActiveHome()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(jobsDir, "captures")
+	dir := filepath.Join(home, "workspace", "screenshots")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	name := "screenshot-" + frame.ID + ".png"
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, frame.PNG, 0o644); err != nil {
-		return "", err
-	}
-	pruneCaptures(dir)
-	return path, nil
-}
 
-func pruneCaptures(dir string) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	type fileInfo struct {
-		path    string
-		modTime time.Time
-	}
-	files := make([]fileInfo, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".png") {
+	base := "screenshot-" + time.Now().Format("20060102-150405")
+	for attempt := 1; attempt <= 100; attempt++ {
+		name := base + ".png"
+		if attempt > 1 {
+			name = fmt.Sprintf("%s-%d.png", base, attempt)
+		}
+		file, err := os.OpenFile(filepath.Join(dir, name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if os.IsExist(err) {
 			continue
 		}
-		info, err := entry.Info()
 		if err != nil {
-			continue
+			return "", err
 		}
-		files = append(files, fileInfo{path: filepath.Join(dir, entry.Name()), modTime: info.ModTime()})
+		if _, err := file.Write(frame.PNG); err != nil {
+			file.Close()
+			return "", err
+		}
+		return name, file.Close()
 	}
-	if len(files) <= captureCacheLimit {
-		return
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].modTime.Before(files[j].modTime) })
-	for _, file := range files[:len(files)-captureCacheLimit] {
-		_ = os.Remove(file.path)
-	}
+	return "", fmt.Errorf("could not allocate a screenshot name in %s", dir)
 }

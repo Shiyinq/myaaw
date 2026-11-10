@@ -199,7 +199,12 @@ SSE `done` event (`internal/channel/api/timeline.go`):
 The non-streaming API response (`internal/services/bot/handler/api_handler.go`)
 uses the same fields on `AttachmentResponse`. Tool attachments that live on disk
 also set `Path` (for example the `computer` tool's
-`/jobs/captures/shot.png`), so screenshots are streamed instead of embedded.
+`/home/workspace/screenshots/shot.png`), so screenshots are streamed instead of
+embedded.
+
+MCP servers run with `/home/workspace/mcp` as their working directory, so files
+they write with a relative name (Playwright screenshots, downloads) land there
+and can be attached as `/home/workspace/mcp/<file>`.
 
 > Screenshot bytes used by the **model** are a separate path:
 > `StructuredResult.Images` becomes a provider `image_url` content item. Removing

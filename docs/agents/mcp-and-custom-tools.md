@@ -132,6 +132,7 @@ Myaaw implements native MCP client capabilities over standard input/output (`std
 
 ### How MCP Works in Myaaw
 - **Automatic PATH Resolution**: Works seamlessly in background daemon services (`myaaw start`), automatically resolving Node.js, NVM, and Homebrew paths from your login shell.
+- **Workspace Working Directory**: every MCP server starts in `~/.myaaw/agents/<agent>/home/workspace/mcp` (virtual `/home/workspace/mcp`). Servers that write relative filenames themselves, such as Playwright screenshots or downloads, land there instead of the directory the daemon was launched from. Those files are visible in the dashboard's file browser and can be delivered with `@attach`.
 - **Prefix Isolation**: All tools exposed by an MCP server are prefixed as `<server_name>_<tool_name>` (e.g., `playwright_browser_navigate`) to avoid naming collisions.
 - **Schema Sanitization**: Incompatible JSON Schema draft fields (e.g., `$schema`, `propertyNames`) are automatically sanitized to ensure compatibility with LLMs like Gemini and OpenAI.
 
@@ -153,6 +154,11 @@ Enables full browser navigation, scraping, and web interaction for your agent:
   ]
 }
 ```
+
+`playwright_browser_take_screenshot` with a relative `filename` (for example
+`"filename": "home.png"`) writes to `/home/workspace/mcp/home.png`. Screenshots
+taken without `filename` are returned inline, so the model sees them but no file
+is created.
 
 ### Example: Filesystem MCP Server
 Exposes specific directories via the official MCP filesystem server:
