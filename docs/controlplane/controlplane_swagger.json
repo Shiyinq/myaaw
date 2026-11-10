@@ -8103,6 +8103,26 @@
                 }
             }
         },
+        "obs.SessionContext": {
+            "type": "object",
+            "properties": {
+                "message_tokens": {
+                    "type": "integer"
+                },
+                "system_tokens": {
+                    "type": "integer"
+                },
+                "tokens": {
+                    "type": "integer"
+                },
+                "tool_tokens": {
+                    "type": "integer"
+                },
+                "window": {
+                    "type": "integer"
+                }
+            }
+        },
         "obs.SessionTotals": {
             "type": "object",
             "properties": {
@@ -8115,6 +8135,14 @@
                 },
                 "channel": {
                     "type": "string"
+                },
+                "context": {
+                    "description": "Context describes the newest request against the model's context window.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/obs.SessionContext"
+                        }
+                    ]
                 },
                 "conversation_id": {
                     "type": "string"
@@ -8206,6 +8234,9 @@
                 "kind": {
                     "$ref": "#/definitions/obs.SpanKind"
                 },
+                "message_tokens": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -8231,6 +8262,13 @@
                     "$ref": "#/definitions/obs.Status"
                 },
                 "step_index": {
+                    "type": "integer"
+                },
+                "system_tokens": {
+                    "description": "SystemTokens, ToolTokens, and MessageTokens split the request estimate\ninto its parts. They are recorded on the llm span from the pre-request\nevent; InputTokens is the exact total from the provider usage.",
+                    "type": "integer"
+                },
+                "tool_tokens": {
                     "type": "integer"
                 }
             }
@@ -10390,6 +10428,9 @@
                 "kind": {
                     "$ref": "#/definitions/obs.SpanKind"
                 },
+                "message_tokens": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -10415,6 +10456,13 @@
                     "$ref": "#/definitions/obs.Status"
                 },
                 "step_index": {
+                    "type": "integer"
+                },
+                "system_tokens": {
+                    "description": "SystemTokens, ToolTokens, and MessageTokens split the request estimate\ninto its parts. They are recorded on the llm span from the pre-request\nevent; InputTokens is the exact total from the provider usage.",
+                    "type": "integer"
+                },
+                "tool_tokens": {
                     "type": "integer"
                 }
             }

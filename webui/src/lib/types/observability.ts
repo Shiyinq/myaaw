@@ -167,4 +167,6 @@ export interface SessionStats {
 	llm_ms: number;
 	tool_ms: number;
 	ttft_ms: number;
+	/** Newest request against the model's context window. */
+	context?: import('./chat').ContextUsage;
 }

@@ -2,6 +2,7 @@ package obs
 
 import (
 	"math"
+	"myaaw/internal/capabilities"
 	"testing"
 )
 
@@ -351,7 +352,8 @@ func TestSessionTotalsAggregatesOneConversation(t *testing.T) {
 		{ID: "s4a", RunID: other.ID, Kind: KindStep, StepIndex: 1, StartedAt: base + 500, Status: StatusCompleted},
 		{ID: "s3llm", RunID: latest.ID, Kind: KindLLM, Name: "deepseek-v4-flash", StepIndex: 1,
 			RequestIndex: 1, StartedAt: base + 2000, DurationMs: 800, FirstTokenMs: 200,
-			GenerationMs: 500, OutputTokens: 100, Status: StatusCompleted},
+			GenerationMs: 500, OutputTokens: 100, InputTokens: 9000,
+			SystemTokens: 1000, ToolTokens: 7000, MessageTokens: 1000, Status: StatusCompleted},
 		{ID: "s1llm", RunID: first.ID, Kind: KindLLM, Name: "deepseek-flash", StepIndex: 1,
 			RequestIndex: 1, StartedAt: base, DurationMs: 200, FirstTokenMs: 400,
 			Status: StatusCompleted},
@@ -395,6 +397,21 @@ func TestSessionTotalsAggregatesOneConversation(t *testing.T) {
 	}
 	if totals.LlmMs != 1000 || totals.ToolMs != 100 || totals.TtftMs != 300 {
 		t.Fatalf("conv-1 timing = llm %d, tool %d, ttft %d", totals.LlmMs, totals.ToolMs, totals.TtftMs)
+	}
+
+	if totals.Context == nil {
+		t.Fatal("conv-1 context is missing")
+	}
+	if totals.Context.Tokens != 9000 || totals.Context.SystemTokens != 1000 ||
+		totals.Context.ToolTokens != 7000 || totals.Context.MessageTokens != 1000 {
+		t.Fatalf("conv-1 context = %+v", totals.Context)
+	}
+	wantWindow := 0
+	if entry, ok := capabilities.Lookup("deepseek-v4-flash"); ok && entry.ContextWindow != nil {
+		wantWindow = *entry.ContextWindow
+	}
+	if totals.Context.Window != wantWindow {
+		t.Fatalf("context window = %d, want %d", totals.Context.Window, wantWindow)
 	}
 
 	if _, found, err := store.SessionTotals("missing"); err != nil || found {

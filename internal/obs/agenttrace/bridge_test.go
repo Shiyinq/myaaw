@@ -60,6 +60,24 @@ func TestFromEventMapsEngineEvents(t *testing.T) {
 		}
 	})
 
+	t.Run("llm request start carries the context breakdown", func(t *testing.T) {
+		event, ok := FromEvent(agent.AgentEvent{
+			Type:      agent.EventLLMRequestStart,
+			Model:     "deepseek-v4-flash",
+			StepIndex: 1,
+			Context: agent.ContextUsage{
+				Tokens: 9000, WindowTokens: 1048576,
+				SystemTokens: 1000, ToolTokens: 7000, MessageTokens: 1000,
+			},
+		})
+		if !ok {
+			t.Fatal("event was dropped")
+		}
+		if event.SystemTokens != 1000 || event.ToolTokens != 7000 || event.MessageTokens != 1000 {
+			t.Fatalf("breakdown = %+v", event)
+		}
+	})
+
 	t.Run("tool end carries result and error state", func(t *testing.T) {
 		result := agent.ToolResult{
 			Content:    []provider.ContentItem{{Type: "text", Text: "boom"}},

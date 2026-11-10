@@ -122,11 +122,17 @@ type Span struct {
 	InputTokens    int      `json:"input_tokens,omitempty"`
 	OutputTokens   int      `json:"output_tokens,omitempty"`
 	CacheHitTokens int      `json:"cache_hit_tokens,omitempty"`
-	CostUSD        float64  `json:"cost_usd,omitempty"`
-	Status         Status   `json:"status,omitempty"`
-	Error          string   `json:"error,omitempty"`
-	InputJSON      string   `json:"input_json,omitempty"`
-	OutputJSON     string   `json:"output_json,omitempty"`
+	// SystemTokens, ToolTokens, and MessageTokens split the request estimate
+	// into its parts. They are recorded on the llm span from the pre-request
+	// event; InputTokens is the exact total from the provider usage.
+	SystemTokens  int     `json:"system_tokens,omitempty"`
+	ToolTokens    int     `json:"tool_tokens,omitempty"`
+	MessageTokens int     `json:"message_tokens,omitempty"`
+	CostUSD       float64 `json:"cost_usd,omitempty"`
+	Status        Status  `json:"status,omitempty"`
+	Error         string  `json:"error,omitempty"`
+	InputJSON     string  `json:"input_json,omitempty"`
+	OutputJSON    string  `json:"output_json,omitempty"`
 }
 
 // Throughput returns output tokens per second over the generation phase, or 0

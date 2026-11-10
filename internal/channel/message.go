@@ -84,6 +84,17 @@ type Attachment struct {
 	Data     []byte
 }
 
+// ContextUsage describes how full the model's context window is for one request.
+// Tokens is a pre-request estimate at the moment the chunk is emitted; a later
+// update from the provider's usage block carries the exact count.
+type ContextUsage struct {
+	Tokens        int `json:"tokens"`
+	WindowTokens  int `json:"window"`
+	SystemTokens  int `json:"system_tokens"`
+	ToolTokens    int `json:"tool_tokens"`
+	MessageTokens int `json:"message_tokens"`
+}
+
 type StreamChunk struct {
 	// Kind distinguishes progress events: "step", "text", "thought", "tool",
 	// "tool_result", "trace", "usage", "conversation", or "attachment".
@@ -124,6 +135,8 @@ type StreamChunk struct {
 	TokensBefore    int
 	TokensAfter     int
 	DroppedMessages int
+	// Context is set on Kind "context".
+	Context *ContextUsage
 }
 
 type QueueEnvelope struct {

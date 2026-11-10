@@ -918,6 +918,19 @@ definitions:
       unpriced_turns:
         type: integer
     type: object
+  obs.SessionContext:
+    properties:
+      message_tokens:
+        type: integer
+      system_tokens:
+        type: integer
+      tokens:
+        type: integer
+      tool_tokens:
+        type: integer
+      window:
+        type: integer
+    type: object
   obs.SessionTotals:
     properties:
       cache_hit_rate:
@@ -928,6 +941,11 @@ definitions:
         type: integer
       channel:
         type: string
+      context:
+        allOf:
+        - $ref: '#/definitions/obs.SessionContext'
+        description: Context describes the newest request against the model's context
+          window.
       conversation_id:
         type: string
       error_count:
@@ -995,6 +1013,8 @@ definitions:
         type: integer
       kind:
         $ref: '#/definitions/obs.SpanKind'
+      message_tokens:
+        type: integer
       name:
         type: string
       output_json:
@@ -1012,6 +1032,14 @@ definitions:
       status:
         $ref: '#/definitions/obs.Status'
       step_index:
+        type: integer
+      system_tokens:
+        description: |-
+          SystemTokens, ToolTokens, and MessageTokens split the request estimate
+          into its parts. They are recorded on the llm span from the pre-request
+          event; InputTokens is the exact total from the provider usage.
+        type: integer
+      tool_tokens:
         type: integer
     type: object
   obs.SpanKind:
@@ -2497,6 +2525,8 @@ definitions:
         type: integer
       kind:
         $ref: '#/definitions/obs.SpanKind'
+      message_tokens:
+        type: integer
       name:
         type: string
       output_json:
@@ -2514,6 +2544,14 @@ definitions:
       status:
         $ref: '#/definitions/obs.Status'
       step_index:
+        type: integer
+      system_tokens:
+        description: |-
+          SystemTokens, ToolTokens, and MessageTokens split the request estimate
+          into its parts. They are recorded on the llm span from the pre-request
+          event; InputTokens is the exact total from the provider usage.
+        type: integer
+      tool_tokens:
         type: integer
     type: object
   service.TerminalInfo:

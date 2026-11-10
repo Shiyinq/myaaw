@@ -2,8 +2,10 @@ package obs
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
+	"myaaw/internal/capabilities"
 	"sort"
 )
 
@@ -459,6 +461,18 @@ func (s *Store) ListSessions(limit int) ([]Session, error) {
 	return sessions, rows.Err()
 }
 
+// SessionContext is how full the model's context window is for the newest
+// request of a conversation. Tokens is exact (the provider's input_tokens);
+// the breakdown is the pre-request estimate the engine recorded alongside it,
+// and Window is the catalog limit for the model that served the request.
+type SessionContext struct {
+	Tokens        int `json:"tokens"`
+	Window        int `json:"window"`
+	SystemTokens  int `json:"system_tokens"`
+	ToolTokens    int `json:"tool_tokens"`
+	MessageTokens int `json:"message_tokens"`
+}
+
 // SessionTotals are the aggregate numbers for one conversation: how many runs
 // it has, how many step spans all of them produced, and what they spent. They
 // are computed in SQL so long sessions are not truncated by a run page size.
@@ -491,6 +505,8 @@ type SessionTotals struct {
 	LlmMs  int64 `json:"llm_ms"`
 	ToolMs int64 `json:"tool_ms"`
 	TtftMs int64 `json:"ttft_ms"`
+	// Context describes the newest request against the model's context window.
+	Context *SessionContext `json:"context,omitempty"`
 }
 
 // SessionTotals aggregates one conversation. The boolean is false when the
@@ -563,5 +579,39 @@ func (s *Store) SessionTotals(conversationID string) (SessionTotals, bool, error
 	if generatedTokens > 0 && generationMs > 0 {
 		totals.TokPerSec = int(math.Round(float64(generatedTokens) / (float64(generationMs) / 1000)))
 	}
+
+	// The context view is the newest request, not the sum of every request. The
+	// exact total lives on the llm span; the breakdown is the estimate the
+	// engine recorded with it, and the window comes from the catalog.
+	var (
+		ctxTokens, ctxSystem, ctxTool, ctxMessage int
+		ctxModel                                  string
+	)
+	err := s.db.QueryRow(`SELECT COALESCE(s.input_tokens, 0), COALESCE(s.system_tokens, 0),
+			COALESCE(s.tool_tokens, 0), COALESCE(s.message_tokens, 0),
+			COALESCE(r.model, '')
+		FROM spans s JOIN runs r ON r.id = s.run_id
+		WHERE r.conversation_id = ? AND s.kind = 'llm'
+		ORDER BY s.started_at DESC, s.step_index DESC, s.request_index DESC
+		LIMIT 1`, conversationID).
+		Scan(&ctxTokens, &ctxSystem, &ctxTool, &ctxMessage, &ctxModel)
+	switch {
+	case err == nil:
+		context := &SessionContext{
+			Tokens:        ctxTokens,
+			SystemTokens:  ctxSystem,
+			ToolTokens:    ctxTool,
+			MessageTokens: ctxMessage,
+		}
+		if entry, ok := capabilities.Lookup(ctxModel); ok && entry.ContextWindow != nil {
+			context.Window = *entry.ContextWindow
+		}
+		totals.Context = context
+	case errors.Is(err, sql.ErrNoRows):
+		// No model request yet; the caller falls back to the cumulative view.
+	default:
+		return totals, false, fmt.Errorf("latest session context: %w", err)
+	}
+
 	return totals, true, nil
 }

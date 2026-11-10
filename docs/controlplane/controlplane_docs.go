@@ -8109,6 +8109,26 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "obs.SessionContext": {
+            "type": "object",
+            "properties": {
+                "message_tokens": {
+                    "type": "integer"
+                },
+                "system_tokens": {
+                    "type": "integer"
+                },
+                "tokens": {
+                    "type": "integer"
+                },
+                "tool_tokens": {
+                    "type": "integer"
+                },
+                "window": {
+                    "type": "integer"
+                }
+            }
+        },
         "obs.SessionTotals": {
             "type": "object",
             "properties": {
@@ -8121,6 +8141,14 @@ const docTemplatecontrolplane = `{
                 },
                 "channel": {
                     "type": "string"
+                },
+                "context": {
+                    "description": "Context describes the newest request against the model's context window.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/obs.SessionContext"
+                        }
+                    ]
                 },
                 "conversation_id": {
                     "type": "string"
@@ -8212,6 +8240,9 @@ const docTemplatecontrolplane = `{
                 "kind": {
                     "$ref": "#/definitions/obs.SpanKind"
                 },
+                "message_tokens": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -8237,6 +8268,13 @@ const docTemplatecontrolplane = `{
                     "$ref": "#/definitions/obs.Status"
                 },
                 "step_index": {
+                    "type": "integer"
+                },
+                "system_tokens": {
+                    "description": "SystemTokens, ToolTokens, and MessageTokens split the request estimate\ninto its parts. They are recorded on the llm span from the pre-request\nevent; InputTokens is the exact total from the provider usage.",
+                    "type": "integer"
+                },
+                "tool_tokens": {
                     "type": "integer"
                 }
             }
@@ -10396,6 +10434,9 @@ const docTemplatecontrolplane = `{
                 "kind": {
                     "$ref": "#/definitions/obs.SpanKind"
                 },
+                "message_tokens": {
+                    "type": "integer"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -10421,6 +10462,13 @@ const docTemplatecontrolplane = `{
                     "$ref": "#/definitions/obs.Status"
                 },
                 "step_index": {
+                    "type": "integer"
+                },
+                "system_tokens": {
+                    "description": "SystemTokens, ToolTokens, and MessageTokens split the request estimate\ninto its parts. They are recorded on the llm span from the pre-request\nevent; InputTokens is the exact total from the provider usage.",
+                    "type": "integer"
+                },
+                "tool_tokens": {
                     "type": "integer"
                 }
             }

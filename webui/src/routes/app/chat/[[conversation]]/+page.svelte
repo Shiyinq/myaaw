@@ -85,6 +85,7 @@
 	import type {
 		ApprovalDecision,
 		Attachment,
+		ContextUsage,
 		ConversationTurn,
 		Message,
 		ModelCapabilitiesView,
@@ -223,6 +224,7 @@
 		llmMs?: number;
 		toolMs?: number;
 		ttftMs?: number;
+		context?: ContextUsage;
 	} | null>(null);
 	// Configured provider and its default model, as the terminal status line shows.
 	let providerInfo = $state<{
@@ -840,7 +842,8 @@
 				outputTokens: detail.output_tokens ?? 0,
 				llmMs: detail.llm_ms ?? 0,
 				toolMs: detail.tool_ms ?? 0,
-				ttftMs: detail.ttft_ms ?? 0
+				ttftMs: detail.ttft_ms ?? 0,
+				context: detail.context
 			};
 		} catch {
 			// No runs recorded for this conversation; keep the local counts.
@@ -1589,34 +1592,46 @@
 	let statsOutputTokens = $derived(sessionStats?.outputTokens ?? 0);
 	let statsCachedTokens = $derived(sessionStats?.cacheHitTokens ?? 0);
 	let statsUncachedTokens = $derived(sessionStats?.uncachedInputTokens ?? 0);
-	let statsProvider = $derived.by(() => {
-		const model = sessionStats?.model ?? '';
-		const providers = providerInfo?.providers ?? [];
-		if (providers.length === 0) return sessionStats?.provider ?? '';
-		// The newest run names the model, so a mid-chat switch follows it.
-		const byModel = model ? providers.find((provider) => provider.model === model) : undefined;
-		if (byModel) return byModel.name;
-		// A model that is not a provider default still points at one provider type.
-		const type = sessionStats?.provider ?? '';
-		const byType = type ? providers.filter((provider) => provider.type === type) : [];
-		if (byType.length === 1) return byType[0].name;
-		return providerInfo?.default || byType[0]?.name || '';
-	});
-	let statsModel = $derived(
-		sessionStats?.model ||
-			providerInfo?.providers.find((provider) => provider.name === providerInfo?.default)?.model ||
-			''
-	);
-	let statsModelText = $derived([statsProvider, statsModel].filter(Boolean).join(' · '));
 	// The footer packs these into one line on a phone, so they stay apart rather
-	// than pre-joined: the cache figure and the model name are the first to go
-	// when the composer is narrow.
+	// than pre-joined: the cache figure is the first to go when the composer is
+	// narrow. The provider and model live in the composer's model dropdown, not
+	// here.
 	let statsTokenText = $derived(
 		statsTokens > 0 ? t('myaaw.chat.stats_tokens', { count: formatTokens(statsTokens) }) : ''
 	);
 	let statsCacheText = $derived(
 		statsCacheRate > 0 ? t('myaaw.chat.stats_cache_hit', { percent: statsCacheRate }) : ''
 	);
+
+	// Context view: a live run's newest request wins over the stored session, and
+	// the stored session wins over nothing. `tokens` is the exact input count the
+	// provider reported; the breakdown rows are the pre-request estimate.
+	let onlineContext = $derived(activeRun?.context ?? sessionStats?.context ?? null);
+	let contextTokens = $derived(onlineContext?.tokens ?? 0);
+	let contextWindow = $derived(onlineContext?.window ?? 0);
+	let contextKnown = $derived(contextTokens > 0 && contextWindow > 0);
+	let contextPercent = $derived(
+		contextWindow > 0 ? Math.min(100, Math.round((contextTokens / contextWindow) * 100)) : 0
+	);
+	let contextSystem = $derived(onlineContext?.system_tokens ?? 0);
+	let contextTool = $derived(onlineContext?.tool_tokens ?? 0);
+	let contextMessage = $derived(onlineContext?.message_tokens ?? 0);
+	let contextPartsTotal = $derived(contextSystem + contextTool + contextMessage);
+	let contextDash = $derived(`${((contextPercent / 100) * 94.25).toFixed(2)} 94.25`);
+	let contextTokenText = $derived(
+		contextKnown
+			? t('myaaw.chat.context_window', {
+					used: formatTokens(contextTokens),
+					window: formatTokens(contextWindow)
+				})
+			: ''
+	);
+
+	function contextStrokeClass(percent: number) {
+		if (percent >= 90) return 'stroke-red-500';
+		if (percent >= 70) return 'stroke-amber-500';
+		return 'stroke-primary';
+	}
 
 	function formatTokens(count: number) {
 		if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
@@ -3817,7 +3832,7 @@
 											{/if}
 										</div>
 
-										{#if statsTokenText || statsCacheText || statsModelText}
+										{#if statsTokenText || statsCacheText || contextKnown}
 											<div class="relative min-w-0">
 												<button
 													type="button"
@@ -3832,69 +3847,150 @@
 													}}
 													aria-expanded={openUsage}
 												>
+													{#if contextKnown}
+														<span
+															class="inline-flex items-center gap-1"
+															title={t('myaaw.chat.context_used', {
+																percent: contextPercent
+															})}
+														>
+															<svg
+																viewBox="0 0 36 36"
+																class="h-3.5 w-3.5 shrink-0 -rotate-90"
+																aria-hidden="true"
+															>
+																<circle
+																	cx="18"
+																	cy="18"
+																	r="15"
+																	fill="none"
+																	class="stroke-muted"
+																	stroke-width="4"
+																/>
+																<circle
+																	cx="18"
+																	cy="18"
+																	r="15"
+																	fill="none"
+																	class={contextStrokeClass(contextPercent)}
+																	stroke-width="4"
+																	stroke-linecap="round"
+																	stroke-dasharray={contextDash}
+																/>
+															</svg>
+															<span class="tabular-nums">{contextPercent}%</span>
+														</span>
+														<span aria-hidden="true">·</span>
+													{/if}
 													<Database class="h-3 w-3 shrink-0" />
 													{#if statsTokenText}
 														<span class="whitespace-nowrap">{statsTokenText}</span>
 													{/if}
 													{#if statsCacheText}
 														<span class="hidden whitespace-nowrap sm:inline"
-															>• {statsCacheText}</span
+															>· {statsCacheText}</span
 														>
 													{/if}
-													{#if statsModelText}
-														<span class="hidden truncate whitespace-nowrap sm:inline">
-															• {statsModelText}
-														</span>
-													{/if}
 												</button>
-												{#if openUsage && sessionStats}
+												{#if openUsage && (sessionStats || onlineContext)}
 													<div
 														class="absolute right-0 bottom-full z-30 mb-2 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border bg-popover p-3 text-xs text-popover-foreground shadow-md frost-popover sm:right-auto sm:left-1/2 sm:-translate-x-1/2"
 														onclick={(event) => event.stopPropagation()}
 														role="presentation"
 													>
-														<div class="flex items-center justify-between gap-3 font-medium">
-															<span class="flex items-center gap-2">
-																<Database class="h-3.5 w-3.5" />
-																{t('myaaw.chat.stats_usage_title')}
-															</span>
-															<span class="tabular-nums">
-																{t('myaaw.chat.stats_tokens', {
-																	count: formatCount(statsTokens)
-																})}
-															</span>
-														</div>
-														<div class="my-2 h-px bg-border"></div>
-														<dl class="space-y-1.5">
-															<div class="flex justify-between gap-3">
-																<dt>{t('myaaw.chat.stats_cache_hit_label')}</dt>
-																<dd class="tabular-nums">{statsCacheRate}%</dd>
+														{#if onlineContext}
+															<div class="space-y-1.5">
+																<div class="flex items-center justify-between gap-3 font-medium">
+																	<span>
+																		{contextKnown
+																			? t('myaaw.chat.context_used', { percent: contextPercent })
+																			: t('myaaw.chat.context_unknown')}
+																	</span>
+																	<span class="tabular-nums">{contextTokenText}</span>
+																</div>
+																{#if contextPartsTotal > 0}
+																	<div class="flex h-1.5 overflow-hidden rounded-full bg-muted">
+																		<div
+																			class="bg-primary/40"
+																			style={`width: ${(contextSystem / contextPartsTotal) * 100}%`}
+																		></div>
+																		<div
+																			class="bg-primary/70"
+																			style={`width: ${(contextTool / contextPartsTotal) * 100}%`}
+																		></div>
+																		<div
+																			class="bg-primary"
+																			style={`width: ${(contextMessage / contextPartsTotal) * 100}%`}
+																		></div>
+																	</div>
+																{/if}
+																<dl class="space-y-1.5">
+																	<div class="flex justify-between gap-3">
+																		<dt class="text-muted-foreground">
+																			{t('myaaw.chat.context_system')}
+																		</dt>
+																		<dd class="tabular-nums">~{formatTokens(contextSystem)}</dd>
+																	</div>
+																	<div class="flex justify-between gap-3">
+																		<dt class="text-muted-foreground">
+																			{t('myaaw.chat.context_tools')}
+																		</dt>
+																		<dd class="tabular-nums">~{formatTokens(contextTool)}</dd>
+																	</div>
+																	<div class="flex justify-between gap-3">
+																		<dt class="text-muted-foreground">
+																			{t('myaaw.chat.context_messages')}
+																		</dt>
+																		<dd class="tabular-nums">~{formatTokens(contextMessage)}</dd>
+																	</div>
+																</dl>
 															</div>
-															<div class="flex justify-between gap-3">
-																<dt>{t('myaaw.chat.stats_uncached_input')}</dt>
-																<dd class="tabular-nums">
+														{/if}
+														{#if sessionStats}
+															{#if onlineContext}<div class="my-2 h-px bg-border"></div>{/if}
+															<div class="flex items-center justify-between gap-3 font-medium">
+																<span class="flex items-center gap-2">
+																	<Database class="h-3.5 w-3.5" />
+																	{t('myaaw.chat.stats_usage_title')}
+																</span>
+																<span class="tabular-nums">
 																	{t('myaaw.chat.stats_tokens', {
-																		count: formatCount(statsUncachedTokens)
+																		count: formatCount(statsTokens)
 																	})}
-																</dd>
+																</span>
 															</div>
-															<div class="flex justify-between gap-3">
-																<dt>{t('myaaw.chat.stats_cached_input')}</dt>
-																<dd class="tabular-nums">
-																	{t('myaaw.chat.stats_tokens', {
-																		count: formatCount(statsCachedTokens)
-																	})}
-																</dd>
-															</div>
-															<div class="flex justify-between gap-3">
-																<dt>{t('myaaw.chat.stats_output')}</dt>
-																<dd class="tabular-nums">
-																	{t('myaaw.chat.stats_tokens', {
-																		count: formatCount(statsOutputTokens)
-																	})}
-																</dd>
-															</div>
-														</dl>
+															<div class="my-2 h-px bg-border"></div>
+															<dl class="space-y-1.5">
+																<div class="flex justify-between gap-3">
+																	<dt>{t('myaaw.chat.stats_cache_hit_label')}</dt>
+																	<dd class="tabular-nums">{statsCacheRate}%</dd>
+																</div>
+																<div class="flex justify-between gap-3">
+																	<dt>{t('myaaw.chat.stats_uncached_input')}</dt>
+																	<dd class="tabular-nums">
+																		{t('myaaw.chat.stats_tokens', {
+																			count: formatCount(statsUncachedTokens)
+																		})}
+																	</dd>
+																</div>
+																<div class="flex justify-between gap-3">
+																	<dt>{t('myaaw.chat.stats_cached_input')}</dt>
+																	<dd class="tabular-nums">
+																		{t('myaaw.chat.stats_tokens', {
+																			count: formatCount(statsCachedTokens)
+																		})}
+																	</dd>
+																</div>
+																<div class="flex justify-between gap-3">
+																	<dt>{t('myaaw.chat.stats_output')}</dt>
+																	<dd class="tabular-nums">
+																		{t('myaaw.chat.stats_tokens', {
+																			count: formatCount(statsOutputTokens)
+																		})}
+																	</dd>
+																</div>
+															</dl>
+														{/if}
 													</div>
 												{/if}
 											</div>

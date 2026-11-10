@@ -6,6 +6,7 @@ import type {
 	ChatFile,
 	ChatRunInfo,
 	ChatStreamEvent,
+	ContextUsage,
 	TimelineItem,
 	Upload,
 	Usage
@@ -88,6 +89,7 @@ export class ChatRun {
 	items = $state<ChatItem[]>([]);
 	streaming = $state(true);
 	usage = $state<Usage | null>(null);
+	context = $state<ContextUsage | null>(null);
 	attachments = $state<Attachment[]>([]);
 	error = $state('');
 	pendingApproval = $state<ApprovalPrompt | null>(null);
@@ -324,6 +326,17 @@ export class ChatRun {
 					tokens_after: data?.tokens_after,
 					dropped_messages: data?.dropped_messages
 				});
+				break;
+			case 'context':
+				// The newest request against the context window. A later event for the
+				// same request replaces the estimate with the exact provider count.
+				this.context = {
+					tokens: data?.tokens ?? 0,
+					window: data?.window ?? 0,
+					system_tokens: data?.system_tokens ?? 0,
+					tool_tokens: data?.tool_tokens ?? 0,
+					message_tokens: data?.message_tokens ?? 0
+				};
 				break;
 			case 'approval_required': {
 				// Only the card above the composer renders it; a transcript row would

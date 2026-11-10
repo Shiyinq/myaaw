@@ -179,6 +179,21 @@ func EstimateTokens(messages []provider.Message) int {
 // accounting used by computer-use agents.
 const imageTokenCost = 1500
 
+// EstimateToolSchemas returns a rough token estimate for the tool definitions
+// sent with a request. It uses the same provider-agnostic heuristic as
+// EstimateTokens (~4 bytes per token).
+func EstimateToolSchemas(schemas []map[string]any) int {
+	total := 0
+	for _, schema := range schemas {
+		data, err := json.Marshal(schema)
+		if err != nil {
+			continue
+		}
+		total += estimateText(string(data))
+	}
+	return total
+}
+
 // imagePlaceholder replaces evicted image items while keeping the message
 // structure and its text intact.
 const imagePlaceholder = "[image removed to save context]"

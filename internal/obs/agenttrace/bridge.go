@@ -126,11 +126,14 @@ func FromEvent(event agent.AgentEvent) (obs.Event, bool) {
 
 	case agent.EventLLMRequestStart:
 		return obs.Event{
-			Type:      obs.EventLLMRequestStart,
-			Time:      event.Time,
-			StepIndex: event.StepIndex,
-			Model:     event.Model,
-			Messages:  event.Messages,
+			Type:          obs.EventLLMRequestStart,
+			Time:          event.Time,
+			StepIndex:     event.StepIndex,
+			Model:         event.Model,
+			Messages:      event.Messages,
+			SystemTokens:  event.Context.SystemTokens,
+			ToolTokens:    event.Context.ToolTokens,
+			MessageTokens: event.Context.MessageTokens,
 		}, true
 
 	case agent.EventLLMRetry:

@@ -149,6 +149,9 @@ func (r *BotServiceImpl) runConversation(
 		cfg.ApprovalGate = gate
 	}
 
+	// lastContext remembers the breakdown of the most recent request so the
+	// provider's exact usage can update its total without recomputing it.
+	var lastContext channel.ContextUsage
 	result, runErr := r.agent.RunEvents(ctx, cfg, messages, func(event agent.AgentEvent) error {
 		recorder.Event(event)
 		if onChunk == nil {
@@ -192,9 +195,24 @@ func (r *BotServiceImpl) runConversation(
 			if len(event.Trace) > 0 {
 				onChunk(channel.StreamChunk{Kind: "trace", Trace: event.Trace})
 			}
+		case agent.EventLLMRequestStart:
+			lastContext = event.Context
+			contextUsage := lastContext
+			onChunk(channel.StreamChunk{Kind: "context", Context: &contextUsage})
 		case agent.EventUsage:
 			if event.Usage.TotalTokens > 0 {
 				onChunk(channel.StreamChunk{Kind: "usage", Usage: event.Usage})
+			}
+			// The provider's usage block carries the exact input count; replace the
+			// pre-request estimate so the ring shows the real number.
+			input := event.Usage.PromptTokens
+			if input == 0 && event.Usage.TotalTokens > 0 {
+				input = event.Usage.TotalTokens - event.Usage.CompletionTokens
+			}
+			if input > 0 {
+				lastContext.Tokens = input
+				contextUsage := lastContext
+				onChunk(channel.StreamChunk{Kind: "context", Context: &contextUsage})
 			}
 		case agent.EventLLMRetry:
 			onChunk(channel.StreamChunk{Kind: "retry", StepIndex: event.StepIndex, Attempt: event.Attempt})

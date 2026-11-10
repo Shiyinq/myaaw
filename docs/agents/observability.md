@@ -374,6 +374,33 @@ though the request is billed.
 A retried request gets its own `llm` row per attempt, marked with `request N`, so
 a single step can show more than one `llm` line.
 
+#### Why the session total is larger than the context
+
+`tok` (and the composer's "Token usage") is the **sum of every request's full
+prompt**, not the size of the conversation. Each model call sends the whole
+transcript again, so a turn that adds ~100 tokens still re-sends the ~3000 tokens
+that were already there — and they are billed and counted again.
+
+Example, one request per turn:
+
+| Turn | Prompt sent | Input counted |
+| :--- | :--- | :--- |
+| 1 | S + U1 | 1000 |
+| 2 | S + U1 + A1 + U2 | 2500 |
+| 3 | S + U1 + A1 + U2 + A2 + U3 | 3000 |
+| 4 | turns 1–3 + U4 | 3100 |
+
+The context after turn 4 is **3100** — the union, where each message appears once.
+The cumulative total is `1000 + 2500 + 3000 + 3100 = 9600`, because every request
+already contains the earlier turns and is charged for them again. The snapshots
+overlap, so their sum is not the conversation size.
+
+That is why the composer shows both numbers: the context ring is the **latest
+request** (how full the window is), while "Token usage" is the **cumulative
+billing** history. A large cumulative total with a low context percentage is
+expected — most of it is the same transcript re-sent, which the prompt cache
+makes cheap.
+
 #### Worked example: three steps, two tool calls
 
 ```text
@@ -407,6 +434,32 @@ answer the other question the row alone cannot: Step 1 and Step 3 produced
 thinking/text, Step 2 produced only a tool call. The cost difference between
 Step 1 and Step 3 despite similar input comes from prompt-cache hits, which are
 stored but not printed (see above).
+
+### Exact vs estimated tokens
+
+Two different numbers both get called "tokens", and they must not be mixed:
+
+| Kind | Source | When | Used for |
+| :--- | :--- | :--- | :--- |
+| **Exact** | the provider's `usage` block in the response (`prompt_tokens`, `completion_tokens`, cached tokens) | after the response arrives | `llm.input_tokens` / `output_tokens` / `cache_hit_tokens`, session totals, cost |
+| **Estimated** | `EstimateTokens`, a provider-agnostic heuristic (~4 bytes per token + 1500 per image) | before the request is sent | compaction (trim decision) and the context-window breakdown (`system` / `tool` / `message`, labelled `~`) |
+
+The exact counts are what the provider actually billed: they are stored verbatim on
+the `llm` span and rolled up to the run, and every cumulative number in this
+document (session `tok`, cache-hit rate, cost) is computed from them — never from
+the estimate.
+
+The estimate exists for one reason only: the trim decision must be made *before*
+sending the request, when the real count does not yet exist. It is deliberately
+provider-agnostic (it does not run `tiktoken` or any per-model tokenizer), so it is
+only approximate and is labelled `~` wherever it is shown. The context-window
+breakdown splits the single exact total the API returns into `system` / `tool` /
+`message` using the same heuristic, because the API reports only a total and never
+a per-role split; those three rows are therefore estimates even though the total
+they sum toward is exact.
+
+In short: **cumulative totals and cost are exact (from `usage`); compaction and the
+context breakdown are estimates (from `EstimateTokens`).**
 
 ### Glossary
 

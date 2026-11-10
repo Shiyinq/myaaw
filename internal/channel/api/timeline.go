@@ -111,6 +111,16 @@ func (t *Timeline) HandleChunk(chunk channel.StreamChunk) {
 			"tokens_after":     chunk.TokensAfter,
 			"dropped_messages": chunk.DroppedMessages,
 		})
+	case "context":
+		if chunk.Context != nil {
+			t.emitEvent("context", map[string]any{
+				"tokens":         chunk.Context.Tokens,
+				"window":         chunk.Context.WindowTokens,
+				"system_tokens":  chunk.Context.SystemTokens,
+				"tool_tokens":    chunk.Context.ToolTokens,
+				"message_tokens": chunk.Context.MessageTokens,
+			})
+		}
 	default:
 		// Backwards compatible with providers that only populate fields.
 		if chunk.Thought != "" {

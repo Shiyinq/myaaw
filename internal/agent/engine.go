@@ -13,6 +13,7 @@ import (
 
 	"myaaw/internal/agent/approvals"
 	"myaaw/internal/agent/tools"
+	"myaaw/internal/capabilities"
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
@@ -198,6 +199,7 @@ func (a *Agent) RunEvents(
 			Type:     EventLLMRequestStart,
 			Model:    cfg.Model,
 			Messages: CloneMessages(requestMessages),
+			Context:  requestContextUsage(requestMessages, schemas, cfg.Model),
 		})
 
 		var (
@@ -688,4 +690,34 @@ func argsToString(value interface{}) string {
 		return fmt.Sprintf("%v", value)
 	}
 	return string(data)
+}
+
+// requestContextUsage estimates the request's size against the model's context
+// window. The total is a pre-request estimate; the provider's usage block later
+// supplies the exact input count, and the breakdown splits that total into the
+// system prefix, the tool definitions, and the conversation messages.
+func requestContextUsage(messages []provider.Message, schemas []map[string]any, model string) ContextUsage {
+	systemTokens := 0
+	for _, message := range messages {
+		if message.Role != "system" {
+			break
+		}
+		systemTokens += EstimateTokens([]provider.Message{message})
+	}
+	messageTokens := EstimateTokens(messages) - systemTokens
+	if messageTokens < 0 {
+		messageTokens = 0
+	}
+	toolTokens := EstimateToolSchemas(schemas)
+
+	usage := ContextUsage{
+		SystemTokens:  systemTokens,
+		ToolTokens:    toolTokens,
+		MessageTokens: messageTokens,
+		Tokens:        systemTokens + messageTokens + toolTokens,
+	}
+	if entry, ok := capabilities.Lookup(model); ok && entry.ContextWindow != nil {
+		usage.WindowTokens = *entry.ContextWindow
+	}
+	return usage
 }

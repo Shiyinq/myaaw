@@ -17,6 +17,23 @@ func TestEstimateTokensCountsImagesFlat(t *testing.T) {
 	}
 }
 
+func TestEstimateToolSchemasCountsEverySchema(t *testing.T) {
+	one := EstimateToolSchemas([]map[string]any{{"name": "bash", "description": "Run a command"}})
+	two := EstimateToolSchemas([]map[string]any{
+		{"name": "bash", "description": "Run a command"},
+		{"name": "filesystem", "description": "Read and write files"},
+	})
+	if one <= 0 {
+		t.Fatalf("single schema estimate = %d, want positive", one)
+	}
+	if two <= one {
+		t.Fatalf("two schemas = %d; want more than one (%d)", two, one)
+	}
+	if EstimateToolSchemas(nil) != 0 {
+		t.Fatal("nil schemas should estimate to 0")
+	}
+}
+
 func imageToolMessage(dataSize int) provider.Message {
 	return provider.Message{
 		Role: "tool",

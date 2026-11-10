@@ -280,11 +280,19 @@ Migration is idempotent: v2 transcripts are never expanded again.
 
 `CompactTranscript` limits transcript size before a provider request.
 
-- Token estimate: roughly 4 bytes per token plus per-message overhead; images count as 1000 tokens.
+- Token estimate: roughly 4 bytes per token plus per-message overhead; images count as 1500 tokens.
 - The system prefix is always kept.
 - The newest turn is always kept.
 - Turns are grouped by `user` messages and never split, so assistant tool calls and tool results stay together.
 - Old turns are removed from the front until the budget is satisfied.
+
+This estimate (`EstimateTokens`) is a **pre-request approximation** used only to
+decide whether to trim. It is not the token count the provider reports, and it is
+not what observability records: the exact `prompt_tokens` / `completion_tokens`
+from the provider's `usage` are stored on the `llm` span after the response
+arrives (see [Observability](observability.md)). The estimate exists only because
+the trim decision must be made *before* sending the request, when the real count
+is not yet known.
 
 Configuration:
 

@@ -4,6 +4,19 @@ export interface Usage {
 	total_tokens: number;
 }
 
+/**
+ * How full the model's context window is for the newest request. `tokens` is the
+ * exact input count the provider reported; the breakdown rows are the
+ * pre-request estimate and are shown with a ~.
+ */
+export interface ContextUsage {
+	tokens: number;
+	window: number;
+	system_tokens: number;
+	tool_tokens: number;
+	message_tokens: number;
+}
+
 export interface Attachment {
 	file_name: string;
 	mime_type?: string;
@@ -87,5 +100,6 @@ export type ChatStreamEvent =
 	| 'approval_required'
 	| 'approval_resolved'
 	| 'compaction'
+	| 'context'
 	| 'done'
 	| 'error';

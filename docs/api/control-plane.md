@@ -1317,12 +1317,24 @@ no run or span is loaded — so it also stays correct for sessions longer than t
   "tok_per_sec": 182,
   "llm_ms": 22700,
   "tool_ms": 13700,
-  "ttft_ms": 1600
+  "ttft_ms": 1600,
+  "context": {
+    "tokens": 9430,
+    "window": 1048576,
+    "system_tokens": 1400,
+    "tool_tokens": 7100,
+    "message_tokens": 930
+  }
 }
 ```
 
 - `turns` is the number of recorded runs; `steps` counts `step` spans across all
   of them (not `llm` or `tool` spans).
+- `input_tokens`, `output_tokens`, and `total_tokens` are **cumulative** over every
+  request in the session. Each request re-sends the whole transcript, so earlier
+  turns are counted again — the sum of overlapping request snapshots, not the
+  conversation size. Use `context.tokens` for the current size; see
+  [Observability](../agents/observability.md#why-the-session-total-is-larger-than-the-context).
 - `cache_hit_tokens` is part of `input_tokens`, so the hit rate is
   `cache_hit_tokens / input_tokens` — never `/ total_tokens`. `cache_hit_rate`,
   `total_tokens` and `uncached_input_tokens` are that arithmetic already done by
@@ -1337,6 +1349,13 @@ no run or span is loaded — so it also stays correct for sessions longer than t
   instead of counting as a zero.
 - `provider` is the provider **type** of the newest run (`openai`, `gemini`),
   while the configured provider name (`deepseek`) lives in the agent config.
+- `context` describes the **newest** request, not the session sum. `tokens` is the
+  exact `input_tokens` the provider reported on the last `llm` span, and `window`
+  is the model's catalog `context_window_tokens`. `system_tokens`, `tool_tokens`,
+  and `message_tokens` split that total but are a pre-request **estimate** (the
+  API reports only a total), so a client shows them with a `~`. The object is
+  omitted when the session has no model request yet, and a client hides the
+  percentage when either `tokens` or `window` is zero.
 - A conversation with no recorded runs returns 404, like the detail endpoint.
 
 ### Mapping the response to a trajectory UI
