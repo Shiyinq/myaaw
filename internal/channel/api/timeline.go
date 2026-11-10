@@ -168,13 +168,24 @@ func (t *Timeline) Done(out *channel.OutgoingMessage) {
 		}
 	}
 	if len(out.Attachments) > 0 {
-		list := make([]map[string]string, 0, len(out.Attachments))
+		list := make([]map[string]any, 0, len(out.Attachments))
 		for _, att := range out.Attachments {
-			list = append(list, map[string]string{
-				"file_name":   att.FileName,
-				"mime_type":   att.MimeType,
-				"data_base64": base64.StdEncoding.EncodeToString(att.Data),
-			})
+			entry := map[string]any{
+				"file_name": att.FileName,
+				"mime_type": att.MimeType,
+			}
+			if att.Path != "" {
+				// Path-based attachment: the client fetches the bytes itself,
+				// so large files never enter the event stream.
+				entry["path"] = att.Path
+				entry["kind"] = att.Kind
+				if att.Size > 0 {
+					entry["size"] = att.Size
+				}
+			} else if len(att.Data) > 0 {
+				entry["data_base64"] = base64.StdEncoding.EncodeToString(att.Data)
+			}
+			list = append(list, entry)
 		}
 		data["attachments"] = list
 	}

@@ -54,6 +54,11 @@ type Message struct {
 	Action      string `json:"action,omitempty" bson:"action,omitempty"`
 	ActionInput string `json:"action_input,omitempty" bson:"action_input,omitempty"`
 	Observation string `json:"observation,omitempty" bson:"observation,omitempty"`
+	// Attachments are files delivered with this turn. They are presentation
+	// metadata persisted with the transcript so a reopened chat renders the same
+	// previews. Providers never receive them: every adapter maps fields onto its
+	// own wire type.
+	Attachments []MessageAttachment `json:"attachments,omitempty" bson:"attachments,omitempty"`
 	// Trace stores all ReAct steps as JSON array for final response
 	Trace []ReactStep `json:"trace,omitempty" bson:"trace,omitempty"`
 	// Token Usage
@@ -67,6 +72,18 @@ type Message struct {
 	// CreatedAt is when the message entered the transcript, stored in UTC. A nil
 	// timestamp means the message predates per-message times.
 	CreatedAt *time.Time `json:"created_at,omitempty" bson:"created_at,omitempty"`
+}
+
+// MessageAttachment is a file delivered with an assistant turn. It is
+// presentation metadata: persisted with the transcript so a reopened chat
+// renders the same previews, and never sent to a provider.
+type MessageAttachment struct {
+	FileName   string `json:"file_name"`
+	MimeType   string `json:"mime_type,omitempty"`
+	Path       string `json:"path,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Size       int64  `json:"size,omitempty"`
+	DataBase64 string `json:"data_base64,omitempty"`
 }
 
 type UsageDetail struct {

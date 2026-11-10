@@ -1208,6 +1208,15 @@ definitions:
         type: string
       action_input:
         type: string
+      attachments:
+        description: |-
+          Attachments are files delivered with this turn. They are presentation
+          metadata persisted with the transcript so a reopened chat renders the same
+          previews. Providers never receive them: every adapter maps fields onto its
+          own wire type.
+        items:
+          $ref: '#/definitions/provider.MessageAttachment'
+        type: array
       content: {}
       created_at:
         description: |-
@@ -1282,6 +1291,21 @@ definitions:
         - $ref: '#/definitions/provider.Usage'
         description: Token Usage
       v:
+        type: integer
+    type: object
+  provider.MessageAttachment:
+    properties:
+      data_base64:
+        type: string
+      file_name:
+        type: string
+      kind:
+        type: string
+      mime_type:
+        type: string
+      path:
+        type: string
+      size:
         type: integer
     type: object
   provider.ReactStep:

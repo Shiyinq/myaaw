@@ -1,3 +1,5 @@
+import type { Attachment } from './chat';
+
 export interface ContentPart {
 	type: string;
 	text?: string;
@@ -35,6 +37,8 @@ export interface Message {
 	created_at?: string;
 	/** How long the turn took, set on the final assistant message. */
 	duration_ms?: number;
+	/** Files delivered with this answer, so a reopened chat renders them again. */
+	attachments?: Attachment[];
 }
 
 /** A file a user attached to a message; persisted on the agent. */

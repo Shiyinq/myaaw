@@ -588,8 +588,17 @@ const docTemplate = `{
                 "file_name": {
                     "type": "string"
                 },
+                "kind": {
+                    "type": "string"
+                },
                 "mime_type": {
                     "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
                 }
             }
         },

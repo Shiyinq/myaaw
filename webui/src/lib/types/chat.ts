@@ -20,7 +20,14 @@ export interface ContextUsage {
 export interface Attachment {
 	file_name: string;
 	mime_type?: string;
-	data_base64: string;
+	/** Present for small tool attachments; omitted when the file lives on the agent. */
+	data_base64?: string;
+	/** Virtual path the WebUI fetches through `/fs/raw`. */
+	path?: string;
+	/** Rendering kind: image, video, audio, pdf, or file. */
+	kind?: string;
+	/** Byte length of the referenced file, when known. */
+	size?: number;
 }
 
 export interface ChatRequest {

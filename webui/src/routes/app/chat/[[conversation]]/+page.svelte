@@ -29,6 +29,7 @@
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
 	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
+	import RunAttachments from '$lib/components/app/RunAttachments.svelte';
 	import FocusAgentPanel from '$lib/components/focus/FocusAgentPanel.svelte';
 	import FocusContextEditor from '$lib/components/focus/FocusContextEditor.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
@@ -47,7 +48,6 @@
 	import { isFrosted } from '$lib/theme';
 	import {
 		AlertTriangle,
-		ArrowDownToLine,
 		Bot,
 		Brain,
 		CalendarClock,
@@ -84,7 +84,6 @@
 	} from 'lucide-svelte';
 	import type {
 		ApprovalDecision,
-		Attachment,
 		ContextUsage,
 		ConversationTurn,
 		Message,
@@ -249,7 +248,6 @@
 	// Approvals mode for the next message: "off" is Full access, "manual" asks.
 	let approvalMode = $state<'manual' | 'off'>('manual');
 	let switchingApproval = $state(false);
-	let attachments = $derived<Attachment[]>(activeRun?.attachments ?? []);
 	let pending = $state<PendingImage[]>([]);
 	let pendingFiles = $state<PendingFile[]>([]);
 	let dragOver = $state(false);
@@ -260,6 +258,7 @@
 	let openStats = $state(false);
 	let openUsage = $state(false);
 	let scroller = $state<HTMLDivElement | null>(null);
+	let transcript = $state<HTMLDivElement | null>(null);
 	let composer = $state<HTMLTextAreaElement | null>(null);
 	// True while the transcript sits at the end, so a growing answer may follow it.
 	// Scrolling away clears it until the reader comes back.
@@ -388,6 +387,19 @@
 		if (!scroller) return true;
 		return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= slack;
 	}
+
+	// Images and videos report their real size after they load, which grows the
+	// transcript outside the item-change effect. Follow the bottom again when that
+	// happens, otherwise the media lands below the composer.
+	$effect(() => {
+		const node = transcript;
+		if (!node || typeof ResizeObserver === 'undefined') return;
+		const observer = new ResizeObserver(() => {
+			if (preferences.value.autoScroll && stickToBottom) scrollToBottom();
+		});
+		observer.observe(node);
+		return () => observer.disconnect();
+	});
 
 	/** How much text the last row holds; it changes on every streamed token. */
 	function tailGrowth(item: Item | undefined): number {
@@ -2185,10 +2197,12 @@
 			if (message.role !== 'assistant') continue;
 
 			const text = messageText(message);
-			if (text) {
+			const attachments = message.attachments ?? [];
+			if (text || attachments.length > 0) {
 				timeline.push({
 					kind: 'text',
 					text,
+					attachments,
 					localId: nextId(),
 					messageIndex,
 					createdAt: message.created_at
@@ -2644,14 +2658,6 @@
 		speech = null;
 	});
 
-	function attachmentUrl(attachment: Attachment) {
-		return `data:${attachment.mime_type || 'application/octet-stream'};base64,${attachment.data_base64}`;
-	}
-
-	function isImage(attachment: Attachment) {
-		return (attachment.mime_type ?? '').startsWith('image/');
-	}
-
 	function fileExtension(name: string) {
 		const dot = name.lastIndexOf('.');
 		return dot >= 0 ? name.slice(dot).toLowerCase() : '';
@@ -2833,6 +2839,7 @@
 						onscroll={onScroll}
 					>
 						<div
+							bind:this={transcript}
 							class={cn(
 								'mx-auto w-full max-w-4xl space-y-5 px-4 py-6',
 								focusMode && items.length > 0 && 'pt-40',
@@ -3184,6 +3191,9 @@
 											class="group/message wrap-break-word text-sm terminal:border-l terminal:pl-3"
 										>
 											<Markdown content={item.text ?? ''} />
+											{#if (item.attachments?.length ?? 0) > 0}
+												<RunAttachments {agent} attachments={item.attachments ?? []} />
+											{/if}
 											<div
 												class={cn(
 													'mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100',
@@ -3226,29 +3236,6 @@
 										<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
 									{/if}
 									<span class="font-medium">{t('myaaw.chat.tool_running')}</span>
-								</div>
-							{/if}
-
-							{#if attachments.length > 0}
-								<div class="space-y-2">
-									{#each attachments as attachment (attachment.file_name)}
-										{#if isImage(attachment)}
-											<img
-												src={attachmentUrl(attachment)}
-												alt={attachment.file_name}
-												class="max-h-72 rounded-xl border"
-											/>
-										{:else}
-											<a
-												href={attachmentUrl(attachment)}
-												download={attachment.file_name}
-												class="inline-flex items-center gap-2 text-xs text-primary underline-offset-4 hover:underline"
-											>
-												<ArrowDownToLine class="h-3.5 w-3.5" />
-												{attachment.file_name}
-											</a>
-										{/if}
-									{/each}
 								</div>
 							{/if}
 						</div>

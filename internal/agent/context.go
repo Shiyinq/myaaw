@@ -133,6 +133,14 @@ func (b *SystemPromptBuilder) Build() string {
 		fmt.Fprintf(&sb, "- Downloads: %s/\n\n", downloadsDir)
 	}
 
+	// 4b. File delivery
+	// Identical on every surface: a per-channel sentence would change the cached
+	// prompt prefix when a session moves between surfaces. The surface decides
+	// how a referenced file is presented.
+	sb.WriteString("## File & project delivery\n")
+	sb.WriteString(deliveryInstruction)
+	sb.WriteString("\n\n")
+
 	// 5. Current Directory (Dynamic)
 	// Only local CLI sessions have a meaningful project directory.
 	if b.currentDir != "" {
@@ -155,6 +163,11 @@ func (b *SystemPromptBuilder) Build() string {
 
 	return strings.TrimSpace(sb.String())
 }
+
+// deliveryInstruction has to stay identical for every channel. The prompt is
+// cached by prefix, so a surface-specific sentence would invalidate the cache
+// whenever a session switches between the terminal and a chat surface.
+const deliveryInstruction = "To hand a file to the user, write @attach(/absolute/path) in your final answer and it will appear in the chat; never base64-encode the file or paste its contents into the reply."
 
 // isLocalChannel reports whether the channel runs in the user's local working
 // directory and should therefore receive current-directory context.

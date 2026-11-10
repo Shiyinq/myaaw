@@ -77,11 +77,22 @@ type FileUpload struct {
 	DataBase64 string `json:"data_base64"`
 }
 
-// Attachment is one file produced by a tool and delivered to the user.
+// Attachment is one file produced by a tool or delivered by the model.
+//
+// A channel either sends the bytes itself (Data) or hands a rendering surface a
+// reference it can fetch from (Path, a virtual path such as /home/workspace/x).
+// Path-based attachments avoid base64-encoding large files into the stream.
 type Attachment struct {
 	FileName string
 	MimeType string
 	Data     []byte
+	// Path is the virtual file path for surfaces that fetch bytes themselves
+	// (the API/WebUI). Empty for byte-only attachments.
+	Path string
+	// Kind is the rendering kind: image, video, audio, pdf, or file.
+	Kind string
+	// Size is the byte length of the referenced file, when known.
+	Size int64
 }
 
 // ContextUsage describes how full the model's context window is for one request.

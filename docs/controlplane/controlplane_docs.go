@@ -8508,6 +8508,13 @@ const docTemplatecontrolplane = `{
                 "action_input": {
                     "type": "string"
                 },
+                "attachments": {
+                    "description": "Attachments are files delivered with this turn. They are presentation\nmetadata persisted with the transcript so a reopened chat renders the same\npreviews. Providers never receive them: every adapter maps fields onto its\nown wire type.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.MessageAttachment"
+                    }
+                },
                 "content": {},
                 "created_at": {
                     "description": "CreatedAt is when the message entered the transcript, stored in UTC. A nil\ntimestamp means the message predates per-message times.",
@@ -8600,6 +8607,29 @@ const docTemplatecontrolplane = `{
                     ]
                 },
                 "v": {
+                    "type": "integer"
+                }
+            }
+        },
+        "provider.MessageAttachment": {
+            "type": "object",
+            "properties": {
+                "data_base64": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size": {
                     "type": "integer"
                 }
             }

@@ -250,6 +250,18 @@ func (r *BotServiceImpl) runConversation(
 		finalText = "⚠️ Agent error: " + result.Err.Error()
 	}
 
+	// Turn explicit @attach(...) directives into attachments for this surface.
+	// The cleaned text is what the chat shows and what the transcript keeps.
+	deliveredText, deliveredAttachments := r.deliverAttachments(msg, finalText)
+	if len(deliveredAttachments) > 0 {
+		result.Attachments = append(result.Attachments, deliveredAttachments...)
+		attachToFinalAssistant(result.Transcript, deliveredAttachments)
+	}
+	if deliveredText != finalText {
+		replaceFinalAssistantText(result.Transcript, deliveredText)
+		finalText = deliveredText
+	}
+
 	out := &channel.OutgoingMessage{
 		Text:           finalText,
 		Trace:          result.Final.Trace,

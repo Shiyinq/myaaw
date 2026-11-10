@@ -38,6 +38,8 @@ export interface ChatItem extends TimelineItem {
 	trigger?: 'cron' | 'heartbeat' | 'subagent';
 	images?: string[];
 	uploads?: Upload[];
+	/** Files delivered with this answer; rehydrated from the stored transcript. */
+	attachments?: Attachment[];
 	running?: boolean;
 	expanded?: boolean;
 	group_duration_ms?: number;
@@ -90,7 +92,6 @@ export class ChatRun {
 	streaming = $state(true);
 	usage = $state<Usage | null>(null);
 	context = $state<ContextUsage | null>(null);
-	attachments = $state<Attachment[]>([]);
 	error = $state('');
 	pendingApproval = $state<ApprovalPrompt | null>(null);
 	/** Step group that is still collecting rows, so its header keeps spinning. */
@@ -360,9 +361,27 @@ export class ChatRun {
 				this.streaming = false;
 				const next = data?.conversation_id;
 				if (typeof next === 'string' && next) this.bindConversation(next);
-				if (data?.text) {
-					const hasText = [...this.items].reverse().some((item) => item.kind === 'text');
-					if (!hasText) this.push({ kind: 'text', text: data.text });
+				const doneAttachments = data?.attachments ?? [];
+				if (data?.text || doneAttachments.length > 0) {
+					// The final text is authoritative: it has the delivery directives
+					// removed, while the streamed deltas still contain them. Attachments
+					// ride on the same answer so history renders them too.
+					let lastText = -1;
+					for (let i = this.items.length - 1; i >= 0; i -= 1) {
+						if (this.items[i].kind === 'text') {
+							lastText = i;
+							break;
+						}
+					}
+					if (lastText >= 0) {
+						this.items[lastText] = {
+							...this.items[lastText],
+							...(data?.text ? { text: data.text } : {}),
+							attachments: doneAttachments
+						};
+					} else {
+						this.push({ kind: 'text', text: data?.text ?? '', attachments: doneAttachments });
+					}
 				}
 				// Live rows have no stored timestamp yet; stamp the answer when it lands.
 				const stampedAt = new Date().toISOString();
@@ -370,7 +389,6 @@ export class ChatRun {
 					item.kind === 'text' && !item.createdAt ? { ...item, createdAt: stampedAt } : item
 				);
 				this.usage = data?.usage ?? null;
-				this.attachments = data?.attachments ?? [];
 				this.view?.onDone?.(this);
 				break;
 			}
