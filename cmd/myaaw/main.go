@@ -134,6 +134,7 @@ func init() {
 			"version": true,
 			"help":    true,
 			"update":  true,
+			"upgrade": true,
 			"agent":   true,
 			"api":     true,
 			"backup":  true,
@@ -228,7 +229,7 @@ func init() {
 					{name: "Channels & Integrations", cmdNames: []string{"channel", "provider", "webhook"}},
 					{name: "Monitoring & Diagnostics", cmdNames: []string{"status", "logs", "observability", "doctor"}},
 					{name: "Settings & Desktop", cmdNames: []string{"config", "computer", "codesign"}},
-					{name: "Maintenance", cmdNames: []string{"backup", "restore", "update", "version", "completion"}},
+					{name: "Maintenance", cmdNames: []string{"backup", "restore", "update", "upgrade", "version", "completion"}},
 					{name: "Service Management", cmdNames: []string{"server", "start", "stop", "restart", "api", "webui"}},
 				}
 
