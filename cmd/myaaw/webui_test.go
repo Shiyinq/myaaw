@@ -293,3 +293,26 @@ func TestWebuiBundleVersion(t *testing.T) {
 		t.Fatalf("empty version = %q, want unknown", got)
 	}
 }
+
+func TestWebUIUpToDate(t *testing.T) {
+	tests := []struct {
+		name      string
+		current   string
+		tag       string
+		installed bool
+		force     bool
+		want      bool
+	}{
+		{"same tag", "v2026.11.10.3", "v2026.11.10.3", true, false, true},
+		{"same tag different case", "V2026.11.10.3", "v2026.11.10.3", true, false, true},
+		{"older tag", "v2026.11.10.2", "v2026.11.10.3", true, false, false},
+		{"no bundle installed", "v2026.11.10.3", "v2026.11.10.3", false, false, false},
+		{"version not tracked", "", "v2026.11.10.3", true, false, false},
+		{"forced install", "v2026.11.10.3", "v2026.11.10.3", true, true, false},
+	}
+	for _, tt := range tests {
+		if got := webUIUpToDate(tt.current, tt.tag, tt.installed, tt.force); got != tt.want {
+			t.Errorf("%s: webUIUpToDate(%q, %q, %v, %v) = %v, want %v", tt.name, tt.current, tt.tag, tt.installed, tt.force, got, tt.want)
+		}
+	}
+}

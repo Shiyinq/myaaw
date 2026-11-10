@@ -878,38 +878,38 @@
 
 					{#if jobDetail.name}
 						<dt class="text-muted-foreground">{t('myaaw.cron.name')}</dt>
-						<dd class="min-w-0 break-words">{jobDetail.name}</dd>
+						<dd class="min-w-0 wrap-break-word">{jobDetail.name}</dd>
 					{/if}
 
 					{#if jobDetail.agent_id}
 						<dt class="text-muted-foreground">{t('myaaw.cron.field_agent')}</dt>
-						<dd class="min-w-0 break-words">{jobDetail.agent_id}</dd>
+						<dd class="min-w-0 wrap-break-word">{jobDetail.agent_id}</dd>
 					{/if}
 
 					<dt class="text-muted-foreground">{t('myaaw.cron.kind')}</dt>
-					<dd class="min-w-0 font-mono text-[11px] break-words">
+					<dd class="min-w-0 font-mono text-[11px] wrap-break-word">
 						{jobDetail.schedule.kind} · {jobDetail.schedule.expr}
 						{#if jobDetail.schedule.tz}· {jobDetail.schedule.tz}{/if}
 					</dd>
 
 					{#if jobDetail.payload.kind}
 						<dt class="text-muted-foreground">{t('myaaw.cron.field_payload')}</dt>
-						<dd class="min-w-0 break-words">{jobDetail.payload.kind}</dd>
+						<dd class="min-w-0 wrap-break-word">{jobDetail.payload.kind}</dd>
 					{/if}
 
 					{#if jobDetail.payload.content}
 						<dt class="text-muted-foreground">{t('myaaw.cron.message')}</dt>
-						<dd class="min-w-0 whitespace-pre-wrap break-words">{jobDetail.payload.content}</dd>
+						<dd class="min-w-0 whitespace-pre-wrap wrap-break-word">{jobDetail.payload.content}</dd>
 					{/if}
 
 					{#if jobDetail.delivery.mode}
 						<dt class="text-muted-foreground">{t('myaaw.cron.field_mode')}</dt>
-						<dd class="min-w-0 break-words">{jobDetail.delivery.mode}</dd>
+						<dd class="min-w-0 wrap-break-word">{jobDetail.delivery.mode}</dd>
 					{/if}
 
 					{#if jobDetail.delivery.channel}
 						<dt class="text-muted-foreground">{t('myaaw.cron.channel')}</dt>
-						<dd class="min-w-0 break-words">{jobDetail.delivery.channel}</dd>
+						<dd class="min-w-0 wrap-break-word">{jobDetail.delivery.channel}</dd>
 					{/if}
 
 					{#if jobDetail.delivery.to}
@@ -919,7 +919,7 @@
 
 					{#if jobDetail.delivery.chat_type}
 						<dt class="text-muted-foreground">{t('myaaw.cron.field_chat_type')}</dt>
-						<dd class="min-w-0 break-words">{jobDetail.delivery.chat_type}</dd>
+						<dd class="min-w-0 wrap-break-word">{jobDetail.delivery.chat_type}</dd>
 					{/if}
 
 					{#if jobDetail.delivery.thread_id}
@@ -933,7 +933,7 @@
 					{/if}
 
 					<dt class="text-muted-foreground">{t('myaaw.cron.field_status')}</dt>
-					<dd class="min-w-0 break-words">
+					<dd class="min-w-0 wrap-break-word">
 						{jobDetail.enabled ? t('myaaw.cron.enabled') : t('myaaw.cron.disabled')}
 					</dd>
 
@@ -988,20 +988,20 @@
 
 						{#if runDetail.name}
 							<dt class="text-muted-foreground">{t('myaaw.cron.name')}</dt>
-							<dd class="min-w-0 break-words">{runDetail.name}</dd>
+							<dd class="min-w-0 wrap-break-word">{runDetail.name}</dd>
 						{/if}
 
 						<dt class="text-muted-foreground">{t('myaaw.cron.run_status')}</dt>
-						<dd class="min-w-0 break-words">{runDetail.status}</dd>
+						<dd class="min-w-0 wrap-break-word">{runDetail.status}</dd>
 
 						{#if runDetail.message}
 							<dt class="text-muted-foreground">{t('myaaw.cron.message')}</dt>
-							<dd class="min-w-0 whitespace-pre-wrap break-words">{runDetail.message}</dd>
+							<dd class="min-w-0 whitespace-pre-wrap wrap-break-word">{runDetail.message}</dd>
 						{/if}
 
 						{#if runDetail.channel}
 							<dt class="text-muted-foreground">{t('myaaw.cron.channel')}</dt>
-							<dd class="min-w-0 break-words">{runDetail.channel}</dd>
+							<dd class="min-w-0 wrap-break-word">{runDetail.channel}</dd>
 						{/if}
 
 						{#if runDetail.to}
@@ -1011,7 +1011,7 @@
 
 						{#if runDetail.chat_type}
 							<dt class="text-muted-foreground">{t('myaaw.cron.field_chat_type')}</dt>
-							<dd class="min-w-0 break-words">{runDetail.chat_type}</dd>
+							<dd class="min-w-0 wrap-break-word">{runDetail.chat_type}</dd>
 						{/if}
 
 						{#if runDetail.thread_id}
@@ -1025,7 +1025,7 @@
 						{/if}
 
 						<dt class="text-muted-foreground">{t('myaaw.cron.run_result')}</dt>
-						<dd class="min-w-0 whitespace-pre-wrap break-words">{runDetail.result || '—'}</dd>
+						<dd class="min-w-0 whitespace-pre-wrap wrap-break-word">{runDetail.result || '—'}</dd>
 					</dl>
 
 					{#if !runDetail.name && !runDetail.message && !runDetail.channel}

@@ -142,7 +142,7 @@ var approvalsGrantsRevokeCmd = &cobra.Command{
 			if !removed {
 				return fmt.Errorf("grant %q for session %q not found", key, session)
 			}
-			fmt.Println(theme.RenderSuccess(fmt.Sprintf("✅ Revoked %s for session %s", key, session)))
+			fmt.Println(theme.RenderSuccess(fmt.Sprintf("Revoked %s for session %s", key, session)))
 			return nil
 		}
 		if channel != "" || userID != "" {
@@ -153,7 +153,7 @@ var approvalsGrantsRevokeCmd = &cobra.Command{
 			if !removed {
 				return fmt.Errorf("grant %q for %s not found", key, scopeLabel(channel, userID))
 			}
-			fmt.Println(theme.RenderSuccess(fmt.Sprintf("✅ Revoked %s for %s", key, scopeLabel(channel, userID))))
+			fmt.Println(theme.RenderSuccess(fmt.Sprintf("Revoked %s for %s", key, scopeLabel(channel, userID))))
 			return nil
 		}
 
@@ -163,7 +163,7 @@ var approvalsGrantsRevokeCmd = &cobra.Command{
 		if err := store.Revoke(key); err != nil {
 			return err
 		}
-		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✅ Revoked all grants for %s", key)))
+		fmt.Println(theme.RenderSuccess(fmt.Sprintf("Revoked all grants for %s", key)))
 		return nil
 	},
 }
@@ -179,7 +179,7 @@ var approvalsGrantsClearCmd = &cobra.Command{
 		if err := approvals.NewStore(path).Clear(); err != nil {
 			return err
 		}
-		fmt.Println(theme.RenderSuccess("✅ Cleared all approval grants"))
+		fmt.Println(theme.RenderSuccess("Cleared all approval grants"))
 		return nil
 	},
 }

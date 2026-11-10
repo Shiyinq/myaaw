@@ -33,7 +33,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "myaaw",
 	Short: "Personal AI Assistant",
-	Long:  "😼 A Cat who becomes your personal AI assistant.",
+	Long:  "A Cat who becomes your personal AI assistant.",
 	// Errors are printed once by main; commands suppress usage for logical
 	// failures so the output stays readable.
 	SilenceErrors: true,
@@ -106,11 +106,6 @@ func init() {
 	rootCmd.AddCommand(codesignCmd)
 	rootCmd.AddCommand(computerCmd)
 
-	// Aliases for convenience so users can type `myaaw start` instead of `myaaw server start`
-	rootCmd.AddCommand(serverStartCmd)
-	rootCmd.AddCommand(serverStopCmd)
-	rootCmd.AddCommand(serverRestartCmd)
-
 	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false, "enable verbose logging")
 	rootCmd.PersistentFlags().StringVar(&agentFlag, "agent", "", "agent name to use (defaults to the registry default)")
 
@@ -119,6 +114,18 @@ func init() {
 		// stdout (backup -o -).
 		if cmd.Name() != "backup" {
 			fmt.Println()
+		}
+
+		// --all-agent targets every registered agent and takes precedence over
+		// --agent, so skip active-agent resolution (which would reject an
+		// unknown --agent) and only prepare the layout. The service commands
+		// read each agent's files themselves.
+		if allAgentsRequested(cmd) {
+			if err := agentdir.EnsureLayout(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not prepare agent layout: %v\n", err)
+				os.Exit(1)
+			}
+			return nil
 		}
 
 		// Commands that don't require .myaaw configuration
@@ -140,13 +147,13 @@ func init() {
 		}
 
 		if err := agentdir.EnsureLayout(); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  Could not prepare agent layout: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: could not prepare agent layout: %v\n", err)
 			os.Exit(1)
 		}
 
 		activeAgent, err := agentdir.ResolveActive(agentFlag)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Invalid agent: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Invalid agent: %v\n", err)
 			os.Exit(1)
 		}
 		if !agentdir.AgentInitialized(activeAgent) && agentFlag == "" {
@@ -157,20 +164,20 @@ func init() {
 			}
 		}
 		if !agentdir.AgentInitialized(activeAgent) {
-			fmt.Printf("⚠️  Agent %q is not initialized!\n", activeAgent)
+			fmt.Printf("Agent %q is not initialized!\n", activeAgent)
 			fmt.Println("Please run 'myaaw onboard' or 'myaaw agent create <name>' first.")
 			os.Exit(1)
 		}
 
 		cwd, _ := os.Getwd()
 		if err := filesystem.ConfigureForActiveAgent(cwd); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  Could not configure filesystem paths: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: could not configure filesystem paths: %v\n", err)
 		}
 
 		// Prepare the workspace before any command runs so it exists even before
 		// the first agent request.
 		if _, err := agent.EnsureWorkspace(); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  Could not prepare agent workspace: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: could not prepare agent workspace: %v\n", err)
 		}
 
 		// Local agent sessions treat their launch directory as the active
@@ -178,7 +185,7 @@ func init() {
 		if cmd.Name() == "chat" || cmd.Name() == "voice-classic" {
 			if cwd != "" {
 				if err := filesystem.SetProjectDirectory(cwd); err != nil {
-					fmt.Fprintf(os.Stderr, "⚠️  Could not register current directory as project: %v\n", err)
+					fmt.Fprintf(os.Stderr, "Warning: could not register current directory as project: %v\n", err)
 				}
 			}
 		}

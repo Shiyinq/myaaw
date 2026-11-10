@@ -122,7 +122,7 @@ var agentUseCmd = &cobra.Command{
 			fmt.Println(theme.RenderError(err.Error()))
 			return
 		}
-		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✅ Default agent set to %q", name)))
+		fmt.Println(theme.RenderSuccess(fmt.Sprintf("Default agent set to %q", name)))
 	},
 }
 
@@ -225,7 +225,7 @@ var agentDeleteCmd = &cobra.Command{
 			fmt.Println(theme.RenderError(fmt.Sprintf("Failed to update registry: %v", err)))
 			return
 		}
-		fmt.Println(theme.RenderSuccess(fmt.Sprintf("✅ Agent %q deleted.", name)))
+		fmt.Println(theme.RenderSuccess(fmt.Sprintf("Agent %q deleted.", name)))
 	},
 }
 

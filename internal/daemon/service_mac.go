@@ -92,8 +92,8 @@ func startDarwin(m *Manager, args []string) error {
 		return fmt.Errorf("failed to load launchd service: %w", err)
 	}
 
-	fmt.Printf("✅ %s registered and started via Launchd\n", m.Name)
-	fmt.Printf("📄 Logs: %s\n", m.LogFile)
+	fmt.Printf("%s registered and started via Launchd\n", m.Name)
+	fmt.Printf("Logs: %s\n", m.LogFile)
 
 	return nil
 }
@@ -117,7 +117,7 @@ func stopDarwin(m *Manager) error {
 		return fmt.Errorf("failed to remove plist file: %w", err)
 	}
 
-	fmt.Printf("🛑 %s stopped and unregistered from Launchd\n", m.Name)
+	fmt.Printf("%s stopped and unregistered from Launchd\n", m.Name)
 	return nil
 }
 

@@ -492,6 +492,12 @@ type HeartbeatConfig struct {
 
 var CronActive bool
 
+// LoadConfigFile parses one config.json without touching the global
+// configuration, so callers can inspect several agents in one process.
+func LoadConfigFile(path string) (*Config, error) {
+	return parseJSONFile(path)
+}
+
 func loadJSONConfig() (*Config, error) {
 	// 1. Check the active agent configuration.
 	if configPath, err := agentdir.ActiveConfigPath(); err == nil {
@@ -611,15 +617,15 @@ func LoadBaseConfig() {
 	if path != "" {
 		err := godotenv.Load(path)
 		if err != nil {
-			log.Printf("⚠️  Warning: Error loading .env file from %s: %v\n", path, err)
+			log.Printf("Warning: error loading .env file from %s: %v\n", path, err)
 		} else {
 			if Verbose {
-				log.Printf("✅ Loaded environment from: %s\n", path)
+				log.Printf("Loaded environment from: %s\n", path)
 			}
 		}
 	} else {
 		if Verbose {
-			log.Println("ℹ️  No .env file found in the agent directory, current directory, or dev fallback. Using system environment variables.")
+			log.Println("No .env file found in the agent directory, current directory, or dev fallback. Using system environment variables.")
 		}
 	}
 

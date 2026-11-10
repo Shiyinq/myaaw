@@ -129,7 +129,7 @@ var webuiInstallCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Download and install the WebUI bundle",
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := installWebUI(webuiVersion); err != nil {
+		if _, err := installWebUI(webuiVersion, true); err != nil {
 			log.Fatalf("%s: %v", theme.RenderError("Install failed"), err)
 		}
 	},
@@ -195,13 +195,13 @@ var webuiStatusCmd = &cobra.Command{
 			log.Fatalf("Error checking status: %v", err)
 		}
 		if running {
-			fmt.Printf("%s (PID: %d)\n", theme.RenderSuccess("✅ WebUI is running"), pid)
+			fmt.Printf("%s (PID: %d)\n", theme.RenderSuccess("WebUI is running"), pid)
 			fmt.Printf("   http://127.0.0.1:%s\n", cfg.Port)
 			if cfg.Public {
 				fmt.Println(theme.RenderMuted("   public hosting: /setup is disabled"))
 			}
 		} else {
-			fmt.Println(theme.RenderError("❌ WebUI is stopped"))
+			fmt.Println(theme.RenderError("WebUI is stopped"))
 		}
 	},
 }
@@ -221,7 +221,7 @@ var webuiVersionCmd = &cobra.Command{
 			log.Fatalf("Error: %v", err)
 		}
 		if _, err := os.Stat(entry); err != nil {
-			fmt.Println(theme.RenderError("❌ WebUI is not installed"))
+			fmt.Println(theme.RenderError("WebUI is not installed"))
 			fmt.Println(theme.RenderMuted("   run 'myaaw webui install' first"))
 			return
 		}
@@ -265,8 +265,12 @@ var webuiUpdateCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := effectiveWebUIConfig()
 		running := isWebUIRunning()
-		if err := installWebUI(webuiVersion); err != nil {
+		changed, err := installWebUI(webuiVersion, false)
+		if err != nil {
 			log.Fatalf("%s: %v", theme.RenderError("Update failed"), err)
+		}
+		if !changed {
+			return
 		}
 		if running {
 			if err := restartWebUI(cfg); err != nil {
@@ -315,7 +319,7 @@ var webuiUninstallCmd = &cobra.Command{
 		if err := os.RemoveAll(root); err != nil {
 			log.Fatalf("Could not remove %s: %v", root, err)
 		}
-		fmt.Println(theme.RenderSuccess("🗑️  WebUI removed from " + root))
+		fmt.Println(theme.RenderSuccess("WebUI removed from " + root))
 	},
 }
 
@@ -465,6 +469,33 @@ func isWebUIRunning() bool {
 	return running
 }
 
+// isWebUIInstalled reports whether a bundle is present, so `myaaw start` can
+// skip the dashboard on machines that never installed it.
+func isWebUIInstalled() bool {
+	entry, err := webuiEntryPath()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(entry)
+	return err == nil
+}
+
+func stopWebUIDaemon() error {
+	dm, err := daemon.NewGlobalManager(webuiDaemonName)
+	if err != nil {
+		return err
+	}
+	return dm.Stop()
+}
+
+func webUIDaemonStatus() (int, bool, error) {
+	dm, err := daemon.NewGlobalManager(webuiDaemonName)
+	if err != nil {
+		return 0, false, err
+	}
+	return dm.Status()
+}
+
 func startWebUI(cfg webUIConfig) error {
 	entry, err := webuiEntryPath()
 	if err != nil {
@@ -511,7 +542,7 @@ func startWebUI(cfg webUIConfig) error {
 		return fmt.Errorf("WebUI exited right after starting; check %s", dm.LogFile)
 	}
 
-	fmt.Printf("%s http://127.0.0.1:%s\n", theme.RenderSuccess("✅ WebUI started"), cfg.Port)
+	fmt.Printf("%s http://127.0.0.1:%s\n", theme.RenderSuccess("WebUI started"), cfg.Port)
 	return nil
 }
 
@@ -555,11 +586,11 @@ func restartWebUI(cfg webUIConfig) error {
 		return err
 	}
 	if _, running, _ := dm.Status(); running {
-		fmt.Println(theme.RenderSecondary("🔄 Stopping WebUI..."))
+		fmt.Println(theme.RenderSecondary("Stopping WebUI..."))
 		_ = dm.Stop()
 		time.Sleep(1 * time.Second)
 	}
-	fmt.Println(theme.RenderPrimary("🚀 Starting WebUI..."))
+	fmt.Println(theme.RenderPrimary("Starting WebUI..."))
 	return startWebUI(cfg)
 }
 
@@ -597,74 +628,104 @@ func runWebUI() error {
 	return launchNode(node, entry, env)
 }
 
-func installWebUI(version string) error {
+// installWebUI downloads and installs the bundle for version. With force it
+// always downloads; without it, an install that already matches the release is
+// reported and skipped, returning changed=false so callers do not restart the
+// daemon for nothing.
+func installWebUI(version string, force bool) (changed bool, err error) {
 	if _, err := findNode(); err != nil {
-		return err
+		return false, err
 	}
 
 	root, err := webUIRoot()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
-		return err
+		return false, err
 	}
 
 	rel, err := webuiRelease(version)
 	if err != nil {
-		return err
+		return false, err
+	}
+	if current, installed := installedWebUIVersion(); webUIUpToDate(current, rel.Tag, installed, force) {
+		fmt.Printf("%s (Version: %s)\n", theme.RenderSuccess("WebUI is already up to date"), rel.Tag)
+		return false, nil
 	}
 	fmt.Printf("%s %s\n", theme.RenderSecondary("Downloading WebUI"), rel.Tag)
 
 	tmpFile, err := os.CreateTemp(root, "webui-*.tar.gz")
 	if err != nil {
-		return err
+		return false, err
 	}
 	tmpName := tmpFile.Name()
 	_ = tmpFile.Close()
 	defer os.Remove(tmpName)
 
 	if err := downloadFile(rel.DownloadURL, tmpName); err != nil {
-		return err
+		return false, err
 	}
 	if err := verifyBundleChecksum(tmpName, rel); err != nil {
-		return err
+		return false, err
 	}
 
 	extractDir, err := os.MkdirTemp(root, "current-")
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer os.RemoveAll(extractDir)
 
 	if err := extractTarGz(tmpName, extractDir); err != nil {
-		return err
+		return false, err
 	}
 	if _, err := os.Stat(filepath.Join(extractDir, "build", "index.js")); err != nil {
-		return fmt.Errorf("downloaded bundle is missing build/index.js")
+		return false, fmt.Errorf("downloaded bundle is missing build/index.js")
 	}
 
 	current := filepath.Join(root, "current")
 	oldCfg, _ := loadWebUIConfig()
 	backup, err := backupCurrentBundle(current, oldCfg.Version)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := os.Rename(extractDir, current); err != nil {
 		_ = restoreBundle(current, backup)
-		return err
+		return false, err
 	}
 
 	cfg := effectiveWebUIConfig()
 	cfg.Version = rel.Tag
 	if err := saveWebUIConfig(cfg); err != nil {
-		return err
+		return false, err
 	}
 	pruneVersionBackups()
 
-	fmt.Printf("%s %s\n", theme.RenderSuccess("✅ WebUI installed"), rel.Tag)
+	fmt.Printf("%s %s\n", theme.RenderSuccess("WebUI installed"), rel.Tag)
 	fmt.Printf("   %s\n", current)
-	return nil
+	return true, nil
+}
+
+// installedWebUIVersion reports the tag recorded for the bundle on disk. The
+// second value is false when no bundle is installed, so a stale config cannot
+// make an update look unnecessary.
+func installedWebUIVersion() (string, bool) {
+	if !isWebUIInstalled() {
+		return "", false
+	}
+	cfg, err := loadWebUIConfig()
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(cfg.Version), true
+}
+
+// webUIUpToDate reports whether an update should skip the download.
+func webUIUpToDate(current, tag string, installed, force bool) bool {
+	if force || !installed || current == "" {
+		return false
+	}
+	return strings.EqualFold(current, strings.TrimSpace(tag))
 }
 
 type webuiReleaseInfo struct {
@@ -908,7 +969,7 @@ func rollbackWebUI(version string) error {
 		return err
 	}
 
-	fmt.Printf("%s %s\n", theme.RenderSuccess("✅ Rolled back to"), target)
+	fmt.Printf("%s %s\n", theme.RenderSuccess("Rolled back to"), target)
 	if isWebUIRunning() {
 		return restartWebUI(cfg)
 	}

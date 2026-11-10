@@ -198,7 +198,7 @@ var cronAddCmd = &cobra.Command{
 			log.Fatalf("Failed to add job: %v", err)
 		}
 
-		fmt.Println(theme.RenderSuccess("✅ Job added successfully!"))
+		fmt.Println(theme.RenderSuccess("Job added successfully!"))
 		fmt.Printf("ID: %s\n", job.ID)
 	},
 }
@@ -226,7 +226,7 @@ var cronRemoveCmd = &cobra.Command{
 			log.Fatalf("Failed to remove job: %v", err)
 		}
 
-		fmt.Println(theme.RenderSuccess("✅ Job removed successfully!"))
+		fmt.Println(theme.RenderSuccess("Job removed successfully!"))
 	},
 }
 
@@ -267,7 +267,7 @@ var cronRunCmd = &cobra.Command{
 			log.Fatalf("Failed to run job: %v", err)
 		}
 
-		fmt.Println(theme.RenderSuccess("✅ Job triggered successfully! (Check logs/history for result)"))
+		fmt.Println(theme.RenderSuccess("Job triggered successfully (check logs/history for the result)."))
 	},
 }
 

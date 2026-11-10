@@ -31,16 +31,16 @@ var codesignSetupCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println(theme.RenderPrimary("🔐 Local code-signing identity"))
+		fmt.Println(theme.RenderPrimary("Local code-signing identity"))
 		res, err := codesign.Setup("")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 		if res.Reason == "already exists" {
-			fmt.Println(theme.RenderSuccess("✅ Identity \"" + res.Identity + "\" already exists."))
+			fmt.Println(theme.RenderSuccess("Identity \"" + res.Identity + "\" already exists."))
 		} else {
-			fmt.Println(theme.RenderSuccess("✅ Identity \"" + res.Identity + "\" created."))
+			fmt.Println(theme.RenderSuccess("Identity \"" + res.Identity + "\" created."))
 		}
 		fmt.Println(theme.RenderMuted("If a keychain dialog appeared, choose \"Always Allow\"."))
 		fmt.Println(theme.RenderMuted("install.sh and `myaaw update` re-sign automatically from now on."))
@@ -56,7 +56,7 @@ var codesignStatusCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println(theme.RenderPrimary("🔐 Code-signing status"))
+		fmt.Println(theme.RenderPrimary("Code-signing status"))
 		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
 
 		if codesign.IdentityExists("") {
@@ -122,10 +122,10 @@ var codesignRemoveCmd = &cobra.Command{
 
 		res, err := codesign.Remove(identity)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println(theme.RenderSuccess("✅ Identity \"" + res.Identity + "\" removed."))
+		fmt.Println(theme.RenderSuccess("Identity \"" + res.Identity + "\" removed."))
 		fmt.Println(theme.RenderMuted("Existing binaries stay signed. Re-sign ad-hoc with:"))
 		fmt.Println(theme.RenderMuted("  cp \"$(command -v myaaw)\" /tmp/myaaw && codesign --force --sign - /tmp/myaaw && mv /tmp/myaaw \"$(command -v myaaw)\""))
 	},

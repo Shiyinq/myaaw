@@ -32,15 +32,15 @@ var computerEnableCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		agent, path, changed, err := setComputerUseForActiveAgent(true)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 		if runtime.GOOS != "darwin" {
-			fmt.Println(theme.RenderWarning("⚠️  The built-in computer tool is macOS-only (" + runtime.GOOS + " detected)."))
+			fmt.Println(theme.RenderWarning("The built-in computer tool is macOS-only (" + runtime.GOOS + " detected)."))
 			fmt.Println(theme.RenderMuted("Every action will return COMPUTER_UNSUPPORTED_PLATFORM; use an MCP driver instead."))
 		}
 		if changed {
-			fmt.Println(theme.RenderSuccess("✅ Computer use enabled for agent \"" + agent + "\"."))
+			fmt.Println(theme.RenderSuccess("Computer use enabled for agent \"" + agent + "\"."))
 		} else {
 			fmt.Println(theme.RenderMuted("Computer use is already enabled for agent \"" + agent + "\"."))
 		}
@@ -59,11 +59,11 @@ var computerDisableCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		agent, path, changed, err := setComputerUseForActiveAgent(false)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 		if changed {
-			fmt.Println(theme.RenderSuccess("✅ Computer use disabled for agent \"" + agent + "\"."))
+			fmt.Println(theme.RenderSuccess("Computer use disabled for agent \"" + agent + "\"."))
 		} else {
 			fmt.Println(theme.RenderMuted("Computer use is already disabled for agent \"" + agent + "\"."))
 		}
@@ -78,12 +78,12 @@ var computerStatusCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		agent, err := agentdir.ResolveActive(agentFlag)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 		configPath, err := agentdir.ConfigPath(agent)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -225,25 +225,25 @@ func printRestartHint() {
 // grants survive rebuilds and updates. It creates the identity when missing.
 func ensureCodeSigning() {
 	fmt.Println()
-	fmt.Println(theme.RenderPrimary("🔐 Code-signing"))
+	fmt.Println(theme.RenderPrimary("Code-signing"))
 	identity := codesign.DefaultIdentity
 	if codesign.IdentityExists("") {
-		fmt.Println(theme.RenderSuccess("✅ Identity \"" + identity + "\" found; macOS permissions survive rebuilds and updates."))
+		fmt.Println(theme.RenderSuccess("Identity \"" + identity + "\" found; macOS permissions survive rebuilds and updates."))
 		return
 	}
-	fmt.Println(theme.RenderWarning("⚠️  Identity \"" + identity + "\" not found; creating it now..."))
+	fmt.Println(theme.RenderWarning("Identity \"" + identity + "\" not found; creating it now..."))
 	fmt.Println(theme.RenderMuted("If a keychain dialog appears, enter your login password and choose \"Always Allow\"."))
 	res, err := codesign.Setup("")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  ❌ %v\n", err)
+		fmt.Fprintf(os.Stderr, "  Error: %v\n", err)
 		fmt.Println(theme.RenderMuted("  Computer use stays enabled, but macOS permissions may reset after updates."))
 		fmt.Println(theme.RenderMuted("  Fix the keychain/certificate issue, then retry: myaaw codesign setup"))
 		return
 	}
 	if res.Reason == "already exists" {
-		fmt.Println(theme.RenderSuccess("✅ Identity \"" + res.Identity + "\" is ready."))
+		fmt.Println(theme.RenderSuccess("Identity \"" + res.Identity + "\" is ready."))
 	} else {
-		fmt.Println(theme.RenderSuccess("✅ Identity \"" + res.Identity + "\" created."))
+		fmt.Println(theme.RenderSuccess("Identity \"" + res.Identity + "\" created."))
 	}
 }
 
@@ -252,7 +252,7 @@ func ensureCodeSigning() {
 // not trigger screen-capture dialogs.
 func printPermissionGuide() {
 	fmt.Println()
-	fmt.Println(theme.RenderPrimary("🖥️  Enable macOS permissions for computer use"))
+	fmt.Println(theme.RenderPrimary("Enable macOS permissions for computer use"))
 	fmt.Println(theme.RenderMuted("System Settings → Privacy & Security, granted to the app that runs Myaaw:"))
 	fmt.Println("  1. Screen Recording           → screenshot (screencapture)")
 	fmt.Println("  2. Accessibility              → mouse/keyboard (cliclick)")
