@@ -122,7 +122,7 @@ Versions injected at build time show the commit; a `dev` version means the binar
 
 ## `myaaw update`
 
-Checks GitHub releases for a newer version, prompts before downloading, installs the new binary, and attempts to restart the service.
+Checks GitHub releases for a newer version, prompts before downloading, and replaces the CLI binary. It does **not** update the WebUI or restart running services; use [`myaaw upgrade`](#myaaw-upgrade) for that.
 
 ```bash
 myaaw update
@@ -136,6 +136,33 @@ myaaw --agent agent-b server restart
 ```
 
 The update command only updates the binary; agent data and configuration are untouched.
+
+## `myaaw upgrade`
+
+Updates everything in one step: the CLI, the WebUI bundle when it is installed, and then the services that are already running.
+
+```bash
+myaaw upgrade              # CLI + WebUI, restart what is running
+myaaw upgrade --check      # report available updates, change nothing
+myaaw upgrade --no-restart # update files only
+myaaw upgrade --force      # reinstall the WebUI bundle even when the tag matches
+```
+
+What it does, in order:
+
+1. Resolve the latest release.
+2. Update the CLI when the running build is older.
+3. Update the WebUI bundle when it is installed (`already up to date` is reported instead of downloading again).
+4. Restart the agent daemons and the control plane **only if they are running**. Stopped services stay stopped.
+
+Notes:
+
+- `--check` prints the CLI and WebUI versions next to the latest tag and exits without changing anything.
+- The WebUI runs on Node.js, not on the CLI binary, so it is only restarted when its bundle actually changed.
+- A restart is only needed when the CLI binary changed; `--no-restart` keeps everything as it is so you can restart later with `myaaw restart` or `myaaw server restart --all-agent`.
+- `--force` applies to the WebUI bundle; the CLI still updates only when a newer tag exists.
+
+Agent data, configuration, and credentials are never touched.
 
 ## `myaaw completion`
 

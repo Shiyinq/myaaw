@@ -83,7 +83,8 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 | :--- | :--- | :--- |
 | `backup` | Write a `tar.gz` per agent | [Backup](backup.md) |
 | `restore` | Verify and restore an archive | [Backup](backup.md#restore) |
-| `update` | Check for and install updates | [Utilities](utilities.md#myaaw-update) |
+| `update` | Update the CLI binary to the latest release | [Utilities](utilities.md#myaaw-update) |
+| `upgrade` | Update the CLI and the WebUI to the latest release, then restart running services | [Utilities](utilities.md#myaaw-upgrade) |
 | `version` | Print build information | [Utilities](utilities.md#myaaw-version) |
 | `completion` | Generate shell completion | [Utilities](utilities.md#myaaw-completion) |
 
