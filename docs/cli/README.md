@@ -87,6 +87,7 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 | `upgrade` | Update the CLI and the WebUI to the latest release, then restart running services | [Utilities](utilities.md#myaaw-upgrade) |
 | `version` | Print build information | [Utilities](utilities.md#myaaw-version) |
 | `completion` | Generate shell completion | [Utilities](utilities.md#myaaw-completion) |
+| `uninstall` | Stop and remove every Myaaw service, file, and the CLI binary | [Uninstall](uninstall.md) |
 
 ### Service management
 
