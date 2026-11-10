@@ -1395,7 +1395,7 @@
 				"api_title": "Jalankan API control plane",
 				"api_body": "Jalankan myaaw api start secara terpisah untuk akses dashboard. Installer tidak menyalakan API ini.",
 				"dashboard_title": "Build dashboard web",
-				"dashboard_body": "Gunakan checkout source dan Node.js 20+. Di webui/, jalankan npm install, npm run build, lalu node build. Lihat pengaturan koneksi API di panduan setup."
+				"dashboard_body": "Gunakan checkout source dan Node.js 22+. Di webui/, jalankan npm install, npm run build, lalu node build. Lihat pengaturan koneksi API di panduan setup."
 			},
 			"secondary": "Lihat repositori",
 			"signature": "Dibangun diam-diam, untuk satu pikiran yang berisik."

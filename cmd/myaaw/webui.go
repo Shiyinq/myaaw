@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,47 @@ const (
 	webuiAssetPrefix   = "myaaw-webui-"
 	webuiAssetSuffix   = ".tar.gz"
 )
+
+// minNodeMajor is the oldest Node.js the dashboard bundle supports. The bundle
+// is server-rendered, so the runtime has to be a version it was verified
+// against; Node 20 is end-of-life and has no global `navigator`.
+const minNodeMajor = 22
+
+// findNode locates node and rejects versions older than minNodeMajor. It returns
+// the resolved path so callers do not look it up twice.
+func findNode() (string, error) {
+	path, err := exec.LookPath("node")
+	if err != nil {
+		return "", fmt.Errorf("Node.js %d+ is required but was not found in PATH", minNodeMajor)
+	}
+	out, err := exec.Command(path, "--version").Output()
+	if err != nil {
+		return "", fmt.Errorf("could not read the Node.js version from %q: %w", path, err)
+	}
+	major, ok := parseNodeMajor(string(out))
+	if !ok {
+		// An unexpected format is not a reason to block an otherwise working install.
+		return path, nil
+	}
+	if major < minNodeMajor {
+		return "", fmt.Errorf("Node.js %d+ is required, found %s", minNodeMajor, strings.TrimSpace(string(out)))
+	}
+	return path, nil
+}
+
+// parseNodeMajor reads the major version from `node --version` output (`v22.14.0`).
+func parseNodeMajor(out string) (int, bool) {
+	v := strings.TrimPrefix(strings.TrimSpace(out), "v")
+	dot := strings.IndexByte(v, '.')
+	if dot <= 0 {
+		return 0, false
+	}
+	major, err := strconv.Atoi(v[:dot])
+	if err != nil {
+		return 0, false
+	}
+	return major, true
+}
 
 // webUIConfig is stored in ~/.myaaw/webui/config.json. It only holds the
 // defaults; the browser keeps the user's last choice in localStorage.
@@ -394,9 +436,9 @@ func runWebUI() error {
 		return fmt.Errorf("WebUI is not installed; run 'myaaw webui install' first")
 	}
 
-	node, err := exec.LookPath("node")
+	node, err := findNode()
 	if err != nil {
-		return fmt.Errorf("Node.js 20+ is required but was not found in PATH")
+		return err
 	}
 
 	// The current WebUI still proxies /api server-side, so keep it pointed at the
@@ -418,8 +460,8 @@ func runWebUI() error {
 }
 
 func installWebUI(version string) error {
-	if _, err := exec.LookPath("node"); err != nil {
-		return fmt.Errorf("Node.js 20+ is required but was not found in PATH")
+	if _, err := findNode(); err != nil {
+		return err
 	}
 
 	root, err := webUIRoot()

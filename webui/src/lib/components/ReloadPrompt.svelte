@@ -1,16 +1,27 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
+	import { writable } from 'svelte/store';
 	import { useRegisterSW } from 'virtual:pwa-register/svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { Button } from '$lib/components/ui/button';
 
-	const { needRefresh, updateServiceWorker } = useRegisterSW({
-		onRegistered(r: ServiceWorkerRegistration | undefined) {
-			console.log('SW Registered:', r);
-		},
-		onRegisterError(error: Error | unknown) {
-			console.error('SW error', error);
-		}
-	});
+	// `useRegisterSW` reads `navigator` as soon as it is called, so it must only
+	// run in the browser. SvelteKit renders this layout on the server during
+	// `vite build` and on every request, where `navigator` may not exist (Node 20
+	// has no such global). Register from the browser bundle only.
+	const { needRefresh, updateServiceWorker } = browser
+		? useRegisterSW({
+				onRegistered(r: ServiceWorkerRegistration | undefined) {
+					console.log('SW Registered:', r);
+				},
+				onRegisterError(error: Error | unknown) {
+					console.error('SW error', error);
+				}
+			})
+		: {
+				needRefresh: writable(false),
+				updateServiceWorker: (_reloadPage?: boolean) => Promise.resolve()
+			};
 
 	const { t } = useTranslation();
 </script>
