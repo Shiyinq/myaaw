@@ -436,7 +436,6 @@
 			"attachments_open": "Buka lampiran",
 			"attachments_count": "{count} berkas",
 			"attachments_empty": "Belum ada lampiran di chat ini",
-			"attachments_loading": "Memuat berkas...",
 			"attachments_retry": "Coba lagi",
 			"attachments_filters": "Filter lampiran",
 			"attachments_filter_all": "Semua",

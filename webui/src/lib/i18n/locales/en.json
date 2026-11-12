@@ -436,7 +436,6 @@
 			"attachments_open": "Open attachments",
 			"attachments_count": "{count} files",
 			"attachments_empty": "No attachments in this chat",
-			"attachments_loading": "Loading files...",
 			"attachments_retry": "Try again",
 			"attachments_filters": "Attachment filters",
 			"attachments_filter_all": "All",

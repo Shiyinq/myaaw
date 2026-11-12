@@ -30,9 +30,6 @@
 
 	const { t } = useTranslation();
 
-	let root = $state<HTMLElement | null>(null);
-	/** Space kept free at the right so the actions never slide under the top bar. */
-	let gutter = $state(8);
 	let lightboxOpen = $state(false);
 	let imageFailed = $state(false);
 
@@ -87,39 +84,6 @@
 		void ensureSigned(agent, [path]);
 	});
 
-	/**
-	 * The chat shell floats its actions over the top-right of the column. Keep the
-	 * header controls clear of them at every width, like the context editor does.
-	 */
-	function measureGutter() {
-		if (!root) return;
-		const bar = document.querySelector('header');
-		const columnRight = root.getBoundingClientRect().right;
-		if (!bar) {
-			gutter = 8;
-			return;
-		}
-		const edges = [...bar.querySelectorAll('button')]
-			.map((button) => button.getBoundingClientRect())
-			.filter((rect) => rect.width > 0 && rect.left > window.innerWidth / 2)
-			.map((rect) => rect.left);
-		const actionLeft = edges.length > 0 ? Math.min(...edges) : window.innerWidth;
-		gutter = Math.max(8, Math.round(columnRight - actionLeft + 8));
-	}
-
-	$effect(() => {
-		const element = root;
-		if (!element) return;
-		measureGutter();
-		const observer = new ResizeObserver(() => measureGutter());
-		observer.observe(element);
-		window.addEventListener('resize', measureGutter);
-		return () => {
-			observer.disconnect();
-			window.removeEventListener('resize', measureGutter);
-		};
-	});
-
 	function retryImage() {
 		if (imageFailed) {
 			toastStore.error(t('myaaw.chat.attachments_missing'));
@@ -139,13 +103,8 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div
-	class="flex h-full min-h-0 flex-col"
-	role="dialog"
-	aria-label={item.file_name}
-	bind:this={root}
->
-	<div class="flex shrink-0 items-center gap-2 border-b p-2" style:padding-right="{gutter}px">
+<div class="flex h-full min-h-0 flex-col" role="dialog" aria-label={item.file_name}>
+	<div class="flex shrink-0 items-center gap-2 border-b p-2 pr-3">
 		{#if item.kind === 'image'}
 			<img
 				{src}

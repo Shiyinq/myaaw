@@ -3020,12 +3020,15 @@
 		]}
 	>
 		{#if agent && previewAttachment}
-			<AttachmentPreview
-				{agent}
-				item={previewAttachment}
-				onClose={() => (previewAttachment = null)}
-				onShowInChat={showAttachmentInChat}
-			/>
+			<!-- The focus header floats over the column; keep the pane below it there. -->
+			<div class={focusMode ? 'min-h-0 flex-1 pt-14 lg:pt-16' : 'min-h-0 flex-1'}>
+				<AttachmentPreview
+					{agent}
+					item={previewAttachment}
+					onClose={() => (previewAttachment = null)}
+					onShowInChat={showAttachmentInChat}
+				/>
+			</div>
 		{:else if agent && focusMode && focusContextPath}
 			<FocusContextEditor {agent} path={focusContextPath} onClose={() => (focusContextPath = '')} />
 		{:else if !agent}

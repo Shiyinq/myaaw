@@ -276,13 +276,11 @@
 					{t('myaaw.chat.attachments_retry')}
 				</Button>
 			</div>
-		{:else if loaded && items.length === 0}
+		{:else if items.length === 0}
 			<div class="flex flex-col items-center gap-2 px-2 py-6 text-center">
 				<Paperclip class="h-5 w-5 text-muted-foreground" />
 				<p class="text-xs text-muted-foreground">{t('myaaw.chat.attachments_empty')}</p>
 			</div>
-		{:else if items.length === 0 && !loaded}
-			<p class="px-2 py-3 text-xs text-muted-foreground">{t('myaaw.chat.attachments_loading')}</p>
 		{/if}
 
 		{#if items.length > 0}
