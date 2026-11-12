@@ -80,7 +80,7 @@ New installs seed `user_id` as `0`. Existing credential files without the field 
 | `POST` | `/auth/change-password` | `{current_password, new_password}` |
 | `PUT` | `/auth/username` | `{password, new_username}` |
 
-Tokens are valid for 24 hours. Changing the password invalidates all sessions. Restarting `myaaw api` also clears sessions. `/health` and `/docs/*` are public; every other route requires the bearer token.
+Tokens are valid for 24 hours. Changing the password invalidates all sessions. Restarting `myaaw api` also clears sessions. `/health` and `/docs/*` are public; every other route requires the bearer token. The one exception is `GET /agents/:name/fs/raw`, which also accepts a valid short-lived `exp`+`sig` pair issued by `POST /agents/:name/fs/sign` (see Files below).
 
 The login response includes `user_id` (default `0`):
 
@@ -409,6 +409,7 @@ Virtual roots are `/home`, `/user`, `/skills`, and `/jobs`. `/user` holds conten
 | `POST` | `/agents/:name/fs/rename` | `{from, to}` |
 | `DELETE` | `/agents/:name/fs?path=...&recursive=true` | delete a file or directory |
 | `GET` | `/agents/:name/fs/raw?path=...` | stream the raw bytes (images, video, audio, PDF, any binary) |
+| `POST` | `/agents/:name/fs/sign` | sign up to 200 media paths for a short-lived `/fs/raw` URL: `{"paths":[...]}` → `{expires_at, urls:{path:"exp=…&sig=…"}}` |
 | `GET` | `/agents/:name/fs/search?q=milk&path=/home` | search text |
 
 Editing an agent's instructions:
@@ -428,6 +429,13 @@ curl -X POST "http://localhost:9000/agents/myfriend/fs/write" \
 Limits: reads and writes are capped at 2 MiB, binary files return `415`, and the virtual roots cannot be deleted or renamed.
 
 `fs/raw` bypasses the text limits: it streams the file with its real `Content-Type`, supports `Range` (so `<video>` can seek), sends `X-Content-Type-Options: nosniff`, and adds `Content-Security-Policy: sandbox` for `svg`/`html`/`xml`. Pass `download=1` for `Content-Disposition: attachment`, e.g. `curl -OJ "http://localhost:9000/agents/myfriend/fs/raw?path=/home/pixel.png&download=1" -H "Authorization: Bearer $TOKEN"`.
+
+Browser media elements cannot send an `Authorization` header, so clients may sign a path first and then load it without the session token:
+
+1. `POST /agents/:name/fs/sign` with the bearer token and `{"paths":["/home/a.png"]}`.
+2. Use the returned suffix: `GET /agents/:name/fs/raw?path=/home/a.png&exp=…&sig=…`.
+
+Signatures are `HMAC-SHA256` over agent, path, and expiry, last 10 minutes (`MEDIA_URL_TTL`), and are only accepted on `GET /fs/raw`. An expired or invalid pair returns `401 {"error":"invalid or expired media signature"}`. The signing key is `~/.myaaw/config/media.key`, created when the control plane starts. See [Agent Attachments](../agents/attachments.md) for the client-side caching and re-sign behaviour.
 
 ### Context files
 
@@ -1454,7 +1462,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Agents | `GET /agents`, `GET /capabilities`, `GET/DELETE /agents/:name`, `POST /agents/:name/onboard`, `POST /agents/:name/default` |
 | Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream`, `POST /agents/:name/chat/stop`, `GET /agents/:name/chat/runs`, `GET /agents/:name/chat/run/:id/stream`, `GET /agents/:name/events` |
 | Approvals | `GET /agents/:name/approvals`, `POST /agents/:name/approvals/:id/decision`, `DELETE /agents/:name/approvals/grants`, `DELETE /agents/:name/approvals/grants/:key`, `DELETE /agents/:name/approvals/grants/:key/sessions/:conversation` |
-| Files | `GET/DELETE /agents/:name/fs`, `GET /fs/raw`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
+| Files | `GET/DELETE /agents/:name/fs`, `GET /fs/raw`, `POST /fs/sign`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
 | Skills | `GET /agents/:name/skills`, `POST /skills/:skill/install`, `GET /skills/builtin/:skill`, `GET /skills/builtin/:skill/file?path=`, `GET /skills/:skill`, `GET /skills/:skill/file?path=`, `PATCH /skills/:skill`, `DELETE /skills/:skill`, `DELETE /skills/:skill/config` |
 | Tools | `GET /agents/:name/tools`, `POST /tools/custom`, `POST /tools/mcp`, `PATCH /tools/builtin/:tool`, `PATCH /tools/custom/:tool`, `PATCH /tools/mcp/:tool`, `DELETE /tools/custom/:tool`, `DELETE /tools/mcp/:tool` |

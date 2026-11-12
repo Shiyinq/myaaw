@@ -150,20 +150,41 @@ Checks applied per reference:
 ### 4.4 Tokens in media URLs
 
 `<img>`, `<video>`, `<iframe>`, and `<a download>` cannot send an
-`Authorization` header, so `/fs/raw` also accepts the session token as a query
-parameter (`internal/services/controlplane/middleware/auth.go`). It is a
-24-hour local session. Consequences:
+`Authorization` header. Media URLs therefore carry a **per-path signature**
+instead of the session token:
 
-- the token can appear in browser history, proxy access logs, and any monitoring
-  that records URLs;
-- use **HTTPS** for anything beyond loopback; over plain HTTP the token is
-  readable on the network;
-- a remote dashboard must either share the API origin (reverse proxy) or be
-  listed in `ALLOWED_ORIGINS`; the default allows loopback origins only
-  (`internal/services/controlplane/router.go`);
-- browsers ignore the `download` attribute for cross-origin URLs, so remote
-  dashboards may open a file instead of saving it. Same-origin serving avoids
-  that.
+```
+/agents/<agent>/fs/raw?path=…&exp=<unix>&sig=<hmac>
+```
+
+- `sig` is `HMAC-SHA256(key, agent | path | exp)` and only authorises `GET
+  /fs/raw` for that one file.
+- Signatures last **10 minutes** (`MEDIA_URL_TTL`). Rendered pixels are not
+  affected; only new fetches, downloads, or lightbox opens need a fresh one.
+- The dashboard asks for signatures in batches through
+  `POST /agents/:name/fs/sign`, caches them per path, and re-signs when a tab
+  becomes visible again or when a URL is about to expire. A download or lightbox
+  open re-signs before fetching.
+- The key lives in `~/.myaaw/config/media.key` (32 random bytes, mode `0600`).
+  It is created when the control plane starts; if that fails the server still
+  runs and the dashboard falls back to the session token.
+- The dashboard caches signatures per page session. While the first batch is in
+  flight media renders a blank placeholder instead of a token URL, so a page
+  load fetches each file once. A reload starts a new batch; SPA navigation does
+  not re-sign.
+- Before a download or lightbox open, the WebUI re-signs paths that are within
+  60 seconds of expiry, and a tab that becomes visible again re-signs watched
+  paths.
+- An expired or invalid signature on `GET /fs/raw` returns `401
+  {"error":"invalid or expired media signature"}`; the session token is used
+  only when `/fs/sign` itself is unavailable.
+- Only browser clients are affected. Telegram and Discord receive attachment
+  **bytes** from the delivery layer and never call `/fs/raw`; their behaviour is
+  unchanged. API/CLI clients that fetch a path still use a bearer token.
+- The session token remains a fallback while the signature cache is cold, so a
+  remote dashboard must still use HTTPS and list its origin in
+  `ALLOWED_ORIGINS`; browsers ignore `download` for cross-origin URLs unless the
+  bytes are fetched and saved as a blob (the WebUI does that).
 
 ### 4.5 Messaging surfaces
 

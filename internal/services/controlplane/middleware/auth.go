@@ -13,17 +13,49 @@ func RequireAuth(auth *service.AuthService) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		token := BearerToken(c)
 		if token == "" {
+			// Media elements cannot send a header; accept a valid per-path signature
+			// instead of a bearer token for GET /fs/raw.
+			if mediaSignatureAllowed(c, auth) {
+				return c.Next()
+			}
+			if isRawMediaPath(c) && (c.Query("exp") != "" || c.Query("sig") != "") {
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+					"error": "invalid or expired media signature",
+				})
+			}
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "missing bearer token",
 			})
 		}
-		if !auth.Validate(token) {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "invalid or expired token",
-			})
+		if token != "" && auth.Validate(token) {
+			return c.Next()
 		}
-		return c.Next()
+		if mediaSignatureAllowed(c, auth) {
+			return c.Next()
+		}
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "invalid or expired token",
+		})
 	}
+}
+
+// isRawMediaPath reports whether the request targets GET /agents/:name/fs/raw.
+func isRawMediaPath(c fiber.Ctx) bool {
+	if c.Method() != fiber.MethodGet {
+		return false
+	}
+	parts := strings.Split(strings.Trim(c.Path(), "/"), "/")
+	return len(parts) == 4 && parts[0] == "agents" && parts[2] == "fs" && parts[3] == "raw"
+}
+
+// mediaSignatureAllowed accepts a per-path signature on GET
+// /agents/:name/fs/raw, so media elements can load without the session token.
+func mediaSignatureAllowed(c fiber.Ctx, auth *service.AuthService) bool {
+	if !isRawMediaPath(c) {
+		return false
+	}
+	parts := strings.Split(strings.Trim(c.Path(), "/"), "/")
+	return auth.ValidateMediaSignature(parts[1], c.Query("path"), c.Query("exp"), c.Query("sig"))
 }
 
 func BearerToken(c fiber.Ctx) string {

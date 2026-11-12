@@ -177,6 +177,45 @@ func (h *Handler) SearchFiles(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"matches": matches})
 }
 
+// SignFiles returns short-lived signatures for one page of media paths, so
+// <img>/<video> URLs do not need the session token.
+// @Summary      Sign media paths
+// @Tags         Files
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        request body SignFilesRequest true "Paths to sign"
+// @Success      200 {object} SignFilesResponse
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      503 {object} common.ErrorResponse
+// @Router       /agents/{name}/fs/sign [post]
+func (h *Handler) SignFiles(c fiber.Ctx) error {
+	var req SignFilesRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON request body"})
+	}
+	if len(req.Paths) == 0 || len(req.Paths) > maxSignPaths {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "paths must contain 1-200 entries"})
+	}
+	exp, urls, err := h.auth.SignMedia(c.Params("name"), req.Paths)
+	if err != nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(SignFilesResponse{ExpiresAt: exp, URLs: urls})
+}
+
+const maxSignPaths = 200
+
+type SignFilesRequest struct {
+	Paths []string `json:"paths"`
+}
+
+type SignFilesResponse struct {
+	ExpiresAt int64             `json:"expires_at"`
+	URLs      map[string]string `json:"urls"`
+}
+
 // RawFile streams a file with its real content type, so the browser can render
 // images, video, audio, and PDFs inline. Range requests are enabled, which is
 // what lets a <video> element seek without downloading the whole file.
