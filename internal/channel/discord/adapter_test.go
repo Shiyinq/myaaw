@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -320,5 +321,25 @@ func TestParseIncomingLegacyPayloadHasNoScope(t *testing.T) {
 	}
 	if msg.ChatType != "" || msg.ChatID != "999888" || msg.IsThread {
 		t.Fatalf("legacy chat = %q / %q / thread %v", msg.ChatType, msg.ChatID, msg.IsThread)
+	}
+}
+
+func TestDiscordFileBatchesSplitAtTen(t *testing.T) {
+	files := make([]*discordgo.File, 20)
+	for i := range files {
+		files[i] = &discordgo.File{Name: fmt.Sprintf("f%d", i)}
+	}
+
+	batches := discordFileBatches(files)
+	if len(batches) != 2 {
+		t.Fatalf("batches = %d, want 2", len(batches))
+	}
+	if len(batches[0]) != 10 || len(batches[1]) != 10 {
+		t.Fatalf("batch sizes = %d/%d, want 10/10", len(batches[0]), len(batches[1]))
+	}
+
+	small := discordFileBatches(files[:3])
+	if len(small) != 1 || len(small[0]) != 3 {
+		t.Fatalf("small batches = %v, want one batch of 3", small)
 	}
 }

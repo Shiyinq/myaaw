@@ -239,6 +239,8 @@ exist from the Telegram work. Discord-specific behaviour:
 - [x] Control plane exposes `scope`, `chat_name`, and `topic_name`; the
       dashboard renders `Server › #channel`.
 - [x] Streaming timeline, inline approval buttons, and attachment sending.
+- [x] Outgoing attachments are bundled up to Discord's limit of 10 files per
+      message; a turn with more files is split into several messages.
 
 Related tests live in `internal/channel/discord/*_test.go`
 (`scope_test.go`, `adapter_test.go`) and `cmd/myaaw/dispatch_test.go`.

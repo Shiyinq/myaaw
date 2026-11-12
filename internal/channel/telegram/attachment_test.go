@@ -165,3 +165,44 @@ func TestTelegramFileEndpointRoutesMedia(t *testing.T) {
 		}
 	}
 }
+
+func TestSendTelegramAttachmentsGroupsAlbumsOfTen(t *testing.T) {
+	var sizes []int
+	useTelegramTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/sendMediaGroup") {
+			t.Errorf("path = %q, want sendMediaGroup", r.URL.Path)
+			return
+		}
+		if err := r.ParseMultipartForm(16 << 20); err != nil {
+			t.Errorf("multipart: %v", err)
+			return
+		}
+		media := r.FormValue("media")
+		count := strings.Count(media, "attach://file")
+		sizes = append(sizes, count)
+		for i := 0; i < count; i++ {
+			if _, _, err := r.FormFile(fmt.Sprintf("file%d", i)); err != nil {
+				t.Errorf("file%d part: %v", i, err)
+			}
+		}
+		if !strings.Contains(media, `"type":"photo"`) {
+			t.Errorf("media types = %q", media)
+		}
+		fmt.Fprint(w, `{"ok":true}`)
+	})
+
+	atts := make([]channel.Attachment, 12)
+	for i := range atts {
+		atts[i] = channel.Attachment{
+			FileName: fmt.Sprintf("p%d.png", i),
+			MimeType: "image/png",
+			Data:     []byte("PNG"),
+		}
+	}
+	if err := sendTelegramAttachments(42, 0, 0, atts); err != nil {
+		t.Fatalf("sendTelegramAttachments: %v", err)
+	}
+	if len(sizes) != 2 || sizes[0] != 10 || sizes[1] != 2 {
+		t.Fatalf("album sizes = %v, want [10 2]", sizes)
+	}
+}

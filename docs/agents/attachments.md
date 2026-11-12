@@ -76,7 +76,7 @@ The same directive produces a different presentation on each surface.
 | Surface | Text | Attachment |
 | :--- | :--- | :--- |
 | API / WebUI (`api`) | Directive is kept; the WebUI hides `@attach(`/`)` (and the `@` of `@/path`) and shows only the path | Virtual path (`/home/...`, `/user/...`); streamed by the browser through `/fs/raw` |
-| Telegram / Discord | Directive is replaced by the plain absolute path | Bytes read into memory and uploaded natively (Telegram: photo for JPEG/PNG, animation for GIF, video for MP4, audio for MP3/M4A, document otherwise) |
+| Telegram / Discord | Directive is replaced by the plain absolute path | Bytes read into memory and uploaded natively (Telegram: photo for JPEG/PNG, animation for GIF, video for MP4, audio for MP3/M4A, document otherwise; photos/videos grouped into albums) |
 | CLI / TUI | Directive is replaced by the plain absolute path | None |
 | A2A / other | Directive is replaced by the plain absolute path | None |
 

@@ -373,6 +373,9 @@ func (d *DiscordAdapter) dmChannel(target string) (string, error) {
 	return channel.ID, nil
 }
 
+// discordMaxFiles is the per-message attachment limit enforced by Discord.
+const discordMaxFiles = 10
+
 func (d *DiscordAdapter) sendAttachments(channelID string, attachments []channel.Attachment) error {
 	if len(attachments) == 0 {
 		return nil
@@ -380,6 +383,8 @@ func (d *DiscordAdapter) sendAttachments(channelID string, attachments []channel
 	if d.session == nil {
 		return fmt.Errorf("discord session is not available")
 	}
+
+	files := make([]*discordgo.File, 0, len(attachments))
 	for _, att := range attachments {
 		if len(att.Data) == 0 {
 			continue
@@ -392,18 +397,36 @@ func (d *DiscordAdapter) sendAttachments(channelID string, attachments []channel
 		if mimeType == "" {
 			mimeType = "application/octet-stream"
 		}
-		_, err := d.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-			Files: []*discordgo.File{{
-				Name:        name,
-				ContentType: mimeType,
-				Reader:      bytes.NewReader(att.Data),
-			}},
+		files = append(files, &discordgo.File{
+			Name:        name,
+			ContentType: mimeType,
+			Reader:      bytes.NewReader(att.Data),
 		})
-		if err != nil {
+	}
+
+	// A turn can produce more files than one Discord message accepts, so each
+	// group of ten becomes its own message instead of failing the delivery.
+	for _, batch := range discordFileBatches(files) {
+		if _, err := d.session.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+			Files: batch,
+		}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// discordFileBatches splits files into messages of at most discordMaxFiles.
+func discordFileBatches(files []*discordgo.File) [][]*discordgo.File {
+	batches := make([][]*discordgo.File, 0, (len(files)+discordMaxFiles-1)/discordMaxFiles)
+	for start := 0; start < len(files); start += discordMaxFiles {
+		end := start + discordMaxFiles
+		if end > len(files) {
+			end = len(files)
+		}
+		batches = append(batches, files[start:end])
+	}
+	return batches
 }
 
 func (d *DiscordAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onChunk func(chunk channel.StreamChunk)) error) (*channel.OutgoingMessage, error) {

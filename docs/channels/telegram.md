@@ -198,12 +198,16 @@ Rejected users get no reply; the handler still returns 200.
 
 Outgoing files are routed by type so Telegram renders them inline: JPEG/PNG →
 `sendPhoto`, GIF → `sendAnimation`, MP4 → `sendVideo`, MP3/M4A → `sendAudio`,
-and everything else (zip, PDF, WebP/SVG, other codecs) → `sendDocument`. A media
+and everything else (zip, PDF, WebP/SVG, other codecs) → `sendDocument`. Photos
+and videos are grouped with `sendMediaGroup` so multiple files arrive as one
+album; the Bot API caps an album at 10 items, so twenty photos become two
+albums automatically. Other types are sent as their own messages. A media
 request Telegram refuses with `400` (too large, unsupported codec, odd
-dimensions) is retried as a document, so one odd file never fails the whole
-reply. Uploads are capped at 20 MB by the delivery layer, transport failures are
-retried once (the upload never reached Telegram), and the bot token is redacted
-from errors shown in the chat.
+dimensions) is retried as a document, and an album that Telegram refuses falls
+back to individual sends, so one odd file never fails the whole reply. Uploads
+are capped at 20 MB by the delivery layer, transport failures are retried once
+(the upload never reached Telegram), and the bot token is redacted from errors
+shown in the chat.
 
 ### 5.10 Display names and sender identity
 
@@ -283,7 +287,7 @@ is required. Restart the agent once so the migration and the name capture run.
 - [x] Scope-keyed queue ordering.
 - [x] Voice transcription, photo/document download, attachments sent as photos
       (JPEG/PNG), animations (GIF), videos (MP4), audio (MP3/M4A), or documents
-      (everything else).
+      (everything else), with photo/video albums of up to 10 items.
 - [x] Rate-limit retries and message chunking.
 - [x] `scope` exposed by the control plane and rendered as a badge in the
       dashboard conversation list (Telegram sessions only).

@@ -194,6 +194,125 @@ func sendTelegramTypingAction(chatId, threadId int) error {
 	return nil
 }
 
+// telegramAlbumMax is the Bot API limit for one sendMediaGroup call.
+const telegramAlbumMax = 10
+
+// sendTelegramAttachments delivers every file of one turn. Photos and videos are
+// grouped into albums so Telegram shows them as one grid instead of a stream of
+// separate bubbles; anything else is sent on its own because it does not belong
+// in a media group. Albums are capped at ten items, so a turn with twenty photos
+// becomes two albums.
+func sendTelegramAttachments(chatID, threadID, replyTo int, atts []channel.Attachment) error {
+	var media, singles []channel.Attachment
+	for _, att := range atts {
+		if len(att.Data) == 0 {
+			continue
+		}
+		if _, ok := telegramAlbumType(att.MimeType, att.FileName); ok {
+			media = append(media, att)
+			continue
+		}
+		singles = append(singles, att)
+	}
+
+	var firstErr error
+	keep := func(err error) {
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	for start := 0; start < len(media); start += telegramAlbumMax {
+		end := start + telegramAlbumMax
+		if end > len(media) {
+			end = len(media)
+		}
+		batch := media[start:end]
+		if len(batch) == 1 {
+			keep(sendTelegramAttachment(chatID, threadID, replyTo, batch[0]))
+			continue
+		}
+		if err := sendTelegramAlbum(chatID, threadID, replyTo, batch); err != nil {
+			// Telegram may refuse an album (for example a video codec it cannot
+			// preview). Sending the files individually still delivers them, and
+			// each keeps its own document fallback.
+			log.Printf("telegram: album of %d failed, sending individually: %v", len(batch), err)
+			for _, att := range batch {
+				keep(sendTelegramAttachment(chatID, threadID, replyTo, att))
+			}
+		}
+	}
+
+	for _, att := range singles {
+		keep(sendTelegramAttachment(chatID, threadID, replyTo, att))
+	}
+	return firstErr
+}
+
+// telegramAlbumType reports whether a file can join a media group.
+func telegramAlbumType(mime, name string) (string, bool) {
+	method, _ := telegramFileEndpoint(mime, name)
+	switch method {
+	case "sendPhoto":
+		return "photo", true
+	case "sendVideo":
+		return "video", true
+	}
+	return "", false
+}
+
+// sendTelegramAlbum uploads a 2-10 item media group in one message.
+func sendTelegramAlbum(chatID, threadID, replyTo int, atts []channel.Attachment) error {
+	if len(atts) < 2 || len(atts) > telegramAlbumMax {
+		return fmt.Errorf("album needs 2-%d items, got %d", telegramAlbumMax, len(atts))
+	}
+
+	items := make([]map[string]string, 0, len(atts))
+	for i, att := range atts {
+		kind, _ := telegramAlbumType(att.MimeType, att.FileName)
+		items = append(items, map[string]string{
+			"type":  kind,
+			"media": fmt.Sprintf("attach://file%d", i),
+		})
+	}
+	media, err := json.Marshal(items)
+	if err != nil {
+		return err
+	}
+
+	form := map[string]string{
+		"chat_id": strconv.Itoa(chatID),
+		"media":   string(media),
+	}
+	if replyTo != 0 {
+		form["reply_to_message_id"] = strconv.Itoa(replyTo)
+	}
+	if threadID != 0 {
+		form["message_thread_id"] = strconv.Itoa(threadID)
+	}
+
+	client := resty.New().
+		SetTimeout(telegramFileTimeout).
+		SetTransport(telegramFileTransport())
+	request := client.R().SetFormData(form)
+	for i, att := range atts {
+		name := strings.TrimSpace(att.FileName)
+		if name == "" {
+			name = fmt.Sprintf("attachment-%d", i+1)
+		}
+		request.SetFileReader(fmt.Sprintf("file%d", i), name, bytes.NewReader(att.Data))
+	}
+
+	resp, err := request.Post(telegramAPIURL("sendMediaGroup"))
+	if err != nil {
+		return fmt.Errorf("send album: %w", redactTelegramToken(err))
+	}
+	if resp.IsError() {
+		return fmt.Errorf("send album failed: %s", resp.Status())
+	}
+	return nil
+}
+
 // sendTelegramAttachment uploads one file through the endpoint Telegram uses to
 // render that media inline: photo for JPEG/PNG, animation for GIF, video for
 // MP4, audio for MP3/M4A, and document for everything else. A media request
