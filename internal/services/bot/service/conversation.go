@@ -448,7 +448,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 	// the files again under the right turn. The conversation id is already final
 	// here (existing or freshly created), so the folder is stable before the run.
 	messageID := uuid.New().String()
-	var uploads []provider.Upload
+	var uploads, imageUploads []provider.Upload
 	if len(msg.Files) > 0 || len(msg.Images) > 0 {
 		userDir, rootErr := agentdir.ActiveUserDir()
 		if rootErr != nil {
@@ -461,16 +461,20 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 				return nil, saveErr
 			}
 		}
-		// Images still travel inline to the model; the copy on disk lets the person
-		// find them in the Files page next to the documents they uploaded.
-		if saveErr := saveUserImages(userDir, msg.ConversationID, messageID, msg.Images); saveErr != nil {
+		// Images travel inline to the model. Their metadata is stored separately so
+		// history still shows the photo after the inline items leave the context.
+		var saveErr error
+		imageUploads, saveErr = saveUserImages(userDir, msg.ConversationID, messageID, msg.Images)
+		if saveErr != nil {
 			return nil, saveErr
 		}
 	}
 
+	// Only documents go into the <attached> block: images already reach the model
+	// inline, and adding their path would ask it to read them with a tool too.
 	userMessage := r.buildUserMessage(msg, uploads)
 	userMessage.ID = messageID
-	userMessage.Uploads = uploads
+	userMessage.Uploads = append(uploads, imageUploads...)
 	created := time.Now().UTC()
 	userMessage.CreatedAt = &created
 	messages = append(messages, userMessage)

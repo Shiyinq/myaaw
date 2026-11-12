@@ -2015,6 +2015,15 @@
 		for (const image of message.images ?? []) {
 			urls.push(`data:image/jpeg;base64,${image}`);
 		}
+		// Inline image items can be evicted from the model context; the saved upload
+		// is the fallback and keeps the photo visible after a reload.
+		if (urls.length === 0 && agent) {
+			for (const upload of message.uploads ?? []) {
+				if (!upload.mime_type?.startsWith('image/')) continue;
+				const virtual = uploadVirtualPath(upload);
+				if (virtual) urls.push(filesApi.rawUrl(agent, virtual));
+			}
+		}
 		return urls;
 	}
 
@@ -3127,7 +3136,7 @@
 												{/if}
 												{#if item.uploads?.length}
 													<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
-														{#each item.uploads as upload (upload.path || upload.name)}
+														{#each item.uploads.filter((upload) => !upload.mime_type?.startsWith('image/')) as upload (upload.path || upload.name)}
 															{@const downloadPath = uploadVirtualPath(upload)}
 															{#if agent && downloadPath}
 																<button

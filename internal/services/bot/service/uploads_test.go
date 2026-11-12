@@ -15,8 +15,15 @@ func TestSaveUserImages(t *testing.T) {
 	png := base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\n-fake-png"))
 	jpeg := base64.StdEncoding.EncodeToString([]byte("\xff\xd8\xff\xe0-fake-jpeg"))
 
-	if err := saveUserImages(userDir, "conv-1", "msg-1", []string{png, jpeg}); err != nil {
+	uploads, err := saveUserImages(userDir, "conv-1", "msg-1", []string{png, jpeg})
+	if err != nil {
 		t.Fatalf("saveUserImages: %v", err)
+	}
+	if len(uploads) != 2 || uploads[0].Name != "image-1.png" || uploads[1].Name != "image-2.jpg" {
+		t.Fatalf("uploads = %+v", uploads)
+	}
+	if uploads[0].MimeType != "image/png" || uploads[1].MimeType != "image/jpeg" {
+		t.Fatalf("mime types = %q/%q", uploads[0].MimeType, uploads[1].MimeType)
 	}
 
 	dir := filepath.Join(userDir, "uploads", "conv-1", "msg-1")
@@ -37,8 +44,8 @@ func TestSaveUserImages(t *testing.T) {
 	}
 
 	// No images means no directory either.
-	if err := saveUserImages(userDir, "conv-2", "msg-2", nil); err != nil {
-		t.Fatalf("empty save: %v", err)
+	if empty, err := saveUserImages(userDir, "conv-2", "msg-2", nil); err != nil || len(empty) != 0 {
+		t.Fatalf("empty save: %v (uploads=%+v)", err, empty)
 	}
 	if _, err := os.Stat(filepath.Join(userDir, "uploads", "conv-2")); !os.IsNotExist(err) {
 		t.Fatal("empty images should not create a directory")

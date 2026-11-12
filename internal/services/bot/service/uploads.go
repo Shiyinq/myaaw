@@ -47,29 +47,52 @@ func saveUserFiles(userDir, conversationID, messageID string, files []channel.Fi
 
 // saveUserImages writes a message's inline images under
 // <userDir>/uploads/<conversationID>/<messageID>/ as image-1.jpg, image-2.png, ...
-// They still travel inline to the model; this copy exists so the person using the
-// agent finds them in the Files page next to the documents they uploaded.
-func saveUserImages(userDir, conversationID, messageID string, images []string) error {
+// They still travel inline to the model. The metadata lets a reopened chat show
+// the images from disk when the inline image items are no longer in context.
+func saveUserImages(userDir, conversationID, messageID string, images []string) ([]provider.Upload, error) {
 	if len(images) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	dir := filepath.Join(userDir, "uploads", conversationID, messageID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create upload directory: %w", err)
+		return nil, fmt.Errorf("create upload directory: %w", err)
 	}
 
+	uploads := make([]provider.Upload, 0, len(images))
 	for index, image := range images {
 		data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(image))
 		if err != nil {
-			return fmt.Errorf("decode image %d: %w", index+1, err)
+			return nil, fmt.Errorf("decode image %d: %w", index+1, err)
 		}
-		name := uniqueFileName(dir, fmt.Sprintf("image-%d%s", index+1, imageExtension(image)))
-		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
-			return fmt.Errorf("write %q: %w", name, err)
+		ext := imageExtension(image)
+		name := uniqueFileName(dir, fmt.Sprintf("image-%d%s", index+1, ext))
+		full := filepath.Join(dir, name)
+		if err := os.WriteFile(full, data, 0o600); err != nil {
+			return nil, fmt.Errorf("write %q: %w", name, err)
 		}
+		uploads = append(uploads, provider.Upload{
+			Name:     name,
+			Path:     full,
+			MimeType: imageMimeType(ext),
+			Size:     int64(len(data)),
+		})
 	}
-	return nil
+	return uploads, nil
+}
+
+// imageMimeType maps the extension chosen by imageExtension to a MIME type.
+func imageMimeType(ext string) string {
+	switch ext {
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".gif":
+		return "image/gif"
+	default:
+		return "image/jpeg"
+	}
 }
 
 // imageExtension guesses the file extension from the base64 signature. The
