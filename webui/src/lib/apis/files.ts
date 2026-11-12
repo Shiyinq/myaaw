@@ -40,12 +40,37 @@ export const files = {
 		if (options.download) query.set('download', '1');
 		return `${getApiBase()}${agentPath(agent, `/fs/raw?${query.toString()}`)}`;
 	},
-	download: (agent: string, path: string) => {
-		const anchor = document.createElement('a');
-		anchor.href = files.rawUrl(agent, path, { download: true });
-		anchor.download = path.split('/').pop() || 'download';
-		document.body.append(anchor);
-		anchor.click();
-		anchor.remove();
+	download: (agent: string, path: string) =>
+		files.downloadUrl(
+			files.rawUrl(agent, path, { download: true }),
+			path.split('/').pop() || 'download'
+		),
+	/**
+	 * Fetches the bytes and saves them with a filename. A plain `<a download>` is
+	 * ignored for cross-origin URLs (a remote dashboard), which would open the
+	 * file instead of saving it.
+	 */
+	downloadUrl: async (url: string, name: string) => {
+		try {
+			const response = await fetch(url);
+			if (!response.ok) throw new Error(String(response.status));
+			const objectUrl = URL.createObjectURL(await response.blob());
+			const anchor = document.createElement('a');
+			anchor.href = objectUrl;
+			anchor.download = name;
+			document.body.append(anchor);
+			anchor.click();
+			anchor.remove();
+			setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+		} catch {
+			// Fall back to navigation when the download cannot be fetched (CORS,
+			// offline, or a data URL the browser refuses to fetch).
+			const anchor = document.createElement('a');
+			anchor.href = url;
+			anchor.download = name;
+			document.body.append(anchor);
+			anchor.click();
+			anchor.remove();
+		}
 	}
 };

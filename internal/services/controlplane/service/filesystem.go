@@ -190,12 +190,25 @@ func (s *FileService) Read(agentName, virtualPath string) (FileContent, error) {
 // returns the same errors as Read, but does not touch the file contents, so it
 // works for images, video, PDFs, and other binaries.
 func (s *FileService) Raw(agentName, virtualPath string) (string, string, error) {
-	abs, virtual, _, err := s.resolve(agentName, virtualPath)
+	abs, virtual, root, err := s.resolve(agentName, virtualPath)
 	if err != nil {
 		return "", "", err
 	}
 
-	info, err := os.Stat(abs)
+	// Serve the resolved target instead of the requested path: opening `abs`
+	// again would follow a symlink that could have been swapped after the check.
+	real, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", ErrPathNotFound
+		}
+		return "", "", err
+	}
+	if !isWithin(canonicalPath(root.abs), canonicalPath(real)) {
+		return "", "", fmt.Errorf("%w: symlink escapes the agent root", ErrInvalidPath)
+	}
+
+	info, err := os.Stat(real)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", "", ErrPathNotFound
@@ -205,7 +218,7 @@ func (s *FileService) Raw(agentName, virtualPath string) (string, string, error)
 	if info.IsDir() {
 		return "", "", fmt.Errorf("%w: path is a directory", ErrInvalidPath)
 	}
-	return abs, virtual, nil
+	return real, virtual, nil
 }
 
 // Write creates or overwrites a text file.
