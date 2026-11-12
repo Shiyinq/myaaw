@@ -235,6 +235,9 @@ func (r *BotServiceImpl) runConversation(
 		}
 	}
 
+	// Tool attachments ride an early chunk so a live surface can show them while
+	// the run continues. Delivery directives are only resolved after the final
+	// text is known, so they get their own chunk below.
 	if onChunk != nil && len(result.Attachments) > 0 {
 		onChunk(channel.StreamChunk{Kind: "attachment", Attachments: result.Attachments})
 	}
@@ -256,6 +259,12 @@ func (r *BotServiceImpl) runConversation(
 	if len(deliveredAttachments) > 0 {
 		result.Attachments = append(result.Attachments, deliveredAttachments...)
 		attachToFinalAssistant(result.Transcript, deliveredAttachments)
+		// Streaming surfaces such as Telegram send the photos they collect from
+		// chunks, not from the returned message, so the delivered files need a
+		// chunk of their own.
+		if onChunk != nil {
+			onChunk(channel.StreamChunk{Kind: "attachment", Attachments: deliveredAttachments})
+		}
 	}
 	if deliveredText != finalText {
 		replaceFinalAssistantText(result.Transcript, deliveredText)

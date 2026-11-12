@@ -35,7 +35,15 @@ func attachmentRoots() attachment.Roots {
 // files through the platform API. CLI/TUI keeps the text as-is: its prompt asks
 // for a plain path instead of a directive.
 func (r *BotServiceImpl) deliverAttachments(msg *channel.IncomingMessage, text string) (string, []channel.Attachment) {
-	return attachmentsForChannel(msg.Channel, text, attachmentRoots())
+	cleaned, atts := attachmentsForChannel(msg.Channel, text, attachmentRoots())
+	if len(atts) > 0 {
+		log.Printf("Delivering %d attachment(s) on channel %s", len(atts), msg.Channel)
+	} else if strings.Contains(strings.ToLower(text), "@attach(") {
+		// A directive the surface asked for but could not resolve is almost always
+		// a path outside the agent roots or a file that no longer exists.
+		log.Printf("Attachment directive on channel %s resolved to no file", msg.Channel)
+	}
+	return cleaned, atts
 }
 
 func attachmentsForChannel(channelName, text string, roots attachment.Roots) (string, []channel.Attachment) {
