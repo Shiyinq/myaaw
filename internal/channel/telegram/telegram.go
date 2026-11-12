@@ -194,10 +194,11 @@ func sendTelegramTypingAction(chatId, threadId int) error {
 	return nil
 }
 
-// sendTelegramAttachment uploads one file. Telegram only renders JPEG and PNG
-// through sendPhoto; every other type (zip, pdf, audio, video, other image
-// formats) must use sendDocument. A photo Telegram refuses is retried as a
-// document so one odd image cannot fail the whole reply.
+// sendTelegramAttachment uploads one file through the endpoint Telegram uses to
+// render that media inline: photo for JPEG/PNG, animation for GIF, video for
+// MP4, audio for MP3/M4A, and document for everything else. A media request
+// Telegram refuses is retried as a document so one odd file cannot fail the
+// whole reply.
 func sendTelegramAttachment(chatID, threadID, replyTo int, att channel.Attachment) error {
 	if len(att.Data) == 0 {
 		return nil
@@ -207,50 +208,62 @@ func sendTelegramAttachment(chatID, threadID, replyTo int, att channel.Attachmen
 		name = "attachment"
 	}
 
-	if !telegramRendersPhoto(att.MimeType, name) {
-		return postTelegramFile(chatID, threadID, replyTo, "document", name, att.Data)
-	}
-
-	status, err := postTelegramFileStatus(chatID, threadID, replyTo, "photo", name, att.Data)
+	method, field := telegramFileEndpoint(att.MimeType, name)
+	status, err := postTelegramFileStatus(chatID, threadID, replyTo, method, field, name, att.Data)
 	if err == nil {
 		return nil
 	}
-	// 400 means Telegram decoded the request but refused the image: too large, odd
-	// dimensions, or a format it does not accept as a photo. A document still
-	// reaches the user.
-	if status == http.StatusBadRequest {
-		log.Printf("telegram: %q rejected as photo, sending it as a document: %v", name, err)
-		return postTelegramFile(chatID, threadID, replyTo, "document", name, att.Data)
+	// 400 means Telegram decoded the request but refused the media: too large,
+	// odd dimensions/codec, or a format that endpoint does not accept. A document
+	// still reaches the user.
+	if method != "sendDocument" && status == http.StatusBadRequest {
+		log.Printf("telegram: %q rejected by %s, sending it as a document: %v", name, method, err)
+		return postTelegramFile(chatID, threadID, replyTo, "sendDocument", "document", name, att.Data)
 	}
 	return err
 }
 
-// telegramRendersPhoto reports whether Telegram accepts the file as a photo.
-// Only JPEG and PNG qualify; GIF, WebP, SVG, AVIF and every non-image document
-// go through sendDocument.
-func telegramRendersPhoto(mime, name string) bool {
-	switch strings.ToLower(strings.TrimSpace(mime)) {
+// telegramFileEndpoint picks the Bot API method and multipart field for a file.
+// Only formats each endpoint actually renders are routed there; everything else
+// falls back to sendDocument, which accepts any type.
+func telegramFileEndpoint(mime, name string) (method, field string) {
+	mime = strings.ToLower(strings.TrimSpace(mime))
+	if mime == "" {
+		switch strings.ToLower(filepath.Ext(name)) {
+		case ".jpg", ".jpeg", ".png":
+			mime = "image/png"
+		case ".gif":
+			mime = "image/gif"
+		case ".mp4":
+			mime = "video/mp4"
+		case ".mp3":
+			mime = "audio/mpeg"
+		case ".m4a":
+			mime = "audio/mp4"
+		}
+	}
+
+	switch mime {
 	case "image/jpeg", "image/jpg", "image/png":
-		return true
+		return "sendPhoto", "photo"
+	case "image/gif":
+		return "sendAnimation", "animation"
+	case "video/mp4":
+		return "sendVideo", "video"
+	case "audio/mpeg", "audio/mp4", "audio/m4a", "audio/x-m4a":
+		return "sendAudio", "audio"
 	}
-	if strings.TrimSpace(mime) != "" {
-		return false
-	}
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".jpg", ".jpeg", ".png":
-		return true
-	}
-	return false
+	return "sendDocument", "document"
 }
 
-func postTelegramFile(chatID, threadID, replyTo int, field, name string, data []byte) error {
-	_, err := postTelegramFileStatus(chatID, threadID, replyTo, field, name, data)
+func postTelegramFile(chatID, threadID, replyTo int, method, field, name string, data []byte) error {
+	_, err := postTelegramFileStatus(chatID, threadID, replyTo, method, field, name, data)
 	return err
 }
 
 // postTelegramFileStatus also reports the HTTP status so the caller can fall back
 // only when Telegram answered (0 means the request never got a response).
-func postTelegramFileStatus(chatID, threadID, replyTo int, field, name string, data []byte) (int, error) {
+func postTelegramFileStatus(chatID, threadID, replyTo int, method, field, name string, data []byte) (int, error) {
 	form := map[string]string{"chat_id": strconv.Itoa(chatID)}
 	if replyTo != 0 {
 		form["reply_to_message_id"] = strconv.Itoa(replyTo)
@@ -259,11 +272,16 @@ func postTelegramFileStatus(chatID, threadID, replyTo int, field, name string, d
 		form["message_thread_id"] = strconv.Itoa(threadID)
 	}
 
-	method := "sendDocument"
 	label := "send document"
-	if field == "photo" {
-		method = "sendPhoto"
+	switch method {
+	case "sendPhoto":
 		label = "send photo"
+	case "sendAnimation":
+		label = "send animation"
+	case "sendVideo":
+		label = "send video"
+	case "sendAudio":
+		label = "send audio"
 	}
 
 	client := resty.New().

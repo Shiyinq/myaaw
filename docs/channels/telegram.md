@@ -196,12 +196,14 @@ Rejected users get no reply; the handler still returns 200.
 | Request timeouts | 15s (message), 60s (file), 5s (typing) |
 | Run timeout | `bot.run_timeout_seconds` + 60s on the consumer side |
 
-Outgoing files: JPEG and PNG attachments use `sendPhoto`, so Telegram renders
-them inline. Every other type — zip, PDF, audio, video, GIF/WebP/SVG — uses
-`sendDocument`. A photo Telegram refuses with `400` is retried as a document, so
-a rejected image never fails the whole reply. Uploads are capped at 20 MB by the
-delivery layer, transport failures are retried once (the upload never reached
-Telegram), and the bot token is redacted from errors shown in the chat.
+Outgoing files are routed by type so Telegram renders them inline: JPEG/PNG →
+`sendPhoto`, GIF → `sendAnimation`, MP4 → `sendVideo`, MP3/M4A → `sendAudio`,
+and everything else (zip, PDF, WebP/SVG, other codecs) → `sendDocument`. A media
+request Telegram refuses with `400` (too large, unsupported codec, odd
+dimensions) is retried as a document, so one odd file never fails the whole
+reply. Uploads are capped at 20 MB by the delivery layer, transport failures are
+retried once (the upload never reached Telegram), and the bot token is redacted
+from errors shown in the chat.
 
 ### 5.10 Display names and sender identity
 
@@ -280,7 +282,8 @@ is required. Restart the agent once so the migration and the name capture run.
 - [x] Commands with the `@username` suffix.
 - [x] Scope-keyed queue ordering.
 - [x] Voice transcription, photo/document download, attachments sent as photos
-      (JPEG/PNG) or documents (everything else).
+      (JPEG/PNG), animations (GIF), videos (MP4), audio (MP3/M4A), or documents
+      (everything else).
 - [x] Rate-limit retries and message chunking.
 - [x] `scope` exposed by the control plane and rendered as a badge in the
       dashboard conversation list (Telegram sessions only).

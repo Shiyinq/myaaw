@@ -137,3 +137,31 @@ func TestSendTelegramAttachmentRetriesRejectedPhotosAsDocuments(t *testing.T) {
 		t.Errorf("document attempts = %d, want 1", got)
 	}
 }
+
+func TestTelegramFileEndpointRoutesMedia(t *testing.T) {
+	cases := []struct {
+		mime   string
+		name   string
+		method string
+		field  string
+	}{
+		{"image/jpeg", "a.jpg", "sendPhoto", "photo"},
+		{"image/png", "a.png", "sendPhoto", "photo"},
+		{"image/gif", "a.gif", "sendAnimation", "animation"},
+		{"video/mp4", "a.mp4", "sendVideo", "video"},
+		{"audio/mpeg", "a.mp3", "sendAudio", "audio"},
+		{"audio/mp4", "a.m4a", "sendAudio", "audio"},
+		{"image/webp", "a.webp", "sendDocument", "document"},
+		{"application/zip", "a.zip", "sendDocument", "document"},
+		{"", "a.gif", "sendAnimation", "animation"},
+		{"", "a.mp4", "sendVideo", "video"},
+		{"", "a.mp3", "sendAudio", "audio"},
+		{"", "noext", "sendDocument", "document"},
+	}
+	for _, c := range cases {
+		method, field := telegramFileEndpoint(c.mime, c.name)
+		if method != c.method || field != c.field {
+			t.Errorf("(%q, %q) = %s/%s, want %s/%s", c.mime, c.name, method, field, c.method, c.field)
+		}
+	}
+}
