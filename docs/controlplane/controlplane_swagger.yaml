@@ -679,6 +679,22 @@ definitions:
         example: openai
         type: string
     type: object
+  handler.SignFilesRequest:
+    properties:
+      paths:
+        items:
+          type: string
+        type: array
+    type: object
+  handler.SignFilesResponse:
+    properties:
+      expires_at:
+        type: integer
+      urls:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
   handler.SkillToggleRequest:
     properties:
       enabled:
@@ -4767,6 +4783,42 @@ paths:
       security:
       - BearerAuth: []
       summary: Search agent files
+      tags:
+      - Files
+  /agents/{name}/fs/sign:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Paths to sign
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.SignFilesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.SignFilesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Sign media paths
       tags:
       - Files
   /agents/{name}/fs/write:
