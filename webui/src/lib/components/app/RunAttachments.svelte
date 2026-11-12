@@ -7,6 +7,7 @@
 		File as FileIcon
 	} from 'lucide-svelte';
 	import { files as filesApi } from '$lib/apis/files';
+	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import type { Attachment, LightboxImage } from '$lib/types';
 	import ImageLightbox from './ImageLightbox.svelte';
@@ -53,6 +54,14 @@
 	let media = $derived(attachments.filter((a) => ['image', 'video'].includes(kindOf(a))));
 	let others = $derived(attachments.filter((a) => !['image', 'video'].includes(kindOf(a))));
 	let images = $derived(media.filter((a) => kindOf(a) === 'image'));
+
+	// Sign the media paths once per answer so images load without the session token.
+	$effect(() => {
+		const paths = attachments
+			.map((attachment) => attachment.path)
+			.filter((path): path is string => !!path);
+		void ensureSigned(agent, paths);
+	});
 
 	// Clicking a photo opens the shared lightbox with the whole image set, so the
 	// reader can zoom and step through the answer's pictures without going back.

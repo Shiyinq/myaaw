@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { files as filesApi } from '$lib/apis/files';
+	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { revealPane } from '$lib/utils/scroll';
@@ -71,12 +72,23 @@
 	let textPreview = $derived(!!preview && !mediaKind && preview.kind !== 'binary');
 	let tooLargeToPreview = $derived(!!selected && textPreview && selected.size > PREVIEW_LIMIT);
 	let mediaUrl = $derived(selected && agent ? filesApi.rawUrl(agent, selected.path) : '');
+	// Sign the previewed file so the browser can load it without the session token.
+	$effect(() => {
+		if (agent && selected?.path) void ensureSigned(agent, [selected.path]);
+	});
 	let csvTable = $derived(preview?.kind === 'csv' && selected ? parseCsv(content) : null);
 	let mediaFailed = $state(false);
 
 	function downloadFile(target: string) {
 		if (!agent) return;
 		filesApi.download(agent, target);
+	}
+
+	// A preview can render before its signature arrives, when src is a blank data
+	// URL. That failure must not latch: the element reloads once the signed URL
+	// replaces it.
+	function mediaError() {
+		if (mediaUrl && mediaUrl !== 'data:,') mediaFailed = true;
 	}
 
 	async function load(currentAgent: string, target: string) {
@@ -585,7 +597,7 @@
 										src={mediaUrl}
 										alt={selected.path}
 										class="max-h-full max-w-full object-contain"
-										onerror={() => (mediaFailed = true)}
+										onerror={mediaError}
 									/>
 								</div>
 							{/if}
@@ -601,7 +613,7 @@
 										controls
 										preload="metadata"
 										class="max-h-full max-w-full rounded-md"
-										onerror={() => (mediaFailed = true)}
+										onerror={mediaError}
 									></video>
 								</div>
 							{/if}
@@ -615,7 +627,7 @@
 										controls
 										preload="metadata"
 										class="w-full max-w-lg"
-										onerror={() => (mediaFailed = true)}
+										onerror={mediaError}
 									></audio>
 								</div>
 							{/if}

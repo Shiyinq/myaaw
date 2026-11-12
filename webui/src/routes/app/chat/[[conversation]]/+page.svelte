@@ -8,6 +8,7 @@
 	import { config as configApi } from '$lib/apis/config';
 	import { conversations as conversationsApi } from '$lib/apis/conversations';
 	import { files as filesApi } from '$lib/apis/files';
+	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { providers as providersApi } from '$lib/apis/providers';
 	import { observability as observabilityApi } from '$lib/apis/observability';
 	import { agentSelection, conversationHistory, toastStore, topBarTitle } from '$lib/stores';
@@ -674,6 +675,19 @@
 			loadedOffset = detail.offset;
 			turns = detail.turns ?? [];
 			historyItems = historyTimeline(detail.messages, detail.offset);
+			// Sign every media path on this page once, so photos load without the
+			// session token and stay valid for their short lifetime.
+			const mediaPaths: string[] = [];
+			for (const message of detail.messages) {
+				for (const attachment of message.attachments ?? []) {
+					if (attachment.path) mediaPaths.push(attachment.path);
+				}
+				for (const upload of message.uploads ?? []) {
+					const virtual = uploadVirtualPath(upload);
+					if (virtual) mediaPaths.push(virtual);
+				}
+			}
+			void ensureSigned(currentAgent, mediaPaths);
 			// A finished run is redundant once the stored transcript is loaded; the
 			// server's copy includes the final answer. A live run keeps going.
 			chatRuns.settle(currentAgent, id);
