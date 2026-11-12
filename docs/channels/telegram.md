@@ -196,6 +196,13 @@ Rejected users get no reply; the handler still returns 200.
 | Request timeouts | 15s (message), 60s (file), 5s (typing) |
 | Run timeout | `bot.run_timeout_seconds` + 60s on the consumer side |
 
+Outgoing files: JPEG and PNG attachments use `sendPhoto`, so Telegram renders
+them inline. Every other type — zip, PDF, audio, video, GIF/WebP/SVG — uses
+`sendDocument`. A photo Telegram refuses with `400` is retried as a document, so
+a rejected image never fails the whole reply. Uploads are capped at 20 MB by the
+delivery layer, transport failures are retried once (the upload never reached
+Telegram), and the bot token is redacted from errors shown in the chat.
+
 ### 5.10 Display names and sender identity
 
 Display metadata is captured only for scoped chats (groups and forum topics).
@@ -265,14 +272,15 @@ is required. Restart the agent once so the migration and the name capture run.
 - [x] `message_thread_id` parsing.
 - [x] Scope normalisation (`0`/`1` → chat-level).
 - [x] `message_thread_id` on `sendMessage`, `editMessageText`,
-      `sendChatAction`, `sendPhoto`, and approval prompts.
+      `sendChatAction`, `sendPhoto`, `sendDocument`, and approval prompts.
 - [x] `scope` column migration plus a unique index for one active session per
       scope.
 - [x] Per-topic sessions shared across topic members.
 - [x] `/new` per topic; DM/CLI/API sessions stay per user.
 - [x] Commands with the `@username` suffix.
 - [x] Scope-keyed queue ordering.
-- [x] Voice transcription, photo/document download, attachments sent as photos.
+- [x] Voice transcription, photo/document download, attachments sent as photos
+      (JPEG/PNG) or documents (everything else).
 - [x] Rate-limit retries and message chunking.
 - [x] `scope` exposed by the control plane and rendered as a badge in the
       dashboard conversation list (Telegram sessions only).

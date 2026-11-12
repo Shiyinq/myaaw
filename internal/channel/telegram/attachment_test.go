@@ -6,14 +6,23 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"myaaw/internal/channel"
 )
 
-func TestSendTelegramPhotoMultipart(t *testing.T) {
+func useTelegramTestServer(t *testing.T, handler http.HandlerFunc) {
+	t.Helper()
 	oldBase := telegramAPIBaseURL
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	telegramAPIBaseURL = server.URL
+	t.Cleanup(func() { telegramAPIBaseURL = oldBase })
+}
+
+func TestSendTelegramAttachmentSendsPhotosAsPhotos(t *testing.T) {
+	useTelegramTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/sendPhoto") {
 			t.Errorf("path = %q", r.URL.Path)
 		}
@@ -43,19 +52,88 @@ func TestSendTelegramPhotoMultipart(t *testing.T) {
 		if string(data) != "PNGDATA" {
 			t.Errorf("data = %q", data)
 		}
-		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"ok":true}`)
-	}))
-	t.Cleanup(server.Close)
-	telegramAPIBaseURL = server.URL
-	t.Cleanup(func() { telegramAPIBaseURL = oldBase })
+	})
 
-	err := sendTelegramPhoto(42, 99, 7, channel.Attachment{
+	err := sendTelegramAttachment(42, 99, 7, channel.Attachment{
 		FileName: "shot.png",
 		MimeType: "image/png",
 		Data:     []byte("PNGDATA"),
 	})
 	if err != nil {
-		t.Fatalf("sendTelegramPhoto: %v", err)
+		t.Fatalf("sendTelegramAttachment: %v", err)
+	}
+}
+
+func TestSendTelegramAttachmentSendsDocumentsForFiles(t *testing.T) {
+	useTelegramTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/sendDocument") {
+			t.Errorf("path = %q, want sendDocument", r.URL.Path)
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("multipart: %v", err)
+			return
+		}
+		file, header, err := r.FormFile("document")
+		if err != nil {
+			t.Errorf("document part: %v", err)
+			return
+		}
+		defer file.Close()
+		if header.Filename != "photos.zip" {
+			t.Errorf("filename = %q", header.Filename)
+		}
+		data, _ := io.ReadAll(file)
+		if string(data) != "ZIPDATA" {
+			t.Errorf("data = %q", data)
+		}
+		fmt.Fprint(w, `{"ok":true}`)
+	})
+
+	err := sendTelegramAttachment(42, 99, 7, channel.Attachment{
+		FileName: "photos.zip",
+		MimeType: "application/zip",
+		Data:     []byte("ZIPDATA"),
+	})
+	if err != nil {
+		t.Fatalf("sendTelegramAttachment: %v", err)
+	}
+}
+
+func TestSendTelegramAttachmentRetriesRejectedPhotosAsDocuments(t *testing.T) {
+	var photos, documents int32
+	useTelegramTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/sendPhoto"):
+			atomic.AddInt32(&photos, 1)
+			http.Error(w, `{"ok":false,"description":"Bad Request"}`, http.StatusBadRequest)
+		case strings.HasSuffix(r.URL.Path, "/sendDocument"):
+			atomic.AddInt32(&documents, 1)
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Errorf("multipart: %v", err)
+				return
+			}
+			if _, _, err := r.FormFile("document"); err != nil {
+				t.Errorf("document part: %v", err)
+			}
+			fmt.Fprint(w, `{"ok":true}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+	})
+
+	err := sendTelegramAttachment(42, 0, 0, channel.Attachment{
+		FileName: "huge.png",
+		MimeType: "image/png",
+		Data:     []byte("PNGDATA"),
+	})
+	if err != nil {
+		t.Fatalf("sendTelegramAttachment: %v", err)
+	}
+	if got := atomic.LoadInt32(&photos); got != 1 {
+		t.Errorf("photo attempts = %d, want 1", got)
+	}
+	if got := atomic.LoadInt32(&documents); got != 1 {
+		t.Errorf("document attempts = %d, want 1", got)
 	}
 }

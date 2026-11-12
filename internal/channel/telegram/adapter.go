@@ -116,7 +116,7 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 	}
 
 	for _, att := range out.Attachments {
-		if err := sendTelegramPhoto(meta.ChatID, meta.ThreadID, meta.MessageID, att); err != nil && sendErr == nil {
+		if err := sendTelegramAttachment(meta.ChatID, meta.ThreadID, meta.MessageID, att); err != nil && sendErr == nil {
 			sendErr = err
 		}
 	}
@@ -141,7 +141,7 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 		return nil, err
 	}
 	for _, att := range timeline.attachments {
-		if sendErr := sendTelegramPhoto(meta.ChatID, meta.ThreadID, meta.MessageID, att); sendErr != nil {
+		if sendErr := sendTelegramAttachment(meta.ChatID, meta.ThreadID, meta.MessageID, att); sendErr != nil {
 			return nil, sendErr
 		}
 	}

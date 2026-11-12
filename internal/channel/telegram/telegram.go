@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"myaaw/internal/channel"
 	"myaaw/internal/config"
+	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -191,16 +194,63 @@ func sendTelegramTypingAction(chatId, threadId int) error {
 	return nil
 }
 
-// sendTelegramPhoto uploads one attachment as a real image message. Telegram's
-// sendPhoto expects multipart/form-data. threadID targets a forum topic.
-func sendTelegramPhoto(chatID, threadID, replyTo int, att channel.Attachment) error {
+// sendTelegramAttachment uploads one file. Telegram only renders JPEG and PNG
+// through sendPhoto; every other type (zip, pdf, audio, video, other image
+// formats) must use sendDocument. A photo Telegram refuses is retried as a
+// document so one odd image cannot fail the whole reply.
+func sendTelegramAttachment(chatID, threadID, replyTo int, att channel.Attachment) error {
 	if len(att.Data) == 0 {
 		return nil
 	}
 	name := strings.TrimSpace(att.FileName)
 	if name == "" {
-		name = "attachment.png"
+		name = "attachment"
 	}
+
+	if !telegramRendersPhoto(att.MimeType, name) {
+		return postTelegramFile(chatID, threadID, replyTo, "document", name, att.Data)
+	}
+
+	status, err := postTelegramFileStatus(chatID, threadID, replyTo, "photo", name, att.Data)
+	if err == nil {
+		return nil
+	}
+	// 400 means Telegram decoded the request but refused the image: too large, odd
+	// dimensions, or a format it does not accept as a photo. A document still
+	// reaches the user.
+	if status == http.StatusBadRequest {
+		log.Printf("telegram: %q rejected as photo, sending it as a document: %v", name, err)
+		return postTelegramFile(chatID, threadID, replyTo, "document", name, att.Data)
+	}
+	return err
+}
+
+// telegramRendersPhoto reports whether Telegram accepts the file as a photo.
+// Only JPEG and PNG qualify; GIF, WebP, SVG, AVIF and every non-image document
+// go through sendDocument.
+func telegramRendersPhoto(mime, name string) bool {
+	switch strings.ToLower(strings.TrimSpace(mime)) {
+	case "image/jpeg", "image/jpg", "image/png":
+		return true
+	}
+	if strings.TrimSpace(mime) != "" {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".jpg", ".jpeg", ".png":
+		return true
+	}
+	return false
+}
+
+func postTelegramFile(chatID, threadID, replyTo int, field, name string, data []byte) error {
+	_, err := postTelegramFileStatus(chatID, threadID, replyTo, field, name, data)
+	return err
+}
+
+// postTelegramFileStatus also reports the HTTP status so the caller can fall back
+// only when Telegram answered (0 means the request never got a response).
+func postTelegramFileStatus(chatID, threadID, replyTo int, field, name string, data []byte) (int, error) {
 	form := map[string]string{"chat_id": strconv.Itoa(chatID)}
 	if replyTo != 0 {
 		form["reply_to_message_id"] = strconv.Itoa(replyTo)
@@ -209,18 +259,64 @@ func sendTelegramPhoto(chatID, threadID, replyTo int, att channel.Attachment) er
 		form["message_thread_id"] = strconv.Itoa(threadID)
 	}
 
-	client := resty.New().SetTimeout(telegramFileTimeout)
-	resp, err := client.R().
-		SetFileReader("photo", name, bytes.NewReader(att.Data)).
-		SetFormData(form).
-		Post(telegramAPIURL("sendPhoto"))
-	if err != nil {
-		return fmt.Errorf("send photo: %w", err)
+	method := "sendDocument"
+	label := "send document"
+	if field == "photo" {
+		method = "sendPhoto"
+		label = "send photo"
 	}
-	if resp.IsError() {
-		return fmt.Errorf("send photo failed: %s", resp.Status())
+
+	client := resty.New().
+		SetTimeout(telegramFileTimeout).
+		SetTransport(telegramFileTransport())
+
+	// A transport failure means the upload never reached Telegram, so one retry
+	// covers flaky TLS handshakes without duplicating a delivered file.
+	var lastErr error
+	for attempt := 0; attempt <= telegramMaxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+		}
+		resp, err := client.R().
+			SetFileReader(field, name, bytes.NewReader(data)).
+			SetFormData(form).
+			Post(telegramAPIURL(method))
+		if err != nil {
+			lastErr = fmt.Errorf("%s: %w", label, redactTelegramToken(err))
+			continue
+		}
+		if resp.IsError() {
+			return resp.StatusCode(), fmt.Errorf("%s failed: %s", label, resp.Status())
+		}
+		return resp.StatusCode(), nil
 	}
-	return nil
+	return 0, lastErr
+}
+
+// telegramFileTransport gives uploads a longer TLS handshake budget than the Go
+// default, which times out on slow mobile connections.
+func telegramFileTransport() *http.Transport {
+	return &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		TLSHandshakeTimeout:   30 * time.Second,
+		ResponseHeaderTimeout: telegramFileTimeout,
+		IdleConnTimeout:       30 * time.Second,
+		ForceAttemptHTTP2:     true,
+	}
+}
+
+// redactTelegramToken keeps the bot token out of errors that are surfaced in the
+// chat, where the API URL (and therefore the token) would otherwise appear.
+func redactTelegramToken(err error) error {
+	if err == nil {
+		return nil
+	}
+	token := config.TelegramBotToken
+	if token == "" {
+		return err
+	}
+	message := strings.ReplaceAll(err.Error(), token, "<token>")
+	return errors.New(message)
 }
 
 func telegramSendBody(chatID, threadID, replyID int, text, parseMode string) *TelegramSendMessage {
