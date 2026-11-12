@@ -35,7 +35,6 @@ func TestTelegramStreamReceivesPromotedPhoto(t *testing.T) {
 	}
 	// The helper owns the temp HOME, so files must be created after it runs.
 	svc, repo := newCheckpointService(t, ag)
-	_ = repo
 
 	agentHome, err := agentdir.Home("default")
 	if err != nil {
@@ -80,5 +79,22 @@ func TestTelegramStreamReceivesPromotedPhoto(t *testing.T) {
 	}
 	if streamed != 1 {
 		t.Fatalf("streamed attachments = %d, want 1", streamed)
+	}
+
+	// The dashboard renders history from stored metadata, so the messaging path
+	// must persist the virtual path even though the platform received bytes.
+	if len(repo.updates) == 0 {
+		t.Fatal("conversation was never saved")
+	}
+	saved := repo.updates[len(repo.updates)-1].messages
+	if len(saved) == 0 {
+		t.Fatal("saved transcript is empty")
+	}
+	last := saved[len(saved)-1]
+	if len(last.Attachments) != 1 {
+		t.Fatalf("persisted attachments = %+v", last.Attachments)
+	}
+	if last.Attachments[0].Path != "/home/workspace/photo.jpg" || last.Attachments[0].FileName != "photo.jpg" {
+		t.Fatalf("persisted attachment = %+v", last.Attachments[0])
 	}
 }

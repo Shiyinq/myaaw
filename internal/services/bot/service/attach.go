@@ -92,6 +92,11 @@ func messagingAttachments(text string, roots attachment.Roots) (string, []channe
 			FileName: item.Name,
 			MimeType: item.Mime,
 			Data:     data,
+			// The adapter uploads bytes, but the virtual path still matters: the
+			// dashboard stores it so the same file appears in chat history.
+			Path: item.Virtual,
+			Kind: string(item.Kind),
+			Size: item.Size,
 		})
 	}
 	return cleaned, atts

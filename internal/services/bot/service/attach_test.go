@@ -104,8 +104,13 @@ func TestDeliverAttachmentsMessagingReadsBytes(t *testing.T) {
 	if len(attachments) != 1 || string(attachments[0].Data) != "PNG" {
 		t.Fatalf("attachments = %+v", attachments)
 	}
-	if attachments[0].Path != "" {
-		t.Errorf("messaging attachment should carry bytes, not a path")
+	// The bytes go to the platform, while the path is persisted so the dashboard
+	// can render the same file in chat history.
+	if attachments[0].Path != "/home/workspace/shot.png" {
+		t.Errorf("path = %q", attachments[0].Path)
+	}
+	if attachments[0].Kind != "image" || attachments[0].Size != 3 {
+		t.Errorf("kind/size = %q/%d", attachments[0].Kind, attachments[0].Size)
 	}
 }
 
