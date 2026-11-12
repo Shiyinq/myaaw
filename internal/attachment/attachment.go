@@ -204,16 +204,50 @@ func Substitute(text string, roots Roots) string {
 // glued to a word is not promoted by accident.
 var mediaPathRE = regexp.MustCompile(`(?:^|[\s("'` + "`" + `])((?:~/?|/)[^\s"'<>()]+\.(?:png|jpe?g|gif|webp|bmp|svg|avif|apng|ico|mp4|m4v|webm|mov|mkv|avi|ogv|mp3|wav|m4a|aac|flac|ogg|opus|oga|pdf)\b)`)
 
-// Promote finds bare previewable file paths in the answer and turns them into
-// attachments without requiring the model to remember the directive. The paths
-// stay in the text; only the directive is removed by Extract. Fenced code blocks
-// are ignored so documentation is never turned into an attachment.
+// standalonePathRE matches a line that holds nothing but one absolute or ~
+// path, optionally wrapped in inline-code backticks or prefixed by a list
+// bullet. A model that lists a deliverable this way means "here is the file";
+// media is promoted anywhere in prose, but archives and documents need this
+// shape because promoting paths inside sentences would attach incidental files.
+var standalonePathRE = regexp.MustCompile("^\\s*(?:[-*]\\s+)?`?((?:~/|/|~)[^\\s\"'<>()`]+)`?\\s*$")
+
+// unpromotableExt keeps scratch output from becoming an attachment when the
+// model prints its path on a line of its own.
+var unpromotableExt = map[string]bool{
+	".log": true, ".tmp": true, ".temp": true, ".cache": true,
+	".bak": true, ".swp": true, ".swo": true,
+}
+
+// Promote finds bare file paths in the answer and turns them into attachments
+// without requiring the model to remember the directive. Previewable media is
+// promoted wherever it appears in prose; any other file is promoted only when a
+// line contains nothing but the path (or a bullet and the path), which is how a
+// model lists a packaged deliverable. Scratch extensions are ignored. Fenced
+// code blocks are never scanned.
 func Promote(text string, roots Roots) []Item {
 	var items []Item
 	seen := make(map[string]bool)
-	for _, match := range mediaPathRE.FindAllStringSubmatch(stripFencedBlocks(text), -1) {
+	body := stripFencedBlocks(text)
+
+	for _, match := range mediaPathRE.FindAllStringSubmatch(body, -1) {
 		item, ok := resolveLoose(match[1], roots)
 		if !ok || item.Kind == KindFile {
+			continue
+		}
+		if seen[item.Virtual] {
+			continue
+		}
+		seen[item.Virtual] = true
+		items = append(items, item)
+	}
+
+	for _, line := range strings.Split(body, "\n") {
+		match := standalonePathRE.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		item, ok := resolveLoose(match[1], roots)
+		if !ok || unpromotableExt[strings.ToLower(filepath.Ext(item.Name))] {
 			continue
 		}
 		if seen[item.Virtual] {

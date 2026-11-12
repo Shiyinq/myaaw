@@ -297,3 +297,51 @@ func TestResolveUserRoot(t *testing.T) {
 		t.Errorf("virtual = %q", item.Virtual)
 	}
 }
+
+func TestPromoteStandaloneDocument(t *testing.T) {
+	roots := testRoots(t)
+	zip := writeFile(t, filepath.Join(roots.Home, "workspace", "photos.zip"))
+
+	items := Promote("Hasil zip:\n\n"+zip, roots)
+
+	if len(items) != 1 {
+		t.Fatalf("items = %+v", items)
+	}
+	if items[0].Kind != KindFile || items[0].Name != "photos.zip" {
+		t.Errorf("item = %+v", items[0])
+	}
+}
+
+func TestPromoteStandaloneBulletAndInlineCode(t *testing.T) {
+	roots := testRoots(t)
+	zip := writeFile(t, filepath.Join(roots.Home, "workspace", "photos.zip"))
+
+	for _, line := range []string{"- " + zip, "* `" + zip + "`", "`" + zip + "`"} {
+		items := Promote(line, roots)
+		if len(items) != 1 {
+			t.Fatalf("line %q: items = %+v", line, items)
+		}
+	}
+}
+
+func TestPromoteIgnoresInlineDocumentPath(t *testing.T) {
+	roots := testRoots(t)
+	txt := writeFile(t, filepath.Join(roots.Home, "workspace", "notes.txt"))
+
+	items := Promote("Catatan lengkap ada di "+txt+" untuk dibaca nanti.", roots)
+
+	if len(items) != 0 {
+		t.Fatalf("items = %+v", items)
+	}
+}
+
+func TestPromoteIgnoresStandaloneScratchFile(t *testing.T) {
+	roots := testRoots(t)
+	logFile := writeFile(t, filepath.Join(roots.Home, "workspace", "debug.log"))
+
+	items := Promote("Log:\n\n"+logFile, roots)
+
+	if len(items) != 0 {
+		t.Fatalf("items = %+v", items)
+	}
+}
