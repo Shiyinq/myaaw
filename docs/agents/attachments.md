@@ -76,7 +76,7 @@ The same directive produces a different presentation on each surface.
 | Surface | Text | Attachment |
 | :--- | :--- | :--- |
 | API / WebUI (`api`) | Directive is kept; the WebUI hides `@attach(`/`)` (and the `@` of `@/path`) and shows only the path | Virtual path (`/home/...`, `/user/...`); streamed by the browser through `/fs/raw` |
-| Telegram / Discord | Directive is replaced by the plain absolute path | Bytes read into memory and uploaded natively (Telegram: photo for JPEG/PNG, animation for GIF, video for MP4, audio for MP3/M4A, document otherwise; photos/videos grouped into albums) |
+| Telegram / Discord | Directive is replaced by the plain absolute path | Bytes read into memory and uploaded natively (Telegram: photo for JPEG/PNG, animation for GIF, video for MP4, audio for MP3/M4A, document otherwise; photos/videos grouped into albums); the virtual path is also persisted for dashboard history |
 | CLI / TUI | Directive is replaced by the plain absolute path | None |
 | A2A / other | Directive is replaced by the plain absolute path | None |
 
@@ -85,12 +85,28 @@ what the model wrote, and the frontend decides how to present it. This also
 means the model sees its own directive when the transcript is replayed.
 
 `@/path` and `@~/path` are recognized on every surface, for every extension
-(including `.md`). Bare paths without `@` are only auto-promoted for media
-(§5).
+(including `.md`). Bare paths without `@` follow the promotion rules in §5:
+media anywhere in prose, other files only on a line of their own.
 
 ---
 
 ## 4. Validation and security
+
+Attachments cross a trust boundary: the model chooses the path, the browser or
+chat platform fetches the bytes, and the agent host owns the file. The rules
+below keep that boundary narrow.
+
+### 4.1 Where a reference may come from
+
+- Only the **final assistant answer** is scanned for `@attach(...)`. Directives
+  in tool output, intermediate text, user messages, and fenced code blocks are
+  documentation, not delivery.
+- Bare paths follow the promotion rules in §5 and pass the same validation as
+  directives.
+- Users cannot attach arbitrary agent files from the composer; their uploads are
+  stored separately under `<agent>/user/uploads/…` (§4.6).
+
+### 4.2 Path validation (delivery time)
 
 A reference is accepted only if it resolves to a readable **file** inside one of
 the agent's roots:
@@ -117,28 +133,108 @@ Checks applied per reference:
 - **Trailing punctuation** — a path followed by `.`, `,`, `;`, `:`, `!`, or `?`
   is retried without the punctuation.
 
-The same rules are re-applied when the browser fetches the bytes through
-`/fs/raw`, so a stale transcript cannot read a file that has since moved outside
-the roots.
+### 4.3 Serving the bytes (`/fs/raw`)
+
+- The virtual path is **re-validated on every request**: allowed roots, symlink
+  containment, and a regular file. A transcript that points outside the roots
+  stops working even if it was stored earlier.
+- `X-Content-Type-Options: nosniff` keeps the browser from guessing a type from
+  the bytes.
+- `Content-Security-Policy: sandbox; default-src 'none'; …` is added for `svg`,
+  `html`, and `xml`, so opening one directly cannot inherit the control-plane
+  origin's privileges.
+- `download=1` sends `Content-Disposition: attachment`; `Range` is supported so
+  video can seek.
+- Requests without a valid session token get `401`.
+
+### 4.4 Tokens in media URLs
+
+`<img>`, `<video>`, `<iframe>`, and `<a download>` cannot send an
+`Authorization` header, so `/fs/raw` also accepts the session token as a query
+parameter (`internal/services/controlplane/middleware/auth.go`). It is a
+24-hour local session. Consequences:
+
+- the token can appear in browser history, proxy access logs, and any monitoring
+  that records URLs;
+- use **HTTPS** for anything beyond loopback; over plain HTTP the token is
+  readable on the network;
+- a remote dashboard must either share the API origin (reverse proxy) or be
+  listed in `ALLOWED_ORIGINS`; the default allows loopback origins only
+  (`internal/services/controlplane/router.go`);
+- browsers ignore the `download` attribute for cross-origin URLs, so remote
+  dashboards may open a file instead of saving it. Same-origin serving avoids
+  that.
+
+### 4.5 Messaging surfaces
+
+- Telegram and Discord receive the **bytes**, so the file leaves the agent host
+  and is stored by that platform; the platform's retention rules apply. Attach
+  only what the user asked for.
+- Files above 20 MB are skipped with a log line and never uploaded.
+- Telegram errors are redacted before they reach the chat
+  (`redactTelegramToken`), because the Bot API URL embeds the bot token.
+- The virtual path is still stored in the transcript for dashboard history, so
+  the file must remain inside the agent roots to render later.
+
+### 4.6 User uploads (the other direction)
+
+- The API accepts at most 8 files per message, 10 MB each and 20 MB total
+  (`internal/channel/api/adapter.go`).
+- Names are reduced to a basename and unknown extensions are rejected.
+- Files are written with mode `0600` under
+  `<agent>/user/uploads/<conversation>/<message>/`, one directory per message,
+  with unique names so an upload never overwrites an earlier file.
+- The model never receives the bytes: only absolute paths inside `<attached>`,
+  which it reads with its own tools.
+
+### 4.7 Auto-promotion risk
+
+- Media paths in prose are promoted aggressively; other files only when a line
+  contains just the path. Both shapes still pass §4.2, so an outside path or a
+  directory is ignored.
+- `.log`, `.tmp`, `.temp`, `.cache`, `.bak`, `.swp`, and `.swo` are never
+  promoted, so scratch output does not become a delivery by accident.
+- Fenced code blocks are never scanned, so documentation examples stay inert.
+
+### 4.8 Out of scope
+
+- This validation is about **where** a file comes from, not **what** it
+  contains. An agent-produced file can still be malicious; treat downloaded
+  artifacts as untrusted.
+- The agent host's filesystem permissions are the final boundary. Run the agent
+  as a dedicated user when the machine is shared.
 
 ---
 
-## 5. Auto-promotion of bare media paths
+## 5. Auto-promotion of bare paths
 
-If the model forgets the directive and simply writes a media path in prose,
-the engine still attaches it:
+If the model forgets the directive, the engine still attaches files it names
+with a bare path, in two shapes.
 
-- Matched only for previewable kinds: **image, video, audio, PDF**.
+**Previewable media anywhere in prose** (image, video, audio, PDF):
+
 - The path must look absolute (`/...` or `~/...`) and end in a known media
   extension.
-- The path must be preceded by a boundary (start of line, whitespace, quote,
+- It must be preceded by a boundary (start of line, whitespace, quote,
   parenthesis, backtick), so URL paths and word-glued paths are not promoted.
-- Fenced code blocks are ignored.
-- Non-media files (`.md`, `.zip`, source code, …) are **not** auto-promoted;
-  they require `@attach(...)` or the `@/path` shorthand.
 
-The bare path stays in the answer text; only the directive is hidden by the
-WebUI.
+**Any other file on a line of its own** (archives, documents, source files):
+
+- The line must contain only the path, optionally wrapped in inline-code
+  backticks or prefixed by a list bullet (`- /path/file.zip`). This is how a
+  model lists a packaged deliverable.
+- The path must exist inside the agent roots, like any other attachment.
+- Scratch extensions (`.log`, `.tmp`, `.temp`, `.cache`, `.bak`, `.swp`, `.swo`)
+  are skipped, so debug output is not delivered by accident.
+
+A non-media path **inside a sentence is not promoted**. For example,
+`The zip is at /home/workspace/a.zip, ready to download` stays text only; the
+model must use `@attach(/home/workspace/a.zip)` (or put the path on its own
+line) to deliver it. This keeps an explanation that mentions a config, log, or
+source file from attaching every path it names.
+
+Fenced code blocks are ignored in both shapes. The bare path stays in the answer
+text; only the directive is hidden by the WebUI.
 
 ---
 
@@ -150,11 +246,11 @@ final assistant text
         ▼
 internal/attachment.Collect ──► []Item (AbsPath, Virtual, Name, Kind, Mime, Size)
         │                         ├─ @attach(...) / @/path / @~/path
-        │                         └─ Promote: bare media paths
+        │                         └─ Promote: media in prose, other files on their own line
         ▼
 internal/services/bot/service/attach.go
         ├─ api    → channel.Attachment{Path, Kind, Size}   (text unchanged)
-        ├─ telegram/discord → read bytes → channel.Attachment{Data}  (text substituted)
+        ├─ telegram/discord → read bytes → channel.Attachment{Data, Path}  (text substituted)
         └─ cli/tui→ no attachment                          (text substituted)
         ▼
 channel.OutgoingMessage.Attachments
@@ -228,8 +324,11 @@ Attachment metadata is stored with the assistant turn in
 }
 ```
 
-- Only path-based attachments are persisted. Byte-only attachments (messaging
-  uploads) are not written to the transcript.
+- Attachments that resolve to a file are persisted with their virtual path on
+  every surface. Messaging adapters upload bytes for the platform but still keep
+  the path, so the dashboard renders the same file in chat history.
+- Attachments without a path (for example a tool attachment that only carries
+  bytes) are not written to the transcript.
 - `CloneMessages` copies the slice, so checkpoints, compaction, and title
   generation keep it.
 - Provider adapters build their own wire types and never send this field to a
@@ -287,9 +386,10 @@ by the WebUI and replaced by the path on messaging/terminal surfaces.
 
 | Symptom | Likely cause |
 | :--- | :--- |
-| File text shows but no card | The model wrote a plain non-media path without `@attach`. Only media paths are auto-promoted. |
+| File text shows but no card | The model wrote a plain path without `@attach`. Media is promoted anywhere in prose; other files are promoted only when a line contains just the path. |
 | A literal `@` remains in front of the path | The model wrote `@/path`; older builds did not recognize the shorthand. Current builds do, and the WebUI hides the `@`. |
 | Nothing appears for an old turn | Attachments are stored per turn. A turn processed before the feature (or with an unresolved path) is not retroactively enriched; re-ask in a new turn. |
+| A file arrived on Telegram/Discord but not in dashboard history | The turn predates path persistence, or the file has since left the agent roots. New turns store the virtual path next to the uploaded bytes. |
 | `@attach(...)` is visible for a moment while streaming | The WebUI hides a complete directive; a partially streamed one is hidden as soon as the closing `)` arrives. |
 | A file is skipped | Path outside the roots, hidden/credential name, symlink escape, or above the surface size limit. The messaging path logs `Skipping attachment …`. |
 | Cards appear twice | Only one of the live run or the stored transcript should render a turn; reload the chat to settle the run. |
@@ -307,6 +407,9 @@ by the WebUI and replaced by the path on messaging/terminal surfaces.
 | Static prompt instruction | `internal/agent/context.go` |
 | Attachment struct | `internal/channel/message.go` |
 | SSE serialization | `internal/channel/api/timeline.go` |
+| Raw file serving and re-validation | `internal/services/controlplane/service/filesystem.go`, `internal/services/controlplane/handler/files.go` |
+| Media token and CORS | `internal/services/controlplane/middleware/auth.go`, `internal/services/controlplane/router.go` |
+| Upload validation and storage | `internal/channel/api/adapter.go`, `internal/services/bot/service/uploads.go` |
 | Non-stream API response | `internal/services/bot/handler/api_handler.go` |
 | Stored metadata type | `internal/provider/provider.go` |
 | Transcript cloning | `internal/agent/messages.go` |

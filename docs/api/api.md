@@ -121,6 +121,9 @@ curl -X POST http://localhost:8080/api/chat \
 | `usage` | token usage; omitted when `total_tokens` is 0 |
 | `attachments` | files produced by the run; each carries a virtual `path` the client fetches through `/fs/raw`, plus `kind` and `size`; omitted when empty |
 
+See [Agent Attachments](../agents/attachments.md) for the path-validation,
+token, and CORS rules that apply when a client fetches these files.
+
 ### Timeline items
 
 | `kind` | Fields | Meaning |
