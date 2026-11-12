@@ -29,6 +29,8 @@
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
+	import AttachmentPanel from '$lib/components/app/AttachmentPanel.svelte';
+	import AttachmentPreview from '$lib/components/app/AttachmentPreview.svelte';
 	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
 	import RunAttachments from '$lib/components/app/RunAttachments.svelte';
 	import ImageLightbox from '$lib/components/app/ImageLightbox.svelte';
@@ -65,6 +67,7 @@
 		Gauge,
 		Globe,
 		HeartPulse,
+		History,
 		Loader2,
 		MessageSquarePlus,
 		Mic,
@@ -87,6 +90,7 @@
 	import type {
 		ApprovalDecision,
 		ContextUsage,
+		ConversationAttachment,
 		ConversationTurn,
 		LightboxImage,
 		Message,
@@ -172,6 +176,25 @@
 	let focusMode = $derived(shellMode === 'focus');
 	// In focus mode a context file replaces the transcript column until it closes.
 	let focusContextPath = $state('');
+	// The right column shows either the conversation list or the files of the open
+	// chat. The choice is remembered per browser; a mode change never forces an
+	// empty panel open.
+	const PANEL_TAB_KEY = 'myaaw_chat_right_tab';
+	let rightTab = $state<'history' | 'attachments'>(
+		browser && localStorage.getItem(PANEL_TAB_KEY) === 'attachments' ? 'attachments' : 'history'
+	);
+	// Focus mode owns a tab set of its own; the header can return it to history.
+	let focusPanelTab = $state<'history' | 'context' | 'control'>('history');
+	// Classic has no right column, so its attachment surface is an overlay drawer.
+	let classicAttachmentsOpen = $state(false);
+	// Bumped when a run ends so an open attachment list picks up new files.
+	let attachmentsRefresh = $state(0);
+	let attachmentCount = $state(0);
+	// The file whose preview pane replaces the transcript column (classic overlays it).
+	let previewAttachment = $state<ConversationAttachment | null>(null);
+	// The turn a "Show in chat" jump landed on, so its row can flash a ring.
+	let highlightedMessage = $state<number | null>(null);
+	let highlightTimer: ReturnType<typeof setTimeout> | undefined;
 	let conversationId = $state('');
 	// A run of the open conversation keeps streaming while the user is elsewhere;
 	// the page only renders whatever the store currently holds.
@@ -409,6 +432,20 @@
 		browser ? window.innerWidth >= 1024 && localStorage.getItem(HISTORY_KEY) !== 'false' : false
 	);
 	let searchBox = $state<HTMLInputElement | null>(null);
+
+	$effect(() => {
+		if (browser) localStorage.setItem(PANEL_TAB_KEY, rightTab);
+	});
+
+	// A shell change never leaves an overlay from the previous mode on screen.
+	let lastShellMode = '';
+	$effect(() => {
+		const mode = shellMode;
+		if (mode === lastShellMode) return;
+		lastShellMode = mode;
+		classicAttachmentsOpen = false;
+		previewAttachment = null;
+	});
 
 	function scrollToBottom() {
 		stickToBottom = true;
@@ -659,6 +696,7 @@
 		error = '';
 		sessionStats = null;
 		groupOpen = {};
+		attachmentCount = 0;
 		void refreshStats(currentAgent, id);
 		try {
 			// Ask for the last page so the chat opens at the newest message without
@@ -696,6 +734,7 @@
 			unreadChats.ack(currentAgent, id, detail.updated_at);
 			if (isPlaceholderTitle(title)) pollTitle(currentAgent, id, 0);
 			storedUsage = null;
+			void refreshAttachmentCount();
 		} catch (err) {
 			error = getErrorMessage(err);
 		} finally {
@@ -1204,6 +1243,8 @@
 		conversationId = '';
 		historyItems = [];
 		clearRail();
+		previewAttachment = null;
+		attachmentCount = 0;
 		storedUsage = null;
 		sessionStats = null;
 		error = '';
@@ -1249,6 +1290,8 @@
 		loadKey = key;
 		conversationId = currentConversation;
 		focusContextPath = '';
+		previewAttachment = null;
+		classicAttachmentsOpen = false;
 		rememberConversation(currentConversation);
 		void loadConversation(currentAgent, currentConversation);
 	});
@@ -1324,6 +1367,9 @@
 				const statsId = conversationId;
 				void refreshStats(currentAgent, statsId);
 				void refreshTitle(currentAgent, statsId);
+				// A run may have delivered files: refresh the panel and the badge.
+				attachmentsRefresh += 1;
+				void refreshAttachmentCount();
 				// The run may land in the trace store just after `done`.
 				setTimeout(() => void refreshStats(currentAgent, statsId), 1500);
 
@@ -1905,6 +1951,9 @@
 		clearRail();
 		input = '';
 		focusContextPath = '';
+		previewAttachment = null;
+		attachmentCount = 0;
+		classicAttachmentsOpen = false;
 		if (composer) composer.style.height = '';
 		storedUsage = null;
 		sessionStats = null;
@@ -1920,14 +1969,109 @@
 
 	function toggleHistory() {
 		if (classicMode) return;
-		historyOpen = !historyOpen;
+		// The history button shows history; a second press on it closes the panel.
+		if (historyOpen && rightTab === 'history') {
+			historyOpen = false;
+		} else {
+			historyOpen = true;
+			rightTab = 'history';
+			focusPanelTab = 'history';
+		}
 		if (browser) localStorage.setItem(HISTORY_KEY, String(historyOpen));
+	}
+
+	/** Closes whichever right-panel surface the current shell uses. */
+	function closeSidePanel() {
+		if (classicMode) {
+			classicAttachmentsOpen = false;
+			return;
+		}
+		historyOpen = false;
+		if (browser) localStorage.setItem(HISTORY_KEY, 'false');
 	}
 
 	function openConversation(id: string) {
 		focusContextPath = '';
-		if (browser && window.innerWidth < 1024) toggleHistory();
+		previewAttachment = null;
+		if (browser && window.innerWidth < 1024) closeSidePanel();
 		if (id !== conversationId) void goto(`/app/chat/${id}`);
+	}
+
+	/**
+	 * The header paperclip owns the attachment surface and the history button owns
+	 * the conversation list: each toggles its own view in the shared right column.
+	 */
+	function openAttachments() {
+		if (!browser || !agent) return;
+		if (classicMode) {
+			classicAttachmentsOpen = !classicAttachmentsOpen;
+			return;
+		}
+		if (historyOpen && rightTab === 'attachments') {
+			historyOpen = false;
+			if (browser) localStorage.setItem(HISTORY_KEY, 'false');
+			return;
+		}
+		rightTab = 'attachments';
+		if (!historyOpen) {
+			historyOpen = true;
+			localStorage.setItem(HISTORY_KEY, 'true');
+		}
+	}
+
+	/** Opens one file in the shared preview pane. */
+	function openAttachment(item: ConversationAttachment) {
+		previewAttachment = item;
+		// On phones the right panel is a drawer over the column; close it so the
+		// preview pane is what the reader sees.
+		if (browser && window.innerWidth < 1024) closeSidePanel();
+	}
+
+	/**
+	 * Closes every attachment surface first, then reveals the turn that carried
+	 * the file. The transcript may have been unmounted while a pane held its slot,
+	 * so this waits a tick before asking it for a row.
+	 */
+	async function showAttachmentInChat(item: ConversationAttachment) {
+		previewAttachment = null;
+		// The panel may stay open on a wide screen; a phone drawer would cover the row.
+		if (browser && window.innerWidth < 1024) closeSidePanel();
+		await tick();
+		await revealMessage(item.message_index);
+	}
+
+	/** Loads earlier pages until the turn exists, then centres and flashes it. */
+	async function revealMessage(index: number) {
+		await tick();
+		for (let guard = 0; guard < 10 && index < loadedOffset; guard += 1) {
+			const before = loadedOffset;
+			await loadOlder(100);
+			if (loadedOffset === before) break;
+		}
+		await tick();
+		const node = scroller?.querySelector<HTMLElement>(`[data-chat-turn-index="${index}"]`);
+		if (!node) return;
+		node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		highlightedMessage = index;
+		if (highlightTimer) clearTimeout(highlightTimer);
+		highlightTimer = setTimeout(() => (highlightedMessage = null), 1400);
+	}
+
+	/** The badge count must be right even while the attachment list is closed. */
+	async function refreshAttachmentCount() {
+		const currentAgent = agent ?? '';
+		const currentId = conversationId;
+		if (!currentAgent || !currentId) {
+			attachmentCount = 0;
+			return;
+		}
+		try {
+			const page = await conversationsApi.attachments(currentAgent, currentId, { limit: 1 });
+			if (conversationId !== currentId) return;
+			attachmentCount = page.total ?? 0;
+		} catch {
+			// Keep the last known count; opening the panel retries.
+		}
 	}
 
 	function onHistoryDeleted(id: string) {
@@ -2543,6 +2687,11 @@
 			toggleHistory();
 			return;
 		}
+		if (matchesShortcut(event, 'mod+shift+a')) {
+			event.preventDefault();
+			openAttachments();
+			return;
+		}
 
 		// Arrow and letter shortcuts must not steal keys from a text field.
 		if (isTypingTarget(event.target)) return;
@@ -2817,32 +2966,67 @@
 	{#snippet children()}
 		{#if !classicMode}
 			<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
+		{/if}
+		<Button
+			variant={historyOpen && rightTab === 'attachments' ? 'secondary' : 'outline'}
+			size="icon-sm"
+			class="relative"
+			onclick={openAttachments}
+			title={`${t('myaaw.chat.attachments_open')} (${formatShortcut('mod+shift+a')})`}
+			aria-label={t('myaaw.chat.attachments_open')}
+			aria-keyshortcuts="Control+Shift+A Meta+Shift+A"
+			aria-pressed={historyOpen && rightTab === 'attachments'}
+		>
+			<Paperclip class="h-4 w-4" />
+			{#if attachmentCount > 0}
+				<span
+					class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
+				>
+					{attachmentCount > 99 ? '99+' : attachmentCount}
+				</span>
+			{/if}
+		</Button>
+		{#if !classicMode}
 			<Button
-				variant="outline"
+				variant={historyOpen && rightTab === 'history' ? 'secondary' : 'outline'}
 				size="icon-sm"
 				onclick={toggleHistory}
-				title={`${historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')} (${formatShortcut('mod+shift+h')})`}
-				aria-label={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
+				title={`${historyOpen && rightTab === 'history' ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')} (${formatShortcut('mod+shift+h')})`}
+				aria-label={historyOpen && rightTab === 'history'
+					? t('myaaw.chat.history_hide')
+					: t('myaaw.chat.history_show')}
+				aria-pressed={historyOpen && rightTab === 'history'}
 				aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
 			>
-				{#if historyOpen}
-					<PanelRightClose class="h-4 w-4" />
+				{#if focusMode}
+					{#if historyOpen && rightTab === 'history'}
+						<PanelRightClose class="h-4 w-4" />
+					{:else}
+						<PanelRightOpen class="h-4 w-4" />
+					{/if}
 				{:else}
-					<PanelRightOpen class="h-4 w-4" />
+					<History class="h-4 w-4" />
 				{/if}
 			</Button>
 		{/if}
 	{/snippet}
 </TopBarActions>
 
-<div class="flex h-full min-h-0">
+<div class="relative flex h-full min-h-0">
 	<div
 		class={[
 			'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
 			focusMode && historyOpen ? 'lg:pr-88' : ''
 		]}
 	>
-		{#if agent && focusMode && focusContextPath}
+		{#if agent && previewAttachment}
+			<AttachmentPreview
+				{agent}
+				item={previewAttachment}
+				onClose={() => (previewAttachment = null)}
+				onShowInChat={showAttachmentInChat}
+			/>
+		{:else if agent && focusMode && focusContextPath}
 			<FocusContextEditor {agent} path={focusContextPath} onClose={() => (focusContextPath = '')} />
 		{:else if !agent}
 			<div
@@ -3107,7 +3291,11 @@
 											data-chat-turn-index={item.messageIndex}
 										>
 											<div
-												class="group/user flex w-full min-w-0 max-w-[80%] flex-col items-end gap-2 terminal:max-w-full terminal:items-start"
+												class={cn(
+													'group/user flex w-full min-w-0 max-w-[80%] flex-col items-end gap-2 rounded-2xl transition-shadow terminal:max-w-full terminal:items-start',
+													highlightedMessage === item.messageIndex &&
+														'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
+												)}
 											>
 												{#if senderLabel(item)}
 													<span
@@ -3277,7 +3465,12 @@
 										</div>
 									{:else if item.kind === 'text'}
 										<div
-											class="group/message wrap-break-word text-sm terminal:border-l terminal:pl-3"
+											data-chat-turn-index={item.messageIndex}
+											class={cn(
+												'group/message wrap-break-word rounded-xl text-sm transition-shadow terminal:border-l terminal:pl-3',
+												highlightedMessage === item.messageIndex &&
+													'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
+											)}
 										>
 											<Markdown content={displayText(item.text ?? '')} />
 											{#if (item.attachments?.length ?? 0) > 0}
@@ -4092,7 +4285,7 @@
 				type="button"
 				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
 				aria-label={t('myaaw.chat.history_hide')}
-				onclick={toggleHistory}
+				onclick={closeSidePanel}
 			></button>
 		{/if}
 		<aside
@@ -4102,16 +4295,33 @@
 			]}
 			inert={!historyOpen}
 		>
-			<FocusAgentPanel
-				{agent}
-				activeId={conversationId}
-				onOpen={openConversation}
-				onClose={toggleHistory}
-				onOpenContext={(path) => {
-					focusContextPath = path;
-					if (browser && window.innerWidth < 1024) toggleHistory();
-				}}
-			/>
+			{#if rightTab === 'attachments'}
+				<!-- The focus header floats over the panel on a desktop and its actions
+				     would cover the title, so keep the panel below them there. A phone
+				     drawer sits above the header and needs no gap. -->
+				<div class="min-h-0 flex-1 lg:pt-16">
+					<AttachmentPanel
+						{agent}
+						{conversationId}
+						refreshKey={attachmentsRefresh}
+						onOpen={openAttachment}
+						onShowInChat={showAttachmentInChat}
+						onClose={closeSidePanel}
+					/>
+				</div>
+			{:else}
+				<FocusAgentPanel
+					{agent}
+					activeId={conversationId}
+					bind:tab={focusPanelTab}
+					onOpen={openConversation}
+					onClose={toggleHistory}
+					onOpenContext={(path) => {
+						focusContextPath = path;
+						if (browser && window.innerWidth < 1024) toggleHistory();
+					}}
+				/>
+			{/if}
 		</aside>
 	{:else if agent && historyOpen && !classicMode}
 		<!-- Drawer on small screens, a static third column from lg up. -->
@@ -4119,20 +4329,54 @@
 			type="button"
 			class="fixed inset-0 z-40 bg-black/40 lg:hidden"
 			aria-label={t('myaaw.chat.history_hide')}
-			onclick={toggleHistory}
+			onclick={closeSidePanel}
 		></button>
 		<aside
 			class="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card lg:static lg:z-auto lg:h-full lg:w-72 lg:max-w-none frost-drawer"
 		>
-			<ConversationList
-				activeId={conversationId}
-				onOpen={openConversation}
-				onClose={toggleHistory}
-				onNewInFolder={(folderId) =>
-					void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
-				onDeleted={onHistoryDeleted}
-				onRenamed={onHistoryRenamed}
-				bind:searchInput={searchBox}
+			{#if rightTab === 'attachments'}
+				<AttachmentPanel
+					{agent}
+					{conversationId}
+					refreshKey={attachmentsRefresh}
+					onOpen={openAttachment}
+					onShowInChat={showAttachmentInChat}
+					onClose={closeSidePanel}
+				/>
+			{:else}
+				<ConversationList
+					activeId={conversationId}
+					onOpen={openConversation}
+					onClose={closeSidePanel}
+					onNewInFolder={(folderId) =>
+						void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+					onDeleted={onHistoryDeleted}
+					onRenamed={onHistoryRenamed}
+					bind:searchInput={searchBox}
+				/>
+			{/if}
+		</aside>
+	{/if}
+
+	{#if agent && classicMode && classicAttachmentsOpen}
+		<!-- Classic borrows the advanced layout: a drawer on phones and a static
+		     third column from lg up. History already lives in its left sidebar. -->
+		<button
+			type="button"
+			class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+			aria-label={t('myaaw.chat.attachments_close_list')}
+			onclick={() => (classicAttachmentsOpen = false)}
+		></button>
+		<aside
+			class="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card lg:static lg:z-auto lg:h-full lg:w-72 lg:max-w-none frost-drawer"
+		>
+			<AttachmentPanel
+				{agent}
+				{conversationId}
+				refreshKey={attachmentsRefresh}
+				onOpen={openAttachment}
+				onShowInChat={showAttachmentInChat}
+				onClose={() => (classicAttachmentsOpen = false)}
 			/>
 		</aside>
 	{/if}

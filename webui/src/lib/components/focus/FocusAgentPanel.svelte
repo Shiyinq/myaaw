@@ -38,18 +38,30 @@
 	import { getErrorMessage } from '$lib/utils/api';
 	import type { ContextFile, ConversationSummary } from '$lib/types';
 
+	type Tab = 'history' | 'context' | 'control';
+	type Status = 'connected' | 'stopped' | 'unknown';
+
 	interface Props {
 		/** The focus agent this panel describes. */
 		agent: string;
 		/** The open conversation, highlighted in the history list. */
 		activeId?: string;
+		/** Tab the panel opens on; the chat header can return it to history. */
+		tab?: Tab;
 		onOpen: (id: string) => void;
 		onClose: () => void;
 		/** Opens the full-page editor for one context file. */
 		onOpenContext: (path: string) => void;
 	}
 
-	let { agent, activeId = '', onOpen, onClose, onOpenContext }: Props = $props();
+	let {
+		agent,
+		activeId = '',
+		tab = $bindable<Tab>('history'),
+		onOpen,
+		onClose,
+		onOpenContext
+	}: Props = $props();
 
 	const { t, locale } = useTranslation();
 
@@ -60,10 +72,6 @@
 	/** Dated memory notes, one Markdown file per day. */
 	const DATED_MEMORY = /^\d{4}-\d{2}-\d{2}\.md$/;
 
-	type Tab = 'history' | 'context' | 'control';
-	type Status = 'connected' | 'stopped' | 'unknown';
-
-	let tab = $state<Tab>('history');
 	let status = $state<Status>('unknown');
 
 	let items = $state<ConversationSummary[]>([]);

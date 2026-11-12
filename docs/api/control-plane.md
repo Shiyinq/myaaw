@@ -880,6 +880,7 @@ turning recording on: the trace database is opened once per process.
 | `GET` | `/agents/:name/conversations?search=&limit=&offset=` | paginated conversation list (`pinned`, `unfiled`, `folder`, `channel` filters) |
 | `GET` | `/agents/:name/conversations/activity?from=&to=` | per-day conversation counts for the dashboard activity map |
 | `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages |
+| `GET` | `/agents/:name/conversations/:id/attachments?limit=&offset=&kind=` | every file in the conversation, deduplicated by path |
 | `PATCH` | `/agents/:name/conversations/:id` | rename `{title}` |
 | `DELETE` | `/agents/:name/conversations/:id` | delete a conversation |
 | `PUT` | `/agents/:name/conversations/:id/pin` | pin or unpin `{pinned}` |
@@ -890,7 +891,7 @@ turning recording on: the trace database is opened once per process.
 | `PATCH` | `/agents/:name/chat-folders/:folder` | rename a folder `{name}` |
 | `DELETE` | `/agents/:name/chat-folders/:folder` | delete a folder and every chat inside it |
 
-**User scoping.** List, detail, rename, delete, pin, move, and every folder route use the `user_id` from `~/.myaaw/config/controlplane.json` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
+**User scoping.** List, detail, attachments, rename, delete, pin, move, and every folder route use the `user_id` from `~/.myaaw/config/controlplane.json` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
 
 **Search.** `search` matches the **title only**, case-insensitive for ASCII, and is applied before pagination. `total` reflects the filtered count.
 
@@ -966,6 +967,68 @@ curl "http://localhost:9000/agents/myfriend/conversations/conv-id?limit=20&offse
 ```
 
 The detail response adds `messages`, `total_messages`, `limit`, `offset`, and `has_more`. `limit=0` returns all messages; otherwise the maximum page size is 500.
+
+### Attachments
+
+`GET /agents/:name/conversations/:id/attachments` lists the files of one
+conversation, oldest first, one entry per path. It reads the stored transcript
+and combines:
+
+- files the agent delivered (`attachments`: `path`, `kind`, `mime_type`, `size`);
+- files the user uploaded (`uploads`). The transcript stores their absolute host
+  path, while the response exposes the virtual path from `/user/uploads/` on, so
+  the dashboard can fetch them through `/fs/raw`.
+
+Entries without a fetchable path are skipped: byte-only legacy attachments, and
+uploads outside `/user/uploads/` (which would also leak host paths). The same
+path appearing in several turns collapses to the first turn it appeared in.
+
+```bash
+curl "http://localhost:9000/agents/myfriend/conversations/conv-id/attachments?limit=50&offset=0&kind=image,video" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "items": [
+    {
+      "path": "/home/workspace/out/report.pdf",
+      "file_name": "report.pdf",
+      "mime_type": "application/pdf",
+      "kind": "pdf",
+      "size": 1048576,
+      "origin": "agent",
+      "message_id": "…",
+      "message_index": 12,
+      "created_at": "2026-11-12T18:00:00Z"
+    }
+  ],
+  "total": 42,
+  "offset": 0,
+  "has_more": true
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `path` | virtual path (`/home/…` for agent files, `/user/uploads/…` for user uploads) |
+| `kind` | rendering kind: `image`, `video`, `audio`, `pdf`, or `file`; derived from the MIME type or extension when an older entry has none |
+| `origin` | `agent` for delivered files, `user` for uploads |
+| `message_id` | transcript entry id that carried the file, when stored |
+| `message_index` | position of that entry in the whole transcript, used by "Show in chat" |
+| `created_at` | UTC timestamp of the carrying turn; omitted for turns written before timestamps existed |
+
+- `limit` defaults to 50 and never exceeds 200; `offset` walks the deduplicated
+  list from the oldest entry. Pages never overlap because the order is stable
+  (`created_at`, then `message_index`).
+- `kind` is a comma-separated filter over the rendering kinds. `documents`
+  expands to `pdf,file`; any unknown value is a `400`.
+- `total` counts every file after deduplication **and** kind filtering, not the
+  size of this page. A client can request `limit=1` just to read `total` (the
+  dashboard badge does this) and still get the full count; `has_more` only says
+  whether the returned page has another page after it.
+- Ownership matches the detail route: another user's conversation is `403`, a
+  missing id is `404`.
 
 ### Rename
 
@@ -1470,7 +1533,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models`, `GET /models/capabilities` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
-| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read` |
+| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `GET /conversations/:id/attachments?limit=&offset=&kind=`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read` |
 | Chat folders | `GET /chat-folders`, `POST /chat-folders`, `PATCH /chat-folders/:folder`, `DELETE /chat-folders/:folder` |
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |

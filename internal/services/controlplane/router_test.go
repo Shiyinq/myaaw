@@ -1081,6 +1081,98 @@ func TestRouterConversationManagement(t *testing.T) {
 	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine", token, "", fiber.StatusNotFound, nil)
 }
 
+func TestRouterConversationAttachments(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	dbDir := filepath.Join(home, ".myaaw", "agents", "myfriend", "database")
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatalf("mkdir database: %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", filepath.Join(dbDir, "myaaw.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE conversations (
+		id TEXT PRIMARY KEY, user_id INTEGER, title TEXT, messages TEXT, active INTEGER, created_at DATETIME, updated_at DATETIME
+	)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	messages := `[
+		{"role":"user","id":"m1","content":"see photo","uploads":[
+			{"name":"photo.jpg","path":"/home/someone/.myaaw/agents/myfriend/user/uploads/conv-mine/m1/photo.jpg","mime_type":"image/jpeg","size":2048}
+		]},
+		{"role":"assistant","content":"report","attachments":[
+			{"file_name":"report.pdf","path":"/home/workspace/out/report.pdf","kind":"pdf","size":4096}
+		]}
+	]`
+	now := time.Now().UTC()
+	for _, row := range []struct {
+		id     string
+		userID int
+		body   string
+	}{
+		{"conv-mine", 0, messages},
+		{"conv-other", 7, messages},
+	} {
+		if _, err := db.Exec(
+			`INSERT INTO conversations (id, user_id, title, messages, active, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`,
+			row.id, row.userID, row.id, row.body, 1, now, now,
+		); err != nil {
+			t.Fatalf("insert %s: %v", row.id, err)
+		}
+	}
+	db.Close()
+
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	type attachmentPage struct {
+		Items []struct {
+			Path         string `json:"path"`
+			FileName     string `json:"file_name"`
+			Kind         string `json:"kind"`
+			Origin       string `json:"origin"`
+			MessageIndex int    `json:"message_index"`
+		} `json:"items"`
+		Total   int  `json:"total"`
+		Offset  int  `json:"offset"`
+		HasMore bool `json:"has_more"`
+	}
+
+	var page attachmentPage
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine/attachments", token, "", fiber.StatusOK, &page)
+	if page.Total != 2 || len(page.Items) != 2 || page.HasMore {
+		t.Fatalf("attachments = %+v", page)
+	}
+	if page.Items[0].Origin != "user" || page.Items[0].Path != "/user/uploads/conv-mine/m1/photo.jpg" {
+		t.Fatalf("upload row = %+v", page.Items[0])
+	}
+	if page.Items[1].Origin != "agent" || page.Items[1].Kind != "pdf" || page.Items[1].MessageIndex != 1 {
+		t.Fatalf("agent row = %+v", page.Items[1])
+	}
+
+	var images attachmentPage
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine/attachments?kind=image", token, "", fiber.StatusOK, &images)
+	if images.Total != 1 || len(images.Items) != 1 || images.Items[0].Kind != "image" {
+		t.Fatalf("images = %+v", images)
+	}
+
+	var first attachmentPage
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine/attachments?limit=1", token, "", fiber.StatusOK, &first)
+	if first.Total != 2 || len(first.Items) != 1 || !first.HasMore {
+		t.Fatalf("first page = %+v", first)
+	}
+
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine/attachments?kind=bogus", token, "", fiber.StatusBadRequest, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-other/attachments", token, "", fiber.StatusForbidden, nil)
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/missing/attachments", token, "", fiber.StatusNotFound, nil)
+}
+
 func TestRouterConversationActivity(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	home, err := os.UserHomeDir()

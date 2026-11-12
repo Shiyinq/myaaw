@@ -122,6 +122,31 @@ export interface ConversationTurn {
 	text: string;
 }
 
+/** One file that appears in a conversation, from either side. */
+export interface ConversationAttachment {
+	/** Virtual path the dashboard fetches through `/fs/raw`. */
+	path: string;
+	file_name: string;
+	mime_type?: string;
+	/** Rendering kind: image, video, audio, pdf, or file. */
+	kind: string;
+	size?: number;
+	origin: 'agent' | 'user';
+	/** Transcript entry that carried the file, used by "Show in chat". */
+	message_id?: string;
+	message_index: number;
+	created_at?: string;
+}
+
+/** One page of a conversation's attachments, oldest first. */
+export interface ConversationAttachmentPage {
+	items: ConversationAttachment[];
+	/** Every file after deduplication and kind filtering. */
+	total: number;
+	offset: number;
+	has_more: boolean;
+}
+
 export interface ConversationDetail {
 	id: string;
 	user_id: number;

@@ -146,6 +146,7 @@ func NewApp() (*fiber.App, error) {
 	app.Patch("/agents/:name/chat-folders/:folder", h.RenameChatFolder)
 	app.Delete("/agents/:name/chat-folders/:folder", h.DeleteChatFolder)
 	app.Get("/agents/:name/conversations/:id", h.GetConversation)
+	app.Get("/agents/:name/conversations/:id/attachments", h.ListConversationAttachments)
 	app.Patch("/agents/:name/conversations/:id", h.RenameConversation)
 	app.Delete("/agents/:name/conversations/:id", h.DeleteConversation)
 	app.Put("/agents/:name/conversations/:id/pin", h.PinConversation)

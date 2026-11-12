@@ -168,6 +168,78 @@ func (h *Handler) GetConversation(c fiber.Ctx) error {
 	return c.JSON(detail)
 }
 
+// ListConversationAttachments returns the files that appear in one
+// conversation, oldest first, deduplicated by path.
+// @Summary      List conversation attachments
+// @Description  Scans the stored transcript and returns agent deliveries and user uploads. `kind` filters on the rendering kind (image, video, audio, pdf, file).
+// @Tags         Conversations
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        id path string true "Conversation ID"
+// @Param        user_id query int false "User ID (defaults to the authenticated user)"
+// @Param        limit query int false "Page size (default 50, max 200)"
+// @Param        offset query int false "Offset from the oldest attachment (default 0)"
+// @Param        kind query string false "Comma-separated rendering kinds"
+// @Success      200 {object} service.ConversationAttachments
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      403 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /agents/{name}/conversations/{id}/attachments [get]
+func (h *Handler) ListConversationAttachments(c fiber.Ctx) error {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+
+	kinds, err := attachmentKinds(c.Query("kind"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	page, err := h.conversations.Attachments(
+		c.Params("name"), c.Params("id"), h.requestUserID(c), limit, offset, kinds,
+	)
+	if err != nil {
+		return conversationError(c, err)
+	}
+	return c.JSON(page)
+}
+
+// attachmentKinds parses the optional kind filter. Aliases keep the dashboard's
+// Documents chip honest without teaching the service about UI wording.
+func attachmentKinds(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	kinds := make([]string, 0, 4)
+	seen := make(map[string]bool)
+	for _, entry := range strings.Split(raw, ",") {
+		kind := strings.ToLower(strings.TrimSpace(entry))
+		switch kind {
+		case "":
+			continue
+		case "image", "video", "audio", "pdf", "file":
+			if !seen[kind] {
+				seen[kind] = true
+				kinds = append(kinds, kind)
+			}
+			continue
+		case "document", "documents":
+			// The dashboard's Documents chip covers PDFs and generic files.
+			for _, expanded := range []string{"pdf", "file"} {
+				if !seen[expanded] {
+					seen[expanded] = true
+					kinds = append(kinds, expanded)
+				}
+			}
+			continue
+		default:
+			return nil, errors.New("kind must be image, video, audio, pdf, or file")
+		}
+	}
+	return kinds, nil
+}
+
 // MarkConversationRead stores the newest turn the reader has acknowledged.
 // @Summary      Mark conversation read
 // @Description  Stores the read watermark shared by every device. `at` is optional (RFC3339); omitted means now. The value never moves backwards and is clamped to the conversation's own updated_at.

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	pathpkg "path"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -108,6 +110,35 @@ type ConversationDetail struct {
 	// labels per window, cap the list with a `turns_truncated` flag, or lower
 	// turnTextLimit.
 	Turns []ConversationTurn `json:"turns"`
+}
+
+// ConversationAttachment is one file that appears in a conversation, either
+// delivered by the agent or uploaded by the user.
+//
+// Path is always a virtual path the dashboard can fetch through /fs/raw, so
+// user uploads stored under <agent>/user/uploads are exposed from that folder
+// on. MessageIndex points at the transcript entry that carried the file, which
+// is what "Show in chat" scrolls to.
+type ConversationAttachment struct {
+	Path         string     `json:"path"`
+	FileName     string     `json:"file_name"`
+	MimeType     string     `json:"mime_type,omitempty"`
+	Kind         string     `json:"kind"`
+	Size         int64      `json:"size,omitempty"`
+	Origin       string     `json:"origin"`
+	MessageID    string     `json:"message_id,omitempty"`
+	MessageIndex int        `json:"message_index"`
+	CreatedAt    *time.Time `json:"created_at,omitempty"`
+}
+
+// ConversationAttachments is one page of the files found in a conversation.
+// Total counts every file after deduplication and kind filtering, so a client
+// can page without re-reading the transcript and use total for its badge.
+type ConversationAttachments struct {
+	Items   []ConversationAttachment `json:"items"`
+	Total   int                      `json:"total"`
+	Offset  int                      `json:"offset"`
+	HasMore bool                     `json:"has_more"`
 }
 
 // ActivityDay is one calendar day with the number of conversations created
@@ -471,6 +502,210 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 	detail.Offset = offset
 	detail.HasMore = offset+len(detail.Messages) < detail.TotalMessages
 	return detail, nil
+}
+
+// Attachments lists every file in a conversation, oldest first, deduplicated by
+// path. It reads the stored transcript and scans it in Go: chat transcripts are
+// one JSON column, so there is no per-file table to query and a compact scan is
+// cheaper than shipping the whole transcript to a browser.
+//
+// limit defaults to 50 and is capped at 200; offset walks the deduplicated list.
+// kinds keeps only the listed rendering kinds (image, video, audio, pdf, file).
+func (s *ConversationService) Attachments(
+	agentName, id string,
+	userID, limit, offset int,
+	kinds []string,
+) (ConversationAttachments, error) {
+	page := ConversationAttachments{Items: []ConversationAttachment{}, Offset: 0}
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	db, err := openAgentDB(agentName)
+	if err != nil {
+		return page, err
+	}
+	if db == nil {
+		return page, ErrConversationNotFound
+	}
+	defer db.Close()
+
+	var (
+		owner        int
+		messagesJSON string
+	)
+	err = db.QueryRow(
+		`SELECT user_id, messages FROM conversations WHERE id = ? LIMIT 1`, id,
+	).Scan(&owner, &messagesJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return page, ErrConversationNotFound
+	}
+	if err != nil {
+		return page, err
+	}
+	if owner != userID {
+		return page, ErrConversationForbidden
+	}
+
+	var messages []provider.Message
+	if err := json.Unmarshal([]byte(messagesJSON), &messages); err != nil {
+		return page, err
+	}
+	messages = agent.MigrateLegacyTranscript(messages)
+
+	items := collectConversationAttachments(messages)
+	if len(kinds) > 0 {
+		allowed := make(map[string]bool, len(kinds))
+		for _, kind := range kinds {
+			allowed[kind] = true
+		}
+		filtered := items[:0]
+		for _, item := range items {
+			if allowed[item.Kind] {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+
+	page.Total = len(items)
+	page.Offset = offset
+	if offset > len(items) {
+		offset = len(items)
+		page.Offset = offset
+	}
+	end := offset + limit
+	if end > len(items) {
+		end = len(items)
+	}
+	page.Items = append(page.Items, items[offset:end]...)
+	page.HasMore = end < len(items)
+	return page, nil
+}
+
+// collectConversationAttachments walks a transcript in order and keeps the
+// first turn each path appears in. Agent deliveries come first because they are
+// stored on the answer that carried them; user uploads follow their own turn.
+func collectConversationAttachments(messages []provider.Message) []ConversationAttachment {
+	items := make([]ConversationAttachment, 0, 8)
+	seen := make(map[string]bool)
+
+	for index, message := range messages {
+		for _, attachment := range message.Attachments {
+			path := strings.TrimSpace(attachment.Path)
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			items = append(items, ConversationAttachment{
+				Path:         path,
+				FileName:     attachmentFileName(attachment.FileName, path),
+				MimeType:     attachment.MimeType,
+				Kind:         attachmentKind(attachment.Kind, attachment.MimeType, path),
+				Size:         attachment.Size,
+				Origin:       "agent",
+				MessageID:    message.ID,
+				MessageIndex: index,
+				CreatedAt:    message.CreatedAt,
+			})
+		}
+
+		for _, upload := range message.Uploads {
+			path := uploadVirtualPath(upload.Path)
+			// A path outside /user/uploads cannot be served by /fs/raw; leaving it
+			// out also keeps the agent's host paths out of the browser.
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			items = append(items, ConversationAttachment{
+				Path:         path,
+				FileName:     attachmentFileName(upload.Name, path),
+				MimeType:     upload.MimeType,
+				Kind:         attachmentKind("", upload.MimeType, path),
+				Size:         upload.Size,
+				Origin:       "user",
+				MessageID:    message.ID,
+				MessageIndex: index,
+				CreatedAt:    message.CreatedAt,
+			})
+		}
+	}
+
+	// The transcript is appended chronologically, so index order is already the
+	// 	oldest-first order. Sorting by created_at first keeps pages stable if a
+	// clock ever wrote a turn out of order, with the index as the tie-breaker.
+	sort.SliceStable(items, func(i, j int) bool {
+		left, right := items[i], items[j]
+		if left.CreatedAt != nil && right.CreatedAt != nil && !left.CreatedAt.Equal(*right.CreatedAt) {
+			return left.CreatedAt.Before(*right.CreatedAt)
+		}
+		return left.MessageIndex < right.MessageIndex
+	})
+	return items
+}
+
+// attachmentFileName falls back to the path's base name for entries stored
+// before file names were recorded.
+func attachmentFileName(name, path string) string {
+	if trimmed := strings.TrimSpace(name); trimmed != "" {
+		return trimmed
+	}
+	return pathpkg.Base(strings.ReplaceAll(path, "\\", "/"))
+}
+
+// attachmentKind normalises the stored rendering kind and derives one from the
+// MIME type or extension when an older entry has none.
+func attachmentKind(kind, mimeType, path string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "image", "video", "audio", "pdf", "file":
+		return strings.ToLower(strings.TrimSpace(kind))
+	}
+
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		return "image"
+	case strings.HasPrefix(mimeType, "video/"):
+		return "video"
+	case strings.HasPrefix(mimeType, "audio/"):
+		return "audio"
+	case mimeType == "application/pdf":
+		return "pdf"
+	case mimeType != "":
+		return "file"
+	}
+
+	switch strings.ToLower(pathpkg.Ext(path)) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".avif", ".ico":
+		return "image"
+	case ".mp4", ".m4v", ".webm", ".mov", ".mkv", ".avi", ".ogv":
+		return "video"
+	case ".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".opus":
+		return "audio"
+	case ".pdf":
+		return "pdf"
+	default:
+		return "file"
+	}
+}
+
+// uploadVirtualPath keeps a user upload addressable by the Files API. The
+// transcript stores the absolute path on the agent host, while /fs/raw speaks in
+// virtual roots, so the path from /user/uploads on is what the browser gets.
+func uploadVirtualPath(raw string) string {
+	path := strings.ReplaceAll(strings.TrimSpace(raw), "\\", "/")
+	if path == "" {
+		return ""
+	}
+	const marker = "/user/uploads/"
+	if index := strings.Index(path, marker); index >= 0 {
+		return path[index:]
+	}
+	return ""
 }
 
 // Rename updates a conversation title. It only affects conversations owned by userID.

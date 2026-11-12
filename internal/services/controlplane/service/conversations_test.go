@@ -221,6 +221,124 @@ func TestVisibleMessageCountSkipsToolRounds(t *testing.T) {
 	}
 }
 
+func TestConversationAttachmentsDedupeFilterAndPage(t *testing.T) {
+	dbPath := setupConversationAgent(t)
+
+	first := time.Date(2026, 11, 12, 18, 0, 0, 0, time.UTC)
+	second := first.Add(time.Minute)
+	third := first.Add(2 * time.Minute)
+	messages := []provider.Message{
+		{
+			Role: "user", ID: "m1", Content: "look", Version: 2, CreatedAt: &first,
+			Uploads: []provider.Upload{
+				{
+					Name:     "photo.jpg",
+					Path:     "/home/someone/.myaaw/agents/myfriend/user/uploads/conv-1/m1/photo.jpg",
+					MimeType: "image/jpeg",
+					Size:     2048,
+				},
+				// A legacy upload outside /user/uploads cannot be served by /fs/raw.
+				{Name: "elsewhere.bin", Path: "/tmp/elsewhere.bin"},
+			},
+		},
+		{
+			Role: "assistant", Content: "here is the report", Version: 2, CreatedAt: &second,
+			Attachments: []provider.MessageAttachment{{
+				FileName: "report.pdf",
+				MimeType: "application/pdf",
+				Path:     "/home/workspace/out/report.pdf",
+				Kind:     "pdf",
+				Size:     1048576,
+			}},
+		},
+		{
+			Role: "assistant", Content: "and again", Version: 2, CreatedAt: &third,
+			Attachments: []provider.MessageAttachment{
+				// The same path delivered twice collapses to its first turn.
+				{FileName: "report.pdf", Path: "/home/workspace/out/report.pdf", Kind: "pdf"},
+				{FileName: "shot.png", MimeType: "image/png", Path: "/home/workspace/screenshots/shot.png", Size: 123},
+				// Byte-only legacy attachments are skipped.
+				{FileName: "bytes-only.bin", Kind: "file"},
+			},
+		},
+	}
+	encoded, err := json.Marshal(messages)
+	if err != nil {
+		t.Fatalf("marshal messages: %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE conversations SET messages = ? WHERE id = 'conv-1'`, string(encoded)); err != nil {
+		t.Fatalf("update messages: %v", err)
+	}
+	db.Close()
+
+	conversations := NewConversationService()
+	page, err := conversations.Attachments("myfriend", "conv-1", 7, 10, 0, nil)
+	if err != nil {
+		t.Fatalf("Attachments: %v", err)
+	}
+	if page.Total != 3 || len(page.Items) != 3 || page.HasMore {
+		t.Fatalf("page = %+v", page)
+	}
+
+	photo := page.Items[0]
+	if photo.Origin != "user" || photo.Path != "/user/uploads/conv-1/m1/photo.jpg" {
+		t.Fatalf("photo = %+v", photo)
+	}
+	if photo.Kind != "image" || photo.FileName != "photo.jpg" || photo.MessageIndex != 0 || photo.MessageID != "m1" {
+		t.Fatalf("photo metadata = %+v", photo)
+	}
+
+	report := page.Items[1]
+	if report.Origin != "agent" || report.Kind != "pdf" || report.MessageIndex != 1 {
+		t.Fatalf("report = %+v", report)
+	}
+	if report.Size != 1048576 || report.MimeType != "application/pdf" {
+		t.Fatalf("report metadata = %+v", report)
+	}
+
+	shot := page.Items[2]
+	if shot.Kind != "image" || shot.MessageIndex != 2 || shot.FileName != "shot.png" {
+		t.Fatalf("shot = %+v", shot)
+	}
+
+	// Pages never overlap and the total stays deduplicated.
+	secondPage, err := conversations.Attachments("myfriend", "conv-1", 7, 1, 1, nil)
+	if err != nil {
+		t.Fatalf("Attachments page 2: %v", err)
+	}
+	if secondPage.Total != 3 || len(secondPage.Items) != 1 || !secondPage.HasMore {
+		t.Fatalf("second page = %+v", secondPage)
+	}
+	if secondPage.Items[0].Path != report.Path {
+		t.Fatalf("second page item = %+v", secondPage.Items[0])
+	}
+
+	images, err := conversations.Attachments("myfriend", "conv-1", 7, 10, 0, []string{"image"})
+	if err != nil {
+		t.Fatalf("Attachments images: %v", err)
+	}
+	if images.Total != 2 || len(images.Items) != 2 {
+		t.Fatalf("image filter = %+v", images)
+	}
+	for _, item := range images.Items {
+		if item.Kind != "image" {
+			t.Fatalf("kind filter leaked: %+v", images.Items)
+		}
+	}
+
+	if _, err := conversations.Attachments("myfriend", "conv-1", 8, 10, 0, nil); !errors.Is(err, ErrConversationForbidden) {
+		t.Fatalf("other user error = %v", err)
+	}
+	if _, err := conversations.Attachments("myfriend", "missing", 7, 10, 0, nil); !errors.Is(err, ErrConversationNotFound) {
+		t.Fatalf("missing conversation error = %v", err)
+	}
+}
+
 func TestConversationServiceList(t *testing.T) {
 	setupConversationAgent(t)
 	conversations := NewConversationService()
