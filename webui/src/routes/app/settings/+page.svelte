@@ -72,6 +72,16 @@
 		{ value: 'expanded', label: t('myaaw.settings.steps_expanded') }
 	]);
 
+	// The two send-while-streaming modes are mutually exclusive: turning one on
+	// switches the other off, and both may be off at once.
+	function setQueueMessages(next: boolean) {
+		preferences.update({ queueMessages: next, ...(next ? { interruptOnSend: false } : {}) });
+	}
+
+	function setInterruptOnSend(next: boolean) {
+		preferences.update({ interruptOnSend: next, ...(next ? { queueMessages: false } : {}) });
+	}
+
 	// The synthesiser list is empty until the browser announces it, so the card
 	// waits for the mount before claiming support.
 	let speechSupported = $state(false);
@@ -407,6 +417,29 @@
 				{@render choice(stepOptions, preferences.value.steps, (next) =>
 					preferences.update({ steps: next as 'summary' | 'expanded' })
 				)}
+			</div>
+
+			<div class="grid gap-5 border-t pt-5">
+				<div class="grid gap-1">
+					<Label>{t('myaaw.settings.chat_while_streaming')}</Label>
+					<p class="text-xs text-muted-foreground">
+						{t('myaaw.settings.chat_while_streaming_desc')}
+					</p>
+				</div>
+				<div class="flex flex-wrap gap-2">
+					{@render toggle(
+						t('myaaw.settings.queue_messages'),
+						t('myaaw.settings.queue_messages_desc'),
+						preferences.value.queueMessages,
+						setQueueMessages
+					)}
+					{@render toggle(
+						t('myaaw.settings.interrupt_on_send'),
+						t('myaaw.settings.interrupt_on_send_desc'),
+						preferences.value.interruptOnSend,
+						setInterruptOnSend
+					)}
+				</div>
 			</div>
 
 			<div class="flex flex-wrap gap-2">

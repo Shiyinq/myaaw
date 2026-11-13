@@ -322,6 +322,16 @@
 	// Whether the composer holds something worth sending; while a run streams the
 	// action button swaps from Stop to queue-send only once this is true.
 	let canSend = $derived(input.trim().length > 0 || pending.length > 0 || pendingFiles.length > 0);
+	// How a send is handled while the agent is still answering. The two modes are
+	// mutually exclusive in preferences; `none` leaves the composer editable but
+	// unsendable until the run stops.
+	let sendWhileStreaming = $derived<'queue' | 'interrupt' | 'none'>(
+		preferences.value.queueMessages
+			? 'queue'
+			: preferences.value.interruptOnSend
+				? 'interrupt'
+				: 'none'
+	);
 	// The key that promotes the queue head; the first row advertises it whenever the
 	// composer is empty, because that is when pressing it sends the first message.
 	let queueKeyLabel = $derived(
@@ -1548,7 +1558,10 @@
 			// does not inherit these messages.
 			localStorage.removeItem(draftQueueStorageKey(agent ?? '', ''));
 		} else {
-			queue = keep ? readDraftQueue(draftQueueStorageKey(agent ?? '', conversationId)) : [];
+			queue =
+				keep && preferences.value.queueMessages
+					? readDraftQueue(draftQueueStorageKey(agent ?? '', conversationId))
+					: [];
 		}
 		queueOpen = true;
 	});
@@ -1576,9 +1589,10 @@
 	});
 
 	// The queue is part of the draft too: a refresh, a menu switch, or another chat
-	// must bring back what was queued here but not sent yet.
+	// must bring back what was queued here but not sent yet. When the feature is off
+	// the stored queue is left untouched, so re-enabling it restores the messages.
 	$effect(() => {
-		if (!browser || !draftKey) return;
+		if (!browser || !draftKey || !preferences.value.queueMessages) return;
 		const key = draftStorageKey(agent ?? '', conversationId);
 		if (key !== draftKey) return;
 		const queueKey = draftQueueStorageKey(agent ?? '', conversationId);
@@ -2428,21 +2442,30 @@
 		}
 		if (!agent) return;
 
-		// While an answer streams nothing is blocked: the message joins the queue
-		// above the composer and starts on its own once the run settles.
+		// While an answer streams, the composer honours the chosen mode: queue the
+		// message, interrupt the run and send now, or (both off) just keep the text.
 		if (streaming) {
-			queue = [
-				...queue,
-				{
-					id: crypto.randomUUID(),
-					text,
-					quotes: [...quotes],
-					images: pending,
-					files: pendingFiles,
-					createdAt: new Date().toISOString()
-				}
-			];
-			queueOpen = true;
+			if (sendWhileStreaming === 'queue') {
+				queue = [
+					...queue,
+					{
+						id: crypto.randomUUID(),
+						text,
+						quotes: [...quotes],
+						images: pending,
+						files: pendingFiles,
+						createdAt: new Date().toISOString()
+					}
+				];
+				queueOpen = true;
+			} else if (sendWhileStreaming === 'interrupt') {
+				// The stop request is dispatched before the new stream, so the agent
+				// sees the interrupt first; starting the run here keeps the swap instant.
+				void activeRun?.stop();
+				if (!submit({ text, quotes: [...quotes], images: pending, files: pendingFiles })) return;
+			} else {
+				return;
+			}
 		} else if (!submit({ text, quotes: [...quotes], images: pending, files: pendingFiles })) {
 			return;
 		}
@@ -2459,7 +2482,7 @@
 	 * message continues the conversation without another action.
 	 */
 	function drainQueue() {
-		if (streaming || queue.length === 0) return;
+		if (!preferences.value.queueMessages || streaming || queue.length === 0) return;
 		const [next, ...rest] = queue;
 		queue = rest;
 		submit(next);
@@ -4901,7 +4924,7 @@
 												>
 													<Square class="h-4 w-4" />
 												</Button>
-											{:else if streaming}
+											{:else if streaming && sendWhileStreaming === 'queue'}
 												<Button
 													size="icon"
 													class="rounded-full"
@@ -4910,6 +4933,26 @@
 													title={t('myaaw.chat.queue_send')}
 												>
 													<ListEnd class="h-4 w-4" />
+												</Button>
+											{:else if streaming && sendWhileStreaming === 'interrupt'}
+												<Button
+													size="icon"
+													class="rounded-full"
+													onclick={send}
+													aria-label={t('myaaw.chat.send')}
+													title={t('myaaw.chat.send')}
+												>
+													<Send class="h-4 w-4" />
+												</Button>
+											{:else if streaming}
+												<Button
+													size="icon"
+													class="rounded-full"
+													disabled
+													aria-label={t('myaaw.chat.send')}
+													title={t('myaaw.chat.send')}
+												>
+													<Send class="h-4 w-4" />
 												</Button>
 											{:else}
 												<Button
