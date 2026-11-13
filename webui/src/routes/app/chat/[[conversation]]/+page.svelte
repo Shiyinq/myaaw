@@ -1534,9 +1534,20 @@
 			}
 		};
 		run.view = view;
+		// Run completion outside this reactive effect: `onDone` reads and writes
+		// page state, and tracking those reads would re-trigger the effect forever.
+		if (run.finishedAt > 0) queueMicrotask(() => run.notifyDone());
 		return () => {
 			if (run.view === view) run.view = null;
 		};
+	});
+
+	// A reloaded tab restores the run before the transcript page arrives. Seed the
+	// run with those rows so the previous turns do not disappear while it streams.
+	$effect(() => {
+		const run = activeRun;
+		if (!run?.resumed || historyItems.length === 0) return;
+		if (run.adopt(historyItems) && stickToBottom) scrollToBottom();
 	});
 
 	// An answer just ended: the reader is most likely typing next, and the mark

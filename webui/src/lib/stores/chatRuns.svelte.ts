@@ -125,6 +125,8 @@ export class ChatRun {
 	private counter = 0;
 	private groupStart = 0;
 	private groupLastStep = '';
+	private adopted = false;
+	private doneNotified = false;
 
 	constructor(agent: string, requestId: string, resumed = false) {
 		this.agent = agent;
@@ -248,6 +250,28 @@ export class ChatRun {
 			this.finishedAt = Date.now();
 			this.controller = null;
 		});
+	}
+
+	/**
+	 * Runs the page's completion callback once. A restored run can finish before
+	 * the page attaches its view, so the page calls this after attaching.
+	 */
+	notifyDone() {
+		if (this.doneNotified || !this.view) return;
+		this.doneNotified = true;
+		this.view.onDone?.(this);
+	}
+
+	/**
+	 * Seeds a resumed run with the transcript the page already loaded. A reloaded
+	 * tab starts the run with only the replayed events, so without this the live
+	 * answer would replace the whole conversation until the run ends.
+	 */
+	adopt(earlier: ChatItem[]): boolean {
+		if (this.adopted || earlier.length === 0) return false;
+		this.adopted = true;
+		this.items = [...earlier, ...this.items];
+		return true;
 	}
 
 	/**
@@ -404,7 +428,7 @@ export class ChatRun {
 					item.kind === 'text' && !item.createdAt ? { ...item, createdAt: stampedAt } : item
 				);
 				this.usage = data?.usage ?? null;
-				this.view?.onDone?.(this);
+				this.notifyDone();
 				break;
 			}
 			case 'error': {
@@ -438,17 +462,19 @@ export class ChatRun {
 	 */
 	async stop() {
 		if (!this.streaming) return;
-		try {
-			await chatApi.stop(this.agent, this.requestId);
-		} catch {
-			// The run may already be gone; the abort below still detaches.
-		}
+		// Close this tab's stream first. The server request is best-effort, and a
+		// slow control plane must not make the Stop button feel dead.
 		this.controller?.abort();
 		this.controller = null;
 		this.endRun();
 		this.finishReason = 'stopped';
 		this.streaming = false;
 		this.finishedAt = Date.now();
+		try {
+			await chatApi.stop(this.agent, this.requestId);
+		} catch {
+			// The run may already be gone; the abort above still detached this tab.
+		}
 	}
 }
 
