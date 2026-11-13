@@ -1452,22 +1452,27 @@
 	// outer collapsible run. Assistant text in between stays plain text, only
 	// the last answer of each run is shown outside the group.
 	let rendered: TimelineRow[] = $derived.by(() => {
+		// While the answer is still streaming, the last text may be followed by more
+		// tool calls, so nothing is the final answer yet. Treating it as one would
+		// split the process into several "Completed" groups mid-run.
 		const answers = new Set<number>();
-		let pending = -1;
-		items.forEach((item, index) => {
-			if (item.kind === 'user') {
-				if (pending >= 0) answers.add(pending);
-				pending = -1;
-			} else if (item.kind === 'text') {
-				pending = index;
-			}
-		});
-		if (pending >= 0) answers.add(pending);
+		if (!streaming) {
+			let pending = -1;
+			items.forEach((item, index) => {
+				if (item.kind === 'user') {
+					if (pending >= 0) answers.add(pending);
+					pending = -1;
+				} else if (item.kind === 'text') {
+					pending = index;
+				}
+			});
+			if (pending >= 0) answers.add(pending);
+		}
 
 		const rows: TimelineRow[] = [];
 		let steps: Item[] = [];
 		let lines: string[] = [];
-		const flush = () => {
+		const flush = (live = false) => {
 			if (steps.length > 0) {
 				const first = steps[0];
 				rows.push({
@@ -1476,6 +1481,7 @@
 						key: `run-${first.localId ?? rows.length}`,
 						steps: [...steps],
 						running:
+							(live && streaming) ||
 							steps.some((step) => step.running) ||
 							steps.some((step) => step.localId === openGroup),
 						durationMs: steps.find((step) => step.group_duration_ms !== undefined)
@@ -1504,7 +1510,7 @@
 				rows.push({ kind: 'item', item });
 			}
 		});
-		flush();
+		flush(true);
 		return rows;
 	});
 
