@@ -71,6 +71,7 @@
 		Globe,
 		HeartPulse,
 		History,
+		ListEnd,
 		Loader2,
 		MessageSquarePlus,
 		Mic,
@@ -164,6 +165,8 @@
 	}
 
 	const MAX_IMAGES = 6;
+	// A saved queue is bounded so a long-lived draft cannot grow without limit.
+	const MAX_QUEUED_MESSAGES = 20;
 	const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 	const MAX_IMAGE_EDGE = 1600;
 	// Raster formats only: the browser re-encodes them to JPEG, and SVG/GIF
@@ -316,12 +319,20 @@
 	let switchingApproval = $state(false);
 	let pending = $state<PendingImage[]>([]);
 	let pendingFiles = $state<PendingFile[]>([]);
+	// Whether the composer holds something worth sending; while a run streams the
+	// action button swaps from Stop to queue-send only once this is true.
+	let canSend = $derived(input.trim().length > 0 || pending.length > 0 || pendingFiles.length > 0);
+	// The key that promotes the queue head; the first row advertises it whenever the
+	// composer is empty, because that is when pressing it sends the first message.
+	let queueKeyLabel = $derived(
+		formatShortcut(preferences.value.sendKey === 'mod-enter' ? 'mod+enter' : 'enter')
+	);
 	// Excerpts the reader highlighted in an agent reply and attached to the next
 	// message; the whole set travels with one send.
 	let quotes = $state<AskQuote[]>([]);
 	let askCounter = 0;
-	// Messages sent while a run streams wait here and take over one at a time, so
-	// the reader never has to stop the agent to keep typing.
+	// Messages sent while a run streams wait here. When a response finishes the
+	// first one goes out on its own, so the conversation keeps moving.
 	let queue = $state<QueuedMessage[]>([]);
 	let queueOpen = $state(true);
 	// The floating Ask button, anchored to the current range in viewport units.
@@ -1378,9 +1389,6 @@
 
 		loadKey = key;
 		conversationId = currentConversation;
-		// A queue belongs to the conversation it was typed in.
-		queue = [];
-		queueOpen = true;
 		focusContextPath = '';
 		previewAttachment = null;
 		classicAttachmentsOpen = false;
@@ -1418,6 +1426,11 @@
 
 	function draftQuotesStorageKey(who: string, id: string) {
 		return `myaaw_draft_quotes:${who}:${id || 'new'}`;
+	}
+
+	/** Queued messages ride with the draft, so a refresh keeps what was not sent yet. */
+	function draftQueueStorageKey(who: string, id: string) {
+		return `myaaw_draft_queue:${who}:${id || 'new'}`;
 	}
 
 	/** Restores excerpts saved with a draft, dropping anything malformed. */
@@ -1460,10 +1473,66 @@
 		}, 0);
 	}
 
+	/** Restores the messages queued in a conversation, dropping anything malformed. */
+	function readDraftQueue(key: string): QueuedMessage[] {
+		if (!browser) return [];
+		try {
+			const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
+			if (!Array.isArray(parsed)) return [];
+			const restored: QueuedMessage[] = [];
+			for (const item of parsed) {
+				if (!item || typeof item !== 'object') continue;
+				const entry = item as Partial<QueuedMessage>;
+				const text = typeof entry.text === 'string' ? entry.text : '';
+				const images = Array.isArray(entry.images)
+					? entry.images.filter(
+							(image) =>
+								!!image && typeof image.base64 === 'string' && typeof image.dataUrl === 'string'
+						)
+					: [];
+				const files = Array.isArray(entry.files)
+					? entry.files.filter(
+							(file) => !!file && typeof file.base64 === 'string' && typeof file.name === 'string'
+						)
+					: [];
+				if (!text.trim() && images.length === 0 && files.length === 0) continue;
+
+				const quotes = Array.isArray(entry.quotes)
+					? entry.quotes.filter(
+							(quote): quote is AskQuote =>
+								!!quote &&
+								typeof quote === 'object' &&
+								typeof (quote as AskQuote).text === 'string' &&
+								['answer', 'thinking', 'tool'].includes((quote as AskQuote).source)
+						)
+					: [];
+
+				restored.push({
+					id: typeof entry.id === 'string' && entry.id ? entry.id : crypto.randomUUID(),
+					text,
+					quotes,
+					images,
+					files,
+					createdAt:
+						typeof entry.createdAt === 'string' && entry.createdAt
+							? entry.createdAt
+							: new Date().toISOString()
+				});
+				if (restored.length >= MAX_QUEUED_MESSAGES) break;
+			}
+			return restored;
+		} catch {
+			return [];
+		}
+	}
+
 	$effect(() => {
 		if (!browser) return;
 		const key = draftStorageKey(agent ?? '', conversationId);
 		if (key === draftKey) return;
+		// A new chat's first answer binds its conversation id: whatever was queued
+		// before that belongs to the chat being created, not to the `new` slot.
+		const carried = draftKey === draftStorageKey(agent ?? '', '');
 		draftKey = key;
 		const keep = preferences.value.keepDrafts;
 		input = keep ? (localStorage.getItem(key) ?? '') : '';
@@ -1474,6 +1543,14 @@
 		askCounter = nextAskCounter(restored);
 		askAnchor = null;
 		clearQuoteFlash();
+		if (keep && carried && queue.length > 0) {
+			// The queue follows the id; drop the temporary key so the next new chat
+			// does not inherit these messages.
+			localStorage.removeItem(draftQueueStorageKey(agent ?? '', ''));
+		} else {
+			queue = keep ? readDraftQueue(draftQueueStorageKey(agent ?? '', conversationId)) : [];
+		}
+		queueOpen = true;
 	});
 
 	$effect(() => {
@@ -1495,6 +1572,25 @@
 			localStorage.setItem(quotesKey, JSON.stringify(quotes));
 		} else {
 			localStorage.removeItem(quotesKey);
+		}
+	});
+
+	// The queue is part of the draft too: a refresh, a menu switch, or another chat
+	// must bring back what was queued here but not sent yet.
+	$effect(() => {
+		if (!browser || !draftKey) return;
+		const key = draftStorageKey(agent ?? '', conversationId);
+		if (key !== draftKey) return;
+		const queueKey = draftQueueStorageKey(agent ?? '', conversationId);
+		if (preferences.value.keepDrafts && queue.length > 0) {
+			try {
+				localStorage.setItem(queueKey, JSON.stringify(queue));
+			} catch {
+				// Attachments can outgrow the storage quota; keep the queue in memory
+				// rather than showing it out of sync with what would be restored.
+			}
+		} else {
+			localStorage.removeItem(queueKey);
 		}
 	});
 
@@ -1578,12 +1674,15 @@
 	let completedTimer: ReturnType<typeof setTimeout> | undefined;
 	$effect(() => {
 		const now = streaming;
+		const run = activeRun;
 		if (wasStreaming && !now) {
 			void focusComposer();
-			// The answer just ended (finished, stopped or failed), so the next queued
-			// message takes over. Deferred outside this tracking effect: draining
-			// starts a run, and that must not look like a dependency.
-			queueMicrotask(() => untrack(drainQueue));
+			// The response just ended (finished, stopped or failed), so the head of the
+			// queue goes out next. A run picked up after a reload does not drain: the
+			// reader refreshed, so the queue must stay exactly as it was. Deferred
+			// outside this tracking effect: draining starts a run, and that must not
+			// look like a dependency.
+			if (!run?.resumed) queueMicrotask(() => untrack(drainQueue));
 			if (!runError && !error && preferences.value.notifyEnabled) {
 				completed = true;
 				clearTimeout(completedTimer);
@@ -2320,7 +2419,14 @@
 		tts.stop();
 		cancelEdit();
 		const text = input.trim();
-		if ((!text && pending.length === 0 && pendingFiles.length === 0) || !agent) return;
+		if (!text && pending.length === 0 && pendingFiles.length === 0) {
+			// Enter on an empty composer promotes the head of the queue instead of
+			// doing nothing, so the reader can keep the agent moving with one key.
+			const [next] = queue;
+			if (next) sendQueuedNow(next);
+			return;
+		}
+		if (!agent) return;
 
 		// While an answer streams nothing is blocked: the message joins the queue
 		// above the composer and starts on its own once the run settles.
@@ -2349,8 +2455,8 @@
 	}
 
 	/**
-	 * Sends the next queued message once the current run settles. Runs drain one
-	 * at a time, because each answer streams into its own turn.
+	 * Sends the head of the queue when a response settles, so the reader's next
+	 * message continues the conversation without another action.
 	 */
 	function drainQueue() {
 		if (streaming || queue.length === 0) return;
@@ -2359,6 +2465,10 @@
 		submit(next);
 	}
 
+	/**
+	 * Removes one queued message. Send now and the drain above both do the same
+	 * thing when it is time for that message to go out.
+	 */
 	function removeQueued(id: string) {
 		queue = queue.filter((item) => item.id !== id);
 	}
@@ -2531,8 +2641,11 @@
 		input = '';
 		quotes = [];
 		askAnchor = null;
+		// A fresh chat starts without a queue; the stored `new` slot is dropped so
+		// the draft-switch effect does not bring it back.
 		queue = [];
 		queueOpen = true;
+		if (browser) localStorage.removeItem(draftQueueStorageKey(agent ?? '', ''));
 		focusContextPath = '';
 		previewAttachment = null;
 		attachmentCount = 0;
@@ -4341,7 +4454,7 @@
 											</div>
 											{#if queueOpen}
 												<ul class="mt-1.5 flex flex-col gap-1">
-													{#each queue as item (item.id)}
+													{#each queue as item, index (item.id)}
 														{@const attachments = item.images.length + item.files.length}
 														<li
 															class="flex items-center gap-2 rounded-lg border bg-muted/30 py-1 pr-1 pl-2.5"
@@ -4371,6 +4484,13 @@
 															>
 																<Send class="h-3 w-3" />
 																{t('myaaw.chat.queue_send_now')}
+																{#if index === 0 && !canSend}
+																	<kbd
+																		class="ml-0.5 hidden rounded border border-border/60 bg-background px-1 py-px font-sans text-[9px] font-normal text-muted-foreground sm:inline"
+																	>
+																		{queueKeyLabel}
+																	</kbd>
+																{/if}
 															</Button>
 															<button
 																type="button"
@@ -4770,7 +4890,7 @@
 													</DropdownMenu.Item>
 												</DropdownMenu.Content>
 											</DropdownMenu.Root>
-											{#if streaming}
+											{#if streaming && !canSend}
 												<Button
 													size="icon"
 													variant="destructive"
@@ -4781,19 +4901,28 @@
 												>
 													<Square class="h-4 w-4" />
 												</Button>
+											{:else if streaming}
+												<Button
+													size="icon"
+													class="rounded-full"
+													onclick={send}
+													aria-label={t('myaaw.chat.queue_send')}
+													title={t('myaaw.chat.queue_send')}
+												>
+													<ListEnd class="h-4 w-4" />
+												</Button>
+											{:else}
+												<Button
+													size="icon"
+													class="rounded-full"
+													onclick={send}
+													disabled={!canSend}
+													aria-label={t('myaaw.chat.send')}
+													title={t('myaaw.chat.send')}
+												>
+													<Send class="h-4 w-4" />
+												</Button>
 											{/if}
-											<Button
-												size="icon"
-												class="rounded-full"
-												onclick={send}
-												disabled={!input.trim() &&
-													pending.length === 0 &&
-													pendingFiles.length === 0}
-												aria-label={streaming ? t('myaaw.chat.queue_send') : t('myaaw.chat.send')}
-												title={streaming ? t('myaaw.chat.queue_send') : t('myaaw.chat.send')}
-											>
-												<Send class="h-4 w-4" />
-											</Button>
 										</div>
 									</div>
 									<div
