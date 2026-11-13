@@ -19,6 +19,7 @@
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { cn } from '$lib/utils';
+	import ProjectCard from '$lib/components/app/ProjectCard.svelte';
 	import type { ConversationAttachment } from '$lib/types';
 
 	interface Props {
@@ -49,9 +50,10 @@
 	/** Files per page, matching the conversation list. */
 	const PAGE = 50;
 
-	type Filter = 'all' | 'images' | 'videos' | 'audio' | 'documents';
+	type Filter = 'all' | 'projects' | 'images' | 'videos' | 'audio' | 'documents';
 	const FILTERS: { id: Filter; kinds: string }[] = [
 		{ id: 'all', kinds: '' },
+		{ id: 'projects', kinds: 'project' },
 		{ id: 'images', kinds: 'image' },
 		{ id: 'videos', kinds: 'video' },
 		{ id: 'audio', kinds: 'audio' },
@@ -200,6 +202,8 @@
 
 	function filterLabel(id: Filter): string {
 		switch (id) {
+			case 'projects':
+				return t('myaaw.chat.attachments_filter_projects');
 			case 'images':
 				return t('myaaw.chat.attachments_filter_images');
 			case 'videos':
@@ -290,49 +294,62 @@
 			<ul class="space-y-0.5">
 				{#each items as item (item.path)}
 					<li class="flex items-center gap-1 rounded-lg hover:bg-muted/60">
-						<button
-							type="button"
-							class="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
-							title={item.path}
-							onclick={() => onOpen(item)}
-						>
-							{#if item.kind === 'image'}
-								<img
-									src={thumbSrc(item)}
-									alt=""
-									loading="lazy"
-									draggable="false"
-									class="h-10 w-10 shrink-0 rounded-md border object-cover"
-									onerror={() => retryImage(item)}
-								/>
-							{:else}
-								{@const Icon = iconFor(item.kind)}
-								<span
-									class="grid h-10 w-10 shrink-0 place-items-center rounded-md border bg-muted/50 text-muted-foreground"
-								>
-									<Icon class="h-4 w-4" />
-								</span>
-							{/if}
-							<span class="min-w-0 flex-1">
-								<span class="block truncate text-xs font-medium">{item.file_name}</span>
-								<span class="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+						{#if item.kind === 'project'}
+							<ProjectCard
+								{agent}
+								path={item.path}
+								name={item.file_name}
+								projectType={item.project_type}
+								size={item.size}
+								variant="row"
+							/>
+						{:else}
+							<button
+								type="button"
+								class="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+								title={item.path}
+								onclick={() => onOpen(item)}
+							>
+								{#if item.kind === 'image'}
+									<img
+										src={thumbSrc(item)}
+										alt=""
+										loading="lazy"
+										draggable="false"
+										class="h-10 w-10 shrink-0 rounded-md border object-cover"
+										onerror={() => retryImage(item)}
+									/>
+								{:else}
+									{@const Icon = iconFor(item.kind)}
 									<span
-										class={cn(
-											'shrink-0 rounded-full border px-1.5 py-px font-medium',
-											item.origin === 'agent' ? 'border-primary/30 bg-primary/10 text-primary' : ''
-										)}
+										class="grid h-10 w-10 shrink-0 place-items-center rounded-md border bg-muted/50 text-muted-foreground"
 									>
-										{item.origin === 'agent'
-											? t('myaaw.chat.attachments_from_agent')
-											: t('myaaw.chat.attachments_from_you')}
+										<Icon class="h-4 w-4" />
 									</span>
-									{#if sizeLabel(item.size)}
-										<span class="shrink-0">{sizeLabel(item.size)}</span>
-									{/if}
-									<ChatTime at={item.created_at ?? ''} class="truncate text-[10px]" />
+								{/if}
+								<span class="min-w-0 flex-1">
+									<span class="block truncate text-xs font-medium">{item.file_name}</span>
+									<span class="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+										<span
+											class={cn(
+												'shrink-0 rounded-full border px-1.5 py-px font-medium',
+												item.origin === 'agent'
+													? 'border-primary/30 bg-primary/10 text-primary'
+													: ''
+											)}
+										>
+											{item.origin === 'agent'
+												? t('myaaw.chat.attachments_from_agent')
+												: t('myaaw.chat.attachments_from_you')}
+										</span>
+										{#if sizeLabel(item.size)}
+											<span class="shrink-0">{sizeLabel(item.size)}</span>
+										{/if}
+										<ChatTime at={item.created_at ?? ''} class="truncate text-[10px]" />
+									</span>
 								</span>
-							</span>
-						</button>
+							</button>
+						{/if}
 						<button
 							type="button"
 							class="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"

@@ -18,6 +18,9 @@ func RequireAuth(auth *service.AuthService) fiber.Handler {
 			if mediaSignatureAllowed(c, auth) {
 				return c.Next()
 			}
+			if projectPreviewAllowed(c, auth) {
+				return c.Next()
+			}
 			if isRawMediaPath(c) && (c.Query("exp") != "" || c.Query("sig") != "") {
 				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 					"error": "invalid or expired media signature",
@@ -31,6 +34,9 @@ func RequireAuth(auth *service.AuthService) fiber.Handler {
 			return c.Next()
 		}
 		if mediaSignatureAllowed(c, auth) {
+			return c.Next()
+		}
+		if projectPreviewAllowed(c, auth) {
 			return c.Next()
 		}
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
@@ -56,6 +62,21 @@ func mediaSignatureAllowed(c fiber.Ctx, auth *service.AuthService) bool {
 	}
 	parts := strings.Split(strings.Trim(c.Path(), "/"), "/")
 	return auth.ValidateMediaSignature(parts[1], c.Query("path"), c.Query("exp"), c.Query("sig"))
+}
+
+// projectPreviewAllowed accepts a signed preview token in the path on GET
+// /agents/:name/project/preview/:token/... . The token travels in the path
+// because an iframe's relative subresource requests would drop a query string.
+func projectPreviewAllowed(c fiber.Ctx, auth *service.AuthService) bool {
+	if c.Method() != fiber.MethodGet {
+		return false
+	}
+	parts := strings.Split(strings.Trim(c.Path(), "/"), "/")
+	if len(parts) < 5 || parts[0] != "agents" || parts[2] != "project" || parts[3] != "preview" {
+		return false
+	}
+	_, ok := auth.ValidateProjectPreview(parts[1], parts[4])
+	return ok
 }
 
 func BearerToken(c fiber.Ctx) string {

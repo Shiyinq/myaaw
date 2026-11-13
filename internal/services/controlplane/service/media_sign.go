@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -96,6 +97,37 @@ func (m *MediaSigner) signature(agent, path string, exp int64) string {
 	mac := hmac.New(sha256.New, m.key)
 	fmt.Fprintf(mac, "%s\x00%s\x00%d", agent, path, exp)
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// SignProjectToken signs a project preview root. The token lives in the URL
+// path so every relative subresource the iframe requests carries it too; a
+// query signature would be dropped by relative URL resolution.
+func (m *MediaSigner) SignProjectToken(agent, virtualPath string) (string, int64) {
+	exp := m.now().Add(ProjectPreviewTTL).Unix()
+	payload := base64.RawURLEncoding.EncodeToString([]byte(virtualPath))
+	sig := m.signature(agent, "project:"+virtualPath, exp)
+	return payload + "." + strconv.FormatInt(exp, 10) + "." + sig, exp
+}
+
+// VerifyProjectToken returns the virtual project path carried by a valid token.
+func (m *MediaSigner) VerifyProjectToken(agent, token string) (string, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 || parts[0] == "" || parts[2] == "" {
+		return "", false
+	}
+	exp, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || exp < m.now().Add(-mediaSignatureSkew).Unix() {
+		return "", false
+	}
+	path, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil || len(path) == 0 {
+		return "", false
+	}
+	expected := m.signature(agent, "project:"+string(path), exp)
+	if !hmac.Equal([]byte(expected), []byte(parts[2])) {
+		return "", false
+	}
+	return string(path), true
 }
 
 func loadOrCreateMediaKey(path string) ([]byte, error) {

@@ -95,6 +95,19 @@ func TestProtectRecoversFromPanic(t *testing.T) {
 	})
 }
 
+func TestSendAttachmentsIgnoresPathOnlyProject(t *testing.T) {
+	adapter := &DiscordAdapter{}
+
+	err := adapter.sendAttachments("chan", []channel.Attachment{{
+		FileName: "site",
+		Path:     "/home/workspace/site",
+		Kind:     "project",
+	}})
+	if err != nil {
+		t.Fatalf("sendAttachments: %v", err)
+	}
+}
+
 func TestSendErrorWithoutTransportReturnsError(t *testing.T) {
 	adapter := &DiscordAdapter{}
 	msg := &channel.IncomingMessage{RawMeta: DiscordMeta{ChannelID: "chan"}}

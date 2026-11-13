@@ -22,8 +22,10 @@ export interface Attachment {
 	mime_type?: string;
 	/** Virtual path the WebUI fetches through `/fs/raw`. */
 	path?: string;
-	/** Rendering kind: image, video, audio, pdf, or file. */
+	/** Rendering kind: image, video, audio, pdf, file, or project. */
 	kind?: string;
+	/** For a project: static, react, svelte, next, vite, or source. */
+	project_type?: string;
 	/** Byte length of the referenced file, when known. */
 	size?: number;
 }

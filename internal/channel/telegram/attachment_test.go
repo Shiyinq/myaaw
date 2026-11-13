@@ -21,6 +21,21 @@ func useTelegramTestServer(t *testing.T, handler http.HandlerFunc) {
 	t.Cleanup(func() { telegramAPIBaseURL = oldBase })
 }
 
+func TestSendTelegramAttachmentsIgnoresPathOnlyProject(t *testing.T) {
+	useTelegramTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s", r.URL.Path)
+	})
+
+	atts := []channel.Attachment{{
+		FileName: "site",
+		Path:     "/home/workspace/site",
+		Kind:     "project",
+	}}
+	if err := sendTelegramAttachments(42, 0, 0, atts); err != nil {
+		t.Fatalf("sendTelegramAttachments: %v", err)
+	}
+}
+
 func TestSendTelegramAttachmentSendsPhotosAsPhotos(t *testing.T) {
 	useTelegramTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/sendPhoto") {

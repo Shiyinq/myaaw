@@ -4,11 +4,12 @@
 // The model writes `@attach(/absolute/path)` in its final answer. The directive
 // is removed from the visible text and the referenced file is resolved to a
 // virtual path (such as /home/workspace/projects/site/index.html) that the
-// control plane can serve. Directories, unreadable files, and paths outside the
-// allowed roots are ignored.
+// control plane can serve. An explicitly named directory becomes a project
+// attachment; unreadable files and paths outside the allowed roots are ignored.
 package attachment
 
 import (
+	"encoding/json"
 	"mime"
 	"os"
 	"path/filepath"
@@ -20,11 +21,24 @@ import (
 type Kind string
 
 const (
-	KindImage Kind = "image"
-	KindVideo Kind = "video"
-	KindAudio Kind = "audio"
-	KindPDF   Kind = "pdf"
-	KindFile  Kind = "file"
+	KindImage   Kind = "image"
+	KindVideo   Kind = "video"
+	KindAudio   Kind = "audio"
+	KindPDF     Kind = "pdf"
+	KindFile    Kind = "file"
+	KindProject Kind = "project"
+)
+
+// Project type labels stored with a project attachment. They describe how the
+// project is rendered: static files are served as-is, built types need a build
+// step, and source projects are download-only.
+const (
+	ProjectStatic = "static"
+	ProjectReact  = "react"
+	ProjectSvelte = "svelte"
+	ProjectNext   = "next"
+	ProjectVite   = "vite"
+	ProjectSource = "source"
 )
 
 // Roots are the absolute directories an attachment may come from, paired with
@@ -44,6 +58,9 @@ type Item struct {
 	Kind    Kind
 	Mime    string
 	Size    int64
+	// ProjectType is set for KindProject: static, react, svelte, next, vite, or
+	// source.
+	ProjectType string
 }
 
 // directiveRE matches @attach(path), @attach("path with spaces"), and
@@ -96,6 +113,9 @@ var deniedNames = map[string]bool{
 // paths inside a fenced code block are documentation, not delivery. The caller
 // decides how the text is presented, so a surface can keep the directive and
 // render it its own way.
+//
+// A directory is only attached through an explicit directive (`@attach(...)` or
+// `@/path`); auto-promotion never turns a directory into a project.
 func Collect(text string, roots Roots) []Item {
 	if !directiveRE.MatchString(text) && !bareAtRE.MatchString(text) && !mediaPathRE.MatchString(text) {
 		return nil
@@ -107,7 +127,7 @@ func Collect(text string, roots Roots) []Item {
 		if raw == "" {
 			return
 		}
-		item, ok := resolveLoose(raw, roots)
+		item, ok := resolveExplicit(raw, roots)
 		if !ok || seen[item.Virtual] {
 			return
 		}
@@ -183,14 +203,14 @@ func Substitute(text string, roots Roots) string {
 		lines[i] = directiveRE.ReplaceAllStringFunc(line, func(match string) string {
 			sub := directiveRE.FindStringSubmatch(match)
 			raw := firstNonEmpty(sub[1], sub[2], sub[3])
-			if item, ok := resolveLoose(raw, roots); ok {
+			if item, ok := resolveExplicit(raw, roots); ok {
 				return item.AbsPath
 			}
 			return match
 		})
 		lines[i] = bareAtRE.ReplaceAllStringFunc(lines[i], func(match string) string {
 			sub := bareAtRE.FindStringSubmatch(match)
-			if item, ok := resolveLoose(sub[1], roots); ok {
+			if item, ok := resolveExplicit(sub[1], roots); ok {
 				return item.AbsPath
 			}
 			return match
@@ -279,6 +299,63 @@ func stripFencedBlocks(text string) string {
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n")
+}
+
+// resolveExplicit resolves a directive target. Unlike Resolve it accepts a
+// directory and marks it as a project, because the model named the path on
+// purpose. Auto-promotion keeps using Resolve, so a stray directory path in
+// prose still never becomes an attachment.
+func resolveExplicit(raw string, roots Roots) (Item, bool) {
+	if item, ok := resolveLoose(raw, roots); ok {
+		return item, true
+	}
+	if item, ok := resolveProject(raw, roots); ok {
+		return item, true
+	}
+	trimmed := strings.TrimRight(raw, ".,;:!?")
+	if trimmed != raw {
+		return resolveProject(trimmed, roots)
+	}
+	return Item{}, false
+}
+
+// resolveProject resolves an explicitly named directory to a project item.
+func resolveProject(raw string, roots Roots) (Item, bool) {
+	path, ok := expandPath(raw)
+	if !ok {
+		return Item{}, false
+	}
+
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return Item{}, false
+	}
+
+	virtual, rel, ok := virtualPath(path, roots)
+	if !ok || rel == "" || rel == "." {
+		return Item{}, false
+	}
+	if denied(rel) || deniedNames[strings.ToLower(filepath.Base(path))] {
+		return Item{}, false
+	}
+
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return Item{}, false
+	}
+	_, realRel, ok := virtualPath(real, roots)
+	if !ok || denied(realRel) {
+		return Item{}, false
+	}
+
+	return Item{
+		AbsPath:     path,
+		Virtual:     virtual,
+		Name:        filepath.Base(path),
+		Kind:        KindProject,
+		Size:        0,
+		ProjectType: DetectProjectType(path),
+	}, true
 }
 
 // Resolve expands and validates one direct path. It reports false for
@@ -401,6 +478,88 @@ func rootVariants(root string) []string {
 		variants = append(variants, real)
 	}
 	return variants
+}
+
+// DetectProjectType classifies a project directory from its manifest. The order
+// matters: a static site that happens to have a package.json for tooling stays
+// static while it has an index.html and no build config.
+func DetectProjectType(dir string) string {
+	vite := hasGlob(dir, "vite.config.*")
+	svelte := hasFile(dir, "svelte.config.js") || hasFile(dir, "svelte.config.ts")
+	next := hasGlob(dir, "next.config.*")
+
+	packageJSON := readPackageJSON(dir)
+	framework := packageFramework(packageJSON)
+
+	switch {
+	case next || framework == ProjectNext:
+		return ProjectNext
+	case svelte || framework == ProjectSvelte:
+		return ProjectSvelte
+	case vite:
+		return ProjectVite
+	case framework == ProjectReact:
+		return ProjectReact
+	case hasFile(dir, "index.html"):
+		return ProjectStatic
+	default:
+		return ProjectSource
+	}
+}
+
+// Buildable reports whether a project type needs a build step before preview.
+func Buildable(projectType string) bool {
+	switch projectType {
+	case ProjectReact, ProjectSvelte, ProjectNext, ProjectVite:
+		return true
+	default:
+		return false
+	}
+}
+
+func hasFile(dir, name string) bool {
+	info, err := os.Stat(filepath.Join(dir, name))
+	return err == nil && !info.IsDir()
+}
+
+func hasGlob(dir, pattern string) bool {
+	matches, err := filepath.Glob(filepath.Join(dir, pattern))
+	return err == nil && len(matches) > 0
+}
+
+func readPackageJSON(dir string) map[string]any {
+	data, err := os.ReadFile(filepath.Join(dir, "package.json"))
+	if err != nil {
+		return nil
+	}
+	var manifest map[string]any
+	if json.Unmarshal(data, &manifest) != nil {
+		return nil
+	}
+	return manifest
+}
+
+func packageFramework(manifest map[string]any) string {
+	if manifest == nil {
+		return ""
+	}
+	for _, field := range []string{"dependencies", "devDependencies"} {
+		deps, ok := manifest[field].(map[string]any)
+		if !ok {
+			continue
+		}
+		for name := range deps {
+			switch name {
+			case "next":
+				return ProjectNext
+			case "svelte", "@sveltejs/kit":
+				return ProjectSvelte
+			case "react":
+				return ProjectReact
+			}
+		}
+	}
+	return ""
 }
 
 func kindOf(ext string) Kind {

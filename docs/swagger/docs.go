@@ -594,6 +594,9 @@ const docTemplate = `{
                 "path": {
                     "type": "string"
                 },
+                "project_type": {
+                    "type": "string"
+                },
                 "size": {
                     "type": "integer"
                 }

@@ -380,9 +380,6 @@ func (d *DiscordAdapter) sendAttachments(channelID string, attachments []channel
 	if len(attachments) == 0 {
 		return nil
 	}
-	if d.session == nil {
-		return fmt.Errorf("discord session is not available")
-	}
 
 	files := make([]*discordgo.File, 0, len(attachments))
 	for _, att := range attachments {
@@ -402,6 +399,14 @@ func (d *DiscordAdapter) sendAttachments(channelID string, attachments []channel
 			ContentType: mimeType,
 			Reader:      bytes.NewReader(att.Data),
 		})
+	}
+	// A turn can carry path-only metadata (a project) next to real uploads. Only
+	// fail for a missing session when there is something to upload.
+	if len(files) == 0 {
+		return nil
+	}
+	if d.session == nil {
+		return fmt.Errorf("discord session is not available")
 	}
 
 	// A turn can produce more files than one Discord message accepts, so each

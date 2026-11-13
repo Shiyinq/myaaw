@@ -11,6 +11,7 @@
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import type { Attachment, LightboxImage } from '$lib/types';
 	import ImageLightbox from './ImageLightbox.svelte';
+	import ProjectCard from './ProjectCard.svelte';
 
 	interface Props {
 		agent: string;
@@ -50,14 +51,19 @@
 	}
 
 	// Photos and videos share one horizontal carousel when there is more than one;
-	// everything else (audio, PDF, opaque files) keeps its own row below.
+	// projects get their own card; everything else (audio, PDF, opaque files)
+	// keeps its own row below.
+	let projectItems = $derived(attachments.filter((a) => kindOf(a) === 'project'));
 	let media = $derived(attachments.filter((a) => ['image', 'video'].includes(kindOf(a))));
-	let others = $derived(attachments.filter((a) => !['image', 'video'].includes(kindOf(a))));
+	let others = $derived(
+		attachments.filter((a) => !['image', 'video', 'project'].includes(kindOf(a)))
+	);
 	let images = $derived(media.filter((a) => kindOf(a) === 'image'));
 
 	// Sign the media paths once per answer so images load without the session token.
 	$effect(() => {
 		const paths = attachments
+			.filter((attachment) => kindOf(attachment) !== 'project')
 			.map((attachment) => attachment.path)
 			.filter((path): path is string => !!path);
 		void ensureSigned(agent, paths);
@@ -203,6 +209,20 @@
 		></video>
 	{/if}
 {/snippet}
+
+{#if projectItems.length > 0}
+	<div class="space-y-2">
+		{#each projectItems as attachment, index (`project-${index}-${attachment.path}`)}
+			<ProjectCard
+				{agent}
+				path={attachment.path ?? ''}
+				name={attachment.file_name}
+				projectType={attachment.project_type}
+				size={attachment.size}
+			/>
+		{/each}
+	</div>
+{/if}
 
 {#if media.length === 1}
 	<div class="space-y-2">

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"myaaw/internal/attachment"
+	"myaaw/internal/channel"
 	"myaaw/internal/provider"
 )
 
@@ -121,6 +122,87 @@ func TestDeliverAttachmentsCLISubstitutesPath(t *testing.T) {
 	cleaned, attachments := attachmentsForChannel("cli", "See @attach("+image+")", roots)
 
 	if cleaned != "See "+image {
+		t.Errorf("cleaned = %q", cleaned)
+	}
+	if len(attachments) != 0 {
+		t.Errorf("attachments = %+v", attachments)
+	}
+}
+
+func TestDeliverAttachmentsProjectAPI(t *testing.T) {
+	roots := attachRoots(t)
+	site := filepath.Join(roots.Home, "workspace", "site")
+	attachFile(t, filepath.Join(site, "index.html"), "<h1>hi</h1>")
+
+	cleaned, attachments := attachmentsForChannel("api", "Project: @attach("+site+")", roots)
+
+	if cleaned != "Project: @attach("+site+")" {
+		t.Errorf("cleaned = %q", cleaned)
+	}
+	if len(attachments) != 1 {
+		t.Fatalf("attachments = %+v", attachments)
+	}
+	item := attachments[0]
+	if item.Kind != "project" || item.ProjectType != "static" {
+		t.Errorf("kind/project_type = %q/%q", item.Kind, item.ProjectType)
+	}
+	if item.Path != "/home/workspace/site" {
+		t.Errorf("path = %q", item.Path)
+	}
+	if len(item.Data) != 0 {
+		t.Errorf("API project attachment must not carry bytes, got %d", len(item.Data))
+	}
+}
+
+func TestDeliverAttachmentsProjectMessagingKeepsPathOnly(t *testing.T) {
+	roots := attachRoots(t)
+	site := filepath.Join(roots.Home, "workspace", "site")
+	attachFile(t, filepath.Join(site, "index.html"), "<h1>hi</h1>")
+
+	cleaned, attachments := attachmentsForChannel("telegram", "Project: @attach("+site+")", roots)
+
+	if cleaned != "Project: "+site {
+		t.Errorf("cleaned = %q", cleaned)
+	}
+	if len(attachments) != 1 {
+		t.Fatalf("attachments = %+v", attachments)
+	}
+	item := attachments[0]
+	if len(item.Data) != 0 {
+		t.Errorf("a project must not be uploaded as bytes, got %d", len(item.Data))
+	}
+	if item.Kind != "project" || item.ProjectType != "static" || item.Path != "/home/workspace/site" {
+		t.Errorf("item = %+v", item)
+	}
+}
+
+func TestAttachToFinalAssistantPersistsProject(t *testing.T) {
+	transcript := []provider.Message{{Role: "assistant", Content: "done"}}
+
+	attachToFinalAssistant(transcript, []channel.Attachment{{
+		FileName:    "site",
+		Path:        "/home/workspace/site",
+		Kind:        "project",
+		ProjectType: "static",
+	}})
+
+	if len(transcript[0].Attachments) != 1 {
+		t.Fatalf("attachments = %+v", transcript[0].Attachments)
+	}
+	got := transcript[0].Attachments[0]
+	if got.Kind != "project" || got.ProjectType != "static" || got.Path != "/home/workspace/site" {
+		t.Fatalf("stored = %+v", got)
+	}
+}
+
+func TestDeliverAttachmentsProjectCLI(t *testing.T) {
+	roots := attachRoots(t)
+	site := filepath.Join(roots.Home, "workspace", "site")
+	attachFile(t, filepath.Join(site, "index.html"), "<h1>hi</h1>")
+
+	cleaned, attachments := attachmentsForChannel("cli", "Project: @attach("+site+")", roots)
+
+	if cleaned != "Project: "+site {
 		t.Errorf("cleaned = %q", cleaned)
 	}
 	if len(attachments) != 0 {

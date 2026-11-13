@@ -31,6 +31,7 @@ func NewApp() (*fiber.App, error) {
 	agents := service.NewAgentService()
 	proxy := service.NewProxyService(agents)
 	files := service.NewFileService()
+	projects := service.NewProjectService(files)
 	configSvc := service.NewConfigService()
 	conversations := service.NewConversationService()
 	logs := service.NewLogsService()
@@ -43,7 +44,7 @@ func NewApp() (*fiber.App, error) {
 	approvalsSvc := service.NewApprovalsService()
 	terminals := service.NewTerminalService()
 	backups := service.NewBackupService(serverSvc)
-	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups)
+	h := handler.New(auth, agents, proxy, files, projects, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api", BodyLimit: config.A2AMaxRequestBytes})
 	app.Use(cors.New(corsConfig()))
@@ -91,6 +92,11 @@ func NewApp() (*fiber.App, error) {
 	app.Get("/agents/:name/context", h.ListContextFiles)
 	app.Get("/agents/:name/context/file", h.ReadContextFile)
 	app.Put("/agents/:name/context/file", h.WriteContextFile)
+
+	app.Get("/agents/:name/project/status", h.ProjectStatus)
+	app.Post("/agents/:name/project/build", h.BuildProject)
+	app.Get("/agents/:name/project/preview/:token", h.ProjectPreview)
+	app.Get("/agents/:name/project/preview/:token/*", h.ProjectPreview)
 
 	app.Get("/agents/:name/skills", h.ListSkills)
 	app.Post("/agents/:name/skills/:skill/install", h.InstallSkill)

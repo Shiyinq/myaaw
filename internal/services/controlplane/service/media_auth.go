@@ -20,6 +20,23 @@ func (s *AuthService) ValidateMediaSignature(agent, path, exp, sig string) bool 
 	return s.media.Verify(agent, path, exp, sig)
 }
 
+// SignProjectPreview issues a short-lived preview token for one project root.
+func (s *AuthService) SignProjectPreview(agent, path string) (string, int64, error) {
+	if s.media == nil {
+		return "", 0, fmt.Errorf("media signing is unavailable")
+	}
+	token, exp := s.media.SignProjectToken(agent, path)
+	return token, exp, nil
+}
+
+// ValidateProjectPreview authorises a preview request without a bearer token.
+func (s *AuthService) ValidateProjectPreview(agent, token string) (string, bool) {
+	if s.media == nil {
+		return "", false
+	}
+	return s.media.VerifyProjectToken(agent, token)
+}
+
 // newMediaSignerOrNil keeps the server running when the key cannot be created;
 // signed URLs stay disabled and the WebUI falls back to the session token.
 func newMediaSignerOrNil() *MediaSigner {

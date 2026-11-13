@@ -110,15 +110,84 @@ func TestCollectDeduplicates(t *testing.T) {
 	}
 }
 
-func TestCollectKeepsUnresolved(t *testing.T) {
+func TestCollectResolvesProjectDirectory(t *testing.T) {
+	roots := testRoots(t)
+	dir := filepath.Join(roots.Home, "workspace", "site")
+	if err := os.MkdirAll(filepath.Join(dir, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "index.html"))
+
+	items := Collect("Project ready.\n@attach("+dir+")", roots)
+
+	if len(items) != 1 {
+		t.Fatalf("items = %+v, want one project", items)
+	}
+	item := items[0]
+	if item.Kind != KindProject {
+		t.Errorf("kind = %q, want project", item.Kind)
+	}
+	if item.Virtual != "/home/workspace/site" {
+		t.Errorf("virtual = %q", item.Virtual)
+	}
+	if item.Name != "site" {
+		t.Errorf("name = %q", item.Name)
+	}
+	if item.ProjectType != ProjectStatic {
+		t.Errorf("project type = %q, want static", item.ProjectType)
+	}
+}
+
+func TestCollectDetectsBuiltProject(t *testing.T) {
+	roots := testRoots(t)
+	dir := filepath.Join(roots.Home, "workspace", "app")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "vite.config.ts"))
+	writeFile(t, filepath.Join(dir, "package.json"))
+
+	items := Collect("@attach("+dir+")", roots)
+	if len(items) != 1 || items[0].ProjectType != ProjectVite {
+		t.Fatalf("items = %+v, want vite", items)
+	}
+}
+
+func TestPromoteNeverAttachesDirectory(t *testing.T) {
 	roots := testRoots(t)
 	dir := filepath.Join(roots.Home, "workspace", "site")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	if items := Collect("@attach("+dir+")", roots); len(items) != 0 {
+	if items := Promote(dir+"\n", roots); len(items) != 0 {
 		t.Fatalf("items = %+v, want none for a directory", items)
+	}
+}
+
+func TestBareAtPathResolvesProject(t *testing.T) {
+	roots := testRoots(t)
+	dir := filepath.Join(roots.Home, "workspace", "site")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "index.html"))
+
+	items := Collect("Project: @"+dir, roots)
+	if len(items) != 1 || items[0].Kind != KindProject {
+		t.Fatalf("items = %+v, want project", items)
+	}
+}
+
+func TestCollectRejectsOutsideProject(t *testing.T) {
+	roots := testRoots(t)
+	dir := filepath.Join(t.TempDir(), "site")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if items := Collect("@attach("+dir+")", roots); len(items) != 0 {
+		t.Fatalf("items = %+v, want none", items)
 	}
 }
 

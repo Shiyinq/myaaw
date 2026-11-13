@@ -38,9 +38,11 @@ func (r *BotServiceImpl) deliverAttachments(msg *channel.IncomingMessage, text s
 	cleaned, atts := attachmentsForChannel(msg.Channel, text, attachmentRoots())
 	if len(atts) > 0 {
 		log.Printf("Delivering %d attachment(s) on channel %s", len(atts), msg.Channel)
-	} else if strings.Contains(strings.ToLower(text), "@attach(") {
+	} else if strings.Contains(strings.ToLower(text), "@attach(") && cleaned == text {
 		// A directive the surface asked for but could not resolve is almost always
-		// a path outside the agent roots or a file that no longer exists.
+		// a path outside the agent roots or a file that no longer exists. A project
+		// on a messaging/terminal surface also produces no attachment, but it is
+		// substituted with its path, so it must not be reported as unresolved.
 		log.Printf("Attachment directive on channel %s resolved to no file", msg.Channel)
 	}
 	return cleaned, atts
@@ -55,11 +57,12 @@ func attachmentsForChannel(channelName, text string, roots attachment.Roots) (st
 		atts := make([]channel.Attachment, 0, len(items))
 		for _, item := range items {
 			atts = append(atts, channel.Attachment{
-				FileName: item.Name,
-				MimeType: item.Mime,
-				Path:     item.Virtual,
-				Kind:     string(item.Kind),
-				Size:     item.Size,
+				FileName:    item.Name,
+				MimeType:    item.Mime,
+				Path:        item.Virtual,
+				Kind:        string(item.Kind),
+				ProjectType: item.ProjectType,
+				Size:        item.Size,
 			})
 		}
 		return text, atts
@@ -79,6 +82,19 @@ func messagingAttachments(text string, roots attachment.Roots) (string, []channe
 	items := attachment.Collect(text, roots)
 	atts := make([]channel.Attachment, 0, len(items))
 	for _, item := range items {
+		if item.Kind == attachment.KindProject {
+			// A directory cannot be uploaded, but its metadata still rides on the
+			// turn: the adapter skips it (no Data), while the transcript keeps the
+			// path so the dashboard history renders an Open project card.
+			atts = append(atts, channel.Attachment{
+				FileName:    item.Name,
+				Path:        item.Virtual,
+				Kind:        string(item.Kind),
+				ProjectType: item.ProjectType,
+				Size:        item.Size,
+			})
+			continue
+		}
 		if item.Size > messagingAttachmentMaxBytes {
 			log.Printf("Skipping attachment %s: %d bytes exceeds the messaging cap", item.AbsPath, item.Size)
 			continue
@@ -112,11 +128,12 @@ func attachToFinalAssistant(transcript []provider.Message, attachments []channel
 			continue
 		}
 		items = append(items, provider.MessageAttachment{
-			FileName: att.FileName,
-			MimeType: att.MimeType,
-			Path:     att.Path,
-			Kind:     att.Kind,
-			Size:     att.Size,
+			FileName:    att.FileName,
+			MimeType:    att.MimeType,
+			Path:        att.Path,
+			Kind:        att.Kind,
+			ProjectType: att.ProjectType,
+			Size:        att.Size,
 		})
 	}
 	if len(items) == 0 {

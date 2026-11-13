@@ -11,6 +11,7 @@ type Handler struct {
 	agents        *service.AgentService
 	proxy         *service.ProxyService
 	files         *service.FileService
+	projects      *service.ProjectService
 	config        *service.ConfigService
 	conversations *service.ConversationService
 	logs          *service.LogsService
@@ -30,6 +31,7 @@ func New(
 	agents *service.AgentService,
 	proxy *service.ProxyService,
 	files *service.FileService,
+	projects *service.ProjectService,
 	configSvc *service.ConfigService,
 	conversations *service.ConversationService,
 	logs *service.LogsService,
@@ -48,6 +50,7 @@ func New(
 		agents:        agents,
 		proxy:         proxy,
 		files:         files,
+		projects:      projects,
 		config:        configSvc,
 		conversations: conversations,
 		logs:          logs,

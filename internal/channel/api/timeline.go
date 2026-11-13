@@ -180,6 +180,9 @@ func (t *Timeline) Done(out *channel.OutgoingMessage) {
 				"path":      att.Path,
 				"kind":      att.Kind,
 			}
+			if att.ProjectType != "" {
+				entry["project_type"] = att.ProjectType
+			}
 			if att.Size > 0 {
 				entry["size"] = att.Size
 			}

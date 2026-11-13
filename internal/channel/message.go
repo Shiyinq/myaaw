@@ -89,8 +89,11 @@ type Attachment struct {
 	// Path is the virtual file path for surfaces that fetch bytes themselves
 	// (the API/WebUI). Empty for byte-only attachments.
 	Path string
-	// Kind is the rendering kind: image, video, audio, pdf, or file.
+	// Kind is the rendering kind: image, video, audio, pdf, file, or project.
 	Kind string
+	// ProjectType is set for a project attachment: static, react, svelte, next,
+	// vite, or source.
+	ProjectType string
 	// Size is the byte length of the referenced file, when known.
 	Size int64
 }

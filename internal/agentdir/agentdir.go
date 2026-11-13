@@ -208,8 +208,12 @@ func EnvPath(name string) (string, error)   { return agentPath(name, ".env") }
 func SkillsDir(name string) (string, error) { return agentPath(name, "skills") }
 func JobsDir(name string) (string, error)   { return agentPath(name, "jobs") }
 func LogsDir(name string) (string, error)   { return agentPath(name, "logs") }
-func CronDir(name string) (string, error)   { return agentPath(name, "cron") }
-func ToolsDir(name string) (string, error)  { return agentPath(name, "tools") }
+
+// CacheDir holds regenerable artifacts (preview builds, temporary output) that
+// may be deleted at any time.
+func CacheDir(name string) (string, error) { return agentPath(name, "cache") }
+func CronDir(name string) (string, error)  { return agentPath(name, "cron") }
+func ToolsDir(name string) (string, error) { return agentPath(name, "tools") }
 func TelegramOffsetPath(name string) (string, error) {
 	return agentPath(name, filepath.Join("database", "telegram_offset"))
 }

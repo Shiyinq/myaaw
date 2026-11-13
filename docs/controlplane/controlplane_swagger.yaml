@@ -1319,6 +1319,8 @@ definitions:
         type: string
       path:
         type: string
+      project_type:
+        type: string
       size:
         type: integer
     type: object
@@ -1814,6 +1816,8 @@ definitions:
         type: string
       path:
         type: string
+      project_type:
+        type: string
       size:
         type: integer
     type: object
@@ -2265,6 +2269,31 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  service.ProjectStatus:
+    properties:
+      download_only:
+        type: boolean
+      entry:
+        type: string
+      error:
+        type: string
+      expires_at:
+        type: integer
+      file_count:
+        type: integer
+      logs:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+      state:
+        type: string
+      type:
+        type: string
+      url:
+        type: string
     type: object
   service.ProviderConnection:
     properties:
@@ -5346,6 +5375,120 @@ paths:
       summary: Create or reconfigure an agent
       tags:
       - Agents
+  /agents/{name}/project/build:
+    post:
+      description: Copies the project to a temp directory, installs dependencies,
+        runs the build, and caches the output for 15 minutes.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Virtual project path
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/service.ProjectStatus'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Build a project preview
+      tags:
+      - Projects
+  /agents/{name}/project/preview/{token}:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Signed preview token
+        in: path
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "206":
+          description: Partial content
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      summary: Serve a project preview file
+      tags:
+      - Projects
+  /agents/{name}/project/status:
+    get:
+      description: Reports the detected type, size, build state, and a signed preview
+        URL for a project directory.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - default: /home/workspace/site
+        description: Virtual project path
+        in: query
+        name: path
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ProjectStatus'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Project preview status
+      tags:
+      - Projects
   /agents/{name}/providers:
     get:
       parameters:

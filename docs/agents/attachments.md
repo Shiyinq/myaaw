@@ -76,7 +76,7 @@ The same directive produces a different presentation on each surface.
 | Surface | Text | Attachment |
 | :--- | :--- | :--- |
 | API / WebUI (`api`) | Directive is kept; the WebUI hides `@attach(`/`)` (and the `@` of `@/path`) and shows only the path | Virtual path (`/home/...`, `/user/...`); streamed by the browser through `/fs/raw` |
-| Telegram / Discord | Directive is replaced by the plain absolute path | Bytes read into memory and uploaded natively (Telegram: photo for JPEG/PNG, animation for GIF, video for MP4, audio for MP3/M4A, document otherwise; photos/videos grouped into albums); the virtual path is also persisted for dashboard history |
+| Telegram / Discord | Directive is replaced by the plain absolute path | Bytes read into memory and uploaded natively (Telegram: photo for JPEG/PNG, animation for GIF, video for MP4, audio for MP3/M4A, document otherwise; photos/videos grouped into albums); the virtual path is also persisted for dashboard history. A **project directory** is not uploaded: only its path, kind, and `project_type` are persisted, so the dashboard history still shows the project card |
 | CLI / TUI | Directive is replaced by the plain absolute path | None |
 | A2A / other | Directive is replaced by the plain absolute path | None |
 
@@ -108,8 +108,8 @@ below keep that boundary narrow.
 
 ### 4.2 Path validation (delivery time)
 
-A reference is accepted only if it resolves to a readable **file** inside one of
-the agent's roots:
+A reference is accepted only if it resolves to a readable file **or an explicitly
+named project directory** inside one of the agent's roots:
 
 | Virtual root | Absolute directory |
 | :--- | :--- |
@@ -122,8 +122,10 @@ Checks applied per reference:
 
 - **Root containment** — the path (and its symlink-resolved target) must stay
   inside one of the roots. Symlink escapes are rejected.
-- **Regular file** — directories are not attachments (a project preview is a
-  separate, planned feature).
+- **Regular file** — a directory is accepted only when the model writes an
+  explicit directive (`@attach(/home/workspace/site)` or `@/home/workspace/site`),
+  and it becomes a `kind: "project"` attachment. Auto-promotion never promotes a
+  directory, so a stray path in prose cannot attach a whole tree.
 - **Hidden segments** — any path segment starting with `.` is rejected
   (`.env`, `.git`, `.ssh`, …). The install root itself (`~/.myaaw`) is not
   affected because only the part inside the root is checked.
@@ -340,7 +342,8 @@ Attachment metadata is stored with the assistant turn in
   "role": "assistant",
   "content": "...",
   "attachments": [
-    {"file_name": "clip.mp4", "mime_type": "video/mp4", "path": "/home/workspace/clip.mp4", "kind": "video", "size": 1048576}
+    {"file_name": "clip.mp4", "mime_type": "video/mp4", "path": "/home/workspace/clip.mp4", "kind": "video", "size": 1048576},
+    {"file_name": "site", "path": "/home/workspace/site", "kind": "project", "project_type": "static"}
   ]
 }
 ```
@@ -373,6 +376,7 @@ one answer, both live and from history:
 | `video` | `<video controls preload="metadata">`, aspect-correct, capped at `70vh` |
 | `audio` | `<audio controls>` |
 | `pdf` | inline `<iframe>` |
+| `project` | `ProjectCard` (folder, type badge, “Open project”) opening the full-screen `ProjectDrawer` |
 | anything else | download card with name, size, and a `download=1` link |
 
 When an answer has **more than one** photo/video, they are grouped into a
@@ -415,9 +419,53 @@ by the WebUI and replaced by the path on messaging/terminal surfaces.
 | A file is skipped | Path outside the roots, hidden/credential name, symlink escape, or above the surface size limit. The messaging path logs `Skipping attachment …`. |
 | Cards appear twice | Only one of the live run or the stored transcript should render a turn; reload the chat to settle the run. |
 
+## 12. Project attachments
+
+For the complete contract — detection, signed URL format, build sandbox, cache,
+and the card/drawer states — see
+[Project Attachments](attachment-project.md).
+
+An explicit directory directive is persisted as a path-only project attachment
+(`kind: "project"`, `project_type`). The type is detected from the manifest, in
+this order:
+
+| Type | Detection | Preview |
+| :--- | :--- | :--- |
+| `next` / `svelte` / `react` / `vite` | `next.config.*`, `svelte.config.*`, a framework dependency in `package.json`, or `vite.config.*` | sandboxed build |
+| `static` | `index.html` and no build tooling | served as-is |
+| `source` | none of the above | download-only |
+
+A project with no web entry point — a native desktop app, a CLI, or a folder of
+Markdown files — is `source`: it is not built, opens no port, and gets no preview.
+See [Project Attachments](attachment-project.md) §2.4 and §7.1.
+
+The control plane exposes:
+
+```
+GET  /agents/:name/project/status?path=/home/workspace/site
+POST /agents/:name/project/build?path=/home/workspace/site
+GET  /agents/:name/project/preview/:token/*
+```
+
+`status` returns `{ type, state: idle|building|ready|failed, entry, url?,
+logs?, error?, download_only? }`. `url` is a signed URL whose token lives in the
+path, so relative CSS/JS requests inside the iframe keep working without a
+session token. The token covers the agent, the virtual project path, and a
+15-minute expiry.
+
+Static previews serve the virtual root read-only with traversal, hidden-segment,
+and `node_modules` rejection. Built projects are copied to a temp directory,
+installed with `npm ci --ignore-scripts` (or `npm install --ignore-scripts`), and
+built with `npm run build`, bounded by a 5-minute timeout. The build is
+one-shot: the result is plain static output served from the cache, with no dev
+server and no per-project port. Only the output
+directory (`dist`, `build`, `out`, `.svelte-kit/output/client`) is cached under
+`<agent>/cache/projects/<hash>`; the project directory is never written to.
+Builds are limited to **500 files / 50 MB**; larger projects are download-only.
+
 ---
 
-## 12. Code map
+## 13. Code map
 
 | Concern | File |
 | :--- | :--- |
@@ -429,12 +477,16 @@ by the WebUI and replaced by the path on messaging/terminal surfaces.
 | Attachment struct | `internal/channel/message.go` |
 | SSE serialization | `internal/channel/api/timeline.go` |
 | Raw file serving and re-validation | `internal/services/controlplane/service/filesystem.go`, `internal/services/controlplane/handler/files.go` |
+| Project detection, build sandbox, preview serving | `internal/services/controlplane/service/projects.go`, `internal/services/controlplane/handler/projects.go` |
+| Project preview signing | `internal/services/controlplane/service/media_sign.go`, `internal/services/controlplane/middleware/auth.go` |
 | Media token and CORS | `internal/services/controlplane/middleware/auth.go`, `internal/services/controlplane/router.go` |
 | Upload validation and storage | `internal/channel/api/adapter.go`, `internal/services/bot/service/uploads.go` |
 | Non-stream API response | `internal/services/bot/handler/api_handler.go` |
 | Stored metadata type | `internal/provider/provider.go` |
 | Transcript cloning | `internal/agent/messages.go` |
 | WebUI renderer | `webui/src/lib/components/app/RunAttachments.svelte` |
+| Project card and drawer | `webui/src/lib/components/app/ProjectCard.svelte`, `webui/src/lib/components/app/ProjectDrawer.svelte` |
+| Attachment sidebar | `webui/src/lib/components/app/AttachmentPanel.svelte` |
 | Directive display and per-message rendering | `webui/src/routes/app/chat/[[conversation]]/+page.svelte` |
 | Live `done` handling | `webui/src/lib/stores/chatRuns.svelte.ts` |
 

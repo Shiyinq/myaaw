@@ -10,6 +10,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | [Agent Loop](agents/agent-loop.md) | `RunEvents` engine, transcript v2, compaction, tools, and retries. |
 | [Agent Context](agents/context.md) | What the agent knows per turn, the `<userinfo>`/`<attached>` blocks, and prompt-cache safety. |
 | [Agent Attachments](agents/attachments.md) | Delivering agent-produced files: the `@attach` contract, per-surface previews, validation and security, persistence, and rendering. |
+| [Project Attachments](agents/attachment-project.md) | Project directories end-to-end: detection, signed preview API, static serving, sandboxed builds, cache, limits, and the WebUI card/drawer. |
 | [Thinking Levels](agents/thinking.md) | Reasoning effort per provider: catalog data, resolver rules, and wire shapes for Gemini, OpenAI, DeepSeek, and ChatGPT. |
 | [Cron & Heartbeat](agents/cron-heartbeat.md) | Scheduled jobs, heartbeat ticks, delivery targets, session pinning, and multi-agent isolation. |
 | [Agent Skills](agents/skills.md) | `SKILL.md` skills, discovery, prompt injection, and data isolation. |

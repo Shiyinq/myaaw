@@ -175,8 +175,9 @@ const deliveryInstruction = "Deliver the files that answer the user's request. "
 	"Whenever you create, generate, download, export, or modify a file, document, image, " +
 	"audio/video, archive, report, or project the user asked for, always attach it by writing " +
 	"@attach(/absolute/path) in your final answer (one directive per file). " +
-	"For a project, attach the relevant source files or the packaged output the user needs, " +
-	"not its dependencies or build caches. " +
+	"For a project, attach only the project directory once, writing " +
+	"@attach(/absolute/path/to/project) and nothing else. Do not attach its individual source " +
+	"files, HTML/CSS/JS, assets, dependencies, or build caches. " +
 	"Do not attach files you created only as temporary helpers, debug scripts, probes, logs, " +
 	"caches, or scratch files. " +
 	"Use absolute paths, and never base64-encode a file or paste its contents into the reply."

@@ -368,6 +368,83 @@ func TestRouterRawFiles(t *testing.T) {
 	}
 }
 
+func TestRouterProjectPreview(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	site := filepath.Join(home, ".myaaw", "agents", "myfriend", "home", "workspace", "site")
+	if err := os.MkdirAll(filepath.Join(site, "assets"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(site, "index.html"), []byte("<h1>preview</h1>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(site, "assets", "app.js"), []byte("console.log(1)"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var status struct {
+		Type  string `json:"type"`
+		State string `json:"state"`
+		Entry string `json:"entry"`
+		URL   string `json:"url"`
+	}
+	doJSON(t, app, "GET", "/agents/myfriend/project/status?path=/home/workspace/site", token, "", fiber.StatusOK, &status)
+	if status.Type != "static" || status.State != "ready" {
+		t.Fatalf("status = %+v", status)
+	}
+	if status.Entry != "index.html" || status.URL == "" {
+		t.Fatalf("entry/url = %q / %q", status.Entry, status.URL)
+	}
+
+	get := func(path string) (*http.Response, []byte) {
+		t.Helper()
+		req := httptest.NewRequest("GET", path, nil)
+		resp, reqErr := app.Test(req)
+		if reqErr != nil {
+			t.Fatalf("GET %s: %v", path, reqErr)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			t.Fatalf("read %s: %v", path, readErr)
+		}
+		return resp, body
+	}
+
+	// The signed URL works without a session token: an iframe cannot send one.
+	resp, body := get(status.URL)
+	if resp.StatusCode != fiber.StatusOK || !strings.Contains(string(body), "preview") {
+		t.Fatalf("preview status = %d, body = %s", resp.StatusCode, body)
+	}
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox") || !strings.Contains(csp, "connect-src 'none'") {
+		t.Fatalf("csp = %q", csp)
+	}
+	if allowOrigin := resp.Header.Get("Access-Control-Allow-Origin"); allowOrigin != "*" {
+		t.Fatalf("access-control-allow-origin = %q", allowOrigin)
+	}
+
+	// Relative subresources keep the token because it lives in the path.
+	base := strings.TrimSuffix(status.URL, "index.html")
+	asset, assetBody := get(base + "assets/app.js")
+	if asset.StatusCode != fiber.StatusOK || string(assetBody) != "console.log(1)" {
+		t.Fatalf("asset status = %d, body = %s", asset.StatusCode, assetBody)
+	}
+
+	// Traversal and an invalid token are rejected.
+	escape, _ := get(base + "../AGENTS.md")
+	if escape.StatusCode < 400 {
+		t.Fatalf("traversal status = %d", escape.StatusCode)
+	}
+
+	doJSON(t, app, "GET", "/agents/myfriend/project/status?path=/home/AGENTS.md", token, "", fiber.StatusBadRequest, nil)
+}
+
 func TestRouterTerminal(t *testing.T) {
 	t.Setenv("MYAAW_TERMINAL", "1")
 	t.Setenv("SHELL", "/bin/sh")

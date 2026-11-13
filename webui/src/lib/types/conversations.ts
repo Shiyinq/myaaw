@@ -128,8 +128,10 @@ export interface ConversationAttachment {
 	path: string;
 	file_name: string;
 	mime_type?: string;
-	/** Rendering kind: image, video, audio, pdf, or file. */
+	/** Rendering kind: image, video, audio, pdf, file, or project. */
 	kind: string;
+	/** For a project: static, react, svelte, next, vite, or source. */
+	project_type?: string;
 	size?: number;
 	origin: 'agent' | 'user';
 	/** Transcript entry that carried the file, used by "Show in chat". */
@@ -168,4 +170,19 @@ export interface ConversationDetail {
 	has_more: boolean;
 	/** Every question of the conversation, not only the returned messages. */
 	turns: ConversationTurn[];
+}
+
+/** One project's preview state, as reported by /project/status. */
+export interface ProjectStatus {
+	path: string;
+	type: string;
+	state: 'idle' | 'building' | 'ready' | 'failed';
+	entry?: string;
+	url?: string;
+	expires_at?: number;
+	logs?: string;
+	error?: string;
+	file_count?: number;
+	size?: number;
+	download_only?: boolean;
 }

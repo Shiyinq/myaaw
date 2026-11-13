@@ -124,6 +124,7 @@ type ConversationAttachment struct {
 	FileName     string     `json:"file_name"`
 	MimeType     string     `json:"mime_type,omitempty"`
 	Kind         string     `json:"kind"`
+	ProjectType  string     `json:"project_type,omitempty"`
 	Size         int64      `json:"size,omitempty"`
 	Origin       string     `json:"origin"`
 	MessageID    string     `json:"message_id,omitempty"`
@@ -605,6 +606,7 @@ func collectConversationAttachments(messages []provider.Message) []ConversationA
 				FileName:     attachmentFileName(attachment.FileName, path),
 				MimeType:     attachment.MimeType,
 				Kind:         attachmentKind(attachment.Kind, attachment.MimeType, path),
+				ProjectType:  attachment.ProjectType,
 				Size:         attachment.Size,
 				Origin:       "agent",
 				MessageID:    message.ID,
@@ -661,7 +663,7 @@ func attachmentFileName(name, path string) string {
 // MIME type or extension when an older entry has none.
 func attachmentKind(kind, mimeType, path string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "image", "video", "audio", "pdf", "file":
+	case "image", "video", "audio", "pdf", "file", "project":
 		return strings.ToLower(strings.TrimSpace(kind))
 	}
 
