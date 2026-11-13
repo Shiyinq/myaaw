@@ -617,6 +617,11 @@ On mount:
 4. poll status every 1.5 seconds while `building`;
 5. stop polling on `ready` or `failed`.
 
+The overlay is portalled to `document.body`. Focus mode keeps its sidebar in a
+`transform`ed container (`translate-x`), and a transformed ancestor would become
+the containing block of a `position: fixed` child; portalling keeps the drawer
+full-screen instead of clipping it to the sidebar width.
+
 On unmount: clear the timer and restore body overflow.
 
 States:

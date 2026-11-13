@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { AlertTriangle, ExternalLink, FolderOpen, Loader2, RefreshCw, X } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { portal } from '$lib/actions/portal';
 	import { projects as projectsApi } from '$lib/apis/projects';
 	import { getApiBase } from '$lib/constants';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -98,11 +99,14 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
+<!-- The focus-mode sidebar is translated (transform), which would make a fixed
+     overlay size itself to the aside. Portalling to <body> keeps it full-screen. -->
 <div
 	class="fixed inset-0 z-[70] flex flex-col bg-background"
 	role="dialog"
 	aria-modal="true"
 	aria-label={name}
+	use:portal
 >
 	<header class="flex shrink-0 items-center gap-2.5 border-b px-3 py-2">
 		<span class="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
