@@ -96,6 +96,10 @@ export class ChatRun {
 	pendingApproval = $state<ApprovalPrompt | null>(null);
 	/** Step group that is still collecting rows, so its header keeps spinning. */
 	openGroup = $state('');
+	/** When this run started, used by the live duration in the process header. */
+	startedAt = $state(Date.now());
+	/** When the open step group started; the completed duration uses the same point. */
+	groupStartedAt = $state(0);
 	finishedAt = $state(0);
 	/**
 	 * Why the run ended. `done` means the answer landed, so it is worth announcing
@@ -134,6 +138,7 @@ export class ChatRun {
 		const duration = Date.now() - this.groupStart;
 		const last = this.groupLastStep;
 		this.groupStart = 0;
+		this.groupStartedAt = 0;
 		this.groupLastStep = '';
 		this.openGroup = '';
 		this.items = this.items.map((item) =>
@@ -146,6 +151,7 @@ export class ChatRun {
 		if (this.stepRow(item)) {
 			if (!this.groupStart) {
 				this.groupStart = Date.now();
+				this.groupStartedAt = this.groupStart;
 				this.openGroup = localId;
 			}
 			this.groupLastStep = localId;
@@ -206,6 +212,8 @@ export class ChatRun {
 
 	start(options: StartRunOptions) {
 		this.conversationId = options.conversationId;
+		this.startedAt = Date.now();
+		this.finishedAt = 0;
 		const earlier = options.initialItems ?? [];
 		this.items = [...earlier];
 		// Continue the id sequence of the rows we adopted, so a stale local id
@@ -472,6 +480,8 @@ export const chatRuns = {
 
 			const run = new ChatRun(agentName, info.request_id, true);
 			run.conversationId = info.conversation_id ?? '';
+			const startedAt = Date.parse(info.started_at ?? '');
+			if (Number.isFinite(startedAt)) run.startedAt = startedAt;
 			run.discard = () => {
 				const index = runs.indexOf(run);
 				if (index >= 0) runs.splice(index, 1);

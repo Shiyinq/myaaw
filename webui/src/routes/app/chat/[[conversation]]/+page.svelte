@@ -214,6 +214,14 @@
 	let messageDraft = $state('');
 	let draftArea = $state<HTMLTextAreaElement | null>(null);
 	let streaming = $derived(activeRun?.streaming ?? false);
+	// Ticks the elapsed time shown on the live process header. It stops with the run.
+	let now = $state(Date.now());
+	$effect(() => {
+		if (!streaming) return;
+		now = Date.now();
+		const timer = setInterval(() => (now = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
 	let loading = $state(false);
 	// A pending approval can belong to this run, or to a detached one (a sub-agent)
 	// announced on the agent's approval stream, which has no run object here.
@@ -1674,10 +1682,13 @@
 	}
 
 	function formatDuration(ms: number) {
-		const seconds = ms / 1000;
-		if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
-		const minutes = Math.floor(seconds / 60);
-		return `${minutes}m ${Math.round(seconds % 60)}s`;
+		const total = Math.max(1, Math.round(ms / 1000));
+		const hours = Math.floor(total / 3600);
+		const minutes = Math.floor((total % 3600) / 60);
+		const seconds = total % 60;
+		if (hours > 0) return t('myaaw.chat.duration_hours', { hours, minutes, seconds });
+		if (minutes > 0) return t('myaaw.chat.duration_minutes', { minutes, seconds });
+		return t('myaaw.chat.duration_seconds', { seconds });
 	}
 
 	let turnCount = $derived(items.filter((item) => item.kind === 'user').length);
@@ -3164,15 +3175,23 @@
 												aria-expanded={open}
 											>
 												{#if group.running}
-													<Bloub mood={groupMood(group)} size={18} color={markColor} />
+													{#if preferences.value.showRunMascot}
+														<Bloub mood={groupMood(group)} size={18} color={markColor} />
+													{/if}
 												{:else}
 													<Clock class="h-3.5 w-3.5 shrink-0" />
 												{/if}
 												<span class="font-medium">
 													{group.running ? t('myaaw.chat.tool_running') : t('myaaw.chat.completed')}
 												</span>
-												{#if !group.running && group.durationMs !== undefined}
-													<span class="shrink-0 text-muted-foreground">
+												{#if group.running}
+													<span class="shrink-0 text-muted-foreground tabular-nums">
+														· {formatDuration(
+															now - (activeRun?.groupStartedAt || activeRun?.startedAt || now)
+														)}
+													</span>
+												{:else if group.durationMs !== undefined}
+													<span class="shrink-0 text-muted-foreground tabular-nums">
 														· {formatDuration(group.durationMs)}
 													</span>
 												{/if}
@@ -3207,7 +3226,7 @@
 																onclick={() => toggleGroup(phaseGroup)}
 																aria-expanded={phaseOpen}
 															>
-																{#if phaseGroup.running}
+																{#if phaseGroup.running && preferences.value.showRunMascot}
 																	<Bloub mood={groupMood(phaseGroup)} size={18} color={markColor} />
 																{/if}
 																<span class="font-medium">{groupLabel(phaseGroup)}</span>
@@ -3526,7 +3545,7 @@
 							{#if streaming && items[items.length - 1]?.kind === 'user'}
 								<!-- The first token can take a while; show that the run started. -->
 								<div class="flex items-center gap-2 px-1 py-1 text-xs text-muted-foreground">
-									{#if focusMode}
+									{#if focusMode && preferences.value.showRunMascot}
 										<Bloub mood={bloubMood} size={20} color={markColor} />
 									{:else}
 										<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />

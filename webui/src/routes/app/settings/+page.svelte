@@ -422,6 +422,12 @@
 					preferences.value.keepDrafts,
 					(next) => preferences.update({ keepDrafts: next })
 				)}
+				{@render toggle(
+					t('myaaw.settings.run_mascot'),
+					t('myaaw.settings.run_mascot_desc'),
+					preferences.value.showRunMascot,
+					(next) => preferences.update({ showRunMascot: next })
+				)}
 			</div>
 
 			<div class="grid gap-5 border-t pt-5">

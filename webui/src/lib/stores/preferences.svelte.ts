@@ -43,6 +43,8 @@ export interface Preferences {
 	notifyVolume: number;
 	/** Show which control-plane host the header is talking to. */
 	showHostBadge: boolean;
+	/** Show the agent mascot while an answer is working. */
+	showRunMascot: boolean;
 }
 
 const STORAGE_KEY = 'myaaw_prefs';
@@ -66,7 +68,8 @@ const DEFAULTS: Preferences = {
 	notifyBrowser: false,
 	notifySound: 'chime',
 	notifyVolume: 0.7,
-	showHostBadge: true
+	showHostBadge: true,
+	showRunMascot: true
 };
 
 function audioLanguage(value: unknown): AudioLanguage {
@@ -131,7 +134,8 @@ function load(): Preferences {
 				1,
 				Math.max(0, Math.round((Number(parsed.notifyVolume) || 0.7) * 100) / 100)
 			),
-			showHostBadge: parsed.showHostBadge !== false
+			showHostBadge: parsed.showHostBadge !== false,
+			showRunMascot: parsed.showRunMascot !== false
 		};
 	} catch {
 		return { ...DEFAULTS };
