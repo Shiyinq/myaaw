@@ -1596,20 +1596,36 @@
 	// outer collapsible run. Assistant text in between stays plain text, only
 	// the last answer of each run is shown outside the group.
 	let rendered: TimelineRow[] = $derived.by(() => {
-		// While the answer is still streaming, the last text may be followed by more
-		// tool calls, so nothing is the final answer yet. Treating it as one would
-		// split the process into several "Completed" groups mid-run.
+		// A completed turn always shows its final answer, even while the next turn
+		// streams. Only the current turn's trailing text is held back until the run
+		// ends, because more tool calls may follow it.
 		const answers = new Set<number>();
+		let lastUser = -1;
+		for (let index = items.length - 1; index >= 0; index -= 1) {
+			if (items[index].kind === 'user') {
+				lastUser = index;
+				break;
+			}
+		}
+		const completedEnd = lastUser < 0 ? 0 : lastUser + 1;
+		let pending = -1;
+		for (let index = 0; index < completedEnd; index += 1) {
+			const item = items[index];
+			if (item.kind === 'user') {
+				if (pending >= 0) answers.add(pending);
+				pending = -1;
+			} else if (item.kind === 'text') {
+				pending = index;
+			}
+		}
+		// The text just before the newest question is the previous turn's answer.
+		if (pending >= 0) answers.add(pending);
+
 		if (!streaming) {
-			let pending = -1;
-			items.forEach((item, index) => {
-				if (item.kind === 'user') {
-					if (pending >= 0) answers.add(pending);
-					pending = -1;
-				} else if (item.kind === 'text') {
-					pending = index;
-				}
-			});
+			pending = -1;
+			for (let index = completedEnd; index < items.length; index += 1) {
+				if (items[index].kind === 'text') pending = index;
+			}
 			if (pending >= 0) answers.add(pending);
 		}
 
