@@ -35,6 +35,11 @@
 	the OS list (fast, familiar, no custom focus handling) with the current face
 	beside it, and from md up the list becomes a dropdown where every row carries
 	its agent's own face.
+
+	The compact trigger is left-aligned at the same padding as the expanded one
+	(8px row + 10px vs 12px row + 1px border + 5px), so the face holds its exact x
+	while the label and chevron fold away instead of being shoved to the edge by
+	`justify-center`.
 -->
 <div class="flex w-full flex-col gap-1">
 	<span
@@ -73,7 +78,7 @@
 					class={[
 						'hidden items-center rounded-md text-left text-sm text-foreground transition-colors hover:bg-muted focus-visible:ring-1 focus-visible:ring-ring/50 md:flex',
 						compact
-							? 'h-8 w-10 justify-center px-0'
+							? 'h-8 w-10 justify-start pl-[10px] pr-0'
 							: 'h-9 w-full gap-3 border border-input bg-transparent pl-[5px] pr-3 focus-visible:border-ring'
 					]}
 					aria-label={t('myaaw.agent.label')}
