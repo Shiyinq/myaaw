@@ -137,6 +137,20 @@
 		base64: string;
 	}
 
+	/** One message of a send: the text, the quoted excerpts and the attachments. */
+	interface MessagePayload {
+		text: string;
+		quotes: AskQuote[];
+		images: PendingImage[];
+		files: PendingFile[];
+	}
+
+	/** A message typed while an answer streams; it waits above the composer. */
+	interface QueuedMessage extends MessagePayload {
+		id: string;
+		createdAt: string;
+	}
+
 	/** A live text selection in an agent reply, positioned for the Ask button. */
 	interface AskAnchor {
 		text: string;
@@ -306,6 +320,10 @@
 	// message; the whole set travels with one send.
 	let quotes = $state<AskQuote[]>([]);
 	let askCounter = 0;
+	// Messages sent while a run streams wait here and take over one at a time, so
+	// the reader never has to stop the agent to keep typing.
+	let queue = $state<QueuedMessage[]>([]);
+	let queueOpen = $state(true);
 	// The floating Ask button, anchored to the current range in viewport units.
 	let askAnchor = $state<AskAnchor | null>(null);
 	// Sent-message quotes opened in the preview dialog.
@@ -1360,6 +1378,9 @@
 
 		loadKey = key;
 		conversationId = currentConversation;
+		// A queue belongs to the conversation it was typed in.
+		queue = [];
+		queueOpen = true;
 		focusContextPath = '';
 		previewAttachment = null;
 		classicAttachmentsOpen = false;
@@ -1559,6 +1580,10 @@
 		const now = streaming;
 		if (wasStreaming && !now) {
 			void focusComposer();
+			// The answer just ended (finished, stopped or failed), so the next queued
+			// message takes over. Deferred outside this tracking effect: draining
+			// starts a run, and that must not look like a dependency.
+			queueMicrotask(() => untrack(drainQueue));
 			if (!runError && !error && preferences.value.notifyEnabled) {
 				completed = true;
 				clearTimeout(completedTimer);
@@ -2248,19 +2273,20 @@
 		};
 	});
 
-	function send() {
-		const text = input.trim();
-		// Sending ends the dictation, any read-aloud, and an unfinished edit.
-		stopSpeech();
-		tts.stop();
-		cancelEdit();
-		const images = pending.map((item) => item.base64);
-		const files = pendingFiles.map((item) => ({
+	/**
+	 * Starts the run for one message: the composer hands it a fresh one, a queued
+	 * row hands it the message it held. Returns false when there is nothing to send.
+	 */
+	function submit(message: MessagePayload): boolean {
+		if (!agent) return false;
+		const text = message.text.trim();
+		const images = message.images.map((item) => item.base64);
+		const files = message.files.map((item) => ({
 			name: item.name,
 			mime_type: item.mimeType || undefined,
 			data_base64: item.base64
 		}));
-		if ((!text && images.length === 0 && files.length === 0) || !agent || streaming) return;
+		if (!text && images.length === 0 && files.length === 0) return false;
 
 		// The run owns the stream and its timeline, so opening another
 		// conversation or another menu no longer cuts the answer off.
@@ -2268,11 +2294,11 @@
 			agent,
 			conversationId,
 			text,
-			quotes,
+			quotes: message.quotes,
 			images,
-			imagesDisplay: pending.map((item) => item.dataUrl),
+			imagesDisplay: message.images.map((item) => item.dataUrl),
 			files,
-			uploads: pendingFiles.map((item) => ({
+			uploads: message.files.map((item) => ({
 				name: item.name,
 				path: '',
 				mime_type: item.mimeType,
@@ -2282,14 +2308,88 @@
 			initialItems: items
 		});
 
+		groupOpen = {};
+		error = '';
+		storedUsage = null;
+		return true;
+	}
+
+	function send() {
+		// Sending ends the dictation, any read-aloud, and an unfinished edit.
+		stopSpeech();
+		tts.stop();
+		cancelEdit();
+		const text = input.trim();
+		if ((!text && pending.length === 0 && pendingFiles.length === 0) || !agent) return;
+
+		// While an answer streams nothing is blocked: the message joins the queue
+		// above the composer and starts on its own once the run settles.
+		if (streaming) {
+			queue = [
+				...queue,
+				{
+					id: crypto.randomUUID(),
+					text,
+					quotes: [...quotes],
+					images: pending,
+					files: pendingFiles,
+					createdAt: new Date().toISOString()
+				}
+			];
+			queueOpen = true;
+		} else if (!submit({ text, quotes: [...quotes], images: pending, files: pendingFiles })) {
+			return;
+		}
+
 		input = '';
 		quotes = [];
 		askAnchor = null;
 		clearPending();
-		groupOpen = {};
 		if (composer) composer.style.height = '';
-		error = '';
-		storedUsage = null;
+	}
+
+	/**
+	 * Sends the next queued message once the current run settles. Runs drain one
+	 * at a time, because each answer streams into its own turn.
+	 */
+	function drainQueue() {
+		if (streaming || queue.length === 0) return;
+		const [next, ...rest] = queue;
+		queue = rest;
+		submit(next);
+	}
+
+	function removeQueued(id: string) {
+		queue = queue.filter((item) => item.id !== id);
+	}
+
+	function clearQueue() {
+		queue = [];
+	}
+
+	/** Pulls a queued message back into the composer, with its excerpts and files. */
+	function editQueued(item: QueuedMessage) {
+		queue = queue.filter((entry) => entry.id !== item.id);
+		pending = [...pending, ...item.images];
+		pendingFiles = [...pendingFiles, ...item.files];
+		quotes = [...quotes, ...item.quotes];
+		askCounter = Math.max(askCounter, nextAskCounter(item.quotes));
+		input = input.trim() ? `${input.trim()}\n\n${item.text}` : item.text;
+		void focusComposer();
+	}
+
+	/** Interrupts the streaming answer and sends this queued message right away. */
+	function sendQueuedNow(item: QueuedMessage) {
+		queue = queue.filter((entry) => entry.id !== item.id);
+		// The stop request is dispatched before the new stream, so the agent sees
+		// the interrupt first. Starting the run here keeps the swap instant.
+		void activeRun?.stop();
+		submit(item);
+	}
+
+	/** The one-line preview of a queued message. */
+	function queuedPreview(item: QueuedMessage): string {
+		return item.text || t('myaaw.chat.queue_attachment_only');
 	}
 
 	// --- Editing and regenerating ---------------------------------------------
@@ -2431,6 +2531,8 @@
 		input = '';
 		quotes = [];
 		askAnchor = null;
+		queue = [];
+		queueOpen = true;
 		focusContextPath = '';
 		previewAttachment = null;
 		attachmentCount = 0;
@@ -4207,6 +4309,93 @@
 										void addFiles(event.dataTransfer?.files);
 									}}
 								>
+									{#if queue.length > 0}
+										<div class="border-b px-3 py-2" data-chat-queue>
+											<div class="flex items-center justify-between gap-2">
+												<button
+													type="button"
+													class="flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+													onclick={() => (queueOpen = !queueOpen)}
+													aria-expanded={queueOpen}
+													title={t('myaaw.chat.queue_toggle')}
+												>
+													<ChevronDown
+														class={cn(
+															'h-3 w-3 shrink-0 transition-transform',
+															!queueOpen && '-rotate-90'
+														)}
+													/>
+													<span class="truncate">
+														{queue.length === 1
+															? t('myaaw.chat.queue_title_one')
+															: t('myaaw.chat.queue_title', { count: queue.length })}
+													</span>
+												</button>
+												<button
+													type="button"
+													class="shrink-0 rounded-md px-1 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+													onclick={clearQueue}
+												>
+													{t('myaaw.chat.queue_clear')}
+												</button>
+											</div>
+											{#if queueOpen}
+												<ul class="mt-1.5 flex flex-col gap-1">
+													{#each queue as item (item.id)}
+														{@const attachments = item.images.length + item.files.length}
+														<li
+															class="flex items-center gap-2 rounded-lg border bg-muted/30 py-1 pr-1 pl-2.5"
+															data-chat-queued={item.id}
+														>
+															<span class="size-1.5 shrink-0 rounded-full bg-primary/60"></span>
+															<span
+																class="min-w-0 flex-1 truncate text-xs text-foreground/90"
+																title={queuedPreview(item)}
+															>
+																{queuedPreview(item)}
+															</span>
+															{#if attachments > 0}
+																<span
+																	class="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground"
+																>
+																	<Paperclip class="h-3 w-3" />
+																	{attachments}
+																</span>
+															{/if}
+															<Button
+																size="xs"
+																variant="ghost"
+																class="shrink-0 text-[10px]"
+																onclick={() => sendQueuedNow(item)}
+																title={t('myaaw.chat.queue_send_now')}
+															>
+																<Send class="h-3 w-3" />
+																{t('myaaw.chat.queue_send_now')}
+															</Button>
+															<button
+																type="button"
+																class="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+																onclick={() => editQueued(item)}
+																aria-label={t('myaaw.chat.queue_edit')}
+																title={t('myaaw.chat.queue_edit')}
+															>
+																<Pencil class="h-3 w-3" />
+															</button>
+															<button
+																type="button"
+																class="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+																onclick={() => removeQueued(item.id)}
+																aria-label={t('myaaw.chat.queue_remove')}
+																title={t('myaaw.chat.queue_remove')}
+															>
+																<X class="h-3 w-3" />
+															</button>
+														</li>
+													{/each}
+												</ul>
+											{/if}
+										</div>
+									{/if}
 									{#if pending.length > 0}
 										<div class="flex flex-wrap gap-2 px-3 pt-3">
 											{#each pending as image (image.id)}
@@ -4588,22 +4777,23 @@
 													class="rounded-full"
 													onclick={stop}
 													aria-label={t('myaaw.chat.stop')}
+													title={t('myaaw.chat.stop')}
 												>
 													<Square class="h-4 w-4" />
 												</Button>
-											{:else}
-												<Button
-													size="icon"
-													class="rounded-full"
-													onclick={send}
-													disabled={!input.trim() &&
-														pending.length === 0 &&
-														pendingFiles.length === 0}
-													aria-label={t('myaaw.chat.send')}
-												>
-													<Send class="h-4 w-4" />
-												</Button>
 											{/if}
+											<Button
+												size="icon"
+												class="rounded-full"
+												onclick={send}
+												disabled={!input.trim() &&
+													pending.length === 0 &&
+													pendingFiles.length === 0}
+												aria-label={streaming ? t('myaaw.chat.queue_send') : t('myaaw.chat.send')}
+												title={streaming ? t('myaaw.chat.queue_send') : t('myaaw.chat.send')}
+											>
+												<Send class="h-4 w-4" />
+											</Button>
 										</div>
 									</div>
 									<div
