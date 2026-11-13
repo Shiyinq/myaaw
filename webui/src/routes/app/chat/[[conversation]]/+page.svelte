@@ -27,10 +27,12 @@
 	import { cn } from '$lib/utils';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { MAX_ASK_QUOTES, MAX_ASK_QUOTE_CHARS, parseAskPrompt } from '$lib/utils/ask';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
 	import AttachmentPanel from '$lib/components/app/AttachmentPanel.svelte';
 	import AttachmentPreview from '$lib/components/app/AttachmentPreview.svelte';
+	import AskQuoteList from '$lib/components/app/AskQuoteList.svelte';
 	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
 	import RunAttachments from '$lib/components/app/RunAttachments.svelte';
 	import ImageLightbox from '$lib/components/app/ImageLightbox.svelte';
@@ -47,6 +49,7 @@
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { colorOf, cycleSrc, moodSrc, type BloubCycle, type BloubMood } from '$lib/bloub';
 	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { theme } from 'mode-watcher';
 	import { isFrosted } from '$lib/theme';
@@ -77,6 +80,7 @@
 		PanelRightOpen,
 		Paperclip,
 		Pencil,
+		Quote,
 		RotateCcw,
 		Send,
 		ShieldCheck,
@@ -89,6 +93,8 @@
 	} from 'lucide-svelte';
 	import type {
 		ApprovalDecision,
+		AskQuote,
+		AskQuoteSource,
 		ContextUsage,
 		ConversationAttachment,
 		ConversationTurn,
@@ -129,6 +135,18 @@
 		mimeType: string;
 		size: number;
 		base64: string;
+	}
+
+	/** A live text selection in an agent reply, positioned for the Ask button. */
+	interface AskAnchor {
+		text: string;
+		source: AskQuoteSource;
+		label?: string;
+		sourceId?: string;
+		startOffset?: number;
+		endOffset?: number;
+		top: number;
+		left: number;
 	}
 
 	const MAX_IMAGES = 6;
@@ -284,6 +302,21 @@
 	let switchingApproval = $state(false);
 	let pending = $state<PendingImage[]>([]);
 	let pendingFiles = $state<PendingFile[]>([]);
+	// Excerpts the reader highlighted in an agent reply and attached to the next
+	// message; the whole set travels with one send.
+	let quotes = $state<AskQuote[]>([]);
+	let askCounter = 0;
+	// The floating Ask button, anchored to the current range in viewport units.
+	let askAnchor = $state<AskAnchor | null>(null);
+	// Sent-message quotes opened in the preview dialog.
+	let quotePreview = $state<AskQuote[] | null>(null);
+	// The temporary overlay rectangles that mark exactly the quoted passage.
+	let quoteRects = $state<{ left: number; top: number; width: number; height: number }[]>([]);
+	let quoteMarkTimer: ReturnType<typeof setTimeout> | undefined;
+	// Jumps to a quote bypass pagination until the scroll settles; paging older
+	// messages mid-jump would rebuild the rows the reader is being sent to.
+	let locatingQuote = false;
+	let locateTimer: ReturnType<typeof setTimeout> | undefined;
 	// Photos from user turns use this shared viewer; agent attachments mount their
 	// own instance inside RunAttachments.
 	let lightboxOpen = $state(false);
@@ -382,18 +415,45 @@
 	// A question asked in a live run is not in the summary yet; it gets a negative
 	// index so the rail can still show and light it.
 	let railTurns = $derived.by(() => {
-		const stored = new Set(turns.map((turn) => turn.index));
-		const live = turnMarks
-			.filter((mark) => !stored.has(mark.index))
-			.map((mark) => ({ index: mark.index, text: mark.text }));
-		// One entry per question: a row can repeat an index the summary already has
-		// while a run is settling, and a keyed block cannot repeat a key.
+		// A loaded row knows the question as the transcript parsed it (and hides
+		// context tags). Prefer that over the server summary, which may predate the
+		// current stripping rules, while keeping the summary for rows not loaded yet.
+		const local = new Map<number, string>();
+		for (const mark of turnMarks) {
+			if (mark.text) local.set(mark.index, mark.text);
+		}
 		const unique = new Map<number, { index: number; text: string }>();
-		for (const turn of [...turns, ...live]) {
-			if (!unique.has(turn.index)) unique.set(turn.index, turn);
+		for (const turn of turns) {
+			unique.set(turn.index, {
+				index: turn.index,
+				text: turnLabelText(local.get(turn.index) ?? turn.text)
+			});
+		}
+		for (const mark of turnMarks) {
+			if (!unique.has(mark.index)) {
+				unique.set(mark.index, { index: mark.index, text: turnLabelText(mark.text) });
+			}
 		}
 		return [...unique.values()];
 	});
+
+	/**
+	 * Strips model-only blocks from a turn label. The server summary is normally
+	 * clean, but a row from an older server may carry a whole <selections> block (or
+	 * its truncated head) and must never show it in the rail.
+	 */
+	function turnLabelText(raw: string): string {
+		const hadSelections = /<selections\b/i.test(raw);
+		const stripped = raw
+			.replace(/<selections\b[^>]*>[\s\S]*?<\/selections>\s*/gi, '')
+			.replace(/<selections\b[\s\S]*$/i, '')
+			.replace(/<userinfo>[\s\S]*?<\/userinfo>\s*/gi, '')
+			.replace(/<attached>[\s\S]*?<\/attached>\s*/gi, '')
+			.replace(/<trigger\b[^>]*>[\s\S]*?<\/trigger>\s*/gi, '')
+			.replace(/<trigger\b[\s\S]*$/i, '')
+			.trim();
+		return !stripped && hadSelections ? t('myaaw.chat.quoted_turn') : stripped;
+	}
 
 	// The ticks are a window over the list, centred on the question being read. It
 	// rolls like a lens: the marks at both ends of the window are shorter and
@@ -543,7 +603,7 @@
 				// index so the rail can still point at it.
 				const index = Number.isFinite(stored) ? stored : -(position + 1);
 				const top = node.getBoundingClientRect().top - origin + container.scrollTop;
-				const text = storedTexts.get(index) ?? texts.get(index) ?? '';
+				const text = turnLabelText(texts.get(index) || storedTexts.get(index) || '');
 				return { id, index, text, top };
 			}
 		);
@@ -622,8 +682,11 @@
 	function onScroll() {
 		stickToBottom = nearBottom();
 		syncActiveTurn();
+		// The Ask button is placed in viewport coordinates; scrolling moves the
+		// selection out from under it, so it closes instead of pointing elsewhere.
+		askAnchor = null;
 		// Near the top the previous page is pulled in, keeping the reader's place.
-		if (scroller && scroller.scrollTop < 120) void loadOlder();
+		if (scroller && scroller.scrollTop < 120 && !locatingQuote) void loadOlder();
 	}
 
 	/** Whether the unfolded list has more turns above or below the visible part. */
@@ -1332,12 +1395,64 @@
 		return `myaaw_draft:${who}:${id || 'new'}`;
 	}
 
+	function draftQuotesStorageKey(who: string, id: string) {
+		return `myaaw_draft_quotes:${who}:${id || 'new'}`;
+	}
+
+	/** Restores excerpts saved with a draft, dropping anything malformed. */
+	function readDraftQuotes(key: string): AskQuote[] {
+		if (!browser) return [];
+		try {
+			const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
+			if (!Array.isArray(parsed)) return [];
+			const restored: AskQuote[] = [];
+			for (const item of parsed) {
+				if (!item || typeof item !== 'object') continue;
+				const quote = item as Partial<AskQuote>;
+				if (typeof quote.text !== 'string' || !quote.text.trim()) continue;
+				if (quote.source !== 'answer' && quote.source !== 'thinking' && quote.source !== 'tool') {
+					continue;
+				}
+				restored.push({
+					id: typeof quote.id === 'string' && quote.id ? quote.id : `ask-${restored.length + 1}`,
+					text: quote.text.slice(0, MAX_ASK_QUOTE_CHARS),
+					source: quote.source,
+					label: typeof quote.label === 'string' && quote.label ? quote.label : undefined,
+					sourceId:
+						typeof quote.sourceId === 'string' && quote.sourceId ? quote.sourceId : undefined,
+					startOffset: typeof quote.startOffset === 'number' ? quote.startOffset : undefined,
+					endOffset: typeof quote.endOffset === 'number' ? quote.endOffset : undefined
+				});
+				if (restored.length >= MAX_ASK_QUOTES) break;
+			}
+			return restored;
+		} catch {
+			return [];
+		}
+	}
+
+	/** Keeps new ids from colliding with the ones a restored draft already used. */
+	function nextAskCounter(items: AskQuote[]): number {
+		return items.reduce((max, quote) => {
+			const match = /^ask-(\d+)$/.exec(quote.id);
+			return match ? Math.max(max, Number(match[1])) : max;
+		}, 0);
+	}
+
 	$effect(() => {
 		if (!browser) return;
 		const key = draftStorageKey(agent ?? '', conversationId);
 		if (key === draftKey) return;
 		draftKey = key;
-		input = preferences.value.keepDrafts ? (localStorage.getItem(key) ?? '') : '';
+		const keep = preferences.value.keepDrafts;
+		input = keep ? (localStorage.getItem(key) ?? '') : '';
+		const restored = keep
+			? readDraftQuotes(draftQuotesStorageKey(agent ?? '', conversationId))
+			: [];
+		quotes = restored;
+		askCounter = nextAskCounter(restored);
+		askAnchor = null;
+		clearQuoteFlash();
 	});
 
 	$effect(() => {
@@ -1346,6 +1461,20 @@
 		if (key !== draftKey) return;
 		if (preferences.value.keepDrafts && input) localStorage.setItem(key, input);
 		else localStorage.removeItem(key);
+	});
+
+	// Quotes are part of the same draft: a refresh must bring back the excerpts
+	// even when no question was typed yet.
+	$effect(() => {
+		if (!browser || !draftKey) return;
+		const key = draftStorageKey(agent ?? '', conversationId);
+		if (key !== draftKey) return;
+		const quotesKey = draftQuotesStorageKey(agent ?? '', conversationId);
+		if (preferences.value.keepDrafts && quotes.length > 0) {
+			localStorage.setItem(quotesKey, JSON.stringify(quotes));
+		} else {
+			localStorage.removeItem(quotesKey);
+		}
 	});
 
 	// This page is only a viewer of a run: callbacks are attached while it is on
@@ -1443,6 +1572,13 @@
 		spokenScope = scope;
 		editingMessageId = '';
 		messageDraft = '';
+		// Selections quote this conversation, so they do not follow the reader
+		// into another chat. The draft effect restores the new chat's saved
+		// excerpts instead of clearing them here.
+		askAnchor = null;
+		clearQuoteFlash();
+		locatingQuote = false;
+		clearTimeout(locateTimer);
 		untrack(() => tts.stop());
 	});
 
@@ -1799,6 +1935,292 @@
 		);
 	}
 
+	// --- Quoted selections -----------------------------------------------------
+	// Selecting text in an agent answer, a thinking block, or a tool log raises a
+	// small Ask button. Clicking it pins that excerpt to the next message; any
+	// number of excerpts can be collected before sending.
+
+	function askSourceHost(node: Node | null): HTMLElement | null {
+		if (!node) return null;
+		const element =
+			node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+		return element?.closest<HTMLElement>('[data-ask-source]') ?? null;
+	}
+
+	/** Character offset of a range boundary measured from `host`'s text. */
+	function textOffsetIn(host: HTMLElement, container: Node, offset: number): number {
+		const range = document.createRange();
+		range.selectNodeContents(host);
+		try {
+			range.setEnd(container, offset);
+		} catch {
+			return -1;
+		}
+		return range.toString().length;
+	}
+
+	function updateAskAnchor() {
+		if (!browser) return;
+		const selection = window.getSelection();
+		if (!selection || selection.isCollapsed || selection.rangeCount === 0 || !transcript) {
+			askAnchor = null;
+			return;
+		}
+		const text = selection.toString().trim();
+		if (!text) {
+			askAnchor = null;
+			return;
+		}
+		const range = selection.getRangeAt(0);
+		const startHost = askSourceHost(range.startContainer);
+		const endHost = askSourceHost(range.endContainer);
+		// A selection that spans two messages (or reaches the composer) has no single
+		// source to attribute, so it does not become a quote.
+		if (!startHost || !endHost || startHost !== endHost || !transcript.contains(startHost)) {
+			askAnchor = null;
+			return;
+		}
+		const rects = range.getClientRects();
+		const rect = rects[rects.length - 1] ?? range.getBoundingClientRect();
+		if (!rect || (rect.width === 0 && rect.height === 0)) {
+			askAnchor = null;
+			return;
+		}
+		// Offsets record exactly what was highlighted, so the card can mark that
+		// same passage later instead of washing the whole reply.
+		const raw = range.toString();
+		const startOffset = textOffsetIn(startHost, range.startContainer, range.startOffset);
+		const endOffset = textOffsetIn(startHost, range.endContainer, range.endOffset);
+		const leading = raw.length - raw.trimStart().length;
+		const trailing = raw.length - raw.trimEnd().length;
+		const exactRange = startOffset >= 0 && endOffset - trailing > startOffset + leading;
+		const width = 104;
+		const height = 34;
+		const margin = 8;
+		// Sit above the end of the selection, flip below near the top edge, and stay
+		// inside the viewport on narrow screens.
+		let top = rect.top - height - 6;
+		if (top < 64) top = rect.bottom + 6;
+		let left = rect.right - width;
+		left = Math.min(Math.max(margin, left), window.innerWidth - width - margin);
+		top = Math.min(Math.max(margin, top), window.innerHeight - height - margin);
+		askAnchor = {
+			text,
+			source: startHost.dataset.askSource as AskQuoteSource,
+			label: startHost.dataset.askLabel || undefined,
+			sourceId: startHost.dataset.askId || undefined,
+			startOffset: exactRange ? startOffset + leading : undefined,
+			endOffset: exactRange ? endOffset - trailing : undefined,
+			top,
+			left
+		};
+	}
+
+	function addAskQuote() {
+		const anchor = askAnchor;
+		if (!anchor) return;
+		if (quotes.length >= MAX_ASK_QUOTES) {
+			toastStore.error(t('myaaw.chat.ask_limit', { count: MAX_ASK_QUOTES }));
+			return;
+		}
+		const trimmed = anchor.text.length > MAX_ASK_QUOTE_CHARS;
+		const text = trimmed ? anchor.text.slice(0, MAX_ASK_QUOTE_CHARS).trimEnd() : anchor.text;
+		askAnchor = null;
+		window.getSelection()?.removeAllRanges();
+		if (quotes.some((quote) => quote.text === text && quote.source === anchor.source)) {
+			return;
+		}
+		askCounter += 1;
+		quotes = [
+			...quotes,
+			{
+				id: `ask-${askCounter}`,
+				text,
+				source: anchor.source,
+				label: anchor.label,
+				sourceId: anchor.sourceId,
+				startOffset: anchor.startOffset,
+				endOffset: anchor.endOffset
+			}
+		];
+		if (trimmed) {
+			toastStore.warning(t('myaaw.chat.ask_trimmed', { count: MAX_ASK_QUOTE_CHARS }));
+		}
+		void focusComposer();
+	}
+
+	function removeAskQuote(id: string) {
+		quotes = quotes.filter((quote) => quote.id !== id);
+	}
+
+	function clearAskQuotes() {
+		quotes = [];
+	}
+
+	function openQuotePreview(items: AskQuote[]) {
+		if (items.length > 0) quotePreview = items;
+	}
+
+	/**
+	 * Rebuilds a range from character offsets inside one agent row, so a quote can
+	 * mark exactly the passage the reader highlighted earlier.
+	 */
+	function rangeFromOffsets(host: HTMLElement, start: number, end: number): Range | null {
+		if (start < 0 || end <= start) return null;
+		const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+		const range = document.createRange();
+		let position = 0;
+		let started = false;
+		let node: Node | null;
+		while ((node = walker.nextNode())) {
+			const length = node.nodeValue?.length ?? 0;
+			if (!started && start <= position + length) {
+				range.setStart(node, Math.max(0, start - position));
+				started = true;
+			}
+			if (started && end <= position + length) {
+				range.setEnd(node, Math.max(0, end - position));
+				break;
+			}
+			position += length;
+		}
+		return started && !range.collapsed ? range : null;
+	}
+
+	/**
+	 * Finds a quote again when its row id no longer exists (a finished run is
+	 * replaced by the stored transcript). The first pass prefers the same kind of
+	 * source and tool, so an identical sentence in another answer is not picked
+	 * before the most likely one.
+	 */
+	function findQuoteRange(
+		text: string,
+		source: AskQuoteSource,
+		label?: string
+	): { host: HTMLElement; range: Range } | null {
+		if (!transcript || !text) return null;
+		const hosts = Array.from(transcript.querySelectorAll<HTMLElement>('[data-ask-source]'));
+		const passes: ((host: HTMLElement) => boolean)[] = [
+			(host) => host.dataset.askSource === source && (!label || host.dataset.askLabel === label),
+			(host) => host.dataset.askSource === source,
+			() => true
+		];
+		for (const accept of passes) {
+			for (const host of hosts) {
+				if (!accept(host)) continue;
+				const index = (host.textContent ?? '').indexOf(text);
+				if (index < 0) continue;
+				const range = rangeFromOffsets(host, index, index + text.length);
+				if (range) return { host, range };
+			}
+		}
+		return null;
+	}
+
+	/** Stops the yellow wash and forgets the rectangles behind it. */
+	function clearQuoteFlash() {
+		clearTimeout(quoteMarkTimer);
+		quoteRects = [];
+	}
+
+	/**
+	 * Jumps to the reply an excerpt came from and paints exactly the quoted text.
+	 * A step inside a collapsed process group opens first, so the reader always
+	 * lands on the passage rather than on a closed header. The overlay is drawn
+	 * inside the transcript, so it follows the text while the view scrolls.
+	 */
+	async function locateAskQuote(quote: AskQuote) {
+		if (!browser || !transcript) return;
+		const sourceId = quote.sourceId;
+		const selector = sourceId ? `[data-ask-id="${CSS.escape(sourceId)}"]` : '';
+		let host = selector ? transcript.querySelector<HTMLElement>(selector) : null;
+		if (!host && sourceId) {
+			const row = transcript.querySelector<HTMLElement>(`[data-ask-row="${CSS.escape(sourceId)}"]`);
+			row?.querySelector<HTMLButtonElement>('button[aria-expanded]')?.click();
+			await tick();
+			host = transcript.querySelector<HTMLElement>(selector);
+		}
+
+		clearQuoteFlash();
+		let range =
+			host && quote.startOffset !== undefined && quote.endOffset !== undefined
+				? rangeFromOffsets(host, quote.startOffset, quote.endOffset)
+				: null;
+		if (!range) {
+			const found = findQuoteRange(quote.text, quote.source, quote.label);
+			if (found) {
+				host = found.host;
+				range = found.range;
+			}
+		}
+		if (!host || !range) return;
+
+		// Rects are measured against the transcript, not the viewport, so the
+		// overlay scrolls with the message it belongs to.
+		const base = transcript.getBoundingClientRect();
+		const rects = Array.from(range.getClientRects())
+			.filter((rect) => rect.width > 0 && rect.height > 0)
+			.map((rect) => ({
+				left: rect.left - base.left,
+				top: rect.top - base.top,
+				width: rect.width,
+				height: rect.height
+			}));
+		if (rects.length === 0) return;
+
+		quoteRects = rects;
+		locatingQuote = true;
+		clearTimeout(locateTimer);
+		locateTimer = setTimeout(() => (locatingQuote = false), 1200);
+		const startElement = range.startContainer.parentElement ?? host;
+		startElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		quoteMarkTimer = setTimeout(clearQuoteFlash, 3400);
+	}
+
+	$effect(() => () => clearQuoteFlash());
+	$effect(() => () => clearTimeout(locateTimer));
+
+	function askQuoteLabel(quote: AskQuote): string {
+		if (quote.source === 'tool') {
+			return quote.label
+				? `${t('myaaw.chat.ask_source_tool')} · ${quote.label}`
+				: t('myaaw.chat.ask_source_tool');
+		}
+		return quote.source === 'thinking'
+			? t('myaaw.chat.ask_source_thinking')
+			: t('myaaw.chat.ask_source_answer');
+	}
+
+	function askQuoteIcon(quote: AskQuote) {
+		return quote.source === 'tool' ? Wrench : quote.source === 'thinking' ? Brain : Quote;
+	}
+
+	// Selections can be made with the mouse, a finger, or the keyboard. A frame
+	// delay lets the browser settle the range after the pointer is released.
+	$effect(() => {
+		if (!browser) return;
+		let frame = 0;
+		const schedule = () => {
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(updateAskAnchor);
+		};
+		const onPointerDown = (event: PointerEvent) => {
+			const target = event.target as HTMLElement | null;
+			if (!target?.closest('[data-ask-anchor]')) askAnchor = null;
+		};
+		document.addEventListener('selectionchange', schedule);
+		document.addEventListener('mouseup', schedule);
+		document.addEventListener('touchend', schedule);
+		document.addEventListener('pointerdown', onPointerDown, true);
+		return () => {
+			cancelAnimationFrame(frame);
+			document.removeEventListener('selectionchange', schedule);
+			document.removeEventListener('mouseup', schedule);
+			document.removeEventListener('touchend', schedule);
+			document.removeEventListener('pointerdown', onPointerDown, true);
+		};
+	});
+
 	function send() {
 		const text = input.trim();
 		// Sending ends the dictation, any read-aloud, and an unfinished edit.
@@ -1819,6 +2241,7 @@
 			agent,
 			conversationId,
 			text,
+			quotes,
 			images,
 			imagesDisplay: pending.map((item) => item.dataUrl),
 			files,
@@ -1833,6 +2256,8 @@
 		});
 
 		input = '';
+		quotes = [];
+		askAnchor = null;
 		clearPending();
 		groupOpen = {};
 		if (composer) composer.style.height = '';
@@ -1871,7 +2296,12 @@
 		messageDraft = '';
 	}
 
-	function startRewind(nextItems: Item[], text: string, offset: number) {
+	function startRewind(
+		nextItems: Item[],
+		text: string,
+		offset: number,
+		rewindQuotes: AskQuote[] = []
+	) {
 		if (!agent || streaming) return;
 		stopSpeech();
 		tts.stop();
@@ -1884,6 +2314,7 @@
 			agent,
 			conversationId,
 			text,
+			quotes: rewindQuotes,
 			images: [],
 			imagesDisplay: [],
 			files: [],
@@ -1902,7 +2333,9 @@
 		const next = items
 			.slice(0, index + 1)
 			.map((row, position) => (position === index ? { ...row, text } : row));
-		startRewind(next, text, rewindOffsetAfter(index));
+		// Editing keeps the excerpt block attached, so the model still sees the
+		// quoted context while only the question changes.
+		startRewind(next, text, rewindOffsetAfter(index), item.quotes ?? []);
 	}
 
 	/**
@@ -1969,6 +2402,8 @@
 		historyItems = [];
 		clearRail();
 		input = '';
+		quotes = [];
+		askAnchor = null;
 		focusContextPath = '';
 		previewAttachment = null;
 		attachmentCount = 0;
@@ -2161,17 +2596,27 @@
 	 *   <trigger kind="cron">…rules… the prompt…</trigger>
 	 *
 	 * People see a badge and nothing else. Turns stored before the block existed
-	 * have no marker and render as plain text.
+	 * have no marker and render as plain text. A quoted selections block sits in
+	 * front of the question; it is split out here so the bubble stays readable.
 	 */
-	function splitTrigger(raw: string): { trigger: TriggerKind | null; text: string } {
+	function splitTrigger(raw: string): {
+		trigger: TriggerKind | null;
+		text: string;
+		quotes: AskQuote[];
+	} {
 		const cleaned = withoutContext(raw);
-		const block = cleaned.match(
+		const parsed = parseAskPrompt(cleaned);
+		const block = parsed.text.match(
 			/^\s*<trigger\b[^>]*\bkind="(cron|heartbeat|subagent)"[^>]*>[\s\S]*?<\/trigger>\s*/i
 		);
-		if (!block) return { trigger: null, text: cleaned };
+		if (!block) return { trigger: null, text: parsed.text, quotes: parsed.quotes };
 
 		// The whole block is model-only, so the badge is the message.
-		return { trigger: block[1].toLowerCase() as TriggerKind, text: '' };
+		return {
+			trigger: block[1].toLowerCase() as TriggerKind,
+			text: '',
+			quotes: parsed.quotes
+		};
 	}
 
 	function triggerLabel(trigger: TriggerKind): string {
@@ -2404,7 +2849,7 @@
 
 			if (message.role === 'user') {
 				lastStep = -1;
-				const { trigger, text } = splitTrigger(messageText(message));
+				const { trigger, text, quotes: storedQuotes } = splitTrigger(messageText(message));
 				const images = messageImages(message);
 				// A trigger turn has no visible text: the badge is the message, so it still
 				// gets a row.
@@ -2412,6 +2857,7 @@
 					timeline.push({
 						kind: 'user',
 						text,
+						quotes: storedQuotes.length > 0 ? storedQuotes : undefined,
 						trigger: trigger ?? undefined,
 						images: images.length > 0 ? images : undefined,
 						uploads: message.uploads,
@@ -2659,6 +3105,12 @@
 		if (matchesShortcut(event, 'escape')) {
 			// An open dialog or menu owns Esc, so interrupting waits its turn.
 			if (isOverlayOpen()) return;
+			if (askAnchor) {
+				event.preventDefault();
+				askAnchor = null;
+				window.getSelection()?.removeAllRanges();
+				return;
+			}
 			if (listening) {
 				event.preventDefault();
 				stopSpeech();
@@ -3116,7 +3568,7 @@
 						<div
 							bind:this={transcript}
 							class={cn(
-								'mx-auto w-full max-w-4xl space-y-5 px-4 py-6',
+								'mx-auto relative w-full max-w-4xl space-y-5 px-4 py-6',
 								focusMode && items.length > 0 && 'pt-40',
 								railTurns.length > 1 && 'pr-8 md:pr-14',
 								// Nothing to read: sit in the middle of the column instead of
@@ -3125,6 +3577,21 @@
 							)}
 							style:padding-bottom={frosted ? `${composerHeight + 24}px` : null}
 						>
+							{#if quoteRects.length > 0}
+								<!-- The yellow wash sits above the text but never touches the DOM, so
+								     format wrappers and text nodes stay exactly as rendered. -->
+								<div class="pointer-events-none absolute inset-0 z-10" aria-hidden="true">
+									{#each quoteRects as rect, index (index)}
+										<span
+											class="ask-quote-mark"
+											style:left={`${rect.left}px`}
+											style:top={`${rect.top}px`}
+											style:width={`${rect.width}px`}
+											style:height={`${rect.height}px`}
+										></span>
+									{/each}
+								</div>
+							{/if}
 							{#if loadingOlder}
 								<p
 									class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
@@ -3213,7 +3680,11 @@
 											<div class="space-y-1 pl-2">
 												{#each phaseRows(group) as phase, index (phase.kind === 'group' ? phase.group.key : (phase.item.localId ?? index))}
 													{#if phase.kind === 'text'}
-														<div class="px-1 text-sm">
+														<div
+															class="px-1 text-sm"
+															data-ask-source="answer"
+															data-ask-id={phase.item.localId}
+														>
 															<Markdown content={displayText(phase.item.text ?? '')} />
 														</div>
 													{:else}
@@ -3241,50 +3712,61 @@
 																<div class="space-y-0.5 pl-2">
 																	{#each phaseGroup.steps as step (step.localId)}
 																		{#if step.kind === 'thought'}
-																			<ChatStep
-																				title={t('myaaw.chat.think')}
-																				summary={oneLine(step.text ?? '')}
-																				icon={Brain}
-																				expanded={!!step.expanded}
-																				ontoggle={() => toggleItem(step.localId)}
-																				running={step.running}
-																			>
-																				<p class="whitespace-pre-wrap text-muted-foreground">
-																					{step.text}
-																				</p>
-																			</ChatStep>
-																		{:else if step.kind === 'tool'}
-																			<ChatStep
-																				title={toolLabel(step.name)}
-																				summary={toolSummary(step)}
-																				icon={toolIcon(step.name)}
-																				expanded={!!step.expanded}
-																				ontoggle={() => toggleItem(step.localId)}
-																				running={step.running}
-																				error={step.is_error}
-																				copyText={toolInvocation(step)}
-																			>
-																				<div
-																					class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
+																			<div data-ask-row={step.localId}>
+																				<ChatStep
+																					title={t('myaaw.chat.think')}
+																					summary={oneLine(step.text ?? '')}
+																					icon={Brain}
+																					expanded={!!step.expanded}
+																					ontoggle={() => toggleItem(step.localId)}
+																					running={step.running}
 																				>
-																					<pre
-																						class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
-																							class="select-none text-zinc-500"
-																							>$ </span>{toolInvocation(step)}</pre>
-																					{#if step.result}
+																					<p
+																						class="whitespace-pre-wrap text-muted-foreground"
+																						data-ask-source="thinking"
+																						data-ask-id={step.localId}
+																					>
+																						{step.text}
+																					</p>
+																				</ChatStep>
+																			</div>
+																		{:else if step.kind === 'tool'}
+																			<div data-ask-row={step.localId}>
+																				<ChatStep
+																					title={toolLabel(step.name)}
+																					summary={toolSummary(step)}
+																					icon={toolIcon(step.name)}
+																					expanded={!!step.expanded}
+																					ontoggle={() => toggleItem(step.localId)}
+																					running={step.running}
+																					error={step.is_error}
+																					copyText={toolInvocation(step)}
+																				>
+																					<div
+																						class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
+																						data-ask-source="tool"
+																						data-ask-label={step.name}
+																						data-ask-id={step.localId}
+																					>
 																						<pre
-																							class={cn(
-																								'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
-																								step.is_error ? 'text-red-400' : 'text-zinc-300'
-																							)}>{step.result}</pre>
-																					{:else if step.running}
-																						<pre
-																							class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
-																								'myaaw.chat.tool_running'
-																							)}</pre>
-																					{/if}
-																				</div>
-																			</ChatStep>
+																							class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
+																								class="select-none text-zinc-500"
+																								>$ </span>{toolInvocation(step)}</pre>
+																						{#if step.result}
+																							<pre
+																								class={cn(
+																									'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
+																									step.is_error ? 'text-red-400' : 'text-zinc-300'
+																								)}>{step.result}</pre>
+																						{:else if step.running}
+																							<pre
+																								class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
+																									'myaaw.chat.tool_running'
+																								)}</pre>
+																						{/if}
+																					</div>
+																				</ChatStep>
+																			</div>
 																		{:else if step.kind === 'retry'}
 																			<div
 																				class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
@@ -3468,6 +3950,21 @@
 																</span>
 																{item.text}
 															</div>
+															{#if (item.quotes?.length ?? 0) > 0}
+																{@const quoteCount = item.quotes?.length ?? 0}
+																<button
+																	type="button"
+																	class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+																	data-ask-summary
+																	onclick={() => openQuotePreview(item.quotes ?? [])}
+																	title={t('myaaw.chat.ask_open')}
+																>
+																	<Quote class="h-3.5 w-3.5" />
+																	{quoteCount === 1
+																		? t('myaaw.chat.ask_selected_one')
+																		: t('myaaw.chat.ask_selected', { count: quoteCount })}
+																</button>
+															{/if}
 															<div
 																class={cn(
 																	'mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/user:opacity-100 group-focus-within/user:opacity-100 [@media(hover:none)]:opacity-100',
@@ -3502,7 +3999,9 @@
 													'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
 											)}
 										>
-											<Markdown content={displayText(item.text ?? '')} />
+											<div data-ask-source="answer" data-ask-id={item.localId}>
+												<Markdown content={displayText(item.text ?? '')} />
+											</div>
 											{#if (item.attachments?.length ?? 0) > 0}
 												<RunAttachments {agent} attachments={item.attachments ?? []} />
 											{/if}
@@ -3731,6 +4230,16 @@
 										<p class="px-4 pt-2 text-[11px] font-medium text-foreground">
 											{t('myaaw.chat.drop_files')}
 										</p>
+									{/if}
+									{#if quotes.length > 0}
+										<div class="px-3 pt-3" data-ask-quotes>
+											<AskQuoteList
+												{quotes}
+												onremove={removeAskQuote}
+												onclear={clearAskQuotes}
+												onlocate={(quote) => void locateAskQuote(quote)}
+											/>
+										</div>
 									{/if}
 									<textarea
 										bind:this={composer}
@@ -4430,4 +4939,54 @@
 	{/if}
 
 	<ImageLightbox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />
+
+	{#if askAnchor}
+		<!-- The one action a text selection unlocks. It floats above the reply so the
+		     reader can quote without hunting for a toolbar. -->
+		<button
+			type="button"
+			data-ask-anchor
+			class="fixed z-50 inline-flex items-center gap-1.5 rounded-full border bg-popover px-3 py-1.5 text-xs font-medium text-popover-foreground shadow-md transition-colors hover:bg-muted"
+			style:top={`${askAnchor.top}px`}
+			style:left={`${askAnchor.left}px`}
+			title={t('myaaw.chat.ask_hint')}
+			aria-label={t('myaaw.chat.ask_hint')}
+			onmousedown={(event) => event.preventDefault()}
+			onclick={addAskQuote}
+			in:fade={{ duration: 90 }}
+		>
+			<Quote class="h-3.5 w-3.5" />
+			{t('myaaw.chat.ask')}
+		</button>
+	{/if}
+
+	<Dialog.Root
+		open={quotePreview !== null}
+		onOpenChange={(open) => {
+			if (!open) quotePreview = null;
+		}}
+	>
+		<Dialog.Content class="sm:max-w-xl" data-ask-preview>
+			<Dialog.Header>
+				<Dialog.Title>{t('myaaw.chat.ask_preview_title')}</Dialog.Title>
+				<Dialog.Description>{t('myaaw.chat.ask_preview_desc')}</Dialog.Description>
+			</Dialog.Header>
+			<div class="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+				{#each quotePreview ?? [] as quote (quote.id)}
+					{@const Icon = askQuoteIcon(quote)}
+					<div class="rounded-xl border bg-muted/30 px-3 py-2">
+						<span
+							class="mb-1.5 flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground"
+						>
+							<Icon class="h-3 w-3 shrink-0" />
+							{askQuoteLabel(quote)}
+						</span>
+						<p class="max-h-52 overflow-y-auto text-xs whitespace-pre-wrap text-foreground/85">
+							{quote.text}
+						</p>
+					</div>
+				{/each}
+			</div>
+		</Dialog.Content>
+	</Dialog.Root>
 </div>

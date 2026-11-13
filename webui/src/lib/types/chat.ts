@@ -38,6 +38,23 @@ export interface LightboxImage {
 	downloadSrc?: string;
 }
 
+/** Where a quoted excerpt came from, so the model and the reader can tell. */
+export type AskQuoteSource = 'answer' | 'thinking' | 'tool';
+
+/** One excerpt of an agent reply the user attached to their next message. */
+export interface AskQuote {
+	id: string;
+	text: string;
+	source: AskQuoteSource;
+	/** Tool name for `tool` excerpts; empty for answers and thinking. */
+	label?: string;
+	/** Row id of the source element, so the card can jump back to it. */
+	sourceId?: string;
+	/** Character offsets inside that row, so only the quoted text is marked. */
+	startOffset?: number;
+	endOffset?: number;
+}
+
 export interface ChatRequest {
 	text: string;
 	/** Lets the client stop this run with `POST /chat/stop`. */

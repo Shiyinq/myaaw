@@ -43,8 +43,14 @@ func StripAttachmentBlock(text string) string {
 func StripContextBlocks(text string) string {
 	if !strings.Contains(text, UserInfoBlockOpen) &&
 		!strings.Contains(text, AttachmentBlockOpen) &&
-		!HasTriggerBlock(text) {
+		!HasTriggerBlock(text) &&
+		!strings.Contains(text, SelectionsBlockOpen) {
 		return text
+	}
+	// Selections go first: a quoted reply may itself contain a word that looks
+	// like another context tag, and that text must disappear with the quote.
+	if selectionItemPattern.MatchString(text) {
+		text = selectionsBlockPattern.ReplaceAllString(text, "")
 	}
 	text = userInfoBlockPattern.ReplaceAllString(text, "")
 	text = attachmentBlockPattern.ReplaceAllString(text, "")

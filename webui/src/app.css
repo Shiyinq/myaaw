@@ -946,6 +946,37 @@ aside a[aria-current='page']:not(.justify-center)::after {
 }
 
 /*
+ * A quoted excerpt is painted in place, on the exact passage the reader picked,
+ * then fades to nothing. The layer is decorative: it never touches the DOM the
+ * transcript renders, so inline code and bold wrappers stay intact.
+ */
+.ask-quote-mark {
+	position: absolute;
+	display: block;
+	border-radius: 0.25rem;
+	background-color: rgb(250 204 21 / 0.42);
+	mix-blend-mode: multiply;
+	animation: ask-quote-fade 3.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.dark .ask-quote-mark {
+	background-color: rgb(250 204 21 / 0.26);
+	mix-blend-mode: screen;
+}
+
+@keyframes ask-quote-fade {
+	0% {
+		opacity: 1;
+	}
+	55% {
+		opacity: 0.82;
+	}
+	100% {
+		opacity: 0;
+	}
+}
+
+/*
  * Toasts say what happened in words and colour, never with a face. sonner always
  * renders an icon column and styles it with `[data-sonner-toast] [data-icon]`,
  * which outranks a utility class, so hiding it is done here once for every theme.

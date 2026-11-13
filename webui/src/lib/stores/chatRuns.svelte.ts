@@ -1,7 +1,9 @@
 import { browser } from '$app/environment';
 import { chat as chatApi } from '$lib/apis/chat';
+import { composeAskPrompt } from '$lib/utils/ask';
 import type {
 	ApprovalPrompt,
+	AskQuote,
 	Attachment,
 	ChatFile,
 	ChatRunInfo,
@@ -38,6 +40,8 @@ export interface ChatItem extends TimelineItem {
 	trigger?: 'cron' | 'heartbeat' | 'subagent';
 	images?: string[];
 	uploads?: Upload[];
+	/** Excerpts quoted from earlier answers, thinking, or tool output. */
+	quotes?: AskQuote[];
 	/** Files delivered with this answer; rehydrated from the stored transcript. */
 	attachments?: Attachment[];
 	running?: boolean;
@@ -53,6 +57,8 @@ export interface StartRunOptions {
 	/** Conversation being continued; empty for a brand new chat. */
 	conversationId: string;
 	text: string;
+	/** Excerpts quoted from earlier replies; folded into the prompt before sending. */
+	quotes?: AskQuote[];
 	images: string[];
 	imagesDisplay: string[];
 	files: ChatFile[];
@@ -228,6 +234,7 @@ export class ChatRun {
 			this.push({
 				kind: 'user',
 				text: options.text,
+				quotes: options.quotes?.length ? options.quotes : undefined,
 				images: options.imagesDisplay.length > 0 ? options.imagesDisplay : undefined,
 				uploads: options.uploads.length > 0 ? options.uploads : undefined,
 				createdAt: new Date().toISOString()
@@ -280,7 +287,7 @@ export class ChatRun {
 			await chatApi.stream(
 				this.agent,
 				{
-					text: options.text,
+					text: composeAskPrompt(options.text, options.quotes),
 					request_id: this.requestId,
 					conversation_id: options.conversationId || undefined,
 					images: options.images.length > 0 ? options.images : undefined,

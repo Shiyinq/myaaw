@@ -20,6 +20,7 @@ conversation history — byte-stable.
 | Platform, room, ids, speaker, time | channel adapter → `<userinfo>` | yes, user message |
 | Uploaded file paths | `<attached>` | yes, user message |
 | Trigger kind (cron, heartbeat, sub-agent) | bot service → `<trigger kind="…">` | yes, user message |
+| Quoted excerpts from earlier replies | dashboard → `<selections>` | yes, user message |
 | Sender metadata fields | `provider.Message.Sender*` | no, dashboard only |
 | Session scope (`tg:…`, `dc:…`) | conversation store | no, routing only |
 
@@ -243,18 +244,21 @@ The tags are model-only. Each surface strips them before rendering:
 | Surface | Implementation |
 | :--- | :--- |
 | Chat bubbles and the edit box | `withoutContext()` in `webui/src/routes/app/chat/[[conversation]]/+page.svelte` |
+| Quoted excerpts | `parseAskPrompt()` in `webui/src/lib/utils/ask.ts` removes the block and leaves a `N selections` chip |
 | Trigger turns | `splitTrigger()` in the same file hides the whole block and draws a badge (icon + `cron`/`heartbeat`/`subagent`); the badge is not clickable |
 | Auto-generated title | `provider.StripContextBlocks` in `conversation.go` |
 | Turn rail labels (control plane) | `provider.StripContextBlocks` in `controlplane/service/conversations.go` |
 | CLI resumed transcript | `provider.StripContextBlocks` in `cmd/myaaw/chat.go` |
 | Observability trace | **not** stripped: the trace shows the real prompt, including the block |
 
-`provider.StripContextBlocks` removes `<userinfo>` and `<attached>` and unwraps
-`<trigger>` down to its content (`provider.StripTriggerBlocks` uses the kind to
-drop the known rules), so a title, a preview, or the CLI shows what the turn was
-about and never the rules. A heartbeat holds no content, so it strips to nothing.
-`SplitContextBlocks`/`JoinContextBlocks` only handle the leading
-`<userinfo>`/`<attached>` blocks, so editing never touches the trigger marker.
+`provider.StripContextBlocks` removes `<userinfo>` and `<attached>`, drops a
+whole `<selections>` block, and unwraps `<trigger>` down to its content
+(`provider.StripTriggerBlocks` uses the kind to drop the known rules), so a title,
+a preview, or the CLI shows what the turn was about and never the rules. A
+heartbeat holds no content, so it strips to nothing; quoted excerpts are not the
+user's words, so they strip to nothing too. `SplitContextBlocks`/`JoinContextBlocks`
+only handle the leading `<userinfo>`/`<attached>` blocks, so editing never touches
+the trigger marker or duplicates the excerpt block.
 
 ---
 
@@ -266,6 +270,10 @@ The dashboard edit box contains only the text the person typed. On the server,
 - the leading `<userinfo>` and `<attached>` blocks, in their original order;
 - image parts for providers that store content as `[]ContentItem`
   (OpenAI/Groq), and `GeminiPart.InlineData` for Gemini.
+
+A quoted-excerpt block is part of the replacement the dashboard sends, so an
+edit keeps its quotes by re-sending them in the new body; the server does not
+treat `<selections>` as leading context (that would duplicate it on every edit).
 
 Regeneration keeps the content untouched (`replacement == ""`), so it reuses the
 same prompt prefix.
