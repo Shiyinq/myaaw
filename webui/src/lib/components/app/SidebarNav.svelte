@@ -18,11 +18,14 @@
 <nav class={['flex-1 overflow-y-auto', compact ? 'space-y-2 p-2' : 'space-y-5 p-3']}>
 	{#each groups as group, groupIndex (group.label)}
 		<div class="space-y-1">
-			{#if !compact}
-				<p class="px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-					{t(group.label)}
-				</p>
-			{:else if groupIndex > 0}
+			<p
+				class="truncate px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground transition-all duration-200 {compact
+					? 'max-h-0 opacity-0 delay-0'
+					: 'max-h-5 opacity-100 delay-200'}"
+			>
+				{t(group.label)}
+			</p>
+			{#if compact && groupIndex > 0}
 				<div class="mx-auto my-2 h-px w-6 bg-border"></div>
 			{/if}
 			{#each group.items as item (item.href)}
@@ -34,7 +37,7 @@
 					aria-current={active ? 'page' : undefined}
 					class={[
 						'relative flex items-center rounded-md text-sm transition-colors list-row',
-						compact ? 'justify-center px-0 py-2' : 'gap-2 px-2 py-1.5',
+						compact ? 'gap-0 pl-3 pr-0 py-2' : 'gap-2 px-2 py-1.5',
 						active
 							? 'bg-accent font-medium text-accent-foreground'
 							: 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -44,9 +47,13 @@
 						<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
 					{/if}
 					<Icon class="h-4 w-4 shrink-0" />
-					{#if !compact}
-						<span class="truncate">{t(item.label)}</span>
-					{/if}
+					<span
+						class="truncate transition-all duration-200 {compact
+							? 'max-w-0 opacity-0 delay-0'
+							: 'max-w-full opacity-100 delay-200'}"
+					>
+						{t(item.label)}
+					</span>
 				</a>
 			{/each}
 		</div>

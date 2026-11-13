@@ -4353,61 +4353,79 @@
 				/>
 			{/if}
 		</aside>
-	{:else if agent && historyOpen && !classicMode}
-		<!-- Drawer on small screens, a static third column from lg up. -->
-		<button
-			type="button"
-			class="fixed inset-0 z-40 bg-black/40 lg:hidden"
-			aria-label={t('myaaw.chat.history_hide')}
-			onclick={closeSidePanel}
-		></button>
+	{:else if agent && !classicMode}
+		<!-- Drawer on small screens, a static third column from lg up. Kept mounted
+		     on desktop so hiding it animates the width instead of snapping the
+		     transcript and the composer. -->
+		{#if historyOpen}
+			<button
+				type="button"
+				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+				aria-label={t('myaaw.chat.history_hide')}
+				onclick={closeSidePanel}
+			></button>
+		{/if}
 		<aside
-			class="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card lg:static lg:z-auto lg:h-full lg:w-72 lg:max-w-none frost-drawer"
+			inert={!historyOpen}
+			class={[
+				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
+				historyOpen ? 'flex lg:w-72' : 'hidden lg:flex lg:w-0 lg:border-l-0'
+			]}
 		>
-			{#if rightTab === 'attachments'}
+			<div class="flex h-full w-full flex-col lg:w-72 lg:min-w-72">
+				{#if rightTab === 'attachments'}
+					<AttachmentPanel
+						{agent}
+						{conversationId}
+						refreshKey={attachmentsRefresh}
+						onOpen={openAttachment}
+						onShowInChat={showAttachmentInChat}
+						onClose={closeSidePanel}
+					/>
+				{:else}
+					<ConversationList
+						activeId={conversationId}
+						onOpen={openConversation}
+						onClose={closeSidePanel}
+						onNewInFolder={(folderId) =>
+							void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+						onDeleted={onHistoryDeleted}
+						onRenamed={onHistoryRenamed}
+						bind:searchInput={searchBox}
+					/>
+				{/if}
+			</div>
+		</aside>
+	{/if}
+
+	{#if agent && classicMode}
+		<!-- Classic borrows the advanced layout: a drawer on phones and a static
+		     third column from lg up. History already lives in its left sidebar. -->
+		{#if classicAttachmentsOpen}
+			<button
+				type="button"
+				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+				aria-label={t('myaaw.chat.attachments_close_list')}
+				onclick={() => (classicAttachmentsOpen = false)}
+			></button>
+		{/if}
+		<aside
+			inert={!classicAttachmentsOpen}
+			class={[
+				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
+				classicAttachmentsOpen ? 'flex lg:w-72' : 'hidden lg:flex lg:w-0 lg:border-l-0'
+			]}
+		>
+			<div class="flex h-full w-full flex-col lg:w-72 lg:min-w-72">
 				<AttachmentPanel
 					{agent}
 					{conversationId}
 					refreshKey={attachmentsRefresh}
 					onOpen={openAttachment}
 					onShowInChat={showAttachmentInChat}
-					onClose={closeSidePanel}
+					onClose={() => (classicAttachmentsOpen = false)}
 				/>
-			{:else}
-				<ConversationList
-					activeId={conversationId}
-					onOpen={openConversation}
-					onClose={closeSidePanel}
-					onNewInFolder={(folderId) =>
-						void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
-					onDeleted={onHistoryDeleted}
-					onRenamed={onHistoryRenamed}
-					bind:searchInput={searchBox}
-				/>
-			{/if}
-		</aside>
-	{/if}
-
-	{#if agent && classicMode && classicAttachmentsOpen}
-		<!-- Classic borrows the advanced layout: a drawer on phones and a static
-		     third column from lg up. History already lives in its left sidebar. -->
-		<button
-			type="button"
-			class="fixed inset-0 z-40 bg-black/40 lg:hidden"
-			aria-label={t('myaaw.chat.attachments_close_list')}
-			onclick={() => (classicAttachmentsOpen = false)}
-		></button>
-		<aside
-			class="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card lg:static lg:z-auto lg:h-full lg:w-72 lg:max-w-none frost-drawer"
-		>
-			<AttachmentPanel
-				{agent}
-				{conversationId}
-				refreshKey={attachmentsRefresh}
-				onOpen={openAttachment}
-				onShowInChat={showAttachmentInChat}
-				onClose={() => (classicAttachmentsOpen = false)}
-			/>
+			</div>
 		</aside>
 	{/if}
 
