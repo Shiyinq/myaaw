@@ -265,7 +265,7 @@
 
 {#if open && current}
 	<div
-		class="fixed inset-0 z-[100] select-none bg-black/90 text-white"
+		class="fixed inset-0 z-100 select-none bg-black/90 text-white"
 		role="dialog"
 		aria-modal="true"
 		aria-label={current.name}

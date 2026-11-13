@@ -292,7 +292,7 @@
 					<li class="flex items-center gap-1 rounded-lg hover:bg-muted/60">
 						<button
 							type="button"
-							class="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+							class="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
 							title={item.path}
 							onclick={() => onOpen(item)}
 						>
@@ -335,7 +335,7 @@
 						</button>
 						<button
 							type="button"
-							class="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+							class="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
 							title={t('myaaw.chat.attachments_show_in_chat')}
 							aria-label={t('myaaw.chat.attachments_show_in_chat')}
 							onclick={() => onShowInChat(item)}
