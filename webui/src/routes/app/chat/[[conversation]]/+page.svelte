@@ -1648,8 +1648,10 @@
 				group: {
 					key: `phase-${first.localId ?? rows.length}`,
 					steps: [...steps],
-					running:
-						steps.some((step) => step.running) || steps.some((step) => step.localId === openGroup),
+					// A phase is working only while one of its own steps is. The run's
+					// openGroup keeps the outer "Working..." header alive between calls;
+					// it must not make a finished Thinking/Tools phase spin again.
+					running: steps.some((step) => step.running),
 					durationMs: steps.find((step) => step.group_duration_ms !== undefined)?.group_duration_ms
 				}
 			});
