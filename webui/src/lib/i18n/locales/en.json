@@ -27,7 +27,20 @@
 		"refresh": "Refresh",
 		"previous": "Previous",
 		"next": "Next",
-		"search": "Search"
+		"search": "Search",
+		"markdown": {
+			"copy": "Copy",
+			"copied": "Copied",
+			"download": "Download",
+			"source": "Source",
+			"show_diagram": "Diagram",
+			"render_failed": "Could not render this diagram.",
+			"expand": "Fullscreen diagram",
+			"zoom_in": "Zoom in",
+			"zoom_out": "Zoom out",
+			"zoom_reset": "Reset zoom",
+			"close": "Close"
+		}
 	},
 	"errors": {
 		"401": {

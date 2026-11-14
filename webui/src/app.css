@@ -946,6 +946,92 @@ aside a[aria-current='page']:not(.justify-center)::after {
 }
 
 /*
+ * Rich Markdown: mermaid diagrams and KaTeX math.
+ *
+ * marked emits the diagram's source; Markdown.svelte swaps in the SVG once
+ * mermaid has drawn it. `data-mermaid-state` is the whole state machine: pending
+ * and error keep the source readable, ready swaps it for the picture, and the
+ * Source button can bring it back. The rules stay unlayered so prose cannot
+ * re-style the generated markup.
+ */
+.md-mermaid-canvas {
+	display: none;
+	overflow-x: auto;
+	/* A horizontal flick inside a diagram must not turn into a page swipe. */
+	overscroll-behavior-x: contain;
+}
+
+.md-mermaid[data-mermaid-state='ready'] .md-mermaid-canvas {
+	display: block;
+}
+
+.md-mermaid[data-mermaid-state='ready'] .md-mermaid-source {
+	display: none;
+}
+
+.md-mermaid-canvas svg {
+	display: block;
+	height: auto;
+	margin-inline: auto;
+}
+
+.md-mermaid-error {
+	display: none;
+	margin: 0;
+	font-size: 0.75rem;
+	color: var(--destructive);
+}
+
+.md-mermaid[data-mermaid-state='error'] .md-mermaid-error {
+	display: block;
+	margin-bottom: 0.5rem;
+}
+
+.md-mermaid-source {
+	margin: 0;
+	overflow-x: auto;
+	font-family: var(--font-ui-mono);
+	font-size: 0.75rem;
+	line-height: 1.6;
+}
+
+.md-mermaid-source code {
+	padding: 0;
+	background: transparent;
+	font-family: inherit;
+	font-size: inherit;
+}
+
+/* The Source button swaps the picture for the code instead of stacking them. */
+.md-mermaid[data-mermaid-show-source='true'] .md-mermaid-canvas {
+	display: none;
+}
+
+.md-mermaid[data-mermaid-show-source='true'] .md-mermaid-source {
+	display: block;
+}
+
+/* Inline math sits in the line; a long expression scrolls, never widens a bubble. */
+.md-math {
+	max-width: 100%;
+	overflow-x: auto;
+	overflow-y: hidden;
+}
+
+span.md-math {
+	display: inline-block;
+	vertical-align: middle;
+}
+
+.md-math .katex-display {
+	margin: 0.75rem 0;
+}
+
+.md-mermaid-body {
+	min-width: 0;
+}
+
+/*
  * A quoted excerpt is painted in place, on the exact passage the reader picked,
  * then fades to nothing. The layer is decorative: it never touches the DOM the
  * transcript renders, so inline code and bold wrappers stay intact.

@@ -34,6 +34,14 @@
 	let pinchDistance = 0;
 	/** Fingers currently on the stage, so a second one starts a pinch, not a pan. */
 	let activePointers = 0;
+	/**
+	 * The click that dismisses the lightbox must start on the empty backdrop.
+	 * Pointer capture retargets the follow-up click to the stage even when the press
+	 * began on the photo, and a pan that ends over the photo would otherwise close
+	 * the lightbox mid-gesture.
+	 */
+	let pressedBackdrop = false;
+	let panMoved = false;
 
 	let position = $derived(Math.min(Math.max(index, 0), Math.max(0, items.length - 1)));
 	let current = $derived(items[position] as LightboxImage | undefined);
@@ -175,6 +183,8 @@
 
 		const onPointerDown = (event: PointerEvent) => {
 			activePointers += 1;
+			pressedBackdrop = event.target === node;
+			panMoved = false;
 			if (activePointers > 1) {
 				dragging = false;
 				panPointer = null;
@@ -194,6 +204,9 @@
 		const onPointerMove = (event: PointerEvent) => {
 			if (activePointers > 1) return;
 			if (panPointer !== event.pointerId || !dragging) return;
+			if (!panMoved && Math.hypot(event.clientX - panStartX, event.clientY - panStartY) > 4) {
+				panMoved = true;
+			}
 			offsetX = panOriginX + (event.clientX - panStartX);
 			offsetY = panOriginY + (event.clientY - panStartY);
 		};
@@ -229,9 +242,12 @@
 		};
 
 		const onClick = (event: MouseEvent) => {
-			// Only the empty area around the image dismisses it; toolbar and image
-			// clicks are handled by their own elements.
-			if (event.target === node) close();
+			// Only a press that began on the empty area dismisses the photo, and never
+			// after a pan: the drag was meant to move the picture, not to close it.
+			const dismiss = pressedBackdrop && !panMoved && event.target === node;
+			pressedBackdrop = false;
+			panMoved = false;
+			if (dismiss) close();
 		};
 
 		node.addEventListener('wheel', onWheel, { passive: false });

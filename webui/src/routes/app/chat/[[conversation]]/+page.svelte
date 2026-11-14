@@ -3950,7 +3950,10 @@
 															data-ask-source="answer"
 															data-ask-id={phase.item.localId}
 														>
-															<Markdown content={displayText(phase.item.text ?? '')} />
+															<Markdown
+																content={displayText(phase.item.text ?? '')}
+																streaming={streaming && phase.item.localId === latestAnswerKey}
+															/>
 														</div>
 													{:else}
 														{@const phaseGroup = phase.group}
@@ -4265,7 +4268,10 @@
 											)}
 										>
 											<div data-ask-source="answer" data-ask-id={item.localId}>
-												<Markdown content={displayText(item.text ?? '')} />
+												<Markdown
+													content={displayText(item.text ?? '')}
+													streaming={streaming && item.localId === latestAnswerKey}
+												/>
 											</div>
 											{#if (item.attachments?.length ?? 0) > 0}
 												<RunAttachments {agent} attachments={item.attachments ?? []} />

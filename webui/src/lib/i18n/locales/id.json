@@ -27,7 +27,20 @@
 		"refresh": "Muat ulang",
 		"previous": "Sebelumnya",
 		"next": "Berikutnya",
-		"search": "Cari"
+		"search": "Cari",
+		"markdown": {
+			"copy": "Salin",
+			"copied": "Tersalin",
+			"download": "Unduh",
+			"source": "Sumber",
+			"show_diagram": "Diagram",
+			"render_failed": "Diagram ini tidak bisa dirender.",
+			"expand": "Diagram layar penuh",
+			"zoom_in": "Perbesar",
+			"zoom_out": "Perkecil",
+			"zoom_reset": "Atur ulang zoom",
+			"close": "Tutup"
+		}
 	},
 	"errors": {
 		"401": {
