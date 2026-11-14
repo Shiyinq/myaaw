@@ -57,11 +57,7 @@ func (r *BotServiceImpl) lockConversation(msg *channel.IncomingMessage) func() {
 // conversationLockKey prefers the conversation id and falls back to the chat
 // target, matching how a heartbeat chooses its delivery target.
 func conversationLockKey(msg *channel.IncomingMessage) string {
-	if id := strings.TrimSpace(msg.ConversationID); id != "" {
-		return "conversation:" + id
-	}
-	channel := strings.ToLower(strings.TrimSpace(msg.Channel))
-	return "target:" + channel + ":" + msg.ChatID + ":" + msg.TopicID
+	return TurnKey(msg.Channel, msg.ConversationID, msg.ChatID, msg.TopicID)
 }
 
 // publishTurnEvent tells SSE clients that a triggered turn was persisted.
@@ -85,11 +81,29 @@ func (r *BotServiceImpl) runConversation(
 	msg *channel.IncomingMessage,
 	onChunk func(channel.StreamChunk),
 ) (*channel.OutgoingMessage, error) {
+	if err := r.requireProvider(); err != nil {
+		return nil, err
+	}
+
+	key := conversationLockKey(msg)
+	registry := r.turnRegistry()
+	// A new message from the same chat replaces the response still being written:
+	// cancel it before waiting for the conversation lock, so the older turn saves
+	// its partial transcript and releases the lock for this one.
+	if stoppableTurn(msg) {
+		registry.cancel(key)
+	}
+
 	unlock := r.lockConversation(msg)
 	defer unlock()
 
-	if err := r.requireProvider(); err != nil {
-		return nil, err
+	// The turn owns a cancelable context so a /stop or !stop delivered by another
+	// webhook request can reach it.
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	if stoppableTurn(msg) {
+		turn := registry.register(key, cancel)
+		defer registry.unregister(key, turn)
 	}
 
 	messages, err := r.buildConversationMessages(user, msg)
@@ -444,10 +458,26 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 
 	messages = append(messages, convMessages...)
 
-	// A user upload is addressed by its own message id so the frontend can show
-	// the files again under the right turn. The conversation id is already final
-	// here (existing or freshly created), so the folder is stable before the run.
+	// A spam burst arrives as one turn carrying several messages. Each one becomes
+	// its own user entry so the transcript keeps separate bubbles, but the model
+	// answers the whole burst once.
+	for _, turn := range msg.TurnMessages() {
+		var appendErr error
+		messages, appendErr = r.appendUserTurn(messages, msg.ConversationID, turn)
+		if appendErr != nil {
+			return nil, appendErr
+		}
+	}
+	return messages, nil
+}
+
+// appendUserTurn stores one chat message (with its uploads) as a user entry and
+// returns the extended transcript. The conversation id is already final, so the
+// upload folder is stable before the run; the per-message id keeps the uploads
+// of a burst attached to the bubble they came from.
+func (r *BotServiceImpl) appendUserTurn(messages []provider.Message, conversationID string, msg *channel.IncomingMessage) ([]provider.Message, error) {
 	messageID := uuid.New().String()
+
 	var uploads, imageUploads []provider.Upload
 	if len(msg.Files) > 0 || len(msg.Images) > 0 {
 		userDir, rootErr := agentdir.ActiveUserDir()
@@ -456,7 +486,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		}
 		if len(msg.Files) > 0 {
 			var saveErr error
-			uploads, saveErr = saveUserFiles(userDir, msg.ConversationID, messageID, msg.Files)
+			uploads, saveErr = saveUserFiles(userDir, conversationID, messageID, msg.Files)
 			if saveErr != nil {
 				return nil, saveErr
 			}
@@ -464,7 +494,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		// Images travel inline to the model. Their metadata is stored separately so
 		// history still shows the photo after the inline items leave the context.
 		var saveErr error
-		imageUploads, saveErr = saveUserImages(userDir, msg.ConversationID, messageID, msg.Images)
+		imageUploads, saveErr = saveUserImages(userDir, conversationID, messageID, msg.Images)
 		if saveErr != nil {
 			return nil, saveErr
 		}
@@ -477,8 +507,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 	userMessage.Uploads = append(uploads, imageUploads...)
 	created := time.Now().UTC()
 	userMessage.CreatedAt = &created
-	messages = append(messages, userMessage)
-	return messages, nil
+	return append(messages, userMessage), nil
 }
 
 // stampTurnDuration records how long the turn took on its final assistant

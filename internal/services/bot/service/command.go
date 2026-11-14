@@ -43,6 +43,24 @@ func (c *AboutCommand) HandleCommand(ctx CommandContext, args string) (bool, str
 	return true, common.CommandAbout(), nil
 }
 
+type StopCommand struct {
+	r *BotServiceImpl
+}
+
+func NewStopCommand(r *BotServiceImpl) CommandFactory {
+	return &StopCommand{r: r}
+}
+
+// HandleCommand cancels the turn currently answering the same conversation.
+// The partial transcript is saved by runConversation, so stopping never loses
+// what the model already produced.
+func (c *StopCommand) HandleCommand(ctx CommandContext, args string) (bool, string, error) {
+	if ctx.Msg == nil || !c.r.turnRegistry().cancel(conversationLockKey(ctx.Msg)) {
+		return true, common.CommandStopNothing(), nil
+	}
+	return true, common.CommandStopped(), nil
+}
+
 type NewCommand struct {
 	r *BotServiceImpl
 }
@@ -104,10 +122,17 @@ func NewCommandExecutor(r *BotServiceImpl) *CommandExecutor {
 			"help":  NewStartCommand(r),
 			"about": NewAboutCommand(r),
 			"new":   NewNewCommand(r),
+			"stop":  NewStopCommand(r),
 
 			"me": NewMeCommand(r),
 		},
 	}
+}
+
+// Known reports whether name is a command this executor handles.
+func (e *CommandExecutor) Known(name string) bool {
+	_, ok := e.commandMap[name]
+	return ok
 }
 
 func (e *CommandExecutor) ExecuteCommand(command string, ctx CommandContext, args string) (bool, string, error) {
@@ -125,5 +150,12 @@ func (r *BotServiceImpl) command(user *model.User, msg *channel.IncomingMessage)
 	}
 
 	executor := NewCommandExecutor(r)
+	// "/" always means a command, including the "not found" reply. "!" is a
+	// convenience prefix from chat platforms, so it only counts when it names a
+	// command we know; a normal message that starts with "!" reaches the model.
+	if utils.CommandPrefix(msg.Text) == '!' && !executor.Known(command) {
+		return false, "", nil
+	}
+
 	return executor.ExecuteCommand(command, CommandContext{User: user, Msg: msg, Scope: msg.Scope}, args)
 }

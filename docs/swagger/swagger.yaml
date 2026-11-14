@@ -76,6 +76,16 @@ definitions:
         items:
           type: integer
         type: array
+      payloads:
+        description: |-
+          Payloads carries several messages that belong to one agent turn. The queue
+          consumer batches a chat's burst so every message is kept but the agent
+          answers once.
+        items:
+          items:
+            type: integer
+          type: array
+        type: array
     type: object
   common.ErrorResponse:
     properties:

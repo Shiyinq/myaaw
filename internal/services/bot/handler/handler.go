@@ -78,7 +78,7 @@ func (s *BotHandlerImpl) Webhook(c fiber.Ctx) error {
 		})
 	}
 
-	msg, err := adapter.ParseIncoming(envelope.Payload)
+	msg, err := parseEnvelopeMessages(adapter, envelope)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Failed to parse channel payload: " + err.Error(),
@@ -126,6 +126,40 @@ func (s *BotHandlerImpl) Webhook(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"ok": true,
 	})
+}
+
+// parseEnvelopeMessages turns a queue envelope into the one message the turn
+// answers. The queue consumer batches a chat's spam burst, so an envelope may
+// carry several payloads; they all belong to the same turn and the first one
+// keeps the channel identity used to deliver the answer.
+func parseEnvelopeMessages(adapter channel.Adapter, envelope channel.QueueEnvelope) (*channel.IncomingMessage, error) {
+	if len(envelope.Payloads) == 0 {
+		return adapter.ParseIncoming(envelope.Payload)
+	}
+
+	var primary *channel.IncomingMessage
+	var lastErr error
+	for _, payload := range envelope.Payloads {
+		parsed, err := adapter.ParseIncoming(payload)
+		if err != nil {
+			// One unreadable payload must not drop the rest of the burst.
+			lastErr = err
+			log.Printf("Skipping unparseable batched message: %v", err)
+			continue
+		}
+		if primary == nil {
+			primary = parsed
+			continue
+		}
+		primary.Batch = append(primary.Batch, parsed)
+	}
+	if primary == nil {
+		if lastErr == nil {
+			lastErr = fmt.Errorf("empty message batch")
+		}
+		return nil, lastErr
+	}
+	return primary, nil
 }
 
 func (s *BotHandlerImpl) approvalContext(ctx context.Context, adapter channel.Adapter, msg *channel.IncomingMessage) context.Context {

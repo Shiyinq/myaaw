@@ -128,10 +128,21 @@ text exactly like Telegram, through `utils.ParseCommand` and
 | `/about` | Project information |
 | `/me` | User and config information |
 | `/new` | Start a new session **for the current channel** |
+| `/stop`, `!stop` | Stop the response currently running in this channel |
 | anything else | "Command not found" |
+
+Both `/` and `!` start a command, with or without a bot mention, so `!stop` and
+`/stop` are both plain-text commands. A `!` message only counts as a command
+when the name is known; any other message starting with `!` reaches the model.
+Because Discord's slash-command UI can capture a leading `/`, `!stop` is the most
+reliable spelling there.
 
 Because `/new` receives `msg.Scope`, it only rotates the session of the channel
 where it was typed. DMs keep the legacy per-user rotation.
+
+While the agent is still answering, a new plain message (not a slash command)
+stops that answer and starts a new turn. A burst is answered once but every
+message is kept. See §4.5.
 
 ### 4.4 Scope and sessions
 
@@ -162,11 +173,26 @@ Session invariants:
 
 - In-memory queue buffer: **1000** messages.
 - Workers: `bot.queue_workers`, default **4**, maximum **16**.
-- Queue key: `scope:dc:<channelID>` for guild channels, threads, and forum
-  posts; `user:<id>` for DMs and legacy payloads.
+- Queue key: `target:discord:<channelID>`, the same scope the conversation lock
+  uses; falls back to `user:<id>` when a payload carries no channel id. Messages
+  in one channel are processed in order; different channels run in parallel, and
+  a DM and a channel from the same user never serialize each other.
 
-Messages in one channel are processed in order; different channels run in
-parallel. A DM and a channel from the same user never serialize each other.
+Channel turns are interruptible:
+
+- `/stop` or `!stop` bypasses the per-conversation queue and cancels the turn
+  answering that channel. Whatever the model produced before the stop is
+  persisted, and the partial answer is delivered.
+- A new plain message in the same channel interrupts the running turn instead of
+  waiting behind it: the older turn saves its partial transcript and releases
+  the conversation lock, then the new turn runs. Messages that arrive in a burst
+  are collected for one second and answered together, so nothing is lost and
+  there is still one answer. Each message keeps its own bubble, caption, photo,
+  and document in the transcript.
+- `/stop` or `!stop` also clears messages that are still inside that one-second
+  window, which is the way to silence a burst.
+- Only user turns are interruptible. Cron and heartbeat turns run to completion.
+- Slash commands keep their place in the queue behind running work.
 
 Access is decided by `IsAllowed(userID)`:
 
@@ -233,6 +259,10 @@ exist from the Telegram work. Discord-specific behaviour:
 - [x] DMs keep the legacy per-user session.
 - [x] Scope-keyed queue ordering.
 - [x] `/new` rotates only the current channel.
+- [x] `/stop` and `!stop` stop the running turn; the partial transcript is kept.
+- [x] A new plain message interrupts the turn already answering the same channel.
+- [x] Messages sent in a burst are all kept as separate bubbles and answered
+      once, including every photo with its caption.
 - [x] Server and channel names captured from the gateway state and stored in
       `chat_scopes`.
 - [x] Sender id, display name, and username stored per channel message.

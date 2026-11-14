@@ -109,9 +109,18 @@ Stickers, video, audio, location, contact, and polls are **not** supported yet
 | `/about` | Project information |
 | `/me` | User and config information |
 | `/new` | Start a new session (per topic in groups; per user elsewhere) |
+| `/stop`, `!stop` | Stop the response currently running in this chat |
 | anything else | "Command not found" |
 
-The `@username` suffix is stripped, so `/start@MyaawBot` still works.
+Both `/` and `!` start a command, with or without a bot mention. A `!` message
+only counts as a command when the name is known; any other message starting
+with `!` reaches the model. Telegram sometimes appends the bot's own username
+(`/stop@YourBot`); whatever that name is, the suffix is stripped, so tagging the
+bot is never required.
+
+While the agent is still answering, a new plain message (not a slash command)
+stops that answer and starts a new turn. A burst is answered once but every
+message is kept. See §5.5.
 
 ### 5.4 Scope and sessions
 
@@ -156,10 +165,28 @@ Session invariants:
 
 - In-memory queue buffer: **1000** messages.
 - Workers: `bot.queue_workers`, default **4**, maximum **16**.
-- Queue key: `scope:tg:<chat>[:<thread>]` for groups, `user:<id>` for DMs.
-  Messages in one topic are processed in order; different topics run in parallel.
+- Queue key: `target:telegram:<chat>[:<thread>]`, the same scope the
+  conversation lock uses (falling back to `user:<id>` when a payload carries no
+  chat id). Messages in one topic are processed in order; different topics run
+  in parallel.
 - One run may take up to `bot.run_timeout_seconds` (default 900s), holding a
   worker slot for that long.
+
+Channel turns are interruptible:
+
+- `/stop` or `!stop` bypasses the per-conversation queue and cancels the turn
+  answering that chat. Whatever the model produced before the stop is persisted,
+  and the partial answer is delivered to the chat.
+- A new plain message in the same chat interrupts the running turn instead of
+  waiting behind it: the older turn saves its partial transcript and releases
+  the conversation lock, then the new turn runs. Messages that arrive in a burst
+  are collected for one second and answered together, so nothing is lost and
+  there is still one answer. Each message keeps its own bubble, caption, photo,
+  and document in the transcript.
+- `/stop` or `!stop` also clears messages that are still inside that one-second
+  window, which is the way to silence a burst.
+- Only user turns are interruptible. Cron and heartbeat turns run to completion.
+- Slash commands keep their place in the queue behind running work.
 
 ### 5.6 Replies and topic routing
 
@@ -284,6 +311,10 @@ is required. Restart the agent once so the migration and the name capture run.
 - [x] Per-topic sessions shared across topic members.
 - [x] `/new` per topic; DM/CLI/API sessions stay per user.
 - [x] Commands with the `@username` suffix.
+- [x] `/stop` and `!stop` stop the running turn; the partial transcript is kept.
+- [x] A new plain message interrupts the turn already answering the same chat.
+- [x] Messages sent in a burst are all kept as separate bubbles and answered
+      once, including every photo and document with its caption.
 - [x] Scope-keyed queue ordering.
 - [x] Voice transcription, photo/document download, attachments sent as photos
       (JPEG/PNG), animations (GIF), videos (MP4), audio (MP3/M4A), or documents

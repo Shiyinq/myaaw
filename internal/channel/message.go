@@ -3,6 +3,7 @@ package channel
 import (
 	"encoding/json"
 	"myaaw/internal/provider"
+	"strings"
 )
 
 type IncomingMessage struct {
@@ -51,6 +52,40 @@ type IncomingMessage struct {
 	// transcript up to the last user message (regenerate), N keeps it up to the
 	// user message N turns earlier (edit). Nil appends a normal user message.
 	RewindUserOffset *int
+	// Batch carries the other messages of the same spam burst, oldest first. The
+	// turn stores every message as its own user entry but answers only once. It is
+	// never serialized: the queue collects the batch out of band.
+	Batch []*IncomingMessage `json:"-"`
+}
+
+// TurnMessages returns this message followed by the rest of its batch. It is
+// always non-empty, so callers can loop over the whole turn.
+func (m *IncomingMessage) TurnMessages() []*IncomingMessage {
+	if m == nil {
+		return nil
+	}
+	if len(m.Batch) == 0 {
+		return []*IncomingMessage{m}
+	}
+	turns := make([]*IncomingMessage, 0, len(m.Batch)+1)
+	turns = append(turns, m)
+	turns = append(turns, m.Batch...)
+	return turns
+}
+
+// TurnText joins the text of every message in the turn, oldest first, so a trace
+// shows the whole burst instead of its first message. Empty messages are skipped.
+func (m *IncomingMessage) TurnText() string {
+	if m == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(m.Batch)+1)
+	for _, turn := range m.TurnMessages() {
+		if text := strings.TrimSpace(turn.Text); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 type OutgoingMessage struct {
@@ -155,5 +190,9 @@ type StreamChunk struct {
 
 type QueueEnvelope struct {
 	Channel string          `json:"channel"`
-	Payload json.RawMessage `json:"payload"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+	// Payloads carries several messages that belong to one agent turn. The queue
+	// consumer batches a chat's burst so every message is kept but the agent
+	// answers once.
+	Payloads []json.RawMessage `json:"payloads,omitempty"`
 }

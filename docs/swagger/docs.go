@@ -567,6 +567,16 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "payloads": {
+                    "description": "Payloads carries several messages that belong to one agent turn. The queue\nconsumer batches a chat's burst so every message is kept but the agent\nanswers once.",
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    }
                 }
             }
         },
