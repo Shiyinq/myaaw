@@ -533,8 +533,9 @@
 
 	// Conversation history sidebar
 	// Messages fetched per transcript page; scrolling to the top fetches the page
-	// before the loaded one.
-	const PAGE_SIZE = 20;
+	// before the loaded one. 50 keeps most short conversations (a few turns) in a
+	// single page, so opening them never needs a follow-up "older messages" fetch.
+	const PAGE_SIZE = 50;
 	const HISTORY_KEY = 'myaaw_chat_history_open';
 	const LAST_CONVERSATION_KEY = 'myaaw_last_conversation';
 
