@@ -114,15 +114,26 @@
 
 	async function refresh() {
 		await agentSelection.load(true);
-		await Promise.all([
+		const currentAgent = agentSelection.selected;
+		// The activity window ends now, not at mount; otherwise a manual refresh
+		// would keep asking for the same historical slice.
+		const activityArgs = currentAgent
+			? {
+					agent: currentAgent,
+					from: activityMonths[activityMonths.length - 1].getTime(),
+					to: Date.now()
+				}
+			: null;
+		const jobs: Promise<void>[] = [
 			serverStore.refresh(),
 			observabilityStore.summary.refresh(),
 			conversationsStore.list.refresh(),
 			skillsStore.list.refresh(),
 			toolsStore.query.refresh(),
-			contactsStore.query.refresh(),
-			conversationsStore.activity.refresh()
-		]);
+			contactsStore.query.refresh()
+		];
+		if (activityArgs) jobs.push(conversationsStore.activity.refresh(activityArgs));
+		await Promise.all(jobs);
 	}
 
 	function newChat() {

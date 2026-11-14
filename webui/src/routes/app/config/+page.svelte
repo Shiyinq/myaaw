@@ -75,12 +75,11 @@
 	let loading = $derived(configStore.loading);
 	let error = $derived(configStore.error);
 
-	let syncedAt = -1;
+	let syncedAgent = '';
 	$effect(() => {
 		const data = configStore.data;
-		const at = configStore.updatedAt;
-		if (!data || at === syncedAt) return;
-		syncedAt = at;
+		if (!data || !agent || syncedAgent === agent) return;
+		syncedAgent = agent;
 		apply(data);
 	});
 
@@ -150,7 +149,11 @@
 			return;
 		saving = true;
 		try {
-			await configStore.resetFields(agent, section === 'bot' ? { bot: [] } : { [section]: true });
+			const next = await configStore.resetFields(
+				agent,
+				section === 'bot' ? { bot: [] } : { [section]: true }
+			);
+			apply(next);
 			toastStore.success(t('myaaw.config.reset_done'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -167,7 +170,8 @@
 			return;
 		saving = true;
 		try {
-			await configStore.reset(agent);
+			const next = await configStore.reset(agent);
+			apply(next);
 			toastStore.success(t('myaaw.config.reset_done'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -185,7 +189,8 @@
 		if (!agent) return;
 		saving = true;
 		try {
-			await configStore.resetFields(agent, { [section]: [field] });
+			const next = await configStore.resetFields(agent, { [section]: [field] });
+			apply(next);
 			toastStore.success(t('myaaw.config.reset_done'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -198,7 +203,7 @@
 		if (!agent) return;
 		saving = true;
 		try {
-			await configStore.patch(agent, {
+			const next = await configStore.patch(agent, {
 				bot: {
 					type: botType,
 					owner_ids: splitList(ownerIds),
@@ -244,6 +249,7 @@
 					deny: splitList(apDeny)
 				}
 			});
+			apply(next);
 			toastStore.success(t('myaaw.config.saved'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));

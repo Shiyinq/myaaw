@@ -86,11 +86,10 @@ export const conversationsStore = {
 		return activity.ensure({ agent, from, to });
 	},
 	/** Mutations invalidate every cached view of that conversation. */
-	invalidate(agent: string) {
+	invalidate() {
 		list.invalidate();
 		detail.invalidate();
 		attachments.invalidate();
 		activity.invalidate();
-		void agent;
 	}
 };

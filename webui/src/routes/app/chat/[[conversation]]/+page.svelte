@@ -898,6 +898,7 @@
 		void refreshStats(currentAgent, id);
 		try {
 			await conversationsStore.ensureDetail(currentAgent, id, PAGE_SIZE, -1);
+			if (conversationId !== id) return; // Another conversation won.
 			const detail = conversationsStore.detail.data;
 			if (detail) {
 				// A fresh cache returns the same object; a stale one is a new page.
@@ -909,11 +910,15 @@
 				error = conversationsStore.detail.error;
 			}
 		} catch (err) {
-			if (!cached) error = getErrorMessage(err);
+			if (conversationId === id && !cached) error = getErrorMessage(err);
 		} finally {
-			loading = false;
-			scrollToBottom();
+			if (conversationId === id) {
+				loading = false;
+				scrollToBottom();
+			}
 		}
+
+		if (conversationId !== id) return;
 
 		// A page that does not fill the viewport cannot be scrolled, so the reader
 		// would never reach the trigger that pulls older messages; fetch until it
@@ -938,17 +943,18 @@
 	let appending = false;
 	async function appendNew() {
 		const currentAgent = agent ?? '';
-		if (!currentAgent || !conversationId || appending) return;
+		const id = conversationId;
+		if (!currentAgent || !id || appending) return;
 		// A streaming run owns the timeline; it picks the new turn up when it ends.
 		if (activeRun?.streaming) return;
 		appending = true;
 		const follow = preferences.value.autoScroll && stickToBottom;
 		try {
-			const detail = await conversationsStore.fetchDetail(currentAgent, conversationId, {
+			const detail = await conversationsStore.fetchDetail(currentAgent, id, {
 				limit: PAGE_SIZE,
 				offset: -1
 			});
-			if (conversationId === '' || detail.messages.length === 0) return;
+			if (conversationId !== id || detail.messages.length === 0) return;
 
 			// Keep the older pages the reader may have scrolled back to; the server's
 			// tail replaces everything from its offset on, so the background turn
@@ -965,10 +971,10 @@
 			turns = detail.turns ?? turns;
 			// Keep the transcript cache current for the next mount.
 			conversationsStore.detail.write(
-				{ agent: currentAgent, id: conversationId, limit: PAGE_SIZE, offset: -1 },
+				{ agent: currentAgent, id, limit: PAGE_SIZE, offset: -1 },
 				detail
 			);
-			chatRuns.settle(currentAgent, conversationId);
+			chatRuns.settle(currentAgent, id);
 			await tick();
 			measureTurns();
 			if (follow) scrollToBottom();

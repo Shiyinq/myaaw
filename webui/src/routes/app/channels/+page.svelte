@@ -19,7 +19,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { RefreshCw, Save, Trash2 } from 'lucide-svelte';
-	import type { SecretState } from '$lib/types';
+	import type { ChannelsView, SecretState } from '$lib/types';
 
 	const { t } = useTranslation();
 
@@ -41,12 +41,7 @@
 	let loading = $derived(channelsStore.loading);
 	let error = $derived(channelsStore.error);
 
-	let syncedAt = -1;
-	$effect(() => {
-		const view = channelsStore.data;
-		const at = channelsStore.updatedAt;
-		if (!view || at === syncedAt) return;
-		syncedAt = at;
+	function applyView(view: ChannelsView) {
 		const channels = view.channels ?? [];
 		const tg = channels.find((channel) => channel.name === 'telegram');
 		const dc = channels.find((channel) => channel.name === 'discord');
@@ -67,6 +62,14 @@
 		} else {
 			discordToken = null;
 		}
+	}
+
+	let syncedAgent = '';
+	$effect(() => {
+		const view = channelsStore.data;
+		if (!view || !agent || syncedAgent === agent) return;
+		syncedAgent = agent;
+		applyView(view);
 	});
 
 	async function save(channel: 'telegram' | 'discord') {
@@ -78,6 +81,7 @@
 				channel,
 				channel === 'telegram' ? { ...telegram } : { ...discord }
 			);
+			if (channelsStore.data) applyView(channelsStore.data);
 			toastStore.success(t('myaaw.channels.saved'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -91,6 +95,7 @@
 		if (!(await askConfirm({ message: t('myaaw.channels.disable_confirm') }))) return;
 		try {
 			await channelsStore.disable(agent, channel);
+			if (channelsStore.data) applyView(channelsStore.data);
 			toastStore.success(t('myaaw.channels.disabled'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
