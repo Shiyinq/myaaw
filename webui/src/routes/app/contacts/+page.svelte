@@ -3,12 +3,16 @@
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { revealPane } from '$lib/utils/scroll';
+	import { createSearchNav } from '$lib/utils/searchNav.svelte';
 	import { validate, type FieldErrors } from '$lib/utils/validation';
 	import { contactSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
+	import SidebarHeader from '$lib/components/app/SidebarHeader.svelte';
+	import SidebarSearchField from '$lib/components/app/SidebarSearchField.svelte';
+	import SidebarSkeletons from '$lib/components/app/SidebarSkeletons.svelte';
 	import FieldError from '$lib/components/common/FieldError.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -34,6 +38,7 @@
 	let loading = $state(false);
 	let saving = $state(false);
 	let error = $state('');
+	let query = $state('');
 	let loadKey = '';
 
 	let name = $state('');
@@ -45,6 +50,29 @@
 	let clearToken = $state(false);
 
 	let agent = $derived(agentSelection.selected);
+	let filteredContacts = $derived.by(() => {
+		const needle = query.trim().toLowerCase();
+		if (!needle) return contacts;
+		return contacts.filter(
+			(contact) =>
+				contact.name.toLowerCase().includes(needle) ||
+				contact.url.toLowerCase().includes(needle) ||
+				(contact.description ?? '').toLowerCase().includes(needle)
+		);
+	});
+
+	let navItems = $derived(
+		filteredContacts.map((contact) => ({
+			id: contact.name,
+			activate: () => startEdit(contact)
+		}))
+	);
+
+	const searchNav = createSearchNav({
+		items: () => navItems,
+		query: () => query,
+		clear: () => (query = '')
+	});
 
 	async function load(currentAgent: string) {
 		loading = true;
@@ -169,6 +197,8 @@
 	}
 </script>
 
+<svelte:window onkeydown={searchNav.onKeydown} />
+
 <TopBarActions id="contacts-refresh">
 	{#snippet children()}
 		<TopBarButton
@@ -194,67 +224,77 @@
 		<aside
 			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
 		>
-			<div class="shrink-0 border-b px-3 py-2.5">
-				<p class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-					{t('myaaw.contacts.list')}
-				</p>
+			<div class="shrink-0 space-y-2 border-b px-3 py-2.5">
+				<SidebarHeader label={t('myaaw.contacts.list')} count={contacts.length} />
+				<SidebarSearchField
+					bind:inputRef={searchNav.input}
+					bind:value={query}
+					placeholder={t('common.search')}
+				/>
 			</div>
 
-			<div class="space-y-1 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+			<div bind:this={searchNav.list} class="space-y-1 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
 				{#if loading}
-					<p class="px-1 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
+					<SidebarSkeletons class="h-12" />
 				{:else if contacts.length === 0}
 					<p class="px-1 py-2 text-sm text-muted-foreground">{t('myaaw.contacts.empty')}</p>
-				{/if}
-
-				{#each contacts as contact (contact.name)}
-					<div
-						class={[
-							'flex items-start gap-2 rounded-md px-1 py-1.5 hover:bg-muted list-row',
-							editing?.name === contact.name ? 'bg-muted' : ''
-						]}
-					>
-						<Bot class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-						<div class="min-w-0 flex-1">
-							<div class="flex items-center gap-1.5">
-								<span class="min-w-0 truncate text-sm font-medium">{contact.name}</span>
-								<Badge
-									variant={contact.token.configured ? 'secondary' : 'outline'}
-									class="shrink-0 text-[10px]"
-								>
-									{contact.token.configured ? contact.token.masked : t('myaaw.contacts.open')}
-								</Badge>
-							</div>
-							<p class="truncate text-[10px] text-muted-foreground" title={contact.url}>
-								{contact.url}
-							</p>
-							{#if contact.description}
-								<p class="truncate text-[10px] text-muted-foreground" title={contact.description}>
-									{contact.description}
+				{:else if filteredContacts.length === 0}
+					<p class="px-1 py-2 text-sm text-muted-foreground">
+						{t('myaaw.contacts.no_matches')}
+					</p>
+				{:else}
+					{#each filteredContacts as contact (contact.name)}
+						<div
+							class={[
+								'flex items-start gap-2 rounded-md px-1 py-1.5 hover:bg-muted list-row',
+								editing?.name === contact.name ? 'bg-accent' : '',
+								searchNav.cursor === contact.name ? 'ring-1 ring-ring/50' : ''
+							]}
+							data-nav-id={contact.name}
+							aria-current={editing?.name === contact.name ? 'true' : undefined}
+						>
+							<Bot class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+							<div class="min-w-0 flex-1">
+								<div class="flex items-center gap-1.5">
+									<span class="min-w-0 truncate text-sm font-medium">{contact.name}</span>
+									<Badge
+										variant={contact.token.configured ? 'secondary' : 'outline'}
+										class="shrink-0 text-[10px]"
+									>
+										{contact.token.configured ? contact.token.masked : t('myaaw.contacts.open')}
+									</Badge>
+								</div>
+								<p class="truncate text-[10px] text-muted-foreground" title={contact.url}>
+									{contact.url}
 								</p>
-							{/if}
+								{#if contact.description}
+									<p class="truncate text-[10px] text-muted-foreground" title={contact.description}>
+										{contact.description}
+									</p>
+								{/if}
+							</div>
+							<div class="mt-0.5 flex shrink-0 gap-0.5">
+								<Button
+									size="icon-xs"
+									variant="ghost"
+									onclick={() => startEdit(contact)}
+									aria-label={t('myaaw.contacts.edit')}
+									title={t('myaaw.contacts.edit')}
+								>
+									<Pencil class="h-3 w-3" />
+								</Button>
+								<Button
+									size="icon-xs"
+									variant="ghost"
+									onclick={() => remove(contact.name)}
+									aria-label={t('common.delete')}
+								>
+									<Trash2 class="h-3 w-3 text-destructive" />
+								</Button>
+							</div>
 						</div>
-						<div class="mt-0.5 flex shrink-0 gap-0.5">
-							<Button
-								size="icon-xs"
-								variant="ghost"
-								onclick={() => startEdit(contact)}
-								aria-label={t('myaaw.contacts.edit')}
-								title={t('myaaw.contacts.edit')}
-							>
-								<Pencil class="h-3 w-3" />
-							</Button>
-							<Button
-								size="icon-xs"
-								variant="ghost"
-								onclick={() => remove(contact.name)}
-								aria-label={t('common.delete')}
-							>
-								<Trash2 class="h-3 w-3 text-destructive" />
-							</Button>
-						</div>
-					</div>
-				{/each}
+					{/each}
+				{/if}
 			</div>
 		</aside>
 

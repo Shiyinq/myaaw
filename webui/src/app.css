@@ -1062,6 +1062,43 @@ span.md-math {
 	}
 }
 
+@keyframes skeleton-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.5;
+	}
+}
+
+@keyframes skeleton-wait {
+	from {
+		visibility: hidden;
+	}
+	to {
+		visibility: visible;
+	}
+}
+
+/*
+ * Skeletons wait a beat before showing themselves. A fast API response
+ * removes them while they are still hidden, so no placeholder flashes; a slow
+ * one fades the skeleton in after the delay. The pulse and the delay live on
+ * the Skeleton itself, so every page gets the same behaviour.
+ */
+.skeleton-delayed {
+	animation:
+		skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite,
+		skeleton-wait 0ms linear 180ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.skeleton-delayed {
+		animation: skeleton-wait 0ms linear 180ms both;
+	}
+}
+
 /*
  * Toasts say what happened in words and colour, never with a face. sonner always
  * renders an icon column and styles it with `[data-sonner-toast] [data-icon]`,
