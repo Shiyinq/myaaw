@@ -70,15 +70,24 @@
 					const label = language === 'plaintext' ? 'text' : language;
 					const body = highlightCode(text ?? '', language);
 					return `<div class="md-code not-prose my-3 overflow-hidden rounded-md border border-input" data-code-block>
-	<div class="flex items-center justify-between gap-2 border-b bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
-		<span class="font-mono">${label}</span>
-		<span class="flex items-center gap-3">
-			<button type="button" data-code-action="copy" data-code-label="${escapeHtml(strings.copy)}" data-copied-label="${escapeHtml(strings.copied)}" class="hover:text-foreground">${escapeHtml(strings.copy)}</button>
-			<button type="button" data-code-action="download" data-code-lang="${language}" class="hover:text-foreground">${escapeHtml(strings.download)}</button>
-		</span>
-	</div>
-	<pre class="hljs overflow-auto bg-muted/20 p-3 font-mono text-xs leading-relaxed"><code class="language-${language}">${body}</code></pre>
+<div class="flex items-center justify-between gap-2 border-b bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
+	<span class="font-mono">${label}</span>
+	<span class="flex items-center gap-3">
+		<button type="button" data-code-action="copy" data-code-label="${escapeHtml(strings.copy)}" data-copied-label="${escapeHtml(strings.copied)}" class="hover:text-foreground">${escapeHtml(strings.copy)}</button>
+		<button type="button" data-code-action="download" data-code-lang="${language}" class="hover:text-foreground">${escapeHtml(strings.download)}</button>
+	</span>
+</div>
+<pre class="hljs overflow-auto bg-muted/20 p-3 font-mono text-xs leading-relaxed"><code class="language-${language}">${body}</code></pre>
 </div>`;
+				},
+				// Answers link out to the web constantly, and following one in the same tab
+				// would replace the conversation. External links open in their own tab;
+				// in-page anchors keep the current one.
+				link({ href, title, tokens }) {
+					const titleAttribute = title ? ` title="${escapeHtml(title)}"` : '';
+					const target = href.startsWith('#') ? '' : ' target="_blank" rel="noopener noreferrer"';
+					const body = this.parser.parseInline(tokens);
+					return `<a href="${escapeHtml(href)}"${titleAttribute}${target}>${body}</a>`;
 				}
 			}
 		});
@@ -108,10 +117,13 @@
 	// `semantics`/`annotation`, which DOMPurify does not know) so screen readers
 	// still get the expression. The few SVG tags are what the Mermaid toolbar's
 	// fullscreen icon needs: nothing else in a message is allowed to draw SVG.
+	// `target` is not in DOMPurify's default attribute list, and links rely on it
+	// to open outside the dashboard.
 	const SANITIZE = {
 		USE_PROFILES: { html: true, mathMl: true },
 		ADD_TAGS: ['annotation', 'semantics', 'svg', 'path', 'polyline', 'line'],
 		ADD_ATTR: [
+			'target',
 			'encoding',
 			'viewBox',
 			'xmlns',
