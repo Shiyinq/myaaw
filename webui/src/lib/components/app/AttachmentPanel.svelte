@@ -242,14 +242,14 @@
 	<div
 		role="group"
 		aria-label={t('myaaw.chat.attachments_filters')}
-		class="flex shrink-0 flex-wrap gap-0.5 px-2 pt-2 pb-2"
+		class="flex shrink-0 flex-nowrap items-center gap-0.5 overflow-x-auto overscroll-x-contain px-2 pt-2 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
 	>
 		{#each FILTERS as entry (entry.id)}
 			<button
 				type="button"
 				aria-pressed={filter === entry.id}
 				class={cn(
-					'whitespace-nowrap rounded-full border px-1 py-1 text-[11px] font-medium transition-colors',
+					'shrink-0 whitespace-nowrap rounded-full border px-1 py-1 text-[11px] font-medium transition-colors',
 					filter === entry.id
 						? 'border-transparent bg-primary text-primary-foreground'
 						: 'text-muted-foreground hover:bg-muted hover:text-foreground'
