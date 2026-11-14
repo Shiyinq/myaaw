@@ -27,9 +27,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { colorOf } from '$lib/bloub';
-	import { conversations as conversationsApi } from '$lib/apis/conversations';
-	import { context as contextApi } from '$lib/apis/context';
-	import { server as serverApi } from '$lib/apis/server';
+	import { conversationsStore } from '$lib/stores/conversations.svelte';
+	import { contextStore } from '$lib/stores/context.svelte';
+	import { serverStore } from '$lib/stores/server.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
 	import { conversationHistory } from '$lib/stores/conversationHistory.svelte';
@@ -202,7 +202,7 @@
 	// Status is cheap to poll and matters while the panel is on screen.
 	async function refreshStatus(name: string) {
 		try {
-			const result = await serverApi.status(name);
+			const result = await serverStore.fetchStatus(name);
 			status = result.running ? 'connected' : 'stopped';
 		} catch {
 			status = 'unknown';
@@ -215,7 +215,9 @@
 		if (!name || controlling) return;
 		controlling = true;
 		try {
-			await serverApi[action](name);
+			if (action === 'start') await serverStore.start(name);
+			else if (action === 'stop') await serverStore.stop(name);
+			else await serverStore.restart(name);
 			const doneKey =
 				action === 'start'
 					? 'myaaw.server.start_done'
@@ -250,7 +252,7 @@
 		const revision = unreadChats.revision();
 		loading = true;
 		try {
-			const result = await conversationsApi.list(name, { limit: PAGE, offset: pageOffset });
+			const result = await conversationsStore.fetchList(name, { limit: PAGE, offset: pageOffset });
 			if (current !== generation) return;
 			const page = result.conversations ?? [];
 			items = reset
@@ -276,7 +278,7 @@
 		const current = generation;
 		const revision = unreadChats.revision();
 		try {
-			const result = await conversationsApi.list(name, { limit: PAGE, offset: 0 });
+			const result = await conversationsStore.fetchList(name, { limit: PAGE, offset: 0 });
 			if (current !== generation) return;
 			const page = result.conversations ?? [];
 			if (page.length === 0) return;
@@ -293,7 +295,7 @@
 
 	async function loadFiles(name: string) {
 		try {
-			const result = await contextApi.list(name);
+			const result = await contextStore.fetchList(name);
 			const next: Record<string, ContextFile> = {};
 			for (const file of result.files ?? []) next[file.path] = file;
 			files = next;

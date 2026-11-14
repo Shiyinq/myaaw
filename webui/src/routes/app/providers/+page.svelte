@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { providers as providersApi } from '$lib/apis/providers';
+	import { providersStore } from '$lib/stores/providers.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { capabilityFor, loadModelCapabilities } from '$lib/stores/modelCatalog';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -34,13 +35,8 @@
 
 	const { t } = useTranslation();
 
-	let providers = $state<ProviderView[]>([]);
-	let defaultProvider = $state('');
-	let loading = $state(false);
 	let saving = $state(false);
 	let discovering = $state(false);
-	let error = $state('');
-	let loadKey = '';
 
 	let name = $state('');
 	let type = $state('openai');
@@ -64,6 +60,12 @@
 	);
 
 	let agent = $derived(agentSelection.selected);
+	useQuery(providersStore.list, () => (agent ? { agent } : null));
+
+	let providers = $derived(providersStore.providers);
+	let defaultProvider = $derived(providersStore.defaultProvider);
+	let loading = $derived(providersStore.loading);
+	let error = $derived(providersStore.error);
 
 	// The catalog decides whether the selected model can reason at all. Without an
 	// entry the thinking field stays hidden instead of offering levels the model
@@ -105,30 +107,6 @@
 		return value.charAt(0).toUpperCase() + value.slice(1);
 	}
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			const view = await providersApi.list(currentAgent);
-			if (currentAgent !== agentSelection.selected) return;
-			providers = view.providers ?? [];
-			defaultProvider = view.default_provider;
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
-
-	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		if (currentAgent === loadKey) return;
-		loadKey = currentAgent;
-		resetForm();
-		providers = [];
-		if (currentAgent) void load(currentAgent);
-	});
-
 	async function discover() {
 		if (!agent || connecting || (isChatGPT && !connected)) return;
 		const version = formVersion;
@@ -138,13 +116,13 @@
 		try {
 			// Editing with a blank key can reuse the stored secret.
 			const view = isChatGPT
-				? await providersApi.modelsForCredentials({
+				? await providersStore.modelsForCredentials({
 						type: 'openai_chatgpt',
 						credential_id: credentialId
 					})
 				: editing && !apiKey
-					? await providersApi.models(agent, editing)
-					: await providersApi.modelsForCredentials({
+					? await providersStore.models(agent, editing)
+					: await providersStore.modelsForCredentials({
 							type,
 							base_url: baseUrl || undefined,
 							api_key: apiKey || undefined
@@ -256,12 +234,12 @@
 					default_model: result.data.default_model ?? '',
 					thinking_level: effectiveThinking
 				};
-				if (editing) await providersApi.update(agent, editing, payload);
-				else await providersApi.create(agent, { ...payload, name: result.data.name });
+				if (editing) await providersStore.update(agent, editing, payload);
+				else await providersStore.create(agent, { ...payload, name: result.data.name });
 			} else if (editing) {
 				// An empty key keeps the stored secret; empty strings clear the
 				// endpoint and model instead of leaving the old values in place.
-				await providersApi.update(agent, editing, {
+				await providersStore.update(agent, editing, {
 					type: result.data.type,
 					base_url: result.data.base_url ?? '',
 					api_key: result.data.api_key?.trim() || undefined,
@@ -269,7 +247,7 @@
 					thinking_level: effectiveThinking
 				});
 			} else {
-				await providersApi.create(agent, {
+				await providersStore.create(agent, {
 					name: result.data.name,
 					type: result.data.type,
 					base_url: result.data.base_url || undefined,
@@ -281,7 +259,6 @@
 			toastStore.success(t('myaaw.providers.saved'));
 			if (saveAgent !== agent || version !== formVersion) return;
 			resetForm();
-			await load(saveAgent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -292,8 +269,7 @@
 	async function setDefault(provider: string) {
 		if (!agent) return;
 		try {
-			await providersApi.setDefault(agent, provider);
-			defaultProvider = provider;
+			await providersStore.setDefault(agent, provider);
 			toastStore.success(t('myaaw.providers.saved'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -310,9 +286,8 @@
 		)
 			return;
 		try {
-			await providersApi.remove(agent, provider);
+			await providersStore.remove(agent, provider);
 			if (editing === provider) resetForm();
-			await load(agent);
 			toastStore.success(t('myaaw.providers.deleted'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -325,8 +300,8 @@
 		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
-			onclick={() => agent && load(agent)}
-			{loading}
+			onclick={() => void providersStore.refresh()}
+			loading={loading || providersStore.refreshing}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -489,7 +464,7 @@
 									bind:credentialId
 									bind:connection
 									bind:busy={connecting}
-									ondisconnect={() => void load(agent)}
+									ondisconnect={() => void providersStore.refresh()}
 									onchange={() => {
 										discovered = null;
 									}}

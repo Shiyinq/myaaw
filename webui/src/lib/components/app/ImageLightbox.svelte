@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ChevronLeft, ChevronRight, Download, X, ZoomIn, ZoomOut } from 'lucide-svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import { files as filesApi } from '$lib/apis/files';
+	import { filesStore } from '$lib/stores/files.svelte';
 	import type { LightboxImage } from '$lib/types';
 
 	interface Props {
@@ -99,7 +99,7 @@
 	function download() {
 		const item = current;
 		if (!item) return;
-		void filesApi.downloadUrl(item.downloadSrc || item.src, item.name || 'image');
+		void filesStore.downloadUrl(item.downloadSrc || item.src, item.name || 'image');
 	}
 
 	// A new image always starts unzoomed, and closing drops any pan so reopening

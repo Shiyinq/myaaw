@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { context as contextApi } from '$lib/apis/context';
+	import { contextStore } from '$lib/stores/context.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { revealPane } from '$lib/utils/scroll';
@@ -30,19 +31,20 @@
 	// brought into view whenever a file further up is picked.
 	let detail = $state<HTMLElement | null>(null);
 
-	let files = $state<ContextFile[]>([]);
 	let path = $state('');
 	let content = $state('');
 	// The buffer as last written (or opened), so the header can flag unsaved edits.
 	let savedContent = $state('');
 	let query = $state('');
-	let loading = $state(false);
 	let saving = $state(false);
-	let error = $state('');
 	let editing = $state(false);
-	let loadKey = '';
 
 	let agent = $derived(agentSelection.selected);
+	useQuery(contextStore.list, () => (agent ? { agent } : null));
+
+	let files = $derived(contextStore.list.data?.files ?? []);
+	let loading = $derived(contextStore.list.loading);
+	let error = $derived(contextStore.list.error);
 	let selectedFile = $derived(files.find((file) => file.path === path) ?? null);
 	let dirty = $derived(!!path && content !== savedContent);
 	let wordCount = $derived((content.trim().match(/\S+/g) ?? []).length);
@@ -97,53 +99,38 @@
 		return formatChatTimestamp(value, locale.value, t('myaaw.chat.yesterday'));
 	}
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			const result = await contextApi.list(currentAgent);
-			files = result.files ?? [];
-			const next = files.find((file) => file.path === path) ?? files[0];
-			if (next) {
-				await open(currentAgent, next.path);
-			} else {
-				path = '';
-				content = '';
-				savedContent = '';
-				editing = false;
-			}
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
-
 	async function open(currentAgent: string, nextPath: string) {
-		const file = await contextApi.read(currentAgent, nextPath);
+		await contextStore.ensureFile(currentAgent, nextPath);
+		const file = contextStore.read.data;
+		if (!file) return;
 		path = file.path;
 		content = file.content;
 		savedContent = file.content;
 		editing = false;
 	}
 
+	let openedFor = '';
 	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
+		const list = contextStore.list.data;
+		if (!agent || !list) return;
+		if (openedFor === agent) return;
+		openedFor = agent;
+		const next = (list.files ?? []).find((file) => file.path === path) ?? (list.files ?? [])[0];
+		if (next) void open(agent, next.path);
+		else {
+			path = '';
+			content = '';
+			savedContent = '';
+			editing = false;
+		}
 	});
 
 	async function save() {
 		if (!agent || !path) return;
 		saving = true;
 		try {
-			const saved = await contextApi.write(agent, path, content);
+			const saved = await contextStore.write(agent, path, content);
 			savedContent = saved.content;
-			files = files.map((file) =>
-				file.path === path ? { ...file, size: saved.size, mod_time: saved.mod_time } : file
-			);
 			toastStore.success(t('myaaw.context.saved'));
 			editing = false;
 		} catch (err) {

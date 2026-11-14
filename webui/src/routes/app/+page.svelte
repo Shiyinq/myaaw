@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { agents as agentsApi } from '$lib/apis/agents';
-	import { server as serverApi } from '$lib/apis/server';
+	import { agentsStore } from '$lib/stores/agents.svelte';
+	import { serverStore } from '$lib/stores/server.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -86,8 +86,7 @@
 
 	async function setDefaultAgent(name: string) {
 		try {
-			await agentsApi.setDefault(name);
-			await agentSelection.load(true);
+			await agentsStore.setDefault(name);
 			toastStore.success(t('myaaw.home.agent_default_set', { name }));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -103,8 +102,7 @@
 		)
 			return;
 		try {
-			await agentsApi.remove(name);
-			await agentSelection.load(true);
+			await agentsStore.remove(name);
 			toastStore.success(t('myaaw.home.agent_deleted'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -117,8 +115,8 @@
 		// Flip the badge right away; the daemon takes a moment to bind its port.
 		agentSelection.setRunning(name, !running);
 		try {
-			if (running) await serverApi.stop(name);
-			else await serverApi.start(name);
+			if (running) await serverStore.stop(name);
+			else await serverStore.start(name);
 			toastStore.success(t(running ? 'myaaw.server.stop_done' : 'myaaw.server.start_done'));
 			await waitForServerState(name, !running);
 		} catch (err) {
@@ -135,8 +133,7 @@
 		for (let attempt = 0; attempt < 20; attempt += 1) {
 			await new Promise((resolve) => setTimeout(resolve, 300));
 			try {
-				const { agents: list } = await agentsApi.list();
-				agentSelection.setAgents(list);
+				const list = await agentsStore.reload();
 				if (list.some((agent) => agent.name === name && agent.running === running)) return;
 			} catch {
 				// Transient failures are expected while the daemon boots; keep polling.
@@ -148,7 +145,7 @@
 		if (toggling || bulkBusy) return;
 		toggling = name;
 		try {
-			await serverApi.restart(name);
+			await serverStore.restart(name);
 			toastStore.success(t('myaaw.server.restart_done'));
 			await waitForServerState(name, true);
 		} catch (err) {
@@ -185,9 +182,9 @@
 		const failed: string[] = [];
 		for (const agent of targets) {
 			try {
-				if (kind === 'start') await serverApi.start(agent.name);
-				else if (kind === 'restart') await serverApi.restart(agent.name);
-				else await serverApi.stop(agent.name);
+				if (kind === 'start') await serverStore.start(agent.name);
+				else if (kind === 'restart') await serverStore.restart(agent.name);
+				else await serverStore.stop(agent.name);
 			} catch {
 				failed.push(agent.name);
 			}
@@ -217,8 +214,7 @@
 		for (let attempt = 0; attempt < 20 && pending.size > 0; attempt += 1) {
 			await new Promise((resolve) => setTimeout(resolve, 300));
 			try {
-				const { agents: list } = await agentsApi.list();
-				agentSelection.setAgents(list);
+				const list = await agentsStore.reload();
 				for (const agent of list) {
 					if (pending.has(agent.name) && agent.running === running) pending.delete(agent.name);
 				}

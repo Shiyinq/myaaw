@@ -49,7 +49,7 @@
 	import { isOverlayOpen, isTypingTarget, matchesShortcut } from '$lib/utils/keys';
 	import type { Command } from '$lib/commands';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
-	import { server as serverApi } from '$lib/apis/server';
+	import { serverStore } from '$lib/stores/server.svelte';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { isActiveHref } from '$lib/utils/nav';
 	import type { NavGroup } from '$lib/utils/nav';
@@ -593,9 +593,9 @@
 		const running = kind !== 'stop';
 		agentSelection.setRunning(name, running);
 		try {
-			if (kind === 'start') await serverApi.start(name);
-			else if (kind === 'stop') await serverApi.stop(name);
-			else await serverApi.restart(name);
+			if (kind === 'start') await serverStore.start(name);
+			else if (kind === 'stop') await serverStore.stop(name);
+			else await serverStore.restart(name);
 			toastStore.success(
 				t(
 					kind === 'start'

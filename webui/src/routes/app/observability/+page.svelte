@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { observability as observabilityApi } from '$lib/apis/observability';
+	import { observabilityStore } from '$lib/stores/observability.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -18,37 +19,58 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { Activity, ChevronLeft, ChevronRight, RefreshCw, Trash2 } from 'lucide-svelte';
-	import type {
-		ObservabilitySummary,
-		RunDetail,
-		RunSummary,
-		SessionDetail,
-		SessionSummary,
-		StepStat
-	} from '$lib/types';
+	import type { RunDetail, RunSummary, SessionSummary, StepStat } from '$lib/types';
 
 	const { t } = useTranslation();
 	const limit = 25;
 
-	let summary = $state<ObservabilitySummary | null>(null);
-	let runs = $state<RunSummary[]>([]);
-	let detail = $state<RunDetail | null>(null);
-	let loading = $state(false);
-	let detailLoading = $state(false);
-	let error = $state('');
-	let loadKey = '';
 	let offset = $state(0);
 	let status = $state('');
 	let trigger = $state('');
 	let mode = $state<'runs' | 'sessions' | 'summary'>('summary');
 	let summaryView = $state<'chart' | 'table'>('chart');
-	let sessions = $state<SessionSummary[]>([]);
-	let session = $state<SessionDetail | null>(null);
-	let sessionLoading = $state(false);
 	let highlightRuns = $state<Record<string, RunDetail | null>>({});
 	let highlightKey = '';
 
 	let agent = $derived(agentSelection.selected);
+
+	useQuery(observabilityStore.summary, () => (agent ? { agent, days: 7 } : null));
+	useQuery(observabilityStore.runs, () =>
+		agent && mode === 'runs'
+			? {
+					agent,
+					filters: {
+						limit,
+						offset,
+						status: status || undefined,
+						trigger: trigger || undefined
+					}
+				}
+			: null
+	);
+	useQuery(observabilityStore.sessions, () =>
+		agent && mode === 'sessions' ? { agent, limit: 50 } : null
+	);
+
+	let summary = $derived(observabilityStore.summary.data ?? null);
+	// Keep the previous rows on screen while a new page is in flight; the store
+	// only replaces `data` once the response for the new key lands.
+	let runs = $state<RunSummary[]>([]);
+	let sessions = $state<SessionSummary[]>([]);
+	$effect(() => {
+		const data = observabilityStore.runs.data;
+		if (data) runs = data.runs ?? [];
+	});
+	$effect(() => {
+		const data = observabilityStore.sessions.data;
+		if (data) sessions = data.sessions ?? [];
+	});
+	let detail = $derived(observabilityStore.run.data ?? null);
+	let session = $derived(observabilityStore.session.data ?? null);
+	let loading = $derived(observabilityStore.summary.loading);
+	let detailLoading = $derived(observabilityStore.run.loading);
+	let sessionLoading = $derived(observabilityStore.session.loading);
+	let error = $derived(observabilityStore.summary.error);
 
 	interface HighlightCard {
 		label: string;
@@ -232,59 +254,17 @@
 		return Math.max(1, Math.min(100, (value / max) * 100));
 	}
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			const summaryResult = await observabilityApi.summary(currentAgent, 7);
-			summary = summaryResult;
-			if (mode === 'sessions') {
-				const sessionsResult = await observabilityApi.sessions(currentAgent);
-				sessions = sessionsResult.sessions ?? [];
-			} else if (mode === 'runs') {
-				const runsResult = await observabilityApi.runs(currentAgent, {
-					limit,
-					offset,
-					status: status || undefined,
-					trigger: trigger || undefined
-				});
-				runs = runsResult.runs ?? [];
-			}
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
-
 	function switchMode(next: 'runs' | 'sessions' | 'summary') {
 		if (mode === next) return;
 		mode = next;
 		offset = 0;
-		session = null;
+		observabilityStore.session.reset();
 	}
 
 	async function openSession(item: SessionSummary) {
 		if (!agent) return;
-		sessionLoading = true;
-		try {
-			// Spans make the session answer render like a run trajectory instead of
-			// a bare list of run ids.
-			session = await observabilityApi.session(agent, item.conversation_id, true);
-		} catch (err) {
-			toastStore.error(getErrorMessage(err));
-		} finally {
-			sessionLoading = false;
-		}
+		await observabilityStore.ensureSession(agent, item.conversation_id, true);
 	}
-
-	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}:${mode}:${offset}:${status}:${trigger}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
-	});
 
 	$effect(() => {
 		const currentAgent = agent;
@@ -301,7 +281,7 @@
 		highlightKey = key;
 		highlightRuns = {};
 		const results = await Promise.all(
-			ids.map((id) => observabilityApi.run(currentAgent, id).catch(() => null))
+			ids.map((id) => observabilityStore.fetchRun(currentAgent, id).catch(() => null))
 		);
 		const next: Record<string, RunDetail | null> = {};
 		ids.forEach((id, index) => (next[id] = results[index]));
@@ -310,14 +290,7 @@
 
 	async function openRun(run: RunSummary) {
 		if (!agent) return;
-		detailLoading = true;
-		try {
-			detail = await observabilityApi.run(agent, run.id);
-		} catch (err) {
-			toastStore.error(getErrorMessage(err));
-		} finally {
-			detailLoading = false;
-		}
+		await observabilityStore.ensureRun(agent, run.id);
 	}
 
 	async function purge() {
@@ -330,9 +303,7 @@
 		)
 			return;
 		try {
-			await observabilityApi.purge(agent);
-			detail = null;
-			await load(agent);
+			await observabilityStore.purge(agent);
 			toastStore.success(t('myaaw.observability.purged'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -629,7 +600,7 @@
 		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
-			onclick={() => agent && load(agent)}
+			onclick={() => void observabilityStore.summary.refresh()}
 			{loading}
 		/>
 		<TopBarButton

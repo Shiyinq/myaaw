@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { files as filesApi } from '$lib/apis/files';
+	import { filesStore } from '$lib/stores/files.svelte';
 	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -109,7 +109,7 @@
 	let mediaKind = $derived(preview && MEDIA_KINDS.has(preview.kind) ? preview.kind : null);
 	let textPreview = $derived(!!preview && !mediaKind && preview.kind !== 'binary');
 	let tooLargeToPreview = $derived(!!selected && textPreview && selected.size > PREVIEW_LIMIT);
-	let mediaUrl = $derived(selected && agent ? filesApi.rawUrl(agent, selected.path) : '');
+	let mediaUrl = $derived(selected && agent ? filesStore.rawUrl(agent, selected.path) : '');
 	// While /fs/sign is in flight rawUrl is `data:,`; mounting a media element
 	// with it flashes the browser's broken-image placeholder, so wait for the
 	// signed URL before rendering the element.
@@ -123,7 +123,7 @@
 
 	function downloadFile(target: string) {
 		if (!agent) return;
-		filesApi.download(agent, target);
+		filesStore.download(agent, target);
 	}
 
 	// A preview can render before its signature arrives, when src is a blank data
@@ -134,29 +134,31 @@
 	}
 
 	async function load(currentAgent: string, target: string) {
-		loading = true;
+		const cached = filesStore.list.peek({ agent: currentAgent, path: target });
+		loading = cached === undefined;
 		error = '';
-		try {
-			const result = await filesApi.list(currentAgent, target);
+		await filesStore.list.ensure({ agent: currentAgent, path: target });
+		const result = filesStore.list.data;
+		if (result) {
 			entries = result.entries ?? [];
 			path = result.path ?? target;
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
 		}
+		error = filesStore.list.error;
+		loading = false;
 	}
 
 	$effect(() => {
 		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
+		if (!currentAgent || currentAgent === loadKey) return;
+		loadKey = currentAgent;
 		void load(currentAgent, path);
 	});
 
 	async function refresh() {
-		if (agent) await load(agent, path);
+		if (!agent) return;
+		await filesStore.list.refresh({ agent, path });
+		const result = filesStore.list.data;
+		if (result) entries = result.entries ?? [];
 	}
 
 	async function open(entry: FileEntry) {
@@ -179,7 +181,13 @@
 		}
 
 		try {
-			const file = await filesApi.read(agent, entry.path);
+			await filesStore.read.ensure({ agent, path: entry.path });
+			const file = filesStore.read.data;
+			if (filesStore.read.error) {
+				toastStore.error(filesStore.read.error);
+				return;
+			}
+			if (!file) return;
 			selected = file;
 			content = file.content;
 			editing = false;
@@ -190,7 +198,9 @@
 
 	async function openMatch(match: SearchMatch) {
 		if (!agent) return;
-		const file = await filesApi.read(agent, match.path);
+		await filesStore.read.ensure({ agent, path: match.path });
+		const file = filesStore.read.data;
+		if (!file) return;
 		selected = file;
 		content = file.content;
 		editing = false;
@@ -202,7 +212,7 @@
 		if (!agent || !selected) return;
 		saving = true;
 		try {
-			await filesApi.write(agent, selected.path, content);
+			await filesStore.write(agent, selected.path, content, path);
 			toastStore.success(t('myaaw.files.saved'));
 			editing = false;
 		} catch (err) {
@@ -222,7 +232,7 @@
 		)
 			return;
 		try {
-			await filesApi.remove(agent, entry.path, entry.is_dir);
+			await filesStore.remove(agent, entry.path, path, entry.is_dir);
 			if (selected?.path === entry.path) {
 				selected = null;
 				content = '';
@@ -241,7 +251,7 @@
 		if (!name) return;
 		const target = path === '' ? `/${name}` : `${path}/${name}`;
 		try {
-			await filesApi.mkdir(agent, target);
+			await filesStore.mkdir(agent, target, path);
 			folderName = '';
 			await load(agent, path);
 			toastStore.success(t('myaaw.files.folder_created'));
@@ -256,10 +266,12 @@
 		if (!name) return;
 		const target = path === '' ? `/${name}` : `${path}/${name}`;
 		try {
-			await filesApi.write(agent, target, '');
+			await filesStore.write(agent, target, '', path);
 			folderName = '';
 			await load(agent, path);
-			const file = await filesApi.read(agent, target);
+			await filesStore.read.ensure({ agent, path: target });
+			const file = filesStore.read.data;
+			if (!file) return;
 			selected = file;
 			content = file.content;
 			editing = true;
@@ -302,7 +314,7 @@
 		const parent = entry.path.split('/').slice(0, -1).join('/');
 		const target = parent ? `${parent}/${result.data}` : `/${result.data}`;
 		try {
-			await filesApi.rename(agent, entry.path, target);
+			await filesStore.rename(agent, entry.path, target, path);
 			if (selected?.path === entry.path) {
 				selected = null;
 				content = '';
@@ -320,7 +332,7 @@
 		if (!agent || !searchQuery.trim()) return;
 		searchLoading = true;
 		try {
-			const result = await filesApi.search(agent, searchQuery.trim(), path || '/home');
+			const result = await filesStore.search(agent, searchQuery.trim(), path || '/home');
 			matches = result.matches ?? [];
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));

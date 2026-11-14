@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { backups as backupsApi } from '$lib/apis/backup';
+	import { backupsStore } from '$lib/stores/backups.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -18,7 +18,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Input } from '$lib/components/ui/input';
 	import { Archive, Download, HardDriveDownload, RotateCcw, Trash2 } from 'lucide-svelte';
-	import type { BackupArchive, BackupList } from '$lib/types';
+	import type { BackupArchive } from '$lib/types';
 
 	interface Props {
 		/**
@@ -35,8 +35,10 @@
 
 	let creating = $state(false);
 	let restoring = $state(false);
-	let error = $state('');
-	let data = $state<BackupList | null>(null);
+	let actionError = $state('');
+	let error = $derived(actionError || backupsStore.query.error);
+	useQuery(backupsStore.query, () => ({}));
+	let data = $derived(backupsStore.data ?? null);
 
 	let showCreate = $state(false);
 	let allAgents = $state(true);
@@ -75,17 +77,6 @@
 			: chosenAgents.filter((item) => item !== name);
 	}
 
-	onMount(refresh);
-
-	async function refresh() {
-		error = '';
-		try {
-			data = await backupsApi.list();
-		} catch (err) {
-			error = getErrorMessage(err);
-		}
-	}
-
 	async function create() {
 		// Names can disappear between opening the form and submitting it.
 		const targets = chosenAgents.filter((name) => fleet.some((item) => item.name === name));
@@ -96,9 +87,9 @@
 		}
 
 		creating = true;
-		error = '';
+		actionError = '';
 		try {
-			await backupsApi.create({
+			await backupsStore.create({
 				agents: scoped ? [agent as string] : allAgents ? [] : targets,
 				include_workspace: includeWorkspace,
 				include_logs: includeLogs,
@@ -108,10 +99,9 @@
 			});
 			toastStore.success(t('myaaw.backups.created_ok'));
 			showCreate = false;
-			await refresh();
 		} catch (err) {
-			error = getErrorMessage(err);
-			toastStore.error(error);
+			actionError = getErrorMessage(err);
+			toastStore.error(actionError);
 		} finally {
 			creating = false;
 		}
@@ -119,9 +109,9 @@
 
 	async function restore(archive: BackupArchive) {
 		restoring = true;
-		error = '';
+		actionError = '';
 		try {
-			const result = await backupsApi.restore(archive.name, {
+			const result = await backupsStore.restore(archive.name, {
 				agent: restoreAs.trim() || undefined,
 				force: restoreForce,
 				start: restoreStart
@@ -129,25 +119,23 @@
 			toastStore.success(t('myaaw.backups.restored_ok', { agent: result.agent }));
 			if (result.port_warning) toastStore.error(result.port_warning);
 			restoreName = '';
-			await refresh();
 		} catch (err) {
-			error = getErrorMessage(err);
-			toastStore.error(error);
+			actionError = getErrorMessage(err);
+			toastStore.error(actionError);
 		} finally {
 			restoring = false;
 		}
 	}
 
 	async function remove(archive: BackupArchive) {
-		error = '';
+		actionError = '';
 		try {
-			await backupsApi.remove(archive.name);
+			await backupsStore.remove(archive.name);
 			toastStore.success(t('myaaw.backups.deleted_ok'));
 			confirmDelete = '';
-			await refresh();
 		} catch (err) {
-			error = getErrorMessage(err);
-			toastStore.error(error);
+			actionError = getErrorMessage(err);
+			toastStore.error(actionError);
 		}
 	}
 
@@ -294,7 +282,7 @@
 							<Button
 								variant="ghost"
 								size="icon-sm"
-								onclick={() => backupsApi.download(archive.name)}
+								onclick={() => backupsStore.download(archive.name)}
 								aria-label={t('myaaw.backups.download')}
 								title={t('myaaw.backups.download')}
 							>

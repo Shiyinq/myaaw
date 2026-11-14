@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { skills as skillsApi } from '$lib/apis/skills';
-	import { agents as agentsApi } from '$lib/apis/agents';
+	import { skillsStore } from '$lib/stores/skills.svelte';
+	import { agentsStore } from '$lib/stores/agents.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { revealPane } from '$lib/utils/scroll';
@@ -22,7 +23,7 @@
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { detectPreview, stripFrontmatter } from '$lib/utils/filePreview';
 	import { PackageOpen, Puzzle, RefreshCw, Sparkles, Trash2 } from 'lucide-svelte';
-	import type { CapabilityEntry, SkillDetail, SkillFileContent } from '$lib/types';
+	import type { SkillFileContent } from '$lib/types';
 
 	const { t } = useTranslation();
 
@@ -30,19 +31,21 @@
 	// brought into view whenever a row further up is picked.
 	let detail = $state<HTMLElement | null>(null);
 
-	let skills = $state<SkillDetail[]>([]);
-	let catalog = $state<CapabilityEntry[]>([]);
 	let installing = $state('');
 	let previewMode = $state(false);
-	let selected = $state<SkillDetail | null>(null);
 	let fileContent = $state<SkillFileContent | null>(null);
 	let filePath = $state('');
-	let loading = $state(false);
-	let error = $state('');
 	let query = $state('');
-	let loadKey = '';
 
 	let agent = $derived(agentSelection.selected);
+	useQuery(skillsStore.list, () => (agent ? { agent } : null));
+	useQuery(agentsStore.capabilities, () => ({}));
+
+	let skills = $derived(skillsStore.list.data?.skills ?? []);
+	let catalog = $derived(agentsStore.capabilitiesData?.skills ?? []);
+	let selected = $derived(skillsStore.detail.data ?? null);
+	let loading = $derived(skillsStore.list.loading);
+	let error = $derived(skillsStore.list.error);
 	// Built-in names drive which section a skill belongs to; the catalog itself
 	// lists every embedded template, installed or not.
 	let catalogNames = $derived(new Set(catalog.map((entry) => entry.name)));
@@ -114,45 +117,23 @@
 		return preview.kind === 'markdown' ? stripFrontmatter(raw) : raw;
 	});
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			const [result, caps] = await Promise.all([
-				skillsApi.list(currentAgent),
-				agentsApi.capabilities().catch(() => null)
-			]);
-			if (caps) catalog = caps.skills ?? [];
-			const list = result.skills ?? [];
-			skills = list.map((skill) => ({ ...skill, content: '', files: [] }));
-			const keep = list.find((skill) => skill.name === selected?.name) ?? list[0];
-			if (keep) {
-				await open(currentAgent, keep.name);
-			} else {
-				selected = null;
-			}
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
-
 	async function open(currentAgent: string, name: string) {
-		selected = await skillsApi.get(currentAgent, name);
+		await skillsStore.ensureDetail(currentAgent, name, false);
+		const detail = skillsStore.detail.data;
 		previewMode = false;
 		fileContent = null;
-		filePath = selected.files.find((file) => file.path.toLowerCase().endsWith('.md'))?.path ?? '';
+		filePath = detail?.files.find((file) => file.path.toLowerCase().endsWith('.md'))?.path ?? '';
 	}
 
 	/** Show a built-in template that is not installed yet. */
 	async function openBuiltin(name: string) {
 		if (!agent) return;
 		try {
-			selected = await skillsApi.builtin(name);
+			await skillsStore.ensureDetail(agent, name, true);
+			const detail = skillsStore.detail.data;
 			previewMode = true;
 			fileContent = null;
-			filePath = selected.files.find((file) => file.path.toLowerCase().endsWith('.md'))?.path ?? '';
+			filePath = detail?.files.find((file) => file.path.toLowerCase().endsWith('.md'))?.path ?? '';
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
@@ -162,9 +143,8 @@
 		if (!agent || installing) return;
 		installing = name;
 		try {
-			await skillsApi.install(agent, name);
+			await skillsStore.install(agent, name);
 			toastStore.success(t('myaaw.skills.installed_ok', { name }));
-			await load(agent);
 			await open(agent, name);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -193,28 +173,29 @@
 		if (!agent || !selected) return;
 		filePath = name;
 		try {
-			fileContent = previewMode
-				? await skillsApi.builtinFile(selected.name, name)
-				: await skillsApi.file(agent, selected.name, name);
+			await skillsStore.ensureFile(agent, selected.name, name, previewMode);
+			fileContent = skillsStore.file.data ?? null;
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
 	}
 
+	let openedFor = '';
 	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
+		const list = skillsStore.list.data;
+		if (!agent || !list) return;
+		if (openedFor === agent) return;
+		openedFor = agent;
+		const entries = list.skills ?? [];
+		const keep = entries.find((skill) => skill.name === selected?.name) ?? entries[0];
+		if (keep) void open(agent, keep.name);
+		else skillsStore.detail.reset();
 	});
 
 	async function toggle(name: string, enabled: boolean) {
 		if (!agent) return;
 		try {
-			await skillsApi.toggle(agent, name, enabled);
-			skills = skills.map((skill) => (skill.name === name ? { ...skill, enabled } : skill));
-			if (selected?.name === name) selected = { ...selected, enabled };
+			await skillsStore.toggle(agent, name, enabled);
 			toastStore.success(
 				enabled ? t('myaaw.skills.enabled_ok', { name }) : t('myaaw.skills.disabled_ok', { name })
 			);
@@ -233,9 +214,8 @@
 		)
 			return;
 		try {
-			await skillsApi.remove(agent, name);
+			await skillsStore.remove(agent, name);
 			toastStore.success(t('myaaw.skills.deleted'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
@@ -244,9 +224,8 @@
 	async function clearConfig(name: string) {
 		if (!agent) return;
 		try {
-			await skillsApi.removeConfig(agent, name);
+			await skillsStore.removeConfig(agent, name);
 			toastStore.success(t('myaaw.skills.config_cleared'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
@@ -260,8 +239,11 @@
 		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
-			onclick={() => agent && load(agent)}
-			{loading}
+			onclick={() => {
+				void skillsStore.list.refresh();
+				void agentsStore.capabilities.refresh();
+			}}
+			loading={loading || skillsStore.list.refreshing}
 		/>
 	{/snippet}
 </TopBarActions>

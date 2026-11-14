@@ -6,7 +6,7 @@
 		Download,
 		File as FileIcon
 	} from 'lucide-svelte';
-	import { files as filesApi } from '$lib/apis/files';
+	import { filesStore } from '$lib/stores/files.svelte';
 	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import type { Attachment, LightboxImage } from '$lib/types';
@@ -35,7 +35,7 @@
 
 	/** Path-based files stream through `/fs/raw`. */
 	function srcOf(attachment: Attachment, download = false): string {
-		return attachment.path ? filesApi.rawUrl(agent, attachment.path, { download }) : '';
+		return attachment.path ? filesStore.rawUrl(agent, attachment.path, { download }) : '';
 	}
 
 	function sizeLabel(bytes?: number): string {
@@ -100,7 +100,7 @@
 	/** The thumbnail's own button saves the photo without opening the lightbox. */
 	function downloadImage(attachment: Attachment) {
 		if (attachment.path) {
-			filesApi.download(agent, attachment.path);
+			filesStore.download(agent, attachment.path);
 			return;
 		}
 		const src = srcOf(attachment);

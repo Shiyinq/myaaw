@@ -12,7 +12,7 @@
 	} from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ImageLightbox from '$lib/components/app/ImageLightbox.svelte';
-	import { files as filesApi } from '$lib/apis/files';
+	import { filesStore } from '$lib/stores/files.svelte';
 	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { toastStore } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -33,8 +33,8 @@
 	let lightboxOpen = $state(false);
 	let imageFailed = $state(false);
 
-	const src = $derived(filesApi.rawUrl(agent, item.path));
-	const downloadSrc = $derived(filesApi.rawUrl(agent, item.path, { download: true }));
+	const src = $derived(filesStore.rawUrl(agent, item.path));
+	const downloadSrc = $derived(filesStore.rawUrl(agent, item.path, { download: true }));
 	const lightboxItems = $derived<LightboxImage[]>([{ src, name: item.file_name, downloadSrc }]);
 
 	const kindLabel = $derived.by(() => {
@@ -150,7 +150,7 @@
 		<Button
 			variant="outline"
 			size="icon-sm"
-			onclick={() => void filesApi.download(agent, item.path)}
+			onclick={() => void filesStore.download(agent, item.path)}
 			title={t('myaaw.chat.download_file')}
 			aria-label={t('myaaw.chat.download_file')}
 		>
@@ -218,7 +218,7 @@
 				<Button
 					variant="outline"
 					size="sm"
-					onclick={() => void filesApi.download(agent, item.path)}
+					onclick={() => void filesStore.download(agent, item.path)}
 				>
 					<ArrowDownToLine class="mr-1.5 h-4 w-4" />
 					{t('myaaw.chat.download_file')}

@@ -3,7 +3,7 @@
 	import { AlertTriangle, ExternalLink, FolderOpen, Loader2, RefreshCw, X } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { portal } from '$lib/actions/portal';
-	import { projects as projectsApi } from '$lib/apis/projects';
+	import { projectsStore } from '$lib/stores/projects.svelte';
 	import { getApiBase } from '$lib/constants';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -60,11 +60,11 @@
 		if (!status) loading = true;
 		error = '';
 		try {
-			let next = await projectsApi.status(agent, path);
+			let next = await projectsStore.fetchStatus(agent, path);
 			// A built project has no preview until it is built once, so opening the
 			// drawer starts the bounded build instead of showing an empty frame.
 			if (autoBuild && next.state === 'idle' && buildable(next.type)) {
-				next = await projectsApi.build(agent, path);
+				next = await projectsStore.build(agent, path);
 			}
 			if (disposed) return;
 			status = next;
@@ -102,7 +102,7 @@
 <!-- The focus-mode sidebar is translated (transform), which would make a fixed
      overlay size itself to the aside. Portalling to <body> keeps it full-screen. -->
 <div
-	class="fixed inset-0 z-[70] flex flex-col bg-background"
+	class="fixed inset-0 z-70 flex flex-col bg-background"
 	role="dialog"
 	aria-modal="true"
 	aria-label={name}

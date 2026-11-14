@@ -4,13 +4,13 @@
 	import { browser } from '$app/environment';
 	import { tick, untrack } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import { chat as chatApi } from '$lib/apis/chat';
-	import { config as configApi } from '$lib/apis/config';
-	import { conversations as conversationsApi } from '$lib/apis/conversations';
-	import { files as filesApi } from '$lib/apis/files';
+	import { chatStore } from '$lib/stores/chat.svelte';
+	import { configStore } from '$lib/stores/config.svelte';
+	import { conversationsStore } from '$lib/stores/conversations.svelte';
+	import { filesStore } from '$lib/stores/files.svelte';
 	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
-	import { providers as providersApi } from '$lib/apis/providers';
-	import { observability as observabilityApi } from '$lib/apis/observability';
+	import { providersStore } from '$lib/stores/providers.svelte';
+	import { observabilityStore } from '$lib/stores/observability.svelte';
 	import { agentSelection, conversationHistory, toastStore, topBarTitle } from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import { chatRuns, type ChatItem, type ChatRun } from '$lib/stores/chatRuns.svelte';
@@ -49,6 +49,7 @@
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { colorOf, cycleSrc, moodSrc, type BloubCycle, type BloubMood } from '$lib/bloub';
 	import { Button } from '$lib/components/ui/button';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { theme } from 'mode-watcher';
@@ -98,10 +99,12 @@
 		AskQuoteSource,
 		ContextUsage,
 		ConversationAttachment,
+		ConversationDetail,
 		ConversationTurn,
 		LightboxImage,
 		Message,
 		ModelCapabilitiesView,
+		SessionStats,
 		Upload,
 		Usage
 	} from '$lib/types';
@@ -790,6 +793,61 @@
 		if (preferences.value.autoScroll && stickToBottom) scrollToBottom();
 	});
 
+	/**
+	 * Applies a stored page to the transcript. `reset` replaces the window with
+	 * the page; otherwise the page's rows are merged into what is already on
+	 * screen, keeping older pages the reader scrolled back to.
+	 */
+	function applyTranscript(
+		currentAgent: string,
+		id: string,
+		detail: ConversationDetail,
+		reset: boolean
+	) {
+		if (reset) {
+			loadedOffset = detail.offset;
+			turns = detail.turns ?? [];
+			historyItems = historyTimeline(detail.messages, detail.offset);
+		} else {
+			const kept = historyItems.filter(
+				(item) => item.messageIndex === undefined || item.messageIndex < detail.offset
+			);
+			const known = new Set(kept.map((item) => item.localId));
+			const tail = historyTimeline(detail.messages, detail.offset).filter(
+				(item) => !known.has(item.localId)
+			);
+			historyItems = [...kept, ...tail];
+			loadedOffset = Math.min(loadedOffset, detail.offset);
+			turns = detail.turns ?? turns;
+		}
+
+		// Sign every media path on this page once, so photos load without the
+		// session token and stay valid for their short lifetime.
+		const mediaPaths: string[] = [];
+		for (const message of detail.messages) {
+			for (const attachment of message.attachments ?? []) {
+				if (attachment.path) mediaPaths.push(attachment.path);
+			}
+			for (const upload of message.uploads ?? []) {
+				const virtual = uploadVirtualPath(upload);
+				if (virtual) mediaPaths.push(virtual);
+			}
+		}
+		void ensureSigned(currentAgent, mediaPaths);
+
+		// A finished run is redundant once the stored transcript is loaded; the
+		// server's copy includes the final answer. A live run keeps going.
+		chatRuns.settle(currentAgent, id);
+		const title = detail.title ?? '';
+		applyTitle(id, title);
+		unreadChats.ack(currentAgent, id, detail.updated_at);
+		if (isPlaceholderTitle(title)) pollTitle(currentAgent, id, 0);
+		if (reset) {
+			storedUsage = null;
+			void refreshAttachmentCount();
+		}
+	}
+
 	async function loadConversation(currentAgent: string, id: string) {
 		// Dictation belongs to the composer the reader is looking at.
 		stopSpeech();
@@ -802,51 +860,55 @@
 			topBarTitle.clear();
 			return;
 		}
-		loading = true;
 		error = '';
-		sessionStats = null;
 		groupOpen = {};
 		attachmentCount = 0;
+		// A new conversation owns the bar; do not leave the previous chat's title
+		// up while its first page loads. `applyTranscript` sets the real one.
+		stopTitlePolling();
+		topBarTitle.clear();
+
+		const detailKey = { agent: currentAgent, id, limit: PAGE_SIZE, offset: -1 };
+		const cached = conversationsStore.detail.peek(detailKey);
+
+		// Show the transcript the store already has before the request lands, so
+		// returning to a chat never flashes the loading state.
+		if (cached) {
+			applyTranscript(currentAgent, id, cached, true);
+		} else {
+			// A different conversation with no cache must not leave the previous
+			// transcript on screen; clear it before showing the loading state.
+			historyItems = [];
+			loadedOffset = 0;
+			turns = [];
+			storedUsage = null;
+			clearRail();
+		}
+		loading = !cached;
+
+		// The title and totals come from other stores, which may already know them
+		// even when the transcript cache is cold.
+		if (!cached) {
+			const knownTitle = conversationHistory.titleOf(id);
+			if (knownTitle) applyTitle(id, knownTitle);
+		}
+		const cachedStats = observabilityStore.sessionStats.peek({ agent: currentAgent, id });
+		sessionStats = cachedStats ? statsView(cachedStats) : null;
 		void refreshStats(currentAgent, id);
 		try {
-			// Ask for the last page so the chat opens at the newest message without
-			// pulling the whole transcript, which for image-heavy chats is megabytes.
-			// A negative offset means "the last page"; the server normalises it to
-			// total - limit, and every later page walks back from that point.
-			// If improvement is needed (the API stops accepting a negative offset),
-			// fetch `limit: 1` first to read total_messages and then ask for
-			// `offset: total - PAGE_SIZE` — one extra round trip, no server change.
-			const detail = await conversationsApi.get(currentAgent, id, {
-				limit: PAGE_SIZE,
-				offset: -1
-			});
-			loadedOffset = detail.offset;
-			turns = detail.turns ?? [];
-			historyItems = historyTimeline(detail.messages, detail.offset);
-			// Sign every media path on this page once, so photos load without the
-			// session token and stay valid for their short lifetime.
-			const mediaPaths: string[] = [];
-			for (const message of detail.messages) {
-				for (const attachment of message.attachments ?? []) {
-					if (attachment.path) mediaPaths.push(attachment.path);
+			await conversationsStore.ensureDetail(currentAgent, id, PAGE_SIZE, -1);
+			const detail = conversationsStore.detail.data;
+			if (detail) {
+				// A fresh cache returns the same object; a stale one is a new page.
+				if (detail !== cached) {
+					const olderLoaded = cached !== undefined && loadedOffset < cached.offset;
+					applyTranscript(currentAgent, id, detail, !olderLoaded);
 				}
-				for (const upload of message.uploads ?? []) {
-					const virtual = uploadVirtualPath(upload);
-					if (virtual) mediaPaths.push(virtual);
-				}
+			} else if (!cached) {
+				error = conversationsStore.detail.error;
 			}
-			void ensureSigned(currentAgent, mediaPaths);
-			// A finished run is redundant once the stored transcript is loaded; the
-			// server's copy includes the final answer. A live run keeps going.
-			chatRuns.settle(currentAgent, id);
-			const title = detail.title ?? '';
-			applyTitle(id, title);
-			unreadChats.ack(currentAgent, id, detail.updated_at);
-			if (isPlaceholderTitle(title)) pollTitle(currentAgent, id, 0);
-			storedUsage = null;
-			void refreshAttachmentCount();
 		} catch (err) {
-			error = getErrorMessage(err);
+			if (!cached) error = getErrorMessage(err);
 		} finally {
 			loading = false;
 			scrollToBottom();
@@ -881,7 +943,7 @@
 		appending = true;
 		const follow = preferences.value.autoScroll && stickToBottom;
 		try {
-			const detail = await conversationsApi.get(currentAgent, conversationId, {
+			const detail = await conversationsStore.fetchDetail(currentAgent, conversationId, {
 				limit: PAGE_SIZE,
 				offset: -1
 			});
@@ -900,6 +962,11 @@
 			historyItems = [...kept, ...tail];
 			loadedOffset = Math.min(loadedOffset, detail.offset);
 			turns = detail.turns ?? turns;
+			// Keep the transcript cache current for the next mount.
+			conversationsStore.detail.write(
+				{ agent: currentAgent, id: conversationId, limit: PAGE_SIZE, offset: -1 },
+				detail
+			);
 			chatRuns.settle(currentAgent, conversationId);
 			await tick();
 			measureTurns();
@@ -931,7 +998,7 @@
 			// exactly at loadedOffset and the two never overlap. Offsets therefore
 			// walk backwards one page at a time (323 → 303 → 283 …).
 			const start = Math.max(0, loadedOffset - pageSize);
-			const detail = await conversationsApi.get(currentAgent, conversationId, {
+			const detail = await conversationsStore.fetchDetail(currentAgent, conversationId, {
 				limit: loadedOffset - start,
 				offset: start
 			});
@@ -993,7 +1060,7 @@
 		titleTimer = setTimeout(async () => {
 			if (conversationId !== id) return;
 			try {
-				const detail = await conversationsApi.get(currentAgent, id, { limit: 1 });
+				const detail = await conversationsStore.fetchDetail(currentAgent, id, { limit: 1 });
 				if (conversationId !== id) return;
 				const title = detail.title ?? '';
 				applyTitle(id, title);
@@ -1007,7 +1074,7 @@
 	async function refreshTitle(currentAgent: string, id: string) {
 		if (!currentAgent || !id) return;
 		try {
-			const detail = await conversationsApi.get(currentAgent, id, { limit: 1 });
+			const detail = await conversationsStore.fetchDetail(currentAgent, id, { limit: 1 });
 			if (conversationId !== id) return; // Another conversation won.
 			const title = detail.title ?? '';
 			applyTitle(id, title);
@@ -1030,37 +1097,42 @@
 	 * the trace view reports. Conversations recorded before tracing was enabled
 	 * have no runs, and keep the locally counted numbers.
 	 */
-	async function refreshStats(currentAgent: string, id: string) {
+	/** Maps the API's session totals onto the footer's view model. */
+	function statsView(detail: SessionStats) {
+		return {
+			turns: detail.turns,
+			steps: detail.steps,
+			tokens: detail.total_tokens,
+			model: detail.model ?? '',
+			provider: detail.provider ?? '',
+			tokPerSec: detail.tok_per_sec ?? 0,
+			cacheRate: detail.cache_hit_rate ?? 0,
+			cacheHitTokens: detail.cache_hit_tokens ?? 0,
+			uncachedInputTokens: detail.uncached_input_tokens ?? 0,
+			outputTokens: detail.output_tokens ?? 0,
+			llmMs: detail.llm_ms ?? 0,
+			toolMs: detail.tool_ms ?? 0,
+			ttftMs: detail.ttft_ms ?? 0,
+			context: detail.context
+		};
+	}
+
+	async function refreshStats(currentAgent: string, id: string, force = false) {
 		if (!currentAgent || !id) return;
-		try {
-			const detail = await observabilityApi.sessionStats(currentAgent, id);
-			if (conversationId !== id) return; // Another conversation won.
-			// Every number below is computed by the API; the view only formats it.
-			sessionStats = {
-				turns: detail.turns,
-				steps: detail.steps,
-				tokens: detail.total_tokens,
-				model: detail.model ?? '',
-				provider: detail.provider ?? '',
-				tokPerSec: detail.tok_per_sec ?? 0,
-				cacheRate: detail.cache_hit_rate ?? 0,
-				cacheHitTokens: detail.cache_hit_tokens ?? 0,
-				uncachedInputTokens: detail.uncached_input_tokens ?? 0,
-				outputTokens: detail.output_tokens ?? 0,
-				llmMs: detail.llm_ms ?? 0,
-				toolMs: detail.tool_ms ?? 0,
-				ttftMs: detail.ttft_ms ?? 0,
-				context: detail.context
-			};
-		} catch {
-			// No runs recorded for this conversation; keep the local counts.
-		}
+		// Serve the cached totals immediately; the request only reconciles them.
+		const cached = observabilityStore.sessionStats.peek({ agent: currentAgent, id });
+		if (cached && conversationId === id) sessionStats = statsView(cached);
+		if (force) await observabilityStore.sessionStats.refresh({ agent: currentAgent, id });
+		else await observabilityStore.ensureSessionStats(currentAgent, id);
+		const detail = observabilityStore.sessionStats.peek({ agent: currentAgent, id });
+		if (conversationId !== id || !detail) return;
+		sessionStats = statsView(detail);
 	}
 
 	/** The agent's configured provider and its default model. */
 	async function loadProviderInfo(currentAgent: string) {
 		try {
-			const config = await configApi.get(currentAgent);
+			const config = await configStore.fetchConfig(currentAgent);
 			providerInfo = {
 				default: config.default_provider ?? '',
 				providers: (config.providers ?? []).map((provider) => ({
@@ -1123,10 +1195,10 @@
 		switchingModel = true;
 		try {
 			if (providerInfo?.providers.find((entry) => entry.name === provider)?.model !== model) {
-				await providersApi.update(currentAgent, provider, { default_model: model });
+				await providersStore.update(currentAgent, provider, { default_model: model });
 			}
 			if (providerInfo?.default !== provider) {
-				await providersApi.setDefault(currentAgent, provider);
+				await providersStore.setDefault(currentAgent, provider);
 			}
 			if (agent !== currentAgent) return;
 			if (providerInfo) {
@@ -1156,7 +1228,7 @@
 		approvalMode = mode;
 		switchingApproval = true;
 		try {
-			const config = await configApi.patch(currentAgent, { approvals: { mode } });
+			const config = await configStore.patch(currentAgent, { approvals: { mode } });
 			if (agent !== currentAgent) return;
 			approvalMode = config.approvals?.mode === 'off' ? 'off' : 'manual';
 		} catch (err) {
@@ -1246,7 +1318,7 @@
 		thinkingLevels = { ...thinkingLevels, [key]: value };
 		switchingThinking = true;
 		try {
-			await providersApi.update(currentAgent, provider, { thinking_level: value });
+			await providersStore.update(currentAgent, provider, { thinking_level: value });
 			if (agent !== currentAgent) return;
 			if (providerInfo) {
 				providerInfo = {
@@ -1633,13 +1705,13 @@
 			onDone: (run: ChatRun) => {
 				const currentAgent = agent ?? '';
 				const statsId = conversationId;
-				void refreshStats(currentAgent, statsId);
+				void refreshStats(currentAgent, statsId, true);
 				void refreshTitle(currentAgent, statsId);
 				// A run may have delivered files: refresh the panel and the badge.
 				attachmentsRefresh += 1;
 				void refreshAttachmentCount();
 				// The run may land in the trace store just after `done`.
-				setTimeout(() => void refreshStats(currentAgent, statsId), 1500);
+				setTimeout(() => void refreshStats(currentAgent, statsId, true), 1500);
 
 				// The completion tone and the browser notification live in
 				// stores/runCompletion: they must also fire when this page is gone.
@@ -2619,7 +2691,7 @@
 		const prompt = pendingApproval;
 		if (!prompt || !agent) return;
 		try {
-			await chatApi.decide(agent, prompt.approval_id, decision);
+			await chatStore.decide(agent, prompt.approval_id, decision);
 			// Drop it locally too, so the queue never waits for the resolved event.
 			approvalQueue.resolved({ approval_id: prompt.approval_id });
 			activeRun?.resolveApproval(prompt.approval_id);
@@ -2785,7 +2857,7 @@
 			return;
 		}
 		try {
-			const page = await conversationsApi.attachments(currentAgent, currentId, { limit: 1 });
+			const page = await conversationsStore.fetchAttachments(currentAgent, currentId, { limit: 1 });
 			if (conversationId !== currentId) return;
 			attachmentCount = page.total ?? 0;
 		} catch {
@@ -2908,7 +2980,7 @@
 			for (const upload of message.uploads ?? []) {
 				if (!upload.mime_type?.startsWith('image/')) continue;
 				const virtual = uploadVirtualPath(upload);
-				if (virtual) urls.push(filesApi.rawUrl(agent, virtual));
+				if (virtual) urls.push(filesStore.rawUrl(agent, virtual));
 			}
 		}
 		return urls;
@@ -3867,7 +3939,21 @@
 								</p>
 							{/if}
 							{#if loading}
-								<p class="text-sm text-muted-foreground">{t('myaaw.chat.loading')}</p>
+								<div
+									class="w-full max-w-3xl space-y-4"
+									aria-live="polite"
+									aria-label={t('myaaw.chat.loading')}
+								>
+									<div class="flex justify-end">
+										<Skeleton class="h-10 w-1/3 rounded-2xl" />
+									</div>
+									<div class="flex justify-start">
+										<Skeleton class="h-28 w-3/4 rounded-2xl" />
+									</div>
+									<div class="flex justify-start">
+										<Skeleton class="h-16 w-1/2 rounded-2xl" />
+									</div>
+								</div>
 							{:else if items.length === 0}
 								<div class="flex flex-col items-center">
 									<Bloub
@@ -4126,7 +4212,7 @@
 																	title={t('myaaw.chat.download_file')}
 																	aria-label={t('myaaw.chat.download_file')}
 																	class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5 transition-colors hover:border-foreground/30 hover:bg-muted"
-																	onclick={() => filesApi.download(agent, downloadPath)}
+																	onclick={() => filesStore.download(agent, downloadPath)}
 																>
 																	<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
 																	<span class="min-w-0 flex-1 truncate text-xs">{upload.name}</span>

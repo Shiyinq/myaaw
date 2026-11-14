@@ -78,8 +78,8 @@
 					class={[
 						'hidden items-center rounded-md text-left text-sm text-foreground transition-colors hover:bg-muted focus-visible:ring-1 focus-visible:ring-ring/50 md:flex',
 						compact
-							? 'h-8 w-10 justify-start pl-[10px] pr-0'
-							: 'h-9 w-full gap-3 border border-input bg-transparent pl-[5px] pr-3 focus-visible:border-ring'
+							? 'h-8 w-10 justify-start pl-2.5 pr-0'
+							: 'h-9 w-full gap-3 border border-input bg-transparent pl-1.25 pr-3 focus-visible:border-ring'
 					]}
 					aria-label={t('myaaw.agent.label')}
 				>

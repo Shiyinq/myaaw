@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { tools as toolsApi } from '$lib/apis/tools';
+	import { toolsStore } from '$lib/stores/tools.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { revealPane } from '$lib/utils/scroll';
@@ -24,7 +25,7 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { FileCode2, Pencil, Plug, RefreshCw, Trash2, Wrench } from 'lucide-svelte';
-	import type { CustomTool, MCPServer, ToolsView } from '$lib/types';
+	import type { CustomTool, MCPServer } from '$lib/types';
 
 	const { t } = useTranslation();
 
@@ -32,17 +33,18 @@
 	// brought into view whenever a row further up is picked.
 	let detail = $state<HTMLElement | null>(null);
 
-	let view = $state<ToolsView | null>(null);
-	let loading = $state(false);
-	let error = $state('');
 	let query = $state('');
-	let loadKey = '';
 
 	// Which entry the editor below is changing; null means a new one.
 	let editingCustom = $state<CustomTool | null>(null);
 	let editingMCP = $state<MCPServer | null>(null);
 
 	let agent = $derived(agentSelection.selected);
+	useQuery(toolsStore.query, () => (agent ? { agent } : null));
+
+	let view = $derived(toolsStore.data ?? null);
+	let loading = $derived(toolsStore.loading);
+	let error = $derived(toolsStore.error);
 	let builtinTools = $derived(view?.builtin ?? []);
 	let customTools = $derived(view?.custom ?? []);
 	let mcpServers = $derived(view?.mcp_servers ?? []);
@@ -101,71 +103,33 @@
 		clear: () => (query = '')
 	});
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			view = await toolsApi.list(currentAgent);
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
-
-	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
-	});
-
 	async function toggleBuiltin(name: string, enabled: boolean) {
 		if (!agent || !view) return;
 		try {
-			await toolsApi.toggleBuiltin(agent, name, enabled);
-			view = {
-				...view,
-				builtin: view.builtin.map((tool) => (tool.name === name ? { ...tool, enabled } : tool))
-			};
+			await toolsStore.toggleBuiltin(agent, name, enabled);
 			toastToggle(name, enabled);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
-			// Put the checkbox back in step with what the server kept.
-			await load(agent);
 		}
 	}
 
 	async function toggleCustom(name: string, enabled: boolean) {
 		if (!agent || !view) return;
 		try {
-			await toolsApi.patchCustom(agent, name, { enabled });
-			view = {
-				...view,
-				custom: view.custom.map((tool) => (tool.name === name ? { ...tool, enabled } : tool))
-			};
+			await toolsStore.patchCustom(agent, name, { enabled });
 			toastToggle(name, enabled);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
-			await load(agent);
 		}
 	}
 
 	async function toggleMCP(name: string, enabled: boolean) {
 		if (!agent || !view) return;
 		try {
-			await toolsApi.patchMCP(agent, name, { enabled });
-			view = {
-				...view,
-				mcp_servers: view.mcp_servers.map((server) =>
-					server.name === name ? { ...server, enabled } : server
-				)
-			};
+			await toolsStore.patchMCP(agent, name, { enabled });
 			toastToggle(name, enabled);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
-			await load(agent);
 		}
 	}
 
@@ -195,11 +159,10 @@
 		)
 			return;
 		try {
-			if (kind === 'custom') await toolsApi.removeCustom(agent, name);
-			else await toolsApi.removeMCP(agent, name);
+			if (kind === 'custom') await toolsStore.removeCustom(agent, name);
+			else await toolsStore.removeMCP(agent, name);
 			if (kind === 'custom' && editingCustom?.name === name) editingCustom = null;
 			if (kind === 'mcp' && editingMCP?.name === name) editingMCP = null;
-			await load(agent);
 			toastStore.success(t('myaaw.tools.deleted'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -214,8 +177,8 @@
 		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
-			onclick={() => agent && load(agent)}
-			{loading}
+			onclick={() => void toolsStore.refresh()}
+			loading={loading || toolsStore.refreshing}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -446,7 +409,7 @@
 							editing={editingCustom}
 							onSaved={() => {
 								editingCustom = null;
-								void load(agent);
+								void toolsStore.refresh();
 							}}
 							onCancel={() => (editingCustom = null)}
 						/>
@@ -469,7 +432,7 @@
 							editing={editingMCP}
 							onSaved={() => {
 								editingMCP = null;
-								void load(agent);
+								void toolsStore.refresh();
 							}}
 							onCancel={() => (editingMCP = null)}
 						/>

@@ -14,8 +14,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import ChatTime from '$lib/components/common/ChatTime.svelte';
-	import { conversations as conversationsApi } from '$lib/apis/conversations';
-	import { files as filesApi } from '$lib/apis/files';
+	import { conversationsStore } from '$lib/stores/conversations.svelte';
+	import { filesStore } from '$lib/stores/files.svelte';
 	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -133,7 +133,7 @@
 		const current = generation;
 		const pageOffset = reset ? 0 : items.length;
 		try {
-			const page = await conversationsApi.attachments(agent, conversationId, {
+			const page = await conversationsStore.fetchAttachments(agent, conversationId, {
 				limit: PAGE,
 				offset: pageOffset,
 				kind: kinds || undefined
@@ -171,7 +171,7 @@
 	}
 
 	function thumbSrc(item: ConversationAttachment): string {
-		return filesApi.rawUrl(agent, item.path);
+		return filesStore.rawUrl(agent, item.path);
 	}
 
 	function iconFor(kind: string) {

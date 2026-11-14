@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { agents as agentsApi } from '$lib/apis/agents';
-	import { config as configApi } from '$lib/apis/config';
-	import { providers as providersApi } from '$lib/apis/providers';
-	import { server as serverApi } from '$lib/apis/server';
-	import { skills as skillsApi } from '$lib/apis/skills';
-	import { tools as toolsApi } from '$lib/apis/tools';
+	import { agentsStore } from '$lib/stores/agents.svelte';
+	import { configStore } from '$lib/stores/config.svelte';
+	import { providersStore } from '$lib/stores/providers.svelte';
+	import { serverStore } from '$lib/stores/server.svelte';
+	import { skillsStore } from '$lib/stores/skills.svelte';
+	import { toolsStore } from '$lib/stores/tools.svelte';
 	import { agentSelection, toastStore, topBarTitle } from '$lib/stores';
 	import { BLOUB_DEFAULT_COLOR, colorOf, type BloubColor } from '$lib/bloub';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -327,7 +327,7 @@
 		manualModel = false;
 		try {
 			try {
-				capabilities = await agentsApi.capabilities();
+				capabilities = await agentsStore.fetchCapabilities();
 			} catch (err) {
 				loadError = `${t('myaaw.onboard.load_failed')} ${getErrorMessage(err)}`;
 			}
@@ -405,10 +405,10 @@
 	async function prefill(target: string) {
 		try {
 			const [config, skillList, toolList, info] = await Promise.all([
-				configApi.get(target),
-				skillsApi.list(target),
-				toolsApi.list(target),
-				agentsApi.get(target)
+				configStore.fetchConfig(target),
+				skillsStore.fetchList(target),
+				toolsStore.fetchView(target),
+				agentsStore.get(target)
 			]);
 
 			if (target !== agentParam) return;
@@ -495,13 +495,13 @@
 		discovering = true;
 		try {
 			const view = isChatGPT
-				? await providersApi.modelsForCredentials({
+				? await providersStore.modelsForCredentials({
 						type: 'openai_chatgpt',
 						credential_id: credentialId
 					})
 				: useSavedKey && savedProvider
-					? await providersApi.models(agentParam, savedProvider.name)
-					: await providersApi.modelsForCredentials({
+					? await providersStore.models(agentParam, savedProvider.name)
+					: await providersStore.modelsForCredentials({
 							type: providerType,
 							base_url: baseUrl.trim() || undefined,
 							api_key: apiKey.trim() || undefined
@@ -642,7 +642,7 @@
 		errors = {};
 		saving = true;
 		try {
-			const response = await agentsApi.onboard(target, buildPayload(result.data));
+			const response = await agentsStore.onboard(target, buildPayload(result.data));
 			toastStore.success(
 				reconfigure
 					? t('myaaw.onboard.updated', { name: target })
@@ -657,7 +657,7 @@
 
 			if (reconfigure && serverRunning) {
 				if (await askConfirm({ message: t('myaaw.onboard.restart_confirm', { name: target }) })) {
-					await serverApi.restart(target);
+					await serverStore.restart(target);
 					toastStore.success(t('myaaw.onboard.restart_done'));
 				}
 			}

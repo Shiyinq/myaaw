@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { channels as channelsApi } from '$lib/apis/channels';
+	import { channelsStore } from '$lib/stores/channels.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -32,64 +33,52 @@
 	let discord = $state({ active: false, token: '' });
 	let telegramToken = $state<SecretState | null>(null);
 	let discordToken = $state<SecretState | null>(null);
-	let loading = $state(false);
 	let saving = $state<string>('');
-	let error = $state('');
-	let loadKey = '';
 
 	let agent = $derived(agentSelection.selected);
+	useQuery(channelsStore.query, () => (agent ? { agent } : null));
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			const view = await channelsApi.list(currentAgent);
-			const channels = view.channels ?? [];
-			const tg = channels.find((channel) => channel.name === 'telegram');
-			const dc = channels.find((channel) => channel.name === 'discord');
-			if (tg) {
-				telegram.active = tg.active;
-				telegram.mode = tg.mode ?? 'polling';
-				telegram.ngrok_active = Boolean(tg.ngrok_active);
-				telegram.token = '';
-				telegram.ngrok_auth_token = '';
-				telegramToken = tg.token;
-			} else {
-				telegramToken = null;
-			}
-			if (dc) {
-				discord.active = dc.active;
-				discord.token = '';
-				discordToken = dc.token;
-			} else {
-				discordToken = null;
-			}
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
+	let loading = $derived(channelsStore.loading);
+	let error = $derived(channelsStore.error);
 
+	let syncedAt = -1;
 	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
+		const view = channelsStore.data;
+		const at = channelsStore.updatedAt;
+		if (!view || at === syncedAt) return;
+		syncedAt = at;
+		const channels = view.channels ?? [];
+		const tg = channels.find((channel) => channel.name === 'telegram');
+		const dc = channels.find((channel) => channel.name === 'discord');
+		if (tg) {
+			telegram.active = tg.active;
+			telegram.mode = tg.mode ?? 'polling';
+			telegram.ngrok_active = Boolean(tg.ngrok_active);
+			telegram.token = '';
+			telegram.ngrok_auth_token = '';
+			telegramToken = tg.token;
+		} else {
+			telegramToken = null;
+		}
+		if (dc) {
+			discord.active = dc.active;
+			discord.token = '';
+			discordToken = dc.token;
+		} else {
+			discordToken = null;
+		}
 	});
 
 	async function save(channel: 'telegram' | 'discord') {
 		if (!agent) return;
 		saving = channel;
 		try {
-			await channelsApi.upsert(
+			await channelsStore.upsert(
 				agent,
 				channel,
 				channel === 'telegram' ? { ...telegram } : { ...discord }
 			);
 			toastStore.success(t('myaaw.channels.saved'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -101,9 +90,8 @@
 		if (!agent) return;
 		if (!(await askConfirm({ message: t('myaaw.channels.disable_confirm') }))) return;
 		try {
-			await channelsApi.disable(agent, channel);
+			await channelsStore.disable(agent, channel);
 			toastStore.success(t('myaaw.channels.disabled'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
@@ -115,8 +103,8 @@
 		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
-			onclick={() => agent && load(agent)}
-			{loading}
+			onclick={() => void channelsStore.refresh()}
+			loading={loading || channelsStore.refreshing}
 		/>
 	{/snippet}
 </TopBarActions>

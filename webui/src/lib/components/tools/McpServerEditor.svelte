@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { tools as toolsApi } from '$lib/apis/tools';
+	import { toolsStore } from '$lib/stores/tools.svelte';
 	import { toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { validate, type FieldErrors } from '$lib/utils/validation';
@@ -61,13 +61,13 @@
 		try {
 			const parsed = parseEnv(result.data.env);
 			if (editing) {
-				await toolsApi.patchMCP(agent, editing.name, {
+				await toolsStore.patchMCP(agent, editing.name, {
 					command: result.data.command,
 					args: splitArgs(result.data.args ?? ''),
 					...(Object.keys(parsed).length > 0 ? { env: parsed } : {})
 				});
 			} else {
-				await toolsApi.createMCP(agent, {
+				await toolsStore.createMCP(agent, {
 					name: result.data.name,
 					command: result.data.command,
 					args: splitArgs(result.data.args ?? ''),

@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { agentSelection } from '$lib/stores';
-	import { server as serverApi } from '$lib/apis/server';
-	import { contacts as contactsApi } from '$lib/apis/contacts';
-	import { conversations as conversationsApi } from '$lib/apis/conversations';
-	import { observability as observabilityApi } from '$lib/apis/observability';
-	import { skills as skillsApi } from '$lib/apis/skills';
-	import { tools as toolsApi } from '$lib/apis/tools';
-	import { getErrorMessage } from '$lib/utils/api';
+	import {
+		agentSelection,
+		contactsStore,
+		conversationsStore,
+		observabilityStore,
+		skillsStore,
+		toolsStore
+	} from '$lib/stores';
+	import { serverStore } from '$lib/stores/server.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
@@ -23,27 +25,9 @@
 	} from '$lib/components/ui/card';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Bot, MessageSquare, MessagesSquare, RefreshCw, Server } from 'lucide-svelte';
-	import type {
-		ConversationActivity,
-		ConversationSummary,
-		ObservabilitySummary,
-		ServerStatus
-	} from '$lib/types';
 
 	const { t } = useTranslation();
 
-	let status = $state<ServerStatus | null>(null);
-	let summary = $state<ObservabilitySummary | null>(null);
-	let chats = $state<ConversationSummary[]>([]);
-	let chatTotal = $state<number | null>(null);
-	let skillTotal = $state<number | null>(null);
-	let skillEnabled = $state<number | null>(null);
-	let toolTotal = $state<number | null>(null);
-	let toolBuiltin = $state<number | null>(null);
-	let toolCustom = $state<number | null>(null);
-	let toolMcp = $state<number | null>(null);
-	let contactTotal = $state<number | null>(null);
-	let activity = $state<ConversationActivity | null>(null);
 	// Newest month first: the grid fills left to right, top to bottom.
 	let activityMonths = $derived.by(() => {
 		const today = new Date();
@@ -53,105 +37,92 @@
 		);
 	});
 
-	let loading = $state(false);
-	let error = $state('');
-	let loadedFor = '';
-
 	let agent = $derived(agentSelection.selected);
 
-	async function loadFor(currentAgent: string) {
-		loading = true;
-		error = '';
-		// The activity map covers the last three months.
-		const windowStart = activityMonths[activityMonths.length - 1].getTime();
-		const [
-			statusResult,
-			summaryResult,
-			chatsResult,
-			skillsResult,
-			toolsResult,
-			contactsResult,
-			activityResult
-		] = await Promise.allSettled([
-			serverApi.status(currentAgent),
-			observabilityApi.summary(currentAgent, 7),
-			conversationsApi.list(currentAgent, { limit: 5 }),
-			skillsApi.list(currentAgent),
-			toolsApi.list(currentAgent),
-			contactsApi.list(currentAgent),
-			conversationsApi.activity(currentAgent, { from: windowStart, to: Date.now() })
-		]);
+	useQuery(serverStore.query, () => (agent ? { agent } : null));
+	useQuery(observabilityStore.summary, () => (agent ? { agent, days: 7 } : null));
+	useQuery(conversationsStore.list, () => (agent ? { agent, filters: { limit: 5 } } : null));
+	useQuery(skillsStore.list, () => (agent ? { agent } : null));
+	useQuery(toolsStore.query, () => (agent ? { agent } : null));
+	useQuery(contactsStore.query, () => (agent ? { agent } : null));
+	useQuery(conversationsStore.activity, () =>
+		agent
+			? {
+					agent,
+					from: activityMonths[activityMonths.length - 1].getTime(),
+					to: Date.now()
+				}
+			: null
+	);
 
-		status = statusResult.status === 'fulfilled' ? statusResult.value : null;
-		summary = summaryResult.status === 'fulfilled' ? summaryResult.value : null;
-
-		if (chatsResult.status === 'fulfilled') {
-			chats = chatsResult.value.conversations ?? [];
-			chatTotal = chatsResult.value.total ?? chats.length;
-		} else {
-			chats = [];
-			chatTotal = null;
-		}
-
-		if (skillsResult.status === 'fulfilled') {
-			const list = skillsResult.value.skills ?? [];
-			skillTotal = list.length;
-			skillEnabled = list.filter((skill) => skill.enabled).length;
-		} else {
-			skillTotal = null;
-			skillEnabled = null;
-		}
-
-		if (toolsResult.status === 'fulfilled') {
-			const view = toolsResult.value;
-			const builtin = (view.builtin ?? []).filter((tool) => tool.enabled).length;
-			const custom = (view.custom ?? []).filter((tool) => tool.enabled).length;
-			const mcp = (view.mcp_servers ?? []).filter((tool) => tool.enabled).length;
-			toolBuiltin = builtin;
-			toolCustom = custom;
-			toolMcp = mcp;
-			toolTotal = builtin + custom + mcp;
-		} else {
-			toolBuiltin = null;
-			toolCustom = null;
-			toolMcp = null;
-			toolTotal = null;
-		}
-
-		contactTotal =
-			contactsResult.status === 'fulfilled' ? (contactsResult.value.contacts ?? []).length : null;
-
-		activity = activityResult.status === 'fulfilled' ? activityResult.value : null;
-
-		const failed = [
-			statusResult,
-			summaryResult,
-			chatsResult,
-			skillsResult,
-			toolsResult,
-			contactsResult,
-			activityResult
-		].find((result) => result.status === 'rejected');
-		if (failed && failed.status === 'rejected') {
-			error = getErrorMessage(failed.reason);
-		}
-		loading = false;
-	}
-
-	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}:${agentSelection.agents.length}`;
-		if (!currentAgent || key === loadedFor) return;
-		loadedFor = key;
-		void loadFor(currentAgent);
-	});
+	let status = $derived(serverStore.data ?? null);
+	let summary = $derived(observabilityStore.summary.data ?? null);
+	let chats = $derived(conversationsStore.list.data?.conversations ?? []);
+	let chatTotal = $derived(
+		conversationsStore.list.data?.total ?? (conversationsStore.list.data ? chats.length : null)
+	);
+	let skillTotal = $derived(
+		skillsStore.list.data ? (skillsStore.list.data.skills ?? []).length : null
+	);
+	let skillEnabled = $derived(
+		skillsStore.list.data
+			? (skillsStore.list.data.skills ?? []).filter((item) => item.enabled).length
+			: null
+	);
+	let toolBuiltin = $derived(
+		toolsStore.query.data
+			? (toolsStore.query.data.builtin ?? []).filter((item) => item.enabled).length
+			: null
+	);
+	let toolCustom = $derived(
+		toolsStore.query.data
+			? (toolsStore.query.data.custom ?? []).filter((item) => item.enabled).length
+			: null
+	);
+	let toolMcp = $derived(
+		toolsStore.query.data
+			? (toolsStore.query.data.mcp_servers ?? []).filter((item) => item.enabled).length
+			: null
+	);
+	let toolTotal = $derived(
+		toolBuiltin !== null && toolCustom !== null && toolMcp !== null
+			? toolBuiltin + toolCustom + toolMcp
+			: null
+	);
+	let contactTotal = $derived(
+		contactsStore.query.data ? (contactsStore.query.data.contacts ?? []).length : null
+	);
+	let activity = $derived(conversationsStore.activity.data ?? null);
+	let loading = $derived(
+		serverStore.loading ||
+			observabilityStore.summary.loading ||
+			conversationsStore.list.loading ||
+			skillsStore.list.loading ||
+			toolsStore.query.loading ||
+			contactsStore.query.loading ||
+			conversationsStore.activity.loading
+	);
+	let error = $derived(
+		serverStore.error ||
+			observabilityStore.summary.error ||
+			conversationsStore.list.error ||
+			skillsStore.list.error ||
+			toolsStore.query.error ||
+			contactsStore.query.error ||
+			conversationsStore.activity.error
+	);
 
 	async function refresh() {
 		await agentSelection.load(true);
-		const currentAgent = agentSelection.selected;
-		if (!currentAgent) return;
-		loadedFor = `${currentAgent}:${agentSelection.agents.length}`;
-		await loadFor(currentAgent);
+		await Promise.all([
+			serverStore.refresh(),
+			observabilityStore.summary.refresh(),
+			conversationsStore.list.refresh(),
+			skillsStore.list.refresh(),
+			toolsStore.query.refresh(),
+			contactsStore.query.refresh(),
+			conversationsStore.activity.refresh()
+		]);
 	}
 
 	function newChat() {

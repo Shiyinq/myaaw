@@ -7,7 +7,7 @@
 	import CodePreview from '$lib/components/common/CodePreview.svelte';
 	import { detectPreview, stripFrontmatter } from '$lib/utils/filePreview';
 	import { getErrorMessage } from '$lib/utils/api';
-	import { skills as skillsApi } from '$lib/apis/skills';
+	import { skillsStore } from '$lib/stores/skills.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { Loader2, Pencil, Plug, Sparkles, SquareTerminal, Trash2, Wrench } from 'lucide-svelte';
 	import type { SkillDetail, SkillFileContent } from '$lib/types';
@@ -117,7 +117,7 @@
 		fileLoading = true;
 		fileError = '';
 		try {
-			fileContent = await skillsApi.file(agent, target.skill.name, path);
+			fileContent = await skillsStore.fetchFile(agent, target.skill.name, path);
 		} catch (err) {
 			fileContent = null;
 			fileError = getErrorMessage(err);

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { logs as logsApi } from '$lib/apis/logs';
+	import { logsStore } from '$lib/stores/logs.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { revealPane } from '$lib/utils/scroll';
@@ -21,7 +22,6 @@
 		CardTitle
 	} from '$lib/components/ui/card';
 	import { Play, RefreshCw, ScrollText, Square, Terminal } from 'lucide-svelte';
-	import type { LogFile } from '$lib/types';
 
 	const { t } = useTranslation();
 
@@ -29,19 +29,31 @@
 	// brought into view whenever a row further up is picked.
 	let detail = $state<HTMLElement | null>(null);
 
-	let files = $state<LogFile[]>([]);
 	let file = $state('');
 	let lines = $state<string[]>([]);
 	let query = $state('');
-	let loading = $state(false);
 	let streaming = $state(false);
 	let reconnecting = $state(false);
-	let error = $state('');
-	let loadKey = '';
+	let streamError = $state('');
 	let controller: AbortController | null = null;
 	let output = $state<HTMLDivElement | null>(null);
 
 	let agent = $derived(agentSelection.selected);
+	useQuery(logsStore.query, () => (agent ? { agent } : null));
+
+	let files = $derived(logsStore.query.data?.files ?? []);
+	let loading = $derived(logsStore.query.loading);
+	let error = $derived(streamError || logsStore.query.error);
+
+	let pickedFor = '';
+	$effect(() => {
+		if (!agent) return;
+		if (pickedFor !== agent) {
+			pickedFor = agent;
+			file = '';
+		}
+		if (!file && files.length > 0) file = files[0].name;
+	});
 	let filteredFiles = $derived.by(() => {
 		const needle = query.trim().toLowerCase();
 		if (!needle) return files;
@@ -70,37 +82,15 @@
 		scrollDown();
 	});
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			const result = await logsApi.list(currentAgent);
-			files = result.files ?? [];
-			if (!file && files.length > 0) file = files[0].name;
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
-
-	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
-	});
-
 	async function start() {
 		if (!agent || !file || streaming) return;
 		lines = [];
 		streaming = true;
 		reconnecting = false;
-		error = '';
+		streamError = '';
 		controller = new AbortController();
 		try {
-			await logsApi.stream(
+			await logsStore.stream(
 				agent,
 				file,
 				(event) => {
@@ -124,7 +114,7 @@
 			);
 		} catch (err) {
 			if ((err as Error)?.name !== 'AbortError') {
-				error = getErrorMessage(err);
+				streamError = getErrorMessage(err);
 			}
 		} finally {
 			streaming = false;
@@ -155,8 +145,8 @@
 		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
-			onclick={() => agent && load(agent)}
-			{loading}
+			onclick={() => void logsStore.refresh()}
+			loading={loading || logsStore.query.refreshing}
 		/>
 	{/snippet}
 </TopBarActions>

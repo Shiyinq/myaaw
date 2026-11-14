@@ -29,10 +29,10 @@
 <div
 	class={[
 		'relative flex w-full min-w-0 shrink-0 items-end overflow-hidden border-b pb-2 transition-[height] duration-200',
-		compact ? 'h-[50px] px-2' : 'h-[76px] px-3'
+		compact ? 'h-12.5 px-2' : 'h-19 px-3'
 	]}
 >
-	<div class="flex w-[216px] shrink-0 items-end gap-2">
+	<div class="flex w-54 shrink-0 items-end gap-2">
 		<div class="min-w-0 flex-1">
 			<AgentPicker {compact} />
 		</div>

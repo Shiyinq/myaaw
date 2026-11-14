@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { contacts as contactsApi } from '$lib/apis/contacts';
+	import { contactsStore } from '$lib/stores/contacts.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { revealPane } from '$lib/utils/scroll';
@@ -34,12 +35,8 @@
 	// brought into view whenever a row further up is picked.
 	let detail = $state<HTMLElement | null>(null);
 
-	let contacts = $state<ContactView[]>([]);
-	let loading = $state(false);
 	let saving = $state(false);
-	let error = $state('');
 	let query = $state('');
-	let loadKey = '';
 
 	let name = $state('');
 	let url = $state('');
@@ -50,6 +47,12 @@
 	let clearToken = $state(false);
 
 	let agent = $derived(agentSelection.selected);
+	useQuery(contactsStore.query, () => (agent ? { agent } : null));
+
+	let contacts = $derived(contactsStore.contacts);
+	let loading = $derived(contactsStore.loading);
+	let error = $derived(contactsStore.error);
+
 	let filteredContacts = $derived.by(() => {
 		const needle = query.trim().toLowerCase();
 		if (!needle) return contacts;
@@ -74,27 +77,6 @@
 		clear: () => (query = '')
 	});
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			const result = await contactsApi.list(currentAgent);
-			contacts = result.contacts ?? [];
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
-
-	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
-	});
-
 	async function create() {
 		if (!agent) return;
 		const result = validate(contactSchema, { name, url, token, description });
@@ -105,7 +87,7 @@
 		errors = {};
 		saving = true;
 		try {
-			await contactsApi.create(agent, {
+			await contactsStore.create(agent, {
 				name: result.data.name,
 				url: result.data.url,
 				token: result.data.token || undefined,
@@ -113,7 +95,6 @@
 			});
 			resetForm();
 			toastStore.success(t('myaaw.contacts.saved'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -131,7 +112,7 @@
 		errors = {};
 		saving = true;
 		try {
-			await contactsApi.update(agent, editing.name, {
+			await contactsStore.update(agent, editing.name, {
 				name: result.data.name,
 				url: result.data.url,
 				// An empty field means "keep the stored token".
@@ -141,7 +122,6 @@
 			});
 			resetForm();
 			toastStore.success(t('myaaw.contacts.updated'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -188,8 +168,7 @@
 		)
 			return;
 		try {
-			await contactsApi.remove(agent, contact);
-			await load(agent);
+			await contactsStore.remove(agent, contact);
 			toastStore.success(t('myaaw.contacts.deleted'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -204,8 +183,8 @@
 		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
-			onclick={() => agent && load(agent)}
-			{loading}
+			onclick={() => void contactsStore.refresh()}
+			loading={loading || contactsStore.refreshing}
 		/>
 	{/snippet}
 </TopBarActions>
