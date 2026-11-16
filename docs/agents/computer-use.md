@@ -393,10 +393,13 @@ Limitations to keep in mind:
   last capture, no image is returned — only a text note with the frame ID.
 - The result text tells the model the frame size and, when known, the
   logical desktop size: `Screen is 1440x900 points.`
-- `deliver: true` additionally saves the PNG to
-  `~/.myaaw/agents/<agent>/jobs/captures/screenshot-<frame>.png` (newest 20 kept)
-  and attaches it to the user's chat — Telegram photo, Discord attachment,
-  CLI/API attachment.
+- `deliver: true` saves the PNG to
+  `~/.myaaw/agents/<agent>/home/workspace/screenshots/screenshot-<timestamp>.png`
+  (virtual `/home/workspace/screenshots/…`) and attaches it to the user's chat —
+  Telegram photo, Discord attachment, CLI/API attachment. Delivered screenshots
+  are **not pruned**: they are workflow artifacts the chat transcript keeps
+  referencing. The timestamp in the name also means a repeated frame id from a
+  restarted backend never overwrites an earlier screenshot.
 
 ## 5. Coordinate mapping (Retina)
 

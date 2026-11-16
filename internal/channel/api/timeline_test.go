@@ -22,7 +22,7 @@ func eventNames(events []SSEEvent) []string {
 	return names
 }
 
-func TestTimelineDoneIncludesAttachments(t *testing.T) {
+func TestTimelineDoneSkipsBytesOnlyAttachment(t *testing.T) {
 	timeline, events := collectTimeline()
 	timeline.Done(&channel.OutgoingMessage{
 		Text: "ok",
@@ -46,12 +46,49 @@ func TestTimelineDoneIncludesAttachments(t *testing.T) {
 	if !ok {
 		t.Fatalf("done data type = %T", done.Data)
 	}
-	attachments, ok := data["attachments"].([]map[string]string)
+	if attachments, ok := data["attachments"]; ok {
+		t.Fatalf("byte-only attachments must not enter the API timeline: %#v", attachments)
+	}
+}
+
+func TestTimelineDoneIncludesPathAttachment(t *testing.T) {
+	timeline, events := collectTimeline()
+	timeline.Done(&channel.OutgoingMessage{
+		Text: "ok",
+		Attachments: []channel.Attachment{{
+			FileName: "clip.mp4",
+			MimeType: "video/mp4",
+			Path:     "/home/workspace/clip.mp4",
+			Kind:     "video",
+			Size:     1234,
+		}},
+	})
+
+	var done *SSEEvent
+	for i := range *events {
+		if (*events)[i].Name == "done" {
+			done = &(*events)[i]
+		}
+	}
+	if done == nil {
+		t.Fatalf("events = %v", eventNames(*events))
+	}
+	data := done.Data.(map[string]any)
+	attachments, ok := data["attachments"].([]map[string]any)
 	if !ok || len(attachments) != 1 {
 		t.Fatalf("attachments = %#v", data["attachments"])
 	}
-	if attachments[0]["file_name"] != "shot.png" || attachments[0]["data_base64"] != "UE5HREFUQQ==" {
-		t.Fatalf("attachment = %#v", attachments[0])
+	if attachments[0]["path"] != "/home/workspace/clip.mp4" {
+		t.Errorf("path = %v", attachments[0]["path"])
+	}
+	if attachments[0]["kind"] != "video" {
+		t.Errorf("kind = %v", attachments[0]["kind"])
+	}
+	if attachments[0]["size"] != int64(1234) {
+		t.Errorf("size = %v", attachments[0]["size"])
+	}
+	if _, ok := attachments[0]["data_base64"]; ok {
+		t.Error("path-based attachment must not carry base64")
 	}
 }
 

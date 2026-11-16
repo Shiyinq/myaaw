@@ -5,8 +5,11 @@ import (
 )
 
 // keyedDispatcher runs jobs concurrently up to a limit while serializing jobs
-// that share a key. Inbound chats use the user ID as the key, so one
-// conversation keeps its order but different users make progress in parallel.
+// that share a key. Inbound chats use one key per conversation, so a comment
+// keeps its order but different conversations make progress in parallel.
+//
+// Stop commands bypass the key entirely because they must reach the run they
+// cancel, even while that run is still streaming.
 type keyedDispatcher struct {
 	limit int
 	run   func(job []byte)
@@ -39,6 +42,22 @@ func (d *keyedDispatcher) Submit(key string, job []byte) {
 		return
 	}
 	d.queues[key] = append(d.queues[key], job)
+}
+
+// SubmitControl runs a stop command immediately. It must not wait for the
+// conversation it stops, and it must not wait for a free worker either: with one
+// worker configured, queueing it would make /stop useless until the run it
+// cancels finished on its own.
+func (d *keyedDispatcher) SubmitControl(job []byte) {
+	go d.run(job)
+}
+
+// Busy reports whether key is running or still has work waiting for a worker.
+func (d *keyedDispatcher) Busy(key string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.running[key] || len(d.queues[key]) > 0
 }
 
 func (d *keyedDispatcher) startLocked(key string, job []byte) {

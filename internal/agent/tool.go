@@ -490,20 +490,21 @@ func runPreparedToolCall(
 }
 
 // structuredAttachments converts tool file attachments into channel ones,
-// skipping entries without data.
+// skipping entries that carry neither bytes nor a path.
 func structuredAttachments(items []tools.FileAttachment) []channel.Attachment {
 	if len(items) == 0 {
 		return nil
 	}
 	out := make([]channel.Attachment, 0, len(items))
 	for _, item := range items {
-		if len(item.Data) == 0 {
+		if len(item.Data) == 0 && item.Path == "" {
 			continue
 		}
 		out = append(out, channel.Attachment{
 			FileName: item.FileName,
 			MimeType: item.MimeType,
 			Data:     item.Data,
+			Path:     item.Path,
 		})
 	}
 	return out

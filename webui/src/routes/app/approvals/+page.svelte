@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { approvals as approvalsApi } from '$lib/apis/approvals';
+	import { approvalsStore } from '$lib/stores/approvals.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -19,18 +20,19 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import { RefreshCw, ShieldCheck, Trash2 } from 'lucide-svelte';
-	import type { ApprovalGrant, ApprovalsView, GrantScope } from '$lib/types';
+	import type { ApprovalGrant, GrantScope } from '$lib/types';
 
 	const { t } = useTranslation();
 
-	let view = $state<ApprovalsView | null>(null);
-	let loading = $state(false);
-	let error = $state('');
-	let loadKey = '';
 	/** Always and session grants are separate surfaces; always opens first. */
 	let grantTab = $state('always');
 
 	let agent = $derived(agentSelection.selected);
+	useQuery(approvalsStore.query, () => (agent ? { agent } : null));
+
+	let view = $derived(approvalsStore.data ?? null);
+	let loading = $derived(approvalsStore.loading);
+	let error = $derived(approvalsStore.error);
 
 	let alwaysGrants = $derived(
 		(view?.grants ?? []).filter((grant) => (grant.always?.length ?? 0) > 0)
@@ -45,26 +47,6 @@
 		(view?.grants ?? []).reduce((sum, grant) => sum + (grant.sessions?.length ?? 0), 0)
 	);
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			view = await approvalsApi.get(currentAgent);
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
-
-	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
-	});
-
 	async function revoke(key: string) {
 		if (!agent) return;
 		if (
@@ -75,8 +57,7 @@
 		)
 			return;
 		try {
-			await approvalsApi.revokeKey(agent, key);
-			await load(agent);
+			await approvalsStore.revokeKey(agent, key);
 			toastStore.success(t('myaaw.approvals.revoked'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -93,8 +74,7 @@
 			return;
 		}
 		try {
-			await approvalsApi.revokeKey(agent, key, { channel, user });
-			await load(agent);
+			await approvalsStore.revokeKey(agent, key, { channel, user });
 			toastStore.success(t('myaaw.approvals.revoked'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -104,8 +84,7 @@
 	async function revokeSession(key: string, conversation: string) {
 		if (!agent) return;
 		try {
-			await approvalsApi.revokeSession(agent, key, conversation);
-			await load(agent);
+			await approvalsStore.revokeSession(agent, key, conversation);
 			toastStore.success(t('myaaw.approvals.revoked'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -119,8 +98,7 @@
 		)
 			return;
 		try {
-			await approvalsApi.clear(agent);
-			await load(agent);
+			await approvalsStore.clear(agent);
 			toastStore.success(t('myaaw.approvals.revoked'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -147,8 +125,8 @@
 		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
-			onclick={() => agent && load(agent)}
-			{loading}
+			onclick={() => void approvalsStore.refresh()}
+			loading={loading || approvalsStore.refreshing}
 		/>
 	{/snippet}
 </TopBarActions>

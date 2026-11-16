@@ -90,7 +90,7 @@ func (r *BotServiceImpl) traceRun(
 		Model:          user.Model,
 		Agent:          activeAgentName(),
 		Trigger:        runTrigger(msg.Channel, msg.TriggerType),
-		UserMessage:    msg.Text,
+		UserMessage:    msg.TurnText(),
 		SystemPrompt:   agenttrace.SystemPrompt(messages),
 	})
 	trace.SetExporter(r.obsExporter)

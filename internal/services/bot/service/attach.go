@@ -1,0 +1,185 @@
+package service
+
+import (
+	"log"
+	"os"
+	"strings"
+
+	"myaaw/internal/agentdir"
+	"myaaw/internal/attachment"
+	"myaaw/internal/channel"
+	"myaaw/internal/provider"
+)
+
+// messagingAttachmentMaxBytes caps a file read into memory for a messaging
+// channel, which uploads bytes instead of exposing a path. Files above the cap
+// are skipped rather than failing the whole turn.
+const messagingAttachmentMaxBytes = 20 << 20
+
+func attachmentRoots() attachment.Roots {
+	name := agentdir.Active()
+	home, _ := agentdir.Home(name)
+	user, _ := agentdir.UserDir(name)
+	skills, _ := agentdir.SkillsDir(name)
+	jobs, _ := agentdir.JobsDir(name)
+	return attachment.Roots{Home: home, User: user, Skills: skills, Jobs: jobs}
+}
+
+// deliverAttachments converts @attach(...) directives in the model's final
+// answer into attachments the surface can show. The API surface keeps the text
+// untouched and lets the WebUI hide the directive; messaging and terminal
+// surfaces replace it with the plain path, because they cannot render it.
+//
+// The API/WebUI surface receives a virtual path it can fetch (and stream with
+// Range). Messaging surfaces receive the bytes, because their adapters upload
+// files through the platform API. CLI/TUI keeps the text as-is: its prompt asks
+// for a plain path instead of a directive.
+func (r *BotServiceImpl) deliverAttachments(msg *channel.IncomingMessage, text string) (string, []channel.Attachment) {
+	cleaned, atts := attachmentsForChannel(msg.Channel, text, attachmentRoots())
+	if len(atts) > 0 {
+		log.Printf("Delivering %d attachment(s) on channel %s", len(atts), msg.Channel)
+	} else if strings.Contains(strings.ToLower(text), "@attach(") && cleaned == text {
+		// A directive the surface asked for but could not resolve is almost always
+		// a path outside the agent roots or a file that no longer exists. A project
+		// on a messaging/terminal surface also produces no attachment, but it is
+		// substituted with its path, so it must not be reported as unresolved.
+		log.Printf("Attachment directive on channel %s resolved to no file", msg.Channel)
+	}
+	return cleaned, atts
+}
+
+func attachmentsForChannel(channelName, text string, roots attachment.Roots) (string, []channel.Attachment) {
+	switch strings.ToLower(strings.TrimSpace(channelName)) {
+	case "api":
+		// Keep the directive in the text: the WebUI renders it as its path, while
+		// the transcript keeps exactly what the model wrote.
+		items := attachment.Collect(text, roots)
+		atts := make([]channel.Attachment, 0, len(items))
+		for _, item := range items {
+			atts = append(atts, channel.Attachment{
+				FileName:    item.Name,
+				MimeType:    item.Mime,
+				Path:        item.Virtual,
+				Kind:        string(item.Kind),
+				ProjectType: item.ProjectType,
+				Size:        item.Size,
+			})
+		}
+		return text, atts
+	case "telegram", "discord":
+		return messagingAttachments(text, roots)
+	default:
+		// Surfaces without an attachment renderer get the plain path instead of
+		// the directive.
+		return attachment.Substitute(text, roots), nil
+	}
+}
+
+func messagingAttachments(text string, roots attachment.Roots) (string, []channel.Attachment) {
+	// Messaging surfaces cannot hide the directive, so it is replaced by the
+	// plain path; the file still travels as a native attachment.
+	cleaned := attachment.Substitute(text, roots)
+	items := attachment.Collect(text, roots)
+	atts := make([]channel.Attachment, 0, len(items))
+	for _, item := range items {
+		if item.Kind == attachment.KindProject {
+			// A directory cannot be uploaded, but its metadata still rides on the
+			// turn: the adapter skips it (no Data), while the transcript keeps the
+			// path so the dashboard history renders an Open project card.
+			atts = append(atts, channel.Attachment{
+				FileName:    item.Name,
+				Path:        item.Virtual,
+				Kind:        string(item.Kind),
+				ProjectType: item.ProjectType,
+				Size:        item.Size,
+			})
+			continue
+		}
+		if item.Size > messagingAttachmentMaxBytes {
+			log.Printf("Skipping attachment %s: %d bytes exceeds the messaging cap", item.AbsPath, item.Size)
+			continue
+		}
+		data, err := os.ReadFile(item.AbsPath)
+		if err != nil {
+			log.Printf("Skipping attachment %s: %v", item.AbsPath, err)
+			continue
+		}
+		atts = append(atts, channel.Attachment{
+			FileName: item.Name,
+			MimeType: item.Mime,
+			Data:     data,
+			// The adapter uploads bytes, but the virtual path still matters: the
+			// dashboard stores it so the same file appears in chat history.
+			Path: item.Virtual,
+			Kind: string(item.Kind),
+			Size: item.Size,
+		})
+	}
+	return cleaned, atts
+}
+
+// attachToFinalAssistant persists path-based attachments with the assistant
+// turn so a reopened chat renders them again. Byte-only attachments (messaging
+// uploads) are not stored.
+func attachToFinalAssistant(transcript []provider.Message, attachments []channel.Attachment) {
+	items := make([]provider.MessageAttachment, 0, len(attachments))
+	for _, att := range attachments {
+		if att.Path == "" {
+			continue
+		}
+		items = append(items, provider.MessageAttachment{
+			FileName:    att.FileName,
+			MimeType:    att.MimeType,
+			Path:        att.Path,
+			Kind:        att.Kind,
+			ProjectType: att.ProjectType,
+			Size:        att.Size,
+		})
+	}
+	if len(items) == 0 {
+		return
+	}
+	for i := len(transcript) - 1; i >= 0; i-- {
+		if transcript[i].Role != "assistant" {
+			continue
+		}
+		transcript[i].Attachments = items
+		return
+	}
+}
+
+// replaceFinalAssistantText rewrites the last assistant turn so the persisted
+// transcript does not contain the delivery directive. Multimodal turns keep
+// their non-text parts; only the text is replaced.
+func replaceFinalAssistantText(transcript []provider.Message, text string) {
+	for i := len(transcript) - 1; i >= 0; i-- {
+		message := &transcript[i]
+		if message.Role != "assistant" {
+			continue
+		}
+		switch content := message.Content.(type) {
+		case string:
+			message.Content = text
+		case []provider.ContentItem:
+			items := append([]provider.ContentItem(nil), content...)
+			firstText := -1
+			for j := range items {
+				if items[j].Type == "text" {
+					firstText = j
+					break
+				}
+			}
+			if firstText == -1 {
+				return
+			}
+			items[firstText].Text = text
+			for j := firstText + 1; j < len(items); j++ {
+				if items[j].Type == "text" {
+					items[j].Text = ""
+				}
+			}
+			message.Content = items
+		}
+		return
+	}
+}

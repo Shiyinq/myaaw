@@ -4,6 +4,7 @@ import type {
 	ChatFolderDelete,
 	ChatFolderList,
 	ConversationActivity,
+	ConversationAttachmentPage,
 	ConversationDetail,
 	ConversationPage,
 	OKResponse
@@ -21,6 +22,13 @@ export interface ConversationFilters {
 	folder?: string;
 	/** Only sessions owned by one platform (telegram, discord, api, cli). */
 	channel?: string;
+}
+
+export interface AttachmentFilters {
+	limit?: number;
+	offset?: number;
+	/** Comma-separated rendering kinds: image, video, audio, pdf, file. */
+	kind?: string;
 }
 
 export const conversations = {
@@ -78,7 +86,22 @@ export const conversations = {
 	activity: (agent: string, params: { from: number; to: number }) =>
 		client<ConversationActivity>(
 			agentPath(agent, `/conversations/activity?from=${params.from}&to=${params.to}`)
-		)
+		),
+	/**
+	 * The files of one conversation, oldest first and deduplicated by path. The
+	 * list is paged like the conversation list, so a long chat never ships its
+	 * whole transcript to the sidebar.
+	 */
+	attachments: (agent: string, id: string, params: AttachmentFilters = {}) => {
+		const query = new URLSearchParams();
+		if (params.limit !== undefined) query.set('limit', String(params.limit));
+		if (params.offset !== undefined) query.set('offset', String(params.offset));
+		if (params.kind) query.set('kind', params.kind);
+		const suffix = query.toString() ? `?${query.toString()}` : '';
+		return client<ConversationAttachmentPage>(
+			agentPath(agent, `/conversations/${encodeURIComponent(id)}/attachments${suffix}`)
+		);
+	}
 };
 
 export const chatFolders = {

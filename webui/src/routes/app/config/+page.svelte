@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { config as configApi } from '$lib/apis/config';
+	import { configStore } from '$lib/stores/config.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -25,10 +26,7 @@
 	const { t } = useTranslation();
 
 	let tab = $state('bot');
-	let loading = $state(false);
 	let saving = $state(false);
-	let error = $state('');
-	let loadKey = '';
 
 	let botType = $state('private');
 	let ownerIds = $state('');
@@ -71,6 +69,19 @@
 	let apDeny = $state('');
 
 	let agent = $derived(agentSelection.selected);
+
+	useQuery(configStore.query, () => (agent ? { agent } : null));
+
+	let loading = $derived(configStore.loading);
+	let error = $derived(configStore.error);
+
+	let syncedAgent = '';
+	$effect(() => {
+		const data = configStore.data;
+		if (!data || !agent || syncedAgent === agent) return;
+		syncedAgent = agent;
+		apply(data);
+	});
 
 	// Thread and chat type only apply to one platform each; the server drops the
 	// irrelevant one as well.
@@ -125,26 +136,6 @@
 		apDeny = (approvals?.deny ?? []).join('\n');
 	}
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			apply(await configApi.get(currentAgent));
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
-
-	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
-	});
-
 	function splitList(value: string) {
 		return value
 			.split(/[\n,]/)
@@ -158,9 +149,12 @@
 			return;
 		saving = true;
 		try {
-			await configApi.resetFields(agent, section === 'bot' ? { bot: [] } : { [section]: true });
+			const next = await configStore.resetFields(
+				agent,
+				section === 'bot' ? { bot: [] } : { [section]: true }
+			);
+			apply(next);
 			toastStore.success(t('myaaw.config.reset_done'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -176,9 +170,9 @@
 			return;
 		saving = true;
 		try {
-			await configApi.reset(agent);
+			const next = await configStore.reset(agent);
+			apply(next);
 			toastStore.success(t('myaaw.config.reset_done'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -195,9 +189,9 @@
 		if (!agent) return;
 		saving = true;
 		try {
-			await configApi.resetFields(agent, { [section]: [field] });
+			const next = await configStore.resetFields(agent, { [section]: [field] });
+			apply(next);
 			toastStore.success(t('myaaw.config.reset_done'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -209,7 +203,7 @@
 		if (!agent) return;
 		saving = true;
 		try {
-			await configApi.patch(agent, {
+			const next = await configStore.patch(agent, {
 				bot: {
 					type: botType,
 					owner_ids: splitList(ownerIds),
@@ -255,8 +249,8 @@
 					deny: splitList(apDeny)
 				}
 			});
+			apply(next);
 			toastStore.success(t('myaaw.config.saved'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -294,8 +288,8 @@
 		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
-			onclick={() => agent && load(agent)}
-			{loading}
+			onclick={() => void configStore.refresh()}
+			loading={loading || configStore.refreshing}
 		/>
 		<TopBarButton
 			label={t('myaaw.config.reset_all')}

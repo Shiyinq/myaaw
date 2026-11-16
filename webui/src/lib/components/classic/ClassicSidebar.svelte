@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { MessageSquarePlus } from 'lucide-svelte';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
@@ -23,6 +24,17 @@
 
 	let { compact = false, activeId = '', searchInput = $bindable(null), onClose }: Props = $props();
 
+	// Swap the list for the compact new-chat button only after the sidebar width
+	// animation finishes. Mounting the list while the rail is still narrow shows
+	// clipped titles and looks like a glitch during expansion.
+	let contentCompact = $state(untrack(() => compact));
+	$effect(() => {
+		const target = compact;
+		if (target === contentCompact) return;
+		const timer = setTimeout(() => (contentCompact = target), 200);
+		return () => clearTimeout(timer);
+	});
+
 	function newChat() {
 		void goto('/app/chat?new=1');
 	}
@@ -44,12 +56,12 @@
 <SidebarBrand {compact} {onClose} />
 <SidebarAgent {compact} />
 
-{#if compact}
-	<div class="shrink-0 border-b p-2">
+{#if contentCompact}
+	<div class="flex h-14 shrink-0 items-center border-b px-3">
 		<Button
 			variant="ghost"
 			size="icon-sm"
-			class="mx-auto flex"
+			class="flex"
 			onclick={newChat}
 			title={t('myaaw.chat.new')}
 			aria-label={t('myaaw.chat.new')}
@@ -59,7 +71,7 @@
 	</div>
 	<div class="flex-1"></div>
 {:else}
-	<div class="flex min-h-0 flex-1 flex-col">
+	<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 		<ConversationList
 			{activeId}
 			onOpen={openConversation}

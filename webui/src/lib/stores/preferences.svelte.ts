@@ -32,6 +32,10 @@ export interface Preferences {
 	autoScroll: boolean;
 	steps: StepDisplay;
 	keepDrafts: boolean;
+	/** While a run streams, hold typed messages in a queue above the composer. */
+	queueMessages: boolean;
+	/** While a run streams, sending interrupts the run and sends immediately. */
+	interruptOnSend: boolean;
 	speakResponses: boolean;
 	speechRate: number;
 	speechLang: SpeechLanguage;
@@ -43,6 +47,8 @@ export interface Preferences {
 	notifyVolume: number;
 	/** Show which control-plane host the header is talking to. */
 	showHostBadge: boolean;
+	/** Show the agent mascot while an answer is working. */
+	showRunMascot: boolean;
 }
 
 const STORAGE_KEY = 'myaaw_prefs';
@@ -57,6 +63,8 @@ const DEFAULTS: Preferences = {
 	autoScroll: true,
 	steps: 'summary',
 	keepDrafts: true,
+	queueMessages: false,
+	interruptOnSend: true,
 	speakResponses: false,
 	speechRate: 1,
 	speechLang: 'auto',
@@ -66,7 +74,8 @@ const DEFAULTS: Preferences = {
 	notifyBrowser: false,
 	notifySound: 'chime',
 	notifyVolume: 0.7,
-	showHostBadge: true
+	showHostBadge: true,
+	showRunMascot: true
 };
 
 function audioLanguage(value: unknown): AudioLanguage {
@@ -105,6 +114,10 @@ function load(): Preferences {
 		const raw = localStorage.getItem(STORAGE_KEY);
 		if (!raw) return { ...DEFAULTS };
 		const parsed = JSON.parse(raw) as StoredPreferences;
+		// The two send-while-streaming modes are mutually exclusive; the queue
+		// wins when a hand-edited store turns both on at once.
+		const queueMessages = parsed.queueMessages === true;
+		const interruptOnSend = parsed.interruptOnSend !== false && !queueMessages;
 		return {
 			density: parsed.density === 'compact' ? 'compact' : 'comfortable',
 			textScale: Math.min(125, Math.max(100, Math.round(Number(parsed.textScale) || 100))),
@@ -115,6 +128,8 @@ function load(): Preferences {
 			autoScroll: parsed.autoScroll !== false,
 			steps: parsed.steps === 'expanded' ? 'expanded' : 'summary',
 			keepDrafts: parsed.keepDrafts !== false,
+			queueMessages,
+			interruptOnSend,
 			speakResponses: parsed.speakResponses === true,
 			speechRate: Math.min(
 				1.5,
@@ -131,7 +146,8 @@ function load(): Preferences {
 				1,
 				Math.max(0, Math.round((Number(parsed.notifyVolume) || 0.7) * 100) / 100)
 			),
-			showHostBadge: parsed.showHostBadge !== false
+			showHostBadge: parsed.showHostBadge !== false,
+			showRunMascot: parsed.showRunMascot !== false
 		};
 	} catch {
 		return { ...DEFAULTS };

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { tools as toolsApi } from '$lib/apis/tools';
+	import { toolsStore } from '$lib/stores/tools.svelte';
 	import { toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { validate, type FieldErrors } from '$lib/utils/validation';
@@ -54,13 +54,13 @@
 		try {
 			const parsed = result.data.schema.trim() ? JSON.parse(result.data.schema) : undefined;
 			if (editing) {
-				await toolsApi.patchCustom(agent, editing.name, {
+				await toolsStore.patchCustom(agent, editing.name, {
 					command: result.data.command,
 					args: splitArgs(result.data.args ?? ''),
 					schema: parsed
 				});
 			} else {
-				await toolsApi.createCustom(agent, {
+				await toolsStore.createCustom(agent, {
 					name: result.data.name,
 					command: result.data.command,
 					args: splitArgs(result.data.args ?? ''),

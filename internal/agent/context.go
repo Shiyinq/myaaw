@@ -126,12 +126,24 @@ func (b *SystemPromptBuilder) Build() string {
 	if b.workspaceDir != "" {
 		projectsDir := filepath.Join(b.workspaceDir, "projects")
 		downloadsDir := filepath.Join(b.workspaceDir, "downloads")
+		mcpDir := filepath.Join(b.workspaceDir, "mcp")
+		screenshotsDir := filepath.Join(b.workspaceDir, "screenshots")
 
 		sb.WriteString("## Workspace\n")
 		fmt.Fprintf(&sb, "Workspace root: %s\n", b.workspaceDir)
 		fmt.Fprintf(&sb, "- Projects: %s/<project-name>/\n", projectsDir)
-		fmt.Fprintf(&sb, "- Downloads: %s/\n\n", downloadsDir)
+		fmt.Fprintf(&sb, "- Downloads: %s/\n", downloadsDir)
+		fmt.Fprintf(&sb, "- Screenshots: %s/\n", screenshotsDir)
+		fmt.Fprintf(&sb, "- MCP outputs: %s/ (working directory of MCP servers)\n\n", mcpDir)
 	}
+
+	// 4b. File delivery
+	// Identical on every surface: a per-channel sentence would change the cached
+	// prompt prefix when a session moves between surfaces. The surface decides
+	// how a referenced file is presented.
+	sb.WriteString("## File & project delivery\n")
+	sb.WriteString(deliveryInstruction)
+	sb.WriteString("\n\n")
 
 	// 5. Current Directory (Dynamic)
 	// Only local CLI sessions have a meaningful project directory.
@@ -155,6 +167,20 @@ func (b *SystemPromptBuilder) Build() string {
 
 	return strings.TrimSpace(sb.String())
 }
+
+// deliveryInstruction has to stay identical for every channel. The prompt is
+// cached by prefix, so a surface-specific sentence would invalidate the cache
+// whenever a session switches between the terminal and a chat surface.
+const deliveryInstruction = "Deliver the files that answer the user's request. " +
+	"Whenever you create, generate, download, export, or modify a file, document, image, " +
+	"audio/video, archive, report, or project the user asked for, always attach it by writing " +
+	"@attach(/absolute/path) in your final answer (one directive per file). " +
+	"For a project, attach only the project directory once, writing " +
+	"@attach(/absolute/path/to/project) and nothing else. Do not attach its individual source " +
+	"files, HTML/CSS/JS, assets, dependencies, or build caches. " +
+	"Do not attach files you created only as temporary helpers, debug scripts, probes, logs, " +
+	"caches, or scratch files. " +
+	"Use absolute paths, and never base64-encode a file or paste its contents into the reply."
 
 // isLocalChannel reports whether the channel runs in the user's local working
 // directory and should therefore receive current-directory context.

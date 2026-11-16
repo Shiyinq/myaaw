@@ -80,6 +80,10 @@
 	let draggingId = $state('');
 	/** Folder id, or `recents`, currently under a dragged chat. */
 	let dragOver = $state('');
+	/** Conversation under the keyboard cursor, by id; empty when there is none. */
+	let cursorId = $state('');
+	/** The scrolling list, so the cursor row can be scrolled back into view. */
+	let listViewport = $state<HTMLElement | null>(null);
 	let collapsedFolders = $state<Record<string, boolean>>(loadCollapsed());
 	/** Pinned, the folder list and Recents keep the same header, with a toggle. */
 	let collapsedSections = $state<Record<string, boolean>>(loadSectionsCollapsed());
@@ -99,6 +103,40 @@
 	);
 
 	const searching = $derived(conversationHistory.query !== '');
+
+	/**
+	 * The rows the reader can actually see, top to bottom: the search hits, or the
+	 * pinned, folder and recent chats that are not collapsed. The keyboard cursor
+	 * walks exactly this list, so it never lands on a hidden row.
+	 */
+	const visibleConversations = $derived.by((): ConversationSummary[] => {
+		if (searching) return conversationHistory.results.items;
+		const list: ConversationSummary[] = [];
+		if (!isSectionCollapsed('pinned')) list.push(...conversationHistory.pinned.items);
+		if (!isSectionCollapsed('folders')) {
+			for (const folder of conversationHistory.folders) {
+				if (!isCollapsed(folder.id)) list.push(...conversationHistory.sectionFor(folder.id).items);
+			}
+		}
+		if (!isSectionCollapsed('recents')) list.push(...conversationHistory.recents.items);
+		return list;
+	});
+
+	// A row can vanish under the cursor: a new query, a deleted chat, a folded
+	// section. Forget the cursor instead of jumping to a neighbour.
+	$effect(() => {
+		if (cursorId && !visibleConversations.some((item) => item.id === cursorId)) cursorId = '';
+	});
+
+	// The cursor is keyboard-only, so the row it lands on has to stay on screen.
+	$effect(() => {
+		if (!cursorId || !listViewport) return;
+		for (const row of listViewport.querySelectorAll<HTMLElement>('[data-conversation-id]')) {
+			if (row.dataset.conversationId !== cursorId) continue;
+			row.scrollIntoView({ block: 'nearest' });
+			return;
+		}
+	});
 
 	// A folder that was left expanded loads its first page on mount; collapsed
 	// folders cost only their header.
@@ -137,6 +175,72 @@
 		const wrapper = event.currentTarget as HTMLElement;
 		const next = event.relatedTarget as Node | null;
 		if (!next || !wrapper.contains(next)) searchFocused = false;
+	}
+
+	/** True while the list is really on screen; a closed drawer is not. */
+	function listOnScreen() {
+		if (!listViewport) return false;
+		const rect = listViewport.getBoundingClientRect();
+		return rect.width > 0 && rect.right > 0 && rect.left < window.innerWidth;
+	}
+
+	/**
+	 * Arrow keys walk the visible chats - search hits or not - and Enter opens the
+	 * highlighted one, so the list can be used without a mouse. Up from the first
+	 * row hands the keys back to the search box, and they keep working after a chat
+	 * was opened.
+	 */
+	function onSearchKeydown(event: KeyboardEvent) {
+		if (event.defaultPrevented || event.isComposing) return;
+		if (event.altKey || event.metaKey || event.ctrlKey) return;
+		const target = event.target as HTMLElement | null;
+		const inBox = target === searchInput;
+		// Opening a chat leaves focus on the page, so the page itself counts too.
+		const onPage = !target || target === document.body || target === document.documentElement;
+		const inList = !!target && !!listViewport?.contains(target);
+		if (!inBox && !onPage && !inList) return;
+		if (!inBox && !listOnScreen()) return;
+
+		const list = visibleConversations;
+		const index = list.findIndex((item) => item.id === cursorId);
+
+		if (event.key === 'ArrowDown') {
+			event.preventDefault();
+			if (list.length === 0) return;
+			const next = index < 0 ? 0 : Math.min(list.length - 1, index + 1);
+			cursorId = list[next].id;
+			// At the last search hit, ask for the next page so the keys keep moving.
+			if (searching && next === list.length - 1) conversationHistory.loadMoreResults();
+			return;
+		}
+
+		if (event.key === 'ArrowUp') {
+			event.preventDefault();
+			if (index <= 0) {
+				// Above the first row sits the search box: give it back the keyboard.
+				cursorId = '';
+				searchInput?.focus();
+				return;
+			}
+			cursorId = list[index - 1].id;
+			return;
+		}
+
+		if (event.key === 'Enter') {
+			const entry = list.find((item) => item.id === cursorId);
+			if (!entry) return;
+			// A row's own buttons keep Enter for themselves.
+			if (!inBox && !onPage && target?.closest('[data-row-action]')) return;
+			event.preventDefault();
+			onOpen(entry.id);
+			return;
+		}
+
+		if (event.key === 'Escape' && inBox && conversationHistory.search) {
+			event.preventDefault();
+			conversationHistory.clearSearch();
+			searchInput?.focus();
+		}
 	}
 
 	function loadCollapsed(): Record<string, boolean> {
@@ -470,13 +574,15 @@
 {/snippet}
 
 {#snippet conversationRow(entry: ConversationSummary, folderId: string | null)}
+	{@const cursor = entry.id === cursorId}
 	<div
 		role="group"
 		aria-label={entry.title || entry.id}
 		data-conversation-id={entry.id}
 		class={[
 			'group/entry conversation-row rounded-md transition-colors list-row',
-			entry.id === activeId ? 'bg-accent' : 'hover:bg-muted',
+			entry.id === activeId ? 'bg-accent' : cursor ? 'bg-muted' : 'hover:bg-muted',
+			cursor ? 'ring-1 ring-ring/50' : '',
 			draggingId === entry.id ? 'opacity-50' : ''
 		]}
 		aria-current={entry.id === activeId ? 'true' : undefined}
@@ -639,6 +745,8 @@
 	</div>
 {/snippet}
 
+<svelte:window onkeydown={onSearchKeydown} />
+
 <div class="flex h-full min-h-0 flex-col">
 	<div class="flex shrink-0 items-center gap-2 border-b p-2">
 		<div class="relative min-w-0 flex-1" onfocusin={onSearchFocusIn} onfocusout={onSearchFocusOut}>
@@ -694,7 +802,7 @@
 		{/if}
 	</div>
 
-	<div class="min-h-0 flex-1 overflow-y-auto p-2">
+	<div class="min-h-0 flex-1 overflow-y-auto p-2" bind:this={listViewport}>
 		{#if searching}
 			{#if conversationHistory.results.loading && conversationHistory.results.items.length === 0}
 				<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>

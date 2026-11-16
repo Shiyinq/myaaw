@@ -3,7 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
-	import { context as contextApi } from '$lib/apis/context';
+	import { contextStore } from '$lib/stores/context.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { colorOf } from '$lib/bloub';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -87,7 +87,7 @@
 		missing = false;
 		editing = false;
 		try {
-			const file = await contextApi.read(agent, path);
+			const file = await contextStore.fetchFile(agent, path);
 			content = file.content ?? '';
 		} catch (err) {
 			const status = (err as { status?: number }).status;
@@ -107,7 +107,7 @@
 	async function save() {
 		saving = true;
 		try {
-			const file = await contextApi.write(agent, path, content);
+			const file = await contextStore.write(agent, path, content);
 			content = file.content ?? '';
 			editing = false;
 			missing = false;

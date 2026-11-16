@@ -567,6 +567,16 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "payloads": {
+                    "description": "Payloads carries several messages that belong to one agent turn. The queue\nconsumer batches a chat's burst so every message is kept but the agent\nanswers once.",
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    }
                 }
             }
         },
@@ -582,14 +592,23 @@ const docTemplate = `{
         "handler.AttachmentResponse": {
             "type": "object",
             "properties": {
-                "data_base64": {
+                "file_name": {
                     "type": "string"
                 },
-                "file_name": {
+                "kind": {
                     "type": "string"
                 },
                 "mime_type": {
                     "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "project_type": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
                 }
             }
         },

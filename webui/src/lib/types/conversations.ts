@@ -1,3 +1,5 @@
+import type { Attachment } from './chat';
+
 export interface ContentPart {
 	type: string;
 	text?: string;
@@ -35,6 +37,8 @@ export interface Message {
 	created_at?: string;
 	/** How long the turn took, set on the final assistant message. */
 	duration_ms?: number;
+	/** Files delivered with this answer, so a reopened chat renders them again. */
+	attachments?: Attachment[];
 }
 
 /** A file a user attached to a message; persisted on the agent. */
@@ -118,6 +122,33 @@ export interface ConversationTurn {
 	text: string;
 }
 
+/** One file that appears in a conversation, from either side. */
+export interface ConversationAttachment {
+	/** Virtual path the dashboard fetches through `/fs/raw`. */
+	path: string;
+	file_name: string;
+	mime_type?: string;
+	/** Rendering kind: image, video, audio, pdf, file, or project. */
+	kind: string;
+	/** For a project: static, react, svelte, next, vite, or source. */
+	project_type?: string;
+	size?: number;
+	origin: 'agent' | 'user';
+	/** Transcript entry that carried the file, used by "Show in chat". */
+	message_id?: string;
+	message_index: number;
+	created_at?: string;
+}
+
+/** One page of a conversation's attachments, oldest first. */
+export interface ConversationAttachmentPage {
+	items: ConversationAttachment[];
+	/** Every file after deduplication and kind filtering. */
+	total: number;
+	offset: number;
+	has_more: boolean;
+}
+
 export interface ConversationDetail {
 	id: string;
 	user_id: number;
@@ -139,4 +170,19 @@ export interface ConversationDetail {
 	has_more: boolean;
 	/** Every question of the conversation, not only the returned messages. */
 	turns: ConversationTurn[];
+}
+
+/** One project's preview state, as reported by /project/status. */
+export interface ProjectStatus {
+	path: string;
+	type: string;
+	state: 'idle' | 'building' | 'ready' | 'failed';
+	entry?: string;
+	url?: string;
+	expires_at?: number;
+	logs?: string;
+	error?: string;
+	file_count?: number;
+	size?: number;
+	download_only?: boolean;
 }

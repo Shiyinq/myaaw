@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { files as filesApi } from '$lib/apis/files';
+	import { filesStore } from '$lib/stores/files.svelte';
+	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { revealPane } from '$lib/utils/scroll';
@@ -12,14 +13,22 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Badge } from '$lib/components/ui/badge';
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import CodePreview from '$lib/components/common/CodePreview.svelte';
 	import { detectPreview } from '$lib/utils/filePreview';
 	import { parseCsv } from '$lib/utils/csv';
+	import { formatShortDate, formatSize } from '$lib/utils/format';
+	import { fileIcon } from '$lib/utils/fileIcon';
+	import { createSearchNav } from '$lib/utils/searchNav.svelte';
 	import FieldError from '$lib/components/common/FieldError.svelte';
+	import SidebarSearchField from '$lib/components/app/SidebarSearchField.svelte';
+	import SidebarSection from '$lib/components/app/SidebarSection.svelte';
+	import SidebarSkeletons from '$lib/components/app/SidebarSkeletons.svelte';
 	import {
 		ChevronLeft,
+		ChevronRight,
 		Check,
 		Download,
 		ExternalLink,
@@ -27,6 +36,7 @@
 		File,
 		FilePlus,
 		Folder,
+		FolderUp,
 		Pencil,
 		RefreshCw,
 		Save,
@@ -53,6 +63,7 @@
 	let error = $state('');
 	let editing = $state(false);
 	let folderName = $state('');
+	let filter = $state('');
 	let searchQuery = $state('');
 	let matches = $state<SearchMatch[]>([]);
 	let searchLoading = $state(false);
@@ -63,6 +74,34 @@
 
 	let agent = $derived(agentSelection.selected);
 	let preview = $derived(selected ? detectPreview(selected.path) : null);
+	let canGoUp = $derived(path !== '' && path !== '/');
+	let filteredEntries = $derived.by(() => {
+		const needle = filter.trim().toLowerCase();
+		if (!needle) return entries;
+		return entries.filter((entry) => entry.name.toLowerCase().includes(needle));
+	});
+	let folders = $derived(
+		filteredEntries.filter((entry) => entry.is_dir).sort((a, b) => a.name.localeCompare(b.name))
+	);
+	let files = $derived(
+		filteredEntries.filter((entry) => !entry.is_dir).sort((a, b) => a.name.localeCompare(b.name))
+	);
+	let currentFolder = $derived.by(() => {
+		const parts = path.split('/').filter(Boolean);
+		return parts.length ? parts[parts.length - 1] : t('myaaw.files.roots');
+	});
+
+	let navItems = $derived([
+		...(canGoUp ? [{ id: '..', activate: () => goUp() }] : []),
+		...folders.map((entry) => ({ id: entry.path, activate: () => void open(entry) })),
+		...files.map((entry) => ({ id: entry.path, activate: () => void open(entry) }))
+	]);
+
+	const searchNav = createSearchNav({
+		items: () => navItems,
+		query: () => filter,
+		clear: () => (filter = '')
+	});
 
 	// <img>, <video>, <audio> and the PDF viewer stream the raw bytes; everything
 	// text-based keeps going through the JSON read endpoint.
@@ -70,39 +109,56 @@
 	let mediaKind = $derived(preview && MEDIA_KINDS.has(preview.kind) ? preview.kind : null);
 	let textPreview = $derived(!!preview && !mediaKind && preview.kind !== 'binary');
 	let tooLargeToPreview = $derived(!!selected && textPreview && selected.size > PREVIEW_LIMIT);
-	let mediaUrl = $derived(selected && agent ? filesApi.rawUrl(agent, selected.path) : '');
+	let mediaUrl = $derived(selected && agent ? filesStore.rawUrl(agent, selected.path) : '');
+	// While /fs/sign is in flight rawUrl is `data:,`; mounting a media element
+	// with it flashes the browser's broken-image placeholder, so wait for the
+	// signed URL before rendering the element.
+	let mediaReady = $derived(!!mediaUrl && mediaUrl !== 'data:,');
+	// Sign the previewed file so the browser can load it without the session token.
+	$effect(() => {
+		if (agent && selected?.path) void ensureSigned(agent, [selected.path]);
+	});
 	let csvTable = $derived(preview?.kind === 'csv' && selected ? parseCsv(content) : null);
 	let mediaFailed = $state(false);
 
 	function downloadFile(target: string) {
 		if (!agent) return;
-		filesApi.download(agent, target);
+		filesStore.download(agent, target);
+	}
+
+	// A preview can render before its signature arrives, when src is a blank data
+	// URL. That failure must not latch: the element reloads once the signed URL
+	// replaces it.
+	function mediaError() {
+		if (mediaUrl && mediaUrl !== 'data:,') mediaFailed = true;
 	}
 
 	async function load(currentAgent: string, target: string) {
-		loading = true;
+		const cached = filesStore.list.peek({ agent: currentAgent, path: target });
+		loading = cached === undefined;
 		error = '';
-		try {
-			const result = await filesApi.list(currentAgent, target);
+		await filesStore.list.ensure({ agent: currentAgent, path: target });
+		const result = filesStore.list.data;
+		if (result) {
 			entries = result.entries ?? [];
 			path = result.path ?? target;
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
 		}
+		error = filesStore.list.error;
+		loading = false;
 	}
 
 	$effect(() => {
 		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
+		if (!currentAgent || currentAgent === loadKey) return;
+		loadKey = currentAgent;
 		void load(currentAgent, path);
 	});
 
 	async function refresh() {
-		if (agent) await load(agent, path);
+		if (!agent) return;
+		await filesStore.list.refresh({ agent, path });
+		const result = filesStore.list.data;
+		if (result) entries = result.entries ?? [];
 	}
 
 	async function open(entry: FileEntry) {
@@ -125,7 +181,13 @@
 		}
 
 		try {
-			const file = await filesApi.read(agent, entry.path);
+			await filesStore.read.ensure({ agent, path: entry.path });
+			const file = filesStore.read.data;
+			if (filesStore.read.error) {
+				toastStore.error(filesStore.read.error);
+				return;
+			}
+			if (!file) return;
 			selected = file;
 			content = file.content;
 			editing = false;
@@ -136,7 +198,9 @@
 
 	async function openMatch(match: SearchMatch) {
 		if (!agent) return;
-		const file = await filesApi.read(agent, match.path);
+		await filesStore.read.ensure({ agent, path: match.path });
+		const file = filesStore.read.data;
+		if (!file) return;
 		selected = file;
 		content = file.content;
 		editing = false;
@@ -148,7 +212,7 @@
 		if (!agent || !selected) return;
 		saving = true;
 		try {
-			await filesApi.write(agent, selected.path, content);
+			await filesStore.write(agent, selected.path, content, path);
 			toastStore.success(t('myaaw.files.saved'));
 			editing = false;
 		} catch (err) {
@@ -168,7 +232,7 @@
 		)
 			return;
 		try {
-			await filesApi.remove(agent, entry.path, entry.is_dir);
+			await filesStore.remove(agent, entry.path, path, entry.is_dir);
 			if (selected?.path === entry.path) {
 				selected = null;
 				content = '';
@@ -187,7 +251,7 @@
 		if (!name) return;
 		const target = path === '' ? `/${name}` : `${path}/${name}`;
 		try {
-			await filesApi.mkdir(agent, target);
+			await filesStore.mkdir(agent, target, path);
 			folderName = '';
 			await load(agent, path);
 			toastStore.success(t('myaaw.files.folder_created'));
@@ -202,10 +266,12 @@
 		if (!name) return;
 		const target = path === '' ? `/${name}` : `${path}/${name}`;
 		try {
-			await filesApi.write(agent, target, '');
+			await filesStore.write(agent, target, '', path);
 			folderName = '';
 			await load(agent, path);
-			const file = await filesApi.read(agent, target);
+			await filesStore.read.ensure({ agent, path: target });
+			const file = filesStore.read.data;
+			if (!file) return;
 			selected = file;
 			content = file.content;
 			editing = true;
@@ -248,7 +314,7 @@
 		const parent = entry.path.split('/').slice(0, -1).join('/');
 		const target = parent ? `${parent}/${result.data}` : `/${result.data}`;
 		try {
-			await filesApi.rename(agent, entry.path, target);
+			await filesStore.rename(agent, entry.path, target, path);
 			if (selected?.path === entry.path) {
 				selected = null;
 				content = '';
@@ -266,7 +332,7 @@
 		if (!agent || !searchQuery.trim()) return;
 		searchLoading = true;
 		try {
-			const result = await filesApi.search(agent, searchQuery.trim(), path || '/home');
+			const result = await filesStore.search(agent, searchQuery.trim(), path || '/home');
 			matches = result.matches ?? [];
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -284,16 +350,17 @@
 		if (agent) void load(agent, parent ? `/${parent}` : '');
 	}
 
-	function formatSize(size: number) {
-		if (size < 1024) return `${size} B`;
-		if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KiB`;
-		return `${(size / (1024 * 1024)).toFixed(1)} MiB`;
-	}
-
-	function breadcrumb() {
-		return path.split('/').filter(Boolean);
+	function breadcrumbSegments() {
+		const parts = path.split('/').filter(Boolean);
+		let accumulated = '';
+		return parts.map((name, index) => {
+			accumulated += `/${name}`;
+			return { name, path: accumulated, current: index === parts.length - 1 };
+		});
 	}
 </script>
+
+<svelte:window onkeydown={searchNav.onKeydown} />
 
 <TopBarActions id="files-refresh">
 	{#snippet children()}
@@ -331,17 +398,55 @@
 			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
 		>
 			<div class="shrink-0 space-y-2 border-b p-3">
-				<div class="flex items-center gap-1">
-					<Button variant="ghost" size="icon-xs" onclick={goUp}>
-						<ChevronLeft class="h-4 w-4" />
-					</Button>
-					<div class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground">
-						<button class="hover:underline" onclick={() => agent && load(agent, '')}>roots</button>
-						{#each breadcrumb() as part, index (index)}
-							<span>/</span>
-							<span class="truncate font-medium text-foreground">{part}</span>
-						{/each}
+				<div class="flex items-center justify-between gap-2">
+					<div class="flex min-w-0 items-center gap-1">
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							onclick={goUp}
+							disabled={!canGoUp}
+							title={t('myaaw.files.up')}
+							aria-label={t('myaaw.files.up')}
+						>
+							<ChevronLeft class="h-4 w-4" />
+						</Button>
+						<p
+							class="truncate text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+						>
+							{currentFolder}
+						</p>
 					</div>
+					{#if entries.length > 0}
+						<span class="text-[10px] tabular-nums text-muted-foreground">{entries.length}</span>
+					{/if}
+				</div>
+
+				<!-- Every ancestor is a jump target, not just the roots. -->
+				<div class="flex min-w-0 flex-wrap items-center gap-0.5 text-xs">
+					<button
+						class={[
+							'rounded px-1 py-0.5 hover:bg-muted',
+							path === '/' || path === ''
+								? 'font-medium text-foreground'
+								: 'text-muted-foreground hover:text-foreground'
+						]}
+						onclick={() => agent && load(agent, '')}
+					>
+						{t('myaaw.files.roots')}
+					</button>
+					{#each breadcrumbSegments() as segment (segment.path)}
+						<span class="text-muted-foreground">/</span>
+						<button
+							class={[
+								'max-w-32 truncate rounded px-1 py-0.5 hover:bg-muted',
+								segment.current ? 'font-medium text-foreground' : 'text-muted-foreground'
+							]}
+							onclick={() => agent && load(agent, segment.path)}
+							title={segment.path}
+						>
+							{segment.name}
+						</button>
+					{/each}
 				</div>
 
 				<div class="space-y-1">
@@ -375,104 +480,165 @@
 					</div>
 					<FieldError code={nameError} />
 				</div>
+
+				<SidebarSearchField
+					bind:inputRef={searchNav.input}
+					bind:value={filter}
+					placeholder={t('myaaw.files.filter')}
+				/>
 			</div>
 
-			<div class="space-y-0.5 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+			<div bind:this={searchNav.list} class="space-y-3 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
 				{#if loading}
-					<p class="px-1 py-2 text-sm text-muted-foreground">{t('common.loading')}</p>
+					<SidebarSkeletons />
 				{:else if entries.length === 0}
 					<p class="px-1 py-2 text-sm text-muted-foreground">{t('myaaw.files.empty')}</p>
-				{/if}
-
-				{#each entries as entry (entry.path)}
-					{#if renaming === entry.path}
-						<div class="flex items-center gap-1 rounded-md px-1 py-1">
-							<Input
-								bind:value={renameValue}
-								class="h-7 text-xs"
-								onkeydown={(event) => {
-									if (event.key === 'Enter') void submitRename(entry);
-									if (event.key === 'Escape') cancelRename();
-								}}
-							/>
-							<Button
-								size="icon-xs"
-								variant="secondary"
-								onclick={() => submitRename(entry)}
-								aria-label={t('common.save')}
-							>
-								<Check class="h-3 w-3" />
-							</Button>
-							<Button
-								size="icon-xs"
-								variant="ghost"
-								onclick={cancelRename}
-								aria-label={t('common.cancel')}
-							>
-								<X class="h-3 w-3" />
-							</Button>
-						</div>
-					{:else}
-						<div
-							class="group relative flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted list-row"
-							aria-current={selected?.path === entry.path ? 'true' : undefined}
-						>
+				{:else if filteredEntries.length === 0}
+					<p class="px-1 py-2 text-sm text-muted-foreground">{t('myaaw.files.no_matches')}</p>
+				{:else}
+					<!-- Folders first: entering one is the main navigation move. -->
+					<SidebarSection
+						icon={Folder}
+						label={t('myaaw.files.folders')}
+						count={folders.length + (canGoUp ? 1 : 0)}
+					>
+						{#if canGoUp}
 							<button
-								class="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
-								onclick={() => open(entry)}
-								title={entry.name}
+								class={[
+									'flex w-full items-center gap-2 rounded-md px-1 py-1.5 text-left text-sm hover:bg-muted list-row',
+									searchNav.cursor === '..' ? 'ring-1 ring-ring/50' : ''
+								]}
+								data-nav-id=".."
+								onclick={goUp}
+								title={t('myaaw.files.up')}
 							>
-								{#if entry.is_dir}
-									<Folder class="h-4 w-4 shrink-0 text-muted-foreground" />
-								{:else}
-									<File class="h-4 w-4 shrink-0 text-muted-foreground" />
-								{/if}
-								<span class="truncate">{entry.name}</span>
+								<FolderUp class="h-4 w-4 shrink-0 text-muted-foreground" />
+								<span class="truncate text-muted-foreground">..</span>
 							</button>
-							{#if !entry.is_dir}
-								<span class="shrink-0 text-[10px] text-muted-foreground">
-									{formatSize(entry.size)}
-								</span>
-							{/if}
-							<!-- Row actions float over the name on hover so the file name can use
-							     the full width of the sidebar instead of reserving space for them. -->
-							<div
-								class="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 bg-linear-to-l from-muted via-muted to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-lg:pointer-events-auto max-lg:opacity-100"
+						{/if}
+						{#each folders as entry (entry.path)}
+							<button
+								class={[
+									'flex w-full items-center gap-2 rounded-md px-1 py-1.5 text-left text-sm hover:bg-muted list-row',
+									searchNav.cursor === entry.path ? 'ring-1 ring-ring/50' : ''
+								]}
+								data-nav-id={entry.path}
+								onclick={() => open(entry)}
+								title={entry.path}
 							>
-								<Button
-									variant="ghost"
-									size="icon-xs"
-									onclick={() => startRename(entry)}
-									aria-label={t('myaaw.files.rename')}
-								>
-									<Pencil class="h-3.5 w-3.5" />
-								</Button>
-								{#if !entry.is_dir}
+								<Folder class="h-4 w-4 shrink-0 text-muted-foreground" />
+								<span class="min-w-0 flex-1 truncate">{entry.name}</span>
+								<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+							</button>
+						{/each}
+						{#if folders.length === 0 && !canGoUp}
+							<p class="px-1 py-1 text-xs text-muted-foreground">
+								{t('myaaw.files.no_folders')}
+							</p>
+						{/if}
+					</SidebarSection>
+
+					<!-- Files: the same two-line row as the other workspace pages. -->
+					<SidebarSection icon={File} label={t('myaaw.files.files')} count={files.length}>
+						{#if files.length === 0}
+							<p class="px-1 py-1 text-xs text-muted-foreground">{t('myaaw.files.no_files')}</p>
+						{/if}
+						{#each files as entry (entry.path)}
+							{@const EntryIcon = fileIcon(entry.path)}
+							{#if renaming === entry.path}
+								<div class="flex items-center gap-1 rounded-md px-1 py-1">
+									<Input
+										bind:value={renameValue}
+										class="h-7 text-xs"
+										onkeydown={(event) => {
+											if (event.key === 'Enter') void submitRename(entry);
+											if (event.key === 'Escape') cancelRename();
+										}}
+									/>
 									<Button
-										variant="ghost"
 										size="icon-xs"
-										onclick={() => downloadFile(entry.path)}
-										aria-label={t('myaaw.files.download')}
-										title={t('myaaw.files.download')}
+										variant="secondary"
+										onclick={() => submitRename(entry)}
+										aria-label={t('common.save')}
 									>
-										<Download class="h-3.5 w-3.5" />
+										<Check class="h-3 w-3" />
 									</Button>
-								{/if}
-								<Button
-									variant="ghost"
-									size="icon-xs"
-									onclick={() => remove(entry)}
-									aria-label={t('common.delete')}
+									<Button
+										size="icon-xs"
+										variant="ghost"
+										onclick={cancelRename}
+										aria-label={t('common.cancel')}
+									>
+										<X class="h-3 w-3" />
+									</Button>
+								</div>
+							{:else}
+								<div
+									class={[
+										'group relative flex items-start gap-2 rounded-md px-1 py-1.5 hover:bg-muted list-row',
+										selected?.path === entry.path ? 'bg-accent' : '',
+										searchNav.cursor === entry.path ? 'ring-1 ring-ring/50' : ''
+									]}
+									data-nav-id={entry.path}
+									aria-current={selected?.path === entry.path ? 'true' : undefined}
 								>
-									<Trash2 class="h-3.5 w-3.5 text-destructive" />
-								</Button>
-							</div>
-						</div>
-					{/if}
-				{/each}
+									<button
+										class="flex min-w-0 flex-1 items-start gap-2 text-left text-sm"
+										onclick={() => open(entry)}
+										title={entry.path}
+									>
+										<EntryIcon class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+										<span class="min-w-0">
+											<span class="block truncate">{entry.name}</span>
+											<span class="block truncate text-[10px] text-muted-foreground">
+												{formatSize(entry.size)}{entry.mod_time
+													? ` · ${formatShortDate(entry.mod_time)}`
+													: ''}
+											</span>
+										</span>
+									</button>
+									<!-- Row actions float over the name on hover so the file name can use
+									     the full width of the sidebar instead of reserving space for them. -->
+									<div
+										class="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-0.5 bg-linear-to-l from-muted via-muted to-transparent pr-1 pl-6 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-lg:pointer-events-auto max-lg:opacity-100"
+									>
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											onclick={() => startRename(entry)}
+											aria-label={t('myaaw.files.rename')}
+										>
+											<Pencil class="h-3.5 w-3.5" />
+										</Button>
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											onclick={() => downloadFile(entry.path)}
+											aria-label={t('myaaw.files.download')}
+											title={t('myaaw.files.download')}
+										>
+											<Download class="h-3.5 w-3.5" />
+										</Button>
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											onclick={() => remove(entry)}
+											aria-label={t('common.delete')}
+										>
+											<Trash2 class="h-3.5 w-3.5 text-destructive" />
+										</Button>
+									</div>
+								</div>
+							{/if}
+						{/each}
+					</SidebarSection>
+				{/if}
 			</div>
 
 			<div class="shrink-0 space-y-1 border-t p-2">
+				<p class="px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+					{t('myaaw.files.search_contents')}
+				</p>
 				<div class="flex gap-2">
 					<Input
 						bind:value={searchQuery}
@@ -510,6 +676,10 @@
 			<Card class="mx-auto flex w-full max-w-5xl flex-col max-lg:h-[60vh] lg:min-h-0 lg:flex-1">
 				<CardHeader class="flex shrink-0 flex-row items-center justify-between">
 					<div class="flex min-w-0 items-center gap-1">
+						{#if selected}
+							{@const ActiveIcon = fileIcon(selected.path)}
+							<ActiveIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
+						{/if}
 						<CardTitle class="truncate text-sm font-medium">
 							{selected ? selected.path : t('myaaw.files.editor')}
 						</CardTitle>
@@ -546,6 +716,7 @@
 								variant="ghost"
 								size="icon-xs"
 								class="shrink-0 text-muted-foreground"
+								disabled={!mediaReady}
 								onclick={() => window.open(mediaUrl, '_blank', 'noopener,noreferrer')}
 								title={t('myaaw.files.open_new_tab')}
 								aria-label={t('myaaw.files.open_new_tab')}
@@ -579,19 +750,27 @@
 						{:else if mediaKind === 'image'}
 							{#if mediaFailed}
 								{@render previewFallback()}
+							{:else if !mediaReady}
+								<div class="flex h-full items-center justify-center">
+									<Skeleton class="h-40 w-40" />
+								</div>
 							{:else}
 								<div class="flex h-full items-center justify-center overflow-auto">
 									<img
 										src={mediaUrl}
-										alt={selected.path}
+										alt={selected.path.split('/').pop() ?? selected.path}
 										class="max-h-full max-w-full object-contain"
-										onerror={() => (mediaFailed = true)}
+										onerror={mediaError}
 									/>
 								</div>
 							{/if}
 						{:else if mediaKind === 'video'}
 							{#if mediaFailed}
 								{@render previewFallback()}
+							{:else if !mediaReady}
+								<div class="flex h-full items-center justify-center">
+									<Skeleton class="aspect-video w-full max-w-2xl" />
+								</div>
 							{:else}
 								<div class="flex h-full items-center justify-center">
 									<!-- Agent media has no caption track to attach; sound may be needed. -->
@@ -601,13 +780,17 @@
 										controls
 										preload="metadata"
 										class="max-h-full max-w-full rounded-md"
-										onerror={() => (mediaFailed = true)}
+										onerror={mediaError}
 									></video>
 								</div>
 							{/if}
 						{:else if mediaKind === 'audio'}
 							{#if mediaFailed}
 								{@render previewFallback()}
+							{:else if !mediaReady}
+								<div class="flex h-full items-center justify-center">
+									<Skeleton class="h-12 w-full max-w-lg" />
+								</div>
 							{:else}
 								<div class="flex h-full items-center justify-center">
 									<audio
@@ -615,16 +798,20 @@
 										controls
 										preload="metadata"
 										class="w-full max-w-lg"
-										onerror={() => (mediaFailed = true)}
+										onerror={mediaError}
 									></audio>
 								</div>
 							{/if}
 						{:else if mediaKind === 'pdf'}
-							<iframe
-								src={mediaUrl}
-								title={selected.path}
-								class="h-full w-full rounded-md border bg-background"
-							></iframe>
+							{#if mediaReady}
+								<iframe
+									src={mediaUrl}
+									title={selected.path}
+									class="h-full w-full rounded-md border bg-background"
+								></iframe>
+							{:else}
+								<Skeleton class="h-full w-full" />
+							{/if}
 						{:else if preview?.kind === 'binary'}
 							{@render previewFallback()}
 						{:else if tooLargeToPreview}

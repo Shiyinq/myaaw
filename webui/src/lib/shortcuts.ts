@@ -27,6 +27,7 @@ export const shortcutGroups: ShortcutGroup[] = [
 			{ combo: 'mod+enter', labelKey: 'myaaw.shortcuts.send' },
 			{ combo: '/', labelKey: 'myaaw.shortcuts.focus' },
 			{ combo: 'mod+shift+f', labelKey: 'myaaw.shortcuts.attach' },
+			{ combo: 'mod+shift+a', labelKey: 'myaaw.shortcuts.attachments' },
 			{ combo: 'mod+shift+h', labelKey: 'myaaw.shortcuts.history' },
 			{ combo: 'mod+shift+s', labelKey: 'myaaw.shortcuts.search' },
 			{ combo: 'alt+arrowup', labelKey: 'myaaw.shortcuts.prev_turn' },

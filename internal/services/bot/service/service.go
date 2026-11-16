@@ -55,6 +55,11 @@ type BotServiceImpl struct {
 	// job must not read the same transcript and write it back concurrently.
 	locks sync.Map
 
+	// runs tracks the turn currently answering each conversation, so a stop
+	// command or a newer message can cancel it from a different request. Nil uses
+	// the process-wide registry shared with the queue consumer; tests inject one.
+	runs *runRegistry
+
 	// Trace recording. The store is opened lazily on the first run so commands
 	// and tests that never execute the agent do not create a database.
 	obsOnce     sync.Once

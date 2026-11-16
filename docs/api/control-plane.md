@@ -80,7 +80,7 @@ New installs seed `user_id` as `0`. Existing credential files without the field 
 | `POST` | `/auth/change-password` | `{current_password, new_password}` |
 | `PUT` | `/auth/username` | `{password, new_username}` |
 
-Tokens are valid for 24 hours. Changing the password invalidates all sessions. Restarting `myaaw api` also clears sessions. `/health` and `/docs/*` are public; every other route requires the bearer token.
+Tokens are valid for 24 hours. Changing the password invalidates all sessions. Restarting `myaaw api` also clears sessions. `/health` and `/docs/*` are public; every other route requires the bearer token. The one exception is `GET /agents/:name/fs/raw`, which also accepts a valid short-lived `exp`+`sig` pair issued by `POST /agents/:name/fs/sign` (see Files below).
 
 The login response includes `user_id` (default `0`):
 
@@ -249,7 +249,7 @@ curl -N -X POST http://localhost:9000/agents/myfriend/chat/stream \
 | `done` | `{"ok":true,"text","conversation_id"?,"run_id"?,"usage"?,"attachments"?,"stopped"?}` |
 | `error` | `{"error":"..."}` followed by `done {"ok":false}` |
 
-Merge consecutive deltas per kind. On `done`, use `done.text` as the authoritative final answer; it can differ from the accumulated deltas when the run stops without normal output.
+Merge consecutive deltas per kind. On `done`, use `done.text` as the authoritative final answer; it can differ from the accumulated deltas when the run stops without normal output. `done.attachments` entries are `{file_name, mime_type, path, kind, size}` and carry only a virtual path: fetch the bytes with `GET /agents/:name/fs/raw?path=...`. See [Agent Attachments](../agents/attachments.md) for the delivery contract and per-surface behavior.
 
 For streaming requests, an invalid `conversation_id` is reported as an `error` event because the HTTP status is already `200` once the stream starts.
 
@@ -409,6 +409,7 @@ Virtual roots are `/home`, `/user`, `/skills`, and `/jobs`. `/user` holds conten
 | `POST` | `/agents/:name/fs/rename` | `{from, to}` |
 | `DELETE` | `/agents/:name/fs?path=...&recursive=true` | delete a file or directory |
 | `GET` | `/agents/:name/fs/raw?path=...` | stream the raw bytes (images, video, audio, PDF, any binary) |
+| `POST` | `/agents/:name/fs/sign` | sign up to 200 media paths for a short-lived `/fs/raw` URL: `{"paths":[...]}` → `{expires_at, urls:{path:"exp=…&sig=…"}}` |
 | `GET` | `/agents/:name/fs/search?q=milk&path=/home` | search text |
 
 Editing an agent's instructions:
@@ -428,6 +429,13 @@ curl -X POST "http://localhost:9000/agents/myfriend/fs/write" \
 Limits: reads and writes are capped at 2 MiB, binary files return `415`, and the virtual roots cannot be deleted or renamed.
 
 `fs/raw` bypasses the text limits: it streams the file with its real `Content-Type`, supports `Range` (so `<video>` can seek), sends `X-Content-Type-Options: nosniff`, and adds `Content-Security-Policy: sandbox` for `svg`/`html`/`xml`. Pass `download=1` for `Content-Disposition: attachment`, e.g. `curl -OJ "http://localhost:9000/agents/myfriend/fs/raw?path=/home/pixel.png&download=1" -H "Authorization: Bearer $TOKEN"`.
+
+Browser media elements cannot send an `Authorization` header, so clients may sign a path first and then load it without the session token:
+
+1. `POST /agents/:name/fs/sign` with the bearer token and `{"paths":["/home/a.png"]}`.
+2. Use the returned suffix: `GET /agents/:name/fs/raw?path=/home/a.png&exp=…&sig=…`.
+
+Signatures are `HMAC-SHA256` over agent, path, and expiry, last 10 minutes (`MEDIA_URL_TTL`), and are only accepted on `GET /fs/raw`. An expired or invalid pair returns `401 {"error":"invalid or expired media signature"}`. The signing key is `~/.myaaw/config/media.key`, created when the control plane starts. See [Agent Attachments](../agents/attachments.md) for the client-side caching and re-sign behaviour.
 
 ### Context files
 
@@ -872,6 +880,7 @@ turning recording on: the trace database is opened once per process.
 | `GET` | `/agents/:name/conversations?search=&limit=&offset=` | paginated conversation list (`pinned`, `unfiled`, `folder`, `channel` filters) |
 | `GET` | `/agents/:name/conversations/activity?from=&to=` | per-day conversation counts for the dashboard activity map |
 | `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages |
+| `GET` | `/agents/:name/conversations/:id/attachments?limit=&offset=&kind=` | every file in the conversation, deduplicated by path |
 | `PATCH` | `/agents/:name/conversations/:id` | rename `{title}` |
 | `DELETE` | `/agents/:name/conversations/:id` | delete a conversation |
 | `PUT` | `/agents/:name/conversations/:id/pin` | pin or unpin `{pinned}` |
@@ -882,7 +891,7 @@ turning recording on: the trace database is opened once per process.
 | `PATCH` | `/agents/:name/chat-folders/:folder` | rename a folder `{name}` |
 | `DELETE` | `/agents/:name/chat-folders/:folder` | delete a folder and every chat inside it |
 
-**User scoping.** List, detail, rename, delete, pin, move, and every folder route use the `user_id` from `~/.myaaw/config/controlplane.json` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
+**User scoping.** List, detail, attachments, rename, delete, pin, move, and every folder route use the `user_id` from `~/.myaaw/config/controlplane.json` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
 
 **Search.** `search` matches the **title only**, case-insensitive for ASCII, and is applied before pagination. `total` reflects the filtered count.
 
@@ -958,6 +967,68 @@ curl "http://localhost:9000/agents/myfriend/conversations/conv-id?limit=20&offse
 ```
 
 The detail response adds `messages`, `total_messages`, `limit`, `offset`, and `has_more`. `limit=0` returns all messages; otherwise the maximum page size is 500.
+
+### Attachments
+
+`GET /agents/:name/conversations/:id/attachments` lists the files of one
+conversation, oldest first, one entry per path. It reads the stored transcript
+and combines:
+
+- files the agent delivered (`attachments`: `path`, `kind`, `mime_type`, `size`);
+- files the user uploaded (`uploads`). The transcript stores their absolute host
+  path, while the response exposes the virtual path from `/user/uploads/` on, so
+  the dashboard can fetch them through `/fs/raw`.
+
+Entries without a fetchable path are skipped: byte-only legacy attachments, and
+uploads outside `/user/uploads/` (which would also leak host paths). The same
+path appearing in several turns collapses to the first turn it appeared in.
+
+```bash
+curl "http://localhost:9000/agents/myfriend/conversations/conv-id/attachments?limit=50&offset=0&kind=image,video" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "items": [
+    {
+      "path": "/home/workspace/out/report.pdf",
+      "file_name": "report.pdf",
+      "mime_type": "application/pdf",
+      "kind": "pdf",
+      "size": 1048576,
+      "origin": "agent",
+      "message_id": "…",
+      "message_index": 12,
+      "created_at": "2026-11-12T18:00:00Z"
+    }
+  ],
+  "total": 42,
+  "offset": 0,
+  "has_more": true
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `path` | virtual path (`/home/…` for agent files, `/user/uploads/…` for user uploads) |
+| `kind` | rendering kind: `image`, `video`, `audio`, `pdf`, or `file`; derived from the MIME type or extension when an older entry has none |
+| `origin` | `agent` for delivered files, `user` for uploads |
+| `message_id` | transcript entry id that carried the file, when stored |
+| `message_index` | position of that entry in the whole transcript, used by "Show in chat" |
+| `created_at` | UTC timestamp of the carrying turn; omitted for turns written before timestamps existed |
+
+- `limit` defaults to 50 and never exceeds 200; `offset` walks the deduplicated
+  list from the oldest entry. Pages never overlap because the order is stable
+  (`created_at`, then `message_index`).
+- `kind` is a comma-separated filter over the rendering kinds. `documents`
+  expands to `pdf,file`; any unknown value is a `400`.
+- `total` counts every file after deduplication **and** kind filtering, not the
+  size of this page. A client can request `limit=1` just to read `total` (the
+  dashboard badge does this) and still get the full count; `has_more` only says
+  whether the returned page has another page after it.
+- Ownership matches the detail route: another user's conversation is `403`, a
+  missing id is `404`.
 
 ### Rename
 
@@ -1454,7 +1525,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Agents | `GET /agents`, `GET /capabilities`, `GET/DELETE /agents/:name`, `POST /agents/:name/onboard`, `POST /agents/:name/default` |
 | Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream`, `POST /agents/:name/chat/stop`, `GET /agents/:name/chat/runs`, `GET /agents/:name/chat/run/:id/stream`, `GET /agents/:name/events` |
 | Approvals | `GET /agents/:name/approvals`, `POST /agents/:name/approvals/:id/decision`, `DELETE /agents/:name/approvals/grants`, `DELETE /agents/:name/approvals/grants/:key`, `DELETE /agents/:name/approvals/grants/:key/sessions/:conversation` |
-| Files | `GET/DELETE /agents/:name/fs`, `GET /fs/raw`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
+| Files | `GET/DELETE /agents/:name/fs`, `GET /fs/raw`, `POST /fs/sign`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
 | Skills | `GET /agents/:name/skills`, `POST /skills/:skill/install`, `GET /skills/builtin/:skill`, `GET /skills/builtin/:skill/file?path=`, `GET /skills/:skill`, `GET /skills/:skill/file?path=`, `PATCH /skills/:skill`, `DELETE /skills/:skill`, `DELETE /skills/:skill/config` |
 | Tools | `GET /agents/:name/tools`, `POST /tools/custom`, `POST /tools/mcp`, `PATCH /tools/builtin/:tool`, `PATCH /tools/custom/:tool`, `PATCH /tools/mcp/:tool`, `DELETE /tools/custom/:tool`, `DELETE /tools/mcp/:tool` |
@@ -1462,7 +1533,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models`, `GET /models/capabilities` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
-| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read` |
+| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `GET /conversations/:id/attachments?limit=&offset=&kind=`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read` |
 | Chat folders | `GET /chat-folders`, `POST /chat-folders`, `PATCH /chat-folders/:folder`, `DELETE /chat-folders/:folder` |
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |

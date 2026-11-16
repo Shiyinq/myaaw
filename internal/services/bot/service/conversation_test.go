@@ -344,7 +344,7 @@ func TestBuildConversationMessagesStoresUploads(t *testing.T) {
 		t.Fatalf("buildConversationMessages: %v", err)
 	}
 	last := messages[len(messages)-1]
-	if len(last.Uploads) != 1 || last.ID == "" {
+	if len(last.Uploads) != 2 || last.ID == "" {
 		t.Fatalf("uploads = %+v, id = %q", last.Uploads, last.ID)
 	}
 
@@ -357,16 +357,25 @@ func TestBuildConversationMessagesStoresUploads(t *testing.T) {
 		t.Fatalf("stored upload missing: %v", err)
 	}
 
-	// The image is sent inline to the model and also stored next to the document,
-	// so the person finds it in the Files page.
-	imagePath := filepath.Join(wantDir, "image-1.png")
-	if _, err := os.Stat(imagePath); err != nil {
+	// The image also gets an upload entry so history can render it from disk, but
+	// it stays out of the <attached> block because the model already sees it.
+	image := last.Uploads[1]
+	if image.Name != "image-1.png" || image.MimeType != "image/png" {
+		t.Fatalf("image upload = %+v", image)
+	}
+	if filepath.Dir(image.Path) != wantDir {
+		t.Fatalf("image dir = %q, want %q", filepath.Dir(image.Path), wantDir)
+	}
+	if _, err := os.Stat(image.Path); err != nil {
 		t.Fatalf("stored image missing: %v", err)
 	}
 
 	text := provider.MessageText(last)
 	if !strings.Contains(text, "<attached>\n") || !strings.Contains(text, upload.Path) || !strings.HasSuffix(text, "\n\nsummarize this") {
 		t.Fatalf("content = %q", text)
+	}
+	if strings.Contains(text, image.Path) {
+		t.Fatalf("image path must stay out of the attached block: %q", text)
 	}
 	items := provider.MessageContentItems(last)
 	if len(items) != 2 || items[1].Type != "image_url" {

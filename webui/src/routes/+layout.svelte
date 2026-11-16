@@ -1,5 +1,7 @@
 <script lang="ts">
 	import '../app.css';
+	// KaTeX ships its own layout for the math markup that Markdown renders.
+	import 'katex/dist/katex.min.css';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';

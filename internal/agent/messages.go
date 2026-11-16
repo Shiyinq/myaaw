@@ -20,6 +20,7 @@ func CloneMessages(messages []provider.Message) []provider.Message {
 		msg.Content = cloneMessageValue(msg.Content)
 		msg.Images = append([]string(nil), msg.Images...)
 		msg.Uploads = append([]provider.Upload(nil), msg.Uploads...)
+		msg.Attachments = append([]provider.MessageAttachment(nil), msg.Attachments...)
 		msg.Trace = append([]provider.ReactStep(nil), msg.Trace...)
 		msg.Usage.Details = append([]provider.UsageDetail(nil), msg.Usage.Details...)
 		if msg.CreatedAt != nil {

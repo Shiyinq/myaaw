@@ -285,6 +285,14 @@ export const conversationHistory = {
 		patchTitle(results, id, title);
 		for (const section of Object.values(folderSections)) patchTitle(section, id, title);
 	},
+	/** The title the loaded list already knows for a conversation, or ''. */
+	titleOf(id: string): string {
+		for (const section of [pinned, recents, results, ...Object.values(folderSections)]) {
+			const item = section.items.find((entry) => entry.id === id);
+			if (item) return item.title ?? '';
+		}
+		return '';
+	},
 	async rename(id: string, title: string) {
 		const agent = agentSelection.selected;
 		const next = title.trim();

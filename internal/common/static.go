@@ -5,6 +5,7 @@ func CommandStart() string {
 		"**/about** - Info about Myaaw project\n" +
 		"**/me** - About me and show current config\n\n" +
 		"**/new** - Start a new chat session\n\n" +
+		"**/stop** - Stop the response that is currently running\n\n" +
 		"ℹ️ You can interact using natural language without needing to set commands first."
 }
 
@@ -26,4 +27,12 @@ func CommandNewFailed() string {
 
 func CommandNotFound() string {
 	return "4️⃣0️⃣4️⃣ Command not found."
+}
+
+func CommandStopped() string {
+	return "✅ Stopped the current response."
+}
+
+func CommandStopNothing() string {
+	return "Nothing is running right now."
 }

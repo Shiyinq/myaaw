@@ -31,6 +31,7 @@ func NewApp() (*fiber.App, error) {
 	agents := service.NewAgentService()
 	proxy := service.NewProxyService(agents)
 	files := service.NewFileService()
+	projects := service.NewProjectService(files)
 	configSvc := service.NewConfigService()
 	conversations := service.NewConversationService()
 	logs := service.NewLogsService()
@@ -43,7 +44,7 @@ func NewApp() (*fiber.App, error) {
 	approvalsSvc := service.NewApprovalsService()
 	terminals := service.NewTerminalService()
 	backups := service.NewBackupService(serverSvc)
-	h := handler.New(auth, agents, proxy, files, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups)
+	h := handler.New(auth, agents, proxy, files, projects, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api", BodyLimit: config.A2AMaxRequestBytes})
 	app.Use(cors.New(corsConfig()))
@@ -84,12 +85,18 @@ func NewApp() (*fiber.App, error) {
 	app.Delete("/agents/:name/approvals/grants", h.ClearApprovalGrants)
 
 	app.Get("/agents/:name/fs", h.ListFiles)
+	app.Post("/agents/:name/fs/sign", h.SignFiles)
 	app.Get("/agents/:name/fs/raw", h.RawFile)
 	app.Get("/agents/:name/fs/read", h.ReadFile)
 	app.Get("/agents/:name/fs/search", h.SearchFiles)
 	app.Get("/agents/:name/context", h.ListContextFiles)
 	app.Get("/agents/:name/context/file", h.ReadContextFile)
 	app.Put("/agents/:name/context/file", h.WriteContextFile)
+
+	app.Get("/agents/:name/project/status", h.ProjectStatus)
+	app.Post("/agents/:name/project/build", h.BuildProject)
+	app.Get("/agents/:name/project/preview/:token", h.ProjectPreview)
+	app.Get("/agents/:name/project/preview/:token/*", h.ProjectPreview)
 
 	app.Get("/agents/:name/skills", h.ListSkills)
 	app.Post("/agents/:name/skills/:skill/install", h.InstallSkill)
@@ -145,6 +152,7 @@ func NewApp() (*fiber.App, error) {
 	app.Patch("/agents/:name/chat-folders/:folder", h.RenameChatFolder)
 	app.Delete("/agents/:name/chat-folders/:folder", h.DeleteChatFolder)
 	app.Get("/agents/:name/conversations/:id", h.GetConversation)
+	app.Get("/agents/:name/conversations/:id/attachments", h.ListConversationAttachments)
 	app.Patch("/agents/:name/conversations/:id", h.RenameConversation)
 	app.Delete("/agents/:name/conversations/:id", h.DeleteConversation)
 	app.Put("/agents/:name/conversations/:id/pin", h.PinConversation)

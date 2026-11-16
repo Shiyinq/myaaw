@@ -100,12 +100,48 @@ func TestScreenshotDeliverAddsAttachment(t *testing.T) {
 	tool := &ComputerTool{Backend: backend}
 
 	result := tool.CallToolStructured(context.Background(), `{"action":"screenshot","deliver":true}`, nil)
-	if len(result.Attachments) != 1 || result.Attachments[0].FileName != "screenshot-frame01.png" {
+	if len(result.Attachments) != 1 {
 		t.Fatalf("attachments = %+v", result.Attachments)
 	}
-	path := filepath.Join(home, ".myaaw", "agents", "default", "jobs", "captures", "screenshot-frame01.png")
-	if data, err := os.ReadFile(path); err != nil || string(data) != "PNGDATA" {
+	attachment := result.Attachments[0]
+	if !strings.HasPrefix(attachment.FileName, "screenshot-") || !strings.HasSuffix(attachment.FileName, ".png") {
+		t.Fatalf("file name = %q", attachment.FileName)
+	}
+	if attachment.Path != "/home/workspace/screenshots/"+attachment.FileName {
+		t.Fatalf("path = %q", attachment.Path)
+	}
+	dir := filepath.Join(home, ".myaaw", "agents", "default", "home", "workspace", "screenshots")
+	if data, err := os.ReadFile(filepath.Join(dir, attachment.FileName)); err != nil || string(data) != "PNGDATA" {
 		t.Fatalf("saved capture = %q, err=%v", data, err)
+	}
+	if !strings.Contains(result.Text, attachment.FileName) {
+		t.Fatalf("text = %q", result.Text)
+	}
+}
+
+func TestScreenshotDeliverKeepsEarlierScreenshots(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	backend := &fakeBackend{frame: Frame{ID: "frame01", PNG: []byte("FIRST"), Width: 10, Height: 10}}
+	tool := &ComputerTool{Backend: backend}
+
+	first := tool.CallToolStructured(context.Background(), `{"action":"screenshot","deliver":true}`, nil)
+	backend.frame = Frame{ID: "frame01", PNG: []byte("SECOND"), Width: 10, Height: 10}
+	second := tool.CallToolStructured(context.Background(), `{"action":"screenshot","deliver":true}`, nil)
+
+	if len(first.Attachments) != 1 || len(second.Attachments) != 1 {
+		t.Fatalf("attachments = %+v / %+v", first.Attachments, second.Attachments)
+	}
+	if first.Attachments[0].FileName == second.Attachments[0].FileName {
+		t.Fatalf("repeated frame id reused the same file name: %q", first.Attachments[0].FileName)
+	}
+
+	dir := filepath.Join(home, ".myaaw", "agents", "default", "home", "workspace", "screenshots")
+	if data, err := os.ReadFile(filepath.Join(dir, first.Attachments[0].FileName)); err != nil || string(data) != "FIRST" {
+		t.Fatalf("first capture = %q, err=%v", data, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, second.Attachments[0].FileName)); err != nil || string(data) != "SECOND" {
+		t.Fatalf("second capture = %q, err=%v", data, err)
 	}
 }
 

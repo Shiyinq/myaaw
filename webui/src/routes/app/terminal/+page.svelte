@@ -3,7 +3,7 @@
 	import { browser } from '$app/environment';
 	import '@xterm/xterm/css/xterm.css';
 	import { agentSelection } from '$lib/stores';
-	import { terminal as terminalApi } from '$lib/apis/terminal';
+	import { terminalStore } from '$lib/stores/terminal.svelte';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
@@ -155,7 +155,7 @@
 		message = '';
 
 		try {
-			const status = await terminalApi.status(current);
+			const status = await terminalStore.status(current);
 			enabled = status.enabled;
 			if (!status.enabled) {
 				phase = 'idle';
@@ -216,7 +216,7 @@
 	async function pumpStream(agent: string, id: string, signal: AbortSignal) {
 		let response: Response;
 		try {
-			response = await terminalApi.stream(agent, id, signal);
+			response = await terminalStore.stream(agent, id, signal);
 		} catch {
 			return; // Aborted by teardown.
 		}
@@ -236,7 +236,7 @@
 		const attempts = 4;
 		for (let attempt = 1; ; attempt += 1) {
 			try {
-				return await terminalApi.open(agent, cols, rows);
+				return await terminalStore.open(agent, cols, rows);
 			} catch (err) {
 				const status = (err as { status?: number }).status;
 				if (status !== 429 || attempt >= attempts) throw err;
@@ -254,8 +254,8 @@
 		const stored = readStored(agent);
 		if (stored) {
 			try {
-				const info = await terminalApi.get(agent, stored.id);
-				await terminalApi.resize(agent, info.id, cols, rows).catch(() => {});
+				const info = await terminalStore.get(agent, stored.id);
+				await terminalStore.resize(agent, info.id, cols, rows).catch(() => {});
 				return { info, buffer: stored.buffer };
 			} catch {
 				clearStored(agent);
@@ -271,7 +271,7 @@
 	function startHeartbeat(agent: string, id: string) {
 		if (heartbeatTimer) clearInterval(heartbeatTimer);
 		heartbeatTimer = setInterval(() => {
-			void terminalApi.heartbeat(agent, id).catch((err) => {
+			void terminalStore.heartbeat(agent, id).catch((err) => {
 				if ((err as { status?: number }).status !== 404) return;
 				// The grace window ran out while the tab was idle.
 				clearStored(agent);
@@ -309,7 +309,7 @@
 		const payload = new TextEncoder().encode(inputQueue.join(''));
 		inputQueue = [];
 		try {
-			await terminalApi.input(current, sessionId, payload);
+			await terminalStore.input(current, sessionId, payload);
 		} catch {
 			// A dead session is reported by the stream; do not spam toasts per key.
 		}
@@ -323,7 +323,7 @@
 			if (!term || !fitAddon) return;
 			fitAddon.fit();
 			if (!current || !sessionId) return;
-			void terminalApi.resize(current, sessionId, term.cols, term.rows).catch(() => {});
+			void terminalStore.resize(current, sessionId, term.cols, term.rows).catch(() => {});
 		}, 150);
 	}
 

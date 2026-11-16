@@ -4,12 +4,13 @@
 	import { browser } from '$app/environment';
 	import { tick, untrack } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import { chat as chatApi } from '$lib/apis/chat';
-	import { config as configApi } from '$lib/apis/config';
-	import { conversations as conversationsApi } from '$lib/apis/conversations';
-	import { files as filesApi } from '$lib/apis/files';
-	import { providers as providersApi } from '$lib/apis/providers';
-	import { observability as observabilityApi } from '$lib/apis/observability';
+	import { chatStore } from '$lib/stores/chat.svelte';
+	import { configStore } from '$lib/stores/config.svelte';
+	import { conversationsStore } from '$lib/stores/conversations.svelte';
+	import { filesStore } from '$lib/stores/files.svelte';
+	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
+	import { providersStore } from '$lib/stores/providers.svelte';
+	import { observabilityStore } from '$lib/stores/observability.svelte';
 	import { agentSelection, conversationHistory, toastStore, topBarTitle } from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import { chatRuns, type ChatItem, type ChatRun } from '$lib/stores/chatRuns.svelte';
@@ -26,9 +27,15 @@
 	import { cn } from '$lib/utils';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { MAX_ASK_QUOTES, MAX_ASK_QUOTE_CHARS, parseAskPrompt } from '$lib/utils/ask';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
+	import AttachmentPanel from '$lib/components/app/AttachmentPanel.svelte';
+	import AttachmentPreview from '$lib/components/app/AttachmentPreview.svelte';
+	import AskQuoteList from '$lib/components/app/AskQuoteList.svelte';
 	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
+	import RunAttachments from '$lib/components/app/RunAttachments.svelte';
+	import ImageLightbox from '$lib/components/app/ImageLightbox.svelte';
 	import FocusAgentPanel from '$lib/components/focus/FocusAgentPanel.svelte';
 	import FocusContextEditor from '$lib/components/focus/FocusContextEditor.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
@@ -42,12 +49,13 @@
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { colorOf, cycleSrc, moodSrc, type BloubCycle, type BloubMood } from '$lib/bloub';
 	import { Button } from '$lib/components/ui/button';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { theme } from 'mode-watcher';
 	import { isFrosted } from '$lib/theme';
 	import {
 		AlertTriangle,
-		ArrowDownToLine,
 		Bot,
 		Brain,
 		CalendarClock,
@@ -63,6 +71,8 @@
 		Gauge,
 		Globe,
 		HeartPulse,
+		History,
+		ListEnd,
 		Loader2,
 		MessageSquarePlus,
 		Mic,
@@ -72,6 +82,7 @@
 		PanelRightOpen,
 		Paperclip,
 		Pencil,
+		Quote,
 		RotateCcw,
 		Send,
 		ShieldCheck,
@@ -84,11 +95,16 @@
 	} from 'lucide-svelte';
 	import type {
 		ApprovalDecision,
-		Attachment,
+		AskQuote,
+		AskQuoteSource,
 		ContextUsage,
+		ConversationAttachment,
+		ConversationDetail,
 		ConversationTurn,
+		LightboxImage,
 		Message,
 		ModelCapabilitiesView,
+		SessionStats,
 		Upload,
 		Usage
 	} from '$lib/types';
@@ -125,7 +141,35 @@
 		base64: string;
 	}
 
+	/** One message of a send: the text, the quoted excerpts and the attachments. */
+	interface MessagePayload {
+		text: string;
+		quotes: AskQuote[];
+		images: PendingImage[];
+		files: PendingFile[];
+	}
+
+	/** A message typed while an answer streams; it waits above the composer. */
+	interface QueuedMessage extends MessagePayload {
+		id: string;
+		createdAt: string;
+	}
+
+	/** A live text selection in an agent reply, positioned for the Ask button. */
+	interface AskAnchor {
+		text: string;
+		source: AskQuoteSource;
+		label?: string;
+		sourceId?: string;
+		startOffset?: number;
+		endOffset?: number;
+		top: number;
+		left: number;
+	}
+
 	const MAX_IMAGES = 6;
+	// A saved queue is bounded so a long-lived draft cannot grow without limit.
+	const MAX_QUEUED_MESSAGES = 20;
 	const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 	const MAX_IMAGE_EDGE = 1600;
 	// Raster formats only: the browser re-encodes them to JPEG, and SVG/GIF
@@ -170,6 +214,25 @@
 	let focusMode = $derived(shellMode === 'focus');
 	// In focus mode a context file replaces the transcript column until it closes.
 	let focusContextPath = $state('');
+	// The right column shows either the conversation list or the files of the open
+	// chat. The choice is remembered per browser; a mode change never forces an
+	// empty panel open.
+	const PANEL_TAB_KEY = 'myaaw_chat_right_tab';
+	let rightTab = $state<'history' | 'attachments'>(
+		browser && localStorage.getItem(PANEL_TAB_KEY) === 'attachments' ? 'attachments' : 'history'
+	);
+	// Focus mode owns a tab set of its own; the header can return it to history.
+	let focusPanelTab = $state<'history' | 'context' | 'control'>('history');
+	// Classic has no right column, so its attachment surface is an overlay drawer.
+	let classicAttachmentsOpen = $state(false);
+	// Bumped when a run ends so an open attachment list picks up new files.
+	let attachmentsRefresh = $state(0);
+	let attachmentCount = $state(0);
+	// The file whose preview pane replaces the transcript column (classic overlays it).
+	let previewAttachment = $state<ConversationAttachment | null>(null);
+	// The turn a "Show in chat" jump landed on, so its row can flash a ring.
+	let highlightedMessage = $state<number | null>(null);
+	let highlightTimer: ReturnType<typeof setTimeout> | undefined;
 	let conversationId = $state('');
 	// A run of the open conversation keeps streaming while the user is elsewhere;
 	// the page only renders whatever the store currently holds.
@@ -189,6 +252,14 @@
 	let messageDraft = $state('');
 	let draftArea = $state<HTMLTextAreaElement | null>(null);
 	let streaming = $derived(activeRun?.streaming ?? false);
+	// Ticks the elapsed time shown on the live process header. It stops with the run.
+	let now = $state(Date.now());
+	$effect(() => {
+		if (!streaming) return;
+		now = Date.now();
+		const timer = setInterval(() => (now = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
 	let loading = $state(false);
 	// A pending approval can belong to this run, or to a detached one (a sub-agent)
 	// announced on the agent's approval stream, which has no run object here.
@@ -249,9 +320,75 @@
 	// Approvals mode for the next message: "off" is Full access, "manual" asks.
 	let approvalMode = $state<'manual' | 'off'>('manual');
 	let switchingApproval = $state(false);
-	let attachments = $derived<Attachment[]>(activeRun?.attachments ?? []);
 	let pending = $state<PendingImage[]>([]);
 	let pendingFiles = $state<PendingFile[]>([]);
+	// Whether the composer holds something worth sending; while a run streams the
+	// action button swaps from Stop to queue-send only once this is true.
+	let canSend = $derived(input.trim().length > 0 || pending.length > 0 || pendingFiles.length > 0);
+	// How a send is handled while the agent is still answering. The two modes are
+	// mutually exclusive in preferences; `none` leaves the composer editable but
+	// unsendable until the run stops.
+	let sendWhileStreaming = $derived<'queue' | 'interrupt' | 'none'>(
+		preferences.value.queueMessages
+			? 'queue'
+			: preferences.value.interruptOnSend
+				? 'interrupt'
+				: 'none'
+	);
+	// The key that promotes the queue head; the first row advertises it whenever the
+	// composer is empty, because that is when pressing it sends the first message.
+	let queueKeyLabel = $derived(
+		formatShortcut(preferences.value.sendKey === 'mod-enter' ? 'mod+enter' : 'enter')
+	);
+	// Excerpts the reader highlighted in an agent reply and attached to the next
+	// message; the whole set travels with one send.
+	let quotes = $state<AskQuote[]>([]);
+	let askCounter = 0;
+	// Messages sent while a run streams wait here. When a response finishes the
+	// first one goes out on its own, so the conversation keeps moving.
+	let queue = $state<QueuedMessage[]>([]);
+	let queueOpen = $state(true);
+	// The floating Ask button, anchored to the current range in viewport units.
+	let askAnchor = $state<AskAnchor | null>(null);
+	// Sent-message quotes opened in the preview dialog.
+	let quotePreview = $state<AskQuote[] | null>(null);
+	// The temporary overlay rectangles that mark exactly the quoted passage.
+	let quoteRects = $state<{ left: number; top: number; width: number; height: number }[]>([]);
+	let quoteMarkTimer: ReturnType<typeof setTimeout> | undefined;
+	// Jumps to a quote bypass pagination until the scroll settles; paging older
+	// messages mid-jump would rebuild the rows the reader is being sent to.
+	let locatingQuote = false;
+	let locateTimer: ReturnType<typeof setTimeout> | undefined;
+	// Photos from user turns use this shared viewer; agent attachments mount their
+	// own instance inside RunAttachments.
+	let lightboxOpen = $state(false);
+	let lightboxIndex = $state(0);
+	let lightboxItems = $state<LightboxImage[]>([]);
+
+	/** Opens the photos of one user turn with the clicked image selected. */
+	function openImageLightbox(sources: string[], startIndex: number) {
+		lightboxItems = sources.map((src, index) => ({ src, name: imageFileName(src, index) }));
+		lightboxIndex = Math.min(Math.max(startIndex, 0), Math.max(0, sources.length - 1));
+		lightboxOpen = true;
+	}
+
+	/** User uploads arrive as data URLs, so the download name comes from the MIME type. */
+	function imageFileName(src: string, index: number): string {
+		const mime = /^data:image\/([a-z0-9.+-]+)/i.exec(src)?.[1]?.toLowerCase() ?? 'jpeg';
+		const ext = mime === 'jpeg' ? 'jpg' : mime.replace(/[^a-z0-9]/g, '') || 'jpg';
+		return `image-${index + 1}.${ext}`;
+	}
+
+	/** Data-URL photos have no virtual path, so the browser saves them directly. */
+	function downloadImage(src: string, name: string) {
+		const link = document.createElement('a');
+		link.href = src;
+		link.download = name;
+		link.rel = 'noopener';
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+	}
 	let dragOver = $state(false);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let groupOpen = $state<Record<string, boolean>>({});
@@ -260,6 +397,7 @@
 	let openStats = $state(false);
 	let openUsage = $state(false);
 	let scroller = $state<HTMLDivElement | null>(null);
+	let transcript = $state<HTMLDivElement | null>(null);
 	let composer = $state<HTMLTextAreaElement | null>(null);
 	// True while the transcript sits at the end, so a growing answer may follow it.
 	// Scrolling away clears it until the reader comes back.
@@ -319,18 +457,45 @@
 	// A question asked in a live run is not in the summary yet; it gets a negative
 	// index so the rail can still show and light it.
 	let railTurns = $derived.by(() => {
-		const stored = new Set(turns.map((turn) => turn.index));
-		const live = turnMarks
-			.filter((mark) => !stored.has(mark.index))
-			.map((mark) => ({ index: mark.index, text: mark.text }));
-		// One entry per question: a row can repeat an index the summary already has
-		// while a run is settling, and a keyed block cannot repeat a key.
+		// A loaded row knows the question as the transcript parsed it (and hides
+		// context tags). Prefer that over the server summary, which may predate the
+		// current stripping rules, while keeping the summary for rows not loaded yet.
+		const local = new Map<number, string>();
+		for (const mark of turnMarks) {
+			if (mark.text) local.set(mark.index, mark.text);
+		}
 		const unique = new Map<number, { index: number; text: string }>();
-		for (const turn of [...turns, ...live]) {
-			if (!unique.has(turn.index)) unique.set(turn.index, turn);
+		for (const turn of turns) {
+			unique.set(turn.index, {
+				index: turn.index,
+				text: turnLabelText(local.get(turn.index) ?? turn.text)
+			});
+		}
+		for (const mark of turnMarks) {
+			if (!unique.has(mark.index)) {
+				unique.set(mark.index, { index: mark.index, text: turnLabelText(mark.text) });
+			}
 		}
 		return [...unique.values()];
 	});
+
+	/**
+	 * Strips model-only blocks from a turn label. The server summary is normally
+	 * clean, but a row from an older server may carry a whole <selections> block (or
+	 * its truncated head) and must never show it in the rail.
+	 */
+	function turnLabelText(raw: string): string {
+		const hadSelections = /<selections\b/i.test(raw);
+		const stripped = raw
+			.replace(/<selections\b[^>]*>[\s\S]*?<\/selections>\s*/gi, '')
+			.replace(/<selections\b[\s\S]*$/i, '')
+			.replace(/<userinfo>[\s\S]*?<\/userinfo>\s*/gi, '')
+			.replace(/<attached>[\s\S]*?<\/attached>\s*/gi, '')
+			.replace(/<trigger\b[^>]*>[\s\S]*?<\/trigger>\s*/gi, '')
+			.replace(/<trigger\b[\s\S]*$/i, '')
+			.trim();
+		return !stripped && hadSelections ? t('myaaw.chat.quoted_turn') : stripped;
+	}
 
 	// The ticks are a window over the list, centred on the question being read. It
 	// rolls like a lens: the marks at both ends of the window are shorter and
@@ -368,8 +533,9 @@
 
 	// Conversation history sidebar
 	// Messages fetched per transcript page; scrolling to the top fetches the page
-	// before the loaded one.
-	const PAGE_SIZE = 20;
+	// before the loaded one. 50 keeps most short conversations (a few turns) in a
+	// single page, so opening them never needs a follow-up "older messages" fetch.
+	const PAGE_SIZE = 50;
 	const HISTORY_KEY = 'myaaw_chat_history_open';
 	const LAST_CONVERSATION_KEY = 'myaaw_last_conversation';
 
@@ -377,6 +543,20 @@
 		browser ? window.innerWidth >= 1024 && localStorage.getItem(HISTORY_KEY) !== 'false' : false
 	);
 	let searchBox = $state<HTMLInputElement | null>(null);
+
+	$effect(() => {
+		if (browser) localStorage.setItem(PANEL_TAB_KEY, rightTab);
+	});
+
+	// A shell change never leaves an overlay from the previous mode on screen.
+	let lastShellMode = '';
+	$effect(() => {
+		const mode = shellMode;
+		if (mode === lastShellMode) return;
+		lastShellMode = mode;
+		classicAttachmentsOpen = false;
+		previewAttachment = null;
+	});
 
 	function scrollToBottom() {
 		stickToBottom = true;
@@ -388,6 +568,19 @@
 		if (!scroller) return true;
 		return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= slack;
 	}
+
+	// Images and videos report their real size after they load, which grows the
+	// transcript outside the item-change effect. Follow the bottom again when that
+	// happens, otherwise the media lands below the composer.
+	$effect(() => {
+		const node = transcript;
+		if (!node || typeof ResizeObserver === 'undefined') return;
+		const observer = new ResizeObserver(() => {
+			if (preferences.value.autoScroll && stickToBottom) scrollToBottom();
+		});
+		observer.observe(node);
+		return () => observer.disconnect();
+	});
 
 	/** How much text the last row holds; it changes on every streamed token. */
 	function tailGrowth(item: Item | undefined): number {
@@ -453,7 +646,7 @@
 				// index so the rail can still point at it.
 				const index = Number.isFinite(stored) ? stored : -(position + 1);
 				const top = node.getBoundingClientRect().top - origin + container.scrollTop;
-				const text = storedTexts.get(index) ?? texts.get(index) ?? '';
+				const text = turnLabelText(texts.get(index) || storedTexts.get(index) || '');
 				return { id, index, text, top };
 			}
 		);
@@ -532,8 +725,11 @@
 	function onScroll() {
 		stickToBottom = nearBottom();
 		syncActiveTurn();
+		// The Ask button is placed in viewport coordinates; scrolling moves the
+		// selection out from under it, so it closes instead of pointing elsewhere.
+		askAnchor = null;
 		// Near the top the previous page is pulled in, keeping the reader's place.
-		if (scroller && scroller.scrollTop < 120) void loadOlder();
+		if (scroller && scroller.scrollTop < 120 && !locatingQuote) void loadOlder();
 	}
 
 	/** Whether the unfolded list has more turns above or below the visible part. */
@@ -598,6 +794,61 @@
 		if (preferences.value.autoScroll && stickToBottom) scrollToBottom();
 	});
 
+	/**
+	 * Applies a stored page to the transcript. `reset` replaces the window with
+	 * the page; otherwise the page's rows are merged into what is already on
+	 * screen, keeping older pages the reader scrolled back to.
+	 */
+	function applyTranscript(
+		currentAgent: string,
+		id: string,
+		detail: ConversationDetail,
+		reset: boolean
+	) {
+		if (reset) {
+			loadedOffset = detail.offset;
+			turns = detail.turns ?? [];
+			historyItems = historyTimeline(detail.messages, detail.offset);
+		} else {
+			const kept = historyItems.filter(
+				(item) => item.messageIndex === undefined || item.messageIndex < detail.offset
+			);
+			const known = new Set(kept.map((item) => item.localId));
+			const tail = historyTimeline(detail.messages, detail.offset).filter(
+				(item) => !known.has(item.localId)
+			);
+			historyItems = [...kept, ...tail];
+			loadedOffset = Math.min(loadedOffset, detail.offset);
+			turns = detail.turns ?? turns;
+		}
+
+		// Sign every media path on this page once, so photos load without the
+		// session token and stay valid for their short lifetime.
+		const mediaPaths: string[] = [];
+		for (const message of detail.messages) {
+			for (const attachment of message.attachments ?? []) {
+				if (attachment.path) mediaPaths.push(attachment.path);
+			}
+			for (const upload of message.uploads ?? []) {
+				const virtual = uploadVirtualPath(upload);
+				if (virtual) mediaPaths.push(virtual);
+			}
+		}
+		void ensureSigned(currentAgent, mediaPaths);
+
+		// A finished run is redundant once the stored transcript is loaded; the
+		// server's copy includes the final answer. A live run keeps going.
+		chatRuns.settle(currentAgent, id);
+		const title = detail.title ?? '';
+		applyTitle(id, title);
+		unreadChats.ack(currentAgent, id, detail.updated_at);
+		if (isPlaceholderTitle(title)) pollTitle(currentAgent, id, 0);
+		if (reset) {
+			storedUsage = null;
+			void refreshAttachmentCount();
+		}
+	}
+
 	async function loadConversation(currentAgent: string, id: string) {
 		// Dictation belongs to the composer the reader is looking at.
 		stopSpeech();
@@ -610,40 +861,64 @@
 			topBarTitle.clear();
 			return;
 		}
-		loading = true;
 		error = '';
-		sessionStats = null;
 		groupOpen = {};
+		attachmentCount = 0;
+		// A new conversation owns the bar; do not leave the previous chat's title
+		// up while its first page loads. `applyTranscript` sets the real one.
+		stopTitlePolling();
+		topBarTitle.clear();
+
+		const detailKey = { agent: currentAgent, id, limit: PAGE_SIZE, offset: -1 };
+		const cached = conversationsStore.detail.peek(detailKey);
+
+		// Show the transcript the store already has before the request lands, so
+		// returning to a chat never flashes the loading state.
+		if (cached) {
+			applyTranscript(currentAgent, id, cached, true);
+		} else {
+			// A different conversation with no cache must not leave the previous
+			// transcript on screen; clear it before showing the loading state.
+			historyItems = [];
+			loadedOffset = 0;
+			turns = [];
+			storedUsage = null;
+			clearRail();
+		}
+		loading = !cached;
+
+		// The title and totals come from other stores, which may already know them
+		// even when the transcript cache is cold.
+		if (!cached) {
+			const knownTitle = conversationHistory.titleOf(id);
+			if (knownTitle) applyTitle(id, knownTitle);
+		}
+		const cachedStats = observabilityStore.sessionStats.peek({ agent: currentAgent, id });
+		sessionStats = cachedStats ? statsView(cachedStats) : null;
 		void refreshStats(currentAgent, id);
 		try {
-			// Ask for the last page so the chat opens at the newest message without
-			// pulling the whole transcript, which for image-heavy chats is megabytes.
-			// A negative offset means "the last page"; the server normalises it to
-			// total - limit, and every later page walks back from that point.
-			// If improvement is needed (the API stops accepting a negative offset),
-			// fetch `limit: 1` first to read total_messages and then ask for
-			// `offset: total - PAGE_SIZE` — one extra round trip, no server change.
-			const detail = await conversationsApi.get(currentAgent, id, {
-				limit: PAGE_SIZE,
-				offset: -1
-			});
-			loadedOffset = detail.offset;
-			turns = detail.turns ?? [];
-			historyItems = historyTimeline(detail.messages, detail.offset);
-			// A finished run is redundant once the stored transcript is loaded; the
-			// server's copy includes the final answer. A live run keeps going.
-			chatRuns.settle(currentAgent, id);
-			const title = detail.title ?? '';
-			applyTitle(id, title);
-			unreadChats.ack(currentAgent, id, detail.updated_at);
-			if (isPlaceholderTitle(title)) pollTitle(currentAgent, id, 0);
-			storedUsage = null;
+			await conversationsStore.ensureDetail(currentAgent, id, PAGE_SIZE, -1);
+			if (conversationId !== id) return; // Another conversation won.
+			const detail = conversationsStore.detail.data;
+			if (detail) {
+				// A fresh cache returns the same object; a stale one is a new page.
+				if (detail !== cached) {
+					const olderLoaded = cached !== undefined && loadedOffset < cached.offset;
+					applyTranscript(currentAgent, id, detail, !olderLoaded);
+				}
+			} else if (!cached) {
+				error = conversationsStore.detail.error;
+			}
 		} catch (err) {
-			error = getErrorMessage(err);
+			if (conversationId === id && !cached) error = getErrorMessage(err);
 		} finally {
-			loading = false;
-			scrollToBottom();
+			if (conversationId === id) {
+				loading = false;
+				scrollToBottom();
+			}
 		}
+
+		if (conversationId !== id) return;
 
 		// A page that does not fill the viewport cannot be scrolled, so the reader
 		// would never reach the trigger that pulls older messages; fetch until it
@@ -668,17 +943,18 @@
 	let appending = false;
 	async function appendNew() {
 		const currentAgent = agent ?? '';
-		if (!currentAgent || !conversationId || appending) return;
+		const id = conversationId;
+		if (!currentAgent || !id || appending) return;
 		// A streaming run owns the timeline; it picks the new turn up when it ends.
 		if (activeRun?.streaming) return;
 		appending = true;
 		const follow = preferences.value.autoScroll && stickToBottom;
 		try {
-			const detail = await conversationsApi.get(currentAgent, conversationId, {
+			const detail = await conversationsStore.fetchDetail(currentAgent, id, {
 				limit: PAGE_SIZE,
 				offset: -1
 			});
-			if (conversationId === '' || detail.messages.length === 0) return;
+			if (conversationId !== id || detail.messages.length === 0) return;
 
 			// Keep the older pages the reader may have scrolled back to; the server's
 			// tail replaces everything from its offset on, so the background turn
@@ -693,7 +969,12 @@
 			historyItems = [...kept, ...tail];
 			loadedOffset = Math.min(loadedOffset, detail.offset);
 			turns = detail.turns ?? turns;
-			chatRuns.settle(currentAgent, conversationId);
+			// Keep the transcript cache current for the next mount.
+			conversationsStore.detail.write(
+				{ agent: currentAgent, id, limit: PAGE_SIZE, offset: -1 },
+				detail
+			);
+			chatRuns.settle(currentAgent, id);
 			await tick();
 			measureTurns();
 			if (follow) scrollToBottom();
@@ -724,7 +1005,7 @@
 			// exactly at loadedOffset and the two never overlap. Offsets therefore
 			// walk backwards one page at a time (323 → 303 → 283 …).
 			const start = Math.max(0, loadedOffset - pageSize);
-			const detail = await conversationsApi.get(currentAgent, conversationId, {
+			const detail = await conversationsStore.fetchDetail(currentAgent, conversationId, {
 				limit: loadedOffset - start,
 				offset: start
 			});
@@ -786,7 +1067,7 @@
 		titleTimer = setTimeout(async () => {
 			if (conversationId !== id) return;
 			try {
-				const detail = await conversationsApi.get(currentAgent, id, { limit: 1 });
+				const detail = await conversationsStore.fetchDetail(currentAgent, id, { limit: 1 });
 				if (conversationId !== id) return;
 				const title = detail.title ?? '';
 				applyTitle(id, title);
@@ -800,7 +1081,7 @@
 	async function refreshTitle(currentAgent: string, id: string) {
 		if (!currentAgent || !id) return;
 		try {
-			const detail = await conversationsApi.get(currentAgent, id, { limit: 1 });
+			const detail = await conversationsStore.fetchDetail(currentAgent, id, { limit: 1 });
 			if (conversationId !== id) return; // Another conversation won.
 			const title = detail.title ?? '';
 			applyTitle(id, title);
@@ -823,37 +1104,42 @@
 	 * the trace view reports. Conversations recorded before tracing was enabled
 	 * have no runs, and keep the locally counted numbers.
 	 */
-	async function refreshStats(currentAgent: string, id: string) {
+	/** Maps the API's session totals onto the footer's view model. */
+	function statsView(detail: SessionStats) {
+		return {
+			turns: detail.turns,
+			steps: detail.steps,
+			tokens: detail.total_tokens,
+			model: detail.model ?? '',
+			provider: detail.provider ?? '',
+			tokPerSec: detail.tok_per_sec ?? 0,
+			cacheRate: detail.cache_hit_rate ?? 0,
+			cacheHitTokens: detail.cache_hit_tokens ?? 0,
+			uncachedInputTokens: detail.uncached_input_tokens ?? 0,
+			outputTokens: detail.output_tokens ?? 0,
+			llmMs: detail.llm_ms ?? 0,
+			toolMs: detail.tool_ms ?? 0,
+			ttftMs: detail.ttft_ms ?? 0,
+			context: detail.context
+		};
+	}
+
+	async function refreshStats(currentAgent: string, id: string, force = false) {
 		if (!currentAgent || !id) return;
-		try {
-			const detail = await observabilityApi.sessionStats(currentAgent, id);
-			if (conversationId !== id) return; // Another conversation won.
-			// Every number below is computed by the API; the view only formats it.
-			sessionStats = {
-				turns: detail.turns,
-				steps: detail.steps,
-				tokens: detail.total_tokens,
-				model: detail.model ?? '',
-				provider: detail.provider ?? '',
-				tokPerSec: detail.tok_per_sec ?? 0,
-				cacheRate: detail.cache_hit_rate ?? 0,
-				cacheHitTokens: detail.cache_hit_tokens ?? 0,
-				uncachedInputTokens: detail.uncached_input_tokens ?? 0,
-				outputTokens: detail.output_tokens ?? 0,
-				llmMs: detail.llm_ms ?? 0,
-				toolMs: detail.tool_ms ?? 0,
-				ttftMs: detail.ttft_ms ?? 0,
-				context: detail.context
-			};
-		} catch {
-			// No runs recorded for this conversation; keep the local counts.
-		}
+		// Serve the cached totals immediately; the request only reconciles them.
+		const cached = observabilityStore.sessionStats.peek({ agent: currentAgent, id });
+		if (cached && conversationId === id) sessionStats = statsView(cached);
+		if (force) await observabilityStore.sessionStats.refresh({ agent: currentAgent, id });
+		else await observabilityStore.ensureSessionStats(currentAgent, id);
+		const detail = observabilityStore.sessionStats.peek({ agent: currentAgent, id });
+		if (conversationId !== id || !detail) return;
+		sessionStats = statsView(detail);
 	}
 
 	/** The agent's configured provider and its default model. */
 	async function loadProviderInfo(currentAgent: string) {
 		try {
-			const config = await configApi.get(currentAgent);
+			const config = await configStore.fetchConfig(currentAgent);
 			providerInfo = {
 				default: config.default_provider ?? '',
 				providers: (config.providers ?? []).map((provider) => ({
@@ -916,10 +1202,10 @@
 		switchingModel = true;
 		try {
 			if (providerInfo?.providers.find((entry) => entry.name === provider)?.model !== model) {
-				await providersApi.update(currentAgent, provider, { default_model: model });
+				await providersStore.update(currentAgent, provider, { default_model: model });
 			}
 			if (providerInfo?.default !== provider) {
-				await providersApi.setDefault(currentAgent, provider);
+				await providersStore.setDefault(currentAgent, provider);
 			}
 			if (agent !== currentAgent) return;
 			if (providerInfo) {
@@ -949,7 +1235,7 @@
 		approvalMode = mode;
 		switchingApproval = true;
 		try {
-			const config = await configApi.patch(currentAgent, { approvals: { mode } });
+			const config = await configStore.patch(currentAgent, { approvals: { mode } });
 			if (agent !== currentAgent) return;
 			approvalMode = config.approvals?.mode === 'off' ? 'off' : 'manual';
 		} catch (err) {
@@ -1039,7 +1325,7 @@
 		thinkingLevels = { ...thinkingLevels, [key]: value };
 		switchingThinking = true;
 		try {
-			await providersApi.update(currentAgent, provider, { thinking_level: value });
+			await providersStore.update(currentAgent, provider, { thinking_level: value });
 			if (agent !== currentAgent) return;
 			if (providerInfo) {
 				providerInfo = {
@@ -1146,6 +1432,8 @@
 		conversationId = '';
 		historyItems = [];
 		clearRail();
+		previewAttachment = null;
+		attachmentCount = 0;
 		storedUsage = null;
 		sessionStats = null;
 		error = '';
@@ -1191,6 +1479,8 @@
 		loadKey = key;
 		conversationId = currentConversation;
 		focusContextPath = '';
+		previewAttachment = null;
+		classicAttachmentsOpen = false;
 		rememberConversation(currentConversation);
 		void loadConversation(currentAgent, currentConversation);
 	});
@@ -1223,12 +1513,136 @@
 		return `myaaw_draft:${who}:${id || 'new'}`;
 	}
 
+	function draftQuotesStorageKey(who: string, id: string) {
+		return `myaaw_draft_quotes:${who}:${id || 'new'}`;
+	}
+
+	/** Queued messages ride with the draft, so a refresh keeps what was not sent yet. */
+	function draftQueueStorageKey(who: string, id: string) {
+		return `myaaw_draft_queue:${who}:${id || 'new'}`;
+	}
+
+	/** Restores excerpts saved with a draft, dropping anything malformed. */
+	function readDraftQuotes(key: string): AskQuote[] {
+		if (!browser) return [];
+		try {
+			const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
+			if (!Array.isArray(parsed)) return [];
+			const restored: AskQuote[] = [];
+			for (const item of parsed) {
+				if (!item || typeof item !== 'object') continue;
+				const quote = item as Partial<AskQuote>;
+				if (typeof quote.text !== 'string' || !quote.text.trim()) continue;
+				if (quote.source !== 'answer' && quote.source !== 'thinking' && quote.source !== 'tool') {
+					continue;
+				}
+				restored.push({
+					id: typeof quote.id === 'string' && quote.id ? quote.id : `ask-${restored.length + 1}`,
+					text: quote.text.slice(0, MAX_ASK_QUOTE_CHARS),
+					source: quote.source,
+					label: typeof quote.label === 'string' && quote.label ? quote.label : undefined,
+					sourceId:
+						typeof quote.sourceId === 'string' && quote.sourceId ? quote.sourceId : undefined,
+					startOffset: typeof quote.startOffset === 'number' ? quote.startOffset : undefined,
+					endOffset: typeof quote.endOffset === 'number' ? quote.endOffset : undefined
+				});
+				if (restored.length >= MAX_ASK_QUOTES) break;
+			}
+			return restored;
+		} catch {
+			return [];
+		}
+	}
+
+	/** Keeps new ids from colliding with the ones a restored draft already used. */
+	function nextAskCounter(items: AskQuote[]): number {
+		return items.reduce((max, quote) => {
+			const match = /^ask-(\d+)$/.exec(quote.id);
+			return match ? Math.max(max, Number(match[1])) : max;
+		}, 0);
+	}
+
+	/** Restores the messages queued in a conversation, dropping anything malformed. */
+	function readDraftQueue(key: string): QueuedMessage[] {
+		if (!browser) return [];
+		try {
+			const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
+			if (!Array.isArray(parsed)) return [];
+			const restored: QueuedMessage[] = [];
+			for (const item of parsed) {
+				if (!item || typeof item !== 'object') continue;
+				const entry = item as Partial<QueuedMessage>;
+				const text = typeof entry.text === 'string' ? entry.text : '';
+				const images = Array.isArray(entry.images)
+					? entry.images.filter(
+							(image) =>
+								!!image && typeof image.base64 === 'string' && typeof image.dataUrl === 'string'
+						)
+					: [];
+				const files = Array.isArray(entry.files)
+					? entry.files.filter(
+							(file) => !!file && typeof file.base64 === 'string' && typeof file.name === 'string'
+						)
+					: [];
+				if (!text.trim() && images.length === 0 && files.length === 0) continue;
+
+				const quotes = Array.isArray(entry.quotes)
+					? entry.quotes.filter(
+							(quote): quote is AskQuote =>
+								!!quote &&
+								typeof quote === 'object' &&
+								typeof (quote as AskQuote).text === 'string' &&
+								['answer', 'thinking', 'tool'].includes((quote as AskQuote).source)
+						)
+					: [];
+
+				restored.push({
+					id: typeof entry.id === 'string' && entry.id ? entry.id : crypto.randomUUID(),
+					text,
+					quotes,
+					images,
+					files,
+					createdAt:
+						typeof entry.createdAt === 'string' && entry.createdAt
+							? entry.createdAt
+							: new Date().toISOString()
+				});
+				if (restored.length >= MAX_QUEUED_MESSAGES) break;
+			}
+			return restored;
+		} catch {
+			return [];
+		}
+	}
+
 	$effect(() => {
 		if (!browser) return;
 		const key = draftStorageKey(agent ?? '', conversationId);
 		if (key === draftKey) return;
+		// A new chat's first answer binds its conversation id: whatever was queued
+		// before that belongs to the chat being created, not to the `new` slot.
+		const carried = draftKey === draftStorageKey(agent ?? '', '');
 		draftKey = key;
-		input = preferences.value.keepDrafts ? (localStorage.getItem(key) ?? '') : '';
+		const keep = preferences.value.keepDrafts;
+		input = keep ? (localStorage.getItem(key) ?? '') : '';
+		const restored = keep
+			? readDraftQuotes(draftQuotesStorageKey(agent ?? '', conversationId))
+			: [];
+		quotes = restored;
+		askCounter = nextAskCounter(restored);
+		askAnchor = null;
+		clearQuoteFlash();
+		if (keep && carried && queue.length > 0) {
+			// The queue follows the id; drop the temporary key so the next new chat
+			// does not inherit these messages.
+			localStorage.removeItem(draftQueueStorageKey(agent ?? '', ''));
+		} else {
+			queue =
+				keep && preferences.value.queueMessages
+					? readDraftQueue(draftQueueStorageKey(agent ?? '', conversationId))
+					: [];
+		}
+		queueOpen = true;
 	});
 
 	$effect(() => {
@@ -1237,6 +1651,40 @@
 		if (key !== draftKey) return;
 		if (preferences.value.keepDrafts && input) localStorage.setItem(key, input);
 		else localStorage.removeItem(key);
+	});
+
+	// Quotes are part of the same draft: a refresh must bring back the excerpts
+	// even when no question was typed yet.
+	$effect(() => {
+		if (!browser || !draftKey) return;
+		const key = draftStorageKey(agent ?? '', conversationId);
+		if (key !== draftKey) return;
+		const quotesKey = draftQuotesStorageKey(agent ?? '', conversationId);
+		if (preferences.value.keepDrafts && quotes.length > 0) {
+			localStorage.setItem(quotesKey, JSON.stringify(quotes));
+		} else {
+			localStorage.removeItem(quotesKey);
+		}
+	});
+
+	// The queue is part of the draft too: a refresh, a menu switch, or another chat
+	// must bring back what was queued here but not sent yet. When the feature is off
+	// the stored queue is left untouched, so re-enabling it restores the messages.
+	$effect(() => {
+		if (!browser || !draftKey || !preferences.value.queueMessages) return;
+		const key = draftStorageKey(agent ?? '', conversationId);
+		if (key !== draftKey) return;
+		const queueKey = draftQueueStorageKey(agent ?? '', conversationId);
+		if (preferences.value.keepDrafts && queue.length > 0) {
+			try {
+				localStorage.setItem(queueKey, JSON.stringify(queue));
+			} catch {
+				// Attachments can outgrow the storage quota; keep the queue in memory
+				// rather than showing it out of sync with what would be restored.
+			}
+		} else {
+			localStorage.removeItem(queueKey);
+		}
 	});
 
 	// This page is only a viewer of a run: callbacks are attached while it is on
@@ -1264,10 +1712,13 @@
 			onDone: (run: ChatRun) => {
 				const currentAgent = agent ?? '';
 				const statsId = conversationId;
-				void refreshStats(currentAgent, statsId);
+				void refreshStats(currentAgent, statsId, true);
 				void refreshTitle(currentAgent, statsId);
+				// A run may have delivered files: refresh the panel and the badge.
+				attachmentsRefresh += 1;
+				void refreshAttachmentCount();
 				// The run may land in the trace store just after `done`.
-				setTimeout(() => void refreshStats(currentAgent, statsId), 1500);
+				setTimeout(() => void refreshStats(currentAgent, statsId, true), 1500);
 
 				// The completion tone and the browser notification live in
 				// stores/runCompletion: they must also fire when this page is gone.
@@ -1293,9 +1744,20 @@
 			}
 		};
 		run.view = view;
+		// Run completion outside this reactive effect: `onDone` reads and writes
+		// page state, and tracking those reads would re-trigger the effect forever.
+		if (run.finishedAt > 0) queueMicrotask(() => run.notifyDone());
 		return () => {
 			if (run.view === view) run.view = null;
 		};
+	});
+
+	// A reloaded tab restores the run before the transcript page arrives. Seed the
+	// run with those rows so the previous turns do not disappear while it streams.
+	$effect(() => {
+		const run = activeRun;
+		if (!run?.resumed || historyItems.length === 0) return;
+		if (run.adopt(historyItems) && stickToBottom) scrollToBottom();
 	});
 
 	// An answer just ended: the reader is most likely typing next, and the mark
@@ -1305,8 +1767,15 @@
 	let completedTimer: ReturnType<typeof setTimeout> | undefined;
 	$effect(() => {
 		const now = streaming;
+		const run = activeRun;
 		if (wasStreaming && !now) {
 			void focusComposer();
+			// The response just ended (finished, stopped or failed), so the head of the
+			// queue goes out next. A run picked up after a reload does not drain: the
+			// reader refreshed, so the queue must stay exactly as it was. Deferred
+			// outside this tracking effect: draining starts a run, and that must not
+			// look like a dependency.
+			if (!run?.resumed) queueMicrotask(() => untrack(drainQueue));
 			if (!runError && !error && preferences.value.notifyEnabled) {
 				completed = true;
 				clearTimeout(completedTimer);
@@ -1331,6 +1800,13 @@
 		spokenScope = scope;
 		editingMessageId = '';
 		messageDraft = '';
+		// Selections quote this conversation, so they do not follow the reader
+		// into another chat. The draft effect restores the new chat's saved
+		// excerpts instead of clearing them here.
+		askAnchor = null;
+		clearQuoteFlash();
+		locatingQuote = false;
+		clearTimeout(locateTimer);
 		untrack(() => tts.stop());
 	});
 
@@ -1348,22 +1824,43 @@
 	// outer collapsible run. Assistant text in between stays plain text, only
 	// the last answer of each run is shown outside the group.
 	let rendered: TimelineRow[] = $derived.by(() => {
+		// A completed turn always shows its final answer, even while the next turn
+		// streams. Only the current turn's trailing text is held back until the run
+		// ends, because more tool calls may follow it.
 		const answers = new Set<number>();
+		let lastUser = -1;
+		for (let index = items.length - 1; index >= 0; index -= 1) {
+			if (items[index].kind === 'user') {
+				lastUser = index;
+				break;
+			}
+		}
+		const completedEnd = lastUser < 0 ? 0 : lastUser + 1;
 		let pending = -1;
-		items.forEach((item, index) => {
+		for (let index = 0; index < completedEnd; index += 1) {
+			const item = items[index];
 			if (item.kind === 'user') {
 				if (pending >= 0) answers.add(pending);
 				pending = -1;
 			} else if (item.kind === 'text') {
 				pending = index;
 			}
-		});
+		}
+		// The text just before the newest question is the previous turn's answer.
 		if (pending >= 0) answers.add(pending);
+
+		if (!streaming) {
+			pending = -1;
+			for (let index = completedEnd; index < items.length; index += 1) {
+				if (items[index].kind === 'text') pending = index;
+			}
+			if (pending >= 0) answers.add(pending);
+		}
 
 		const rows: TimelineRow[] = [];
 		let steps: Item[] = [];
 		let lines: string[] = [];
-		const flush = () => {
+		const flush = (live = false) => {
 			if (steps.length > 0) {
 				const first = steps[0];
 				rows.push({
@@ -1372,6 +1869,7 @@
 						key: `run-${first.localId ?? rows.length}`,
 						steps: [...steps],
 						running:
+							(live && streaming) ||
 							steps.some((step) => step.running) ||
 							steps.some((step) => step.localId === openGroup),
 						durationMs: steps.find((step) => step.group_duration_ms !== undefined)
@@ -1400,7 +1898,7 @@
 				rows.push({ kind: 'item', item });
 			}
 		});
-		flush();
+		flush(true);
 		return rows;
 	});
 
@@ -1538,8 +2036,10 @@
 				group: {
 					key: `phase-${first.localId ?? rows.length}`,
 					steps: [...steps],
-					running:
-						steps.some((step) => step.running) || steps.some((step) => step.localId === openGroup),
+					// A phase is working only while one of its own steps is. The run's
+					// openGroup keeps the outer "Working..." header alive between calls;
+					// it must not make a finished Thinking/Tools phase spin again.
+					running: steps.some((step) => step.running),
 					durationMs: steps.find((step) => step.group_duration_ms !== undefined)?.group_duration_ms
 				}
 			});
@@ -1562,10 +2062,13 @@
 	}
 
 	function formatDuration(ms: number) {
-		const seconds = ms / 1000;
-		if (seconds < 60) return `${Math.max(1, Math.round(seconds))}s`;
-		const minutes = Math.floor(seconds / 60);
-		return `${minutes}m ${Math.round(seconds % 60)}s`;
+		const total = Math.max(1, Math.round(ms / 1000));
+		const hours = Math.floor(total / 3600);
+		const minutes = Math.floor((total % 3600) / 60);
+		const seconds = total % 60;
+		if (hours > 0) return t('myaaw.chat.duration_hours', { hours, minutes, seconds });
+		if (minutes > 0) return t('myaaw.chat.duration_minutes', { minutes, seconds });
+		return t('myaaw.chat.duration_seconds', { seconds });
 	}
 
 	let turnCount = $derived(items.filter((item) => item.kind === 'user').length);
@@ -1676,19 +2179,306 @@
 		);
 	}
 
-	function send() {
-		const text = input.trim();
-		// Sending ends the dictation, any read-aloud, and an unfinished edit.
-		stopSpeech();
-		tts.stop();
-		cancelEdit();
-		const images = pending.map((item) => item.base64);
-		const files = pendingFiles.map((item) => ({
+	// --- Quoted selections -----------------------------------------------------
+	// Selecting text in an agent answer, a thinking block, or a tool log raises a
+	// small Ask button. Clicking it pins that excerpt to the next message; any
+	// number of excerpts can be collected before sending.
+
+	function askSourceHost(node: Node | null): HTMLElement | null {
+		if (!node) return null;
+		const element =
+			node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+		return element?.closest<HTMLElement>('[data-ask-source]') ?? null;
+	}
+
+	/** Character offset of a range boundary measured from `host`'s text. */
+	function textOffsetIn(host: HTMLElement, container: Node, offset: number): number {
+		const range = document.createRange();
+		range.selectNodeContents(host);
+		try {
+			range.setEnd(container, offset);
+		} catch {
+			return -1;
+		}
+		return range.toString().length;
+	}
+
+	function updateAskAnchor() {
+		if (!browser) return;
+		const selection = window.getSelection();
+		if (!selection || selection.isCollapsed || selection.rangeCount === 0 || !transcript) {
+			askAnchor = null;
+			return;
+		}
+		const text = selection.toString().trim();
+		if (!text) {
+			askAnchor = null;
+			return;
+		}
+		const range = selection.getRangeAt(0);
+		const startHost = askSourceHost(range.startContainer);
+		const endHost = askSourceHost(range.endContainer);
+		// A selection that spans two messages (or reaches the composer) has no single
+		// source to attribute, so it does not become a quote.
+		if (!startHost || !endHost || startHost !== endHost || !transcript.contains(startHost)) {
+			askAnchor = null;
+			return;
+		}
+		const rects = range.getClientRects();
+		const rect = rects[rects.length - 1] ?? range.getBoundingClientRect();
+		if (!rect || (rect.width === 0 && rect.height === 0)) {
+			askAnchor = null;
+			return;
+		}
+		// Offsets record exactly what was highlighted, so the card can mark that
+		// same passage later instead of washing the whole reply.
+		const raw = range.toString();
+		const startOffset = textOffsetIn(startHost, range.startContainer, range.startOffset);
+		const endOffset = textOffsetIn(startHost, range.endContainer, range.endOffset);
+		const leading = raw.length - raw.trimStart().length;
+		const trailing = raw.length - raw.trimEnd().length;
+		const exactRange = startOffset >= 0 && endOffset - trailing > startOffset + leading;
+		const width = 104;
+		const height = 34;
+		const margin = 8;
+		// Sit above the end of the selection, flip below near the top edge, and stay
+		// inside the viewport on narrow screens.
+		let top = rect.top - height - 6;
+		if (top < 64) top = rect.bottom + 6;
+		let left = rect.right - width;
+		left = Math.min(Math.max(margin, left), window.innerWidth - width - margin);
+		top = Math.min(Math.max(margin, top), window.innerHeight - height - margin);
+		askAnchor = {
+			text,
+			source: startHost.dataset.askSource as AskQuoteSource,
+			label: startHost.dataset.askLabel || undefined,
+			sourceId: startHost.dataset.askId || undefined,
+			startOffset: exactRange ? startOffset + leading : undefined,
+			endOffset: exactRange ? endOffset - trailing : undefined,
+			top,
+			left
+		};
+	}
+
+	function addAskQuote() {
+		const anchor = askAnchor;
+		if (!anchor) return;
+		if (quotes.length >= MAX_ASK_QUOTES) {
+			toastStore.error(t('myaaw.chat.ask_limit', { count: MAX_ASK_QUOTES }));
+			return;
+		}
+		const trimmed = anchor.text.length > MAX_ASK_QUOTE_CHARS;
+		const text = trimmed ? anchor.text.slice(0, MAX_ASK_QUOTE_CHARS).trimEnd() : anchor.text;
+		askAnchor = null;
+		window.getSelection()?.removeAllRanges();
+		if (quotes.some((quote) => quote.text === text && quote.source === anchor.source)) {
+			return;
+		}
+		askCounter += 1;
+		quotes = [
+			...quotes,
+			{
+				id: `ask-${askCounter}`,
+				text,
+				source: anchor.source,
+				label: anchor.label,
+				sourceId: anchor.sourceId,
+				startOffset: anchor.startOffset,
+				endOffset: anchor.endOffset
+			}
+		];
+		if (trimmed) {
+			toastStore.warning(t('myaaw.chat.ask_trimmed', { count: MAX_ASK_QUOTE_CHARS }));
+		}
+		void focusComposer();
+	}
+
+	function removeAskQuote(id: string) {
+		quotes = quotes.filter((quote) => quote.id !== id);
+	}
+
+	function clearAskQuotes() {
+		quotes = [];
+	}
+
+	function openQuotePreview(items: AskQuote[]) {
+		if (items.length > 0) quotePreview = items;
+	}
+
+	/**
+	 * Rebuilds a range from character offsets inside one agent row, so a quote can
+	 * mark exactly the passage the reader highlighted earlier.
+	 */
+	function rangeFromOffsets(host: HTMLElement, start: number, end: number): Range | null {
+		if (start < 0 || end <= start) return null;
+		const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+		const range = document.createRange();
+		let position = 0;
+		let started = false;
+		let node: Node | null;
+		while ((node = walker.nextNode())) {
+			const length = node.nodeValue?.length ?? 0;
+			if (!started && start <= position + length) {
+				range.setStart(node, Math.max(0, start - position));
+				started = true;
+			}
+			if (started && end <= position + length) {
+				range.setEnd(node, Math.max(0, end - position));
+				break;
+			}
+			position += length;
+		}
+		return started && !range.collapsed ? range : null;
+	}
+
+	/**
+	 * Finds a quote again when its row id no longer exists (a finished run is
+	 * replaced by the stored transcript). The first pass prefers the same kind of
+	 * source and tool, so an identical sentence in another answer is not picked
+	 * before the most likely one.
+	 */
+	function findQuoteRange(
+		text: string,
+		source: AskQuoteSource,
+		label?: string
+	): { host: HTMLElement; range: Range } | null {
+		if (!transcript || !text) return null;
+		const hosts = Array.from(transcript.querySelectorAll<HTMLElement>('[data-ask-source]'));
+		const passes: ((host: HTMLElement) => boolean)[] = [
+			(host) => host.dataset.askSource === source && (!label || host.dataset.askLabel === label),
+			(host) => host.dataset.askSource === source,
+			() => true
+		];
+		for (const accept of passes) {
+			for (const host of hosts) {
+				if (!accept(host)) continue;
+				const index = (host.textContent ?? '').indexOf(text);
+				if (index < 0) continue;
+				const range = rangeFromOffsets(host, index, index + text.length);
+				if (range) return { host, range };
+			}
+		}
+		return null;
+	}
+
+	/** Stops the yellow wash and forgets the rectangles behind it. */
+	function clearQuoteFlash() {
+		clearTimeout(quoteMarkTimer);
+		quoteRects = [];
+	}
+
+	/**
+	 * Jumps to the reply an excerpt came from and paints exactly the quoted text.
+	 * A step inside a collapsed process group opens first, so the reader always
+	 * lands on the passage rather than on a closed header. The overlay is drawn
+	 * inside the transcript, so it follows the text while the view scrolls.
+	 */
+	async function locateAskQuote(quote: AskQuote) {
+		if (!browser || !transcript) return;
+		const sourceId = quote.sourceId;
+		const selector = sourceId ? `[data-ask-id="${CSS.escape(sourceId)}"]` : '';
+		let host = selector ? transcript.querySelector<HTMLElement>(selector) : null;
+		if (!host && sourceId) {
+			const row = transcript.querySelector<HTMLElement>(`[data-ask-row="${CSS.escape(sourceId)}"]`);
+			row?.querySelector<HTMLButtonElement>('button[aria-expanded]')?.click();
+			await tick();
+			host = transcript.querySelector<HTMLElement>(selector);
+		}
+
+		clearQuoteFlash();
+		let range =
+			host && quote.startOffset !== undefined && quote.endOffset !== undefined
+				? rangeFromOffsets(host, quote.startOffset, quote.endOffset)
+				: null;
+		if (!range) {
+			const found = findQuoteRange(quote.text, quote.source, quote.label);
+			if (found) {
+				host = found.host;
+				range = found.range;
+			}
+		}
+		if (!host || !range) return;
+
+		// Rects are measured against the transcript, not the viewport, so the
+		// overlay scrolls with the message it belongs to.
+		const base = transcript.getBoundingClientRect();
+		const rects = Array.from(range.getClientRects())
+			.filter((rect) => rect.width > 0 && rect.height > 0)
+			.map((rect) => ({
+				left: rect.left - base.left,
+				top: rect.top - base.top,
+				width: rect.width,
+				height: rect.height
+			}));
+		if (rects.length === 0) return;
+
+		quoteRects = rects;
+		locatingQuote = true;
+		clearTimeout(locateTimer);
+		locateTimer = setTimeout(() => (locatingQuote = false), 1200);
+		const startElement = range.startContainer.parentElement ?? host;
+		startElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		quoteMarkTimer = setTimeout(clearQuoteFlash, 3400);
+	}
+
+	$effect(() => () => clearQuoteFlash());
+	$effect(() => () => clearTimeout(locateTimer));
+
+	function askQuoteLabel(quote: AskQuote): string {
+		if (quote.source === 'tool') {
+			return quote.label
+				? `${t('myaaw.chat.ask_source_tool')} · ${quote.label}`
+				: t('myaaw.chat.ask_source_tool');
+		}
+		return quote.source === 'thinking'
+			? t('myaaw.chat.ask_source_thinking')
+			: t('myaaw.chat.ask_source_answer');
+	}
+
+	function askQuoteIcon(quote: AskQuote) {
+		return quote.source === 'tool' ? Wrench : quote.source === 'thinking' ? Brain : Quote;
+	}
+
+	// Selections can be made with the mouse, a finger, or the keyboard. A frame
+	// delay lets the browser settle the range after the pointer is released.
+	$effect(() => {
+		if (!browser) return;
+		let frame = 0;
+		const schedule = () => {
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(updateAskAnchor);
+		};
+		const onPointerDown = (event: PointerEvent) => {
+			const target = event.target as HTMLElement | null;
+			if (!target?.closest('[data-ask-anchor]')) askAnchor = null;
+		};
+		document.addEventListener('selectionchange', schedule);
+		document.addEventListener('mouseup', schedule);
+		document.addEventListener('touchend', schedule);
+		document.addEventListener('pointerdown', onPointerDown, true);
+		return () => {
+			cancelAnimationFrame(frame);
+			document.removeEventListener('selectionchange', schedule);
+			document.removeEventListener('mouseup', schedule);
+			document.removeEventListener('touchend', schedule);
+			document.removeEventListener('pointerdown', onPointerDown, true);
+		};
+	});
+
+	/**
+	 * Starts the run for one message: the composer hands it a fresh one, a queued
+	 * row hands it the message it held. Returns false when there is nothing to send.
+	 */
+	function submit(message: MessagePayload): boolean {
+		if (!agent) return false;
+		const text = message.text.trim();
+		const images = message.images.map((item) => item.base64);
+		const files = message.files.map((item) => ({
 			name: item.name,
 			mime_type: item.mimeType || undefined,
 			data_base64: item.base64
 		}));
-		if ((!text && images.length === 0 && files.length === 0) || !agent || streaming) return;
+		if (!text && images.length === 0 && files.length === 0) return false;
 
 		// The run owns the stream and its timeline, so opening another
 		// conversation or another menu no longer cuts the answer off.
@@ -1696,10 +2486,11 @@
 			agent,
 			conversationId,
 			text,
+			quotes: message.quotes,
 			images,
-			imagesDisplay: pending.map((item) => item.dataUrl),
+			imagesDisplay: message.images.map((item) => item.dataUrl),
 			files,
-			uploads: pendingFiles.map((item) => ({
+			uploads: message.files.map((item) => ({
 				name: item.name,
 				path: '',
 				mime_type: item.mimeType,
@@ -1709,12 +2500,108 @@
 			initialItems: items
 		});
 
-		input = '';
-		clearPending();
 		groupOpen = {};
-		if (composer) composer.style.height = '';
 		error = '';
 		storedUsage = null;
+		return true;
+	}
+
+	function send() {
+		// Sending ends the dictation, any read-aloud, and an unfinished edit.
+		stopSpeech();
+		tts.stop();
+		cancelEdit();
+		const text = input.trim();
+		if (!text && pending.length === 0 && pendingFiles.length === 0) {
+			// Enter on an empty composer promotes the head of the queue instead of
+			// doing nothing, so the reader can keep the agent moving with one key.
+			const [next] = queue;
+			if (next) sendQueuedNow(next);
+			return;
+		}
+		if (!agent) return;
+
+		// While an answer streams, the composer honours the chosen mode: queue the
+		// message, interrupt the run and send now, or (both off) just keep the text.
+		if (streaming) {
+			if (sendWhileStreaming === 'queue') {
+				queue = [
+					...queue,
+					{
+						id: crypto.randomUUID(),
+						text,
+						quotes: [...quotes],
+						images: pending,
+						files: pendingFiles,
+						createdAt: new Date().toISOString()
+					}
+				];
+				queueOpen = true;
+			} else if (sendWhileStreaming === 'interrupt') {
+				// The stop request is dispatched before the new stream, so the agent
+				// sees the interrupt first; starting the run here keeps the swap instant.
+				void activeRun?.stop();
+				if (!submit({ text, quotes: [...quotes], images: pending, files: pendingFiles })) return;
+			} else {
+				return;
+			}
+		} else if (!submit({ text, quotes: [...quotes], images: pending, files: pendingFiles })) {
+			return;
+		}
+
+		input = '';
+		quotes = [];
+		askAnchor = null;
+		clearPending();
+		if (composer) composer.style.height = '';
+	}
+
+	/**
+	 * Sends the head of the queue when a response settles, so the reader's next
+	 * message continues the conversation without another action.
+	 */
+	function drainQueue() {
+		if (!preferences.value.queueMessages || streaming || queue.length === 0) return;
+		const [next, ...rest] = queue;
+		queue = rest;
+		submit(next);
+	}
+
+	/**
+	 * Removes one queued message. Send now and the drain above both do the same
+	 * thing when it is time for that message to go out.
+	 */
+	function removeQueued(id: string) {
+		queue = queue.filter((item) => item.id !== id);
+	}
+
+	function clearQueue() {
+		queue = [];
+	}
+
+	/** Pulls a queued message back into the composer, with its excerpts and files. */
+	function editQueued(item: QueuedMessage) {
+		queue = queue.filter((entry) => entry.id !== item.id);
+		pending = [...pending, ...item.images];
+		pendingFiles = [...pendingFiles, ...item.files];
+		quotes = [...quotes, ...item.quotes];
+		askCounter = Math.max(askCounter, nextAskCounter(item.quotes));
+		input = input.trim() ? `${input.trim()}\n\n${item.text}` : item.text;
+		void focusComposer();
+	}
+
+	/** Interrupts the streaming answer and sends this queued message right away. */
+	function sendQueuedNow(item: QueuedMessage) {
+		queue = queue.filter((entry) => entry.id !== item.id);
+		// The stop request is dispatched before the new stream, so the agent sees
+		// the interrupt first. Starting the run here keeps the swap instant.
+		void activeRun?.stop();
+		submit(item);
+	}
+
+	/** The one-line preview of a queued message. */
+	function queuedPreview(item: QueuedMessage): string {
+		return item.text || t('myaaw.chat.queue_attachment_only');
 	}
 
 	// --- Editing and regenerating ---------------------------------------------
@@ -1748,7 +2635,12 @@
 		messageDraft = '';
 	}
 
-	function startRewind(nextItems: Item[], text: string, offset: number) {
+	function startRewind(
+		nextItems: Item[],
+		text: string,
+		offset: number,
+		rewindQuotes: AskQuote[] = []
+	) {
 		if (!agent || streaming) return;
 		stopSpeech();
 		tts.stop();
@@ -1761,6 +2653,7 @@
 			agent,
 			conversationId,
 			text,
+			quotes: rewindQuotes,
 			images: [],
 			imagesDisplay: [],
 			files: [],
@@ -1779,7 +2672,9 @@
 		const next = items
 			.slice(0, index + 1)
 			.map((row, position) => (position === index ? { ...row, text } : row));
-		startRewind(next, text, rewindOffsetAfter(index));
+		// Editing keeps the excerpt block attached, so the model still sees the
+		// quoted context while only the question changes.
+		startRewind(next, text, rewindOffsetAfter(index), item.quotes ?? []);
 	}
 
 	/**
@@ -1803,7 +2698,7 @@
 		const prompt = pendingApproval;
 		if (!prompt || !agent) return;
 		try {
-			await chatApi.decide(agent, prompt.approval_id, decision);
+			await chatStore.decide(agent, prompt.approval_id, decision);
 			// Drop it locally too, so the queue never waits for the resolved event.
 			approvalQueue.resolved({ approval_id: prompt.approval_id });
 			activeRun?.resolveApproval(prompt.approval_id);
@@ -1846,7 +2741,17 @@
 		historyItems = [];
 		clearRail();
 		input = '';
+		quotes = [];
+		askAnchor = null;
+		// A fresh chat starts without a queue; the stored `new` slot is dropped so
+		// the draft-switch effect does not bring it back.
+		queue = [];
+		queueOpen = true;
+		if (browser) localStorage.removeItem(draftQueueStorageKey(agent ?? '', ''));
 		focusContextPath = '';
+		previewAttachment = null;
+		attachmentCount = 0;
+		classicAttachmentsOpen = false;
 		if (composer) composer.style.height = '';
 		storedUsage = null;
 		sessionStats = null;
@@ -1862,14 +2767,109 @@
 
 	function toggleHistory() {
 		if (classicMode) return;
-		historyOpen = !historyOpen;
+		// The history button shows history; a second press on it closes the panel.
+		if (historyOpen && rightTab === 'history') {
+			historyOpen = false;
+		} else {
+			historyOpen = true;
+			rightTab = 'history';
+			focusPanelTab = 'history';
+		}
 		if (browser) localStorage.setItem(HISTORY_KEY, String(historyOpen));
+	}
+
+	/** Closes whichever right-panel surface the current shell uses. */
+	function closeSidePanel() {
+		if (classicMode) {
+			classicAttachmentsOpen = false;
+			return;
+		}
+		historyOpen = false;
+		if (browser) localStorage.setItem(HISTORY_KEY, 'false');
 	}
 
 	function openConversation(id: string) {
 		focusContextPath = '';
-		if (browser && window.innerWidth < 1024) toggleHistory();
+		previewAttachment = null;
+		if (browser && window.innerWidth < 1024) closeSidePanel();
 		if (id !== conversationId) void goto(`/app/chat/${id}`);
+	}
+
+	/**
+	 * The header paperclip owns the attachment surface and the history button owns
+	 * the conversation list: each toggles its own view in the shared right column.
+	 */
+	function openAttachments() {
+		if (!browser || !agent) return;
+		if (classicMode) {
+			classicAttachmentsOpen = !classicAttachmentsOpen;
+			return;
+		}
+		if (historyOpen && rightTab === 'attachments') {
+			historyOpen = false;
+			if (browser) localStorage.setItem(HISTORY_KEY, 'false');
+			return;
+		}
+		rightTab = 'attachments';
+		if (!historyOpen) {
+			historyOpen = true;
+			localStorage.setItem(HISTORY_KEY, 'true');
+		}
+	}
+
+	/** Opens one file in the shared preview pane. */
+	function openAttachment(item: ConversationAttachment) {
+		previewAttachment = item;
+		// On phones the right panel is a drawer over the column; close it so the
+		// preview pane is what the reader sees.
+		if (browser && window.innerWidth < 1024) closeSidePanel();
+	}
+
+	/**
+	 * Closes every attachment surface first, then reveals the turn that carried
+	 * the file. The transcript may have been unmounted while a pane held its slot,
+	 * so this waits a tick before asking it for a row.
+	 */
+	async function showAttachmentInChat(item: ConversationAttachment) {
+		previewAttachment = null;
+		// The panel may stay open on a wide screen; a phone drawer would cover the row.
+		if (browser && window.innerWidth < 1024) closeSidePanel();
+		await tick();
+		await revealMessage(item.message_index);
+	}
+
+	/** Loads earlier pages until the turn exists, then centres and flashes it. */
+	async function revealMessage(index: number) {
+		await tick();
+		for (let guard = 0; guard < 10 && index < loadedOffset; guard += 1) {
+			const before = loadedOffset;
+			await loadOlder(100);
+			if (loadedOffset === before) break;
+		}
+		await tick();
+		const node = scroller?.querySelector<HTMLElement>(`[data-chat-turn-index="${index}"]`);
+		if (!node) return;
+		node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		highlightedMessage = index;
+		if (highlightTimer) clearTimeout(highlightTimer);
+		highlightTimer = setTimeout(() => (highlightedMessage = null), 1400);
+	}
+
+	/** The badge count must be right even while the attachment list is closed. */
+	async function refreshAttachmentCount() {
+		const currentAgent = agent ?? '';
+		const currentId = conversationId;
+		if (!currentAgent || !currentId) {
+			attachmentCount = 0;
+			return;
+		}
+		try {
+			const page = await conversationsStore.fetchAttachments(currentAgent, currentId, { limit: 1 });
+			if (conversationId !== currentId) return;
+			attachmentCount = page.total ?? 0;
+		} catch {
+			// Keep the last known count; opening the panel retries.
+		}
 	}
 
 	function onHistoryDeleted(id: string) {
@@ -1894,6 +2894,20 @@
 				.join('\n');
 		}
 		return '';
+	}
+
+	/**
+	 * A delivery directive is backend syntax. Readers see the path it names, so
+	 * `@attach(/a/b.png)` renders as `/a/b.png` without the wrapper.
+	 */
+	const ATTACH_DIRECTIVE_RE = /@attach\(\s*(?:"([^"]+)"|'([^']+)'|([^)\s]+))\s*\)/gi;
+	/** Short form the model sometimes writes: `@/absolute/path`. */
+	const BARE_ATTACH_RE = /@((?:~\/?|\/)[^\s"'<>()]+)/g;
+
+	function displayText(text: string): string {
+		return text
+			.replace(ATTACH_DIRECTIVE_RE, (_match, ...groups) => groups.find((group) => group) ?? '')
+			.replace(BARE_ATTACH_RE, '$1');
 	}
 
 	/**
@@ -1926,17 +2940,27 @@
 	 *   <trigger kind="cron">…rules… the prompt…</trigger>
 	 *
 	 * People see a badge and nothing else. Turns stored before the block existed
-	 * have no marker and render as plain text.
+	 * have no marker and render as plain text. A quoted selections block sits in
+	 * front of the question; it is split out here so the bubble stays readable.
 	 */
-	function splitTrigger(raw: string): { trigger: TriggerKind | null; text: string } {
+	function splitTrigger(raw: string): {
+		trigger: TriggerKind | null;
+		text: string;
+		quotes: AskQuote[];
+	} {
 		const cleaned = withoutContext(raw);
-		const block = cleaned.match(
+		const parsed = parseAskPrompt(cleaned);
+		const block = parsed.text.match(
 			/^\s*<trigger\b[^>]*\bkind="(cron|heartbeat|subagent)"[^>]*>[\s\S]*?<\/trigger>\s*/i
 		);
-		if (!block) return { trigger: null, text: cleaned };
+		if (!block) return { trigger: null, text: parsed.text, quotes: parsed.quotes };
 
 		// The whole block is model-only, so the badge is the message.
-		return { trigger: block[1].toLowerCase() as TriggerKind, text: '' };
+		return {
+			trigger: block[1].toLowerCase() as TriggerKind,
+			text: '',
+			quotes: parsed.quotes
+		};
 	}
 
 	function triggerLabel(trigger: TriggerKind): string {
@@ -1956,6 +2980,15 @@
 		}
 		for (const image of message.images ?? []) {
 			urls.push(`data:image/jpeg;base64,${image}`);
+		}
+		// Inline image items can be evicted from the model context; the saved upload
+		// is the fallback and keeps the photo visible after a reload.
+		if (urls.length === 0 && agent) {
+			for (const upload of message.uploads ?? []) {
+				if (!upload.mime_type?.startsWith('image/')) continue;
+				const virtual = uploadVirtualPath(upload);
+				if (virtual) urls.push(filesStore.rawUrl(agent, virtual));
+			}
 		}
 		return urls;
 	}
@@ -2160,7 +3193,7 @@
 
 			if (message.role === 'user') {
 				lastStep = -1;
-				const { trigger, text } = splitTrigger(messageText(message));
+				const { trigger, text, quotes: storedQuotes } = splitTrigger(messageText(message));
 				const images = messageImages(message);
 				// A trigger turn has no visible text: the badge is the message, so it still
 				// gets a row.
@@ -2168,6 +3201,7 @@
 					timeline.push({
 						kind: 'user',
 						text,
+						quotes: storedQuotes.length > 0 ? storedQuotes : undefined,
 						trigger: trigger ?? undefined,
 						images: images.length > 0 ? images : undefined,
 						uploads: message.uploads,
@@ -2185,10 +3219,12 @@
 			if (message.role !== 'assistant') continue;
 
 			const text = messageText(message);
-			if (text) {
+			const attachments = message.attachments ?? [];
+			if (text || attachments.length > 0) {
 				timeline.push({
 					kind: 'text',
 					text,
+					attachments,
 					localId: nextId(),
 					messageIndex,
 					createdAt: message.created_at
@@ -2413,6 +3449,12 @@
 		if (matchesShortcut(event, 'escape')) {
 			// An open dialog or menu owns Esc, so interrupting waits its turn.
 			if (isOverlayOpen()) return;
+			if (askAnchor) {
+				event.preventDefault();
+				askAnchor = null;
+				window.getSelection()?.removeAllRanges();
+				return;
+			}
 			if (listening) {
 				event.preventDefault();
 				stopSpeech();
@@ -2458,6 +3500,11 @@
 		if (matchesShortcut(event, 'mod+shift+h')) {
 			event.preventDefault();
 			toggleHistory();
+			return;
+		}
+		if (matchesShortcut(event, 'mod+shift+a')) {
+			event.preventDefault();
+			openAttachments();
 			return;
 		}
 
@@ -2644,14 +3691,6 @@
 		speech = null;
 	});
 
-	function attachmentUrl(attachment: Attachment) {
-		return `data:${attachment.mime_type || 'application/octet-stream'};base64,${attachment.data_base64}`;
-	}
-
-	function isImage(attachment: Attachment) {
-		return (attachment.mime_type ?? '').startsWith('image/');
-	}
-
 	function fileExtension(name: string) {
 		const dot = name.lastIndexOf('.');
 		return dot >= 0 ? name.slice(dot).toLowerCase() : '';
@@ -2742,32 +3781,70 @@
 	{#snippet children()}
 		{#if !classicMode}
 			<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
+		{/if}
+		<Button
+			variant={historyOpen && rightTab === 'attachments' ? 'secondary' : 'outline'}
+			size="icon-sm"
+			class="relative"
+			onclick={openAttachments}
+			title={`${t('myaaw.chat.attachments_open')} (${formatShortcut('mod+shift+a')})`}
+			aria-label={t('myaaw.chat.attachments_open')}
+			aria-keyshortcuts="Control+Shift+A Meta+Shift+A"
+			aria-pressed={historyOpen && rightTab === 'attachments'}
+		>
+			<Paperclip class="h-4 w-4" />
+			{#if attachmentCount > 0}
+				<span
+					class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
+				>
+					{attachmentCount > 99 ? '99+' : attachmentCount}
+				</span>
+			{/if}
+		</Button>
+		{#if !classicMode}
 			<Button
-				variant="outline"
+				variant={historyOpen && rightTab === 'history' ? 'secondary' : 'outline'}
 				size="icon-sm"
 				onclick={toggleHistory}
-				title={`${historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')} (${formatShortcut('mod+shift+h')})`}
-				aria-label={historyOpen ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')}
+				title={`${historyOpen && rightTab === 'history' ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')} (${formatShortcut('mod+shift+h')})`}
+				aria-label={historyOpen && rightTab === 'history'
+					? t('myaaw.chat.history_hide')
+					: t('myaaw.chat.history_show')}
+				aria-pressed={historyOpen && rightTab === 'history'}
 				aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
 			>
-				{#if historyOpen}
-					<PanelRightClose class="h-4 w-4" />
+				{#if focusMode}
+					{#if historyOpen && rightTab === 'history'}
+						<PanelRightClose class="h-4 w-4" />
+					{:else}
+						<PanelRightOpen class="h-4 w-4" />
+					{/if}
 				{:else}
-					<PanelRightOpen class="h-4 w-4" />
+					<History class="h-4 w-4" />
 				{/if}
 			</Button>
 		{/if}
 	{/snippet}
 </TopBarActions>
 
-<div class="flex h-full min-h-0">
+<div class="relative flex h-full min-h-0">
 	<div
 		class={[
 			'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
 			focusMode && historyOpen ? 'lg:pr-88' : ''
 		]}
 	>
-		{#if agent && focusMode && focusContextPath}
+		{#if agent && previewAttachment}
+			<!-- The focus header floats over the column; keep the pane below it there. -->
+			<div class={focusMode ? 'min-h-0 flex-1 pt-14 lg:pt-16' : 'min-h-0 flex-1'}>
+				<AttachmentPreview
+					{agent}
+					item={previewAttachment}
+					onClose={() => (previewAttachment = null)}
+					onShowInChat={showAttachmentInChat}
+				/>
+			</div>
+		{:else if agent && focusMode && focusContextPath}
 			<FocusContextEditor {agent} path={focusContextPath} onClose={() => (focusContextPath = '')} />
 		{:else if !agent}
 			<div
@@ -2833,8 +3910,9 @@
 						onscroll={onScroll}
 					>
 						<div
+							bind:this={transcript}
 							class={cn(
-								'mx-auto w-full max-w-4xl space-y-5 px-4 py-6',
+								'mx-auto relative w-full max-w-4xl space-y-5 px-4 py-6',
 								focusMode && items.length > 0 && 'pt-40',
 								railTurns.length > 1 && 'pr-8 md:pr-14',
 								// Nothing to read: sit in the middle of the column instead of
@@ -2843,6 +3921,21 @@
 							)}
 							style:padding-bottom={frosted ? `${composerHeight + 24}px` : null}
 						>
+							{#if quoteRects.length > 0}
+								<!-- The yellow wash sits above the text but never touches the DOM, so
+								     format wrappers and text nodes stay exactly as rendered. -->
+								<div class="pointer-events-none absolute inset-0 z-10" aria-hidden="true">
+									{#each quoteRects as rect, index (index)}
+										<span
+											class="ask-quote-mark"
+											style:left={`${rect.left}px`}
+											style:top={`${rect.top}px`}
+											style:width={`${rect.width}px`}
+											style:height={`${rect.height}px`}
+										></span>
+									{/each}
+								</div>
+							{/if}
 							{#if loadingOlder}
 								<p
 									class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
@@ -2853,7 +3946,21 @@
 								</p>
 							{/if}
 							{#if loading}
-								<p class="text-sm text-muted-foreground">{t('myaaw.chat.loading')}</p>
+								<div
+									class="w-full max-w-3xl space-y-4"
+									aria-live="polite"
+									aria-label={t('myaaw.chat.loading')}
+								>
+									<div class="flex justify-end">
+										<Skeleton class="h-10 w-1/3 rounded-2xl" />
+									</div>
+									<div class="flex justify-start">
+										<Skeleton class="h-28 w-3/4 rounded-2xl" />
+									</div>
+									<div class="flex justify-start">
+										<Skeleton class="h-16 w-1/2 rounded-2xl" />
+									</div>
+								</div>
 							{:else if items.length === 0}
 								<div class="flex flex-col items-center">
 									<Bloub
@@ -2893,15 +4000,23 @@
 												aria-expanded={open}
 											>
 												{#if group.running}
-													<Bloub mood={groupMood(group)} size={18} color={markColor} />
+													{#if preferences.value.showRunMascot}
+														<Bloub mood={groupMood(group)} size={18} color={markColor} />
+													{/if}
 												{:else}
 													<Clock class="h-3.5 w-3.5 shrink-0" />
 												{/if}
 												<span class="font-medium">
 													{group.running ? t('myaaw.chat.tool_running') : t('myaaw.chat.completed')}
 												</span>
-												{#if !group.running && group.durationMs !== undefined}
-													<span class="shrink-0 text-muted-foreground">
+												{#if group.running}
+													<span class="shrink-0 text-muted-foreground tabular-nums">
+														· {formatDuration(
+															now - (activeRun?.groupStartedAt || activeRun?.startedAt || now)
+														)}
+													</span>
+												{:else if group.durationMs !== undefined}
+													<span class="shrink-0 text-muted-foreground tabular-nums">
 														· {formatDuration(group.durationMs)}
 													</span>
 												{/if}
@@ -2923,8 +4038,15 @@
 											<div class="space-y-1 pl-2">
 												{#each phaseRows(group) as phase, index (phase.kind === 'group' ? phase.group.key : (phase.item.localId ?? index))}
 													{#if phase.kind === 'text'}
-														<div class="px-1 text-sm">
-															<Markdown content={phase.item.text ?? ''} />
+														<div
+															class="px-1 text-sm"
+															data-ask-source="answer"
+															data-ask-id={phase.item.localId}
+														>
+															<Markdown
+																content={displayText(phase.item.text ?? '')}
+																streaming={streaming && phase.item.localId === latestAnswerKey}
+															/>
 														</div>
 													{:else}
 														{@const phaseGroup = phase.group}
@@ -2936,7 +4058,7 @@
 																onclick={() => toggleGroup(phaseGroup)}
 																aria-expanded={phaseOpen}
 															>
-																{#if phaseGroup.running}
+																{#if phaseGroup.running && preferences.value.showRunMascot}
 																	<Bloub mood={groupMood(phaseGroup)} size={18} color={markColor} />
 																{/if}
 																<span class="font-medium">{groupLabel(phaseGroup)}</span>
@@ -2951,50 +4073,61 @@
 																<div class="space-y-0.5 pl-2">
 																	{#each phaseGroup.steps as step (step.localId)}
 																		{#if step.kind === 'thought'}
-																			<ChatStep
-																				title={t('myaaw.chat.think')}
-																				summary={oneLine(step.text ?? '')}
-																				icon={Brain}
-																				expanded={!!step.expanded}
-																				ontoggle={() => toggleItem(step.localId)}
-																				running={step.running}
-																			>
-																				<p class="whitespace-pre-wrap text-muted-foreground">
-																					{step.text}
-																				</p>
-																			</ChatStep>
-																		{:else if step.kind === 'tool'}
-																			<ChatStep
-																				title={toolLabel(step.name)}
-																				summary={toolSummary(step)}
-																				icon={toolIcon(step.name)}
-																				expanded={!!step.expanded}
-																				ontoggle={() => toggleItem(step.localId)}
-																				running={step.running}
-																				error={step.is_error}
-																				copyText={toolInvocation(step)}
-																			>
-																				<div
-																					class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
+																			<div data-ask-row={step.localId}>
+																				<ChatStep
+																					title={t('myaaw.chat.think')}
+																					summary={oneLine(step.text ?? '')}
+																					icon={Brain}
+																					expanded={!!step.expanded}
+																					ontoggle={() => toggleItem(step.localId)}
+																					running={step.running}
 																				>
-																					<pre
-																						class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
-																							class="select-none text-zinc-500"
-																							>$ </span>{toolInvocation(step)}</pre>
-																					{#if step.result}
+																					<p
+																						class="whitespace-pre-wrap text-muted-foreground"
+																						data-ask-source="thinking"
+																						data-ask-id={step.localId}
+																					>
+																						{step.text}
+																					</p>
+																				</ChatStep>
+																			</div>
+																		{:else if step.kind === 'tool'}
+																			<div data-ask-row={step.localId}>
+																				<ChatStep
+																					title={toolLabel(step.name)}
+																					summary={toolSummary(step)}
+																					icon={toolIcon(step.name)}
+																					expanded={!!step.expanded}
+																					ontoggle={() => toggleItem(step.localId)}
+																					running={step.running}
+																					error={step.is_error}
+																					copyText={toolInvocation(step)}
+																				>
+																					<div
+																						class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
+																						data-ask-source="tool"
+																						data-ask-label={step.name}
+																						data-ask-id={step.localId}
+																					>
 																						<pre
-																							class={cn(
-																								'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
-																								step.is_error ? 'text-red-400' : 'text-zinc-300'
-																							)}>{step.result}</pre>
-																					{:else if step.running}
-																						<pre
-																							class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
-																								'myaaw.chat.tool_running'
-																							)}</pre>
-																					{/if}
-																				</div>
-																			</ChatStep>
+																							class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
+																								class="select-none text-zinc-500"
+																								>$ </span>{toolInvocation(step)}</pre>
+																						{#if step.result}
+																							<pre
+																								class={cn(
+																									'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
+																									step.is_error ? 'text-red-400' : 'text-zinc-300'
+																								)}>{step.result}</pre>
+																						{:else if step.running}
+																							<pre
+																								class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
+																									'myaaw.chat.tool_running'
+																								)}</pre>
+																						{/if}
+																					</div>
+																				</ChatStep>
+																			</div>
 																		{:else if step.kind === 'retry'}
 																			<div
 																				class="flex items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground"
@@ -3031,7 +4164,11 @@
 											data-chat-turn-index={item.messageIndex}
 										>
 											<div
-												class="group/user flex w-full min-w-0 max-w-[80%] flex-col items-end gap-2 terminal:max-w-full terminal:items-start"
+												class={cn(
+													'group/user flex w-full min-w-0 max-w-[80%] flex-col items-end gap-2 rounded-2xl transition-shadow terminal:max-w-full terminal:items-start',
+													highlightedMessage === item.messageIndex &&
+														'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
+												)}
 											>
 												{#if senderLabel(item)}
 													<span
@@ -3044,17 +4181,37 @@
 												{#if item.images?.length}
 													<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
 														{#each item.images as image, imageIndex (imageIndex)}
-															<img
-																src={image}
-																alt=""
-																class="max-h-48 rounded-2xl border object-contain"
-															/>
+															<div class="relative inline-block max-w-full">
+																<button
+																	type="button"
+																	class="block cursor-zoom-in rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2"
+																	aria-label={t('myaaw.chat.lightbox_open')}
+																	onclick={() => openImageLightbox(item.images ?? [], imageIndex)}
+																>
+																	<img
+																		src={image}
+																		alt=""
+																		draggable="false"
+																		class="max-h-48 rounded-2xl border object-contain"
+																	/>
+																</button>
+																<button
+																	type="button"
+																	class="absolute right-1.5 bottom-1.5 grid size-7 place-items-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+																	title={t('myaaw.chat.download_file')}
+																	aria-label={t('myaaw.chat.download_file')}
+																	onclick={() =>
+																		downloadImage(image, imageFileName(image, imageIndex))}
+																>
+																	<Download class="h-3.5 w-3.5" />
+																</button>
+															</div>
 														{/each}
 													</div>
 												{/if}
 												{#if item.uploads?.length}
 													<div class="flex flex-wrap justify-end gap-2 terminal:justify-start">
-														{#each item.uploads as upload (upload.path || upload.name)}
+														{#each item.uploads.filter((upload) => !upload.mime_type?.startsWith('image/')) as upload (upload.path || upload.name)}
 															{@const downloadPath = uploadVirtualPath(upload)}
 															{#if agent && downloadPath}
 																<button
@@ -3062,7 +4219,7 @@
 																	title={t('myaaw.chat.download_file')}
 																	aria-label={t('myaaw.chat.download_file')}
 																	class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5 transition-colors hover:border-foreground/30 hover:bg-muted"
-																	onclick={() => filesApi.download(agent, downloadPath)}
+																	onclick={() => filesStore.download(agent, downloadPath)}
 																>
 																	<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
 																	<span class="min-w-0 flex-1 truncate text-xs">{upload.name}</span>
@@ -3154,6 +4311,21 @@
 																</span>
 																{item.text}
 															</div>
+															{#if (item.quotes?.length ?? 0) > 0}
+																{@const quoteCount = item.quotes?.length ?? 0}
+																<button
+																	type="button"
+																	class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+																	data-ask-summary
+																	onclick={() => openQuotePreview(item.quotes ?? [])}
+																	title={t('myaaw.chat.ask_open')}
+																>
+																	<Quote class="h-3.5 w-3.5" />
+																	{quoteCount === 1
+																		? t('myaaw.chat.ask_selected_one')
+																		: t('myaaw.chat.ask_selected', { count: quoteCount })}
+																</button>
+															{/if}
 															<div
 																class={cn(
 																	'mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/user:opacity-100 group-focus-within/user:opacity-100 [@media(hover:none)]:opacity-100',
@@ -3181,18 +4353,34 @@
 										</div>
 									{:else if item.kind === 'text'}
 										<div
-											class="group/message wrap-break-word text-sm terminal:border-l terminal:pl-3"
+											data-chat-turn-index={item.messageIndex}
+											class={cn(
+												'group/message wrap-break-word rounded-xl text-sm transition-shadow terminal:border-l terminal:pl-3',
+												highlightedMessage === item.messageIndex &&
+													'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
+											)}
 										>
-											<Markdown content={item.text ?? ''} />
+											<div data-ask-source="answer" data-ask-id={item.localId}>
+												<Markdown
+													content={displayText(item.text ?? '')}
+													streaming={streaming && item.localId === latestAnswerKey}
+												/>
+											</div>
+											{#if (item.attachments?.length ?? 0) > 0}
+												<RunAttachments {agent} attachments={item.attachments ?? []} />
+											{/if}
 											<div
 												class={cn(
 													'mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 [@media(hover:none)]:opacity-100',
 													item.localId === latestAnswerKey && 'opacity-100'
 												)}
 											>
-												<CopyButton text={item.text ?? ''} />
+												<CopyButton text={displayText(item.text ?? '')} />
 												{#if !(streaming && item.localId === latestAnswerKey)}
-													<SpeakButton id={item.localId ?? ''} text={item.text ?? ''} />
+													<SpeakButton
+														id={item.localId ?? ''}
+														text={displayText(item.text ?? '')}
+													/>
 												{/if}
 												{#if !streaming && conversationId}
 													<button
@@ -3220,35 +4408,12 @@
 							{#if streaming && items[items.length - 1]?.kind === 'user'}
 								<!-- The first token can take a while; show that the run started. -->
 								<div class="flex items-center gap-2 px-1 py-1 text-xs text-muted-foreground">
-									{#if focusMode}
+									{#if focusMode && preferences.value.showRunMascot}
 										<Bloub mood={bloubMood} size={20} color={markColor} />
 									{:else}
 										<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
 									{/if}
 									<span class="font-medium">{t('myaaw.chat.tool_running')}</span>
-								</div>
-							{/if}
-
-							{#if attachments.length > 0}
-								<div class="space-y-2">
-									{#each attachments as attachment (attachment.file_name)}
-										{#if isImage(attachment)}
-											<img
-												src={attachmentUrl(attachment)}
-												alt={attachment.file_name}
-												class="max-h-72 rounded-xl border"
-											/>
-										{:else}
-											<a
-												href={attachmentUrl(attachment)}
-												download={attachment.file_name}
-												class="inline-flex items-center gap-2 text-xs text-primary underline-offset-4 hover:underline"
-											>
-												<ArrowDownToLine class="h-3.5 w-3.5" />
-												{attachment.file_name}
-											</a>
-										{/if}
-									{/each}
 								</div>
 							{/if}
 						</div>
@@ -3379,6 +4544,100 @@
 										void addFiles(event.dataTransfer?.files);
 									}}
 								>
+									{#if queue.length > 0}
+										<div class="border-b px-3 py-2" data-chat-queue>
+											<div class="flex items-center justify-between gap-2">
+												<button
+													type="button"
+													class="flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+													onclick={() => (queueOpen = !queueOpen)}
+													aria-expanded={queueOpen}
+													title={t('myaaw.chat.queue_toggle')}
+												>
+													<ChevronDown
+														class={cn(
+															'h-3 w-3 shrink-0 transition-transform',
+															!queueOpen && '-rotate-90'
+														)}
+													/>
+													<span class="truncate">
+														{queue.length === 1
+															? t('myaaw.chat.queue_title_one')
+															: t('myaaw.chat.queue_title', { count: queue.length })}
+													</span>
+												</button>
+												<button
+													type="button"
+													class="shrink-0 rounded-md px-1 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+													onclick={clearQueue}
+												>
+													{t('myaaw.chat.queue_clear')}
+												</button>
+											</div>
+											{#if queueOpen}
+												<ul class="mt-1.5 flex flex-col gap-1">
+													{#each queue as item, index (item.id)}
+														{@const attachments = item.images.length + item.files.length}
+														<li
+															class="flex items-center gap-2 rounded-lg border bg-muted/30 py-1 pr-1 pl-2.5"
+															data-chat-queued={item.id}
+														>
+															<span class="size-1.5 shrink-0 rounded-full bg-primary/60"></span>
+															<span
+																class="min-w-0 flex-1 truncate text-xs text-foreground/90"
+																title={queuedPreview(item)}
+															>
+																{queuedPreview(item)}
+															</span>
+															{#if attachments > 0}
+																<span
+																	class="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground"
+																>
+																	<Paperclip class="h-3 w-3" />
+																	{attachments}
+																</span>
+															{/if}
+															<Button
+																size="xs"
+																variant="ghost"
+																class="shrink-0 text-[10px]"
+																onclick={() => sendQueuedNow(item)}
+																title={t('myaaw.chat.queue_send_now')}
+															>
+																<Send class="h-3 w-3" />
+																{t('myaaw.chat.queue_send_now')}
+																{#if index === 0 && !canSend}
+																	<kbd
+																		class="ml-0.5 hidden rounded border border-border/60 bg-background px-1 py-px font-sans text-[9px] font-normal text-muted-foreground sm:inline"
+																	>
+																		{queueKeyLabel}
+																	</kbd>
+																{/if}
+															</Button>
+															<button
+																type="button"
+																class="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+																onclick={() => editQueued(item)}
+																aria-label={t('myaaw.chat.queue_edit')}
+																title={t('myaaw.chat.queue_edit')}
+															>
+																<Pencil class="h-3 w-3" />
+															</button>
+															<button
+																type="button"
+																class="grid size-6 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+																onclick={() => removeQueued(item.id)}
+																aria-label={t('myaaw.chat.queue_remove')}
+																title={t('myaaw.chat.queue_remove')}
+															>
+																<X class="h-3 w-3" />
+															</button>
+														</li>
+													{/each}
+												</ul>
+											{/if}
+										</div>
+									{/if}
 									{#if pending.length > 0}
 										<div class="flex flex-wrap gap-2 px-3 pt-3">
 											{#each pending as image (image.id)}
@@ -3429,6 +4688,16 @@
 										<p class="px-4 pt-2 text-[11px] font-medium text-foreground">
 											{t('myaaw.chat.drop_files')}
 										</p>
+									{/if}
+									{#if quotes.length > 0}
+										<div class="px-3 pt-3" data-ask-quotes>
+											<AskQuoteList
+												{quotes}
+												onremove={removeAskQuote}
+												onclear={clearAskQuotes}
+												onlocate={(quote) => void locateAskQuote(quote)}
+											/>
+										</div>
 									{/if}
 									<textarea
 										bind:this={composer}
@@ -3743,25 +5012,55 @@
 													</DropdownMenu.Item>
 												</DropdownMenu.Content>
 											</DropdownMenu.Root>
-											{#if streaming}
+											{#if streaming && !canSend}
 												<Button
 													size="icon"
 													variant="destructive"
 													class="rounded-full"
 													onclick={stop}
 													aria-label={t('myaaw.chat.stop')}
+													title={t('myaaw.chat.stop')}
 												>
 													<Square class="h-4 w-4" />
+												</Button>
+											{:else if streaming && sendWhileStreaming === 'queue'}
+												<Button
+													size="icon"
+													class="rounded-full"
+													onclick={send}
+													aria-label={t('myaaw.chat.queue_send')}
+													title={t('myaaw.chat.queue_send')}
+												>
+													<ListEnd class="h-4 w-4" />
+												</Button>
+											{:else if streaming && sendWhileStreaming === 'interrupt'}
+												<Button
+													size="icon"
+													class="rounded-full"
+													onclick={send}
+													aria-label={t('myaaw.chat.send')}
+													title={t('myaaw.chat.send')}
+												>
+													<Send class="h-4 w-4" />
+												</Button>
+											{:else if streaming}
+												<Button
+													size="icon"
+													class="rounded-full"
+													disabled
+													aria-label={t('myaaw.chat.send')}
+													title={t('myaaw.chat.send')}
+												>
+													<Send class="h-4 w-4" />
 												</Button>
 											{:else}
 												<Button
 													size="icon"
 													class="rounded-full"
 													onclick={send}
-													disabled={!input.trim() &&
-														pending.length === 0 &&
-														pendingFiles.length === 0}
+													disabled={!canSend}
 													aria-label={t('myaaw.chat.send')}
+													title={t('myaaw.chat.send')}
 												>
 													<Send class="h-4 w-4" />
 												</Button>
@@ -4013,7 +5312,7 @@
 				type="button"
 				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
 				aria-label={t('myaaw.chat.history_hide')}
-				onclick={toggleHistory}
+				onclick={closeSidePanel}
 			></button>
 		{/if}
 		<aside
@@ -4023,38 +5322,159 @@
 			]}
 			inert={!historyOpen}
 		>
-			<FocusAgentPanel
-				{agent}
-				activeId={conversationId}
-				onOpen={openConversation}
-				onClose={toggleHistory}
-				onOpenContext={(path) => {
-					focusContextPath = path;
-					if (browser && window.innerWidth < 1024) toggleHistory();
-				}}
-			/>
+			{#if rightTab === 'attachments'}
+				<!-- The focus header floats over the panel on a desktop and its actions
+				     would cover the title, so keep the panel below them there. A phone
+				     drawer sits above the header and needs no gap. -->
+				<div class="min-h-0 flex-1 lg:pt-16">
+					<AttachmentPanel
+						{agent}
+						{conversationId}
+						refreshKey={attachmentsRefresh}
+						onOpen={openAttachment}
+						onShowInChat={showAttachmentInChat}
+						onClose={closeSidePanel}
+					/>
+				</div>
+			{:else}
+				<FocusAgentPanel
+					{agent}
+					activeId={conversationId}
+					bind:tab={focusPanelTab}
+					onOpen={openConversation}
+					onClose={toggleHistory}
+					onOpenContext={(path) => {
+						focusContextPath = path;
+						if (browser && window.innerWidth < 1024) toggleHistory();
+					}}
+				/>
+			{/if}
 		</aside>
-	{:else if agent && historyOpen && !classicMode}
-		<!-- Drawer on small screens, a static third column from lg up. -->
-		<button
-			type="button"
-			class="fixed inset-0 z-40 bg-black/40 lg:hidden"
-			aria-label={t('myaaw.chat.history_hide')}
-			onclick={toggleHistory}
-		></button>
+	{:else if agent && !classicMode}
+		<!-- Drawer on small screens, a static third column from lg up. Kept mounted
+		     on desktop so hiding it animates the width instead of snapping the
+		     transcript and the composer. -->
+		{#if historyOpen}
+			<button
+				type="button"
+				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+				aria-label={t('myaaw.chat.history_hide')}
+				onclick={closeSidePanel}
+			></button>
+		{/if}
 		<aside
-			class="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card lg:static lg:z-auto lg:h-full lg:w-72 lg:max-w-none frost-drawer"
+			inert={!historyOpen}
+			class={[
+				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
+				historyOpen ? 'flex lg:w-72' : 'hidden lg:flex lg:w-0 lg:border-l-0'
+			]}
 		>
-			<ConversationList
-				activeId={conversationId}
-				onOpen={openConversation}
-				onClose={toggleHistory}
-				onNewInFolder={(folderId) =>
-					void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
-				onDeleted={onHistoryDeleted}
-				onRenamed={onHistoryRenamed}
-				bind:searchInput={searchBox}
-			/>
+			<div class="flex h-full w-full flex-col lg:w-72 lg:min-w-72">
+				{#if rightTab === 'attachments'}
+					<AttachmentPanel
+						{agent}
+						{conversationId}
+						refreshKey={attachmentsRefresh}
+						onOpen={openAttachment}
+						onShowInChat={showAttachmentInChat}
+						onClose={closeSidePanel}
+					/>
+				{:else}
+					<ConversationList
+						activeId={conversationId}
+						onOpen={openConversation}
+						onClose={closeSidePanel}
+						onNewInFolder={(folderId) =>
+							void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+						onDeleted={onHistoryDeleted}
+						onRenamed={onHistoryRenamed}
+						bind:searchInput={searchBox}
+					/>
+				{/if}
+			</div>
 		</aside>
 	{/if}
+
+	{#if agent && classicMode}
+		<!-- Classic borrows the advanced layout: a drawer on phones and a static
+		     third column from lg up. History already lives in its left sidebar. -->
+		{#if classicAttachmentsOpen}
+			<button
+				type="button"
+				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+				aria-label={t('myaaw.chat.attachments_close_list')}
+				onclick={() => (classicAttachmentsOpen = false)}
+			></button>
+		{/if}
+		<aside
+			inert={!classicAttachmentsOpen}
+			class={[
+				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
+				classicAttachmentsOpen ? 'flex lg:w-72' : 'hidden lg:flex lg:w-0 lg:border-l-0'
+			]}
+		>
+			<div class="flex h-full w-full flex-col lg:w-72 lg:min-w-72">
+				<AttachmentPanel
+					{agent}
+					{conversationId}
+					refreshKey={attachmentsRefresh}
+					onOpen={openAttachment}
+					onShowInChat={showAttachmentInChat}
+					onClose={() => (classicAttachmentsOpen = false)}
+				/>
+			</div>
+		</aside>
+	{/if}
+
+	<ImageLightbox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />
+
+	{#if askAnchor}
+		<!-- The one action a text selection unlocks. It floats above the reply so the
+		     reader can quote without hunting for a toolbar. -->
+		<button
+			type="button"
+			data-ask-anchor
+			class="fixed z-50 inline-flex items-center gap-1.5 rounded-full border bg-popover px-3 py-1.5 text-xs font-medium text-popover-foreground shadow-md transition-colors hover:bg-muted"
+			style:top={`${askAnchor.top}px`}
+			style:left={`${askAnchor.left}px`}
+			title={t('myaaw.chat.ask_hint')}
+			aria-label={t('myaaw.chat.ask_hint')}
+			onmousedown={(event) => event.preventDefault()}
+			onclick={addAskQuote}
+			in:fade={{ duration: 90 }}
+		>
+			<Quote class="h-3.5 w-3.5" />
+			{t('myaaw.chat.ask')}
+		</button>
+	{/if}
+
+	<Dialog.Root
+		open={quotePreview !== null}
+		onOpenChange={(open) => {
+			if (!open) quotePreview = null;
+		}}
+	>
+		<Dialog.Content class="sm:max-w-xl" data-ask-preview>
+			<Dialog.Header>
+				<Dialog.Title>{t('myaaw.chat.ask_preview_title')}</Dialog.Title>
+				<Dialog.Description>{t('myaaw.chat.ask_preview_desc')}</Dialog.Description>
+			</Dialog.Header>
+			<div class="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+				{#each quotePreview ?? [] as quote (quote.id)}
+					{@const Icon = askQuoteIcon(quote)}
+					<div class="rounded-xl border bg-muted/30 px-3 py-2">
+						<span
+							class="mb-1.5 flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground"
+						>
+							<Icon class="h-3 w-3 shrink-0" />
+							{askQuoteLabel(quote)}
+						</span>
+						<p class="max-h-52 overflow-y-auto text-xs whitespace-pre-wrap text-foreground/85">
+							{quote.text}
+						</p>
+					</div>
+				{/each}
+			</div>
+		</Dialog.Content>
+	</Dialog.Root>
 </div>

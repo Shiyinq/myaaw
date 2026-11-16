@@ -228,6 +228,22 @@ func runSchemaCommand(command string, args []string) ([]byte, error) {
 	return cmd.Output()
 }
 
+// mcpWorkingDir returns the directory MCP servers run in. Relative paths a
+// server writes on its own (Playwright screenshots, downloads) resolve against
+// it, so they stay inside the agent workspace and remain attachable instead of
+// landing in whatever directory the daemon was started from.
+func mcpWorkingDir() (string, error) {
+	home, err := agentdir.ActiveHome()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, "workspace", "mcp")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create %s: %w", dir, err)
+	}
+	return dir, nil
+}
+
 func startMCPServer(ms MCPServerConfig) {
 	// Build environment with user's full PATH
 	env := getUserEnv()
@@ -239,6 +255,18 @@ func startMCPServer(ms MCPServerConfig) {
 	resolvedCmd := resolveCommand(ms.Command)
 	cmd := exec.Command(resolvedCmd, ms.Args...)
 	cmd.Env = env
+
+	// Some servers write relative filenames themselves (Playwright screenshots
+	// are the common case). Pin them to the agent workspace so those files do
+	// not inherit the directory the daemon was launched from, usually the
+	// user's home directory.
+	workDir, err := mcpWorkingDir()
+	if err != nil {
+		ToolsLogger.Printf("[WARN] Skipping MCP server '%s': %v", ms.Name, err)
+		return
+	}
+	cmd.Dir = workDir
+	ToolsLogger.Printf("[INFO] MCP server '%s' working directory: %s", ms.Name, workDir)
 
 	transport := &mcp.CommandTransport{Command: cmd}
 

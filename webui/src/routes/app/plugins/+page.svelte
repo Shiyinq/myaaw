@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { skills as skillsApi } from '$lib/apis/skills';
-	import { tools as toolsApi } from '$lib/apis/tools';
-	import { agents as agentsApi } from '$lib/apis/agents';
+	import { skillsStore } from '$lib/stores/skills.svelte';
+	import { toolsStore } from '$lib/stores/tools.svelte';
+	import { agentsStore } from '$lib/stores/agents.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -30,28 +31,24 @@
 		Wrench
 	} from 'lucide-svelte';
 	import type { LucideIcon } from '$lib/types/icons';
-	import type {
-		CapabilityEntry,
-		CustomTool,
-		MCPServer,
-		Skill,
-		SkillDetail,
-		ToolsView
-	} from '$lib/types';
+	import type { CustomTool, MCPServer, SkillDetail } from '$lib/types';
 	import type { PluginKind, PluginTarget } from '$lib/types/plugins';
 	import type { Snippet } from 'svelte';
 
 	const { t } = useTranslation();
 
 	let agent = $derived(agentSelection.selected);
-	let skills = $state<Skill[]>([]);
-	let catalog = $state<CapabilityEntry[]>([]);
-	let view = $state<ToolsView | null>(null);
+	useQuery(skillsStore.list, () => (agent ? { agent } : null));
+	useQuery(toolsStore.query, () => (agent ? { agent } : null));
+	useQuery(agentsStore.capabilities, () => ({}));
+
+	let skills = $derived(skillsStore.list.data?.skills ?? []);
+	let catalog = $derived(agentsStore.capabilitiesData?.skills ?? []);
+	let view = $derived(toolsStore.query.data ?? null);
 	let installing = $state('');
-	let loading = $state(false);
-	let error = $state('');
+	let loading = $derived(skillsStore.list.loading || toolsStore.query.loading);
+	let error = $derived(skillsStore.list.error || toolsStore.query.error);
 	let query = $state('');
-	let loadKey = '';
 
 	// The entry whose details are open, resolved against the current lists so a
 	// toggle is reflected in the dialog without fetching it again.
@@ -65,32 +62,6 @@
 	let editingCustom = $state<CustomTool | null>(null);
 	let mcpDialogOpen = $state(false);
 	let editingMCP = $state<MCPServer | null>(null);
-
-	$effect(() => {
-		const name = agent;
-		if (!name || name === loadKey) return;
-		loadKey = name;
-		void load(name);
-	});
-
-	async function load(name: string) {
-		loading = true;
-		error = '';
-		try {
-			const [skillList, toolsView, caps] = await Promise.all([
-				skillsApi.list(name),
-				toolsApi.list(name),
-				agentsApi.capabilities().catch(() => null)
-			]);
-			skills = skillList.skills ?? [];
-			view = toolsView;
-			catalog = caps?.skills ?? [];
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
 
 	const search = $derived(query.trim().toLowerCase());
 
@@ -220,8 +191,8 @@
 		let cancelled = false;
 		detailLoading = true;
 		skillDetail = null;
-		skillsApi
-			.get(currentAgent, name)
+		skillsStore
+			.fetchDetail(currentAgent, name)
 			.then((detail) => {
 				if (!cancelled) skillDetail = detail;
 			})
@@ -245,12 +216,10 @@
 	async function toggleSkill(name: string, enabled: boolean) {
 		if (!agent) return;
 		try {
-			await skillsApi.toggle(agent, name, enabled);
-			skills = skills.map((item) => (item.name === name ? { ...item, enabled } : item));
+			await skillsStore.toggle(agent, name, enabled);
 			toastToggle(name, enabled);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
-			await load(agent);
 		}
 	}
 
@@ -259,9 +228,8 @@
 		if (!agent || installing) return;
 		installing = name;
 		try {
-			await skillsApi.install(agent, name);
+			await skillsStore.install(agent, name);
 			toastStore.success(t('myaaw.skills.installed_ok', { name }));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -292,47 +260,30 @@
 	async function toggleBuiltin(name: string, enabled: boolean) {
 		if (!agent || !view) return;
 		try {
-			await toolsApi.toggleBuiltin(agent, name, enabled);
-			view = {
-				...view,
-				builtin: view.builtin.map((item) => (item.name === name ? { ...item, enabled } : item))
-			};
+			await toolsStore.toggleBuiltin(agent, name, enabled);
 			toastToggle(name, enabled);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
-			await load(agent);
 		}
 	}
 
 	async function toggleCustom(name: string, enabled: boolean) {
 		if (!agent || !view) return;
 		try {
-			await toolsApi.patchCustom(agent, name, { enabled });
-			view = {
-				...view,
-				custom: view.custom.map((item) => (item.name === name ? { ...item, enabled } : item))
-			};
+			await toolsStore.patchCustom(agent, name, { enabled });
 			toastToggle(name, enabled);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
-			await load(agent);
 		}
 	}
 
 	async function toggleMcp(name: string, enabled: boolean) {
 		if (!agent || !view) return;
 		try {
-			await toolsApi.patchMCP(agent, name, { enabled });
-			view = {
-				...view,
-				mcp_servers: view.mcp_servers.map((item) =>
-					item.name === name ? { ...item, enabled } : item
-				)
-			};
+			await toolsStore.patchMCP(agent, name, { enabled });
 			toastToggle(name, enabled);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
-			await load(agent);
 		}
 	}
 
@@ -382,10 +333,9 @@
 		)
 			return;
 		try {
-			await toolsApi.removeCustom(agent, tool.name);
+			await toolsStore.removeCustom(agent, tool.name);
 			selected = null;
 			toastStore.success(t('myaaw.tools.deleted'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
@@ -401,10 +351,9 @@
 		)
 			return;
 		try {
-			await toolsApi.removeMCP(agent, server.name);
+			await toolsStore.removeMCP(agent, server.name);
 			selected = null;
 			toastStore.success(t('myaaw.tools.deleted'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
@@ -417,7 +366,11 @@
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			{loading}
-			onclick={() => agent && load(agent)}
+			onclick={() => {
+				void skillsStore.list.refresh();
+				void toolsStore.query.refresh();
+				void agentsStore.capabilities.refresh();
+			}}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -514,7 +467,14 @@
 	{:else if error}
 		<div class="flex flex-col items-start gap-2 rounded-xl border border-destructive/40 p-4">
 			<p class="text-sm text-destructive">{error}</p>
-			<Button variant="outline" size="sm" onclick={() => load(agent)}>
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={() => {
+					void skillsStore.list.refresh();
+					void toolsStore.query.refresh();
+				}}
+			>
 				{t('common.refresh')}
 			</Button>
 		</div>
@@ -764,7 +724,7 @@
 				onSaved={() => {
 					customDialogOpen = false;
 					editingCustom = null;
-					void load(agent);
+					void toolsStore.query.refresh();
 				}}
 				onCancel={() => {
 					customDialogOpen = false;
@@ -794,7 +754,7 @@
 				onSaved={() => {
 					mcpDialogOpen = false;
 					editingMCP = null;
-					void load(agent);
+					void toolsStore.query.refresh();
 				}}
 				onCancel={() => {
 					mcpDialogOpen = false;

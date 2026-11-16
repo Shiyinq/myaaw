@@ -48,6 +48,7 @@ type AuthService struct {
 	path     string
 	creds    credentials
 	sessions map[string]time.Time
+	media    *MediaSigner
 	now      func() time.Time
 }
 
@@ -95,6 +96,7 @@ func NewAuthServiceAt(path string) (*AuthService, error) {
 	s := &AuthService{
 		path:     path,
 		sessions: make(map[string]time.Time),
+		media:    newMediaSignerOrNil(),
 		now:      time.Now,
 	}
 	if err := s.load(); err != nil {

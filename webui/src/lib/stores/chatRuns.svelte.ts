@@ -1,7 +1,9 @@
 import { browser } from '$app/environment';
 import { chat as chatApi } from '$lib/apis/chat';
+import { composeAskPrompt } from '$lib/utils/ask';
 import type {
 	ApprovalPrompt,
+	AskQuote,
 	Attachment,
 	ChatFile,
 	ChatRunInfo,
@@ -38,6 +40,10 @@ export interface ChatItem extends TimelineItem {
 	trigger?: 'cron' | 'heartbeat' | 'subagent';
 	images?: string[];
 	uploads?: Upload[];
+	/** Excerpts quoted from earlier answers, thinking, or tool output. */
+	quotes?: AskQuote[];
+	/** Files delivered with this answer; rehydrated from the stored transcript. */
+	attachments?: Attachment[];
 	running?: boolean;
 	expanded?: boolean;
 	group_duration_ms?: number;
@@ -51,6 +57,8 @@ export interface StartRunOptions {
 	/** Conversation being continued; empty for a brand new chat. */
 	conversationId: string;
 	text: string;
+	/** Excerpts quoted from earlier replies; folded into the prompt before sending. */
+	quotes?: AskQuote[];
 	images: string[];
 	imagesDisplay: string[];
 	files: ChatFile[];
@@ -90,11 +98,14 @@ export class ChatRun {
 	streaming = $state(true);
 	usage = $state<Usage | null>(null);
 	context = $state<ContextUsage | null>(null);
-	attachments = $state<Attachment[]>([]);
 	error = $state('');
 	pendingApproval = $state<ApprovalPrompt | null>(null);
 	/** Step group that is still collecting rows, so its header keeps spinning. */
 	openGroup = $state('');
+	/** When this run started, used by the live duration in the process header. */
+	startedAt = $state(Date.now());
+	/** When the open step group started; the completed duration uses the same point. */
+	groupStartedAt = $state(0);
 	finishedAt = $state(0);
 	/**
 	 * Why the run ended. `done` means the answer landed, so it is worth announcing
@@ -114,6 +125,8 @@ export class ChatRun {
 	private counter = 0;
 	private groupStart = 0;
 	private groupLastStep = '';
+	private adopted = false;
+	private doneNotified = false;
 
 	constructor(agent: string, requestId: string, resumed = false) {
 		this.agent = agent;
@@ -133,6 +146,7 @@ export class ChatRun {
 		const duration = Date.now() - this.groupStart;
 		const last = this.groupLastStep;
 		this.groupStart = 0;
+		this.groupStartedAt = 0;
 		this.groupLastStep = '';
 		this.openGroup = '';
 		this.items = this.items.map((item) =>
@@ -145,6 +159,7 @@ export class ChatRun {
 		if (this.stepRow(item)) {
 			if (!this.groupStart) {
 				this.groupStart = Date.now();
+				this.groupStartedAt = this.groupStart;
 				this.openGroup = localId;
 			}
 			this.groupLastStep = localId;
@@ -205,6 +220,8 @@ export class ChatRun {
 
 	start(options: StartRunOptions) {
 		this.conversationId = options.conversationId;
+		this.startedAt = Date.now();
+		this.finishedAt = 0;
 		const earlier = options.initialItems ?? [];
 		this.items = [...earlier];
 		// Continue the id sequence of the rows we adopted, so a stale local id
@@ -219,6 +236,7 @@ export class ChatRun {
 			this.push({
 				kind: 'user',
 				text: options.text,
+				quotes: options.quotes?.length ? options.quotes : undefined,
 				images: options.imagesDisplay.length > 0 ? options.imagesDisplay : undefined,
 				uploads: options.uploads.length > 0 ? options.uploads : undefined,
 				createdAt: new Date().toISOString()
@@ -232,6 +250,28 @@ export class ChatRun {
 			this.finishedAt = Date.now();
 			this.controller = null;
 		});
+	}
+
+	/**
+	 * Runs the page's completion callback once. A restored run can finish before
+	 * the page attaches its view, so the page calls this after attaching.
+	 */
+	notifyDone() {
+		if (this.doneNotified || !this.view) return;
+		this.doneNotified = true;
+		this.view.onDone?.(this);
+	}
+
+	/**
+	 * Seeds a resumed run with the transcript the page already loaded. A reloaded
+	 * tab starts the run with only the replayed events, so without this the live
+	 * answer would replace the whole conversation until the run ends.
+	 */
+	adopt(earlier: ChatItem[]): boolean {
+		if (this.adopted || earlier.length === 0) return false;
+		this.adopted = true;
+		this.items = [...earlier, ...this.items];
+		return true;
 	}
 
 	/**
@@ -271,7 +311,7 @@ export class ChatRun {
 			await chatApi.stream(
 				this.agent,
 				{
-					text: options.text,
+					text: composeAskPrompt(options.text, options.quotes),
 					request_id: this.requestId,
 					conversation_id: options.conversationId || undefined,
 					images: options.images.length > 0 ? options.images : undefined,
@@ -360,9 +400,27 @@ export class ChatRun {
 				this.streaming = false;
 				const next = data?.conversation_id;
 				if (typeof next === 'string' && next) this.bindConversation(next);
-				if (data?.text) {
-					const hasText = [...this.items].reverse().some((item) => item.kind === 'text');
-					if (!hasText) this.push({ kind: 'text', text: data.text });
+				const doneAttachments = data?.attachments ?? [];
+				if (data?.text || doneAttachments.length > 0) {
+					// The final text is authoritative: it has the delivery directives
+					// removed, while the streamed deltas still contain them. Attachments
+					// ride on the same answer so history renders them too.
+					let lastText = -1;
+					for (let i = this.items.length - 1; i >= 0; i -= 1) {
+						if (this.items[i].kind === 'text') {
+							lastText = i;
+							break;
+						}
+					}
+					if (lastText >= 0) {
+						this.items[lastText] = {
+							...this.items[lastText],
+							...(data?.text ? { text: data.text } : {}),
+							attachments: doneAttachments
+						};
+					} else {
+						this.push({ kind: 'text', text: data?.text ?? '', attachments: doneAttachments });
+					}
 				}
 				// Live rows have no stored timestamp yet; stamp the answer when it lands.
 				const stampedAt = new Date().toISOString();
@@ -370,8 +428,7 @@ export class ChatRun {
 					item.kind === 'text' && !item.createdAt ? { ...item, createdAt: stampedAt } : item
 				);
 				this.usage = data?.usage ?? null;
-				this.attachments = data?.attachments ?? [];
-				this.view?.onDone?.(this);
+				this.notifyDone();
 				break;
 			}
 			case 'error': {
@@ -405,17 +462,19 @@ export class ChatRun {
 	 */
 	async stop() {
 		if (!this.streaming) return;
-		try {
-			await chatApi.stop(this.agent, this.requestId);
-		} catch {
-			// The run may already be gone; the abort below still detaches.
-		}
+		// Close this tab's stream first. The server request is best-effort, and a
+		// slow control plane must not make the Stop button feel dead.
 		this.controller?.abort();
 		this.controller = null;
 		this.endRun();
 		this.finishReason = 'stopped';
 		this.streaming = false;
 		this.finishedAt = Date.now();
+		try {
+			await chatApi.stop(this.agent, this.requestId);
+		} catch {
+			// The run may already be gone; the abort above still detached this tab.
+		}
 	}
 }
 
@@ -454,6 +513,8 @@ export const chatRuns = {
 
 			const run = new ChatRun(agentName, info.request_id, true);
 			run.conversationId = info.conversation_id ?? '';
+			const startedAt = Date.parse(info.started_at ?? '');
+			if (Number.isFinite(startedAt)) run.startedAt = startedAt;
 			run.discard = () => {
 				const index = runs.indexOf(run);
 				if (index >= 0) runs.splice(index, 1);

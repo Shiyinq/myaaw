@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { providers } from '$lib/apis/providers';
+	import { providersStore } from '$lib/stores/providers.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -84,7 +84,7 @@
 		pending = false;
 		busy = false;
 		if (session) {
-			void providers.cancelChatGPT(sessionAgent, session).catch(() => {
+			void providersStore.cancelChatGPT(sessionAgent, session).catch(() => {
 				// The backend also expires abandoned sessions if cleanup cannot reach it.
 			});
 			session = '';
@@ -106,7 +106,7 @@
 	async function poll(run: number) {
 		controller = new AbortController();
 		try {
-			const result = await providers.chatGPTStatus(sessionAgent, session, controller.signal);
+			const result = await providersStore.chatGPTStatus(sessionAgent, session, controller.signal);
 			if (disposed || run !== generation) return;
 			if (result.status === 'pending') {
 				timer = setTimeout(() => void poll(run), 1500);
@@ -152,9 +152,9 @@
 		popup = window.open('about:blank', '_blank');
 		if (popup) popup.opener = null;
 		try {
-			const result = await providers.connectChatGPT(target, credentialId || undefined);
+			const result = await providersStore.connectChatGPT(target, credentialId || undefined);
 			if (disposed || run !== generation) {
-				await providers.cancelChatGPT(target, result.session_id);
+				await providersStore.cancelChatGPT(target, result.session_id);
 				return;
 			}
 			session = result.session_id;
@@ -211,7 +211,7 @@
 		busy = true;
 		error = '';
 		try {
-			await providers.disconnect(agent, providerId);
+			await providersStore.disconnect(agent, providerId);
 			if (disposed) return;
 			credentialId = '';
 			connection = { configured: false, status: 'disconnected' };

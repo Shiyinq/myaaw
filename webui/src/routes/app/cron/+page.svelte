@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { cron as cronApi } from '$lib/apis/cron';
-	import { config as configApi } from '$lib/apis/config';
-	import { conversations as conversationsApi } from '$lib/apis/conversations';
+	import { cronStore } from '$lib/stores/cron.svelte';
+	import { configStore } from '$lib/stores/config.svelte';
+	import { conversationsStore } from '$lib/stores/conversations.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { validate, type FieldErrors } from '$lib/utils/validation';
@@ -47,11 +48,7 @@
 
 	const { t, locale } = useTranslation();
 
-	let jobs = $state<CronJob[]>([]);
-	let loading = $state(false);
 	let saving = $state(false);
-	let error = $state('');
-	let loadKey = '';
 
 	let name = $state('');
 	let kind = $state('cron');
@@ -102,10 +99,24 @@
 	let jobTab = $state('jobs');
 	let runningId = $state('');
 
-	let schedulerActive = $state(true);
 	let savingScheduler = $state(false);
 
 	let agent = $derived(agentSelection.selected);
+	useQuery(cronStore.list, () => (agent ? { agent } : null));
+	useQuery(configStore.query, () => (agent ? { agent } : null));
+
+	let jobs = $derived(cronStore.jobs);
+	let loading = $derived(cronStore.list.loading);
+	let error = $derived(cronStore.list.error);
+	let schedulerActive = $derived(configStore.data?.cron?.active ?? true);
+
+	let runsKey = '';
+	$effect(() => {
+		if (!agent) return;
+		if (runsKey === agent) return;
+		runsKey = agent;
+		void loadRuns(0);
+	});
 
 	const runsHasMore = $derived(runsOffset + recentRuns.length < runsTotal);
 	const runsRange = $derived.by(() => {
@@ -158,35 +169,13 @@
 		}
 	});
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			const [result, cfg, recent] = await Promise.all([
-				cronApi.list(currentAgent),
-				configApi.get(currentAgent).catch(() => null),
-				cronApi.historyAll(currentAgent, { limit: RUN_PAGE_SIZE, offset: 0 }).catch(() => null)
-			]);
-			jobs = result.jobs ?? [];
-			schedulerActive = cfg?.cron?.active ?? true;
-			recentRuns = recent?.history ?? [];
-			runsTotal = recent?.total ?? 0;
-			runsOffset = 0;
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
-
 	// The agent reads cron.active when it loads its config, so the switch only
 	// takes effect after a server restart.
 	async function setScheduler(next: boolean) {
 		if (!agent) return;
 		savingScheduler = true;
 		try {
-			await configApi.patch(agent, { cron: { active: next } });
-			schedulerActive = next;
+			await configStore.patch(agent, { cron: { active: next } });
 			toastStore.success(t('myaaw.cron.scheduler_saved'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -195,18 +184,10 @@
 		}
 	}
 
-	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
-	});
-
 	async function loadSessions(currentAgent: string, currentChannel: CronChannel) {
 		sessionChoicesLoading = true;
 		try {
-			const page = await conversationsApi.list(currentAgent, {
+			const page = await conversationsStore.fetchList(currentAgent, {
 				limit: 50,
 				channel: currentChannel
 			});
@@ -279,7 +260,7 @@
 		errors = {};
 		saving = true;
 		try {
-			await cronApi.add(agent, {
+			await cronStore.add(agent, {
 				name: result.data.name,
 				schedule_kind: result.data.schedule_kind,
 				expr: result.data.expr,
@@ -299,7 +280,6 @@
 			sessionId = '';
 			chatType = 'guild';
 			toastStore.success(t('myaaw.cron.saved'));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -312,12 +292,11 @@
 		if (!(await askConfirm({ message: t('myaaw.cron.delete_confirm'), variant: 'destructive' })))
 			return;
 		try {
-			await cronApi.remove(agent, id);
+			await cronStore.remove(agent, id);
 			if (historyFor === id) {
 				historyFor = '';
 				history = [];
 			}
-			await load(agent);
 			toastStore.success(t('myaaw.cron.deleted'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -328,7 +307,7 @@
 		if (!agent || runningId) return;
 		runningId = job.id;
 		try {
-			await cronApi.run(agent, job.id);
+			await cronStore.run(agent, job.id);
 			toastStore.success(t('myaaw.cron.ran'));
 			// The agent writes the run entry before answering, so the newest page can
 			// be reloaded right away.
@@ -344,7 +323,7 @@
 		if (!agent) return;
 		historyFor = job.id;
 		try {
-			const result = await cronApi.history(agent, job.id, 20);
+			const result = await cronStore.fetchHistory(agent, job.id);
 			history = result.history ?? [];
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -356,10 +335,7 @@
 		if (!agent || runsLoading) return;
 		runsLoading = true;
 		try {
-			const page = await cronApi.historyAll(agent, {
-				limit: RUN_PAGE_SIZE,
-				offset: Math.max(0, offset)
-			});
+			const page = await cronStore.fetchRuns(agent, RUN_PAGE_SIZE, Math.max(0, offset));
 			recentRuns = page.history ?? [];
 			runsTotal = page.total ?? 0;
 			runsOffset = page.offset ?? Math.max(0, offset);
@@ -394,8 +370,12 @@
 		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
-			onclick={() => agent && load(agent)}
-			{loading}
+			onclick={() => {
+				void cronStore.list.refresh();
+				void configStore.refresh();
+				void loadRuns(0);
+			}}
+			loading={loading || cronStore.list.refreshing}
 		/>
 	{/snippet}
 </TopBarActions>

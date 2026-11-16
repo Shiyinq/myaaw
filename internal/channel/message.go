@@ -3,6 +3,7 @@ package channel
 import (
 	"encoding/json"
 	"myaaw/internal/provider"
+	"strings"
 )
 
 type IncomingMessage struct {
@@ -51,6 +52,40 @@ type IncomingMessage struct {
 	// transcript up to the last user message (regenerate), N keeps it up to the
 	// user message N turns earlier (edit). Nil appends a normal user message.
 	RewindUserOffset *int
+	// Batch carries the other messages of the same spam burst, oldest first. The
+	// turn stores every message as its own user entry but answers only once. It is
+	// never serialized: the queue collects the batch out of band.
+	Batch []*IncomingMessage `json:"-"`
+}
+
+// TurnMessages returns this message followed by the rest of its batch. It is
+// always non-empty, so callers can loop over the whole turn.
+func (m *IncomingMessage) TurnMessages() []*IncomingMessage {
+	if m == nil {
+		return nil
+	}
+	if len(m.Batch) == 0 {
+		return []*IncomingMessage{m}
+	}
+	turns := make([]*IncomingMessage, 0, len(m.Batch)+1)
+	turns = append(turns, m)
+	turns = append(turns, m.Batch...)
+	return turns
+}
+
+// TurnText joins the text of every message in the turn, oldest first, so a trace
+// shows the whole burst instead of its first message. Empty messages are skipped.
+func (m *IncomingMessage) TurnText() string {
+	if m == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(m.Batch)+1)
+	for _, turn := range m.TurnMessages() {
+		if text := strings.TrimSpace(turn.Text); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 type OutgoingMessage struct {
@@ -77,11 +112,25 @@ type FileUpload struct {
 	DataBase64 string `json:"data_base64"`
 }
 
-// Attachment is one file produced by a tool and delivered to the user.
+// Attachment is one file produced by a tool or delivered by the model.
+//
+// A channel either sends the bytes itself (Data) or hands a rendering surface a
+// reference it can fetch from (Path, a virtual path such as /home/workspace/x).
+// Path-based attachments avoid base64-encoding large files into the stream.
 type Attachment struct {
 	FileName string
 	MimeType string
 	Data     []byte
+	// Path is the virtual file path for surfaces that fetch bytes themselves
+	// (the API/WebUI). Empty for byte-only attachments.
+	Path string
+	// Kind is the rendering kind: image, video, audio, pdf, file, or project.
+	Kind string
+	// ProjectType is set for a project attachment: static, react, svelte, next,
+	// vite, or source.
+	ProjectType string
+	// Size is the byte length of the referenced file, when known.
+	Size int64
 }
 
 // ContextUsage describes how full the model's context window is for one request.
@@ -141,5 +190,9 @@ type StreamChunk struct {
 
 type QueueEnvelope struct {
 	Channel string          `json:"channel"`
-	Payload json.RawMessage `json:"payload"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+	// Payloads carries several messages that belong to one agent turn. The queue
+	// consumer batches a chat's burst so every message is kept but the agent
+	// answers once.
+	Payloads []json.RawMessage `json:"payloads,omitempty"`
 }

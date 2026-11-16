@@ -2,7 +2,6 @@ package handler
 
 import (
 	"bufio"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"log"
@@ -37,11 +36,15 @@ type ChatResponse struct {
 	Attachments    []AttachmentResponse `json:"attachments,omitempty"`
 }
 
-// AttachmentResponse is one delivered file, base64-encoded for API clients.
+// AttachmentResponse is one delivered file. The client fetches the bytes from
+// the virtual path through /fs/raw.
 type AttachmentResponse struct {
-	FileName   string `json:"file_name"`
-	MimeType   string `json:"mime_type,omitempty"`
-	DataBase64 string `json:"data_base64"`
+	FileName    string `json:"file_name"`
+	MimeType    string `json:"mime_type,omitempty"`
+	Path        string `json:"path,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	ProjectType string `json:"project_type,omitempty"`
+	Size        int64  `json:"size,omitempty"`
 }
 
 type UsageResponse struct {
@@ -178,10 +181,18 @@ func (s *BotHandlerImpl) writeChatResult(c fiber.Ctx, run *apiRun, res apiRunRes
 		Timeline:       run.timeline.Items(),
 	}
 	for _, att := range out.Attachments {
+		if att.Path == "" {
+			// Byte-only attachments are messaging uploads; the API has no path
+			// to fetch them from.
+			continue
+		}
 		resp.Attachments = append(resp.Attachments, AttachmentResponse{
-			FileName:   att.FileName,
-			MimeType:   att.MimeType,
-			DataBase64: base64.StdEncoding.EncodeToString(att.Data),
+			FileName:    att.FileName,
+			MimeType:    att.MimeType,
+			Path:        att.Path,
+			Kind:        att.Kind,
+			ProjectType: att.ProjectType,
+			Size:        att.Size,
 		})
 	}
 	if out.Usage.TotalTokens > 0 {

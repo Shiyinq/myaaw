@@ -27,9 +27,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { colorOf } from '$lib/bloub';
-	import { conversations as conversationsApi } from '$lib/apis/conversations';
-	import { context as contextApi } from '$lib/apis/context';
-	import { server as serverApi } from '$lib/apis/server';
+	import { conversationsStore } from '$lib/stores/conversations.svelte';
+	import { contextStore } from '$lib/stores/context.svelte';
+	import { serverStore } from '$lib/stores/server.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
 	import { conversationHistory } from '$lib/stores/conversationHistory.svelte';
@@ -38,18 +38,30 @@
 	import { getErrorMessage } from '$lib/utils/api';
 	import type { ContextFile, ConversationSummary } from '$lib/types';
 
+	type Tab = 'history' | 'context' | 'control';
+	type Status = 'connected' | 'stopped' | 'unknown';
+
 	interface Props {
 		/** The focus agent this panel describes. */
 		agent: string;
 		/** The open conversation, highlighted in the history list. */
 		activeId?: string;
+		/** Tab the panel opens on; the chat header can return it to history. */
+		tab?: Tab;
 		onOpen: (id: string) => void;
 		onClose: () => void;
 		/** Opens the full-page editor for one context file. */
 		onOpenContext: (path: string) => void;
 	}
 
-	let { agent, activeId = '', onOpen, onClose, onOpenContext }: Props = $props();
+	let {
+		agent,
+		activeId = '',
+		tab = $bindable<Tab>('history'),
+		onOpen,
+		onClose,
+		onOpenContext
+	}: Props = $props();
 
 	const { t, locale } = useTranslation();
 
@@ -60,10 +72,6 @@
 	/** Dated memory notes, one Markdown file per day. */
 	const DATED_MEMORY = /^\d{4}-\d{2}-\d{2}\.md$/;
 
-	type Tab = 'history' | 'context' | 'control';
-	type Status = 'connected' | 'stopped' | 'unknown';
-
-	let tab = $state<Tab>('history');
 	let status = $state<Status>('unknown');
 
 	let items = $state<ConversationSummary[]>([]);
@@ -194,7 +202,7 @@
 	// Status is cheap to poll and matters while the panel is on screen.
 	async function refreshStatus(name: string) {
 		try {
-			const result = await serverApi.status(name);
+			const result = await serverStore.fetchStatus(name);
 			status = result.running ? 'connected' : 'stopped';
 		} catch {
 			status = 'unknown';
@@ -207,7 +215,9 @@
 		if (!name || controlling) return;
 		controlling = true;
 		try {
-			await serverApi[action](name);
+			if (action === 'start') await serverStore.start(name);
+			else if (action === 'stop') await serverStore.stop(name);
+			else await serverStore.restart(name);
 			const doneKey =
 				action === 'start'
 					? 'myaaw.server.start_done'
@@ -242,7 +252,7 @@
 		const revision = unreadChats.revision();
 		loading = true;
 		try {
-			const result = await conversationsApi.list(name, { limit: PAGE, offset: pageOffset });
+			const result = await conversationsStore.fetchList(name, { limit: PAGE, offset: pageOffset });
 			if (current !== generation) return;
 			const page = result.conversations ?? [];
 			items = reset
@@ -268,7 +278,7 @@
 		const current = generation;
 		const revision = unreadChats.revision();
 		try {
-			const result = await conversationsApi.list(name, { limit: PAGE, offset: 0 });
+			const result = await conversationsStore.fetchList(name, { limit: PAGE, offset: 0 });
 			if (current !== generation) return;
 			const page = result.conversations ?? [];
 			if (page.length === 0) return;
@@ -285,7 +295,7 @@
 
 	async function loadFiles(name: string) {
 		try {
-			const result = await contextApi.list(name);
+			const result = await contextStore.fetchList(name);
 			const next: Record<string, ContextFile> = {};
 			for (const file of result.files ?? []) next[file.path] = file;
 			files = next;

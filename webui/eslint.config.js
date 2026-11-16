@@ -47,6 +47,22 @@ export default [
 					runes: true
 				}
 			}
+		},
+		rules: {
+			// Components talk to stores, never to the HTTP layer. A page that needs
+			// new data adds a query store instead of importing `lib/apis` directly.
+			'no-restricted-imports': [
+				'error',
+				{
+					patterns: [
+						{
+							group: ['$lib/apis/*'],
+							message:
+								'Import the matching store from $lib/stores instead of calling the API directly.'
+						}
+					]
+				}
+			]
 		}
 	},
 	{

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { server as serverApi } from '$lib/apis/server';
+	import { serverStore } from '$lib/stores/server.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -24,46 +25,25 @@
 		Server,
 		Square
 	} from 'lucide-svelte';
-	import type { ServerStatus } from '$lib/types';
-
 	const { t } = useTranslation();
 
-	let status = $state<ServerStatus | null>(null);
-	let loading = $state(false);
 	let action = $state<'start' | 'stop' | 'restart' | ''>('');
-	let error = $state('');
-	let loadKey = '';
 
 	let agent = $derived(agentSelection.selected);
+	useQuery(serverStore.query, () => (agent ? { agent } : null));
 
-	async function load(currentAgent: string) {
-		loading = true;
-		error = '';
-		try {
-			status = await serverApi.status(currentAgent);
-		} catch (err) {
-			status = null;
-			error = getErrorMessage(err);
-		} finally {
-			loading = false;
-		}
-	}
-
-	$effect(() => {
-		const currentAgent = agentSelection.selected;
-		const key = `${currentAgent}`;
-		if (!currentAgent || key === loadKey) return;
-		loadKey = key;
-		void load(currentAgent);
-	});
+	let status = $derived(serverStore.data ?? null);
+	let loading = $derived(serverStore.loading);
+	let error = $derived(serverStore.error);
 
 	async function run(command: 'start' | 'stop' | 'restart') {
 		if (!agent) return;
 		action = command;
 		try {
-			await serverApi[command](agent);
+			if (command === 'start') await serverStore.start(agent);
+			else if (command === 'stop') await serverStore.stop(agent);
+			else await serverStore.restart(agent);
 			toastStore.success(t(`myaaw.server.${command}_done`));
-			await load(agent);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -77,8 +57,8 @@
 		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
-			onclick={() => agent && load(agent)}
-			{loading}
+			onclick={() => void serverStore.refresh()}
+			loading={loading || serverStore.refreshing}
 		/>
 	{/snippet}
 </TopBarActions>

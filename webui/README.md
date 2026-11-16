@@ -90,3 +90,4 @@ npm run format     # prettier --write .
 - [Web Terminal](../docs/api/terminal.md)
 - [CLI `api` command](../docs/cli/api.md)
 - [Agent context blocks](../docs/agents/context.md)
+- [Agent attachments](../docs/agents/attachments.md)
