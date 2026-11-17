@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"myaaw/internal/auth/chatgpt"
 )
 
 const chatGPTPartialText = "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"msg-1\",\"role\":\"assistant\",\"content\":[]}}\n\ndata: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"item_id\":\"msg-1\",\"delta\":\"partial\"}\n\n"
@@ -170,6 +172,91 @@ func TestChatGPTReasoningDoneContinuation(t *testing.T) {
 	message.Content = "edited transcript"
 	if _, err := chatGPTInput([]Message{message, {Role: "tool", ToolCallID: "call-1", Content: "result"}}); err == nil {
 		t.Fatal("stale continuation metadata silently replayed")
+	}
+}
+
+func TestChatGPTCompletedWithEmptyOutputUsesStreamedItems(t *testing.T) {
+	// The Responses API terminates with "output": [] even though the stream
+	// already delivered every item. Tool calls and reasoning continuation only
+	// exist in those streamed items, so an empty terminal snapshot must fall back
+	// to them instead of reporting a successful empty turn.
+	for _, tc := range []struct {
+		name  string
+		item  map[string]interface{}
+		check func(*testing.T, Message, string)
+	}{
+		{
+			name: "function call",
+			item: map[string]interface{}{"type": "function_call", "id": "fc-1", "call_id": "call-1", "name": "bash", "namespace": "myaaw", "arguments": `{"command":"sleep 3"}`},
+			check: func(t *testing.T, message Message, input string) {
+				if len(message.ToolCalls) != 1 || message.ToolCalls[0].Function.Name != "bash" || ToolCallArgumentsString(message.ToolCalls[0].Function.Arguments) != `{"command":"sleep 3"}` {
+					t.Fatalf("streamed tool call lost: %+v", message)
+				}
+				if !strings.Contains(input, `"call_id":"call-1"`) {
+					t.Fatalf("tool call missing from continuation: %s", input)
+				}
+			},
+		},
+		{
+			name: "message",
+			item: map[string]interface{}{"type": "message", "id": "msg-1", "role": "assistant", "content": []interface{}{map[string]interface{}{"type": "output_text", "text": "Hi, I am Vivy.", "annotations": []interface{}{}}}},
+			check: func(t *testing.T, message Message, input string) {
+				if MessageText(message) != "Hi, I am Vivy." {
+					t.Fatalf("streamed text lost: %+v", message)
+				}
+				if !strings.Contains(input, `"text":"Hi, I am Vivy."`) {
+					t.Fatalf("message missing from continuation: %s", input)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := chatGPTTestProvider(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				chatGPTTestSSE(w, map[string]interface{}{"type": "response.output_item.added", "output_index": 0,
+					"item": map[string]interface{}{"type": tc.item["type"], "id": tc.item["id"], "status": "in_progress"}})
+				chatGPTTestSSE(w, map[string]interface{}{"type": "response.output_item.done", "output_index": 0, "item": tc.item})
+				chatGPTTestCompleted(w, []interface{}{})
+			})
+			message, err := p.Chat("", nil, []map[string]interface{}{{"type": "function", "function": map[string]interface{}{"name": "bash"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(message.ProviderMetadata[chatgpt.ProviderType]) == 0 {
+				t.Fatal("streamed continuation was not preserved")
+			}
+			input, err := chatGPTInput(append([]Message{message}, continuationResults(message)...))
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := json.Marshal(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.check(t, message, string(encoded))
+		})
+	}
+}
+
+// continuationResults closes the pending tool calls of a replayed assistant
+// turn, so chatGPTInput accepts the continuation they carry.
+func continuationResults(message Message) []Message {
+	results := make([]Message, 0, len(message.ToolCalls))
+	for _, call := range message.ToolCalls {
+		results = append(results, Message{Role: "tool", Name: call.Function.Name, ToolCallID: call.ID, Content: "ok"})
+	}
+	return results
+}
+
+func TestChatGPTEmptyOutputDoesNotAdvertiseUnfinishedItems(t *testing.T) {
+	p := chatGPTTestProvider(t, func(w http.ResponseWriter, r *http.Request) {
+		chatGPTTestSSE(w, map[string]interface{}{"type": "response.output_item.added", "output_index": 0,
+			"item": map[string]interface{}{"type": "function_call", "id": "fc-1", "status": "in_progress", "call_id": "call-1", "name": "bash", "namespace": "myaaw", "arguments": ""}})
+		chatGPTTestSSE(w, map[string]interface{}{"type": "response.function_call_arguments.delta", "output_index": 0, "item_id": "fc-1", "delta": `{"comm`})
+		chatGPTTestCompleted(w, []interface{}{})
+	})
+	if _, err := p.Chat("", nil, []map[string]interface{}{{"type": "function", "function": map[string]interface{}{"name": "bash"}}}); err == nil || !strings.Contains(err.Error(), "unfinished output item") {
+		t.Fatalf("unfinished streamed item accepted: %v", err)
 	}
 }
 
