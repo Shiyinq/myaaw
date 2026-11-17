@@ -328,7 +328,9 @@ func consumeChatGPTSSE(r io.Reader, names map[string]string, requestID string, o
 		}
 		final.Thought, final.Usage = thought.String(), usage
 	}()
-	ordered := func() []chatGPTOutputItem {
+	// ordered returns the accumulated items with their original output indexes,
+	// because reasoning summary identity is keyed by that index, not by position.
+	ordered := func() ([]int, []chatGPTOutputItem) {
 		indexes := make([]int, 0, len(items))
 		for index := range items {
 			indexes = append(indexes, index)
@@ -338,7 +340,7 @@ func consumeChatGPTSSE(r io.Reader, names map[string]string, requestID string, o
 		for _, index := range indexes {
 			out = append(out, *items[index])
 		}
-		return out
+		return indexes, out
 	}
 	getItem := func(ev chatGPTStreamEvent) (*chatGPTOutputItem, error) {
 		item := items[ev.OutputIndex]
@@ -478,9 +480,16 @@ func consumeChatGPTSSE(r io.Reader, names map[string]string, requestID string, o
 			if ev.Response.Error != nil {
 				return apiError(ev.Response.Error, "response failed", data)
 			}
-			output := ev.Response.Output
-			if output == nil {
-				output = ordered()
+			output, outputIndexes := ev.Response.Output, make([]int, len(ev.Response.Output))
+			for i := range outputIndexes {
+				outputIndexes[i] = i
+			}
+			if len(output) == 0 {
+				// This API version terminates with an empty output snapshot even
+				// though the stream delivered every item. Rebuild the turn from the
+				// accumulated stream items, otherwise tool calls and reasoning
+				// continuation are lost while the run still reports success.
+				outputIndexes, output = ordered()
 			}
 			for i := range output {
 				item := &output[i]
@@ -491,7 +500,7 @@ func consumeChatGPTSSE(r io.Reader, names map[string]string, requestID string, o
 						item.EncryptedContent = done.EncryptedContent
 					}
 				}
-				if err := summarySnapshot(i, item); err != nil {
+				if err := summarySnapshot(outputIndexes[i], item); err != nil {
 					return err
 				}
 			}
