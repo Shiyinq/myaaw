@@ -255,7 +255,13 @@
 {/snippet}
 
 {#snippet archiveList()}
-	{#if archives.length === 0}
+	{#if !data}
+		{#if !backupsStore.query.error}
+			<p class="py-10 text-center text-sm text-muted-foreground" role="status">
+				{t('common.loading')}
+			</p>
+		{/if}
+	{:else if archives.length === 0}
 		<EmptyState
 			title={t('myaaw.backups.empty')}
 			description={scoped
