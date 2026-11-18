@@ -37,8 +37,7 @@
 			compact ? 'max-w-0 opacity-0 delay-0' : 'max-w-44 opacity-100 delay-200'
 		]}
 	>
-		<span class="text-sm font-bold tracking-tight">Myaaw</span>
-		<span class="text-[10px] uppercase tracking-widest text-muted-foreground"> Control plane </span>
+		<span class="text-2xl font-bold tracking-tight">Myaaw</span>
 	</div>
 	<button
 		class={[

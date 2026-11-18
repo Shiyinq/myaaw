@@ -9,10 +9,5 @@
 			<Logo class="h-24 w-24" />
 		{/snippet}
 	</Bloub>
-	<div class="flex flex-col items-center gap-1">
-		<span class="text-2xl font-bold tracking-tight">Myaaw</span>
-		<span class="text-[10px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
-			Control plane
-		</span>
-	</div>
+	<span class="text-2xl font-bold tracking-tight">Myaaw</span>
 </div>
