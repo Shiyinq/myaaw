@@ -13,6 +13,7 @@ import {
 	MoonStar,
 	PawPrint,
 	PenLine,
+	Radar,
 	Sparkles,
 	Sun,
 	SunMedium,
@@ -35,6 +36,7 @@ export type ThemeId =
 	| 'siamese'
 	| 'canvas'
 	| 'obsidian'
+	| 'phosphor'
 	| 'glass'
 	| 'carbon'
 	| 'terminal'
@@ -197,6 +199,19 @@ export const APPEARANCE: AppearanceOption[] = [
 			bg: 'oklch(0 0 0)',
 			card: 'oklch(0 0 0)',
 			accent: 'oklch(0.932 0.003 230)'
+		}
+	},
+	{
+		id: 'phosphor',
+		labelKey: 'myaaw.settings.theme_phosphor',
+		mode: 'dark',
+		theme: 'phosphor',
+		aliases: ['phosphor', 'fosfor', 'amber', 'crt', 'cassette', 'retro', 'telemetry'],
+		icon: Radar,
+		swatch: {
+			bg: 'oklch(0.135 0.014 68)',
+			card: 'oklch(0.18 0.02 68)',
+			accent: 'oklch(0.82 0.155 74)'
 		}
 	},
 	{
