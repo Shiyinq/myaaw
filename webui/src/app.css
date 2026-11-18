@@ -15,13 +15,13 @@
 @custom-variant data-active (&[data-state='active']);
 
 /*
- * Named themes (paper, slate, graphite, typewriter, kontras, kontras-light,
- * mist, carbon, noir, redup, blueprint, terminal, glass) are a `data-theme`
- * value that mode-watcher writes to <html> next to the `dark` class. They change
- * tokens, the page background or the typeface, so most themes never touch the
- * components. The translucent ones (glass, mist) share the `frost-*` surface
- * classes, and only `terminal` needs a variant, because it re-reads the chat
- * transcript per element.
+ * Named themes (canvas, obsidian, paper, slate, graphite, typewriter, kontras,
+ * kontras-light, mist, carbon, noir, redup, blueprint, terminal, glass) are a
+ * `data-theme` value that mode-watcher writes to <html> next to the `dark`
+ * class. They change tokens, the page background or the typeface, so most
+ * themes never touch the components. The translucent ones (glass, mist) share
+ * the `frost-*` surface classes, and only `terminal` needs a variant, because
+ * it re-reads the chat transcript per element.
  */
 @custom-variant terminal (&:where([data-theme='terminal'], [data-theme='terminal'] *));
 
@@ -394,6 +394,64 @@
 		--border: oklch(0.3 0 0);
 		--input: oklch(0.3 0 0);
 		--chat-bubble-radius: 0rem;
+	}
+
+	/*
+	 * Canvas — a single pure-white canvas where the left sidebar, the centre
+	 * column and the right panel share the same white surface, divided only by
+	 * crisp cool hairlines. Near-black ink, slate secondary copy and soft
+	 * cool-grey pills.
+	 */
+	:root[data-theme='canvas'] {
+		--background: oklch(1 0 0);
+		--foreground: oklch(0.188 0.013 248);
+		--card: oklch(1 0 0);
+		--card-foreground: oklch(0.188 0.013 248);
+		--popover: oklch(1 0 0);
+		--popover-foreground: oklch(0.188 0.013 248);
+		--primary: oklch(0.188 0.013 248);
+		--primary-foreground: oklch(1 0 0);
+		--secondary: oklch(0.963 0.005 230);
+		--secondary-foreground: oklch(0.188 0.013 248);
+		--muted: oklch(0.963 0.005 230);
+		--muted-foreground: oklch(0.497 0.024 242);
+		--accent: oklch(0.948 0.007 235);
+		--accent-foreground: oklch(0.188 0.013 248);
+		--border: oklch(0.938 0.006 235);
+		--input: oklch(0.938 0.006 235);
+		--ring: oklch(0.188 0.013 248);
+		--surface-ring: var(--border);
+		--radius: 0.75rem;
+		--chat-bubble-radius: 1.25rem;
+	}
+
+	/*
+	 * Obsidian — the dark counterpart to Canvas: a single pure-black surface
+	 * where the left sidebar, the centre column and the right panel merge into
+	 * one plane, divided only by crisp dark-slate hairlines. Soft white ink,
+	 * slate secondary copy and subtle dark pill fills.
+	 */
+	:root[data-theme='obsidian'] {
+		--background: oklch(0 0 0);
+		--foreground: oklch(0.932 0.003 230);
+		--card: oklch(0 0 0);
+		--card-foreground: oklch(0.932 0.003 230);
+		--popover: oklch(0 0 0);
+		--popover-foreground: oklch(0.932 0.003 230);
+		--primary: oklch(0.963 0.004 230);
+		--primary-foreground: oklch(0.188 0.013 248);
+		--secondary: oklch(0.22 0.007 248);
+		--secondary-foreground: oklch(0.932 0.003 230);
+		--muted: oklch(0.22 0.007 248);
+		--muted-foreground: oklch(0.562 0.011 245);
+		--accent: oklch(0.256 0.008 248);
+		--accent-foreground: oklch(0.932 0.003 230);
+		--border: oklch(0.32 0.008 240);
+		--input: oklch(0.32 0.008 240);
+		--ring: oklch(0.932 0.003 230);
+		--surface-ring: var(--border);
+		--radius: 0.75rem;
+		--chat-bubble-radius: 1.25rem;
 	}
 
 	/*

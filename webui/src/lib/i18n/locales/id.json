@@ -660,6 +660,8 @@
 			"mode": "Mode",
 			"theme": "Tema",
 			"theme_siamese": "Myaaw Siam",
+			"theme_canvas": "Kanvas",
+			"theme_obsidian": "Obsidian",
 			"theme_light": "Terang",
 			"theme_dark": "Gelap",
 			"theme_glass": "Kaca",

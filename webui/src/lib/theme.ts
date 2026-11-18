@@ -3,6 +3,7 @@ import {
 	Accessibility,
 	BookOpen,
 	CloudFog,
+	Columns3,
 	Contrast,
 	Film,
 	Grid3x3,
@@ -32,6 +33,8 @@ export type ThemeMode = 'light' | 'dark' | 'system';
  */
 export type ThemeId =
 	| 'siamese'
+	| 'canvas'
+	| 'obsidian'
 	| 'glass'
 	| 'carbon'
 	| 'terminal'
@@ -84,6 +87,19 @@ export const APPEARANCE: AppearanceOption[] = [
 			bg: 'oklch(0.96 0.013 82)',
 			card: 'oklch(0.985 0.008 82)',
 			accent: 'oklch(0.34 0.03 55)'
+		}
+	},
+	{
+		id: 'canvas',
+		labelKey: 'myaaw.settings.theme_canvas',
+		mode: 'light',
+		theme: 'canvas',
+		aliases: ['canvas', 'kanvas', 'putih', 'white', 'hairline', 'clean'],
+		icon: Columns3,
+		swatch: {
+			bg: 'oklch(1 0 0)',
+			card: 'oklch(1 0 0)',
+			accent: 'oklch(0.188 0.013 248)'
 		}
 	},
 	{
@@ -169,6 +185,19 @@ export const APPEARANCE: AppearanceOption[] = [
 		aliases: ['dark', 'gelap'],
 		icon: Moon,
 		swatch: { bg: 'oklch(0.145 0 0)', card: 'oklch(0.21 0 0)', accent: 'oklch(0.985 0 0)' }
+	},
+	{
+		id: 'obsidian',
+		labelKey: 'myaaw.settings.theme_obsidian',
+		mode: 'dark',
+		theme: 'obsidian',
+		aliases: ['obsidian', 'hitam', 'black', 'hairline', 'oled'],
+		icon: Columns3,
+		swatch: {
+			bg: 'oklch(0 0 0)',
+			card: 'oklch(0 0 0)',
+			accent: 'oklch(0.932 0.003 230)'
+		}
 	},
 	{
 		id: 'carbon',
