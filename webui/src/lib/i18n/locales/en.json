@@ -663,6 +663,8 @@
 			"theme_canvas": "Canvas",
 			"theme_obsidian": "Obsidian",
 			"theme_phosphor": "Phosphor",
+			"theme_radar": "Radar",
+			"theme_dot_matrix": "Dot Matrix",
 			"theme_light": "Light",
 			"theme_dark": "Dark",
 			"theme_glass": "Glass",

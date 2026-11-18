@@ -1,6 +1,7 @@
 import type { LucideIcon } from '$lib/types/icons';
 import {
 	Accessibility,
+	Activity,
 	BookOpen,
 	CloudFog,
 	Columns3,
@@ -14,6 +15,7 @@ import {
 	PawPrint,
 	PenLine,
 	Radar,
+	ScanLine,
 	Sparkles,
 	Sun,
 	SunMedium,
@@ -37,6 +39,8 @@ export type ThemeId =
 	| 'canvas'
 	| 'obsidian'
 	| 'phosphor'
+	| 'radar'
+	| 'dot-matrix'
 	| 'glass'
 	| 'carbon'
 	| 'terminal'
@@ -158,6 +162,28 @@ export const APPEARANCE: AppearanceOption[] = [
 		swatch: { bg: 'oklch(0.985 0 0)', card: 'oklch(1 0 0)', accent: 'oklch(0.16 0 0)' }
 	},
 	{
+		id: 'dot-matrix',
+		labelKey: 'myaaw.settings.theme_dot_matrix',
+		mode: 'light',
+		theme: 'dot-matrix',
+		aliases: [
+			'dot matrix',
+			'matriks titik',
+			'lcd',
+			'casio',
+			'gameboy',
+			'olive',
+			'retro',
+			'cassette'
+		],
+		icon: ScanLine,
+		swatch: {
+			bg: 'oklch(0.855 0.036 126)',
+			card: 'oklch(0.88 0.032 126)',
+			accent: 'oklch(0.22 0.038 134)'
+		}
+	},
+	{
 		id: 'kontras-light',
 		labelKey: 'myaaw.settings.theme_kontras_light',
 		mode: 'light',
@@ -207,11 +233,24 @@ export const APPEARANCE: AppearanceOption[] = [
 		mode: 'dark',
 		theme: 'phosphor',
 		aliases: ['phosphor', 'fosfor', 'amber', 'crt', 'cassette', 'retro', 'telemetry'],
-		icon: Radar,
+		icon: Activity,
 		swatch: {
 			bg: 'oklch(0.135 0.014 68)',
 			card: 'oklch(0.18 0.02 68)',
 			accent: 'oklch(0.82 0.155 74)'
+		}
+	},
+	{
+		id: 'radar',
+		labelKey: 'myaaw.settings.theme_radar',
+		mode: 'dark',
+		theme: 'radar',
+		aliases: ['radar', 'oscilloscope', 'osiloskop', 'green crt', 'p31', 'cassette'],
+		icon: Radar,
+		swatch: {
+			bg: 'oklch(0.13 0.018 152)',
+			card: 'oklch(0.175 0.024 152)',
+			accent: 'oklch(0.82 0.165 152)'
 		}
 	},
 	{

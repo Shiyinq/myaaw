@@ -848,7 +848,9 @@
 	/* Monospace themes need a smaller heading to keep each phrase on one line. */
 	:global(html[data-theme='terminal']) .hero-heading,
 	:global(html[data-theme='typewriter']) .hero-heading,
-	:global(html[data-theme='phosphor']) .hero-heading {
+	:global(html[data-theme='phosphor']) .hero-heading,
+	:global(html[data-theme='radar']) .hero-heading,
+	:global(html[data-theme='dot-matrix']) .hero-heading {
 		font-size: min(4.5rem, 10cqi);
 	}
 
