@@ -15,13 +15,13 @@
 @custom-variant data-active (&[data-state='active']);
 
 /*
- * Named themes (paper, slate, graphite, typewriter, kontras, kontras-light,
- * mist, carbon, noir, redup, blueprint, terminal, glass) are a `data-theme`
- * value that mode-watcher writes to <html> next to the `dark` class. They change
- * tokens, the page background or the typeface, so most themes never touch the
- * components. The translucent ones (glass, mist) share the `frost-*` surface
- * classes, and only `terminal` needs a variant, because it re-reads the chat
- * transcript per element.
+ * Named themes (canvas, obsidian, phosphor, radar, dot-matrix, paper, slate,
+ * graphite, typewriter, kontras, kontras-light, mist, carbon, noir, redup,
+ * blueprint, terminal, glass) are a `data-theme` value that mode-watcher writes
+ * to <html> next to the `dark` class. They change tokens, the page background
+ * or the typeface, so most themes never touch the components. The translucent
+ * ones (glass, mist) share the `frost-*` surface classes, and only `terminal`
+ * needs a variant, because it re-reads the chat transcript per element.
  */
 @custom-variant terminal (&:where([data-theme='terminal'], [data-theme='terminal'] *));
 
@@ -397,6 +397,286 @@
 	}
 
 	/*
+	 * Canvas — a single pure-white canvas where the left sidebar, the centre
+	 * column and the right panel share the same white surface, divided only by
+	 * crisp cool hairlines. Near-black ink, slate secondary copy and soft
+	 * cool-grey pills.
+	 */
+	:root[data-theme='canvas'] {
+		--background: oklch(1 0 0);
+		--foreground: oklch(0.188 0.013 248);
+		--card: oklch(1 0 0);
+		--card-foreground: oklch(0.188 0.013 248);
+		--popover: oklch(1 0 0);
+		--popover-foreground: oklch(0.188 0.013 248);
+		--primary: oklch(0.188 0.013 248);
+		--primary-foreground: oklch(1 0 0);
+		--secondary: oklch(0.963 0.005 230);
+		--secondary-foreground: oklch(0.188 0.013 248);
+		--muted: oklch(0.963 0.005 230);
+		--muted-foreground: oklch(0.497 0.024 242);
+		--accent: oklch(0.948 0.007 235);
+		--accent-foreground: oklch(0.188 0.013 248);
+		--border: oklch(0.938 0.006 235);
+		--input: oklch(0.938 0.006 235);
+		--ring: oklch(0.188 0.013 248);
+		--surface-ring: var(--border);
+		--radius: 0.75rem;
+		--chat-bubble-radius: 1.25rem;
+	}
+
+	/*
+	 * Obsidian — the dark counterpart to Canvas: a single pure-black surface
+	 * where the left sidebar, the centre column and the right panel merge into
+	 * one plane, divided only by crisp dark-slate hairlines. Soft white ink,
+	 * slate secondary copy and subtle dark pill fills.
+	 */
+	:root[data-theme='obsidian'] {
+		--background: oklch(0 0 0);
+		--foreground: oklch(0.932 0.003 230);
+		--card: oklch(0 0 0);
+		--card-foreground: oklch(0.932 0.003 230);
+		--popover: oklch(0 0 0);
+		--popover-foreground: oklch(0.932 0.003 230);
+		--primary: oklch(0.963 0.004 230);
+		--primary-foreground: oklch(0.188 0.013 248);
+		--secondary: oklch(0.22 0.007 248);
+		--secondary-foreground: oklch(0.932 0.003 230);
+		--muted: oklch(0.22 0.007 248);
+		--muted-foreground: oklch(0.562 0.011 245);
+		--accent: oklch(0.256 0.008 248);
+		--accent-foreground: oklch(0.932 0.003 230);
+		--border: oklch(0.32 0.008 240);
+		--input: oklch(0.32 0.008 240);
+		--ring: oklch(0.932 0.003 230);
+		--surface-ring: var(--border);
+		--radius: 0.75rem;
+		--chat-bubble-radius: 1.25rem;
+	}
+
+	/*
+	 * Phosphor — cassette-futurism telemetry console: an amber P3-phosphor CRT
+	 * running on Myaaw Mono, etched amber reticles, square instrument corners
+	 * and a faint fixed scanline over smoked glass.
+	 */
+	:root[data-theme='phosphor'] {
+		--font-sans: var(--font-ui-mono);
+		--font-mono: var(--font-ui-mono);
+		--background: oklch(0.135 0.014 68);
+		--foreground: oklch(0.84 0.145 76);
+		--card: oklch(0.165 0.018 68);
+		--card-foreground: oklch(0.84 0.145 76);
+		--popover: oklch(0.185 0.02 68);
+		--popover-foreground: oklch(0.84 0.145 76);
+		--primary: oklch(0.82 0.155 74);
+		--primary-foreground: oklch(0.14 0.016 68);
+		--secondary: oklch(0.22 0.032 70);
+		--secondary-foreground: oklch(0.84 0.145 76);
+		--muted: oklch(0.21 0.028 70);
+		--muted-foreground: oklch(0.61 0.095 72);
+		--accent: oklch(0.25 0.042 72);
+		--accent-foreground: oklch(0.88 0.15 78);
+		--border: oklch(0.32 0.055 70);
+		--input: oklch(0.32 0.055 70);
+		--ring: oklch(0.82 0.155 74);
+		--surface-ring: var(--border);
+		--chat-bubble-ring: var(--border);
+		--radius: 0.125rem;
+		--chat-bubble-radius: 0.125rem;
+		--code-keyword: oklch(0.88 0.16 80);
+		--code-string: oklch(0.78 0.13 65);
+		--code-number: oklch(0.85 0.15 55);
+		--code-title: oklch(0.9 0.14 85);
+		--code-attr: oklch(0.76 0.12 72);
+		--code-comment: oklch(0.54 0.07 70);
+	}
+
+	:root[data-theme='phosphor'] body {
+		background-image:
+			repeating-linear-gradient(
+				to bottom,
+				transparent 0 2px,
+				color-mix(in oklab, black 18%, transparent) 2px 3px
+			),
+			radial-gradient(
+				120% 90% at 50% 45%,
+				color-mix(in oklab, var(--primary) 5%, transparent),
+				transparent 75%
+			);
+		background-attachment: fixed;
+	}
+
+	/*
+	 * Radar — P31 green-phosphor radar & oscilloscope CRT: the green counterpart
+	 * to Phosphor, pairing a 2px scanline with a faint 32px graticule grid over
+	 * smoked green tube glass.
+	 */
+	:root[data-theme='radar'] {
+		--font-sans: var(--font-ui-mono);
+		--font-mono: var(--font-ui-mono);
+		--background: oklch(0.13 0.018 152);
+		--foreground: oklch(0.84 0.155 152);
+		--card: oklch(0.16 0.022 152);
+		--card-foreground: oklch(0.84 0.155 152);
+		--popover: oklch(0.18 0.025 152);
+		--popover-foreground: oklch(0.84 0.155 152);
+		--primary: oklch(0.82 0.165 152);
+		--primary-foreground: oklch(0.135 0.02 152);
+		--secondary: oklch(0.215 0.032 152);
+		--secondary-foreground: oklch(0.84 0.155 152);
+		--muted: oklch(0.205 0.028 152);
+		--muted-foreground: oklch(0.6 0.095 152);
+		--accent: oklch(0.245 0.04 152);
+		--accent-foreground: oklch(0.88 0.16 152);
+		--border: oklch(0.31 0.055 152);
+		--input: oklch(0.31 0.055 152);
+		--ring: oklch(0.82 0.165 152);
+		--surface-ring: var(--border);
+		--chat-bubble-ring: var(--border);
+		--radius: 0.125rem;
+		--chat-bubble-radius: 0.125rem;
+		--code-keyword: oklch(0.89 0.17 152);
+		--code-string: oklch(0.78 0.13 160);
+		--code-number: oklch(0.86 0.15 142);
+		--code-title: oklch(0.91 0.15 155);
+		--code-attr: oklch(0.75 0.12 150);
+		--code-comment: oklch(0.53 0.075 152);
+	}
+
+	:root[data-theme='radar'] body {
+		background-image:
+			repeating-linear-gradient(
+				to bottom,
+				transparent 0 2px,
+				color-mix(in oklab, black 18%, transparent) 2px 3px
+			),
+			linear-gradient(
+				to right,
+				color-mix(in oklab, var(--primary) 4.5%, transparent) 1px,
+				transparent 1px
+			),
+			linear-gradient(
+				to bottom,
+				color-mix(in oklab, var(--primary) 4.5%, transparent) 1px,
+				transparent 1px
+			),
+			radial-gradient(
+				120% 90% at 50% 45%,
+				color-mix(in oklab, var(--primary) 5%, transparent),
+				transparent 75%
+			);
+		background-size:
+			auto,
+			32px 32px,
+			32px 32px,
+			auto;
+		background-attachment: fixed;
+	}
+
+	/*
+	 * Dot Matrix — reflective STN dot-matrix pocket display (DMG-01 / 1980s
+	 * handheld instruments): an olive-sage polarizer substrate with dark
+	 * energized pixel ink, sharp segment borders and a continuous 4px pixel
+	 * matrix across every sheet.
+	 */
+	:root[data-theme='dot-matrix'] {
+		--font-sans: var(--font-ui-mono);
+		--font-mono: var(--font-ui-mono);
+		--background: oklch(0.855 0.036 126);
+		--foreground: oklch(0.22 0.038 134);
+		--card: oklch(0.88 0.032 126);
+		--card-foreground: oklch(0.22 0.038 134);
+		--popover: oklch(0.89 0.03 126);
+		--popover-foreground: oklch(0.22 0.038 134);
+		--primary: oklch(0.22 0.038 134);
+		--primary-foreground: oklch(0.88 0.032 126);
+		--secondary: oklch(0.805 0.038 126);
+		--secondary-foreground: oklch(0.22 0.038 134);
+		--muted: oklch(0.81 0.038 126);
+		--muted-foreground: oklch(0.44 0.042 132);
+		--accent: oklch(0.785 0.04 126);
+		--accent-foreground: oklch(0.2 0.04 134);
+		--border: oklch(0.71 0.042 128);
+		--input: oklch(0.71 0.042 128);
+		--ring: oklch(0.22 0.038 134);
+		--surface-ring: var(--border);
+		--chat-bubble-ring: var(--border);
+		--radius: 0.125rem;
+		--chat-bubble-radius: 0.125rem;
+		--code-keyword: oklch(0.18 0.04 134);
+		--code-string: oklch(0.32 0.045 130);
+		--code-number: oklch(0.26 0.042 134);
+		--code-title: oklch(0.2 0.04 134);
+		--code-attr: oklch(0.34 0.042 132);
+		--code-comment: oklch(0.48 0.04 130);
+	}
+
+	:root[data-theme='dot-matrix']
+		:is(
+			aside,
+			header,
+			.bg-card,
+			[data-slot='card'],
+			[data-slot='dialog-content'],
+			[data-slot='dropdown-menu-content'],
+			[data-slot='dropdown-menu-sub-content']
+		) {
+		background-image:
+			linear-gradient(
+				to right,
+				color-mix(in oklab, var(--foreground) 6%, transparent) 1px,
+				transparent 1px
+			),
+			linear-gradient(
+				to bottom,
+				color-mix(in oklab, var(--foreground) 6%, transparent) 1px,
+				transparent 1px
+			);
+		background-size: 4px 4px;
+	}
+
+	:root[data-theme='dot-matrix'] body {
+		background-image:
+			linear-gradient(
+				to right,
+				color-mix(in oklab, var(--foreground) 6%, transparent) 1px,
+				transparent 1px
+			),
+			linear-gradient(
+				to bottom,
+				color-mix(in oklab, var(--foreground) 6%, transparent) 1px,
+				transparent 1px
+			),
+			radial-gradient(
+				120% 95% at 50% 50%,
+				transparent 45%,
+				color-mix(in oklab, var(--foreground) 7%, transparent) 100%
+			);
+		background-size:
+			4px 4px,
+			4px 4px,
+			auto;
+		background-attachment: fixed;
+	}
+
+	:is(:root[data-theme='phosphor'], :root[data-theme='radar'])
+		:is(
+			aside,
+			header,
+			.bg-card,
+			[data-slot='card'],
+			[data-slot='dialog-content'],
+			[data-slot='dropdown-menu-content'],
+			[data-slot='dropdown-menu-sub-content']
+		) {
+		background-image: repeating-linear-gradient(
+			to bottom,
+			transparent 0 2px,
+			color-mix(in oklab, black 16%, transparent) 2px 3px
+		);
+	}
+
+	/*
 	 * Paper — a warm, low-contrast light page for long reading. No pure white:
 	 * the tint is the difference, like a page left out in warm lamplight.
 	 */
@@ -763,9 +1043,75 @@
 [data-theme='glass'] .page-clear,
 [data-theme='mist'] .page-clear,
 [data-theme='siamese'] .page-clear,
+[data-theme='phosphor'] .page-clear,
+[data-theme='radar'] .page-clear,
+[data-theme='dot-matrix'] .page-clear,
 [data-theme='blueprint'] .page-clear,
 [data-theme='noir'] .page-clear {
 	background-color: transparent;
+}
+
+/*
+ * @tailwindcss/typography ships its own slate palette on `.prose` and swaps in
+ * `--tw-prose-invert-*` (#fff headings, cold-grey body) in dark mode. Point both
+ * sets at the theme tokens so Markdown previews and chat answers follow the
+ * active theme (such as Phosphor's amber beam or Paper's warm ink).
+ */
+.prose {
+	--tw-prose-body: var(--foreground);
+	--tw-prose-headings: var(--foreground);
+	--tw-prose-lead: var(--muted-foreground);
+	--tw-prose-links: var(--foreground);
+	--tw-prose-bold: var(--foreground);
+	--tw-prose-counters: var(--muted-foreground);
+	--tw-prose-bullets: var(--muted-foreground);
+	--tw-prose-hr: var(--border);
+	--tw-prose-quotes: var(--foreground);
+	--tw-prose-quote-borders: var(--border);
+	--tw-prose-captions: var(--muted-foreground);
+	--tw-prose-kbd: var(--foreground);
+	--tw-prose-code: var(--foreground);
+	--tw-prose-pre-code: var(--foreground);
+	--tw-prose-pre-bg: color-mix(in oklab, var(--muted) 40%, transparent);
+	--tw-prose-th-borders: var(--border);
+	--tw-prose-td-borders: var(--border);
+	--tw-prose-invert-body: var(--foreground);
+	--tw-prose-invert-headings: var(--foreground);
+	--tw-prose-invert-lead: var(--muted-foreground);
+	--tw-prose-invert-links: var(--foreground);
+	--tw-prose-invert-bold: var(--foreground);
+	--tw-prose-invert-counters: var(--muted-foreground);
+	--tw-prose-invert-bullets: var(--muted-foreground);
+	--tw-prose-invert-hr: var(--border);
+	--tw-prose-invert-quotes: var(--foreground);
+	--tw-prose-invert-quote-borders: var(--border);
+	--tw-prose-invert-captions: var(--muted-foreground);
+	--tw-prose-invert-kbd: var(--foreground);
+	--tw-prose-invert-code: var(--foreground);
+	--tw-prose-invert-pre-code: var(--foreground);
+	--tw-prose-invert-pre-bg: color-mix(in oklab, var(--muted) 40%, transparent);
+	--tw-prose-invert-th-borders: var(--border);
+	--tw-prose-invert-td-borders: var(--border);
+}
+
+:is([data-theme='phosphor'], [data-theme='radar'], [data-theme='dot-matrix'])
+	[data-ask-source='tool'] {
+	background-color: var(--card);
+	color: var(--foreground);
+	--tw-ring-color: var(--border);
+}
+
+:is([data-theme='phosphor'], [data-theme='radar'], [data-theme='dot-matrix'])
+	[data-ask-source='tool']
+	pre {
+	border-color: var(--border);
+	color: var(--foreground);
+}
+
+:is([data-theme='phosphor'], [data-theme='radar'], [data-theme='dot-matrix'])
+	[data-ask-source='tool']
+	span {
+	color: var(--muted-foreground);
 }
 
 /*

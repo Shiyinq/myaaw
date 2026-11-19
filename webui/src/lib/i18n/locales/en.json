@@ -175,7 +175,7 @@
 			"thread_id": "Must be a numeric topic id"
 		},
 		"login": {
-			"subtitle": "Sign in to the Myaaw control plane.",
+			"subtitle": "Sign in to Myaaw.",
 			"server_url": "Server URL (optional)",
 			"server_url_placeholder": "http://localhost:9000 or a tunnel URL",
 			"server_url_hint": "Leave empty to use the control plane on this machine.",
@@ -660,6 +660,11 @@
 			"mode": "Mode",
 			"theme": "Theme",
 			"theme_siamese": "Myaaw Siamese",
+			"theme_canvas": "Canvas",
+			"theme_obsidian": "Obsidian",
+			"theme_phosphor": "Phosphor",
+			"theme_radar": "Radar",
+			"theme_dot_matrix": "Dot Matrix",
 			"theme_light": "Light",
 			"theme_dark": "Dark",
 			"theme_glass": "Glass",

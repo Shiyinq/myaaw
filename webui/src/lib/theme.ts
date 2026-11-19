@@ -1,8 +1,10 @@
 import type { LucideIcon } from '$lib/types/icons';
 import {
 	Accessibility,
+	Activity,
 	BookOpen,
 	CloudFog,
+	Columns3,
 	Contrast,
 	Film,
 	Grid3x3,
@@ -12,6 +14,8 @@ import {
 	MoonStar,
 	PawPrint,
 	PenLine,
+	Radar,
+	ScanLine,
 	Sparkles,
 	Sun,
 	SunMedium,
@@ -32,6 +36,11 @@ export type ThemeMode = 'light' | 'dark' | 'system';
  */
 export type ThemeId =
 	| 'siamese'
+	| 'canvas'
+	| 'obsidian'
+	| 'phosphor'
+	| 'radar'
+	| 'dot-matrix'
 	| 'glass'
 	| 'carbon'
 	| 'terminal'
@@ -84,6 +93,19 @@ export const APPEARANCE: AppearanceOption[] = [
 			bg: 'oklch(0.96 0.013 82)',
 			card: 'oklch(0.985 0.008 82)',
 			accent: 'oklch(0.34 0.03 55)'
+		}
+	},
+	{
+		id: 'canvas',
+		labelKey: 'myaaw.settings.theme_canvas',
+		mode: 'light',
+		theme: 'canvas',
+		aliases: ['canvas', 'kanvas', 'putih', 'white', 'hairline', 'clean'],
+		icon: Columns3,
+		swatch: {
+			bg: 'oklch(1 0 0)',
+			card: 'oklch(1 0 0)',
+			accent: 'oklch(0.188 0.013 248)'
 		}
 	},
 	{
@@ -140,6 +162,28 @@ export const APPEARANCE: AppearanceOption[] = [
 		swatch: { bg: 'oklch(0.985 0 0)', card: 'oklch(1 0 0)', accent: 'oklch(0.16 0 0)' }
 	},
 	{
+		id: 'dot-matrix',
+		labelKey: 'myaaw.settings.theme_dot_matrix',
+		mode: 'light',
+		theme: 'dot-matrix',
+		aliases: [
+			'dot matrix',
+			'matriks titik',
+			'lcd',
+			'casio',
+			'gameboy',
+			'olive',
+			'retro',
+			'cassette'
+		],
+		icon: ScanLine,
+		swatch: {
+			bg: 'oklch(0.855 0.036 126)',
+			card: 'oklch(0.88 0.032 126)',
+			accent: 'oklch(0.22 0.038 134)'
+		}
+	},
+	{
 		id: 'kontras-light',
 		labelKey: 'myaaw.settings.theme_kontras_light',
 		mode: 'light',
@@ -169,6 +213,45 @@ export const APPEARANCE: AppearanceOption[] = [
 		aliases: ['dark', 'gelap'],
 		icon: Moon,
 		swatch: { bg: 'oklch(0.145 0 0)', card: 'oklch(0.21 0 0)', accent: 'oklch(0.985 0 0)' }
+	},
+	{
+		id: 'obsidian',
+		labelKey: 'myaaw.settings.theme_obsidian',
+		mode: 'dark',
+		theme: 'obsidian',
+		aliases: ['obsidian', 'hitam', 'black', 'hairline', 'oled'],
+		icon: Columns3,
+		swatch: {
+			bg: 'oklch(0 0 0)',
+			card: 'oklch(0 0 0)',
+			accent: 'oklch(0.932 0.003 230)'
+		}
+	},
+	{
+		id: 'phosphor',
+		labelKey: 'myaaw.settings.theme_phosphor',
+		mode: 'dark',
+		theme: 'phosphor',
+		aliases: ['phosphor', 'fosfor', 'amber', 'crt', 'cassette', 'retro', 'telemetry'],
+		icon: Activity,
+		swatch: {
+			bg: 'oklch(0.135 0.014 68)',
+			card: 'oklch(0.18 0.02 68)',
+			accent: 'oklch(0.82 0.155 74)'
+		}
+	},
+	{
+		id: 'radar',
+		labelKey: 'myaaw.settings.theme_radar',
+		mode: 'dark',
+		theme: 'radar',
+		aliases: ['radar', 'oscilloscope', 'osiloskop', 'green crt', 'p31', 'cassette'],
+		icon: Radar,
+		swatch: {
+			bg: 'oklch(0.13 0.018 152)',
+			card: 'oklch(0.175 0.024 152)',
+			accent: 'oklch(0.82 0.165 152)'
+		}
 	},
 	{
 		id: 'carbon',

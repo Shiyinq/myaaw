@@ -228,15 +228,6 @@
 		void goto('/app/new');
 	}
 
-	// First run: nothing to show until an agent exists, so go straight to the
-	// creation form instead of leaving an empty fleet.
-	$effect(() => {
-		if (!agentSelection.loaded || agentSelection.loading || agentSelection.error) return;
-		if (agentSelection.agents.length === 0) {
-			void goto('/app/new');
-		}
-	});
-
 	function reconfigureAgent(name: string) {
 		void goto(`/app/new?agent=${encodeURIComponent(name)}`);
 	}
@@ -352,7 +343,19 @@
 			</CardAction>
 		</CardHeader>
 		<CardContent>
-			{#if agents.length === 0}
+			{#if agents.length === 0 && (!agentSelection.loaded || agentSelection.loading)}
+				<p
+					class="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"
+					role="status"
+				>
+					<Loader2 class="h-4 w-4 animate-spin" aria-hidden="true" />
+					{t('common.loading')}
+				</p>
+			{:else if agents.length === 0 && agentSelection.error}
+				<p class="py-10 text-center text-sm text-destructive" role="alert">
+					{agentSelection.error}
+				</p>
+			{:else if agents.length === 0}
 				<EmptyState
 					title={t('myaaw.home.no_agents')}
 					description={t('myaaw.home.no_agents_desc')}

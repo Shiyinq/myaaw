@@ -175,7 +175,7 @@
 			"thread_id": "Harus ID topik numerik"
 		},
 		"login": {
-			"subtitle": "Masuk ke control plane Myaaw.",
+			"subtitle": "Masuk ke Myaaw.",
 			"server_url": "Server URL (opsional)",
 			"server_url_placeholder": "http://localhost:9000 atau URL tunnel",
 			"server_url_hint": "Biarkan kosong untuk memakai control plane di mesin ini.",
@@ -660,6 +660,11 @@
 			"mode": "Mode",
 			"theme": "Tema",
 			"theme_siamese": "Myaaw Siam",
+			"theme_canvas": "Kanvas",
+			"theme_obsidian": "Obsidian",
+			"theme_phosphor": "Fosfor",
+			"theme_radar": "Radar",
+			"theme_dot_matrix": "Dot Matrix",
 			"theme_light": "Terang",
 			"theme_dark": "Gelap",
 			"theme_glass": "Kaca",
