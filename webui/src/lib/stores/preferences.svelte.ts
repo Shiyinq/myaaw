@@ -10,10 +10,11 @@ export type SpeechLanguage = AudioLanguage | 'auto';
 
 /**
  * Which shell the app renders: the full navigation meant for people who want
- * every page, the chat-first layout of the first LLM apps, or the minimal focus
- * layout meant for a single agent.
+ * every page, the chat-first layout of the first LLM apps, the minimal focus
+ * layout meant for a single agent, or the bots layout listing every agent as a
+ * direct chat contact.
  */
-export type ShellMode = 'advanced' | 'classic' | 'focus';
+export type ShellMode = 'advanced' | 'classic' | 'focus' | 'bots';
 
 /**
  * Per-browser preferences that are not a theme: how dense the lists are, how
@@ -99,7 +100,9 @@ interface StoredPreferences extends Partial<Omit<Preferences, 'shellMode'>> {
 /** Reads the shell mode, migrating the names of the shells that came before. */
 function shellMode(parsed: StoredPreferences): ShellMode {
 	const value = parsed.shellMode;
-	if (value === 'advanced' || value === 'classic' || value === 'focus') return value;
+	if (value === 'advanced' || value === 'classic' || value === 'focus' || value === 'bots') {
+		return value;
+	}
 	// This shell was called "standard" before "advanced", and the classic shell
 	// was called "simple" before that.
 	if (value === 'standard') return 'advanced';

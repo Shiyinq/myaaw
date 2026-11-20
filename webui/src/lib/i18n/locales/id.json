@@ -756,10 +756,11 @@
 			"notify_sound_doorbell": "Bel Pintu",
 			"notify_sound_marimba": "Marimba",
 			"shell_mode": "Tampilan",
-			"shell_mode_desc": "Pilih seberapa banyak navigasi yang ditampilkan: lengkap (lanjutan), daftar chat di sidebar (klasik), atau satu agen dengan rail minimal (fokus).",
+			"shell_mode_desc": "Pilih seberapa banyak navigasi yang ditampilkan: lengkap (lanjutan), daftar chat di sidebar (klasik), satu agen dengan rail minimal (fokus), atau daftar bot dengan panel agen (bots).",
 			"mode_advanced": "Lanjutan",
 			"mode_classic": "Klasik",
 			"mode_focus": "Fokus",
+			"mode_bots": "Bots",
 			"focus_agent": "Agen fokus",
 			"focus_agent_desc": "Satu-satunya agen di mode ini. Menu lain disembunyikan."
 		},
@@ -1390,7 +1391,20 @@
 			"restart_agent": "Restart {name}",
 			"group_appearance": "Tampilan",
 			"group_language": "Bahasa",
-			"shell_mode_cycle": "Ganti tampilan (lanjutan → klasik → fokus)"
+			"shell_mode_cycle": "Ganti tampilan (lanjutan → klasik → fokus → bots)"
+		},
+		"bots": {
+			"new": "Bot baru",
+			"list_label": "Daftar bot",
+			"search": "Cari bot...",
+			"no_matches": "Tidak ada bot yang cocok.",
+			"thinking": "Sedang berpikir…",
+			"ready": "Siap mengobrol",
+			"stopped": "Berhenti",
+			"routines": "Rutinitas",
+			"manage": "Kelola",
+			"routines_empty": "Belum ada jadwal rutinitas.",
+			"routine_paused": "Dijeda"
 		},
 		"focus": {
 			"rail_label": "Navigasi fokus",

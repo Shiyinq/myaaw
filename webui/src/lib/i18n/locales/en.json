@@ -756,10 +756,11 @@
 			"notify_sound_doorbell": "Doorbell",
 			"notify_sound_marimba": "Marimba",
 			"shell_mode": "Shell",
-			"shell_mode_desc": "Pick how much navigation the app shows: everything (advanced), a chat list in the sidebar (classic), or one agent with a minimal rail (focus).",
+			"shell_mode_desc": "Pick how much navigation the app shows: everything (advanced), a chat list in the sidebar (classic), one agent with a minimal rail (focus), or a bot roster with an agent panel (bots).",
 			"mode_advanced": "Advanced",
 			"mode_classic": "Classic",
 			"mode_focus": "Focus",
+			"mode_bots": "Bots",
 			"focus_agent": "Focus agent",
 			"focus_agent_desc": "The only agent this mode shows. Everything else stays out of the way."
 		},
@@ -1390,7 +1391,20 @@
 			"restart_agent": "Restart {name}",
 			"group_appearance": "Appearance",
 			"group_language": "Language",
-			"shell_mode_cycle": "Switch shell (advanced → classic → focus)"
+			"shell_mode_cycle": "Switch shell (advanced → classic → focus → bots)"
+		},
+		"bots": {
+			"new": "New bot",
+			"list_label": "Bots",
+			"search": "Search bots...",
+			"no_matches": "No matching bots.",
+			"thinking": "Thinking…",
+			"ready": "Ready to chat",
+			"stopped": "Stopped",
+			"routines": "Routines",
+			"manage": "Manage",
+			"routines_empty": "No routines scheduled yet.",
+			"routine_paused": "Paused"
 		},
 		"focus": {
 			"rail_label": "Focus navigation",

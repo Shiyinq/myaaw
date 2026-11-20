@@ -14,6 +14,7 @@
 	import { agentSelection, conversationHistory, toastStore, topBarTitle } from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import { chatRuns, type ChatItem, type ChatRun } from '$lib/stores/chatRuns.svelte';
+	import { botPreviews, lastAssistantFromItems } from '$lib/stores/botPreviews.svelte';
 	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
 	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
@@ -38,6 +39,7 @@
 	import LightBox from '$lib/components/app/LightBox.svelte';
 	import FocusAgentPanel from '$lib/components/focus/FocusAgentPanel.svelte';
 	import FocusContextEditor from '$lib/components/focus/FocusContextEditor.svelte';
+	import BotsAgentPanel from '$lib/components/bots/BotsAgentPanel.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
@@ -212,7 +214,8 @@
 	let shellMode = $derived(preferences.value.shellMode);
 	let classicMode = $derived(shellMode === 'classic');
 	let focusMode = $derived(shellMode === 'focus');
-	// In focus mode a context file replaces the transcript column until it closes.
+	let botsMode = $derived(shellMode === 'bots');
+	// In focus and bots modes a context file replaces the transcript column until it closes.
 	let focusContextPath = $state('');
 	// The right column shows either the conversation list or the files of the open
 	// chat. The choice is remembered per browser; a mode change never forces an
@@ -231,15 +234,20 @@
 	// The file whose preview pane replaces the transcript column (classic overlays it).
 	let previewAttachment = $state<ConversationAttachment | null>(null);
 	// Hide the floating desktop conversation title while a full-height attachment
-	// preview owns the top of the column, and restore it on close or navigation.
+	// preview or inline context editor owns the top of the column, and restore it on close.
 	$effect(() => {
-		topBarTitle.setDesktopHidden(Boolean(agent && previewAttachment));
+		topBarTitle.setDesktopHidden(
+			Boolean(agent && (previewAttachment || (botsMode && focusContextPath)))
+		);
 		return () => topBarTitle.setDesktopHidden(false);
 	});
+
 	// The turn a "Show in chat" jump landed on, so its row can flash a ring.
 	let highlightedMessage = $state<number | null>(null);
 	let highlightTimer: ReturnType<typeof setTimeout> | undefined;
 	let conversationId = $state('');
+	let conversationUpdatedAt = $state('');
+	let transcriptAgent = $state('');
 	// A run of the open conversation keeps streaming while the user is elsewhere;
 	// the page only renders whatever the store currently holds.
 	let activeRun = $derived(chatRuns.forConversation(agent ?? '', conversationId));
@@ -267,6 +275,37 @@
 		return () => clearInterval(timer);
 	});
 	let loading = $state(false);
+	// Keep Bots mode's left sidebar synced with the open conversation's latest
+	// assistant reply (and clear immediately on New Chat), gated by transcriptAgent
+	// so switching bots never writes the previous bot's transcript onto the new bot.
+	$effect(() => {
+		const currentAgent = agent;
+		if (!currentAgent) return;
+		const id = conversationId;
+		const rows = items;
+		const runAgent = activeRun?.agent ?? '';
+		if (transcriptAgent !== currentAgent && runAgent !== currentAgent) return;
+		const updatedFallback = conversationUpdatedAt;
+		const title = topBarTitle.value;
+		if (!id && rows.length === 0) {
+			botPreviews.setOpenChat(currentAgent, {
+				conversationId: '',
+				text: '',
+				title: '',
+				updatedAt: ''
+			});
+			return;
+		}
+		if (loading && rows.length === 0) return;
+		const last = lastAssistantFromItems(rows);
+		const lastRowTime = rows[rows.length - 1]?.createdAt;
+		botPreviews.setOpenChat(currentAgent, {
+			conversationId: id,
+			text: last.text,
+			title,
+			updatedAt: last.updatedAt || lastRowTime || updatedFallback || ''
+		});
+	});
 	// A pending approval can belong to this run, or to a detached one (a sub-agent)
 	// announced on the agent's approval stream, which has no run object here.
 	let pendingApproval = $derived.by(() => {
@@ -562,6 +601,16 @@
 		lastShellMode = mode;
 		classicAttachmentsOpen = false;
 		previewAttachment = null;
+		focusContextPath = '';
+	});
+
+	// Switching bots closes any inline context file opened for the previous bot.
+	let lastContextAgent = '';
+	$effect(() => {
+		const current = agent ?? '';
+		if (current === lastContextAgent) return;
+		lastContextAgent = current;
+		focusContextPath = '';
 	});
 
 	function scrollToBottom() {
@@ -845,6 +894,8 @@
 		// A finished run is redundant once the stored transcript is loaded; the
 		// server's copy includes the final answer. A live run keeps going.
 		chatRuns.settle(currentAgent, id);
+		transcriptAgent = currentAgent;
+		conversationUpdatedAt = detail.updated_at ?? '';
 		const title = detail.title ?? '';
 		applyTitle(id, title);
 		unreadChats.ack(currentAgent, id, detail.updated_at);
@@ -859,7 +910,9 @@
 		// Dictation belongs to the composer the reader is looking at.
 		stopSpeech();
 		if (!id) {
+			transcriptAgent = currentAgent;
 			historyItems = [];
+			conversationUpdatedAt = '';
 			clearRail();
 			storedUsage = null;
 			sessionStats = null;
@@ -867,6 +920,7 @@
 			topBarTitle.clear();
 			return;
 		}
+		transcriptAgent = currentAgent;
 		error = '';
 		groupOpen = {};
 		attachmentCount = 0;
@@ -876,7 +930,13 @@
 		topBarTitle.clear();
 
 		const detailKey = { agent: currentAgent, id, limit: PAGE_SIZE, offset: -1 };
-		const cached = conversationsStore.detail.peek(detailKey);
+		const existingRun = chatRuns.forConversation(currentAgent, id);
+		const hadUnread = unreadChats.has(currentAgent, id);
+		const peeked = conversationsStore.detail.peek(detailKey);
+		// When a live or just-finished background run already holds the latest
+		// timeline for this conversation, keep it on screen until the fresh server
+		// page lands instead of letting a stale cached transcript settle/wipe it.
+		const cached = existingRun ? undefined : peeked;
 
 		// Show the transcript the store already has before the request lands, so
 		// returning to a chat never flashes the loading state.
@@ -890,20 +950,25 @@
 			turns = [];
 			storedUsage = null;
 			clearRail();
+			if (existingRun) unreadChats.ack(currentAgent, id);
 		}
-		loading = !cached;
+		loading = !cached && !existingRun;
 
 		// The title and totals come from other stores, which may already know them
 		// even when the transcript cache is cold.
 		if (!cached) {
-			const knownTitle = conversationHistory.titleOf(id);
+			const knownTitle = conversationHistory.titleOf(id) || peeked?.title || '';
 			if (knownTitle) applyTitle(id, knownTitle);
 		}
 		const cachedStats = observabilityStore.sessionStats.peek({ agent: currentAgent, id });
 		sessionStats = cachedStats ? statsView(cachedStats) : null;
-		void refreshStats(currentAgent, id);
+		void refreshStats(currentAgent, id, Boolean(existingRun || hadUnread));
 		try {
-			await conversationsStore.ensureDetail(currentAgent, id, PAGE_SIZE, -1);
+			if (existingRun || hadUnread) {
+				await conversationsStore.detail.refresh(detailKey);
+			} else {
+				await conversationsStore.ensureDetail(currentAgent, id, PAGE_SIZE, -1);
+			}
 			if (conversationId !== id) return; // Another conversation won.
 			const detail = conversationsStore.detail.data;
 			if (detail) {
@@ -912,7 +977,7 @@
 					const olderLoaded = cached !== undefined && loadedOffset < cached.offset;
 					applyTranscript(currentAgent, id, detail, !olderLoaded);
 				}
-			} else if (!cached) {
+			} else if (!cached && !existingRun) {
 				error = conversationsStore.detail.error;
 			}
 		} catch (err) {
@@ -973,6 +1038,7 @@
 				(item) => !known.has(item.localId)
 			);
 			historyItems = [...kept, ...tail];
+			conversationUpdatedAt = detail.updated_at ?? conversationUpdatedAt;
 			loadedOffset = Math.min(loadedOffset, detail.offset);
 			turns = detail.turns ?? turns;
 			// Keep the transcript cache current for the next mount.
@@ -3828,7 +3894,7 @@
 				aria-pressed={historyOpen && rightTab === 'history'}
 				aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
 			>
-				{#if focusMode}
+				{#if focusMode || botsMode}
 					{#if historyOpen && rightTab === 'history'}
 						<PanelRightClose class="h-4 w-4" />
 					{:else}
@@ -3846,7 +3912,13 @@
 	<div
 		class={[
 			'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
-			focusMode ? (historyOpen ? 'lg:pr-88' : '') : previewAttachment ? '' : 'lg:mt-14'
+			focusMode
+				? historyOpen
+					? 'lg:pr-88'
+					: ''
+				: previewAttachment || (botsMode && focusContextPath)
+					? ''
+					: 'lg:mt-14'
 		]}
 	>
 		{#if agent && previewAttachment}
@@ -3856,7 +3928,7 @@
 				onClose={() => (previewAttachment = null)}
 				onShowInChat={showAttachmentInChat}
 			/>
-		{:else if agent && focusMode && focusContextPath}
+		{:else if agent && (focusMode || botsMode) && focusContextPath}
 			<FocusContextEditor {agent} path={focusContextPath} onClose={() => (focusContextPath = '')} />
 		{:else if !agent}
 			<div
@@ -5361,6 +5433,51 @@
 					}}
 				/>
 			{/if}
+		</aside>
+	{:else if agent && botsMode}
+		<!-- Bots mode pairs the left bot roster with a Focus-style right inspector
+		     panel that runs full-height on desktop and slides over on small screens. -->
+		{#if historyOpen}
+			<button
+				type="button"
+				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+				aria-label={t('myaaw.focus.panel_close')}
+				onclick={closeSidePanel}
+			></button>
+		{/if}
+		<aside
+			inert={!historyOpen}
+			class={[
+				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
+				historyOpen ? 'flex lg:w-88' : 'hidden lg:flex lg:w-0 lg:border-l-0'
+			]}
+		>
+			<div class="flex h-full w-full flex-col lg:w-88 lg:min-w-88">
+				{#if rightTab === 'attachments'}
+					<div class="min-h-0 flex-1 lg:pt-14">
+						<AttachmentPanel
+							{agent}
+							{conversationId}
+							refreshKey={attachmentsRefresh}
+							onOpen={openAttachment}
+							onShowInChat={showAttachmentInChat}
+							onClose={closeSidePanel}
+						/>
+					</div>
+				{:else}
+					<BotsAgentPanel
+						{agent}
+						activeId={conversationId}
+						bind:tab={focusPanelTab}
+						onOpen={openConversation}
+						onClose={toggleHistory}
+						onOpenContext={(path) => {
+							focusContextPath = path;
+							if (browser && window.innerWidth < 1024) toggleHistory();
+						}}
+					/>
+				{/if}
+			</div>
 		</aside>
 	{:else if agent && !classicMode}
 		<!-- Drawer on small screens, a static third column from lg up. Kept mounted

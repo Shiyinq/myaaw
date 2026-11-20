@@ -56,6 +56,7 @@
 	import type { NavGroup } from '$lib/utils/nav';
 	import ClassicSidebar from '$lib/components/classic/ClassicSidebar.svelte';
 	import AdvancedSidebar from '$lib/components/advanced/AdvancedSidebar.svelte';
+	import BotsSidebar from '$lib/components/bots/BotsSidebar.svelte';
 	import FocusRail from '$lib/components/focus/FocusRail.svelte';
 	import FocusTabBar from '$lib/components/focus/FocusTabBar.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
@@ -89,9 +90,12 @@
 	// shortcut and no page groups, just the agent picker and the chat list.
 	// Collapsing it keeps the same minimal rail on desktop.
 	// Focus mode is the third shell: one agent, its own fixed rail, and no menus.
+	// Bots mode is the fourth shell: a direct bot roster in the left sidebar and
+	// a Focus-style inspector panel on the right of the chat screen.
 	let shellMode = $derived(preferences.value.shellMode);
 	let classicMode = $derived(shellMode === 'classic');
 	let focusMode = $derived(shellMode === 'focus');
+	let botsMode = $derived(shellMode === 'bots');
 	let compactSidebar = $derived(sidebar.collapsed && wide);
 	let activeConversation = $derived(page.params.conversation ?? '');
 	let classicSearchInput = $state<HTMLInputElement | null>(null);
@@ -489,12 +493,12 @@
 			}
 		}
 
-		// The palette can flip between the three shells without a trip to Settings.
-		const shells = ['advanced', 'classic', 'focus'] as const;
+		// The palette can flip between the four shells without a trip to Settings.
+		const shells = ['advanced', 'classic', 'focus', 'bots'] as const;
 		list.push({
 			id: 'action:shell-mode',
 			labelKey: 'myaaw.command.shell_mode_cycle',
-			aliases: ['mode', 'layout', 'focus', 'classic', 'advanced', 'sidebar', 'shell'],
+			aliases: ['mode', 'layout', 'focus', 'classic', 'advanced', 'bots', 'sidebar', 'shell'],
 			group: 'appearance',
 			icon: PanelLeft,
 			run: () => {
@@ -646,7 +650,7 @@
 <div
 	class={[
 		'h-dvh bg-background page-clear transition-[padding] duration-200',
-		focusMode || compactSidebar ? 'md:pl-14' : 'md:pl-60'
+		focusMode || compactSidebar ? 'md:pl-14' : botsMode ? 'md:pl-72' : 'md:pl-60'
 	]}
 >
 	{#if focusMode}
@@ -668,7 +672,7 @@
 			class={[
 				'fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r bg-card shadow-xl frost-drawer transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
 				drawerOpen ? 'translate-x-0' : '-translate-x-full',
-				compactSidebar ? 'md:w-14' : 'md:w-60'
+				compactSidebar ? 'md:w-14' : botsMode ? 'md:w-72' : 'md:w-60'
 			]}
 		>
 			<!-- Each shell owns its sidebar; the drawer frame above stays shared. -->
@@ -679,6 +683,8 @@
 					bind:searchInput={classicSearchInput}
 					onClose={() => (drawerOpen = false)}
 				/>
+			{:else if botsMode}
+				<BotsSidebar compact={compactSidebar} onClose={() => (drawerOpen = false)} />
 			{:else}
 				<AdvancedSidebar
 					compact={compactSidebar}
@@ -739,6 +745,29 @@
 				>
 					{#if focusMode && isChat}
 						<!-- The chat screen has no title; the agent mark floats over it. -->
+					{:else if botsMode && isChat}
+						<div class="flex min-w-0 items-center gap-2">
+							<Bloub
+								mood="attentif"
+								size={24}
+								tight
+								color={agentSelection.color}
+								class="hidden shrink-0 md:inline-flex"
+							/>
+							<h1
+								class="pointer-events-auto truncate text-base font-bold tracking-tight text-foreground sm:text-lg"
+								title={topBarTitle.description ||
+									topBarTitle.value ||
+									agentSelection.current?.name ||
+									agentSelection.selected ||
+									t(current.label)}
+							>
+								{topBarTitle.value ||
+									agentSelection.current?.name ||
+									agentSelection.selected ||
+									t(current.label)}
+							</h1>
+						</div>
 					{:else if topBarTitle.value}
 						<!-- A page can name itself: the open conversation, or the agent being
 						     edited, instead of the route's static label. -->

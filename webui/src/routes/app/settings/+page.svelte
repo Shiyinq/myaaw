@@ -51,7 +51,8 @@
 	const shellModeOptions = $derived([
 		{ value: 'advanced', label: t('myaaw.settings.mode_advanced') },
 		{ value: 'classic', label: t('myaaw.settings.mode_classic') },
-		{ value: 'focus', label: t('myaaw.settings.mode_focus') }
+		{ value: 'focus', label: t('myaaw.settings.mode_focus') },
+		{ value: 'bots', label: t('myaaw.settings.mode_bots') }
 	]);
 
 	/** Switching to focus mode needs an agent; default to the current one. */

@@ -8,6 +8,7 @@ import { approvalQueue, type ApprovalEvent } from '$lib/stores/approvalQueue.sve
 import { playNotification } from '$lib/sound/notify.svelte';
 import { agentSelection } from '$lib/stores/selectedAgent.svelte';
 import { conversationHistory } from '$lib/stores/conversationHistory.svelte';
+import { conversationsStore } from '$lib/stores/conversations.svelte';
 import { preferences } from '$lib/stores/preferences.svelte';
 import { unreadChats } from '$lib/stores/unreadChats.svelte';
 
@@ -38,6 +39,9 @@ function handle(raw: ConversationUpdatedEvent, connectionAgent: string) {
 	if (raw.at) lastSeen.set(key, raw.at);
 
 	const event: ConversationUpdatedEvent = { ...raw, agent, conversation_id: id };
+
+	// A background turn changed the stored transcript, so drop cached detail freshness.
+	conversationsStore.detail.invalidate();
 
 	// A dot is only for a conversation the reader is not looking at. When it is
 	// open, the event is acknowledged instead, which also records the watermark so

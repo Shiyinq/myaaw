@@ -113,6 +113,9 @@ export const unreadChats = {
 	has(agent: string, id: string): boolean {
 		return !!(agent && id && state[agent]?.[id]);
 	},
+	count(agent: string): number {
+		return agent && state[agent] ? Object.keys(state[agent]).length : 0;
+	},
 	mark,
 	ack,
 	observe,
