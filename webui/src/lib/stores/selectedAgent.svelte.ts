@@ -1,3 +1,4 @@
+import { untrack } from 'svelte';
 import { browser } from '$app/environment';
 import { agents as agentsApi } from '$lib/apis/agents';
 import { colorOf, type BloubColor } from '$lib/bloub';
@@ -105,8 +106,10 @@ export const agentSelection = {
 	},
 	select,
 	async load(force = false) {
-		if (loading) return;
-		if (!force && agents.length > 0) return;
+		// Read reactive guards untracked so calling `load()` inside a Svelte 5
+		// `$effect` never subscribes to `loading` or `agents` and re-triggers itself.
+		if (untrack(() => loading)) return;
+		if (!force && untrack(() => agents.length > 0)) return;
 		loading = true;
 		error = '';
 		try {

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
@@ -424,7 +424,7 @@
 	// The palette lists each agent's start/stop/restart, so refresh the daemon
 	// states as it opens instead of trusting a possibly stale list.
 	$effect(() => {
-		if (commandPalette.open) void agentSelection.load(true);
+		if (commandPalette.open) untrack(() => void agentSelection.load(true));
 	});
 
 	// Everything the palette can reach: every destination of the shell, every

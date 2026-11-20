@@ -57,12 +57,11 @@
 	let isOffline = $state(false);
 
 	onMount(() => {
-		mounted = true;
-
 		if (accessToken.isExpired) {
 			accessToken.clear();
 			isAuthenticated.set(false);
 		}
+		mounted = true;
 
 		isOffline = !navigator.onLine;
 		const setOffline = () => (isOffline = true);
@@ -83,7 +82,7 @@
 			page.url.pathname.startsWith('/setup')
 	);
 
-	let isGuestRoute = $derived(page.url.pathname === '/login');
+	let isGuestRoute = $derived(page.url.pathname === '/' || page.url.pathname === '/login');
 
 	// The tab follows the route, so it names the page instead of keeping the
 	// title of whichever page was rendered last (e.g. "Myaaw | Login").
@@ -108,10 +107,12 @@
 		if (isAuthenticated.value) {
 			void fetchInitialData();
 			if (isGuestRoute) {
-				void goto('/app');
+				void goto(authStore.mustChangePassword ? '/app/profile?force=1' : '/app', {
+					replaceState: true
+				});
 			}
 		} else if (!isPublicPage) {
-			void goto('/login');
+			void goto('/login', { replaceState: true });
 		}
 	});
 
@@ -132,7 +133,7 @@
 <ReloadPrompt />
 
 <div class="min-h-screen flex flex-col relative overflow-x-hidden">
-	{#if !mounted}
+	{#if !mounted || (isAuthenticated.value && isGuestRoute)}
 		<SplashScreen />
 	{:else}
 		<LoadingBar />
