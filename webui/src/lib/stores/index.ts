@@ -18,6 +18,7 @@ export * from './projects.svelte';
 export * from './providers.svelte';
 export * from './query.svelte';
 export * from './server.svelte';
+export * from './settings.svelte';
 export * from './skills.svelte';
 export * from './terminal.svelte';
 export * from './tools.svelte';

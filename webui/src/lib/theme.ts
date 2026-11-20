@@ -23,6 +23,7 @@ import {
 	Type
 } from 'lucide-svelte';
 import { resetMode, setMode, setTheme } from 'mode-watcher';
+import { queueSettingsPatch } from '$lib/stores/settingsSync.svelte';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -368,6 +369,24 @@ export function applyAppearance(option: AppearanceOption): void {
 	setTheme(option.theme);
 	if (option.mode === 'system') resetMode();
 	else setMode(option.mode);
+	queueSettingsPatch({ theme: option.theme, theme_mode: option.mode });
+}
+
+/**
+ * Applies theme and mode loaded from controlplane.json without echoing back to
+ * the server. Named themes enforce the mode they were designed for.
+ */
+export function applyRemoteAppearance(mode: string, themeId: string): void {
+	const named = APPEARANCE.find((option) => option.theme !== '' && option.theme === themeId);
+	if (named) {
+		setTheme(named.theme);
+		if (named.mode === 'system') resetMode();
+		else setMode(named.mode);
+		return;
+	}
+	setTheme('');
+	if (mode === 'light' || mode === 'dark') setMode(mode);
+	else resetMode();
 }
 
 /** Whether the current custom theme paints frosted sheets (glass or mist). */

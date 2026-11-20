@@ -66,6 +66,9 @@ func NewApp() (*fiber.App, error) {
 	app.Post("/auth/change-password", h.ChangePassword)
 	app.Put("/auth/username", h.ChangeUsername)
 
+	app.Get("/settings", h.GetSettings)
+	app.Patch("/settings", h.UpdateSettings)
+
 	app.Get("/agents", h.ListAgents)
 	app.Get("/capabilities", h.GetCapabilities)
 	app.Post("/agents/:name/onboard", h.OnboardAgent)

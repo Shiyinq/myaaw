@@ -35,11 +35,12 @@ var (
 )
 
 type credentials struct {
-	Username        string `json:"username"`
-	PasswordHash    string `json:"password_hash"`
-	UserID          int    `json:"user_id"`
-	PasswordChanged bool   `json:"password_changed"`
-	CreatedAt       string `json:"created_at"`
+	Username        string   `json:"username"`
+	PasswordHash    string   `json:"password_hash"`
+	UserID          int      `json:"user_id"`
+	PasswordChanged bool     `json:"password_changed"`
+	CreatedAt       string   `json:"created_at"`
+	Settings        Settings `json:"settings"`
 }
 
 // AuthService stores the single control-plane user and its active sessions.
@@ -219,11 +220,12 @@ func (s *AuthService) load() error {
 	}
 
 	var raw struct {
-		Username        string `json:"username"`
-		PasswordHash    string `json:"password_hash"`
-		UserID          *int   `json:"user_id"`
-		PasswordChanged *bool  `json:"password_changed"`
-		CreatedAt       string `json:"created_at"`
+		Username        string         `json:"username"`
+		PasswordHash    string         `json:"password_hash"`
+		UserID          *int           `json:"user_id"`
+		PasswordChanged *bool          `json:"password_changed"`
+		CreatedAt       string         `json:"created_at"`
+		Settings        *SettingsPatch `json:"settings"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("parse %s: %w", s.path, err)
@@ -232,26 +234,40 @@ func (s *AuthService) load() error {
 		return fmt.Errorf("%s is missing username or password_hash", s.path)
 	}
 
+	settings := DefaultSettings()
+	needsPersist := false
+	if raw.Settings == nil {
+		// Older credential files predate synced UI settings. Persist defaults so
+		// the settings object is visible and editable in controlplane.json.
+		needsPersist = true
+	} else {
+		settings = settings.Apply(*raw.Settings)
+	}
+
 	s.creds = credentials{
 		Username:     raw.Username,
 		PasswordHash: raw.PasswordHash,
 		CreatedAt:    raw.CreatedAt,
 		// Legacy credential files predate the flag; never force them to change.
 		PasswordChanged: true,
+		Settings:        settings,
 	}
 	if raw.PasswordChanged != nil {
 		s.creds.PasswordChanged = *raw.PasswordChanged
 	}
 	if raw.UserID != nil {
 		s.creds.UserID = *raw.UserID
-		return nil
+	} else {
+		// Older credential files predate user scoping. Persist the default so the
+		// value is visible and editable instead of living only in code.
+		s.creds.UserID = 0
+		needsPersist = true
 	}
 
-	// Older credential files predate user scoping. Persist the default so the
-	// value is visible and editable instead of living only in code.
-	s.creds.UserID = 0
-	if err := s.saveLocked(); err != nil {
-		return fmt.Errorf("persist default user_id: %w", err)
+	if needsPersist {
+		if err := s.saveLocked(); err != nil {
+			return fmt.Errorf("persist controlplane defaults: %w", err)
+		}
 	}
 	return nil
 }
@@ -267,6 +283,7 @@ func (s *AuthService) seed() error {
 		UserID:          0,
 		PasswordChanged: false,
 		CreatedAt:       s.now().UTC().Format(time.RFC3339),
+		Settings:        DefaultSettings(),
 	}
 	return s.saveLocked()
 }

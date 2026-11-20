@@ -5,7 +5,13 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { isAuthenticated, authStore, isInitialDataLoaded, accessToken } from '$lib/stores';
+	import {
+		isAuthenticated,
+		authStore,
+		isInitialDataLoaded,
+		accessToken,
+		settingsStore
+	} from '$lib/stores';
 	import { applyPreferences, preferences } from '$lib/stores/preferences.svelte';
 	import { locale, type Locale } from '$lib/i18n';
 	import { ModeWatcher, setMode, theme, userPrefersMode } from 'mode-watcher';
@@ -89,7 +95,7 @@
 	async function fetchInitialData() {
 		if (isInitialDataLoaded.value) return;
 		try {
-			await authStore.loadProfile();
+			await Promise.all([authStore.loadProfile(), settingsStore.loadOnce()]);
 		} catch (err) {
 			logger.error('Failed to load profile', err, { context: 'layout' });
 		} finally {

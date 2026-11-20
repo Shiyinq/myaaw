@@ -6979,6 +6979,92 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/settings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the UI settings stored under the \"settings\" key of controlplane.json.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Get dashboard settings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.Settings"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Merges changed fields into the \"settings\" key of controlplane.json and returns the normalized settings.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Update dashboard settings",
+                "parameters": [
+                    {
+                        "description": "Settings patch",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.SettingsPatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.Settings"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/skills/builtin/{skill}": {
             "get": {
                 "security": [
@@ -10788,6 +10874,166 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.Settings": {
+            "type": "object",
+            "properties": {
+                "auto_scroll": {
+                    "type": "boolean"
+                },
+                "density": {
+                    "type": "string"
+                },
+                "dictation_lang": {
+                    "type": "string"
+                },
+                "focus_agent": {
+                    "type": "string"
+                },
+                "interrupt_on_send": {
+                    "type": "boolean"
+                },
+                "keep_drafts": {
+                    "type": "boolean"
+                },
+                "locale": {
+                    "type": "string"
+                },
+                "notify_browser": {
+                    "type": "boolean"
+                },
+                "notify_enabled": {
+                    "type": "boolean"
+                },
+                "notify_sound": {
+                    "type": "string"
+                },
+                "notify_volume": {
+                    "type": "number"
+                },
+                "queue_messages": {
+                    "type": "boolean"
+                },
+                "reduce_motion": {
+                    "type": "boolean"
+                },
+                "send_key": {
+                    "type": "string"
+                },
+                "shell_mode": {
+                    "type": "string"
+                },
+                "show_host_badge": {
+                    "type": "boolean"
+                },
+                "show_run_mascot": {
+                    "type": "boolean"
+                },
+                "speak_responses": {
+                    "type": "boolean"
+                },
+                "speech_lang": {
+                    "type": "string"
+                },
+                "speech_rate": {
+                    "type": "number"
+                },
+                "speech_voice": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "string"
+                },
+                "text_scale": {
+                    "type": "integer"
+                },
+                "theme": {
+                    "type": "string"
+                },
+                "theme_mode": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.SettingsPatch": {
+            "type": "object",
+            "properties": {
+                "auto_scroll": {
+                    "type": "boolean"
+                },
+                "density": {
+                    "type": "string"
+                },
+                "dictation_lang": {
+                    "type": "string"
+                },
+                "focus_agent": {
+                    "type": "string"
+                },
+                "interrupt_on_send": {
+                    "type": "boolean"
+                },
+                "keep_drafts": {
+                    "type": "boolean"
+                },
+                "locale": {
+                    "type": "string"
+                },
+                "notify_browser": {
+                    "type": "boolean"
+                },
+                "notify_enabled": {
+                    "type": "boolean"
+                },
+                "notify_sound": {
+                    "type": "string"
+                },
+                "notify_volume": {
+                    "type": "number"
+                },
+                "queue_messages": {
+                    "type": "boolean"
+                },
+                "reduce_motion": {
+                    "type": "boolean"
+                },
+                "send_key": {
+                    "type": "string"
+                },
+                "shell_mode": {
+                    "type": "string"
+                },
+                "show_host_badge": {
+                    "type": "boolean"
+                },
+                "show_run_mascot": {
+                    "type": "boolean"
+                },
+                "speak_responses": {
+                    "type": "boolean"
+                },
+                "speech_lang": {
+                    "type": "string"
+                },
+                "speech_rate": {
+                    "type": "number"
+                },
+                "speech_voice": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "string"
+                },
+                "text_scale": {
+                    "type": "integer"
+                },
+                "theme": {
+                    "type": "string"
+                },
+                "theme_mode": {
                     "type": "string"
                 }
             }

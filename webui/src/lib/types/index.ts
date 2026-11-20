@@ -15,6 +15,7 @@ export * from './logs';
 export * from './observability';
 export * from './providers';
 export * from './server';
+export * from './settings';
 export * from './skills';
 export * from './terminal';
 export * from './tools';

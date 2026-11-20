@@ -1,6 +1,7 @@
 import { auth as authApi } from '$lib/apis/auth';
 import { accessToken } from '$lib/stores/accessToken.svelte';
 import { isAuthenticated } from '$lib/stores/authStatus.svelte';
+import { settingsStore } from '$lib/stores/settings.svelte';
 import { getErrorMessage } from '$lib/utils/api';
 import { logger } from '$lib/utils/logger';
 import type {
@@ -34,8 +35,13 @@ export const authStore = {
 		try {
 			const response = await authApi.login(credentials);
 			accessToken.set(response.token, response.expires_at);
+			try {
+				await Promise.all([authStore.loadProfile(), settingsStore.loadOnce(true)]);
+			} catch (err) {
+				accessToken.clear();
+				throw err;
+			}
 			isAuthenticated.set(true);
-			await authStore.loadProfile();
 			return response;
 		} catch (err) {
 			error = getErrorMessage(err);
@@ -55,6 +61,7 @@ export const authStore = {
 			accessToken.clear();
 			isAuthenticated.set(false);
 			profile = null;
+			settingsStore.reset();
 		}
 	},
 
@@ -73,6 +80,7 @@ export const authStore = {
 		accessToken.clear();
 		isAuthenticated.set(false);
 		profile = null;
+		settingsStore.reset();
 	},
 
 	async changeUsername(payload: ChangeUsernameRequest) {

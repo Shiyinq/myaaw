@@ -1,4 +1,6 @@
 import { browser } from '$app/environment';
+import { queueSettingsPatch } from '$lib/stores/settingsSync.svelte';
+import type { ControlPlaneSettings, ControlPlaneSettingsPatch } from '$lib/types';
 
 export type Density = 'comfortable' | 'compact';
 export type SendKey = 'enter' | 'mod-enter';
@@ -110,51 +112,116 @@ function shellMode(parsed: StoredPreferences): ShellMode {
 	return 'advanced';
 }
 
+/** Normalizes a partial/stored preferences object against defaults. */
+function normalize(parsed: StoredPreferences): Preferences {
+	// The two send-while-streaming modes are mutually exclusive; the queue
+	// wins when a hand-edited store turns both on at once.
+	const queueMessages = parsed.queueMessages === true;
+	const interruptOnSend = parsed.interruptOnSend !== false && !queueMessages;
+	return {
+		density: parsed.density === 'compact' ? 'compact' : 'comfortable',
+		textScale: Math.min(125, Math.max(100, Math.round(Number(parsed.textScale) || 100))),
+		reduceMotion: parsed.reduceMotion === true,
+		shellMode: shellMode(parsed),
+		focusAgent: typeof parsed.focusAgent === 'string' ? parsed.focusAgent : '',
+		sendKey: parsed.sendKey === 'mod-enter' ? 'mod-enter' : 'enter',
+		autoScroll: parsed.autoScroll !== false,
+		steps: parsed.steps === 'expanded' ? 'expanded' : 'summary',
+		keepDrafts: parsed.keepDrafts !== false,
+		queueMessages,
+		interruptOnSend,
+		speakResponses: parsed.speakResponses === true,
+		speechRate: Math.min(
+			1.5,
+			Math.max(0.75, Math.round((Number(parsed.speechRate) || 1) * 100) / 100)
+		),
+		speechLang: speechLanguage(parsed.speechLang),
+		speechVoice: typeof parsed.speechVoice === 'string' ? parsed.speechVoice : '',
+		dictationLang: audioLanguage(parsed.dictationLang),
+		notifyEnabled: parsed.notifyEnabled !== false,
+		notifyBrowser: parsed.notifyBrowser === true,
+		notifySound:
+			typeof parsed.notifySound === 'string' && parsed.notifySound ? parsed.notifySound : 'chime',
+		notifyVolume: Math.min(
+			1,
+			Math.max(
+				0,
+				Math.round(
+					(parsed.notifyVolume === undefined || !Number.isFinite(Number(parsed.notifyVolume))
+						? 0.7
+						: Number(parsed.notifyVolume)) * 100
+				) / 100
+			)
+		),
+		showHostBadge: parsed.showHostBadge !== false,
+		showRunMascot: parsed.showRunMascot !== false
+	};
+}
+
 /** Reads the stored preferences, dropping unknown or malformed values. */
 function load(): Preferences {
 	if (!browser) return { ...DEFAULTS };
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
 		if (!raw) return { ...DEFAULTS };
-		const parsed = JSON.parse(raw) as StoredPreferences;
-		// The two send-while-streaming modes are mutually exclusive; the queue
-		// wins when a hand-edited store turns both on at once.
-		const queueMessages = parsed.queueMessages === true;
-		const interruptOnSend = parsed.interruptOnSend !== false && !queueMessages;
-		return {
-			density: parsed.density === 'compact' ? 'compact' : 'comfortable',
-			textScale: Math.min(125, Math.max(100, Math.round(Number(parsed.textScale) || 100))),
-			reduceMotion: parsed.reduceMotion === true,
-			shellMode: shellMode(parsed),
-			focusAgent: typeof parsed.focusAgent === 'string' ? parsed.focusAgent : '',
-			sendKey: parsed.sendKey === 'mod-enter' ? 'mod-enter' : 'enter',
-			autoScroll: parsed.autoScroll !== false,
-			steps: parsed.steps === 'expanded' ? 'expanded' : 'summary',
-			keepDrafts: parsed.keepDrafts !== false,
-			queueMessages,
-			interruptOnSend,
-			speakResponses: parsed.speakResponses === true,
-			speechRate: Math.min(
-				1.5,
-				Math.max(0.75, Math.round((Number(parsed.speechRate) || 1) * 100) / 100)
-			),
-			speechLang: speechLanguage(parsed.speechLang),
-			speechVoice: typeof parsed.speechVoice === 'string' ? parsed.speechVoice : '',
-			dictationLang: audioLanguage(parsed.dictationLang),
-			notifyEnabled: parsed.notifyEnabled !== false,
-			notifyBrowser: parsed.notifyBrowser === true,
-			notifySound:
-				typeof parsed.notifySound === 'string' && parsed.notifySound ? parsed.notifySound : 'chime',
-			notifyVolume: Math.min(
-				1,
-				Math.max(0, Math.round((Number(parsed.notifyVolume) || 0.7) * 100) / 100)
-			),
-			showHostBadge: parsed.showHostBadge !== false,
-			showRunMascot: parsed.showRunMascot !== false
-		};
+		return normalize(JSON.parse(raw) as StoredPreferences);
 	} catch {
 		return { ...DEFAULTS };
 	}
+}
+
+function toSettingsPatch(patch: Partial<Preferences>): ControlPlaneSettingsPatch {
+	const out: ControlPlaneSettingsPatch = {};
+	if (patch.density !== undefined) out.density = patch.density;
+	if (patch.textScale !== undefined) out.text_scale = patch.textScale;
+	if (patch.reduceMotion !== undefined) out.reduce_motion = patch.reduceMotion;
+	if (patch.shellMode !== undefined) out.shell_mode = patch.shellMode;
+	if (patch.focusAgent !== undefined) out.focus_agent = patch.focusAgent;
+	if (patch.sendKey !== undefined) out.send_key = patch.sendKey;
+	if (patch.autoScroll !== undefined) out.auto_scroll = patch.autoScroll;
+	if (patch.steps !== undefined) out.steps = patch.steps;
+	if (patch.keepDrafts !== undefined) out.keep_drafts = patch.keepDrafts;
+	if (patch.queueMessages !== undefined) out.queue_messages = patch.queueMessages;
+	if (patch.interruptOnSend !== undefined) out.interrupt_on_send = patch.interruptOnSend;
+	if (patch.speakResponses !== undefined) out.speak_responses = patch.speakResponses;
+	if (patch.speechRate !== undefined) out.speech_rate = patch.speechRate;
+	if (patch.speechLang !== undefined) out.speech_lang = patch.speechLang;
+	if (patch.speechVoice !== undefined) out.speech_voice = patch.speechVoice;
+	if (patch.dictationLang !== undefined) out.dictation_lang = patch.dictationLang;
+	if (patch.notifyEnabled !== undefined) out.notify_enabled = patch.notifyEnabled;
+	if (patch.notifyBrowser !== undefined) out.notify_browser = patch.notifyBrowser;
+	if (patch.notifySound !== undefined) out.notify_sound = patch.notifySound;
+	if (patch.notifyVolume !== undefined) out.notify_volume = patch.notifyVolume;
+	if (patch.showHostBadge !== undefined) out.show_host_badge = patch.showHostBadge;
+	if (patch.showRunMascot !== undefined) out.show_run_mascot = patch.showRunMascot;
+	return out;
+}
+
+function fromControlPlaneSettings(remote: ControlPlaneSettings): Preferences {
+	return normalize({
+		density: remote.density as Density,
+		textScale: remote.text_scale,
+		reduceMotion: remote.reduce_motion,
+		shellMode: remote.shell_mode,
+		focusAgent: remote.focus_agent,
+		sendKey: remote.send_key as SendKey,
+		autoScroll: remote.auto_scroll,
+		steps: remote.steps as StepDisplay,
+		keepDrafts: remote.keep_drafts,
+		queueMessages: remote.queue_messages,
+		interruptOnSend: remote.interrupt_on_send,
+		speakResponses: remote.speak_responses,
+		speechRate: remote.speech_rate,
+		speechLang: remote.speech_lang as SpeechLanguage,
+		speechVoice: remote.speech_voice,
+		dictationLang: remote.dictation_lang as AudioLanguage,
+		notifyEnabled: remote.notify_enabled,
+		notifyBrowser: remote.notify_browser,
+		notifySound: remote.notify_sound,
+		notifyVolume: remote.notify_volume,
+		showHostBadge: remote.show_host_badge,
+		showRunMascot: remote.show_run_mascot
+	});
 }
 
 let current = $state<Preferences>(load());
@@ -163,9 +230,15 @@ export const preferences = {
 	get value() {
 		return current;
 	},
-	/** Merges a patch in, persists it, and lets the applying effect pick it up. */
+	/** Merges a patch in, persists it locally, and syncs it to the control plane. */
 	update(patch: Partial<Preferences>) {
 		current = { ...current, ...patch };
+		if (browser) localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+		queueSettingsPatch(toSettingsPatch(patch));
+	},
+	/** Applies preferences fetched from controlplane.json without echoing back to the server. */
+	hydrate(remote: ControlPlaneSettings) {
+		current = fromControlPlaneSettings(remote);
 		if (browser) localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
 	}
 };
