@@ -3,9 +3,14 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
+		Activity,
+		Archive,
+		Bot,
 		Check,
 		Clock,
+		Cpu,
 		Layers,
+		LayoutDashboard,
 		ListFilter,
 		Loader2,
 		MessageSquarePlus,
@@ -13,11 +18,18 @@
 		Play,
 		Plus,
 		Puzzle,
+		Radio,
 		RotateCw,
+		ScrollText,
 		Search,
+		Server,
+		Settings2,
 		ShieldAlert,
+		ShieldCheck,
 		SlidersHorizontal,
 		Square,
+		SquareTerminal,
+		Wrench,
 		X
 	} from 'lucide-svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
@@ -306,7 +318,29 @@
 		await goto('/app/chat?new=1');
 	}
 
+	const configureItems = $derived([
+		{ href: '/app/providers', label: t('myaaw.nav.providers'), icon: Cpu },
+		{ href: '/app/channels', label: t('myaaw.nav.channels'), icon: Radio },
+		{ href: '/app/config', label: t('myaaw.nav.config'), icon: SlidersHorizontal }
+	]);
+
+	const operationItems = $derived([
+		{ href: '/app/server', label: t('myaaw.nav.server'), icon: Server },
+		{ href: '/app/logs', label: t('myaaw.nav.logs'), icon: ScrollText },
+		{ href: '/app/backups', label: t('myaaw.nav.backups'), icon: Archive },
+		{ href: '/app/approvals', label: t('myaaw.nav.approvals'), icon: ShieldCheck },
+		{ href: '/app/observability', label: t('myaaw.nav.observability'), icon: Activity }
+	]);
+
+	function openBotPage(bot: AgentInfo, href: string) {
+		openMenuBot = '';
+		agentSelection.select(bot.name);
+		void goto(`${href}?agent=${encodeURIComponent(bot.name)}`);
+		onClose();
+	}
+
 	function reconfigureBot(bot: AgentInfo) {
+		openMenuBot = '';
 		void goto(`/app/new?agent=${encodeURIComponent(bot.name)}`);
 		onClose();
 	}
@@ -315,6 +349,18 @@
 		void goto('/app/new');
 		onClose();
 	}
+
+	// Whenever a stopped bot transitions to running, fetch its latest conversation
+	// preview once its daemon port is ready.
+	$effect(() => {
+		const runningNames = agentSelection.agents.filter((bot) => bot.running).map((bot) => bot.name);
+		untrack(() => {
+			for (const name of runningNames) {
+				if (botPreviews.get(name)?.conversationId) continue;
+				setTimeout(() => void refreshLatest(name, false), 1200);
+			}
+		});
+	});
 
 	async function runBotAction(kind: 'start' | 'stop' | 'restart', name: string) {
 		if (busyBot) return;
@@ -325,6 +371,7 @@
 			if (kind === 'start') await serverStore.start(name);
 			else if (kind === 'stop') await serverStore.stop(name);
 			else await serverStore.restart(name);
+			agentSelection.setRunning(name, running);
 			toastStore.success(
 				t(
 					kind === 'start'
@@ -334,10 +381,14 @@
 							: 'myaaw.server.restart_done'
 				)
 			);
+			if (running) {
+				setTimeout(() => void refreshLatest(name, false), 1500);
+			}
 		} catch (err) {
+			agentSelection.clearOptimisticRunning(name);
+			await agentSelection.load(true);
 			toastStore.error(getErrorMessage(err));
 		} finally {
-			await agentSelection.load(true);
 			busyBot = '';
 		}
 	}
@@ -563,6 +614,49 @@
 							{t('myaaw.server.start')}
 						</DropdownMenu.Item>
 					{/if}
+					<DropdownMenu.Separator />
+					<DropdownMenu.Item onclick={() => openBotPage(bot, '/app/dashboard')} class="gap-2">
+						<LayoutDashboard class="h-3.5 w-3.5" />
+						{t('myaaw.nav.dashboard')}
+					</DropdownMenu.Item>
+					<DropdownMenu.Item onclick={() => openBotPage(bot, '/app/contacts')} class="gap-2">
+						<Bot class="h-3.5 w-3.5" />
+						{t('myaaw.nav.contacts')}
+					</DropdownMenu.Item>
+					<DropdownMenu.Item onclick={() => openBotPage(bot, '/app/terminal')} class="gap-2">
+						<SquareTerminal class="h-3.5 w-3.5" />
+						{t('myaaw.nav.terminal')}
+					</DropdownMenu.Item>
+					<DropdownMenu.Sub>
+						<DropdownMenu.SubTrigger class="gap-2">
+							<Settings2 class="h-3.5 w-3.5" />
+							{t('myaaw.nav.group_configure')}
+						</DropdownMenu.SubTrigger>
+						<DropdownMenu.SubContent class="w-44">
+							{#each configureItems as item (item.href)}
+								{@const Icon = item.icon}
+								<DropdownMenu.Item onclick={() => openBotPage(bot, item.href)} class="gap-2">
+									<Icon class="h-3.5 w-3.5" />
+									{item.label}
+								</DropdownMenu.Item>
+							{/each}
+						</DropdownMenu.SubContent>
+					</DropdownMenu.Sub>
+					<DropdownMenu.Sub>
+						<DropdownMenu.SubTrigger class="gap-2">
+							<Wrench class="h-3.5 w-3.5" />
+							{t('myaaw.nav.group_operations')}
+						</DropdownMenu.SubTrigger>
+						<DropdownMenu.SubContent class="w-44">
+							{#each operationItems as item (item.href)}
+								{@const Icon = item.icon}
+								<DropdownMenu.Item onclick={() => openBotPage(bot, item.href)} class="gap-2">
+									<Icon class="h-3.5 w-3.5" />
+									{item.label}
+								</DropdownMenu.Item>
+							{/each}
+						</DropdownMenu.SubContent>
+					</DropdownMenu.Sub>
 					<DropdownMenu.Separator />
 					<DropdownMenu.Item onclick={() => reconfigureBot(bot)} class="gap-2">
 						<SlidersHorizontal class="h-3.5 w-3.5" />

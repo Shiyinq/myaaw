@@ -144,6 +144,14 @@
 		untrack(() => void loadHistory(agent, false));
 	});
 
+	// Keep the right panel status in step whenever the bot is started or stopped
+	// from the left sidebar or command palette.
+	$effect(() => {
+		const known = agentSelection.agents.find((entry) => entry.name === agent);
+		if (!known) return;
+		status = known.running ? 'connected' : 'stopped';
+	});
+
 	async function loadStatus(target: string) {
 		const known = agentSelection.agents.find((entry) => entry.name === target);
 		if (known) status = known.running ? 'connected' : 'stopped';
@@ -213,14 +221,17 @@
 
 	async function control(kind: 'start' | 'restart' | 'stop') {
 		if (!agent || controlling) return;
+		const target = agent;
 		controlling = true;
 		const running = kind !== 'stop';
-		agentSelection.setRunning(agent, running);
+		agentSelection.setRunning(target, running);
 		status = running ? 'connected' : 'stopped';
 		try {
-			if (kind === 'start') await serverStore.start(agent);
-			else if (kind === 'restart') await serverStore.restart(agent);
-			else await serverStore.stop(agent);
+			if (kind === 'start') await serverStore.start(target);
+			else if (kind === 'restart') await serverStore.restart(target);
+			else await serverStore.stop(target);
+			agentSelection.setRunning(target, running);
+			status = running ? 'connected' : 'stopped';
 			toastStore.success(
 				t(
 					kind === 'start'
@@ -230,11 +241,22 @@
 							: 'myaaw.server.stop_done'
 				)
 			);
+			setTimeout(() => {
+				if (agent === target) {
+					void loadStatus(target);
+					if (running) {
+						void loadHistory(target, true);
+						void loadContext(target);
+						void loadSchedules(target);
+					}
+				}
+			}, 1600);
 		} catch (err) {
+			agentSelection.clearOptimisticRunning(target);
+			await agentSelection.load(true);
+			await loadStatus(target);
 			toastStore.error(getErrorMessage(err));
 		} finally {
-			await agentSelection.load(true);
-			await loadStatus(agent);
 			controlling = false;
 		}
 	}

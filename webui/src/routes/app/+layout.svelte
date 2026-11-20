@@ -580,13 +580,24 @@
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
 	);
 	// In Bots mode the left sidebar is a bot roster (clicking a bot opens its chat),
-	// so the three agent-scoped utility pages show a breadcrumb agent picker in the
-	// top bar that defaults to the default agent on entry.
+	// so agent-scoped pages (Artifacts, Schedule, Plugins, Configure, Operations)
+	// show a breadcrumb agent picker in the top bar.
 	let isBotsUtility = $derived(
 		botsMode &&
-			(page.url.pathname.startsWith('/app/artifacts') ||
+			(page.url.pathname.startsWith('/app/dashboard') ||
+				page.url.pathname.startsWith('/app/contacts') ||
+				page.url.pathname.startsWith('/app/terminal') ||
+				page.url.pathname.startsWith('/app/artifacts') ||
 				page.url.pathname.startsWith('/app/schedule') ||
-				page.url.pathname.startsWith('/app/plugins'))
+				page.url.pathname.startsWith('/app/plugins') ||
+				page.url.pathname.startsWith('/app/providers') ||
+				page.url.pathname.startsWith('/app/channels') ||
+				page.url.pathname.startsWith('/app/config') ||
+				page.url.pathname.startsWith('/app/server') ||
+				page.url.pathname.startsWith('/app/logs') ||
+				page.url.pathname.startsWith('/app/backups') ||
+				page.url.pathname.startsWith('/app/approvals') ||
+				page.url.pathname.startsWith('/app/observability'))
 	);
 	// Split list + detail pages run their second sidebar's vertical divider all
 	// the way through the top bar on desktop, so the header floats transparently
