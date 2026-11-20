@@ -23,22 +23,28 @@
 	fades in after the rail has finished widening.
 -->
 <div class="relative flex h-14 shrink-0 items-center overflow-hidden pr-2 pl-4 md:pr-0">
-	<div
-		class="flex h-12 w-12 shrink-0 items-center justify-center transition-transform duration-200 {compact
-			? '-translate-x-3 scale-[0.833]'
-			: 'translate-x-0 scale-100'}"
-		data-brand-logo
+	<a
+		href="/app"
+		onclick={onClose}
+		class="flex min-w-0 items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
 	>
-		<Bloub mood="attentif" size={48} color={agentSelection.color} />
-	</div>
-	<div
-		class={[
-			'flex min-w-0 flex-col overflow-hidden leading-tight whitespace-nowrap transition-all duration-200',
-			compact ? 'max-w-0 opacity-0 delay-0' : 'max-w-44 opacity-100 delay-200'
-		]}
-	>
-		<span class="text-2xl font-bold tracking-tight">Myaaw</span>
-	</div>
+		<div
+			class="flex h-12 w-12 shrink-0 items-center justify-center transition-transform duration-200 {compact
+				? '-translate-x-3 scale-[0.833]'
+				: 'translate-x-0 scale-100'}"
+			data-brand-logo
+		>
+			<Bloub mood="attentif" size={48} color={agentSelection.color} />
+		</div>
+		<div
+			class={[
+				'flex min-w-0 flex-col overflow-hidden leading-tight whitespace-nowrap transition-all duration-200',
+				compact ? 'max-w-0 opacity-0 delay-0' : 'max-w-44 opacity-100 delay-200'
+			]}
+		>
+			<span class="text-2xl font-bold tracking-tight">Myaaw</span>
+		</div>
+	</a>
 	<button
 		class={[
 			'absolute inset-y-0 right-0 hidden w-10 items-center justify-end self-stretch rounded-l-md pr-1 text-muted-foreground hover:bg-muted hover:text-foreground md:flex',

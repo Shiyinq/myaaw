@@ -226,6 +226,12 @@
 		"home": {
 			"title": "Dashboard",
 			"subtitle": "One place to run and inspect your agents.",
+			"classic_title": "Workspace",
+			"classic_subtitle": "Start a new chat or pick up where you left off with this agent.",
+			"focus_title": "Companion",
+			"focus_subtitle": "Daily overview, context memory, and routines for your focus agent.",
+			"bots_title": "Bots Lounge",
+			"bots_subtitle": "Browse all your bots, check live activity, and jump straight into a conversation.",
 			"agents": "Agents",
 			"agents_desc": "Registered agents and their daemon state.",
 			"sort": "Sort",

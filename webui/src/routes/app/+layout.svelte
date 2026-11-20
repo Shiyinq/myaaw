@@ -569,9 +569,37 @@
 		return isActiveHref(page.url.pathname, href);
 	}
 
+	let rootEntry = $derived.by(() => {
+		if (classicMode) {
+			return {
+				href: '/app',
+				label: 'myaaw.home.classic_title',
+				description: 'myaaw.home.classic_subtitle',
+				icon: Boxes
+			};
+		}
+		if (focusMode) {
+			return {
+				href: '/app',
+				label: 'myaaw.home.focus_title',
+				description: 'myaaw.home.focus_subtitle',
+				icon: Boxes
+			};
+		}
+		if (botsMode) {
+			return {
+				href: '/app',
+				label: 'myaaw.home.bots_title',
+				description: 'myaaw.home.bots_subtitle',
+				icon: Boxes
+			};
+		}
+		return fleet;
+	});
+
 	let current = $derived(
 		isActive(fleet.href)
-			? fleet
+			? rootEntry
 			: (hiddenNav.find((item) => isActive(item.href)) ??
 					flatNav.find((item) => isActive(item.href)) ??
 					flatNav[0])

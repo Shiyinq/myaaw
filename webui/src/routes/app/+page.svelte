@@ -3,11 +3,15 @@
 	import { agentsStore } from '$lib/stores/agents.svelte';
 	import { serverStore } from '$lib/stores/server.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
+	import { preferences } from '$lib/stores/preferences.svelte';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
+	import ClassicHome from '$lib/components/classic/ClassicHome.svelte';
+	import FocusHome from '$lib/components/focus/FocusHome.svelte';
+	import BotsHome from '$lib/components/bots/BotsHome.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { colorOf } from '$lib/bloub';
@@ -42,6 +46,7 @@
 
 	const { t } = useTranslation();
 
+	let shellMode = $derived(preferences.value.shellMode);
 	let loading = $state(false);
 	let toggling = $state<string | null>(null);
 	// Which fleet-wide action is running, if any. One at a time, so the daemons
@@ -233,239 +238,247 @@
 	}
 </script>
 
-<TopBarActions id="fleet-actions">
-	{#snippet children()}
-		<TopBarButton
-			label={t('myaaw.home.new_agent')}
-			icon={Plus}
-			onclick={openOnboard}
-			variant="default"
-		/>
-		<TopBarButton label={t('common.refresh')} icon={RefreshCw} onclick={refresh} {loading} />
-	{/snippet}
-</TopBarActions>
+{#if shellMode === 'classic'}
+	<ClassicHome />
+{:else if shellMode === 'focus'}
+	<FocusHome />
+{:else if shellMode === 'bots'}
+	<BotsHome />
+{:else}
+	<TopBarActions id="fleet-actions">
+		{#snippet children()}
+			<TopBarButton
+				label={t('myaaw.home.new_agent')}
+				icon={Plus}
+				onclick={openOnboard}
+				variant="default"
+			/>
+			<TopBarButton label={t('common.refresh')} icon={RefreshCw} onclick={refresh} {loading} />
+		{/snippet}
+	</TopBarActions>
 
-<div class="flex flex-col gap-4">
-	<div class="grid gap-3 sm:grid-cols-3">
-		<Card>
-			<CardHeader class="pb-2">
-				<CardTitle class="text-sm font-medium">{t('myaaw.home.agents')}</CardTitle>
-			</CardHeader>
-			<CardContent>
-				<div class="text-2xl font-bold">{agents.length}</div>
-			</CardContent>
-		</Card>
-		<Card>
-			<CardHeader class="pb-2">
-				<CardTitle class="text-sm font-medium">{t('myaaw.home.running')}</CardTitle>
-			</CardHeader>
-			<CardContent>
-				<div class="text-2xl font-bold">{runningCount}</div>
-			</CardContent>
-		</Card>
-		<Card>
-			<CardHeader class="pb-2">
-				<CardTitle class="text-sm font-medium">{t('myaaw.fleet.default_agent')}</CardTitle>
-			</CardHeader>
-			<CardContent>
-				<div class="truncate font-mono text-lg font-semibold">{defaultAgent}</div>
-			</CardContent>
-		</Card>
-	</div>
+	<div class="flex flex-col gap-4">
+		<div class="grid gap-3 sm:grid-cols-3">
+			<Card>
+				<CardHeader class="pb-2">
+					<CardTitle class="text-sm font-medium">{t('myaaw.home.agents')}</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<div class="text-2xl font-bold">{agents.length}</div>
+				</CardContent>
+			</Card>
+			<Card>
+				<CardHeader class="pb-2">
+					<CardTitle class="text-sm font-medium">{t('myaaw.home.running')}</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<div class="text-2xl font-bold">{runningCount}</div>
+				</CardContent>
+			</Card>
+			<Card>
+				<CardHeader class="pb-2">
+					<CardTitle class="text-sm font-medium">{t('myaaw.fleet.default_agent')}</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<div class="truncate font-mono text-lg font-semibold">{defaultAgent}</div>
+				</CardContent>
+			</Card>
+		</div>
 
-	<Card>
-		<CardHeader>
-			<CardTitle class="flex items-center gap-2">
-				<Bot class="h-4 w-4 shrink-0" />
-				{t('myaaw.home.agents')}
-			</CardTitle>
-			<CardDescription>{t('myaaw.home.agents_desc')}</CardDescription>
-			<CardAction>
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger>
-						{#snippet child({ props })}
-							<Button
-								{...props}
-								variant="ghost"
-								size="icon-sm"
-								aria-label={t('myaaw.home.fleet_actions')}
-								title={t('myaaw.home.fleet_actions')}
+		<Card>
+			<CardHeader>
+				<CardTitle class="flex items-center gap-2">
+					<Bot class="h-4 w-4 shrink-0" />
+					{t('myaaw.home.agents')}
+				</CardTitle>
+				<CardDescription>{t('myaaw.home.agents_desc')}</CardDescription>
+				<CardAction>
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									variant="ghost"
+									size="icon-sm"
+									aria-label={t('myaaw.home.fleet_actions')}
+									title={t('myaaw.home.fleet_actions')}
+								>
+									<Ellipsis class="h-4 w-4" />
+								</Button>
+							{/snippet}
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Content align="end" class="w-60">
+							<DropdownMenu.Item onclick={() => (sortNewest = true)}>
+								<Check class={sortNewest ? 'mr-2 h-4 w-4' : 'mr-2 h-4 w-4 opacity-0'} />
+								{t('myaaw.home.sort_newest')}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item onclick={() => (sortNewest = false)}>
+								<Check class={!sortNewest ? 'mr-2 h-4 w-4' : 'mr-2 h-4 w-4 opacity-0'} />
+								{t('myaaw.home.sort_oldest')}
+							</DropdownMenu.Item>
+							<DropdownMenu.Separator />
+							<DropdownMenu.Item
+								disabled={bulkBusy !== '' || runningCount === agents.length}
+								onclick={() => void bulkAction('start')}
 							>
-								<Ellipsis class="h-4 w-4" />
-							</Button>
-						{/snippet}
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-60">
-						<DropdownMenu.Item onclick={() => (sortNewest = true)}>
-							<Check class={sortNewest ? 'mr-2 h-4 w-4' : 'mr-2 h-4 w-4 opacity-0'} />
-							{t('myaaw.home.sort_newest')}
-						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={() => (sortNewest = false)}>
-							<Check class={!sortNewest ? 'mr-2 h-4 w-4' : 'mr-2 h-4 w-4 opacity-0'} />
-							{t('myaaw.home.sort_oldest')}
-						</DropdownMenu.Item>
-						<DropdownMenu.Separator />
-						<DropdownMenu.Item
-							disabled={bulkBusy !== '' || runningCount === agents.length}
-							onclick={() => void bulkAction('start')}
-						>
-							{#if bulkBusy === 'start'}
-								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-							{:else}
-								<Play class="mr-2 h-4 w-4" />
-							{/if}
-							{t('myaaw.server.start_all')}
-						</DropdownMenu.Item>
-						<DropdownMenu.Item
-							disabled={bulkBusy !== '' || runningCount === 0}
-							onclick={() => void bulkAction('restart')}
-						>
-							{#if bulkBusy === 'restart'}
-								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-							{:else}
-								<RotateCw class="mr-2 h-4 w-4" />
-							{/if}
-							{t('myaaw.server.restart_all')}
-						</DropdownMenu.Item>
-						<DropdownMenu.Item
-							disabled={bulkBusy !== '' || runningCount === 0}
-							onclick={() => void bulkAction('stop')}
-						>
-							{#if bulkBusy === 'stop'}
-								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
-							{:else}
-								<Square class="mr-2 h-4 w-4" />
-							{/if}
-							{t('myaaw.server.stop_all')}
-						</DropdownMenu.Item>
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
-			</CardAction>
-		</CardHeader>
-		<CardContent>
-			{#if agents.length === 0 && (!agentSelection.loaded || agentSelection.loading)}
-				<p
-					class="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"
-					role="status"
-				>
-					<Loader2 class="h-4 w-4 animate-spin" aria-hidden="true" />
-					{t('common.loading')}
-				</p>
-			{:else if agents.length === 0 && agentSelection.error}
-				<p class="py-10 text-center text-sm text-destructive" role="alert">
-					{agentSelection.error}
-				</p>
-			{:else if agents.length === 0}
-				<EmptyState
-					title={t('myaaw.home.no_agents')}
-					description={t('myaaw.home.no_agents_desc')}
-					bloub="curieux"
-					icon={Bot}
-				/>
-			{:else}
-				<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-					{#each sortedAgents as agent (agent.name)}
-						<div
-							class="relative rounded-xl border bg-card transition-colors hover:border-ring/40 hover:bg-muted/40"
-						>
-							<button
-								class="flex w-full flex-col items-center gap-1.5 p-5 text-center"
-								onclick={() => openChat(agent.name)}
-								title={t('myaaw.home.open_chat')}
-							>
-								<Bloub mood="attentif" size={40} tight color={colorOf(agent.agent_color)} />
-								<span class="mt-1 w-full truncate text-sm font-semibold">{agent.name}</span>
-								<span class="flex flex-wrap items-center justify-center gap-1">
-									{#if agent.default}
-										<Badge variant="secondary">{t('myaaw.agent.default')}</Badge>
-									{/if}
-									{#if agent.running}
-										<Badge variant="outline" class="text-emerald-600 dark:text-emerald-400">
-											<CircleCheck class="mr-1 h-3 w-3" />
-											{t('myaaw.agent.running')}
-										</Badge>
-									{:else}
-										<Badge variant="outline" class="text-muted-foreground">
-											<CircleSlash class="mr-1 h-3 w-3" />
-											{t('myaaw.agent.stopped')}
-										</Badge>
-									{/if}
-								</span>
-								{#if agent.port}
-									<span class="font-mono text-[10px] text-muted-foreground">
-										:{agent.port}
-									</span>
+								{#if bulkBusy === 'start'}
+									<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+								{:else}
+									<Play class="mr-2 h-4 w-4" />
 								{/if}
-							</button>
-							<div class="absolute top-1 right-1">
-								<DropdownMenu.Root>
-									<DropdownMenu.Trigger>
-										{#snippet child({ props })}
-											<Button
-												{...props}
-												variant="ghost"
-												size="icon-sm"
-												aria-label={t('myaaw.home.agent_actions')}
-											>
-												<Ellipsis class="h-4 w-4" />
-											</Button>
-										{/snippet}
-									</DropdownMenu.Trigger>
-									<DropdownMenu.Content align="end" class="w-48">
-										<DropdownMenu.Item
-											disabled={!!toggling || bulkBusy !== ''}
-											onclick={() => toggleServer(agent.name, agent.running)}
-										>
-											{#if agent.running}
-												<Square class="mr-2 h-4 w-4" />
-											{:else}
-												<Play class="mr-2 h-4 w-4" />
-											{/if}
-											{agent.running ? t('myaaw.server.stop') : t('myaaw.server.start')}
-										</DropdownMenu.Item>
+								{t('myaaw.server.start_all')}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item
+								disabled={bulkBusy !== '' || runningCount === 0}
+								onclick={() => void bulkAction('restart')}
+							>
+								{#if bulkBusy === 'restart'}
+									<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+								{:else}
+									<RotateCw class="mr-2 h-4 w-4" />
+								{/if}
+								{t('myaaw.server.restart_all')}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item
+								disabled={bulkBusy !== '' || runningCount === 0}
+								onclick={() => void bulkAction('stop')}
+							>
+								{#if bulkBusy === 'stop'}
+									<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+								{:else}
+									<Square class="mr-2 h-4 w-4" />
+								{/if}
+								{t('myaaw.server.stop_all')}
+							</DropdownMenu.Item>
+						</DropdownMenu.Content>
+					</DropdownMenu.Root>
+				</CardAction>
+			</CardHeader>
+			<CardContent>
+				{#if agents.length === 0 && (!agentSelection.loaded || agentSelection.loading)}
+					<p
+						class="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"
+						role="status"
+					>
+						<Loader2 class="h-4 w-4 animate-spin" aria-hidden="true" />
+						{t('common.loading')}
+					</p>
+				{:else if agents.length === 0 && agentSelection.error}
+					<p class="py-10 text-center text-sm text-destructive" role="alert">
+						{agentSelection.error}
+					</p>
+				{:else if agents.length === 0}
+					<EmptyState
+						title={t('myaaw.home.no_agents')}
+						description={t('myaaw.home.no_agents_desc')}
+						bloub="curieux"
+						icon={Bot}
+					/>
+				{:else}
+					<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+						{#each sortedAgents as agent (agent.name)}
+							<div
+								class="relative rounded-xl border bg-card transition-colors hover:border-ring/40 hover:bg-muted/40"
+							>
+								<button
+									class="flex w-full flex-col items-center gap-1.5 p-5 text-center"
+									onclick={() => openChat(agent.name)}
+									title={t('myaaw.home.open_chat')}
+								>
+									<Bloub mood="attentif" size={40} tight color={colorOf(agent.agent_color)} />
+									<span class="mt-1 w-full truncate text-sm font-semibold">{agent.name}</span>
+									<span class="flex flex-wrap items-center justify-center gap-1">
+										{#if agent.default}
+											<Badge variant="secondary">{t('myaaw.agent.default')}</Badge>
+										{/if}
 										{#if agent.running}
+											<Badge variant="outline" class="text-emerald-600 dark:text-emerald-400">
+												<CircleCheck class="mr-1 h-3 w-3" />
+												{t('myaaw.agent.running')}
+											</Badge>
+										{:else}
+											<Badge variant="outline" class="text-muted-foreground">
+												<CircleSlash class="mr-1 h-3 w-3" />
+												{t('myaaw.agent.stopped')}
+											</Badge>
+										{/if}
+									</span>
+									{#if agent.port}
+										<span class="font-mono text-[10px] text-muted-foreground">
+											:{agent.port}
+										</span>
+									{/if}
+								</button>
+								<div class="absolute top-1 right-1">
+									<DropdownMenu.Root>
+										<DropdownMenu.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													variant="ghost"
+													size="icon-sm"
+													aria-label={t('myaaw.home.agent_actions')}
+												>
+													<Ellipsis class="h-4 w-4" />
+												</Button>
+											{/snippet}
+										</DropdownMenu.Trigger>
+										<DropdownMenu.Content align="end" class="w-48">
 											<DropdownMenu.Item
 												disabled={!!toggling || bulkBusy !== ''}
-												onclick={() => void restartServer(agent.name)}
+												onclick={() => toggleServer(agent.name, agent.running)}
 											>
-												{#if toggling === agent.name}
-													<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+												{#if agent.running}
+													<Square class="mr-2 h-4 w-4" />
 												{:else}
-													<RotateCw class="mr-2 h-4 w-4" />
+													<Play class="mr-2 h-4 w-4" />
 												{/if}
-												{t('myaaw.server.restart')}
+												{agent.running ? t('myaaw.server.stop') : t('myaaw.server.start')}
 											</DropdownMenu.Item>
-										{/if}
-										<DropdownMenu.Separator />
-										<DropdownMenu.Item onclick={() => reconfigureAgent(agent.name)}>
-											<Settings2 class="mr-2 h-4 w-4" />
-											{t('myaaw.onboard.reconfigure')}
-										</DropdownMenu.Item>
-										{#if !agent.default}
-											<DropdownMenu.Item onclick={() => setDefaultAgent(agent.name)}>
-												<Star class="mr-2 h-4 w-4" />
-												{t('myaaw.home.set_default')}
-											</DropdownMenu.Item>
+											{#if agent.running}
+												<DropdownMenu.Item
+													disabled={!!toggling || bulkBusy !== ''}
+													onclick={() => void restartServer(agent.name)}
+												>
+													{#if toggling === agent.name}
+														<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+													{:else}
+														<RotateCw class="mr-2 h-4 w-4" />
+													{/if}
+													{t('myaaw.server.restart')}
+												</DropdownMenu.Item>
+											{/if}
 											<DropdownMenu.Separator />
-										{/if}
-										<DropdownMenu.Item
-											variant="destructive"
-											onclick={() => removeAgent(agent.name)}
-										>
-											<Trash2 class="mr-2 h-4 w-4" />
-											{t('myaaw.home.delete_agent')}
-										</DropdownMenu.Item>
-									</DropdownMenu.Content>
-								</DropdownMenu.Root>
+											<DropdownMenu.Item onclick={() => reconfigureAgent(agent.name)}>
+												<Settings2 class="mr-2 h-4 w-4" />
+												{t('myaaw.onboard.reconfigure')}
+											</DropdownMenu.Item>
+											{#if !agent.default}
+												<DropdownMenu.Item onclick={() => setDefaultAgent(agent.name)}>
+													<Star class="mr-2 h-4 w-4" />
+													{t('myaaw.home.set_default')}
+												</DropdownMenu.Item>
+												<DropdownMenu.Separator />
+											{/if}
+											<DropdownMenu.Item
+												variant="destructive"
+												onclick={() => removeAgent(agent.name)}
+											>
+												<Trash2 class="mr-2 h-4 w-4" />
+												{t('myaaw.home.delete_agent')}
+											</DropdownMenu.Item>
+										</DropdownMenu.Content>
+									</DropdownMenu.Root>
+								</div>
 							</div>
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</CardContent>
-	</Card>
+						{/each}
+					</div>
+				{/if}
+			</CardContent>
+		</Card>
 
-	<!-- Fleet-wide backup management: create archives for any agent and manage
+		<!-- Fleet-wide backup management: create archives for any agent and manage
 	     every archive. Agent-scoped backups live on /app/backups. -->
-	<BackupsPanel />
-</div>
+		<BackupsPanel />
+	</div>
+{/if}

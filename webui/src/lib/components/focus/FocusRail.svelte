@@ -33,7 +33,7 @@
 	<!-- The chat screen floats its own mark; every other page keeps the rail brand. -->
 	{#if !chatActive}
 		<a
-			href="/app/chat"
+			href="/app"
 			class="mb-1 flex h-10 w-10 items-center justify-center"
 			title={t('myaaw.focus.rail_brand')}
 			aria-label={t('myaaw.focus.rail_brand')}

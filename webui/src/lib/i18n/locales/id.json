@@ -226,6 +226,12 @@
 		"home": {
 			"title": "Dasbor",
 			"subtitle": "Satu tempat untuk menjalankan dan memeriksa agen.",
+			"classic_title": "Ruang Kerja",
+			"classic_subtitle": "Mulai obrolan baru atau lanjutkan percakapan terakhir dengan agen ini.",
+			"focus_title": "Pendamping",
+			"focus_subtitle": "Ringkasan harian, memori konteks, dan rutinitas untuk agen fokusmu.",
+			"bots_title": "Galeri Bot",
+			"bots_subtitle": "Lihat semua bot, pantau aktivitas terbaru, dan langsung masuk ke obrolan.",
 			"agents": "Agen",
 			"agents_desc": "Agen terdaftar dan status daemon-nya.",
 			"sort": "Urutkan",
