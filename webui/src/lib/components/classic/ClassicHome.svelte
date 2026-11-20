@@ -158,12 +158,6 @@
 <TopBarActions id="classic-home-actions">
 	{#snippet children()}
 		<TopBarButton
-			label={t('myaaw.chat.new')}
-			icon={MessageSquarePlus}
-			onclick={startNewChat}
-			variant="default"
-		/>
-		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={refresh}

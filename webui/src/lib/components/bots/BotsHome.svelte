@@ -182,12 +182,6 @@
 <TopBarActions id="bots-home-actions">
 	{#snippet children()}
 		<TopBarButton
-			label={t('myaaw.bots.new')}
-			icon={Plus}
-			onclick={() => void goto('/app/new')}
-			variant="default"
-		/>
-		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={refresh}

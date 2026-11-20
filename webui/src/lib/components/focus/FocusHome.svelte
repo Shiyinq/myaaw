@@ -115,12 +115,6 @@
 <TopBarActions id="focus-home-actions">
 	{#snippet children()}
 		<TopBarButton
-			label={t('myaaw.home.open_chat')}
-			icon={MessagesSquare}
-			onclick={() => void goto('/app/chat')}
-			variant="default"
-		/>
-		<TopBarButton
 			label={t('common.refresh')}
 			icon={RefreshCw}
 			onclick={refresh}
