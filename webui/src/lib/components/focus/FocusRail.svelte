@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { Clock, MessagesSquare, Puzzle } from 'lucide-svelte';
+	import { Clock, Layers, MessagesSquare, Puzzle } from 'lucide-svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { agentSelection } from '$lib/stores';
 	import AccountMenu from '$lib/components/app/AccountMenu.svelte';
@@ -9,6 +9,7 @@
 	const { t } = useTranslation();
 
 	const chatActive = $derived(page.url.pathname.startsWith('/app/chat'));
+	const artifactsActive = $derived(page.url.pathname.startsWith('/app/artifacts'));
 	const cronActive = $derived(page.url.pathname.startsWith('/app/schedule'));
 	const pluginsActive = $derived(page.url.pathname.startsWith('/app/plugins'));
 
@@ -52,6 +53,15 @@
 			aria-label={t('myaaw.focus.rail_chat')}
 		>
 			<MessagesSquare class="h-4.5 w-4.5" />
+		</a>
+		<a
+			href="/app/artifacts"
+			class={itemClass(artifactsActive)}
+			aria-current={artifactsActive ? 'page' : undefined}
+			title={t('myaaw.focus.rail_artifacts')}
+			aria-label={t('myaaw.focus.rail_artifacts')}
+		>
+			<Layers class="h-4.5 w-4.5" />
 		</a>
 		<a
 			href="/app/schedule"

@@ -29,6 +29,10 @@ const pageTitles: Record<string, PageTitle> = {
 	'/app/skills': { titleKey: 'myaaw.nav.skills', descriptionKey: 'myaaw.skills.subtitle' },
 	'/app/tools': { titleKey: 'myaaw.nav.tools', descriptionKey: 'myaaw.tools.subtitle' },
 	'/app/contacts': { titleKey: 'myaaw.nav.contacts', descriptionKey: 'myaaw.contacts.subtitle' },
+	'/app/artifacts': {
+		titleKey: 'myaaw.nav.artifacts',
+		descriptionKey: 'myaaw.artifacts.subtitle'
+	},
 	'/app/files': { titleKey: 'myaaw.nav.files', descriptionKey: 'myaaw.files.subtitle' },
 	'/app/terminal': { titleKey: 'myaaw.nav.terminal', descriptionKey: 'myaaw.terminal.subtitle' },
 	'/app/providers': { titleKey: 'myaaw.nav.providers', descriptionKey: 'myaaw.providers.subtitle' },

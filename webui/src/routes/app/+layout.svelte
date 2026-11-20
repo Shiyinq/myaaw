@@ -6,6 +6,7 @@
 		Boxes,
 		Keyboard,
 		Languages,
+		Layers,
 		LayoutDashboard,
 		Play,
 		MessagesSquare,
@@ -294,6 +295,12 @@
 					label: 'myaaw.nav.contacts',
 					description: 'myaaw.contacts.subtitle',
 					icon: Bot
+				},
+				{
+					href: '/app/artifacts',
+					label: 'myaaw.nav.artifacts',
+					description: 'myaaw.artifacts.subtitle',
+					icon: Layers
 				},
 				{
 					href: '/app/files',

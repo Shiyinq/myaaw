@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { Clock, MessagesSquare, Puzzle } from 'lucide-svelte';
+	import { Clock, Layers, MessagesSquare, Puzzle } from 'lucide-svelte';
 	import AccountMenu from '$lib/components/app/AccountMenu.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
@@ -13,6 +13,12 @@
 			label: t('myaaw.focus.rail_chat'),
 			icon: MessagesSquare,
 			active: path.startsWith('/app/chat')
+		},
+		{
+			href: '/app/artifacts',
+			label: t('myaaw.focus.rail_artifacts'),
+			icon: Layers,
+			active: path.startsWith('/app/artifacts')
 		},
 		{
 			href: '/app/schedule',
