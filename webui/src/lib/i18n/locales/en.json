@@ -763,7 +763,7 @@
 			"notify_sound_doorbell": "Doorbell",
 			"notify_sound_marimba": "Marimba",
 			"shell_mode": "Shell",
-			"shell_mode_desc": "Pick how much navigation the app shows: everything (studio), a chat list in the sidebar (classic), one agent with a minimal rail (focus), or a bot roster with an agent panel (bots).",
+			"shell_mode_desc": "Pick how much navigation the app shows: everything (studio), a bot roster with an agent panel (bots), one agent with a minimal rail (focus), or a chat list in the sidebar (classic).",
 			"mode_studio": "Studio",
 			"mode_classic": "Classic",
 			"mode_focus": "Focus",

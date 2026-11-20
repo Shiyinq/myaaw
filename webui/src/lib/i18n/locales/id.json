@@ -763,7 +763,7 @@
 			"notify_sound_doorbell": "Bel Pintu",
 			"notify_sound_marimba": "Marimba",
 			"shell_mode": "Tampilan",
-			"shell_mode_desc": "Pilih seberapa banyak navigasi yang ditampilkan: lengkap (studio), daftar chat di sidebar (klasik), satu agen dengan rail minimal (fokus), atau daftar bot dengan panel agen (bots).",
+			"shell_mode_desc": "Pilih seberapa banyak navigasi yang ditampilkan: lengkap (studio), daftar bot dengan panel agen (bots), satu agen dengan rail minimal (fokus), atau daftar chat di sidebar (klasik).",
 			"mode_studio": "Studio",
 			"mode_classic": "Klasik",
 			"mode_focus": "Fokus",

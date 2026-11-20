@@ -503,9 +503,9 @@
 				aliases: ['mode', 'layout', 'shell', 'tampilan', 'sidebar', 'studio', 'fleet']
 			},
 			{
-				id: 'classic' as const,
-				labelKey: 'myaaw.settings.mode_classic',
-				aliases: ['mode', 'layout', 'shell', 'tampilan', 'sidebar', 'classic', 'klasik']
+				id: 'bots' as const,
+				labelKey: 'myaaw.settings.mode_bots',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'bots', 'bot', 'lounge']
 			},
 			{
 				id: 'focus' as const,
@@ -513,9 +513,9 @@
 				aliases: ['mode', 'layout', 'shell', 'tampilan', 'focus', 'fokus', 'minimal']
 			},
 			{
-				id: 'bots' as const,
-				labelKey: 'myaaw.settings.mode_bots',
-				aliases: ['mode', 'layout', 'shell', 'tampilan', 'bots', 'bot', 'lounge']
+				id: 'classic' as const,
+				labelKey: 'myaaw.settings.mode_classic',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'sidebar', 'classic', 'klasik']
 			}
 		];
 		for (const shell of shellEntries) {
