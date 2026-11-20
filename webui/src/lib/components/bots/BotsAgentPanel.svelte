@@ -255,6 +255,8 @@
 		};
 	}
 
+	const tabIndex = $derived(tab === 'history' ? 0 : tab === 'context' ? 1 : 2);
+
 	const statusLabel = $derived(
 		status === 'connected'
 			? t('myaaw.focus.status_connected')
@@ -394,16 +396,21 @@
 		</p>
 	</div>
 
-	<div role="tablist" class="mx-3 mb-2 grid shrink-0 grid-cols-3 gap-1 rounded-lg border p-0.5">
+	<div role="tablist" class="relative mx-3 mb-2 grid shrink-0 grid-cols-3 rounded-lg border p-0.5">
+		<span
+			aria-hidden="true"
+			class="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc((100%-0.25rem)/3)] rounded-md bg-primary transition-transform duration-200 ease-out will-change-transform"
+			style:transform={`translateX(${tabIndex * 100}%)`}
+		></span>
 		<button
 			type="button"
 			role="tab"
 			aria-selected={tab === 'history'}
 			class={[
-				'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+				'relative z-10 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium select-none transition-colors duration-150',
 				tab === 'history'
-					? 'bg-primary text-primary-foreground'
-					: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+					? 'text-primary-foreground'
+					: 'text-muted-foreground hover:text-foreground'
 			]}
 			onclick={() => (tab = 'history')}
 		>
@@ -415,10 +422,10 @@
 			role="tab"
 			aria-selected={tab === 'context'}
 			class={[
-				'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+				'relative z-10 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium select-none transition-colors duration-150',
 				tab === 'context'
-					? 'bg-primary text-primary-foreground'
-					: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+					? 'text-primary-foreground'
+					: 'text-muted-foreground hover:text-foreground'
 			]}
 			onclick={() => (tab = 'context')}
 		>
@@ -430,10 +437,10 @@
 			role="tab"
 			aria-selected={tab === 'control'}
 			class={[
-				'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+				'relative z-10 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium select-none transition-colors duration-150',
 				tab === 'control'
-					? 'bg-primary text-primary-foreground'
-					: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+					? 'text-primary-foreground'
+					: 'text-muted-foreground hover:text-foreground'
 			]}
 			onclick={() => (tab = 'control')}
 		>
@@ -692,7 +699,7 @@
 							{t('myaaw.bots.routines')}
 						</p>
 						<a
-							href="/app/schedule"
+							href={`/app/schedule?agent=${encodeURIComponent(agent)}`}
 							class="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
 						>
 							{t('myaaw.bots.manage')}
@@ -700,7 +707,7 @@
 					</div>
 					{#if schedules.length === 0}
 						<a
-							href="/app/schedule"
+							href={`/app/schedule?agent=${encodeURIComponent(agent)}`}
 							class="flex items-center gap-2.5 rounded-xl border border-dashed p-3 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
 						>
 							<Clock class="h-4 w-4 shrink-0" />
@@ -710,7 +717,7 @@
 						<div class="space-y-1">
 							{#each schedules.slice(0, 5) as job (job.id)}
 								<a
-									href="/app/schedule"
+									href={`/app/schedule?agent=${encodeURIComponent(agent)}`}
 									class="flex items-start gap-2.5 rounded-xl border p-2.5 transition-colors hover:bg-muted/60"
 								>
 									<span
@@ -738,14 +745,14 @@
 				<!-- Quick shortcuts for this bot's artifacts and plugins. -->
 				<div class="grid grid-cols-2 gap-2">
 					<a
-						href="/app/artifacts"
+						href={`/app/artifacts?agent=${encodeURIComponent(agent)}`}
 						class="flex items-center gap-2 rounded-xl border p-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
 					>
 						<Layers class="h-4 w-4 shrink-0" />
 						<span class="truncate">{t('myaaw.nav.artifacts')}</span>
 					</a>
 					<a
-						href="/app/plugins"
+						href={`/app/plugins?agent=${encodeURIComponent(agent)}`}
 						class="flex items-center gap-2 rounded-xl border p-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
 					>
 						<Puzzle class="h-4 w-4 shrink-0" />

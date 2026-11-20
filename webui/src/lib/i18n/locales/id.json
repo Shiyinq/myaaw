@@ -1358,6 +1358,10 @@
 			"group_general": "Umum",
 			"group_chat": "Chat",
 			"group_speech": "Suara ke teks",
+			"group_bots": "Mode Bots",
+			"prev_bot": "Pindah ke bot sebelumnya",
+			"next_bot": "Pindah ke bot berikutnya",
+			"pick_bot": "Lompat ke bot 1–9",
 			"sidebar": "Tampilkan atau sembunyikan sidebar utama",
 			"help": "Tampilkan daftar ini",
 			"send": "Kirim pesan",
@@ -1396,6 +1400,7 @@
 		"bots": {
 			"new": "Bot baru",
 			"list_label": "Daftar bot",
+			"select_agent": "Pilih agen",
 			"search": "Cari bot...",
 			"no_matches": "Tidak ada bot yang cocok.",
 			"thinking": "Sedang berpikir…",
@@ -1404,7 +1409,16 @@
 			"routines": "Rutinitas",
 			"manage": "Kelola",
 			"routines_empty": "Belum ada jadwal rutinitas.",
-			"routine_paused": "Dijeda"
+			"routine_paused": "Dijeda",
+			"section_unread": "Belum dibaca",
+			"section_all": "Semua bot",
+			"filter_label": "Saring bot",
+			"filter_all": "Semua",
+			"filter_running": "Berjalan",
+			"filter_unread": "Belum dibaca",
+			"empty_filter": "Tidak ada bot yang sesuai filter.",
+			"actions": "Aksi bot",
+			"reconfigure": "Konfigurasi ulang"
 		},
 		"focus": {
 			"rail_label": "Navigasi fokus",

@@ -304,6 +304,8 @@
 		}
 	}
 
+	const tabIndex = $derived(tab === 'history' ? 0 : tab === 'context' ? 1 : 2);
+
 	function dayLabel(date: Date) {
 		if (Number.isNaN(date.getTime())) return '';
 		const startOfDay = (value: Date) =>
@@ -406,16 +408,21 @@
 		</p>
 	</div>
 
-	<div role="tablist" class="mx-3 mb-2 grid shrink-0 grid-cols-3 gap-1 rounded-lg border p-0.5">
+	<div role="tablist" class="relative mx-3 mb-2 grid shrink-0 grid-cols-3 rounded-lg border p-0.5">
+		<span
+			aria-hidden="true"
+			class="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc((100%-0.25rem)/3)] rounded-md bg-primary transition-transform duration-200 ease-out will-change-transform"
+			style:transform={`translateX(${tabIndex * 100}%)`}
+		></span>
 		<button
 			type="button"
 			role="tab"
 			aria-selected={tab === 'history'}
 			class={[
-				'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+				'relative z-10 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium select-none transition-colors duration-150',
 				tab === 'history'
-					? 'bg-primary text-primary-foreground'
-					: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+					? 'text-primary-foreground'
+					: 'text-muted-foreground hover:text-foreground'
 			]}
 			onclick={() => (tab = 'history')}
 		>
@@ -427,10 +434,10 @@
 			role="tab"
 			aria-selected={tab === 'context'}
 			class={[
-				'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+				'relative z-10 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium select-none transition-colors duration-150',
 				tab === 'context'
-					? 'bg-primary text-primary-foreground'
-					: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+					? 'text-primary-foreground'
+					: 'text-muted-foreground hover:text-foreground'
 			]}
 			onclick={() => (tab = 'context')}
 		>
@@ -442,10 +449,10 @@
 			role="tab"
 			aria-selected={tab === 'control'}
 			class={[
-				'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+				'relative z-10 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium select-none transition-colors duration-150',
 				tab === 'control'
-					? 'bg-primary text-primary-foreground'
-					: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+					? 'text-primary-foreground'
+					: 'text-muted-foreground hover:text-foreground'
 			]}
 			onclick={() => (tab = 'control')}
 		>

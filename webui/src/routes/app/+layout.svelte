@@ -57,6 +57,7 @@
 	import ClassicSidebar from '$lib/components/classic/ClassicSidebar.svelte';
 	import AdvancedSidebar from '$lib/components/advanced/AdvancedSidebar.svelte';
 	import BotsSidebar from '$lib/components/bots/BotsSidebar.svelte';
+	import BotsAgentPicker from '$lib/components/bots/BotsAgentPicker.svelte';
 	import FocusRail from '$lib/components/focus/FocusRail.svelte';
 	import FocusTabBar from '$lib/components/focus/FocusTabBar.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
@@ -578,6 +579,15 @@
 	let isChat = $derived(
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
 	);
+	// In Bots mode the left sidebar is a bot roster (clicking a bot opens its chat),
+	// so the three agent-scoped utility pages show a breadcrumb agent picker in the
+	// top bar that defaults to the default agent on entry.
+	let isBotsUtility = $derived(
+		botsMode &&
+			(page.url.pathname.startsWith('/app/artifacts') ||
+				page.url.pathname.startsWith('/app/schedule') ||
+				page.url.pathname.startsWith('/app/plugins'))
+	);
 	// Split list + detail pages run their second sidebar's vertical divider all
 	// the way through the top bar on desktop, so the header floats transparently
 	// across both columns instead of capping the sidebar below a horizontal bar.
@@ -778,14 +788,16 @@
 							{topBarTitle.value}
 						</h1>
 					{:else if !focusMode}
-						<div class="flex items-baseline gap-2">
+						<div class="flex min-w-0 items-center gap-2">
 							<h1
 								class="pointer-events-auto truncate text-base font-bold tracking-tight text-foreground sm:text-lg"
 								title={t(current.description)}
 							>
 								{t(current.label)}
 							</h1>
-							{#if isChat}
+							{#if isBotsUtility}
+								<BotsAgentPicker />
+							{:else if isChat}
 								<span
 									class="hidden shrink-0 text-base font-medium text-muted-foreground sm:inline sm:text-lg"
 								>

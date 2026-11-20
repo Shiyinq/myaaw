@@ -7,10 +7,29 @@ export interface BotPreview {
 	text: string;
 	/** Fallback conversation title when no assistant response text exists yet. */
 	title?: string;
-	/** ISO timestamp of the latest response or conversation update. */
+	/** ISO timestamp displayed on the bot row. */
 	updatedAt?: string;
+	/**
+	 * Monotonic high-water ISO timestamp of actual conversation activity used for
+	 * sorting the bot list, so opening New Chat or browsing older history never
+	 * drops a bot to the bottom of the sidebar.
+	 */
+	activityAt?: string;
 	/** True when driven directly by the chat view currently open for this bot. */
 	fromOpenChat?: boolean;
+}
+
+function parseIso(value?: string): number {
+	if (!value) return 0;
+	const ms = Date.parse(value);
+	return Number.isFinite(ms) ? ms : 0;
+}
+
+function newerIso(a?: string, b?: string): string | undefined {
+	const msA = parseIso(a);
+	const msB = parseIso(b);
+	if (msA === 0 && msB === 0) return a || b;
+	return msB >= msA ? b : a;
 }
 
 const MAX_PREVIEW_CHARS = 140;
@@ -106,25 +125,39 @@ export const botPreviews = {
 	get(agent: string): BotPreview | undefined {
 		return previews[agent];
 	},
-	setOpenChat(agent: string, next: Omit<BotPreview, 'fromOpenChat'>) {
+	setOpenChat(
+		agent: string,
+		next: Omit<BotPreview, 'fromOpenChat'>,
+		options: { bumpActivity?: boolean } = {}
+	) {
 		if (!agent) return;
 		const current = previews[agent];
+		const activityAt = options.bumpActivity
+			? newerIso(current?.activityAt, next.activityAt ?? next.updatedAt)
+			: (current?.activityAt ?? next.activityAt ?? next.updatedAt);
 		if (
 			current &&
 			current.fromOpenChat &&
 			current.conversationId === next.conversationId &&
 			current.text === next.text &&
 			current.title === next.title &&
-			current.updatedAt === next.updatedAt
+			current.updatedAt === next.updatedAt &&
+			current.activityAt === activityAt
 		) {
 			return;
 		}
-		previews = { ...previews, [agent]: { ...next, fromOpenChat: true } };
+		previews = { ...previews, [agent]: { ...next, activityAt, fromOpenChat: true } };
 	},
 	seed(agent: string, next: Omit<BotPreview, 'fromOpenChat'>, force = false) {
 		if (!agent) return;
 		const current = previews[agent];
-		if (!force && current?.fromOpenChat) return;
-		previews = { ...previews, [agent]: { ...next, fromOpenChat: false } };
+		const activityAt = newerIso(current?.activityAt, next.activityAt ?? next.updatedAt);
+		if (!force && current?.fromOpenChat) {
+			if (activityAt && activityAt !== current.activityAt) {
+				previews = { ...previews, [agent]: { ...current, activityAt } };
+			}
+			return;
+		}
+		previews = { ...previews, [agent]: { ...next, activityAt, fromOpenChat: false } };
 	}
 };

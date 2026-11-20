@@ -1358,6 +1358,10 @@
 			"group_general": "General",
 			"group_chat": "Chat",
 			"group_speech": "Speech to text",
+			"group_bots": "Bots mode",
+			"prev_bot": "Switch to the previous bot",
+			"next_bot": "Switch to the next bot",
+			"pick_bot": "Jump to bot 1–9",
 			"sidebar": "Show or hide the main sidebar",
 			"help": "Show this list",
 			"send": "Send the message",
@@ -1396,6 +1400,7 @@
 		"bots": {
 			"new": "New bot",
 			"list_label": "Bots",
+			"select_agent": "Choose agent",
 			"search": "Search bots...",
 			"no_matches": "No matching bots.",
 			"thinking": "Thinking…",
@@ -1404,7 +1409,16 @@
 			"routines": "Routines",
 			"manage": "Manage",
 			"routines_empty": "No routines scheduled yet.",
-			"routine_paused": "Paused"
+			"routine_paused": "Paused",
+			"section_unread": "Unread",
+			"section_all": "All bots",
+			"filter_label": "Filter bots",
+			"filter_all": "All",
+			"filter_running": "Running",
+			"filter_unread": "Unread",
+			"empty_filter": "No bots match this filter.",
+			"actions": "Bot actions",
+			"reconfigure": "Reconfigure"
 		},
 		"focus": {
 			"rail_label": "Focus navigation",

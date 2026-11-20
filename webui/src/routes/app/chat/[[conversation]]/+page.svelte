@@ -248,6 +248,7 @@
 	let conversationId = $state('');
 	let conversationUpdatedAt = $state('');
 	let transcriptAgent = $state('');
+	let explicitNewChat = $state(false);
 	// A run of the open conversation keeps streaming while the user is elsewhere;
 	// the page only renders whatever the store currently holds.
 	let activeRun = $derived(chatRuns.forConversation(agent ?? '', conversationId));
@@ -276,35 +277,34 @@
 	});
 	let loading = $state(false);
 	// Keep Bots mode's left sidebar synced with the open conversation's latest
-	// assistant reply (and clear immediately on New Chat), gated by transcriptAgent
-	// so switching bots never writes the previous bot's transcript onto the new bot.
+	// assistant reply, gated by transcriptAgent so switching bots never writes the
+	// previous bot's transcript onto the new bot.
 	$effect(() => {
 		const currentAgent = agent;
 		if (!currentAgent) return;
 		const id = conversationId;
 		const rows = items;
+		const isRunStreaming = Boolean(
+			activeRun && activeRun.agent === currentAgent && activeRun.streaming
+		);
 		const runAgent = activeRun?.agent ?? '';
 		if (transcriptAgent !== currentAgent && runAgent !== currentAgent) return;
 		const updatedFallback = conversationUpdatedAt;
 		const title = topBarTitle.value;
-		if (!id && rows.length === 0) {
-			botPreviews.setOpenChat(currentAgent, {
-				conversationId: '',
-				text: '',
-				title: '',
-				updatedAt: ''
-			});
-			return;
-		}
+		if (!id && rows.length === 0) return;
 		if (loading && rows.length === 0) return;
 		const last = lastAssistantFromItems(rows);
 		const lastRowTime = rows[rows.length - 1]?.createdAt;
-		botPreviews.setOpenChat(currentAgent, {
-			conversationId: id,
-			text: last.text,
-			title,
-			updatedAt: last.updatedAt || lastRowTime || updatedFallback || ''
-		});
+		botPreviews.setOpenChat(
+			currentAgent,
+			{
+				conversationId: id,
+				text: last.text,
+				title,
+				updatedAt: last.updatedAt || lastRowTime || updatedFallback || ''
+			},
+			{ bumpActivity: isRunStreaming }
+		);
 	});
 	// A pending approval can belong to this run, or to a detached one (a sub-agent)
 	// announced on the agent's approval stream, which has no run object here.
@@ -1501,6 +1501,7 @@
 		const openConversation = page.params.conversation ?? '';
 		// Do not load a conversation that belongs to the previous agent.
 		if (openConversation) loadKey = `${currentAgent}:${openConversation}`;
+		explicitNewChat = false;
 		conversationId = '';
 		historyItems = [];
 		clearRail();
@@ -1535,18 +1536,22 @@
 			return;
 		}
 
-		const key = `${currentAgent}:${currentConversation}`;
-		if (key === loadKey) return;
-
 		// The sidebar links to /app/chat, so restore the last opened conversation
-		// instead of dropping the user into a brand new chat.
-		if (!currentConversation) {
-			const last = lastConversationFor(currentAgent);
+		// instead of dropping the user into a brand new chat. In Bots mode also fall
+		// back to the bot's previewed latest conversation (e.g. on a fresh browser/incognito).
+		if (!currentConversation && !explicitNewChat) {
+			const last =
+				lastConversationFor(currentAgent) ||
+				(botsMode ? (botPreviews.get(currentAgent)?.conversationId ?? '') : '');
 			if (last) {
 				void goto(`/app/chat/${last}`, { replaceState: true, noScroll: true });
 				return;
 			}
 		}
+
+		const key = `${currentAgent}:${currentConversation}`;
+		if (key === loadKey) return;
+		if (currentConversation) explicitNewChat = false;
 
 		loadKey = key;
 		conversationId = currentConversation;
@@ -2809,8 +2814,20 @@
 
 	function resetChat() {
 		// Runs of other conversations keep streaming: this only clears the view.
+		const currentAgent = agent ?? '';
+		explicitNewChat = true;
+		transcriptAgent = currentAgent;
 		conversationId = '';
+		conversationUpdatedAt = '';
 		historyItems = [];
+		if (currentAgent) {
+			botPreviews.setOpenChat(currentAgent, {
+				conversationId: '',
+				text: '',
+				title: '',
+				updatedAt: ''
+			});
+		}
 		clearRail();
 		input = '';
 		quotes = [];
