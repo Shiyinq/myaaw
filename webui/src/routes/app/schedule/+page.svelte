@@ -121,7 +121,7 @@
 	const runsHasMore = $derived(runsOffset + recentRuns.length < runsTotal);
 	const runsRange = $derived.by(() => {
 		if (recentRuns.length === 0) return '';
-		return t('myaaw.cron.runs_range', {
+		return t('myaaw.schedule.runs_range', {
 			from: runsOffset + 1,
 			to: runsOffset + recentRuns.length,
 			total: runsTotal
@@ -176,7 +176,7 @@
 		savingScheduler = true;
 		try {
 			await configStore.patch(agent, { cron: { active: next } });
-			toastStore.success(t('myaaw.cron.scheduler_saved'));
+			toastStore.success(t('myaaw.schedule.scheduler_saved'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -279,7 +279,7 @@
 			threadId = '';
 			sessionId = '';
 			chatType = 'guild';
-			toastStore.success(t('myaaw.cron.saved'));
+			toastStore.success(t('myaaw.schedule.saved'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -289,7 +289,9 @@
 
 	async function remove(id: string) {
 		if (!agent) return;
-		if (!(await askConfirm({ message: t('myaaw.cron.delete_confirm'), variant: 'destructive' })))
+		if (
+			!(await askConfirm({ message: t('myaaw.schedule.delete_confirm'), variant: 'destructive' }))
+		)
 			return;
 		try {
 			await cronStore.remove(agent, id);
@@ -297,7 +299,7 @@
 				historyFor = '';
 				history = [];
 			}
-			toastStore.success(t('myaaw.cron.deleted'));
+			toastStore.success(t('myaaw.schedule.deleted'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
@@ -308,7 +310,7 @@
 		runningId = job.id;
 		try {
 			await cronStore.run(agent, job.id);
-			toastStore.success(t('myaaw.cron.ran'));
+			toastStore.success(t('myaaw.schedule.ran'));
 			// The agent writes the run entry before answering, so the newest page can
 			// be reloaded right away.
 			await loadRuns(0);
@@ -361,7 +363,14 @@
 	// readable both by name (while it exists) and by a short id afterwards.
 	function jobLabel(id: string) {
 		const known = jobs.find((job) => job.id === id);
-		return known ? known.name : t('myaaw.cron.removed_job', { id: id.slice(0, 8) });
+		return known ? known.name : t('myaaw.schedule.removed_job', { id: id.slice(0, 8) });
+	}
+
+	function kindLabel(value: string) {
+		if (value === 'cron') return t('myaaw.schedule.kind_recurring');
+		if (value === 'every') return t('myaaw.schedule.kind_interval');
+		if (value === 'at') return t('myaaw.schedule.kind_once');
+		return value;
 	}
 </script>
 
@@ -400,8 +409,8 @@
 			<div class="min-w-0 space-y-4 lg:col-span-3">
 				<Card>
 					<CardHeader class="pb-2">
-						<CardTitle class="text-sm font-medium">{t('myaaw.cron.scheduler')}</CardTitle>
-						<CardDescription>{t('myaaw.cron.scheduler_desc')}</CardDescription>
+						<CardTitle class="text-sm font-medium">{t('myaaw.schedule.scheduler')}</CardTitle>
+						<CardDescription>{t('myaaw.schedule.scheduler_desc')}</CardDescription>
 					</CardHeader>
 					<CardContent class="space-y-1">
 						<label class="flex items-center gap-2 text-sm">
@@ -412,9 +421,9 @@
 								onchange={(event) => setScheduler(event.currentTarget.checked)}
 								class="h-4 w-4 accent-primary"
 							/>
-							{t('myaaw.cron.scheduler_active')}
+							{t('myaaw.schedule.scheduler_active')}
 						</label>
-						<p class="text-xs text-muted-foreground">{t('myaaw.cron.scheduler_hint')}</p>
+						<p class="text-xs text-muted-foreground">{t('myaaw.schedule.scheduler_hint')}</p>
 					</CardContent>
 				</Card>
 
@@ -422,21 +431,21 @@
 					<CardHeader>
 						<CardTitle class="flex items-center gap-2">
 							<CalendarClock class="h-4 w-4" />
-							{t('myaaw.cron.jobs')}
+							{t('myaaw.schedule.jobs')}
 						</CardTitle>
-						<CardDescription>{t('myaaw.cron.jobs_desc')}</CardDescription>
+						<CardDescription>{t('myaaw.schedule.jobs_desc')}</CardDescription>
 					</CardHeader>
 					<CardContent>
 						<Tabs.Root bind:value={jobTab} class="space-y-3">
 							<Tabs.List variant="line" class="flex-wrap justify-start">
-								<Tabs.Trigger value="jobs">{t('myaaw.cron.tab_jobs')}</Tabs.Trigger>
-								<Tabs.Trigger value="history">{t('myaaw.cron.tab_history')}</Tabs.Trigger>
+								<Tabs.Trigger value="jobs">{t('myaaw.schedule.tab_jobs')}</Tabs.Trigger>
+								<Tabs.Trigger value="history">{t('myaaw.schedule.tab_history')}</Tabs.Trigger>
 							</Tabs.List>
 							<Tabs.Content value="jobs" class="space-y-2">
 								{#if !loading && jobs.length === 0}
 									<EmptyState
-										title={t('myaaw.cron.empty')}
-										description={t('myaaw.cron.empty_desc')}
+										title={t('myaaw.schedule.empty')}
+										description={t('myaaw.schedule.empty_desc')}
 										bloub="somnolent"
 										icon={CalendarClock}
 										class="min-h-55"
@@ -449,15 +458,17 @@
 												type="button"
 												class="min-w-0 flex-1 rounded-md text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 												onclick={() => showJob(job)}
-												title={t('myaaw.cron.detail_desc')}
+												title={t('myaaw.schedule.detail_desc')}
 											>
 												<div class="flex flex-wrap items-center gap-2">
 													<span class="font-medium">{job.name}</span>
 													<Badge variant={job.enabled ? 'secondary' : 'outline'}>
-														{job.enabled ? t('myaaw.cron.enabled') : t('myaaw.cron.disabled')}
+														{job.enabled
+															? t('myaaw.schedule.enabled')
+															: t('myaaw.schedule.disabled')}
 													</Badge>
 													<Badge variant="outline" class="font-mono text-[10px]">
-														{job.schedule.kind} · {job.schedule.expr}
+														{kindLabel(job.schedule.kind)} · {job.schedule.expr}
 													</Badge>
 												</div>
 												<p class="mt-1 truncate text-[11px] text-muted-foreground">
@@ -467,13 +478,13 @@
 													<p class="text-[11px] text-muted-foreground">
 														{job.delivery.channel || '—'} → {job.delivery.to || '—'}
 														{#if job.delivery.thread_id}
-															· {t('myaaw.cron.delivery_topic')} {job.delivery.thread_id}
+															· {t('myaaw.schedule.delivery_topic')} {job.delivery.thread_id}
 														{/if}
 														{#if job.delivery.chat_type}
 															· {job.delivery.chat_type}
 														{/if}
 														{#if job.delivery.session_id}
-															· {t('myaaw.cron.delivery_session')}
+															· {t('myaaw.schedule.delivery_session')}
 															<span class="font-mono">{job.delivery.session_id.slice(0, 8)}</span>
 														{/if}
 													</p>
@@ -485,7 +496,7 @@
 													variant="outline"
 													disabled={runningId !== '' && runningId !== job.id}
 													onclick={() => run(job)}
-													aria-label={t('myaaw.cron.run_now')}
+													aria-label={t('myaaw.schedule.run_now')}
 												>
 													{#if runningId === job.id}
 														<Loader2 class="h-3.5 w-3.5 animate-spin" />
@@ -507,7 +518,7 @@
 												class="max-h-48 space-y-0.5 overflow-y-auto rounded-md bg-muted/30 p-2 text-[11px]"
 											>
 												{#if history.length === 0}
-													<p class="text-muted-foreground">{t('myaaw.cron.no_history')}</p>
+													<p class="text-muted-foreground">{t('myaaw.schedule.no_history')}</p>
 												{/if}
 												{#each history as entry, index (index)}
 													<button
@@ -536,8 +547,8 @@
 							<Tabs.Content value="history" class="space-y-2">
 								{#if recentRuns.length === 0 && runsTotal === 0}
 									<EmptyState
-										title={t('myaaw.cron.recent_runs_empty')}
-										description={t('myaaw.cron.recent_runs_empty_desc')}
+										title={t('myaaw.schedule.recent_runs_empty')}
+										description={t('myaaw.schedule.recent_runs_empty_desc')}
 										bloub="somnolent"
 										icon={History}
 										class="min-h-55"
@@ -578,7 +589,7 @@
 												variant="outline"
 												disabled={runsOffset === 0 || runsLoading}
 												onclick={() => loadRuns(runsOffset - RUN_PAGE_SIZE)}
-												aria-label={t('myaaw.cron.page_prev')}
+												aria-label={t('myaaw.schedule.page_prev')}
 											>
 												<ChevronLeft class="h-3.5 w-3.5" />
 											</Button>
@@ -587,7 +598,7 @@
 												variant="outline"
 												disabled={!runsHasMore || runsLoading}
 												onclick={() => loadRuns(runsOffset + RUN_PAGE_SIZE)}
-												aria-label={t('myaaw.cron.page_next')}
+												aria-label={t('myaaw.schedule.page_next')}
 											>
 												<ChevronRight class="h-3.5 w-3.5" />
 											</Button>
@@ -602,8 +613,8 @@
 
 			<Card class="min-w-0 lg:col-span-2">
 				<CardHeader>
-					<CardTitle>{t('myaaw.cron.create')}</CardTitle>
-					<CardDescription>{t('myaaw.cron.create_desc')}</CardDescription>
+					<CardTitle>{t('myaaw.schedule.create')}</CardTitle>
+					<CardDescription>{t('myaaw.schedule.create_desc')}</CardDescription>
 				</CardHeader>
 				<CardContent>
 					<form
@@ -616,52 +627,52 @@
 					>
 						<section class="space-y-3">
 							<p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-								{t('myaaw.cron.section_schedule')}
+								{t('myaaw.schedule.section_schedule')}
 							</p>
 							<div class="grid gap-1">
-								<Label for="cron-name">{t('myaaw.cron.name')}</Label>
+								<Label for="cron-name">{t('myaaw.schedule.name')}</Label>
 								<Input id="cron-name" bind:value={name} placeholder="Morning reminder" />
 								<FieldError code={errors.name} />
 							</div>
 							<div class="grid grid-cols-2 gap-2">
 								<div class="grid gap-1">
-									<Label for="cron-kind">{t('myaaw.cron.kind')}</Label>
+									<Label for="cron-kind">{t('myaaw.schedule.kind')}</Label>
 									<select
 										id="cron-kind"
 										bind:value={kind}
 										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 									>
-										<option value="cron">cron</option>
-										<option value="every">every</option>
-										<option value="at">at</option>
+										<option value="cron">{t('myaaw.schedule.kind_recurring')}</option>
+										<option value="every">{t('myaaw.schedule.kind_interval')}</option>
+										<option value="at">{t('myaaw.schedule.kind_once')}</option>
 									</select>
 								</div>
 								<div class="grid gap-1">
-									<Label for="cron-tz">{t('myaaw.cron.tz')}</Label>
+									<Label for="cron-tz">{t('myaaw.schedule.tz')}</Label>
 									<Input id="cron-tz" bind:value={tz} />
 								</div>
 							</div>
 							{#if kind === 'cron'}
 								<div class="grid gap-1">
-									<Label for="cron-preset">{t('myaaw.cron.preset')}</Label>
+									<Label for="cron-preset">{t('myaaw.schedule.preset')}</Label>
 									<select
 										id="cron-preset"
 										bind:value={preset}
 										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 									>
-										<option value="custom">{t('myaaw.cron.preset_custom')}</option>
-										<option value="minutes">{t('myaaw.cron.preset_minutes')}</option>
-										<option value="hourly">{t('myaaw.cron.preset_hourly')}</option>
-										<option value="daily">{t('myaaw.cron.preset_daily')}</option>
-										<option value="weekdays">{t('myaaw.cron.preset_weekdays')}</option>
-										<option value="weekly">{t('myaaw.cron.preset_weekly')}</option>
-										<option value="monthly">{t('myaaw.cron.preset_monthly')}</option>
+										<option value="custom">{t('myaaw.schedule.preset_custom')}</option>
+										<option value="minutes">{t('myaaw.schedule.preset_minutes')}</option>
+										<option value="hourly">{t('myaaw.schedule.preset_hourly')}</option>
+										<option value="daily">{t('myaaw.schedule.preset_daily')}</option>
+										<option value="weekdays">{t('myaaw.schedule.preset_weekdays')}</option>
+										<option value="weekly">{t('myaaw.schedule.preset_weekly')}</option>
+										<option value="monthly">{t('myaaw.schedule.preset_monthly')}</option>
 									</select>
 								</div>
 
 								{#if preset === 'minutes'}
 									<div class="grid gap-1">
-										<Label for="cron-minutes">{t('myaaw.cron.minutes')}</Label>
+										<Label for="cron-minutes">{t('myaaw.schedule.minutes')}</Label>
 										<Input
 											id="cron-minutes"
 											type="number"
@@ -673,12 +684,12 @@
 								{:else if preset === 'daily' || preset === 'weekdays' || preset === 'weekly' || preset === 'monthly'}
 									<div class="grid grid-cols-2 gap-2">
 										<div class="grid gap-1">
-											<Label for="cron-time">{t('myaaw.cron.time')}</Label>
+											<Label for="cron-time">{t('myaaw.schedule.time')}</Label>
 											<Input id="cron-time" type="time" bind:value={presetTime} />
 										</div>
 										{#if preset === 'weekly'}
 											<div class="grid gap-1">
-												<Label for="cron-weekday">{t('myaaw.cron.weekday')}</Label>
+												<Label for="cron-weekday">{t('myaaw.schedule.weekday')}</Label>
 												<select
 													id="cron-weekday"
 													bind:value={presetWeekday}
@@ -691,7 +702,7 @@
 											</div>
 										{:else if preset === 'monthly'}
 											<div class="grid gap-1">
-												<Label for="cron-day">{t('myaaw.cron.day_of_month')}</Label>
+												<Label for="cron-day">{t('myaaw.schedule.day_of_month')}</Label>
 												<Input
 													id="cron-day"
 													type="number"
@@ -705,7 +716,7 @@
 								{/if}
 
 								<div class="grid gap-1">
-									<Label for="cron-expr">{t('myaaw.cron.expr')}</Label>
+									<Label for="cron-expr">{t('myaaw.schedule.expr')}</Label>
 									{#if preset === 'custom'}
 										<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
 									{:else}
@@ -715,7 +726,7 @@
 								</div>
 							{:else}
 								<div class="grid gap-1">
-									<Label for="cron-expr">{t('myaaw.cron.expr')}</Label>
+									<Label for="cron-expr">{t('myaaw.schedule.expr')}</Label>
 									<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
 									<FieldError code={errors.expr} />
 								</div>
@@ -724,10 +735,10 @@
 
 						<section class="space-y-3">
 							<p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-								{t('myaaw.cron.section_message')}
+								{t('myaaw.schedule.section_message')}
 							</p>
 							<div class="grid gap-1">
-								<Label for="cron-message">{t('myaaw.cron.message')}</Label>
+								<Label for="cron-message">{t('myaaw.schedule.message')}</Label>
 								<textarea
 									id="cron-message"
 									bind:value={message}
@@ -741,37 +752,37 @@
 
 						<section class="space-y-3">
 							<p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-								{t('myaaw.cron.section_delivery')}
+								{t('myaaw.schedule.section_delivery')}
 							</p>
 							<div class="grid items-start gap-2 sm:grid-cols-2">
 								<div class="grid gap-1">
-									<Label for="cron-channel">{t('myaaw.cron.channel')}</Label>
+									<Label for="cron-channel">{t('myaaw.schedule.channel')}</Label>
 									<select
 										id="cron-channel"
 										value={channel}
 										onchange={(event) => changeChannel(event.currentTarget.value as CronChannel)}
 										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 									>
-										<option value="telegram">{t('myaaw.cron.channel_telegram')}</option>
-										<option value="discord">{t('myaaw.cron.channel_discord')}</option>
-										<option value="api">{t('myaaw.cron.channel_api')}</option>
-										<option value="cli">{t('myaaw.cron.channel_cli')}</option>
+										<option value="telegram">{t('myaaw.schedule.channel_telegram')}</option>
+										<option value="discord">{t('myaaw.schedule.channel_discord')}</option>
+										<option value="api">{t('myaaw.schedule.channel_api')}</option>
+										<option value="cli">{t('myaaw.schedule.channel_cli')}</option>
 									</select>
 								</div>
 								<div class="grid gap-1">
-									<Label for="cron-to">{t('myaaw.cron.to')}</Label>
+									<Label for="cron-to">{t('myaaw.schedule.to')}</Label>
 									<Input id="cron-to" bind:value={to} placeholder="123456789" />
 									{#if isTelegram}
 										<p class="text-[11px] text-muted-foreground">
-											{t('myaaw.cron.to_telegram_hint')}
+											{t('myaaw.schedule.to_telegram_hint')}
 										</p>
 									{:else if isDiscord}
 										<p class="text-[11px] text-muted-foreground">
-											{t('myaaw.cron.to_discord_hint')}
+											{t('myaaw.schedule.to_discord_hint')}
 										</p>
 									{:else}
 										<p class="text-[11px] text-muted-foreground">
-											{t('myaaw.cron.to_api_hint')}
+											{t('myaaw.schedule.to_api_hint')}
 										</p>
 									{/if}
 								</div>
@@ -779,28 +790,32 @@
 
 							{#if isTelegram}
 								<div class="grid gap-1">
-									<Label for="cron-thread">{t('myaaw.cron.thread_id')}</Label>
+									<Label for="cron-thread">{t('myaaw.schedule.thread_id')}</Label>
 									<Input id="cron-thread" bind:value={threadId} placeholder="77" />
-									<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.thread_id_hint')}</p>
+									<p class="text-[11px] text-muted-foreground">
+										{t('myaaw.schedule.thread_id_hint')}
+									</p>
 									<FieldError code={errors.thread_id} />
 								</div>
 							{:else if isDiscord}
 								<div class="grid gap-1">
-									<Label for="cron-chat-type">{t('myaaw.cron.chat_type')}</Label>
+									<Label for="cron-chat-type">{t('myaaw.schedule.chat_type')}</Label>
 									<select
 										id="cron-chat-type"
 										bind:value={chatType}
 										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
 									>
-										<option value="guild">{t('myaaw.cron.chat_type_guild')}</option>
-										<option value="dm">{t('myaaw.cron.chat_type_dm')}</option>
+										<option value="guild">{t('myaaw.schedule.chat_type_guild')}</option>
+										<option value="dm">{t('myaaw.schedule.chat_type_dm')}</option>
 									</select>
-									<p class="text-[11px] text-muted-foreground">{t('myaaw.cron.chat_type_hint')}</p>
+									<p class="text-[11px] text-muted-foreground">
+										{t('myaaw.schedule.chat_type_hint')}
+									</p>
 								</div>
 							{/if}
 
 							<div class="grid gap-1">
-								<Label for="cron-session">{t('myaaw.cron.session_id')}</Label>
+								<Label for="cron-session">{t('myaaw.schedule.session_id')}</Label>
 								<select
 									id="cron-session-pick"
 									value={sessionChoices.some((choice) => choice.id === sessionId) ? sessionId : ''}
@@ -810,8 +825,8 @@
 								>
 									<option value="">
 										{sessionChoices.length === 0
-											? t('myaaw.cron.session_none')
-											: t('myaaw.cron.session_history')}
+											? t('myaaw.schedule.session_none')
+											: t('myaaw.schedule.session_history')}
 									</option>
 									{#each sessionChoices as choice (choice.id)}
 										<option value={choice.id}>
@@ -822,19 +837,19 @@
 								<Input id="cron-session" bind:value={sessionId} placeholder="0f4e8b3a-…" />
 								<p class="text-[11px] text-muted-foreground">
 									{needsSession
-										? t('myaaw.cron.session_id_required_hint')
-										: t('myaaw.cron.session_id_optional_hint')}
+										? t('myaaw.schedule.session_id_required_hint')
+										: t('myaaw.schedule.session_id_optional_hint')}
 								</p>
 								<FieldError code={errors.session_id} />
 							</div>
 							<label class="flex items-center gap-2 text-sm">
 								<input type="checkbox" bind:checked={enabled} class="h-4 w-4 accent-primary" />
-								{t('myaaw.cron.enabled')}
+								{t('myaaw.schedule.enabled')}
 							</label>
 						</section>
 						<Button type="submit" class="w-full" loading={saving}>
 							<Plus class="mr-2 h-4 w-4" />
-							{t('myaaw.cron.create')}
+							{t('myaaw.schedule.create')}
 						</Button>
 					</form>
 				</CardContent>
@@ -848,82 +863,82 @@
 		<Dialog.Content class="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
 			<Dialog.Header>
 				<Dialog.Title class="pr-6">{jobDetail?.name || ''}</Dialog.Title>
-				<Dialog.Description>{t('myaaw.cron.detail_desc')}</Dialog.Description>
+				<Dialog.Description>{t('myaaw.schedule.detail_desc')}</Dialog.Description>
 			</Dialog.Header>
 
 			{#if jobDetail}
 				<dl class="grid grid-cols-[minmax(0,6rem)_1fr] gap-x-3 gap-y-2 text-xs">
-					<dt class="text-muted-foreground">{t('myaaw.cron.field_id')}</dt>
+					<dt class="text-muted-foreground">{t('myaaw.schedule.field_id')}</dt>
 					<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.id}</dd>
 
 					{#if jobDetail.name}
-						<dt class="text-muted-foreground">{t('myaaw.cron.name')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.name')}</dt>
 						<dd class="min-w-0 wrap-break-word">{jobDetail.name}</dd>
 					{/if}
 
 					{#if jobDetail.agent_id}
-						<dt class="text-muted-foreground">{t('myaaw.cron.field_agent')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.field_agent')}</dt>
 						<dd class="min-w-0 wrap-break-word">{jobDetail.agent_id}</dd>
 					{/if}
 
-					<dt class="text-muted-foreground">{t('myaaw.cron.kind')}</dt>
+					<dt class="text-muted-foreground">{t('myaaw.schedule.kind')}</dt>
 					<dd class="min-w-0 font-mono text-[11px] wrap-break-word">
-						{jobDetail.schedule.kind} · {jobDetail.schedule.expr}
+						{kindLabel(jobDetail.schedule.kind)} · {jobDetail.schedule.expr}
 						{#if jobDetail.schedule.tz}· {jobDetail.schedule.tz}{/if}
 					</dd>
 
 					{#if jobDetail.payload.kind}
-						<dt class="text-muted-foreground">{t('myaaw.cron.field_payload')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.field_payload')}</dt>
 						<dd class="min-w-0 wrap-break-word">{jobDetail.payload.kind}</dd>
 					{/if}
 
 					{#if jobDetail.payload.content}
-						<dt class="text-muted-foreground">{t('myaaw.cron.message')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.message')}</dt>
 						<dd class="min-w-0 whitespace-pre-wrap wrap-break-word">{jobDetail.payload.content}</dd>
 					{/if}
 
 					{#if jobDetail.delivery.mode}
-						<dt class="text-muted-foreground">{t('myaaw.cron.field_mode')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.field_mode')}</dt>
 						<dd class="min-w-0 wrap-break-word">{jobDetail.delivery.mode}</dd>
 					{/if}
 
 					{#if jobDetail.delivery.channel}
-						<dt class="text-muted-foreground">{t('myaaw.cron.channel')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.channel')}</dt>
 						<dd class="min-w-0 wrap-break-word">{jobDetail.delivery.channel}</dd>
 					{/if}
 
 					{#if jobDetail.delivery.to}
-						<dt class="text-muted-foreground">{t('myaaw.cron.to')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.to')}</dt>
 						<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.delivery.to}</dd>
 					{/if}
 
 					{#if jobDetail.delivery.chat_type}
-						<dt class="text-muted-foreground">{t('myaaw.cron.field_chat_type')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.field_chat_type')}</dt>
 						<dd class="min-w-0 wrap-break-word">{jobDetail.delivery.chat_type}</dd>
 					{/if}
 
 					{#if jobDetail.delivery.thread_id}
-						<dt class="text-muted-foreground">{t('myaaw.cron.thread_id')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.thread_id')}</dt>
 						<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.delivery.thread_id}</dd>
 					{/if}
 
 					{#if jobDetail.delivery.session_id}
-						<dt class="text-muted-foreground">{t('myaaw.cron.session_id')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.session_id')}</dt>
 						<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.delivery.session_id}</dd>
 					{/if}
 
-					<dt class="text-muted-foreground">{t('myaaw.cron.field_status')}</dt>
+					<dt class="text-muted-foreground">{t('myaaw.schedule.field_status')}</dt>
 					<dd class="min-w-0 wrap-break-word">
-						{jobDetail.enabled ? t('myaaw.cron.enabled') : t('myaaw.cron.disabled')}
+						{jobDetail.enabled ? t('myaaw.schedule.enabled') : t('myaaw.schedule.disabled')}
 					</dd>
 
 					{#if jobDetail.created_at}
-						<dt class="text-muted-foreground">{t('myaaw.cron.field_created')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.field_created')}</dt>
 						<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.created_at}</dd>
 					{/if}
 
 					{#if jobDetail.updated_at}
-						<dt class="text-muted-foreground">{t('myaaw.cron.field_updated')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.field_updated')}</dt>
 						<dd class="min-w-0 font-mono text-[11px] break-all">{jobDetail.updated_at}</dd>
 					{/if}
 				</dl>
@@ -931,7 +946,7 @@
 
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (jobDetailOpen = false)}>
-					{t('myaaw.cron.run_close')}
+					{t('myaaw.schedule.run_close')}
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
@@ -954,63 +969,63 @@
 						</Badge>
 					{/if}
 				</Dialog.Title>
-				<Dialog.Description>{t('myaaw.cron.run_detail_desc')}</Dialog.Description>
+				<Dialog.Description>{t('myaaw.schedule.run_detail_desc')}</Dialog.Description>
 			</Dialog.Header>
 
 			{#if runDetail}
 				<div class="space-y-3">
 					<dl class="grid grid-cols-[minmax(0,6rem)_1fr] gap-x-3 gap-y-2 text-xs">
-						<dt class="text-muted-foreground">{t('myaaw.cron.run_time')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.run_time')}</dt>
 						<dd class="min-w-0 font-mono text-[11px] break-all">{runDetail.ts}</dd>
 
-						<dt class="text-muted-foreground">{t('myaaw.cron.run_job_id')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.run_job_id')}</dt>
 						<dd class="min-w-0 font-mono text-[11px] break-all">{runDetail.job_id}</dd>
 
 						{#if runDetail.name}
-							<dt class="text-muted-foreground">{t('myaaw.cron.name')}</dt>
+							<dt class="text-muted-foreground">{t('myaaw.schedule.name')}</dt>
 							<dd class="min-w-0 wrap-break-word">{runDetail.name}</dd>
 						{/if}
 
-						<dt class="text-muted-foreground">{t('myaaw.cron.run_status')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.run_status')}</dt>
 						<dd class="min-w-0 wrap-break-word">{runDetail.status}</dd>
 
 						{#if runDetail.message}
-							<dt class="text-muted-foreground">{t('myaaw.cron.message')}</dt>
+							<dt class="text-muted-foreground">{t('myaaw.schedule.message')}</dt>
 							<dd class="min-w-0 whitespace-pre-wrap wrap-break-word">{runDetail.message}</dd>
 						{/if}
 
 						{#if runDetail.channel}
-							<dt class="text-muted-foreground">{t('myaaw.cron.channel')}</dt>
+							<dt class="text-muted-foreground">{t('myaaw.schedule.channel')}</dt>
 							<dd class="min-w-0 wrap-break-word">{runDetail.channel}</dd>
 						{/if}
 
 						{#if runDetail.to}
-							<dt class="text-muted-foreground">{t('myaaw.cron.to')}</dt>
+							<dt class="text-muted-foreground">{t('myaaw.schedule.to')}</dt>
 							<dd class="min-w-0 font-mono text-[11px] break-all">{runDetail.to}</dd>
 						{/if}
 
 						{#if runDetail.chat_type}
-							<dt class="text-muted-foreground">{t('myaaw.cron.field_chat_type')}</dt>
+							<dt class="text-muted-foreground">{t('myaaw.schedule.field_chat_type')}</dt>
 							<dd class="min-w-0 wrap-break-word">{runDetail.chat_type}</dd>
 						{/if}
 
 						{#if runDetail.thread_id}
-							<dt class="text-muted-foreground">{t('myaaw.cron.thread_id')}</dt>
+							<dt class="text-muted-foreground">{t('myaaw.schedule.thread_id')}</dt>
 							<dd class="min-w-0 font-mono text-[11px] break-all">{runDetail.thread_id}</dd>
 						{/if}
 
 						{#if runDetail.session_id}
-							<dt class="text-muted-foreground">{t('myaaw.cron.session_id')}</dt>
+							<dt class="text-muted-foreground">{t('myaaw.schedule.session_id')}</dt>
 							<dd class="min-w-0 font-mono text-[11px] break-all">{runDetail.session_id}</dd>
 						{/if}
 
-						<dt class="text-muted-foreground">{t('myaaw.cron.run_result')}</dt>
+						<dt class="text-muted-foreground">{t('myaaw.schedule.run_result')}</dt>
 						<dd class="min-w-0 whitespace-pre-wrap wrap-break-word">{runDetail.result || '—'}</dd>
 					</dl>
 
 					{#if !runDetail.name && !runDetail.message && !runDetail.channel}
 						<p class="rounded-md bg-muted/40 p-2 text-[11px] text-muted-foreground">
-							{t('myaaw.cron.run_detail_old')}
+							{t('myaaw.schedule.run_detail_old')}
 						</p>
 					{/if}
 				</div>
@@ -1018,7 +1033,7 @@
 
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (runDetailOpen = false)}>
-					{t('myaaw.cron.run_close')}
+					{t('myaaw.schedule.run_close')}
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>

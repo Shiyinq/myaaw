@@ -32,6 +32,45 @@
 
 	let lightboxOpen = $state(false);
 	let imageFailed = $state(false);
+	/** Space kept free at the right so controls never sit under the floating top bar. */
+	let gutter = $state(12);
+	let root = $state<HTMLElement | null>(null);
+
+	function measureGutter() {
+		if (!root) return;
+		const bar = document.querySelector('header');
+		const rootRect = root.getBoundingClientRect();
+		if (!bar) {
+			gutter = 12;
+			return;
+		}
+		const barRect = bar.getBoundingClientRect();
+		if (barRect.bottom <= rootRect.top + 1) {
+			gutter = 12;
+			return;
+		}
+		const edges = [...bar.querySelectorAll('button, a')]
+			.map((element) => element.getBoundingClientRect())
+			.filter((rect) => rect.width > 0 && rect.left > window.innerWidth / 2)
+			.map((rect) => rect.left);
+		const actionLeft = edges.length > 0 ? Math.min(...edges) : window.innerWidth;
+		gutter = Math.max(12, Math.round(rootRect.right - actionLeft + 8));
+	}
+
+	$effect(() => {
+		const element = root;
+		if (!element) return;
+		measureGutter();
+		const observer = new ResizeObserver(() => measureGutter());
+		observer.observe(element);
+		const bar = document.querySelector('header');
+		if (bar) observer.observe(bar);
+		window.addEventListener('resize', measureGutter);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('resize', measureGutter);
+		};
+	});
 
 	const src = $derived(filesStore.rawUrl(agent, item.path));
 	const downloadSrc = $derived(filesStore.rawUrl(agent, item.path, { download: true }));
@@ -103,8 +142,16 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="flex h-full min-h-0 flex-col" role="dialog" aria-label={item.file_name}>
-	<div class="flex shrink-0 items-center gap-2 border-b p-2 pr-3">
+<div
+	bind:this={root}
+	class="flex h-full min-h-0 flex-col"
+	role="dialog"
+	aria-label={item.file_name}
+>
+	<div
+		class="flex min-h-14 shrink-0 items-center gap-2 border-b py-2 pl-3"
+		style:padding-right="{gutter}px"
+	>
 		{#if item.kind === 'image'}
 			<img
 				{src}

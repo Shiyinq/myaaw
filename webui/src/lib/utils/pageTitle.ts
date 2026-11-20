@@ -34,7 +34,7 @@ const pageTitles: Record<string, PageTitle> = {
 	'/app/providers': { titleKey: 'myaaw.nav.providers', descriptionKey: 'myaaw.providers.subtitle' },
 	'/app/channels': { titleKey: 'myaaw.nav.channels', descriptionKey: 'myaaw.channels.subtitle' },
 	'/app/config': { titleKey: 'myaaw.nav.config', descriptionKey: 'myaaw.config.subtitle' },
-	'/app/cron': { titleKey: 'myaaw.nav.cron', descriptionKey: 'myaaw.cron.subtitle' },
+	'/app/schedule': { titleKey: 'myaaw.nav.schedule', descriptionKey: 'myaaw.schedule.subtitle' },
 	'/app/server': { titleKey: 'myaaw.nav.server', descriptionKey: 'myaaw.server.subtitle' },
 	'/app/logs': { titleKey: 'myaaw.nav.logs', descriptionKey: 'myaaw.logs.subtitle' },
 	'/app/backups': { titleKey: 'myaaw.nav.backups', descriptionKey: 'myaaw.backups.subtitle' },

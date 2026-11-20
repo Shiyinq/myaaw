@@ -230,6 +230,12 @@
 	let attachmentCount = $state(0);
 	// The file whose preview pane replaces the transcript column (classic overlays it).
 	let previewAttachment = $state<ConversationAttachment | null>(null);
+	// Hide the floating desktop conversation title while a full-height attachment
+	// preview owns the top of the column, and restore it on close or navigation.
+	$effect(() => {
+		topBarTitle.setDesktopHidden(Boolean(agent && previewAttachment));
+		return () => topBarTitle.setDesktopHidden(false);
+	});
 	// The turn a "Show in chat" jump landed on, so its row can flash a ring.
 	let highlightedMessage = $state<number | null>(null);
 	let highlightTimer: ReturnType<typeof setTimeout> | undefined;
@@ -3783,9 +3789,13 @@
 			<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
 		{/if}
 		<Button
-			variant={historyOpen && rightTab === 'attachments' ? 'secondary' : 'outline'}
+			variant={historyOpen && rightTab === 'attachments' ? 'secondary' : 'ghost'}
 			size="icon-sm"
-			class="relative"
+			class={[
+				'relative rounded-full',
+				!(historyOpen && rightTab === 'attachments') &&
+					'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+			]}
 			onclick={openAttachments}
 			title={`${t('myaaw.chat.attachments_open')} (${formatShortcut('mod+shift+a')})`}
 			aria-label={t('myaaw.chat.attachments_open')}
@@ -3795,7 +3805,7 @@
 			<Paperclip class="h-4 w-4" />
 			{#if attachmentCount > 0}
 				<span
-					class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
+					class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
 				>
 					{attachmentCount > 99 ? '99+' : attachmentCount}
 				</span>
@@ -3803,8 +3813,13 @@
 		</Button>
 		{#if !classicMode}
 			<Button
-				variant={historyOpen && rightTab === 'history' ? 'secondary' : 'outline'}
+				variant={historyOpen && rightTab === 'history' ? 'secondary' : 'ghost'}
 				size="icon-sm"
+				class={[
+					'rounded-full',
+					!(historyOpen && rightTab === 'history') &&
+						'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+				]}
 				onclick={toggleHistory}
 				title={`${historyOpen && rightTab === 'history' ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')} (${formatShortcut('mod+shift+h')})`}
 				aria-label={historyOpen && rightTab === 'history'
@@ -3831,19 +3846,16 @@
 	<div
 		class={[
 			'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
-			focusMode && historyOpen ? 'lg:pr-88' : ''
+			focusMode ? (historyOpen ? 'lg:pr-88' : '') : previewAttachment ? '' : 'lg:mt-14'
 		]}
 	>
 		{#if agent && previewAttachment}
-			<!-- The focus header floats over the column; keep the pane below it there. -->
-			<div class={focusMode ? 'min-h-0 flex-1 pt-14 lg:pt-16' : 'min-h-0 flex-1'}>
-				<AttachmentPreview
-					{agent}
-					item={previewAttachment}
-					onClose={() => (previewAttachment = null)}
-					onShowInChat={showAttachmentInChat}
-				/>
-			</div>
+			<AttachmentPreview
+				{agent}
+				item={previewAttachment}
+				onClose={() => (previewAttachment = null)}
+				onShowInChat={showAttachmentInChat}
+			/>
 		{:else if agent && focusMode && focusContextPath}
 			<FocusContextEditor {agent} path={focusContextPath} onClose={() => (focusContextPath = '')} />
 		{:else if !agent}
@@ -4517,10 +4529,10 @@
 
 						<div
 							class={[
-								'border-t px-2 py-2 sm:px-4 sm:py-3',
+								'px-2 py-2 sm:px-4 sm:py-3',
 								frosted
 									? 'bg-linear-to-b from-transparent via-card/40 to-card/40 backdrop-blur-xl'
-									: 'bg-background/80 backdrop-blur'
+									: ''
 							]}
 						>
 							<div class="mx-auto w-full max-w-4xl">
@@ -5366,10 +5378,10 @@
 			inert={!historyOpen}
 			class={[
 				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
-				historyOpen ? 'flex lg:w-72' : 'hidden lg:flex lg:w-0 lg:border-l-0'
+				historyOpen ? 'flex lg:w-80' : 'hidden lg:flex lg:w-0 lg:border-l-0'
 			]}
 		>
-			<div class="flex h-full w-full flex-col lg:w-72 lg:min-w-72">
+			<div class="flex h-full w-full flex-col lg:w-80 lg:min-w-80 lg:pt-14">
 				{#if rightTab === 'attachments'}
 					<AttachmentPanel
 						{agent}
@@ -5410,10 +5422,10 @@
 			inert={!classicAttachmentsOpen}
 			class={[
 				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
-				classicAttachmentsOpen ? 'flex lg:w-72' : 'hidden lg:flex lg:w-0 lg:border-l-0'
+				classicAttachmentsOpen ? 'flex lg:w-80' : 'hidden lg:flex lg:w-0 lg:border-l-0'
 			]}
 		>
-			<div class="flex h-full w-full flex-col lg:w-72 lg:min-w-72">
+			<div class="flex h-full w-full flex-col lg:w-80 lg:min-w-80 lg:pt-14">
 				<AttachmentPanel
 					{agent}
 					{conversationId}

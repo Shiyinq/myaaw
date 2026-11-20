@@ -41,15 +41,7 @@
 	while the label and chevron fold away instead of being shoved to the edge by
 	`justify-center`.
 -->
-<div class="flex w-full flex-col gap-1">
-	<span
-		class="overflow-hidden text-[10px] font-semibold uppercase tracking-widest whitespace-nowrap text-muted-foreground transition-all duration-200 {compact
-			? 'max-h-0 opacity-0 delay-0'
-			: 'max-h-4 opacity-100 delay-200'}"
-	>
-		{t('myaaw.agent.label')}
-	</span>
-
+<div class="flex w-full flex-col">
 	<div class="flex items-center gap-2 md:hidden">
 		<Bloub mood="attentif" size={26} color={currentColor} class="shrink-0" />
 		<select

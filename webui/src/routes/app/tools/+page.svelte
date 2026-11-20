@@ -185,7 +185,7 @@
 
 <div class="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
 	{#if !agent}
-		<div class="w-full p-4 lg:p-6">
+		<div class="w-full p-4 lg:p-6 lg:pt-16">
 			<Card>
 				<CardContent class="py-10 text-center text-sm text-muted-foreground">
 					{t('myaaw.agent.none')}
@@ -195,9 +195,9 @@
 	{:else}
 		<!-- Everything registered for the agent: a second sidebar nested inside the main one. -->
 		<aside
-			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-full lg:w-72 lg:border-r lg:border-b-0 lg:pt-14 xl:w-80"
 		>
-			<div class="shrink-0 space-y-2 border-b px-3 py-2.5">
+			<div class="shrink-0 space-y-2 px-4 py-2.5 lg:pt-1">
 				<SidebarHeader label={t('myaaw.tools.title')} count={totalTools} />
 				<SidebarSearchField
 					bind:inputRef={searchNav.input}
@@ -384,7 +384,7 @@
 
 		<section
 			bind:this={detail}
-			class="flex flex-col gap-4 p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:p-6"
+			class="flex flex-col gap-4 p-4 lg:mt-14 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-6 lg:pt-1 lg:pb-6"
 		>
 			{#if error}
 				<div

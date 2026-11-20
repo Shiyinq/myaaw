@@ -15,10 +15,10 @@
 			active: path.startsWith('/app/chat')
 		},
 		{
-			href: '/app/cron',
-			label: t('myaaw.focus.rail_cron'),
+			href: '/app/schedule',
+			label: t('myaaw.focus.rail_schedule'),
 			icon: Clock,
-			active: path.startsWith('/app/cron')
+			active: path.startsWith('/app/schedule')
 		},
 		{
 			href: '/app/plugins',

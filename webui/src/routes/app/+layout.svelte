@@ -62,7 +62,6 @@
 	import ShortcutHelp from '$lib/components/app/ShortcutHelp.svelte';
 	import CommandPalette from '$lib/components/app/CommandPalette.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
 	import { theme, userPrefersMode } from 'mode-watcher';
 	import { APPEARANCE, applyAppearance, isAppearanceActive } from '$lib/theme';
 	import { preferences } from '$lib/stores/preferences.svelte';
@@ -285,6 +284,12 @@
 					icon: Wrench
 				},
 				{
+					href: '/app/schedule',
+					label: 'myaaw.nav.schedule',
+					description: 'myaaw.schedule.subtitle',
+					icon: Clock
+				},
+				{
 					href: '/app/contacts',
 					label: 'myaaw.nav.contacts',
 					description: 'myaaw.contacts.subtitle',
@@ -306,6 +311,8 @@
 		},
 		{
 			label: 'myaaw.nav.group_configure',
+			collapsible: true,
+			defaultOpen: false,
 			items: [
 				{
 					href: '/app/providers',
@@ -324,17 +331,13 @@
 					label: 'myaaw.nav.config',
 					description: 'myaaw.config.subtitle',
 					icon: SlidersHorizontal
-				},
-				{
-					href: '/app/cron',
-					label: 'myaaw.nav.cron',
-					description: 'myaaw.cron.subtitle',
-					icon: Clock
 				}
 			]
 		},
 		{
 			label: 'myaaw.nav.group_operations',
+			collapsible: true,
+			defaultOpen: false,
 			items: [
 				{
 					href: '/app/server',
@@ -564,19 +567,25 @@
 	let isChat = $derived(
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
 	);
+	// Split list + detail pages run their second sidebar's vertical divider all
+	// the way through the top bar on desktop, so the header floats transparently
+	// across both columns instead of capping the sidebar below a horizontal bar.
+	let hasSplitSidebar = $derived(
+		page.url.pathname.startsWith('/app/context') ||
+			page.url.pathname.startsWith('/app/skills') ||
+			page.url.pathname.startsWith('/app/tools') ||
+			page.url.pathname.startsWith('/app/contacts') ||
+			page.url.pathname.startsWith('/app/files') ||
+			page.url.pathname.startsWith('/app/logs')
+	);
 	// Pages with a split list + editor layout manage their own scrolling, so the
 	// shell gives them the full height of the viewport instead of scrolling.
 	let isFullHeight = $derived(
 		isChat ||
+			hasSplitSidebar ||
 			page.url.pathname.startsWith('/app/dashboard') ||
-			page.url.pathname.startsWith('/app/files') ||
 			page.url.pathname.startsWith('/app/terminal') ||
-			page.url.pathname.startsWith('/app/context') ||
-			page.url.pathname.startsWith('/app/skills') ||
-			page.url.pathname.startsWith('/app/logs') ||
-			page.url.pathname.startsWith('/app/observability') ||
-			page.url.pathname.startsWith('/app/tools') ||
-			page.url.pathname.startsWith('/app/contacts')
+			page.url.pathname.startsWith('/app/observability')
 	);
 
 	/** Opens the chat list (from the rail if needed) and focuses its search box. */
@@ -678,9 +687,16 @@
 		<header
 			class={focusMode && isChat
 				? 'pointer-events-none absolute inset-x-0 top-0 z-40 h-14 lg:z-60'
-				: 'h-14 shrink-0 border-b bg-background/80 backdrop-blur frost-chrome'}
+				: hasSplitSidebar || isChat
+					? 'h-14 shrink-0 lg:pointer-events-none lg:absolute lg:inset-x-0 lg:top-0 lg:z-30'
+					: 'h-14 shrink-0'}
 		>
-			<div class="flex h-full items-center gap-2 px-2 sm:gap-3 sm:px-4">
+			<div
+				class={[
+					'flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-4',
+					hasSplitSidebar ? 'lg:pr-6 lg:pl-4' : 'lg:px-6'
+				]}
+			>
 				<!-- Phones reach the whole navigation through the drawer; from md up the
 				     sidebar is always on screen, so the control is not rendered there.
 				     Focus mode has no drawer: its mascot is a static brand mark, and the
@@ -699,7 +715,7 @@
 					<Button
 						variant="ghost"
 						size="icon-sm"
-						class="-mr-2 shrink-0 border-0 md:hidden"
+						class="-mr-2 shrink-0 rounded-full border-0 md:hidden"
 						onclick={() => (drawerOpen = true)}
 						title={t('myaaw.sidebar.open')}
 						aria-label={t('myaaw.sidebar.open')}
@@ -708,46 +724,55 @@
 						<Bloub mood="attentif" size={32} eager color={agentSelection.color} />
 					</Button>
 				{/if}
-				<div class="min-w-0 flex-1">
+				<div
+					class={[
+						hasSplitSidebar ? 'min-w-0 flex-1 lg:max-w-64 xl:max-w-72' : 'min-w-0 flex-1',
+						topBarTitle.desktopHidden ? 'lg:pointer-events-none lg:invisible' : ''
+					]}
+				>
 					{#if focusMode && isChat}
 						<!-- The chat screen has no title; the agent mark floats over it. -->
 					{:else if topBarTitle.value}
 						<!-- A page can name itself: the open conversation, or the agent being
 						     edited, instead of the route's static label. -->
-						<h1 class="truncate text-sm font-semibold tracking-tight">{topBarTitle.value}</h1>
-						{#if topBarTitle.description}
-							<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
-								{topBarTitle.description}
-							</p>
-						{/if}
+						<h1
+							class="pointer-events-auto truncate text-base font-bold tracking-tight text-foreground sm:text-lg"
+							title={topBarTitle.description || topBarTitle.value}
+						>
+							{topBarTitle.value}
+						</h1>
 					{:else if !focusMode}
-						<div class="flex items-center gap-2">
-							<h1 class="truncate text-sm font-semibold tracking-tight">
+						<div class="flex items-baseline gap-2">
+							<h1
+								class="pointer-events-auto truncate text-base font-bold tracking-tight text-foreground sm:text-lg"
+								title={t(current.description)}
+							>
 								{t(current.label)}
 							</h1>
 							{#if isChat}
-								<Badge variant="outline" class="hidden shrink-0 sm:inline-flex">
+								<span
+									class="hidden shrink-0 text-base font-medium text-muted-foreground sm:inline sm:text-lg"
+								>
 									{agentSelection.current?.name ?? agentSelection.selected ?? '—'}
-								</Badge>
+								</span>
 							{/if}
 						</div>
-						<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
-							{t(current.description)}
-						</p>
 					{:else}
 						<!-- Focus mode keeps the page header for every page except chat. -->
-						<h1 class="truncate text-sm font-semibold tracking-tight">{t(current.label)}</h1>
-						<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
-							{t(current.description)}
-						</p>
+						<h1
+							class="pointer-events-auto truncate text-base font-bold tracking-tight text-foreground sm:text-lg"
+							title={t(current.description)}
+						>
+							{t(current.label)}
+						</h1>
 					{/if}
 				</div>
 
-				<div class="pointer-events-auto flex min-w-0 shrink-0 items-center gap-2">
+				<div class="pointer-events-auto ml-auto flex min-w-0 shrink-0 items-center gap-1.5">
 					{#if showHostBadge}
 						<a
 							href="/app/settings"
-							class="inline-flex max-w-none items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:max-w-36"
+							class="inline-flex max-w-none items-center gap-1.5 rounded-full bg-muted/50 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:max-w-36"
 							title={apiBase.isCustom
 								? t('myaaw.settings.connection_remote', { url: apiBase.value })
 								: t('myaaw.settings.connection_local')}

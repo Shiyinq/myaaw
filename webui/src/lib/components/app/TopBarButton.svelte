@@ -16,18 +16,29 @@
 		onclick,
 		loading = false,
 		disabled = false,
-		variant = 'outline'
+		variant = 'ghost'
 	}: Props = $props();
+
+	let tone = $derived(
+		variant === 'ghost' ? 'text-muted-foreground hover:bg-muted/80 hover:text-foreground' : ''
+	);
 </script>
 
-<Button {variant} size="sm" class="hidden shrink-0 sm:inline-flex" {onclick} {loading} {disabled}>
-	<Icon class="mr-2 h-4 w-4" />
+<Button
+	{variant}
+	size="sm"
+	class={['hidden shrink-0 gap-1.5 rounded-full px-3 sm:inline-flex', tone]}
+	{onclick}
+	{loading}
+	{disabled}
+>
+	<Icon class="h-3.5 w-3.5" />
 	{label}
 </Button>
 <Button
 	{variant}
 	size="icon-sm"
-	class="shrink-0 sm:hidden"
+	class={['shrink-0 rounded-full sm:hidden', tone]}
 	{onclick}
 	{loading}
 	{disabled}

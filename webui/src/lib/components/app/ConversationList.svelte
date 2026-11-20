@@ -748,7 +748,7 @@
 <svelte:window onkeydown={onSearchKeydown} />
 
 <div class="flex h-full min-h-0 flex-col">
-	<div class="flex shrink-0 items-center gap-2 border-b p-2">
+	<div class="flex shrink-0 items-center gap-2 px-3 py-2">
 		<div class="relative min-w-0 flex-1" onfocusin={onSearchFocusIn} onfocusout={onSearchFocusOut}>
 			<Search
 				class="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"

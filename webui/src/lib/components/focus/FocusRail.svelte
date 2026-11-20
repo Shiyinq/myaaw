@@ -9,7 +9,7 @@
 	const { t } = useTranslation();
 
 	const chatActive = $derived(page.url.pathname.startsWith('/app/chat'));
-	const cronActive = $derived(page.url.pathname.startsWith('/app/cron'));
+	const cronActive = $derived(page.url.pathname.startsWith('/app/schedule'));
 	const pluginsActive = $derived(page.url.pathname.startsWith('/app/plugins'));
 
 	const itemClass = (active: boolean) => [
@@ -54,11 +54,11 @@
 			<MessagesSquare class="h-4.5 w-4.5" />
 		</a>
 		<a
-			href="/app/cron"
+			href="/app/schedule"
 			class={itemClass(cronActive)}
 			aria-current={cronActive ? 'page' : undefined}
-			title={t('myaaw.focus.rail_cron')}
-			aria-label={t('myaaw.focus.rail_cron')}
+			title={t('myaaw.focus.rail_schedule')}
+			aria-label={t('myaaw.focus.rail_schedule')}
 		>
 			<Clock class="h-4.5 w-4.5" />
 		</a>

@@ -22,7 +22,7 @@
 	right edge (not `ml-auto`, which slid it over the logo mid-transition) and only
 	fades in after the rail has finished widening.
 -->
-<div class="relative flex h-14 shrink-0 items-center overflow-hidden border-b pr-2 pl-4 md:pr-0">
+<div class="relative flex h-14 shrink-0 items-center overflow-hidden pr-2 pl-4 md:pr-0">
 	<div
 		class="flex h-12 w-12 shrink-0 items-center justify-center transition-transform duration-200 {compact
 			? '-translate-x-3 scale-[0.833]'
