@@ -55,7 +55,7 @@
 	import { isActiveHref } from '$lib/utils/nav';
 	import type { NavGroup } from '$lib/utils/nav';
 	import ClassicSidebar from '$lib/components/classic/ClassicSidebar.svelte';
-	import AdvancedSidebar from '$lib/components/advanced/AdvancedSidebar.svelte';
+	import StudioSidebar from '$lib/components/studio/StudioSidebar.svelte';
 	import BotsSidebar from '$lib/components/bots/BotsSidebar.svelte';
 	import BotsAgentPicker from '$lib/components/bots/BotsAgentPicker.svelte';
 	import FocusRail from '$lib/components/focus/FocusRail.svelte';
@@ -498,9 +498,9 @@
 		// any layout without cycling through the others.
 		const shellEntries = [
 			{
-				id: 'advanced' as const,
-				labelKey: 'myaaw.settings.mode_advanced',
-				aliases: ['mode', 'layout', 'shell', 'tampilan', 'sidebar', 'advanced', 'lanjutan']
+				id: 'studio' as const,
+				labelKey: 'myaaw.settings.mode_studio',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'sidebar', 'studio', 'fleet']
 			},
 			{
 				id: 'classic' as const,
@@ -760,7 +760,7 @@
 			{:else if botsMode}
 				<BotsSidebar compact={compactSidebar} onClose={() => (drawerOpen = false)} />
 			{:else}
-				<AdvancedSidebar
+				<StudioSidebar
 					compact={compactSidebar}
 					{fleet}
 					groups={nav}

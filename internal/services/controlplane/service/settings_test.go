@@ -35,7 +35,7 @@ func TestAuthServiceSeedsDefaultSettings(t *testing.T) {
 	if !ok {
 		t.Fatalf("stored settings missing or not an object: %#v", stored["settings"])
 	}
-	if rawSettings["shell_mode"] != "advanced" || rawSettings["locale"] != "en" || rawSettings["theme_mode"] != "system" {
+	if rawSettings["shell_mode"] != "studio" || rawSettings["locale"] != "en" || rawSettings["theme_mode"] != "system" {
 		t.Fatalf("unexpected persisted settings defaults: %#v", rawSettings)
 	}
 }

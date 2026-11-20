@@ -5407,7 +5407,7 @@
 
 	{#if agent && focusMode}
 		<!-- Focus mode keeps the panel mounted so opening and closing slides it in
-		     and out, like the left drawer in advanced mode. -->
+		     and out, like the left drawer in studio mode. -->
 		{#if historyOpen}
 			<button
 				type="button"
@@ -5542,7 +5542,7 @@
 	{/if}
 
 	{#if agent && classicMode}
-		<!-- Classic borrows the advanced layout: a drawer on phones and a static
+		<!-- Classic borrows the studio layout: a drawer on phones and a static
 		     third column from lg up. History already lives in its left sidebar. -->
 		{#if classicAttachmentsOpen}
 			<button

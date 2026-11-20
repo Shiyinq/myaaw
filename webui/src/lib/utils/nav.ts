@@ -1,6 +1,6 @@
 import type { LucideIcon } from '$lib/types/icons';
 
-/** One destination of the advanced shell's sidebar. */
+/** One destination of the studio shell's sidebar. */
 export interface NavItem {
 	href: string;
 	label: string;

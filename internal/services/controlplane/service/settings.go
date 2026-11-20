@@ -75,7 +75,7 @@ func DefaultSettings() Settings {
 		Density:         "comfortable",
 		TextScale:       100,
 		ReduceMotion:    false,
-		ShellMode:       "advanced",
+		ShellMode:       "studio",
 		FocusAgent:      "",
 		SendKey:         "enter",
 		AutoScroll:      true,
@@ -218,9 +218,9 @@ func (s Settings) Normalize() Settings {
 	}
 
 	switch s.ShellMode {
-	case "advanced", "classic", "focus", "bots":
-	case "standard":
-		s.ShellMode = "advanced"
+	case "studio", "classic", "focus", "bots":
+	case "advanced", "standard":
+		s.ShellMode = "studio"
 	case "simple":
 		s.ShellMode = "classic"
 	default:

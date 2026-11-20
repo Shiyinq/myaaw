@@ -20,7 +20,7 @@
 </script>
 
 <!--
-	Advanced mode is the full navigator: every page of the agent, grouped by
+	Studio mode is the full navigator: every page of the agent, grouped by
 	what it configures. Expanded, the fleet overview rides in the picker's row as a
 	bare icon; collapsed, its own row folds open above the agent. The row is
 	always mounted so the picker glides instead of jumping.
