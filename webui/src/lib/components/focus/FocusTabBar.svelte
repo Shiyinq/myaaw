@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { Clock, Layers, MessagesSquare, Puzzle } from 'lucide-svelte';
 	import AccountMenu from '$lib/components/app/AccountMenu.svelte';
+	import FocusMoreMenu from '$lib/components/focus/FocusMoreMenu.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
 	const { t } = useTranslation();
@@ -70,6 +71,8 @@
 			</span>
 		</a>
 	{/each}
+
+	<FocusMoreMenu tab side="top" align="center" />
 
 	<AccountMenu tab side="top" align="end" />
 </nav>

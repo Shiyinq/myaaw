@@ -4,6 +4,7 @@
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { agentSelection } from '$lib/stores';
 	import AccountMenu from '$lib/components/app/AccountMenu.svelte';
+	import FocusMoreMenu from '$lib/components/focus/FocusMoreMenu.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
 	const { t } = useTranslation();
@@ -81,6 +82,7 @@
 		>
 			<Puzzle class="h-4.5 w-4.5" />
 		</a>
+		<FocusMoreMenu side="right" align="center" />
 	</nav>
 
 	<div class="flex-1"></div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import AgentPicker from '$lib/components/app/AgentPicker.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -14,9 +15,11 @@
 		 * row as a bare icon. The compact rail keeps its own fleet row instead.
 		 */
 		fleet?: NavItem;
+		/** Optional trailing control when `fleet` is not used (e.g. Classic mode menu). */
+		action?: Snippet;
 	}
 
-	let { compact = false, fleet }: Props = $props();
+	let { compact = false, fleet, action }: Props = $props();
 
 	const fleetActive = $derived(fleet ? isActiveHref(page.url.pathname, fleet.href) : false);
 </script>
@@ -52,6 +55,8 @@
 			>
 				<FleetIcon class="h-4 w-4" />
 			</a>
+		{:else if action}
+			{@render action()}
 		{/if}
 	</div>
 </div>

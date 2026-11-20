@@ -3,42 +3,26 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
-		Activity,
-		Archive,
-		Bot,
 		Check,
 		Clock,
-		Cpu,
 		Layers,
-		LayoutDashboard,
 		ListFilter,
 		Loader2,
-		MessageSquarePlus,
 		MoreHorizontal,
-		Play,
 		Plus,
 		Puzzle,
-		Radio,
-		RotateCw,
-		ScrollText,
 		Search,
-		Server,
-		Settings2,
 		ShieldAlert,
-		ShieldCheck,
-		SlidersHorizontal,
-		Square,
-		SquareTerminal,
-		Wrench,
 		X
 	} from 'lucide-svelte';
+	import AgentMoreMenuItems from '$lib/components/app/AgentMoreMenuItems.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import SidebarAccount from '$lib/components/app/SidebarAccount.svelte';
 	import SidebarBrand from '$lib/components/app/SidebarBrand.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { colorOf } from '$lib/bloub';
-	import { agentSelection, toastStore } from '$lib/stores';
+	import { agentSelection } from '$lib/stores';
 	import {
 		botPreviews,
 		lastAssistantFromMessages,
@@ -46,12 +30,10 @@
 	} from '$lib/stores/botPreviews.svelte';
 	import { conversationsStore } from '$lib/stores/conversations.svelte';
 	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
-	import { serverStore } from '$lib/stores/server.svelte';
 	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
 	import { chatRuns } from '$lib/stores/chatRuns.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import { getErrorMessage } from '$lib/utils/api';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut } from '$lib/utils/keys';
 	import { isActiveHref } from '$lib/utils/nav';
 	import { formatChatTimestamp } from '$lib/utils/time';
@@ -72,7 +54,7 @@
 
 	let query = $state('');
 	let filter = $state<BotFilter>('all');
-	let busyBot = $state('');
+	let busyMap = $state<Record<string, boolean>>({});
 	let openMenuBot = $state('');
 	const fetchedAgents = new Set<string>();
 
@@ -318,33 +300,6 @@
 		await goto('/app/chat?new=1');
 	}
 
-	const configureItems = $derived([
-		{ href: '/app/providers', label: t('myaaw.nav.providers'), icon: Cpu },
-		{ href: '/app/channels', label: t('myaaw.nav.channels'), icon: Radio },
-		{ href: '/app/config', label: t('myaaw.nav.config'), icon: SlidersHorizontal }
-	]);
-
-	const operationItems = $derived([
-		{ href: '/app/server', label: t('myaaw.nav.server'), icon: Server },
-		{ href: '/app/logs', label: t('myaaw.nav.logs'), icon: ScrollText },
-		{ href: '/app/backups', label: t('myaaw.nav.backups'), icon: Archive },
-		{ href: '/app/approvals', label: t('myaaw.nav.approvals'), icon: ShieldCheck },
-		{ href: '/app/observability', label: t('myaaw.nav.observability'), icon: Activity }
-	]);
-
-	function openBotPage(bot: AgentInfo, href: string) {
-		openMenuBot = '';
-		agentSelection.select(bot.name);
-		void goto(`${href}?agent=${encodeURIComponent(bot.name)}`);
-		onClose();
-	}
-
-	function reconfigureBot(bot: AgentInfo) {
-		openMenuBot = '';
-		void goto(`/app/new?agent=${encodeURIComponent(bot.name)}`);
-		onClose();
-	}
-
 	function createBot() {
 		void goto('/app/new');
 		onClose();
@@ -361,37 +316,6 @@
 			}
 		});
 	});
-
-	async function runBotAction(kind: 'start' | 'stop' | 'restart', name: string) {
-		if (busyBot) return;
-		busyBot = name;
-		const running = kind !== 'stop';
-		agentSelection.setRunning(name, running);
-		try {
-			if (kind === 'start') await serverStore.start(name);
-			else if (kind === 'stop') await serverStore.stop(name);
-			else await serverStore.restart(name);
-			agentSelection.setRunning(name, running);
-			toastStore.success(
-				t(
-					kind === 'start'
-						? 'myaaw.server.start_done'
-						: kind === 'stop'
-							? 'myaaw.server.stop_done'
-							: 'myaaw.server.restart_done'
-				)
-			);
-			if (running) {
-				setTimeout(() => void refreshLatest(name, false), 1500);
-			}
-		} catch (err) {
-			agentSelection.clearOptimisticRunning(name);
-			await agentSelection.load(true);
-			toastStore.error(getErrorMessage(err));
-		} finally {
-			busyBot = '';
-		}
-	}
 
 	// Quick keyboard switching between bots (Alt+Shift+Up/Down and Alt+1..9).
 	// Scoped strictly to Bots mode because this component only mounts there.
@@ -464,7 +388,7 @@
 	{@const unreads = unreadCount(bot.name)}
 	{@const streaming = isStreaming(bot.name)}
 	{@const timeLabel = previewTime(bot)}
-	{@const busy = busyBot === bot.name}
+	{@const busy = Boolean(busyMap[bot.name])}
 	{@const menuOpen = openMenuBot === bot.name}
 	<div class="group relative">
 		<button
@@ -582,86 +506,25 @@
 					{/snippet}
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end" class="w-44">
-					<DropdownMenu.Item onclick={() => newChatForBot(bot)} class="gap-2">
-						<MessageSquarePlus class="h-3.5 w-3.5" />
-						{t('myaaw.chat.new')}
-					</DropdownMenu.Item>
-					<DropdownMenu.Separator />
-					{#if bot.running}
-						<DropdownMenu.Item
-							disabled={busy}
-							onclick={() => void runBotAction('restart', bot.name)}
-							class="gap-2"
-						>
-							<RotateCw class="h-3.5 w-3.5" />
-							{t('myaaw.server.restart')}
-						</DropdownMenu.Item>
-						<DropdownMenu.Item
-							disabled={busy}
-							onclick={() => void runBotAction('stop', bot.name)}
-							class="gap-2 text-destructive focus:text-destructive"
-						>
-							<Square class="h-3.5 w-3.5" />
-							{t('myaaw.server.stop')}
-						</DropdownMenu.Item>
-					{:else}
-						<DropdownMenu.Item
-							disabled={busy}
-							onclick={() => void runBotAction('start', bot.name)}
-							class="gap-2"
-						>
-							<Play class="h-3.5 w-3.5" />
-							{t('myaaw.server.start')}
-						</DropdownMenu.Item>
-					{/if}
-					<DropdownMenu.Separator />
-					<DropdownMenu.Item onclick={() => openBotPage(bot, '/app/dashboard')} class="gap-2">
-						<LayoutDashboard class="h-3.5 w-3.5" />
-						{t('myaaw.nav.dashboard')}
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => openBotPage(bot, '/app/contacts')} class="gap-2">
-						<Bot class="h-3.5 w-3.5" />
-						{t('myaaw.nav.contacts')}
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => openBotPage(bot, '/app/terminal')} class="gap-2">
-						<SquareTerminal class="h-3.5 w-3.5" />
-						{t('myaaw.nav.terminal')}
-					</DropdownMenu.Item>
-					<DropdownMenu.Sub>
-						<DropdownMenu.SubTrigger class="gap-2">
-							<Settings2 class="h-3.5 w-3.5" />
-							{t('myaaw.nav.group_configure')}
-						</DropdownMenu.SubTrigger>
-						<DropdownMenu.SubContent class="w-44">
-							{#each configureItems as item (item.href)}
-								{@const Icon = item.icon}
-								<DropdownMenu.Item onclick={() => openBotPage(bot, item.href)} class="gap-2">
-									<Icon class="h-3.5 w-3.5" />
-									{item.label}
-								</DropdownMenu.Item>
-							{/each}
-						</DropdownMenu.SubContent>
-					</DropdownMenu.Sub>
-					<DropdownMenu.Sub>
-						<DropdownMenu.SubTrigger class="gap-2">
-							<Wrench class="h-3.5 w-3.5" />
-							{t('myaaw.nav.group_operations')}
-						</DropdownMenu.SubTrigger>
-						<DropdownMenu.SubContent class="w-44">
-							{#each operationItems as item (item.href)}
-								{@const Icon = item.icon}
-								<DropdownMenu.Item onclick={() => openBotPage(bot, item.href)} class="gap-2">
-									<Icon class="h-3.5 w-3.5" />
-									{item.label}
-								</DropdownMenu.Item>
-							{/each}
-						</DropdownMenu.SubContent>
-					</DropdownMenu.Sub>
-					<DropdownMenu.Separator />
-					<DropdownMenu.Item onclick={() => reconfigureBot(bot)} class="gap-2">
-						<SlidersHorizontal class="h-3.5 w-3.5" />
-						{t('myaaw.bots.reconfigure')}
-					</DropdownMenu.Item>
+					<AgentMoreMenuItems
+						agent={bot.name}
+						running={bot.running}
+						{busy}
+						onBusyChange={(next) => {
+							busyMap = { ...busyMap, [bot.name]: next };
+						}}
+						includeChatActions
+						includeServerControls
+						passAgentParam
+						onNewChat={() => void newChatForBot(bot)}
+						onStarted={(startedName) => {
+							setTimeout(() => void refreshLatest(startedName, false), 1500);
+						}}
+						onNavigate={() => {
+							openMenuBot = '';
+							onClose();
+						}}
+					/>
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		</div>
