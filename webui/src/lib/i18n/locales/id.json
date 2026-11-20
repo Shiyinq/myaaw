@@ -184,7 +184,7 @@
 			"setup_link": "Pertama kali? Siapkan Myaaw",
 			"submit": "Masuk",
 			"submitting": "Sedang masuk...",
-			"hint": "Kredensial default ada di ~/.myaaw/controlplane.json."
+			"hint": "Kredensial default ada di ~/.myaaw/config/controlplane.json."
 		},
 		"setup": {
 			"title": "Penyiapan Myaaw",
@@ -634,7 +634,7 @@
 		"profile": {
 			"title": "Profil",
 			"subtitle": "Akun, kata sandi, dan nama pengguna.",
-			"credentials_note": "Kredensial disimpan di ~/.myaaw/controlplane.json.",
+			"credentials_note": "Kredensial disimpan di ~/.myaaw/config/controlplane.json.",
 			"force_password": "Ganti password default sebelum melanjutkan.",
 			"password": "Ganti kata sandi",
 			"password_desc": "Mengganti kata sandi mengeluarkan semua sesi.",
@@ -1482,7 +1482,6 @@
 		},
 		"stream": {
 			"illustration": "Ilustrasi · bukan tayangan langsung",
-
 			"report_prompt": "Buat laporan proyek minggu ini dari notes/week.md dan data/tasks.csv. Simpan ke reports/weekly.md.",
 			"thinking_summary": "Menyiapkan laporan mingguan dari data proyek.",
 			"thinking_detail": "Gunakan catatan proyek sebagai konteks dan CSV untuk menghitung tugas. Hitung tingkat penyelesaian, lalu tulis laporan ke reports/weekly.md.",
@@ -1490,7 +1489,6 @@
 			"read_summary": "Catatan dan 8 baris data tugas dimuat.",
 			"compute_summary": "{done}/{total} tugas selesai · {percent}% · {pending} tertunda",
 			"write_summary": "reports/weekly.md tersimpan (ilustrasi).",
-
 			"tool_input": "Input",
 			"tool_output": "Output",
 			"week_notes": "# Catatan proyek\n\nSelesai: landing page, navigasi, chat, tools, dokumentasi, dan pengujian.\nBerikutnya: QA seluler dan tinjauan rilis.\n",
@@ -1584,7 +1582,6 @@
 			"install_label": "install.sh",
 			"install_hint": "Workflow rilis menargetkan Linux x86_64 dan macOS Apple Silicon.",
 			"releases": "Periksa aset rilis terbaru.",
-
 			"guide": "Panduan setup",
 			"steps": {
 				"install_title": "Pasang dan mulai onboarding",

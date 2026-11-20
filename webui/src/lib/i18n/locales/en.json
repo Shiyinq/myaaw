@@ -184,7 +184,7 @@
 			"setup_link": "First run? Set up Myaaw",
 			"submit": "Sign in",
 			"submitting": "Signing in...",
-			"hint": "Default credentials come from ~/.myaaw/controlplane.json."
+			"hint": "Default credentials come from ~/.myaaw/config/controlplane.json."
 		},
 		"setup": {
 			"title": "Myaaw setup",
@@ -634,7 +634,7 @@
 		"profile": {
 			"title": "Profile",
 			"subtitle": "Your account, password, and username.",
-			"credentials_note": "Credentials are stored in ~/.myaaw/controlplane.json.",
+			"credentials_note": "Credentials are stored in ~/.myaaw/config/controlplane.json.",
 			"force_password": "Change the default password before continuing.",
 			"password": "Change password",
 			"password_desc": "Changing the password signs out every session.",
@@ -1482,7 +1482,6 @@
 		},
 		"stream": {
 			"illustration": "Illustration · not live",
-
 			"report_prompt": "Prepare this week's project report from notes/week.md and data/tasks.csv. Save it to reports/weekly.md.",
 			"thinking_summary": "Preparing a weekly report from project data.",
 			"thinking_detail": "Use the project notes for context and the CSV for task counts. Calculate completion, then write the report to reports/weekly.md.",
@@ -1490,7 +1489,6 @@
 			"read_summary": "Notes and 8 task rows loaded.",
 			"compute_summary": "{done}/{total} tasks done · {percent}% · {pending} pending",
 			"write_summary": "reports/weekly.md saved (illustration).",
-
 			"tool_input": "Input",
 			"tool_output": "Output",
 			"week_notes": "# Project notes\n\nDelivered: landing page, navigation, chat, tools, documentation and tests.\nNext: mobile QA and release review.\n",
@@ -1584,7 +1582,6 @@
 			"install_label": "install.sh",
 			"install_hint": "Release workflow targets Linux x86_64 and macOS Apple Silicon.",
 			"releases": "Check the latest release assets.",
-
 			"guide": "Setup guide",
 			"steps": {
 				"install_title": "Install and onboard",
