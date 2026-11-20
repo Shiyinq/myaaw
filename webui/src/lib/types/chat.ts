@@ -30,12 +30,27 @@ export interface Attachment {
 	size?: number;
 }
 
-/** One image opened in the full-screen lightbox. */
+import type { FilePreviewKind } from '$lib/utils/filePreview';
+
+/** One image, video, audio, or document opened in the full-screen lightbox. */
 export interface LightboxImage {
 	src: string;
 	name: string;
 	/** URL used by the download button; falls back to `src` (data URLs work). */
 	downloadSrc?: string;
+	/** Preview kind; defaults to `'image'` for legacy image-only callers. */
+	kind?: FilePreviewKind;
+	/** highlight.js language id for `'code'` items. */
+	language?: string;
+	/** Short human-readable type badge, e.g. "PDF", "Markdown", "MP4". */
+	label?: string;
+	/** Agent name + virtual path for on-demand text reads and URL signing. */
+	agent?: string;
+	path?: string;
+	/** Byte length for metadata display and text-preview size guard. */
+	size?: number;
+	/** Optional compact metadata shown next to the title (e.g. source label). */
+	meta?: string;
 }
 
 /** Where a quoted excerpt came from, so the model and the reader can tell. */

@@ -9,7 +9,7 @@
 	 * diagram toolbar; the SVG is rendered here from the same source, so the
 	 * viewer works even when the inline block is showing its source.
 	 *
-	 * Zoom and pan follow ImageLightbox: the picture is fitted to the viewport at
+	 * Zoom and pan follow LightBox: the picture is fitted to the viewport at
 	 * 100%, and the transform grows it around the pointer or pinch, so a dense
 	 * diagram can be read without changing the page layout around it.
 	 */

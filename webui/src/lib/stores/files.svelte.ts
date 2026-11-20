@@ -44,6 +44,14 @@ export const filesStore = {
 	ensureFile(agent: string, path: string) {
 		return read.ensure({ agent, path });
 	},
+	/** Direct directory listing for callers that aggregate multiple paths without mutating the browser query. */
+	listDir(agent: string, path = ''): Promise<FileListResponse> {
+		return filesApi.list(agent, path);
+	},
+	/** Direct file read for modal previews outside the Files page editor state. */
+	readFile(agent: string, path: string): Promise<FileContent> {
+		return filesApi.read(agent, path);
+	},
 	async search(agent: string, query: string, path = '/home'): Promise<SearchResponse> {
 		return filesApi.search(agent, query, path);
 	},

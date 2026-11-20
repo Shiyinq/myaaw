@@ -35,7 +35,7 @@
 	import AskQuoteList from '$lib/components/app/AskQuoteList.svelte';
 	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
 	import RunAttachments from '$lib/components/app/RunAttachments.svelte';
-	import ImageLightbox from '$lib/components/app/ImageLightbox.svelte';
+	import LightBox from '$lib/components/app/LightBox.svelte';
 	import FocusAgentPanel from '$lib/components/focus/FocusAgentPanel.svelte';
 	import FocusContextEditor from '$lib/components/focus/FocusContextEditor.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
@@ -5438,7 +5438,7 @@
 		</aside>
 	{/if}
 
-	<ImageLightbox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />
+	<LightBox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />
 
 	{#if askAnchor}
 		<!-- The one action a text selection unlocks. It floats above the reply so the

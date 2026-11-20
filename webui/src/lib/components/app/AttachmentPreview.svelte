@@ -11,7 +11,7 @@
 		X
 	} from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
-	import ImageLightbox from '$lib/components/app/ImageLightbox.svelte';
+	import LightBox from '$lib/components/app/LightBox.svelte';
 	import { filesStore } from '$lib/stores/files.svelte';
 	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { toastStore } from '$lib/stores';
@@ -275,4 +275,4 @@
 	</div>
 </div>
 
-<ImageLightbox bind:open={lightboxOpen} items={lightboxItems} index={0} />
+<LightBox bind:open={lightboxOpen} items={lightboxItems} index={0} />
