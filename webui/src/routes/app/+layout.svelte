@@ -494,24 +494,49 @@
 			}
 		}
 
-		// The palette can flip between the four shells without a trip to Settings.
-		const shells = ['advanced', 'classic', 'focus', 'bots'] as const;
-		list.push({
-			id: 'action:shell-mode',
-			labelKey: 'myaaw.command.shell_mode_cycle',
-			aliases: ['mode', 'layout', 'focus', 'classic', 'advanced', 'bots', 'sidebar', 'shell'],
-			group: 'appearance',
-			icon: PanelLeft,
-			run: () => {
-				const next = shells[(shells.indexOf(preferences.value.shellMode) + 1) % shells.length];
-				const focusAgent =
-					preferences.value.focusAgent ||
-					agentSelection.current?.name ||
-					agentSelection.selected ||
-					'';
-				preferences.update({ shellMode: next, focusAgent });
+		// Each shell mode gets its own command so the palette can jump straight to
+		// any layout without cycling through the others.
+		const shellEntries = [
+			{
+				id: 'advanced' as const,
+				labelKey: 'myaaw.settings.mode_advanced',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'sidebar', 'advanced', 'lanjutan']
+			},
+			{
+				id: 'classic' as const,
+				labelKey: 'myaaw.settings.mode_classic',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'sidebar', 'classic', 'klasik']
+			},
+			{
+				id: 'focus' as const,
+				labelKey: 'myaaw.settings.mode_focus',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'focus', 'fokus', 'minimal']
+			},
+			{
+				id: 'bots' as const,
+				labelKey: 'myaaw.settings.mode_bots',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'bots', 'bot', 'lounge']
 			}
-		});
+		];
+		for (const shell of shellEntries) {
+			list.push({
+				id: `action:shell-mode:${shell.id}`,
+				labelKey: 'myaaw.command.shell_mode',
+				params: { mode: t(shell.labelKey) },
+				aliases: shell.aliases,
+				group: 'appearance',
+				icon: PanelLeft,
+				current: preferences.value.shellMode === shell.id,
+				run: () => {
+					const focusAgent =
+						preferences.value.focusAgent ||
+						agentSelection.current?.name ||
+						agentSelection.selected ||
+						'';
+					preferences.update({ shellMode: shell.id, focusAgent });
+				}
+			});
+		}
 		for (const option of APPEARANCE) {
 			list.push({
 				id: `action:theme:${option.id}`,

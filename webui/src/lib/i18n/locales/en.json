@@ -1402,7 +1402,7 @@
 			"restart_agent": "Restart {name}",
 			"group_appearance": "Appearance",
 			"group_language": "Language",
-			"shell_mode_cycle": "Switch shell (advanced → classic → focus → bots)"
+			"shell_mode": "Switch to {mode} mode"
 		},
 		"bots": {
 			"new": "New bot",

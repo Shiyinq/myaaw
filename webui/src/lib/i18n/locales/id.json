@@ -1402,7 +1402,7 @@
 			"restart_agent": "Restart {name}",
 			"group_appearance": "Tampilan",
 			"group_language": "Bahasa",
-			"shell_mode_cycle": "Ganti tampilan (lanjutan → klasik → fokus → bots)"
+			"shell_mode": "Pindah ke mode {mode}"
 		},
 		"bots": {
 			"new": "Bot baru",
