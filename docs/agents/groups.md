@@ -93,7 +93,22 @@ Group Chat supports two complementary ways to reference earlier content, and bot
 
 ### Attachments (`images` and `files`)
 
-User uploads (`images[]` and `files[]`) sent with `POST /groups/:id/messages` are forwarded to each agent only on the first turn in which that agent sees the triggering user message; they are not re-uploaded on later bot-to-bot follow-up turns.
+When a user sends images (`images[]`) or documents (`files[]`) with `POST /groups/:id/messages`, uploads follow a two-layer storage flow so the room stays unified while every agent remains sandboxed:
+
+1. **Control Plane room copy (for UI, preview & Files tab)**:
+   - Decoded files and images are persisted under `~/.myaaw/controlplane/group_uploads/<group_id>/<message_id>/<stored_name>` (`0700` dir, `0600` file), and their metadata (`GroupAttachment`) is saved in `group_messages.attachments_json`.
+   - Served via `GET /groups/:id/uploads/:msgId/:file` (`?download=1` forces download; path-traversal protected) and listed newest-first via `GET /groups/:id/attachments?limit=&offset=&kind=`.
+   - In the WebUI, images render as zoomable thumbnails (LightBox + download) and non-image files render as clickable chips above the user's message bubble; all uploads are also browsable in the **Files** tab of `GroupInspectorPanel` with preview and **Show in chat** auto-scroll.
+   - Clearing chat history (`DELETE /groups/:id/messages`) or deleting the group (`DELETE /groups/:id`) automatically removes `~/.myaaw/controlplane/group_uploads/<group_id>/`.
+
+2. **Per-agent copy (for model vision & tool access)**:
+   - `GroupService` forwards `images[]` and `files[]` to each participating agent's `POST /api/chat/stream` only on the first turn in which that agent sees the triggering user message (never re-uploaded on later bot-to-bot follow-up turns).
+   - Each receiving agent daemon saves its own isolated copy under `~/.myaaw/agents/<name>/user/uploads/<conversation_id>/<message_id>/` so agents never need access to `~/.myaaw/controlplane/`.
+   - For non-image files, the agent daemon automatically prepends an `<attached>…</attached>` block (between `<userinfo>…</userinfo>` and `<group>…</group>`) containing the virtual `/user/uploads/…` paths so the agent can inspect them with its `filesystem` / `bash` tools.
+   - Because receiving agents store these copies in `/user/uploads/`, those files also appear under **Uploads** on each receiving agent's `/app/artifacts` page (agents that did not participate in that turn do not receive a copy).
+
+3. **Agent-delivered `@attach(...)` files**:
+   - When an agent replies with `@attach(/absolute/path)` directives, its daemon resolves them into `done` SSE `attachments` (`path`, `file_name`, `mime_type`, `kind`, `size`, `project_type`). `GroupService` persists them on the agent's `GroupMessage.Attachments` (with `agent` + `path`), and the WebUI strips the `@attach(...)` wrapper via the shared `stripAttachDirectives` helper and renders the media/files directly using the shared `RunAttachments` component (carousel, LightBox, PDF/audio/file rows, and `ProjectCard`) as well as listing them in the **Files** tab of `GroupInspectorPanel`.
 
 ---
 
@@ -203,6 +218,7 @@ See [Control Plane API — Groups](../api/control-plane.md#23-groups) for the co
 - **Right Inspector Panel (`GroupInspectorPanel`)**:
   - Toggle from the top bar button or press **`Mod+Shift+H`** (`Ctrl+Shift+H` / `Cmd+Shift+H`). On desktop it animates smoothly between `w-80` and `w-0` (`inert` when closed); on mobile it slides in as a drawer with a faded backdrop.
   - **Members tab**: pending tool approvals list (when any member or sub-agent is awaiting approval, with inline decision buttons and a tab count badge), live running/stopped indicators, inline **Start** button for stopped agents, and add/remove member controls.
+  - **Files tab**: filterable (`All`, `Images`, `Documents`) list of every uploaded photo, file, and agent `@attach(...)` deliverable shared in the group (`GET /groups/:id/attachments`). Clicking an item opens the shared inline `AttachmentPreview` pane (replacing the chat column while keeping the sidebars visible so you can step through files seamlessly); clicking **Show in chat** closes the preview (and mobile drawer if open) and auto-scrolls to and highlights the originating message (loading older pages automatically if needed).
   - **Settings tab**: edit group name, topic/description, discussion mode (`autonomous` / `all` / `mention`), and `max_turns` (`1`–`50`), clear chat history, or delete the group (with confirmation).
 
 ---

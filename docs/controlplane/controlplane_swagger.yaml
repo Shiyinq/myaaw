@@ -2134,6 +2134,53 @@ definitions:
       updated_at:
         type: string
     type: object
+  service.GroupAttachment:
+    properties:
+      agent:
+        type: string
+      created_at:
+        type: string
+      file_name:
+        type: string
+      group_id:
+        type: string
+      id:
+        type: string
+      kind:
+        description: '"image" | "video" | "audio" | "pdf" | "file" | "project"'
+        type: string
+      message_id:
+        type: string
+      mime_type:
+        type: string
+      path:
+        type: string
+      project_type:
+        type: string
+      sender_name:
+        type: string
+      sender_type:
+        type: string
+      size:
+        type: integer
+      stored_name:
+        type: string
+    type: object
+  service.GroupAttachmentsPage:
+    properties:
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/service.GroupAttachment'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
   service.GroupDetail:
     properties:
       group:
@@ -2183,6 +2230,10 @@ definitions:
     properties:
       agent_color:
         type: string
+      attachments:
+        items:
+          $ref: '#/definitions/service.GroupAttachment'
+        type: array
       content:
         type: string
       created_at:
@@ -7706,6 +7757,51 @@ paths:
       summary: Update group
       tags:
       - Groups
+  /groups/{id}/attachments:
+    get:
+      description: Returns uploaded images and files shared in a group, newest first.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page size (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset from newest attachment
+        in: query
+        name: offset
+        type: integer
+      - description: Comma-separated kind filter (image, video, audio, pdf, file)
+        in: query
+        name: kind
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.GroupAttachmentsPage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List group attachments
+      tags:
+      - Groups
   /groups/{id}/continue:
     post:
       consumes:
@@ -7887,6 +7983,52 @@ paths:
       security:
       - BearerAuth: []
       summary: Stream group events
+      tags:
+      - Groups
+  /groups/{id}/uploads/{msgId}/{file}:
+    get:
+      description: Serves an uploaded image or document for a group message. Pass
+        download=1 to force a file download.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Message ID
+        in: path
+        name: msgId
+        required: true
+        type: string
+      - description: Stored file name
+        in: path
+        name: file
+        required: true
+        type: string
+      - description: Force attachment download
+        in: query
+        name: download
+        type: boolean
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get group upload
       tags:
       - Groups
   /health:

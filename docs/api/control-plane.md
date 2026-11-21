@@ -1634,6 +1634,8 @@ Host-level multi-agent chat rooms coordinated by the control plane. Rooms, membe
 | `POST` | `/groups/:id/messages` | send a user message and start (or interrupt) orchestration → `202` `{"message", "run_state"}` |
 | `POST` | `/groups/:id/stop` | cancel the active run and send a best-effort `/api/chat/stop` to the running agent (`{"stopped", "run_state"}`) |
 | `POST` | `/groups/:id/continue` | resume a run paused at `max_turns` for `+extra_turns` → `202` `{"continued": true, "run_state"}` (`409` if not paused) |
+| `GET` | `/groups/:id/attachments?limit=&offset=&kind=` | list uploaded images/files and agent `@attach(...)` deliverables in the group, newest first (`GroupAttachmentsPage`) |
+| `GET` | `/groups/:id/uploads/:msgId/:file?download=1` | serve one uploaded file/image for a group message (`download=1` forces attachment download) |
 | `GET` | `/groups/:id/stream` | subscribe to live group Server-Sent Events (`text/event-stream`) |
 
 ### Validation & error rules
@@ -1746,11 +1748,12 @@ Includes all `Group` fields (`id`, `name`, `description`, `members`, `discussion
   "current_agent": "alice",
   "turn_count": 2,
   "max_turns": 8,
-  "queue": ["bob"]
+  "queue": ["bob"],
+  "pending_approvals": []
 }
 ```
 
-`pause_reason` is `""` or `"max_turns"`. `queue` is always a JSON array (`[]` when empty). `GET /groups/:id` returns `GroupDetail`:
+`pause_reason` is `""` or `"max_turns"`. `queue` is always a JSON array (`[]` when empty). `pending_approvals` lists any active tool approvals (`GroupPendingApproval`) waiting inside the group (omitted when empty), and `GroupSummary.pending_approval_count` mirrors its length in `GET /groups`. `GET /groups/:id` returns `GroupDetail`:
 
 ```json
 {
@@ -1781,6 +1784,8 @@ Immediately upon connecting, the control plane emits a `status` snapshot with th
 | `chunk` | `{"group_id","agent","text"}` | Answer delta relayed from the agent's `chunk` event |
 | `tool_start` | `{"group_id","agent","id","name","arguments"}` | Relayed from the agent's `tool` event |
 | `tool_end` | `{"group_id","agent","id","name","result","is_error"}` | Relayed from the agent's `tool_result` event |
+| `approval_required` | `GroupPendingApproval` (`group_id`, `agent`, `approval_id`, `tool_name`, `action`, `args_summary`, `args`, `subagent`) | Relayed when an agent (or sub-agent) pauses for tool approval during a group turn |
+| `approval_resolved` | `{"group_id","agent","approval_id","decision","reason"}` | Relayed when a pending group tool approval is decided or times out |
 | `message` | `{"group_id","message"}` | Whenever a user, agent, or system `GroupMessage` is persisted |
 | `turn_end` | `{"group_id","agent","turn","max_turns","message_id","stopped","passed","done_signal"}` | After each agent turn finishes, passes (`[PASS]`), or fails |
 | `run_end` | `{"group_id","reason","turn_count","max_turns","paused","run_state"}` | When the orchestration loop ends (`completed`, `max_turns`, `stopped`, `interrupted`, `no_online_members`, or `error`) |
