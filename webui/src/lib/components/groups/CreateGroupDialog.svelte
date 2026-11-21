@@ -117,7 +117,7 @@
 			<Dialog.Description>{t('myaaw.groups.create_desc')}</Dialog.Description>
 		</Dialog.Header>
 
-		<form onsubmit={handleSubmit} class="space-y-4 pt-1">
+		<form onsubmit={handleSubmit} autocomplete="off" class="space-y-4 pt-1">
 			<div class="space-y-1.5">
 				<Label for="group-name">{t('myaaw.groups.name_label')}</Label>
 				<Input
@@ -125,6 +125,7 @@
 					bind:value={name}
 					maxlength={100}
 					required
+					autocomplete="off"
 					placeholder={t('myaaw.groups.name_placeholder')}
 				/>
 			</div>
@@ -136,6 +137,7 @@
 					bind:value={description}
 					maxlength={2000}
 					rows={2}
+					autocomplete="off"
 					placeholder={t('myaaw.groups.topic_placeholder')}
 					class="w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 				></textarea>

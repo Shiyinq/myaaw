@@ -4403,14 +4403,13 @@
 															</div>
 														{:else}
 															<div
-																class="max-w-full whitespace-pre-wrap wrap-break-word rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-(--chat-bubble-ring) terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
+																class="max-w-full wrap-break-word rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-(--chat-bubble-ring) terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
 															>
 																<span
 																	class="mr-1.5 hidden select-none font-semibold text-muted-foreground terminal:inline"
 																>
 																	❯
-																</span>
-																{item.text}
+																</span><span class="whitespace-pre-wrap">{item.text}</span>
 															</div>
 															{#if (item.quotes?.length ?? 0) > 0}
 																{@const quoteCount = item.quotes?.length ?? 0}
