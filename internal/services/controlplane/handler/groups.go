@@ -235,7 +235,7 @@ func (h *Handler) ContinueGroupRun(c fiber.Ctx) error {
 // @Failure      404 {object} common.ErrorResponse
 // @Router       /groups/{id}/stream [get]
 func (h *Handler) StreamGroup(c fiber.Ctx) error {
-	groupID := c.Params("id")
+	groupID := strings.Clone(c.Params("id"))
 	events, initial, unsubscribe, err := h.groups.Subscribe(groupID)
 	if err != nil {
 		return groupError(c, err)
@@ -245,6 +245,7 @@ func (h *Handler) StreamGroup(c fiber.Ctx) error {
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
+	c.Set("X-Accel-Buffering", "no")
 
 	return c.SendStreamWriter(func(w *bufio.Writer) {
 		defer unsubscribe()

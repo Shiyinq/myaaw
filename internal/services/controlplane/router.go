@@ -50,9 +50,17 @@ func NewApp() (*fiber.App, error) {
 	terminals := service.NewTerminalService()
 	backups := service.NewBackupService(serverSvc)
 	groupsSvc := service.NewGroupServiceWithDB(cpdb, agents)
+	proxy.SetGroups(groupsSvc)
 	h := handler.New(auth, agents, proxy, files, projects, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups, groupsSvc)
 
-	app := fiber.New(fiber.Config{AppName: "myaaw api", BodyLimit: config.A2AMaxRequestBytes})
+	app := fiber.New(fiber.Config{
+		AppName:   "myaaw api",
+		BodyLimit: config.A2AMaxRequestBytes,
+		// Keep route params, query strings, and headers immutable so background
+		// goroutines and SSE SendStreamWriter callbacks never observe recycled
+		// fasthttp request buffers.
+		Immutable: true,
+	})
 	app.Use(cors.New(corsConfig()))
 
 	app.Get("/health", h.Health)
@@ -87,6 +95,7 @@ func NewApp() (*fiber.App, error) {
 	app.Get("/agents/:name/chat/runs", h.ChatRuns)
 	app.Get("/agents/:name/chat/run/:id/stream", h.ChatRunStream)
 	app.Get("/agents/:name/events", h.Events)
+	app.Get("/events", h.EventsAll)
 	app.Post("/agents/:name/approvals/:id/decision", h.ApprovalDecision)
 	app.Get("/agents/:name/approvals", h.GetApprovals)
 	app.Delete("/agents/:name/approvals/grants/:key", h.RevokeApprovalGrant)

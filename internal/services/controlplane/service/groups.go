@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -70,10 +71,12 @@ type groupRuntime struct {
 	initialMembers    map[string]bool
 	spokenInRun       map[string]bool
 	directlyAddressed map[string]bool
+	activeTurnEvents  []GroupSSEEvent
+	onGlobal          func(GroupSSEEvent)
 	subs              map[chan GroupSSEEvent]struct{}
 }
 
-func newGroupRuntime(maxTurns int) *groupRuntime {
+func newGroupRuntime(maxTurns int, onGlobal func(GroupSSEEvent)) *groupRuntime {
 	if maxTurns <= 0 {
 		maxTurns = DefaultGroupMaxTurns
 	}
@@ -82,7 +85,8 @@ func newGroupRuntime(maxTurns int) *groupRuntime {
 			MaxTurns: maxTurns,
 			Queue:    []string{},
 		},
-		subs: make(map[chan GroupSSEEvent]struct{}),
+		onGlobal: onGlobal,
+		subs:     make(map[chan GroupSSEEvent]struct{}),
 	}
 }
 
@@ -156,13 +160,34 @@ func (rt *groupRuntime) broadcast(ev GroupSSEEvent) {
 	rt.broadcastLocked(ev)
 }
 
+const maxActiveTurnReplayEvents = 512
+
 func (rt *groupRuntime) broadcastLocked(ev GroupSSEEvent) {
+	switch ev.Name {
+	case "turn_start":
+		rt.activeTurnEvents = []GroupSSEEvent{ev}
+	case "thinking", "tool_start", "tool_end", "chunk", "approval_required", "approval_resolved":
+		if len(rt.activeTurnEvents) > 0 && len(rt.activeTurnEvents) < maxActiveTurnReplayEvents {
+			rt.activeTurnEvents = append(rt.activeTurnEvents, ev)
+		}
+	case "turn_end", "message":
+		rt.activeTurnEvents = nil
+	case "status":
+		if !rt.state.Running {
+			rt.activeTurnEvents = nil
+		}
+	}
+
 	for ch := range rt.subs {
 		select {
 		case ch <- ev:
 		default:
 			// Drop for slow consumers so one stalled browser never blocks orchestration.
 		}
+	}
+
+	if rt.onGlobal != nil && (ev.Name == "status" || ev.Name == "message") {
+		rt.onGlobal(ev)
 	}
 }
 
@@ -173,8 +198,10 @@ type GroupService struct {
 	httpClient *http.Client
 	stopClient *http.Client
 
-	mu       sync.Mutex
-	runtimes map[string]*groupRuntime
+	mu         sync.Mutex
+	runtimes   map[string]*groupRuntime
+	globalMu   sync.Mutex
+	globalSubs map[chan GroupSSEEvent]struct{}
 }
 
 // NewGroupService builds a GroupService backed by ~/.myaaw/controlplane/controlplane.db.
@@ -206,7 +233,45 @@ func NewGroupServiceWithStore(store *GroupStore, agents AgentDirectory, httpClie
 		httpClient: httpClient,
 		stopClient: stopClient,
 		runtimes:   make(map[string]*groupRuntime),
+		globalSubs: make(map[chan GroupSSEEvent]struct{}),
 	}
+}
+
+// SubscribeGlobal attaches a listener to lightweight group status and message
+// updates across all groups, used by the multiplexed GET /events stream so the
+// sidebar stays fresh even when viewing another bot.
+func (s *GroupService) SubscribeGlobal() (<-chan GroupSSEEvent, func()) {
+	ch := make(chan GroupSSEEvent, 64)
+	s.globalMu.Lock()
+	if s.globalSubs == nil {
+		s.globalSubs = make(map[chan GroupSSEEvent]struct{})
+	}
+	s.globalSubs[ch] = struct{}{}
+	s.globalMu.Unlock()
+
+	var once sync.Once
+	unsub := func() {
+		once.Do(func() {
+			s.globalMu.Lock()
+			if _, ok := s.globalSubs[ch]; ok {
+				delete(s.globalSubs, ch)
+				close(ch)
+			}
+			s.globalMu.Unlock()
+		})
+	}
+	return ch, unsub
+}
+
+func (s *GroupService) emitGlobal(ev GroupSSEEvent) {
+	s.globalMu.Lock()
+	for ch := range s.globalSubs {
+		select {
+		case ch <- ev:
+		default:
+		}
+	}
+	s.globalMu.Unlock()
 }
 
 func (s *GroupService) runtimeFor(id string, maxTurns int) *groupRuntime {
@@ -214,7 +279,7 @@ func (s *GroupService) runtimeFor(id string, maxTurns int) *groupRuntime {
 	defer s.mu.Unlock()
 	rt, ok := s.runtimes[id]
 	if !ok {
-		rt = newGroupRuntime(maxTurns)
+		rt = newGroupRuntime(maxTurns, s.emitGlobal)
 		s.runtimes[id] = rt
 	}
 	return rt
@@ -530,6 +595,7 @@ func (s *GroupService) ClearMessages(id string, userID int) error {
 
 // SendMessage persists a user message, interrupts any active run, and kicks off sequential orchestration.
 func (s *GroupService) SendMessage(id string, userID int, req SendGroupMessageRequest) (GroupMessage, GroupRunState, error) {
+	id = strings.Clone(id)
 	trimmedText := strings.TrimSpace(req.Text)
 	if trimmedText == "" && len(req.Images) == 0 && len(req.Files) == 0 {
 		return GroupMessage{}, GroupRunState{}, fmt.Errorf("%w: text, images, or files are required", ErrGroupValidation)
@@ -701,6 +767,7 @@ func (s *GroupService) Stop(id string, userID int) (bool, GroupRunState, error) 
 
 // Continue resumes a run that paused at max_turns for extraTurns more turns.
 func (s *GroupService) Continue(id string, userID int, extraTurns int) (GroupRunState, error) {
+	id = strings.Clone(id)
 	sg, err := s.store.Get(id)
 	if err != nil {
 		return GroupRunState{}, err
@@ -750,15 +817,19 @@ func (s *GroupService) Continue(id string, userID int, extraTurns int) (GroupRun
 
 // Subscribe attaches a browser SSE subscriber to a group's live event hub.
 func (s *GroupService) Subscribe(id string) (<-chan GroupSSEEvent, GroupRunState, func(), error) {
+	id = strings.Clone(id)
 	sg, err := s.store.Get(id)
 	if err != nil {
 		return nil, GroupRunState{}, nil, err
 	}
 
 	rt := s.runtimeFor(id, sg.Group.MaxTurns)
-	ch := make(chan GroupSSEEvent, groupSubBufferSize)
 
 	rt.mu.Lock()
+	ch := make(chan GroupSSEEvent, groupSubBufferSize+len(rt.activeTurnEvents))
+	for _, ev := range rt.activeTurnEvents {
+		ch <- ev
+	}
 	rt.subs[ch] = struct{}{}
 	initial := rt.snapshotLocked()
 	if !initial.Running && !initial.Paused {
@@ -1058,6 +1129,7 @@ func (s *GroupService) runLoop(ctx context.Context, groupID string, userID int, 
 
 		// If cancelled or superseded by stop/interruption while streaming, exit quietly.
 		if ctx.Err() != nil || !s.isCurrentGen(rt, gen) {
+			log.Printf("[groups] turn aborted before save group=%s agent=%s ctxErr=%v currentGen=%v", groupID, nextAgent, ctx.Err(), s.isCurrentGen(rt, gen))
 			return
 		}
 
@@ -1109,6 +1181,7 @@ func (s *GroupService) runLoop(ctx context.Context, groupID string, userID int, 
 			}
 
 			hadStreamErr = true
+			log.Printf("[groups] stream turn error group=%s agent=%s: %v", groupID, nextAgent, callErr)
 			if !res.EmittedError {
 				rt.broadcast(GroupSSEEvent{
 					Name: "error",
@@ -1148,6 +1221,7 @@ func (s *GroupService) runLoop(ctx context.Context, groupID string, userID int, 
 
 		// Detect [PASS] or empty output (when not stopped with partial text).
 		if rawText == "" || strings.EqualFold(rawText, "[PASS]") {
+			log.Printf("[groups] turn skipped save (empty/pass) group=%s agent=%s rawLen=%d stopped=%v timeline=%d", groupID, nextAgent, len(rawText), res.Stopped, len(res.Timeline))
 			_, _ = s.store.Update(groupID, func(cur *storedGroup) error {
 				latestID := latestMessageID(cur.Messages)
 				for i := range cur.Group.Members {
@@ -1259,6 +1333,7 @@ func (s *GroupService) runLoop(ctx context.Context, groupID string, userID int, 
 			return nil
 		})
 		if updateErr != nil {
+			log.Printf("[groups] failed to persist agent message group=%s agent=%s: %v", groupID, nextAgent, updateErr)
 			continue
 		}
 

@@ -235,6 +235,11 @@ export const groupsStore = {
 		onError?: (err: unknown) => void
 	): () => void {
 		const controller = new AbortController();
+		const abortOnUnload = () => controller.abort();
+		if (typeof window !== 'undefined') {
+			window.addEventListener('beforeunload', abortOnUnload);
+			window.addEventListener('pagehide', abortOnUnload);
+		}
 
 		void (async () => {
 			let delayMs = 1500;
@@ -258,6 +263,12 @@ export const groupsStore = {
 			}
 		})();
 
-		return () => controller.abort();
+		return () => {
+			if (typeof window !== 'undefined') {
+				window.removeEventListener('beforeunload', abortOnUnload);
+				window.removeEventListener('pagehide', abortOnUnload);
+			}
+			controller.abort();
+		};
 	}
 };

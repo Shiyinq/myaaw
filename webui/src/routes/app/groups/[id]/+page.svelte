@@ -424,6 +424,8 @@
 			prepending = false;
 			jumpingToMessage = false;
 			stickToBottom = true;
+			sseStatusReceived = false;
+			messages = [];
 			activeTurn = null;
 			replyTo = null;
 			pendingQuotes = [];
@@ -439,16 +441,23 @@
 		});
 	});
 
+	let sseStatusReceived = false;
+
 	async function loadGroup(id: string, token: number) {
 		try {
 			const detail = await groupsStore.get(id, { limit: PAGE_SIZE, offset: -1 });
 			if (token !== loadToken) return;
 			group = detail.group;
-			messages = detail.messages ?? [];
+			const incoming = detail.messages ?? [];
+			const seen = new Set(incoming.map((m) => m.id));
+			const liveAfter = messages.filter((m) => !seen.has(m.id));
+			messages = [...incoming, ...liveAfter];
 			hasMore = Boolean(detail.has_more);
-			totalMessages = detail.total_messages ?? messages.length;
-			runState = detail.run_state ?? { ...EMPTY_RUN_STATE };
-			approvalQueue.syncGroup(id, detail.run_state?.pending_approvals ?? []);
+			totalMessages = Math.max(detail.total_messages ?? incoming.length, messages.length);
+			if (!sseStatusReceived) {
+				runState = detail.run_state ?? { ...EMPTY_RUN_STATE };
+				approvalQueue.syncGroup(id, detail.run_state?.pending_approvals ?? []);
+			}
 			// Flip `loading` off BEFORE awaiting `tick()` so the real transcript
 			// mounts (replacing the skeleton) and `scroller` exists when snapping
 			// to the newest message at the bottom.
@@ -465,6 +474,28 @@
 			loadError = getErrorMessage(err);
 			group = null;
 			loading = false;
+		}
+	}
+
+	/**
+	 * Fetches the latest page and appends any messages that landed while a
+	 * reload or SSE reconnect was in flight.
+	 */
+	async function refreshLatestMessages(id: string) {
+		const token = loadToken;
+		try {
+			const detail = await groupsStore.get(id, { limit: 20, offset: -1 });
+			if (token !== loadToken || id !== groupId) return;
+			const incoming = detail.messages ?? [];
+			if (incoming.length === 0) return;
+			const existing = new Set(messages.map((m) => m.id));
+			const missing = incoming.filter((m) => !existing.has(m.id));
+			if (missing.length === 0) return;
+			messages = [...messages, ...missing];
+			totalMessages = Math.max(detail.total_messages ?? messages.length, messages.length);
+			maybeAutoScroll();
+		} catch {
+			// Ignore transient refresh failures.
 		}
 	}
 
@@ -532,11 +563,16 @@
 			case 'status': {
 				const payload = data as unknown as GroupStatusEvent;
 				if (!payload.run_state) return;
+				const wasRunning = runState.running;
+				sseStatusReceived = true;
 				runState = payload.run_state;
 				approvalQueue.syncGroup(id, payload.run_state.pending_approvals ?? []);
 				groupsStore.syncSummaryFromRunState(id, payload.run_state);
 				if (!payload.run_state.running) {
 					activeTurn = null;
+					if (wasRunning) {
+						void refreshLatestMessages(id);
+					}
 				}
 				break;
 			}

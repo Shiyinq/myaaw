@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -1300,5 +1301,131 @@ func TestGroupUploadsAndAttachments(t *testing.T) {
 	}
 	if _, _, _, err := svc.AttachmentFile(group.ID, userMsg.ID, userMsg.Attachments[1].StoredName); err == nil {
 		t.Fatal("expected attachment to be deleted after ClearMessages")
+	}
+}
+
+func TestGroupServiceGlobalUpdatesAndReplayOnDisconnect(t *testing.T) {
+	store := newTestGroupStore(t)
+	release := make(chan struct{})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat/stream" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		fmt.Fprint(w, "event: tool\ndata: {\"id\":\"t1\",\"name\":\"bash\",\"arguments\":\"{\\\"command\\\":\\\"sleep 5\\\"}\"}\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+		<-release
+		fmt.Fprint(w, "event: tool_result\ndata: {\"id\":\"t1\",\"name\":\"bash\",\"result\":\"ok\",\"is_error\":false}\n\n")
+		fmt.Fprint(w, "event: chunk\ndata: {\"text\":\"Done sleeping.\"}\n\n")
+		fmt.Fprint(w, "event: done\ndata: {\"ok\":true,\"text\":\"Done sleeping.\",\"conversation_id\":\"conv-g1\"}\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	defer srv.Close()
+
+	dir := newMockAgentDirectory(
+		AgentInfo{Name: "default", Running: true, BaseURL: srv.URL},
+	)
+	svc := NewGroupServiceWithStore(store, dir, srv.Client())
+	group, err := svc.Create(CreateGroupRequest{
+		Name:           "Replay Room",
+		Members:        []string{"default"},
+		DiscussionMode: DiscussionModeAutonomous,
+		MaxTurns:       8,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	globalCh, unsubGlobal := svc.SubscribeGlobal()
+	defer unsubGlobal()
+
+	// Start turn.
+	if _, _, err := svc.SendMessage(group.ID, 1, SendGroupMessageRequest{Text: "sleep 5"}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	// Wait until tool_start is buffered (simulating mid-turn refresh).
+	ch1, init1, unsub1, err := svc.Subscribe(group.ID)
+	if err != nil {
+		t.Fatalf("Subscribe #1: %v", err)
+	}
+	if !init1.Running {
+		t.Fatalf("expected running=true on Subscribe #1")
+	}
+	sawTool := false
+	deadline := time.After(3 * time.Second)
+	for !sawTool {
+		select {
+		case ev := <-ch1:
+			if ev.Name == "tool_start" {
+				sawTool = true
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for tool_start")
+		}
+	}
+	// Disconnect group stream (simulating refresh + switching to another agent).
+	unsub1()
+
+	// Re-subscribe mid-turn to verify replay buffer has turn_start + tool_start.
+	ch2, _, unsub2, err := svc.Subscribe(group.ID)
+	if err != nil {
+		t.Fatalf("Subscribe #2: %v", err)
+	}
+	replayedNames := map[string]bool{}
+	for len(replayedNames) < 2 {
+		select {
+		case ev := <-ch2:
+			replayedNames[ev.Name] = true
+		case <-time.After(2 * time.Second):
+			t.Fatalf("expected replayed turn_start+tool_start, got %v", replayedNames)
+		}
+	}
+	// Disconnect again (user switched to another agent before agent finished).
+	unsub2()
+
+	// Let the agent finish while ZERO group subscribers are connected.
+	close(release)
+
+	// Global subscriber (used by GET /events) must receive both message and status(running=false).
+	sawAgentMsg := false
+	sawStopped := false
+	globalDeadline := time.After(3 * time.Second)
+	for !(sawAgentMsg && sawStopped) {
+		select {
+		case ev := <-globalCh:
+			data, _ := ev.Data.(map[string]any)
+			if ev.Name == "message" {
+				if msg, ok := data["message"].(GroupMessage); ok && msg.SenderType == "agent" && msg.Content == "Done sleeping." {
+					sawAgentMsg = true
+				}
+			}
+			if ev.Name == "status" {
+				if rs, ok := data["run_state"].(GroupRunState); ok && !rs.Running {
+					sawStopped = true
+				}
+			}
+		case <-globalDeadline:
+			t.Fatalf("global stream missing events: sawAgentMsg=%v sawStopped=%v", sawAgentMsg, sawStopped)
+		}
+	}
+
+	// Persisted group must contain the agent's reply and running=false.
+	detail, err := svc.Get(group.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if detail.RunState.Running {
+		t.Fatalf("expected RunState.Running=false after completion")
+	}
+	if len(detail.Messages) != 2 || detail.Messages[1].Content != "Done sleeping." {
+		t.Fatalf("unexpected persisted messages: %+v", detail.Messages)
 	}
 }
