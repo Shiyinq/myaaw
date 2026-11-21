@@ -327,6 +327,7 @@
 		untrack(() => {
 			loading = true;
 			loadError = '';
+			stickToBottom = true;
 			activeTurn = null;
 			replyTo = null;
 			pendingQuotes = [];
@@ -349,14 +350,22 @@
 			group = detail.group;
 			messages = detail.messages ?? [];
 			runState = detail.run_state ?? { ...EMPTY_RUN_STATE };
+			// Flip `loading` off BEFORE awaiting `tick()` so the real transcript
+			// mounts (replacing the skeleton) and `scroller` exists when snapping
+			// to the newest message at the bottom.
+			loading = false;
+			stickToBottom = true;
 			await tick();
+			if (token !== loadToken) return;
 			scrollToBottom(false);
+			requestAnimationFrame(() => {
+				if (token === loadToken && stickToBottom) scrollToBottom(false);
+			});
 		} catch (err) {
 			if (token !== loadToken) return;
 			loadError = getErrorMessage(err);
 			group = null;
-		} finally {
-			if (token === loadToken) loading = false;
+			loading = false;
 		}
 	}
 
@@ -582,11 +591,28 @@
 	function scrollToBottom(smooth = true) {
 		stickToBottom = true;
 		if (!scroller) return;
+		if (!smooth) {
+			scroller.scrollTop = scroller.scrollHeight;
+			return;
+		}
 		scroller.scrollTo({
 			top: scroller.scrollHeight,
-			behavior: smooth ? 'smooth' : 'auto'
+			behavior: 'smooth'
 		});
 	}
+
+	// Images, code blocks, and Mermaid diagrams report their real height after
+	// mount; keep following the bottom while the reader is already at the end
+	// (same ResizeObserver behavior as regular 1-on-1 chat).
+	$effect(() => {
+		const node = transcript;
+		if (!node || typeof ResizeObserver === 'undefined') return;
+		const observer = new ResizeObserver(() => {
+			if (preferences.value.autoScroll && stickToBottom) scrollToBottom(false);
+		});
+		observer.observe(node);
+		return () => observer.disconnect();
+	});
 
 	function maybeAutoScroll() {
 		if (!preferences.value.autoScroll || !stickToBottom) return;
