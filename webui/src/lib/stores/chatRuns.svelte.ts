@@ -275,6 +275,16 @@ export class ChatRun {
 	}
 
 	/**
+	 * Aborts the browser's SSE connection without stopping the run on the
+	 * server. Used on page reload/unload so HTTP/1.1 sockets are released
+	 * immediately while the agent finishes in the background.
+	 */
+	detach() {
+		this.controller?.abort();
+		this.controller = null;
+	}
+
+	/**
 	 * Attaches to a run that started before this page existed (a reload, a closed
 	 * tab, a logout). The server replays its buffer, so the timeline is rebuilt
 	 * from the beginning and then keeps streaming.
@@ -484,6 +494,14 @@ const runs = $state<ChatRun[]>([]);
 // Agents whose in-flight runs were already recovered after a reload.
 const restored = new Set<string>();
 
+if (browser) {
+	const detachAll = () => {
+		for (const run of runs) run.detach();
+	};
+	window.addEventListener('beforeunload', detachAll);
+	window.addEventListener('pagehide', detachAll);
+}
+
 export const chatRuns = {
 	/** Runs for every conversation, newest last. */
 	all(): ChatRun[] {
@@ -509,6 +527,7 @@ export const chatRuns = {
 
 		for (const info of infos) {
 			if (!info.streaming || !info.request_id) continue;
+			if (info.scope?.startsWith('group:')) continue;
 			if (runs.some((run) => run.requestId === info.request_id)) continue;
 
 			const run = new ChatRun(agentName, info.request_id, true);

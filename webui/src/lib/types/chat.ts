@@ -131,6 +131,7 @@ export interface ChatResponse {
 export interface ChatRunInfo {
 	request_id: string;
 	conversation_id?: string;
+	scope?: string;
 	streaming: boolean;
 	started_at: string;
 	finished_at?: string;
