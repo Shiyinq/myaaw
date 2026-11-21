@@ -304,15 +304,21 @@ var webuiUninstallCmd = &cobra.Command{
 		}
 
 		if webuiPurge {
-			credentials, pathErr := agentdir.GlobalConfigPath("controlplane.json")
+			dbPath, pathErr := agentdir.ControlPlaneDBPath()
 			if pathErr != nil {
-				log.Fatalf("Could not resolve control-plane credentials: %v", pathErr)
+				log.Fatalf("Could not resolve control-plane database path: %v", pathErr)
 			}
-			if askYesNo("Also remove control-plane credentials ("+credentials+")?", false) {
-				if err := os.Remove(credentials); err != nil && !os.IsNotExist(err) {
-					log.Fatalf("Could not remove %s: %v", credentials, err)
+			prompt := fmt.Sprintf(
+				"WARNING: Also delete the control-plane database (%s)? This permanently deletes login credentials, UI settings, and all multi-agent group chats.",
+				dbPath,
+			)
+			if askYesNo(prompt, false) {
+				for _, target := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+					if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+						log.Fatalf("Could not remove %s: %v", target, err)
+					}
 				}
-				fmt.Println(theme.RenderMuted("Removed " + credentials))
+				fmt.Println(theme.RenderMuted("Removed " + dbPath))
 			}
 		}
 
@@ -348,7 +354,7 @@ func init() {
 	webuiInstallCmd.Flags().StringVar(&webuiVersion, "version", "", "install a specific release tag (default: latest)")
 	webuiUpdateCmd.Flags().StringVar(&webuiVersion, "version", "", "update to a specific release tag (default: latest)")
 	webuiRollbackCmd.Flags().StringVar(&webuiRollbackTarget, "version", "", "release tag to restore (default: list available versions)")
-	webuiUninstallCmd.Flags().BoolVar(&webuiPurge, "purge", false, "also remove control-plane credentials")
+	webuiUninstallCmd.Flags().BoolVar(&webuiPurge, "purge", false, "also delete control-plane database (login credentials, UI settings, and group chats)")
 
 	webuiVersionCmd.Flags().BoolVar(&webuiVersionJSON, "json", false, "print the config as JSON")
 

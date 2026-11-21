@@ -205,7 +205,7 @@ func restoreGlobal(root, staging string, manifest Manifest, opts RestoreOptions)
 	}
 	allowed := map[string]bool{
 		"agents.json":                    true,
-		"controlplane.json":              true,
+		controlPlaneArchivePath:          true,
 		"config/model_capabilities.json": true,
 		"config/model_prices.json":       true,
 		"config/tool_prices.json":        true,
@@ -235,8 +235,16 @@ func restoreGlobal(root, staging string, manifest Manifest, opts RestoreOptions)
 				return RestoreResult{}, fmt.Errorf("save previous %s: %w", file.Path, err)
 			}
 		}
+		if file.Path == controlPlaneArchivePath {
+			// Drop stale WAL/SHM side files so SQLite never replays old pages onto the restored DB.
+			_ = os.Remove(dst + "-wal")
+			_ = os.Remove(dst + "-shm")
+		}
 		if err := moveFile(src, dst); err != nil {
 			return RestoreResult{}, err
+		}
+		if file.Path == controlPlaneArchivePath {
+			_ = os.Chmod(dst, 0o600)
 		}
 	}
 	return RestoreResult{
@@ -247,9 +255,9 @@ func restoreGlobal(root, staging string, manifest Manifest, opts RestoreOptions)
 }
 
 // globalRestorePath maps an archive entry to its on-disk location. Flat
-// agents.json/controlplane.json entries from older archives land in config/.
+// agents.json entries from older archives land in config/.
 func globalRestorePath(root, archiveName string) string {
-	if archiveName == "agents.json" || archiveName == "controlplane.json" {
+	if archiveName == "agents.json" {
 		return filepath.Join(root, "config", archiveName)
 	}
 	return filepath.Join(root, filepath.FromSlash(archiveName))

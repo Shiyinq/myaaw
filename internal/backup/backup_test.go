@@ -337,11 +337,87 @@ func TestCreateNoSecrets(t *testing.T) {
 	}
 }
 
+func createControlPlaneDBFixture(t *testing.T, root string) string {
+	t.Helper()
+	dir := filepath.Join(root, "controlplane")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir controlplane: %v", err)
+	}
+	path := filepath.Join(dir, "controlplane.db")
+	db, err := sql.Open("sqlite3", "file:"+path+"?_journal_mode=WAL&_foreign_keys=on")
+	if err != nil {
+		t.Fatalf("open controlplane.db: %v", err)
+	}
+	defer db.Close()
+	for _, stmt := range []string{
+		`CREATE TABLE auth_account (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			username TEXT NOT NULL,
+			password_hash TEXT NOT NULL,
+			role TEXT NOT NULL DEFAULT 'admin',
+			user_id INTEGER NOT NULL DEFAULT 0,
+			password_changed INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE settings (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			data_json TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE groups (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			discussion_mode TEXT NOT NULL DEFAULT 'autonomous',
+			max_turns INTEGER NOT NULL DEFAULT 8,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE group_members (
+			group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+			name TEXT NOT NULL,
+			position INTEGER NOT NULL,
+			last_seen_message_id TEXT NOT NULL DEFAULT '',
+			conversation_id TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (group_id, name)
+		)`,
+		`CREATE TABLE group_messages (
+			seq INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT NOT NULL UNIQUE,
+			group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+			sender_type TEXT NOT NULL,
+			sender_name TEXT NOT NULL,
+			agent_color TEXT NOT NULL DEFAULT '',
+			content TEXT NOT NULL DEFAULT '',
+			timeline_json TEXT NOT NULL DEFAULT '',
+			reply_to_id TEXT NOT NULL DEFAULT '',
+			reply_preview_json TEXT NOT NULL DEFAULT '',
+			quotes_json TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL
+		)`,
+		`INSERT INTO auth_account (id, username, password_hash, role, user_id, password_changed, created_at, updated_at)
+		 VALUES (1, 'admin', '$2a$10$SECRET_HASH_VALUE', 'admin', 0, 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO settings (id, data_json, updated_at)
+		 VALUES (1, '{"theme_mode":"dark","shell_mode":"bots"}', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO groups (id, name, created_at, updated_at)
+		 VALUES ('grp-1', 'Council', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO group_members (group_id, name, position) VALUES ('grp-1', 'default', 0)`,
+		`INSERT INTO group_messages (id, group_id, sender_type, sender_name, content, created_at)
+		 VALUES ('msg-1', 'grp-1', 'user', 'User', 'hello council', '2026-01-01T00:00:00Z')`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+	return path
+}
+
 func TestCreateAllIncludesGlobalArchive(t *testing.T) {
 	root := setupHome(t, "default", "agent-b")
 	createAgentFixture(t, root, "default")
 	createAgentFixture(t, root, "agent-b")
-	writeFile(t, filepath.Join(root, "controlplane.json"), `{"username":"admin","password_hash":"SECRET"}`, 0o600)
+	createControlPlaneDBFixture(t, root)
 
 	results, err := Create(Options{OutputDir: t.TempDir()})
 	if err != nil {
@@ -364,15 +440,41 @@ func TestCreateAllIncludesGlobalArchive(t *testing.T) {
 	if _, ok := files["agents.json"]; !ok {
 		t.Fatal("global archive is missing agents.json")
 	}
-	if _, ok := files["controlplane.json"]; !ok {
-		t.Fatal("global archive is missing controlplane.json")
+	cpBytes, ok := files["controlplane/controlplane.db"]
+	if !ok {
+		t.Fatal("global archive is missing controlplane/controlplane.db")
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(files["manifest.json"], &manifest); err != nil {
+		t.Fatalf("unmarshal manifest: %v", err)
+	}
+	if manifest.DatabaseSnapshot != "VACUUM INTO" {
+		t.Fatalf("database_snapshot = %q, want VACUUM INTO", manifest.DatabaseSnapshot)
+	}
+
+	snapPath := filepath.Join(t.TempDir(), "cp.db")
+	if err := os.WriteFile(snapPath, cpBytes, 0o600); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+	db, err := sql.Open("sqlite3", snapPath)
+	if err != nil {
+		t.Fatalf("open snapshot: %v", err)
+	}
+	defer db.Close()
+
+	var authCount, groupCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM auth_account`).Scan(&authCount); err != nil || authCount != 1 {
+		t.Fatalf("auth_account count = %d, err = %v, want 1", authCount, err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM groups`).Scan(&groupCount); err != nil || groupCount != 1 {
+		t.Fatalf("groups count = %d, err = %v, want 1", groupCount, err)
 	}
 }
 
-func TestCreateAllNoSecretsSkipsControlplane(t *testing.T) {
+func TestCreateAllNoSecretsSanitizesControlPlaneDB(t *testing.T) {
 	root := setupHome(t, "default")
 	createAgentFixture(t, root, "default")
-	writeFile(t, filepath.Join(root, "controlplane.json"), `{"password_hash":"SECRET"}`, 0o600)
+	createControlPlaneDBFixture(t, root)
 
 	results, err := Create(Options{OutputDir: t.TempDir(), NoSecrets: true})
 	if err != nil {
@@ -383,8 +485,33 @@ func TestCreateAllNoSecretsSkipsControlplane(t *testing.T) {
 			continue
 		}
 		files, _ := readArchive(t, result.Path)
-		if _, ok := files["controlplane.json"]; ok {
-			t.Fatal("controlplane.json must be excluded with --no-secrets")
+		cpBytes, ok := files["controlplane/controlplane.db"]
+		if !ok {
+			t.Fatal("controlplane/controlplane.db should be included in sanitized form with --no-secrets")
+		}
+		if strings.Contains(string(cpBytes), "SECRET_HASH_VALUE") {
+			t.Fatal("sanitized controlplane.db still contains password_hash bytes")
+		}
+
+		snapPath := filepath.Join(t.TempDir(), "cp-sanitized.db")
+		if err := os.WriteFile(snapPath, cpBytes, 0o600); err != nil {
+			t.Fatalf("write snapshot: %v", err)
+		}
+		db, err := sql.Open("sqlite3", snapPath)
+		if err != nil {
+			t.Fatalf("open snapshot: %v", err)
+		}
+		defer db.Close()
+
+		var authCount, settingsCount, msgCount int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM auth_account`).Scan(&authCount); err != nil || authCount != 0 {
+			t.Fatalf("auth_account count = %d, err = %v, want 0", authCount, err)
+		}
+		if err := db.QueryRow(`SELECT COUNT(*) FROM settings`).Scan(&settingsCount); err != nil || settingsCount != 1 {
+			t.Fatalf("settings count = %d, err = %v, want 1", settingsCount, err)
+		}
+		if err := db.QueryRow(`SELECT COUNT(*) FROM group_messages`).Scan(&msgCount); err != nil || msgCount != 1 {
+			t.Fatalf("group_messages count = %d, err = %v, want 1", msgCount, err)
 		}
 		return
 	}
