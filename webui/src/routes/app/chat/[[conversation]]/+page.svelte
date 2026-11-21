@@ -5431,6 +5431,10 @@
 					activeId={conversationId}
 					bind:tab={focusPanelTab}
 					onOpen={openConversation}
+					onNewInFolder={(folderId) =>
+						void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+					onDeleted={onHistoryDeleted}
+					onRenamed={onHistoryRenamed}
 					onClose={toggleHistory}
 					onOpenContext={(path) => {
 						focusContextPath = path;
@@ -5475,6 +5479,10 @@
 						activeId={conversationId}
 						bind:tab={focusPanelTab}
 						onOpen={openConversation}
+						onNewInFolder={(folderId) =>
+							void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+						onDeleted={onHistoryDeleted}
+						onRenamed={onHistoryRenamed}
 						onClose={toggleHistory}
 						onOpenContext={(path) => {
 							focusContextPath = path;
