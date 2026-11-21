@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,16 @@ import (
 
 	"myaaw/internal/channel"
 )
+
+func newTestGroupStore(t *testing.T) *GroupStore {
+	t.Helper()
+	store, err := NewGroupStoreAt(filepath.Join(t.TempDir(), "controlplane.db"))
+	if err != nil {
+		t.Fatalf("NewGroupStoreAt: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	return store
+}
 
 type mockAgentDirectory struct {
 	mu     sync.RWMutex
@@ -90,7 +101,7 @@ func waitForRunEnd(t *testing.T, ch <-chan GroupSSEEvent, timeout time.Duration)
 }
 
 func TestGroupStoreValidationAndCRUD(t *testing.T) {
-	store := NewGroupStoreAt(t.TempDir())
+	store := newTestGroupStore(t)
 
 	for _, bad := range []string{"", "../etc/passwd", "a/b", "bad id", strings.Repeat("a", 65)} {
 		if err := ValidateGroupID(bad); err == nil {
@@ -265,7 +276,7 @@ func TestGroupAutonomousHandoffDeltaReplyQuotesAndSessionReuse(t *testing.T) {
 		}),
 	}
 
-	svc := NewGroupServiceWithStore(NewGroupStoreAt(t.TempDir()), dir, client)
+	svc := NewGroupServiceWithStore(newTestGroupStore(t), dir, client)
 
 	group, err := svc.Create(CreateGroupRequest{
 		Name:           "Arch <Council>",
@@ -447,7 +458,7 @@ func TestGroupSelfHealing404PassMaxTurnsContinueAndOfflineSkip(t *testing.T) {
 		}),
 	}
 
-	store := NewGroupStoreAt(t.TempDir())
+	store := newTestGroupStore(t)
 	svc := NewGroupServiceWithStore(store, dir, client)
 
 	group, err := svc.Create(CreateGroupRequest{
@@ -585,7 +596,7 @@ func TestGroupStopCallsAgentStopEndpointAndUserInterrupts(t *testing.T) {
 		}),
 	}
 
-	svc := NewGroupServiceWithStore(NewGroupStoreAt(t.TempDir()), dir, client)
+	svc := NewGroupServiceWithStore(newTestGroupStore(t), dir, client)
 	group, err := svc.Create(CreateGroupRequest{
 		Name:    "Stop Test",
 		Members: []string{"slow"},
@@ -671,7 +682,7 @@ func TestGroupNoOnlineMembersAndMentionModeAndClear(t *testing.T) {
 		AgentInfo{Name: "offline1", AgentColor: "gris", Running: false, BaseURL: "http://offline1"},
 	)
 
-	svc := NewGroupServiceWithStore(NewGroupStoreAt(t.TempDir()), dir, &http.Client{
+	svc := NewGroupServiceWithStore(newTestGroupStore(t), dir, &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			return nil, fmt.Errorf("dial tcp: connection refused")
 		}),
@@ -736,7 +747,7 @@ func TestGroupDialUnreachableEmitsTurnEndAndStatusReset(t *testing.T) {
 		AgentInfo{Name: "flaky", AgentColor: "rouge", Running: true, BaseURL: "http://agent-flaky"},
 	)
 
-	svc := NewGroupServiceWithStore(NewGroupStoreAt(t.TempDir()), dir, &http.Client{
+	svc := NewGroupServiceWithStore(newTestGroupStore(t), dir, &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			return nil, fmt.Errorf("dial tcp: connection refused")
 		}),
@@ -833,7 +844,7 @@ func TestGroupMentionOverridesDoneAndPreservesUnspokenInitialMembers(t *testing.
 		}),
 	}
 
-	svc := NewGroupServiceWithStore(NewGroupStoreAt(t.TempDir()), dir, client)
+	svc := NewGroupServiceWithStore(newTestGroupStore(t), dir, client)
 	group, err := svc.Create(CreateGroupRequest{
 		Name:           "Trio",
 		Members:        []string{"default", "bob", "charlie"},
@@ -917,7 +928,7 @@ func TestGroupPlainNameAddressingPrioritizesQueueAndPrompt(t *testing.T) {
 		}),
 	}
 
-	svc := NewGroupServiceWithStore(NewGroupStoreAt(t.TempDir()), dir, client)
+	svc := NewGroupServiceWithStore(newTestGroupStore(t), dir, client)
 	group, err := svc.Create(CreateGroupRequest{
 		Name:           "Plain Name Room",
 		Members:        []string{"default", "bob", "charlie"},
@@ -960,5 +971,129 @@ func TestGroupPlainNameAddressingPrioritizesQueueAndPrompt(t *testing.T) {
 	}
 	if !strings.Contains(prompts["charlie"], "Never append [DONE] when you @mention a teammate") {
 		t.Fatalf("prompt missing stronger [DONE] guardrail:\n%s", prompts["charlie"])
+	}
+}
+
+func TestGroupStoreAndServicePagination(t *testing.T) {
+	dir := newMockAgentDirectory(
+		AgentInfo{Name: "alice", AgentColor: "bleu", Running: false, BaseURL: "http://agent-alice"},
+	)
+	store := newTestGroupStore(t)
+	svc := NewGroupServiceWithStore(store, dir, nil)
+
+	group, err := svc.Create(CreateGroupRequest{
+		Name:           "Paged Room",
+		Members:        []string{"alice"},
+		DiscussionMode: DiscussionModeMention,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Seed 25 messages chronologically.
+	if _, err := store.Update(group.ID, func(sg *storedGroup) error {
+		for i := 1; i <= 25; i++ {
+			sg.Messages = append(sg.Messages, GroupMessage{
+				ID:         fmt.Sprintf("msg-%02d", i),
+				GroupID:    group.ID,
+				SenderType: "user",
+				SenderName: "User",
+				Content:    fmt.Sprintf("Message %02d", i),
+				CreatedAt:  "2026-11-21T07:00:00Z",
+			})
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed messages: %v", err)
+	}
+
+	// 1. Unpaged (limit=0) returns all 25 messages.
+	all, err := svc.GetPage(group.ID, 0, 0, "")
+	if err != nil {
+		t.Fatalf("GetPage unpaged: %v", err)
+	}
+	if len(all.Messages) != 25 || all.TotalMessages != 25 || all.Offset != 0 || all.Limit != 0 || all.HasMore {
+		t.Fatalf("unpaged = len=%d total=%d offset=%d limit=%d hasMore=%v",
+			len(all.Messages), all.TotalMessages, all.Offset, all.Limit, all.HasMore)
+	}
+
+	// 2. Tail page (limit=10, offset=-1) returns msg-16..msg-25 with offset=15, has_more=true.
+	tail, err := svc.GetPage(group.ID, 10, -1, "")
+	if err != nil {
+		t.Fatalf("GetPage tail: %v", err)
+	}
+	if len(tail.Messages) != 10 || tail.TotalMessages != 25 || tail.Offset != 15 || tail.Limit != 10 || !tail.HasMore {
+		t.Fatalf("tail = len=%d total=%d offset=%d limit=%d hasMore=%v",
+			len(tail.Messages), tail.TotalMessages, tail.Offset, tail.Limit, tail.HasMore)
+	}
+	if tail.Messages[0].ID != "msg-16" || tail.Messages[9].ID != "msg-25" {
+		t.Fatalf("tail bounds = [%s .. %s], want [msg-16 .. msg-25]", tail.Messages[0].ID, tail.Messages[9].ID)
+	}
+
+	// 3. Backward page via before_id returns msg-06..msg-15 chronologically with offset=5, has_more=true.
+	prev1, err := svc.GetPage(group.ID, 10, 0, tail.Messages[0].ID)
+	if err != nil {
+		t.Fatalf("GetPage before_id 1: %v", err)
+	}
+	if len(prev1.Messages) != 10 || prev1.Offset != 5 || !prev1.HasMore {
+		t.Fatalf("prev1 = len=%d offset=%d hasMore=%v", len(prev1.Messages), prev1.Offset, prev1.HasMore)
+	}
+	if prev1.Messages[0].ID != "msg-06" || prev1.Messages[9].ID != "msg-15" {
+		t.Fatalf("prev1 bounds = [%s .. %s], want [msg-06 .. msg-15]", prev1.Messages[0].ID, prev1.Messages[9].ID)
+	}
+
+	// 4. Simulate concurrent appends at the tail while scrolling up.
+	if _, err := store.Update(group.ID, func(sg *storedGroup) error {
+		for i := 26; i <= 28; i++ {
+			sg.Messages = append(sg.Messages, GroupMessage{
+				ID:         fmt.Sprintf("msg-%02d", i),
+				GroupID:    group.ID,
+				SenderType: "user",
+				SenderName: "User",
+				Content:    fmt.Sprintf("Message %02d", i),
+				CreatedAt:  "2026-11-21T07:05:00Z",
+			})
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("append concurrent messages: %v", err)
+	}
+
+	// Next before_id page is immune to concurrent appends: exact msg-01..msg-05, offset=0, has_more=false.
+	prev2, err := svc.GetPage(group.ID, 10, 0, prev1.Messages[0].ID)
+	if err != nil {
+		t.Fatalf("GetPage before_id 2: %v", err)
+	}
+	if len(prev2.Messages) != 5 || prev2.TotalMessages != 28 || prev2.Offset != 0 || prev2.HasMore {
+		t.Fatalf("prev2 = len=%d total=%d offset=%d hasMore=%v",
+			len(prev2.Messages), prev2.TotalMessages, prev2.Offset, prev2.HasMore)
+	}
+	if prev2.Messages[0].ID != "msg-01" || prev2.Messages[4].ID != "msg-05" {
+		t.Fatalf("prev2 bounds = [%s .. %s], want [msg-01 .. msg-05]", prev2.Messages[0].ID, prev2.Messages[4].ID)
+	}
+
+	// 5. Clamping & edge cases: limit > 500 clamped to 500, out-of-range offset clamped to total, unknown before_id empty.
+	clamped, err := svc.GetPage(group.ID, 999, 0, "")
+	if err != nil {
+		t.Fatalf("GetPage clamped limit: %v", err)
+	}
+	if clamped.Limit != MaxGroupMessagePageLimit || len(clamped.Messages) != 28 || clamped.HasMore {
+		t.Fatalf("clamped = limit=%d len=%d hasMore=%v", clamped.Limit, len(clamped.Messages), clamped.HasMore)
+	}
+
+	pastEnd, err := svc.GetPage(group.ID, 10, 999, "")
+	if err != nil {
+		t.Fatalf("GetPage past end: %v", err)
+	}
+	if len(pastEnd.Messages) != 0 || pastEnd.Offset != 28 || !pastEnd.HasMore {
+		t.Fatalf("pastEnd = len=%d offset=%d hasMore=%v", len(pastEnd.Messages), pastEnd.Offset, pastEnd.HasMore)
+	}
+
+	missingCursor, err := svc.GetPage(group.ID, 10, 0, "does-not-exist")
+	if err != nil {
+		t.Fatalf("GetPage missing cursor: %v", err)
+	}
+	if len(missingCursor.Messages) != 0 || missingCursor.Offset != 0 || missingCursor.HasMore {
+		t.Fatalf("missingCursor = len=%d offset=%d hasMore=%v", len(missingCursor.Messages), missingCursor.Offset, missingCursor.HasMore)
 	}
 }

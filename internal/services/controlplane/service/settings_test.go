@@ -2,7 +2,6 @@ package service
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
 )
@@ -11,11 +10,12 @@ func intPtr(v int) *int           { return &v }
 func floatPtr(v float64) *float64 { return &v }
 
 func TestAuthServiceSeedsDefaultSettings(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "controlplane.json")
+	path := filepath.Join(t.TempDir(), "controlplane.db")
 	auth, err := NewAuthServiceAt(path)
 	if err != nil {
 		t.Fatalf("NewAuthServiceAt: %v", err)
 	}
+	defer auth.Close()
 
 	got := auth.Settings()
 	want := DefaultSettings()
@@ -23,65 +23,62 @@ func TestAuthServiceSeedsDefaultSettings(t *testing.T) {
 		t.Fatalf("seeded settings = %+v, want %+v", got, want)
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read controlplane.json: %v", err)
+	var rawJSON string
+	if err := auth.db.DB().QueryRow(`SELECT data_json FROM settings WHERE id = 1`).Scan(&rawJSON); err != nil {
+		t.Fatalf("query settings: %v", err)
 	}
 	var stored map[string]any
-	if err := json.Unmarshal(data, &stored); err != nil {
-		t.Fatalf("unmarshal controlplane.json: %v", err)
+	if err := json.Unmarshal([]byte(rawJSON), &stored); err != nil {
+		t.Fatalf("unmarshal settings: %v", err)
 	}
-	rawSettings, ok := stored["settings"].(map[string]any)
-	if !ok {
-		t.Fatalf("stored settings missing or not an object: %#v", stored["settings"])
-	}
-	if rawSettings["shell_mode"] != "studio" || rawSettings["locale"] != "en" || rawSettings["theme_mode"] != "system" {
-		t.Fatalf("unexpected persisted settings defaults: %#v", rawSettings)
+	if stored["shell_mode"] != "studio" || stored["locale"] != "en" || stored["theme_mode"] != "system" {
+		t.Fatalf("unexpected persisted settings defaults: %#v", stored)
 	}
 }
 
-func TestAuthServiceMigratesMissingSettings(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "controlplane.json")
-	if _, err := NewAuthServiceAt(path); err != nil {
+func TestAuthServiceReseedsAccountWhilePreservingSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "controlplane.db")
+	first, err := NewAuthServiceAt(path)
+	if err != nil {
 		t.Fatalf("NewAuthServiceAt: %v", err)
 	}
+	if err := first.ChangePassword(DefaultPassword, "custom-secret-99"); err != nil {
+		t.Fatalf("ChangePassword: %v", err)
+	}
+	if _, err := first.UpdateSettings(SettingsPatch{
+		Locale:    strPtr("id"),
+		ThemeMode: strPtr("dark"),
+		ShellMode: strPtr("bots"),
+	}); err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+	// Simulate restoring a --no-secrets snapshot where auth_account was stripped.
+	if _, err := first.db.DB().Exec(`DELETE FROM auth_account`); err != nil {
+		t.Fatalf("delete auth_account: %v", err)
+	}
+	_ = first.Close()
 
-	data, err := os.ReadFile(path)
+	reloaded, err := NewAuthServiceAt(path)
 	if err != nil {
-		t.Fatalf("read controlplane.json: %v", err)
+		t.Fatalf("reload after auth strip: %v", err)
 	}
-	var stored map[string]any
-	if err := json.Unmarshal(data, &stored); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	delete(stored, "settings")
-	data, _ = json.Marshal(stored)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("write legacy file: %v", err)
-	}
+	defer reloaded.Close()
 
-	auth, err := NewAuthServiceAt(path)
-	if err != nil {
-		t.Fatalf("reload: %v", err)
+	if reloaded.Username() != DefaultUsername || reloaded.Role() != DefaultRole || !reloaded.MustChangePassword() {
+		t.Fatalf("expected re-seeded default admin requiring password change, got user=%q role=%q mustChange=%v",
+			reloaded.Username(), reloaded.Role(), reloaded.MustChangePassword())
 	}
-	if auth.Settings() != DefaultSettings() {
-		t.Fatalf("migrated settings = %+v, want defaults", auth.Settings())
+	if _, _, err := reloaded.Login(DefaultUsername, DefaultPassword); err != nil {
+		t.Fatalf("expected default login to succeed after re-seed: %v", err)
 	}
-
-	data, err = os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read migrated file: %v", err)
-	}
-	if err := json.Unmarshal(data, &stored); err != nil {
-		t.Fatalf("unmarshal migrated: %v", err)
-	}
-	if _, ok := stored["settings"].(map[string]any); !ok {
-		t.Fatalf("migrated file is missing settings key: %#v", stored)
+	gotSettings := reloaded.Settings()
+	if gotSettings.Locale != "id" || gotSettings.ThemeMode != "dark" || gotSettings.ShellMode != "bots" {
+		t.Fatalf("restored settings were lost during auth re-seed: %+v", gotSettings)
 	}
 }
 
 func TestAuthServiceUpdateSettingsPersistsAndNormalizes(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "controlplane.json")
+	path := filepath.Join(t.TempDir(), "controlplane.db")
 	auth, err := NewAuthServiceAt(path)
 	if err != nil {
 		t.Fatalf("NewAuthServiceAt: %v", err)
@@ -94,12 +91,13 @@ func TestAuthServiceUpdateSettingsPersistsAndNormalizes(t *testing.T) {
 		ShellMode:     strPtr("bots"),
 		TextScale:     intPtr(150), // clamped to 125
 		QueueMessages: boolPtr(true),
-		SpeechRate:    floatPtr(2.5), // clamped to 1.5
+		SpeechRate:    floatPtr(2.5),  // clamped to 1.5
 		NotifyVolume:  floatPtr(-0.5), // clamped to 0
 	})
 	if err != nil {
 		t.Fatalf("UpdateSettings: %v", err)
 	}
+	_ = auth.Close()
 
 	if updated.Locale != "id" || updated.ThemeMode != "dark" || updated.Theme != "obsidian" || updated.ShellMode != "bots" {
 		t.Fatalf("unexpected updated fields: %+v", updated)
@@ -122,6 +120,7 @@ func TestAuthServiceUpdateSettingsPersistsAndNormalizes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
+	defer reloaded.Close()
 	if reloaded.Settings() != updated {
 		t.Fatalf("reloaded settings = %+v, want %+v", reloaded.Settings(), updated)
 	}

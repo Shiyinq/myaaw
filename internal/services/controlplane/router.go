@@ -24,8 +24,13 @@ func NewApp() (*fiber.App, error) {
 		return nil, err
 	}
 
-	auth, err := service.NewAuthService()
+	cpdb, err := service.OpenControlPlaneDB()
 	if err != nil {
+		return nil, err
+	}
+	auth, err := service.NewAuthServiceWithDB(cpdb)
+	if err != nil {
+		_ = cpdb.Close()
 		return nil, err
 	}
 	agents := service.NewAgentService()
@@ -44,10 +49,7 @@ func NewApp() (*fiber.App, error) {
 	approvalsSvc := service.NewApprovalsService()
 	terminals := service.NewTerminalService()
 	backups := service.NewBackupService(serverSvc)
-	groupsSvc, err := service.NewGroupService(agents)
-	if err != nil {
-		return nil, err
-	}
+	groupsSvc := service.NewGroupServiceWithDB(cpdb, agents)
 	h := handler.New(auth, agents, proxy, files, projects, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups, groupsSvc)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api", BodyLimit: config.A2AMaxRequestBytes})

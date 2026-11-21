@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// Settings holds the dashboard preferences persisted in ~/.myaaw/config/controlplane.json
-// under the "settings" key so they stay in sync across browsers.
+// Settings holds the dashboard preferences persisted in ~/.myaaw/controlplane/controlplane.db
+// (settings table) so they stay in sync across browsers.
 // Defaults match the WebUI's built-in defaults.
 type Settings struct {
 	Locale          string  `json:"locale"`
@@ -37,7 +37,7 @@ type Settings struct {
 }
 
 // SettingsPatch carries optional fields for partial updates (PATCH /settings)
-// and tolerant loading of older or hand-edited controlplane.json files.
+// and tolerant loading of older stored settings JSON payloads.
 type SettingsPatch struct {
 	Locale          *string  `json:"locale,omitempty"`
 	ThemeMode       *string  `json:"theme_mode,omitempty"`
@@ -293,13 +293,13 @@ func (s *AuthService) Settings() Settings {
 	return s.creds.Settings
 }
 
-// UpdateSettings merges patch into the stored settings and writes controlplane.json.
+// UpdateSettings merges patch into the stored settings and writes to controlplane.db.
 func (s *AuthService) UpdateSettings(patch SettingsPatch) (Settings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.creds.Settings = s.creds.Settings.Apply(patch)
-	if err := s.saveLocked(); err != nil {
+	if err := s.saveSettingsLocked(); err != nil {
 		return Settings{}, err
 	}
 	return s.creds.Settings, nil

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,19 +55,26 @@ func (h *Handler) CreateGroup(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(group)
 }
 
-// GetGroup returns a group's metadata, transcript, and live run state.
+// GetGroup returns a group's metadata, a page of its transcript, and live run state.
 // @Summary      Get group
 // @Tags         Groups
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id path string true "Group ID"
+// @Param        limit query int false "Message page size (0 = all, max 500)"
+// @Param        offset query int false "Message offset (default 0, negative starts from the end)"
+// @Param        before_id query string false "Return up to limit messages strictly older than this message ID"
 // @Success      200 {object} service.GroupDetail
 // @Failure      400 {object} common.ErrorResponse
 // @Failure      401 {object} common.ErrorResponse
 // @Failure      404 {object} common.ErrorResponse
 // @Router       /groups/{id} [get]
 func (h *Handler) GetGroup(c fiber.Ctx) error {
-	detail, err := h.groups.Get(c.Params("id"))
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	beforeID := strings.TrimSpace(c.Query("before_id"))
+
+	detail, err := h.groups.GetPage(c.Params("id"), limit, offset, beforeID)
 	if err != nil {
 		return groupError(c, err)
 	}

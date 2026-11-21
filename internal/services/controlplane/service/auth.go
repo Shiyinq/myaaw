@@ -2,30 +2,27 @@ package service
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
-
-	"myaaw/internal/agentdir"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
 const (
-	// DefaultUsername and DefaultPassword are seeded on first run. They can be
-	// changed after login through the auth endpoints.
+	// DefaultUsername, DefaultPassword, and DefaultRole are seeded on first run.
+	// Credentials can be changed after login through the auth endpoints.
 	DefaultUsername = "myaaw"
 	DefaultPassword = "myaawadmin"
+	DefaultRole     = "admin"
 
-	credentialsFileName = "controlplane.json"
-	sessionTTL          = 24 * time.Hour
-	minPasswordLength   = 8
+	sessionTTL        = 24 * time.Hour
+	minPasswordLength = 8
 )
 
 var (
@@ -35,67 +32,68 @@ var (
 )
 
 type credentials struct {
-	Username        string   `json:"username"`
-	PasswordHash    string   `json:"password_hash"`
-	UserID          int      `json:"user_id"`
-	PasswordChanged bool     `json:"password_changed"`
-	CreatedAt       string   `json:"created_at"`
-	Settings        Settings `json:"settings"`
+	Username        string
+	PasswordHash    string
+	Role            string
+	UserID          int
+	PasswordChanged bool
+	CreatedAt       string
+	Settings        Settings
 }
 
-// AuthService stores the single control-plane user and its active sessions.
+// AuthService stores the single control-plane user in controlplane.db and keeps
+// active bearer sessions in memory.
 type AuthService struct {
 	mu       sync.Mutex
-	path     string
+	db       *ControlPlaneDB
+	ownsDB   bool
 	creds    credentials
 	sessions map[string]time.Time
 	media    *MediaSigner
 	now      func() time.Time
 }
 
-// NewAuthService loads (or creates) credentials under ~/.myaaw/config.
+// NewAuthService opens ~/.myaaw/controlplane/controlplane.db and loads (or seeds)
+// the control-plane account and settings.
 func NewAuthService() (*AuthService, error) {
-	path, err := agentdir.GlobalConfigPath(credentialsFileName)
+	cpdb, err := OpenControlPlaneDB()
 	if err != nil {
 		return nil, err
 	}
-	migrateLegacyCredentials(path)
-	return NewAuthServiceAt(path)
+	s, err := newAuthService(cpdb, true)
+	if err != nil {
+		_ = cpdb.Close()
+		return nil, err
+	}
+	return s, nil
 }
 
-// migrateLegacyCredentials moves the pre-global-config credentials file once, so
-// the auth service always writes the file it actually loaded.
-func migrateLegacyCredentials(target string) {
-	if _, err := os.Stat(target); err == nil || !os.IsNotExist(err) {
-		return
+// NewAuthServiceWithDB initializes AuthService on a shared *ControlPlaneDB.
+func NewAuthServiceWithDB(db *ControlPlaneDB) (*AuthService, error) {
+	if db == nil {
+		return nil, errors.New("controlplane db is required")
 	}
-	root, err := agentdir.MyaawRoot()
-	if err != nil {
-		return
-	}
-	legacy := filepath.Join(root, credentialsFileName)
-	if _, err := os.Stat(legacy); err != nil {
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-		return
-	}
-	if err := os.Rename(legacy, target); err == nil {
-		return
-	}
-	data, err := os.ReadFile(legacy)
-	if err != nil {
-		return
-	}
-	if err := os.WriteFile(target, data, 0o600); err == nil {
-		_ = os.Remove(legacy)
-	}
+	return newAuthService(db, false)
 }
 
-// NewAuthServiceAt is the testable constructor.
+// NewAuthServiceAt opens a dedicated SQLite database at path (ideal for tests).
 func NewAuthServiceAt(path string) (*AuthService, error) {
+	cpdb, err := OpenControlPlaneDBAt(path)
+	if err != nil {
+		return nil, err
+	}
+	s, err := newAuthService(cpdb, true)
+	if err != nil {
+		_ = cpdb.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+func newAuthService(cpdb *ControlPlaneDB, ownsDB bool) (*AuthService, error) {
 	s := &AuthService{
-		path:     path,
+		db:       cpdb,
+		ownsDB:   ownsDB,
 		sessions: make(map[string]time.Time),
 		media:    newMediaSignerOrNil(),
 		now:      time.Now,
@@ -106,14 +104,31 @@ func NewAuthServiceAt(path string) (*AuthService, error) {
 	return s, nil
 }
 
+// Close closes the underlying database when owned by this AuthService.
+func (s *AuthService) Close() error {
+	if s.ownsDB && s.db != nil {
+		return s.db.Close()
+	}
+	return nil
+}
+
 func (s *AuthService) Username() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.creds.Username
 }
 
+// Role returns the control-plane account role (defaults to "admin").
+func (s *AuthService) Role() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.creds.Role == "" {
+		return DefaultRole
+	}
+	return s.creds.Role
+}
+
 // UserID returns the agent user ID associated with the control-plane login.
-// Existing credential files without a user_id default to 0.
 func (s *AuthService) UserID() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -191,7 +206,7 @@ func (s *AuthService) ChangePassword(currentPassword, newPassword string) error 
 	s.creds.PasswordHash = string(hash)
 	s.creds.PasswordChanged = true
 	s.sessions = make(map[string]time.Time)
-	return s.saveLocked()
+	return s.saveAccountLocked()
 }
 
 func (s *AuthService) ChangeUsername(password, newUsername string) error {
@@ -207,100 +222,137 @@ func (s *AuthService) ChangeUsername(password, newUsername string) error {
 		return ErrInvalidCredentials
 	}
 	s.creds.Username = newUsername
-	return s.saveLocked()
+	return s.saveAccountLocked()
 }
 
 func (s *AuthService) load() error {
-	data, err := os.ReadFile(s.path)
+	if err := s.loadOrSeedAccount(); err != nil {
+		return err
+	}
+	return s.loadOrSeedSettings()
+}
+
+func (s *AuthService) loadOrSeedAccount() error {
+	var (
+		username        string
+		passwordHash    string
+		role            string
+		userID          int
+		passwordChanged int
+		createdAt       string
+	)
+	err := s.db.DB().QueryRow(
+		`SELECT username, password_hash, role, user_id, password_changed, created_at FROM auth_account WHERE id = 1`,
+	).Scan(&username, &passwordHash, &role, &userID, &passwordChanged, &createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return s.seedAccount()
+	}
 	if err != nil {
-		if !os.IsNotExist(err) {
-			return err
-		}
-		return s.seed()
+		return fmt.Errorf("load auth_account: %w", err)
+	}
+	if username == "" || passwordHash == "" {
+		return errors.New("controlplane auth_account is missing username or password_hash")
+	}
+	if strings.TrimSpace(role) == "" {
+		role = DefaultRole
 	}
 
-	var raw struct {
-		Username        string         `json:"username"`
-		PasswordHash    string         `json:"password_hash"`
-		UserID          *int           `json:"user_id"`
-		PasswordChanged *bool          `json:"password_changed"`
-		CreatedAt       string         `json:"created_at"`
-		Settings        *SettingsPatch `json:"settings"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("parse %s: %w", s.path, err)
-	}
-	if raw.Username == "" || raw.PasswordHash == "" {
-		return fmt.Errorf("%s is missing username or password_hash", s.path)
-	}
-
-	settings := DefaultSettings()
-	needsPersist := false
-	if raw.Settings == nil {
-		// Older credential files predate synced UI settings. Persist defaults so
-		// the settings object is visible and editable in controlplane.json.
-		needsPersist = true
-	} else {
-		settings = settings.Apply(*raw.Settings)
-	}
-
-	s.creds = credentials{
-		Username:     raw.Username,
-		PasswordHash: raw.PasswordHash,
-		CreatedAt:    raw.CreatedAt,
-		// Legacy credential files predate the flag; never force them to change.
-		PasswordChanged: true,
-		Settings:        settings,
-	}
-	if raw.PasswordChanged != nil {
-		s.creds.PasswordChanged = *raw.PasswordChanged
-	}
-	if raw.UserID != nil {
-		s.creds.UserID = *raw.UserID
-	} else {
-		// Older credential files predate user scoping. Persist the default so the
-		// value is visible and editable instead of living only in code.
-		s.creds.UserID = 0
-		needsPersist = true
-	}
-
-	if needsPersist {
-		if err := s.saveLocked(); err != nil {
-			return fmt.Errorf("persist controlplane defaults: %w", err)
-		}
-	}
+	s.creds.Username = username
+	s.creds.PasswordHash = passwordHash
+	s.creds.Role = role
+	s.creds.UserID = userID
+	s.creds.PasswordChanged = passwordChanged != 0
+	s.creds.CreatedAt = createdAt
 	return nil
 }
 
-func (s *AuthService) seed() error {
+func (s *AuthService) seedAccount() error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(DefaultPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	s.creds = credentials{
-		Username:        DefaultUsername,
-		PasswordHash:    string(hash),
-		UserID:          0,
-		PasswordChanged: false,
-		CreatedAt:       s.now().UTC().Format(time.RFC3339),
-		Settings:        DefaultSettings(),
-	}
-	return s.saveLocked()
+	now := s.now().UTC().Format(time.RFC3339)
+	s.creds.Username = DefaultUsername
+	s.creds.PasswordHash = string(hash)
+	s.creds.Role = DefaultRole
+	s.creds.UserID = 0
+	s.creds.PasswordChanged = false
+	s.creds.CreatedAt = now
+	return s.saveAccountLocked()
 }
 
-func (s *AuthService) saveLocked() error {
-	data, err := json.MarshalIndent(s.creds, "", "  ")
+func (s *AuthService) loadOrSeedSettings() error {
+	var rawJSON string
+	err := s.db.DB().QueryRow(`SELECT data_json FROM settings WHERE id = 1`).Scan(&rawJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		s.creds.Settings = DefaultSettings()
+		return s.saveSettingsLocked()
+	}
+	if err != nil {
+		return fmt.Errorf("load settings: %w", err)
+	}
+
+	var patch SettingsPatch
+	if err := json.Unmarshal([]byte(rawJSON), &patch); err != nil {
+		return fmt.Errorf("parse settings: %w", err)
+	}
+	s.creds.Settings = DefaultSettings().Apply(patch)
+	return nil
+}
+
+func (s *AuthService) saveAccountLocked() error {
+	now := s.now().UTC().Format(time.RFC3339)
+	createdAt := s.creds.CreatedAt
+	if createdAt == "" {
+		createdAt = now
+		s.creds.CreatedAt = now
+	}
+	role := strings.TrimSpace(s.creds.Role)
+	if role == "" {
+		role = DefaultRole
+		s.creds.Role = role
+	}
+	changed := 0
+	if s.creds.PasswordChanged {
+		changed = 1
+	}
+	_, err := s.db.DB().Exec(`
+		INSERT INTO auth_account (id, username, password_hash, role, user_id, password_changed, created_at, updated_at)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			username         = excluded.username,
+			password_hash    = excluded.password_hash,
+			role             = excluded.role,
+			user_id          = excluded.user_id,
+			password_changed = excluded.password_changed,
+			updated_at       = excluded.updated_at`,
+		s.creds.Username,
+		s.creds.PasswordHash,
+		role,
+		s.creds.UserID,
+		changed,
+		createdAt,
+		now,
+	)
+	return err
+}
+
+func (s *AuthService) saveSettingsLocked() error {
+	data, err := json.Marshal(s.creds.Settings)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
-		return err
-	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path)
+	now := s.now().UTC().Format(time.RFC3339)
+	_, err = s.db.DB().Exec(`
+		INSERT INTO settings (id, data_json, updated_at)
+		VALUES (1, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			data_json  = excluded.data_json,
+			updated_at = excluded.updated_at`,
+		string(data),
+		now,
+	)
+	return err
 }
 
 func newToken() (string, error) {

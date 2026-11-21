@@ -254,3 +254,51 @@ func TestGroupStreamEmitsInitialStatus(t *testing.T) {
 		t.Fatalf("stream output missing initial status event:\n%s", joined)
 	}
 }
+
+func TestGroupDetailPaginationEndpoints(t *testing.T) {
+	setupGroupTestAgents(t, map[string]string{"alice": "http://127.0.0.1:1"})
+	app := mustNewApp(t)
+	token := login(t, app)
+
+	var created service.Group
+	doJSON(t, app, "POST", "/groups", token, `{
+		"name": "Paged HTTP Room",
+		"members": ["alice"],
+		"discussion_mode": "mention"
+	}`, fiber.StatusCreated, &created)
+
+	ids := make([]string, 0, 7)
+	for i := 1; i <= 7; i++ {
+		var sendResp struct {
+			Message service.GroupMessage `json:"message"`
+		}
+		body := fmt.Sprintf(`{"text":"note %d"}`, i)
+		doJSON(t, app, "POST", "/groups/"+created.ID+"/messages", token, body, fiber.StatusAccepted, &sendResp)
+		ids = append(ids, sendResp.Message.ID)
+	}
+
+	// Tail page: latest 3 messages (note 5, 6, 7).
+	var tail service.GroupDetail
+	doJSON(t, app, "GET", "/groups/"+created.ID+"?limit=3&offset=-1", token, "", fiber.StatusOK, &tail)
+	if len(tail.Messages) != 3 || tail.TotalMessages != 7 || tail.Offset != 4 || tail.Limit != 3 || !tail.HasMore {
+		t.Fatalf("tail = len=%d total=%d offset=%d limit=%d hasMore=%v",
+			len(tail.Messages), tail.TotalMessages, tail.Offset, tail.Limit, tail.HasMore)
+	}
+	if tail.Messages[0].ID != ids[4] || tail.Messages[2].ID != ids[6] {
+		t.Fatalf("tail IDs = [%s .. %s], want [%s .. %s]", tail.Messages[0].ID, tail.Messages[2].ID, ids[4], ids[6])
+	}
+
+	// Page before note 5 -> note 2, 3, 4 (offset=1, has_more=true).
+	var prev1 service.GroupDetail
+	doJSON(t, app, "GET", "/groups/"+created.ID+"?limit=3&before_id="+tail.Messages[0].ID, token, "", fiber.StatusOK, &prev1)
+	if len(prev1.Messages) != 3 || prev1.Offset != 1 || !prev1.HasMore || prev1.Messages[0].ID != ids[1] || prev1.Messages[2].ID != ids[3] {
+		t.Fatalf("prev1 = len=%d offset=%d hasMore=%v", len(prev1.Messages), prev1.Offset, prev1.HasMore)
+	}
+
+	// Page before note 2 -> note 1 (offset=0, has_more=false).
+	var prev2 service.GroupDetail
+	doJSON(t, app, "GET", "/groups/"+created.ID+"?limit=3&before_id="+prev1.Messages[0].ID, token, "", fiber.StatusOK, &prev2)
+	if len(prev2.Messages) != 1 || prev2.Offset != 0 || prev2.HasMore || prev2.Messages[0].ID != ids[0] {
+		t.Fatalf("prev2 = len=%d offset=%d hasMore=%v", len(prev2.Messages), prev2.Offset, prev2.HasMore)
+	}
+}

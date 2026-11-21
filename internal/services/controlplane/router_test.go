@@ -17,6 +17,7 @@ import (
 	"myaaw/internal/agent/approvals"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/obs"
+	"myaaw/internal/services/controlplane/service"
 
 	"github.com/gofiber/fiber/v3"
 	"golang.org/x/crypto/bcrypt"
@@ -1349,14 +1350,18 @@ func TestRouterUsesConfiguredUserID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	credentialsPath := filepath.Join(home, ".myaaw", "controlplane.json")
-	credentials := fmt.Sprintf(
-		`{"username":"myaaw","password_hash":%q,"user_id":7,"created_at":"2026-01-01T00:00:00Z"}`,
-		string(hash),
-	)
-	if err := os.WriteFile(credentialsPath, []byte(credentials), 0o600); err != nil {
-		t.Fatalf("write credentials: %v", err)
+	cpdb, err := service.OpenControlPlaneDB()
+	if err != nil {
+		t.Fatalf("OpenControlPlaneDB: %v", err)
 	}
+	if _, err := cpdb.DB().Exec(`
+		INSERT INTO auth_account (id, username, password_hash, role, user_id, password_changed, created_at, updated_at)
+		VALUES (1, 'myaaw', ?, 'admin', 7, 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+		string(hash),
+	); err != nil {
+		t.Fatalf("seed auth_account: %v", err)
+	}
+	_ = cpdb.Close()
 
 	dbDir := filepath.Join(home, ".myaaw", "agents", "myfriend", "database")
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {
@@ -1712,10 +1717,21 @@ func login(t *testing.T, app *fiber.App) string {
 	t.Helper()
 	var out struct {
 		Token string `json:"token"`
+		Role  string `json:"role"`
 	}
 	doJSON(t, app, "POST", "/auth/login", "", `{"username":"myaaw","password":"myaawadmin"}`, fiber.StatusOK, &out)
 	if out.Token == "" {
 		t.Fatal("login returned an empty token")
+	}
+	if out.Role != service.DefaultRole {
+		t.Fatalf("login role = %q, want %q", out.Role, service.DefaultRole)
+	}
+	var me struct {
+		Role string `json:"role"`
+	}
+	doJSON(t, app, "GET", "/auth/me", out.Token, "", fiber.StatusOK, &me)
+	if me.Role != service.DefaultRole {
+		t.Fatalf("/auth/me role = %q, want %q", me.Role, service.DefaultRole)
 	}
 	return out.Token
 }

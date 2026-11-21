@@ -7,12 +7,14 @@ export interface LoginResponse {
 	token: string;
 	expires_at: string;
 	user_id: number;
+	role?: string;
 	must_change_password?: boolean;
 }
 
 export interface MeResponse {
 	username: string;
 	user_id: number;
+	role?: string;
 	must_change_password?: boolean;
 }
 

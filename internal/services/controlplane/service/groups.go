@@ -113,13 +113,18 @@ type GroupService struct {
 	runtimes map[string]*groupRuntime
 }
 
-// NewGroupService builds a GroupService backed by ~/.myaaw/groups/.
+// NewGroupService builds a GroupService backed by ~/.myaaw/controlplane/controlplane.db.
 func NewGroupService(agents AgentDirectory) (*GroupService, error) {
 	store, err := NewGroupStore()
 	if err != nil {
 		return nil, err
 	}
 	return NewGroupServiceWithStore(store, agents, nil), nil
+}
+
+// NewGroupServiceWithDB builds a GroupService backed by a shared *ControlPlaneDB.
+func NewGroupServiceWithDB(db *ControlPlaneDB, agents AgentDirectory) *GroupService {
+	return NewGroupServiceWithStore(NewGroupStoreWithDB(db), agents, nil)
 }
 
 // NewGroupServiceWithStore builds a GroupService with custom store and HTTP client (ideal for tests).
@@ -251,31 +256,40 @@ func (s *GroupService) Create(req CreateGroupRequest) (Group, error) {
 	return group, nil
 }
 
-// Get returns full group metadata, transcript, and current run state.
+// Get returns full group metadata, full transcript, and current run state.
 func (s *GroupService) Get(id string) (GroupDetail, error) {
-	sg, err := s.store.Get(id)
+	return s.GetPage(id, 0, 0, "")
+}
+
+// GetPage returns group metadata, a page of its transcript, and current run state.
+func (s *GroupService) GetPage(id string, limit, offset int, beforeID string) (GroupDetail, error) {
+	page, err := s.store.GetPage(id, limit, offset, strings.TrimSpace(beforeID))
 	if err != nil {
 		return GroupDetail{}, err
 	}
 
-	sg.Group.Members = s.hydrateMembers(sg.Group.Members)
+	page.Group.Members = s.hydrateMembers(page.Group.Members)
 	runState := GroupRunState{
-		MaxTurns: sg.Group.MaxTurns,
+		MaxTurns: page.Group.MaxTurns,
 		Queue:    []string{},
 	}
 	if rt := s.getRuntime(id); rt != nil {
 		rt.mu.Lock()
 		runState = rt.snapshotLocked()
 		if !runState.Running && !runState.Paused {
-			runState.MaxTurns = sg.Group.MaxTurns
+			runState.MaxTurns = page.Group.MaxTurns
 		}
 		rt.mu.Unlock()
 	}
 
 	return GroupDetail{
-		Group:    sg.Group,
-		Messages: sg.Messages,
-		RunState: runState,
+		Group:         page.Group,
+		Messages:      page.Messages,
+		TotalMessages: page.TotalMessages,
+		Offset:        page.Offset,
+		Limit:         page.Limit,
+		HasMore:       page.HasMore,
+		RunState:      runState,
 	}, nil
 }
 

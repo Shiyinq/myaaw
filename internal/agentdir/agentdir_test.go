@@ -287,9 +287,6 @@ func TestEnsureLayoutCreatesGlobalConfigAndMigratesState(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "agents.json"), []byte(`{"default":"legacy"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "controlplane.json"), []byte(`{"username":"admin"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	agentConfig := filepath.Join(root, "agents", "alpha", "config")
 	if err := os.MkdirAll(agentConfig, 0o755); err != nil {
 		t.Fatal(err)
@@ -308,13 +305,27 @@ func TestEnsureLayoutCreatesGlobalConfigAndMigratesState(t *testing.T) {
 	} else if runtime.GOOS != "windows" && info.Mode().Perm() != 0o700 {
 		t.Fatalf("config dir mode = %o, want 700", info.Mode().Perm())
 	}
-	for _, name := range []string{"agents.json", "controlplane.json"} {
-		if _, err := os.Stat(filepath.Join(configDir, name)); err != nil {
-			t.Fatalf("migrated %s: %v", name, err)
-		}
-		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
-			t.Fatalf("legacy %s still exists", name)
-		}
+	cpDir, err := ControlPlaneDir()
+	if err != nil {
+		t.Fatalf("ControlPlaneDir: %v", err)
+	}
+	if info, err := os.Stat(cpDir); err != nil {
+		t.Fatalf("controlplane dir: %v", err)
+	} else if runtime.GOOS != "windows" && info.Mode().Perm() != 0o700 {
+		t.Fatalf("controlplane dir mode = %o, want 700", info.Mode().Perm())
+	}
+	cpDB, err := ControlPlaneDBPath()
+	if err != nil {
+		t.Fatalf("ControlPlaneDBPath: %v", err)
+	}
+	if cpDB != filepath.Join(root, "controlplane", "controlplane.db") {
+		t.Fatalf("ControlPlaneDBPath = %q", cpDB)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "agents.json")); err != nil {
+		t.Fatalf("migrated agents.json: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "agents.json")); !os.IsNotExist(err) {
+		t.Fatalf("legacy agents.json still exists")
 	}
 	for _, name := range globalDataFiles {
 		if _, err := os.Stat(filepath.Join(configDir, name)); err != nil {

@@ -6,9 +6,9 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// GetSettings returns the synced dashboard settings from controlplane.json.
+// GetSettings returns the synced dashboard settings from controlplane.db.
 // @Summary      Get dashboard settings
-// @Description  Returns the UI settings stored under the "settings" key of controlplane.json.
+// @Description  Returns the UI settings stored in the control-plane SQLite database.
 // @Tags         Settings
 // @Produce      json
 // @Security     BearerAuth
@@ -21,7 +21,7 @@ func (h *Handler) GetSettings(c fiber.Ctx) error {
 
 // UpdateSettings merges a partial update into the synced dashboard settings.
 // @Summary      Update dashboard settings
-// @Description  Merges changed fields into the "settings" key of controlplane.json and returns the normalized settings.
+// @Description  Merges changed fields into the control-plane SQLite settings table and returns the normalized settings.
 // @Tags         Settings
 // @Accept       json
 // @Produce      json

@@ -1,19 +1,13 @@
 package service
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
-	"runtime"
-	"sort"
-	"strings"
 	"sync"
-	"time"
 
-	"myaaw/internal/agentdir"
 	"myaaw/internal/channel"
 	"myaaw/internal/channel/api"
 )
@@ -33,12 +27,12 @@ const (
 	MaxGroupMaxTurns          = 50
 	DefaultContinueExtraTurns = 5
 	MaxContinueExtraTurns     = 20
+	MaxGroupMessagePageLimit  = 500
 )
 
 var groupIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// ValidateGroupID prevents path traversal by restricting group IDs to a safe
-// filesystem filename subset.
+// ValidateGroupID restricts group IDs to a safe identifier subset.
 func ValidateGroupID(id string) error {
 	if !groupIDPattern.MatchString(id) {
 		return ErrInvalidGroupID
@@ -141,9 +135,13 @@ type GroupSummary struct {
 
 // GroupDetail is returned by GET /groups/:id.
 type GroupDetail struct {
-	Group    Group          `json:"group"`
-	Messages []GroupMessage `json:"messages"`
-	RunState GroupRunState  `json:"run_state"`
+	Group         Group          `json:"group"`
+	Messages      []GroupMessage `json:"messages"`
+	TotalMessages int            `json:"total_messages"`
+	Offset        int            `json:"offset"`
+	Limit         int            `json:"limit"`
+	HasMore       bool           `json:"has_more"`
+	RunState      GroupRunState  `json:"run_state"`
 }
 
 // CreateGroupRequest is the payload for POST /groups.
@@ -189,201 +187,654 @@ type storedGroup struct {
 	Messages []GroupMessage `json:"messages"`
 }
 
-// GroupStore persists one atomic JSON file per group under ~/.myaaw/groups/.
+// GroupStore persists groups, member rosters, and transcripts in controlplane.db.
 type GroupStore struct {
-	dir string
-	mu  sync.RWMutex
+	db     *ControlPlaneDB
+	ownsDB bool
+	mu     sync.Mutex
 }
 
-// NewGroupStore resolves ~/.myaaw/groups/ and returns a GroupStore rooted there.
+// NewGroupStore opens ~/.myaaw/controlplane/controlplane.db and returns a GroupStore.
 func NewGroupStore() (*GroupStore, error) {
-	root, err := agentdir.MyaawRoot()
+	cpdb, err := OpenControlPlaneDB()
 	if err != nil {
 		return nil, err
 	}
-	return NewGroupStoreAt(filepath.Join(root, "groups")), nil
+	return &GroupStore{db: cpdb, ownsDB: true}, nil
 }
 
-// NewGroupStoreAt returns a GroupStore rooted at dir (useful in tests).
-func NewGroupStoreAt(dir string) *GroupStore {
-	return &GroupStore{dir: dir}
+// NewGroupStoreWithDB returns a GroupStore backed by a shared *ControlPlaneDB.
+func NewGroupStoreWithDB(db *ControlPlaneDB) *GroupStore {
+	return &GroupStore{db: db, ownsDB: false}
 }
 
-func (s *GroupStore) filePath(id string) (string, error) {
-	if err := ValidateGroupID(id); err != nil {
-		return "", err
+// NewGroupStoreAt opens a dedicated SQLite database at path (ideal for tests).
+func NewGroupStoreAt(path string) (*GroupStore, error) {
+	cpdb, err := OpenControlPlaneDBAt(path)
+	if err != nil {
+		return nil, err
 	}
-	return filepath.Join(s.dir, id+".json"), nil
+	return &GroupStore{db: cpdb, ownsDB: true}, nil
 }
 
-// List returns all persisted groups sorted by UpdatedAt descending.
+// Close closes the underlying database when owned by this GroupStore.
+func (s *GroupStore) Close() error {
+	if s.ownsDB && s.db != nil {
+		return s.db.Close()
+	}
+	return nil
+}
+
+// List returns all persisted groups sorted by UpdatedAt descending, loading
+// ordered members and only the latest message per group (not full transcripts).
 func (s *GroupStore) List() ([]storedGroup, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	entries, err := os.ReadDir(s.dir)
+	db := s.db.DB()
+
+	rows, err := db.Query(`
+		SELECT id, name, description, discussion_mode, max_turns, created_at, updated_at
+		FROM groups
+		ORDER BY updated_at DESC, id ASC`)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return []storedGroup{}, nil
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]storedGroup, 0)
+	indexByID := make(map[string]int)
+	for rows.Next() {
+		var g Group
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.DiscussionMode, &g.MaxTurns, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			return nil, err
 		}
+		g.Members = []GroupMember{}
+		sg := storedGroup{Group: g, Messages: []GroupMessage{}}
+		normalizeStoredGroup(&sg)
+		indexByID[g.ID] = len(result)
+		result = append(result, sg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(result) == 0 {
+		return result, nil
+	}
+
+	// Load ordered members for all groups in one query.
+	mRows, err := db.Query(`
+		SELECT group_id, name, last_seen_message_id, conversation_id
+		FROM group_members
+		ORDER BY group_id ASC, position ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer mRows.Close()
+	for mRows.Next() {
+		var (
+			groupID string
+			member  GroupMember
+		)
+		if err := mRows.Scan(&groupID, &member.Name, &member.LastSeenMessageID, &member.ConversationID); err != nil {
+			return nil, err
+		}
+		if idx, ok := indexByID[groupID]; ok {
+			result[idx].Group.Members = append(result[idx].Group.Members, member)
+		}
+	}
+	if err := mRows.Err(); err != nil {
 		return nil, err
 	}
 
-	result := make([]storedGroup, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".json") {
-			continue
-		}
-		id := strings.TrimSuffix(name, ".json")
-		if ValidateGroupID(id) != nil {
-			continue
-		}
-		sg, err := s.readFileLocked(filepath.Join(s.dir, name))
-		if err != nil {
-			continue
-		}
-		result = append(result, *sg)
+	// Load only the latest message per group without scanning full transcripts.
+	msgRows, err := db.Query(`
+		SELECT id, group_id, sender_type, sender_name, agent_color, content,
+		       timeline_json, reply_to_id, reply_preview_json, quotes_json, created_at
+		FROM group_messages
+		WHERE seq IN (SELECT MAX(seq) FROM group_messages GROUP BY group_id)`)
+	if err != nil {
+		return nil, err
 	}
-
-	sort.SliceStable(result, func(i, j int) bool {
-		ti, ei := time.Parse(time.RFC3339Nano, result[i].Group.UpdatedAt)
-		tj, ej := time.Parse(time.RFC3339Nano, result[j].Group.UpdatedAt)
-		if ei == nil && ej == nil && !ti.Equal(tj) {
-			return ti.After(tj)
+	defer msgRows.Close()
+	for msgRows.Next() {
+		msg, err := scanGroupMessage(msgRows)
+		if err != nil {
+			return nil, err
 		}
-		if result[i].Group.UpdatedAt != result[j].Group.UpdatedAt {
-			return result[i].Group.UpdatedAt > result[j].Group.UpdatedAt
+		if idx, ok := indexByID[msg.GroupID]; ok {
+			result[idx].Messages = []GroupMessage{msg}
 		}
-		return result[i].Group.ID < result[j].Group.ID
-	})
+	}
+	if err := msgRows.Err(); err != nil {
+		return nil, err
+	}
 
 	return result, nil
 }
 
-// Get reads one stored group by ID.
+// Get reads one stored group, its ordered member roster, and its full transcript.
 func (s *GroupStore) Get(id string) (*storedGroup, error) {
-	path, err := s.filePath(id)
-	if err != nil {
+	if err := ValidateGroupID(id); err != nil {
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	return s.readFileLocked(path)
+	return loadStoredGroup(s.db.DB(), id)
 }
 
-// Create persists a new group file atomically.
-func (s *GroupStore) Create(sg *storedGroup) error {
-	path, err := s.filePath(sg.Group.ID)
+type storedGroupPage struct {
+	Group         Group
+	Messages      []GroupMessage
+	TotalMessages int
+	Offset        int
+	Limit         int
+	HasMore       bool
+}
+
+// GetPage reads one stored group and a slice of its transcript using indexed
+// seq queries so paged requests never load the entire history into memory.
+//
+// Pagination rules:
+//   - limit <= 0 returns all messages (capped at MaxGroupMessagePageLimit when > 0)
+//   - beforeID != "" returns up to limit messages strictly older than beforeID's seq
+//     in chronological (ASC) order, immune to concurrent appends at the tail
+//   - offset < 0 with limit > 0 returns the tail page of the latest limit messages
+//   - HasMore is true iff older messages exist before the returned page (Offset > 0)
+func (s *GroupStore) GetPage(id string, limit, offset int, beforeID string) (storedGroupPage, error) {
+	if err := ValidateGroupID(id); err != nil {
+		return storedGroupPage{}, err
+	}
+
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > MaxGroupMessagePageLimit {
+		limit = MaxGroupMessagePageLimit
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	db := s.db.DB()
+
+	group, err := loadGroupAndMembers(db, id)
 	if err != nil {
+		return storedGroupPage{}, err
+	}
+
+	var total int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM group_messages WHERE group_id = ?`, id).Scan(&total); err != nil {
+		return storedGroupPage{}, err
+	}
+
+	page := storedGroupPage{
+		Group:         group,
+		Messages:      []GroupMessage{},
+		TotalMessages: total,
+		Limit:         limit,
+	}
+
+	if beforeID != "" {
+		var targetSeq int64
+		err := db.QueryRow(`SELECT seq FROM group_messages WHERE group_id = ? AND id = ?`, id, beforeID).Scan(&targetSeq)
+		if errors.Is(err, sql.ErrNoRows) {
+			return page, nil
+		}
+		if err != nil {
+			return storedGroupPage{}, err
+		}
+
+		var rows *sql.Rows
+		if limit > 0 {
+			rows, err = db.Query(`
+				SELECT seq, id, group_id, sender_type, sender_name, agent_color, content,
+				       timeline_json, reply_to_id, reply_preview_json, quotes_json, created_at
+				FROM group_messages
+				WHERE group_id = ? AND seq < ?
+				ORDER BY seq DESC
+				LIMIT ?`, id, targetSeq, limit)
+		} else {
+			rows, err = db.Query(`
+				SELECT seq, id, group_id, sender_type, sender_name, agent_color, content,
+				       timeline_json, reply_to_id, reply_preview_json, quotes_json, created_at
+				FROM group_messages
+				WHERE group_id = ? AND seq < ?
+				ORDER BY seq ASC`, id, targetSeq)
+		}
+		if err != nil {
+			return storedGroupPage{}, err
+		}
+		defer rows.Close()
+
+		var (
+			seqs []int64
+			msgs = []GroupMessage{}
+		)
+		for rows.Next() {
+			seq, msg, err := scanGroupMessageWithSeq(rows)
+			if err != nil {
+				return storedGroupPage{}, err
+			}
+			seqs = append(seqs, seq)
+			msgs = append(msgs, msg)
+		}
+		if err := rows.Err(); err != nil {
+			return storedGroupPage{}, err
+		}
+
+		if limit > 0 {
+			for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+				msgs[i], msgs[j] = msgs[j], msgs[i]
+				seqs[i], seqs[j] = seqs[j], seqs[i]
+			}
+		}
+
+		page.Messages = msgs
+		if len(seqs) > 0 {
+			var olderCount int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM group_messages WHERE group_id = ? AND seq < ?`, id, seqs[0]).Scan(&olderCount); err != nil {
+				return storedGroupPage{}, err
+			}
+			page.Offset = olderCount
+			page.HasMore = olderCount > 0
+		}
+		return page, nil
+	}
+
+	// Offset-based paging (including negative tail offset).
+	if offset < 0 && limit > 0 {
+		offset = total - limit
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > total {
+		offset = total
+	}
+	page.Offset = offset
+	page.HasMore = offset > 0
+
+	var rows *sql.Rows
+	switch {
+	case limit > 0:
+		rows, err = db.Query(`
+			SELECT id, group_id, sender_type, sender_name, agent_color, content,
+			       timeline_json, reply_to_id, reply_preview_json, quotes_json, created_at
+			FROM group_messages
+			WHERE group_id = ?
+			ORDER BY seq ASC
+			LIMIT ? OFFSET ?`, id, limit, offset)
+	case offset > 0:
+		rows, err = db.Query(`
+			SELECT id, group_id, sender_type, sender_name, agent_color, content,
+			       timeline_json, reply_to_id, reply_preview_json, quotes_json, created_at
+			FROM group_messages
+			WHERE group_id = ?
+			ORDER BY seq ASC
+			LIMIT -1 OFFSET ?`, id, offset)
+	default:
+		rows, err = db.Query(`
+			SELECT id, group_id, sender_type, sender_name, agent_color, content,
+			       timeline_json, reply_to_id, reply_preview_json, quotes_json, created_at
+			FROM group_messages
+			WHERE group_id = ?
+			ORDER BY seq ASC`, id)
+	}
+	if err != nil {
+		return storedGroupPage{}, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		msg, err := scanGroupMessage(rows)
+		if err != nil {
+			return storedGroupPage{}, err
+		}
+		page.Messages = append(page.Messages, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return storedGroupPage{}, err
+	}
+	return page, nil
+}
+
+// Create inserts a new group, its members, and any initial messages atomically.
+func (s *GroupStore) Create(sg *storedGroup) error {
+	if err := ValidateGroupID(sg.Group.ID); err != nil {
 		return err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.writeFileLocked(path, sg)
+	normalizeStoredGroup(sg)
+
+	tx, err := s.db.DB().Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.Exec(`
+		INSERT INTO groups (id, name, description, discussion_mode, max_turns, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		sg.Group.ID, sg.Group.Name, sg.Group.Description,
+		sg.Group.DiscussionMode, sg.Group.MaxTurns,
+		sg.Group.CreatedAt, sg.Group.UpdatedAt,
+	); err != nil {
+		return err
+	}
+
+	if err = replaceMembersTx(tx, sg.Group.ID, sg.Group.Members); err != nil {
+		return err
+	}
+	for _, msg := range sg.Messages {
+		if err = insertMessageTx(tx, msg); err != nil {
+			return err
+		}
+	}
+
+	err = tx.Commit()
+	return err
 }
 
-// Update runs fn under the store write lock and atomically saves the modified group.
+// Update runs fn against the latest group state inside a SQLite transaction and
+// persists all metadata, member roster/cursor, and transcript updates atomically.
 func (s *GroupStore) Update(id string, fn func(sg *storedGroup) error) (*storedGroup, error) {
-	path, err := s.filePath(id)
-	if err != nil {
+	if err := ValidateGroupID(id); err != nil {
 		return nil, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	sg, err := s.readFileLocked(path)
+	tx, err := s.db.DB().Begin()
 	if err != nil {
 		return nil, err
 	}
-	if err := fn(sg); err != nil {
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	sg, err := loadStoredGroup(tx, id)
+	if err != nil {
 		return nil, err
 	}
-	if err := s.writeFileLocked(path, sg); err != nil {
+	existingMsgIDs := make(map[string]bool, len(sg.Messages))
+	for _, m := range sg.Messages {
+		existingMsgIDs[m.ID] = true
+	}
+
+	if err = fn(sg); err != nil {
+		return nil, err
+	}
+	normalizeStoredGroup(sg)
+
+	if _, err = tx.Exec(`
+		UPDATE groups
+		SET name = ?, description = ?, discussion_mode = ?, max_turns = ?, updated_at = ?
+		WHERE id = ?`,
+		sg.Group.Name, sg.Group.Description,
+		sg.Group.DiscussionMode, sg.Group.MaxTurns,
+		sg.Group.UpdatedAt, id,
+	); err != nil {
+		return nil, err
+	}
+
+	if err = replaceMembersTx(tx, id, sg.Group.Members); err != nil {
+		return nil, err
+	}
+
+	if len(sg.Messages) == 0 {
+		if _, err = tx.Exec(`DELETE FROM group_messages WHERE group_id = ?`, id); err != nil {
+			return nil, err
+		}
+	} else {
+		for _, msg := range sg.Messages {
+			if existingMsgIDs[msg.ID] {
+				continue
+			}
+			if err = insertMessageTx(tx, msg); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
 	return cloneStoredGroup(sg), nil
 }
 
-// Delete removes the group's JSON file from disk.
+// Delete removes the group row (ON DELETE CASCADE cleans up members and messages).
 func (s *GroupStore) Delete(id string) error {
-	path, err := s.filePath(id)
-	if err != nil {
+	if err := ValidateGroupID(id); err != nil {
 		return err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := os.Remove(path); err != nil {
-		if os.IsNotExist(err) {
-			return ErrGroupNotFound
-		}
+	res, err := s.db.DB().Exec(`DELETE FROM groups WHERE id = ?`, id)
+	if err != nil {
 		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrGroupNotFound
 	}
 	return nil
 }
 
-func (s *GroupStore) readFileLocked(path string) (*storedGroup, error) {
-	data, err := os.ReadFile(path)
+type sqlQueryer interface {
+	QueryRow(query string, args ...any) *sql.Row
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
+func loadGroupAndMembers(q sqlQueryer, id string) (Group, error) {
+	var g Group
+	err := q.QueryRow(`
+		SELECT id, name, description, discussion_mode, max_turns, created_at, updated_at
+		FROM groups
+		WHERE id = ?`, id,
+	).Scan(&g.ID, &g.Name, &g.Description, &g.DiscussionMode, &g.MaxTurns, &g.CreatedAt, &g.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Group{}, ErrGroupNotFound
+	}
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, ErrGroupNotFound
+		return Group{}, err
+	}
+
+	mRows, err := q.Query(`
+		SELECT name, last_seen_message_id, conversation_id
+		FROM group_members
+		WHERE group_id = ?
+		ORDER BY position ASC`, id)
+	if err != nil {
+		return Group{}, err
+	}
+	g.Members = []GroupMember{}
+	for mRows.Next() {
+		var m GroupMember
+		if err := mRows.Scan(&m.Name, &m.LastSeenMessageID, &m.ConversationID); err != nil {
+			_ = mRows.Close()
+			return Group{}, err
 		}
+		g.Members = append(g.Members, m)
+	}
+	if err := mRows.Err(); err != nil {
+		_ = mRows.Close()
+		return Group{}, err
+	}
+	_ = mRows.Close()
+
+	if g.DiscussionMode == "" {
+		g.DiscussionMode = DiscussionModeAutonomous
+	}
+	if g.MaxTurns <= 0 {
+		g.MaxTurns = DefaultGroupMaxTurns
+	}
+	return g, nil
+}
+
+func loadStoredGroup(q sqlQueryer, id string) (*storedGroup, error) {
+	g, err := loadGroupAndMembers(q, id)
+	if err != nil {
 		return nil, err
 	}
 
-	var sg storedGroup
-	if err := json.Unmarshal(data, &sg); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+	msgRows, err := q.Query(`
+		SELECT id, group_id, sender_type, sender_name, agent_color, content,
+		       timeline_json, reply_to_id, reply_preview_json, quotes_json, created_at
+		FROM group_messages
+		WHERE group_id = ?
+		ORDER BY seq ASC`, id)
+	if err != nil {
+		return nil, err
 	}
-	normalizeStoredGroup(&sg)
-	return &sg, nil
+	messages := []GroupMessage{}
+	for msgRows.Next() {
+		msg, err := scanGroupMessage(msgRows)
+		if err != nil {
+			_ = msgRows.Close()
+			return nil, err
+		}
+		messages = append(messages, msg)
+	}
+	if err := msgRows.Err(); err != nil {
+		_ = msgRows.Close()
+		return nil, err
+	}
+	_ = msgRows.Close()
+
+	sg := &storedGroup{Group: g, Messages: messages}
+	normalizeStoredGroup(sg)
+	return sg, nil
 }
 
-func (s *GroupStore) writeFileLocked(path string, sg *storedGroup) error {
-	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+func replaceMembersTx(tx *sql.Tx, groupID string, members []GroupMember) error {
+	if _, err := tx.Exec(`DELETE FROM group_members WHERE group_id = ?`, groupID); err != nil {
 		return err
 	}
-	normalizeStoredGroup(sg)
+	for i, m := range members {
+		if _, err := tx.Exec(`
+			INSERT INTO group_members (group_id, name, position, last_seen_message_id, conversation_id)
+			VALUES (?, ?, ?, ?, ?)`,
+			groupID, m.Name, i, m.LastSeenMessageID, m.ConversationID,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-	data, err := json.MarshalIndent(sg, "", "  ")
-	if err != nil {
-		return err
+func insertMessageTx(tx *sql.Tx, msg GroupMessage) error {
+	var (
+		timelineJSON     string
+		replyPreviewJSON string
+		quotesJSON       string
+	)
+	if len(msg.Timeline) > 0 {
+		b, err := json.Marshal(msg.Timeline)
+		if err != nil {
+			return fmt.Errorf("marshal timeline: %w", err)
+		}
+		timelineJSON = string(b)
+	}
+	if msg.ReplyPreview != nil {
+		b, err := json.Marshal(msg.ReplyPreview)
+		if err != nil {
+			return fmt.Errorf("marshal reply_preview: %w", err)
+		}
+		replyPreviewJSON = string(b)
+	}
+	if len(msg.Quotes) > 0 {
+		b, err := json.Marshal(msg.Quotes)
+		if err != nil {
+			return fmt.Errorf("marshal quotes: %w", err)
+		}
+		quotesJSON = string(b)
 	}
 
-	tmp, err := os.CreateTemp(s.dir, "group-*.tmp")
-	if err != nil {
-		return err
+	_, err := tx.Exec(`
+		INSERT OR IGNORE INTO group_messages (
+			id, group_id, sender_type, sender_name, agent_color, content,
+			timeline_json, reply_to_id, reply_preview_json, quotes_json, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		msg.ID, msg.GroupID, msg.SenderType, msg.SenderName, msg.AgentColor, msg.Content,
+		timelineJSON, msg.ReplyToID, replyPreviewJSON, quotesJSON, msg.CreatedAt,
+	)
+	return err
+}
+
+func scanGroupMessage(rows *sql.Rows) (GroupMessage, error) {
+	var (
+		msg              GroupMessage
+		timelineJSON     string
+		replyPreviewJSON string
+		quotesJSON       string
+	)
+	if err := rows.Scan(
+		&msg.ID, &msg.GroupID, &msg.SenderType, &msg.SenderName, &msg.AgentColor, &msg.Content,
+		&timelineJSON, &msg.ReplyToID, &replyPreviewJSON, &quotesJSON, &msg.CreatedAt,
+	); err != nil {
+		return GroupMessage{}, err
 	}
-	tmpPath := tmp.Name()
-	if _, err := tmp.Write(append(data, '\n')); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-		return err
+	if err := decodeMessageJSON(&msg, timelineJSON, replyPreviewJSON, quotesJSON); err != nil {
+		return GroupMessage{}, err
 	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
+	return msg, nil
+}
+
+func scanGroupMessageWithSeq(rows *sql.Rows) (int64, GroupMessage, error) {
+	var (
+		seq              int64
+		msg              GroupMessage
+		timelineJSON     string
+		replyPreviewJSON string
+		quotesJSON       string
+	)
+	if err := rows.Scan(
+		&seq, &msg.ID, &msg.GroupID, &msg.SenderType, &msg.SenderName, &msg.AgentColor, &msg.Content,
+		&timelineJSON, &msg.ReplyToID, &replyPreviewJSON, &quotesJSON, &msg.CreatedAt,
+	); err != nil {
+		return 0, GroupMessage{}, err
 	}
-	if err := os.Chmod(tmpPath, 0o600); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
+	if err := decodeMessageJSON(&msg, timelineJSON, replyPreviewJSON, quotesJSON); err != nil {
+		return 0, GroupMessage{}, err
 	}
-	if runtime.GOOS == "windows" {
-		_ = os.Remove(path)
+	return seq, msg, nil
+}
+
+func decodeMessageJSON(msg *GroupMessage, timelineJSON, replyPreviewJSON, quotesJSON string) error {
+	if timelineJSON != "" {
+		if err := json.Unmarshal([]byte(timelineJSON), &msg.Timeline); err != nil {
+			return fmt.Errorf("unmarshal timeline: %w", err)
+		}
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
+	if replyPreviewJSON != "" {
+		var rp ReplyPreview
+		if err := json.Unmarshal([]byte(replyPreviewJSON), &rp); err != nil {
+			return fmt.Errorf("unmarshal reply_preview: %w", err)
+		}
+		msg.ReplyPreview = &rp
+	}
+	if quotesJSON != "" {
+		if err := json.Unmarshal([]byte(quotesJSON), &msg.Quotes); err != nil {
+			return fmt.Errorf("unmarshal quotes: %w", err)
+		}
 	}
 	return nil
 }
