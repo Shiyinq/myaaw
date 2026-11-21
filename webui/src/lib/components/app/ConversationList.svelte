@@ -44,6 +44,8 @@
 		/** The list itself is not allowed to navigate, so the owner handles the URL. */
 		onDeleted?: (id: string) => void;
 		onRenamed?: (id: string, title: string) => void;
+		/** Groups the Recents section under local date headers (Today, Yesterday, Nov 18). */
+		groupRecentsByDate?: boolean;
 		searchInput?: HTMLInputElement | null;
 	}
 
@@ -55,10 +57,38 @@
 		onClose,
 		onDeleted,
 		onRenamed,
+		groupRecentsByDate = true,
 		searchInput = $bindable(null)
 	}: Props = $props();
 
-	const { t } = useTranslation();
+	const { t, locale } = useTranslation();
+
+	function dayLabel(date: Date): string {
+		if (Number.isNaN(date.getTime())) return '';
+		const startOfDay = (value: Date) =>
+			new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+		const diff = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86_400_000);
+		if (diff === 0) return t('myaaw.focus.history_today');
+		if (diff === 1) return t('myaaw.focus.history_yesterday');
+		return date.toLocaleDateString(locale.value || undefined, { month: 'short', day: 'numeric' });
+	}
+
+	const recentDayGroups = $derived.by(() => {
+		const out: { key: string; label: string; items: ConversationSummary[] }[] = [];
+		for (const item of conversationHistory.recents.items) {
+			const date = new Date(item.updated_at);
+			const key = Number.isNaN(date.getTime())
+				? 'unknown'
+				: `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+			const last = out[out.length - 1];
+			if (last && last.key === key) {
+				last.items.push(item);
+			} else {
+				out.push({ key, label: dayLabel(date), items: [item] });
+			}
+		}
+		return out;
+	});
 	const COLLAPSED_KEY = 'myaaw_chat_folders_collapsed';
 	const SECTIONS_KEY = 'myaaw_chat_sections_collapsed';
 
@@ -1098,9 +1128,27 @@
 					{:else if conversationHistory.recents.items.length === 0}
 						<p class="px-2 py-3 text-xs text-muted-foreground">{t('myaaw.chat.history_empty')}</p>
 					{/if}
-					{#each conversationHistory.recents.items as entry (entry.id)}
-						{@render conversationRow(entry, null)}
-					{/each}
+					{#if groupRecentsByDate}
+						{#each recentDayGroups as group, index (group.key)}
+							{#if group.label}
+								<p
+									class={[
+										'px-2 pb-1 text-[10px] font-semibold tracking-widest text-muted-foreground uppercase',
+										index === 0 ? 'pt-1' : 'pt-2.5'
+									]}
+								>
+									{group.label}
+								</p>
+							{/if}
+							{#each group.items as entry (entry.id)}
+								{@render conversationRow(entry, null)}
+							{/each}
+						{/each}
+					{:else}
+						{#each conversationHistory.recents.items as entry (entry.id)}
+							{@render conversationRow(entry, null)}
+						{/each}
+					{/if}
 					{@render infiniteSentinel()}
 				{/if}
 			</div>
