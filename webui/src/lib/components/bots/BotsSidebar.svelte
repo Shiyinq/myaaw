@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
+		Bot,
 		Check,
 		Clock,
 		Layers,
@@ -12,17 +13,20 @@
 		Plus,
 		Puzzle,
 		Search,
+		Settings2,
 		ShieldAlert,
+		Trash2,
+		Users,
 		X
 	} from 'lucide-svelte';
 	import AgentMoreMenuItems from '$lib/components/app/AgentMoreMenuItems.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import SidebarAccount from '$lib/components/app/SidebarAccount.svelte';
 	import SidebarBrand from '$lib/components/app/SidebarBrand.svelte';
-	import { Button } from '$lib/components/ui/button';
+	import { groupAccent } from '$lib/components/groups/accent';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { colorOf } from '$lib/bloub';
-	import { agentSelection } from '$lib/stores';
+	import { agentSelection, groupsStore, toastStore } from '$lib/stores';
 	import {
 		botPreviews,
 		lastAssistantFromMessages,
@@ -33,11 +37,14 @@
 	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
 	import { chatRuns } from '$lib/stores/chatRuns.svelte';
+	import { isAuthenticated } from '$lib/stores/authStatus.svelte';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { getErrorMessage } from '$lib/utils/api';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut } from '$lib/utils/keys';
 	import { isActiveHref } from '$lib/utils/nav';
 	import { formatChatTimestamp } from '$lib/utils/time';
-	import type { AgentInfo } from '$lib/types';
+	import type { AgentInfo, GroupSummary } from '$lib/types';
 
 	type BotFilter = 'all' | 'running' | 'unread';
 
@@ -56,7 +63,14 @@
 	let filter = $state<BotFilter>('all');
 	let busyMap = $state<Record<string, boolean>>({});
 	let openMenuBot = $state('');
+	let openMenuGroup = $state('');
 	const fetchedAgents = new Set<string>();
+
+	// Load groups list whenever authenticated.
+	$effect(() => {
+		if (!isAuthenticated.value) return;
+		untrack(() => void groupsStore.load());
+	});
 
 	// Delay swapping between compact rail and expanded list until the 200ms
 	// sidebar width transition settles, preventing clipped text mid-slide.
@@ -224,9 +238,91 @@
 	// Canonical display order used by both the compact rail and keyboard shortcuts.
 	const orderedBots = $derived(splitSections ? [...attentionBots, ...regularBots] : visibleAgents);
 
+	const visibleGroups = $derived.by(() => {
+		return groupsStore.groups.filter((grp) => {
+			if (searchTerm) {
+				const nameHit = grp.name.toLowerCase().includes(searchTerm);
+				const memberHit = grp.members.some((m) => m.name.toLowerCase().includes(searchTerm));
+				if (!nameHit && !memberHit) return false;
+			}
+			if (filter === 'running') {
+				return grp.running || grp.members.some((m) => m.running);
+			}
+			if (filter === 'unread') {
+				return grp.running;
+			}
+			return true;
+		});
+	});
+
 	const onChatRoute = $derived(
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
 	);
+
+	function isGroupActive(id: string): boolean {
+		const path = page.url.pathname;
+		return path === `/app/groups/${id}` || path === `/app/groups/${encodeURIComponent(id)}`;
+	}
+
+	function selectGroup(grp: GroupSummary) {
+		void goto(`/app/groups/${encodeURIComponent(grp.id)}`);
+		onClose();
+	}
+
+	function openGroupSettings(grp: GroupSummary) {
+		openMenuGroup = '';
+		void goto(`/app/groups/${encodeURIComponent(grp.id)}?inspector=settings`);
+		onClose();
+	}
+
+	async function deleteGroupFromSidebar(grp: GroupSummary) {
+		openMenuGroup = '';
+		const confirmed = await askConfirm({
+			title: t('myaaw.groups.delete_title'),
+			message: t('myaaw.groups.delete_confirm', { name: grp.name }),
+			confirmText: t('myaaw.groups.delete_action'),
+			variant: 'destructive'
+		});
+		if (!confirmed) return;
+		const wasActive = isGroupActive(grp.id);
+		try {
+			await groupsStore.remove(grp.id);
+			toastStore.success(t('myaaw.groups.deleted', { name: grp.name }));
+			if (wasActive) {
+				await goto('/app/chat');
+			}
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		}
+	}
+
+	function groupPreviewLine(grp: GroupSummary): string {
+		if (grp.running && grp.current_agent) {
+			return t('myaaw.groups.agent_thinking', { name: grp.current_agent });
+		}
+		if (grp.last_message) {
+			const who =
+				grp.last_message.sender_type === 'user'
+					? t('myaaw.groups.you')
+					: grp.last_message.sender_name;
+			const snippet = grp.last_message.content.replace(/\s+/g, ' ').trim();
+			return who ? `${who}: ${snippet}` : snippet;
+		}
+		return t('myaaw.groups.members_count', { count: grp.member_count || grp.members.length });
+	}
+
+	function groupPreviewTime(grp: GroupSummary): string {
+		const raw = grp.last_message?.created_at || grp.updated_at;
+		if (!raw) return '';
+		const formatted = formatChatTimestamp(raw, locale.value, t('myaaw.chat.yesterday'));
+		const parts = formatted.split(' · ');
+		return parts[0] ?? formatted;
+	}
+
+	function openCreateGroup() {
+		groupsStore.openCreateDialog();
+		onClose();
+	}
 
 	const utilityLinks = $derived([
 		{
@@ -531,6 +627,120 @@
 	</div>
 {/snippet}
 
+{#snippet groupRow(grp: GroupSummary)}
+	{@const active = isGroupActive(grp.id)}
+	{@const timeLabel = groupPreviewTime(grp)}
+	{@const menuOpen = openMenuGroup === grp.id}
+	<div class="group relative">
+		<button
+			type="button"
+			onclick={() => selectGroup(grp)}
+			aria-current={active ? 'page' : undefined}
+			class={[
+				'flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors list-row',
+				active ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/70'
+			]}
+		>
+			<span
+				class="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-muted/60 ring-1 ring-border/40"
+			>
+				{#if grp.members.length > 0}
+					<span class="grid grid-cols-2 gap-0.5 p-1.5">
+						{#each grp.members.slice(0, 4) as member (member.name)}
+							<span
+								aria-hidden="true"
+								class={['h-2.5 w-2.5 rounded-full', groupAccent(member.agent_color).dot]}
+							></span>
+						{/each}
+					</span>
+				{:else}
+					<Users class="h-4 w-4 text-muted-foreground" />
+				{/if}
+				{#if grp.running}
+					<span
+						aria-hidden="true"
+						class="absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 animate-pulse rounded-full bg-primary ring-2 ring-card"
+					></span>
+				{/if}
+			</span>
+
+			<span class="min-w-0 flex-1">
+				<span class="flex items-center justify-between gap-1.5">
+					<span class="truncate text-sm font-semibold text-foreground">{grp.name}</span>
+					{#if timeLabel}
+						<span
+							class={[
+								'shrink-0 text-[10px] text-muted-foreground tabular-nums transition-opacity',
+								menuOpen ? 'opacity-0' : 'group-focus-within:opacity-0 group-hover:opacity-0'
+							]}
+						>
+							{timeLabel}
+						</span>
+					{/if}
+				</span>
+				<span class="mt-0.5 flex items-center justify-between gap-1.5">
+					<span
+						class={[
+							'truncate text-xs',
+							grp.running ? 'font-medium text-primary' : 'text-muted-foreground'
+						]}
+					>
+						{groupPreviewLine(grp)}
+					</span>
+				</span>
+			</span>
+		</button>
+
+		<div
+			class={[
+				'absolute top-1.5 right-1.5 transition-opacity',
+				menuOpen
+					? 'opacity-100'
+					: 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'
+			]}
+		>
+			<DropdownMenu.Root
+				open={menuOpen}
+				onOpenChange={(open) => {
+					openMenuGroup = open ? grp.id : openMenuGroup === grp.id ? '' : openMenuGroup;
+				}}
+			>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<button
+							{...props}
+							type="button"
+							onclick={(event) => {
+								event.stopPropagation();
+								(props.onclick as ((e: MouseEvent) => void) | undefined)?.(event);
+							}}
+							aria-label={t('myaaw.groups.actions')}
+							title={t('myaaw.groups.actions')}
+							class="grid h-6 w-6 place-items-center rounded-md bg-card/90 text-muted-foreground shadow-xs ring-1 ring-border/60 transition-colors hover:bg-muted hover:text-foreground"
+						>
+							<MoreHorizontal class="h-3.5 w-3.5" />
+						</button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end" class="w-44">
+					<DropdownMenu.Item onclick={() => openGroupSettings(grp)} class="gap-2">
+						<Settings2 class="h-3.5 w-3.5" />
+						{t('myaaw.groups.open_settings')}
+					</DropdownMenu.Item>
+					<DropdownMenu.Separator />
+					<DropdownMenu.Item
+						onclick={() => void deleteGroupFromSidebar(grp)}
+						class="gap-2 text-destructive focus:text-destructive"
+					>
+						<Trash2 class="h-3.5 w-3.5" />
+						{t('myaaw.groups.delete_action')}
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		</div>
+	</div>
+{/snippet}
+
 <!--
 	Bots mode turns the left sidebar into a direct bot roster (inspired by Grok
 	Bots / OpenBot): search, filter, and add a bot at the top, pick any agent to
@@ -541,19 +751,64 @@
 
 {#if contentCompact}
 	<div class="flex shrink-0 flex-col items-center gap-1 px-2 py-1.5">
-		<Button
-			variant="ghost"
-			size="icon-sm"
-			class="rounded-lg text-muted-foreground hover:text-foreground"
-			onclick={createBot}
-			title={t('myaaw.bots.new')}
-			aria-label={t('myaaw.bots.new')}
-		>
-			<Plus class="h-4 w-4" />
-		</Button>
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger>
+				{#snippet child({ props })}
+					<button
+						{...props}
+						type="button"
+						title={t('myaaw.bots.new')}
+						aria-label={t('myaaw.bots.new')}
+						class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+					>
+						<Plus class="h-4 w-4" />
+					</button>
+				{/snippet}
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content side="right" align="start" class="w-44">
+				<DropdownMenu.Item onclick={openCreateGroup} class="gap-2">
+					<Users class="h-3.5 w-3.5" />
+					{t('myaaw.groups.create_group')}
+				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={createBot} class="gap-2">
+					<Bot class="h-3.5 w-3.5" />
+					{t('myaaw.groups.new_agent')}
+				</DropdownMenu.Item>
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
 	</div>
 	<div class="mx-auto my-1 h-px w-6 bg-border"></div>
 	<nav class="flex-1 space-y-1.5 overflow-y-auto px-2 py-1" aria-label={t('myaaw.bots.list_label')}>
+		{#if groupsStore.groups.length > 0}
+			{#each groupsStore.groups as grp (grp.id)}
+				{@const active = isGroupActive(grp.id)}
+				<button
+					type="button"
+					onclick={() => selectGroup(grp)}
+					title={grp.name}
+					aria-label={grp.name}
+					aria-current={active ? 'page' : undefined}
+					class={[
+						'relative flex h-10 w-10 items-center justify-center rounded-xl transition-colors',
+						active
+							? 'bg-accent text-accent-foreground'
+							: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+					]}
+				>
+					{#if active}
+						<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary"></span>
+					{/if}
+					<Users class="h-4 w-4" />
+					{#if grp.running}
+						<span
+							aria-hidden="true"
+							class="absolute right-1 bottom-1 h-2 w-2 animate-pulse rounded-full bg-primary ring-2 ring-card"
+						></span>
+					{/if}
+				</button>
+			{/each}
+			<div class="mx-auto my-1.5 h-px w-6 bg-border"></div>
+		{/if}
 		{#each orderedBots as bot (bot.name)}
 			{@const active = onChatRoute && agentSelection.selected === bot.name}
 			{@const approvals = approvalCount(bot.name)}
@@ -708,24 +963,54 @@
 			</DropdownMenu.Content>
 		</DropdownMenu.Root>
 
-		<button
-			type="button"
-			onclick={createBot}
-			title={t('myaaw.bots.new')}
-			aria-label={t('myaaw.bots.new')}
-			class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
-		>
-			<Plus class="h-4 w-4" />
-		</button>
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger>
+				{#snippet child({ props })}
+					<button
+						{...props}
+						type="button"
+						title={t('myaaw.bots.new')}
+						aria-label={t('myaaw.bots.new')}
+						class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-dashed text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
+					>
+						<Plus class="h-4 w-4" />
+					</button>
+				{/snippet}
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content align="end" class="w-44">
+				<DropdownMenu.Item onclick={openCreateGroup} class="gap-2">
+					<Users class="h-3.5 w-3.5" />
+					{t('myaaw.groups.create_group')}
+				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={createBot} class="gap-2">
+					<Bot class="h-3.5 w-3.5" />
+					{t('myaaw.groups.new_agent')}
+				</DropdownMenu.Item>
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
 	</div>
 
 	<nav
 		class="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-1"
 		aria-label={t('myaaw.bots.list_label')}
 	>
+		{#if visibleGroups.length > 0}
+			<div class="flex items-center justify-between px-2 pt-1 pb-1">
+				<span class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+					{t('myaaw.groups.section_groups')}
+				</span>
+				<span class="text-[10px] font-medium text-muted-foreground tabular-nums">
+					{visibleGroups.length}
+				</span>
+			</div>
+			{#each visibleGroups as grp (grp.id)}
+				{@render groupRow(grp)}
+			{/each}
+		{/if}
+
 		{#if agentSelection.loading && agentSelection.agents.length === 0}
 			<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
-		{:else if visibleAgents.length === 0}
+		{:else if visibleAgents.length === 0 && visibleGroups.length === 0}
 			<p class="px-2 py-3 text-xs text-muted-foreground">
 				{searchTerm
 					? t('myaaw.bots.no_matches')
@@ -734,7 +1019,12 @@
 						: t('myaaw.agent.none')}
 			</p>
 		{:else if splitSections}
-			<div class="flex items-center justify-between px-2 pt-1 pb-1">
+			<div
+				class={[
+					'flex items-center justify-between px-2 pb-1',
+					visibleGroups.length > 0 ? 'pt-3' : 'pt-1'
+				]}
+			>
 				<span class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
 					{t('myaaw.bots.section_unread')}
 				</span>
@@ -757,7 +1047,17 @@
 			{#each regularBots as bot (bot.name)}
 				{@render botRow(bot)}
 			{/each}
-		{:else}
+		{:else if visibleAgents.length > 0}
+			{#if visibleGroups.length > 0}
+				<div class="flex items-center justify-between px-2 pt-3 pb-1">
+					<span class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+						{t('myaaw.groups.section_bots')}
+					</span>
+					<span class="text-[10px] font-medium text-muted-foreground tabular-nums">
+						{visibleAgents.length}
+					</span>
+				</div>
+			{/if}
 			{#each visibleAgents as bot (bot.name)}
 				{@render botRow(bot)}
 			{/each}

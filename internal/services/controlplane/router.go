@@ -44,7 +44,11 @@ func NewApp() (*fiber.App, error) {
 	approvalsSvc := service.NewApprovalsService()
 	terminals := service.NewTerminalService()
 	backups := service.NewBackupService(serverSvc)
-	h := handler.New(auth, agents, proxy, files, projects, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups)
+	groupsSvc, err := service.NewGroupService(agents)
+	if err != nil {
+		return nil, err
+	}
+	h := handler.New(auth, agents, proxy, files, projects, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups, groupsSvc)
 
 	app := fiber.New(fiber.Config{AppName: "myaaw api", BodyLimit: config.A2AMaxRequestBytes})
 	app.Use(cors.New(corsConfig()))
@@ -200,6 +204,18 @@ func NewApp() (*fiber.App, error) {
 	app.Get("/backups/:name", h.DownloadBackup)
 	app.Delete("/backups/:name", h.DeleteBackup)
 	app.Post("/backups/:name/restore", h.RestoreBackup)
+
+	// Multi-agent group chat rooms and orchestrator endpoints.
+	app.Get("/groups", h.ListGroups)
+	app.Post("/groups", h.CreateGroup)
+	app.Get("/groups/:id", h.GetGroup)
+	app.Patch("/groups/:id", h.UpdateGroup)
+	app.Delete("/groups/:id", h.DeleteGroup)
+	app.Delete("/groups/:id/messages", h.ClearGroupMessages)
+	app.Post("/groups/:id/messages", h.SendGroupMessage)
+	app.Post("/groups/:id/stop", h.StopGroupRun)
+	app.Post("/groups/:id/continue", h.ContinueGroupRun)
+	app.Get("/groups/:id/stream", h.StreamGroup)
 
 	return app, nil
 }

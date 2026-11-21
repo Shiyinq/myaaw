@@ -1540,19 +1540,20 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Cron | `GET/POST /cron`, `DELETE /cron/:id`, `POST /cron/:id/run`, `GET /cron/:id/history` |
 | Observability | `GET /observability/summary`, `GET /observability/sessions`, `GET /observability/sessions/:id`, `GET /observability/sessions/:id/stats`, `GET /observability/runs`, `GET /observability/runs/:id`, `DELETE /observability/runs` |
 | Backups | `GET/POST /backups`, `GET/DELETE /backups/:name`, `POST /backups/:name/restore` |
+| Groups | `GET/POST /groups`, `GET/PATCH/DELETE /groups/:id`, `POST/DELETE /groups/:id/messages`, `POST /groups/:id/stop`, `POST /groups/:id/continue`, `GET /groups/:id/stream` |
 | System | `GET /health`, `GET /docs/*` |
 
-All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, `GET /models/capabilities`, `POST /providers/models`, `/skills/builtin/*` and `/backups` are the routes outside an agent: the first three let a dashboard build and check an agent before it exists or render the model picker, the built-in skills are embedded in the binary, and `/backups` is host-level because one archive can hold every agent plus the registry.
+All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, `GET /models/capabilities`, `POST /providers/models`, `/skills/builtin/*`, `/backups`, and `/groups` are the routes outside an agent: the first three let a dashboard build and check an agent before it exists or render the model picker, the built-in skills are embedded in the binary, `/backups` is host-level because one archive can hold every agent plus the registry, and `/groups` coordinates multi-agent rooms across agents.
 
 ## 19. Errors
 
 | Status | Meaning |
 |---|---|
-| `400` | invalid JSON, invalid path, or invalid config |
+| `400` | invalid JSON, invalid path/group ID, or invalid config/request |
 | `401` | missing, invalid, or expired token |
 | `403` | conversation belongs to another user |
-| `404` | agent, provider, channel, job, conversation, log file, or backup archive not found |
-| `409` | agent already exists, or server already running |
+| `404` | agent, group, provider, channel, job, conversation, log file, or backup archive not found |
+| `409` | agent already exists, server already running, or group run is not paused |
 | `413` | file too large |
 | `415` | binary file |
 | `502` | agent server is not reachable |
@@ -1627,3 +1628,144 @@ curl -OJ localhost:9000/backups/<name> -H "Authorization: Bearer $TOKEN"
 curl -X POST localhost:9000/backups/<name>/restore -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"force":true,"start":true}'
 ```
+
+## 23. Groups
+
+Host-level multi-agent chat rooms coordinated by the control plane. Each group is stored as an atomic JSON file at `~/.myaaw/groups/<id>.json` (`0700` directory, `0600` files), while each member agent keeps its own isolated daemon, workspace, memory, and dedicated conversation ID. All routes below require the bearer token (`RequireAuth`). See [Multi-Agent Group Chat](../agents/groups.md) for architecture, delta context sync, autonomous `@mention` routing, and guardrails.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/groups` | list groups sorted by `updated_at` descending (`{"groups": [...]}`) |
+| `POST` | `/groups` | create a group → `201` `Group` |
+| `GET` | `/groups/:id` | fetch group metadata, full message list, and live `run_state` |
+| `PATCH` | `/groups/:id` | update `name`, `description`, `members`, `discussion_mode`, or `max_turns` |
+| `DELETE` | `/groups/:id` | stop any active run, close SSE subscribers, and delete the group (`{"deleted": true}`) |
+| `DELETE` | `/groups/:id/messages` | stop any active run, clear messages, reset member cursors/sessions (`{"cleared": true}`) |
+| `POST` | `/groups/:id/messages` | send a user message and start (or interrupt) orchestration → `202` `{"message", "run_state"}` |
+| `POST` | `/groups/:id/stop` | cancel the active run and send a best-effort `/api/chat/stop` to the running agent (`{"stopped", "run_state"}`) |
+| `POST` | `/groups/:id/continue` | resume a run paused at `max_turns` for `+extra_turns` → `202` `{"continued": true, "run_state"}` (`409` if not paused) |
+| `GET` | `/groups/:id/stream` | subscribe to live group Server-Sent Events (`text/event-stream`) |
+
+### Validation & error rules
+
+- **Group ID**: `:id` must match `^[A-Za-z0-9_-]{1,64}$` (`400` otherwise); an unknown ID returns `404 {"error":"group not found"}`.
+- **Create (`POST /groups`)**:
+  - `name`: required, trimmed, 1–100 characters.
+  - `description`: optional, trimmed, max 2000 characters.
+  - `members`: required array of at least 1 initialized agent name (deduplicated preserving order; unknown agents return `400`).
+  - `discussion_mode`: `"autonomous"` (default), `"all"`, or `"mention"`.
+  - `max_turns`: optional, defaults to `8` when omitted or `0`, allowed range `1`–`50`.
+- **Update (`PATCH /groups/:id`)**: all fields are optional pointers; omitted fields stay unchanged. Updating `members` preserves `last_seen_message_id` and `conversation_id` for existing members while new members start empty.
+- **Send message (`POST /groups/:id/messages`)**: accepts `{text, reply_to_id?, quotes?, images?, files?}`. Requires non-empty trimmed `text`, or at least one entry in `images` or `files` (`400` otherwise). When `reply_to_id` is supplied, it must reference an existing message in the same group (`400` otherwise). The authenticated control-plane `user_id` is injected automatically when forwarding turns to agent daemons.
+- **Continue (`POST /groups/:id/continue`)**: body is optional (`{"extra_turns": 5}` by default; values are clamped to `1`–`20`). Returns `409 {"error":"group run is not paused"}` when the group is not paused or has an empty queue.
+
+### Examples
+
+```bash
+# Create a group
+curl -X POST http://localhost:9000/groups \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"Architecture Council","description":"Review system design trade-offs.","members":["default","myfriend"],"discussion_mode":"autonomous","max_turns":8}'
+
+# List groups
+curl http://localhost:9000/groups -H "Authorization: Bearer $TOKEN"
+
+# Send a message (with optional WhatsApp-style reply_to_id and selection quotes)
+curl -X POST http://localhost:9000/groups/$GROUP_ID/messages \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"text":"@myfriend what do you think?","reply_to_id":"prev-msg-id"}'
+
+# Subscribe to live events
+curl -N http://localhost:9000/groups/$GROUP_ID/stream -H "Authorization: Bearer $TOKEN"
+
+# Stop or continue a paused run
+curl -X POST http://localhost:9000/groups/$GROUP_ID/stop -H "Authorization: Bearer $TOKEN"
+curl -X POST http://localhost:9000/groups/$GROUP_ID/continue \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"extra_turns":5}'
+```
+
+### Object shapes
+
+#### `GroupMember`
+
+```json
+{
+  "name": "alice",
+  "agent_color": "bleu",
+  "running": true,
+  "last_seen_message_id": "msg-uuid",
+  "conversation_id": "conv-uuid"
+}
+```
+
+`agent_color` and `running` are hydrated live from `AgentService` on every read.
+
+#### `GroupSummary` (returned in `GET /groups`)
+
+Includes all `Group` fields (`id`, `name`, `description`, `members`, `discussion_mode`, `max_turns`, `created_at`, `updated_at`) plus `member_count`, `running`, `current_agent`, and optional `last_message` (`{id, sender_type, sender_name, content, created_at}`).
+
+#### `GroupMessage`
+
+```json
+{
+  "id": "msg-uuid",
+  "group_id": "grp-uuid",
+  "sender_type": "user",
+  "sender_name": "User",
+  "agent_color": "",
+  "content": "What about token rotation?",
+  "timeline": [],
+  "reply_to_id": "prev-msg-uuid",
+  "reply_preview": {
+    "id": "prev-msg-uuid",
+    "sender_type": "agent",
+    "sender_name": "alice",
+    "excerpt": "We should use short-lived JWTs..."
+  },
+  "quotes": [
+    {
+      "id": "quote-1",
+      "text": "short-lived JWTs",
+      "source": "answer",
+      "sourceId": "prev-msg-uuid"
+    }
+  ],
+  "created_at": "2026-11-21T07:45:00Z"
+}
+```
+
+`sender_type` is `"user"`, `"agent"`, or `"system"`. `timeline`, `reply_to_id`, `reply_preview`, and `quotes` are omitted when empty.
+
+#### `GroupRunState`
+
+```json
+{
+  "running": true,
+  "paused": false,
+  "pause_reason": "",
+  "current_agent": "alice",
+  "turn_count": 2,
+  "max_turns": 8,
+  "queue": ["bob"]
+}
+```
+
+`pause_reason` is `""` or `"max_turns"`. `queue` is always a JSON array (`[]` when empty). `GET /groups/:id` returns `{"group": Group, "messages": GroupMessage[], "run_state": GroupRunState}`.
+
+### Streaming (SSE): `GET /groups/:id/stream`
+
+Immediately upon connecting, the control plane emits a `status` snapshot with the current `GroupRunState`, and sends a `: ping` keepalive comment every 20 seconds. Because `EventSource` cannot send an `Authorization` header, use `fetch` with `ReadableStream` (same pattern as Chat Streaming above).
+
+| Event | Data | When emitted |
+|---|---|---|
+| `status` | `{"group_id","run_state"}` | On connect, and on state transitions (start, turn start, stop, clear, pause, finish, dial-failure rollback) |
+| `turn_start` | `{"group_id","agent","agent_color","turn","max_turns","request_id"}` | Immediately before invoking an agent's `/api/chat/stream` |
+| `thinking` | `{"group_id","agent","text"}` | Reasoning delta relayed from the agent's `thought` event |
+| `chunk` | `{"group_id","agent","text"}` | Answer delta relayed from the agent's `chunk` event |
+| `tool_start` | `{"group_id","agent","id","name","arguments"}` | Relayed from the agent's `tool` event |
+| `tool_end` | `{"group_id","agent","id","name","result","is_error"}` | Relayed from the agent's `tool_result` event |
+| `message` | `{"group_id","message"}` | Whenever a user, agent, or system `GroupMessage` is persisted |
+| `turn_end` | `{"group_id","agent","turn","max_turns","message_id","stopped","passed","done_signal"}` | After each agent turn finishes, passes (`[PASS]`), or fails |
+| `run_end` | `{"group_id","reason","turn_count","max_turns","paused","run_state"}` | When the orchestration loop ends (`completed`, `max_turns`, `stopped`, `interrupted`, `no_online_members`, or `error`) |
+| `error` | `{"group_id","agent"?,"error"}` | On offline/unreachable agent skip or upstream agent stream error |

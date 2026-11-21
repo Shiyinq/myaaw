@@ -12,6 +12,7 @@ export * from './context.svelte';
 export * from './conversations.svelte';
 export * from './cron.svelte';
 export * from './files.svelte';
+export * from './groups.svelte';
 export * from './logs.svelte';
 export * from './observability.svelte';
 export * from './projects.svelte';

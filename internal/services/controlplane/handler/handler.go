@@ -24,6 +24,7 @@ type Handler struct {
 	approvals     *service.ApprovalsService
 	terminals     *service.TerminalService
 	backups       *service.BackupService
+	groups        *service.GroupService
 }
 
 func New(
@@ -44,6 +45,7 @@ func New(
 	approvalsSvc *service.ApprovalsService,
 	terminals *service.TerminalService,
 	backupsSvc *service.BackupService,
+	groupsSvc *service.GroupService,
 ) *Handler {
 	return &Handler{
 		auth:          auth,
@@ -63,6 +65,7 @@ func New(
 		approvals:     approvalsSvc,
 		terminals:     terminals,
 		backups:       backupsSvc,
+		groups:        groupsSvc,
 	}
 }
 

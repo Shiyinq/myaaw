@@ -32,7 +32,8 @@
 		RotateCw,
 		PanelLeft,
 		Puzzle,
-		UserRound
+		UserRound,
+		Users
 	} from 'lucide-svelte';
 	import {
 		agentSelection,
@@ -40,6 +41,7 @@
 		authStore,
 		commandPalette,
 		conversationHistory,
+		groupsStore,
 		shortcutHelp,
 		sidebar,
 		toastStore,
@@ -64,6 +66,7 @@
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ShortcutHelp from '$lib/components/app/ShortcutHelp.svelte';
 	import CommandPalette from '$lib/components/app/CommandPalette.svelte';
+	import CreateGroupDialog from '$lib/components/groups/CreateGroupDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { theme, userPrefersMode } from 'mode-watcher';
 	import { APPEARANCE, applyAppearance, isAppearanceActive } from '$lib/theme';
@@ -419,12 +422,18 @@
 
 	onMount(() => {
 		void agentSelection.load();
+		if (isAuthenticated.value) void groupsStore.load();
 	});
 
-	// The palette lists each agent's start/stop/restart, so refresh the daemon
-	// states as it opens instead of trusting a possibly stale list.
+	// The palette lists each agent's start/stop/restart and existing groups, so
+	// refresh states as it opens instead of trusting a possibly stale list.
 	$effect(() => {
-		if (commandPalette.open) untrack(() => void agentSelection.load(true));
+		if (commandPalette.open) {
+			untrack(() => {
+				void agentSelection.load(true);
+				if (isAuthenticated.value) void groupsStore.load(true);
+			});
+		}
 	});
 
 	// Everything the palette can reach: every destination of the shell, every
@@ -448,6 +457,30 @@
 		}
 		for (const item of hiddenNav) {
 			navigate(item.href, item.label, item.description, item.icon);
+		}
+
+		list.push({
+			id: 'action:create-group',
+			labelKey: 'myaaw.command.create_group',
+			aliases: ['group', 'grup', 'create group', 'buat grup', 'multi-agent', 'chat'],
+			group: 'action',
+			icon: Users,
+			run: () => groupsStore.openCreateDialog()
+		});
+
+		for (const grp of groupsStore.groups) {
+			list.push({
+				id: `group:${grp.id}`,
+				labelKey: 'myaaw.command.open_group',
+				params: { name: grp.name },
+				aliases: ['group', 'grup', grp.name, ...grp.members.map((m) => m.name)],
+				group: 'navigate',
+				icon: Users,
+				href: `/app/groups/${encodeURIComponent(grp.id)}`,
+				current:
+					page.url.pathname === `/app/groups/${grp.id}` ||
+					page.url.pathname === `/app/groups/${encodeURIComponent(grp.id)}`
+			});
 		}
 
 		for (const agent of agentSelection.agents) {
@@ -632,6 +665,7 @@
 	let isChat = $derived(
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
 	);
+	let isGroupChat = $derived(page.url.pathname.startsWith('/app/groups/'));
 	// In Bots mode the left sidebar is a bot roster (clicking a bot opens its chat),
 	// so agent-scoped pages (Artifacts, Schedule, Plugins, Configure, Operations)
 	// show a breadcrumb agent picker in the top bar.
@@ -667,6 +701,7 @@
 	// shell gives them the full height of the viewport instead of scrolling.
 	let isFullHeight = $derived(
 		isChat ||
+			isGroupChat ||
 			hasSplitSidebar ||
 			page.url.pathname.startsWith('/app/dashboard') ||
 			page.url.pathname.startsWith('/app/terminal') ||
@@ -707,6 +742,7 @@
 	}
 
 	async function logout() {
+		groupsStore.reset();
 		await authStore.logout();
 		await goto('/login');
 	}
@@ -774,7 +810,7 @@
 		<header
 			class={focusMode && isChat
 				? 'pointer-events-none absolute inset-x-0 top-0 z-40 h-14 lg:z-60'
-				: hasSplitSidebar || isChat
+				: hasSplitSidebar || isChat || isGroupChat
 					? 'h-14 shrink-0 lg:pointer-events-none lg:absolute lg:inset-x-0 lg:top-0 lg:z-30'
 					: 'h-14 shrink-0'}
 		>
@@ -940,4 +976,7 @@
 
 	<!-- Mod+K walks every page, and every agent, without touching the sidebar. -->
 	<CommandPalette {commands} />
+
+	<!-- Create group dialog, reachable from BotsSidebar and CommandPalette. -->
+	<CreateGroupDialog />
 </div>

@@ -11,6 +11,7 @@ export * from './context';
 export * from './conversations';
 export * from './cron';
 export * from './files';
+export * from './groups';
 export * from './logs';
 export * from './observability';
 export * from './providers';
