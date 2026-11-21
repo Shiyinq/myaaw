@@ -49,8 +49,9 @@ flowchart LR
 Each member in a group remains completely isolated on disk:
 
 - **Own persona & memory**: Every agent still loads its own `SOUL.md`, `AGENTS.md`, `SECURITY.md`, `MEMORY.md`, skills, custom/MCP tools, workspace, and LLM provider.
-- **Dedicated per-agent conversation**: Each `(group_id, agent_name)` pair stores a `conversation_id` on `GroupMember`.
-  - On an agent's **first turn** in a group, the Control Plane sends `conversation_id: ""` so the agent creates a fresh API conversation inside its own `~/.myaaw/agents/<name>/database/myaaw.db`.
+- **Dedicated per-agent conversation (`scope: "group:<group_id>"`)**: Each `(group_id, agent_name)` pair stores a `conversation_id` on `GroupMember`.
+  - On an agent's **first turn** in a group, the Control Plane sends `conversation_id: ""` and `scope: "group:<group_id>"` so the agent creates a scoped API conversation inside its own `~/.myaaw/agents/<name>/database/myaaw.db`.
+  - Because the session is scoped under `group:<group_id>`, it is isolated from the agent's 1-on-1 DM history, sidebar previews, unread indicators, and activity counts — and any tool-call approvals requested during a group turn (including from sub-agents) route back into the group composer (one at a time) and the Group Info sidebar list rather than the individual bot DM.
   - The Control Plane captures the returned `conversation_id` from the agent's `conversation` or `done` SSE event and persists it on the member record.
   - Every **subsequent turn** reuses that `conversation_id`. If the agent ever returns `404` (for example, its database was reset), `GroupService` clears that member's `conversation_id` and `last_seen_message_id` and retries once automatically.
   - Clearing chat history (`DELETE /groups/:id/messages`) resets both `conversation_id` and `last_seen_message_id` for all members so every agent begins a clean session.
@@ -60,8 +61,8 @@ Each member in a group remains completely isolated on disk:
 Instead of re-sending the entire room transcript on every turn, `GroupService` tracks `last_seen_message_id` per member:
 
 1. Before calling agent `X`, `GroupService` collects only the messages in the group strictly **after** `X.last_seen_message_id` (or the last 30 messages if `X` is new or history was reset).
-2. On `X`'s first turn (`conversation_id == ""`), `GroupService` prepends a `<group_context>` block with the group name, topic/description, member roster, discussion mode, and concise room rules (`@mention` handoff, `[DONE]` only when no other member needs to speak, `[PASS]`, never impersonate other agents).
-3. On subsequent turns, `GroupService` prepends a compact `<group_context>` header (carrying room identity and the rule never to append `[DONE]` when `@mention`ing a teammate or while other members still need to answer) followed only by unseen delta messages labeled by speaker (`[User]`, `[<agent_name>]`, `[System]`). Whenever `X` was directly addressed (via `@mention`, replying to `X`, plain-name match, or an autonomous teammate handoff), `<group_context>` also instructs `X` to answer directly and not reply with `[PASS]`.
+2. On `X`'s first turn (`conversation_id == ""`), `GroupService` wraps the turn in `<group>…</group>` with a full `<group_context>…</group_context>` block (group name, topic/description, member roster, discussion mode, and concise room rules: `@mention` handoff, `[DONE]` only when no other member needs to speak, `[PASS]`, never impersonate other agents) followed by `<chats>…</chats>` containing the unseen messages.
+3. On subsequent turns, `GroupService` wraps the turn in the same `<group>…</group>` envelope with a compact `<group_context>…</group_context>` header (carrying room identity and the rule never to append `[DONE]` when `@mention`ing a teammate or while other members still need to answer) followed by `<chats>…</chats>` containing only unseen delta messages labeled by speaker (`[User]`, `[<agent_name>]`, `[System]`). Whenever `X` was directly addressed (via `@mention`, replying to `X`, plain-name match, or an autonomous teammate handoff), `<group_context>` also instructs `X` to answer directly and not reply with `[PASS]`.
 4. Because each agent's system prompt stays static and previous turns stay append-only in its own `conversation_id`, **provider prompt caching remains intact** (see [Agent Context](context.md#8-prompt-caching)).
 5. After `X` responds (or passes with `[PASS]`), `X.last_seen_message_id` advances to the newest message so `X` never re-reads messages it has already seen.
 
@@ -150,8 +151,20 @@ sequenceDiagram
 | **Manual `Stop` & `Continue`** | `POST /groups/:id/stop` cancels the run context, calls `POST /api/chat/stop` with the active `request_id` on the streaming agent so it stops spending LLM tokens immediately, and clears the queue. `POST /groups/:id/continue` resumes a paused run for `+N` extra turns (default `5`, clamped `1`–`20`). |
 | **Self-mention & duplicate prevention** | An agent cannot `@mention` itself into an infinite loop, and an agent already waiting in the queue is not duplicated. |
 | **Offline / stopped bot handling** | Before calling a queued agent, `GroupService` checks reachability. Stopped or unreachable bots emit an `error` SSE event, do not consume a turn, and are skipped cleanly (if dial fails after `turn_start`, the orchestrator rolls back `turn_count` and also emits `turn_end` with `passed: false` plus an updated `status` so clients clear the streaming placeholder immediately). If no targeted bots are online, the run terminates with `reason: "no_online_members"`. |
-| **Prompt-injection / tag sanitization** | Group names, descriptions, and sender names have `<`/`>` stripped and control characters/newlines collapsed before rendering `<group_context>`. Quoted excerpts escape `</selection>` and `</selections>`. |
+| **Prompt-injection / tag sanitization** | Group names, descriptions, and sender names have `<`/`>` stripped and control characters/newlines collapsed before rendering `<group_context>`. Message bodies and reply excerpts inside `<chats>` escape `</group>`, `</group_context>`, and `</chats>`, and quoted excerpts escape `</selection>` and `</selections>`. |
 | **Storage & concurrency safety** | Group IDs are validated against `^[A-Za-z0-9_-]{1,64}$`. Rooms, members (`group_members` with `position`), and messages (`group_messages` with monotonic `seq`) live in the shared Control Plane SQLite database `~/.myaaw/controlplane/controlplane.db` (`0700` dir, `0600` file, `WAL`, `foreign_keys=ON` with `ON DELETE CASCADE`, `busy_timeout=5000`, `synchronous=NORMAL`, `SetMaxOpenConns(1)`). Each group's orchestrator run uses a per-group mutex and monotonic generation counter so a cancelled goroutine can never clobber a newer run. |
+
+### Group Tool Approvals
+
+When a member agent (or one of its sub-agents) runs with approval mode enabled (`approvals.mode = "manual"`) and calls a gated tool during a group turn, approvals stay scoped to the group instead of leaking into the agent's 1-on-1 DM:
+
+1. **Scope propagation**: Every group turn carries `scope: "group:<group_id>"` from `GroupService` through `/api/chat/stream` into `approvals.Session`, `approvals.Request`, and `approvals.Event` (inherited automatically by sub-agents).
+2. **Live SSE & refresh recovery**: `GroupService` listens for `approval_required` and `approval_resolved` events on the agent's stream, tracks them in `GroupRunState.pending_approvals` (and `GroupSummary.pending_approval_count`), and broadcasts them on `GET /groups/:id/stream`. Refreshing the browser restores all pending approvals immediately; cancelling or finishing a run clears stale entries.
+3. **WebUI isolation (`approvalQueue`)**:
+   - Group-scoped approvals (`scope: "group:<id>"`) are excluded from per-bot DM lists (`approvalQueue.list(agent)`), so individual bot rows in the `BOT` sidebar and 1-on-1 chat pages never display group approvals.
+   - The owning group row in `BotsSidebar` shows an amber shield badge with the pending approval count.
+   - Above the group composer, `PendingApprovalCard` renders **one approval at a time** (FIFO) with the requesting `@agent` pill and a `1 / N` queue counter when multiple approvals are waiting.
+   - The **Members** tab of `GroupInspectorPanel` displays the complete **Pending approvals** list (with an amber count badge on the tab) so you can inspect and approve/deny any queued request directly (`Allow once`, `Allow session`, `Always`, or `Deny`), which resolves via `POST /agents/{name}/api/approvals/{id}`.
 
 ---
 
@@ -167,7 +180,7 @@ See [Control Plane API — Groups](../api/control-plane.md#23-groups) for the co
 
 ### Creating & Navigating Groups
 - **Bots Sidebar (`+` menu)**: Click the `+` button in the Bots sidebar (expanded or compact rail) to choose **Create group** (opens `CreateGroupDialog`) or **New agent** (`/app/new`).
-- **Groups Section & Filters**: Groups appear alongside your bots in `BotsSidebar`, filtered by the same search box and filter menu (`All`, `Groups`, `Bots`, `Running`, `Unread`). Single-type filters (`Groups` / `Bots`) hide redundant section header labels so the filtered list stays clean. Each group row shows stacked member color dots, group name, last message preview (`alice: ...` or pulsing `<agent> is thinking...`), timestamp, and a `⋯` menu for opening settings or deleting the group.
+- **Groups Section & Filters**: Groups appear alongside your bots in `BotsSidebar`, filtered by the same search box and filter menu (`All`, `Groups`, `Bots`, `Running`, `Unread`). Single-type filters (`Groups` / `Bots`) hide redundant section header labels so the filtered list stays clean. Each group row shows stacked member color dots, group name, last message preview (`alice: ...`, pulsing `<agent> is thinking...`, or amber `Needs approval` with a count badge when a member is waiting on tool approval), timestamp, and a `⋯` menu for opening settings or deleting the group.
 - **Command Palette (`Cmd+K`)**: Jump directly to any group or launch **Create group** from anywhere in `/app`.
 
 ### Group Chat Screen (`/app/groups/[id]`)
@@ -189,7 +202,7 @@ See [Control Plane API — Groups](../api/control-plane.md#23-groups) for the co
   - When paused at `max_turns`: shows a **Continue (+5 turns)** button to let the discussion proceed.
 - **Right Inspector Panel (`GroupInspectorPanel`)**:
   - Toggle from the top bar button or press **`Mod+Shift+H`** (`Ctrl+Shift+H` / `Cmd+Shift+H`). On desktop it animates smoothly between `w-80` and `w-0` (`inert` when closed); on mobile it slides in as a drawer with a faded backdrop.
-  - **Members tab**: live running/stopped indicators, inline **Start** button for stopped agents, and add/remove member controls.
+  - **Members tab**: pending tool approvals list (when any member or sub-agent is awaiting approval, with inline decision buttons and a tab count badge), live running/stopped indicators, inline **Start** button for stopped agents, and add/remove member controls.
   - **Settings tab**: edit group name, topic/description, discussion mode (`autonomous` / `all` / `mention`), and `max_turns` (`1`–`50`), clear chat history, or delete the group (with confirmation).
 
 ---

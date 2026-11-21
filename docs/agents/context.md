@@ -21,6 +21,7 @@ conversation history — byte-stable.
 | Uploaded file paths | `<attached>` | yes, user message |
 | Trigger kind (cron, heartbeat, sub-agent) | bot service → `<trigger kind="…">` | yes, user message |
 | Quoted excerpts from earlier replies | dashboard → `<selections>` | yes, user message |
+| Multi-agent group turn | control plane → `<group>` (`<group_context>` + `<chats>`) | yes, user message |
 | Sender metadata fields | `provider.Message.Sender*` | no, dashboard only |
 | Session scope (`tg:…`, `dc:…`) | conversation store | no, routing only |
 

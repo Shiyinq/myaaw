@@ -10927,6 +10927,44 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.GroupPendingApproval": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "agent": {
+                    "type": "string"
+                },
+                "agent_color": {
+                    "type": "string"
+                },
+                "approval_id": {
+                    "type": "string"
+                },
+                "args": {
+                    "type": "string"
+                },
+                "args_summary": {
+                    "type": "string"
+                },
+                "conversation_id": {
+                    "type": "string"
+                },
+                "group_id": {
+                    "type": "string"
+                },
+                "run_id": {
+                    "type": "string"
+                },
+                "subagent": {
+                    "type": "string"
+                },
+                "tool_name": {
+                    "type": "string"
+                }
+            }
+        },
         "service.GroupRunState": {
             "type": "object",
             "properties": {
@@ -10941,6 +10979,12 @@ const docTemplatecontrolplane = `{
                 },
                 "paused": {
                     "type": "boolean"
+                },
+                "pending_approvals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.GroupPendingApproval"
+                    }
                 },
                 "queue": {
                     "type": "array",
@@ -10991,6 +11035,9 @@ const docTemplatecontrolplane = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "pending_approval_count": {
+                    "type": "integer"
                 },
                 "running": {
                     "type": "boolean"

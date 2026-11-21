@@ -21,6 +21,11 @@ definitions:
           transcript up to the last user message (regenerate); N keeps it up to the
           user message N turns earlier (edit that message with `text`).
         type: integer
+      scope:
+        description: |-
+          Scope optionally isolates a session from the default DM/API list, e.g.
+          "group:<group_id>" for control-plane multi-agent group chats.
+        type: string
       text:
         type: string
       user_id:
