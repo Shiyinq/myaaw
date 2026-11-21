@@ -42,6 +42,7 @@ var (
 	doneTokenPattern       = regexp.MustCompile(`(?i)(?:^|[\s\n])\[DONE\](?:$|[\s\n.,!?;:])`)
 	doneStripPattern       = regexp.MustCompile(`(?i)(^|\s)\[DONE\][.,!?;:]*(\s|$)`)
 	closingSelectionTag    = regexp.MustCompile(`(?i)</(selection|selections)>`)
+	closingGroupTag        = regexp.MustCompile(`(?i)</(group|group_context|chats)>`)
 	attrEscapePattern      = regexp.MustCompile(`["<>&]`)
 )
 
@@ -83,7 +84,65 @@ func newGroupRuntime(maxTurns int) *groupRuntime {
 func (rt *groupRuntime) snapshotLocked() GroupRunState {
 	st := rt.state
 	st.Queue = append([]string{}, rt.state.Queue...)
+	if len(rt.state.PendingApprovals) > 0 {
+		st.PendingApprovals = append([]GroupPendingApproval{}, rt.state.PendingApprovals...)
+	} else {
+		st.PendingApprovals = nil
+	}
 	return st
+}
+
+func (rt *groupRuntime) upsertApproval(approval GroupPendingApproval) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	for i, existing := range rt.state.PendingApprovals {
+		if existing.ApprovalID == approval.ApprovalID {
+			rt.state.PendingApprovals[i] = approval
+			return
+		}
+	}
+	rt.state.PendingApprovals = append(rt.state.PendingApprovals, approval)
+}
+
+func (rt *groupRuntime) removeApproval(approvalID string) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if len(rt.state.PendingApprovals) == 0 {
+		return
+	}
+	next := rt.state.PendingApprovals[:0]
+	for _, existing := range rt.state.PendingApprovals {
+		if existing.ApprovalID != approvalID {
+			next = append(next, existing)
+		}
+	}
+	if len(next) == 0 {
+		rt.state.PendingApprovals = nil
+	} else {
+		rt.state.PendingApprovals = next
+	}
+}
+
+func (rt *groupRuntime) clearRunApprovals(runID string) {
+	if runID == "" {
+		return
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if len(rt.state.PendingApprovals) == 0 {
+		return
+	}
+	next := rt.state.PendingApprovals[:0]
+	for _, existing := range rt.state.PendingApprovals {
+		if existing.RunID != runID {
+			next = append(next, existing)
+		}
+	}
+	if len(next) == 0 {
+		rt.state.PendingApprovals = nil
+	} else {
+		rt.state.PendingApprovals = next
+	}
 }
 
 func (rt *groupRuntime) broadcast(ev GroupSSEEvent) {
@@ -187,6 +246,7 @@ func (s *GroupService) List() ([]GroupSummary, error) {
 			rt.mu.Lock()
 			summary.Running = rt.state.Running
 			summary.CurrentAgent = rt.state.CurrentAgent
+			summary.PendingApprovalCount = len(rt.state.PendingApprovals)
 			rt.mu.Unlock()
 		}
 		if n := len(sg.Messages); n > 0 {
@@ -717,6 +777,7 @@ func (s *GroupService) cancelRun(id string, userID int, reason string, emitStatu
 		rt.state.PauseReason = ""
 		rt.state.CurrentAgent = ""
 		rt.state.Queue = []string{}
+		rt.state.PendingApprovals = nil
 	}
 	snap := rt.snapshotLocked()
 	if wasActive {
@@ -939,7 +1000,7 @@ func (s *GroupService) runLoop(ctx context.Context, groupID string, userID int, 
 		rt.mu.Unlock()
 
 		prompt, images, files := buildDeltaPrompt(sg, member, triggerMsgID, triggerImages, triggerFiles, addressedDirectly)
-		res, callErr := s.streamAgentTurn(ctx, groupID, nextAgent, agentInfo.BaseURL, userID, requestID, member.ConversationID, prompt, images, files, rt, gen)
+		res, callErr := s.streamAgentTurn(ctx, groupID, nextAgent, agentColor, agentInfo.BaseURL, userID, requestID, member.ConversationID, prompt, images, files, rt, gen)
 
 		// Self-healing 404 fallback if the agent's stored conversation was wiped.
 		if errors.Is(callErr, errAgentConversationNotFound) && member.ConversationID != "" {
@@ -963,7 +1024,7 @@ func (s *GroupService) runLoop(ctx context.Context, groupID string, userID int, 
 				}
 				rt.mu.Unlock()
 				prompt, images, files = buildDeltaPrompt(sg, member, triggerMsgID, triggerImages, triggerFiles, addressedDirectly)
-				res, callErr = s.streamAgentTurn(ctx, groupID, nextAgent, agentInfo.BaseURL, userID, requestID, "", prompt, images, files, rt, gen)
+				res, callErr = s.streamAgentTurn(ctx, groupID, nextAgent, agentColor, agentInfo.BaseURL, userID, requestID, "", prompt, images, files, rt, gen)
 			}
 		}
 
@@ -1252,13 +1313,14 @@ type agentChatStreamRequest struct {
 	Text           string               `json:"text"`
 	RequestID      string               `json:"request_id"`
 	ConversationID string               `json:"conversation_id,omitempty"`
+	Scope          string               `json:"scope,omitempty"`
 	Images         []string             `json:"images,omitempty"`
 	Files          []channel.FileUpload `json:"files,omitempty"`
 }
 
 func (s *GroupService) streamAgentTurn(
 	ctx context.Context,
-	groupID, agentName, baseURL string,
+	groupID, agentName, agentColor, baseURL string,
 	userID int,
 	requestID, conversationID, prompt string,
 	images []string,
@@ -1267,12 +1329,14 @@ func (s *GroupService) streamAgentTurn(
 	gen uint64,
 ) (agentTurnResult, error) {
 	var result agentTurnResult
+	defer rt.clearRunApprovals(requestID)
 
 	payload, err := json.Marshal(agentChatStreamRequest{
 		UserID:         userID,
 		Text:           prompt,
 		RequestID:      requestID,
 		ConversationID: conversationID,
+		Scope:          "group:" + groupID,
 		Images:         images,
 		Files:          files,
 	})
@@ -1444,6 +1508,54 @@ func (s *GroupService) streamAgentTurn(
 			if json.Unmarshal([]byte(rawData), &ev) == nil && ev.ConversationID != "" {
 				result.ConversationID = ev.ConversationID
 			}
+		case "approval_required":
+			var ev struct {
+				ApprovalID  string `json:"approval_id"`
+				ToolName    string `json:"tool_name"`
+				Action      string `json:"action"`
+				ArgsSummary string `json:"args_summary"`
+				Args        string `json:"args"`
+				SubAgent    string `json:"subagent"`
+			}
+			if json.Unmarshal([]byte(rawData), &ev) == nil && ev.ApprovalID != "" {
+				pending := GroupPendingApproval{
+					ApprovalID:     ev.ApprovalID,
+					GroupID:        groupID,
+					Agent:          agentName,
+					AgentColor:     agentColor,
+					ConversationID: result.ConversationID,
+					RunID:          requestID,
+					ToolName:       ev.ToolName,
+					Action:         ev.Action,
+					ArgsSummary:    ev.ArgsSummary,
+					Args:           ev.Args,
+					SubAgent:       ev.SubAgent,
+				}
+				rt.upsertApproval(pending)
+				rt.broadcast(GroupSSEEvent{
+					Name: "approval_required",
+					Data: pending,
+				})
+			}
+		case "approval_resolved":
+			var ev struct {
+				ApprovalID string `json:"approval_id"`
+				Decision   string `json:"decision"`
+				Reason     string `json:"reason"`
+			}
+			if json.Unmarshal([]byte(rawData), &ev) == nil && ev.ApprovalID != "" {
+				rt.removeApproval(ev.ApprovalID)
+				rt.broadcast(GroupSSEEvent{
+					Name: "approval_resolved",
+					Data: map[string]any{
+						"group_id":    groupID,
+						"agent":       agentName,
+						"approval_id": ev.ApprovalID,
+						"decision":    ev.Decision,
+						"reason":      ev.Reason,
+					},
+				})
+			}
 		case "done":
 			var ev struct {
 				OK             bool   `json:"ok"`
@@ -1553,6 +1665,7 @@ func buildDeltaPrompt(
 	safeGroupName := sanitizeTagText(sg.Group.Name)
 	safeAgentName := sanitizeTagText(member.Name)
 
+	sb.WriteString("<group>\n")
 	if member.ConversationID == "" {
 		sb.WriteString("<group_context>\n")
 		sb.WriteString("Group: " + safeGroupName + "\n")
@@ -1571,7 +1684,7 @@ func buildDeltaPrompt(
 		if addressedDirectly {
 			sb.WriteString("- You were directly mentioned or addressed — respond directly and do NOT reply with [PASS].\n")
 		}
-		sb.WriteString("</group_context>\n\n")
+		sb.WriteString("</group_context>\n")
 	} else {
 		sb.WriteString("<group_context>\n")
 		sb.WriteString(fmt.Sprintf("Group: %s | You are: @%s | Members: %s | Mode: %s\n",
@@ -1580,7 +1693,7 @@ func buildDeltaPrompt(
 		if addressedDirectly {
 			sb.WriteString("Note: You were directly mentioned or addressed — respond directly and do NOT reply with [PASS].\n")
 		}
-		sb.WriteString("</group_context>\n\n")
+		sb.WriteString("</group_context>\n")
 	}
 
 	var (
@@ -1588,6 +1701,7 @@ func buildDeltaPrompt(
 		attachFiles  []channel.FileUpload
 	)
 
+	sb.WriteString("<chats>\n")
 	for i, msg := range unseen {
 		if i > 0 {
 			sb.WriteString("\n\n")
@@ -1600,6 +1714,7 @@ func buildDeltaPrompt(
 		label := senderLabel(msg)
 		if msg.ReplyToID != "" {
 			origSender, origText := resolveReplyTarget(sg.Messages, msg)
+			origText = closingGroupTag.ReplaceAllString(origText, `<\/$1>`)
 			sb.WriteString(fmt.Sprintf("%s (replying to %s: %q)\n", label, origSender, origText))
 		} else {
 			sb.WriteString(label + "\n")
@@ -1609,8 +1724,9 @@ func buildDeltaPrompt(
 			sb.WriteString(formatSelectionsBlock(msg.Quotes))
 			sb.WriteString("\n\n")
 		}
-		sb.WriteString(msg.Content)
+		sb.WriteString(closingGroupTag.ReplaceAllString(msg.Content, `<\/$1>`))
 	}
+	sb.WriteString("\n</chats>\n</group>")
 
 	return sb.String(), attachImages, attachFiles
 }

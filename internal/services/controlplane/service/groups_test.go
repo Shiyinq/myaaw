@@ -392,8 +392,12 @@ func TestGroupAutonomousHandoffDeltaReplyQuotesAndSessionReuse(t *testing.T) {
 	if r1.ConversationID != "" || r1.UserID != 42 || len(r1.Images) != 1 || len(r1.Files) != 1 {
 		t.Fatalf("req 1 = %+v", r1)
 	}
-	if !strings.Contains(r1.Text, "Group: Arch Council") || !strings.Contains(r1.Text, "Rules:") {
-		t.Fatalf("req 1 missing sanitized first-turn group_context:\n%s", r1.Text)
+	if !strings.HasPrefix(r1.Text, "<group>\n<group_context>\n") ||
+		!strings.Contains(r1.Text, "Group: Arch Council") ||
+		!strings.Contains(r1.Text, "Rules:") ||
+		!strings.Contains(r1.Text, "</group_context>\n<chats>\n") ||
+		!strings.HasSuffix(r1.Text, "\n</chats>\n</group>") {
+		t.Fatalf("req 1 missing wrapped first-turn <group>/<group_context>/<chats>:\n%s", r1.Text)
 	}
 	// Call 2 (bob first turn): sees both userMsg and aliceMsg, and gets the image & file since userMsg is in bob's unseen delta.
 	r2 := requests[1].Body
@@ -1095,5 +1099,117 @@ func TestGroupStoreAndServicePagination(t *testing.T) {
 	}
 	if len(missingCursor.Messages) != 0 || missingCursor.Offset != 0 || missingCursor.HasMore {
 		t.Fatalf("missingCursor = len=%d offset=%d hasMore=%v", len(missingCursor.Messages), missingCursor.Offset, missingCursor.HasMore)
+	}
+}
+
+func TestGroupStreamForwardsScopeAndApprovals(t *testing.T) {
+	dir := newMockAgentDirectory(
+		AgentInfo{Name: "mikaela", AgentColor: "amber", Running: true, BaseURL: "http://agent-mikaela"},
+	)
+
+	var gotScope string
+	releaseApproval := make(chan struct{})
+
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			var req agentChatStreamRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			gotScope = req.Scope
+
+			pr, pw := io.Pipe()
+			go func() {
+				defer pw.Close()
+				_, _ = io.WriteString(pw, "event: conversation\ndata: {\"conversation_id\":\"conv-grp-1\"}\n\n")
+				_, _ = io.WriteString(pw, "event: approval_required\ndata: {\"approval_id\":\"appr-1\",\"tool_name\":\"bash\",\"action\":\"run\",\"args_summary\":\"sleep 5\",\"args\":\"{\\\"command\\\":\\\"sleep 5\\\"}\"}\n\n")
+				<-releaseApproval
+				_, _ = io.WriteString(pw, "event: approval_resolved\ndata: {\"approval_id\":\"appr-1\",\"decision\":\"allow_once\"}\n\n")
+				_, _ = io.WriteString(pw, "event: chunk\ndata: {\"text\":\"Done!\"}\n\n")
+				_, _ = io.WriteString(pw, "event: done\ndata: {\"ok\":true,\"text\":\"Done!\",\"conversation_id\":\"conv-grp-1\"}\n\n")
+			}()
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       pr,
+			}, nil
+		}),
+	}
+
+	svc := NewGroupServiceWithStore(newTestGroupStore(t), dir, client)
+	group, err := svc.Create(CreateGroupRequest{
+		Name:           "Ops",
+		Members:        []string{"mikaela"},
+		DiscussionMode: DiscussionModeAll,
+		MaxTurns:       2,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	ch, _, unsub, err := svc.Subscribe(group.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer unsub()
+
+	if _, _, err := svc.SendMessage(group.ID, 1, SendGroupMessageRequest{Text: "run sleep 5"}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	// Wait until approval_required arrives on the group SSE stream.
+	deadline := time.After(5 * time.Second)
+	var sawRequired bool
+	for !sawRequired {
+		select {
+		case ev := <-ch:
+			if ev.Name == "approval_required" {
+				sawRequired = true
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for approval_required")
+		}
+	}
+
+	if wantScope := "group:" + group.ID; gotScope != wantScope {
+		t.Fatalf("agent request scope = %q, want %q", gotScope, wantScope)
+	}
+
+	// While paused on approval, Get() and List() must surface pending approval state.
+	detail, err := svc.Get(group.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if len(detail.RunState.PendingApprovals) != 1 || detail.RunState.PendingApprovals[0].ApprovalID != "appr-1" {
+		t.Fatalf("PendingApprovals = %+v, want [appr-1]", detail.RunState.PendingApprovals)
+	}
+	summaries, err := svc.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(summaries) != 1 || summaries[0].PendingApprovalCount != 1 {
+		t.Fatalf("List PendingApprovalCount = %+v, want 1", summaries)
+	}
+
+	// Release approval and wait for run completion.
+	close(releaseApproval)
+	events, endData := waitForRunEnd(t, ch, 5*time.Second)
+	if endData["reason"] != "completed" {
+		t.Fatalf("run_end reason = %v, want completed", endData["reason"])
+	}
+	sawResolved := false
+	for _, ev := range events {
+		if ev.Name == "approval_resolved" {
+			sawResolved = true
+		}
+	}
+	if !sawResolved {
+		t.Fatal("expected approval_resolved event on group stream")
+	}
+
+	after, err := svc.Get(group.ID)
+	if err != nil {
+		t.Fatalf("Get after: %v", err)
+	}
+	if len(after.RunState.PendingApprovals) != 0 {
+		t.Fatalf("PendingApprovals after resolve = %+v, want empty", after.RunState.PendingApprovals)
 	}
 }

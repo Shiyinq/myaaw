@@ -85,15 +85,31 @@ type GroupMessage struct {
 	CreatedAt    string             `json:"created_at"`
 }
 
+// GroupPendingApproval describes one tool call waiting for user approval inside a group turn.
+type GroupPendingApproval struct {
+	ApprovalID     string `json:"approval_id"`
+	GroupID        string `json:"group_id"`
+	Agent          string `json:"agent"`
+	AgentColor     string `json:"agent_color,omitempty"`
+	ConversationID string `json:"conversation_id,omitempty"`
+	RunID          string `json:"run_id,omitempty"`
+	ToolName       string `json:"tool_name"`
+	Action         string `json:"action,omitempty"`
+	ArgsSummary    string `json:"args_summary,omitempty"`
+	Args           string `json:"args,omitempty"`
+	SubAgent       string `json:"subagent,omitempty"`
+}
+
 // GroupRunState describes the live orchestration state of a group.
 type GroupRunState struct {
-	Running      bool     `json:"running"`
-	Paused       bool     `json:"paused"`
-	PauseReason  string   `json:"pause_reason"`
-	CurrentAgent string   `json:"current_agent"`
-	TurnCount    int      `json:"turn_count"`
-	MaxTurns     int      `json:"max_turns"`
-	Queue        []string `json:"queue"`
+	Running          bool                   `json:"running"`
+	Paused           bool                   `json:"paused"`
+	PauseReason      string                 `json:"pause_reason"`
+	CurrentAgent     string                 `json:"current_agent"`
+	TurnCount        int                    `json:"turn_count"`
+	MaxTurns         int                    `json:"max_turns"`
+	Queue            []string               `json:"queue"`
+	PendingApprovals []GroupPendingApproval `json:"pending_approvals,omitempty"`
 }
 
 // Group holds a group's configuration and member roster.
@@ -126,9 +142,10 @@ type GroupSummary struct {
 	MemberCount    int               `json:"member_count"`
 	DiscussionMode string            `json:"discussion_mode"`
 	MaxTurns       int               `json:"max_turns"`
-	Running        bool              `json:"running"`
-	CurrentAgent   string            `json:"current_agent"`
-	LastMessage    *GroupLastMessage `json:"last_message,omitempty"`
+	Running              bool              `json:"running"`
+	CurrentAgent         string            `json:"current_agent"`
+	PendingApprovalCount int               `json:"pending_approval_count,omitempty"`
+	LastMessage          *GroupLastMessage `json:"last_message,omitempty"`
 	CreatedAt      string            `json:"created_at"`
 	UpdatedAt      string            `json:"updated_at"`
 }
