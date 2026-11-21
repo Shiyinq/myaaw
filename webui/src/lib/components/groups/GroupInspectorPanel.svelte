@@ -116,7 +116,7 @@
 			setTimeout(() => {
 				void agentSelection.load(true);
 				void groupsStore
-					.get(group.id)
+					.get(group.id, { limit: 1, offset: -1 })
 					.then((detail) => onUpdated(detail.group))
 					.catch(() => {});
 			}, 1400);

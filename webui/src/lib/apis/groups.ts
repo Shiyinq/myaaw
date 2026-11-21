@@ -6,6 +6,7 @@ import type {
 	CreateGroupRequest,
 	Group,
 	GroupDetail,
+	GroupDetailParams,
 	GroupSummary,
 	SendGroupMessageRequest,
 	SendGroupMessageResponse,
@@ -21,7 +22,14 @@ export const groups = {
 	list: () => client<{ groups: GroupSummary[] }>('/groups'),
 	create: (payload: CreateGroupRequest) =>
 		client<Group>('/groups', { method: 'POST', body: payload }),
-	get: (id: string) => client<GroupDetail>(groupPath(id)),
+	get: (id: string, params?: GroupDetailParams) => {
+		const query = new URLSearchParams();
+		if (params?.limit !== undefined) query.set('limit', String(params.limit));
+		if (params?.offset !== undefined) query.set('offset', String(params.offset));
+		if (params?.before_id) query.set('before_id', params.before_id);
+		const qs = query.toString();
+		return client<GroupDetail>(groupPath(id, qs ? `?${qs}` : ''));
+	},
 	update: (id: string, payload: UpdateGroupRequest) =>
 		client<Group>(groupPath(id), { method: 'PATCH', body: payload }),
 	remove: (id: string) => client<{ deleted: boolean }>(groupPath(id), { method: 'DELETE' }),

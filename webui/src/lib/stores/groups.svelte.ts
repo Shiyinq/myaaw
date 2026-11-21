@@ -6,6 +6,7 @@ import type {
 	CreateGroupRequest,
 	Group,
 	GroupDetail,
+	GroupDetailParams,
 	GroupMessage,
 	GroupRunState,
 	GroupSummary,
@@ -108,20 +109,31 @@ export const groupsStore = {
 		loaded = true;
 		return created;
 	},
-	async get(id: string): Promise<GroupDetail> {
-		const detail = await groupsApi.get(id);
+	async get(id: string, params?: GroupDetailParams): Promise<GroupDetail> {
+		const detail = await groupsApi.get(id, params);
 		const existing = list.find((entry) => entry.id === id);
-		const lastMsg = detail.messages.length > 0 ? detail.messages[detail.messages.length - 1] : null;
 		const summary = toSummary(detail.group, existing, detail.run_state);
-		summary.last_message = lastMsg
-			? {
-					id: lastMsg.id,
-					sender_type: lastMsg.sender_type,
-					sender_name: lastMsg.sender_name,
-					content: lastMsg.content,
-					created_at: lastMsg.created_at
-				}
-			: null;
+		// Only overwrite `last_message` when fetching the tail or full transcript —
+		// backward pagination (`before_id` or a positive slice) returns older messages.
+		const isTailOrFull =
+			!params?.before_id &&
+			(params?.limit === undefined ||
+				params.limit === 0 ||
+				params.offset === undefined ||
+				params.offset < 0);
+		if (isTailOrFull) {
+			const lastMsg =
+				detail.messages.length > 0 ? detail.messages[detail.messages.length - 1] : null;
+			summary.last_message = lastMsg
+				? {
+						id: lastMsg.id,
+						sender_type: lastMsg.sender_type,
+						sender_name: lastMsg.sender_name,
+						content: lastMsg.content,
+						created_at: lastMsg.created_at
+					}
+				: null;
+		}
 		upsertSummary(summary);
 		return detail;
 	},

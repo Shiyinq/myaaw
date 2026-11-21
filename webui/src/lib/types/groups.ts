@@ -77,10 +77,20 @@ export interface GroupSummary {
 	updated_at: string;
 }
 
+export interface GroupDetailParams {
+	limit?: number;
+	offset?: number;
+	before_id?: string;
+}
+
 export interface GroupDetail {
 	group: Group;
 	messages: GroupMessage[];
 	run_state: GroupRunState;
+	total_messages?: number;
+	offset?: number;
+	limit?: number;
+	has_more?: boolean;
 }
 
 export interface CreateGroupRequest {

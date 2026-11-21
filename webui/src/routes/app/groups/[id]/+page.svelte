@@ -36,6 +36,12 @@
 	import GroupInspectorPanel from '$lib/components/groups/GroupInspectorPanel.svelte';
 	import GroupReplyBar from '$lib/components/groups/GroupReplyBar.svelte';
 	import { groupAccent } from '$lib/components/groups/accent';
+	import {
+		highlightMentions,
+		mentionPillClass,
+		splitMentionSegments,
+		type MentionTarget
+	} from '$lib/components/groups/mentions';
 	import { Button } from '$lib/components/ui/button';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { colorOf } from '$lib/bloub';
@@ -181,11 +187,18 @@
 		queue: []
 	};
 
+	const PAGE_SIZE = 50;
 	const INSPECTOR_KEY = 'myaaw_group_inspector_open';
 
 	let groupId = $derived(page.params.id ?? '');
 	let group = $state<Group | null>(null);
 	let messages = $state<GroupMessage[]>([]);
+	let hasMore = $state(false);
+	let totalMessages = $state(0);
+	let loadingOlder = $state(false);
+	let prepending = false;
+	let jumpingToMessage = false;
+	let jumpTimer: ReturnType<typeof setTimeout> | undefined;
 	let runState = $state<GroupRunState>({ ...EMPTY_RUN_STATE });
 	let activeTurn = $state<ActiveTurn | null>(null);
 	let loading = $state(true);
@@ -284,6 +297,13 @@
 		return items.filter((item) => item.handle.toLowerCase().includes(q));
 	});
 
+	const mentionTargets = $derived.by<MentionTarget[]>(() =>
+		(group?.members ?? []).map((member) => ({
+			name: member.name,
+			color: memberColorMap.get(member.name) || member.agent_color
+		}))
+	);
+
 	const canSend = $derived(
 		(input.trim().length > 0 || pending.length > 0 || pendingFiles.length > 0) &&
 			!sending &&
@@ -327,6 +347,11 @@
 		untrack(() => {
 			loading = true;
 			loadError = '';
+			hasMore = false;
+			totalMessages = 0;
+			loadingOlder = false;
+			prepending = false;
+			jumpingToMessage = false;
 			stickToBottom = true;
 			activeTurn = null;
 			replyTo = null;
@@ -345,10 +370,12 @@
 
 	async function loadGroup(id: string, token: number) {
 		try {
-			const detail = await groupsStore.get(id);
+			const detail = await groupsStore.get(id, { limit: PAGE_SIZE, offset: -1 });
 			if (token !== loadToken) return;
 			group = detail.group;
 			messages = detail.messages ?? [];
+			hasMore = Boolean(detail.has_more);
+			totalMessages = detail.total_messages ?? messages.length;
 			runState = detail.run_state ?? { ...EMPTY_RUN_STATE };
 			// Flip `loading` off BEFORE awaiting `tick()` so the real transcript
 			// mounts (replacing the skeleton) and `scroller` exists when snapping
@@ -366,6 +393,54 @@
 			loadError = getErrorMessage(err);
 			group = null;
 			loading = false;
+		}
+	}
+
+	/**
+	 * Fetches the page of older messages strictly before `messages[0].id` using
+	 * cursor pagination (`before_id`), preserving the user's scroll position so
+	 * prepending never jumps the viewport.
+	 */
+	async function loadOlder(pageSize = PAGE_SIZE): Promise<number> {
+		const id = groupId;
+		const oldestId = messages[0]?.id;
+		if (!id || !oldestId || !hasMore || loadingOlder || loading) return 0;
+		const token = loadToken;
+		loadingOlder = true;
+		prepending = true;
+		const prevScrollHeight = scroller?.scrollHeight ?? 0;
+		const prevScrollTop = scroller?.scrollTop ?? 0;
+		try {
+			const detail = await groupsStore.get(id, {
+				limit: pageSize,
+				before_id: oldestId
+			});
+			if (token !== loadToken || id !== groupId) return 0;
+			const older = detail.messages ?? [];
+			if (detail.total_messages !== undefined) {
+				totalMessages = detail.total_messages;
+			}
+			hasMore = Boolean(detail.has_more) && older.length > 0;
+			if (older.length === 0) return 0;
+			const known = new Set(messages.map((m) => m.id));
+			const uniqueOlder = older.filter((m) => !known.has(m.id));
+			if (uniqueOlder.length === 0) return 0;
+			messages = [...uniqueOlder, ...messages];
+			await tick();
+			if (token === loadToken && scroller) {
+				scroller.scrollTop = prevScrollTop + (scroller.scrollHeight - prevScrollHeight);
+			}
+			return uniqueOlder.length;
+		} catch (err) {
+			if (token === loadToken) {
+				toastStore.error(getErrorMessage(err));
+			}
+			return 0;
+		} finally {
+			if (token === loadToken) {
+				loadingOlder = false;
+				prepending = false;
+			}
 		}
 	}
 
@@ -522,6 +597,7 @@
 				if (!msg?.id) return;
 				if (!messages.some((existing) => existing.id === msg.id)) {
 					messages = [...messages, msg];
+					totalMessages += 1;
 				}
 				if (msg.sender_type === 'agent' && activeTurn?.agent === msg.sender_name) {
 					activeTurn = null;
@@ -608,16 +684,16 @@
 		const node = transcript;
 		if (!node || typeof ResizeObserver === 'undefined') return;
 		const observer = new ResizeObserver(() => {
-			if (preferences.value.autoScroll && stickToBottom) scrollToBottom(false);
+			if (!prepending && preferences.value.autoScroll && stickToBottom) scrollToBottom(false);
 		});
 		observer.observe(node);
 		return () => observer.disconnect();
 	});
 
 	function maybeAutoScroll() {
-		if (!preferences.value.autoScroll || !stickToBottom) return;
+		if (prepending || !preferences.value.autoScroll || !stickToBottom) return;
 		void tick().then(() => {
-			if (scroller && stickToBottom) {
+			if (!prepending && scroller && stickToBottom) {
 				scroller.scrollTop = scroller.scrollHeight;
 			}
 		});
@@ -626,6 +702,17 @@
 	function onScroll() {
 		stickToBottom = nearBottom();
 		askAnchor = null;
+		// Near the top of the transcript, pull in the previous page seamlessly.
+		if (
+			scroller &&
+			scroller.scrollTop < 120 &&
+			hasMore &&
+			!loadingOlder &&
+			!loading &&
+			!jumpingToMessage
+		) {
+			void loadOlder();
+		}
 	}
 
 	function resizeComposer() {
@@ -1078,6 +1165,7 @@
 			});
 			if (res.message?.id && !messages.some((m) => m.id === res.message.id)) {
 				messages = [...messages, res.message];
+				totalMessages += 1;
 			}
 			if (res.run_state) {
 				runState = res.run_state;
@@ -1133,11 +1221,33 @@
 		void focusComposer();
 	}
 
-	function jumpToMessage(targetId: string) {
+	async function jumpToMessage(targetId: string) {
 		if (!browser || !transcript || !targetId) return;
-		const node = transcript.querySelector<HTMLElement>(
+		const token = loadToken;
+		let node = transcript.querySelector<HTMLElement>(
 			`[data-group-message-id="${CSS.escape(targetId)}"]`
 		);
+		if (!node && !messages.some((m) => m.id === targetId) && hasMore) {
+			jumpingToMessage = true;
+			clearTimeout(jumpTimer);
+			try {
+				for (
+					let guard = 0;
+					guard < 20 && hasMore && !messages.some((m) => m.id === targetId) && token === loadToken;
+					guard += 1
+				) {
+					const added = await loadOlder(100);
+					if (added === 0) break;
+				}
+			} finally {
+				jumpTimer = setTimeout(() => (jumpingToMessage = false), 1200);
+			}
+			if (token !== loadToken || !transcript) return;
+			await tick();
+			node = transcript.querySelector<HTMLElement>(
+				`[data-group-message-id="${CSS.escape(targetId)}"]`
+			);
+		}
 		if (!node) return;
 		node.scrollIntoView({ behavior: 'smooth', block: 'center' });
 		highlightedMessageId = targetId;
@@ -1147,7 +1257,10 @@
 		}, 1800);
 	}
 
-	$effect(() => () => clearTimeout(highlightTimer));
+	$effect(() => () => {
+		clearTimeout(highlightTimer);
+		clearTimeout(jumpTimer);
+	});
 
 	// -------------------------------------------------- Text-selection Quotes
 
@@ -1317,7 +1430,7 @@
 		}
 
 		if (!host || !range) {
-			if (sourceId) jumpToMessage(sourceId);
+			if (sourceId) void jumpToMessage(sourceId);
 			return;
 		}
 
@@ -1441,12 +1554,23 @@
 	}
 </script>
 
+{#snippet mentionText(text: string)}
+	{#each splitMentionSegments(text, mentionTargets) as segment, idx (idx)}
+		{#if segment.mention}
+			<span
+				data-mention-pill={segment.mention.isAll ? 'all' : segment.mention.handle}
+				class={mentionPillClass(segment.mention.color, segment.mention.isAll)}>{segment.text}</span
+			>
+		{:else}{segment.text}{/if}
+	{/each}
+{/snippet}
+
 {#snippet replyCard(preview: ReplyPreview)}
 	{@const isAgent = preview.sender_type === 'agent'}
 	{@const accent = isAgent ? groupAccent(colorForAgent(preview.sender_name)) : null}
 	<button
 		type="button"
-		onclick={() => jumpToMessage(preview.id)}
+		onclick={() => void jumpToMessage(preview.id)}
 		class={[
 			'mb-2 flex w-full flex-col rounded-lg border border-l-[3px] bg-background/70 px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-background',
 			accent ? accent.border : 'border-l-primary'
@@ -1456,7 +1580,7 @@
 			{replySenderLabel(preview)}
 		</span>
 		<span class="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
-			{preview.excerpt}
+			{@render mentionText(preview.excerpt)}
 		</span>
 	</button>
 {/snippet}
@@ -1513,6 +1637,8 @@
 			>
 				<div
 					bind:this={transcript}
+					data-total-messages={totalMessages}
+					data-has-more={hasMore}
 					class={cn(
 						'relative mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6',
 						messages.length === 0 && !activeTurn && 'min-h-full justify-center'
@@ -1529,6 +1655,16 @@
 							style:height={`${rect.height}px`}
 						></span>
 					{/each}
+
+					{#if loadingOlder}
+						<p
+							class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
+							aria-live="polite"
+						>
+							<Loader2 class="h-3.5 w-3.5 animate-spin" />
+							{t('myaaw.chat.loading_older')}
+						</p>
+					{/if}
 
 					{#if messages.length === 0 && !activeTurn}
 						<!-- Empty state -->
@@ -1602,7 +1738,7 @@
 								]}
 							>
 								<div
-									class="w-full rounded-2xl rounded-tr-sm bg-primary/10 px-3.5 py-2.5 text-sm text-foreground ring-1 ring-primary/15"
+									class="w-fit max-w-full rounded-2xl rounded-tr-sm bg-primary/10 px-3.5 py-2.5 text-sm text-foreground ring-1 ring-primary/15"
 								>
 									{#if msg.reply_preview}
 										{@render replyCard(msg.reply_preview)}
@@ -1615,7 +1751,9 @@
 											/>
 										</div>
 									{/if}
-									<p class="whitespace-pre-wrap wrap-break-word">{msg.content}</p>
+									<p class="whitespace-pre-wrap wrap-break-word">
+										{@render mentionText(msg.content)}
+									</p>
 								</div>
 
 								<div class="mt-1 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
@@ -1753,16 +1891,19 @@
 										</div>
 									{/if}
 
-									{#if msg.reply_preview}
-										{@render replyCard(msg.reply_preview)}
-									{/if}
-
 									<div
-										data-ask-source="answer"
-										data-ask-id={msg.id}
-										class="rounded-2xl rounded-tl-sm border bg-card px-3.5 py-2.5 text-sm shadow-2xs"
+										class="w-fit max-w-full rounded-2xl rounded-tl-sm border bg-card px-3.5 py-2.5 text-sm shadow-2xs"
 									>
-										<Markdown content={msg.content} />
+										{#if msg.reply_preview}
+											{@render replyCard(msg.reply_preview)}
+										{/if}
+										<div
+											data-ask-source="answer"
+											data-ask-id={msg.id}
+											use:highlightMentions={{ mentions: mentionTargets, key: msg.content }}
+										>
+											<Markdown content={msg.content} />
+										</div>
 									</div>
 
 									<div class="mt-1 flex items-center gap-1.5 px-1">
@@ -1893,7 +2034,8 @@
 								{/if}
 
 								<div
-									class="rounded-2xl rounded-tl-sm border border-primary/25 bg-card px-3.5 py-2.5 text-sm"
+									use:highlightMentions={{ mentions: mentionTargets, key: activeTurn.text }}
+									class="w-fit max-w-full rounded-2xl rounded-tl-sm border border-primary/25 bg-card px-3.5 py-2.5 text-sm"
 								>
 									{#if activeTurn.text}
 										<Markdown content={activeTurn.text} streaming />
@@ -2273,6 +2415,9 @@
 					onUpdated={(updated) => (group = updated)}
 					onCleared={() => {
 						messages = [];
+						hasMore = false;
+						totalMessages = 0;
+						loadingOlder = false;
 						activeTurn = null;
 						replyTo = null;
 						pendingQuotes = [];
