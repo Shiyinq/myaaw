@@ -293,6 +293,62 @@ func (h *Handler) StreamGroup(c fiber.Ctx) error {
 	})
 }
 
+// ListGroupAttachments returns paginated uploaded attachments for a group.
+// @Summary      List group attachments
+// @Description  Returns uploaded images and files shared in a group, newest first.
+// @Tags         Groups
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Group ID"
+// @Param        limit query int false "Page size (default 50, max 200)"
+// @Param        offset query int false "Offset from newest attachment"
+// @Param        kind query string false "Comma-separated kind filter (image, video, audio, pdf, file)"
+// @Success      200 {object} service.GroupAttachmentsPage
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /groups/{id}/attachments [get]
+func (h *Handler) ListGroupAttachments(c fiber.Ctx) error {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	kind := c.Query("kind")
+	page, err := h.groups.ListAttachments(c.Params("id"), kind, limit, offset)
+	if err != nil {
+		return groupError(c, err)
+	}
+	return c.JSON(page)
+}
+
+// DownloadGroupUpload serves one uploaded file or image belonging to a group message.
+// @Summary      Get group upload
+// @Description  Serves an uploaded image or document for a group message. Pass download=1 to force a file download.
+// @Tags         Groups
+// @Security     BearerAuth
+// @Param        id path string true "Group ID"
+// @Param        msgId path string true "Message ID"
+// @Param        file path string true "Stored file name"
+// @Param        download query bool false "Force attachment download"
+// @Success      200 {file} binary
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /groups/{id}/uploads/{msgId}/{file} [get]
+func (h *Handler) DownloadGroupUpload(c fiber.Ctx) error {
+	absPath, fileName, mimeType, err := h.groups.AttachmentFile(c.Params("id"), c.Params("msgId"), c.Params("file"))
+	if err != nil {
+		return groupError(c, err)
+	}
+	if mimeType != "" {
+		c.Set("Content-Type", mimeType)
+	}
+	c.Set("X-Content-Type-Options", "nosniff")
+	c.Set("Cache-Control", "private, max-age=3600")
+	if c.Query("download") == "1" || c.Query("download") == "true" {
+		c.Attachment(fileName)
+	}
+	return c.SendFile(absPath)
+}
+
 func groupError(c fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, service.ErrInvalidGroupID), errors.Is(err, service.ErrGroupValidation):

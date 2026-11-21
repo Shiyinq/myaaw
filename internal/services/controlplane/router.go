@@ -217,6 +217,8 @@ func NewApp() (*fiber.App, error) {
 	app.Post("/groups/:id/messages", h.SendGroupMessage)
 	app.Post("/groups/:id/stop", h.StopGroupRun)
 	app.Post("/groups/:id/continue", h.ContinueGroupRun)
+	app.Get("/groups/:id/attachments", h.ListGroupAttachments)
+	app.Get("/groups/:id/uploads/:msgId/:file", h.DownloadGroupUpload)
 	app.Get("/groups/:id/stream", h.StreamGroup)
 
 	return app, nil

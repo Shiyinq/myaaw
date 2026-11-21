@@ -4,11 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"myaaw/internal/agentdir"
+	"myaaw/internal/attachment"
 	"myaaw/internal/channel"
 	"myaaw/internal/channel/api"
 
@@ -329,6 +334,13 @@ func (s *GroupService) GetPage(id string, limit, offset int, beforeID string) (G
 	}
 
 	page.Group.Members = s.hydrateMembers(page.Group.Members)
+	for i := range page.Messages {
+		if page.Messages[i].SenderType == "agent" && len(page.Messages[i].Attachments) == 0 && page.Messages[i].SenderName != "" {
+			if collected := collectAgentMessageAttachments(page.Group.ID, page.Messages[i].ID, page.Messages[i].SenderName, page.Messages[i].Content, page.Messages[i].CreatedAt); len(collected) > 0 {
+				page.Messages[i].Attachments = collected
+			}
+		}
+	}
 	runState := GroupRunState{
 		MaxTurns: page.Group.MaxTurns,
 		Queue:    []string{},
@@ -469,7 +481,11 @@ func (s *GroupService) Delete(id string, userID int) error {
 		rt.mu.Unlock()
 	}
 
-	return s.store.Delete(id)
+	if err := s.store.Delete(id); err != nil {
+		return err
+	}
+	_ = os.RemoveAll(s.store.UploadsDir(id))
+	return nil
 }
 
 // ClearMessages stops any active run, clears history, and resets per-member cursors & sessions.
@@ -479,6 +495,7 @@ func (s *GroupService) ClearMessages(id string, userID int) error {
 	}
 
 	s.cancelRun(id, userID, "stopped", true)
+	_ = os.RemoveAll(s.store.UploadsDir(id))
 
 	updated, err := s.store.Update(id, func(sg *storedGroup) error {
 		sg.Messages = []GroupMessage{}
@@ -519,6 +536,14 @@ func (s *GroupService) SendMessage(id string, userID int, req SendGroupMessageRe
 	}
 
 	replyToID := strings.TrimSpace(req.ReplyToID)
+	msgID := uuid.NewString()
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	attachments, attachErr := s.persistGroupUploads(id, msgID, now, req.Images, req.Files)
+	if attachErr != nil {
+		return GroupMessage{}, GroupRunState{}, attachErr
+	}
+
 	var (
 		userMsg      GroupMessage
 		repliedAgent string
@@ -543,9 +568,8 @@ func (s *GroupService) SendMessage(id string, userID int, req SendGroupMessageRe
 			}
 		}
 
-		now := time.Now().UTC().Format(time.RFC3339)
 		userMsg = GroupMessage{
-			ID:           uuid.NewString(),
+			ID:           msgID,
 			GroupID:      id,
 			SenderType:   "user",
 			SenderName:   "User",
@@ -554,6 +578,7 @@ func (s *GroupService) SendMessage(id string, userID int, req SendGroupMessageRe
 			ReplyToID:    replyToID,
 			ReplyPreview: preview,
 			Quotes:       sanitizeQuotes(req.Quotes),
+			Attachments:  attachments,
 			CreatedAt:    now,
 		}
 		sg.Messages = append(sg.Messages, userMsg)
@@ -562,6 +587,9 @@ func (s *GroupService) SendMessage(id string, userID int, req SendGroupMessageRe
 		return nil
 	})
 	if err != nil {
+		if len(attachments) > 0 {
+			_ = os.RemoveAll(filepath.Join(s.store.UploadsDir(id), msgID))
+		}
 		return GroupMessage{}, GroupRunState{}, err
 	}
 	_ = updated
@@ -1195,15 +1223,28 @@ func (s *GroupService) runLoop(ctx context.Context, groupID string, userID int, 
 		var savedMsg GroupMessage
 		updatedSG, updateErr := s.store.Update(groupID, func(cur *storedGroup) error {
 			now := time.Now().UTC().Format(time.RFC3339)
+			msgID := uuid.NewString()
+			var msgAttachments []GroupAttachment
+			if len(res.Attachments) > 0 {
+				msgAttachments = make([]GroupAttachment, len(res.Attachments))
+				for i, att := range res.Attachments {
+					att.MessageID = msgID
+					att.CreatedAt = now
+					msgAttachments[i] = att
+				}
+			} else {
+				msgAttachments = collectAgentMessageAttachments(groupID, msgID, nextAgent, cleanedText, now)
+			}
 			savedMsg = GroupMessage{
-				ID:         uuid.NewString(),
-				GroupID:    groupID,
-				SenderType: "agent",
-				SenderName: nextAgent,
-				AgentColor: agentColor,
-				Content:    cleanedText,
-				Timeline:   timeline,
-				CreatedAt:  now,
+				ID:          msgID,
+				GroupID:     groupID,
+				SenderType:  "agent",
+				SenderName:  nextAgent,
+				AgentColor:  agentColor,
+				Content:     cleanedText,
+				Timeline:    timeline,
+				Attachments: msgAttachments,
+				CreatedAt:   now,
 			}
 			cur.Messages = append(cur.Messages, savedMsg)
 			cur.Group.UpdatedAt = now
@@ -1303,6 +1344,7 @@ type agentTurnResult struct {
 	Text           string
 	ConversationID string
 	Timeline       []api.TimelineItem
+	Attachments    []GroupAttachment
 	Stopped        bool
 	Unreachable    bool
 	EmittedError   bool
@@ -1562,6 +1604,14 @@ func (s *GroupService) streamAgentTurn(
 				Text           string `json:"text"`
 				ConversationID string `json:"conversation_id"`
 				Stopped        bool   `json:"stopped"`
+				Attachments    []struct {
+					FileName    string `json:"file_name"`
+					MimeType    string `json:"mime_type"`
+					Path        string `json:"path"`
+					Kind        string `json:"kind"`
+					ProjectType string `json:"project_type"`
+					Size        int64  `json:"size"`
+				} `json:"attachments"`
 			}
 			if json.Unmarshal([]byte(rawData), &ev) == nil {
 				doneReceived = true
@@ -1573,6 +1623,32 @@ func (s *GroupService) streamAgentTurn(
 				}
 				if ev.Stopped {
 					result.Stopped = true
+				}
+				if len(ev.Attachments) > 0 {
+					atts := make([]GroupAttachment, 0, len(ev.Attachments))
+					for _, a := range ev.Attachments {
+						if strings.TrimSpace(a.Path) == "" {
+							continue
+						}
+						kind := strings.TrimSpace(a.Kind)
+						if kind == "" {
+							kind = attachmentKindFromMime(a.FileName, a.MimeType)
+						}
+						atts = append(atts, GroupAttachment{
+							ID:          uuid.NewString(),
+							GroupID:     groupID,
+							SenderType:  "agent",
+							SenderName:  agentName,
+							Agent:       agentName,
+							Path:        a.Path,
+							ProjectType: a.ProjectType,
+							FileName:    a.FileName,
+							MimeType:    a.MimeType,
+							Kind:        kind,
+							Size:        a.Size,
+						})
+					}
+					result.Attachments = atts
 				}
 			}
 		case "error":
@@ -2200,4 +2276,265 @@ func containsString(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// ListAttachments returns paginated uploaded images and files for a group, newest first.
+func (s *GroupService) ListAttachments(id, kind string, limit, offset int) (GroupAttachmentsPage, error) {
+	return s.store.ListAttachments(id, kind, limit, offset)
+}
+
+// AttachmentFile resolves one persisted group upload to its safe on-disk path.
+func (s *GroupService) AttachmentFile(groupID, messageID, storedName string) (string, string, string, error) {
+	if err := ValidateGroupID(groupID); err != nil {
+		return "", "", "", err
+	}
+	if !isSafePathSegment(messageID) || !isSafePathSegment(storedName) {
+		return "", "", "", ErrGroupNotFound
+	}
+	att, err := s.store.FindAttachment(groupID, messageID, storedName)
+	if err != nil {
+		return "", "", "", err
+	}
+	baseDir := s.store.UploadsDir(groupID)
+	absPath := filepath.Join(baseDir, messageID, att.StoredName)
+	if !strings.HasPrefix(absPath, filepath.Clean(baseDir)+string(os.PathSeparator)) {
+		return "", "", "", ErrGroupNotFound
+	}
+	if _, err := os.Stat(absPath); err != nil {
+		return "", "", "", ErrGroupNotFound
+	}
+	return absPath, att.FileName, att.MimeType, nil
+}
+
+func (s *GroupService) persistGroupUploads(
+	groupID, messageID, createdAt string,
+	images []string,
+	files []channel.FileUpload,
+) ([]GroupAttachment, error) {
+	if len(images) == 0 && len(files) == 0 {
+		return nil, nil
+	}
+
+	msgDir := filepath.Join(s.store.UploadsDir(groupID), messageID)
+	if err := os.MkdirAll(msgDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create group uploads dir: %w", err)
+	}
+
+	usedNames := map[string]int{}
+	uniqueStoredName := func(base string) string {
+		ext := filepath.Ext(base)
+		stem := strings.TrimSuffix(base, ext)
+		if stem == "" {
+			stem = "file"
+		}
+		candidate := stem + ext
+		key := strings.ToLower(candidate)
+		if count, exists := usedNames[key]; exists {
+			count++
+			usedNames[key] = count
+			candidate = fmt.Sprintf("%s-%d%s", stem, count, ext)
+		} else {
+			usedNames[key] = 1
+		}
+		return candidate
+	}
+
+	attachments := make([]GroupAttachment, 0, len(images)+len(files))
+
+	for i, raw := range images {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		// Accept both raw base64 and data URLs ("data:image/png;base64,...").
+		if idx := strings.Index(trimmed, ";base64,"); idx >= 0 && strings.HasPrefix(trimmed, "data:") {
+			trimmed = trimmed[idx+len(";base64,"):]
+		}
+		data, err := base64.StdEncoding.DecodeString(trimmed)
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		mimeType := http.DetectContentType(data)
+		if !strings.HasPrefix(mimeType, "image/") {
+			mimeType = "image/png"
+		}
+		ext := imageExtensionForMime(mimeType)
+		fileName := fmt.Sprintf("image-%d%s", i+1, ext)
+		storedName := uniqueStoredName(fileName)
+		if err := os.WriteFile(filepath.Join(msgDir, storedName), data, 0o600); err != nil {
+			_ = os.RemoveAll(msgDir)
+			return nil, fmt.Errorf("write group image: %w", err)
+		}
+		attachments = append(attachments, GroupAttachment{
+			ID:         uuid.NewString(),
+			GroupID:    groupID,
+			MessageID:  messageID,
+			SenderType: "user",
+			SenderName: "User",
+			FileName:   fileName,
+			StoredName: storedName,
+			MimeType:   mimeType,
+			Kind:       "image",
+			Size:       int64(len(data)),
+			CreatedAt:  createdAt,
+		})
+	}
+
+	for _, f := range files {
+		trimmed := strings.TrimSpace(f.DataBase64)
+		if trimmed == "" {
+			continue
+		}
+		if idx := strings.Index(trimmed, ";base64,"); idx >= 0 && strings.HasPrefix(trimmed, "data:") {
+			trimmed = trimmed[idx+len(";base64,"):]
+		}
+		data, err := base64.StdEncoding.DecodeString(trimmed)
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		cleanName := sanitizeUploadFileName(f.Name)
+		if cleanName == "" {
+			cleanName = "attachment"
+		}
+		storedName := uniqueStoredName(cleanName)
+		if err := os.WriteFile(filepath.Join(msgDir, storedName), data, 0o600); err != nil {
+			_ = os.RemoveAll(msgDir)
+			return nil, fmt.Errorf("write group file: %w", err)
+		}
+		mimeType := detectUploadMime(cleanName, data)
+		attachments = append(attachments, GroupAttachment{
+			ID:         uuid.NewString(),
+			GroupID:    groupID,
+			MessageID:  messageID,
+			SenderType: "user",
+			SenderName: "User",
+			FileName:   cleanName,
+			StoredName: storedName,
+			MimeType:   mimeType,
+			Kind:       attachmentKindFromMime(cleanName, mimeType),
+			Size:       int64(len(data)),
+			CreatedAt:  createdAt,
+		})
+	}
+
+	if len(attachments) == 0 {
+		_ = os.RemoveAll(msgDir)
+		return nil, nil
+	}
+	return attachments, nil
+}
+
+func isSafePathSegment(v string) bool {
+	if v == "" || v == "." || v == ".." {
+		return false
+	}
+	return !strings.ContainsAny(v, `/\`) && !strings.Contains(v, "..")
+}
+
+func sanitizeUploadFileName(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = filepath.Base(name)
+	if name == "." || name == ".." || name == "/" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f || r == '/' || r == '\\' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func imageExtensionForMime(mimeType string) string {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/webp":
+		return ".webp"
+	case "image/gif":
+		return ".gif"
+	default:
+		return ".png"
+	}
+}
+
+func detectUploadMime(fileName string, data []byte) string {
+	if ext := strings.ToLower(filepath.Ext(fileName)); ext != "" {
+		if byExt := mime.TypeByExtension(ext); byExt != "" {
+			return byExt
+		}
+		switch ext {
+		case ".md", ".markdown":
+			return "text/markdown; charset=utf-8"
+		case ".yaml", ".yml":
+			return "text/yaml; charset=utf-8"
+		case ".log":
+			return "text/plain; charset=utf-8"
+		}
+	}
+	return http.DetectContentType(data)
+}
+
+func attachmentKindFromMime(fileName, mimeType string) string {
+	lowerMime := strings.ToLower(mimeType)
+	lowerExt := strings.ToLower(filepath.Ext(fileName))
+	switch {
+	case strings.HasPrefix(lowerMime, "image/"):
+		return "image"
+	case strings.HasPrefix(lowerMime, "video/"):
+		return "video"
+	case strings.HasPrefix(lowerMime, "audio/"):
+		return "audio"
+	case strings.HasPrefix(lowerMime, "application/pdf") || lowerExt == ".pdf":
+		return "pdf"
+	default:
+		return "file"
+	}
+}
+
+// collectAgentMessageAttachments uses the shared internal/attachment package
+// to resolve @attach(...) directives and previewable media/project paths inside
+// an agent's own sandboxed roots.
+func collectAgentMessageAttachments(groupID, messageID, agentName, text, createdAt string) []GroupAttachment {
+	if agentName == "" || strings.TrimSpace(text) == "" {
+		return nil
+	}
+	home, err := agentdir.Home(agentName)
+	if err != nil {
+		return nil
+	}
+	user, _ := agentdir.UserDir(agentName)
+	skills, _ := agentdir.SkillsDir(agentName)
+	jobs, _ := agentdir.JobsDir(agentName)
+	items := attachment.Collect(text, attachment.Roots{
+		Home:   home,
+		User:   user,
+		Skills: skills,
+		Jobs:   jobs,
+	})
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]GroupAttachment, 0, len(items))
+	for _, item := range items {
+		out = append(out, GroupAttachment{
+			ID:          uuid.NewString(),
+			GroupID:     groupID,
+			MessageID:   messageID,
+			SenderType:  "agent",
+			SenderName:  agentName,
+			Agent:       agentName,
+			Path:        item.Virtual,
+			ProjectType: item.ProjectType,
+			FileName:    item.Name,
+			MimeType:    item.Mime,
+			Kind:        string(item.Kind),
+			Size:        item.Size,
+			CreatedAt:   createdAt,
+		})
+	}
+	return out
 }

@@ -11,7 +11,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const controlPlaneSchemaVersion = 1
+const controlPlaneSchemaVersion = 2
 
 var controlPlaneSchemaV1 = []string{
 	`CREATE TABLE IF NOT EXISTS auth_account (
@@ -62,6 +62,7 @@ var controlPlaneSchemaV1 = []string{
 		reply_to_id        TEXT    NOT NULL DEFAULT '',
 		reply_preview_json TEXT    NOT NULL DEFAULT '',
 		quotes_json        TEXT    NOT NULL DEFAULT '',
+		attachments_json   TEXT    NOT NULL DEFAULT '',
 		created_at         TEXT    NOT NULL
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_group_messages_group_seq
@@ -155,10 +156,17 @@ func (c *ControlPlaneDB) migrate() error {
 	if err != nil {
 		return fmt.Errorf("begin controlplane schema migration: %w", err)
 	}
-	for _, stmt := range controlPlaneSchemaV1 {
-		if _, err := tx.Exec(stmt); err != nil {
+	if version < 1 {
+		for _, stmt := range controlPlaneSchemaV1 {
+			if _, err := tx.Exec(stmt); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("apply controlplane schema: %w", err)
+			}
+		}
+	} else if version < 2 {
+		if _, err := tx.Exec(`ALTER TABLE group_messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT ''`); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("apply controlplane schema: %w", err)
+			return fmt.Errorf("apply controlplane schema v2: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {

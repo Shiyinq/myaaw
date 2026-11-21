@@ -1213,3 +1213,92 @@ func TestGroupStreamForwardsScopeAndApprovals(t *testing.T) {
 		t.Fatalf("PendingApprovals after resolve = %+v, want empty", after.RunState.PendingApprovals)
 	}
 }
+
+func TestGroupUploadsAndAttachments(t *testing.T) {
+	dir := newMockAgentDirectory(
+		AgentInfo{Name: "alice", AgentColor: "bleu", Running: true, BaseURL: "http://agent-alice"},
+	)
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return sseHTTPResponse(
+				"event: done\ndata: {\"ok\":true,\"text\":\"Got it!\",\"conversation_id\":\"conv-1\",\"attachments\":[{\"file_name\":\"photo.jpg\",\"mime_type\":\"image/jpeg\",\"path\":\"/home/workspace/photo.jpg\",\"kind\":\"image\",\"size\":1234}]}\n\n",
+			), nil
+		}),
+	}
+
+	svc := NewGroupServiceWithStore(newTestGroupStore(t), dir, client)
+	group, err := svc.Create(CreateGroupRequest{
+		Name:           "Files",
+		Members:        []string{"alice"},
+		DiscussionMode: DiscussionModeAll,
+		MaxTurns:       2,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	ch, _, unsub, err := svc.Subscribe(group.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer unsub()
+
+	// 1x1 valid PNG (base64) + plain text PDF/doc upload.
+	pngB64 := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+	docB64 := "aGVsbG8gZ3JvdXAgZmlsZQ==" // "hello group file"
+
+	userMsg, _, err := svc.SendMessage(group.ID, 1, SendGroupMessageRequest{
+		Text:   "check these",
+		Images: []string{pngB64},
+		Files:  []channel.FileUpload{{Name: "notes.txt", DataBase64: docB64}},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	waitForRunEnd(t, ch, 5*time.Second)
+
+	if len(userMsg.Attachments) != 2 {
+		t.Fatalf("Attachments len = %d, want 2", len(userMsg.Attachments))
+	}
+	if userMsg.Attachments[0].Kind != "image" || userMsg.Attachments[1].Kind != "file" || userMsg.Attachments[1].FileName != "notes.txt" {
+		t.Fatalf("unexpected attachments = %+v", userMsg.Attachments)
+	}
+
+	// Verify both user uploads AND agent @attach(...) deliverables persist across GetPage & ListAttachments.
+	page, err := svc.GetPage(group.ID, 10, -1, "")
+	if err != nil {
+		t.Fatalf("GetPage: %v", err)
+	}
+	if len(page.Messages) != 2 || len(page.Messages[0].Attachments) != 2 || len(page.Messages[1].Attachments) != 1 {
+		t.Fatalf("persisted message attachments = %+v", page.Messages)
+	}
+	if page.Messages[1].Attachments[0].Agent != "alice" || page.Messages[1].Attachments[0].Path != "/home/workspace/photo.jpg" {
+		t.Fatalf("agent attachment = %+v", page.Messages[1].Attachments[0])
+	}
+
+	allAtts, err := svc.ListAttachments(group.ID, "", 50, 0)
+	if err != nil || allAtts.Total != 3 || len(allAtts.Items) != 3 {
+		t.Fatalf("ListAttachments all = %+v, err=%v", allAtts, err)
+	}
+	imgAtts, err := svc.ListAttachments(group.ID, "image", 50, 0)
+	if err != nil || imgAtts.Total != 2 || imgAtts.Items[0].Kind != "image" {
+		t.Fatalf("ListAttachments image = %+v, err=%v", imgAtts, err)
+	}
+
+	// Verify file exists on disk and AttachmentFile resolves safely.
+	absPath, origName, mimeType, err := svc.AttachmentFile(group.ID, userMsg.ID, userMsg.Attachments[1].StoredName)
+	if err != nil || origName != "notes.txt" || mimeType == "" {
+		t.Fatalf("AttachmentFile = (%q, %q, %q, %v)", absPath, origName, mimeType, err)
+	}
+	if _, _, _, err := svc.AttachmentFile(group.ID, userMsg.ID, "../secret"); err == nil {
+		t.Fatal("expected path traversal to be rejected")
+	}
+
+	// Clearing messages removes on-disk uploads.
+	if err := svc.ClearMessages(group.ID, 1); err != nil {
+		t.Fatalf("ClearMessages: %v", err)
+	}
+	if _, _, _, err := svc.AttachmentFile(group.ID, userMsg.ID, userMsg.Attachments[1].StoredName); err == nil {
+		t.Fatal("expected attachment to be deleted after ClearMessages")
+	}
+}
