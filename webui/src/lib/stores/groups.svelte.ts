@@ -22,6 +22,9 @@ let loading = $state(false);
 let loaded = $state(false);
 let error = $state('');
 let createDialogOpen = $state(false);
+let openGroupId = $state('');
+let unreadCounts = $state<Record<string, number>>({});
+const announcedMessageIds = new Set<string>();
 
 function toSummary(group: Group, existing?: GroupSummary, runState?: GroupRunState): GroupSummary {
 	return {
@@ -87,6 +90,9 @@ export const groupsStore = {
 		loaded = false;
 		loading = false;
 		error = '';
+		openGroupId = '';
+		unreadCounts = {};
+		announcedMessageIds.clear();
 	},
 	async load(force = false) {
 		if (untrack(() => loading)) return;
@@ -167,7 +173,17 @@ export const groupsStore = {
 	): Promise<SendGroupMessageResponse> {
 		const res = await groupsApi.sendMessage(id, payload);
 		groupsStore.syncSummaryFromMessage(id, res.message);
-		groupsStore.syncSummaryFromRunState(id, res.run_state);
+		const existing = list.find((entry) => entry.id === id);
+		// SSE `turn_start`/`status` often arrives before the 202 HTTP response;
+		// keep the live `current_agent` instead of regressing to the initial empty one.
+		const nextRunState =
+			existing?.running &&
+			existing.current_agent &&
+			res.run_state.running &&
+			!res.run_state.current_agent
+				? { ...res.run_state, current_agent: existing.current_agent }
+				: res.run_state;
+		groupsStore.syncSummaryFromRunState(id, nextRunState);
 		return res;
 	},
 	async stop(id: string): Promise<StopGroupResponse> {
@@ -223,6 +239,37 @@ export const groupsStore = {
 			},
 			updated_at: msg.created_at || new Date().toISOString()
 		});
+	},
+	setOpen(id: string) {
+		openGroupId = id;
+		if (id && unreadCounts[id]) {
+			const next = { ...unreadCounts };
+			delete next[id];
+			unreadCounts = next;
+		}
+	},
+	isOpen(id: string): boolean {
+		return Boolean(id) && openGroupId === id;
+	},
+	markUnread(id: string) {
+		if (!id) return;
+		unreadCounts = { ...unreadCounts, [id]: (unreadCounts[id] ?? 0) + 1 };
+	},
+	unreadCount(id: string): number {
+		return id ? (unreadCounts[id] ?? 0) : 0;
+	},
+	nameOf(id: string): string {
+		return list.find((entry) => entry.id === id)?.name ?? '';
+	},
+	/** Returns true once per message id so reconnects never double-alert. */
+	claimMessageAnnouncement(messageId: string): boolean {
+		if (!messageId || announcedMessageIds.has(messageId)) return false;
+		announcedMessageIds.add(messageId);
+		if (announcedMessageIds.size > 500) {
+			const oldest = announcedMessageIds.values().next().value;
+			if (oldest) announcedMessageIds.delete(oldest);
+		}
+		return true;
 	},
 	/**
 	 * Opens a live SSE connection to `GET /groups/:id/stream`. Reconnects

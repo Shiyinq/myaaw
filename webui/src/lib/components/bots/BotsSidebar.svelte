@@ -240,8 +240,15 @@
 	const orderedBots = $derived(splitSections ? [...attentionBots, ...regularBots] : visibleAgents);
 
 	const visibleGroups = $derived.by(() => {
-		if (filter !== 'all' && filter !== 'groups') return [];
+		if (filter !== 'all' && filter !== 'groups' && filter !== 'unread') return [];
 		return groupsStore.groups.filter((grp) => {
+			if (filter === 'unread') {
+				const approvals = Math.max(
+					approvalQueue.groupCount(grp.id),
+					grp.pending_approval_count ?? 0
+				);
+				if (groupsStore.unreadCount(grp.id) === 0 && approvals === 0) return false;
+			}
 			if (searchTerm) {
 				const nameHit = grp.name.toLowerCase().includes(searchTerm);
 				const memberHit = grp.members.some((m) => m.name.toLowerCase().includes(searchTerm));
@@ -295,8 +302,10 @@
 	}
 
 	function groupPreviewLine(grp: GroupSummary): string {
-		if (grp.running && grp.current_agent) {
-			return t('myaaw.groups.agent_thinking', { name: grp.current_agent });
+		if (grp.running) {
+			return grp.current_agent
+				? t('myaaw.groups.agent_thinking', { name: grp.current_agent })
+				: t('myaaw.bots.thinking');
 		}
 		if (grp.last_message) {
 			const who =
@@ -457,8 +466,7 @@
 	function previewLine(bot: AgentInfo): string {
 		const run = activeStream(bot.name);
 		if (run) {
-			const liveReply = streamingReplyFromItems(run.items);
-			return liveReply || t('myaaw.bots.thinking');
+			return streamingReplyFromItems(run.items);
 		}
 		const preview = botPreviews.get(bot.name);
 		if (preview?.text) return preview.text;
@@ -475,6 +483,14 @@
 		return parts[0] ?? formatted;
 	}
 </script>
+
+{#snippet typingDots(label: string)}
+	<span class="inline-flex items-center gap-0.5 align-middle" aria-label={label}>
+		<span class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.2s]"></span>
+		<span class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.1s]"></span>
+		<span class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary"></span>
+	</span>
+{/snippet}
 
 {#snippet botRow(bot: AgentInfo)}
 	{@const active = onChatRoute && agentSelection.selected === bot.name}
@@ -537,11 +553,15 @@
 				<span class="mt-0.5 flex items-center justify-between gap-1.5">
 					<span
 						class={[
-							'truncate text-xs',
+							'flex min-h-4 min-w-0 items-center truncate text-xs',
 							streaming ? 'font-medium text-primary' : 'text-muted-foreground'
 						]}
 					>
-						{previewLine(bot)}
+						{#if streaming && !previewLine(bot)}
+							{@render typingDots(t('myaaw.bots.thinking'))}
+						{:else}
+							<span class="truncate">{previewLine(bot)}</span>
+						{/if}
 					</span>
 					{#if approvals > 0 || unreads > 0}
 						<span class="flex shrink-0 items-center gap-1">
@@ -633,6 +653,7 @@
 		approvalQueue.groupCount(grp.id),
 		grp.pending_approval_count ?? 0
 	)}
+	{@const groupUnreads = groupsStore.unreadCount(grp.id)}
 	<div class="group relative">
 		<button
 			type="button"
@@ -683,7 +704,7 @@
 				<span class="mt-0.5 flex items-center justify-between gap-1.5">
 					<span
 						class={[
-							'truncate text-xs',
+							'flex min-h-4 min-w-0 items-center gap-1.5 truncate text-xs',
 							groupApprovals > 0
 								? 'font-medium text-amber-600 dark:text-amber-400'
 								: grp.running
@@ -691,15 +712,40 @@
 									: 'text-muted-foreground'
 						]}
 					>
-						{groupApprovals > 0 ? t('myaaw.chat.need_approval') : groupPreviewLine(grp)}
+						{#if groupApprovals > 0}
+							<span class="truncate">{t('myaaw.chat.need_approval')}</span>
+						{:else if grp.running}
+							{#if grp.current_agent}
+								<span class="truncate">{grp.current_agent}</span>
+							{/if}
+							{@render typingDots(
+								grp.current_agent
+									? t('myaaw.groups.agent_thinking', { name: grp.current_agent })
+									: t('myaaw.bots.thinking')
+							)}
+						{:else}
+							<span class="truncate">{groupPreviewLine(grp)}</span>
+						{/if}
 					</span>
-					{#if groupApprovals > 0}
-						<span
-							title={t('myaaw.chat.need_approval')}
-							class="inline-flex h-4 min-w-4 shrink-0 items-center justify-center gap-0.5 rounded-full bg-amber-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums"
-						>
-							<ShieldAlert class="h-2.5 w-2.5 shrink-0" />
-							{groupApprovals > 9 ? '9+' : groupApprovals}
+					{#if groupApprovals > 0 || groupUnreads > 0}
+						<span class="flex shrink-0 items-center gap-1">
+							{#if groupApprovals > 0}
+								<span
+									title={t('myaaw.chat.need_approval')}
+									class="inline-flex h-4 min-w-4 items-center justify-center gap-0.5 rounded-full bg-amber-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums"
+								>
+									<ShieldAlert class="h-2.5 w-2.5 shrink-0" />
+									{groupApprovals > 9 ? '9+' : groupApprovals}
+								</span>
+							{/if}
+							{#if groupUnreads > 0}
+								<span
+									aria-label={t('myaaw.chat.unread')}
+									class="grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] leading-none font-semibold text-primary-foreground tabular-nums"
+								>
+									{groupUnreads > 99 ? '99+' : groupUnreads}
+								</span>
+							{/if}
 						</span>
 					{/if}
 				</span>
@@ -797,6 +843,11 @@
 		{#if visibleGroups.length > 0}
 			{#each visibleGroups as grp (grp.id)}
 				{@const active = isGroupActive(grp.id)}
+				{@const compactGroupUnreads = groupsStore.unreadCount(grp.id)}
+				{@const compactGroupApprovals = Math.max(
+					approvalQueue.groupCount(grp.id),
+					grp.pending_approval_count ?? 0
+				)}
 				<button
 					type="button"
 					onclick={() => selectGroup(grp)}
@@ -814,7 +865,19 @@
 						<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary"></span>
 					{/if}
 					<Users class="h-4 w-4" />
-					{#if grp.running}
+					{#if compactGroupApprovals > 0}
+						<span
+							class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[9px] leading-4 font-semibold text-white tabular-nums"
+						>
+							{compactGroupApprovals > 9 ? '9+' : compactGroupApprovals}
+						</span>
+					{:else if compactGroupUnreads > 0}
+						<span
+							class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
+						>
+							{compactGroupUnreads > 9 ? '9+' : compactGroupUnreads}
+						</span>
+					{:else if grp.running}
 						<span
 							aria-hidden="true"
 							class="absolute right-1 bottom-1 h-2 w-2 animate-pulse rounded-full bg-primary ring-2 ring-card"

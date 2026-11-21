@@ -109,6 +109,28 @@ function connectAll(agents: string[], key: string) {
 						}
 						if (payload.message) {
 							groupsStore.syncSummaryFromMessage(payload.group_id, payload.message);
+							if (
+								payload.message.sender_type === 'agent' &&
+								groupsStore.claimMessageAnnouncement(payload.message.id)
+							) {
+								if (preferences.value.notifyEnabled) {
+									playNotification(preferences.value.notifySound, preferences.value.notifyVolume);
+								}
+								const onScreen = groupsStore.isOpen(payload.group_id);
+								if (!onScreen) {
+									groupsStore.markUnread(payload.group_id);
+								}
+								const hidden = document.visibilityState === 'hidden';
+								if (preferences.value.notifyBrowser && (!onScreen || hidden)) {
+									const groupName =
+										groupsStore.nameOf(payload.group_id) || payload.message.sender_name || 'Group';
+									showChatNotification({
+										agent: groupName,
+										conversationId: `group:${payload.group_id}`,
+										trigger: 'chat'
+									});
+								}
+							}
 						}
 					}
 					return;

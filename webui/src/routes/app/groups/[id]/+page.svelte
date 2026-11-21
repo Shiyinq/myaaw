@@ -547,6 +547,15 @@
 		}
 	}
 
+	// Track which group is currently on screen so unread badges and browser
+	// notifications only fire when the reader is away or the tab is hidden.
+	$effect(() => {
+		const id = groupId;
+		if (!browser || !id) return;
+		groupsStore.setOpen(id);
+		return () => groupsStore.setOpen('');
+	});
+
 	// Subscribe to live SSE events for this group.
 	$effect(() => {
 		const id = groupId;
@@ -1308,7 +1317,16 @@
 				totalMessages += 1;
 			}
 			if (res.run_state) {
-				runState = res.run_state;
+				// SSE `turn_start`/`status` may have already advanced past the initial
+				// turn_count=0 snapshot returned by POST /messages.
+				const sseAhead =
+					runState.running &&
+					res.run_state.running &&
+					(runState.turn_count > res.run_state.turn_count ||
+						(Boolean(runState.current_agent) && !res.run_state.current_agent));
+				if (!sseAhead) {
+					runState = res.run_state;
+				}
 			}
 			await tick();
 			scrollToBottom(true);
