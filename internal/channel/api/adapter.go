@@ -34,6 +34,9 @@ type ChatRequest struct {
 	Images         []string             `json:"images,omitempty"`
 	Files          []channel.FileUpload `json:"files,omitempty"`
 	ConversationID string               `json:"conversation_id,omitempty"`
+	// Scope optionally isolates a session from the default DM/API list, e.g.
+	// "group:<group_id>" for control-plane multi-agent group chats.
+	Scope string `json:"scope,omitempty"`
 	// RewindUserOffset rewinds the transcript before this turn. 0 keeps the
 	// transcript up to the last user message (regenerate); N keeps it up to the
 	// user message N turns earlier (edit that message with `text`).
@@ -97,6 +100,7 @@ func (a *APIAdapter) ParseIncoming(payload json.RawMessage) (*channel.IncomingMe
 		Images:           req.Images,
 		Files:            req.Files,
 		Channel:          "api",
+		Scope:            strings.TrimSpace(req.Scope),
 		ConversationID:   conversationID,
 		RewindUserOffset: req.RewindUserOffset,
 		TriggerType:      trigger,

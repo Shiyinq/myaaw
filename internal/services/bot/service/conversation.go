@@ -67,6 +67,7 @@ func (r *BotServiceImpl) publishTurnEvent(msg *channel.IncomingMessage) {
 	}
 	events.Default().Publish(events.TurnEvent{
 		ConversationID: msg.ConversationID,
+		Scope:          msg.Scope,
 		Trigger:        msg.TriggerType,
 		// Nanoseconds matter: clients acknowledge the read watermark with this
 		// timestamp, and a second-truncated value can sit just behind the turn's

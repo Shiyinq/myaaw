@@ -105,3 +105,14 @@ func TestParseIncomingRewind(t *testing.T) {
 		t.Fatal("a negative rewind offset should be rejected")
 	}
 }
+
+func TestParseIncomingScope(t *testing.T) {
+	adapter := NewAPIAdapter()
+	msg, err := adapter.ParseIncoming([]byte(`{"user_id":7,"text":"hello","scope":" group:abc-123 "}`))
+	if err != nil {
+		t.Fatalf("ParseIncoming with scope: %v", err)
+	}
+	if msg.Scope != "group:abc-123" {
+		t.Fatalf("Scope = %q, want %q", msg.Scope, "group:abc-123")
+	}
+}

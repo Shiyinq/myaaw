@@ -12,6 +12,7 @@ import (
 type Event struct {
 	ID             string `json:"approval_id"`
 	RunID          string `json:"run_id,omitempty"`
+	Scope          string `json:"scope,omitempty"`
 	ConversationID string `json:"conversation_id,omitempty"`
 	ToolName       string `json:"tool_name,omitempty"`
 	Action         string `json:"action,omitempty"`
@@ -86,6 +87,7 @@ func PublishRequired(req Request) {
 	DefaultBroker().Publish(Event{
 		ID:             req.ID,
 		RunID:          req.RunID,
+		Scope:          req.Scope,
 		ConversationID: req.ConversationID,
 		ToolName:       req.ToolName,
 		Action:         req.Action,
@@ -101,6 +103,7 @@ func PublishResolved(req Request, decision string) {
 	DefaultBroker().Publish(Event{
 		ID:             req.ID,
 		RunID:          req.RunID,
+		Scope:          req.Scope,
 		ConversationID: req.ConversationID,
 		Decision:       decision,
 		Resolved:       true,

@@ -43,6 +43,7 @@ type Request struct {
 	// summary above stays the one-line preview.
 	Args           string
 	Channel        string
+	Scope          string
 	ConversationID string
 	UserID         string
 	// SubAgent is the task name of the sub-agent that made the call, empty for
@@ -61,6 +62,7 @@ type Requester interface {
 type Session struct {
 	RunID          string
 	Channel        string
+	Scope          string
 	ConversationID string
 	UserID         string
 }
@@ -226,6 +228,7 @@ func (g *Gate) Check(ctx context.Context, toolName string, args json.RawMessage)
 		ArgsSummary:    SummarizeArgs(args),
 		Args:           string(args),
 		Channel:        g.Session.Channel,
+		Scope:          g.Session.Scope,
 		ConversationID: g.Session.ConversationID,
 		UserID:         g.Session.UserID,
 		SubAgent:       SubagentName(ctx),
