@@ -269,14 +269,25 @@ curl -N "http://localhost:9000/agents/myfriend/chat/run/3f0c6b0e-9a51-4e7f-b2f4-
 
 `after` skips events the client already has. The replay buffer is capped, a finished run stays attachable for 15 minutes, and runs live in the agent process (restarting the agent drops them). Every run announces itself with a `run` event carrying its request id.
 
-### Conversation events: `GET /agents/:name/events`
+### Conversation events: `GET /events` & `GET /agents/:name/events`
 
 A cron, heartbeat, or sub-agent turn is started by the agent, so a client that
 only listens to its own chat stream would never see it. The agent publishes
-`conversation.updated` once such a turn is saved, and this route relays that
-stream:
+`conversation.updated` once such a turn is saved, and these routes relay that
+stream.
+
+Prefer the **multiplexed** endpoint `GET /events` for browser clients so the
+dashboard consumes only **one** HTTP/1.1 connection regardless of how many
+agents are running (avoiding the browser 6-connection-per-origin limit). Pass
+`?agents=a,b` to subscribe to specific agents, or omit it to subscribe to all
+currently running agents:
 
 ```bash
+# Multiplexed stream for multiple (or all running) agents
+curl -N "http://localhost:9000/events?agents=default,myfriend" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Single-agent stream
 curl -N "http://localhost:9000/agents/myfriend/events" \
   -H "Authorization: Bearer $TOKEN"
 ```
@@ -287,9 +298,13 @@ data: {"agent":"myfriend","conversation_id":"af53cc52-…","trigger":"cron","at"
 ```
 
 The event is a signal: read `GET /agents/:name/conversations/:id` for the
-transcript. A `HEARTBEAT_OK` turn is not stored and emits nothing. Open one
-stream per agent, keep it open across agent switches, and expect a
-`: keep-alive` comment every 20 seconds.
+transcript. A `HEARTBEAT_OK` turn is not stored and emits nothing. On the
+multiplexed `GET /events` stream, the control plane also emits `group.updated`
+(carrying `group_id` with `run_state` or `message`) so group sidebar previews
+and thinking indicators stay live even while viewing another agent. Keep one
+multiplexed `/events` stream open across agent switches, expect a `: keepalive`
+comment every 20 seconds, and abort active SSE controllers on `beforeunload` /
+`pagehide` so page reloads release HTTP/1.1 sockets immediately.
 
 The same stream also relays `approval.required` and `approval.resolved`, so a
 dashboard can surface a tool approval raised outside the chat it is viewing (a
@@ -1513,7 +1528,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 |---|---|
 | Auth | `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, `POST /auth/change-password`, `PUT /auth/username` |
 | Agents | `GET /agents`, `GET /capabilities`, `GET/DELETE /agents/:name`, `POST /agents/:name/onboard`, `POST /agents/:name/default` |
-| Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream`, `POST /agents/:name/chat/stop`, `GET /agents/:name/chat/runs`, `GET /agents/:name/chat/run/:id/stream`, `GET /agents/:name/events` |
+| Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream`, `POST /agents/:name/chat/stop`, `GET /agents/:name/chat/runs`, `GET /agents/:name/chat/run/:id/stream`, `GET /events`, `GET /agents/:name/events` |
 | Approvals | `GET /agents/:name/approvals`, `POST /agents/:name/approvals/:id/decision`, `DELETE /agents/:name/approvals/grants`, `DELETE /agents/:name/approvals/grants/:key`, `DELETE /agents/:name/approvals/grants/:key/sessions/:conversation` |
 | Files | `GET/DELETE /agents/:name/fs`, `GET /fs/raw`, `POST /fs/sign`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
@@ -1774,7 +1789,7 @@ Includes all `Group` fields (`id`, `name`, `description`, `members`, `discussion
 
 ### Streaming (SSE): `GET /groups/:id/stream`
 
-Immediately upon connecting, the control plane emits a `status` snapshot with the current `GroupRunState`, and sends a `: ping` keepalive comment every 20 seconds. Because `EventSource` cannot send an `Authorization` header, use `fetch` with `ReadableStream` (same pattern as Chat Streaming above).
+Immediately upon connecting, the control plane emits a `status` snapshot with the current `GroupRunState`. If an agent turn is currently in flight, the control plane immediately replays the active turn's buffered SSE events (`turn_start`, `thinking`, `tool_start`, `tool_end`, `chunk`, `approval_required`, `approval_resolved`, up to 512 events) so a reloaded tab restores the live working bubble and tool trajectory without waiting for the next event. A `: ping` keepalive comment is sent every 20 seconds. Because `EventSource` cannot send an `Authorization` header, use `fetch` with `ReadableStream` (same pattern as Chat Streaming above).
 
 | Event | Data | When emitted |
 |---|---|---|

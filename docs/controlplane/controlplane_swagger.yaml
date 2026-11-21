@@ -7588,6 +7588,25 @@ paths:
       summary: Onboarding capabilities
       tags:
       - Agents
+  /events:
+    get:
+      description: Server-Sent Events multiplexing `conversation.updated`, `approval.required`,
+        and `approval.resolved` across multiple agents over one connection.
+      parameters:
+      - description: Comma-separated agent names (defaults to all running agents)
+        in: query
+        name: agents
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: OK
+      security:
+      - BearerAuth: []
+      summary: Multiplexed conversation events
+      tags:
+      - Chat
   /groups:
     get:
       produces:

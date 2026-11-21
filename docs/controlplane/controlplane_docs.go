@@ -6880,6 +6880,36 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Server-Sent Events multiplexing ` + "`" + `conversation.updated` + "`" + `, ` + "`" + `approval.required` + "`" + `, and ` + "`" + `approval.resolved` + "`" + ` across multiple agents over one connection.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Multiplexed conversation events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated agent names (defaults to all running agents)",
+                        "name": "agents",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/groups": {
             "get": {
                 "security": [

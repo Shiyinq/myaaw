@@ -662,6 +662,9 @@ const docTemplate = `{
                 "request_id": {
                     "type": "string"
                 },
+                "scope": {
+                    "type": "string"
+                },
                 "started_at": {
                     "type": "string"
                 },
