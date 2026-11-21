@@ -26,5 +26,25 @@ export const conversationEvents = {
 				baseDelayMs: 1000,
 				maxDelayMs: 15_000
 			}
-		})
+		}),
+	/**
+	 * Streams conversation and approval updates for multiple agents multiplexed
+	 * over a single SSE connection (`GET /events`), avoiding HTTP/1.1 browser
+	 * connection pool exhaustion when several agents are running.
+	 */
+	streamAll: (agents: string[], onEvent: (event: SSEEvent) => void, signal?: AbortSignal) => {
+		const params = new URLSearchParams();
+		if (agents.length > 0) params.set('agents', agents.join(','));
+		const query = params.toString();
+		return streamSSE(query ? `/events?${query}` : '/events', {
+			method: 'GET',
+			signal,
+			onEvent,
+			retry: {
+				attempts: 100,
+				baseDelayMs: 1000,
+				maxDelayMs: 15_000
+			}
+		});
+	}
 };

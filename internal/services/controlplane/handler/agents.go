@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"strings"
 
 	"myaaw/internal/services/controlplane/service"
 
@@ -150,6 +151,24 @@ func (h *Handler) ChatRunStream(c fiber.Ctx) error {
 		return proxyError(c, err)
 	}
 	return nil
+}
+
+// EventsAll multiplexes conversation and approval SSE events for all running
+// (or requested) agents over a single stream.
+// @Summary      Multiplexed conversation events
+// @Description  Server-Sent Events multiplexing `conversation.updated`, `approval.required`, and `approval.resolved` across multiple agents over one connection.
+// @Tags         Chat
+// @Produce      text/event-stream
+// @Security     BearerAuth
+// @Param        agents query string false "Comma-separated agent names (defaults to all running agents)"
+// @Success      200
+// @Router       /events [get]
+func (h *Handler) EventsAll(c fiber.Ctx) error {
+	var names []string
+	if raw := strings.TrimSpace(c.Query("agents")); raw != "" {
+		names = strings.Split(raw, ",")
+	}
+	return h.proxy.EventsAll(c, names)
 }
 
 // Events streams conversation updates for the selected agent.
