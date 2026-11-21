@@ -6985,6 +6985,24 @@ const docTemplatecontrolplane = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Message page size (0 = all, max 500)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Message offset (default 0, negative starts from the end)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Return up to limit messages strictly older than this message ID",
+                        "name": "before_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -7522,7 +7540,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the UI settings stored under the \"settings\" key of controlplane.json.",
+                "description": "Returns the UI settings stored in the control-plane SQLite database.",
                 "produces": [
                     "application/json"
                 ],
@@ -7551,7 +7569,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Merges changed fields into the \"settings\" key of controlplane.json and returns the normalized settings.",
+                "description": "Merges changed fields into the control-plane SQLite settings table and returns the normalized settings.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8568,6 +8586,10 @@ const docTemplatecontrolplane = `{
                     "type": "boolean",
                     "example": false
                 },
+                "role": {
+                    "type": "string",
+                    "example": "admin"
+                },
                 "token": {
                     "type": "string",
                     "example": "a1b2c3"
@@ -8827,6 +8849,10 @@ const docTemplatecontrolplane = `{
                 "must_change_password": {
                     "type": "boolean",
                     "example": false
+                },
+                "role": {
+                    "type": "string",
+                    "example": "admin"
                 },
                 "user_id": {
                     "type": "integer",
@@ -10794,14 +10820,26 @@ const docTemplatecontrolplane = `{
                 "group": {
                     "$ref": "#/definitions/service.Group"
                 },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer"
+                },
                 "messages": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/service.GroupMessage"
                     }
                 },
+                "offset": {
+                    "type": "integer"
+                },
                 "run_state": {
                     "$ref": "#/definitions/service.GroupRunState"
+                },
+                "total_messages": {
+                    "type": "integer"
                 }
             }
         },

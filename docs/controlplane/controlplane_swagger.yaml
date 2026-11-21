@@ -586,6 +586,9 @@ definitions:
       must_change_password:
         example: false
         type: boolean
+      role:
+        example: admin
+        type: string
       token:
         example: a1b2c3
         type: string
@@ -759,6 +762,9 @@ definitions:
       must_change_password:
         example: false
         type: boolean
+      role:
+        example: admin
+        type: string
       user_id:
         example: 0
         type: integer
@@ -2132,12 +2138,20 @@ definitions:
     properties:
       group:
         $ref: '#/definitions/service.Group'
+      has_more:
+        type: boolean
+      limit:
+        type: integer
       messages:
         items:
           $ref: '#/definitions/service.GroupMessage'
         type: array
+      offset:
+        type: integer
       run_state:
         $ref: '#/definitions/service.GroupRunState'
+      total_messages:
+        type: integer
     type: object
   service.GroupLastMessage:
     properties:
@@ -7585,6 +7599,19 @@ paths:
         name: id
         required: true
         type: string
+      - description: Message page size (0 = all, max 500)
+        in: query
+        name: limit
+        type: integer
+      - description: Message offset (default 0, negative starts from the end)
+        in: query
+        name: offset
+        type: integer
+      - description: Return up to limit messages strictly older than this message
+          ID
+        in: query
+        name: before_id
+        type: string
       produces:
       - application/json
       responses:
@@ -7894,7 +7921,7 @@ paths:
       - Providers
   /settings:
     get:
-      description: Returns the UI settings stored under the "settings" key of controlplane.json.
+      description: Returns the UI settings stored in the control-plane SQLite database.
       produces:
       - application/json
       responses:
@@ -7914,7 +7941,7 @@ paths:
     patch:
       consumes:
       - application/json
-      description: Merges changed fields into the "settings" key of controlplane.json
+      description: Merges changed fields into the control-plane SQLite settings table
         and returns the normalized settings.
       parameters:
       - description: Settings patch

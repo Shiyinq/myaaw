@@ -57,38 +57,28 @@ Store the returned `token` and send it on every other request:
 Authorization: Bearer <token>
 ```
 
-Credentials live in `~/.myaaw/config/controlplane.json` with a bcrypt hash and the agent `user_id`, never plaintext:
-
-```json
-{
-  "username": "myaaw",
-  "password_hash": "$2a$...",
-  "user_id": 0,
-  "created_at": "2026-10-20T00:00:00Z"
-}
-```
-
-New installs seed `user_id` as `0`. Existing credential files without the field are rewritten with `user_id: 0` the next time `myaaw api` starts. Edit the value and restart the API to change which agent user chat and conversation requests use. Clients do not need to send `user_id`.
+Credentials, synced dashboard settings, and multi-agent group chats live in the SQLite database `~/.myaaw/controlplane/controlplane.db` (`0700` directory, `0600` database file, WAL mode). The `auth_account` table stores the username, bcrypt password hash (never plaintext), `role` (defaults to `"admin"`), and agent `user_id` (default `0`). Clients do not need to send `user_id`.
 
 ## 3. Authentication
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/auth/login` | `{username, password}` → `{token, expires_at, user_id, must_change_password}` |
-| `GET` | `/auth/me` | current `{username, user_id, must_change_password}` |
+| `POST` | `/auth/login` | `{username, password}` → `{token, expires_at, user_id, role, must_change_password}` |
+| `GET` | `/auth/me` | current `{username, user_id, role, must_change_password}` |
 | `POST` | `/auth/logout` | invalidate the current token |
 | `POST` | `/auth/change-password` | `{current_password, new_password}` |
 | `PUT` | `/auth/username` | `{password, new_username}` |
 
-Tokens are valid for 24 hours. Changing the password invalidates all sessions. Restarting `myaaw api` also clears sessions. `/health` and `/docs/*` are public; every other route requires the bearer token. The one exception is `GET /agents/:name/fs/raw`, which also accepts a valid short-lived `exp`+`sig` pair issued by `POST /agents/:name/fs/sign` (see Files below).
+Tokens are valid for 24 hours. Changing the password invalidates all sessions. Restarting `myaaw api` also clears sessions (sessions stay in memory). `/health` and `/docs/*` are public; every other route requires the bearer token. The one exception is `GET /agents/:name/fs/raw`, which also accepts a valid short-lived `exp`+`sig` pair issued by `POST /agents/:name/fs/sign` (see Files below).
 
-The login response includes `user_id` (default `0`):
+The login response includes `user_id` (default `0`) and `role` (`"admin"` on the seeded account):
 
 ```json
 {
   "token": "...",
   "expires_at": "2026-10-20T20:00:00Z",
   "user_id": 0,
+  "role": "admin",
   "must_change_password": false
 }
 ```
@@ -178,7 +168,7 @@ curl -X POST http://localhost:9000/agents/myfriend/chat \
   -d '{"text":"Check my workspace"}'
 ```
 
-`user_id` is ignored in the request body. The control plane always sends the ID from `~/.myaaw/config/controlplane.json` (default `0`), so chat and conversation endpoints stay in the same scope. Direct calls to the agent server's `/api/chat` still default a missing `user_id` to `0`.
+`user_id` is ignored in the request body. The control plane always sends the ID from `~/.myaaw/controlplane/controlplane.db` (default `0`), so chat and conversation endpoints stay in the same scope. Direct calls to the agent server's `/api/chat` still default a missing `user_id` to `0`.
 
 To continue an existing conversation, pass its `conversation_id`. Omit it to start a **new conversation** every time; `"NEW"` also forces a new conversation. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
 
@@ -891,7 +881,7 @@ turning recording on: the trace database is opened once per process.
 | `PATCH` | `/agents/:name/chat-folders/:folder` | rename a folder `{name}` |
 | `DELETE` | `/agents/:name/chat-folders/:folder` | delete a folder and every chat inside it |
 
-**User scoping.** List, detail, attachments, rename, delete, pin, move, and every folder route use the `user_id` from `~/.myaaw/config/controlplane.json` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
+**User scoping.** List, detail, attachments, rename, delete, pin, move, and every folder route use the `user_id` from `~/.myaaw/controlplane/controlplane.db` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
 
 **Search.** `search` matches the **title only**, case-insensitive for ASCII, and is applied before pagination. `total` reflects the filtered count.
 
@@ -1631,13 +1621,13 @@ curl -X POST localhost:9000/backups/<name>/restore -H "Authorization: Bearer $TO
 
 ## 23. Groups
 
-Host-level multi-agent chat rooms coordinated by the control plane. Each group is stored as an atomic JSON file at `~/.myaaw/groups/<id>.json` (`0700` directory, `0600` files), while each member agent keeps its own isolated daemon, workspace, memory, and dedicated conversation ID. All routes below require the bearer token (`RequireAuth`). See [Multi-Agent Group Chat](../agents/groups.md) for architecture, delta context sync, autonomous `@mention` routing, and guardrails.
+Host-level multi-agent chat rooms coordinated by the control plane. Rooms, members, and messages are persisted in `~/.myaaw/controlplane/controlplane.db` (`0700` directory, `0600` SQLite file in WAL mode), while each member agent keeps its own isolated daemon, workspace, memory, and dedicated conversation ID. All routes below require the bearer token (`RequireAuth`). See [Multi-Agent Group Chat](../agents/groups.md) for architecture, delta context sync, autonomous `@mention` routing, and guardrails.
 
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/groups` | list groups sorted by `updated_at` descending (`{"groups": [...]}`) |
 | `POST` | `/groups` | create a group → `201` `Group` |
-| `GET` | `/groups/:id` | fetch group metadata, full message list, and live `run_state` |
+| `GET` | `/groups/:id?limit=&offset=&before_id=` | fetch group metadata, a page of messages, and live `run_state` |
 | `PATCH` | `/groups/:id` | update `name`, `description`, `members`, `discussion_mode`, or `max_turns` |
 | `DELETE` | `/groups/:id` | stop any active run, close SSE subscribers, and delete the group (`{"deleted": true}`) |
 | `DELETE` | `/groups/:id/messages` | stop any active run, clear messages, reset member cursors/sessions (`{"cleared": true}`) |
@@ -1657,6 +1647,11 @@ Host-level multi-agent chat rooms coordinated by the control plane. Each group i
   - `max_turns`: optional, defaults to `8` when omitted or `0`, allowed range `1`–`50`.
 - **Update (`PATCH /groups/:id`)**: all fields are optional pointers; omitted fields stay unchanged. Updating `members` preserves `last_seen_message_id` and `conversation_id` for existing members while new members start empty.
 - **Send message (`POST /groups/:id/messages`)**: accepts `{text, reply_to_id?, quotes?, images?, files?}`. Requires non-empty trimmed `text`, or at least one entry in `images` or `files` (`400` otherwise). When `reply_to_id` is supplied, it must reference an existing message in the same group (`400` otherwise). The authenticated control-plane `user_id` is injected automatically when forwarding turns to agent daemons.
+- **Pagination (`GET /groups/:id`)**:
+  - `limit`: optional page size (`0` or omitted returns all messages for backwards compatibility; capped at `500`).
+  - `offset`: optional 0-based index into the chronological transcript (default `0`). Pass a negative value (e.g. `offset=-1` with `limit=50`) to fetch the **tail page** of the latest `limit` messages.
+  - `before_id`: optional message ID cursor. Returns up to `limit` messages strictly older than that message's `seq`, ordered oldest → newest — immune to concurrent SSE inserts at the bottom.
+  - Queries use the indexed `seq` column (`idx_group_messages_group_seq`) so paged fetches never load the full transcript.
 - **Continue (`POST /groups/:id/continue`)**: body is optional (`{"extra_turns": 5}` by default; values are clamped to `1`–`20`). Returns `409 {"error":"group run is not paused"}` when the group is not paused or has an empty queue.
 
 ### Examples
@@ -1669,6 +1664,10 @@ curl -X POST http://localhost:9000/groups \
 
 # List groups
 curl http://localhost:9000/groups -H "Authorization: Bearer $TOKEN"
+
+# Fetch the latest 50 messages, then page backwards with before_id
+curl "http://localhost:9000/groups/$GROUP_ID?limit=50&offset=-1" -H "Authorization: Bearer $TOKEN"
+curl "http://localhost:9000/groups/$GROUP_ID?limit=50&before_id=$OLDEST_MSG_ID" -H "Authorization: Bearer $TOKEN"
 
 # Send a message (with optional WhatsApp-style reply_to_id and selection quotes)
 curl -X POST http://localhost:9000/groups/$GROUP_ID/messages \
@@ -1751,7 +1750,24 @@ Includes all `Group` fields (`id`, `name`, `description`, `members`, `discussion
 }
 ```
 
-`pause_reason` is `""` or `"max_turns"`. `queue` is always a JSON array (`[]` when empty). `GET /groups/:id` returns `{"group": Group, "messages": GroupMessage[], "run_state": GroupRunState}`.
+`pause_reason` is `""` or `"max_turns"`. `queue` is always a JSON array (`[]` when empty). `GET /groups/:id` returns `GroupDetail`:
+
+```json
+{
+  "group": { "...": "..." },
+  "messages": [],
+  "run_state": { "...": "..." },
+  "total_messages": 142,
+  "offset": 92,
+  "limit": 50,
+  "has_more": true
+}
+```
+
+- `total_messages`: total messages stored in the group.
+- `offset`: 0-based index of the first returned message in the full chronological transcript (`0` when no older messages precede this page).
+- `limit`: effective page size (`0` when unpaged).
+- `has_more`: `true` when older messages exist before the returned page (`offset > 0`).
 
 ### Streaming (SSE): `GET /groups/:id/stream`
 

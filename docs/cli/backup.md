@@ -129,15 +129,14 @@ default/
 
 ```text
 myaaw-backup-global-<timestamp>.tar.gz
-  agents.json                 # restored to config/agents.json
-  controlplane.json           # restored to config/controlplane.json
+  agents.json                     # restored to config/agents.json
+  controlplane/controlplane.db    # SQLite snapshot restored to controlplane/controlplane.db
   config/model_capabilities.json
   config/model_prices.json
   config/tool_prices.json
 ```
 
-`controlplane.json` contains a password hash and is treated as a secret. Older archives that only
-contain the two flat files still restore into the new `~/.myaaw/config/` folder.
+`controlplane/controlplane.db` is captured as a live single-file SQLite snapshot via `VACUUM INTO` (no `-wal`/`-shm` side files) and holds control-plane credentials, UI settings, and multi-agent group chats. With `--no-secrets`, `auth_account` is deleted from the temporary snapshot (`DELETE FROM auth_account; VACUUM;`) so UI settings and group chats are still backed up without leaking `password_hash`; on restore to a fresh host, `myaaw api` automatically seeds default credentials (`myaaw` / `myaawadmin`, `role: "admin"`, `must_change_password: true`) while preserving the restored settings and groups.
 
 ## Manifest
 
@@ -155,7 +154,7 @@ Archives are written to a temporary file, synced, then renamed. Permissions: arc
 | `--include-logs` | Include `logs/`, `.logs/`, `cron/runs/`, and `jobs/*.log`. |
 | `--include-venv` | Include `home/.venv` (same platform only). |
 | `--include-caches` | Include `.playwright-mcp/` and `tmp/`. |
-| `--no-secrets` | Exclude `.env`, blank `api_key` in `config/config.json`, blank tokens in `contacts.json`, exclude `controlplane.json`. |
+| `--no-secrets` | Exclude `.env`, blank `api_key` in `config/config.json`, blank tokens in `contacts.json`, strip `auth_account` from the `controlplane/controlplane.db` snapshot (preserving settings and group chats). |
 | `--json` | Print a machine-readable summary. |
 
 ## Restore
@@ -220,7 +219,7 @@ Restore flags:
 myaaw restore myaaw-backup-global-20261027-002704.tar.gz --force
 ```
 
-Restores `agents.json` and `controlplane.json` into `~/.myaaw/config/`, plus the model tables. Existing files are copied to `<name>.pre-restore-<timestamp>` first. Restart the control plane API afterwards.
+Restores `agents.json` and the model tables into `~/.myaaw/config/`, and `controlplane/controlplane.db` into `~/.myaaw/controlplane/controlplane.db` (mode `0600`). Existing files are copied to `<name>.pre-restore-<timestamp>` first, and stale `controlplane.db-wal` / `controlplane.db-shm` side files are removed so SQLite never replays old WAL frames onto the restored database. Restart the control plane API afterwards.
 
 ### Manual extraction
 
@@ -248,7 +247,7 @@ Every `files[]` entry in `manifest.json` has the expected `sha256`.
 
 ## Security
 
-- Archives contain `.env`, provider API keys, A2A tokens, and possibly `controlplane.json` (password hash).
+- Archives contain `.env`, provider API keys, A2A tokens, and `controlplane/controlplane.db` (which includes the control-plane password hash unless `--no-secrets` is used).
 - Archives are created with mode `0600`; the default directory uses `0700`.
 - Use `--no-secrets` for shareable backups.
 - Nothing in the backup process prints secret values.
@@ -259,5 +258,5 @@ Every `files[]` entry in `manifest.json` has the expected `sha256`.
 - `--include-venv` is platform-specific and may not work across machines.
 - `--restore-packages` needs network access and a local `python3`.
 - Backups are a point-in-time snapshot of files; JSON files written concurrently (for example cron config) are copied as they are.
-- A global restore updates `agents.json`, `controlplane.json`, and the model tables under `~/.myaaw/config/`; restart the control plane API afterwards.
+- A global restore updates `agents.json` and the model tables under `~/.myaaw/config/`, plus `controlplane/controlplane.db` under `~/.myaaw/controlplane/`; restart the control plane API afterwards.
 - No automatic retention/pruning yet. Archive names are timestamped; delete old files manually.

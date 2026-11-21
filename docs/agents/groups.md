@@ -24,13 +24,13 @@ Group Chat preserves Myaaw's core multi-agent invariant: **one process = one iso
 flowchart LR
     UI["WebUI (/app/groups/:id)"]
     CP["Control Plane (GroupService + GroupStore)"]
-    Disk["~/.myaaw/groups/<id>.json"]
+    Disk["~/.myaaw/controlplane/controlplane.db"]
     A["Agent A Daemon (:8080)"]
     B["Agent B Daemon (:8081)"]
     C["Agent C Daemon (:8082)"]
 
     UI <-->|"REST + GET /groups/:id/stream (SSE)"| CP
-    CP <-->|"Atomic JSON read/write"| Disk
+    CP <-->|"SQLite WAL read/write"| Disk
     CP -->|"POST /api/chat/stream & /api/chat/stop"| A
     CP -->|"POST /api/chat/stream & /api/chat/stop"| B
     CP -->|"POST /api/chat/stream & /api/chat/stop"| C
@@ -151,7 +151,7 @@ sequenceDiagram
 | **Self-mention & duplicate prevention** | An agent cannot `@mention` itself into an infinite loop, and an agent already waiting in the queue is not duplicated. |
 | **Offline / stopped bot handling** | Before calling a queued agent, `GroupService` checks reachability. Stopped or unreachable bots emit an `error` SSE event, do not consume a turn, and are skipped cleanly (if dial fails after `turn_start`, the orchestrator rolls back `turn_count` and also emits `turn_end` with `passed: false` plus an updated `status` so clients clear the streaming placeholder immediately). If no targeted bots are online, the run terminates with `reason: "no_online_members"`. |
 | **Prompt-injection / tag sanitization** | Group names, descriptions, and sender names have `<`/`>` stripped and control characters/newlines collapsed before rendering `<group_context>`. Quoted excerpts escape `</selection>` and `</selections>`. |
-| **Storage & concurrency safety** | Group IDs are validated against `^[A-Za-z0-9_-]{1,64}$` to block path traversal. Files live in `~/.myaaw/groups/<id>.json` (`0700` dir, `0600` files) and are written atomically (temp file + `chmod` + `os.Rename`) under a `sync.RWMutex`. Each group's orchestrator run uses a per-group mutex and monotonic generation counter so a cancelled goroutine can never clobber a newer run. |
+| **Storage & concurrency safety** | Group IDs are validated against `^[A-Za-z0-9_-]{1,64}$`. Rooms, members (`group_members` with `position`), and messages (`group_messages` with monotonic `seq`) live in the shared Control Plane SQLite database `~/.myaaw/controlplane/controlplane.db` (`0700` dir, `0600` file, `WAL`, `foreign_keys=ON` with `ON DELETE CASCADE`, `busy_timeout=5000`, `synchronous=NORMAL`, `SetMaxOpenConns(1)`). Each group's orchestrator run uses a per-group mutex and monotonic generation counter so a cancelled goroutine can never clobber a newer run. |
 
 ---
 
@@ -167,15 +167,16 @@ See [Control Plane API — Groups](../api/control-plane.md#23-groups) for the co
 
 ### Creating & Navigating Groups
 - **Bots Sidebar (`+` menu)**: Click the `+` button in the Bots sidebar (expanded or compact rail) to choose **Create group** (opens `CreateGroupDialog`) or **New agent** (`/app/new`).
-- **Groups Section**: Groups appear alongside your bots in `BotsSidebar`, filtered by the same search box. Each row shows stacked member color dots, group name, last message preview (`alice: ...` or pulsing `<agent> is thinking...`), timestamp, and a `⋯` menu for opening settings or deleting the group.
+- **Groups Section & Filters**: Groups appear alongside your bots in `BotsSidebar`, filtered by the same search box and filter menu (`All`, `Groups`, `Bots`, `Running`, `Unread`). Single-type filters (`Groups` / `Bots`) hide redundant section header labels so the filtered list stays clean. Each group row shows stacked member color dots, group name, last message preview (`alice: ...` or pulsing `<agent> is thinking...`), timestamp, and a `⋯` menu for opening settings or deleting the group.
 - **Command Palette (`Cmd+K`)**: Jump directly to any group or launch **Create group** from anywhere in `/app`.
 
 ### Group Chat Screen (`/app/groups/[id]`)
-- **Multi-agent bubbles & compact trajectory**: Each agent turn renders with its Bloub avatar (`agent_color`), agent name, timestamp, Markdown body, and compact borderless thinking/tool steps matching regular 1-on-1 chat (fit-content toggle, indented `ChatStep` rows, one-line thought summaries, and dark terminal tool blocks; live streaming steps auto-collapse once answer text begins streaming while remaining manually toggleable). The transcript and borderless floating rounded composer share regular chat's `max-w-4xl` width and horizontal padding.
+- **Multi-agent bubbles, `@mention` pills & compact trajectory**: Each agent turn renders in a fit-to-content (`w-fit max-w-full`) bubble with its Bloub avatar (`agent_color`), agent name, timestamp, Markdown body, and compact borderless thinking/tool steps matching regular 1-on-1 chat (fit-content toggle, indented `ChatStep` rows, one-line thought summaries, and dark terminal tool blocks; live streaming steps auto-collapse once answer text begins streaming while remaining manually toggleable). Valid `@agent` and `@all` mentions are highlighted as accent-tinted inline pills across user bubbles, reply previews, and persisted/streaming agent Markdown bubbles (skipping code blocks, inline code, links, and emails while preserving `AskQuote` text-selection offsets). The transcript and borderless floating rounded composer share regular chat's `max-w-4xl` width and horizontal padding.
+- **Paged transcript & upward infinite scroll**: Opening or refreshing a group loads the latest 50 messages (`GET /groups/:id?limit=50&offset=-1`) and snaps cleanly to the newest message at the bottom. Scrolling near the top automatically fetches older pages using the `before_id` cursor (showing a top loading spinner and preserving your exact scroll position when older messages prepend), while live SSE messages deduplicate by `id` at the bottom.
 - **WhatsApp-style Full-Message Reply**:
   1. Click **Reply** on any user or agent message to attach it to `GroupReplyBar` above the composer (colored left accent border, sender name, excerpt, and `×` clear button).
   2. Type your follow-up and send — the resulting message displays a clickable `reply_preview` card inside the bubble.
-  3. Click any reply card in the transcript to smoothly scroll back to and highlight the original message.
+  3. Click any reply card in the transcript to smoothly scroll back to and highlight the original message — if the original message is older than the currently loaded page, the page automatically loads earlier pages until it is found before jumping.
 - **Text-Selection Quote (`AskQuoteList`)**:
   - Highlight any text inside an agent's answer to surface the floating **Quote / Ask** pill, adding excerpts to `AskQuoteList` above the composer.
   - Works independently of — and coexists cleanly with — full-message Reply.
@@ -197,7 +198,8 @@ See [Control Plane API — Groups](../api/control-plane.md#23-groups) for the co
 
 | Concern | Location |
 | :--- | :--- |
-| Persistent JSON store (`~/.myaaw/groups/`) | `internal/services/controlplane/service/groups_store.go` |
+| Shared SQLite database (`~/.myaaw/controlplane/controlplane.db`) | `internal/services/controlplane/service/cpdb.go` |
+| SQLite group store (`groups`, `group_members`, `group_messages`) | `internal/services/controlplane/service/groups_store.go` |
 | Group orchestrator, delta builder & SSE hub | `internal/services/controlplane/service/groups.go` |
 | HTTP & SSE handlers | `internal/services/controlplane/handler/groups.go`, `internal/services/controlplane/handler/handler.go` |
 | Auth-protected route registration | `internal/services/controlplane/router.go` |
@@ -205,7 +207,7 @@ See [Control Plane API — Groups](../api/control-plane.md#23-groups) for the co
 | Frontend TypeScript types | `webui/src/lib/types/groups.ts`, `webui/src/lib/types/index.ts` |
 | Frontend REST & SSE API client | `webui/src/lib/apis/groups.ts` |
 | Svelte 5 groups store | `webui/src/lib/stores/groups.svelte.ts`, `webui/src/lib/stores/index.ts` |
-| Group UI components & accents | `webui/src/lib/components/groups/CreateGroupDialog.svelte`, `GroupInspectorPanel.svelte`, `GroupReplyBar.svelte`, `accent.ts` |
+| Group UI components, accents & mention pills | `webui/src/lib/components/groups/CreateGroupDialog.svelte`, `GroupInspectorPanel.svelte`, `GroupReplyBar.svelte`, `accent.ts`, `mentions.ts` |
 | Sidebar `+` menu & Groups section | `webui/src/lib/components/bots/BotsSidebar.svelte` |
 | Group chat page | `webui/src/routes/app/groups/[id]/+page.svelte` |
 | Shell layout & `Cmd+K` commands | `webui/src/routes/app/+layout.svelte` |
