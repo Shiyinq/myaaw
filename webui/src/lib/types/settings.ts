@@ -1,5 +1,5 @@
 /**
- * Dashboard settings persisted under the "settings" key of ~/.myaaw/config/controlplane.json
+ * Dashboard settings persisted in the `settings` table of ~/.myaaw/controlplane/controlplane.db
  * so preferences stay in sync across browsers.
  */
 export interface ControlPlaneSettings {

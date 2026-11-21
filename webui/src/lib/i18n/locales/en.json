@@ -184,7 +184,7 @@
 			"setup_link": "First run? Set up Myaaw",
 			"submit": "Sign in",
 			"submitting": "Signing in...",
-			"hint": "Default credentials come from ~/.myaaw/config/controlplane.json."
+			"hint": "Default credentials are stored in ~/.myaaw/controlplane/controlplane.db."
 		},
 		"setup": {
 			"title": "Myaaw setup",
@@ -634,7 +634,7 @@
 		"profile": {
 			"title": "Profile",
 			"subtitle": "Your account, password, and username.",
-			"credentials_note": "Credentials are stored in ~/.myaaw/config/controlplane.json.",
+			"credentials_note": "Credentials are stored in ~/.myaaw/controlplane/controlplane.db.",
 			"force_password": "Change the default password before continuing.",
 			"password": "Change password",
 			"password_desc": "Changing the password signs out every session.",
@@ -1423,9 +1423,12 @@
 			"section_all": "All bots",
 			"filter_label": "Filter bots",
 			"filter_all": "All",
+			"filter_groups": "Groups",
+			"filter_bots": "Bots",
 			"filter_running": "Running",
 			"filter_unread": "Unread",
 			"empty_filter": "No bots match this filter.",
+			"empty_groups": "No groups yet.",
 			"actions": "Bot actions",
 			"reconfigure": "Reconfigure"
 		},

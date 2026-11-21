@@ -20,7 +20,7 @@ export const settingsStore = {
 	},
 
 	/**
-	 * Fetches dashboard settings from ~/.myaaw/config/controlplane.json once per
+	 * Fetches dashboard settings from ~/.myaaw/controlplane/controlplane.db once per
 	 * login/session and hydrates local stores (preferences, theme, mode, locale).
 	 */
 	async loadOnce(force = false): Promise<void> {

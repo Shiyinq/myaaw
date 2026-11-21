@@ -236,7 +236,7 @@ export const preferences = {
 		if (browser) localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
 		queueSettingsPatch(toSettingsPatch(patch));
 	},
-	/** Applies preferences fetched from controlplane.json without echoing back to the server. */
+	/** Applies preferences fetched from controlplane.db without echoing back to the server. */
 	hydrate(remote: ControlPlaneSettings) {
 		current = fromControlPlaneSettings(remote);
 		if (browser) localStorage.setItem(STORAGE_KEY, JSON.stringify(current));

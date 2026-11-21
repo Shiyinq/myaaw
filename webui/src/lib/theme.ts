@@ -373,7 +373,7 @@ export function applyAppearance(option: AppearanceOption): void {
 }
 
 /**
- * Applies theme and mode loaded from controlplane.json without echoing back to
+ * Applies theme and mode loaded from controlplane.db without echoing back to
  * the server. Named themes enforce the mode they were designed for.
  */
 export function applyRemoteAppearance(mode: string, themeId: string): void {

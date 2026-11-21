@@ -184,7 +184,7 @@
 			"setup_link": "Pertama kali? Siapkan Myaaw",
 			"submit": "Masuk",
 			"submitting": "Sedang masuk...",
-			"hint": "Kredensial default ada di ~/.myaaw/config/controlplane.json."
+			"hint": "Kredensial default disimpan di ~/.myaaw/controlplane/controlplane.db."
 		},
 		"setup": {
 			"title": "Penyiapan Myaaw",
@@ -634,7 +634,7 @@
 		"profile": {
 			"title": "Profil",
 			"subtitle": "Akun, kata sandi, dan nama pengguna.",
-			"credentials_note": "Kredensial disimpan di ~/.myaaw/config/controlplane.json.",
+			"credentials_note": "Kredensial disimpan di ~/.myaaw/controlplane/controlplane.db.",
 			"force_password": "Ganti password default sebelum melanjutkan.",
 			"password": "Ganti kata sandi",
 			"password_desc": "Mengganti kata sandi mengeluarkan semua sesi.",
@@ -1423,9 +1423,12 @@
 			"section_all": "Semua bot",
 			"filter_label": "Saring bot",
 			"filter_all": "Semua",
+			"filter_groups": "Grup",
+			"filter_bots": "Bot",
 			"filter_running": "Berjalan",
 			"filter_unread": "Belum dibaca",
 			"empty_filter": "Tidak ada bot yang sesuai filter.",
+			"empty_groups": "Belum ada grup.",
 			"actions": "Aksi bot",
 			"reconfigure": "Konfigurasi ulang"
 		},

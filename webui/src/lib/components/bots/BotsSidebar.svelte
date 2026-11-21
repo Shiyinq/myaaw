@@ -46,7 +46,7 @@
 	import { formatChatTimestamp } from '$lib/utils/time';
 	import type { AgentInfo, GroupSummary } from '$lib/types';
 
-	type BotFilter = 'all' | 'running' | 'unread';
+	type BotFilter = 'all' | 'groups' | 'bots' | 'running' | 'unread';
 
 	const { t, locale } = useTranslation();
 
@@ -221,6 +221,7 @@
 	);
 
 	const visibleAgents = $derived.by(() => {
+		if (filter === 'groups') return [];
 		const base = agentSelection.agents.filter((bot) => {
 			if (searchTerm && !bot.name.toLowerCase().includes(searchTerm)) return false;
 			if (filter === 'running' && !bot.running) return false;
@@ -239,21 +240,18 @@
 	const orderedBots = $derived(splitSections ? [...attentionBots, ...regularBots] : visibleAgents);
 
 	const visibleGroups = $derived.by(() => {
+		if (filter !== 'all' && filter !== 'groups') return [];
 		return groupsStore.groups.filter((grp) => {
 			if (searchTerm) {
 				const nameHit = grp.name.toLowerCase().includes(searchTerm);
 				const memberHit = grp.members.some((m) => m.name.toLowerCase().includes(searchTerm));
 				if (!nameHit && !memberHit) return false;
 			}
-			if (filter === 'running') {
-				return grp.running || grp.members.some((m) => m.running);
-			}
-			if (filter === 'unread') {
-				return grp.running;
-			}
 			return true;
 		});
 	});
+
+	const showSectionHeaders = $derived(filter === 'all');
 
 	const onChatRoute = $derived(
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
@@ -779,8 +777,8 @@
 	</div>
 	<div class="mx-auto my-1 h-px w-6 bg-border"></div>
 	<nav class="flex-1 space-y-1.5 overflow-y-auto px-2 py-1" aria-label={t('myaaw.bots.list_label')}>
-		{#if groupsStore.groups.length > 0}
-			{#each groupsStore.groups as grp (grp.id)}
+		{#if visibleGroups.length > 0}
+			{#each visibleGroups as grp (grp.id)}
 				{@const active = isGroupActive(grp.id)}
 				<button
 					type="button"
@@ -807,7 +805,9 @@
 					{/if}
 				</button>
 			{/each}
-			<div class="mx-auto my-1.5 h-px w-6 bg-border"></div>
+			{#if orderedBots.length > 0}
+				<div class="mx-auto my-1.5 h-px w-6 bg-border"></div>
+			{/if}
 		{/if}
 		{#each orderedBots as bot (bot.name)}
 			{@const active = onChatRoute && agentSelection.selected === bot.name}
@@ -858,29 +858,6 @@
 			</button>
 		{/each}
 	</nav>
-	<div class="mx-auto my-1 h-px w-6 bg-border"></div>
-	<div class="flex shrink-0 flex-col items-center gap-1 px-2 py-1">
-		{#each utilityLinks as item (item.href)}
-			{@const Icon = item.icon}
-			<a
-				href={item.href}
-				title={item.label}
-				aria-label={item.label}
-				aria-current={item.active ? 'page' : undefined}
-				class={[
-					'relative flex h-9 w-10 items-center justify-center rounded-md transition-colors',
-					item.active
-						? 'bg-accent text-accent-foreground'
-						: 'text-muted-foreground hover:bg-muted hover:text-foreground'
-				]}
-			>
-				{#if item.active}
-					<span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary"></span>
-				{/if}
-				<Icon class="h-4 w-4 shrink-0" />
-			</a>
-		{/each}
-	</div>
 {:else}
 	<div class="flex shrink-0 items-center gap-1.5 px-3 py-2">
 		<div class="relative min-w-0 flex-1">
@@ -943,9 +920,28 @@
 						{t('myaaw.bots.filter_all')}
 					</span>
 					<span class="text-[11px] text-muted-foreground tabular-nums">
+						{groupsStore.groups.length + agentSelection.agents.length}
+					</span>
+				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => (filter = 'groups')} class="justify-between gap-2">
+					<span class="flex items-center gap-2">
+						<Check class={filter === 'groups' ? 'h-3.5 w-3.5' : 'h-3.5 w-3.5 opacity-0'} />
+						{t('myaaw.bots.filter_groups')}
+					</span>
+					<span class="text-[11px] text-muted-foreground tabular-nums">
+						{groupsStore.groups.length}
+					</span>
+				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => (filter = 'bots')} class="justify-between gap-2">
+					<span class="flex items-center gap-2">
+						<Check class={filter === 'bots' ? 'h-3.5 w-3.5' : 'h-3.5 w-3.5 opacity-0'} />
+						{t('myaaw.bots.filter_bots')}
+					</span>
+					<span class="text-[11px] text-muted-foreground tabular-nums">
 						{agentSelection.agents.length}
 					</span>
 				</DropdownMenu.Item>
+				<DropdownMenu.Separator />
 				<DropdownMenu.Item onclick={() => (filter = 'running')} class="justify-between gap-2">
 					<span class="flex items-center gap-2">
 						<Check class={filter === 'running' ? 'h-3.5 w-3.5' : 'h-3.5 w-3.5 opacity-0'} />
@@ -995,28 +991,32 @@
 		aria-label={t('myaaw.bots.list_label')}
 	>
 		{#if visibleGroups.length > 0}
-			<div class="flex items-center justify-between px-2 pt-1 pb-1">
-				<span class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-					{t('myaaw.groups.section_groups')}
-				</span>
-				<span class="text-[10px] font-medium text-muted-foreground tabular-nums">
-					{visibleGroups.length}
-				</span>
-			</div>
+			{#if showSectionHeaders}
+				<div class="flex items-center justify-between px-2 pt-1 pb-1">
+					<span class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+						{t('myaaw.groups.section_groups')}
+					</span>
+					<span class="text-[10px] font-medium text-muted-foreground tabular-nums">
+						{visibleGroups.length}
+					</span>
+				</div>
+			{/if}
 			{#each visibleGroups as grp (grp.id)}
 				{@render groupRow(grp)}
 			{/each}
 		{/if}
 
-		{#if agentSelection.loading && agentSelection.agents.length === 0}
+		{#if agentSelection.loading && agentSelection.agents.length === 0 && filter !== 'groups'}
 			<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
 		{:else if visibleAgents.length === 0 && visibleGroups.length === 0}
 			<p class="px-2 py-3 text-xs text-muted-foreground">
 				{searchTerm
 					? t('myaaw.bots.no_matches')
-					: filter !== 'all'
-						? t('myaaw.bots.empty_filter')
-						: t('myaaw.agent.none')}
+					: filter === 'groups'
+						? t('myaaw.bots.empty_groups')
+						: filter !== 'all'
+							? t('myaaw.bots.empty_filter')
+							: t('myaaw.agent.none')}
 			</p>
 		{:else if splitSections}
 			<div
@@ -1048,7 +1048,7 @@
 				{@render botRow(bot)}
 			{/each}
 		{:else if visibleAgents.length > 0}
-			{#if visibleGroups.length > 0}
+			{#if showSectionHeaders && visibleGroups.length > 0}
 				<div class="flex items-center justify-between px-2 pt-3 pb-1">
 					<span class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
 						{t('myaaw.groups.section_bots')}
@@ -1063,25 +1063,46 @@
 			{/each}
 		{/if}
 	</nav>
-
-	<div class="shrink-0 space-y-0.5 px-2 pt-2 pb-1">
-		{#each utilityLinks as item (item.href)}
-			{@const Icon = item.icon}
-			<a
-				href={item.href}
-				aria-current={item.active ? 'page' : undefined}
-				class={[
-					'relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors list-row',
-					item.active
-						? 'bg-accent font-medium text-accent-foreground'
-						: 'text-muted-foreground hover:bg-muted hover:text-foreground'
-				]}
-			>
-				<Icon class="h-4 w-4 shrink-0" />
-				<span class="truncate">{item.label}</span>
-			</a>
-		{/each}
-	</div>
 {/if}
+
+<!-- Utility links stay mounted outside the compact/expanded swap so the icons
+     stay pixel-anchored with zero remounting, horizontal jump, or flicker while
+     the sidebar animates between compact rail and expanded widths. -->
+<div
+	aria-hidden="true"
+	class="mx-auto my-1 h-px shrink-0 bg-border transition-[width,opacity] duration-200 {compact
+		? 'w-6 opacity-100'
+		: 'w-0 opacity-0'}"
+></div>
+<div class="shrink-0 space-y-0.5 px-2 py-1">
+	{#each utilityLinks as item (item.href)}
+		{@const Icon = item.icon}
+		<a
+			href={item.href}
+			title={compact ? item.label : undefined}
+			aria-label={compact ? item.label : undefined}
+			aria-current={item.active ? 'page' : undefined}
+			class={[
+				'relative flex h-9 items-center overflow-hidden rounded-lg pl-3 text-sm transition-colors list-row',
+				compact ? 'gap-0 pr-0' : 'gap-2.5 pr-2.5',
+				item.active
+					? 'bg-accent font-medium text-accent-foreground'
+					: 'text-muted-foreground hover:bg-muted hover:text-foreground'
+			]}
+		>
+			{#if compact && item.active}
+				<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary"></span>
+			{/if}
+			<Icon class="h-4 w-4 shrink-0" />
+			<span
+				class="truncate overflow-hidden whitespace-nowrap transition-all duration-200 {compact
+					? 'max-w-0 opacity-0 delay-0'
+					: 'max-w-full opacity-100 delay-200'}"
+			>
+				{item.label}
+			</span>
+		</a>
+	{/each}
+</div>
 
 <SidebarAccount {compact} />

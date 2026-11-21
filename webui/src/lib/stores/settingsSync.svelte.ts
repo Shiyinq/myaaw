@@ -26,7 +26,7 @@ export function withRemoteSettingsSuppression(fn: () => void): void {
 }
 
 /**
- * Queues a partial settings update to be persisted in ~/.myaaw/config/controlplane.json.
+ * Queues a partial settings update to be persisted in ~/.myaaw/controlplane/controlplane.db.
  * Rapid changes (such as dragging range sliders) are coalesced into a single PATCH,
  * and requests are serialized so earlier patches never overwrite newer ones.
  */
