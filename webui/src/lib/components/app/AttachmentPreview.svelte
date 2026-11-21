@@ -24,9 +24,23 @@
 		onClose: () => void;
 		/** Closes the pane and scrolls the transcript to the carrying turn. */
 		onShowInChat: (item: ConversationAttachment) => void;
+		/** Optional direct URLs & download handler (e.g. for control-plane group uploads). */
+		srcOverride?: string;
+		downloadSrcOverride?: string;
+		onDownload?: () => void;
+		originLabel?: string;
 	}
 
-	let { agent, item, onClose, onShowInChat }: Props = $props();
+	let {
+		agent,
+		item,
+		onClose,
+		onShowInChat,
+		srcOverride,
+		downloadSrcOverride,
+		onDownload,
+		originLabel
+	}: Props = $props();
 
 	const { t } = useTranslation();
 
@@ -72,9 +86,19 @@
 		};
 	});
 
-	const src = $derived(filesStore.rawUrl(agent, item.path));
-	const downloadSrc = $derived(filesStore.rawUrl(agent, item.path, { download: true }));
+	const src = $derived(srcOverride || filesStore.rawUrl(agent, item.path));
+	const downloadSrc = $derived(
+		downloadSrcOverride || filesStore.rawUrl(agent, item.path, { download: true })
+	);
 	const lightboxItems = $derived<LightboxImage[]>([{ src, name: item.file_name, downloadSrc }]);
+
+	function triggerDownload() {
+		if (onDownload) {
+			onDownload();
+			return;
+		}
+		void filesStore.download(agent, item.path);
+	}
 
 	const kindLabel = $derived.by(() => {
 		switch (item.kind) {
@@ -118,13 +142,13 @@
 	/** One signature per file; media elements cannot send the session token. */
 	$effect(() => {
 		const path = item.path;
-		if (!path) return;
 		imageFailed = false;
+		if (!path || !agent || srcOverride) return;
 		void ensureSigned(agent, [path]);
 	});
 
 	function retryImage() {
-		if (imageFailed) {
+		if (imageFailed || !agent || !item.path || srcOverride) {
 			toastStore.error(t('myaaw.chat.attachments_missing'));
 			return;
 		}
@@ -178,9 +202,10 @@
 				{/if}
 				<span>·</span>
 				<span>
-					{item.origin === 'agent'
-						? t('myaaw.chat.attachments_from_agent')
-						: t('myaaw.chat.attachments_from_you')}
+					{originLabel ||
+						(item.origin === 'agent'
+							? t('myaaw.chat.attachments_from_agent')
+							: t('myaaw.chat.attachments_from_you'))}
 				</span>
 			</p>
 		</div>
@@ -197,7 +222,7 @@
 		<Button
 			variant="outline"
 			size="icon-sm"
-			onclick={() => void filesStore.download(agent, item.path)}
+			onclick={triggerDownload}
 			title={t('myaaw.chat.download_file')}
 			aria-label={t('myaaw.chat.download_file')}
 		>
@@ -262,11 +287,7 @@
 							· {sizeLabel(item.size)}{/if}
 					</p>
 				</div>
-				<Button
-					variant="outline"
-					size="sm"
-					onclick={() => void filesStore.download(agent, item.path)}
-				>
+				<Button variant="outline" size="sm" onclick={triggerDownload}>
 					<ArrowDownToLine class="mr-1.5 h-4 w-4" />
 					{t('myaaw.chat.download_file')}
 				</Button>

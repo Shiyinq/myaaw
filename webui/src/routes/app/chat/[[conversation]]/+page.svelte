@@ -29,6 +29,7 @@
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { MAX_ASK_QUOTES, MAX_ASK_QUOTE_CHARS, parseAskPrompt } from '$lib/utils/ask';
+	import { stripAttachDirectives } from '$lib/utils/attachments';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
 	import AttachmentPanel from '$lib/components/app/AttachmentPanel.svelte';
@@ -2985,19 +2986,7 @@
 		return '';
 	}
 
-	/**
-	 * A delivery directive is backend syntax. Readers see the path it names, so
-	 * `@attach(/a/b.png)` renders as `/a/b.png` without the wrapper.
-	 */
-	const ATTACH_DIRECTIVE_RE = /@attach\(\s*(?:"([^"]+)"|'([^']+)'|([^)\s]+))\s*\)/gi;
-	/** Short form the model sometimes writes: `@/absolute/path`. */
-	const BARE_ATTACH_RE = /@((?:~\/?|\/)[^\s"'<>()]+)/g;
-
-	function displayText(text: string): string {
-		return text
-			.replace(ATTACH_DIRECTIVE_RE, (_match, ...groups) => groups.find((group) => group) ?? '')
-			.replace(BARE_ATTACH_RE, '$1');
-	}
+	const displayText = stripAttachDirectives;
 
 	/**
 	 * Uploads live under <agent>/user/uploads/<conversation>/<message>/ and the
