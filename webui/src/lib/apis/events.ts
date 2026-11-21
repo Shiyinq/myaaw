@@ -5,6 +5,7 @@ import { streamSSE, type SSEEvent } from '$lib/utils/sse';
 export interface ConversationUpdatedEvent {
 	agent: string;
 	conversation_id: string;
+	scope?: string;
 	trigger: 'cron' | 'heartbeat' | 'subagent' | string;
 	at: string;
 }

@@ -7,6 +7,7 @@
 		Plus,
 		Save,
 		Settings2,
+		ShieldAlert,
 		Trash2,
 		UserMinus,
 		Users,
@@ -16,25 +17,37 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import Bloub from '$lib/components/common/Bloub.svelte';
+	import { groupAccent } from '$lib/components/groups/accent';
 	import { colorOf } from '$lib/bloub';
 	import { agentSelection, groupsStore, serverStore, toastStore } from '$lib/stores';
+	import type { PendingApproval } from '$lib/stores/approvalQueue.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { formatShortcut } from '$lib/utils/keys';
-	import type { DiscussionMode, Group, GroupMember } from '$lib/types';
+	import type { ApprovalDecision, DiscussionMode, Group, GroupMember } from '$lib/types';
 
 	type Tab = 'members' | 'settings';
 
 	interface Props {
 		group: Group;
 		tab?: Tab;
+		pendingApprovals?: PendingApproval[];
+		onDecideApproval?: (entry: PendingApproval, decision: ApprovalDecision) => void;
 		onClose: () => void;
 		onUpdated: (group: Group) => void;
 		onCleared: () => void;
 	}
 
-	let { group, tab = $bindable<Tab>('members'), onClose, onUpdated, onCleared }: Props = $props();
+	let {
+		group,
+		tab = $bindable<Tab>('members'),
+		pendingApprovals = [],
+		onDecideApproval,
+		onClose,
+		onUpdated,
+		onCleared
+	}: Props = $props();
 
 	const { t } = useTranslation();
 
@@ -287,6 +300,13 @@
 		>
 			<Users class="h-3.5 w-3.5" />
 			{t('myaaw.groups.tab_members')}
+			{#if pendingApprovals.length > 0}
+				<span
+					class="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums"
+				>
+					{pendingApprovals.length > 9 ? '9+' : pendingApprovals.length}
+				</span>
+			{/if}
 		</button>
 		<button
 			type="button"
@@ -308,6 +328,80 @@
 	<div class="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
 		{#if tab === 'members'}
 			<div class="space-y-3 pt-1">
+				{#if pendingApprovals.length > 0}
+					<div class="space-y-1.5">
+						<p
+							class="flex items-center gap-1 px-1 text-[10px] font-semibold tracking-widest text-amber-600 uppercase dark:text-amber-400"
+						>
+							<ShieldAlert class="h-3 w-3 shrink-0" />
+							{t('myaaw.groups.pending_approvals')} ({pendingApprovals.length})
+						</p>
+						{#each pendingApprovals as entry (entry.approvalId)}
+							{@const accent = groupAccent(
+								agentSelection.agents.find((a) => a.name === entry.agent)?.agent_color ||
+									entry.agentColor
+							)}
+							<div class="rounded-xl border border-amber-500/35 bg-amber-500/10 p-2.5 text-xs">
+								<div class="flex flex-wrap items-center gap-1.5">
+									<span
+										class={[
+											'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1',
+											accent.softBg,
+											accent.text,
+											accent.ring
+										]}
+									>
+										<span class={['h-1.5 w-1.5 rounded-full', accent.dot]}></span>
+										@{entry.agent}
+									</span>
+									{#if entry.subAgent}
+										<span
+											class="rounded-full bg-amber-500/25 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800 dark:text-amber-100"
+										>
+											{entry.subAgent}
+										</span>
+									{/if}
+									<span class="truncate font-mono text-[11px] font-medium text-foreground">
+										{entry.toolName}
+									</span>
+								</div>
+								{#if entry.argsSummary}
+									<pre
+										class="mt-1 max-h-20 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] text-muted-foreground">{entry.argsSummary}</pre>
+								{/if}
+								{#if onDecideApproval}
+									<div class="mt-2 flex flex-wrap gap-1.5">
+										<Button size="xs" onclick={() => onDecideApproval(entry, 'allow_once')}>
+											{t('myaaw.chat.allow_once')}
+										</Button>
+										<Button
+											size="xs"
+											variant="secondary"
+											onclick={() => onDecideApproval(entry, 'allow_session')}
+										>
+											{t('myaaw.chat.allow_session')}
+										</Button>
+										<Button
+											size="xs"
+											variant="secondary"
+											onclick={() => onDecideApproval(entry, 'allow_always')}
+										>
+											{t('myaaw.chat.allow_always')}
+										</Button>
+										<Button
+											size="xs"
+											variant="destructive"
+											onclick={() => onDecideApproval(entry, 'deny')}
+										>
+											{t('myaaw.chat.deny')}
+										</Button>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+
 				<div class="space-y-1.5">
 					<p class="px-1 text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
 						{t('myaaw.groups.current_members')} ({group.members.length})
@@ -410,7 +504,7 @@
 				{/if}
 			</div>
 		{:else}
-			<form onsubmit={saveSettings} class="space-y-3.5 pt-1">
+			<form onsubmit={saveSettings} autocomplete="off" class="space-y-3.5 pt-1">
 				<div class="space-y-1.5">
 					<Label for="inspector-group-name" class="text-xs">
 						{t('myaaw.groups.name_label')}
@@ -420,6 +514,7 @@
 						bind:value={editName}
 						maxlength={100}
 						required
+						autocomplete="off"
 						class="h-8 text-xs"
 					/>
 				</div>

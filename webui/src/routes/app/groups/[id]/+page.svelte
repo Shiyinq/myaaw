@@ -27,6 +27,7 @@
 		X
 	} from 'lucide-svelte';
 	import AskQuoteList from '$lib/components/app/AskQuoteList.svelte';
+	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import ChatStep from '$lib/components/common/ChatStep.svelte';
@@ -45,7 +46,15 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { colorOf } from '$lib/bloub';
-	import { agentSelection, groupsStore, preferences, toastStore, topBarTitle } from '$lib/stores';
+	import {
+		agentSelection,
+		chatStore,
+		groupsStore,
+		preferences,
+		toastStore,
+		topBarTitle
+	} from '$lib/stores';
+	import { approvalQueue, type PendingApproval } from '$lib/stores/approvalQueue.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { cn } from '$lib/utils';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -53,11 +62,13 @@
 	import { formatShortcut, isOverlayOpen, matchesShortcut } from '$lib/utils/keys';
 	import type { SSEEvent } from '$lib/utils/sse';
 	import type {
+		ApprovalDecision,
 		AskQuote,
 		AskQuoteSource,
 		ChatFile,
 		Group,
 		GroupChunkEvent,
+		GroupPendingApproval,
 		GroupErrorEvent,
 		GroupMessage,
 		GroupMessageEvent,
@@ -273,6 +284,18 @@
 		return map;
 	});
 
+	const groupApprovals = $derived(approvalQueue.listForGroup(groupId));
+	const activeGroupApproval = $derived(groupApprovals[0] ?? null);
+
+	async function decideGroupApproval(entry: PendingApproval, decision: ApprovalDecision) {
+		try {
+			await chatStore.decide(entry.agent, entry.approvalId, decision);
+			approvalQueue.resolved({ approval_id: entry.approvalId });
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		}
+	}
+
 	const mentionCandidates = $derived.by<MentionCandidate[]>(() => {
 		if (!group) return [];
 		const q = mentionQuery.toLowerCase();
@@ -377,6 +400,7 @@
 			hasMore = Boolean(detail.has_more);
 			totalMessages = detail.total_messages ?? messages.length;
 			runState = detail.run_state ?? { ...EMPTY_RUN_STATE };
+			approvalQueue.syncGroup(id, detail.run_state?.pending_approvals ?? []);
 			// Flip `loading` off BEFORE awaiting `tick()` so the real transcript
 			// mounts (replacing the skeleton) and `scroller` exists when snapping
 			// to the newest message at the bottom.
@@ -461,6 +485,7 @@
 				const payload = data as unknown as GroupStatusEvent;
 				if (!payload.run_state) return;
 				runState = payload.run_state;
+				approvalQueue.syncGroup(id, payload.run_state.pending_approvals ?? []);
 				groupsStore.syncSummaryFromRunState(id, payload.run_state);
 				if (!payload.run_state.running) {
 					activeTurn = null;
@@ -613,13 +638,41 @@
 				}
 				break;
 			}
+			case 'approval_required': {
+				const payload = data as unknown as GroupPendingApproval;
+				if (!payload?.approval_id || !payload?.agent) return;
+				approvalQueue.required(payload.agent, {
+					approval_id: payload.approval_id,
+					agent: payload.agent,
+					agent_color: payload.agent_color,
+					conversation_id: payload.conversation_id,
+					group_id: payload.group_id || id,
+					scope: `group:${payload.group_id || id}`,
+					run_id: payload.run_id,
+					tool_name: payload.tool_name,
+					action: payload.action,
+					args_summary: payload.args_summary,
+					args: payload.args,
+					subagent: payload.subagent
+				});
+				break;
+			}
+			case 'approval_resolved': {
+				const payload = data as unknown as { approval_id?: string };
+				if (payload?.approval_id) {
+					approvalQueue.resolved({ approval_id: payload.approval_id });
+				}
+				break;
+			}
 			case 'run_end': {
 				const payload = data as unknown as GroupRunEndEvent;
 				activeTurn = null;
 				if (payload.run_state) {
 					runState = payload.run_state;
+					approvalQueue.syncGroup(id, payload.run_state.pending_approvals ?? []);
 					groupsStore.syncSummaryFromRunState(id, payload.run_state);
 				} else {
+					approvalQueue.syncGroup(id, []);
 					runState = {
 						...runState,
 						running: false,
@@ -2220,6 +2273,27 @@
 						</div>
 					{/if}
 
+					{#if activeGroupApproval}
+						<div class="mb-2">
+							<PendingApprovalCard
+								approval={{
+									approval_id: activeGroupApproval.approvalId,
+									tool_name: activeGroupApproval.toolName,
+									action: activeGroupApproval.action,
+									args_summary: activeGroupApproval.argsSummary,
+									args: activeGroupApproval.args,
+									subagent: activeGroupApproval.subAgent
+								}}
+								agentName={activeGroupApproval.agent}
+								agentColor={memberColorMap.get(activeGroupApproval.agent) ||
+									activeGroupApproval.agentColor}
+								queuePosition={1}
+								queueTotal={groupApprovals.length}
+								onDecide={(decision) => void decideGroupApproval(activeGroupApproval, decision)}
+							/>
+						</div>
+					{/if}
+
 					<!-- Rounded floating composer card (matching regular 1-on-1 chat) -->
 					<div
 						role="region"
@@ -2411,6 +2485,8 @@
 				<GroupInspectorPanel
 					{group}
 					bind:tab={inspectorTab}
+					pendingApprovals={groupApprovals}
+					onDecideApproval={(entry, decision) => void decideGroupApproval(entry, decision)}
 					onClose={toggleInspector}
 					onUpdated={(updated) => (group = updated)}
 					onCleared={() => {

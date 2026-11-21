@@ -1491,6 +1491,7 @@
 			"members_count": "{count} anggota",
 			"members_online": "{online}/{total} aktif",
 			"tab_members": "Anggota",
+			"pending_approvals": "Menunggu persetujuan",
 			"tab_settings": "Pengaturan",
 			"current_members": "Anggota",
 			"add_member": "Tambah agen",

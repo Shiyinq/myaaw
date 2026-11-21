@@ -189,7 +189,8 @@ export const groupsStore = {
 				? {
 						...entry,
 						running: runState.running,
-						current_agent: runState.current_agent
+						current_agent: runState.current_agent,
+						pending_approval_count: runState.pending_approvals?.length ?? 0
 					}
 				: entry
 		);

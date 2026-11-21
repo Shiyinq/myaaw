@@ -1491,6 +1491,7 @@
 			"members_count": "{count} members",
 			"members_online": "{online}/{total} online",
 			"tab_members": "Members",
+			"pending_approvals": "Pending approvals",
 			"tab_settings": "Settings",
 			"current_members": "Members",
 			"add_member": "Add agent",

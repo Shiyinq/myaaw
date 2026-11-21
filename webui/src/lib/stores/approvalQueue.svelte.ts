@@ -4,20 +4,27 @@ import { playNotification } from '$lib/sound/notify.svelte';
 import { chatRuns } from '$lib/stores/chatRuns.svelte';
 import { preferences } from '$lib/stores/preferences.svelte';
 import { unreadChats } from '$lib/stores/unreadChats.svelte';
+import type { GroupPendingApproval } from '$lib/types';
 
 /**
- * Tool calls waiting for a decision, across every conversation of an agent.
+ * Tool calls waiting for a decision, across every conversation of an agent and
+ * every multi-agent group.
  *
  * Two sources feed it: the open chat's run stream (`ChatRun.pendingApproval`,
  * instant) and the agent's `approval.required` / `approval.resolved` events on
- * `/api/events`. The second is what makes a sub-agent approval visible: its run
- * outlives the parent chat stream, so the dashboard would otherwise never see it.
+ * `/api/events` (plus group SSE events and initial `run_state.pending_approvals`).
+ * Group-scoped approvals (`scope: "group:<id>"`) are kept strictly separate from
+ * 1-on-1 agent DM lists so they appear only in their owning group.
  */
 export interface PendingApproval {
 	approvalId: string;
 	agent: string;
 	conversationId: string;
+	scope?: string;
+	groupId?: string;
+	agentColor?: string;
 	toolName: string;
+	action?: string;
 	argsSummary?: string;
 	/** Full raw argument JSON; present on the event and on the chat stream. */
 	args?: string;
@@ -29,14 +36,24 @@ export interface PendingApproval {
 export interface ApprovalEvent {
 	approval_id?: string;
 	agent?: string;
+	agent_color?: string;
 	conversation_id?: string;
+	scope?: string;
+	group_id?: string;
 	run_id?: string;
 	tool_name?: string;
+	action?: string;
 	args_summary?: string;
 	args?: string;
 	subagent?: string;
 	decision?: string;
 	resolved?: boolean;
+}
+
+function groupIdFromScope(scope?: string): string | undefined {
+	if (!scope || !scope.startsWith('group:')) return undefined;
+	const id = scope.slice('group:'.length).trim();
+	return id || undefined;
 }
 
 let events = $state<Record<string, PendingApproval>>({});
@@ -79,20 +96,64 @@ function required(connectionAgent: string, data: ApprovalEvent) {
 	const approvalId = data?.approval_id;
 	const agent = data?.agent || connectionAgent;
 	const conversationId = data?.conversation_id || '';
-	if (!approvalId || !agent || !conversationId || events[approvalId]) return;
+	const scope = data?.scope || (data?.group_id ? `group:${data.group_id}` : undefined);
+	const groupId = data?.group_id || groupIdFromScope(scope);
+	if (!approvalId || !agent || (!conversationId && !groupId)) return;
 
+	const existing = events[approvalId];
 	const entry: PendingApproval = {
 		approvalId,
 		agent,
-		conversationId,
-		toolName: data.tool_name || 'tool',
-		argsSummary: data.args_summary,
-		args: data.args,
-		subAgent: data.subagent,
-		runId: data.run_id
+		conversationId: conversationId || existing?.conversationId || '',
+		scope: scope || existing?.scope,
+		groupId: groupId || existing?.groupId,
+		agentColor: data.agent_color || existing?.agentColor,
+		toolName: data.tool_name || existing?.toolName || 'tool',
+		action: data.action || existing?.action,
+		argsSummary: data.args_summary ?? existing?.argsSummary,
+		args: data.args ?? existing?.args,
+		subAgent: data.subagent ?? existing?.subAgent,
+		runId: data.run_id ?? existing?.runId
 	};
 	events = { ...events, [approvalId]: entry };
-	alertIfAway(entry);
+	if (!existing) {
+		alertIfAway(entry, groupId ? false : undefined);
+	}
+}
+
+/** Replaces the server-known pending approvals for one group (e.g. on initial load/refresh). */
+function syncGroup(groupId: string, pending: GroupPendingApproval[]) {
+	if (!groupId) return;
+	const keepIds = new Set(pending.map((item) => item.approval_id));
+	const next: Record<string, PendingApproval> = {};
+	for (const [id, entry] of Object.entries(events)) {
+		// Keep all non-group entries, entries from other groups, and still-live entries
+		// (plus any sub-agent entries that arrived via /api/events for this group).
+		if (entry.groupId === groupId && !keepIds.has(id) && !entry.subAgent) {
+			alerted.delete(id);
+			continue;
+		}
+		next[id] = entry;
+	}
+	for (const item of pending) {
+		if (!item.approval_id || !item.agent) continue;
+		const prev = next[item.approval_id];
+		next[item.approval_id] = {
+			approvalId: item.approval_id,
+			agent: item.agent,
+			conversationId: item.conversation_id || prev?.conversationId || '',
+			scope: `group:${groupId}`,
+			groupId,
+			agentColor: item.agent_color || prev?.agentColor,
+			toolName: item.tool_name || prev?.toolName || 'tool',
+			action: item.action || prev?.action,
+			argsSummary: item.args_summary ?? prev?.argsSummary,
+			args: item.args ?? prev?.args,
+			subAgent: item.subagent ?? prev?.subAgent,
+			runId: item.run_id ?? prev?.runId
+		};
+	}
+	events = next;
 }
 
 /** Removes a pending approval after a decision (or a timeout). */
@@ -127,15 +188,33 @@ function fromRuns(agent: string): PendingApproval[] {
 }
 
 export const approvalQueue = {
-	/** Every pending approval of one agent, deduplicated by approval id. */
+	/** Every non-group pending approval of one agent, deduplicated by approval id. */
 	list(agent: string): PendingApproval[] {
 		if (!agent) return [];
 		const merged = new Map<string, PendingApproval>();
 		for (const entry of fromRuns(agent)) merged.set(entry.approvalId, entry);
 		for (const entry of Object.values(events)) {
-			if (entry.agent === agent) merged.set(entry.approvalId, entry);
+			if (entry.agent === agent && !entry.groupId) merged.set(entry.approvalId, entry);
 		}
 		return [...merged.values()];
+	},
+	/** Every pending approval belonging to one multi-agent group, in FIFO order. */
+	listForGroup(groupId: string): PendingApproval[] {
+		if (!groupId) return [];
+		const result: PendingApproval[] = [];
+		for (const entry of Object.values(events)) {
+			if (entry.groupId === groupId) result.push(entry);
+		}
+		return result;
+	},
+	/** Count of pending approvals for one group (for sidebar badges). */
+	groupCount(groupId: string): number {
+		if (!groupId) return 0;
+		let count = 0;
+		for (const entry of Object.values(events)) {
+			if (entry.groupId === groupId) count += 1;
+		}
+		return count;
 	},
 	has(agent: string, conversationId: string): boolean {
 		return approvalQueue.list(agent).some((entry) => entry.conversationId === conversationId);
@@ -157,6 +236,7 @@ export const approvalQueue = {
 	},
 	required,
 	resolved,
+	syncGroup,
 	setTitle(agent: string, id: string, title: string) {
 		if (!agent || !id || !title) return;
 		titles = { ...titles, [titleKey(agent, id)]: title };

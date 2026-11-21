@@ -33,6 +33,20 @@ export interface GroupMessage {
 	created_at: string;
 }
 
+export interface GroupPendingApproval {
+	approval_id: string;
+	group_id: string;
+	agent: string;
+	agent_color?: string;
+	conversation_id?: string;
+	run_id?: string;
+	tool_name: string;
+	action?: string;
+	args_summary?: string;
+	args?: string;
+	subagent?: string;
+}
+
 export interface GroupRunState {
 	running: boolean;
 	paused: boolean;
@@ -41,6 +55,7 @@ export interface GroupRunState {
 	turn_count: number;
 	max_turns: number;
 	queue: string[];
+	pending_approvals?: GroupPendingApproval[];
 }
 
 export interface Group {
@@ -72,6 +87,7 @@ export interface GroupSummary {
 	max_turns: number;
 	running: boolean;
 	current_agent: string;
+	pending_approval_count?: number;
 	last_message?: GroupLastMessage | null;
 	created_at: string;
 	updated_at: string;

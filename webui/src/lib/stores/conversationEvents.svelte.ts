@@ -92,6 +92,7 @@ function connect(agent: string) {
 				if (sse.event !== 'conversation.updated') return;
 				const data = sse.data as ConversationUpdatedEvent | null;
 				if (!data?.conversation_id) return;
+				if (data.scope?.startsWith('group:')) return;
 				handle(data, agent);
 			},
 			controller.signal

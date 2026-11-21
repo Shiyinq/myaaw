@@ -629,6 +629,10 @@
 	{@const active = isGroupActive(grp.id)}
 	{@const timeLabel = groupPreviewTime(grp)}
 	{@const menuOpen = openMenuGroup === grp.id}
+	{@const groupApprovals = Math.max(
+		approvalQueue.groupCount(grp.id),
+		grp.pending_approval_count ?? 0
+	)}
 	<div class="group relative">
 		<button
 			type="button"
@@ -680,11 +684,24 @@
 					<span
 						class={[
 							'truncate text-xs',
-							grp.running ? 'font-medium text-primary' : 'text-muted-foreground'
+							groupApprovals > 0
+								? 'font-medium text-amber-600 dark:text-amber-400'
+								: grp.running
+									? 'font-medium text-primary'
+									: 'text-muted-foreground'
 						]}
 					>
-						{groupPreviewLine(grp)}
+						{groupApprovals > 0 ? t('myaaw.chat.need_approval') : groupPreviewLine(grp)}
 					</span>
+					{#if groupApprovals > 0}
+						<span
+							title={t('myaaw.chat.need_approval')}
+							class="inline-flex h-4 min-w-4 shrink-0 items-center justify-center gap-0.5 rounded-full bg-amber-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums"
+						>
+							<ShieldAlert class="h-2.5 w-2.5 shrink-0" />
+							{groupApprovals > 9 ? '9+' : groupApprovals}
+						</span>
+					{/if}
 				</span>
 			</span>
 		</button>
