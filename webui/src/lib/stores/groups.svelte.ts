@@ -175,13 +175,27 @@ export const groupsStore = {
 		groupsStore.syncSummaryFromRunState(id, res.run_state);
 		return res;
 	},
-	async continueRun(id: string, extraTurns?: number): Promise<ContinueGroupResponse> {
+	continueRun: async (id: string, extraTurns?: number): Promise<ContinueGroupResponse> => {
 		const res = await groupsApi.continueRun(
 			id,
 			extraTurns !== undefined ? { extra_turns: extraTurns } : {}
 		);
 		groupsStore.syncSummaryFromRunState(id, res.run_state);
 		return res;
+	},
+	fetchAttachments(id: string, params?: { limit?: number; offset?: number; kind?: string }) {
+		return groupsApi.attachments(id, params);
+	},
+	uploadUrl(
+		groupId: string,
+		messageId: string,
+		storedName: string,
+		options?: { download?: boolean }
+	) {
+		return groupsApi.uploadUrl(groupId, messageId, storedName, options);
+	},
+	downloadUpload(groupId: string, messageId: string, storedName: string, fileName?: string) {
+		return groupsApi.downloadUpload(groupId, messageId, storedName, fileName);
 	},
 	syncSummaryFromRunState(id: string, runState: GroupRunState) {
 		list = list.map((entry) =>

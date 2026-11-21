@@ -11,6 +11,7 @@
 		Brain,
 		ChevronDown,
 		Clock,
+		Download,
 		FileText,
 		Loader2,
 		Mic,
@@ -27,7 +28,10 @@
 		X
 	} from 'lucide-svelte';
 	import AskQuoteList from '$lib/components/app/AskQuoteList.svelte';
+	import AttachmentPreview from '$lib/components/app/AttachmentPreview.svelte';
+	import LightBox from '$lib/components/app/LightBox.svelte';
 	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
+	import RunAttachments from '$lib/components/app/RunAttachments.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import ChatStep from '$lib/components/common/ChatStep.svelte';
@@ -59,6 +63,12 @@
 	import { cn } from '$lib/utils';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { MAX_ASK_QUOTES, MAX_ASK_QUOTE_CHARS } from '$lib/utils/ask';
+	import {
+		downloadGroupAttachment,
+		groupAttachmentUrl,
+		stripAttachDirectives,
+		toRunAttachments
+	} from '$lib/utils/attachments';
 	import { formatShortcut, isOverlayOpen, matchesShortcut } from '$lib/utils/keys';
 	import type { SSEEvent } from '$lib/utils/sse';
 	import type {
@@ -67,6 +77,7 @@
 		AskQuoteSource,
 		ChatFile,
 		Group,
+		GroupAttachment,
 		GroupChunkEvent,
 		GroupPendingApproval,
 		GroupErrorEvent,
@@ -80,6 +91,7 @@
 		GroupToolStartEvent,
 		GroupTurnEndEvent,
 		GroupTurnStartEvent,
+		LightboxImage,
 		ReplyPreview,
 		TimelineItem
 	} from '$lib/types';
@@ -254,7 +266,35 @@
 	let inspectorOpen = $state(
 		browser ? window.innerWidth >= 1024 && localStorage.getItem(INSPECTOR_KEY) !== 'false' : false
 	);
-	let inspectorTab = $state<'members' | 'settings'>('members');
+	let inspectorTab = $state<'members' | 'attachments' | 'settings'>('members');
+	let attachmentsRefreshKey = $state(0);
+	let previewAttachment = $state<GroupAttachment | null>(null);
+	let lightboxOpen = $state(false);
+	let lightboxIndex = $state(0);
+	let lightboxItems = $state<LightboxImage[]>([]);
+
+	function openImageAttachmentsLightbox(images: GroupAttachment[], index: number) {
+		if (images.length === 0) return;
+		lightboxItems = images.map((att) => ({
+			src: groupAttachmentUrl(att),
+			name: att.file_name,
+			downloadSrc: groupAttachmentUrl(att, { download: true })
+		}));
+		lightboxIndex = index;
+		lightboxOpen = true;
+	}
+
+	function openAttachmentPreview(item: GroupAttachment) {
+		previewAttachment = item;
+	}
+
+	function showAttachmentInChat(item: GroupAttachment) {
+		previewAttachment = null;
+		if (browser && window.innerWidth < 1024 && inspectorOpen) {
+			inspectorOpen = false;
+		}
+		void jumpToMessage(item.message_id);
+	}
 
 	// Scroll & composer refs.
 	let scroller = $state<HTMLDivElement | null>(null);
@@ -360,6 +400,14 @@
 			topBarTitle.set(t('myaaw.groups.title'));
 		}
 		return () => topBarTitle.clear();
+	});
+
+	// Hide the floating desktop group title while AttachmentPreview owns the top
+	// of the column (matching regular 1-on-1 chat), so the title never overlaps
+	// and header buttons stay clickable.
+	$effect(() => {
+		topBarTitle.setDesktopHidden(Boolean(previewAttachment));
+		return () => topBarTitle.setDesktopHidden(false);
 	});
 
 	// Load group detail whenever route param changes.
@@ -623,6 +671,9 @@
 				if (!messages.some((existing) => existing.id === msg.id)) {
 					messages = [...messages, msg];
 					totalMessages += 1;
+				}
+				if (msg.attachments && msg.attachments.length > 0) {
+					attachmentsRefreshKey += 1;
 				}
 				if (msg.sender_type === 'agent' && activeTurn?.agent === msg.sender_name) {
 					activeTurn = null;
@@ -1666,8 +1717,35 @@
 
 <div class="relative flex h-full min-h-0 w-full overflow-hidden">
 	<!-- Main chat column -->
-	<div class="relative flex min-h-0 min-w-0 flex-1 flex-col lg:pt-14">
-		{#if loading}
+	<div class={['relative flex min-h-0 min-w-0 flex-1 flex-col', !previewAttachment && 'lg:pt-14']}>
+		{#if previewAttachment}
+			{@const activeAtt = previewAttachment}
+			<AttachmentPreview
+				agent={activeAtt.agent ?? ''}
+				item={{
+					path: activeAtt.path ?? '',
+					file_name: activeAtt.file_name,
+					mime_type: activeAtt.mime_type,
+					kind: activeAtt.kind as 'image' | 'video' | 'audio' | 'pdf' | 'file' | 'project',
+					project_type: activeAtt.project_type,
+					size: activeAtt.size,
+					origin: activeAtt.sender_type === 'agent' ? 'agent' : 'user',
+					message_id: activeAtt.message_id,
+					message_index: 0,
+					created_at: activeAtt.created_at
+				}}
+				srcOverride={activeAtt.agent && activeAtt.path ? undefined : groupAttachmentUrl(activeAtt)}
+				downloadSrcOverride={activeAtt.agent && activeAtt.path
+					? undefined
+					: groupAttachmentUrl(activeAtt, { download: true })}
+				onDownload={() => downloadGroupAttachment(activeAtt)}
+				originLabel={activeAtt.sender_type === 'agent' && activeAtt.sender_name
+					? `@${activeAtt.sender_name}`
+					: undefined}
+				onClose={() => (previewAttachment = null)}
+				onShowInChat={() => showAttachmentInChat(activeAtt)}
+			/>
+		{:else if loading}
 			<div class="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-6">
 				<Skeleton class="h-14 w-2/3 rounded-2xl" />
 				<Skeleton class="ml-auto h-12 w-1/2 rounded-2xl" />
@@ -1783,31 +1861,95 @@
 								{msg.content}
 							</div>
 						{:else if msg.sender_type === 'user'}
+							{@const imageAttachments = (msg.attachments ?? []).filter(
+								(att) => att.kind === 'image'
+							)}
+							{@const fileAttachments = (msg.attachments ?? []).filter(
+								(att) => att.kind !== 'image'
+							)}
 							<div
 								data-group-message-id={msg.id}
 								class={[
-									'group ml-auto flex max-w-[85%] flex-col items-end rounded-2xl transition-shadow duration-300',
+									'group ml-auto flex max-w-[85%] flex-col items-end gap-1.5 rounded-2xl transition-shadow duration-300',
 									highlighted ? 'ring-2 ring-primary/60 ring-offset-2 ring-offset-background' : ''
 								]}
 							>
-								<div
-									class="w-fit max-w-full rounded-2xl rounded-tr-sm bg-primary/10 px-3.5 py-2.5 text-sm text-foreground ring-1 ring-primary/15"
-								>
-									{#if msg.reply_preview}
-										{@render replyCard(msg.reply_preview)}
-									{/if}
-									{#if msg.quotes && msg.quotes.length > 0}
-										<div class="mb-2">
-											<AskQuoteList
-												quotes={msg.quotes}
-												onlocate={(quote) => void locateAskQuote(quote)}
-											/>
-										</div>
-									{/if}
-									<p class="whitespace-pre-wrap wrap-break-word">
-										{@render mentionText(msg.content)}
-									</p>
-								</div>
+								{#if imageAttachments.length > 0}
+									<div class="flex flex-wrap justify-end gap-2">
+										{#each imageAttachments as att, imgIdx (att.id)}
+											{@const imgUrl = groupAttachmentUrl(att)}
+											<div class="relative inline-block max-w-full">
+												<button
+													type="button"
+													class="block cursor-zoom-in rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2"
+													aria-label={t('myaaw.chat.lightbox_open')}
+													onclick={() => openImageAttachmentsLightbox(imageAttachments, imgIdx)}
+												>
+													<img
+														src={imgUrl}
+														alt={att.file_name}
+														draggable="false"
+														class="max-h-48 rounded-2xl border object-contain"
+													/>
+												</button>
+												<button
+													type="button"
+													class="absolute right-1.5 bottom-1.5 grid size-7 place-items-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80"
+													title={t('myaaw.chat.download_file')}
+													aria-label={t('myaaw.chat.download_file')}
+													onclick={() => downloadGroupAttachment(att)}
+												>
+													<Download class="h-3.5 w-3.5" />
+												</button>
+											</div>
+										{/each}
+									</div>
+								{/if}
+								{#if fileAttachments.length > 0}
+									<div class="flex flex-wrap justify-end gap-2">
+										{#each fileAttachments as att (att.id)}
+											<button
+												type="button"
+												onclick={() => openAttachmentPreview(att)}
+												title={att.file_name}
+												class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-left transition-colors hover:border-foreground/30 hover:bg-muted"
+											>
+												<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+												<span class="min-w-0 flex-1 truncate text-xs">{att.file_name}</span>
+												{#if att.size}
+													<span class="shrink-0 text-[10px] text-muted-foreground">
+														{formatBytes(att.size)}
+													</span>
+												{/if}
+												<Download
+													class="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover/file:text-foreground"
+												/>
+											</button>
+										{/each}
+									</div>
+								{/if}
+								{#if msg.content.trim().length > 0 || msg.reply_preview || (msg.quotes && msg.quotes.length > 0)}
+									<div
+										class="w-fit max-w-full rounded-2xl rounded-tr-sm bg-primary/10 px-3.5 py-2.5 text-sm text-foreground ring-1 ring-primary/15"
+									>
+										{#if msg.reply_preview}
+											{@render replyCard(msg.reply_preview)}
+										{/if}
+										{#if msg.quotes && msg.quotes.length > 0}
+											<div class="mb-2">
+												<AskQuoteList
+													quotes={msg.quotes}
+													onlocate={(quote) => void locateAskQuote(quote)}
+												/>
+											</div>
+										{/if}
+										{#if msg.content.trim().length > 0}
+											<p class="whitespace-pre-wrap wrap-break-word">
+												{@render mentionText(msg.content)}
+											</p>
+										{/if}
+									</div>
+								{/if}
 
 								<div class="mt-1 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
 									<ChatTime at={msg.created_at} />
@@ -1829,6 +1971,8 @@
 							{@const accent = groupAccent(agentColor)}
 							{@const steps = stepsOf(msg.timeline)}
 							{@const groupStepsOpen = Boolean(expandedStepGroups[msg.id])}
+							{@const displayAgentText = stripAttachDirectives(msg.content)}
+							{@const agentRunAttachments = toRunAttachments(msg.attachments)}
 							<div
 								data-group-message-id={msg.id}
 								class={[
@@ -1953,11 +2097,17 @@
 										<div
 											data-ask-source="answer"
 											data-ask-id={msg.id}
-											use:highlightMentions={{ mentions: mentionTargets, key: msg.content }}
+											use:highlightMentions={{ mentions: mentionTargets, key: displayAgentText }}
 										>
-											<Markdown content={msg.content} />
+											<Markdown content={displayAgentText} />
 										</div>
 									</div>
+
+									{#if agentRunAttachments.length > 0}
+										<div class="mt-2.5">
+											<RunAttachments agent={msg.sender_name} attachments={agentRunAttachments} />
+										</div>
+									{/if}
 
 									<div class="mt-1 flex items-center gap-1.5 px-1">
 										<button
@@ -2486,7 +2636,10 @@
 					{group}
 					bind:tab={inspectorTab}
 					pendingApprovals={groupApprovals}
+					{attachmentsRefreshKey}
 					onDecideApproval={(entry, decision) => void decideGroupApproval(entry, decision)}
+					onOpenAttachment={openAttachmentPreview}
+					onShowAttachmentInChat={showAttachmentInChat}
 					onClose={toggleInspector}
 					onUpdated={(updated) => (group = updated)}
 					onCleared={() => {
@@ -2497,12 +2650,15 @@
 						activeTurn = null;
 						replyTo = null;
 						pendingQuotes = [];
+						attachmentsRefreshKey += 1;
 						runState = { ...EMPTY_RUN_STATE, max_turns: group?.max_turns ?? 8 };
 					}}
 				/>
 			</div>
 		</aside>
 	{/if}
+
+	<LightBox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />
 
 	<!-- Floating text-selection Quote button -->
 	{#if askAnchor}

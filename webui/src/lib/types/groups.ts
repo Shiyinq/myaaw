@@ -19,6 +19,31 @@ export interface ReplyPreview {
 	excerpt: string;
 }
 
+export interface GroupAttachment {
+	id: string;
+	group_id: string;
+	message_id: string;
+	sender_type?: GroupSenderType;
+	sender_name?: string;
+	agent?: string;
+	path?: string;
+	project_type?: string;
+	file_name: string;
+	stored_name?: string;
+	mime_type?: string;
+	kind: 'image' | 'video' | 'audio' | 'pdf' | 'file' | 'project' | string;
+	size?: number;
+	created_at?: string;
+}
+
+export interface GroupAttachmentsPage {
+	items: GroupAttachment[];
+	total: number;
+	limit: number;
+	offset: number;
+	has_more: boolean;
+}
+
 export interface GroupMessage {
 	id: string;
 	group_id: string;
@@ -30,6 +55,7 @@ export interface GroupMessage {
 	reply_to_id?: string;
 	reply_preview?: ReplyPreview;
 	quotes?: AskQuote[];
+	attachments?: GroupAttachment[];
 	created_at: string;
 }
 

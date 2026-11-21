@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import {
 		Eraser,
+		File as FileIcon,
+		FileText,
+		Image as ImageIcon,
 		Loader2,
+		MessageSquare,
+		Music,
+		Paperclip,
 		Play,
 		Plus,
 		Save,
@@ -11,29 +18,43 @@
 		Trash2,
 		UserMinus,
 		Users,
+		Video,
 		X
 	} from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import Bloub from '$lib/components/common/Bloub.svelte';
+	import ChatTime from '$lib/components/common/ChatTime.svelte';
 	import { groupAccent } from '$lib/components/groups/accent';
 	import { colorOf } from '$lib/bloub';
 	import { agentSelection, groupsStore, serverStore, toastStore } from '$lib/stores';
 	import type { PendingApproval } from '$lib/stores/approvalQueue.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
+	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { groupAttachmentUrl } from '$lib/utils/attachments';
 	import { formatShortcut } from '$lib/utils/keys';
-	import type { ApprovalDecision, DiscussionMode, Group, GroupMember } from '$lib/types';
+	import type {
+		ApprovalDecision,
+		DiscussionMode,
+		Group,
+		GroupAttachment,
+		GroupMember
+	} from '$lib/types';
 
-	type Tab = 'members' | 'settings';
+	type Tab = 'members' | 'attachments' | 'settings';
+	type AttachmentFilter = 'all' | 'images' | 'documents';
 
 	interface Props {
 		group: Group;
 		tab?: Tab;
 		pendingApprovals?: PendingApproval[];
+		attachmentsRefreshKey?: number;
 		onDecideApproval?: (entry: PendingApproval, decision: ApprovalDecision) => void;
+		onOpenAttachment?: (item: GroupAttachment) => void;
+		onShowAttachmentInChat?: (item: GroupAttachment) => void;
 		onClose: () => void;
 		onUpdated: (group: Group) => void;
 		onCleared: () => void;
@@ -43,7 +64,10 @@
 		group,
 		tab = $bindable<Tab>('members'),
 		pendingApprovals = [],
+		attachmentsRefreshKey = 0,
 		onDecideApproval,
+		onOpenAttachment,
+		onShowAttachmentInChat,
 		onClose,
 		onUpdated,
 		onCleared
@@ -69,7 +93,111 @@
 		editMaxTurns = group.max_turns;
 	});
 
-	const tabIndex = $derived(tab === 'members' ? 0 : 1);
+	const tabIndex = $derived(tab === 'members' ? 0 : tab === 'attachments' ? 1 : 2);
+
+	const ATTACHMENT_PAGE = 50;
+	let attachmentFilter = $state<AttachmentFilter>('all');
+	let attachmentItems = $state<GroupAttachment[]>([]);
+	let attachmentTotal = $state(0);
+	let attachmentHasMore = $state(false);
+	let attachmentLoading = $state(false);
+	let attachmentLoadingMore = $state(false);
+	let attachmentError = $state('');
+	let attachmentGen = 0;
+	let attachmentLoadKey = '';
+
+	const attachmentKindParam = $derived(
+		attachmentFilter === 'images'
+			? 'image'
+			: attachmentFilter === 'documents'
+				? 'pdf,file,video,audio'
+				: ''
+	);
+
+	$effect(() => {
+		if (tab !== 'attachments') return;
+		const key = `${group.id}:${attachmentFilter}:${attachmentsRefreshKey}`;
+		if (key === attachmentLoadKey) return;
+		attachmentLoadKey = key;
+		untrack(() => void loadAttachments(true));
+	});
+
+	async function loadAttachments(reset: boolean) {
+		if (reset) {
+			attachmentGen += 1;
+			attachmentLoading = true;
+			attachmentError = '';
+		} else {
+			if (attachmentLoading || attachmentLoadingMore || !attachmentHasMore) return;
+			attachmentLoadingMore = true;
+		}
+		const current = attachmentGen;
+		const offset = reset ? 0 : attachmentItems.length;
+		try {
+			const page = await groupsStore.fetchAttachments(group.id, {
+				limit: ATTACHMENT_PAGE,
+				offset,
+				kind: attachmentKindParam || undefined
+			});
+			if (current !== attachmentGen) return;
+			const fresh = page.items ?? [];
+			attachmentItems = reset
+				? fresh
+				: [
+						...attachmentItems,
+						...fresh.filter((item) => !attachmentItems.some((known) => known.id === item.id))
+					];
+			attachmentTotal = page.total ?? attachmentItems.length;
+			attachmentHasMore = Boolean(page.has_more) && fresh.length > 0;
+			attachmentError = '';
+			const byAgent = new Map<string, string[]>();
+			for (const entry of fresh) {
+				if (entry.agent && entry.path && entry.kind === 'image') {
+					const list = byAgent.get(entry.agent) ?? [];
+					list.push(entry.path);
+					byAgent.set(entry.agent, list);
+				}
+			}
+			for (const [agentName, paths] of byAgent) {
+				void ensureSigned(agentName, paths);
+			}
+		} catch (err) {
+			if (current !== attachmentGen) return;
+			attachmentError = getErrorMessage(err);
+		} finally {
+			if (current === attachmentGen) {
+				attachmentLoading = false;
+				attachmentLoadingMore = false;
+			}
+		}
+	}
+
+	function attachmentIcon(kind: string) {
+		switch (kind) {
+			case 'image':
+				return ImageIcon;
+			case 'video':
+				return Video;
+			case 'audio':
+				return Music;
+			case 'pdf':
+				return FileText;
+			default:
+				return FileIcon;
+		}
+	}
+
+	function formatSize(bytes?: number): string {
+		if (!bytes || bytes <= 0) return '';
+		const units = ['B', 'KB', 'MB', 'GB'];
+		let value = bytes;
+		let unit = 0;
+		while (value >= 1024 && unit < units.length - 1) {
+			value /= 1024;
+			unit += 1;
+		}
+		return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+	}
 
 	const memberSet = $derived(new Set(group.members.map((m) => m.name)));
 	const availableToAdd = $derived(
@@ -280,10 +408,10 @@
 		</p>
 	</div>
 
-	<div role="tablist" class="relative mx-3 mb-2 grid shrink-0 grid-cols-2 rounded-lg border p-0.5">
+	<div role="tablist" class="relative mx-3 mb-2 grid shrink-0 grid-cols-3 rounded-lg border p-0.5">
 		<span
 			aria-hidden="true"
-			class="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc((100%-0.25rem)/2)] rounded-md bg-primary transition-transform duration-200 ease-out will-change-transform"
+			class="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc((100%-0.25rem)/3)] rounded-md bg-primary transition-transform duration-200 ease-out will-change-transform"
 			style:transform={`translateX(${tabIndex * 100}%)`}
 		></span>
 		<button
@@ -291,18 +419,18 @@
 			role="tab"
 			aria-selected={tab === 'members'}
 			class={[
-				'relative z-10 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium select-none transition-colors duration-150',
+				'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-xs font-medium select-none transition-colors duration-150',
 				tab === 'members'
 					? 'text-primary-foreground'
 					: 'text-muted-foreground hover:text-foreground'
 			]}
 			onclick={() => (tab = 'members')}
 		>
-			<Users class="h-3.5 w-3.5" />
-			{t('myaaw.groups.tab_members')}
+			<Users class="h-3.5 w-3.5 shrink-0" />
+			<span class="truncate">{t('myaaw.groups.tab_members')}</span>
 			{#if pendingApprovals.length > 0}
 				<span
-					class="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums"
+					class="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] leading-none font-semibold text-white tabular-nums"
 				>
 					{pendingApprovals.length > 9 ? '9+' : pendingApprovals.length}
 				</span>
@@ -311,17 +439,32 @@
 		<button
 			type="button"
 			role="tab"
+			aria-selected={tab === 'attachments'}
+			class={[
+				'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-xs font-medium select-none transition-colors duration-150',
+				tab === 'attachments'
+					? 'text-primary-foreground'
+					: 'text-muted-foreground hover:text-foreground'
+			]}
+			onclick={() => (tab = 'attachments')}
+		>
+			<Paperclip class="h-3.5 w-3.5 shrink-0" />
+			<span class="truncate">{t('myaaw.groups.tab_attachments')}</span>
+		</button>
+		<button
+			type="button"
+			role="tab"
 			aria-selected={tab === 'settings'}
 			class={[
-				'relative z-10 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium select-none transition-colors duration-150',
+				'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1.5 text-xs font-medium select-none transition-colors duration-150',
 				tab === 'settings'
 					? 'text-primary-foreground'
 					: 'text-muted-foreground hover:text-foreground'
 			]}
 			onclick={() => (tab = 'settings')}
 		>
-			<Settings2 class="h-3.5 w-3.5" />
-			{t('myaaw.groups.tab_settings')}
+			<Settings2 class="h-3.5 w-3.5 shrink-0" />
+			<span class="truncate">{t('myaaw.groups.tab_settings')}</span>
 		</button>
 	</div>
 
@@ -501,6 +644,113 @@
 							</div>
 						{/each}
 					</div>
+				{/if}
+			</div>
+		{:else if tab === 'attachments'}
+			<div class="space-y-3 pt-1">
+				<div class="flex flex-wrap gap-1.5">
+					{#each [{ id: 'all', label: t('myaaw.chat.attachments_filter_all') }, { id: 'images', label: t('myaaw.chat.attachments_filter_images') }, { id: 'documents', label: t('myaaw.chat.attachments_filter_documents') }] as chip (chip.id)}
+						<button
+							type="button"
+							onclick={() => (attachmentFilter = chip.id as AttachmentFilter)}
+							class={[
+								'rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
+								attachmentFilter === chip.id
+									? 'border-primary bg-primary text-primary-foreground'
+									: 'border-border bg-background/60 text-muted-foreground hover:text-foreground'
+							]}
+						>
+							{chip.label}
+						</button>
+					{/each}
+				</div>
+
+				{#if attachmentLoading && attachmentItems.length === 0}
+					<div class="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
+						<Loader2 class="h-3.5 w-3.5 animate-spin" />
+						<span>{t('common.loading')}</span>
+					</div>
+				{:else if attachmentError}
+					<p class="px-1 py-4 text-center text-xs text-destructive">{attachmentError}</p>
+				{:else if attachmentItems.length === 0}
+					<div class="flex flex-col items-center gap-2 px-2 py-8 text-center">
+						<Paperclip class="h-6 w-6 text-muted-foreground/60" />
+						<p class="text-xs text-muted-foreground">{t('myaaw.groups.attachments_empty')}</p>
+					</div>
+				{:else}
+					<div class="space-y-1.5">
+						<p
+							class="px-1 text-[10px] font-semibold tracking-widest text-muted-foreground uppercase"
+						>
+							{t('myaaw.groups.tab_attachments')} ({attachmentTotal})
+						</p>
+						{#each attachmentItems as item (item.id)}
+							{@const KindIcon = attachmentIcon(item.kind)}
+							<div
+								class="group/att flex items-center gap-2 rounded-xl border bg-background/60 p-2 transition-colors hover:border-foreground/25 hover:bg-muted/50"
+							>
+								<button
+									type="button"
+									class="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+									onclick={() => onOpenAttachment?.(item)}
+								>
+									{#if item.kind === 'image'}
+										<img
+											src={groupAttachmentUrl(item)}
+											alt={item.file_name}
+											loading="lazy"
+											class="h-10 w-10 shrink-0 rounded-lg border object-cover"
+										/>
+									{:else}
+										<span
+											class="grid h-10 w-10 shrink-0 place-items-center rounded-lg border bg-muted/60 text-muted-foreground"
+										>
+											<KindIcon class="h-4 w-4" />
+										</span>
+									{/if}
+									<div class="min-w-0 flex-1">
+										<p class="truncate text-xs font-medium text-foreground">{item.file_name}</p>
+										<p class="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+											{#if item.size}
+												<span>{formatSize(item.size)}</span>
+												<span>·</span>
+											{/if}
+											{#if item.created_at}
+												<ChatTime at={item.created_at} class="text-[10px]" />
+											{/if}
+										</p>
+									</div>
+								</button>
+								{#if onShowAttachmentInChat}
+									<button
+										type="button"
+										onclick={() => onShowAttachmentInChat(item)}
+										title={t('myaaw.chat.attachments_show_in_chat')}
+										aria-label={t('myaaw.chat.attachments_show_in_chat')}
+										class="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+									>
+										<MessageSquare class="h-3.5 w-3.5" />
+									</button>
+								{/if}
+							</div>
+						{/each}
+					</div>
+					{#if attachmentHasMore}
+						<div class="pt-1 text-center">
+							<Button
+								size="sm"
+								variant="ghost"
+								class="h-7 text-xs"
+								disabled={attachmentLoadingMore}
+								onclick={() => void loadAttachments(false)}
+							>
+								{#if attachmentLoadingMore}
+									<Loader2 class="mr-1.5 h-3 w-3 animate-spin" />
+								{/if}
+								{t('common.load_more')}
+							</Button>
+						</div>
+					{/if}
 				{/if}
 			</div>
 		{:else}

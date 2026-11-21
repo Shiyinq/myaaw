@@ -1491,6 +1491,8 @@
 			"members_count": "{count} anggota",
 			"members_online": "{online}/{total} aktif",
 			"tab_members": "Anggota",
+			"tab_attachments": "Lampiran",
+			"attachments_empty": "Belum ada lampiran di grup ini.",
 			"pending_approvals": "Menunggu persetujuan",
 			"tab_settings": "Pengaturan",
 			"current_members": "Anggota",

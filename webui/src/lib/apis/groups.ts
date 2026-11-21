@@ -1,3 +1,5 @@
+import { getApiBase } from '$lib/constants';
+import { accessToken } from '$lib/stores/accessToken.svelte';
 import { client } from './client';
 import { streamSSE, type SSEEvent } from '$lib/utils/sse';
 import type {
@@ -5,6 +7,7 @@ import type {
 	ContinueGroupResponse,
 	CreateGroupRequest,
 	Group,
+	GroupAttachmentsPage,
 	GroupDetail,
 	GroupDetailParams,
 	GroupSummary,
@@ -16,6 +19,28 @@ import type {
 
 function groupPath(id: string, suffix = ''): string {
 	return `/groups/${encodeURIComponent(id)}${suffix}`;
+}
+
+async function saveBlobUrl(url: string, name: string) {
+	try {
+		const response = await fetch(url);
+		if (!response.ok) throw new Error(String(response.status));
+		const objectUrl = URL.createObjectURL(await response.blob());
+		const anchor = document.createElement('a');
+		anchor.href = objectUrl;
+		anchor.download = name;
+		document.body.append(anchor);
+		anchor.click();
+		anchor.remove();
+		setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+	} catch {
+		const anchor = document.createElement('a');
+		anchor.href = url;
+		anchor.download = name;
+		document.body.append(anchor);
+		anchor.click();
+		anchor.remove();
+	}
 }
 
 export const groups = {
@@ -46,6 +71,31 @@ export const groups = {
 			method: 'POST',
 			body: payload
 		}),
+	attachments: (id: string, params?: { limit?: number; offset?: number; kind?: string }) => {
+		const query = new URLSearchParams();
+		if (params?.limit !== undefined) query.set('limit', String(params.limit));
+		if (params?.offset !== undefined) query.set('offset', String(params.offset));
+		if (params?.kind) query.set('kind', params.kind);
+		const qs = query.toString();
+		return client<GroupAttachmentsPage>(groupPath(id, `/attachments${qs ? `?${qs}` : ''}`));
+	},
+	uploadUrl: (
+		groupId: string,
+		messageId: string,
+		storedName: string,
+		options?: { download?: boolean }
+	) => {
+		const query = new URLSearchParams();
+		const token = accessToken.value;
+		if (token) query.set('token', token);
+		if (options?.download) query.set('download', '1');
+		const qs = query.toString();
+		return `${getApiBase()}/groups/${encodeURIComponent(groupId)}/uploads/${encodeURIComponent(messageId)}/${encodeURIComponent(storedName)}${qs ? `?${qs}` : ''}`;
+	},
+	downloadUpload: (groupId: string, messageId: string, storedName: string, fileName?: string) => {
+		const url = groups.uploadUrl(groupId, messageId, storedName, { download: true });
+		return saveBlobUrl(url, fileName || storedName);
+	},
 	stream: (id: string, onEvent: (event: SSEEvent) => void, signal?: AbortSignal) =>
 		streamSSE(groupPath(id, '/stream'), {
 			method: 'GET',

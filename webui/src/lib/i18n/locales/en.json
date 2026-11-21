@@ -1491,6 +1491,8 @@
 			"members_count": "{count} members",
 			"members_online": "{online}/{total} online",
 			"tab_members": "Members",
+			"tab_attachments": "Files",
+			"attachments_empty": "No files shared in this group yet.",
 			"pending_approvals": "Pending approvals",
 			"tab_settings": "Settings",
 			"current_members": "Members",
