@@ -615,6 +615,25 @@ func collectConversationAttachments(messages []provider.Message) []ConversationA
 			})
 		}
 
+		for _, extraAtt := range extractExtraMessageLocalAttachments(message.ExtraMessages) {
+			path := strings.TrimSpace(extraAtt.Path)
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			items = append(items, ConversationAttachment{
+				Path:         path,
+				FileName:     attachmentFileName(extraAtt.FileName, path),
+				MimeType:     extraAtt.MimeType,
+				Kind:         attachmentKind(extraAtt.Kind, extraAtt.MimeType, path),
+				Size:         extraAtt.Size,
+				Origin:       "agent",
+				MessageID:    message.ID,
+				MessageIndex: index,
+				CreatedAt:    message.CreatedAt,
+			})
+		}
+
 		for _, upload := range message.Uploads {
 			path := uploadVirtualPath(upload.Path)
 			// A path outside /user/uploads cannot be served by /fs/raw; leaving it
@@ -657,6 +676,75 @@ func attachmentFileName(name, path string) string {
 		return trimmed
 	}
 	return pathpkg.Base(strings.ReplaceAll(path, "\\", "/"))
+}
+
+// extractExtraMessageLocalAttachments extracts local virtual-path files from
+// media and carousel blocks inside ExtraMessages so the Attachments panel lists
+// them alongside @attach(...) deliverables.
+func extractExtraMessageLocalAttachments(extras []provider.ExtraMessage) []provider.MessageAttachment {
+	if len(extras) == 0 {
+		return nil
+	}
+	var out []provider.MessageAttachment
+	for _, em := range extras {
+		for _, block := range em.Blocks {
+			switch block.Type {
+			case "media":
+				var data struct {
+					Items []struct {
+						Path     string `json:"path"`
+						Kind     string `json:"kind"`
+						Title    string `json:"title"`
+						FileName string `json:"file_name"`
+						MimeType string `json:"mime_type"`
+						Size     int64  `json:"size"`
+					} `json:"items"`
+				}
+				if json.Unmarshal(block.Data, &data) != nil {
+					continue
+				}
+				for _, it := range data.Items {
+					p := strings.TrimSpace(it.Path)
+					if p == "" {
+						continue
+					}
+					name := strings.TrimSpace(it.FileName)
+					if name == "" {
+						name = strings.TrimSpace(it.Title)
+					}
+					out = append(out, provider.MessageAttachment{
+						FileName: name,
+						MimeType: it.MimeType,
+						Path:     p,
+						Kind:     it.Kind,
+						Size:     it.Size,
+					})
+				}
+			case "carousel":
+				var data struct {
+					Cards []struct {
+						Title     string `json:"title"`
+						ImagePath string `json:"image_path"`
+					} `json:"cards"`
+				}
+				if json.Unmarshal(block.Data, &data) != nil {
+					continue
+				}
+				for _, card := range data.Cards {
+					p := strings.TrimSpace(card.ImagePath)
+					if p == "" {
+						continue
+					}
+					out = append(out, provider.MessageAttachment{
+						FileName: attachmentFileName("", p),
+						Path:     p,
+						Kind:     "image",
+					})
+				}
+			}
+		}
+	}
+	return out
 }
 
 // attachmentKind normalises the stored rendering kind and derives one from the

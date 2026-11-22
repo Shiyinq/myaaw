@@ -1177,9 +1177,9 @@ func (s *GroupStore) ListAttachments(groupID, kindFilter string, limit, offset i
 	}
 
 	rows, err := db.Query(`
-		SELECT id, sender_type, sender_name, attachments_json, created_at
+		SELECT id, sender_type, sender_name, attachments_json, extra_messages_json, created_at
 		FROM group_messages
-		WHERE group_id = ? AND attachments_json != ''
+		WHERE group_id = ? AND (attachments_json != '' OR extra_messages_json != '')
 		ORDER BY seq DESC`, groupID)
 	if err != nil {
 		return GroupAttachmentsPage{}, err
@@ -1189,39 +1189,75 @@ func (s *GroupStore) ListAttachments(groupID, kindFilter string, limit, offset i
 	all := []GroupAttachment{}
 	for rows.Next() {
 		var (
-			msgID      string
-			senderType string
-			senderName string
-			rawJSON    string
-			createdAt  string
+			msgID          string
+			senderType     string
+			senderName     string
+			rawJSON        string
+			rawExtraJSON   string
+			createdAt      string
 		)
-		if err := rows.Scan(&msgID, &senderType, &senderName, &rawJSON, &createdAt); err != nil {
+		if err := rows.Scan(&msgID, &senderType, &senderName, &rawJSON, &rawExtraJSON, &createdAt); err != nil {
 			return GroupAttachmentsPage{}, err
 		}
-		var atts []GroupAttachment
-		if err := json.Unmarshal([]byte(rawJSON), &atts); err != nil {
-			continue
+		seenPaths := map[string]bool{}
+		if rawJSON != "" {
+			var atts []GroupAttachment
+			if err := json.Unmarshal([]byte(rawJSON), &atts); err == nil {
+				for _, att := range atts {
+					if att.Path != "" {
+						seenPaths[strings.TrimSpace(att.Path)] = true
+					}
+					if len(allowedKinds) > 0 && !allowedKinds[strings.ToLower(att.Kind)] {
+						continue
+					}
+					if att.GroupID == "" {
+						att.GroupID = groupID
+					}
+					if att.MessageID == "" {
+						att.MessageID = msgID
+					}
+					if att.SenderType == "" {
+						att.SenderType = senderType
+					}
+					if att.SenderName == "" {
+						att.SenderName = senderName
+					}
+					if att.CreatedAt == "" {
+						att.CreatedAt = createdAt
+					}
+					all = append(all, att)
+				}
+			}
 		}
-		for _, att := range atts {
-			if len(allowedKinds) > 0 && !allowedKinds[strings.ToLower(att.Kind)] {
-				continue
+		if rawExtraJSON != "" {
+			var extras []provider.ExtraMessage
+			if err := json.Unmarshal([]byte(rawExtraJSON), &extras); err == nil {
+				for idx, extraAtt := range extractExtraMessageLocalAttachments(extras) {
+					p := strings.TrimSpace(extraAtt.Path)
+					if p == "" || seenPaths[p] {
+						continue
+					}
+					seenPaths[p] = true
+					kind := attachmentKind(extraAtt.Kind, extraAtt.MimeType, p)
+					if len(allowedKinds) > 0 && !allowedKinds[strings.ToLower(kind)] {
+						continue
+					}
+					all = append(all, GroupAttachment{
+						ID:         fmt.Sprintf("%s:em:%d", msgID, idx),
+						GroupID:    groupID,
+						MessageID:  msgID,
+						SenderType: senderType,
+						SenderName: senderName,
+						Agent:      senderName,
+						Path:       p,
+						FileName:   attachmentFileName(extraAtt.FileName, p),
+						MimeType:   extraAtt.MimeType,
+						Kind:       kind,
+						Size:       extraAtt.Size,
+						CreatedAt:  createdAt,
+					})
+				}
 			}
-			if att.GroupID == "" {
-				att.GroupID = groupID
-			}
-			if att.MessageID == "" {
-				att.MessageID = msgID
-			}
-			if att.SenderType == "" {
-				att.SenderType = senderType
-			}
-			if att.SenderName == "" {
-				att.SenderName = senderName
-			}
-			if att.CreatedAt == "" {
-				att.CreatedAt = createdAt
-			}
-			all = append(all, att)
 		}
 	}
 	if err := rows.Err(); err != nil {
