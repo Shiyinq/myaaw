@@ -935,7 +935,7 @@
 		"providers": {
 			"title": "Providers",
 			"subtitle": "Manage LLM providers and discover their models.",
-			"list": "Providers",
+			"list": "Configured Providers",
 			"default": "default",
 			"empty": "No providers yet",
 			"empty_desc": "Add a provider to start chatting with an agent.",
@@ -961,6 +961,8 @@
 		"channels": {
 			"title": "Channels",
 			"subtitle": "Connect Telegram and Discord to the selected agent.",
+			"list": "Messaging Integrations",
+			"configure": "Configure",
 			"telegram": "Telegram",
 			"telegram_desc": "Bot API over polling or webhook.",
 			"discord": "Discord",
@@ -1459,7 +1461,7 @@
 		"groups": {
 			"title": "Group chat",
 			"section_groups": "Groups",
-			"section_bots": "Bots",
+			"section_bots": "Agents",
 			"create_group": "Create group",
 			"new_agent": "New agent",
 			"create_title": "Create group chat",

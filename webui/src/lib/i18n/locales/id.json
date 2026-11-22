@@ -935,7 +935,7 @@
 		"providers": {
 			"title": "Penyedia",
 			"subtitle": "Kelola penyedia LLM dan temukan modelnya.",
-			"list": "Penyedia",
+			"list": "Penyedia Terkonfigurasi",
 			"default": "bawaan",
 			"empty": "Belum ada penyedia",
 			"empty_desc": "Tambahkan penyedia untuk mulai chat dengan agen.",
@@ -961,6 +961,8 @@
 		"channels": {
 			"title": "Kanal",
 			"subtitle": "Hubungkan Telegram dan Discord ke agen terpilih.",
+			"list": "Integrasi Pesan",
+			"configure": "Konfigurasi",
 			"telegram": "Telegram",
 			"telegram_desc": "Bot API via polling atau webhook.",
 			"discord": "Discord",
@@ -1459,7 +1461,7 @@
 		"groups": {
 			"title": "Obrolan grup",
 			"section_groups": "Grup",
-			"section_bots": "Bot",
+			"section_bots": "Agen",
 			"create_group": "Buat grup",
 			"new_agent": "Agen baru",
 			"create_title": "Buat obrolan grup",
