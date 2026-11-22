@@ -17,6 +17,7 @@
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import CodePreview from '$lib/components/common/CodePreview.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
@@ -301,13 +302,13 @@
 								data-nav-id={`custom:${skill.name}`}
 								aria-current={selected?.name === skill.name ? 'true' : undefined}
 							>
-								<input
-									type="checkbox"
-									checked={skill.enabled}
-									onchange={(event) => toggle(skill.name, event.currentTarget.checked)}
-									class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-									aria-label={t('myaaw.skills.enabled')}
-								/>
+								<span class="mt-0.5 shrink-0">
+									<Switch
+										checked={skill.enabled}
+										label={skill.display_name || skill.name}
+										onchange={(next) => toggle(skill.name, next)}
+									/>
+								</span>
 								<button
 									class="min-w-0 flex-1 text-left"
 									title={skill.description || skill.name}
@@ -351,14 +352,14 @@
 								aria-current={selected?.name === row.entry.name ? 'true' : undefined}
 								title={row.entry.description}
 							>
-								<input
-									type="checkbox"
-									checked={!!row.installed?.enabled}
-									onchange={(event) => setBuiltin(row.entry.name, event.currentTarget.checked)}
-									class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-									aria-label={row.entry.name}
-									disabled={installing === row.entry.name}
-								/>
+								<span class="mt-0.5 shrink-0">
+									<Switch
+										checked={!!row.installed?.enabled}
+										disabled={installing === row.entry.name}
+										label={row.entry.name}
+										onchange={(next) => setBuiltin(row.entry.name, next)}
+									/>
+								</span>
 								<div class="min-w-0 flex-1">
 									{#if row.installed}
 										<button
