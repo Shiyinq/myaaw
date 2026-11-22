@@ -393,18 +393,6 @@
 		onClose();
 	}
 
-	// Whenever a stopped bot transitions to running, fetch its latest conversation
-	// preview once its daemon port is ready.
-	$effect(() => {
-		const runningNames = agentSelection.agents.filter((bot) => bot.running).map((bot) => bot.name);
-		untrack(() => {
-			for (const name of runningNames) {
-				if (botPreviews.get(name)?.conversationId) continue;
-				setTimeout(() => void refreshLatest(name, false), 1200);
-			}
-		});
-	});
-
 	// Quick keyboard switching between bots (Alt+Shift+Up/Down and Alt+1..9).
 	// Scoped strictly to Bots mode because this component only mounts there.
 	$effect(() => {
