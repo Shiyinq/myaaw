@@ -101,8 +101,12 @@ function connectAll(agents: string[], key: string) {
 						group_id?: string;
 						run_state?: GroupRunState;
 						message?: GroupMessage;
+						unread_count?: number;
 					} | null;
 					if (payload?.group_id) {
+						if (typeof payload.unread_count === 'number') {
+							groupsStore.setUnreadCount(payload.group_id, payload.unread_count);
+						}
 						if (payload.run_state) {
 							groupsStore.syncSummaryFromRunState(payload.group_id, payload.run_state);
 							approvalQueue.syncGroup(payload.group_id, payload.run_state.pending_approvals ?? []);

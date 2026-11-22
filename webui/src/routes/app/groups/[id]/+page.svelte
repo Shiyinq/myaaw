@@ -425,6 +425,8 @@
 			jumpingToMessage = false;
 			stickToBottom = true;
 			sseStatusReceived = false;
+			unreadBannerId = '';
+			unreadBannerCount = 0;
 			messages = [];
 			activeTurn = null;
 			replyTo = null;
@@ -442,6 +444,9 @@
 	});
 
 	let sseStatusReceived = false;
+	/** First unread message ID and count captured when opening this group. */
+	let unreadBannerId = $state('');
+	let unreadBannerCount = $state(0);
 
 	async function loadGroup(id: string, token: number) {
 		try {
@@ -458,17 +463,61 @@
 				runState = detail.run_state ?? { ...EMPTY_RUN_STATE };
 				approvalQueue.syncGroup(id, detail.run_state?.pending_approvals ?? []);
 			}
+
+			const initialUnread = detail.unread_count ?? 0;
+			const firstUnreadId = detail.first_unread_message_id ?? '';
+			if (initialUnread > 0 && firstUnreadId) {
+				unreadBannerId = firstUnreadId;
+				unreadBannerCount = initialUnread;
+			}
+
 			// Flip `loading` off BEFORE awaiting `tick()` so the real transcript
-			// mounts (replacing the skeleton) and `scroller` exists when snapping
-			// to the newest message at the bottom.
+			// mounts (replacing the skeleton) and `scroller` exists.
 			loading = false;
-			stickToBottom = true;
-			await tick();
-			if (token !== loadToken) return;
-			scrollToBottom(false);
-			requestAnimationFrame(() => {
-				if (token === loadToken && stickToBottom) scrollToBottom(false);
-			});
+
+			if (initialUnread > 0 && firstUnreadId) {
+				// Persist read watermark now that the user opened the room.
+				groupsStore.markRead(id);
+				stickToBottom = false;
+				// If more than one page of unread messages arrived while away, load
+				// earlier pages until the top-most unread message is in the transcript.
+				for (
+					let guard = 0;
+					guard < 10 &&
+					hasMore &&
+					!messages.some((m) => m.id === firstUnreadId) &&
+					token === loadToken;
+					guard++
+				) {
+					const added = await loadOlder(PAGE_SIZE);
+					if (added === 0) break;
+				}
+				if (token !== loadToken) return;
+				await tick();
+				if (token !== loadToken) return;
+				const scrollToUnread = () => {
+					if (token !== loadToken || !transcript) return;
+					const divider = transcript.querySelector<HTMLElement>('[data-group-unread-divider]');
+					const target =
+						divider ??
+						transcript.querySelector<HTMLElement>(
+							`[data-group-message-id="${CSS.escape(firstUnreadId)}"]`
+						);
+					if (target) {
+						target.scrollIntoView({ behavior: 'instant', block: 'start' });
+					}
+				};
+				scrollToUnread();
+				requestAnimationFrame(scrollToUnread);
+			} else {
+				stickToBottom = true;
+				await tick();
+				if (token !== loadToken) return;
+				scrollToBottom(false);
+				requestAnimationFrame(() => {
+					if (token === loadToken && stickToBottom) scrollToBottom(false);
+				});
+			}
 		} catch (err) {
 			if (token !== loadToken) return;
 			loadError = getErrorMessage(err);
@@ -724,6 +773,9 @@
 					activeTurn = null;
 				}
 				groupsStore.syncSummaryFromMessage(id, msg);
+				if (msg.sender_type === 'agent' && document.visibilityState !== 'hidden') {
+					groupsStore.markRead(id, msg.id);
+				}
 				maybeAutoScroll();
 				break;
 			}
@@ -1294,6 +1346,8 @@
 		}));
 
 		sending = true;
+		unreadBannerId = '';
+		unreadBannerCount = 0;
 		input = '';
 		replyTo = null;
 		pendingQuotes = [];
@@ -1637,9 +1691,15 @@
 
 	// -------------------------------------------------- Step helpers
 
-	function stepsOf(timeline?: TimelineItem[]): TimelineItem[] {
+	function stepsOf<T extends TimelineItem>(timeline?: T[]): T[] {
 		if (!timeline?.length) return [];
-		return timeline.filter((item) => item.kind === 'thought' || item.kind === 'tool');
+		const hideThinking = Boolean(group?.hide_thinking);
+		const hideTools = Boolean(group?.hide_tools);
+		return timeline.filter((item) => {
+			if (item.kind === 'thought') return !hideThinking;
+			if (item.kind === 'tool') return !hideTools;
+			return false;
+		});
 	}
 
 	function stepSummaryLabel(steps: TimelineItem[]): string {
@@ -1907,6 +1967,20 @@
 
 					{#each messages as msg (msg.id)}
 						{@const highlighted = highlightedMessageId === msg.id}
+						{#if unreadBannerId === msg.id && unreadBannerCount > 0}
+							<div
+								data-group-unread-divider
+								class="my-2 flex scroll-mt-4 items-center gap-3 select-none"
+							>
+								<div class="h-px flex-1 bg-primary/30"></div>
+								<span
+									class="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary"
+								>
+									{t('myaaw.groups.unread_divider', { count: unreadBannerCount })}
+								</span>
+								<div class="h-px flex-1 bg-primary/30"></div>
+							</div>
+						{/if}
 						{#if msg.sender_type === 'system'}
 							<div
 								data-group-message-id={msg.id}
@@ -2006,18 +2080,22 @@
 								{/if}
 
 								<div class="mt-1 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
-									<ChatTime at={msg.created_at} />
-									<button
-										type="button"
-										onclick={() => startReply(msg)}
-										title={t('myaaw.groups.reply')}
-										aria-label={t('myaaw.groups.reply')}
-										class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground opacity-80 transition-colors hover:bg-muted hover:text-foreground hover:opacity-100"
+									<span
+										class="inline-flex items-center gap-1 opacity-100 transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
 									>
-										<Reply class="h-3 w-3" />
-										<span class="hidden sm:inline">{t('myaaw.groups.reply')}</span>
-									</button>
-									<CopyButton text={msg.content} />
+										<button
+											type="button"
+											onclick={() => startReply(msg)}
+											title={t('myaaw.groups.reply')}
+											aria-label={t('myaaw.groups.reply')}
+											class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+										>
+											<Reply class="h-3 w-3" />
+											<span class="hidden sm:inline">{t('myaaw.groups.reply')}</span>
+										</button>
+										<CopyButton text={msg.content} />
+									</span>
+									<ChatTime at={msg.created_at} />
 								</div>
 							</div>
 						{:else}
@@ -2163,7 +2241,9 @@
 										</div>
 									{/if}
 
-									<div class="mt-1 flex items-center gap-1.5 px-1">
+									<div
+										class="mt-1 flex items-center gap-1.5 px-1 opacity-100 transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
+									>
 										<button
 											type="button"
 											onclick={() => startReply(msg)}
@@ -2184,6 +2264,7 @@
 					<!-- Live streaming turn bubble -->
 					{#if activeTurn}
 						{@const liveAccent = groupAccent(activeTurn.agentColor)}
+						{@const visibleLiveTimeline = stepsOf(activeTurn.timeline)}
 						<div class="flex items-start gap-2.5" in:fade={{ duration: 120 }}>
 							<div
 								class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-muted/70 ring-1 ring-primary/40"
@@ -2207,8 +2288,8 @@
 									</span>
 								</div>
 
-								{#if activeTurn.timeline.length > 0}
-									{@const liveStepsRunning = activeTurn.timeline.some((s) => s.running)}
+								{#if visibleLiveTimeline.length > 0}
+									{@const liveStepsRunning = visibleLiveTimeline.some((s) => s.running)}
 									{@const liveOpen = isLiveStepsOpen(activeTurn)}
 									<div class="mb-1.5 space-y-0.5">
 										<button
@@ -2225,7 +2306,7 @@
 											<span class="font-medium">
 												{liveStepsRunning
 													? t('myaaw.chat.tool_running')
-													: stepSummaryLabel(activeTurn.timeline)}
+													: stepSummaryLabel(visibleLiveTimeline)}
 											</span>
 											<ChevronDown
 												class={cn(
@@ -2237,7 +2318,7 @@
 
 										{#if liveOpen}
 											<div class="space-y-0.5 pl-2">
-												{#each activeTurn.timeline as step (step.localId)}
+												{#each visibleLiveTimeline as step (step.localId)}
 													{#if step.kind === 'thought'}
 														<ChatStep
 															title={t('myaaw.chat.thinking')}

@@ -91,6 +91,10 @@ export interface Group {
 	members: GroupMember[];
 	discussion_mode: DiscussionMode;
 	max_turns: number;
+	hide_thinking?: boolean;
+	hide_tools?: boolean;
+	last_read_message_id?: string;
+	read_at?: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -114,6 +118,8 @@ export interface GroupSummary {
 	running: boolean;
 	current_agent: string;
 	pending_approval_count?: number;
+	unread_count?: number;
+	first_unread_message_id?: string;
 	last_message?: GroupLastMessage | null;
 	created_at: string;
 	updated_at: string;
@@ -133,6 +139,8 @@ export interface GroupDetail {
 	offset?: number;
 	limit?: number;
 	has_more?: boolean;
+	unread_count?: number;
+	first_unread_message_id?: string;
 }
 
 export interface CreateGroupRequest {
@@ -141,6 +149,8 @@ export interface CreateGroupRequest {
 	members: string[];
 	discussion_mode?: DiscussionMode;
 	max_turns?: number;
+	hide_thinking?: boolean;
+	hide_tools?: boolean;
 }
 
 export interface UpdateGroupRequest {
@@ -149,6 +159,8 @@ export interface UpdateGroupRequest {
 	members?: string[];
 	discussion_mode?: DiscussionMode;
 	max_turns?: number;
+	hide_thinking?: boolean;
+	hide_tools?: boolean;
 }
 
 export interface SendGroupMessageRequest {

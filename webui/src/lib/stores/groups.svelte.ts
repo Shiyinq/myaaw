@@ -101,7 +101,15 @@ export const groupsStore = {
 		error = '';
 		try {
 			const res = await groupsApi.list();
-			list = sortByUpdatedDesc(res.groups ?? []);
+			const fetched = sortByUpdatedDesc(res.groups ?? []);
+			list = fetched;
+			const nextUnreads: Record<string, number> = {};
+			for (const grp of fetched) {
+				if (grp.id !== openGroupId && (grp.unread_count ?? 0) > 0) {
+					nextUnreads[grp.id] = grp.unread_count ?? 0;
+				}
+			}
+			unreadCounts = nextUnreads;
 			loaded = true;
 		} catch (err) {
 			error = getErrorMessage(err);
@@ -254,6 +262,22 @@ export const groupsStore = {
 	markUnread(id: string) {
 		if (!id) return;
 		unreadCounts = { ...unreadCounts, [id]: (unreadCounts[id] ?? 0) + 1 };
+	},
+	setUnreadCount(id: string, count: number) {
+		if (!id) return;
+		if (count <= 0) {
+			if (!unreadCounts[id]) return;
+			const next = { ...unreadCounts };
+			delete next[id];
+			unreadCounts = next;
+			return;
+		}
+		unreadCounts = { ...unreadCounts, [id]: count };
+	},
+	markRead(id: string, messageId?: string) {
+		if (!id) return;
+		groupsStore.setUnreadCount(id, 0);
+		void groupsApi.markRead(id, messageId).catch(() => {});
 	},
 	unreadCount(id: string): number {
 		return id ? (unreadCounts[id] ?? 0) : 0;

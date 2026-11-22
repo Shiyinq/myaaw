@@ -7,6 +7,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import Bloub from '$lib/components/common/Bloub.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 	import { colorOf } from '$lib/bloub';
 	import { agentSelection, groupsStore, toastStore } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -20,6 +21,8 @@
 	let selectedMembers = $state<string[]>([]);
 	let discussionMode = $state<DiscussionMode>('autonomous');
 	let maxTurns = $state(8);
+	let hideThinking = $state(false);
+	let hideTools = $state(false);
 	let submitting = $state(false);
 	let formError = $state('');
 
@@ -58,6 +61,8 @@
 			description = '';
 			discussionMode = 'autonomous';
 			maxTurns = 8;
+			hideThinking = false;
+			hideTools = false;
 			formError = '';
 			submitting = false;
 			const running = agentSelection.agents.filter((a) => a.running).map((a) => a.name);
@@ -91,7 +96,9 @@
 				description: description.trim() || undefined,
 				members: selectedMembers,
 				discussion_mode: discussionMode,
-				max_turns: Math.min(50, Math.max(1, Math.round(maxTurns)))
+				max_turns: Math.min(50, Math.max(1, Math.round(maxTurns))),
+				hide_thinking: hideThinking,
+				hide_tools: hideTools
 			});
 			toastStore.success(t('myaaw.groups.created', { name: created.name }));
 			groupsStore.closeCreateDialog();
@@ -259,6 +266,36 @@
 					bind:value={maxTurns}
 					class="w-20 text-center tabular-nums"
 				/>
+			</div>
+
+			<div class="space-y-2 rounded-xl border px-3 py-2.5">
+				<div class="flex items-center justify-between gap-3">
+					<div class="min-w-0">
+						<p class="text-xs font-medium">{t('myaaw.groups.hide_thinking_label')}</p>
+						<p class="text-[11px] text-muted-foreground">
+							{t('myaaw.groups.hide_thinking_hint')}
+						</p>
+					</div>
+					<Switch
+						checked={hideThinking}
+						label={t('myaaw.groups.hide_thinking_label')}
+						onchange={(next) => (hideThinking = next)}
+					/>
+				</div>
+				<div class="h-px bg-border/60"></div>
+				<div class="flex items-center justify-between gap-3">
+					<div class="min-w-0">
+						<p class="text-xs font-medium">{t('myaaw.groups.hide_tools_label')}</p>
+						<p class="text-[11px] text-muted-foreground">
+							{t('myaaw.groups.hide_tools_hint')}
+						</p>
+					</div>
+					<Switch
+						checked={hideTools}
+						label={t('myaaw.groups.hide_tools_label')}
+						onchange={(next) => (hideTools = next)}
+					/>
+				</div>
 			</div>
 
 			{#if formError}

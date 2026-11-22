@@ -65,6 +65,14 @@ export const groups = {
 			method: 'POST',
 			body: payload
 		}),
+	markRead: (id: string, messageId?: string) =>
+		client<{ read: boolean; last_read_message_id: string; read_at: string; unread_count: number }>(
+			groupPath(id, '/read'),
+			{
+				method: 'POST',
+				body: messageId ? { message_id: messageId } : {}
+			}
+		),
 	stop: (id: string) => client<StopGroupResponse>(groupPath(id, '/stop'), { method: 'POST' }),
 	continueRun: (id: string, payload: ContinueGroupRequest = {}) =>
 		client<ContinueGroupResponse>(groupPath(id, '/continue'), {
