@@ -995,6 +995,7 @@
 			if (conversationId === id && !cached) error = getErrorMessage(err);
 		} finally {
 			if (conversationId === id) {
+				if (topBarTitle.chatTitle(`dm:${id}`) === undefined) topBarTitle.setChat(`dm:${id}`, '');
 				loading = false;
 				scrollToBottom();
 			}
@@ -1133,7 +1134,7 @@
 
 	function applyTitle(id: string, title: string) {
 		if (conversationId !== id) return; // Another conversation won.
-		topBarTitle.set(title);
+		topBarTitle.setChat(`dm:${id}`, title);
 		// Keep the history entry in step with the bar without reloading the list.
 		conversationHistory.update(id, title);
 		approvalQueue.setTitle(agent ?? '', id, title);
@@ -3018,7 +3019,7 @@
 	function onHistoryRenamed(id: string, title: string) {
 		if (id !== conversationId) return;
 		stopTitlePolling();
-		topBarTitle.set(title);
+		topBarTitle.setChat(`dm:${id}`, title);
 	}
 
 	function messageText(message: Message): string {

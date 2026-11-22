@@ -406,15 +406,7 @@
 		inspectorTab = param === 'members' ? 'members' : 'settings';
 	});
 
-	// Keep the shell top bar title synced with the active group.
-	$effect(() => {
-		if (group) {
-			topBarTitle.set(group.name, group.description);
-		} else {
-			topBarTitle.set(t('myaaw.groups.title'));
-		}
-		return () => topBarTitle.clear();
-	});
+	$effect(() => () => topBarTitle.clear());
 
 	// Hide the floating desktop group title while AttachmentPreview owns the top
 	// of the column (matching regular 1-on-1 chat), so the title never overlaps
@@ -538,6 +530,7 @@
 		} catch (err) {
 			if (token !== loadToken) return;
 			loadError = getErrorMessage(err);
+			topBarTitle.setChat(`group:${id}`, '');
 			group = null;
 			loading = false;
 		}

@@ -705,6 +705,9 @@
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
 	);
 	let isGroupChat = $derived(page.url.pathname.startsWith('/app/groups/'));
+	let activeGroup = $derived(
+		isGroupChat ? groupsStore.groups.find((group) => group.id === page.params.id) : undefined
+	);
 	// In Bots mode the left sidebar is a bot roster (clicking a bot opens its chat),
 	// so agent-scoped pages (Artifacts, Schedule, Plugins, Configure, Operations)
 	// show a breadcrumb agent picker in the top bar.
@@ -893,17 +896,26 @@
 					{#if focusMode && isChat}
 						<!-- The chat screen has no title; the agent mark floats over it. -->
 					{:else if isChat || isGroupChat}
+						{@const dmTitle = activeConversation
+							? topBarTitle.chatTitle(`dm:${activeConversation}`)
+							: topBarTitle.value}
+						{@const title = isGroupChat
+							? activeGroup?.name ||
+								(topBarTitle.chatTitle(`group:${page.params.id}`) !== undefined
+									? t(current.label)
+									: undefined)
+							: dmTitle === undefined
+								? undefined
+								: dmTitle ||
+									(botsMode && (agentSelection.current?.name || agentSelection.selected)) ||
+									t(current.label)}
 						<h1
 							class="pointer-events-auto truncate text-base font-medium tracking-tight text-foreground"
-							title={topBarTitle.description ||
-								topBarTitle.value ||
-								(botsMode && isChat
-									? agentSelection.current?.name || agentSelection.selected || t(current.label)
-									: t(current.description))}
+							title={isGroupChat
+								? activeGroup?.description || title
+								: dmTitle || (botsMode ? title : t(current.description))}
 						>
-							{topBarTitle.value ||
-								(botsMode && isChat && (agentSelection.current?.name || agentSelection.selected)) ||
-								t(current.label)}
+							{title}
 						</h1>
 					{:else if topBarTitle.value}
 						<!-- A page can name itself: the open conversation, or the agent being
