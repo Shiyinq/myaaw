@@ -98,9 +98,10 @@ type discordTimeline struct {
 	finalText   string
 	finalTrace  []provider.ReactStep
 	finalUsage  provider.Usage
-	finalSent   bool
-	attachments []channel.Attachment
-	err         error
+	finalSent     bool
+	attachments   []channel.Attachment
+	extraMessages []provider.ExtraMessage
+	err           error
 
 	editThreshold int
 	editInterval  time.Duration
@@ -155,6 +156,8 @@ func (tl *discordTimeline) handleChunk(chunk channel.StreamChunk) {
 		tl.finishTool(chunk.ToolCallID, chunk.ToolName, chunk.ToolResultText, chunk.IsError)
 	case "attachment":
 		tl.attachments = append(tl.attachments, chunk.Attachments...)
+	case "extra_messages":
+		tl.extraMessages = append(tl.extraMessages, chunk.ExtraMessages...)
 	case "trace", "usage":
 		// Tool lifecycle events already carry the descriptive data.
 	default:

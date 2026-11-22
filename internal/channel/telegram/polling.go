@@ -201,6 +201,21 @@ func deleteWebhook(client *resty.Client) error {
 }
 
 func processUpdate(payload json.RawMessage, q service.QueueService) {
+	// Interactive extra_messages button clicks lock their block and enqueue
+	// a structured <interaction> turn.
+	if synth, handled := HandleExtraMessageCallback(payload); handled {
+		if len(synth) > 0 {
+			envelope := channel.QueueEnvelope{
+				Channel: "telegram",
+				Payload: synth,
+			}
+			if err := q.ProcessAndPublishMessage(&envelope); err != nil {
+				log.Printf("❌ Failed to push extra_messages callback to queue: %v", err)
+			}
+		}
+		return
+	}
+
 	// Approval button presses are resolved inline; they are not chat messages.
 	if HandleApprovalCallback(payload) {
 		return

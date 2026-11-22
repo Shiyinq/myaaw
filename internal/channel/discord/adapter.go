@@ -99,6 +99,9 @@ func (d *DiscordAdapter) registerHandler(queueRepo repository.QueueRepository) {
 		protect("approval interaction", func() {
 			handleApprovalInteraction(s, i)
 		})
+		protect("extra_messages interaction", func() {
+			handleExtraMessageInteraction(s, i, queueRepo)
+		})
 	})
 }
 
@@ -307,6 +310,9 @@ func (d *DiscordAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoin
 	if err := d.sendAttachments(channelID, out.Attachments); err != nil && sendErr == nil {
 		sendErr = err
 	}
+	if err := d.sendExtraMessages(channelID, msg.UserID, out.ConversationID, out.ExtraMessages); err != nil && sendErr == nil {
+		sendErr = err
+	}
 	return sendErr
 }
 
@@ -459,12 +465,16 @@ func (d *DiscordAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(
 	if err := d.sendAttachments(channelID, timeline.attachments); err != nil {
 		return nil, err
 	}
+	if err := d.sendExtraMessages(channelID, msg.UserID, msg.ConversationID, timeline.extraMessages); err != nil {
+		log.Printf("discord extra_messages delivery error: %v", err)
+	}
 
 	return &channel.OutgoingMessage{
-		Text:        timeline.finalText,
-		Trace:       timeline.finalTrace,
-		Usage:       timeline.finalUsage,
-		Attachments: timeline.attachments,
+		Text:          timeline.finalText,
+		Trace:         timeline.finalTrace,
+		Usage:         timeline.finalUsage,
+		Attachments:   timeline.attachments,
+		ExtraMessages: timeline.extraMessages,
 	}, nil
 }
 

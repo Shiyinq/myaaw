@@ -150,6 +150,9 @@ func HandleApprovalCallback(payload json.RawMessage) bool {
 	}
 
 	cb := update.CallbackQuery
+	if strings.HasPrefix(cb.Data, extraCallbackPrefix) {
+		return false
+	}
 	if id, decision, ok := parseApprovalCallback(cb.Data); ok {
 		actor := approvals.Actor{Channel: "telegram"}
 		if cb.From != nil {

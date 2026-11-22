@@ -118,6 +118,9 @@ func (t *TelegramAdapter) Send(msg *channel.IncomingMessage, out *channel.Outgoi
 	if err := sendTelegramAttachments(meta.ChatID, meta.ThreadID, meta.MessageID, out.Attachments); err != nil && sendErr == nil {
 		sendErr = err
 	}
+	if err := sendTelegramExtraMessages(nil, meta.ChatID, meta.ThreadID, meta.MessageID, msg.UserID, out.ConversationID, out.ExtraMessages); err != nil && sendErr == nil {
+		sendErr = err
+	}
 	return sendErr
 }
 
@@ -141,12 +144,16 @@ func (t *TelegramAdapter) SendStream(msg *channel.IncomingMessage, streamFn func
 	if err := sendTelegramAttachments(meta.ChatID, meta.ThreadID, meta.MessageID, timeline.attachments); err != nil {
 		return nil, err
 	}
+	if err := sendTelegramExtraMessages(nil, meta.ChatID, meta.ThreadID, meta.MessageID, msg.UserID, msg.ConversationID, timeline.extraMessages); err != nil {
+		log.Printf("telegram extra_messages delivery error: %v", err)
+	}
 
 	return &channel.OutgoingMessage{
-		Text:        timeline.finalText,
-		Trace:       timeline.finalTrace,
-		Usage:       timeline.finalUsage,
-		Attachments: timeline.attachments,
+		Text:          timeline.finalText,
+		Trace:         timeline.finalTrace,
+		Usage:         timeline.finalUsage,
+		Attachments:   timeline.attachments,
+		ExtraMessages: timeline.extraMessages,
 	}, nil
 }
 
