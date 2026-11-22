@@ -1474,6 +1474,7 @@
 			"topic_placeholder": "Optional focus, rules, or goals for agents in this group...",
 			"members_label": "Members",
 			"select_all": "Select all",
+			"clear_all": "Clear",
 			"no_agents": "No agents available yet. Create an agent first.",
 			"online": "Online",
 			"mode_label": "Discussion mode",

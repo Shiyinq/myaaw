@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Check, Loader2, Users } from 'lucide-svelte';
+	import { Check, Loader2, Search, Users } from 'lucide-svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -19,6 +19,7 @@
 	let name = $state('');
 	let description = $state('');
 	let selectedMembers = $state<string[]>([]);
+	let memberQuery = $state('');
 	let discussionMode = $state<DiscussionMode>('autonomous');
 	let maxTurns = $state(8);
 	let hideThinking = $state(false);
@@ -27,6 +28,11 @@
 	let formError = $state('');
 
 	const agents = $derived(agentSelection.agents);
+	const filteredAgents = $derived.by(() => {
+		const needle = memberQuery.trim().toLowerCase();
+		if (!needle) return agents;
+		return agents.filter((a) => a.name.toLowerCase().includes(needle));
+	});
 	const canSubmit = $derived(
 		name.trim().length > 0 &&
 			selectedMembers.length > 0 &&
@@ -59,6 +65,7 @@
 		untrack(() => {
 			name = '';
 			description = '';
+			memberQuery = '';
 			discussionMode = 'autonomous';
 			maxTurns = 8;
 			hideThinking = false;
@@ -83,6 +90,10 @@
 
 	function selectAllMembers() {
 		selectedMembers = agents.map((a) => a.name);
+	}
+
+	function clearMembers() {
+		selectedMembers = [];
 	}
 
 	async function handleSubmit(event: SubmitEvent) {
@@ -154,10 +165,10 @@
 						id="group-topic"
 						bind:value={description}
 						maxlength={2000}
-						rows={2}
+						rows={3}
 						autocomplete="off"
 						placeholder={t('myaaw.groups.topic_placeholder')}
-						class="w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+						class="max-h-64 min-h-20 w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 					></textarea>
 				</div>
 
@@ -169,16 +180,41 @@
 								({selectedMembers.length})
 							</span>
 						</Label>
-						{#if agents.length > 1 && selectedMembers.length < agents.length}
-							<button
-								type="button"
-								onclick={selectAllMembers}
-								class="text-xs font-medium text-primary hover:underline"
-							>
-								{t('myaaw.groups.select_all')}
-							</button>
-						{/if}
+						<div class="flex items-center gap-3">
+							{#if agents.length > 1 && selectedMembers.length < agents.length}
+								<button
+									type="button"
+									onclick={selectAllMembers}
+									class="text-xs font-medium text-primary hover:underline"
+								>
+									{t('myaaw.groups.select_all')}
+								</button>
+							{/if}
+							{#if selectedMembers.length > 0}
+								<button
+									type="button"
+									onclick={clearMembers}
+									class="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+								>
+									{t('myaaw.groups.clear_all')}
+								</button>
+							{/if}
+						</div>
 					</div>
+
+					{#if agents.length > 6}
+						<div class="relative">
+							<Search
+								class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+							/>
+							<Input
+								bind:value={memberQuery}
+								placeholder={t('common.search')}
+								autocomplete="off"
+								class="h-8 pl-8 text-xs"
+							/>
+						</div>
+					{/if}
 
 					{#if agents.length === 0}
 						<p
@@ -186,9 +222,15 @@
 						>
 							{t('myaaw.groups.no_agents')}
 						</p>
+					{:else if filteredAgents.length === 0}
+						<p
+							class="rounded-lg border border-dashed px-3 py-4 text-center text-xs text-muted-foreground"
+						>
+							{t('myaaw.bots.no_matches')}
+						</p>
 					{:else}
 						<div class="grid max-h-44 grid-cols-1 gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
-							{#each agents as agent (agent.name)}
+							{#each filteredAgents as agent (agent.name)}
 								{@const picked = selectedMembers.includes(agent.name)}
 								<button
 									type="button"

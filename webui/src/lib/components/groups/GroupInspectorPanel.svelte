@@ -837,7 +837,7 @@
 						maxlength={2000}
 						rows={3}
 						placeholder={t('myaaw.groups.topic_placeholder')}
-						class="w-full resize-none rounded-md border border-input bg-transparent px-2.5 py-2 text-xs shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+						class="max-h-64 min-h-20 w-full resize-y rounded-md border border-input bg-transparent px-2.5 py-2 text-xs shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 					></textarea>
 				</div>
 

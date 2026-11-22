@@ -1474,6 +1474,7 @@
 			"topic_placeholder": "Fokus, aturan, atau tujuan opsional untuk agen di grup ini...",
 			"members_label": "Anggota",
 			"select_all": "Pilih semua",
+			"clear_all": "Kosongkan",
 			"no_agents": "Belum ada agen tersedia. Buat agen terlebih dahulu.",
 			"online": "Aktif",
 			"mode_label": "Mode diskusi",
