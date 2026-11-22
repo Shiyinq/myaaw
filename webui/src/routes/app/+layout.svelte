@@ -892,28 +892,19 @@
 				>
 					{#if focusMode && isChat}
 						<!-- The chat screen has no title; the agent mark floats over it. -->
-					{:else if botsMode && isChat}
-						<div class="flex min-w-0 items-center gap-2">
-							<Bloub
-								mood="attentif"
-								size={24}
-								color={agentSelection.color}
-								class="hidden shrink-0 translate-y-[1.5px] md:inline-flex"
-							/>
-							<h1
-								class="pointer-events-auto truncate text-base font-bold tracking-tight text-foreground sm:text-lg"
-								title={topBarTitle.description ||
-									topBarTitle.value ||
-									agentSelection.current?.name ||
-									agentSelection.selected ||
-									t(current.label)}
-							>
-								{topBarTitle.value ||
-									agentSelection.current?.name ||
-									agentSelection.selected ||
-									t(current.label)}
-							</h1>
-						</div>
+					{:else if isChat || isGroupChat}
+						<h1
+							class="pointer-events-auto truncate text-base font-medium tracking-tight text-foreground"
+							title={topBarTitle.description ||
+								topBarTitle.value ||
+								(botsMode && isChat
+									? agentSelection.current?.name || agentSelection.selected || t(current.label)
+									: t(current.description))}
+						>
+							{topBarTitle.value ||
+								(botsMode && isChat && (agentSelection.current?.name || agentSelection.selected)) ||
+								t(current.label)}
+						</h1>
 					{:else if topBarTitle.value}
 						<!-- A page can name itself: the open conversation, or the agent being
 						     edited, instead of the route's static label. -->
@@ -933,12 +924,6 @@
 							</h1>
 							{#if isBotsUtility}
 								<BotsAgentPicker />
-							{:else if isChat}
-								<span
-									class="hidden shrink-0 text-base font-medium text-muted-foreground sm:inline sm:text-lg"
-								>
-									{agentSelection.current?.name ?? agentSelection.selected ?? '—'}
-								</span>
 							{/if}
 						</div>
 					{:else}
