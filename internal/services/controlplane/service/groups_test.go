@@ -1428,4 +1428,25 @@ func TestGroupServiceGlobalUpdatesAndReplayOnDisconnect(t *testing.T) {
 	if len(detail.Messages) != 2 || detail.Messages[1].Content != "Done sleeping." {
 		t.Fatalf("unexpected persisted messages: %+v", detail.Messages)
 	}
+	// Agent reply arrived after user's message, so persistent unread_count must be 1
+	// and first_unread_message_id must point to that agent reply.
+	if detail.UnreadCount != 1 || detail.FirstUnreadMessageID != detail.Messages[1].ID {
+		t.Fatalf("unread = (%d, %q), want (1, %q)", detail.UnreadCount, detail.FirstUnreadMessageID, detail.Messages[1].ID)
+	}
+	// List() must report the exact same persistent unread count.
+	list, err := svc.List()
+	if err != nil || len(list) != 1 || list[0].UnreadCount != 1 || list[0].FirstUnreadMessageID != detail.Messages[1].ID {
+		t.Fatalf("List unread = %+v, err=%v", list, err)
+	}
+	// MarkRead persists the watermark and clears unread_count across subsequent reads.
+	if _, _, err := svc.MarkRead(group.ID, ""); err != nil {
+		t.Fatalf("MarkRead: %v", err)
+	}
+	afterRead, err := svc.Get(group.ID)
+	if err != nil {
+		t.Fatalf("Get after MarkRead: %v", err)
+	}
+	if afterRead.UnreadCount != 0 || afterRead.FirstUnreadMessageID != "" {
+		t.Fatalf("after MarkRead unread = (%d, %q), want (0, \"\")", afterRead.UnreadCount, afterRead.FirstUnreadMessageID)
+	}
 }

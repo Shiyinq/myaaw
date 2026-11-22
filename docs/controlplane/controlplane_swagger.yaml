@@ -333,6 +333,13 @@ definitions:
           $ref: '#/definitions/service.AgentInfo'
         type: array
     type: object
+  handler.BotsSummaryResponse:
+    properties:
+      bots:
+        items:
+          $ref: '#/definitions/service.BotSidebarSummary'
+        type: array
+    type: object
   handler.BuiltinToggleRequest:
     properties:
       enabled:
@@ -602,6 +609,11 @@ definitions:
         items:
           $ref: '#/definitions/service.LogFile'
         type: array
+    type: object
+  handler.MarkGroupReadRequest:
+    properties:
+      message_id:
+        type: string
     type: object
   handler.MarkReadRequest:
     properties:
@@ -1577,6 +1589,44 @@ definitions:
       watermark:
         type: boolean
     type: object
+  service.BotRunSummary:
+    properties:
+      conversation_id:
+        type: string
+      finished_at:
+        type: string
+      request_id:
+        type: string
+      scope:
+        type: string
+      started_at:
+        type: string
+      streaming:
+        type: boolean
+    type: object
+  service.BotSidebarSummary:
+    properties:
+      active_runs:
+        items:
+          $ref: '#/definitions/service.BotRunSummary'
+        type: array
+      agent:
+        type: string
+      latest_conversation_id:
+        type: string
+      latest_preview:
+        type: string
+      latest_read_at:
+        type: string
+      latest_title:
+        type: string
+      latest_updated_at:
+        type: string
+      recent_conversations:
+        items:
+          $ref: '#/definitions/service.ConversationSummary'
+        type: array
+    type: object
   service.BuiltinToolView:
     properties:
       description:
@@ -2004,6 +2054,10 @@ definitions:
         type: string
       discussion_mode:
         type: string
+      hide_thinking:
+        type: boolean
+      hide_tools:
+        type: boolean
       max_turns:
         type: integer
       members:
@@ -2121,7 +2175,13 @@ definitions:
         type: string
       discussion_mode:
         type: string
+      hide_thinking:
+        type: boolean
+      hide_tools:
+        type: boolean
       id:
+        type: string
+      last_read_message_id:
         type: string
       max_turns:
         type: integer
@@ -2130,6 +2190,8 @@ definitions:
           $ref: '#/definitions/service.GroupMember'
         type: array
       name:
+        type: string
+      read_at:
         type: string
       updated_at:
         type: string
@@ -2183,6 +2245,8 @@ definitions:
     type: object
   service.GroupDetail:
     properties:
+      first_unread_message_id:
+        type: string
       group:
         $ref: '#/definitions/service.Group'
       has_more:
@@ -2198,6 +2262,8 @@ definitions:
       run_state:
         $ref: '#/definitions/service.GroupRunState'
       total_messages:
+        type: integer
+      unread_count:
         type: integer
     type: object
   service.GroupLastMessage:
@@ -2317,6 +2383,8 @@ definitions:
         type: string
       discussion_mode:
         type: string
+      first_unread_message_id:
+        type: string
       id:
         type: string
       last_message:
@@ -2335,6 +2403,8 @@ definitions:
         type: integer
       running:
         type: boolean
+      unread_count:
+        type: integer
       updated_at:
         type: string
     type: object
@@ -3102,6 +3172,10 @@ definitions:
         type: string
       discussion_mode:
         type: string
+      hide_thinking:
+        type: boolean
+      hide_tools:
+        type: boolean
       max_turns:
         type: integer
       members:
@@ -7570,6 +7644,30 @@ paths:
       summary: Restore a backup
       tags:
       - Backups
+  /bots/summary:
+    get:
+      description: Aggregates latest DM preview, recent conversations, and active
+        DM runs for every agent in one request.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.BotsSummaryResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Batch bot sidebar summaries
+      tags:
+      - Agents
   /capabilities:
     get:
       produces:
@@ -7937,6 +8035,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Send group message
+      tags:
+      - Groups
+  /groups/{id}/read:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Optional message_id watermark (defaults to newest message)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/handler.MarkGroupReadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark group read
       tags:
       - Groups
   /groups/{id}/stop:

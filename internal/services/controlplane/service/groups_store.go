@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"myaaw/internal/channel"
 	"myaaw/internal/channel/api"
@@ -145,14 +146,18 @@ type GroupRunState struct {
 
 // Group holds a group's configuration and member roster.
 type Group struct {
-	ID             string        `json:"id"`
-	Name           string        `json:"name"`
-	Description    string        `json:"description"`
-	Members        []GroupMember `json:"members"`
-	DiscussionMode string        `json:"discussion_mode"`
-	MaxTurns       int           `json:"max_turns"`
-	CreatedAt      string        `json:"created_at"`
-	UpdatedAt      string        `json:"updated_at"`
+	ID                string        `json:"id"`
+	Name              string        `json:"name"`
+	Description       string        `json:"description"`
+	Members           []GroupMember `json:"members"`
+	DiscussionMode    string        `json:"discussion_mode"`
+	MaxTurns          int           `json:"max_turns"`
+	HideThinking      bool          `json:"hide_thinking"`
+	HideTools         bool          `json:"hide_tools"`
+	LastReadMessageID string        `json:"last_read_message_id,omitempty"`
+	ReadAt            string        `json:"read_at,omitempty"`
+	CreatedAt         string        `json:"created_at"`
+	UpdatedAt         string        `json:"updated_at"`
 }
 
 // GroupLastMessage is the preview of the latest message returned in GET /groups.
@@ -166,30 +171,34 @@ type GroupLastMessage struct {
 
 // GroupSummary is returned in GET /groups.
 type GroupSummary struct {
-	ID             string            `json:"id"`
-	Name           string            `json:"name"`
-	Description    string            `json:"description"`
-	Members        []GroupMember     `json:"members"`
-	MemberCount    int               `json:"member_count"`
-	DiscussionMode string            `json:"discussion_mode"`
-	MaxTurns       int               `json:"max_turns"`
+	ID                   string            `json:"id"`
+	Name                 string            `json:"name"`
+	Description          string            `json:"description"`
+	Members              []GroupMember     `json:"members"`
+	MemberCount          int               `json:"member_count"`
+	DiscussionMode       string            `json:"discussion_mode"`
+	MaxTurns             int               `json:"max_turns"`
 	Running              bool              `json:"running"`
 	CurrentAgent         string            `json:"current_agent"`
 	PendingApprovalCount int               `json:"pending_approval_count,omitempty"`
+	UnreadCount          int               `json:"unread_count"`
+	FirstUnreadMessageID string            `json:"first_unread_message_id,omitempty"`
 	LastMessage          *GroupLastMessage `json:"last_message,omitempty"`
-	CreatedAt      string            `json:"created_at"`
-	UpdatedAt      string            `json:"updated_at"`
+	CreatedAt            string            `json:"created_at"`
+	UpdatedAt            string            `json:"updated_at"`
 }
 
 // GroupDetail is returned by GET /groups/:id.
 type GroupDetail struct {
-	Group         Group          `json:"group"`
-	Messages      []GroupMessage `json:"messages"`
-	TotalMessages int            `json:"total_messages"`
-	Offset        int            `json:"offset"`
-	Limit         int            `json:"limit"`
-	HasMore       bool           `json:"has_more"`
-	RunState      GroupRunState  `json:"run_state"`
+	Group                Group          `json:"group"`
+	Messages             []GroupMessage `json:"messages"`
+	TotalMessages        int            `json:"total_messages"`
+	Offset               int            `json:"offset"`
+	Limit                int            `json:"limit"`
+	HasMore              bool           `json:"has_more"`
+	UnreadCount          int            `json:"unread_count"`
+	FirstUnreadMessageID string         `json:"first_unread_message_id,omitempty"`
+	RunState             GroupRunState  `json:"run_state"`
 }
 
 // CreateGroupRequest is the payload for POST /groups.
@@ -199,6 +208,8 @@ type CreateGroupRequest struct {
 	Members        []string `json:"members"`
 	DiscussionMode string   `json:"discussion_mode"`
 	MaxTurns       int      `json:"max_turns"`
+	HideThinking   bool     `json:"hide_thinking"`
+	HideTools      bool     `json:"hide_tools"`
 }
 
 // UpdateGroupRequest is the payload for PATCH /groups/:id.
@@ -208,6 +219,8 @@ type UpdateGroupRequest struct {
 	Members        *[]string `json:"members"`
 	DiscussionMode *string   `json:"discussion_mode"`
 	MaxTurns       *int      `json:"max_turns"`
+	HideThinking   *bool     `json:"hide_thinking"`
+	HideTools      *bool     `json:"hide_tools"`
 }
 
 // SendGroupMessageRequest is the payload for POST /groups/:id/messages.
@@ -231,8 +244,10 @@ type GroupSSEEvent struct {
 }
 
 type storedGroup struct {
-	Group    Group          `json:"group"`
-	Messages []GroupMessage `json:"messages"`
+	Group                Group          `json:"group"`
+	Messages             []GroupMessage `json:"messages"`
+	UnreadCount          int            `json:"unread_count"`
+	FirstUnreadMessageID string         `json:"first_unread_message_id,omitempty"`
 }
 
 // GroupStore persists groups, member rosters, and transcripts in controlplane.db.
@@ -282,7 +297,7 @@ func (s *GroupStore) List() ([]storedGroup, error) {
 	db := s.db.DB()
 
 	rows, err := db.Query(`
-		SELECT id, name, description, discussion_mode, max_turns, created_at, updated_at
+		SELECT id, name, description, discussion_mode, max_turns, hide_thinking, hide_tools, last_read_message_id, read_at, created_at, updated_at
 		FROM groups
 		ORDER BY updated_at DESC, id ASC`)
 	if err != nil {
@@ -293,10 +308,16 @@ func (s *GroupStore) List() ([]storedGroup, error) {
 	result := make([]storedGroup, 0)
 	indexByID := make(map[string]int)
 	for rows.Next() {
-		var g Group
-		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.DiscussionMode, &g.MaxTurns, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		var (
+			g            Group
+			hideThinking int
+			hideTools    int
+		)
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.DiscussionMode, &g.MaxTurns, &hideThinking, &hideTools, &g.LastReadMessageID, &g.ReadAt, &g.CreatedAt, &g.UpdatedAt); err != nil {
 			return nil, err
 		}
+		g.HideThinking = hideThinking != 0
+		g.HideTools = hideTools != 0
 		g.Members = []GroupMember{}
 		sg := storedGroup{Group: g, Messages: []GroupMessage{}}
 		normalizeStoredGroup(&sg)
@@ -358,6 +379,15 @@ func (s *GroupStore) List() ([]storedGroup, error) {
 		return nil, err
 	}
 
+	for i := range result {
+		unread, firstUnread, err := computeUnreadStats(db, result[i].Group.ID, result[i].Group.LastReadMessageID)
+		if err != nil {
+			return nil, err
+		}
+		result[i].UnreadCount = unread
+		result[i].FirstUnreadMessageID = firstUnread
+	}
+
 	return result, nil
 }
 
@@ -374,12 +404,14 @@ func (s *GroupStore) Get(id string) (*storedGroup, error) {
 }
 
 type storedGroupPage struct {
-	Group         Group
-	Messages      []GroupMessage
-	TotalMessages int
-	Offset        int
-	Limit         int
-	HasMore       bool
+	Group                Group
+	Messages             []GroupMessage
+	TotalMessages        int
+	Offset               int
+	Limit                int
+	HasMore              bool
+	UnreadCount          int
+	FirstUnreadMessageID string
 }
 
 // GetPage reads one stored group and a slice of its transcript using indexed
@@ -546,7 +578,73 @@ func (s *GroupStore) GetPage(id string, limit, offset int, beforeID string) (sto
 	if err := rows.Err(); err != nil {
 		return storedGroupPage{}, err
 	}
+	unread, firstUnread, err := computeUnreadStats(db, id, group.LastReadMessageID)
+	if err != nil {
+		return storedGroupPage{}, err
+	}
+	page.UnreadCount = unread
+	page.FirstUnreadMessageID = firstUnread
 	return page, nil
+}
+
+// MarkRead advances a group's persistent read watermark to messageID (or the
+// newest message in the group when messageID is empty).
+func (s *GroupStore) MarkRead(id, messageID string) (string, string, error) {
+	if err := ValidateGroupID(id); err != nil {
+		return "", "", err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	db := s.db.DB()
+	var exists int
+	if err := db.QueryRow(`SELECT 1 FROM groups WHERE id = ?`, id).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+		return "", "", ErrGroupNotFound
+	} else if err != nil {
+		return "", "", err
+	}
+
+	targetID := strings.TrimSpace(messageID)
+	if targetID == "" {
+		_ = db.QueryRow(`SELECT id FROM group_messages WHERE group_id = ? ORDER BY seq DESC LIMIT 1`, id).Scan(&targetID)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := db.Exec(`UPDATE groups SET last_read_message_id = ?, read_at = ? WHERE id = ?`, targetID, now, id); err != nil {
+		return "", "", err
+	}
+	return targetID, now, nil
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+func computeUnreadStats(q sqlQueryer, groupID, lastReadID string) (int, string, error) {
+	var readSeq int64
+	if lastReadID != "" {
+		_ = q.QueryRow(`SELECT seq FROM group_messages WHERE group_id = ? AND id = ?`, groupID, lastReadID).Scan(&readSeq)
+	}
+	var (
+		count  int
+		minSeq int64
+	)
+	if err := q.QueryRow(`
+		SELECT COUNT(*), COALESCE(MIN(seq), 0)
+		FROM group_messages
+		WHERE group_id = ? AND sender_type = 'agent' AND seq > ?`,
+		groupID, readSeq,
+	).Scan(&count, &minSeq); err != nil {
+		return 0, "", err
+	}
+	var firstUnreadID string
+	if minSeq > 0 {
+		_ = q.QueryRow(`SELECT id FROM group_messages WHERE seq = ?`, minSeq).Scan(&firstUnreadID)
+	}
+	return count, firstUnreadID, nil
 }
 
 // Create inserts a new group, its members, and any initial messages atomically.
@@ -571,10 +669,12 @@ func (s *GroupStore) Create(sg *storedGroup) error {
 	}()
 
 	if _, err = tx.Exec(`
-		INSERT INTO groups (id, name, description, discussion_mode, max_turns, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO groups (id, name, description, discussion_mode, max_turns, hide_thinking, hide_tools, last_read_message_id, read_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		sg.Group.ID, sg.Group.Name, sg.Group.Description,
 		sg.Group.DiscussionMode, sg.Group.MaxTurns,
+		boolToInt(sg.Group.HideThinking), boolToInt(sg.Group.HideTools),
+		sg.Group.LastReadMessageID, sg.Group.ReadAt,
 		sg.Group.CreatedAt, sg.Group.UpdatedAt,
 	); err != nil {
 		return err
@@ -629,10 +729,12 @@ func (s *GroupStore) Update(id string, fn func(sg *storedGroup) error) (*storedG
 
 	if _, err = tx.Exec(`
 		UPDATE groups
-		SET name = ?, description = ?, discussion_mode = ?, max_turns = ?, updated_at = ?
+		SET name = ?, description = ?, discussion_mode = ?, max_turns = ?, hide_thinking = ?, hide_tools = ?, last_read_message_id = ?, read_at = ?, updated_at = ?
 		WHERE id = ?`,
 		sg.Group.Name, sg.Group.Description,
 		sg.Group.DiscussionMode, sg.Group.MaxTurns,
+		boolToInt(sg.Group.HideThinking), boolToInt(sg.Group.HideTools),
+		sg.Group.LastReadMessageID, sg.Group.ReadAt,
 		sg.Group.UpdatedAt, id,
 	); err != nil {
 		return nil, err
@@ -693,17 +795,23 @@ type sqlQueryer interface {
 
 func loadGroupAndMembers(q sqlQueryer, id string) (Group, error) {
 	var g Group
+	var (
+		hideThinking int
+		hideTools    int
+	)
 	err := q.QueryRow(`
-		SELECT id, name, description, discussion_mode, max_turns, created_at, updated_at
+		SELECT id, name, description, discussion_mode, max_turns, hide_thinking, hide_tools, last_read_message_id, read_at, created_at, updated_at
 		FROM groups
 		WHERE id = ?`, id,
-	).Scan(&g.ID, &g.Name, &g.Description, &g.DiscussionMode, &g.MaxTurns, &g.CreatedAt, &g.UpdatedAt)
+	).Scan(&g.ID, &g.Name, &g.Description, &g.DiscussionMode, &g.MaxTurns, &hideThinking, &hideTools, &g.LastReadMessageID, &g.ReadAt, &g.CreatedAt, &g.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Group{}, ErrGroupNotFound
 	}
 	if err != nil {
 		return Group{}, err
 	}
+	g.HideThinking = hideThinking != 0
+	g.HideTools = hideTools != 0
 
 	mRows, err := q.Query(`
 		SELECT name, last_seen_message_id, conversation_id

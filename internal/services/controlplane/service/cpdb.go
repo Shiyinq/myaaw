@@ -11,7 +11,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const controlPlaneSchemaVersion = 2
+const controlPlaneSchemaVersion = 4
 
 var controlPlaneSchemaV1 = []string{
 	`CREATE TABLE IF NOT EXISTS auth_account (
@@ -30,13 +30,17 @@ var controlPlaneSchemaV1 = []string{
 		updated_at TEXT    NOT NULL
 	)`,
 	`CREATE TABLE IF NOT EXISTS groups (
-		id              TEXT    PRIMARY KEY,
-		name            TEXT    NOT NULL,
-		description     TEXT    NOT NULL DEFAULT '',
-		discussion_mode TEXT    NOT NULL DEFAULT 'autonomous',
-		max_turns       INTEGER NOT NULL DEFAULT 8,
-		created_at      TEXT    NOT NULL,
-		updated_at      TEXT    NOT NULL
+		id                   TEXT    PRIMARY KEY,
+		name                 TEXT    NOT NULL,
+		description          TEXT    NOT NULL DEFAULT '',
+		discussion_mode      TEXT    NOT NULL DEFAULT 'autonomous',
+		max_turns            INTEGER NOT NULL DEFAULT 8,
+		hide_thinking        INTEGER NOT NULL DEFAULT 0,
+		hide_tools           INTEGER NOT NULL DEFAULT 0,
+		last_read_message_id TEXT    NOT NULL DEFAULT '',
+		read_at              TEXT    NOT NULL DEFAULT '',
+		created_at           TEXT    NOT NULL,
+		updated_at           TEXT    NOT NULL
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_groups_updated_at
 		ON groups(updated_at DESC, id ASC)`,
@@ -163,10 +167,42 @@ func (c *ControlPlaneDB) migrate() error {
 				return fmt.Errorf("apply controlplane schema: %w", err)
 			}
 		}
-	} else if version < 2 {
-		if _, err := tx.Exec(`ALTER TABLE group_messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT ''`); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("apply controlplane schema v2: %w", err)
+	} else {
+		if version < 2 {
+			if _, err := tx.Exec(`ALTER TABLE group_messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT ''`); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("apply controlplane schema v2: %w", err)
+			}
+		}
+		if version < 3 {
+			for _, stmt := range []string{
+				`ALTER TABLE groups ADD COLUMN last_read_message_id TEXT NOT NULL DEFAULT ''`,
+				`ALTER TABLE groups ADD COLUMN read_at TEXT NOT NULL DEFAULT ''`,
+				`UPDATE groups
+				 SET last_read_message_id = COALESCE((
+				     SELECT id FROM group_messages
+				     WHERE group_id = groups.id
+				     ORDER BY seq DESC LIMIT 1
+				 ), ''),
+				 read_at = updated_at
+				 WHERE last_read_message_id = '' AND read_at = ''`,
+			} {
+				if _, err := tx.Exec(stmt); err != nil {
+					_ = tx.Rollback()
+					return fmt.Errorf("apply controlplane schema v3: %w", err)
+				}
+			}
+		}
+		if version < 4 {
+			for _, stmt := range []string{
+				`ALTER TABLE groups ADD COLUMN hide_thinking INTEGER NOT NULL DEFAULT 0`,
+				`ALTER TABLE groups ADD COLUMN hide_tools INTEGER NOT NULL DEFAULT 0`,
+			} {
+				if _, err := tx.Exec(stmt); err != nil {
+					_ = tx.Rollback()
+					return fmt.Errorf("apply controlplane schema v4: %w", err)
+				}
+			}
 		}
 	}
 	if err := tx.Commit(); err != nil {

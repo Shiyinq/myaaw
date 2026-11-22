@@ -307,10 +307,12 @@ func (s *GroupService) List() ([]GroupSummary, error) {
 			Description:    sg.Group.Description,
 			Members:        members,
 			MemberCount:    len(members),
-			DiscussionMode: sg.Group.DiscussionMode,
-			MaxTurns:       sg.Group.MaxTurns,
-			CreatedAt:      sg.Group.CreatedAt,
-			UpdatedAt:      sg.Group.UpdatedAt,
+			DiscussionMode:       sg.Group.DiscussionMode,
+			MaxTurns:             sg.Group.MaxTurns,
+			UnreadCount:          sg.UnreadCount,
+			FirstUnreadMessageID: sg.FirstUnreadMessageID,
+			CreatedAt:            sg.Group.CreatedAt,
+			UpdatedAt:            sg.Group.UpdatedAt,
 		}
 		if rt := s.getRuntime(sg.Group.ID); rt != nil {
 			rt.mu.Lock()
@@ -370,6 +372,8 @@ func (s *GroupService) Create(req CreateGroupRequest) (Group, error) {
 		Members:        members,
 		DiscussionMode: mode,
 		MaxTurns:       maxTurns,
+		HideThinking:   req.HideThinking,
+		HideTools:      req.HideTools,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -420,13 +424,15 @@ func (s *GroupService) GetPage(id string, limit, offset int, beforeID string) (G
 	}
 
 	return GroupDetail{
-		Group:         page.Group,
-		Messages:      page.Messages,
-		TotalMessages: page.TotalMessages,
-		Offset:        page.Offset,
-		Limit:         page.Limit,
-		HasMore:       page.HasMore,
-		RunState:      runState,
+		Group:                page.Group,
+		Messages:             page.Messages,
+		TotalMessages:        page.TotalMessages,
+		Offset:               page.Offset,
+		Limit:                page.Limit,
+		HasMore:              page.HasMore,
+		UnreadCount:          page.UnreadCount,
+		FirstUnreadMessageID: page.FirstUnreadMessageID,
+		RunState:             runState,
 	}, nil
 }
 
@@ -485,6 +491,12 @@ func (s *GroupService) Update(id string, req UpdateGroupRequest) (Group, error) 
 		}
 		if validatedMaxTurns != nil {
 			sg.Group.MaxTurns = *validatedMaxTurns
+		}
+		if req.HideThinking != nil {
+			sg.Group.HideThinking = *req.HideThinking
+		}
+		if req.HideTools != nil {
+			sg.Group.HideTools = *req.HideTools
 		}
 		if req.Members != nil {
 			existing := make(map[string]GroupMember, len(sg.Group.Members))
@@ -568,7 +580,10 @@ func (s *GroupService) ClearMessages(id string, userID int) error {
 			sg.Group.Members[i].LastSeenMessageID = ""
 			sg.Group.Members[i].ConversationID = ""
 		}
-		sg.Group.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		now := time.Now().UTC().Format(time.RFC3339)
+		sg.Group.LastReadMessageID = ""
+		sg.Group.ReadAt = now
+		sg.Group.UpdatedAt = now
 		return nil
 	})
 	if err != nil {
@@ -648,6 +663,8 @@ func (s *GroupService) SendMessage(id string, userID int, req SendGroupMessageRe
 			CreatedAt:    now,
 		}
 		sg.Messages = append(sg.Messages, userMsg)
+		sg.Group.LastReadMessageID = userMsg.ID
+		sg.Group.ReadAt = now
 		sg.Group.UpdatedAt = now
 		groupSnap = sg.Group
 		return nil
@@ -749,6 +766,27 @@ func (s *GroupService) SendMessage(id string, userID int, req SendGroupMessageRe
 	go s.runLoop(ctx, id, userID, gen, rt)
 
 	return userMsg, snap, nil
+}
+
+// MarkRead persists the user's read watermark for a group and broadcasts a
+// global group.updated event so other tabs and devices clear their unread badge.
+func (s *GroupService) MarkRead(id, messageID string) (string, string, error) {
+	id = strings.Clone(id)
+	messageID = strings.Clone(strings.TrimSpace(messageID))
+	lastReadID, readAt, err := s.store.MarkRead(id, messageID)
+	if err != nil {
+		return "", "", err
+	}
+	s.emitGlobal(GroupSSEEvent{
+		Name: "read",
+		Data: map[string]any{
+			"group_id":             id,
+			"last_read_message_id": lastReadID,
+			"read_at":              readAt,
+			"unread_count":         0,
+		},
+	})
+	return lastReadID, readAt, nil
 }
 
 // Stop cancels an active or paused group run and sends a best-effort stop to the running agent.

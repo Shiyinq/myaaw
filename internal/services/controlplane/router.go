@@ -84,6 +84,7 @@ func NewApp() (*fiber.App, error) {
 	app.Patch("/settings", h.UpdateSettings)
 
 	app.Get("/agents", h.ListAgents)
+	app.Get("/bots/summary", h.BotsSummary)
 	app.Get("/capabilities", h.GetCapabilities)
 	app.Post("/agents/:name/onboard", h.OnboardAgent)
 	app.Get("/agents/:name", h.GetAgent)
@@ -224,6 +225,7 @@ func NewApp() (*fiber.App, error) {
 	app.Delete("/groups/:id", h.DeleteGroup)
 	app.Delete("/groups/:id/messages", h.ClearGroupMessages)
 	app.Post("/groups/:id/messages", h.SendGroupMessage)
+	app.Post("/groups/:id/read", h.MarkGroupRead)
 	app.Post("/groups/:id/stop", h.StopGroupRun)
 	app.Post("/groups/:id/continue", h.ContinueGroupRun)
 	app.Get("/groups/:id/attachments", h.ListGroupAttachments)

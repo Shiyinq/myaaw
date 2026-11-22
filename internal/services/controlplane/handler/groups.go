@@ -170,6 +170,43 @@ func (h *Handler) SendGroupMessage(c fiber.Ctx) error {
 	})
 }
 
+// MarkGroupReadRequest is the optional body for POST /groups/:id/read.
+type MarkGroupReadRequest struct {
+	MessageID string `json:"message_id,omitempty"`
+}
+
+// MarkGroupRead records the user's persistent read watermark for a group.
+// @Summary      Mark group read
+// @Tags         Groups
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Group ID"
+// @Param        request body MarkGroupReadRequest false "Optional message_id watermark (defaults to newest message)"
+// @Success      200 {object} map[string]interface{}
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Router       /groups/{id}/read [post]
+func (h *Handler) MarkGroupRead(c fiber.Ctx) error {
+	var req MarkGroupReadRequest
+	if len(c.Body()) > 0 {
+		if err := c.Bind().JSON(&req); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+		}
+	}
+	lastReadID, readAt, err := h.groups.MarkRead(c.Params("id"), req.MessageID)
+	if err != nil {
+		return groupError(c, err)
+	}
+	return c.JSON(fiber.Map{
+		"read":                 true,
+		"last_read_message_id": lastReadID,
+		"read_at":              readAt,
+		"unread_count":         0,
+	})
+}
+
 // StopGroupRun cancels any active autonomous discussion and stops the running agent turn.
 // @Summary      Stop group run
 // @Tags         Groups

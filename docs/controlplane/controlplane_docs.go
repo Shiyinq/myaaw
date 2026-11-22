@@ -6850,6 +6850,43 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/bots/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Aggregates latest DM preview, recent conversations, and active DM runs for every agent in one request.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Batch bot sidebar summaries",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BotsSummaryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/capabilities": {
             "get": {
                 "security": [
@@ -7408,6 +7445,69 @@ const docTemplatecontrolplane = `{
                             "additionalProperties": {
                                 "type": "boolean"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/read": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Mark group read",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional message_id watermark (defaults to newest message)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.MarkGroupReadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
@@ -8379,6 +8479,17 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "handler.BotsSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "bots": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.BotSidebarSummary"
+                    }
+                }
+            }
+        },
         "handler.BuiltinToggleRequest": {
             "type": "object",
             "properties": {
@@ -8777,6 +8888,14 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.LogFile"
                     }
+                }
+            }
+        },
+        "handler.MarkGroupReadRequest": {
+            "type": "object",
+            "properties": {
+                "message_id": {
+                    "type": "string"
                 }
             }
         },
@@ -10160,6 +10279,64 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.BotRunSummary": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "streaming": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "service.BotSidebarSummary": {
+            "type": "object",
+            "properties": {
+                "active_runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.BotRunSummary"
+                    }
+                },
+                "agent": {
+                    "type": "string"
+                },
+                "latest_conversation_id": {
+                    "type": "string"
+                },
+                "latest_preview": {
+                    "type": "string"
+                },
+                "latest_read_at": {
+                    "type": "string"
+                },
+                "latest_title": {
+                    "type": "string"
+                },
+                "latest_updated_at": {
+                    "type": "string"
+                },
+                "recent_conversations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ConversationSummary"
+                    }
+                }
+            }
+        },
         "service.BuiltinToolView": {
             "type": "object",
             "properties": {
@@ -10784,6 +10961,12 @@ const docTemplatecontrolplane = `{
                 "discussion_mode": {
                     "type": "string"
                 },
+                "hide_thinking": {
+                    "type": "boolean"
+                },
+                "hide_tools": {
+                    "type": "boolean"
+                },
                 "max_turns": {
                     "type": "integer"
                 },
@@ -10963,7 +11146,16 @@ const docTemplatecontrolplane = `{
                 "discussion_mode": {
                     "type": "string"
                 },
+                "hide_thinking": {
+                    "type": "boolean"
+                },
+                "hide_tools": {
+                    "type": "boolean"
+                },
                 "id": {
+                    "type": "string"
+                },
+                "last_read_message_id": {
                     "type": "string"
                 },
                 "max_turns": {
@@ -10976,6 +11168,9 @@ const docTemplatecontrolplane = `{
                     }
                 },
                 "name": {
+                    "type": "string"
+                },
+                "read_at": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -11057,6 +11252,9 @@ const docTemplatecontrolplane = `{
         "service.GroupDetail": {
             "type": "object",
             "properties": {
+                "first_unread_message_id": {
+                    "type": "string"
+                },
                 "group": {
                     "$ref": "#/definitions/service.Group"
                 },
@@ -11079,6 +11277,9 @@ const docTemplatecontrolplane = `{
                     "$ref": "#/definitions/service.GroupRunState"
                 },
                 "total_messages": {
+                    "type": "integer"
+                },
+                "unread_count": {
                     "type": "integer"
                 }
             }
@@ -11261,6 +11462,9 @@ const docTemplatecontrolplane = `{
                 "discussion_mode": {
                     "type": "string"
                 },
+                "first_unread_message_id": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -11287,6 +11491,9 @@ const docTemplatecontrolplane = `{
                 },
                 "running": {
                     "type": "boolean"
+                },
+                "unread_count": {
+                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
@@ -12426,6 +12633,12 @@ const docTemplatecontrolplane = `{
                 },
                 "discussion_mode": {
                     "type": "string"
+                },
+                "hide_thinking": {
+                    "type": "boolean"
+                },
+                "hide_tools": {
+                    "type": "boolean"
                 },
                 "max_turns": {
                     "type": "integer"
