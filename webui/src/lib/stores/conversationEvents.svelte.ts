@@ -61,16 +61,19 @@ function handle(raw: ConversationUpdatedEvent, connectionAgent: string) {
 	}
 	notify(event);
 
-	// The tone is independent of what is on screen, like a finished normal chat.
-	// The browser notification is not: it follows the same rule as a chat the
-	// reader left, so it only fires when that conversation is not being read
-	// (another menu or chat, or a hidden tab).
-	if (preferences.value.notifyEnabled) {
-		playNotification(preferences.value.notifySound, preferences.value.notifyVolume);
-	}
-	const hidden = document.visibilityState === 'hidden';
-	if (preferences.value.notifyBrowser && (!onScreen || hidden)) {
-		showChatNotification({ agent, conversationId: id, trigger: raw.trigger });
+	const isInteractionSync = raw.trigger === 'interaction';
+	if (!isInteractionSync) {
+		// The tone is independent of what is on screen, like a finished normal chat.
+		// The browser notification is not: it follows the same rule as a chat the
+		// reader left, so it only fires when that conversation is not being read
+		// (another menu or chat, or a hidden tab).
+		if (preferences.value.notifyEnabled) {
+			playNotification(preferences.value.notifySound, preferences.value.notifyVolume);
+		}
+		const hidden = document.visibilityState === 'hidden';
+		if (preferences.value.notifyBrowser && (!onScreen || hidden)) {
+			showChatNotification({ agent, conversationId: id, trigger: raw.trigger });
+		}
 	}
 
 	// The list only needs a refetch when the event belongs to the visible agent.

@@ -71,11 +71,16 @@
 
 	let lightboxOpen = $state(false);
 	let lightboxIndex = $state(0);
-	let lightboxItems = $derived<LightboxImage[]>(
+	let lightboxItems = $state<LightboxImage[]>([]);
+	let imageLightboxItems = $derived<LightboxImage[]>(
 		imageItems.map((item) => ({
 			src: srcOf(item),
 			name: labelOf(item),
-			downloadSrc: srcOf(item, true)
+			downloadSrc: srcOf(item, true),
+			kind: 'image',
+			agent: item.path ? agent : undefined,
+			path: item.path,
+			size: item.size
 		}))
 	);
 
@@ -91,7 +96,25 @@
 	function openImage(event: MouseEvent, item: ExtraMediaItem) {
 		if (Math.hypot(event.clientX - pressX, event.clientY - pressY) > 8) return;
 		const idx = imageItems.indexOf(item);
+		lightboxItems = imageLightboxItems;
 		lightboxIndex = idx < 0 ? 0 : idx;
+		lightboxOpen = true;
+	}
+
+	function openPdfPreview(item: ExtraMediaItem) {
+		lightboxItems = [
+			{
+				src: srcOf(item),
+				name: labelOf(item),
+				downloadSrc: srcOf(item, true),
+				kind: 'pdf',
+				label: 'PDF',
+				agent: item.path ? agent : undefined,
+				path: item.path,
+				size: item.size
+			}
+		];
+		lightboxIndex = 0;
 		lightboxOpen = true;
 	}
 
@@ -296,18 +319,37 @@
 				{:else}
 					<div class="flex items-center gap-2.5 rounded-xl border bg-card px-3 py-2">
 						{#if k === 'pdf'}
-							<FileText class="h-4 w-4 shrink-0 text-rose-500" />
+							<button
+								type="button"
+								onclick={() => openPdfPreview(item)}
+								class="flex min-w-0 flex-1 items-center gap-2.5 text-left transition-opacity hover:opacity-80"
+								title={labelOf(item)}
+							>
+								<FileText class="h-4 w-4 shrink-0 text-rose-500" />
+								<div class="min-w-0 flex-1">
+									<p class="truncate text-xs font-medium text-foreground">{labelOf(item)}</p>
+									{#if item.caption || item.size || item.mime_type}
+										<p class="truncate text-[11px] text-muted-foreground">
+											{[item.caption, sizeLabel(item.size), item.mime_type]
+												.filter(Boolean)
+												.join(' · ')}
+										</p>
+									{/if}
+								</div>
+							</button>
 						{:else}
 							<FileIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-xs font-medium text-foreground">{labelOf(item)}</p>
+								{#if item.caption || item.size || item.mime_type}
+									<p class="truncate text-[11px] text-muted-foreground">
+										{[item.caption, sizeLabel(item.size), item.mime_type]
+											.filter(Boolean)
+											.join(' · ')}
+									</p>
+								{/if}
+							</div>
 						{/if}
-						<div class="min-w-0 flex-1">
-							<p class="truncate text-xs font-medium text-foreground">{labelOf(item)}</p>
-							{#if item.caption || item.size || item.mime_type}
-								<p class="truncate text-[11px] text-muted-foreground">
-									{[item.caption, sizeLabel(item.size), item.mime_type].filter(Boolean).join(' · ')}
-								</p>
-							{/if}
-						</div>
 						{#if item.url && !item.path}
 							<a
 								href={item.url}
