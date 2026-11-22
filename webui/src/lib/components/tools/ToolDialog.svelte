@@ -21,6 +21,7 @@
 		editingCustom?: CustomTool | null;
 		editingMCP?: MCPServer | null;
 		onOpenChange: (open: boolean) => void;
+		onSaved?: () => void;
 	}
 
 	let {
@@ -29,7 +30,8 @@
 		kind,
 		editingCustom = null,
 		editingMCP = null,
-		onOpenChange
+		onOpenChange,
+		onSaved
 	}: Props = $props();
 	const { t } = useTranslation();
 
@@ -119,6 +121,7 @@
 				}
 				toastStore.success(t('myaaw.tools.saved'));
 				onOpenChange(false);
+				onSaved?.();
 			} catch (err) {
 				formError = getErrorMessage(err);
 			} finally {
@@ -154,6 +157,7 @@
 			}
 			toastStore.success(t('myaaw.tools.saved'));
 			onOpenChange(false);
+			onSaved?.();
 		} catch (err) {
 			formError = getErrorMessage(err);
 		} finally {

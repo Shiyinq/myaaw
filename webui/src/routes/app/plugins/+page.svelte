@@ -9,15 +9,13 @@
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
-	import CustomToolEditor from '$lib/components/tools/CustomToolEditor.svelte';
-	import McpServerEditor from '$lib/components/tools/McpServerEditor.svelte';
+	import ToolDialog from '$lib/components/tools/ToolDialog.svelte';
 	import PluginDetailsDialog from '$lib/components/plugins/PluginDetailsDialog.svelte';
 	import SkillCreatorDialog from '$lib/components/plugins/SkillCreatorDialog.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
-	import * as Dialog from '$lib/components/ui/dialog';
 	import {
 		ChevronRight,
 		Loader2,
@@ -703,64 +701,32 @@
 	/>
 {/if}
 
-<Dialog.Root
+<ToolDialog
 	open={customDialogOpen}
+	{agent}
+	kind="custom"
+	{editingCustom}
 	onOpenChange={(open) => {
 		customDialogOpen = open;
 		if (!open) editingCustom = null;
 	}}
->
-	<Dialog.Content class="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>
-				{editingCustom ? t('common.edit') : t('myaaw.plugins.add_custom')}
-			</Dialog.Title>
-			<Dialog.Description>{t('myaaw.plugins.custom_desc')}</Dialog.Description>
-		</Dialog.Header>
-		{#key `${customDialogOpen}:${editingCustom?.name ?? 'new'}`}
-			<CustomToolEditor
-				{agent}
-				editing={editingCustom}
-				onSaved={() => {
-					customDialogOpen = false;
-					editingCustom = null;
-					void toolsStore.query.refresh();
-				}}
-				onCancel={() => {
-					customDialogOpen = false;
-					editingCustom = null;
-				}}
-			/>
-		{/key}
-	</Dialog.Content>
-</Dialog.Root>
+	onSaved={() => {
+		editingCustom = null;
+		void toolsStore.query.refresh();
+	}}
+/>
 
-<Dialog.Root
+<ToolDialog
 	open={mcpDialogOpen}
+	{agent}
+	kind="mcp"
+	{editingMCP}
 	onOpenChange={(open) => {
 		mcpDialogOpen = open;
 		if (!open) editingMCP = null;
 	}}
->
-	<Dialog.Content class="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>{editingMCP ? t('common.edit') : t('myaaw.plugins.add_mcp')}</Dialog.Title>
-			<Dialog.Description>{t('myaaw.plugins.mcp_desc')}</Dialog.Description>
-		</Dialog.Header>
-		{#key `${mcpDialogOpen}:${editingMCP?.name ?? 'new'}`}
-			<McpServerEditor
-				{agent}
-				editing={editingMCP}
-				onSaved={() => {
-					mcpDialogOpen = false;
-					editingMCP = null;
-					void toolsStore.query.refresh();
-				}}
-				onCancel={() => {
-					mcpDialogOpen = false;
-					editingMCP = null;
-				}}
-			/>
-		{/key}
-	</Dialog.Content>
-</Dialog.Root>
+	onSaved={() => {
+		editingMCP = null;
+		void toolsStore.query.refresh();
+	}}
+/>

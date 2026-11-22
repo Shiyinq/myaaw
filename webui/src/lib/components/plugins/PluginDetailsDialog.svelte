@@ -142,9 +142,13 @@
 		if (!open) onClose();
 	}}
 >
-	<Dialog.Content class="max-h-[85dvh] min-w-0 gap-4 overflow-x-hidden overflow-y-auto sm:max-w-xl">
-		<Dialog.Header>
-			<div class="flex min-w-0 items-start gap-3 pr-8">
+	<Dialog.Content
+		class="inset-0 top-0 left-0 flex h-dvh max-h-dvh w-screen max-w-none min-w-0 translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none bg-background p-0 ring-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[90vh] sm:w-full sm:max-w-xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:bg-popover sm:ring-1"
+	>
+		<Dialog.Header
+			class="shrink-0 border-b px-4 py-3.5 pr-12 text-left sm:border-b-0 sm:px-5 sm:pt-5 sm:pb-2"
+		>
+			<div class="flex min-w-0 items-start gap-3">
 				<span
 					class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground"
 				>
@@ -157,7 +161,9 @@
 			</div>
 		</Dialog.Header>
 
-		<div class="min-w-0 space-y-4">
+		<div
+			class="min-h-0 min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-2"
+		>
 			{#if target.kind === 'skill' || target.kind === 'builtin'}
 				<p class="text-sm wrap-break-word whitespace-pre-line text-muted-foreground">
 					{description || t('myaaw.plugins.no_description')}
@@ -269,7 +275,7 @@
 				</dl>
 			{/if}
 
-			<div class="flex items-center justify-between gap-3 rounded-lg border p-3">
+			<div class="flex items-center justify-between gap-3 rounded-xl border p-3">
 				<div class="min-w-0">
 					<p class="text-sm font-medium">
 						{enabled ? t('myaaw.plugins.active') : t('myaaw.plugins.off')}
@@ -278,23 +284,27 @@
 				</div>
 				<Switch checked={enabled} label={t('myaaw.plugins.toggle', { name })} onchange={onToggle} />
 			</div>
-
-			{#if onEdit || onDelete}
-				<div class="flex flex-wrap justify-end gap-2">
-					{#if onEdit}
-						<Button variant="outline" size="sm" onclick={onEdit}>
-							<Pencil class="mr-2 h-3.5 w-3.5" />
-							{t('common.edit')}
-						</Button>
-					{/if}
-					{#if onDelete}
-						<Button variant="destructive" size="sm" onclick={onDelete}>
-							<Trash2 class="mr-2 h-3.5 w-3.5" />
-							{t('common.delete')}
-						</Button>
-					{/if}
-				</div>
-			{/if}
 		</div>
+
+		{#if onEdit || onDelete}
+			<Dialog.Footer
+				class="mx-0 mb-0 shrink-0 flex-row justify-end gap-2 rounded-none border-t bg-muted/40 px-4 py-3.5 sm:rounded-b-xl sm:px-5 sm:py-3.5"
+			>
+				{#if onEdit}
+					<Button variant="outline" size="sm" onclick={onEdit}>
+						<Pencil class="mr-2 h-3.5 w-3.5" />
+						{t('common.edit')}
+					</Button>
+				{/if}
+				{#if onDelete}
+					<Button variant="destructive" size="sm" onclick={onDelete}>
+						<Trash2 class="mr-2 h-3.5 w-3.5" />
+						{t('common.delete')}
+					</Button>
+				{/if}
+			</Dialog.Footer>
+		{:else}
+			<div class="h-2 shrink-0 sm:h-3"></div>
+		{/if}
 	</Dialog.Content>
 </Dialog.Root>
