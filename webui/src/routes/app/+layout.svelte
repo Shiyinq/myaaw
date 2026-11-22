@@ -120,8 +120,10 @@
 	});
 
 	// The chat list belongs to the shell, so the chat page's history panel and the
-	// classic-mode sidebar share one fetch (see stores/conversationHistory).
-	conversationHistory.init();
+	// classic-mode sidebar share one fetch (see stores/conversationHistory). Only
+	// Classic mode fetches eagerly on every route; Bots/Focus/Studio lazy-load
+	// when ConversationList actually mounts.
+	conversationHistory.init(() => classicMode);
 
 	let summaryLoadedForKey = '';
 

@@ -1,3 +1,4 @@
+import { untrack } from 'svelte';
 import {
 	chatFolders as chatFoldersApi,
 	conversations as conversationsApi
@@ -41,6 +42,7 @@ let results = $state<Section>(emptySection());
 let search = $state('');
 let query = $state('');
 let key = '';
+let consumers = $state(0);
 let generation = 0;
 /** Sections mid-background-reload, so a silent refresh never double-fetches. */
 const refreshing = new WeakSet<Section>();
@@ -215,13 +217,14 @@ export const conversationHistory = {
 	sectionFor(id: string) {
 		return peekFolderSection(id);
 	},
-	init() {
+	init(eager?: () => boolean) {
 		// A different agent or search starts the list over; the key keeps the
 		// effect from refetching on unrelated state changes. A previous mount may
 		// have run before login (the client redirects to /login on 401), so the
 		// key is cleared here to make this mount fetch again.
 		key = '';
 		$effect(() => {
+			if (consumers === 0 && !eager?.()) return;
 			const agent = agentSelection.selected;
 			// Wait for the session: the shell can mount briefly before the auth
 			// guard redirects, and a 401 there would blank the list.
@@ -245,6 +248,17 @@ export const conversationHistory = {
 			const timer = setTimeout(() => (query = value), 300);
 			return () => clearTimeout(timer);
 		});
+	},
+	/** Marks a history list view as mounted so non-Classic layouts lazy-load on demand. */
+	acquire() {
+		untrack(() => {
+			consumers += 1;
+		});
+		return () => {
+			untrack(() => {
+				consumers = Math.max(0, consumers - 1);
+			});
+		};
 	},
 	setSearch(value: string) {
 		search = value;

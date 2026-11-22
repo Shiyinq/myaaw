@@ -63,6 +63,8 @@
 
 	const { t, locale } = useTranslation();
 
+	$effect(() => conversationHistory.acquire());
+
 	function dayLabel(date: Date): string {
 		if (Number.isNaN(date.getTime())) return '';
 		const startOfDay = (value: Date) =>
