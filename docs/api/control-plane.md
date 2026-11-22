@@ -891,6 +891,7 @@ turning recording on: the trace database is opened once per process.
 | `PUT` | `/agents/:name/conversations/:id/pin` | pin or unpin `{pinned}` |
 | `PUT` | `/agents/:name/conversations/:id/folder` | move into a folder, or to Recents with `{"folder_id": null}` |
 | `POST` | `/agents/:name/conversations/:id/read` | record the newest acknowledged turn `{at}` (shared unread watermark) |
+| `POST` | `/agents/:name/conversations/:id/interactions` | atomically record an interactive `extra_messages` response (`409` if already submitted) and return `{ok, block_id, state, interaction_text}` |
 | `GET` | `/agents/:name/chat-folders` | the user's chat folders with a chat count each |
 | `POST` | `/agents/:name/chat-folders` | create a folder `{name}` |
 | `PATCH` | `/agents/:name/chat-folders/:folder` | rename a folder `{name}` |
@@ -1538,14 +1539,14 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models`, `GET /models/capabilities` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
-| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `GET /conversations/:id/attachments?limit=&offset=&kind=`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read` |
+| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `GET /conversations/:id/attachments?limit=&offset=&kind=`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read`, `POST /conversations/:id/interactions` |
 | Chat folders | `GET /chat-folders`, `POST /chat-folders`, `PATCH /chat-folders/:folder`, `DELETE /chat-folders/:folder` |
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |
 | Cron | `GET/POST /cron`, `DELETE /cron/:id`, `POST /cron/:id/run`, `GET /cron/:id/history` |
 | Observability | `GET /observability/summary`, `GET /observability/sessions`, `GET /observability/sessions/:id`, `GET /observability/sessions/:id/stats`, `GET /observability/runs`, `GET /observability/runs/:id`, `DELETE /observability/runs` |
 | Backups | `GET/POST /backups`, `GET/DELETE /backups/:name`, `POST /backups/:name/restore` |
-| Groups | `GET/POST /groups`, `GET/PATCH/DELETE /groups/:id`, `POST/DELETE /groups/:id/messages`, `POST /groups/:id/stop`, `POST /groups/:id/continue`, `GET /groups/:id/stream` |
+| Groups | `GET/POST /groups`, `GET/PATCH/DELETE /groups/:id`, `POST/DELETE /groups/:id/messages`, `POST /groups/:id/interactions`, `POST /groups/:id/stop`, `POST /groups/:id/continue`, `GET /groups/:id/stream` |
 | System | `GET /health`, `GET /docs/*` |
 
 All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, `GET /models/capabilities`, `POST /providers/models`, `/skills/builtin/*`, `/backups`, and `/groups` are the routes outside an agent: the first three let a dashboard build and check an agent before it exists or render the model picker, the built-in skills are embedded in the binary, `/backups` is host-level because one archive can hold every agent plus the registry, and `/groups` coordinates multi-agent rooms across agents.
@@ -1647,6 +1648,7 @@ Host-level multi-agent chat rooms coordinated by the control plane. Rooms, membe
 | `DELETE` | `/groups/:id` | stop any active run, close SSE subscribers, and delete the group (`{"deleted": true}`) |
 | `DELETE` | `/groups/:id/messages` | stop any active run, clear messages, reset member cursors/sessions (`{"cleared": true}`) |
 | `POST` | `/groups/:id/messages` | send a user message and start (or interrupt) orchestration → `202` `{"message", "run_state"}` |
+| `POST` | `/groups/:id/interactions` | atomically lock an interactive `extra_messages` block, broadcast `extra_block_updated`, and dispatch a reply turn → `202` `{"ok", "block_id", "state", "message", "run_state"}` (`409` if already submitted) |
 | `POST` | `/groups/:id/stop` | cancel the active run and send a best-effort `/api/chat/stop` to the running agent (`{"stopped", "run_state"}`) |
 | `POST` | `/groups/:id/continue` | resume a run paused at `max_turns` for `+extra_turns` → `202` `{"continued": true, "run_state"}` (`409` if not paused) |
 | `GET` | `/groups/:id/attachments?limit=&offset=&kind=` | list uploaded images/files and agent `@attach(...)` deliverables in the group, newest first (`GroupAttachmentsPage`) |
@@ -1799,6 +1801,8 @@ Immediately upon connecting, the control plane emits a `status` snapshot with th
 | `chunk` | `{"group_id","agent","text"}` | Answer delta relayed from the agent's `chunk` event |
 | `tool_start` | `{"group_id","agent","id","name","arguments"}` | Relayed from the agent's `tool` event |
 | `tool_end` | `{"group_id","agent","id","name","result","is_error"}` | Relayed from the agent's `tool_result` event |
+| `extra_messages` | `{"group_id","agent","extra_messages"}` | Relayed when an agent emits rich display or interactive `extra_messages` blocks during a live turn |
+| `extra_block_updated` | `{"group_id","message_id","block_id","state"}` | Broadcast when an interactive `extra_messages` block is answered and locked |
 | `approval_required` | `GroupPendingApproval` (`group_id`, `agent`, `approval_id`, `tool_name`, `action`, `args_summary`, `args`, `subagent`) | Relayed when an agent (or sub-agent) pauses for tool approval during a group turn |
 | `approval_resolved` | `{"group_id","agent","approval_id","decision","reason"}` | Relayed when a pending group tool approval is decided or times out |
 | `message` | `{"group_id","message"}` | Whenever a user, agent, or system `GroupMessage` is persisted |

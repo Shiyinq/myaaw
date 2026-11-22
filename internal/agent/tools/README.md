@@ -62,6 +62,14 @@ The Myaaw Tools package contains a set of specialized tools that can be used wit
 - Ask an A2A caller to authenticate/authorize and pause the task in `TASK_STATE_AUTH_REQUIRED` state
 - Only available while handling an A2A task
 
+### 8. [Extra Messages Tool](./extramessages/README.md)
+
+**Function**: `extra_messages`
+
+- Present rich display and interactive UI blocks alongside an answer: multi-file `media` (1–10 local or URL items), `carousel`, `buttons`, `quick_replies`, dynamic `form` (10 field types), `checklist`, `callout`, `summary`, and `link_preview`
+- Atomic single-use locking and structured `<interaction>` round-trips across WebUI (DM & Group), Telegram, Discord, and CLI
+- Reuses the `@attach(...)` local path sandbox; see [Extra Messages Guide](../../../docs/agents/extra-messages.md)
+
 ## Tool Integration
 
 ### Factory Pattern

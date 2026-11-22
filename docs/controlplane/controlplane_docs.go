@@ -2368,6 +2368,95 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/conversations/{id}/interactions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Atomically locks a single-use interactive extra_messages block (button, quick reply, form, or checklist) in conversations.db and returns the formatted \u003cinteraction\u003e text to dispatch as the next turn. Returns 409 Conflict with the persisted state if the block was already submitted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Respond to conversation extra_messages interaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User ID (defaults to the authenticated user)",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Interaction response payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.InteractionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.InteractionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/service.InteractionResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/conversations/{id}/pin": {
             "put": {
                 "security": [
@@ -7352,6 +7441,76 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/groups/{id}/interactions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Atomically locks a single-use interactive extra_messages block in a group message, broadcasts an extra_block_updated SSE event, and dispatches a follow-up reply turn targeting the originating agent. Returns 409 Conflict with the persisted state if already submitted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Respond to group extra_messages interaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Interaction response payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.InteractionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/service.GroupInteractionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/service.InteractionResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/groups/{id}/messages": {
             "post": {
                 "security": [
@@ -9780,6 +9939,49 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "provider.ExtraBlock": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "interactive": {
+                    "type": "boolean"
+                },
+                "single_use": {
+                    "type": "boolean"
+                },
+                "state": {
+                    "$ref": "#/definitions/provider.InteractionState"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "provider.ExtraMessage": {
+            "type": "object",
+            "properties": {
+                "blocks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.ExtraBlock"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
         "provider.FunctionCall": {
             "type": "object",
             "properties": {
@@ -9788,6 +9990,28 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "thought_signature": {
+                    "type": "string"
+                }
+            }
+        },
+        "provider.InteractionState": {
+            "type": "object",
+            "properties": {
+                "actor": {
+                    "type": "string"
+                },
+                "answered_at": {
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "status": {
+                    "description": "\"pending\" | \"submitted\"",
+                    "type": "string"
+                },
+                "summary": {
                     "type": "string"
                 }
             }
@@ -9818,6 +10042,13 @@ const docTemplatecontrolplane = `{
                 },
                 "error_message": {
                     "type": "string"
+                },
+                "extra_messages": {
+                    "description": "ExtraMessages are rich display/interactive blocks emitted by the\nextra_messages tool. Like Attachments, they are presentation metadata\npersisted with the transcript and never sent raw to LLM providers.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.ExtraMessage"
+                    }
                 },
                 "id": {
                     "description": "ID is the stable transcript-entry id, used to address the files a user\nuploaded with that message.",
@@ -11284,6 +11515,26 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.GroupInteractionResponse": {
+            "type": "object",
+            "properties": {
+                "block_id": {
+                    "type": "string"
+                },
+                "message": {
+                    "$ref": "#/definitions/service.GroupMessage"
+                },
+                "ok": {
+                    "type": "boolean"
+                },
+                "run_state": {
+                    "$ref": "#/definitions/service.GroupRunState"
+                },
+                "state": {
+                    "$ref": "#/definitions/provider.InteractionState"
+                }
+            }
+        },
         "service.GroupLastMessage": {
             "type": "object",
             "properties": {
@@ -11341,6 +11592,12 @@ const docTemplatecontrolplane = `{
                 },
                 "created_at": {
                     "type": "string"
+                },
+                "extra_messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.ExtraMessage"
+                    }
                 },
                 "group_id": {
                     "type": "string"
@@ -11523,6 +11780,57 @@ const docTemplatecontrolplane = `{
                 },
                 "to": {
                     "type": "string"
+                }
+            }
+        },
+        "service.InteractionRequest": {
+            "type": "object",
+            "properties": {
+                "action_id": {
+                    "type": "string"
+                },
+                "block_id": {
+                    "type": "string"
+                },
+                "card_id": {
+                    "type": "string"
+                },
+                "display_text": {
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "button | quick_reply | form | checklist",
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                },
+                "values": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "service.InteractionResponse": {
+            "type": "object",
+            "properties": {
+                "block_id": {
+                    "type": "string"
+                },
+                "interaction_text": {
+                    "type": "string"
+                },
+                "ok": {
+                    "type": "boolean"
+                },
+                "state": {
+                    "$ref": "#/definitions/provider.InteractionState"
                 }
             }
         },
