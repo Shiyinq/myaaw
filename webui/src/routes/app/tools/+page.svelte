@@ -3,39 +3,39 @@
 	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
-	import { revealPane } from '$lib/utils/scroll';
-	import { createSearchNav } from '$lib/utils/searchNav.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
-	import SidebarHeader from '$lib/components/app/SidebarHeader.svelte';
-	import SidebarSearchField from '$lib/components/app/SidebarSearchField.svelte';
-	import SidebarSection from '$lib/components/app/SidebarSection.svelte';
-	import SidebarSkeletons from '$lib/components/app/SidebarSkeletons.svelte';
-	import CustomToolEditor from '$lib/components/tools/CustomToolEditor.svelte';
-	import McpServerEditor from '$lib/components/tools/McpServerEditor.svelte';
+	import EmptyState from '$lib/components/common/EmptyState.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
+	import ToolDialog from '$lib/components/tools/ToolDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { Input } from '$lib/components/ui/input';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import * as Tabs from '$lib/components/ui/tabs';
 	import {
-		Card,
-		CardContent,
-		CardDescription,
-		CardHeader,
-		CardTitle
-	} from '$lib/components/ui/card';
-	import { FileCode2, Pencil, Plug, RefreshCw, Trash2, Wrench } from 'lucide-svelte';
+		FileCode2,
+		Pencil,
+		Plug,
+		Plus,
+		RefreshCw,
+		Search,
+		Terminal,
+		Trash2,
+		Wrench
+	} from 'lucide-svelte';
 	import type { CustomTool, MCPServer } from '$lib/types';
 
 	const { t } = useTranslation();
 
-	// Below lg the list and the panel share one scrolling page, so the panel is
-	// brought into view whenever a row further up is picked.
-	let detail = $state<HTMLElement | null>(null);
-
+	let activeTab = $state<'builtin' | 'custom' | 'mcp'>('builtin');
 	let query = $state('');
 
-	// Which entry the editor below is changing; null means a new one.
+	let dialogOpen = $state(false);
+	let dialogKind = $state<'custom' | 'mcp'>('custom');
 	let editingCustom = $state<CustomTool | null>(null);
 	let editingMCP = $state<MCPServer | null>(null);
 
@@ -48,7 +48,8 @@
 	let builtinTools = $derived(view?.builtin ?? []);
 	let customTools = $derived(view?.custom ?? []);
 	let mcpServers = $derived(view?.mcp_servers ?? []);
-	let totalTools = $derived(builtinTools.length + customTools.length + mcpServers.length);
+	let builtinEnabledCount = $derived(builtinTools.filter((tool) => tool.enabled).length);
+
 	let filteredBuiltin = $derived.by(() => {
 		const needle = query.trim().toLowerCase();
 		if (!needle) return builtinTools;
@@ -78,30 +79,27 @@
 				(server.args?.join(' ') ?? '').toLowerCase().includes(needle)
 		);
 	});
-	let hasMatches = $derived(
-		filteredBuiltin.length + filteredCustom.length + filteredMCP.length > 0
-	);
 
-	let navItems = $derived([
-		...filteredBuiltin.map((tool) => ({
-			id: `builtin:${tool.name}`,
-			activate: () => void toggleBuiltin(tool.name, !tool.enabled)
-		})),
-		...filteredCustom.map((tool) => ({
-			id: `custom:${tool.name}`,
-			activate: () => startEditCustom(tool)
-		})),
-		...filteredMCP.map((server) => ({
-			id: `mcp:${server.name}`,
-			activate: () => startEditMCP(server)
-		}))
-	]);
+	function openCreate(kind: 'custom' | 'mcp') {
+		dialogKind = kind;
+		editingCustom = null;
+		editingMCP = null;
+		dialogOpen = true;
+	}
 
-	const searchNav = createSearchNav({
-		items: () => navItems,
-		query: () => query,
-		clear: () => (query = '')
-	});
+	function openEditCustom(tool: CustomTool) {
+		dialogKind = 'custom';
+		editingCustom = tool;
+		editingMCP = null;
+		dialogOpen = true;
+	}
+
+	function openEditMCP(server: MCPServer) {
+		dialogKind = 'mcp';
+		editingCustom = null;
+		editingMCP = server;
+		dialogOpen = true;
+	}
 
 	async function toggleBuiltin(name: string, enabled: boolean) {
 		if (!agent || !view) return;
@@ -139,16 +137,6 @@
 		);
 	}
 
-	function startEditCustom(tool: CustomTool) {
-		editingCustom = tool;
-		revealPane(detail);
-	}
-
-	function startEditMCP(server: MCPServer) {
-		editingMCP = server;
-		revealPane(detail);
-	}
-
 	async function remove(kind: 'custom' | 'mcp', name: string) {
 		if (!agent) return;
 		if (
@@ -161,16 +149,12 @@
 		try {
 			if (kind === 'custom') await toolsStore.removeCustom(agent, name);
 			else await toolsStore.removeMCP(agent, name);
-			if (kind === 'custom' && editingCustom?.name === name) editingCustom = null;
-			if (kind === 'mcp' && editingMCP?.name === name) editingMCP = null;
 			toastStore.success(t('myaaw.tools.deleted'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		}
 	}
 </script>
-
-<svelte:window onkeydown={searchNav.onKeydown} />
 
 <TopBarActions id="tools-refresh">
 	{#snippet children()}
@@ -183,262 +167,318 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+<div class="mx-auto w-full max-w-5xl space-y-4">
 	{#if !agent}
-		<div class="w-full p-4 lg:p-6 lg:pt-16">
-			<Card>
-				<CardContent class="py-10 text-center text-sm text-muted-foreground">
-					{t('myaaw.agent.none')}
-				</CardContent>
-			</Card>
-		</div>
+		<Card>
+			<CardContent class="py-10 text-center text-sm text-muted-foreground">
+				{t('myaaw.agent.none')}
+			</CardContent>
+		</Card>
 	{:else}
-		<!-- Everything registered for the agent: a second sidebar nested inside the main one. -->
-		<aside
-			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-full lg:w-72 lg:border-r lg:border-b-0 lg:pt-14 xl:w-80"
-		>
-			<div class="shrink-0 space-y-2 px-4 py-2.5 lg:pt-1">
-				<SidebarHeader label={t('myaaw.tools.title')} count={totalTools} />
-				<SidebarSearchField
-					bind:inputRef={searchNav.input}
-					bind:value={query}
-					placeholder={t('common.search')}
-				/>
+		{#if error}
+			<div
+				class="rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive"
+			>
+				{error}
 			</div>
+		{/if}
 
-			<div bind:this={searchNav.list} class="space-y-4 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-				{#if loading}
-					<SidebarSkeletons />
-				{:else if query && !hasMatches}
-					<p class="px-1 py-2 text-sm text-muted-foreground">
-						{t('myaaw.tools.no_matches')}
-					</p>
-				{/if}
-
-				{#if !loading && (filteredBuiltin.length > 0 || !query)}
-					<SidebarSection
-						icon={Wrench}
-						label={t('myaaw.tools.builtin')}
-						count={filteredBuiltin.length}
-					>
-						{#if filteredBuiltin.length === 0}
-							<p class="px-1 py-1 text-xs text-muted-foreground">{t('myaaw.tools.empty')}</p>
-						{/if}
-						{#each filteredBuiltin as tool (tool.name)}
-							<label
-								class={[
-									'flex items-start gap-2 rounded-md px-1 py-1.5 text-sm hover:bg-muted list-row',
-									searchNav.cursor === `builtin:${tool.name}` ? 'ring-1 ring-ring/50' : ''
-								]}
-								data-nav-id={`builtin:${tool.name}`}
-								title={tool.description}
+		<div class="rounded-xl border bg-card shadow-xs">
+			<Tabs.Root bind:value={activeTab}>
+				<div class="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
+					<Tabs.List variant="line" class="flex-wrap justify-start">
+						<Tabs.Trigger value="builtin" class="gap-1.5">
+							<Wrench class="h-3.5 w-3.5" />
+							{t('myaaw.tools.builtin')}
+							<span
+								class="rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none font-medium text-muted-foreground tabular-nums"
 							>
-								<input
-									type="checkbox"
-									checked={tool.enabled}
-									onchange={(event) => toggleBuiltin(tool.name, event.currentTarget.checked)}
-									class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-								/>
-								<span class="min-w-0 flex-1">
-									<span class="block truncate font-mono text-xs">{tool.name}</span>
-									{#if tool.description}
-										<span class="block truncate text-[10px] text-muted-foreground">
-											{tool.description}
-										</span>
-									{/if}
-								</span>
-							</label>
-						{/each}
-					</SidebarSection>
-				{/if}
-
-				{#if !loading && (filteredCustom.length > 0 || !query)}
-					<SidebarSection
-						icon={FileCode2}
-						label={t('myaaw.tools.custom')}
-						count={filteredCustom.length}
-					>
-						{#if filteredCustom.length === 0}
-							<p class="px-1 py-1 text-xs text-muted-foreground">{t('myaaw.tools.empty')}</p>
-						{/if}
-						{#each filteredCustom as tool (tool.name)}
-							<div
-								class={[
-									'flex items-start gap-2 rounded-md px-1 py-1.5 hover:bg-muted list-row',
-									editingCustom?.name === tool.name ? 'bg-accent' : '',
-									searchNav.cursor === `custom:${tool.name}` ? 'ring-1 ring-ring/50' : ''
-								]}
-								data-nav-id={`custom:${tool.name}`}
-								aria-current={editingCustom?.name === tool.name ? 'true' : undefined}
+								{builtinEnabledCount}/{builtinTools.length}
+							</span>
+						</Tabs.Trigger>
+						<Tabs.Trigger value="custom" class="gap-1.5">
+							<FileCode2 class="h-3.5 w-3.5" />
+							{t('myaaw.tools.custom')}
+							<span
+								class="rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none font-medium text-muted-foreground tabular-nums"
 							>
-								<input
-									type="checkbox"
-									checked={tool.enabled}
-									onchange={(event) => toggleCustom(tool.name, event.currentTarget.checked)}
-									aria-label={tool.name}
-									class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-								/>
-								<div class="min-w-0 flex-1">
-									<div class="flex items-center gap-1.5">
-										<span class="min-w-0 truncate font-mono text-xs">{tool.name}</span>
-										{#if !tool.enabled}
-											<Badge variant="outline" class="shrink-0 text-[10px]">
-												{t('myaaw.tools.disabled')}
-											</Badge>
-										{/if}
-									</div>
-									<p
-										class="truncate text-[10px] text-muted-foreground"
-										title={`${tool.command} ${tool.args?.join(' ') ?? ''}`}
-									>
-										{tool.command}
-										{tool.args?.join(' ') ?? ''}
-									</p>
-								</div>
-								<Button
-									size="icon-xs"
-									variant="ghost"
-									class="mt-0.5 shrink-0"
-									onclick={() => startEditCustom(tool)}
-									aria-label={t('common.edit')}
-								>
-									<Pencil class="h-3 w-3" />
-								</Button>
-								<Button
-									size="icon-xs"
-									variant="ghost"
-									class="mt-0.5 shrink-0"
-									onclick={() => remove('custom', tool.name)}
-									aria-label={t('common.delete')}
-								>
-									<Trash2 class="h-3 w-3 text-destructive" />
-								</Button>
-							</div>
-						{/each}
-					</SidebarSection>
-				{/if}
-
-				{#if !loading && (filteredMCP.length > 0 || !query)}
-					<SidebarSection icon={Plug} label={t('myaaw.tools.mcp')} count={filteredMCP.length}>
-						{#if filteredMCP.length === 0}
-							<p class="px-1 py-1 text-xs text-muted-foreground">{t('myaaw.tools.empty')}</p>
-						{/if}
-						{#each filteredMCP as server (server.name)}
-							<div
-								class={[
-									'flex items-start gap-2 rounded-md px-1 py-1.5 hover:bg-muted list-row',
-									editingMCP?.name === server.name ? 'bg-accent' : '',
-									searchNav.cursor === `mcp:${server.name}` ? 'ring-1 ring-ring/50' : ''
-								]}
-								data-nav-id={`mcp:${server.name}`}
-								aria-current={editingMCP?.name === server.name ? 'true' : undefined}
+								{customTools.length}
+							</span>
+						</Tabs.Trigger>
+						<Tabs.Trigger value="mcp" class="gap-1.5">
+							<Plug class="h-3.5 w-3.5" />
+							{t('myaaw.tools.mcp')}
+							<span
+								class="rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none font-medium text-muted-foreground tabular-nums"
 							>
-								<input
-									type="checkbox"
-									checked={server.enabled}
-									onchange={(event) => toggleMCP(server.name, event.currentTarget.checked)}
-									aria-label={server.name}
-									class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-								/>
-								<div class="min-w-0 flex-1">
-									<div class="flex items-center gap-1.5">
-										<span class="min-w-0 truncate font-mono text-xs">{server.name}</span>
-										{#if !server.enabled}
-											<Badge variant="outline" class="shrink-0 text-[10px]">
-												{t('myaaw.tools.disabled')}
-											</Badge>
-										{/if}
-									</div>
-									<p
-										class="truncate text-[10px] text-muted-foreground"
-										title={`${server.command} ${server.args?.join(' ') ?? ''}`}
-									>
-										{server.command}
-										{server.args?.join(' ') ?? ''}
-									</p>
-								</div>
-								<Button
-									size="icon-xs"
-									variant="ghost"
-									class="mt-0.5 shrink-0"
-									onclick={() => startEditMCP(server)}
-									aria-label={t('common.edit')}
-								>
-									<Pencil class="h-3 w-3" />
-								</Button>
-								<Button
-									size="icon-xs"
-									variant="ghost"
-									class="mt-0.5 shrink-0"
-									onclick={() => remove('mcp', server.name)}
-									aria-label={t('common.delete')}
-								>
-									<Trash2 class="h-3 w-3 text-destructive" />
-								</Button>
-							</div>
-						{/each}
-					</SidebarSection>
-				{/if}
-			</div>
-		</aside>
+								{mcpServers.length}
+							</span>
+						</Tabs.Trigger>
+					</Tabs.List>
 
-		<section
-			bind:this={detail}
-			class="flex flex-col gap-4 p-4 lg:mt-14 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-6 lg:pt-1 lg:pb-6"
-		>
-			{#if error}
-				<div
-					class="shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-				>
-					{error}
+					<div class="flex w-full items-center gap-2 sm:w-auto">
+						<div class="relative flex-1 sm:w-52 sm:flex-none">
+							<Search
+								class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+							/>
+							<Input bind:value={query} placeholder={t('common.search')} class="h-8 pl-8 text-xs" />
+						</div>
+						{#if activeTab === 'custom'}
+							<Button
+								size="sm"
+								onclick={() => openCreate('custom')}
+								class="shrink-0 gap-1.5 rounded-lg"
+							>
+								<Plus class="h-3.5 w-3.5" />
+								{t('myaaw.tools.create')}
+							</Button>
+						{:else if activeTab === 'mcp'}
+							<Button
+								size="sm"
+								onclick={() => openCreate('mcp')}
+								class="shrink-0 gap-1.5 rounded-lg"
+							>
+								<Plus class="h-3.5 w-3.5" />
+								{t('myaaw.tools.create')}
+							</Button>
+						{/if}
+					</div>
 				</div>
-			{/if}
 
-			<Card class="mx-auto w-full max-w-3xl shrink-0">
-				<CardHeader>
-					<CardTitle class="flex items-center gap-1.5">
-						<FileCode2 class="h-4 w-4 shrink-0 text-muted-foreground" />
-						{editingCustom ? editingCustom.name : t('myaaw.tools.custom')}
-					</CardTitle>
-					<CardDescription>{t('myaaw.tools.custom_desc')}</CardDescription>
-				</CardHeader>
-				<CardContent>
-					{#key editingCustom?.name ?? 'new-custom'}
-						<CustomToolEditor
-							{agent}
-							editing={editingCustom}
-							onSaved={() => {
-								editingCustom = null;
-								void toolsStore.refresh();
-							}}
-							onCancel={() => (editingCustom = null)}
-						/>
-					{/key}
-				</CardContent>
-			</Card>
+				<div class="p-4 sm:p-5">
+					{#if loading}
+						<div class="grid gap-2.5 sm:grid-cols-2">
+							<Skeleton class="h-20 w-full rounded-xl" />
+							<Skeleton class="h-20 w-full rounded-xl" />
+							<Skeleton class="h-20 w-full rounded-xl" />
+							<Skeleton class="h-20 w-full rounded-xl" />
+						</div>
+					{:else}
+						<!-- Built-in tools -->
+						<Tabs.Content value="builtin" class="mt-0">
+							{#if builtinTools.length === 0}
+								<EmptyState
+									title={t('myaaw.tools.empty')}
+									description={t('myaaw.tools.builtin_desc')}
+									bloub="somnolent"
+									icon={Wrench}
+									class="min-h-60"
+								/>
+							{:else if filteredBuiltin.length === 0}
+								<p class="py-10 text-center text-sm text-muted-foreground">
+									{t('myaaw.tools.no_matches')}
+								</p>
+							{:else}
+								<div class="grid gap-2.5 sm:grid-cols-2">
+									{#each filteredBuiltin as tool (tool.name)}
+										<div
+											class="flex items-start justify-between gap-3 rounded-xl border bg-background/40 p-3.5 transition-colors hover:border-border/90 hover:bg-muted/20"
+										>
+											<div class="min-w-0 flex-1 space-y-1">
+												<div class="flex items-center gap-2">
+													<span
+														aria-hidden="true"
+														class={[
+															'h-2 w-2 shrink-0 rounded-full',
+															tool.enabled ? 'bg-emerald-500' : 'bg-muted-foreground/35'
+														]}
+													></span>
+													<span class="truncate font-mono text-xs font-semibold text-foreground">
+														{tool.name}
+													</span>
+												</div>
+												{#if tool.description}
+													<p class="line-clamp-2 text-xs text-muted-foreground">
+														{tool.description}
+													</p>
+												{/if}
+											</div>
+											<Switch
+												checked={tool.enabled}
+												label={tool.name}
+												onchange={(next) => toggleBuiltin(tool.name, next)}
+											/>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</Tabs.Content>
 
-			<Card class="mx-auto w-full max-w-3xl shrink-0">
-				<CardHeader>
-					<CardTitle class="flex items-center gap-1.5">
-						<Plug class="h-4 w-4 shrink-0 text-muted-foreground" />
-						{editingMCP ? editingMCP.name : t('myaaw.tools.mcp')}
-					</CardTitle>
-					<CardDescription>{t('myaaw.tools.mcp_desc')}</CardDescription>
-				</CardHeader>
-				<CardContent>
-					{#key editingMCP?.name ?? 'new-mcp'}
-						<McpServerEditor
-							{agent}
-							editing={editingMCP}
-							onSaved={() => {
-								editingMCP = null;
-								void toolsStore.refresh();
-							}}
-							onCancel={() => (editingMCP = null)}
-						/>
-					{/key}
-				</CardContent>
-			</Card>
-		</section>
+						<!-- Custom tools -->
+						<Tabs.Content value="custom" class="mt-0">
+							{#if customTools.length === 0}
+								<EmptyState
+									title={t('myaaw.tools.empty')}
+									description={t('myaaw.tools.custom_desc')}
+									bloub="curieux"
+									icon={FileCode2}
+									class="min-h-60"
+								/>
+							{:else if filteredCustom.length === 0}
+								<p class="py-10 text-center text-sm text-muted-foreground">
+									{t('myaaw.tools.no_matches')}
+								</p>
+							{:else}
+								<div class="space-y-2.5">
+									{#each filteredCustom as tool (tool.name)}
+										<div
+											class="flex flex-col gap-3 rounded-xl border bg-background/40 p-3.5 transition-colors hover:border-border/90 hover:bg-muted/20 sm:flex-row sm:items-center sm:justify-between"
+										>
+											<div class="min-w-0 flex-1 space-y-1">
+												<div class="flex flex-wrap items-center gap-2">
+													<span
+														aria-hidden="true"
+														class={[
+															'h-2 w-2 shrink-0 rounded-full',
+															tool.enabled ? 'bg-emerald-500' : 'bg-muted-foreground/35'
+														]}
+													></span>
+													<span class="font-mono text-sm font-semibold text-foreground">
+														{tool.name}
+													</span>
+													<Badge
+														variant={tool.enabled ? 'secondary' : 'outline'}
+														class="text-[10px]"
+													>
+														{tool.enabled ? t('myaaw.tools.enabled') : t('myaaw.tools.disabled')}
+													</Badge>
+												</div>
+												<p
+													class="flex items-center gap-1.5 truncate font-mono text-[11px] text-muted-foreground"
+													title={`${tool.command} ${tool.args?.join(' ') ?? ''}`}
+												>
+													<Terminal class="h-3 w-3 shrink-0 opacity-70" />
+													<span class="truncate">
+														{tool.command}
+														{tool.args?.join(' ') ?? ''}
+													</span>
+												</p>
+											</div>
+
+											<div class="flex shrink-0 items-center justify-end gap-1.5">
+												<Switch
+													checked={tool.enabled}
+													label={tool.name}
+													onchange={(next) => toggleCustom(tool.name, next)}
+												/>
+												<Button
+													size="icon-sm"
+													variant="ghost"
+													onclick={() => openEditCustom(tool)}
+													aria-label={t('common.edit')}
+													title={t('common.edit')}
+												>
+													<Pencil class="h-3.5 w-3.5" />
+												</Button>
+												<Button
+													size="icon-sm"
+													variant="ghost"
+													onclick={() => remove('custom', tool.name)}
+													aria-label={t('common.delete')}
+													title={t('common.delete')}
+												>
+													<Trash2 class="h-3.5 w-3.5 text-destructive" />
+												</Button>
+											</div>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</Tabs.Content>
+
+						<!-- MCP servers -->
+						<Tabs.Content value="mcp" class="mt-0">
+							{#if mcpServers.length === 0}
+								<EmptyState
+									title={t('myaaw.tools.empty')}
+									description={t('myaaw.tools.mcp_desc')}
+									bloub="curieux"
+									icon={Plug}
+									class="min-h-60"
+								/>
+							{:else if filteredMCP.length === 0}
+								<p class="py-10 text-center text-sm text-muted-foreground">
+									{t('myaaw.tools.no_matches')}
+								</p>
+							{:else}
+								<div class="space-y-2.5">
+									{#each filteredMCP as server (server.name)}
+										<div
+											class="flex flex-col gap-3 rounded-xl border bg-background/40 p-3.5 transition-colors hover:border-border/90 hover:bg-muted/20 sm:flex-row sm:items-center sm:justify-between"
+										>
+											<div class="min-w-0 flex-1 space-y-1">
+												<div class="flex flex-wrap items-center gap-2">
+													<span
+														aria-hidden="true"
+														class={[
+															'h-2 w-2 shrink-0 rounded-full',
+															server.enabled ? 'bg-emerald-500' : 'bg-muted-foreground/35'
+														]}
+													></span>
+													<span class="font-mono text-sm font-semibold text-foreground">
+														{server.name}
+													</span>
+													<Badge
+														variant={server.enabled ? 'secondary' : 'outline'}
+														class="text-[10px]"
+													>
+														{server.enabled ? t('myaaw.tools.enabled') : t('myaaw.tools.disabled')}
+													</Badge>
+												</div>
+												<p
+													class="flex items-center gap-1.5 truncate font-mono text-[11px] text-muted-foreground"
+													title={`${server.command} ${server.args?.join(' ') ?? ''}`}
+												>
+													<Terminal class="h-3 w-3 shrink-0 opacity-70" />
+													<span class="truncate">
+														{server.command}
+														{server.args?.join(' ') ?? ''}
+													</span>
+												</p>
+											</div>
+
+											<div class="flex shrink-0 items-center justify-end gap-1.5">
+												<Switch
+													checked={server.enabled}
+													label={server.name}
+													onchange={(next) => toggleMCP(server.name, next)}
+												/>
+												<Button
+													size="icon-sm"
+													variant="ghost"
+													onclick={() => openEditMCP(server)}
+													aria-label={t('common.edit')}
+													title={t('common.edit')}
+												>
+													<Pencil class="h-3.5 w-3.5" />
+												</Button>
+												<Button
+													size="icon-sm"
+													variant="ghost"
+													onclick={() => remove('mcp', server.name)}
+													aria-label={t('common.delete')}
+													title={t('common.delete')}
+												>
+													<Trash2 class="h-3.5 w-3.5 text-destructive" />
+												</Button>
+											</div>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</Tabs.Content>
+					{/if}
+				</div>
+			</Tabs.Root>
+		</div>
 	{/if}
+
+	<ToolDialog
+		open={dialogOpen}
+		agent={agent ?? ''}
+		kind={dialogKind}
+		{editingCustom}
+		{editingMCP}
+		onOpenChange={(next) => (dialogOpen = next)}
+	/>
 </div>

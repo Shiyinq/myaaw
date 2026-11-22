@@ -731,8 +731,6 @@
 	let hasSplitSidebar = $derived(
 		page.url.pathname.startsWith('/app/context') ||
 			page.url.pathname.startsWith('/app/skills') ||
-			page.url.pathname.startsWith('/app/tools') ||
-			page.url.pathname.startsWith('/app/contacts') ||
 			page.url.pathname.startsWith('/app/files') ||
 			page.url.pathname.startsWith('/app/logs')
 	);
