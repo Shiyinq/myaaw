@@ -239,6 +239,13 @@ func (r *BotServiceImpl) runConversation(
 				TokensAfter:     event.Compact.TokensAfter,
 				DroppedMessages: event.Compact.DroppedMessages,
 			})
+		case agent.EventExtraMessages:
+			if len(event.ExtraMessages) > 0 {
+				onChunk(channel.StreamChunk{
+					Kind:          "extra_messages",
+					ExtraMessages: event.ExtraMessages,
+				})
+			}
 		}
 		return nil
 	})
@@ -271,6 +278,7 @@ func (r *BotServiceImpl) runConversation(
 	// Turn explicit @attach(...) directives into attachments for this surface.
 	// The cleaned text is what the chat shows and what the transcript keeps.
 	deliveredText, deliveredAttachments := r.deliverAttachments(msg, finalText)
+	deliveredAttachments = dedupeAttachmentsAgainstExtraMessages(deliveredAttachments, result.ExtraMessages)
 	if len(deliveredAttachments) > 0 {
 		result.Attachments = append(result.Attachments, deliveredAttachments...)
 		attachToFinalAssistant(result.Transcript, deliveredAttachments)
@@ -285,6 +293,9 @@ func (r *BotServiceImpl) runConversation(
 		replaceFinalAssistantText(result.Transcript, deliveredText)
 		finalText = deliveredText
 	}
+	if len(result.ExtraMessages) > 0 {
+		attachExtraMessagesToFinalAssistant(result.Transcript, result.ExtraMessages)
+	}
 
 	out := &channel.OutgoingMessage{
 		Text:           finalText,
@@ -294,6 +305,7 @@ func (r *BotServiceImpl) runConversation(
 		ConversationID: msg.ConversationID,
 		RunID:          runID,
 		Attachments:    result.Attachments,
+		ExtraMessages:  result.ExtraMessages,
 		Stopped:        stopped,
 	}
 

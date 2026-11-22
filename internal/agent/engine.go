@@ -95,6 +95,7 @@ func (a *Agent) RunEvents(
 	var trace []provider.ReactStep
 	var usage provider.Usage
 	var attachments []channel.Attachment
+	var extraMessages []provider.ExtraMessage
 
 	if cfg.ToolsContext == nil {
 		extracted := extractToolsContext(transcript)
@@ -423,6 +424,14 @@ func (a *Agent) RunEvents(
 			if len(result.Attachments) > 0 {
 				attachments = append(attachments, result.Attachments...)
 			}
+			if len(result.ExtraMessages) > 0 {
+				cloned := provider.CloneExtraMessages(result.ExtraMessages)
+				extraMessages = append(extraMessages, cloned...)
+				_ = emit(AgentEvent{
+					Type:          EventExtraMessages,
+					ExtraMessages: cloned,
+				})
+			}
 
 			key := toolCall.Function.Name + "\x00" + argsToString(toolCall.Function.Arguments)
 			repeatSeen[key]++
@@ -487,16 +496,17 @@ func (a *Agent) RunEvents(
 	})
 
 	return RunResult{
-		RunID:       runID,
-		StartedAt:   startedAt,
-		EndedAt:     time.Now(),
-		Transcript:  transcript,
-		NewMessages: newMessages,
-		Final:       final,
-		Usage:       usage,
-		StopReason:  stopReason,
-		Err:         runErr,
-		Attachments: attachments,
+		RunID:         runID,
+		StartedAt:     startedAt,
+		EndedAt:       time.Now(),
+		Transcript:    transcript,
+		NewMessages:   newMessages,
+		Final:         final,
+		Usage:         usage,
+		StopReason:    stopReason,
+		Err:           runErr,
+		Attachments:   attachments,
+		ExtraMessages: extraMessages,
 	}, runErr
 }
 

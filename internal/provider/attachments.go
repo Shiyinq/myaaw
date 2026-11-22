@@ -44,6 +44,7 @@ func StripContextBlocks(text string) string {
 	if !strings.Contains(text, UserInfoBlockOpen) &&
 		!strings.Contains(text, AttachmentBlockOpen) &&
 		!HasTriggerBlock(text) &&
+		!HasInteractionBlock(text) &&
 		!strings.Contains(text, SelectionsBlockOpen) {
 		return text
 	}
@@ -55,6 +56,7 @@ func StripContextBlocks(text string) string {
 	text = userInfoBlockPattern.ReplaceAllString(text, "")
 	text = attachmentBlockPattern.ReplaceAllString(text, "")
 	text = StripTriggerBlocks(text)
+	text = StripInteractionBlocks(text)
 	return strings.TrimSpace(text)
 }
 

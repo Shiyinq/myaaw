@@ -12,6 +12,7 @@ import (
 	_ "myaaw/internal/agent/tools/computer"
 	_ "myaaw/internal/agent/tools/contact"
 	_ "myaaw/internal/agent/tools/cron"
+	_ "myaaw/internal/agent/tools/extramessages"
 	_ "myaaw/internal/agent/tools/filesystem"
 	_ "myaaw/internal/agent/tools/provider"
 	_ "myaaw/internal/agent/tools/python"
