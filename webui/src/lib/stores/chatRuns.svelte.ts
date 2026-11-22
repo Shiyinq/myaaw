@@ -1,6 +1,11 @@
 import { browser } from '$app/environment';
 import { chat as chatApi } from '$lib/apis/chat';
 import { composeAskPrompt } from '$lib/utils/ask';
+import {
+	mergeExtraMessages,
+	parseInteractionText,
+	patchExtraBlockState
+} from '$lib/utils/interactions';
 import type {
 	ApprovalPrompt,
 	AskQuote,
@@ -9,6 +14,9 @@ import type {
 	ChatRunInfo,
 	ChatStreamEvent,
 	ContextUsage,
+	ExtraMessage,
+	InteractionKind,
+	InteractionState,
 	TimelineItem,
 	Upload,
 	Usage
@@ -24,6 +32,8 @@ import type {
 
 export interface ChatItem extends TimelineItem {
 	localId?: string;
+	/** Stable message ID from the stored transcript, if any. */
+	messageId?: string;
 	/** Position of the stored message this row was rebuilt from, if any. */
 	messageIndex?: number;
 	/** UTC timestamp shown next to user and answer rows. */
@@ -38,12 +48,19 @@ export interface ChatItem extends TimelineItem {
 	 * model-only <trigger> block; the row shows a badge and hides the block.
 	 */
 	trigger?: 'cron' | 'heartbeat' | 'subagent';
+	/**
+	 * Set when the user turn originated from clicking an interactive extra_messages
+	 * block (button, quick reply, form, or checklist).
+	 */
+	interaction?: InteractionKind;
 	images?: string[];
 	uploads?: Upload[];
 	/** Excerpts quoted from earlier answers, thinking, or tool output. */
 	quotes?: AskQuote[];
 	/** Files delivered with this answer; rehydrated from the stored transcript. */
 	attachments?: Attachment[];
+	/** Structured rich display / interactive blocks emitted by extra_messages. */
+	extraMessages?: ExtraMessage[];
 	running?: boolean;
 	expanded?: boolean;
 	group_duration_ms?: number;
@@ -216,6 +233,44 @@ export class ChatRun {
 		);
 	}
 
+	patchExtraBlock(blockId: string, state: InteractionState) {
+		if (!blockId) return;
+		this.items = this.items.map((item) => {
+			if (!item.extraMessages?.length) return item;
+			const next = patchExtraBlockState(item.extraMessages, blockId, state);
+			return next === item.extraMessages ? item : { ...item, extraMessages: next };
+		});
+	}
+
+	private lastUserIndex(): number {
+		for (let i = this.items.length - 1; i >= 0; i -= 1) {
+			if (this.items[i].kind === 'user') return i;
+		}
+		return -1;
+	}
+
+	private attachLiveExtraMessages(incoming: ExtraMessage[]) {
+		if (!incoming.length) return;
+		const turnStart = this.lastUserIndex();
+		let target = -1;
+		for (let i = this.items.length - 1; i > turnStart; i -= 1) {
+			if (this.items[i].kind === 'text') {
+				target = i;
+				break;
+			}
+		}
+		if (target >= 0) {
+			const existing = this.items[target];
+			this.items = this.items.map((item, idx) =>
+				idx === target
+					? { ...existing, extraMessages: mergeExtraMessages(existing.extraMessages, incoming) }
+					: item
+			);
+		} else {
+			this.push({ kind: 'text', text: '', extraMessages: incoming });
+		}
+	}
+
 	// ------------------------------------------------------------------ control
 
 	start(options: StartRunOptions) {
@@ -233,9 +288,11 @@ export class ChatRun {
 		// An edit or a regeneration already carries its user turn in `initialItems`;
 		// only a normal send appends a new question.
 		if (options.rewindUserOffset === undefined) {
+			const parsedInteraction = parseInteractionText(options.text);
 			this.push({
 				kind: 'user',
-				text: options.text,
+				text: parsedInteraction.kind ? parsedInteraction.text : options.text,
+				interaction: parsedInteraction.kind ?? undefined,
 				quotes: options.quotes?.length ? options.quotes : undefined,
 				images: options.imagesDisplay.length > 0 ? options.imagesDisplay : undefined,
 				uploads: options.uploads.length > 0 ? options.uploads : undefined,
@@ -404,6 +461,13 @@ export class ChatRun {
 			case 'approval_resolved':
 				this.resolveApproval(data?.approval_id ?? '');
 				break;
+			case 'extra_messages': {
+				const incoming = (data?.extra_messages ?? []) as ExtraMessage[];
+				if (Array.isArray(incoming) && incoming.length > 0) {
+					this.attachLiveExtraMessages(incoming);
+				}
+				break;
+			}
 			case 'done': {
 				this.endRun();
 				this.finishReason = 'done';
@@ -411,25 +475,47 @@ export class ChatRun {
 				const next = data?.conversation_id;
 				if (typeof next === 'string' && next) this.bindConversation(next);
 				const doneAttachments = data?.attachments ?? [];
-				if (data?.text || doneAttachments.length > 0) {
+				const doneExtraMessages = (data?.extra_messages ?? []) as ExtraMessage[];
+				if (data?.text || doneAttachments.length > 0 || doneExtraMessages.length > 0) {
 					// The final text is authoritative: it has the delivery directives
 					// removed, while the streamed deltas still contain them. Attachments
-					// ride on the same answer so history renders them too.
+					// and extra_messages ride on the same answer so history renders them too.
+					const turnStart = this.lastUserIndex();
 					let lastText = -1;
-					for (let i = this.items.length - 1; i >= 0; i -= 1) {
+					for (let i = this.items.length - 1; i > turnStart; i -= 1) {
 						if (this.items[i].kind === 'text') {
 							lastText = i;
 							break;
 						}
 					}
 					if (lastText >= 0) {
+						const mergedExtra =
+							doneExtraMessages.length > 0
+								? mergeExtraMessages(this.items[lastText].extraMessages, doneExtraMessages)
+								: this.items[lastText].extraMessages;
 						this.items[lastText] = {
 							...this.items[lastText],
 							...(data?.text ? { text: data.text } : {}),
-							attachments: doneAttachments
+							attachments: doneAttachments,
+							...(mergedExtra && mergedExtra.length > 0 ? { extraMessages: mergedExtra } : {})
 						};
+						// Clean up any empty live stub earlier in the same turn that was only
+						// holding streamed extra_messages before another tool call ran.
+						if (mergedExtra && mergedExtra.length > 0) {
+							this.items = this.items.filter(
+								(item, idx) =>
+									idx <= turnStart ||
+									idx === lastText ||
+									!(item.kind === 'text' && !item.text && (item.extraMessages?.length ?? 0) > 0)
+							);
+						}
 					} else {
-						this.push({ kind: 'text', text: data?.text ?? '', attachments: doneAttachments });
+						this.push({
+							kind: 'text',
+							text: data?.text ?? '',
+							attachments: doneAttachments,
+							...(doneExtraMessages.length > 0 ? { extraMessages: doneExtraMessages } : {})
+						});
 					}
 				}
 				// Live rows have no stored timestamp yet; stamp the answer when it lands.

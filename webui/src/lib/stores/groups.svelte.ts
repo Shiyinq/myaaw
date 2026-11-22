@@ -1,15 +1,18 @@
 import { untrack } from 'svelte';
 import { groups as groupsApi } from '$lib/apis/groups';
 import { getErrorMessage } from '$lib/utils/api';
+import { stripInteractionTags } from '$lib/utils/interactions';
 import type { SSEEvent } from '$lib/utils/sse';
 import type {
 	CreateGroupRequest,
 	Group,
 	GroupDetail,
 	GroupDetailParams,
+	GroupInteractionResponse,
 	GroupMessage,
 	GroupRunState,
 	GroupSummary,
+	InteractionRequest,
 	SendGroupMessageRequest,
 	SendGroupMessageResponse,
 	StopGroupResponse,
@@ -143,7 +146,7 @@ export const groupsStore = {
 						id: lastMsg.id,
 						sender_type: lastMsg.sender_type,
 						sender_name: lastMsg.sender_name,
-						content: lastMsg.content,
+						content: stripInteractionTags(lastMsg.content),
 						created_at: lastMsg.created_at
 					}
 				: null;
@@ -194,6 +197,27 @@ export const groupsStore = {
 		groupsStore.syncSummaryFromRunState(id, nextRunState);
 		return res;
 	},
+	async respondInteraction(
+		id: string,
+		payload: InteractionRequest
+	): Promise<GroupInteractionResponse> {
+		const res = await groupsApi.respondInteraction(id, payload);
+		if (res.message?.id) {
+			groupsStore.syncSummaryFromMessage(id, res.message);
+		}
+		if (res.run_state) {
+			const existing = list.find((entry) => entry.id === id);
+			const nextRunState =
+				existing?.running &&
+				existing.current_agent &&
+				res.run_state.running &&
+				!res.run_state.current_agent
+					? { ...res.run_state, current_agent: existing.current_agent }
+					: res.run_state;
+			groupsStore.syncSummaryFromRunState(id, nextRunState);
+		}
+		return res;
+	},
 	async stop(id: string): Promise<StopGroupResponse> {
 		const res = await groupsApi.stop(id);
 		groupsStore.syncSummaryFromRunState(id, res.run_state);
@@ -242,7 +266,7 @@ export const groupsStore = {
 				id: msg.id,
 				sender_type: msg.sender_type,
 				sender_name: msg.sender_name,
-				content: msg.content,
+				content: stripInteractionTags(msg.content),
 				created_at: msg.created_at
 			},
 			updated_at: msg.created_at || new Date().toISOString()

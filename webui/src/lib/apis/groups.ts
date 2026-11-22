@@ -10,7 +10,9 @@ import type {
 	GroupAttachmentsPage,
 	GroupDetail,
 	GroupDetailParams,
+	GroupInteractionResponse,
 	GroupSummary,
+	InteractionRequest,
 	SendGroupMessageRequest,
 	SendGroupMessageResponse,
 	StopGroupResponse,
@@ -62,6 +64,11 @@ export const groups = {
 		client<{ cleared: boolean }>(groupPath(id, '/messages'), { method: 'DELETE' }),
 	sendMessage: (id: string, payload: SendGroupMessageRequest) =>
 		client<SendGroupMessageResponse>(groupPath(id, '/messages'), {
+			method: 'POST',
+			body: payload
+		}),
+	respondInteraction: (id: string, payload: InteractionRequest) =>
+		client<GroupInteractionResponse>(groupPath(id, '/interactions'), {
 			method: 'POST',
 			body: payload
 		}),

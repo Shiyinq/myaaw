@@ -566,6 +566,10 @@
 			"trigger_heartbeat": "Heartbeat",
 			"trigger_subagent": "Sub-agen",
 			"trigger_chat": "Balasan",
+			"interaction_button": "Tombol",
+			"interaction_quick_reply": "Pilihan cepat",
+			"interaction_form": "Formulir",
+			"interaction_checklist": "Daftar centang",
 			"notify_title": "Myaaw · {agent}",
 			"notify_body": "{trigger} selesai.\nBuka chat untuk membacanya.",
 			"notify_approval_body": "Butuh persetujuan: {tool}\nBuka chat untuk menjawabnya.",
@@ -1542,6 +1546,25 @@
 			"steps_tools": "{count} tool",
 			"steps_count": "{count} langkah",
 			"scroll_bottom": "Gulir ke bawah"
+		},
+		"extra": {
+			"prev": "Sebelumnya",
+			"next": "Berikutnya",
+			"open_link": "Buka tautan",
+			"submit": "Kirim",
+			"submitted": "Terkirim",
+			"confirm_selection": "Konfirmasi pilihan",
+			"selected_summary": "Dipilih: {value}",
+			"selected_count": "{count} dipilih",
+			"none_selected": "Tidak ada yang dipilih",
+			"select_placeholder": "Pilih salah satu…",
+			"field_required": "Kolom ini wajib diisi.",
+			"invalid_number": "Masukkan angka yang valid.",
+			"min_value": "Nilai minimum adalah {min}.",
+			"max_value": "Nilai maksimum adalah {max}.",
+			"yes": "Ya",
+			"no": "Tidak",
+			"already_submitted": "Sudah dikirim."
 		}
 	},
 	"landing": {

@@ -1,4 +1,5 @@
 import type { AskQuote, ChatFile, TimelineItem } from './chat';
+import type { ExtraMessage, InteractionState } from './extra';
 
 export type DiscussionMode = 'autonomous' | 'all' | 'mention';
 
@@ -56,6 +57,7 @@ export interface GroupMessage {
 	reply_preview?: ReplyPreview;
 	quotes?: AskQuote[];
 	attachments?: GroupAttachment[];
+	extra_messages?: ExtraMessage[];
 	created_at: string;
 }
 
@@ -197,6 +199,8 @@ export type GroupStreamEventName =
 	| 'chunk'
 	| 'tool_start'
 	| 'tool_end'
+	| 'extra_messages'
+	| 'extra_block_updated'
 	| 'message'
 	| 'turn_end'
 	| 'run_end'
@@ -274,4 +278,25 @@ export interface GroupErrorEvent {
 	group_id: string;
 	agent?: string;
 	error: string;
+}
+
+export interface GroupExtraMessagesEvent {
+	group_id: string;
+	agent: string;
+	extra_messages: ExtraMessage[];
+}
+
+export interface GroupExtraBlockUpdatedEvent {
+	group_id: string;
+	message_id: string;
+	block_id: string;
+	state: InteractionState;
+}
+
+export interface GroupInteractionResponse {
+	ok: boolean;
+	block_id: string;
+	state: InteractionState;
+	message: GroupMessage;
+	run_state: GroupRunState;
 }

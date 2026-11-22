@@ -32,6 +32,8 @@
 	import LightBox from '$lib/components/app/LightBox.svelte';
 	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
 	import RunAttachments from '$lib/components/app/RunAttachments.svelte';
+	import ExtraMessages from '$lib/components/extra/ExtraMessages.svelte';
+	import InteractionBadge from '$lib/components/extra/InteractionBadge.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import ChatStep from '$lib/components/common/ChatStep.svelte';
@@ -69,6 +71,11 @@
 		stripAttachDirectives,
 		toRunAttachments
 	} from '$lib/utils/attachments';
+	import {
+		mergeExtraMessages,
+		parseInteractionText,
+		patchExtraBlockState
+	} from '$lib/utils/interactions';
 	import { formatShortcut, isOverlayOpen, isTypingTarget, matchesShortcut } from '$lib/utils/keys';
 	import type { SSEEvent } from '$lib/utils/sse';
 	import type {
@@ -76,9 +83,12 @@
 		AskQuote,
 		AskQuoteSource,
 		ChatFile,
+		ExtraMessage,
 		Group,
 		GroupAttachment,
 		GroupChunkEvent,
+		GroupExtraBlockUpdatedEvent,
+		GroupExtraMessagesEvent,
 		GroupPendingApproval,
 		GroupErrorEvent,
 		GroupMessage,
@@ -91,6 +101,8 @@
 		GroupToolStartEvent,
 		GroupTurnEndEvent,
 		GroupTurnStartEvent,
+		InteractionRequest,
+		InteractionState,
 		LightboxImage,
 		ReplyPreview,
 		TimelineItem
@@ -179,6 +191,7 @@
 		requestId: string;
 		text: string;
 		timeline: LiveStep[];
+		extraMessages?: ExtraMessage[];
 	}
 
 	interface AskAnchor {
@@ -762,6 +775,21 @@
 				maybeAutoScroll();
 				break;
 			}
+			case 'extra_messages': {
+				const payload = data as unknown as GroupExtraMessagesEvent;
+				if (!payload?.agent || !Array.isArray(payload.extra_messages)) break;
+				const current = ensureActiveTurn(payload.agent);
+				current.extraMessages = mergeExtraMessages(current.extraMessages, payload.extra_messages);
+				activeTurn = { ...current };
+				maybeAutoScroll();
+				break;
+			}
+			case 'extra_block_updated': {
+				const payload = data as unknown as GroupExtraBlockUpdatedEvent;
+				if (!payload?.block_id || !payload?.state) break;
+				patchGroupExtraBlock(payload.block_id, payload.state, payload.message_id);
+				break;
+			}
 			case 'message': {
 				const payload = data as unknown as GroupMessageEvent;
 				const msg = payload.message;
@@ -865,6 +893,43 @@
 			text: '',
 			timeline: []
 		};
+	}
+
+	function patchGroupExtraBlock(blockId: string, state: InteractionState, messageId?: string) {
+		if (!blockId) return;
+		messages = messages.map((msg) => {
+			if (messageId && msg.id !== messageId) return msg;
+			if (!msg.extra_messages?.length) return msg;
+			const next = patchExtraBlockState(msg.extra_messages, blockId, state);
+			return next === msg.extra_messages ? msg : { ...msg, extra_messages: next };
+		});
+	}
+
+	async function handleExtraInteract(req: InteractionRequest) {
+		const id = groupId;
+		if (!id) return;
+		try {
+			const res = await groupsStore.respondInteraction(id, req);
+			patchGroupExtraBlock(res.block_id || req.block_id, res.state, req.message_id);
+			if (res.message?.id && !messages.some((existing) => existing.id === res.message.id)) {
+				messages = [...messages, res.message];
+				totalMessages += 1;
+				maybeAutoScroll();
+			}
+			if (res.run_state) {
+				runState = res.run_state;
+			}
+		} catch (err) {
+			const apiErr = err as { status?: number; state?: InteractionState } | undefined;
+			if (apiErr?.status === 409) {
+				if (apiErr.state) {
+					patchGroupExtraBlock(req.block_id, apiErr.state, req.message_id);
+				}
+				toastStore.info(t('myaaw.extra.already_submitted'));
+				return;
+			}
+			toastStore.error(getErrorMessage(err));
+		}
 	}
 
 	function nearBottom(slack = 96): boolean {
@@ -2008,6 +2073,10 @@
 								{msg.content}
 							</div>
 						{:else if msg.sender_type === 'user'}
+							{@const parsedInteraction = parseInteractionText(msg.content)}
+							{@const userDisplayText = parsedInteraction.kind
+								? parsedInteraction.text
+								: msg.content}
 							{@const imageAttachments = (msg.attachments ?? []).filter(
 								(att) => att.kind === 'image'
 							)}
@@ -2021,6 +2090,9 @@
 									highlighted ? 'ring-2 ring-primary/60 ring-offset-2 ring-offset-background' : ''
 								]}
 							>
+								{#if parsedInteraction.kind}
+									<InteractionBadge kind={parsedInteraction.kind} />
+								{/if}
 								{#if imageAttachments.length > 0}
 									<div class="flex flex-wrap justify-end gap-2">
 										{#each imageAttachments as att, imgIdx (att.id)}
@@ -2075,7 +2147,7 @@
 										{/each}
 									</div>
 								{/if}
-								{#if msg.content.trim().length > 0 || msg.reply_preview || (msg.quotes && msg.quotes.length > 0)}
+								{#if userDisplayText.trim().length > 0 || msg.reply_preview || (msg.quotes && msg.quotes.length > 0)}
 									<div
 										class="w-fit max-w-full rounded-2xl rounded-tr-sm bg-primary/10 px-3.5 py-2.5 text-sm text-foreground ring-1 ring-primary/15"
 									>
@@ -2090,9 +2162,9 @@
 												/>
 											</div>
 										{/if}
-										{#if msg.content.trim().length > 0}
+										{#if userDisplayText.trim().length > 0}
 											<p class="whitespace-pre-wrap wrap-break-word">
-												{@render mentionText(msg.content)}
+												{@render mentionText(userDisplayText)}
 											</p>
 										{/if}
 									</div>
@@ -2112,7 +2184,7 @@
 											<Reply class="h-3 w-3" />
 											<span class="hidden sm:inline">{t('myaaw.groups.reply')}</span>
 										</button>
-										<CopyButton text={msg.content} />
+										<CopyButton text={userDisplayText} />
 									</span>
 									<ChatTime at={msg.created_at} />
 								</div>
@@ -2258,6 +2330,15 @@
 										<div class="mt-2.5">
 											<RunAttachments agent={msg.sender_name} attachments={agentRunAttachments} />
 										</div>
+									{/if}
+
+									{#if (msg.extra_messages?.length ?? 0) > 0}
+										<ExtraMessages
+											agent={msg.sender_name}
+											extraMessages={msg.extra_messages ?? []}
+											messageId={msg.id}
+											onInteract={handleExtraInteract}
+										/>
 									{/if}
 
 									<div
@@ -2411,6 +2492,13 @@
 										</div>
 									{/if}
 								</div>
+								{#if (activeTurn.extraMessages?.length ?? 0) > 0}
+									<ExtraMessages
+										agent={activeTurn.agent}
+										extraMessages={activeTurn.extraMessages ?? []}
+										disabled
+									/>
+								{/if}
 							</div>
 						</div>
 					{/if}

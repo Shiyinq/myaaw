@@ -10,6 +10,7 @@ export * from './contacts';
 export * from './context';
 export * from './conversations';
 export * from './cron';
+export * from './extra';
 export * from './files';
 export * from './groups';
 export * from './logs';

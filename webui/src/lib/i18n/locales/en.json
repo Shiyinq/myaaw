@@ -566,6 +566,10 @@
 			"trigger_heartbeat": "Heartbeat",
 			"trigger_subagent": "Sub-agent",
 			"trigger_chat": "Reply",
+			"interaction_button": "Button",
+			"interaction_quick_reply": "Quick reply",
+			"interaction_form": "Form",
+			"interaction_checklist": "Checklist",
 			"notify_title": "Myaaw · {agent}",
 			"notify_body": "{trigger} finished.\nOpen the chat to read it.",
 			"notify_approval_body": "Needs approval: {tool}\nOpen the chat to answer it.",
@@ -1542,6 +1546,25 @@
 			"steps_tools": "{count} tools",
 			"steps_count": "{count} steps",
 			"scroll_bottom": "Scroll to bottom"
+		},
+		"extra": {
+			"prev": "Previous",
+			"next": "Next",
+			"open_link": "Open link",
+			"submit": "Submit",
+			"submitted": "Submitted",
+			"confirm_selection": "Confirm selection",
+			"selected_summary": "Selected: {value}",
+			"selected_count": "{count} selected",
+			"none_selected": "None selected",
+			"select_placeholder": "Choose an option…",
+			"field_required": "This field is required.",
+			"invalid_number": "Enter a valid number.",
+			"min_value": "Minimum value is {min}.",
+			"max_value": "Maximum value is {max}.",
+			"yes": "Yes",
+			"no": "No",
+			"already_submitted": "Already submitted."
 		}
 	},
 	"landing": {

@@ -7,7 +7,8 @@ import type {
 	ConversationActivity,
 	ConversationAttachmentPage,
 	ConversationDetail,
-	ConversationPage
+	ConversationPage,
+	InteractionRequest
 } from '$lib/types';
 import { createQueryStore } from './query.svelte';
 
@@ -84,6 +85,9 @@ export const conversationsStore = {
 	},
 	ensureActivity(agent: string, from: number, to: number) {
 		return activity.ensure({ agent, from, to });
+	},
+	respondInteraction(agent: string, id: string, payload: InteractionRequest) {
+		return conversationsApi.respondInteraction(agent, id, payload);
 	},
 	/** Mutations invalidate every cached view of that conversation. */
 	invalidate() {

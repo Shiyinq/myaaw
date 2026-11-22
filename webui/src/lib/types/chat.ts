@@ -31,6 +31,7 @@ export interface Attachment {
 }
 
 import type { FilePreviewKind } from '$lib/utils/filePreview';
+import type { ExtraMessage } from './extra';
 
 /** One image, video, audio, or document opened in the full-screen lightbox. */
 export interface LightboxImage {
@@ -123,6 +124,7 @@ export interface ChatResponse {
 	timeline?: TimelineItem[];
 	usage?: Usage;
 	attachments?: Attachment[];
+	extra_messages?: ExtraMessage[];
 	status?: 'approval_required' | string;
 	approval?: ApprovalPrompt;
 }
@@ -149,5 +151,6 @@ export type ChatStreamEvent =
 	| 'approval_resolved'
 	| 'compaction'
 	| 'context'
+	| 'extra_messages'
 	| 'done'
 	| 'error';

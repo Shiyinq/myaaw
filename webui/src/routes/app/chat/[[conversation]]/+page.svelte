@@ -30,6 +30,11 @@
 	import { getErrorMessage } from '$lib/utils/api';
 	import { MAX_ASK_QUOTES, MAX_ASK_QUOTE_CHARS, parseAskPrompt } from '$lib/utils/ask';
 	import { stripAttachDirectives } from '$lib/utils/attachments';
+	import {
+		parseInteractionText,
+		patchExtraBlockState,
+		stripInteractionTags
+	} from '$lib/utils/interactions';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
 	import AttachmentPanel from '$lib/components/app/AttachmentPanel.svelte';
@@ -37,6 +42,8 @@
 	import AskQuoteList from '$lib/components/app/AskQuoteList.svelte';
 	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
 	import RunAttachments from '$lib/components/app/RunAttachments.svelte';
+	import ExtraMessages from '$lib/components/extra/ExtraMessages.svelte';
+	import InteractionBadge from '$lib/components/extra/InteractionBadge.svelte';
 	import LightBox from '$lib/components/app/LightBox.svelte';
 	import FocusAgentPanel from '$lib/components/focus/FocusAgentPanel.svelte';
 	import FocusContextEditor from '$lib/components/focus/FocusContextEditor.svelte';
@@ -104,6 +111,9 @@
 		ConversationAttachment,
 		ConversationDetail,
 		ConversationTurn,
+		InteractionKind,
+		InteractionRequest,
+		InteractionState,
 		LightboxImage,
 		Message,
 		ModelCapabilitiesView,
@@ -538,9 +548,9 @@
 			.replace(/<userinfo>[\s\S]*?<\/userinfo>\s*/gi, '')
 			.replace(/<attached>[\s\S]*?<\/attached>\s*/gi, '')
 			.replace(/<trigger\b[^>]*>[\s\S]*?<\/trigger>\s*/gi, '')
-			.replace(/<trigger\b[\s\S]*$/i, '')
-			.trim();
-		return !stripped && hadSelections ? t('myaaw.chat.quoted_turn') : stripped;
+			.replace(/<trigger\b[\s\S]*$/i, '');
+		const cleaned = stripInteractionTags(stripped);
+		return !cleaned && hadSelections ? t('myaaw.chat.quoted_turn') : cleaned;
 	}
 
 	// The ticks are a window over the list, centred on the question being read. It
@@ -2584,6 +2594,43 @@
 		return true;
 	}
 
+	function patchLocalExtraBlock(blockId: string, state: InteractionState) {
+		if (!blockId) return;
+		historyItems = historyItems.map((item) => {
+			if (!item.extraMessages?.length) return item;
+			const next = patchExtraBlockState(item.extraMessages, blockId, state);
+			return next === item.extraMessages ? item : { ...item, extraMessages: next };
+		});
+		activeRun?.patchExtraBlock(blockId, state);
+	}
+
+	async function handleExtraInteract(req: InteractionRequest) {
+		if (!agent || !conversationId || streaming) return;
+		try {
+			const res = await conversationsStore.respondInteraction(agent, conversationId, req);
+			patchLocalExtraBlock(res.block_id || req.block_id, res.state);
+			conversationsStore.invalidate();
+			if (res.interaction_text) {
+				submit({
+					text: res.interaction_text,
+					quotes: [],
+					images: [],
+					files: []
+				});
+			}
+		} catch (err) {
+			const apiErr = err as { status?: number; state?: InteractionState } | undefined;
+			if (apiErr?.status === 409) {
+				if (apiErr.state) {
+					patchLocalExtraBlock(req.block_id, apiErr.state);
+				}
+				toastStore.info(t('myaaw.extra.already_submitted'));
+				return;
+			}
+			toastStore.error(getErrorMessage(err));
+		}
+	}
+
 	function send() {
 		// Sending ends the dictation, any read-aloud, and an unfinished edit.
 		stopSpeech();
@@ -3023,6 +3070,7 @@
 	 */
 	function splitTrigger(raw: string): {
 		trigger: TriggerKind | null;
+		interaction: InteractionKind | null;
 		text: string;
 		quotes: AskQuote[];
 	} {
@@ -3031,14 +3079,27 @@
 		const block = parsed.text.match(
 			/^\s*<trigger\b[^>]*\bkind="(cron|heartbeat|subagent)"[^>]*>[\s\S]*?<\/trigger>\s*/i
 		);
-		if (!block) return { trigger: null, text: parsed.text, quotes: parsed.quotes };
+		if (block) {
+			// The whole block is model-only, so the badge is the message.
+			return {
+				trigger: block[1].toLowerCase() as TriggerKind,
+				interaction: null,
+				text: '',
+				quotes: parsed.quotes
+			};
+		}
 
-		// The whole block is model-only, so the badge is the message.
-		return {
-			trigger: block[1].toLowerCase() as TriggerKind,
-			text: '',
-			quotes: parsed.quotes
-		};
+		const interactionParsed = parseInteractionText(parsed.text);
+		if (interactionParsed.kind) {
+			return {
+				trigger: null,
+				interaction: interactionParsed.kind,
+				text: interactionParsed.text,
+				quotes: parsed.quotes
+			};
+		}
+
+		return { trigger: null, interaction: null, text: parsed.text, quotes: parsed.quotes };
 	}
 
 	function triggerLabel(trigger: TriggerKind): string {
@@ -3271,19 +3332,31 @@
 
 			if (message.role === 'user') {
 				lastStep = -1;
-				const { trigger, text, quotes: storedQuotes } = splitTrigger(messageText(message));
+				const {
+					trigger,
+					interaction,
+					text,
+					quotes: storedQuotes
+				} = splitTrigger(messageText(message));
 				const images = messageImages(message);
-				// A trigger turn has no visible text: the badge is the message, so it still
-				// gets a row.
-				if (trigger || text || images.length > 0 || (message.uploads?.length ?? 0) > 0) {
+				// A trigger or interaction turn may have only a badge, so it still gets a row.
+				if (
+					trigger ||
+					interaction ||
+					text ||
+					images.length > 0 ||
+					(message.uploads?.length ?? 0) > 0
+				) {
 					timeline.push({
 						kind: 'user',
 						text,
 						quotes: storedQuotes.length > 0 ? storedQuotes : undefined,
 						trigger: trigger ?? undefined,
+						interaction: interaction ?? undefined,
 						images: images.length > 0 ? images : undefined,
 						uploads: message.uploads,
 						localId: nextId(),
+						messageId: message.id,
 						messageIndex,
 						createdAt: message.created_at,
 						senderId: message.sender_id,
@@ -3298,12 +3371,15 @@
 
 			const text = messageText(message);
 			const attachments = message.attachments ?? [];
-			if (text || attachments.length > 0) {
+			const extraMessages = message.extra_messages ?? [];
+			if (text || attachments.length > 0 || extraMessages.length > 0) {
 				timeline.push({
 					kind: 'text',
 					text,
 					attachments,
+					...(extraMessages.length > 0 ? { extraMessages } : {}),
 					localId: nextId(),
+					messageId: message.id,
 					messageIndex,
 					createdAt: message.created_at
 				});
@@ -4354,6 +4430,30 @@
 															<ChatTime at={item.createdAt ?? ''} />
 														</div>
 													</div>
+												{:else if item.interaction}
+													<div
+														class="flex w-full max-w-full flex-col items-end gap-1.5 terminal:items-start"
+													>
+														<InteractionBadge kind={item.interaction} />
+														{#if item.text}
+															<div
+																class="max-w-full wrap-break-word rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-(--chat-bubble-ring) terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
+															>
+																<span class="whitespace-pre-wrap">{item.text}</span>
+															</div>
+														{/if}
+														<div
+															class={cn(
+																'mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/user:opacity-100 group-focus-within/user:opacity-100 [@media(hover:none)]:opacity-100',
+																item.localId === latestUserKey && 'opacity-100'
+															)}
+														>
+															{#if item.text}
+																<CopyButton text={item.text} />
+															{/if}
+															<ChatTime at={item.createdAt ?? ''} />
+														</div>
+													</div>
 												{:else if item.text}
 													<div
 														class="flex w-full max-w-full flex-col items-end terminal:items-start"
@@ -4449,14 +4549,25 @@
 													'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
 											)}
 										>
-											<div data-ask-source="answer" data-ask-id={item.localId}>
-												<Markdown
-													content={displayText(item.text ?? '')}
-													streaming={streaming && item.localId === latestAnswerKey}
-												/>
-											</div>
+											{#if displayText(item.text ?? '')}
+												<div data-ask-source="answer" data-ask-id={item.localId}>
+													<Markdown
+														content={displayText(item.text ?? '')}
+														streaming={streaming && item.localId === latestAnswerKey}
+													/>
+												</div>
+											{/if}
 											{#if (item.attachments?.length ?? 0) > 0}
 												<RunAttachments {agent} attachments={item.attachments ?? []} />
+											{/if}
+											{#if (item.extraMessages?.length ?? 0) > 0}
+												<ExtraMessages
+													{agent}
+													extraMessages={item.extraMessages ?? []}
+													messageId={item.messageId}
+													disabled={streaming}
+													onInteract={handleExtraInteract}
+												/>
 											{/if}
 											<div
 												class={cn(
