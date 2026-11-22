@@ -387,6 +387,47 @@ func (h *Handler) DownloadGroupUpload(c fiber.Ctx) error {
 	return c.SendFile(absPath)
 }
 
+// RespondGroupInteraction records an interactive extra_messages response on a
+// group message atomically and dispatches a follow-up turn to the sender agent.
+// @Summary      Respond to group extra_messages interaction
+// @Description  Atomically locks a single-use interactive extra_messages block in a group message, broadcasts an extra_block_updated SSE event, and dispatches a follow-up reply turn targeting the originating agent. Returns 409 Conflict with the persisted state if already submitted.
+// @Tags         Groups
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "Group ID"
+// @Param        request body service.InteractionRequest true "Interaction response payload"
+// @Success      202 {object} service.GroupInteractionResponse
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Failure      409 {object} service.InteractionResponse
+// @Router       /groups/{id}/interactions [post]
+func (h *Handler) RespondGroupInteraction(c fiber.Ctx) error {
+	var req service.InteractionRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid JSON request body"})
+	}
+	res, err := h.groups.RespondInteraction(c.Params("id"), h.requestUserID(c), req)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInteractionAlreadySubmitted):
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error":    err.Error(),
+				"block_id": res.BlockID,
+				"state":    res.State,
+			})
+		case errors.Is(err, service.ErrInteractionNotFound):
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		case errors.Is(err, service.ErrInteractionInvalid):
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		default:
+			return groupError(c, err)
+		}
+	}
+	return c.Status(fiber.StatusAccepted).JSON(res)
+}
+
 func groupError(c fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, service.ErrInvalidGroupID), errors.Is(err, service.ErrGroupValidation):

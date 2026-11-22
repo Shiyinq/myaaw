@@ -11,7 +11,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const controlPlaneSchemaVersion = 4
+const controlPlaneSchemaVersion = 5
 
 var controlPlaneSchemaV1 = []string{
 	`CREATE TABLE IF NOT EXISTS auth_account (
@@ -67,6 +67,7 @@ var controlPlaneSchemaV1 = []string{
 		reply_preview_json TEXT    NOT NULL DEFAULT '',
 		quotes_json        TEXT    NOT NULL DEFAULT '',
 		attachments_json   TEXT    NOT NULL DEFAULT '',
+		extra_messages_json TEXT   NOT NULL DEFAULT '',
 		created_at         TEXT    NOT NULL
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_group_messages_group_seq
@@ -202,6 +203,12 @@ func (c *ControlPlaneDB) migrate() error {
 					_ = tx.Rollback()
 					return fmt.Errorf("apply controlplane schema v4: %w", err)
 				}
+			}
+		}
+		if version < 5 {
+			if _, err := tx.Exec(`ALTER TABLE group_messages ADD COLUMN extra_messages_json TEXT NOT NULL DEFAULT ''`); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("apply controlplane schema v5: %w", err)
 			}
 		}
 	}

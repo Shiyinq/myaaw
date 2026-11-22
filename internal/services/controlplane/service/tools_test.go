@@ -35,7 +35,7 @@ func TestToolsServiceListDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(view.Builtin) != 9 {
+	if len(view.Builtin) != 10 {
 		t.Fatalf("builtin = %+v", view.Builtin)
 	}
 	for _, tool := range view.Builtin {
@@ -308,7 +308,7 @@ func TestToolsServiceInvalidJSONDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(view.Builtin) != 9 || len(view.Custom) != 0 {
+	if len(view.Builtin) != 10 || len(view.Custom) != 0 {
 		t.Fatalf("view = %+v", view)
 	}
 

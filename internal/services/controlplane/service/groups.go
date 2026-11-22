@@ -25,6 +25,7 @@ import (
 	"myaaw/internal/attachment"
 	"myaaw/internal/channel"
 	"myaaw/internal/channel/api"
+	"myaaw/internal/provider"
 
 	"github.com/google/uuid"
 )
@@ -1348,15 +1349,16 @@ func (s *GroupService) runLoop(ctx context.Context, groupID string, userID int, 
 				msgAttachments = collectAgentMessageAttachments(groupID, msgID, nextAgent, cleanedText, now)
 			}
 			savedMsg = GroupMessage{
-				ID:          msgID,
-				GroupID:     groupID,
-				SenderType:  "agent",
-				SenderName:  nextAgent,
-				AgentColor:  agentColor,
-				Content:     cleanedText,
-				Timeline:    timeline,
-				Attachments: msgAttachments,
-				CreatedAt:   now,
+				ID:            msgID,
+				GroupID:       groupID,
+				SenderType:    "agent",
+				SenderName:    nextAgent,
+				AgentColor:    agentColor,
+				Content:       cleanedText,
+				Timeline:      timeline,
+				Attachments:   msgAttachments,
+				ExtraMessages: provider.CloneExtraMessages(res.ExtraMessages),
+				CreatedAt:     now,
 			}
 			cur.Messages = append(cur.Messages, savedMsg)
 			cur.Group.UpdatedAt = now
@@ -1458,6 +1460,7 @@ type agentTurnResult struct {
 	ConversationID string
 	Timeline       []api.TimelineItem
 	Attachments    []GroupAttachment
+	ExtraMessages  []provider.ExtraMessage
 	Stopped        bool
 	Unreachable    bool
 	EmittedError   bool
@@ -1711,12 +1714,29 @@ func (s *GroupService) streamAgentTurn(
 					},
 				})
 			}
+		case "extra_messages":
+			var ev struct {
+				ExtraMessages []provider.ExtraMessage `json:"extra_messages"`
+			}
+			if json.Unmarshal([]byte(rawData), &ev) == nil && len(ev.ExtraMessages) > 0 {
+				cloned := provider.CloneExtraMessages(ev.ExtraMessages)
+				result.ExtraMessages = append(result.ExtraMessages, cloned...)
+				rt.broadcast(GroupSSEEvent{
+					Name: "extra_messages",
+					Data: map[string]any{
+						"group_id":       groupID,
+						"agent":          agentName,
+						"extra_messages": cloned,
+					},
+				})
+			}
 		case "done":
 			var ev struct {
-				OK             bool   `json:"ok"`
-				Text           string `json:"text"`
-				ConversationID string `json:"conversation_id"`
-				Stopped        bool   `json:"stopped"`
+				OK             bool                    `json:"ok"`
+				Text           string                  `json:"text"`
+				ConversationID string                  `json:"conversation_id"`
+				Stopped        bool                    `json:"stopped"`
+				ExtraMessages  []provider.ExtraMessage `json:"extra_messages"`
 				Attachments    []struct {
 					FileName    string `json:"file_name"`
 					MimeType    string `json:"mime_type"`
@@ -1736,6 +1756,9 @@ func (s *GroupService) streamAgentTurn(
 				}
 				if ev.Stopped {
 					result.Stopped = true
+				}
+				if len(ev.ExtraMessages) > 0 && len(result.ExtraMessages) == 0 {
+					result.ExtraMessages = provider.CloneExtraMessages(ev.ExtraMessages)
 				}
 				if len(ev.Attachments) > 0 {
 					atts := make([]GroupAttachment, 0, len(ev.Attachments))

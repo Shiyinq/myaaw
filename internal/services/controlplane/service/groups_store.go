@@ -13,6 +13,7 @@ import (
 
 	"myaaw/internal/channel"
 	"myaaw/internal/channel/api"
+	"myaaw/internal/provider"
 )
 
 var (
@@ -112,9 +113,10 @@ type GroupMessage struct {
 	Timeline     []api.TimelineItem `json:"timeline,omitempty"`
 	ReplyToID    string             `json:"reply_to_id,omitempty"`
 	ReplyPreview *ReplyPreview      `json:"reply_preview,omitempty"`
-	Quotes       []AskQuote         `json:"quotes,omitempty"`
-	Attachments  []GroupAttachment  `json:"attachments,omitempty"`
-	CreatedAt    string             `json:"created_at"`
+	Quotes        []AskQuote              `json:"quotes,omitempty"`
+	Attachments   []GroupAttachment       `json:"attachments,omitempty"`
+	ExtraMessages []provider.ExtraMessage `json:"extra_messages,omitempty"`
+	CreatedAt     string                  `json:"created_at"`
 }
 
 // GroupPendingApproval describes one tool call waiting for user approval inside a group turn.
@@ -359,7 +361,7 @@ func (s *GroupStore) List() ([]storedGroup, error) {
 	// Load only the latest message per group without scanning full transcripts.
 	msgRows, err := db.Query(`
 		SELECT id, group_id, sender_type, sender_name, agent_color, content,
-		       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, created_at
+		       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, extra_messages_json, created_at
 		FROM group_messages
 		WHERE seq IN (SELECT MAX(seq) FROM group_messages GROUP BY group_id)`)
 	if err != nil {
@@ -471,7 +473,7 @@ func (s *GroupStore) GetPage(id string, limit, offset int, beforeID string) (sto
 		if limit > 0 {
 			rows, err = db.Query(`
 				SELECT seq, id, group_id, sender_type, sender_name, agent_color, content,
-				       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, created_at
+				       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, extra_messages_json, created_at
 				FROM group_messages
 				WHERE group_id = ? AND seq < ?
 				ORDER BY seq DESC
@@ -479,7 +481,7 @@ func (s *GroupStore) GetPage(id string, limit, offset int, beforeID string) (sto
 		} else {
 			rows, err = db.Query(`
 				SELECT seq, id, group_id, sender_type, sender_name, agent_color, content,
-				       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, created_at
+				       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, extra_messages_json, created_at
 				FROM group_messages
 				WHERE group_id = ? AND seq < ?
 				ORDER BY seq ASC`, id, targetSeq)
@@ -542,7 +544,7 @@ func (s *GroupStore) GetPage(id string, limit, offset int, beforeID string) (sto
 	case limit > 0:
 		rows, err = db.Query(`
 			SELECT id, group_id, sender_type, sender_name, agent_color, content,
-			       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, created_at
+			       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, extra_messages_json, created_at
 			FROM group_messages
 			WHERE group_id = ?
 			ORDER BY seq ASC
@@ -550,7 +552,7 @@ func (s *GroupStore) GetPage(id string, limit, offset int, beforeID string) (sto
 	case offset > 0:
 		rows, err = db.Query(`
 			SELECT id, group_id, sender_type, sender_name, agent_color, content,
-			       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, created_at
+			       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, extra_messages_json, created_at
 			FROM group_messages
 			WHERE group_id = ?
 			ORDER BY seq ASC
@@ -558,7 +560,7 @@ func (s *GroupStore) GetPage(id string, limit, offset int, beforeID string) (sto
 	default:
 		rows, err = db.Query(`
 			SELECT id, group_id, sender_type, sender_name, agent_color, content,
-			       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, created_at
+			       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, extra_messages_json, created_at
 			FROM group_messages
 			WHERE group_id = ?
 			ORDER BY seq ASC`, id)
@@ -788,6 +790,67 @@ func (s *GroupStore) Delete(id string) error {
 	return nil
 }
 
+// ApplyExtraBlockInteraction atomically validates and marks an interactive
+// extra_messages block on one group message as submitted.
+func (s *GroupStore) ApplyExtraBlockInteraction(groupID string, req InteractionRequest, actor string) (provider.InteractionState, string, error) {
+	if err := ValidateGroupID(groupID); err != nil {
+		return provider.InteractionState{}, "", err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	db := s.db.DB()
+	tx, err := db.Begin()
+	if err != nil {
+		return provider.InteractionState{}, "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var extraJSON string
+	err = tx.QueryRow(
+		`SELECT extra_messages_json FROM group_messages WHERE group_id = ? AND id = ? LIMIT 1`,
+		groupID, req.MessageID,
+	).Scan(&extraJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return provider.InteractionState{}, "", ErrInteractionNotFound
+	}
+	if err != nil {
+		return provider.InteractionState{}, "", err
+	}
+	if extraJSON == "" {
+		return provider.InteractionState{}, "", ErrInteractionNotFound
+	}
+
+	var extras []provider.ExtraMessage
+	if err := json.Unmarshal([]byte(extraJSON), &extras); err != nil {
+		return provider.InteractionState{}, "", fmt.Errorf("unmarshal extra_messages: %w", err)
+	}
+
+	state, text, matched, applyErr := applyBlockInteraction(extras, req, actor)
+	if applyErr != nil {
+		return state, "", applyErr
+	}
+	if !matched {
+		return provider.InteractionState{}, "", ErrInteractionNotFound
+	}
+
+	encoded, err := json.Marshal(extras)
+	if err != nil {
+		return provider.InteractionState{}, "", fmt.Errorf("marshal extra_messages: %w", err)
+	}
+	if _, err := tx.Exec(
+		`UPDATE group_messages SET extra_messages_json = ? WHERE group_id = ? AND id = ?`,
+		string(encoded), groupID, req.MessageID,
+	); err != nil {
+		return provider.InteractionState{}, "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return provider.InteractionState{}, "", err
+	}
+	return state, text, nil
+}
+
 type sqlQueryer interface {
 	QueryRow(query string, args ...any) *sql.Row
 	Query(query string, args ...any) (*sql.Rows, error)
@@ -853,7 +916,7 @@ func loadStoredGroup(q sqlQueryer, id string) (*storedGroup, error) {
 
 	msgRows, err := q.Query(`
 		SELECT id, group_id, sender_type, sender_name, agent_color, content,
-		       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, created_at
+		       timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, extra_messages_json, created_at
 		FROM group_messages
 		WHERE group_id = ?
 		ORDER BY seq ASC`, id)
@@ -898,10 +961,11 @@ func replaceMembersTx(tx *sql.Tx, groupID string, members []GroupMember) error {
 
 func insertMessageTx(tx *sql.Tx, msg GroupMessage) error {
 	var (
-		timelineJSON     string
-		replyPreviewJSON string
-		quotesJSON       string
-		attachmentsJSON  string
+		timelineJSON      string
+		replyPreviewJSON  string
+		quotesJSON        string
+		attachmentsJSON   string
+		extraMessagesJSON string
 	)
 	if len(msg.Timeline) > 0 {
 		b, err := json.Marshal(msg.Timeline)
@@ -931,33 +995,41 @@ func insertMessageTx(tx *sql.Tx, msg GroupMessage) error {
 		}
 		attachmentsJSON = string(b)
 	}
+	if len(msg.ExtraMessages) > 0 {
+		b, err := json.Marshal(msg.ExtraMessages)
+		if err != nil {
+			return fmt.Errorf("marshal extra_messages: %w", err)
+		}
+		extraMessagesJSON = string(b)
+	}
 
 	_, err := tx.Exec(`
 		INSERT OR IGNORE INTO group_messages (
 			id, group_id, sender_type, sender_name, agent_color, content,
-			timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			timeline_json, reply_to_id, reply_preview_json, quotes_json, attachments_json, extra_messages_json, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		msg.ID, msg.GroupID, msg.SenderType, msg.SenderName, msg.AgentColor, msg.Content,
-		timelineJSON, msg.ReplyToID, replyPreviewJSON, quotesJSON, attachmentsJSON, msg.CreatedAt,
+		timelineJSON, msg.ReplyToID, replyPreviewJSON, quotesJSON, attachmentsJSON, extraMessagesJSON, msg.CreatedAt,
 	)
 	return err
 }
 
 func scanGroupMessage(rows *sql.Rows) (GroupMessage, error) {
 	var (
-		msg              GroupMessage
-		timelineJSON     string
-		replyPreviewJSON string
-		quotesJSON       string
-		attachmentsJSON  string
+		msg               GroupMessage
+		timelineJSON      string
+		replyPreviewJSON  string
+		quotesJSON        string
+		attachmentsJSON   string
+		extraMessagesJSON string
 	)
 	if err := rows.Scan(
 		&msg.ID, &msg.GroupID, &msg.SenderType, &msg.SenderName, &msg.AgentColor, &msg.Content,
-		&timelineJSON, &msg.ReplyToID, &replyPreviewJSON, &quotesJSON, &attachmentsJSON, &msg.CreatedAt,
+		&timelineJSON, &msg.ReplyToID, &replyPreviewJSON, &quotesJSON, &attachmentsJSON, &extraMessagesJSON, &msg.CreatedAt,
 	); err != nil {
 		return GroupMessage{}, err
 	}
-	if err := decodeMessageJSON(&msg, timelineJSON, replyPreviewJSON, quotesJSON, attachmentsJSON); err != nil {
+	if err := decodeMessageJSON(&msg, timelineJSON, replyPreviewJSON, quotesJSON, attachmentsJSON, extraMessagesJSON); err != nil {
 		return GroupMessage{}, err
 	}
 	return msg, nil
@@ -965,26 +1037,27 @@ func scanGroupMessage(rows *sql.Rows) (GroupMessage, error) {
 
 func scanGroupMessageWithSeq(rows *sql.Rows) (int64, GroupMessage, error) {
 	var (
-		seq              int64
-		msg              GroupMessage
-		timelineJSON     string
-		replyPreviewJSON string
-		quotesJSON       string
-		attachmentsJSON  string
+		seq               int64
+		msg               GroupMessage
+		timelineJSON      string
+		replyPreviewJSON  string
+		quotesJSON        string
+		attachmentsJSON   string
+		extraMessagesJSON string
 	)
 	if err := rows.Scan(
 		&seq, &msg.ID, &msg.GroupID, &msg.SenderType, &msg.SenderName, &msg.AgentColor, &msg.Content,
-		&timelineJSON, &msg.ReplyToID, &replyPreviewJSON, &quotesJSON, &attachmentsJSON, &msg.CreatedAt,
+		&timelineJSON, &msg.ReplyToID, &replyPreviewJSON, &quotesJSON, &attachmentsJSON, &extraMessagesJSON, &msg.CreatedAt,
 	); err != nil {
 		return 0, GroupMessage{}, err
 	}
-	if err := decodeMessageJSON(&msg, timelineJSON, replyPreviewJSON, quotesJSON, attachmentsJSON); err != nil {
+	if err := decodeMessageJSON(&msg, timelineJSON, replyPreviewJSON, quotesJSON, attachmentsJSON, extraMessagesJSON); err != nil {
 		return 0, GroupMessage{}, err
 	}
 	return seq, msg, nil
 }
 
-func decodeMessageJSON(msg *GroupMessage, timelineJSON, replyPreviewJSON, quotesJSON, attachmentsJSON string) error {
+func decodeMessageJSON(msg *GroupMessage, timelineJSON, replyPreviewJSON, quotesJSON, attachmentsJSON, extraMessagesJSON string) error {
 	if timelineJSON != "" {
 		if err := json.Unmarshal([]byte(timelineJSON), &msg.Timeline); err != nil {
 			return fmt.Errorf("unmarshal timeline: %w", err)
@@ -1005,6 +1078,11 @@ func decodeMessageJSON(msg *GroupMessage, timelineJSON, replyPreviewJSON, quotes
 	if attachmentsJSON != "" {
 		if err := json.Unmarshal([]byte(attachmentsJSON), &msg.Attachments); err != nil {
 			return fmt.Errorf("unmarshal attachments: %w", err)
+		}
+	}
+	if extraMessagesJSON != "" {
+		if err := json.Unmarshal([]byte(extraMessagesJSON), &msg.ExtraMessages); err != nil {
+			return fmt.Errorf("unmarshal extra_messages: %w", err)
 		}
 	}
 	return nil
@@ -1052,6 +1130,9 @@ func cloneStoredGroup(sg *storedGroup) *storedGroup {
 		if len(msg.Attachments) > 0 {
 			m.Attachments = make([]GroupAttachment, len(msg.Attachments))
 			copy(m.Attachments, msg.Attachments)
+		}
+		if len(msg.ExtraMessages) > 0 {
+			m.ExtraMessages = provider.CloneExtraMessages(msg.ExtraMessages)
 		}
 		out.Messages[i] = m
 	}
