@@ -3,48 +3,25 @@
 	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
-	import { revealPane } from '$lib/utils/scroll';
-	import { createSearchNav } from '$lib/utils/searchNav.svelte';
-	import { validate, type FieldErrors } from '$lib/utils/validation';
-	import { contactSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
-	import SidebarHeader from '$lib/components/app/SidebarHeader.svelte';
-	import SidebarSearchField from '$lib/components/app/SidebarSearchField.svelte';
-	import SidebarSkeletons from '$lib/components/app/SidebarSkeletons.svelte';
-	import FieldError from '$lib/components/common/FieldError.svelte';
+	import EmptyState from '$lib/components/common/EmptyState.svelte';
+	import ContactDialog from '$lib/components/contacts/ContactDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import {
-		Card,
-		CardContent,
-		CardDescription,
-		CardHeader,
-		CardTitle
-	} from '$lib/components/ui/card';
+	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Bot, Pencil, Plus, RefreshCw, Save, Trash2, X } from 'lucide-svelte';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { Bot, Globe, KeyRound, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-svelte';
 	import type { ContactView } from '$lib/types';
 
 	const { t } = useTranslation();
 
-	// Below lg the list and the panel share one scrolling page, so the panel is
-	// brought into view whenever a row further up is picked.
-	let detail = $state<HTMLElement | null>(null);
-
-	let saving = $state(false);
 	let query = $state('');
-
-	let name = $state('');
-	let url = $state('');
-	let token = $state('');
-	let description = $state('');
-	let errors = $state<FieldErrors>({});
+	let dialogOpen = $state(false);
 	let editing = $state<ContactView | null>(null);
-	let clearToken = $state(false);
 
 	let agent = $derived(agentSelection.selected);
 	useQuery(contactsStore.query, () => (agent ? { agent } : null));
@@ -64,98 +41,14 @@
 		);
 	});
 
-	let navItems = $derived(
-		filteredContacts.map((contact) => ({
-			id: contact.name,
-			activate: () => startEdit(contact)
-		}))
-	);
-
-	const searchNav = createSearchNav({
-		items: () => navItems,
-		query: () => query,
-		clear: () => (query = '')
-	});
-
-	async function create() {
-		if (!agent) return;
-		const result = validate(contactSchema, { name, url, token, description });
-		if (!result.ok) {
-			errors = result.errors;
-			return;
-		}
-		errors = {};
-		saving = true;
-		try {
-			await contactsStore.create(agent, {
-				name: result.data.name,
-				url: result.data.url,
-				token: result.data.token || undefined,
-				description: result.data.description || undefined
-			});
-			resetForm();
-			toastStore.success(t('myaaw.contacts.saved'));
-		} catch (err) {
-			toastStore.error(getErrorMessage(err));
-		} finally {
-			saving = false;
-		}
-	}
-
-	async function update() {
-		if (!agent || !editing) return;
-		const result = validate(contactSchema, { name, url, token, description });
-		if (!result.ok) {
-			errors = result.errors;
-			return;
-		}
-		errors = {};
-		saving = true;
-		try {
-			await contactsStore.update(agent, editing.name, {
-				name: result.data.name,
-				url: result.data.url,
-				// An empty field means "keep the stored token".
-				token: result.data.token || undefined,
-				description: result.data.description ?? '',
-				clear_token: clearToken
-			});
-			resetForm();
-			toastStore.success(t('myaaw.contacts.updated'));
-		} catch (err) {
-			toastStore.error(getErrorMessage(err));
-		} finally {
-			saving = false;
-		}
-	}
-
-	function submit() {
-		if (editing) {
-			void update();
-			return;
-		}
-		void create();
-	}
-
-	function startEdit(contact: ContactView) {
-		editing = contact;
-		name = contact.name;
-		url = contact.url;
-		description = contact.description ?? '';
-		token = '';
-		clearToken = false;
-		errors = {};
-		revealPane(detail);
-	}
-
-	function resetForm() {
+	function openCreate() {
 		editing = null;
-		name = '';
-		url = '';
-		token = '';
-		description = '';
-		clearToken = false;
-		errors = {};
+		dialogOpen = true;
+	}
+
+	function openEdit(contact: ContactView) {
+		editing = contact;
+		dialogOpen = true;
 	}
 
 	async function remove(contact: string) {
@@ -176,8 +69,6 @@
 	}
 </script>
 
-<svelte:window onkeydown={searchNav.onKeydown} />
-
 <TopBarActions id="contacts-refresh">
 	{#snippet children()}
 		<TopBarButton
@@ -189,181 +80,146 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+<div class="mx-auto w-full max-w-5xl space-y-4">
 	{#if !agent}
-		<div class="w-full p-4 lg:p-6 lg:pt-16">
-			<Card>
-				<CardContent class="py-10 text-center text-sm text-muted-foreground">
-					{t('myaaw.agent.none')}
-				</CardContent>
-			</Card>
-		</div>
+		<Card>
+			<CardContent class="py-10 text-center text-sm text-muted-foreground">
+				{t('myaaw.agent.none')}
+			</CardContent>
+		</Card>
 	{:else}
-		<!-- Contacts are remote A2A agents: a second sidebar nested inside the main one. -->
-		<aside
-			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-full lg:w-72 lg:border-r lg:border-b-0 lg:pt-14 xl:w-80"
-		>
-			<div class="shrink-0 space-y-2 px-4 py-2.5 lg:pt-1">
-				<SidebarHeader label={t('myaaw.contacts.list')} count={contacts.length} />
-				<SidebarSearchField
-					bind:inputRef={searchNav.input}
-					bind:value={query}
-					placeholder={t('common.search')}
-				/>
+		{#if error}
+			<div
+				class="rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive"
+			>
+				{error}
+			</div>
+		{/if}
+
+		<div class="rounded-xl border bg-card shadow-xs">
+			<div class="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
+				<div class="flex items-center gap-2">
+					<Bot class="h-4 w-4 text-primary" />
+					<h2 class="text-sm font-semibold text-foreground">{t('myaaw.contacts.list')}</h2>
+					<span
+						class="rounded-full bg-muted px-2 py-0.5 text-[11px] leading-none font-medium text-muted-foreground tabular-nums"
+					>
+						{contacts.length}
+					</span>
+				</div>
+
+				<div class="flex w-full items-center gap-2 sm:w-auto">
+					{#if contacts.length > 0 || query}
+						<div class="relative flex-1 sm:w-56 sm:flex-none">
+							<Search
+								class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+							/>
+							<Input bind:value={query} placeholder={t('common.search')} class="h-8 pl-8 text-xs" />
+						</div>
+					{/if}
+					<Button size="sm" onclick={openCreate} class="shrink-0 gap-1.5 rounded-lg">
+						<Plus class="h-3.5 w-3.5" />
+						{t('myaaw.contacts.create')}
+					</Button>
+				</div>
 			</div>
 
-			<div bind:this={searchNav.list} class="space-y-1 p-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+			<div class="p-4 sm:p-5">
 				{#if loading}
-					<SidebarSkeletons class="h-12" />
+					<div class="space-y-2.5">
+						<Skeleton class="h-20 w-full rounded-xl" />
+						<Skeleton class="h-20 w-full rounded-xl" />
+					</div>
 				{:else if contacts.length === 0}
-					<p class="px-1 py-2 text-sm text-muted-foreground">{t('myaaw.contacts.empty')}</p>
+					<EmptyState
+						title={t('myaaw.contacts.empty')}
+						description={t('myaaw.contacts.create_desc')}
+						bloub="curieux"
+						icon={Bot}
+						class="min-h-64"
+					/>
 				{:else if filteredContacts.length === 0}
-					<p class="px-1 py-2 text-sm text-muted-foreground">
+					<p class="py-10 text-center text-sm text-muted-foreground">
 						{t('myaaw.contacts.no_matches')}
 					</p>
 				{:else}
-					{#each filteredContacts as contact (contact.name)}
-						<div
-							class={[
-								'flex items-start gap-2 rounded-md px-1 py-1.5 hover:bg-muted list-row',
-								editing?.name === contact.name ? 'bg-accent' : '',
-								searchNav.cursor === contact.name ? 'ring-1 ring-ring/50' : ''
-							]}
-							data-nav-id={contact.name}
-							aria-current={editing?.name === contact.name ? 'true' : undefined}
-						>
-							<Bot class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-							<div class="min-w-0 flex-1">
-								<div class="flex items-center gap-1.5">
-									<span class="min-w-0 truncate text-sm font-medium">{contact.name}</span>
-									<Badge
-										variant={contact.token.configured ? 'secondary' : 'outline'}
-										class="shrink-0 text-[10px]"
+					<div class="space-y-2.5">
+						{#each filteredContacts as contact (contact.name)}
+							<div
+								class="flex flex-col gap-3 rounded-xl border bg-background/40 p-3.5 transition-colors hover:border-border/90 hover:bg-muted/20 sm:flex-row sm:items-center sm:justify-between"
+							>
+								<div class="flex min-w-0 items-start gap-3">
+									<div
+										class="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border bg-muted/40 text-muted-foreground"
 									>
-										{contact.token.configured ? contact.token.masked : t('myaaw.contacts.open')}
-									</Badge>
+										<Bot class="h-4 w-4" />
+									</div>
+									<div class="min-w-0 flex-1 space-y-1">
+										<div class="flex flex-wrap items-center gap-2">
+											<span class="text-sm font-semibold text-foreground wrap-anywhere">
+												{contact.name}
+											</span>
+											<Badge
+												variant={contact.token.configured ? 'secondary' : 'outline'}
+												class="gap-1 text-[10px]"
+											>
+												{#if contact.token.configured}
+													<KeyRound class="h-2.5 w-2.5" />
+													{contact.token.masked}
+												{:else}
+													{t('myaaw.contacts.open')}
+												{/if}
+											</Badge>
+										</div>
+
+										<p
+											class="flex items-center gap-1.5 truncate font-mono text-[11px] text-muted-foreground"
+											title={contact.url}
+										>
+											<Globe class="h-3 w-3 shrink-0 opacity-70" />
+											<span class="truncate">{contact.url}</span>
+										</p>
+
+										{#if contact.description}
+											<p class="line-clamp-2 text-xs text-muted-foreground">
+												{contact.description}
+											</p>
+										{/if}
+									</div>
 								</div>
-								<p class="truncate text-[10px] text-muted-foreground" title={contact.url}>
-									{contact.url}
-								</p>
-								{#if contact.description}
-									<p class="truncate text-[10px] text-muted-foreground" title={contact.description}>
-										{contact.description}
-									</p>
-								{/if}
+
+								<div class="flex shrink-0 items-center justify-end gap-1">
+									<Button
+										size="icon-sm"
+										variant="ghost"
+										onclick={() => openEdit(contact)}
+										aria-label={t('myaaw.contacts.edit')}
+										title={t('myaaw.contacts.edit')}
+									>
+										<Pencil class="h-3.5 w-3.5" />
+									</Button>
+									<Button
+										size="icon-sm"
+										variant="ghost"
+										onclick={() => remove(contact.name)}
+										aria-label={t('common.delete')}
+										title={t('common.delete')}
+									>
+										<Trash2 class="h-3.5 w-3.5 text-destructive" />
+									</Button>
+								</div>
 							</div>
-							<div class="mt-0.5 flex shrink-0 gap-0.5">
-								<Button
-									size="icon-xs"
-									variant="ghost"
-									onclick={() => startEdit(contact)}
-									aria-label={t('myaaw.contacts.edit')}
-									title={t('myaaw.contacts.edit')}
-								>
-									<Pencil class="h-3 w-3" />
-								</Button>
-								<Button
-									size="icon-xs"
-									variant="ghost"
-									onclick={() => remove(contact.name)}
-									aria-label={t('common.delete')}
-								>
-									<Trash2 class="h-3 w-3 text-destructive" />
-								</Button>
-							</div>
-						</div>
-					{/each}
+						{/each}
+					</div>
 				{/if}
 			</div>
-		</aside>
-
-		<section
-			bind:this={detail}
-			class="flex flex-col gap-4 p-4 lg:mt-14 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-6 lg:pt-1 lg:pb-6"
-		>
-			{#if error}
-				<div
-					class="shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-				>
-					{error}
-				</div>
-			{/if}
-
-			<Card class="mx-auto w-full max-w-3xl shrink-0">
-				<CardHeader>
-					<CardTitle class="flex items-center gap-2">
-						<Bot class="h-4 w-4" />
-						{editing ? t('myaaw.contacts.edit') : t('myaaw.contacts.create')}
-					</CardTitle>
-					<CardDescription>
-						{editing ? t('myaaw.contacts.edit_desc') : t('myaaw.contacts.create_desc')}
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<form
-						class="space-y-3"
-						onsubmit={(event) => {
-							event.preventDefault();
-							submit();
-						}}
-					>
-						<div class="grid gap-1">
-							<Label for="contact-name">{t('myaaw.contacts.name')}</Label>
-							<Input id="contact-name" bind:value={name} placeholder="research" />
-							<FieldError code={errors.name} />
-						</div>
-						<div class="grid gap-1">
-							<Label for="contact-url">{t('myaaw.contacts.url')}</Label>
-							<Input id="contact-url" bind:value={url} placeholder="https://host/a2a" />
-							<FieldError code={errors.url} />
-						</div>
-						<div class="grid gap-1">
-							<Label for="contact-token">{t('myaaw.contacts.token')}</Label>
-							<Input
-								id="contact-token"
-								type="password"
-								bind:value={token}
-								disabled={editing ? clearToken : false}
-							/>
-							<p class="text-[10px] text-muted-foreground">
-								{editing ? t('myaaw.contacts.token_hint_keep') : t('myaaw.contacts.token_hint')}
-							</p>
-							{#if editing?.token.configured}
-								<label class="flex items-center gap-2 text-xs text-muted-foreground">
-									<input
-										type="checkbox"
-										bind:checked={clearToken}
-										class="h-3.5 w-3.5 accent-primary"
-									/>
-									{t('myaaw.contacts.clear_token')}
-								</label>
-							{/if}
-						</div>
-						<div class="grid gap-1">
-							<Label for="contact-description">{t('myaaw.contacts.description')}</Label>
-							<Input id="contact-description" bind:value={description} />
-							<FieldError code={errors.description} />
-						</div>
-						<div class="flex flex-wrap gap-2">
-							<Button type="submit" size="sm" loading={saving}>
-								{#if editing}
-									<Save class="mr-2 h-4 w-4" />
-									{t('common.save')}
-								{:else}
-									<Plus class="mr-2 h-4 w-4" />
-									{t('myaaw.contacts.create')}
-								{/if}
-							</Button>
-							{#if editing}
-								<Button type="button" size="sm" variant="ghost" onclick={resetForm}>
-									<X class="mr-2 h-4 w-4" />
-									{t('common.cancel')}
-								</Button>
-							{/if}
-						</div>
-					</form>
-				</CardContent>
-			</Card>
-		</section>
+		</div>
 	{/if}
+
+	<ContactDialog
+		open={dialogOpen}
+		agent={agent ?? ''}
+		{editing}
+		onOpenChange={(next) => (dialogOpen = next)}
+	/>
 </div>
