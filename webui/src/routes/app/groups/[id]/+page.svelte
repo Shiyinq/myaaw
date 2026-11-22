@@ -301,6 +301,7 @@
 	let transcript = $state<HTMLDivElement | null>(null);
 	let composer = $state<HTMLTextAreaElement | null>(null);
 	let stickToBottom = $state(true);
+	let unreadBelowCount = $state(0);
 
 	// @mention autocomplete state.
 	let mentionOpen = $state(false);
@@ -506,11 +507,14 @@
 					if (target) {
 						target.scrollIntoView({ behavior: 'instant', block: 'start' });
 					}
+					stickToBottom = nearBottom();
+					unreadBelowCount = stickToBottom ? 0 : initialUnread;
 				};
 				scrollToUnread();
 				requestAnimationFrame(scrollToUnread);
 			} else {
 				stickToBottom = true;
+				unreadBelowCount = 0;
 				await tick();
 				if (token !== loadToken) return;
 				scrollToBottom(false);
@@ -765,6 +769,9 @@
 				if (!messages.some((existing) => existing.id === msg.id)) {
 					messages = [...messages, msg];
 					totalMessages += 1;
+					if (!stickToBottom && msg.sender_type !== 'user') {
+						unreadBelowCount += 1;
+					}
 				}
 				if (msg.attachments && msg.attachments.length > 0) {
 					attachmentsRefreshKey += 1;
@@ -867,6 +874,7 @@
 
 	function scrollToBottom(smooth = true) {
 		stickToBottom = true;
+		unreadBelowCount = 0;
 		if (!scroller) return;
 		if (!smooth) {
 			scroller.scrollTop = scroller.scrollHeight;
@@ -902,6 +910,7 @@
 
 	function onScroll() {
 		stickToBottom = nearBottom();
+		if (stickToBottom) unreadBelowCount = 0;
 		askAnchor = null;
 		// Near the top of the transcript, pull in the previous page seamlessly.
 		if (
@@ -2398,20 +2407,28 @@
 				</div>
 			</div>
 
-			{#if !stickToBottom && messages.length > 0}
-				<button
-					type="button"
-					onclick={() => scrollToBottom(true)}
-					aria-label={t('myaaw.groups.scroll_bottom')}
-					class="absolute right-6 bottom-32 z-20 grid h-8 w-8 place-items-center rounded-full border bg-card text-muted-foreground shadow-md transition-colors hover:bg-muted hover:text-foreground"
-				>
-					<ArrowDown class="h-4 w-4" />
-				</button>
-			{/if}
-
 			<!-- Composer footer (no border-t divider, exact max-w-4xl & padding matching regular 1-on-1 chat) -->
 			<div class="shrink-0 px-2 py-2 sm:px-4 sm:py-3">
 				<div class="relative mx-auto w-full max-w-4xl space-y-2">
+					{#if !stickToBottom && messages.length > 0}
+						<button
+							type="button"
+							transition:fade={{ duration: 150 }}
+							onclick={() => scrollToBottom(true)}
+							title={t('myaaw.groups.scroll_bottom')}
+							aria-label={t('myaaw.groups.scroll_bottom')}
+							class="absolute right-1 -top-12 z-20 inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-border/80 bg-card/95 px-2.5 text-muted-foreground shadow-md backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground"
+						>
+							{#if unreadBelowCount > 0}
+								<span
+									class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] leading-none font-semibold text-primary-foreground tabular-nums"
+								>
+									{unreadBelowCount > 99 ? '99+' : unreadBelowCount}
+								</span>
+							{/if}
+							<ArrowDown class="h-4 w-4" />
+						</button>
+					{/if}
 					<!-- Live run status / pause banner -->
 					{#if runState.running}
 						<div
