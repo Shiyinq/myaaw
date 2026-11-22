@@ -62,13 +62,36 @@ type storedExtraMessage struct {
 
 var interactionStateMu sync.Mutex
 
+func ensureInteractionCallbacksTable(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS interaction_callbacks (
+		key TEXT PRIMARY KEY,
+		conversation_id TEXT NOT NULL DEFAULT '',
+		user_id INTEGER NOT NULL DEFAULT 0,
+		channel TEXT NOT NULL DEFAULT '',
+		block_id TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		action_id TEXT NOT NULL DEFAULT '',
+		card_id TEXT NOT NULL DEFAULT '',
+		label TEXT NOT NULL DEFAULT '',
+		value TEXT NOT NULL DEFAULT '',
+		meta_json TEXT NOT NULL DEFAULT '',
+		created_at DATETIME NOT NULL
+	)`); err != nil {
+		return err
+	}
+	_, err := db.Exec(
+		`CREATE INDEX IF NOT EXISTS idx_interaction_callbacks_created ON interaction_callbacks(created_at)`,
+	)
+	return err
+}
+
 // SaveInteractionCallback inserts a callback record with a generated 8-char hex
 // key (or reuses cb.Key when supplied) and returns the key.
 func SaveInteractionCallback(db *sql.DB, cb InteractionCallback) (string, error) {
 	if db == nil {
 		return "", errors.New("database is nil")
 	}
-	if err := EnsureSchema(db); err != nil {
+	if err := ensureInteractionCallbacksTable(db); err != nil {
 		return "", err
 	}
 	key := strings.TrimSpace(cb.Key)
@@ -119,7 +142,7 @@ func GetInteractionCallback(db *sql.DB, key string) (InteractionCallback, bool, 
 	if key == "" {
 		return InteractionCallback{}, false, nil
 	}
-	if err := EnsureSchema(db); err != nil {
+	if err := ensureInteractionCallbacksTable(db); err != nil {
 		return InteractionCallback{}, false, err
 	}
 
@@ -168,9 +191,9 @@ func MarkBlockSubmitted(
 	actor string,
 	summary string,
 	payload map[string]any,
-) (alreadySubmitted bool, state BlockInteractionState, err error) {
+) (matchedConvID string, alreadySubmitted bool, state BlockInteractionState, err error) {
 	if db == nil || strings.TrimSpace(blockID) == "" {
-		return false, BlockInteractionState{}, nil
+		return "", false, BlockInteractionState{}, nil
 	}
 
 	interactionStateMu.Lock()
@@ -178,7 +201,7 @@ func MarkBlockSubmitted(
 
 	tx, err := db.Begin()
 	if err != nil {
-		return false, BlockInteractionState{}, err
+		return "", false, BlockInteractionState{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -194,14 +217,14 @@ func MarkBlockSubmitted(
 		if err == nil {
 			candidates = append(candidates, convRow{id: id, messagesJSON: raw})
 		} else if !errors.Is(err, sql.ErrNoRows) {
-			return false, BlockInteractionState{}, err
+			return "", false, BlockInteractionState{}, err
 		}
 	}
 
 	if len(candidates) == 0 {
 		rows, qErr := tx.Query(`SELECT id, messages FROM conversations ORDER BY updated_at DESC LIMIT 25`)
 		if qErr != nil {
-			return false, BlockInteractionState{}, qErr
+			return "", false, BlockInteractionState{}, qErr
 		}
 		for rows.Next() {
 			var r convRow
@@ -240,7 +263,7 @@ func MarkBlockSubmitted(
 					}
 					matched = true
 					if blk.isSingleUse() && blk.State != nil && blk.State.Status == "submitted" {
-						return true, *blk.State, nil
+						return cand.id, true, *blk.State, nil
 					}
 					nextState := BlockInteractionState{
 						Status:     "submitted",
@@ -257,7 +280,7 @@ func MarkBlockSubmitted(
 			if matched {
 				encodedExtras, mErr := json.Marshal(extras)
 				if mErr != nil {
-					return false, BlockInteractionState{}, mErr
+					return "", false, BlockInteractionState{}, mErr
 				}
 				rawMessages[i]["extra_messages"] = encodedExtras
 			}
@@ -268,16 +291,16 @@ func MarkBlockSubmitted(
 
 		encoded, mErr := json.Marshal(rawMessages)
 		if mErr != nil {
-			return false, BlockInteractionState{}, mErr
+			return "", false, BlockInteractionState{}, mErr
 		}
 		if _, eErr := tx.Exec(`UPDATE conversations SET messages = ? WHERE id = ?`, string(encoded), cand.id); eErr != nil {
-			return false, BlockInteractionState{}, eErr
+			return "", false, BlockInteractionState{}, eErr
 		}
 		if cErr := tx.Commit(); cErr != nil {
-			return false, BlockInteractionState{}, cErr
+			return "", false, BlockInteractionState{}, cErr
 		}
-		return false, state, nil
+		return cand.id, false, state, nil
 	}
 
-	return false, BlockInteractionState{}, nil
+	return "", false, BlockInteractionState{}, nil
 }

@@ -1,12 +1,15 @@
 package discord
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -14,6 +17,7 @@ import (
 	"myaaw/internal/chatdb"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
+	"myaaw/internal/services/bot/events"
 	"myaaw/internal/services/queue/repository"
 )
 
@@ -25,14 +29,54 @@ const (
 	discordExtraModalPrefix  = "em_modal:"
 )
 
-func (d *DiscordAdapter) sendExtraMessages(channelID string, userID int, conversationID string, extras []provider.ExtraMessage) error {
+func splitDiscordCarouselLocalAttachments(atts []channel.Attachment, extras []provider.ExtraMessage) ([]channel.Attachment, map[string]channel.Attachment) {
+	if len(atts) == 0 || len(extras) == 0 {
+		return atts, nil
+	}
+	wanted := map[string]bool{}
+	for _, em := range extras {
+		for _, block := range em.Blocks {
+			if block.Type != "carousel" {
+				continue
+			}
+			var data channel.ExtraCarouselData
+			if json.Unmarshal(block.Data, &data) != nil {
+				continue
+			}
+			for i, card := range data.Cards {
+				if i >= 10 {
+					break
+				}
+				if p := strings.TrimSpace(card.ImagePath); p != "" {
+					wanted[p] = true
+				}
+			}
+		}
+	}
+	if len(wanted) == 0 {
+		return atts, nil
+	}
+	localFiles := map[string]channel.Attachment{}
+	remaining := make([]channel.Attachment, 0, len(atts))
+	for _, att := range atts {
+		p := strings.TrimSpace(att.Path)
+		if p != "" && len(att.Data) > 0 && wanted[p] {
+			localFiles[p] = att
+			continue
+		}
+		remaining = append(remaining, att)
+	}
+	return remaining, localFiles
+}
+
+func (d *DiscordAdapter) sendExtraMessages(channelID string, userID int, conversationID string, extras []provider.ExtraMessage, localFiles map[string]channel.Attachment) error {
 	if len(extras) == 0 {
 		return nil
 	}
 	if d.session == nil {
 		return nil
 	}
-	return sendDiscordExtraMessagesWithSender(config.DB, channelID, userID, conversationID, extras, func(msg *discordgo.MessageSend) error {
+	return sendDiscordExtraMessagesWithSender(config.DB, channelID, userID, conversationID, extras, localFiles, func(msg *discordgo.MessageSend) error {
 		_, err := d.session.ChannelMessageSendComplex(channelID, msg)
 		return err
 	})
@@ -44,6 +88,7 @@ func sendDiscordExtraMessagesWithSender(
 	userID int,
 	conversationID string,
 	extras []provider.ExtraMessage,
+	localFiles map[string]channel.Attachment,
 	sendFn func(msg *discordgo.MessageSend) error,
 ) error {
 	var firstErr error
@@ -55,7 +100,7 @@ func sendDiscordExtraMessagesWithSender(
 
 	for _, em := range extras {
 		for _, block := range em.Blocks {
-			payloads := buildDiscordBlockMessages(db, userID, conversationID, block)
+			payloads := buildDiscordBlockMessages(db, userID, conversationID, block, localFiles)
 			for _, p := range payloads {
 				recordErr(sendFn(p))
 			}
@@ -64,7 +109,7 @@ func sendDiscordExtraMessagesWithSender(
 	return firstErr
 }
 
-func buildDiscordBlockMessages(db *sql.DB, userID int, conversationID string, block provider.ExtraBlock) []*discordgo.MessageSend {
+func buildDiscordBlockMessages(db *sql.DB, userID int, conversationID string, block provider.ExtraBlock, localFiles map[string]channel.Attachment) []*discordgo.MessageSend {
 	switch block.Type {
 	case "media":
 		return buildDiscordMediaMessages(block)
@@ -73,7 +118,7 @@ func buildDiscordBlockMessages(db *sql.DB, userID int, conversationID string, bl
 	case "quick_replies":
 		return buildDiscordQuickRepliesMessages(db, userID, conversationID, block)
 	case "carousel":
-		return buildDiscordCarouselMessages(db, userID, conversationID, block)
+		return buildDiscordCarouselMessages(db, userID, conversationID, block, localFiles)
 	case "form":
 		return buildDiscordFormMessages(db, userID, conversationID, block)
 	case "checklist":
@@ -312,12 +357,13 @@ func buildDiscordQuickRepliesMessages(db *sql.DB, userID int, conversationID str
 	}}
 }
 
-func buildDiscordCarouselMessages(db *sql.DB, userID int, conversationID string, block provider.ExtraBlock) []*discordgo.MessageSend {
+func buildDiscordCarouselMessages(db *sql.DB, userID int, conversationID string, block provider.ExtraBlock, localFiles map[string]channel.Attachment) []*discordgo.MessageSend {
 	var data channel.ExtraCarouselData
 	if json.Unmarshal(block.Data, &data) != nil || len(data.Cards) == 0 {
 		return nil
 	}
 	embeds := make([]*discordgo.MessageEmbed, 0, len(data.Cards))
+	var files []*discordgo.File
 	var allButtons []channel.ExtraButton
 	cardByBtn := make(map[string]string)
 
@@ -337,7 +383,23 @@ func buildDiscordCarouselMessages(db *sql.DB, userID int, conversationID string,
 			Title:       clipDiscordText(card.Title, 256),
 			Description: clipDiscordText(desc, 2000),
 		}
-		if card.ImageURL != "" {
+		if att, hasLocal := localFiles[strings.TrimSpace(card.ImagePath)]; hasLocal && len(att.Data) > 0 {
+			ext := filepath.Ext(att.FileName)
+			if ext == "" {
+				ext = ".png"
+			}
+			safeName := fmt.Sprintf("card_%d%s", i+1, ext)
+			mimeType := att.MimeType
+			if mimeType == "" {
+				mimeType = "image/png"
+			}
+			files = append(files, &discordgo.File{
+				Name:        safeName,
+				ContentType: mimeType,
+				Reader:      bytes.NewReader(att.Data),
+			})
+			emb.Image = &discordgo.MessageEmbedImage{URL: "attachment://" + safeName}
+		} else if card.ImageURL != "" {
 			emb.Image = &discordgo.MessageEmbedImage{URL: card.ImageURL}
 		}
 		if len(card.Badges) > 0 {
@@ -403,6 +465,7 @@ func buildDiscordCarouselMessages(db *sql.DB, userID int, conversationID string,
 	return []*discordgo.MessageSend{{
 		Embeds:     embeds,
 		Components: rows,
+		Files:      files,
 	}}
 }
 
@@ -612,9 +675,25 @@ func saveDiscordCallback(db *sql.DB, cb chatdb.InteractionCallback) (string, err
 		db = config.DB
 	}
 	if db == nil {
+		log.Printf("discord extra_messages: sqlite db not initialized for block %s", cb.BlockID)
 		return "", fmt.Errorf("sqlite db not initialized")
 	}
-	return chatdb.SaveInteractionCallback(db, cb)
+	key, err := chatdb.SaveInteractionCallback(db, cb)
+	if err != nil {
+		log.Printf("discord extra_messages: save callback for block %s failed: %v", cb.BlockID, err)
+	}
+	return key, err
+}
+
+func publishInteractionEvent(conversationID string) {
+	if strings.TrimSpace(conversationID) == "" {
+		return
+	}
+	events.Default().Publish(events.TurnEvent{
+		ConversationID: conversationID,
+		Trigger:        "interaction",
+		At:             time.Now().UTC().Format(time.RFC3339Nano),
+	})
 }
 
 func clipDiscordText(s string, max int) string {
@@ -687,7 +766,7 @@ func resolveDiscordButtonInteraction(db *sql.DB, s *discordgo.Session, i *discor
 		summary = strings.TrimSpace(rec.Value)
 	}
 
-	already, _, lockErr := chatdb.MarkBlockSubmitted(db, rec.ConversationID, rec.BlockID, "discord", summary, payload)
+	matchedConvID, already, _, lockErr := chatdb.MarkBlockSubmitted(db, rec.ConversationID, rec.BlockID, "discord", summary, payload)
 	if lockErr != nil {
 		log.Printf("discord extra_messages: lock block %s: %v", rec.BlockID, lockErr)
 	}
@@ -695,6 +774,7 @@ func resolveDiscordButtonInteraction(db *sql.DB, s *discordgo.Session, i *discor
 		respondDiscordEphemeral(s, i, "Already submitted.")
 		return
 	}
+	publishInteractionEvent(matchedConvID)
 
 	if s != nil {
 		updatedContent := "✓ Selected: **" + summary + "**"
@@ -743,11 +823,12 @@ func resolveDiscordQuickReplyMenu(db *sql.DB, s *discordgo.Session, i *discordgo
 		"label":     chosenLabel,
 		"value":     chosenVal,
 	}
-	already, _, _ := chatdb.MarkBlockSubmitted(db, rec.ConversationID, rec.BlockID, "discord", chosenLabel, payload)
+	matchedConvID, already, _, _ := chatdb.MarkBlockSubmitted(db, rec.ConversationID, rec.BlockID, "discord", chosenLabel, payload)
 	if already {
 		respondDiscordEphemeral(s, i, "Already submitted.")
 		return
 	}
+	publishInteractionEvent(matchedConvID)
 	if s != nil {
 		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseUpdateMessage,
@@ -794,11 +875,12 @@ func resolveDiscordChecklistMenu(db *sql.DB, s *discordgo.Session, i *discordgo.
 			"checked_labels": labels,
 		},
 	}
-	already, _, _ := chatdb.MarkBlockSubmitted(db, rec.ConversationID, rec.BlockID, "discord", summary, payload)
+	matchedConvID, already, _, _ := chatdb.MarkBlockSubmitted(db, rec.ConversationID, rec.BlockID, "discord", summary, payload)
 	if already {
 		respondDiscordEphemeral(s, i, "Already submitted.")
 		return
 	}
+	publishInteractionEvent(matchedConvID)
 	if s != nil {
 		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseUpdateMessage,
@@ -849,10 +931,14 @@ func openDiscordExtraFormModal(db *sql.DB, s *discordgo.Session, i *discordgo.In
 		})
 	}
 	if s != nil {
+		modalID := discordExtraModalPrefix + key
+		if i.Message != nil && i.Message.ID != "" {
+			modalID += ":" + i.Message.ID
+		}
 		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseModal,
 			Data: &discordgo.InteractionResponseData{
-				CustomID:   discordExtraModalPrefix + key,
+				CustomID:   modalID,
 				Title:      clipDiscordText(form.Title, 45),
 				Components: components,
 			},
@@ -860,7 +946,14 @@ func openDiscordExtraFormModal(db *sql.DB, s *discordgo.Session, i *discordgo.In
 	}
 }
 
-func resolveDiscordFormModalSubmit(db *sql.DB, s *discordgo.Session, i *discordgo.InteractionCreate, queueRepo repository.QueueRepository, key string) {
+func resolveDiscordFormModalSubmit(db *sql.DB, s *discordgo.Session, i *discordgo.InteractionCreate, queueRepo repository.QueueRepository, rawKey string) {
+	key := rawKey
+	originMsgID := ""
+	if parts := strings.SplitN(rawKey, ":", 2); len(parts) == 2 {
+		key = parts[0]
+		originMsgID = parts[1]
+	}
+
 	rec, found, err := chatdb.GetInteractionCallback(db, key)
 	if err != nil || !found {
 		respondDiscordEphemeral(s, i, "This form has expired.")
@@ -868,9 +961,9 @@ func resolveDiscordFormModalSubmit(db *sql.DB, s *discordgo.Session, i *discordg
 	}
 	var form channel.ExtraFormData
 	_ = json.Unmarshal([]byte(rec.MetaJSON), &form)
-	labelByName := make(map[string]string, len(form.Fields))
+	fieldByName := make(map[string]channel.ExtraFormField, len(form.Fields))
 	for _, f := range form.Fields {
-		labelByName[f.Name] = f.Label
+		fieldByName[f.Name] = f
 	}
 
 	values := make(map[string]any)
@@ -896,13 +989,35 @@ func resolveDiscordFormModalSubmit(db *sql.DB, s *discordgo.Session, i *discordg
 			if ti == nil {
 				continue
 			}
-			values[ti.CustomID] = ti.Value
-			if strings.TrimSpace(ti.Value) != "" {
-				lbl := labelByName[ti.CustomID]
-				if lbl == "" {
-					lbl = ti.CustomID
+			trimmed := strings.TrimSpace(ti.Value)
+			field := fieldByName[ti.CustomID]
+			lbl := field.Label
+			if lbl == "" {
+				lbl = ti.CustomID
+			}
+
+			if strings.EqualFold(field.Type, "number") && trimmed != "" {
+				num, parseErr := strconv.ParseFloat(trimmed, 64)
+				if parseErr != nil {
+					respondDiscordEphemeral(s, i, fmt.Sprintf("Field %q must be a valid number.", lbl))
+					return
 				}
-				summaryParts = append(summaryParts, fmt.Sprintf("%s: %s", lbl, strings.TrimSpace(ti.Value)))
+				if field.Min != nil && num < *field.Min {
+					respondDiscordEphemeral(s, i, fmt.Sprintf("Field %q must be at least %g.", lbl, *field.Min))
+					return
+				}
+				if field.Max != nil && num > *field.Max {
+					respondDiscordEphemeral(s, i, fmt.Sprintf("Field %q must be at most %g.", lbl, *field.Max))
+					return
+				}
+				values[ti.CustomID] = num
+				summaryParts = append(summaryParts, fmt.Sprintf("%s: %g", lbl, num))
+				continue
+			}
+
+			values[ti.CustomID] = ti.Value
+			if trimmed != "" {
+				summaryParts = append(summaryParts, fmt.Sprintf("%s: %s", lbl, trimmed))
 			}
 		}
 	}
@@ -918,11 +1033,12 @@ func resolveDiscordFormModalSubmit(db *sql.DB, s *discordgo.Session, i *discordg
 		"values":    values,
 	}
 
-	already, _, _ := chatdb.MarkBlockSubmitted(db, rec.ConversationID, rec.BlockID, "discord", summary, payload)
+	matchedConvID, already, _, _ := chatdb.MarkBlockSubmitted(db, rec.ConversationID, rec.BlockID, "discord", summary, payload)
 	if already {
 		respondDiscordEphemeral(s, i, "Already submitted.")
 		return
 	}
+	publishInteractionEvent(matchedConvID)
 	if s != nil {
 		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -930,6 +1046,14 @@ func resolveDiscordFormModalSubmit(db *sql.DB, s *discordgo.Session, i *discordg
 				Content: "📋 Submitted **" + form.Title + "**",
 			},
 		})
+		if originMsgID != "" && i.ChannelID != "" {
+			empty := []discordgo.MessageComponent{}
+			_, _ = s.ChannelMessageEditComplex(&discordgo.MessageEdit{
+				Channel:    i.ChannelID,
+				ID:         originMsgID,
+				Components: &empty,
+			})
+		}
 	}
 	enqueueDiscordInteraction(s, i, queueRepo, provider.InteractionBlock(provider.InteractionForm, payload, summary))
 }

@@ -100,10 +100,11 @@ type telegramTimeline struct {
 	finalText   string
 	finalTrace  []provider.ReactStep
 	finalUsage  provider.Usage
-	finalSent     bool
-	attachments   []channel.Attachment
-	extraMessages []provider.ExtraMessage
-	err           error
+	finalSent      bool
+	conversationID string
+	attachments    []channel.Attachment
+	extraMessages  []provider.ExtraMessage
+	err            error
 
 	editThreshold int
 	editInterval  time.Duration
@@ -157,6 +158,10 @@ func (tl *telegramTimeline) handleChunk(chunk channel.StreamChunk) {
 		tl.startTool(chunk.ToolCallID, name, chunk.ToolArguments)
 	case "tool_result":
 		tl.finishTool(chunk.ToolCallID, chunk.ToolName, chunk.ToolResultText, chunk.IsError)
+	case "conversation":
+		if chunk.ConversationID != "" {
+			tl.conversationID = chunk.ConversationID
+		}
 	case "attachment":
 		tl.attachments = append(tl.attachments, chunk.Attachments...)
 	case "extra_messages":

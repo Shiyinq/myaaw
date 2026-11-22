@@ -97,24 +97,24 @@ func TestMarkBlockSubmittedAtomicLock(t *testing.T) {
 		t.Fatalf("insert conversation: %v", err)
 	}
 
-	already, state, err := MarkBlockSubmitted(db, "conv-1", "blk_btn", "telegram", "Go", map[string]any{"action_id": "b1"})
+	convID, already, state, err := MarkBlockSubmitted(db, "conv-1", "blk_btn", "telegram", "Go", map[string]any{"action_id": "b1"})
 	if err != nil {
 		t.Fatalf("first MarkBlockSubmitted: %v", err)
 	}
-	if already {
-		t.Fatal("first submit should not report alreadySubmitted")
+	if already || convID != "conv-1" {
+		t.Fatalf("first submit unexpected: convID=%q already=%v", convID, already)
 	}
 	if state.Status != "submitted" || state.Actor != "telegram" || state.Summary != "Go" {
 		t.Fatalf("unexpected state: %+v", state)
 	}
 
 	// Second submit on the same single-use block must be rejected.
-	already2, state2, err := MarkBlockSubmitted(db, "conv-1", "blk_btn", "web", "Go again", map[string]any{"action_id": "b1"})
+	convID2, already2, state2, err := MarkBlockSubmitted(db, "conv-1", "blk_btn", "web", "Go again", map[string]any{"action_id": "b1"})
 	if err != nil {
 		t.Fatalf("second MarkBlockSubmitted: %v", err)
 	}
-	if !already2 {
-		t.Fatal("expected alreadySubmitted=true on duplicate submit")
+	if !already2 || convID2 != "conv-1" {
+		t.Fatalf("expected alreadySubmitted=true on duplicate submit, got convID=%q already=%v", convID2, already2)
 	}
 	if state2.Actor != "telegram" {
 		t.Fatalf("expected original actor preserved, got %+v", state2)

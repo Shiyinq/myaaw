@@ -1,10 +1,14 @@
 package telegram
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
+	"mime/multipart"
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +18,7 @@ import (
 	"myaaw/internal/chatdb"
 	"myaaw/internal/config"
 	"myaaw/internal/provider"
+	"myaaw/internal/services/bot/events"
 )
 
 const extraCallbackPrefix = "em:"
@@ -28,6 +33,46 @@ type telegramExtraCallbackQuery struct {
 	Message *UserMessage `json:"message"`
 }
 
+// splitCarouselLocalAttachments separates local image_path bytes referenced by
+// carousel cards (up to 5 cards) so they attach directly onto each carousel
+// card's sendPhoto request instead of being sent as separate unlinked photos.
+func splitCarouselLocalAttachments(atts []channel.Attachment, extras []provider.ExtraMessage) ([]channel.Attachment, map[string]channel.Attachment) {
+	if len(atts) == 0 || len(extras) == 0 {
+		return atts, nil
+	}
+	wanted := map[string]bool{}
+	for _, em := range extras {
+		for _, block := range em.Blocks {
+			if block.Type != "carousel" {
+				continue
+			}
+			var data channel.ExtraCarouselData
+			if json.Unmarshal(block.Data, &data) != nil || len(data.Cards) > 5 {
+				continue
+			}
+			for _, card := range data.Cards {
+				if p := strings.TrimSpace(card.ImagePath); p != "" {
+					wanted[p] = true
+				}
+			}
+		}
+	}
+	if len(wanted) == 0 {
+		return atts, nil
+	}
+	localFiles := map[string]channel.Attachment{}
+	remaining := make([]channel.Attachment, 0, len(atts))
+	for _, att := range atts {
+		p := strings.TrimSpace(att.Path)
+		if p != "" && len(att.Data) > 0 && wanted[p] {
+			localFiles[p] = att
+			continue
+		}
+		remaining = append(remaining, att)
+	}
+	return remaining, localFiles
+}
+
 // sendTelegramExtraMessages translates canonical extra_messages into native
 // Telegram primitives (media groups/URLs, InlineKeyboardMarkup buttons, or
 // clean Markdown fallbacks for unsupported widgets like dynamic forms).
@@ -36,6 +81,7 @@ func sendTelegramExtraMessages(
 	chatID, threadID, replyTo, userID int,
 	conversationID string,
 	extras []provider.ExtraMessage,
+	localFiles map[string]channel.Attachment,
 ) error {
 	if len(extras) == 0 {
 		return nil
@@ -57,7 +103,7 @@ func sendTelegramExtraMessages(
 			case "quick_replies":
 				recordErr(sendTelegramExtraQuickReplies(db, chatID, threadID, replyTo, userID, conversationID, block))
 			case "carousel":
-				recordErr(sendTelegramExtraCarousel(db, chatID, threadID, replyTo, userID, conversationID, block))
+				recordErr(sendTelegramExtraCarousel(db, chatID, threadID, replyTo, userID, conversationID, block, localFiles))
 			default:
 				text := channel.FormatExtraBlockFallback(block)
 				if text != "" {
@@ -283,6 +329,7 @@ func sendTelegramExtraCarousel(
 	chatID, threadID, replyTo, userID int,
 	conversationID string,
 	block provider.ExtraBlock,
+	localFiles map[string]channel.Attachment,
 ) error {
 	var data channel.ExtraCarouselData
 	if err := json.Unmarshal(block.Data, &data); err != nil || len(data.Cards) == 0 {
@@ -295,7 +342,7 @@ func sendTelegramExtraCarousel(
 		}
 	}
 
-	// Send up to 5 cards individually (with image_url + inline keyboard when present).
+	// Send up to 5 cards individually (with image_path multipart or image_url + inline keyboard).
 	// For >5 cards, fall back to a compact formatted list + aggregated action buttons.
 	if len(data.Cards) <= 5 {
 		for _, card := range data.Cards {
@@ -309,7 +356,10 @@ func sendTelegramExtraCarousel(
 			}
 			rows := buildTelegramButtonRows(db, userID, conversationID, block.ID, card.ID, card.Buttons, false)
 
-			if card.ImageURL != "" {
+			if att, hasLocal := localFiles[strings.TrimSpace(card.ImagePath)]; hasLocal && len(att.Data) > 0 {
+				err := postTelegramPhotoWithMarkup(chatID, threadID, replyTo, att.FileName, att.Data, caption.String(), rows)
+				recordErr(err)
+			} else if card.ImageURL != "" {
 				body := map[string]any{
 					"chat_id": chatID,
 					"photo":   card.ImageURL,
@@ -430,14 +480,74 @@ func buildTelegramButtonRows(
 	return rows
 }
 
+func postTelegramPhotoWithMarkup(
+	chatID, threadID, replyTo int,
+	fileName string,
+	data []byte,
+	caption string,
+	rows [][]map[string]string,
+) error {
+	if strings.TrimSpace(fileName) == "" {
+		fileName = "card.png"
+	}
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	_ = mw.WriteField("chat_id", strconv.Itoa(chatID))
+	if threadID != 0 {
+		_ = mw.WriteField("message_thread_id", strconv.Itoa(threadID))
+	}
+	if replyTo != 0 {
+		_ = mw.WriteField("reply_to_message_id", strconv.Itoa(replyTo))
+	}
+	if caption != "" {
+		_ = mw.WriteField("caption", caption)
+	}
+	if len(rows) > 0 {
+		if rawMarkup, err := json.Marshal(map[string]any{"inline_keyboard": rows}); err == nil {
+			_ = mw.WriteField("reply_markup", string(rawMarkup))
+		}
+	}
+	part, err := mw.CreateFormFile("photo", fileName)
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(data); err != nil {
+		return err
+	}
+	if err := mw.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, telegramAPIURL("sendPhoto"), &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	httpClient := &http.Client{Timeout: telegramFileTimeout}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("telegram sendPhoto multipart failed: %s", resp.Status)
+	}
+	return nil
+}
+
 func saveExtraCallback(db *sql.DB, cb chatdb.InteractionCallback) (string, error) {
 	if db == nil {
 		db = config.DB
 	}
 	if db == nil {
+		log.Printf("telegram extra_messages: sqlite db not initialized for block %s", cb.BlockID)
 		return "", fmt.Errorf("sqlite db not initialized")
 	}
-	return chatdb.SaveInteractionCallback(db, cb)
+	key, err := chatdb.SaveInteractionCallback(db, cb)
+	if err != nil {
+		log.Printf("telegram extra_messages: save callback for block %s failed: %v", cb.BlockID, err)
+	}
+	return key, err
 }
 
 // HandleExtraMessageCallback handles Telegram callback queries created by
@@ -491,7 +601,7 @@ func handleExtraMessageCallbackWithDB(db *sql.DB, payload json.RawMessage) (json
 		summary = strings.TrimSpace(rec.Value)
 	}
 
-	already, _, lockErr := chatdb.MarkBlockSubmitted(db, rec.ConversationID, rec.BlockID, "telegram", summary, interactionPayload)
+	matchedConvID, already, _, lockErr := chatdb.MarkBlockSubmitted(db, rec.ConversationID, rec.BlockID, "telegram", summary, interactionPayload)
 	if lockErr != nil {
 		log.Printf("telegram extra_messages: lock block %s: %v", rec.BlockID, lockErr)
 	}
@@ -501,6 +611,14 @@ func handleExtraMessageCallbackWithDB(db *sql.DB, payload json.RawMessage) (json
 			clearTelegramInlineKeyboard(cb.Message.Chat.Id, cb.Message.MessageId)
 		}
 		return nil, true
+	}
+
+	if matchedConvID != "" {
+		events.Default().Publish(events.TurnEvent{
+			ConversationID: matchedConvID,
+			Trigger:        "interaction",
+			At:             time.Now().UTC().Format(time.RFC3339Nano),
+		})
 	}
 
 	answerCallbackQuery(cb.ID, "✓ "+summary)

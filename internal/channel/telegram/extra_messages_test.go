@@ -118,7 +118,7 @@ func TestTelegramExtraMessagesSendAndCallbackRoundTrip(t *testing.T) {
 		t.Fatalf("insert conv: %v", err)
 	}
 
-	if err := sendTelegramExtraMessages(db, 101, 0, 5, 101, "conv-tg-1", extras); err != nil {
+	if err := sendTelegramExtraMessages(db, 101, 0, 5, 101, "conv-tg-1", extras, nil); err != nil {
 		t.Fatalf("sendTelegramExtraMessages: %v", err)
 	}
 
