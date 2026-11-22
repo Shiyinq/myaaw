@@ -1,93 +1,44 @@
 <script lang="ts">
 	import { cronStore } from '$lib/stores/cron.svelte';
 	import { configStore } from '$lib/stores/config.svelte';
-	import { conversationsStore } from '$lib/stores/conversations.svelte';
 	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
-	import { validate, type FieldErrors } from '$lib/utils/validation';
-	import { cronJobSchema } from '$lib/schemas';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
-	import FieldError from '$lib/components/common/FieldError.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
+	import CreateScheduleDialog from '$lib/components/schedule/CreateScheduleDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import {
-		Card,
-		CardContent,
-		CardDescription,
-		CardHeader,
-		CardTitle
-	} from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	import { Card, CardContent } from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import {
 		CalendarClock,
 		ChevronLeft,
 		ChevronRight,
+		Clock,
 		History,
 		Loader2,
 		Play,
 		Plus,
 		RefreshCw,
+		Send,
 		Trash2
 	} from 'lucide-svelte';
-	import type {
-		ConversationSummary,
-		CronChannel,
-		CronChatType,
-		CronExecution,
-		CronJob,
-		CronJobExecution
-	} from '$lib/types';
+	import type { CronExecution, CronJob, CronJobExecution } from '$lib/types';
 
-	const { t, locale } = useTranslation();
+	const { t } = useTranslation();
 
-	let saving = $state(false);
-
-	let name = $state('');
-	let kind = $state('cron');
-	let expr = $state('0 7 * * *');
-	let tz = $state('Asia/Jakarta');
-	let message = $state('');
-	let channel = $state<CronChannel>('telegram');
-	let to = $state('');
-	let threadId = $state('');
-	let sessionId = $state('');
-	let chatType = $state<CronChatType>('guild');
-	let enabled = $state(true);
-	let errors = $state<FieldErrors>({});
-
-	// Session history for the picker. Only sessions of the selected channel are
-	// listed, so a web target never offers a Telegram DM transcript. Old rows
-	// without a channel are left out on purpose.
-	let sessionChoices = $state<ConversationSummary[]>([]);
-	let sessionChoicesLoading = $state(false);
-	let sessionsKey = '';
-
-	const isTelegram = $derived(channel === 'telegram');
-	const isDiscord = $derived(channel === 'discord');
-	const needsSession = $derived(channel === 'api' || channel === 'cli');
-
-	// The preset is a frontend convenience: it renders the cron expression the
-	// backend already understands, so nothing new is stored.
-	let preset = $state('custom');
-	let presetMinutes = $state(15);
-	let presetTime = $state('07:00');
-	let presetWeekday = $state('1');
-	let presetDay = $state('1');
+	let createDialogOpen = $state(false);
 
 	let historyFor = $state('');
 	let history = $state<CronExecution[]>([]);
-	// The run log grows forever, so the tab shows one page at a time. The list is
-	// capped in height for the same reason: a long history must not stretch the
-	// card or hide the form next to it.
-	const RUN_PAGE_SIZE = 10;
+
+	const RUN_PAGE_SIZE = 15;
 	let recentRuns = $state<CronJobExecution[]>([]);
 	let runsTotal = $state(0);
 	let runsOffset = $state(0);
@@ -106,6 +57,7 @@
 	useQuery(configStore.query, () => (agent ? { agent } : null));
 
 	let jobs = $derived(cronStore.jobs);
+	let enabledCount = $derived(jobs.filter((job) => job.enabled).length);
 	let loading = $derived(cronStore.list.loading);
 	let error = $derived(cronStore.list.error);
 	let schedulerActive = $derived(configStore.data?.cron?.active ?? true);
@@ -128,47 +80,6 @@
 		});
 	});
 
-	const weekdays = $derived(
-		Array.from({ length: 7 }, (_, index) => ({
-			value: String(index),
-			label: new Intl.DateTimeFormat(locale.value, {
-				weekday: 'long',
-				timeZone: 'UTC'
-			}).format(new Date(Date.UTC(2023, 0, 1 + index)))
-		}))
-	);
-
-	function presetTimeParts() {
-		const [hour, minute] = presetTime.split(':').map((part) => Number.parseInt(part, 10));
-		return {
-			hour: Number.isFinite(hour) ? Math.min(23, Math.max(0, hour)) : 0,
-			minute: Number.isFinite(minute) ? Math.min(59, Math.max(0, minute)) : 0
-		};
-	}
-
-	/** The cron expression a preset expands to; empty for the custom mode. */
-	const presetCron = $derived.by(() => {
-		const { hour, minute } = presetTimeParts();
-		switch (preset) {
-			case 'hourly':
-				return '0 * * * *';
-			case 'daily':
-				return `${minute} ${hour} * * *`;
-			case 'weekdays':
-				return `${minute} ${hour} * * 1-5`;
-			case 'weekly':
-				return `${minute} ${hour} * * ${presetWeekday}`;
-			case 'monthly':
-				return `${minute} ${hour} ${presetDay} * *`;
-			case 'minutes': {
-				const every = Math.min(59, Math.max(1, Number(presetMinutes) || 1));
-				return `*/${every} * * * *`;
-			}
-			default:
-				return '';
-		}
-	});
-
 	// The agent reads cron.active when it loads its config, so the switch only
 	// takes effect after a server restart.
 	async function setScheduler(next: boolean) {
@@ -181,109 +92,6 @@
 			toastStore.error(getErrorMessage(err));
 		} finally {
 			savingScheduler = false;
-		}
-	}
-
-	async function loadSessions(currentAgent: string, currentChannel: CronChannel) {
-		sessionChoicesLoading = true;
-		try {
-			const page = await conversationsStore.fetchList(currentAgent, {
-				limit: 50,
-				channel: currentChannel
-			});
-			sessionChoices = page.conversations ?? [];
-		} catch {
-			sessionChoices = [];
-		} finally {
-			sessionChoicesLoading = false;
-		}
-	}
-
-	$effect(() => {
-		const currentAgent = agent;
-		const key = `${currentAgent}:${channel}`;
-		if (!currentAgent || key === sessionsKey) return;
-		sessionsKey = key;
-		void loadSessions(currentAgent, channel);
-	});
-
-	// A channel change starts a new target: stale room fields would point at the
-	// previous platform.
-	function changeChannel(next: CronChannel) {
-		channel = next;
-		to = '';
-		threadId = '';
-		sessionId = '';
-		chatType = 'guild';
-		errors = {};
-	}
-
-	// Picking a past session also fills what its scope already knows: a Telegram
-	// topic id, or whether a Discord target is a guild channel or a DM.
-	function pickSession(id: string) {
-		const choice = sessionChoices.find((candidate) => candidate.id === id);
-		if (!choice) {
-			sessionId = '';
-			return;
-		}
-		sessionId = choice.id;
-		if (isTelegram) {
-			const parts = (choice.scope ?? '').split(':');
-			threadId = parts.length >= 3 ? parts[2] : '';
-		}
-		if (isDiscord) {
-			chatType = (choice.scope ?? '').startsWith('dc:') ? 'guild' : 'dm';
-		}
-	}
-
-	async function create() {
-		if (!agent) return;
-		// A preset is converted to cron syntax here, so the backend only ever sees
-		// a plain expression.
-		const submitted = kind === 'cron' && preset !== 'custom' ? presetCron : expr;
-		const result = validate(cronJobSchema, {
-			name,
-			schedule_kind: kind,
-			expr: submitted,
-			tz,
-			message,
-			channel,
-			to,
-			thread_id: isTelegram ? threadId.trim() : '',
-			session_id: sessionId.trim(),
-			chat_type: isDiscord ? chatType : undefined
-		});
-		if (!result.ok) {
-			errors = result.errors;
-			return;
-		}
-		errors = {};
-		saving = true;
-		try {
-			await cronStore.add(agent, {
-				name: result.data.name,
-				schedule_kind: result.data.schedule_kind,
-				expr: result.data.expr,
-				tz: result.data.tz,
-				message: result.data.message,
-				channel: result.data.channel,
-				to: result.data.to,
-				thread_id: isTelegram ? result.data.thread_id || undefined : undefined,
-				session_id: result.data.session_id || undefined,
-				chat_type: isDiscord ? result.data.chat_type : undefined,
-				enabled
-			});
-			name = '';
-			message = '';
-			to = '';
-			threadId = '';
-			sessionId = '';
-			chatType = 'guild';
-			toastStore.success(t('myaaw.schedule.saved'));
-		} catch (err) {
-			toastStore.error(getErrorMessage(err));
-		} finally {
-			saving = false;
 		}
 	}
 
@@ -311,8 +119,6 @@
 		try {
 			await cronStore.run(agent, job.id);
 			toastStore.success(t('myaaw.schedule.ran'));
-			// The agent writes the run entry before answering, so the newest page can
-			// be reloaded right away.
 			await loadRuns(0);
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -321,8 +127,13 @@
 		}
 	}
 
-	async function showHistory(job: CronJob) {
+	async function toggleHistory(job: CronJob) {
 		if (!agent) return;
+		if (historyFor === job.id) {
+			historyFor = '';
+			history = [];
+			return;
+		}
 		historyFor = job.id;
 		try {
 			const result = await cronStore.fetchHistory(agent, job.id);
@@ -353,14 +164,11 @@
 		runDetailOpen = true;
 	}
 
-	// The card is a summary; the dialog repeats every field the job stores.
 	function showJob(job: CronJob) {
 		jobDetail = job;
 		jobDetailOpen = true;
 	}
 
-	// Runs keep their job id after the job row is gone, so a one-time job stays
-	// readable both by name (while it exists) and by a short id afterwards.
 	function jobLabel(id: string) {
 		const known = jobs.find((job) => job.id === id);
 		return known ? known.name : t('myaaw.schedule.removed_job', { id: id.slice(0, 8) });
@@ -389,7 +197,7 @@
 	{/snippet}
 </TopBarActions>
 
-<div class="space-y-4">
+<div class="mx-auto w-full max-w-5xl space-y-4">
 	{#if !agent}
 		<Card>
 			<CardContent class="py-10 text-center text-sm text-muted-foreground">
@@ -399,463 +207,309 @@
 	{:else}
 		{#if error}
 			<div
-				class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+				class="rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive"
 			>
 				{error}
 			</div>
 		{/if}
 
-		<div class="grid items-start gap-4 lg:grid-cols-5">
-			<div class="min-w-0 space-y-4 lg:col-span-3">
-				<Card>
-					<CardHeader class="pb-2">
-						<CardTitle class="text-sm font-medium">{t('myaaw.schedule.scheduler')}</CardTitle>
-						<CardDescription>{t('myaaw.schedule.scheduler_desc')}</CardDescription>
-					</CardHeader>
-					<CardContent class="space-y-1">
-						<label class="flex items-center gap-2 text-sm">
-							<input
-								type="checkbox"
-								checked={schedulerActive}
-								disabled={savingScheduler}
-								onchange={(event) => setScheduler(event.currentTarget.checked)}
-								class="h-4 w-4 accent-primary"
-							/>
-							{t('myaaw.schedule.scheduler_active')}
-						</label>
-						<p class="text-xs text-muted-foreground">{t('myaaw.schedule.scheduler_hint')}</p>
-					</CardContent>
-				</Card>
+		<!-- Compact master scheduler bar -->
+		<div
+			class="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card px-4 py-3 shadow-xs"
+		>
+			<div class="flex min-w-0 items-start gap-3">
+				<span
+					aria-hidden="true"
+					class={[
+						'mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full',
+						schedulerActive ? 'bg-emerald-500' : 'bg-muted-foreground/40'
+					]}
+				></span>
+				<div class="min-w-0">
+					<div class="flex flex-wrap items-center gap-2">
+						<p class="text-sm font-semibold text-foreground">{t('myaaw.schedule.scheduler')}</p>
+						<Badge variant={schedulerActive ? 'secondary' : 'outline'} class="text-[10px]">
+							{schedulerActive ? t('myaaw.schedule.enabled') : t('myaaw.schedule.disabled')}
+						</Badge>
+					</div>
+					<p class="mt-0.5 text-xs text-muted-foreground">
+						{t('myaaw.schedule.scheduler_desc')}
+					</p>
+					<p class="mt-0.5 text-[11px] text-muted-foreground/80">
+						{t('myaaw.schedule.scheduler_hint')}
+					</p>
+				</div>
+			</div>
 
-				<Card>
-					<CardHeader>
-						<CardTitle class="flex items-center gap-2">
-							<CalendarClock class="h-4 w-4" />
-							{t('myaaw.schedule.jobs')}
-						</CardTitle>
-						<CardDescription>{t('myaaw.schedule.jobs_desc')}</CardDescription>
-					</CardHeader>
-					<CardContent>
-						<Tabs.Root bind:value={jobTab} class="space-y-3">
-							<Tabs.List variant="line" class="flex-wrap justify-start">
-								<Tabs.Trigger value="jobs">{t('myaaw.schedule.tab_jobs')}</Tabs.Trigger>
-								<Tabs.Trigger value="history">{t('myaaw.schedule.tab_history')}</Tabs.Trigger>
-							</Tabs.List>
-							<Tabs.Content value="jobs" class="space-y-2">
-								{#if !loading && jobs.length === 0}
-									<EmptyState
-										title={t('myaaw.schedule.empty')}
-										description={t('myaaw.schedule.empty_desc')}
-										bloub="somnolent"
-										icon={CalendarClock}
-										class="min-h-55"
-									/>
-								{/if}
-								{#each jobs as job (job.id)}
-									<div class="space-y-2 rounded-lg border p-3">
-										<div class="flex items-start justify-between gap-2">
-											<button
-												type="button"
-												class="min-w-0 flex-1 rounded-md text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-												onclick={() => showJob(job)}
-												title={t('myaaw.schedule.detail_desc')}
-											>
-												<div class="flex flex-wrap items-center gap-2">
-													<span class="font-medium">{job.name}</span>
-													<Badge variant={job.enabled ? 'secondary' : 'outline'}>
-														{job.enabled
-															? t('myaaw.schedule.enabled')
-															: t('myaaw.schedule.disabled')}
-													</Badge>
-													<Badge variant="outline" class="font-mono text-[10px]">
-														{kindLabel(job.schedule.kind)} · {job.schedule.expr}
-													</Badge>
-												</div>
-												<p class="mt-1 truncate text-[11px] text-muted-foreground">
-													{job.payload.content}
-												</p>
-												{#if job.delivery.channel || job.delivery.to}
-													<p class="text-[11px] text-muted-foreground">
-														{job.delivery.channel || '—'} → {job.delivery.to || '—'}
-														{#if job.delivery.thread_id}
-															· {t('myaaw.schedule.delivery_topic')} {job.delivery.thread_id}
-														{/if}
-														{#if job.delivery.chat_type}
-															· {job.delivery.chat_type}
-														{/if}
-														{#if job.delivery.session_id}
+			<div class="flex shrink-0 items-center gap-3">
+				<span class="hidden text-xs text-muted-foreground sm:inline">
+					{t('myaaw.schedule.scheduler_active')}
+				</span>
+				<Switch
+					checked={schedulerActive}
+					disabled={savingScheduler}
+					label={t('myaaw.schedule.scheduler_active')}
+					onchange={(next) => setScheduler(next)}
+				/>
+			</div>
+		</div>
+
+		<!-- Main schedules & recent runs panel -->
+		<div class="rounded-xl border bg-card shadow-xs">
+			<Tabs.Root bind:value={jobTab}>
+				<div class="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
+					<Tabs.List variant="line" class="flex-wrap justify-start">
+						<Tabs.Trigger value="jobs" class="gap-1.5">
+							<CalendarClock class="h-3.5 w-3.5" />
+							{t('myaaw.schedule.tab_jobs')}
+							<span
+								class="rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none font-medium text-muted-foreground tabular-nums"
+							>
+								{enabledCount}/{jobs.length}
+							</span>
+						</Tabs.Trigger>
+						<Tabs.Trigger value="history" class="gap-1.5">
+							<History class="h-3.5 w-3.5" />
+							{t('myaaw.schedule.tab_history')}
+							{#if runsTotal > 0}
+								<span
+									class="rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none font-medium text-muted-foreground tabular-nums"
+								>
+									{runsTotal}
+								</span>
+							{/if}
+						</Tabs.Trigger>
+					</Tabs.List>
+
+					<Button size="sm" onclick={() => (createDialogOpen = true)} class="gap-1.5 rounded-lg">
+						<Plus class="h-3.5 w-3.5" />
+						{t('myaaw.schedule.create')}
+					</Button>
+				</div>
+
+				<div class="p-4 sm:p-5">
+					<Tabs.Content value="jobs" class="mt-0 space-y-2.5">
+						{#if !loading && jobs.length === 0}
+							<EmptyState
+								title={t('myaaw.schedule.empty')}
+								description={t('myaaw.schedule.empty_desc')}
+								bloub="somnolent"
+								icon={CalendarClock}
+								class="min-h-64"
+							/>
+						{:else}
+							{#each jobs as job (job.id)}
+								<div
+									class="space-y-2.5 rounded-xl border bg-background/40 p-3.5 transition-colors hover:border-border/90 hover:bg-muted/20"
+								>
+									<div class="flex items-start justify-between gap-3">
+										<button
+											type="button"
+											class="min-w-0 flex-1 rounded-md text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+											onclick={() => showJob(job)}
+											title={t('myaaw.schedule.detail_desc')}
+										>
+											<div class="flex flex-wrap items-center gap-2">
+												<span
+													aria-hidden="true"
+													class={[
+														'h-2 w-2 shrink-0 rounded-full',
+														job.enabled ? 'bg-emerald-500' : 'bg-muted-foreground/40'
+													]}
+												></span>
+												<span class="text-sm font-semibold text-foreground">{job.name}</span>
+												<Badge variant={job.enabled ? 'secondary' : 'outline'} class="text-[10px]">
+													{job.enabled ? t('myaaw.schedule.enabled') : t('myaaw.schedule.disabled')}
+												</Badge>
+												<span
+													class="inline-flex items-center gap-1 rounded-md border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+												>
+													<Clock class="h-2.5 w-2.5" />
+													{kindLabel(job.schedule.kind)} · {job.schedule.expr}
+													{#if job.schedule.tz}
+														· {job.schedule.tz}
+													{/if}
+												</span>
+											</div>
+
+											<p class="mt-1.5 line-clamp-2 text-xs text-muted-foreground">
+												{job.payload.content}
+											</p>
+
+											{#if job.delivery.channel || job.delivery.to}
+												<div
+													class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground"
+												>
+													<Send class="h-3 w-3 shrink-0 opacity-70" />
+													<span class="font-medium capitalize text-foreground/80">
+														{job.delivery.channel || '—'}
+													</span>
+													<span>→</span>
+													<span class="font-mono">{job.delivery.to || '—'}</span>
+													{#if job.delivery.thread_id}
+														<span
+															>· {t('myaaw.schedule.delivery_topic')} {job.delivery.thread_id}</span
+														>
+													{/if}
+													{#if job.delivery.chat_type}
+														<span>· {job.delivery.chat_type}</span>
+													{/if}
+													{#if job.delivery.session_id}
+														<span>
 															· {t('myaaw.schedule.delivery_session')}
 															<span class="font-mono">{job.delivery.session_id.slice(0, 8)}</span>
-														{/if}
-													</p>
-												{/if}
-											</button>
-											<div class="flex shrink-0 gap-1">
-												<Button
-													size="icon-sm"
-													variant="outline"
-													disabled={runningId !== '' && runningId !== job.id}
-													onclick={() => run(job)}
-													aria-label={t('myaaw.schedule.run_now')}
-												>
-													{#if runningId === job.id}
-														<Loader2 class="h-3.5 w-3.5 animate-spin" />
-													{:else}
-														<Play class="h-3.5 w-3.5" />
-													{/if}
-												</Button>
-												<Button size="icon-sm" variant="ghost" onclick={() => showHistory(job)}>
-													<History class="h-3.5 w-3.5" />
-												</Button>
-												<Button size="icon-sm" variant="ghost" onclick={() => remove(job.id)}>
-													<Trash2 class="h-3.5 w-3.5 text-destructive" />
-												</Button>
-											</div>
-										</div>
-
-										{#if historyFor === job.id}
-											<div
-												class="max-h-48 space-y-0.5 overflow-y-auto rounded-md bg-muted/30 p-2 text-[11px]"
-											>
-												{#if history.length === 0}
-													<p class="text-muted-foreground">{t('myaaw.schedule.no_history')}</p>
-												{/if}
-												{#each history as entry, index (index)}
-													<button
-														type="button"
-														class="flex w-full items-start gap-2 rounded-sm px-1 py-0.5 text-left hover:bg-background/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-														onclick={() => showRun({ ...entry, job_id: job.id })}
-													>
-														<Badge
-															variant={entry.status === 'success' ? 'secondary' : 'destructive'}
-															class="text-[9px]"
-														>
-															{entry.status}
-														</Badge>
-														<span class="shrink-0 font-mono text-muted-foreground">
-															{new Date(entry.ts).toLocaleString()}
 														</span>
-														<span class="min-w-0 truncate">{entry.result}</span>
-													</button>
-												{/each}
-											</div>
-										{/if}
-									</div>
-								{/each}
-							</Tabs.Content>
+													{/if}
+												</div>
+											{/if}
+										</button>
 
-							<Tabs.Content value="history" class="space-y-2">
-								{#if recentRuns.length === 0 && runsTotal === 0}
-									<EmptyState
-										title={t('myaaw.schedule.recent_runs_empty')}
-										description={t('myaaw.schedule.recent_runs_empty_desc')}
-										bloub="somnolent"
-										icon={History}
-										class="min-h-55"
-									/>
-								{:else}
-									<div class="max-h-80 overflow-y-auto overscroll-contain pr-1">
-										<div class="space-y-1">
-											{#each recentRuns as run (run.job_id + run.ts)}
+										<div class="flex shrink-0 items-center gap-1">
+											<Button
+												size="icon-sm"
+												variant="outline"
+												disabled={runningId !== '' && runningId !== job.id}
+												onclick={() => run(job)}
+												title={t('myaaw.schedule.run_now')}
+												aria-label={t('myaaw.schedule.run_now')}
+											>
+												{#if runningId === job.id}
+													<Loader2 class="h-3.5 w-3.5 animate-spin" />
+												{:else}
+													<Play class="h-3.5 w-3.5" />
+												{/if}
+											</Button>
+											<Button
+												size="icon-sm"
+												variant={historyFor === job.id ? 'secondary' : 'ghost'}
+												onclick={() => toggleHistory(job)}
+												title={t('myaaw.schedule.tab_history')}
+												aria-label={t('myaaw.schedule.tab_history')}
+											>
+												<History class="h-3.5 w-3.5" />
+											</Button>
+											<Button
+												size="icon-sm"
+												variant="ghost"
+												onclick={() => remove(job.id)}
+												title={t('common.delete')}
+												aria-label={t('common.delete')}
+											>
+												<Trash2 class="h-3.5 w-3.5 text-destructive" />
+											</Button>
+										</div>
+									</div>
+
+									{#if historyFor === job.id}
+										<div
+											class="max-h-52 space-y-1 overflow-y-auto rounded-lg border bg-muted/30 p-2 text-[11px]"
+										>
+											{#if history.length === 0}
+												<p class="px-1 py-1 text-muted-foreground">
+													{t('myaaw.schedule.no_history')}
+												</p>
+											{/if}
+											{#each history as entry, index (index)}
 												<button
 													type="button"
-													class="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md border p-2 text-left text-[11px] transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-													onclick={() => showRun(run)}
+													class="flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-background/80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+													onclick={() => showRun({ ...entry, job_id: job.id })}
 												>
 													<Badge
-														variant={run.status === 'success' ? 'secondary' : 'destructive'}
+														variant={entry.status === 'success' ? 'secondary' : 'destructive'}
 														class="text-[9px]"
 													>
-														{run.status}
+														{entry.status}
 													</Badge>
 													<span class="shrink-0 font-mono text-muted-foreground">
-														{new Date(run.ts).toLocaleString()}
+														{new Date(entry.ts).toLocaleString()}
 													</span>
-													<span class="min-w-0 flex-1 truncate font-medium">
-														{run.name || jobLabel(run.job_id)}
-													</span>
-													<span class="min-w-0 basis-full truncate text-muted-foreground">
-														{run.message || run.result}
-													</span>
+													<span class="min-w-0 truncate text-foreground/90">{entry.result}</span>
 												</button>
 											{/each}
 										</div>
-									</div>
-									<div class="flex items-center justify-between gap-2">
-										<p class="text-[11px] text-muted-foreground">{runsRange}</p>
-										<div class="flex shrink-0 gap-1">
-											<Button
-												size="icon-sm"
-												variant="outline"
-												disabled={runsOffset === 0 || runsLoading}
-												onclick={() => loadRuns(runsOffset - RUN_PAGE_SIZE)}
-												aria-label={t('myaaw.schedule.page_prev')}
-											>
-												<ChevronLeft class="h-3.5 w-3.5" />
-											</Button>
-											<Button
-												size="icon-sm"
-												variant="outline"
-												disabled={!runsHasMore || runsLoading}
-												onclick={() => loadRuns(runsOffset + RUN_PAGE_SIZE)}
-												aria-label={t('myaaw.schedule.page_next')}
-											>
-												<ChevronRight class="h-3.5 w-3.5" />
-											</Button>
-										</div>
-									</div>
-								{/if}
-							</Tabs.Content>
-						</Tabs.Root>
-					</CardContent>
-				</Card>
-			</div>
+									{/if}
+								</div>
+							{/each}
+						{/if}
+					</Tabs.Content>
 
-			<Card class="min-w-0 lg:col-span-2">
-				<CardHeader>
-					<CardTitle>{t('myaaw.schedule.create')}</CardTitle>
-					<CardDescription>{t('myaaw.schedule.create_desc')}</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<form
-						id="cron-create-form"
-						class="space-y-5"
-						onsubmit={(event) => {
-							event.preventDefault();
-							void create();
-						}}
-					>
-						<section class="space-y-3">
-							<p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-								{t('myaaw.schedule.section_schedule')}
-							</p>
-							<div class="grid gap-1">
-								<Label for="cron-name">{t('myaaw.schedule.name')}</Label>
-								<Input id="cron-name" bind:value={name} placeholder="Morning reminder" />
-								<FieldError code={errors.name} />
-							</div>
-							<div class="grid grid-cols-2 gap-2">
-								<div class="grid gap-1">
-									<Label for="cron-kind">{t('myaaw.schedule.kind')}</Label>
-									<select
-										id="cron-kind"
-										bind:value={kind}
-										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+					<Tabs.Content value="history" class="mt-0 space-y-3">
+						{#if recentRuns.length === 0 && runsTotal === 0}
+							<EmptyState
+								title={t('myaaw.schedule.recent_runs_empty')}
+								description={t('myaaw.schedule.recent_runs_empty_desc')}
+								bloub="somnolent"
+								icon={History}
+								class="min-h-64"
+							/>
+						{:else}
+							<div class="space-y-1.5">
+								{#each recentRuns as run (run.job_id + run.ts)}
+									<button
+										type="button"
+										class="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border bg-background/40 px-3 py-2.5 text-left text-xs transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+										onclick={() => showRun(run)}
 									>
-										<option value="cron">{t('myaaw.schedule.kind_recurring')}</option>
-										<option value="every">{t('myaaw.schedule.kind_interval')}</option>
-										<option value="at">{t('myaaw.schedule.kind_once')}</option>
-									</select>
-								</div>
-								<div class="grid gap-1">
-									<Label for="cron-tz">{t('myaaw.schedule.tz')}</Label>
-									<Input id="cron-tz" bind:value={tz} />
-								</div>
-							</div>
-							{#if kind === 'cron'}
-								<div class="grid gap-1">
-									<Label for="cron-preset">{t('myaaw.schedule.preset')}</Label>
-									<select
-										id="cron-preset"
-										bind:value={preset}
-										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-									>
-										<option value="custom">{t('myaaw.schedule.preset_custom')}</option>
-										<option value="minutes">{t('myaaw.schedule.preset_minutes')}</option>
-										<option value="hourly">{t('myaaw.schedule.preset_hourly')}</option>
-										<option value="daily">{t('myaaw.schedule.preset_daily')}</option>
-										<option value="weekdays">{t('myaaw.schedule.preset_weekdays')}</option>
-										<option value="weekly">{t('myaaw.schedule.preset_weekly')}</option>
-										<option value="monthly">{t('myaaw.schedule.preset_monthly')}</option>
-									</select>
-								</div>
-
-								{#if preset === 'minutes'}
-									<div class="grid gap-1">
-										<Label for="cron-minutes">{t('myaaw.schedule.minutes')}</Label>
-										<Input
-											id="cron-minutes"
-											type="number"
-											min="1"
-											max="59"
-											bind:value={presetMinutes}
-										/>
-									</div>
-								{:else if preset === 'daily' || preset === 'weekdays' || preset === 'weekly' || preset === 'monthly'}
-									<div class="grid grid-cols-2 gap-2">
-										<div class="grid gap-1">
-											<Label for="cron-time">{t('myaaw.schedule.time')}</Label>
-											<Input id="cron-time" type="time" bind:value={presetTime} />
-										</div>
-										{#if preset === 'weekly'}
-											<div class="grid gap-1">
-												<Label for="cron-weekday">{t('myaaw.schedule.weekday')}</Label>
-												<select
-													id="cron-weekday"
-													bind:value={presetWeekday}
-													class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-												>
-													{#each weekdays as day (day.value)}
-														<option value={day.value}>{day.label}</option>
-													{/each}
-												</select>
-											</div>
-										{:else if preset === 'monthly'}
-											<div class="grid gap-1">
-												<Label for="cron-day">{t('myaaw.schedule.day_of_month')}</Label>
-												<Input
-													id="cron-day"
-													type="number"
-													min="1"
-													max="31"
-													bind:value={presetDay}
-												/>
-											</div>
+										<Badge
+											variant={run.status === 'success' ? 'secondary' : 'destructive'}
+											class="text-[10px]"
+										>
+											{run.status}
+										</Badge>
+										<span class="shrink-0 font-mono text-[11px] text-muted-foreground">
+											{new Date(run.ts).toLocaleString()}
+										</span>
+										<span class="min-w-0 flex-1 truncate font-medium text-foreground">
+											{run.name || jobLabel(run.job_id)}
+										</span>
+										{#if run.channel}
+											<Badge variant="outline" class="text-[10px] capitalize">
+												{run.channel}
+											</Badge>
 										{/if}
-									</div>
-								{/if}
-
-								<div class="grid gap-1">
-									<Label for="cron-expr">{t('myaaw.schedule.expr')}</Label>
-									{#if preset === 'custom'}
-										<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
-									{:else}
-										<Input id="cron-expr" value={presetCron} disabled />
-									{/if}
-									<FieldError code={errors.expr} />
-								</div>
-							{:else}
-								<div class="grid gap-1">
-									<Label for="cron-expr">{t('myaaw.schedule.expr')}</Label>
-									<Input id="cron-expr" bind:value={expr} placeholder="0 7 * * *" />
-									<FieldError code={errors.expr} />
-								</div>
-							{/if}
-						</section>
-
-						<section class="space-y-3">
-							<p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-								{t('myaaw.schedule.section_message')}
-							</p>
-							<div class="grid gap-1">
-								<Label for="cron-message">{t('myaaw.schedule.message')}</Label>
-								<textarea
-									id="cron-message"
-									bind:value={message}
-									rows="3"
-									placeholder="Good morning!"
-									class="w-full rounded-md border border-input bg-transparent p-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-								></textarea>
-								<FieldError code={errors.message} />
+										<span class="min-w-0 basis-full truncate text-[11px] text-muted-foreground">
+											{run.message || run.result}
+										</span>
+									</button>
+								{/each}
 							</div>
-						</section>
 
-						<section class="space-y-3">
-							<p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-								{t('myaaw.schedule.section_delivery')}
-							</p>
-							<div class="grid items-start gap-2 sm:grid-cols-2">
-								<div class="grid gap-1">
-									<Label for="cron-channel">{t('myaaw.schedule.channel')}</Label>
-									<select
-										id="cron-channel"
-										value={channel}
-										onchange={(event) => changeChannel(event.currentTarget.value as CronChannel)}
-										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+							<div class="flex items-center justify-between gap-2 pt-1">
+								<p class="text-xs text-muted-foreground">{runsRange}</p>
+								<div class="flex shrink-0 gap-1">
+									<Button
+										size="icon-sm"
+										variant="outline"
+										disabled={runsOffset === 0 || runsLoading}
+										onclick={() => loadRuns(runsOffset - RUN_PAGE_SIZE)}
+										aria-label={t('myaaw.schedule.page_prev')}
 									>
-										<option value="telegram">{t('myaaw.schedule.channel_telegram')}</option>
-										<option value="discord">{t('myaaw.schedule.channel_discord')}</option>
-										<option value="api">{t('myaaw.schedule.channel_api')}</option>
-										<option value="cli">{t('myaaw.schedule.channel_cli')}</option>
-									</select>
-								</div>
-								<div class="grid gap-1">
-									<Label for="cron-to">{t('myaaw.schedule.to')}</Label>
-									<Input id="cron-to" bind:value={to} placeholder="123456789" />
-									{#if isTelegram}
-										<p class="text-[11px] text-muted-foreground">
-											{t('myaaw.schedule.to_telegram_hint')}
-										</p>
-									{:else if isDiscord}
-										<p class="text-[11px] text-muted-foreground">
-											{t('myaaw.schedule.to_discord_hint')}
-										</p>
-									{:else}
-										<p class="text-[11px] text-muted-foreground">
-											{t('myaaw.schedule.to_api_hint')}
-										</p>
-									{/if}
-								</div>
-							</div>
-
-							{#if isTelegram}
-								<div class="grid gap-1">
-									<Label for="cron-thread">{t('myaaw.schedule.thread_id')}</Label>
-									<Input id="cron-thread" bind:value={threadId} placeholder="77" />
-									<p class="text-[11px] text-muted-foreground">
-										{t('myaaw.schedule.thread_id_hint')}
-									</p>
-									<FieldError code={errors.thread_id} />
-								</div>
-							{:else if isDiscord}
-								<div class="grid gap-1">
-									<Label for="cron-chat-type">{t('myaaw.schedule.chat_type')}</Label>
-									<select
-										id="cron-chat-type"
-										bind:value={chatType}
-										class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
+										<ChevronLeft class="h-3.5 w-3.5" />
+									</Button>
+									<Button
+										size="icon-sm"
+										variant="outline"
+										disabled={!runsHasMore || runsLoading}
+										onclick={() => loadRuns(runsOffset + RUN_PAGE_SIZE)}
+										aria-label={t('myaaw.schedule.page_next')}
 									>
-										<option value="guild">{t('myaaw.schedule.chat_type_guild')}</option>
-										<option value="dm">{t('myaaw.schedule.chat_type_dm')}</option>
-									</select>
-									<p class="text-[11px] text-muted-foreground">
-										{t('myaaw.schedule.chat_type_hint')}
-									</p>
+										<ChevronRight class="h-3.5 w-3.5" />
+									</Button>
 								</div>
-							{/if}
-
-							<div class="grid gap-1">
-								<Label for="cron-session">{t('myaaw.schedule.session_id')}</Label>
-								<select
-									id="cron-session-pick"
-									value={sessionChoices.some((choice) => choice.id === sessionId) ? sessionId : ''}
-									onchange={(event) => pickSession(event.currentTarget.value)}
-									disabled={sessionChoicesLoading}
-									class="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-								>
-									<option value="">
-										{sessionChoices.length === 0
-											? t('myaaw.schedule.session_none')
-											: t('myaaw.schedule.session_history')}
-									</option>
-									{#each sessionChoices as choice (choice.id)}
-										<option value={choice.id}>
-											{choice.title || choice.id.slice(0, 8)} · {choice.id.slice(0, 8)}
-										</option>
-									{/each}
-								</select>
-								<Input id="cron-session" bind:value={sessionId} placeholder="0f4e8b3a-…" />
-								<p class="text-[11px] text-muted-foreground">
-									{needsSession
-										? t('myaaw.schedule.session_id_required_hint')
-										: t('myaaw.schedule.session_id_optional_hint')}
-								</p>
-								<FieldError code={errors.session_id} />
 							</div>
-							<label class="flex items-center gap-2 text-sm">
-								<input type="checkbox" bind:checked={enabled} class="h-4 w-4 accent-primary" />
-								{t('myaaw.schedule.enabled')}
-							</label>
-						</section>
-						<Button type="submit" class="w-full" loading={saving}>
-							<Plus class="mr-2 h-4 w-4" />
-							{t('myaaw.schedule.create')}
-						</Button>
-					</form>
-				</CardContent>
-			</Card>
+						{/if}
+					</Tabs.Content>
+				</div>
+			</Tabs.Root>
 		</div>
 	{/if}
+
+	<CreateScheduleDialog
+		open={createDialogOpen}
+		agent={agent ?? ''}
+		onOpenChange={(next) => (createDialogOpen = next)}
+	/>
 
 	<!-- Every field the job stores. The card is only a summary, and a job created
 	     from chat can carry a topic or a session nobody typed here. -->
@@ -952,9 +606,7 @@
 		</Dialog.Content>
 	</Dialog.Root>
 
-	<!-- One run, opened from the Recent runs list. Each entry carries a snapshot of
-	     the job, so a run of a job that was since removed still says what it
-	     delivered; older entries only have the id and result. -->
+	<!-- One run, opened from the Recent runs list. -->
 	<Dialog.Root bind:open={runDetailOpen}>
 		<Dialog.Content class="max-h-[85dvh] overflow-y-auto sm:max-w-lg">
 			<Dialog.Header>
