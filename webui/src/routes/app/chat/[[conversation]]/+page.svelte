@@ -3548,11 +3548,6 @@
 			return;
 		}
 
-		if (matchesShortcut(event, '/')) {
-			event.preventDefault();
-			void focusComposer();
-			return;
-		}
 		if (matchesShortcut(event, 'mod+enter')) {
 			event.preventDefault();
 			send();
@@ -3586,8 +3581,13 @@
 			return;
 		}
 
-		// Arrow and letter shortcuts must not steal keys from a text field.
+		// Slash, arrow, and letter shortcuts must not steal keys from a text field.
 		if (isTypingTarget(event.target)) return;
+		if (matchesShortcut(event, '/') && !isOverlayOpen()) {
+			event.preventDefault();
+			void focusComposer();
+			return;
+		}
 		if (matchesShortcut(event, 'alt+arrowup') || matchesShortcut(event, 'alt+arrowdown')) {
 			event.preventDefault();
 			jumpTurn(matchesShortcut(event, 'alt+arrowup') ? -1 : 1);

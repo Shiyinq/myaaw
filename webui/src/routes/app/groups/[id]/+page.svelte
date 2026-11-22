@@ -69,7 +69,7 @@
 		stripAttachDirectives,
 		toRunAttachments
 	} from '$lib/utils/attachments';
-	import { formatShortcut, isOverlayOpen, matchesShortcut } from '$lib/utils/keys';
+	import { formatShortcut, isOverlayOpen, isTypingTarget, matchesShortcut } from '$lib/utils/keys';
 	import type { SSEEvent } from '$lib/utils/sse';
 	import type {
 		ApprovalDecision,
@@ -1308,6 +1308,7 @@
 	});
 
 	// Global shortcuts matching regular 1-on-1 chat:
+	// - /: focus the message composer
 	// - Mod+Shift+H: toggle right Group Info inspector panel
 	// - Mod+Shift+F: attach file/image
 	// - Mod+Shift+Space: toggle voice dictation
@@ -1315,6 +1316,15 @@
 		if (!browser) return;
 		const onKey = (event: KeyboardEvent) => {
 			if (event.defaultPrevented || isOverlayOpen()) return;
+			if (matchesShortcut(event, '/') && !isTypingTarget(event.target)) {
+				event.preventDefault();
+				if (composer) {
+					composer.focus();
+					const end = composer.value.length;
+					composer.setSelectionRange(end, end);
+				}
+				return;
+			}
 			if (matchesShortcut(event, 'mod+shift+h')) {
 				event.preventDefault();
 				toggleInspector();
