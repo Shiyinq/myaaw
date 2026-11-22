@@ -15,6 +15,7 @@
 		Save,
 		Settings2,
 		ShieldAlert,
+		Square,
 		Trash2,
 		UserMinus,
 		Users,
@@ -26,6 +27,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import ChatTime from '$lib/components/common/ChatTime.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 	import { groupAccent } from '$lib/components/groups/accent';
 	import { colorOf } from '$lib/bloub';
 	import { agentSelection, groupsStore, serverStore, toastStore } from '$lib/stores';
@@ -80,7 +82,8 @@
 	let editMode = $state<DiscussionMode>('autonomous');
 	let editMaxTurns = $state(8);
 	let saving = $state(false);
-	let startingMap = $state<Record<string, boolean>>({});
+	let savingDisplay = $state(false);
+	let busyMap = $state<Record<string, boolean>>({});
 	let mutatingMembers = $state(false);
 	let clearing = $state(false);
 	let deleting = $state(false);
@@ -247,13 +250,22 @@
 		return live?.agent_color || member.agent_color;
 	}
 
-	async function startMember(agentName: string) {
-		if (startingMap[agentName]) return;
-		startingMap = { ...startingMap, [agentName]: true };
-		agentSelection.setRunning(agentName, true);
+	const onlineMembersCount = $derived(
+		group.members.filter((member) => isMemberRunning(member)).length
+	);
+
+	async function controlMember(agentName: string, action: 'start' | 'stop') {
+		if (busyMap[agentName]) return;
+		busyMap = { ...busyMap, [agentName]: true };
+		agentSelection.setRunning(agentName, action === 'start');
 		try {
-			await serverStore.start(agentName);
-			toastStore.success(t('myaaw.server.start_done'));
+			if (action === 'start') {
+				await serverStore.start(agentName);
+				toastStore.success(t('myaaw.server.start_done'));
+			} else {
+				await serverStore.stop(agentName);
+				toastStore.success(t('myaaw.server.stop_done'));
+			}
 			setTimeout(() => {
 				void agentSelection.load(true);
 				void groupsStore
@@ -266,7 +278,7 @@
 			await agentSelection.load(true);
 			toastStore.error(getErrorMessage(err));
 		} finally {
-			startingMap = { ...startingMap, [agentName]: false };
+			busyMap = { ...busyMap, [agentName]: false };
 		}
 	}
 
@@ -297,6 +309,24 @@
 			toastStore.error(getErrorMessage(err));
 		} finally {
 			mutatingMembers = false;
+		}
+	}
+
+	async function toggleDisplayFlag(field: 'hide_thinking' | 'hide_tools', next: boolean) {
+		if (savingDisplay) return;
+		const previous = group;
+		// Apply immediately to local state so the transcript hides/reveals steps
+		// instantaneously without re-fetching messages, while persisting to SQLite.
+		onUpdated({ ...group, [field]: next });
+		savingDisplay = true;
+		try {
+			const updated = await groupsStore.update(group.id, { [field]: next });
+			onUpdated(updated);
+		} catch (err) {
+			onUpdated(previous);
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			savingDisplay = false;
 		}
 	}
 
@@ -546,12 +576,25 @@
 				{/if}
 
 				<div class="space-y-1.5">
-					<p class="px-1 text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-						{t('myaaw.groups.current_members')} ({group.members.length})
-					</p>
+					<div class="flex items-center justify-between gap-2 px-1">
+						<p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+							{t('myaaw.groups.current_members')} ({group.members.length})
+						</p>
+						<span class="flex items-center gap-1 text-[10px] text-muted-foreground tabular-nums">
+							<span
+								aria-hidden="true"
+								class={[
+									'h-1.5 w-1.5 rounded-full',
+									onlineMembersCount > 0 ? 'bg-emerald-500' : 'bg-muted-foreground/40'
+								]}
+							></span>
+							{onlineMembersCount}/{group.members.length}
+							{t('myaaw.groups.online')}
+						</span>
+					</div>
 					{#each group.members as member (member.name)}
 						{@const running = isMemberRunning(member)}
-						{@const starting = Boolean(startingMap[member.name])}
+						{@const busy = Boolean(busyMap[member.name])}
 						<div class="flex items-center gap-2.5 rounded-xl border bg-background/60 px-2.5 py-2">
 							<span class="relative shrink-0">
 								<Bloub mood="attentif" size={28} tight color={colorOf(colorForMember(member))} />
@@ -577,16 +620,31 @@
 										size="sm"
 										variant="outline"
 										class="h-7 gap-1 px-2 text-[11px]"
-										disabled={starting}
-										onclick={() => void startMember(member.name)}
+										disabled={busy}
+										onclick={() => void controlMember(member.name, 'start')}
 									>
-										{#if starting}
+										{#if busy}
 											<Loader2 class="h-3 w-3 animate-spin" />
 										{:else}
 											<Play class="h-3 w-3" />
 										{/if}
 										{t('myaaw.server.start')}
 									</Button>
+								{:else}
+									<button
+										type="button"
+										disabled={busy}
+										onclick={() => void controlMember(member.name, 'stop')}
+										title={t('myaaw.server.stop')}
+										aria-label={t('myaaw.server.stop')}
+										class="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+									>
+										{#if busy}
+											<Loader2 class="h-3.5 w-3.5 animate-spin" />
+										{:else}
+											<Square class="h-3 w-3" />
+										{/if}
+									</button>
 								{/if}
 
 								{#if group.members.length > 1}
@@ -823,6 +881,38 @@
 						bind:value={editMaxTurns}
 						class="h-8 w-16 text-center text-xs tabular-nums"
 					/>
+				</div>
+
+				<div class="space-y-2.5 rounded-xl border px-2.5 py-2.5">
+					<div class="flex items-center justify-between gap-2.5">
+						<div class="min-w-0">
+							<p class="text-xs font-medium">{t('myaaw.groups.hide_thinking_label')}</p>
+							<p class="text-[10px] leading-snug text-muted-foreground">
+								{t('myaaw.groups.hide_thinking_hint')}
+							</p>
+						</div>
+						<Switch
+							checked={Boolean(group.hide_thinking)}
+							label={t('myaaw.groups.hide_thinking_label')}
+							disabled={savingDisplay}
+							onchange={(next) => void toggleDisplayFlag('hide_thinking', next)}
+						/>
+					</div>
+					<div class="h-px bg-border/60"></div>
+					<div class="flex items-center justify-between gap-2.5">
+						<div class="min-w-0">
+							<p class="text-xs font-medium">{t('myaaw.groups.hide_tools_label')}</p>
+							<p class="text-[10px] leading-snug text-muted-foreground">
+								{t('myaaw.groups.hide_tools_hint')}
+							</p>
+						</div>
+						<Switch
+							checked={Boolean(group.hide_tools)}
+							label={t('myaaw.groups.hide_tools_label')}
+							disabled={savingDisplay}
+							onchange={(next) => void toggleDisplayFlag('hide_tools', next)}
+						/>
+					</div>
 				</div>
 
 				<Button type="submit" size="sm" class="w-full" disabled={!canSaveSettings}>
