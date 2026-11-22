@@ -15,8 +15,7 @@
 		FileText,
 		Loader2,
 		Mic,
-		PanelRightClose,
-		PanelRightOpen,
+		PanelRight,
 		Paperclip,
 		Play,
 		Quote,
@@ -1897,11 +1896,7 @@
 			aria-pressed={inspectorOpen}
 			aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
 		>
-			{#if inspectorOpen}
-				<PanelRightClose class="h-4 w-4" />
-			{:else}
-				<PanelRightOpen class="h-4 w-4" />
-			{/if}
+			<PanelRight class="h-4 w-4" />
 		</Button>
 	{/if}
 </TopBarActions>

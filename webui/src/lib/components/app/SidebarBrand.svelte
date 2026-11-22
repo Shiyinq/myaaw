@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { PanelLeftClose, PanelLeftOpen, X } from 'lucide-svelte';
+	import { PanelLeft, X } from 'lucide-svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { agentSelection, sidebar } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
@@ -57,7 +57,9 @@
 		aria-label={t('myaaw.sidebar.collapse')}
 		aria-keyshortcuts="Control+\\ Meta+\\"
 	>
-		<PanelLeftClose class="h-4 w-4" />
+		<span class="grid size-6 place-items-center rounded-md bg-muted/70">
+			<PanelLeft class="h-4 w-4" />
+		</span>
 	</button>
 	<button
 		class="ml-auto flex w-10 shrink-0 items-center justify-end self-stretch rounded-l-md pr-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
@@ -83,5 +85,5 @@
 	aria-label={t('myaaw.sidebar.expand')}
 	aria-keyshortcuts="Control+\\ Meta+\\"
 >
-	<PanelLeftOpen class="h-3.5 w-3.5" />
+	<PanelLeft class="h-4 w-4" />
 </button>

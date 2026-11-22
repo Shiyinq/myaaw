@@ -88,8 +88,7 @@
 		Mic,
 		Minimize2,
 		Monitor,
-		PanelRightClose,
-		PanelRightOpen,
+		PanelRight,
 		Paperclip,
 		Pencil,
 		Quote,
@@ -3978,11 +3977,7 @@
 				aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
 			>
 				{#if focusMode || botsMode}
-					{#if historyOpen && rightTab === 'history'}
-						<PanelRightClose class="h-4 w-4" />
-					{:else}
-						<PanelRightOpen class="h-4 w-4" />
-					{/if}
+					<PanelRight class="h-4 w-4" />
 				{:else}
 					<History class="h-4 w-4" />
 				{/if}
