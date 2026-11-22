@@ -526,21 +526,35 @@ export const chatRuns = {
 		}
 
 		for (const info of infos) {
-			if (!info.streaming || !info.request_id) continue;
-			if (info.scope?.startsWith('group:')) continue;
-			if (runs.some((run) => run.requestId === info.request_id)) continue;
-
-			const run = new ChatRun(agentName, info.request_id, true);
-			run.conversationId = info.conversation_id ?? '';
-			const startedAt = Date.parse(info.started_at ?? '');
-			if (Number.isFinite(startedAt)) run.startedAt = startedAt;
-			run.discard = () => {
-				const index = runs.indexOf(run);
-				if (index >= 0) runs.splice(index, 1);
-			};
-			runs.push(run);
-			void run.resume();
+			chatRuns.attachFromInfo(agentName, info);
 		}
+	},
+	/**
+	 * Restores in-flight runs from the batched `GET /bots/summary` response so
+	 * the shell does not need one `/chat/runs` HTTP call per running bot.
+	 */
+	restoreFromSummary(agentName: string, infos: ChatRunInfo[]) {
+		if (!agentName || restored.has(agentName)) return;
+		restored.add(agentName);
+		for (const info of infos) {
+			chatRuns.attachFromInfo(agentName, info);
+		}
+	},
+	attachFromInfo(agentName: string, info: ChatRunInfo) {
+		if (!info.streaming || !info.request_id) return;
+		if (info.scope?.startsWith('group:')) return;
+		if (runs.some((run) => run.requestId === info.request_id)) return;
+
+		const run = new ChatRun(agentName, info.request_id, true);
+		run.conversationId = info.conversation_id ?? '';
+		const startedAt = Date.parse(info.started_at ?? '');
+		if (Number.isFinite(startedAt)) run.startedAt = startedAt;
+		run.discard = () => {
+			const index = runs.indexOf(run);
+			if (index >= 0) runs.splice(index, 1);
+		};
+		runs.push(run);
+		void run.resume();
 	},
 	/**
 	 * The run of the open conversation. A run stays unbound (empty id) only

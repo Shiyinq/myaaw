@@ -105,6 +105,7 @@ export const agentSelection = {
 		}
 	},
 	select,
+	fetchSummary: () => agentsApi.summary(),
 	async load(force = false) {
 		// Read reactive guards untracked so calling `load()` inside a Svelte 5
 		// `$effect` never subscribes to `loading` or `agents` and re-triggers itself.

@@ -71,6 +71,8 @@
 	import { theme, userPrefersMode } from 'mode-watcher';
 	import { APPEARANCE, applyAppearance, isAppearanceActive } from '$lib/theme';
 	import { preferences } from '$lib/stores/preferences.svelte';
+	import { botPreviews } from '$lib/stores/botPreviews.svelte';
+	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
 	import { chatRuns } from '$lib/stores/chatRuns.svelte';
 	import { runCompletion } from '$lib/stores/runCompletion.svelte';
@@ -121,22 +123,57 @@
 	// classic-mode sidebar share one fetch (see stores/conversationHistory).
 	conversationHistory.init();
 
-	// Background turns (cron, heartbeat, sub-agent) are pushed over SSE. The
-	// connection is per agent and lives in the shell, so it keeps working on any
-	// page and while the reader switches agents.
+	let summaryLoadedForKey = '';
+
+	// Background turns (cron, heartbeat, sub-agent) and global group updates
+	// share a single multiplexed SSE stream (`GET /events`). Initial sidebar
+	// previews, unread counts, and in-flight DM runs are hydrated in one batched
+	// `GET /bots/summary` request instead of N×3 per-bot calls.
 	$effect(() => {
 		if (!isAuthenticated.value) {
 			chatUpdates.stop();
+			summaryLoadedForKey = '';
 			return;
 		}
-		// Only running agents can emit events; a stopped one would answer 502
-		// behind the control plane and retry forever.
-		const names = agentSelection.agents.filter((agent) => agent.running).map((agent) => agent.name);
-		chatUpdates.sync(names);
-		// A run the reader started outlives its chat page, and a reload reattaches it
-		// from the agent server. Recover them on any route, so an answer that lands
-		// while the reader is elsewhere is still announced.
-		for (const name of names) void chatRuns.restore(name);
+		const allAgents = agentSelection.agents;
+		const runningNames = allAgents.filter((agent) => agent.running).map((agent) => agent.name);
+		chatUpdates.sync(runningNames);
+
+		if (allAgents.length === 0) return;
+		const key = allAgents
+			.map((agent) => `${agent.name}:${agent.running ? 1 : 0}`)
+			.sort()
+			.join(',');
+		if (key === summaryLoadedForKey) return;
+		summaryLoadedForKey = key;
+
+		untrack(() => {
+			const rev = unreadChats.revision();
+			void agentSelection
+				.fetchSummary()
+				.then((res) => {
+					for (const item of res.bots ?? []) {
+						if (item.recent_conversations && item.recent_conversations.length > 0) {
+							unreadChats.observe(item.agent, item.recent_conversations, rev);
+						}
+						botPreviews.seed(
+							item.agent,
+							{
+								conversationId: item.latest_conversation_id ?? '',
+								text: item.latest_preview ?? '',
+								title: item.latest_title ?? '',
+								updatedAt: item.latest_updated_at ?? ''
+							},
+							false
+						);
+						chatRuns.restoreFromSummary(item.agent, item.active_runs ?? []);
+					}
+				})
+				.catch(() => {
+					// Fallback for older control planes without /bots/summary.
+					for (const name of runningNames) void chatRuns.restore(name);
+				});
+		});
 	});
 
 	// A run that ends while another conversation (or menu) is open must not leave a

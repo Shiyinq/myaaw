@@ -64,7 +64,6 @@
 	let busyMap = $state<Record<string, boolean>>({});
 	let openMenuBot = $state('');
 	let openMenuGroup = $state('');
-	const fetchedAgents = new Set<string>();
 
 	// Load groups list whenever authenticated.
 	$effect(() => {
@@ -137,20 +136,6 @@
 			// Offline or stopped agents simply fall back to their status line.
 		}
 	}
-
-	// Fetch the latest assistant response once for each bot so every row shows
-	// a meaningful preview line and timestamp like a messaging inbox.
-	$effect(() => {
-		const list = agentSelection.agents;
-		if (list.length === 0) return;
-		untrack(() => {
-			for (const bot of list) {
-				if (fetchedAgents.has(bot.name)) continue;
-				fetchedAgents.add(bot.name);
-				void refreshLatest(bot.name, false);
-			}
-		});
-	});
 
 	// Keep background/scheduled turns fresh for bots whose chat is not currently open.
 	$effect(() => {
