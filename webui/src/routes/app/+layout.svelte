@@ -899,9 +899,8 @@
 							<Bloub
 								mood="attentif"
 								size={24}
-								tight
 								color={agentSelection.color}
-								class="hidden shrink-0 md:inline-flex"
+								class="hidden shrink-0 translate-y-[1.5px] md:inline-flex"
 							/>
 							<h1
 								class="pointer-events-auto truncate text-base font-bold tracking-tight text-foreground sm:text-lg"
