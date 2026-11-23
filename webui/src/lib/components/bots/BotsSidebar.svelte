@@ -224,8 +224,17 @@
 	// Canonical display order used by both the compact rail and keyboard shortcuts.
 	const orderedBots = $derived(splitSections ? [...attentionBots, ...regularBots] : visibleAgents);
 
+	const includesGroups = $derived(filter === 'all' || filter === 'groups' || filter === 'unread');
+	const listError = $derived(
+		(filter !== 'groups' && agentSelection.error) || (includesGroups && groupsStore.error)
+	);
+	const listLoading = $derived(
+		(filter !== 'groups' && (!agentSelection.loaded || agentSelection.loading)) ||
+			(includesGroups && groupsStore.loading)
+	);
+
 	const visibleGroups = $derived.by(() => {
-		if (filter !== 'all' && filter !== 'groups' && filter !== 'unread') return [];
+		if (!includesGroups) return [];
 		return groupsStore.groups.filter((grp) => {
 			if (filter === 'unread') {
 				const approvals = Math.max(
@@ -1059,16 +1068,17 @@
 			{/each}
 		{/if}
 
-		{#if (!agentSelection.loaded || agentSelection.loading) && agentSelection.agents.length === 0 && filter !== 'groups'}
-			<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
-		{:else if agentSelection.error && agentSelection.agents.length === 0 && filter !== 'groups'}
+		{#if listError}
 			<p
 				role="alert"
 				class="mx-2 my-2 rounded-xl border border-destructive/30 bg-destructive/10 p-2 text-xs break-words text-destructive"
 			>
-				{agentSelection.error}
+				{listError}
 			</p>
-		{:else if visibleAgents.length === 0 && visibleGroups.length === 0}
+		{/if}
+		{#if !listError && listLoading && visibleAgents.length === 0 && visibleGroups.length === 0}
+			<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
+		{:else if !listError && visibleAgents.length === 0 && visibleGroups.length === 0}
 			<p class="px-2 py-3 text-xs text-muted-foreground">
 				{searchTerm
 					? t('myaaw.bots.no_matches')
