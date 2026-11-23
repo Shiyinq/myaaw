@@ -437,15 +437,13 @@
 			</CardContent>
 		</Card>
 	{:else if phase === 'error' && !hasTerminal}
-		<Card>
-			<CardHeader>
-				<CardTitle>{t('myaaw.terminal.failed_title')}</CardTitle>
-			</CardHeader>
-			<CardContent class="space-y-3 text-sm text-muted-foreground">
-				<p class="font-mono text-xs">{message}</p>
-				<p>{t('myaaw.terminal.failed_hint')}</p>
-			</CardContent>
-		</Card>
+		<div
+			role="alert"
+			class="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+		>
+			{message || t('myaaw.terminal.failed_title')}
+		</div>
+		<p class="mt-3 text-sm text-muted-foreground">{t('myaaw.terminal.failed_hint')}</p>
 	{:else}
 		<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background">
 			<div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-1.5">
