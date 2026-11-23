@@ -1071,7 +1071,7 @@
 		{#if listError}
 			<p
 				role="alert"
-				class="mx-2 my-2 rounded-xl border border-destructive/30 bg-destructive/10 p-2 text-xs break-words text-destructive"
+				class="mx-2 my-2 rounded-xl border border-destructive/30 bg-destructive/10 p-2 text-xs wrap-break-word text-destructive"
 			>
 				{listError}
 			</p>
