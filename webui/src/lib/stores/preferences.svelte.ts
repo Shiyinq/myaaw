@@ -50,6 +50,7 @@ export interface Preferences {
 	notifyVolume: number;
 	/** Show which control-plane host the header is talking to. */
 	showHostBadge: boolean;
+	showConnectionBadge: boolean;
 	/** Show the agent mascot while an answer is working. */
 	showRunMascot: boolean;
 }
@@ -78,6 +79,7 @@ const DEFAULTS: Preferences = {
 	notifySound: 'chime',
 	notifyVolume: 0.7,
 	showHostBadge: true,
+	showConnectionBadge: false,
 	showRunMascot: true
 };
 
@@ -154,6 +156,7 @@ function normalize(parsed: StoredPreferences): Preferences {
 			)
 		),
 		showHostBadge: parsed.showHostBadge !== false,
+		showConnectionBadge: parsed.showConnectionBadge === true,
 		showRunMascot: parsed.showRunMascot !== false
 	};
 }
@@ -192,6 +195,8 @@ function toSettingsPatch(patch: Partial<Preferences>): ControlPlaneSettingsPatch
 	if (patch.notifyBrowser !== undefined) out.notify_browser = patch.notifyBrowser;
 	if (patch.notifySound !== undefined) out.notify_sound = patch.notifySound;
 	if (patch.notifyVolume !== undefined) out.notify_volume = patch.notifyVolume;
+	if (patch.showConnectionBadge !== undefined)
+		out.show_connection_badge = patch.showConnectionBadge;
 	if (patch.showHostBadge !== undefined) out.show_host_badge = patch.showHostBadge;
 	if (patch.showRunMascot !== undefined) out.show_run_mascot = patch.showRunMascot;
 	return out;
@@ -220,18 +225,29 @@ function fromControlPlaneSettings(remote: ControlPlaneSettings): Preferences {
 		notifySound: remote.notify_sound,
 		notifyVolume: remote.notify_volume,
 		showHostBadge: remote.show_host_badge,
+		showConnectionBadge: remote.show_connection_badge,
 		showRunMascot: remote.show_run_mascot
 	});
 }
 
 let current = $state<Preferences>(load());
+let connectionBadgePreview = $state(0);
 
 export const preferences = {
 	get value() {
 		return current;
 	},
+	get connectionBadgePreview() {
+		return connectionBadgePreview;
+	},
 	/** Merges a patch in, persists it locally, and syncs it to the control plane. */
 	update(patch: Partial<Preferences>) {
+		if (
+			patch.showConnectionBadge !== undefined &&
+			patch.showConnectionBadge !== current.showConnectionBadge
+		) {
+			connectionBadgePreview++;
+		}
 		current = { ...current, ...patch };
 		if (browser) localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
 		queueSettingsPatch(toSettingsPatch(patch));

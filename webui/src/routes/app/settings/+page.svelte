@@ -394,6 +394,15 @@
 					(next) => preferences.update({ showHostBadge: next })
 				)}
 			</div>
+
+			<div class="grid gap-2">
+				{@render toggle(
+					t('myaaw.settings.connection_badge'),
+					t('myaaw.settings.connection_badge_desc'),
+					preferences.value.showConnectionBadge,
+					(next) => preferences.update({ showConnectionBadge: next })
+				)}
+			</div>
 		</CardContent>
 	</Card>
 

@@ -81,6 +81,8 @@
 		"reload": "Reload"
 	},
 	"offline": {
+		"indicator": "Internet offline",
+		"restored": "Internet back online",
 		"title": "You Are Offline",
 		"description": "Your internet connection was lost. Please check your Wi-Fi or mobile data network, then try again.",
 		"reloadButton": "Try Reloading"
@@ -704,6 +706,8 @@
 			"reduce_motion_desc": "Turn off transitions and animations.",
 			"host_badge": "Show the host badge",
 			"host_badge_desc": "Show the control-plane host in the header, so a remote dashboard is obvious.",
+			"connection_badge": "Internet status badge",
+			"connection_badge_desc": "Show a badge when the browser goes offline or reconnects. Turning it on shows a short preview.",
 			"host_badge_remote": "Remote",
 			"host_badge_local": "Local",
 			"chat": "Chat",

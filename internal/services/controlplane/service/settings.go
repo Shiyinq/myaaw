@@ -9,61 +9,63 @@ import (
 // (settings table) so they stay in sync across browsers.
 // Defaults match the WebUI's built-in defaults.
 type Settings struct {
-	Locale          string  `json:"locale"`
-	ThemeMode       string  `json:"theme_mode"`
-	Theme           string  `json:"theme"`
-	Density         string  `json:"density"`
-	TextScale       int     `json:"text_scale"`
-	ReduceMotion    bool    `json:"reduce_motion"`
-	ShellMode       string  `json:"shell_mode"`
-	FocusAgent      string  `json:"focus_agent"`
-	SendKey         string  `json:"send_key"`
-	AutoScroll      bool    `json:"auto_scroll"`
-	Steps           string  `json:"steps"`
-	KeepDrafts      bool    `json:"keep_drafts"`
-	QueueMessages   bool    `json:"queue_messages"`
-	InterruptOnSend bool    `json:"interrupt_on_send"`
-	SpeakResponses  bool    `json:"speak_responses"`
-	SpeechRate      float64 `json:"speech_rate"`
-	SpeechLang      string  `json:"speech_lang"`
-	SpeechVoice     string  `json:"speech_voice"`
-	DictationLang   string  `json:"dictation_lang"`
-	NotifyEnabled   bool    `json:"notify_enabled"`
-	NotifyBrowser   bool    `json:"notify_browser"`
-	NotifySound     string  `json:"notify_sound"`
-	NotifyVolume    float64 `json:"notify_volume"`
-	ShowHostBadge   bool    `json:"show_host_badge"`
-	ShowRunMascot   bool    `json:"show_run_mascot"`
+	Locale              string  `json:"locale"`
+	ThemeMode           string  `json:"theme_mode"`
+	Theme               string  `json:"theme"`
+	Density             string  `json:"density"`
+	TextScale           int     `json:"text_scale"`
+	ReduceMotion        bool    `json:"reduce_motion"`
+	ShellMode           string  `json:"shell_mode"`
+	FocusAgent          string  `json:"focus_agent"`
+	SendKey             string  `json:"send_key"`
+	AutoScroll          bool    `json:"auto_scroll"`
+	Steps               string  `json:"steps"`
+	KeepDrafts          bool    `json:"keep_drafts"`
+	QueueMessages       bool    `json:"queue_messages"`
+	InterruptOnSend     bool    `json:"interrupt_on_send"`
+	SpeakResponses      bool    `json:"speak_responses"`
+	SpeechRate          float64 `json:"speech_rate"`
+	SpeechLang          string  `json:"speech_lang"`
+	SpeechVoice         string  `json:"speech_voice"`
+	DictationLang       string  `json:"dictation_lang"`
+	NotifyEnabled       bool    `json:"notify_enabled"`
+	NotifyBrowser       bool    `json:"notify_browser"`
+	NotifySound         string  `json:"notify_sound"`
+	NotifyVolume        float64 `json:"notify_volume"`
+	ShowConnectionBadge bool    `json:"show_connection_badge"`
+	ShowHostBadge       bool    `json:"show_host_badge"`
+	ShowRunMascot       bool    `json:"show_run_mascot"`
 }
 
 // SettingsPatch carries optional fields for partial updates (PATCH /settings)
 // and tolerant loading of older stored settings JSON payloads.
 type SettingsPatch struct {
-	Locale          *string  `json:"locale,omitempty"`
-	ThemeMode       *string  `json:"theme_mode,omitempty"`
-	Theme           *string  `json:"theme,omitempty"`
-	Density         *string  `json:"density,omitempty"`
-	TextScale       *int     `json:"text_scale,omitempty"`
-	ReduceMotion    *bool    `json:"reduce_motion,omitempty"`
-	ShellMode       *string  `json:"shell_mode,omitempty"`
-	FocusAgent      *string  `json:"focus_agent,omitempty"`
-	SendKey         *string  `json:"send_key,omitempty"`
-	AutoScroll      *bool    `json:"auto_scroll,omitempty"`
-	Steps           *string  `json:"steps,omitempty"`
-	KeepDrafts      *bool    `json:"keep_drafts,omitempty"`
-	QueueMessages   *bool    `json:"queue_messages,omitempty"`
-	InterruptOnSend *bool    `json:"interrupt_on_send,omitempty"`
-	SpeakResponses  *bool    `json:"speak_responses,omitempty"`
-	SpeechRate      *float64 `json:"speech_rate,omitempty"`
-	SpeechLang      *string  `json:"speech_lang,omitempty"`
-	SpeechVoice     *string  `json:"speech_voice,omitempty"`
-	DictationLang   *string  `json:"dictation_lang,omitempty"`
-	NotifyEnabled   *bool    `json:"notify_enabled,omitempty"`
-	NotifyBrowser   *bool    `json:"notify_browser,omitempty"`
-	NotifySound     *string  `json:"notify_sound,omitempty"`
-	NotifyVolume    *float64 `json:"notify_volume,omitempty"`
-	ShowHostBadge   *bool    `json:"show_host_badge,omitempty"`
-	ShowRunMascot   *bool    `json:"show_run_mascot,omitempty"`
+	Locale              *string  `json:"locale,omitempty"`
+	ThemeMode           *string  `json:"theme_mode,omitempty"`
+	Theme               *string  `json:"theme,omitempty"`
+	Density             *string  `json:"density,omitempty"`
+	TextScale           *int     `json:"text_scale,omitempty"`
+	ReduceMotion        *bool    `json:"reduce_motion,omitempty"`
+	ShellMode           *string  `json:"shell_mode,omitempty"`
+	FocusAgent          *string  `json:"focus_agent,omitempty"`
+	SendKey             *string  `json:"send_key,omitempty"`
+	AutoScroll          *bool    `json:"auto_scroll,omitempty"`
+	Steps               *string  `json:"steps,omitempty"`
+	KeepDrafts          *bool    `json:"keep_drafts,omitempty"`
+	QueueMessages       *bool    `json:"queue_messages,omitempty"`
+	InterruptOnSend     *bool    `json:"interrupt_on_send,omitempty"`
+	SpeakResponses      *bool    `json:"speak_responses,omitempty"`
+	SpeechRate          *float64 `json:"speech_rate,omitempty"`
+	SpeechLang          *string  `json:"speech_lang,omitempty"`
+	SpeechVoice         *string  `json:"speech_voice,omitempty"`
+	DictationLang       *string  `json:"dictation_lang,omitempty"`
+	NotifyEnabled       *bool    `json:"notify_enabled,omitempty"`
+	NotifyBrowser       *bool    `json:"notify_browser,omitempty"`
+	NotifySound         *string  `json:"notify_sound,omitempty"`
+	NotifyVolume        *float64 `json:"notify_volume,omitempty"`
+	ShowConnectionBadge *bool    `json:"show_connection_badge,omitempty"`
+	ShowHostBadge       *bool    `json:"show_host_badge,omitempty"`
+	ShowRunMascot       *bool    `json:"show_run_mascot,omitempty"`
 }
 
 // DefaultSettings returns the canonical default settings matching the WebUI.
@@ -174,6 +176,9 @@ func (s Settings) Apply(patch SettingsPatch) Settings {
 	}
 	if patch.NotifyVolume != nil {
 		next.NotifyVolume = *patch.NotifyVolume
+	}
+	if patch.ShowConnectionBadge != nil {
+		next.ShowConnectionBadge = *patch.ShowConnectionBadge
 	}
 	if patch.ShowHostBadge != nil {
 		next.ShowHostBadge = *patch.ShowHostBadge

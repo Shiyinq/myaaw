@@ -31,7 +31,7 @@ func TestAuthServiceSeedsDefaultSettings(t *testing.T) {
 	if err := json.Unmarshal([]byte(rawJSON), &stored); err != nil {
 		t.Fatalf("unmarshal settings: %v", err)
 	}
-	if stored["shell_mode"] != "studio" || stored["locale"] != "en" || stored["theme_mode"] != "system" {
+	if stored["shell_mode"] != "studio" || stored["locale"] != "en" || stored["theme_mode"] != "system" || stored["show_connection_badge"] != false {
 		t.Fatalf("unexpected persisted settings defaults: %#v", stored)
 	}
 }
@@ -85,14 +85,15 @@ func TestAuthServiceUpdateSettingsPersistsAndNormalizes(t *testing.T) {
 	}
 
 	updated, err := auth.UpdateSettings(SettingsPatch{
-		Locale:        strPtr("id"),
-		ThemeMode:     strPtr("dark"),
-		Theme:         strPtr("obsidian"),
-		ShellMode:     strPtr("bots"),
-		TextScale:     intPtr(150), // clamped to 125
-		QueueMessages: boolPtr(true),
-		SpeechRate:    floatPtr(2.5),  // clamped to 1.5
-		NotifyVolume:  floatPtr(-0.5), // clamped to 0
+		Locale:              strPtr("id"),
+		ThemeMode:           strPtr("dark"),
+		Theme:               strPtr("obsidian"),
+		ShellMode:           strPtr("bots"),
+		TextScale:           intPtr(150), // clamped to 125
+		QueueMessages:       boolPtr(true),
+		ShowConnectionBadge: boolPtr(true),
+		SpeechRate:          floatPtr(2.5),  // clamped to 1.5
+		NotifyVolume:        floatPtr(-0.5), // clamped to 0
 	})
 	if err != nil {
 		t.Fatalf("UpdateSettings: %v", err)
@@ -101,6 +102,9 @@ func TestAuthServiceUpdateSettingsPersistsAndNormalizes(t *testing.T) {
 
 	if updated.Locale != "id" || updated.ThemeMode != "dark" || updated.Theme != "obsidian" || updated.ShellMode != "bots" {
 		t.Fatalf("unexpected updated fields: %+v", updated)
+	}
+	if !updated.ShowConnectionBadge {
+		t.Fatal("connection badge was not enabled")
 	}
 	if updated.TextScale != 125 {
 		t.Fatalf("text_scale = %d, want 125", updated.TextScale)
@@ -132,7 +136,11 @@ func TestAuthServiceUpdateSettingsPersistsAndNormalizes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second UpdateSettings: %v", err)
 	}
-	if next.Density != "compact" || next.ShellMode != "bots" || next.Locale != "id" {
+	if next.Density != "compact" || next.ShellMode != "bots" || next.Locale != "id" || !next.ShowConnectionBadge {
 		t.Fatalf("partial patch lost prior fields: %+v", next)
+	}
+	next, err = reloaded.UpdateSettings(SettingsPatch{ShowConnectionBadge: boolPtr(false)})
+	if err != nil || next.ShowConnectionBadge {
+		t.Fatalf("disable connection badge: enabled=%v, err=%v", next.ShowConnectionBadge, err)
 	}
 }

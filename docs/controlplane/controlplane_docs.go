@@ -12631,6 +12631,9 @@ const docTemplatecontrolplane = `{
                 "shell_mode": {
                     "type": "string"
                 },
+                "show_connection_badge": {
+                    "type": "boolean"
+                },
                 "show_host_badge": {
                     "type": "boolean"
                 },
@@ -12710,6 +12713,9 @@ const docTemplatecontrolplane = `{
                 },
                 "shell_mode": {
                     "type": "string"
+                },
+                "show_connection_badge": {
+                    "type": "boolean"
                 },
                 "show_host_badge": {
                     "type": "boolean"

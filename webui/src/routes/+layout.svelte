@@ -2,7 +2,7 @@
 	import '../app.css';
 	// KaTeX ships its own layout for the math markup that Markdown renders.
 	import 'katex/dist/katex.min.css';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
@@ -14,13 +14,15 @@
 	} from '$lib/stores';
 	import { applyPreferences, preferences } from '$lib/stores/preferences.svelte';
 	import { locale, type Locale } from '$lib/i18n';
+	import { useTranslation } from '$lib/i18n/useTranslation';
+	import { Wifi, WifiOff } from 'lucide-svelte';
 	import { ModeWatcher, setMode, theme, userPrefersMode } from 'mode-watcher';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import LoadingBar from '$lib/components/LoadingBar.svelte';
 	import SplashScreen from '$lib/components/SplashScreen.svelte';
 	import SEO from '$lib/components/common/SEO.svelte';
 	import { logger } from '$lib/utils/logger';
-	import OfflinePage from './offline/+page.svelte';
+
 	import ReloadPrompt from '$lib/components/ReloadPrompt.svelte';
 	import { modeForTheme } from '$lib/theme';
 	import { documentDescription, documentTitle } from '$lib/utils/pageTitle';
@@ -31,6 +33,7 @@
 	}
 
 	let { data, children }: Props = $props();
+	const { t } = useTranslation();
 
 	$effect(() => {
 		if (data?.locale) {
@@ -54,7 +57,33 @@
 	});
 
 	let mounted = $state(false);
-	let isOffline = $state(false);
+	let connectionStatus = $state<'offline' | 'restored' | null>(null);
+
+	let badgeTimer: number | undefined;
+	let previousBadgePreference = untrack(() => preferences.value.showConnectionBadge);
+	let previousBadgePreview = 0;
+
+	function showConnectionBadge(status: 'offline' | 'restored', temporary = false) {
+		window.clearTimeout(badgeTimer);
+		connectionStatus = status;
+		if (temporary) badgeTimer = window.setTimeout(() => (connectionStatus = null), 3000);
+	}
+
+	$effect(() => {
+		if (!mounted) return;
+		const enabled = preferences.value.showConnectionBadge;
+		const preview = preferences.connectionBadgePreview;
+		if (!enabled) {
+			window.clearTimeout(badgeTimer);
+			connectionStatus = null;
+		} else if (preview !== previousBadgePreview) {
+			showConnectionBadge(navigator.onLine ? 'restored' : 'offline', true);
+		} else if (!previousBadgePreference && !navigator.onLine) {
+			showConnectionBadge('offline');
+		}
+		previousBadgePreview = preview;
+		previousBadgePreference = enabled;
+	});
 
 	onMount(() => {
 		if (accessToken.isExpired) {
@@ -63,15 +92,19 @@
 		}
 		mounted = true;
 
-		isOffline = !navigator.onLine;
-		const setOffline = () => (isOffline = true);
-		const setOnline = () => (isOffline = false);
-		window.addEventListener('offline', setOffline);
-		window.addEventListener('online', setOnline);
-
+		const markOffline = () => {
+			if (preferences.value.showConnectionBadge) showConnectionBadge('offline');
+		};
+		const markOnline = () => {
+			if (preferences.value.showConnectionBadge) showConnectionBadge('restored', true);
+		};
+		if (!navigator.onLine) markOffline();
+		window.addEventListener('offline', markOffline);
+		window.addEventListener('online', markOnline);
 		return () => {
-			window.removeEventListener('offline', setOffline);
-			window.removeEventListener('online', setOnline);
+			window.clearTimeout(badgeTimer);
+			window.removeEventListener('offline', markOffline);
+			window.removeEventListener('online', markOnline);
 		};
 	});
 
@@ -138,12 +171,25 @@
 	{:else}
 		<LoadingBar />
 		<main class="flex-1 w-full relative">
-			{#if isOffline}
-				<OfflinePage />
-			{:else}
-				{@render children()}
-			{/if}
+			{@render children()}
 		</main>
+		{#if connectionStatus && page.url.pathname !== '/offline'}
+			<div
+				role="status"
+				class="pointer-events-none fixed top-2 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full border bg-background px-2.5 py-1 text-xs shadow-sm"
+				class:text-muted-foreground={connectionStatus === 'offline'}
+				class:text-emerald-700={connectionStatus === 'restored'}
+				class:dark:text-emerald-400={connectionStatus === 'restored'}
+			>
+				{#if connectionStatus === 'restored'}
+					<Wifi class="size-3.5 shrink-0" aria-hidden="true" />
+					{t('offline.restored')}
+				{:else}
+					<WifiOff class="size-3.5 shrink-0" aria-hidden="true" />
+					{t('offline.indicator')}
+				{/if}
+			</div>
+		{/if}
 		<Toaster position="bottom-right" richColors />
 	{/if}
 </div>

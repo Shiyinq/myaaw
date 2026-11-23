@@ -27,6 +27,7 @@ export interface ControlPlaneSettings {
 	notify_sound: string;
 	notify_volume: number;
 	show_host_badge: boolean;
+	show_connection_badge: boolean;
 	show_run_mascot: boolean;
 }
 

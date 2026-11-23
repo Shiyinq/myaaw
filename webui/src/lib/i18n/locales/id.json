@@ -81,6 +81,8 @@
 		"reload": "Muat Ulang"
 	},
 	"offline": {
+		"indicator": "Internet offline",
+		"restored": "Internet tersambung kembali",
 		"title": "Anda Sedang Offline",
 		"description": "Koneksi internet Anda terputus. Silakan periksa jaringan Wi-Fi atau data seluler Anda, lalu coba lagi.",
 		"reloadButton": "Coba Muat Ulang"
@@ -704,6 +706,8 @@
 			"reduce_motion_desc": "Matikan transisi dan animasi.",
 			"host_badge": "Tampilkan badge host",
 			"host_badge_desc": "Tampilkan host control plane di header, supaya dashboard remote mudah dikenali.",
+			"connection_badge": "Badge status internet",
+			"connection_badge_desc": "Tampilkan badge saat browser offline atau tersambung kembali. Saat diaktifkan, pratinjau singkat akan muncul.",
 			"host_badge_remote": "Remote",
 			"host_badge_local": "Lokal",
 			"chat": "Chat",
