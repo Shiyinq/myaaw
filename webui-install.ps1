@@ -69,14 +69,37 @@ if (-not $Release.tag_name -or -not $Asset) {
 
 Write-Host "Downloading $($Asset.name)..."
 $Tmp = Join-Path $env:TEMP ("myaaw-webui-" + [System.Guid]::NewGuid().ToString() + ".tar.gz")
-Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $Tmp
+$ChecksumFile = "$Tmp.sha256"
+$ChecksumAsset = $Release.assets | Where-Object { $_.name -ceq "SHA256SUMS" } | Select-Object -First 1
+try {
+    Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $Tmp -ErrorAction Stop
 
-Write-Host "Installing to $WebUIDir\current..."
-$Current = Join-Path $WebUIDir "current"
-if (Test-Path $Current) { Remove-Item -Recurse -Force $Current }
-New-Item -ItemType Directory -Force -Path $Current | Out-Null
-tar -xzf $Tmp -C $Current
-Remove-Item -Force $Tmp
+    if ($ChecksumAsset.browser_download_url) {
+        Write-Host "Verifying WebUI bundle checksum..."
+        Invoke-WebRequest -Uri $ChecksumAsset.browser_download_url -OutFile $ChecksumFile -UseBasicParsing -ErrorAction Stop
+        $Expected = $null
+        foreach ($Line in (Get-Content -LiteralPath $ChecksumFile -ErrorAction Stop)) {
+            $Fields = $Line.Trim() -split '\s+'
+            if ($Fields.Count -ge 2 -and $Fields[1].TrimStart('*') -ceq $Asset.name) {
+                $Expected = $Fields[0]
+                break
+            }
+        }
+        if (-not $Expected) { throw "SHA256SUMS does not list $($Asset.name)" }
+        $Actual = (Get-FileHash -LiteralPath $Tmp -Algorithm SHA256 -ErrorAction Stop).Hash
+        if ($Actual -ine $Expected) { throw "Checksum mismatch for $($Asset.name)" }
+    }
+
+    Write-Host "Installing to $WebUIDir\current..."
+    $Current = Join-Path $WebUIDir "current"
+    if (Test-Path $Current) { Remove-Item -Recurse -Force $Current }
+    New-Item -ItemType Directory -Force -Path $Current | Out-Null
+    tar -xzf $Tmp -C $Current
+    if ($LASTEXITCODE -ne 0) { throw "Could not extract $($Asset.name)" }
+} finally {
+    if (Test-Path $Tmp) { Remove-Item -Force $Tmp }
+    if (Test-Path $ChecksumFile) { Remove-Item -Force $ChecksumFile }
+}
 
 $Config = @{
     port    = "$Port"
