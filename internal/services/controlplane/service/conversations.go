@@ -176,7 +176,7 @@ func (s *ConversationService) Activity(agentName string, userID int, from, to ti
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT created_at FROM conversations WHERE user_id = ?`, userID)
+	rows, err := db.Query(`SELECT created_at FROM conversations WHERE user_id = ? AND COALESCE(scope, '') NOT LIKE 'group:%'`, userID)
 	if err != nil {
 		if strings.Contains(err.Error(), "no such table") {
 			return fillActivityDays(activity, nil, from, to), nil
@@ -281,29 +281,29 @@ func (s *ConversationService) List(
 	}
 	defer db.Close()
 
-	conditions := []string{"user_id = ?"}
+	conditions := []string{"c.user_id = ?", "COALESCE(c.scope, '') NOT LIKE 'group:%'"}
 	args := []any{userID}
 	if filter.Pinned {
-		conditions = append(conditions, "pinned_at IS NOT NULL")
+		conditions = append(conditions, "c.pinned_at IS NOT NULL")
 	}
 	if filter.Unfiled {
-		conditions = append(conditions, "pinned_at IS NULL", "folder_id IS NULL")
+		conditions = append(conditions, "c.pinned_at IS NULL", "c.folder_id IS NULL")
 	}
 	if filter.FolderID != "" {
-		conditions = append(conditions, "folder_id = ?")
+		conditions = append(conditions, "c.folder_id = ?")
 		args = append(args, filter.FolderID)
 	}
 	if filter.Channel != "" {
-		conditions = append(conditions, "channel = ?")
+		conditions = append(conditions, "c.channel = ?")
 		args = append(args, filter.Channel)
 	}
 	if search != "" {
-		conditions = append(conditions, `title LIKE ? ESCAPE '\'`)
+		conditions = append(conditions, `c.title LIKE ? ESCAPE '\'`)
 		args = append(args, "%"+escapeLike(search)+"%")
 	}
 	where := " WHERE " + strings.Join(conditions, " AND ")
 
-	if err := db.QueryRow(`SELECT COUNT(*) FROM conversations`+where, args...).Scan(&page.Total); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM conversations c`+where, args...).Scan(&page.Total); err != nil {
 		if strings.Contains(err.Error(), "no such table") {
 			return page, nil
 		}
@@ -615,6 +615,25 @@ func collectConversationAttachments(messages []provider.Message) []ConversationA
 			})
 		}
 
+		for _, extraAtt := range extractExtraMessageLocalAttachments(message.ExtraMessages) {
+			path := strings.TrimSpace(extraAtt.Path)
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			items = append(items, ConversationAttachment{
+				Path:         path,
+				FileName:     attachmentFileName(extraAtt.FileName, path),
+				MimeType:     extraAtt.MimeType,
+				Kind:         attachmentKind(extraAtt.Kind, extraAtt.MimeType, path),
+				Size:         extraAtt.Size,
+				Origin:       "agent",
+				MessageID:    message.ID,
+				MessageIndex: index,
+				CreatedAt:    message.CreatedAt,
+			})
+		}
+
 		for _, upload := range message.Uploads {
 			path := uploadVirtualPath(upload.Path)
 			// A path outside /user/uploads cannot be served by /fs/raw; leaving it
@@ -657,6 +676,75 @@ func attachmentFileName(name, path string) string {
 		return trimmed
 	}
 	return pathpkg.Base(strings.ReplaceAll(path, "\\", "/"))
+}
+
+// extractExtraMessageLocalAttachments extracts local virtual-path files from
+// media and carousel blocks inside ExtraMessages so the Attachments panel lists
+// them alongside @attach(...) deliverables.
+func extractExtraMessageLocalAttachments(extras []provider.ExtraMessage) []provider.MessageAttachment {
+	if len(extras) == 0 {
+		return nil
+	}
+	var out []provider.MessageAttachment
+	for _, em := range extras {
+		for _, block := range em.Blocks {
+			switch block.Type {
+			case "media":
+				var data struct {
+					Items []struct {
+						Path     string `json:"path"`
+						Kind     string `json:"kind"`
+						Title    string `json:"title"`
+						FileName string `json:"file_name"`
+						MimeType string `json:"mime_type"`
+						Size     int64  `json:"size"`
+					} `json:"items"`
+				}
+				if json.Unmarshal(block.Data, &data) != nil {
+					continue
+				}
+				for _, it := range data.Items {
+					p := strings.TrimSpace(it.Path)
+					if p == "" {
+						continue
+					}
+					name := strings.TrimSpace(it.FileName)
+					if name == "" {
+						name = strings.TrimSpace(it.Title)
+					}
+					out = append(out, provider.MessageAttachment{
+						FileName: name,
+						MimeType: it.MimeType,
+						Path:     p,
+						Kind:     it.Kind,
+						Size:     it.Size,
+					})
+				}
+			case "carousel":
+				var data struct {
+					Cards []struct {
+						Title     string `json:"title"`
+						ImagePath string `json:"image_path"`
+					} `json:"cards"`
+				}
+				if json.Unmarshal(block.Data, &data) != nil {
+					continue
+				}
+				for _, card := range data.Cards {
+					p := strings.TrimSpace(card.ImagePath)
+					if p == "" {
+						continue
+					}
+					out = append(out, provider.MessageAttachment{
+						FileName: attachmentFileName("", p),
+						Path:     p,
+						Kind:     "image",
+					})
+				}
+			}
+		}
+	}
+	return out
 }
 
 // attachmentKind normalises the stored rendering kind and derives one from the

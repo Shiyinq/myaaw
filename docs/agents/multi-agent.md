@@ -61,10 +61,11 @@ invalid: my friend, ../admin, my.friend, my/friend, -agent, _agent, pids
 ~/.myaaw/
 ├── config/                # shared configuration
 │   ├── agents.json        # registry
-│   ├── controlplane.json  # control-plane credentials
 │   ├── model_capabilities.json
 │   ├── model_prices.json
 │   └── tool_prices.json
+├── controlplane/          # control-plane SQLite state (0700)
+│   └── controlplane.db    # credentials, UI settings, and group chats (0600)
 ├── pids/                  # global daemon PID files
 ├── logs/                  # global logs (control plane, webui, daemons)
 ├── credentials/           # host-level credentials (ChatGPT)
@@ -158,9 +159,7 @@ mkdir -p ~/.myaaw/agents
 mv ~/.myaaw/myfriend ~/.myaaw/agents/myfriend
 ```
 
-The registry is migrated automatically to `~/.myaaw/config/agents.json`, together with
-`controlplane.json`. After moving an old agent directory, run any `myaaw` command to register the
-directories again, and check that `myaaw agent list` shows every agent.
+The registry is migrated automatically to `~/.myaaw/config/agents.json`. After moving an old agent directory, run any `myaaw` command to register the directories again, and check that `myaaw agent list` shows every agent.
 
 ## 5. Selecting an agent
 

@@ -45,6 +45,7 @@ func (h *Handler) Login(c fiber.Ctx) error {
 		"token":                token,
 		"expires_at":           expiresAt.UTC().Format(time.RFC3339),
 		"user_id":              h.auth.UserID(),
+		"role":                 h.auth.Role(),
 		"must_change_password": h.auth.MustChangePassword(),
 	})
 }
@@ -62,6 +63,7 @@ func (h *Handler) Me(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"username":             h.auth.Username(),
 		"user_id":              h.auth.UserID(),
+		"role":                 h.auth.Role(),
 		"must_change_password": h.auth.MustChangePassword(),
 	})
 }

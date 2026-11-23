@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 	"strings"
@@ -144,6 +145,78 @@ func attachToFinalAssistant(transcript []provider.Message, attachments []channel
 			continue
 		}
 		transcript[i].Attachments = items
+		return
+	}
+}
+
+// dedupeAttachmentsAgainstExtraMessages removes attachments whose canonical
+// virtual path is already referenced by a media or carousel block in
+// extra_messages so a turn that mixes @attach(...) and extra_messages for the
+// same local file does not render duplicates.
+func dedupeAttachmentsAgainstExtraMessages(attachments []channel.Attachment, extras []provider.ExtraMessage) []channel.Attachment {
+	if len(attachments) == 0 || len(extras) == 0 {
+		return attachments
+	}
+	seen := make(map[string]struct{})
+	for _, extra := range extras {
+		for _, block := range extra.Blocks {
+			switch block.Type {
+			case "media":
+				var data struct {
+					Items []struct {
+						Path string `json:"path"`
+					} `json:"items"`
+				}
+				if json.Unmarshal(block.Data, &data) == nil {
+					for _, item := range data.Items {
+						if p := strings.TrimSpace(item.Path); p != "" {
+							seen[p] = struct{}{}
+						}
+					}
+				}
+			case "carousel":
+				var data struct {
+					Cards []struct {
+						ImagePath string `json:"image_path"`
+					} `json:"cards"`
+				}
+				if json.Unmarshal(block.Data, &data) == nil {
+					for _, card := range data.Cards {
+						if p := strings.TrimSpace(card.ImagePath); p != "" {
+							seen[p] = struct{}{}
+						}
+					}
+				}
+			}
+		}
+	}
+	if len(seen) == 0 {
+		return attachments
+	}
+	filtered := make([]channel.Attachment, 0, len(attachments))
+	for _, att := range attachments {
+		if att.Path != "" {
+			if _, dup := seen[strings.TrimSpace(att.Path)]; dup {
+				continue
+			}
+		}
+		filtered = append(filtered, att)
+	}
+	return filtered
+}
+
+// attachExtraMessagesToFinalAssistant persists extra_messages blocks onto the
+// last assistant turn in the transcript so a reopened chat renders every
+// display/interactive block and its latest interaction state.
+func attachExtraMessagesToFinalAssistant(transcript []provider.Message, extras []provider.ExtraMessage) {
+	if len(extras) == 0 {
+		return
+	}
+	for i := len(transcript) - 1; i >= 0; i-- {
+		if transcript[i].Role != "assistant" {
+			continue
+		}
+		transcript[i].ExtraMessages = provider.CloneExtraMessages(extras)
 		return
 	}
 }

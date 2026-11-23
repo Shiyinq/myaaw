@@ -10,7 +10,7 @@
 </script>
 
 <div
-	class="relative grid w-full min-w-0 shrink-0 grid-cols-1 overflow-hidden border-t transition-[height] duration-200 {compact
+	class="relative grid w-full min-w-0 shrink-0 grid-cols-1 overflow-hidden transition-[height] duration-200 {compact
 		? 'h-14'
 		: 'h-16'}"
 >

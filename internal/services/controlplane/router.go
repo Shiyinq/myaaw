@@ -20,12 +20,21 @@ import (
 // NewApp builds the control-plane Fiber app. Public routes are registered
 // first, then the bearer-token middleware, then the secured routes.
 func NewApp() (*fiber.App, error) {
+	return newApp("dev")
+}
+
+func newApp(version string) (*fiber.App, error) {
 	if err := agentdir.EnsureLayout(); err != nil {
 		return nil, err
 	}
 
-	auth, err := service.NewAuthService()
+	cpdb, err := service.OpenControlPlaneDB()
 	if err != nil {
+		return nil, err
+	}
+	auth, err := service.NewAuthServiceWithDB(cpdb)
+	if err != nil {
+		_ = cpdb.Close()
 		return nil, err
 	}
 	agents := service.NewAgentService()
@@ -44,9 +53,18 @@ func NewApp() (*fiber.App, error) {
 	approvalsSvc := service.NewApprovalsService()
 	terminals := service.NewTerminalService()
 	backups := service.NewBackupService(serverSvc)
-	h := handler.New(auth, agents, proxy, files, projects, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups)
+	groupsSvc := service.NewGroupServiceWithDB(cpdb, agents)
+	proxy.SetGroups(groupsSvc)
+	h := handler.New(auth, agents, proxy, files, projects, configSvc, conversations, logs, serverSvc, cronSvc, skillsSvc, toolsSvc, contactsSvc, observabilitySvc, approvalsSvc, terminals, backups, groupsSvc)
 
-	app := fiber.New(fiber.Config{AppName: "myaaw api", BodyLimit: config.A2AMaxRequestBytes})
+	app := fiber.New(fiber.Config{
+		AppName:   "myaaw api",
+		BodyLimit: config.A2AMaxRequestBytes,
+		// Keep route params, query strings, and headers immutable so background
+		// goroutines and SSE SendStreamWriter callbacks never observe recycled
+		// fasthttp request buffers.
+		Immutable: true,
+	})
 	app.Use(cors.New(corsConfig()))
 
 	app.Get("/health", h.Health)
@@ -61,12 +79,20 @@ func NewApp() (*fiber.App, error) {
 
 	app.Use(cpMiddleware.RequireAuth(auth))
 
+	app.Get("/version", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{"version": version})
+	})
+
 	app.Get("/auth/me", h.Me)
 	app.Post("/auth/logout", h.Logout)
 	app.Post("/auth/change-password", h.ChangePassword)
 	app.Put("/auth/username", h.ChangeUsername)
 
+	app.Get("/settings", h.GetSettings)
+	app.Patch("/settings", h.UpdateSettings)
+
 	app.Get("/agents", h.ListAgents)
+	app.Get("/bots/summary", h.BotsSummary)
 	app.Get("/capabilities", h.GetCapabilities)
 	app.Post("/agents/:name/onboard", h.OnboardAgent)
 	app.Get("/agents/:name", h.GetAgent)
@@ -78,6 +104,7 @@ func NewApp() (*fiber.App, error) {
 	app.Get("/agents/:name/chat/runs", h.ChatRuns)
 	app.Get("/agents/:name/chat/run/:id/stream", h.ChatRunStream)
 	app.Get("/agents/:name/events", h.Events)
+	app.Get("/events", h.EventsAll)
 	app.Post("/agents/:name/approvals/:id/decision", h.ApprovalDecision)
 	app.Get("/agents/:name/approvals", h.GetApprovals)
 	app.Delete("/agents/:name/approvals/grants/:key", h.RevokeApprovalGrant)
@@ -158,6 +185,7 @@ func NewApp() (*fiber.App, error) {
 	app.Put("/agents/:name/conversations/:id/pin", h.PinConversation)
 	app.Put("/agents/:name/conversations/:id/folder", h.MoveConversation)
 	app.Post("/agents/:name/conversations/:id/read", h.MarkConversationRead)
+	app.Post("/agents/:name/conversations/:id/interactions", h.RespondConversationInteraction)
 	app.Get("/agents/:name/logs", h.ListLogs)
 	app.Get("/agents/:name/logs/stream", h.StreamLogs)
 	app.Get("/agents/:name/server/status", h.GetServerStatus)
@@ -198,11 +226,27 @@ func NewApp() (*fiber.App, error) {
 	app.Delete("/backups/:name", h.DeleteBackup)
 	app.Post("/backups/:name/restore", h.RestoreBackup)
 
+	// Multi-agent group chat rooms and orchestrator endpoints.
+	app.Get("/groups", h.ListGroups)
+	app.Post("/groups", h.CreateGroup)
+	app.Get("/groups/:id", h.GetGroup)
+	app.Patch("/groups/:id", h.UpdateGroup)
+	app.Delete("/groups/:id", h.DeleteGroup)
+	app.Delete("/groups/:id/messages", h.ClearGroupMessages)
+	app.Post("/groups/:id/messages", h.SendGroupMessage)
+	app.Post("/groups/:id/interactions", h.RespondGroupInteraction)
+	app.Post("/groups/:id/read", h.MarkGroupRead)
+	app.Post("/groups/:id/stop", h.StopGroupRun)
+	app.Post("/groups/:id/continue", h.ContinueGroupRun)
+	app.Get("/groups/:id/attachments", h.ListGroupAttachments)
+	app.Get("/groups/:id/uploads/:msgId/:file", h.DownloadGroupUpload)
+	app.Get("/groups/:id/stream", h.StreamGroup)
+
 	return app, nil
 }
 
-func Run(addr string) error {
-	app, err := NewApp()
+func Run(addr, version string) error {
+	app, err := newApp(version)
 	if err != nil {
 		return err
 	}

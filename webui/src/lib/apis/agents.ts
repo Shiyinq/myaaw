@@ -2,6 +2,7 @@ import { agentPath, client } from './client';
 import type {
 	AgentInfo,
 	AgentsResponse,
+	BotsSummaryResponse,
 	CapabilitiesView,
 	OKResponse,
 	OnboardRequest,
@@ -10,6 +11,7 @@ import type {
 
 export const agents = {
 	list: () => client<AgentsResponse>('/agents'),
+	summary: () => client<BotsSummaryResponse>('/bots/summary'),
 	get: (name: string) => client<AgentInfo>(agentPath(name, '')),
 	remove: (name: string) => client<OKResponse>(agentPath(name, ''), { method: 'DELETE' }),
 	setDefault: (name: string) => client<OKResponse>(agentPath(name, '/default'), { method: 'POST' }),

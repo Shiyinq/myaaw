@@ -120,6 +120,12 @@ func (t *Timeline) HandleChunk(chunk channel.StreamChunk) {
 				"message_tokens": chunk.Context.MessageTokens,
 			})
 		}
+	case "extra_messages":
+		if len(chunk.ExtraMessages) > 0 {
+			t.emitEvent("extra_messages", map[string]any{
+				"extra_messages": chunk.ExtraMessages,
+			})
+		}
 	default:
 		// Backwards compatible with providers that only populate fields.
 		if chunk.Thought != "" {
@@ -191,6 +197,9 @@ func (t *Timeline) Done(out *channel.OutgoingMessage) {
 		if len(list) > 0 {
 			data["attachments"] = list
 		}
+	}
+	if len(out.ExtraMessages) > 0 {
+		data["extra_messages"] = out.ExtraMessages
 	}
 	t.emit(SSEEvent{Name: "done", Data: data})
 }

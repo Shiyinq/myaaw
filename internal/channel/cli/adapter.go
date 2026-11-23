@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/channel"
+	"myaaw/internal/provider"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,7 +80,17 @@ func (a *CLIAdapter) Send(msg *channel.IncomingMessage, out *channel.OutgoingMes
 	}
 	fmt.Fprintln(os.Stdout, out.Text)
 	a.printAttachments(out.Attachments)
+	a.printExtraMessages(out.ExtraMessages)
 	return nil
+}
+
+func (a *CLIAdapter) printExtraMessages(extras []provider.ExtraMessage) {
+	if len(extras) == 0 {
+		return
+	}
+	if rendered := channel.FormatExtraMessagesPlain(extras); rendered != "" {
+		fmt.Fprintln(os.Stdout, "\n"+rendered)
+	}
 }
 
 // saveAttachments writes delivered files under the agent's logs directory so a
@@ -126,10 +137,15 @@ func (a *CLIAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onCh
 	lastThoughtLen := 0
 	lastTraceLen := 0
 	var attachments []channel.Attachment
+	var extraMessages []provider.ExtraMessage
 	err := streamFn(func(chunk channel.StreamChunk) {
 		if chunk.Kind == "attachment" && len(chunk.Attachments) > 0 {
 			attachments = append(attachments, chunk.Attachments...)
 			a.printAttachments(chunk.Attachments)
+		}
+		if chunk.Kind == "extra_messages" && len(chunk.ExtraMessages) > 0 {
+			extraMessages = append(extraMessages, chunk.ExtraMessages...)
+			a.printExtraMessages(chunk.ExtraMessages)
 		}
 		if chunk.Thought != "" {
 			if len(chunk.Thought) > lastThoughtLen {
@@ -165,7 +181,7 @@ func (a *CLIAdapter) SendStream(msg *channel.IncomingMessage, streamFn func(onCh
 		}
 	})
 	fmt.Println()
-	return &channel.OutgoingMessage{Text: fullContent, Attachments: attachments}, err
+	return &channel.OutgoingMessage{Text: fullContent, Attachments: attachments, ExtraMessages: extraMessages}, err
 }
 
 func (a *CLIAdapter) SendError(msg *channel.IncomingMessage, errText string) error {

@@ -6,6 +6,7 @@
 	import SidebarAccount from '$lib/components/app/SidebarAccount.svelte';
 	import SidebarAgent from '$lib/components/app/SidebarAgent.svelte';
 	import SidebarBrand from '$lib/components/app/SidebarBrand.svelte';
+	import ClassicAgentMenu from '$lib/components/classic/ClassicAgentMenu.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
@@ -54,10 +55,14 @@
 	to find and no navigation to learn.
 -->
 <SidebarBrand {compact} {onClose} />
-<SidebarAgent {compact} />
+<SidebarAgent {compact}>
+	{#snippet action()}
+		<ClassicAgentMenu onNavigate={onClose} side="bottom" align="end" />
+	{/snippet}
+</SidebarAgent>
 
 {#if contentCompact}
-	<div class="flex h-14 shrink-0 items-center border-b px-3">
+	<div class="flex shrink-0 flex-col items-center gap-1 px-2 py-1">
 		<Button
 			variant="ghost"
 			size="icon-sm"
@@ -68,6 +73,7 @@
 		>
 			<MessageSquarePlus class="h-4 w-4" />
 		</Button>
+		<ClassicAgentMenu onNavigate={onClose} side="right" align="start" />
 	</div>
 	<div class="flex-1"></div>
 {:else}

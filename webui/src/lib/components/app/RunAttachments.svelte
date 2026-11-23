@@ -10,7 +10,7 @@
 	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import type { Attachment, LightboxImage } from '$lib/types';
-	import ImageLightbox from './ImageLightbox.svelte';
+	import LightBox from './LightBox.svelte';
 	import ProjectCard from './ProjectCard.svelte';
 
 	interface Props {
@@ -307,4 +307,4 @@
 	</div>
 {/if}
 
-<ImageLightbox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />
+<LightBox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />

@@ -8,6 +8,8 @@ export default defineConfig({
 		tailwindcss(),
 		sveltekit(),
 		SvelteKitPWA({
+			// The worker must resolve from the app root even on a directly loaded nested route.
+			base: '/',
 			registerType: 'prompt',
 			strategies: 'injectManifest',
 			srcDir: 'src',

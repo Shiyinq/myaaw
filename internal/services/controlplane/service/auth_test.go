@@ -1,8 +1,7 @@
 package service
 
 import (
-	"encoding/json"
-	"os"
+	"database/sql"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,37 +9,46 @@ import (
 
 func newTestAuth(t *testing.T) *AuthService {
 	t.Helper()
-	auth, err := NewAuthServiceAt(filepath.Join(t.TempDir(), "controlplane.json"))
+	auth, err := NewAuthServiceAt(filepath.Join(t.TempDir(), "controlplane.db"))
 	if err != nil {
 		t.Fatalf("NewAuthServiceAt: %v", err)
 	}
+	t.Cleanup(func() { _ = auth.Close() })
 	return auth
 }
 
 func TestAuthServiceSeedsDefaultUser(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "controlplane.json")
+	path := filepath.Join(t.TempDir(), "controlplane.db")
 	auth, err := NewAuthServiceAt(path)
 	if err != nil {
 		t.Fatalf("NewAuthServiceAt: %v", err)
 	}
+	defer auth.Close()
 
 	if auth.Username() != DefaultUsername {
 		t.Fatalf("username = %q, want %q", auth.Username(), DefaultUsername)
 	}
+	if auth.Role() != DefaultRole {
+		t.Fatalf("role = %q, want %q", auth.Role(), DefaultRole)
+	}
 	if auth.UserID() != 0 {
 		t.Fatalf("user id = %d, want 0", auth.UserID())
 	}
+	if !auth.MustChangePassword() {
+		t.Fatal("seeded account should require password change")
+	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read credentials: %v", err)
+	var (
+		storedUser string
+		storedRole string
+		storedUID  int
+	)
+	if err := auth.db.DB().QueryRow(`SELECT username, role, user_id FROM auth_account WHERE id = 1`).
+		Scan(&storedUser, &storedRole, &storedUID); err != nil {
+		t.Fatalf("query auth_account: %v", err)
 	}
-	var stored map[string]any
-	if err := json.Unmarshal(data, &stored); err != nil {
-		t.Fatalf("unmarshal credentials: %v", err)
-	}
-	if stored["user_id"] != float64(0) {
-		t.Fatalf("stored user_id = %v, want 0", stored["user_id"])
+	if storedUser != DefaultUsername || storedRole != DefaultRole || storedUID != 0 {
+		t.Fatalf("stored row = (%q, %q, %d)", storedUser, storedRole, storedUID)
 	}
 
 	token, expiresAt, err := auth.Login(DefaultUsername, DefaultPassword)
@@ -55,72 +63,27 @@ func TestAuthServiceSeedsDefaultUser(t *testing.T) {
 	}
 }
 
-func TestAuthServiceMigratesMissingUserID(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "controlplane.json")
-	if _, err := NewAuthServiceAt(path); err != nil {
-		t.Fatalf("NewAuthServiceAt: %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read credentials: %v", err)
-	}
-	var stored map[string]any
-	if err := json.Unmarshal(data, &stored); err != nil {
-		t.Fatalf("unmarshal credentials: %v", err)
-	}
-	delete(stored, "user_id")
-	data, _ = json.Marshal(stored)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("write legacy credentials: %v", err)
-	}
-
-	auth, err := NewAuthServiceAt(path)
-	if err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	if auth.UserID() != 0 {
-		t.Fatalf("user id = %d, want 0", auth.UserID())
-	}
-
-	data, err = os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read migrated credentials: %v", err)
-	}
-	if err := json.Unmarshal(data, &stored); err != nil {
-		t.Fatalf("unmarshal migrated credentials: %v", err)
-	}
-	if stored["user_id"] != float64(0) {
-		t.Fatalf("migrated user_id = %v, want 0", stored["user_id"])
-	}
-}
-
 func TestAuthServiceLoadsConfiguredUserID(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "controlplane.json")
-	if _, err := NewAuthServiceAt(path); err != nil {
+	path := filepath.Join(t.TempDir(), "controlplane.db")
+	first, err := NewAuthServiceAt(path)
+	if err != nil {
 		t.Fatalf("NewAuthServiceAt: %v", err)
 	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read credentials: %v", err)
+	if _, err := first.db.DB().Exec(`UPDATE auth_account SET user_id = 42 WHERE id = 1`); err != nil {
+		t.Fatalf("update user_id: %v", err)
 	}
-	var stored map[string]any
-	if err := json.Unmarshal(data, &stored); err != nil {
-		t.Fatalf("unmarshal credentials: %v", err)
-	}
-	stored["user_id"] = 42
-	data, _ = json.Marshal(stored)
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("write credentials: %v", err)
-	}
+	_ = first.Close()
 
 	auth, err := NewAuthServiceAt(path)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
+	defer auth.Close()
 	if auth.UserID() != 42 {
 		t.Fatalf("user id = %d, want 42", auth.UserID())
+	}
+	if auth.Role() != DefaultRole {
+		t.Fatalf("role = %q, want %q", auth.Role(), DefaultRole)
 	}
 }
 
@@ -162,6 +125,9 @@ func TestAuthServiceChangePassword(t *testing.T) {
 	if err := auth.ChangePassword(DefaultPassword, "new-password-123"); err != nil {
 		t.Fatalf("ChangePassword: %v", err)
 	}
+	if auth.MustChangePassword() {
+		t.Fatal("MustChangePassword should be false after ChangePassword")
+	}
 	if auth.Validate(oldToken) {
 		t.Fatal("existing sessions should be invalidated")
 	}
@@ -199,19 +165,24 @@ func TestAuthServiceChangeUsername(t *testing.T) {
 }
 
 func TestAuthServiceStoresHashNotPlaintext(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "controlplane.json")
-	if _, err := NewAuthServiceAt(path); err != nil {
+	path := filepath.Join(t.TempDir(), "controlplane.db")
+	auth, err := NewAuthServiceAt(path)
+	if err != nil {
 		t.Fatalf("NewAuthServiceAt: %v", err)
 	}
+	defer auth.Close()
 
-	data, err := os.ReadFile(path)
+	db, err := sql.Open("sqlite3", path)
 	if err != nil {
-		t.Fatalf("read credentials: %v", err)
+		t.Fatalf("open db: %v", err)
 	}
-	if strings.Contains(string(data), DefaultPassword) {
-		t.Fatal("credentials file contains the plaintext password")
+	defer db.Close()
+
+	var hash string
+	if err := db.QueryRow(`SELECT password_hash FROM auth_account WHERE id = 1`).Scan(&hash); err != nil {
+		t.Fatalf("query password_hash: %v", err)
 	}
-	if !strings.Contains(string(data), "password_hash") {
-		t.Fatal("credentials file is missing password_hash")
+	if hash == "" || strings.Contains(hash, DefaultPassword) || !strings.HasPrefix(hash, "$2") {
+		t.Fatalf("unexpected stored password_hash: %q", hash)
 	}
 }

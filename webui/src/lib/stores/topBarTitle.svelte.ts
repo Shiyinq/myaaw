@@ -1,5 +1,7 @@
 let title = $state('');
 let description = $state('');
+let desktopHidden = $state(false);
+let chatKey = $state('');
 
 /**
  * The title the shell shows instead of the static page label. The chat page
@@ -14,12 +16,26 @@ export const topBarTitle = {
 	get description() {
 		return description;
 	},
+	/** Hides the floating desktop title when a full-height preview owns the top edge. */
+	get desktopHidden() {
+		return desktopHidden;
+	},
+	chatTitle(key: string): string | undefined {
+		return chatKey === key ? title : undefined;
+	},
+	setChat(key: string, next: string) {
+		this.set(next);
+		chatKey = key;
+	},
 	set(next: string, subtitle = '') {
+		chatKey = '';
 		title = next;
 		description = subtitle;
 	},
+	setDesktopHidden(hidden: boolean) {
+		desktopHidden = hidden;
+	},
 	clear() {
-		title = '';
-		description = '';
+		this.set('');
 	}
 };

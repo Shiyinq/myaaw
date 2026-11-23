@@ -11,7 +11,7 @@
 		X
 	} from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
-	import ImageLightbox from '$lib/components/app/ImageLightbox.svelte';
+	import LightBox from '$lib/components/app/LightBox.svelte';
 	import { filesStore } from '$lib/stores/files.svelte';
 	import { ensureSigned } from '$lib/stores/mediaSign.svelte';
 	import { toastStore } from '$lib/stores';
@@ -24,18 +24,81 @@
 		onClose: () => void;
 		/** Closes the pane and scrolls the transcript to the carrying turn. */
 		onShowInChat: (item: ConversationAttachment) => void;
+		/** Optional direct URLs & download handler (e.g. for control-plane group uploads). */
+		srcOverride?: string;
+		downloadSrcOverride?: string;
+		onDownload?: () => void;
+		originLabel?: string;
 	}
 
-	let { agent, item, onClose, onShowInChat }: Props = $props();
+	let {
+		agent,
+		item,
+		onClose,
+		onShowInChat,
+		srcOverride,
+		downloadSrcOverride,
+		onDownload,
+		originLabel
+	}: Props = $props();
 
 	const { t } = useTranslation();
 
 	let lightboxOpen = $state(false);
 	let imageFailed = $state(false);
+	/** Space kept free at the right so controls never sit under the floating top bar. */
+	let gutter = $state(12);
+	let root = $state<HTMLElement | null>(null);
 
-	const src = $derived(filesStore.rawUrl(agent, item.path));
-	const downloadSrc = $derived(filesStore.rawUrl(agent, item.path, { download: true }));
+	function measureGutter() {
+		if (!root) return;
+		const bar = document.querySelector('header');
+		const rootRect = root.getBoundingClientRect();
+		if (!bar) {
+			gutter = 12;
+			return;
+		}
+		const barRect = bar.getBoundingClientRect();
+		if (barRect.bottom <= rootRect.top + 1) {
+			gutter = 12;
+			return;
+		}
+		const edges = [...bar.querySelectorAll('button, a')]
+			.map((element) => element.getBoundingClientRect())
+			.filter((rect) => rect.width > 0 && rect.left > window.innerWidth / 2)
+			.map((rect) => rect.left);
+		const actionLeft = edges.length > 0 ? Math.min(...edges) : window.innerWidth;
+		gutter = Math.max(12, Math.round(rootRect.right - actionLeft + 8));
+	}
+
+	$effect(() => {
+		const element = root;
+		if (!element) return;
+		measureGutter();
+		const observer = new ResizeObserver(() => measureGutter());
+		observer.observe(element);
+		const bar = document.querySelector('header');
+		if (bar) observer.observe(bar);
+		window.addEventListener('resize', measureGutter);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener('resize', measureGutter);
+		};
+	});
+
+	const src = $derived(srcOverride || filesStore.rawUrl(agent, item.path));
+	const downloadSrc = $derived(
+		downloadSrcOverride || filesStore.rawUrl(agent, item.path, { download: true })
+	);
 	const lightboxItems = $derived<LightboxImage[]>([{ src, name: item.file_name, downloadSrc }]);
+
+	function triggerDownload() {
+		if (onDownload) {
+			onDownload();
+			return;
+		}
+		void filesStore.download(agent, item.path);
+	}
 
 	const kindLabel = $derived.by(() => {
 		switch (item.kind) {
@@ -79,13 +142,13 @@
 	/** One signature per file; media elements cannot send the session token. */
 	$effect(() => {
 		const path = item.path;
-		if (!path) return;
 		imageFailed = false;
+		if (!path || !agent || srcOverride) return;
 		void ensureSigned(agent, [path]);
 	});
 
 	function retryImage() {
-		if (imageFailed) {
+		if (imageFailed || !agent || !item.path || srcOverride) {
 			toastStore.error(t('myaaw.chat.attachments_missing'));
 			return;
 		}
@@ -103,8 +166,16 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="flex h-full min-h-0 flex-col" role="dialog" aria-label={item.file_name}>
-	<div class="flex shrink-0 items-center gap-2 border-b p-2 pr-3">
+<div
+	bind:this={root}
+	class="flex h-full min-h-0 flex-col"
+	role="dialog"
+	aria-label={item.file_name}
+>
+	<div
+		class="flex min-h-14 shrink-0 items-center gap-2 border-b py-2 pl-3"
+		style:padding-right="{gutter}px"
+	>
 		{#if item.kind === 'image'}
 			<img
 				{src}
@@ -131,9 +202,10 @@
 				{/if}
 				<span>·</span>
 				<span>
-					{item.origin === 'agent'
-						? t('myaaw.chat.attachments_from_agent')
-						: t('myaaw.chat.attachments_from_you')}
+					{originLabel ||
+						(item.origin === 'agent'
+							? t('myaaw.chat.attachments_from_agent')
+							: t('myaaw.chat.attachments_from_you'))}
 				</span>
 			</p>
 		</div>
@@ -150,7 +222,7 @@
 		<Button
 			variant="outline"
 			size="icon-sm"
-			onclick={() => void filesStore.download(agent, item.path)}
+			onclick={triggerDownload}
 			title={t('myaaw.chat.download_file')}
 			aria-label={t('myaaw.chat.download_file')}
 		>
@@ -215,11 +287,7 @@
 							· {sizeLabel(item.size)}{/if}
 					</p>
 				</div>
-				<Button
-					variant="outline"
-					size="sm"
-					onclick={() => void filesStore.download(agent, item.path)}
-				>
+				<Button variant="outline" size="sm" onclick={triggerDownload}>
 					<ArrowDownToLine class="mr-1.5 h-4 w-4" />
 					{t('myaaw.chat.download_file')}
 				</Button>
@@ -228,4 +296,4 @@
 	</div>
 </div>
 
-<ImageLightbox bind:open={lightboxOpen} items={lightboxItems} index={0} />
+<LightBox bind:open={lightboxOpen} items={lightboxItems} index={0} />

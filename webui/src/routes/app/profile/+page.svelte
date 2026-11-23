@@ -94,6 +94,14 @@
 </TopBarActions>
 
 <div class="space-y-4">
+	{#if authStore.profileError}
+		<div
+			role="alert"
+			class="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+		>
+			{authStore.profileError}
+		</div>
+	{/if}
 	{#if forcePasswordChange}
 		<div
 			class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"

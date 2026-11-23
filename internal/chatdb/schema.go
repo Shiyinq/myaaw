@@ -42,6 +42,31 @@ func EnsureSchema(db *sql.DB) error {
 		return err
 	}
 
+	// interaction_callbacks maps short 8-char callback keys (e.g. Telegram 64B
+	// callback_data and Discord CustomID) back to an extra_messages block so
+	// button clicks, select menus, and modals remain compact and persistent.
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS interaction_callbacks (
+		key TEXT PRIMARY KEY,
+		conversation_id TEXT NOT NULL DEFAULT '',
+		user_id INTEGER NOT NULL DEFAULT 0,
+		channel TEXT NOT NULL DEFAULT '',
+		block_id TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		action_id TEXT NOT NULL DEFAULT '',
+		card_id TEXT NOT NULL DEFAULT '',
+		label TEXT NOT NULL DEFAULT '',
+		value TEXT NOT NULL DEFAULT '',
+		meta_json TEXT NOT NULL DEFAULT '',
+		created_at DATETIME NOT NULL
+	)`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(
+		`CREATE INDEX IF NOT EXISTS idx_interaction_callbacks_created ON interaction_callbacks(created_at)`,
+	); err != nil {
+		return err
+	}
+
 	scopeColumns, err := tableColumns(db, "chat_scopes")
 	if err != nil {
 		return err

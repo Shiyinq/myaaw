@@ -30,12 +30,28 @@ export interface Attachment {
 	size?: number;
 }
 
-/** One image opened in the full-screen lightbox. */
+import type { FilePreviewKind } from '$lib/utils/filePreview';
+import type { ExtraMessage } from './extra';
+
+/** One image, video, audio, or document opened in the full-screen lightbox. */
 export interface LightboxImage {
 	src: string;
 	name: string;
 	/** URL used by the download button; falls back to `src` (data URLs work). */
 	downloadSrc?: string;
+	/** Preview kind; defaults to `'image'` for legacy image-only callers. */
+	kind?: FilePreviewKind;
+	/** highlight.js language id for `'code'` items. */
+	language?: string;
+	/** Short human-readable type badge, e.g. "PDF", "Markdown", "MP4". */
+	label?: string;
+	/** Agent name + virtual path for on-demand text reads and URL signing. */
+	agent?: string;
+	path?: string;
+	/** Byte length for metadata display and text-preview size guard. */
+	size?: number;
+	/** Optional compact metadata shown next to the title (e.g. source label). */
+	meta?: string;
 }
 
 /** Where a quoted excerpt came from, so the model and the reader can tell. */
@@ -108,6 +124,7 @@ export interface ChatResponse {
 	timeline?: TimelineItem[];
 	usage?: Usage;
 	attachments?: Attachment[];
+	extra_messages?: ExtraMessage[];
 	status?: 'approval_required' | string;
 	approval?: ApprovalPrompt;
 }
@@ -116,6 +133,7 @@ export interface ChatResponse {
 export interface ChatRunInfo {
 	request_id: string;
 	conversation_id?: string;
+	scope?: string;
 	streaming: boolean;
 	started_at: string;
 	finished_at?: string;
@@ -133,5 +151,6 @@ export type ChatStreamEvent =
 	| 'approval_resolved'
 	| 'compaction'
 	| 'context'
+	| 'extra_messages'
 	| 'done'
 	| 'error';

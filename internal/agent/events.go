@@ -34,6 +34,9 @@ const (
 	// EventContextCompacted fires when the transcript was trimmed to fit the
 	// context budget, before the request that used the shortened transcript.
 	EventContextCompacted
+	// EventExtraMessages fires when the extra_messages tool produces rich UI
+	// blocks so live surfaces can render them immediately.
+	EventExtraMessages
 )
 
 // AgentEvent is emitted by the agent loop. Consumers should treat it as a
@@ -74,6 +77,9 @@ type AgentEvent struct {
 	Usage      provider.Usage      // EventUsage / EventAgentEnd (aggregated)
 	StopReason provider.StopReason // EventAgentEnd
 	Err        error               // EventAgentEnd
+
+	// ExtraMessages is set on EventExtraMessages.
+	ExtraMessages []provider.ExtraMessage
 }
 
 // ContextUsage describes how full the model's context window is for one
@@ -104,6 +110,8 @@ type RunResult struct {
 	Err error
 	// Attachments are files the run wants delivered to the user.
 	Attachments []channel.Attachment
+	// ExtraMessages are rich UI blocks emitted by the extra_messages tool.
+	ExtraMessages []provider.ExtraMessage
 }
 
 // newRunID returns a short random identifier for one agent run.

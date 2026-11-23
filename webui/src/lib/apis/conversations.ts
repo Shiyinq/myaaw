@@ -7,6 +7,8 @@ import type {
 	ConversationAttachmentPage,
 	ConversationDetail,
 	ConversationPage,
+	InteractionRequest,
+	InteractionResponse,
 	OKResponse
 } from '$lib/types';
 
@@ -101,7 +103,12 @@ export const conversations = {
 		return client<ConversationAttachmentPage>(
 			agentPath(agent, `/conversations/${encodeURIComponent(id)}/attachments${suffix}`)
 		);
-	}
+	},
+	respondInteraction: (agent: string, id: string, payload: InteractionRequest) =>
+		client<InteractionResponse>(
+			agentPath(agent, `/conversations/${encodeURIComponent(id)}/interactions`),
+			{ method: 'POST', body: payload }
+		)
 };
 
 export const chatFolders = {

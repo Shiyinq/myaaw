@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"strings"
 
 	"myaaw/internal/services/controlplane/service"
 
@@ -26,6 +27,33 @@ func (h *Handler) ListAgents(c fiber.Ctx) error {
 		})
 	}
 	return c.JSON(fiber.Map{"agents": agents})
+}
+
+// BotsSummaryResponse is returned by GET /bots/summary.
+type BotsSummaryResponse struct {
+	Bots []service.BotSidebarSummary `json:"bots"`
+}
+
+// BotsSummary returns the latest DM preview, recent conversations (for unread
+// tracking), and active DM runs for all agents in a single request.
+// @Summary      Batch bot sidebar summaries
+// @Description  Aggregates latest DM preview, recent conversations, and active DM runs for every agent in one request.
+// @Tags         Agents
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} BotsSummaryResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      500 {object} common.ErrorResponse
+// @Router       /bots/summary [get]
+func (h *Handler) BotsSummary(c fiber.Ctx) error {
+	agents, err := h.agents.List()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	summaries := service.SummarizeBots(c.Context(), h.conversations, agents, h.auth.UserID())
+	return c.JSON(BotsSummaryResponse{Bots: summaries})
 }
 
 // GetAgent returns one agent.
@@ -150,6 +178,24 @@ func (h *Handler) ChatRunStream(c fiber.Ctx) error {
 		return proxyError(c, err)
 	}
 	return nil
+}
+
+// EventsAll multiplexes conversation and approval SSE events for all running
+// (or requested) agents over a single stream.
+// @Summary      Multiplexed conversation events
+// @Description  Server-Sent Events multiplexing `conversation.updated`, `approval.required`, and `approval.resolved` across multiple agents over one connection.
+// @Tags         Chat
+// @Produce      text/event-stream
+// @Security     BearerAuth
+// @Param        agents query string false "Comma-separated agent names (defaults to all running agents)"
+// @Success      200
+// @Router       /events [get]
+func (h *Handler) EventsAll(c fiber.Ctx) error {
+	var names []string
+	if raw := strings.TrimSpace(c.Query("agents")); raw != "" {
+		names = strings.Split(raw, ",")
+	}
+	return h.proxy.EventsAll(c, names)
 }
 
 // Events streams conversation updates for the selected agent.

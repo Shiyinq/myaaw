@@ -1,6 +1,6 @@
 import type { LucideIcon } from '$lib/types/icons';
 
-/** One destination of the advanced shell's sidebar. */
+/** One destination of the studio shell's sidebar. */
 export interface NavItem {
 	href: string;
 	label: string;
@@ -12,6 +12,10 @@ export interface NavItem {
 export interface NavGroup {
 	label: string;
 	items: NavItem[];
+	/** Lets the reader fold the group's links under its heading. */
+	collapsible?: boolean;
+	/** Initial expanded state when `collapsible` is true and no preference is stored. */
+	defaultOpen?: boolean;
 }
 
 /** True when `pathname` is the page itself or one of its sub-pages. */

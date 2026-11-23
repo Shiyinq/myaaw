@@ -57,38 +57,28 @@ Store the returned `token` and send it on every other request:
 Authorization: Bearer <token>
 ```
 
-Credentials live in `~/.myaaw/config/controlplane.json` with a bcrypt hash and the agent `user_id`, never plaintext:
-
-```json
-{
-  "username": "myaaw",
-  "password_hash": "$2a$...",
-  "user_id": 0,
-  "created_at": "2026-10-20T00:00:00Z"
-}
-```
-
-New installs seed `user_id` as `0`. Existing credential files without the field are rewritten with `user_id: 0` the next time `myaaw api` starts. Edit the value and restart the API to change which agent user chat and conversation requests use. Clients do not need to send `user_id`.
+Credentials, synced dashboard settings, and multi-agent group chats live in the SQLite database `~/.myaaw/controlplane/controlplane.db` (`0700` directory, `0600` database file, WAL mode). The `auth_account` table stores the username, bcrypt password hash (never plaintext), `role` (defaults to `"admin"`), and agent `user_id` (default `0`). Clients do not need to send `user_id`.
 
 ## 3. Authentication
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/auth/login` | `{username, password}` → `{token, expires_at, user_id, must_change_password}` |
-| `GET` | `/auth/me` | current `{username, user_id, must_change_password}` |
+| `POST` | `/auth/login` | `{username, password}` → `{token, expires_at, user_id, role, must_change_password}` |
+| `GET` | `/auth/me` | current `{username, user_id, role, must_change_password}` |
 | `POST` | `/auth/logout` | invalidate the current token |
 | `POST` | `/auth/change-password` | `{current_password, new_password}` |
 | `PUT` | `/auth/username` | `{password, new_username}` |
 
-Tokens are valid for 24 hours. Changing the password invalidates all sessions. Restarting `myaaw api` also clears sessions. `/health` and `/docs/*` are public; every other route requires the bearer token. The one exception is `GET /agents/:name/fs/raw`, which also accepts a valid short-lived `exp`+`sig` pair issued by `POST /agents/:name/fs/sign` (see Files below).
+Tokens are valid for 24 hours. Changing the password invalidates all sessions. Restarting `myaaw api` also clears sessions (sessions stay in memory). `/health` and `/docs/*` are public; every other route requires the bearer token. The one exception is `GET /agents/:name/fs/raw`, which also accepts a valid short-lived `exp`+`sig` pair issued by `POST /agents/:name/fs/sign` (see Files below).
 
-The login response includes `user_id` (default `0`):
+The login response includes `user_id` (default `0`) and `role` (`"admin"` on the seeded account):
 
 ```json
 {
   "token": "...",
   "expires_at": "2026-10-20T20:00:00Z",
   "user_id": 0,
+  "role": "admin",
   "must_change_password": false
 }
 ```
@@ -178,7 +168,7 @@ curl -X POST http://localhost:9000/agents/myfriend/chat \
   -d '{"text":"Check my workspace"}'
 ```
 
-`user_id` is ignored in the request body. The control plane always sends the ID from `~/.myaaw/config/controlplane.json` (default `0`), so chat and conversation endpoints stay in the same scope. Direct calls to the agent server's `/api/chat` still default a missing `user_id` to `0`.
+`user_id` is ignored in the request body. The control plane always sends the ID from `~/.myaaw/controlplane/controlplane.db` (default `0`), so chat and conversation endpoints stay in the same scope. Direct calls to the agent server's `/api/chat` still default a missing `user_id` to `0`.
 
 To continue an existing conversation, pass its `conversation_id`. Omit it to start a **new conversation** every time; `"NEW"` also forces a new conversation. An explicit ID that does not exist returns `404`; an ID owned by another user returns `403`.
 
@@ -279,14 +269,25 @@ curl -N "http://localhost:9000/agents/myfriend/chat/run/3f0c6b0e-9a51-4e7f-b2f4-
 
 `after` skips events the client already has. The replay buffer is capped, a finished run stays attachable for 15 minutes, and runs live in the agent process (restarting the agent drops them). Every run announces itself with a `run` event carrying its request id.
 
-### Conversation events: `GET /agents/:name/events`
+### Conversation events: `GET /events` & `GET /agents/:name/events`
 
 A cron, heartbeat, or sub-agent turn is started by the agent, so a client that
 only listens to its own chat stream would never see it. The agent publishes
-`conversation.updated` once such a turn is saved, and this route relays that
-stream:
+`conversation.updated` once such a turn is saved, and these routes relay that
+stream.
+
+Prefer the **multiplexed** endpoint `GET /events` for browser clients so the
+dashboard consumes only **one** HTTP/1.1 connection regardless of how many
+agents are running (avoiding the browser 6-connection-per-origin limit). Pass
+`?agents=a,b` to subscribe to specific agents, or omit it to subscribe to all
+currently running agents:
 
 ```bash
+# Multiplexed stream for multiple (or all running) agents
+curl -N "http://localhost:9000/events?agents=default,myfriend" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Single-agent stream
 curl -N "http://localhost:9000/agents/myfriend/events" \
   -H "Authorization: Bearer $TOKEN"
 ```
@@ -297,9 +298,13 @@ data: {"agent":"myfriend","conversation_id":"af53cc52-…","trigger":"cron","at"
 ```
 
 The event is a signal: read `GET /agents/:name/conversations/:id` for the
-transcript. A `HEARTBEAT_OK` turn is not stored and emits nothing. Open one
-stream per agent, keep it open across agent switches, and expect a
-`: keep-alive` comment every 20 seconds.
+transcript. A `HEARTBEAT_OK` turn is not stored and emits nothing. On the
+multiplexed `GET /events` stream, the control plane also emits `group.updated`
+(carrying `group_id` with `run_state` or `message`) so group sidebar previews
+and thinking indicators stay live even while viewing another agent. Keep one
+multiplexed `/events` stream open across agent switches, expect a `: keepalive`
+comment every 20 seconds, and abort active SSE controllers on `beforeunload` /
+`pagehide` so page reloads release HTTP/1.1 sockets immediately.
 
 The same stream also relays `approval.required` and `approval.resolved`, so a
 dashboard can surface a tool approval raised outside the chat it is viewing (a
@@ -886,12 +891,13 @@ turning recording on: the trace database is opened once per process.
 | `PUT` | `/agents/:name/conversations/:id/pin` | pin or unpin `{pinned}` |
 | `PUT` | `/agents/:name/conversations/:id/folder` | move into a folder, or to Recents with `{"folder_id": null}` |
 | `POST` | `/agents/:name/conversations/:id/read` | record the newest acknowledged turn `{at}` (shared unread watermark) |
+| `POST` | `/agents/:name/conversations/:id/interactions` | atomically record an interactive `extra_messages` response (`409` if already submitted) and return `{ok, block_id, state, interaction_text}` |
 | `GET` | `/agents/:name/chat-folders` | the user's chat folders with a chat count each |
 | `POST` | `/agents/:name/chat-folders` | create a folder `{name}` |
 | `PATCH` | `/agents/:name/chat-folders/:folder` | rename a folder `{name}` |
 | `DELETE` | `/agents/:name/chat-folders/:folder` | delete a folder and every chat inside it |
 
-**User scoping.** List, detail, attachments, rename, delete, pin, move, and every folder route use the `user_id` from `~/.myaaw/config/controlplane.json` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
+**User scoping.** List, detail, attachments, rename, delete, pin, move, and every folder route use the `user_id` from `~/.myaaw/controlplane/controlplane.db` (default `0`). An explicit `?user_id=` query parameter overrides it for administration. A conversation owned by another user returns `403`; a missing ID returns `404`.
 
 **Search.** `search` matches the **title only**, case-insensitive for ASCII, and is applied before pagination. `total` reflects the filtered count.
 
@@ -1523,7 +1529,7 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 |---|---|
 | Auth | `POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, `POST /auth/change-password`, `PUT /auth/username` |
 | Agents | `GET /agents`, `GET /capabilities`, `GET/DELETE /agents/:name`, `POST /agents/:name/onboard`, `POST /agents/:name/default` |
-| Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream`, `POST /agents/:name/chat/stop`, `GET /agents/:name/chat/runs`, `GET /agents/:name/chat/run/:id/stream`, `GET /agents/:name/events` |
+| Chat | `POST /agents/:name/chat`, `POST /agents/:name/chat/stream`, `POST /agents/:name/chat/stop`, `GET /agents/:name/chat/runs`, `GET /agents/:name/chat/run/:id/stream`, `GET /events`, `GET /agents/:name/events` |
 | Approvals | `GET /agents/:name/approvals`, `POST /agents/:name/approvals/:id/decision`, `DELETE /agents/:name/approvals/grants`, `DELETE /agents/:name/approvals/grants/:key`, `DELETE /agents/:name/approvals/grants/:key/sessions/:conversation` |
 | Files | `GET/DELETE /agents/:name/fs`, `GET /fs/raw`, `POST /fs/sign`, `GET /fs/read`, `GET /fs/search`, `POST /fs/write`, `POST /fs/mkdir`, `POST /fs/rename` |
 | Context | `GET /agents/:name/context`, `GET /context/file?path=`, `PUT /context/file` |
@@ -1533,26 +1539,27 @@ An agent that has never recorded a run returns an empty summary (`runs: 0`) inst
 | Providers | `GET/POST /providers`, `PUT/DELETE /providers/:id`, `POST /providers/default`, `POST /providers/models`, `GET /providers/:id/models`, `GET /models/capabilities` |
 | Channels | `GET /channels`, `PUT/DELETE /channels/:channel` |
 | Config | `GET /config`, `PATCH /config`, `POST /config/reset`, `PATCH /config/reset` |
-| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `GET /conversations/:id/attachments?limit=&offset=&kind=`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read` |
+| Conversations | `GET /conversations?search=&pinned=&unfiled=&folder=&channel=`, `GET /conversations/activity?from=&to=`, `GET /conversations/:id`, `GET /conversations/:id/attachments?limit=&offset=&kind=`, `PATCH /conversations/:id`, `DELETE /conversations/:id`, `PUT /conversations/:id/pin`, `PUT /conversations/:id/folder`, `POST /conversations/:id/read`, `POST /conversations/:id/interactions` |
 | Chat folders | `GET /chat-folders`, `POST /chat-folders`, `PATCH /chat-folders/:folder`, `DELETE /chat-folders/:folder` |
 | Logs | `GET /logs`, `GET /logs/stream` |
 | Server | `GET /server/status`, `POST /server/start`, `POST /server/stop`, `POST /server/restart` |
 | Cron | `GET/POST /cron`, `DELETE /cron/:id`, `POST /cron/:id/run`, `GET /cron/:id/history` |
 | Observability | `GET /observability/summary`, `GET /observability/sessions`, `GET /observability/sessions/:id`, `GET /observability/sessions/:id/stats`, `GET /observability/runs`, `GET /observability/runs/:id`, `DELETE /observability/runs` |
 | Backups | `GET/POST /backups`, `GET/DELETE /backups/:name`, `POST /backups/:name/restore` |
+| Groups | `GET/POST /groups`, `GET/PATCH/DELETE /groups/:id`, `POST/DELETE /groups/:id/messages`, `POST /groups/:id/interactions`, `POST /groups/:id/stop`, `POST /groups/:id/continue`, `GET /groups/:id/stream` |
 | System | `GET /health`, `GET /docs/*` |
 
-All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, `GET /models/capabilities`, `POST /providers/models`, `/skills/builtin/*` and `/backups` are the routes outside an agent: the first three let a dashboard build and check an agent before it exists or render the model picker, the built-in skills are embedded in the binary, and `/backups` is host-level because one archive can hold every agent plus the registry.
+All `/agents/...` paths are prefixed with `/agents/:name`. `GET /capabilities`, `GET /models/capabilities`, `POST /providers/models`, `/skills/builtin/*`, `/backups`, and `/groups` are the routes outside an agent: the first three let a dashboard build and check an agent before it exists or render the model picker, the built-in skills are embedded in the binary, `/backups` is host-level because one archive can hold every agent plus the registry, and `/groups` coordinates multi-agent rooms across agents.
 
 ## 19. Errors
 
 | Status | Meaning |
 |---|---|
-| `400` | invalid JSON, invalid path, or invalid config |
+| `400` | invalid JSON, invalid path/group ID, or invalid config/request |
 | `401` | missing, invalid, or expired token |
 | `403` | conversation belongs to another user |
-| `404` | agent, provider, channel, job, conversation, log file, or backup archive not found |
-| `409` | agent already exists, or server already running |
+| `404` | agent, group, provider, channel, job, conversation, log file, or backup archive not found |
+| `409` | agent already exists, server already running, or group run is not paused |
 | `413` | file too large |
 | `415` | binary file |
 | `502` | agent server is not reachable |
@@ -1627,3 +1634,178 @@ curl -OJ localhost:9000/backups/<name> -H "Authorization: Bearer $TOKEN"
 curl -X POST localhost:9000/backups/<name>/restore -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"force":true,"start":true}'
 ```
+
+## 23. Groups
+
+Host-level multi-agent chat rooms coordinated by the control plane. Rooms, members, and messages are persisted in `~/.myaaw/controlplane/controlplane.db` (`0700` directory, `0600` SQLite file in WAL mode), while each member agent keeps its own isolated daemon, workspace, memory, and dedicated conversation ID. All routes below require the bearer token (`RequireAuth`). See [Multi-Agent Group Chat](../agents/groups.md) for architecture, delta context sync, autonomous `@mention` routing, and guardrails.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/groups` | list groups sorted by `updated_at` descending (`{"groups": [...]}`) |
+| `POST` | `/groups` | create a group → `201` `Group` |
+| `GET` | `/groups/:id?limit=&offset=&before_id=` | fetch group metadata, a page of messages, and live `run_state` |
+| `PATCH` | `/groups/:id` | update `name`, `description`, `members`, `discussion_mode`, or `max_turns` |
+| `DELETE` | `/groups/:id` | stop any active run, close SSE subscribers, and delete the group (`{"deleted": true}`) |
+| `DELETE` | `/groups/:id/messages` | stop any active run, clear messages, reset member cursors/sessions (`{"cleared": true}`) |
+| `POST` | `/groups/:id/messages` | send a user message and start (or interrupt) orchestration → `202` `{"message", "run_state"}` |
+| `POST` | `/groups/:id/interactions` | atomically lock an interactive `extra_messages` block, broadcast `extra_block_updated`, and dispatch a reply turn → `202` `{"ok", "block_id", "state", "message", "run_state"}` (`409` if already submitted) |
+| `POST` | `/groups/:id/stop` | cancel the active run and send a best-effort `/api/chat/stop` to the running agent (`{"stopped", "run_state"}`) |
+| `POST` | `/groups/:id/continue` | resume a run paused at `max_turns` for `+extra_turns` → `202` `{"continued": true, "run_state"}` (`409` if not paused) |
+| `GET` | `/groups/:id/attachments?limit=&offset=&kind=` | list uploaded images/files and agent `@attach(...)` deliverables in the group, newest first (`GroupAttachmentsPage`) |
+| `GET` | `/groups/:id/uploads/:msgId/:file?download=1` | serve one uploaded file/image for a group message (`download=1` forces attachment download) |
+| `GET` | `/groups/:id/stream` | subscribe to live group Server-Sent Events (`text/event-stream`) |
+
+### Validation & error rules
+
+- **Group ID**: `:id` must match `^[A-Za-z0-9_-]{1,64}$` (`400` otherwise); an unknown ID returns `404 {"error":"group not found"}`.
+- **Create (`POST /groups`)**:
+  - `name`: required, trimmed, 1–100 characters.
+  - `description`: optional, trimmed, max 2000 characters.
+  - `members`: required array of at least 1 initialized agent name (deduplicated preserving order; unknown agents return `400`).
+  - `discussion_mode`: `"autonomous"` (default), `"all"`, or `"mention"`.
+  - `max_turns`: optional, defaults to `8` when omitted or `0`, allowed range `1`–`50`.
+- **Update (`PATCH /groups/:id`)**: all fields are optional pointers; omitted fields stay unchanged. Updating `members` preserves `last_seen_message_id` and `conversation_id` for existing members while new members start empty.
+- **Send message (`POST /groups/:id/messages`)**: accepts `{text, reply_to_id?, quotes?, images?, files?}`. Requires non-empty trimmed `text`, or at least one entry in `images` or `files` (`400` otherwise). When `reply_to_id` is supplied, it must reference an existing message in the same group (`400` otherwise). The authenticated control-plane `user_id` is injected automatically when forwarding turns to agent daemons.
+- **Pagination (`GET /groups/:id`)**:
+  - `limit`: optional page size (`0` or omitted returns all messages for backwards compatibility; capped at `500`).
+  - `offset`: optional 0-based index into the chronological transcript (default `0`). Pass a negative value (e.g. `offset=-1` with `limit=50`) to fetch the **tail page** of the latest `limit` messages.
+  - `before_id`: optional message ID cursor. Returns up to `limit` messages strictly older than that message's `seq`, ordered oldest → newest — immune to concurrent SSE inserts at the bottom.
+  - Queries use the indexed `seq` column (`idx_group_messages_group_seq`) so paged fetches never load the full transcript.
+- **Continue (`POST /groups/:id/continue`)**: body is optional (`{"extra_turns": 5}` by default; values are clamped to `1`–`20`). Returns `409 {"error":"group run is not paused"}` when the group is not paused or has an empty queue.
+
+### Examples
+
+```bash
+# Create a group
+curl -X POST http://localhost:9000/groups \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"Architecture Council","description":"Review system design trade-offs.","members":["default","myfriend"],"discussion_mode":"autonomous","max_turns":8}'
+
+# List groups
+curl http://localhost:9000/groups -H "Authorization: Bearer $TOKEN"
+
+# Fetch the latest 50 messages, then page backwards with before_id
+curl "http://localhost:9000/groups/$GROUP_ID?limit=50&offset=-1" -H "Authorization: Bearer $TOKEN"
+curl "http://localhost:9000/groups/$GROUP_ID?limit=50&before_id=$OLDEST_MSG_ID" -H "Authorization: Bearer $TOKEN"
+
+# Send a message (with optional WhatsApp-style reply_to_id and selection quotes)
+curl -X POST http://localhost:9000/groups/$GROUP_ID/messages \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"text":"@myfriend what do you think?","reply_to_id":"prev-msg-id"}'
+
+# Subscribe to live events
+curl -N http://localhost:9000/groups/$GROUP_ID/stream -H "Authorization: Bearer $TOKEN"
+
+# Stop or continue a paused run
+curl -X POST http://localhost:9000/groups/$GROUP_ID/stop -H "Authorization: Bearer $TOKEN"
+curl -X POST http://localhost:9000/groups/$GROUP_ID/continue \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"extra_turns":5}'
+```
+
+### Object shapes
+
+#### `GroupMember`
+
+```json
+{
+  "name": "alice",
+  "agent_color": "bleu",
+  "running": true,
+  "last_seen_message_id": "msg-uuid",
+  "conversation_id": "conv-uuid"
+}
+```
+
+`agent_color` and `running` are hydrated live from `AgentService` on every read.
+
+#### `GroupSummary` (returned in `GET /groups`)
+
+Includes all `Group` fields (`id`, `name`, `description`, `members`, `discussion_mode`, `max_turns`, `created_at`, `updated_at`) plus `member_count`, `running`, `current_agent`, and optional `last_message` (`{id, sender_type, sender_name, content, created_at}`).
+
+#### `GroupMessage`
+
+```json
+{
+  "id": "msg-uuid",
+  "group_id": "grp-uuid",
+  "sender_type": "user",
+  "sender_name": "User",
+  "agent_color": "",
+  "content": "What about token rotation?",
+  "timeline": [],
+  "reply_to_id": "prev-msg-uuid",
+  "reply_preview": {
+    "id": "prev-msg-uuid",
+    "sender_type": "agent",
+    "sender_name": "alice",
+    "excerpt": "We should use short-lived JWTs..."
+  },
+  "quotes": [
+    {
+      "id": "quote-1",
+      "text": "short-lived JWTs",
+      "source": "answer",
+      "sourceId": "prev-msg-uuid"
+    }
+  ],
+  "created_at": "2026-11-21T07:45:00Z"
+}
+```
+
+`sender_type` is `"user"`, `"agent"`, or `"system"`. `timeline`, `reply_to_id`, `reply_preview`, and `quotes` are omitted when empty.
+
+#### `GroupRunState`
+
+```json
+{
+  "running": true,
+  "paused": false,
+  "pause_reason": "",
+  "current_agent": "alice",
+  "turn_count": 2,
+  "max_turns": 8,
+  "queue": ["bob"],
+  "pending_approvals": []
+}
+```
+
+`pause_reason` is `""` or `"max_turns"`. `queue` is always a JSON array (`[]` when empty). `pending_approvals` lists any active tool approvals (`GroupPendingApproval`) waiting inside the group (omitted when empty), and `GroupSummary.pending_approval_count` mirrors its length in `GET /groups`. `GET /groups/:id` returns `GroupDetail`:
+
+```json
+{
+  "group": { "...": "..." },
+  "messages": [],
+  "run_state": { "...": "..." },
+  "total_messages": 142,
+  "offset": 92,
+  "limit": 50,
+  "has_more": true
+}
+```
+
+- `total_messages`: total messages stored in the group.
+- `offset`: 0-based index of the first returned message in the full chronological transcript (`0` when no older messages precede this page).
+- `limit`: effective page size (`0` when unpaged).
+- `has_more`: `true` when older messages exist before the returned page (`offset > 0`).
+
+### Streaming (SSE): `GET /groups/:id/stream`
+
+Immediately upon connecting, the control plane emits a `status` snapshot with the current `GroupRunState`. If an agent turn is currently in flight, the control plane immediately replays the active turn's buffered SSE events (`turn_start`, `thinking`, `tool_start`, `tool_end`, `chunk`, `approval_required`, `approval_resolved`, up to 512 events) so a reloaded tab restores the live working bubble and tool trajectory without waiting for the next event. A `: ping` keepalive comment is sent every 20 seconds. Because `EventSource` cannot send an `Authorization` header, use `fetch` with `ReadableStream` (same pattern as Chat Streaming above).
+
+| Event | Data | When emitted |
+|---|---|---|
+| `status` | `{"group_id","run_state"}` | On connect, and on state transitions (start, turn start, stop, clear, pause, finish, dial-failure rollback) |
+| `turn_start` | `{"group_id","agent","agent_color","turn","max_turns","request_id"}` | Immediately before invoking an agent's `/api/chat/stream` |
+| `thinking` | `{"group_id","agent","text"}` | Reasoning delta relayed from the agent's `thought` event |
+| `chunk` | `{"group_id","agent","text"}` | Answer delta relayed from the agent's `chunk` event |
+| `tool_start` | `{"group_id","agent","id","name","arguments"}` | Relayed from the agent's `tool` event |
+| `tool_end` | `{"group_id","agent","id","name","result","is_error"}` | Relayed from the agent's `tool_result` event |
+| `extra_messages` | `{"group_id","agent","extra_messages"}` | Relayed when an agent emits rich display or interactive `extra_messages` blocks during a live turn |
+| `extra_block_updated` | `{"group_id","message_id","block_id","state"}` | Broadcast when an interactive `extra_messages` block is answered and locked |
+| `approval_required` | `GroupPendingApproval` (`group_id`, `agent`, `approval_id`, `tool_name`, `action`, `args_summary`, `args`, `subagent`) | Relayed when an agent (or sub-agent) pauses for tool approval during a group turn |
+| `approval_resolved` | `{"group_id","agent","approval_id","decision","reason"}` | Relayed when a pending group tool approval is decided or times out |
+| `message` | `{"group_id","message"}` | Whenever a user, agent, or system `GroupMessage` is persisted |
+| `turn_end` | `{"group_id","agent","turn","max_turns","message_id","stopped","passed","done_signal"}` | After each agent turn finishes, passes (`[PASS]`), or fails |
+| `run_end` | `{"group_id","reason","turn_count","max_turns","paused","run_state"}` | When the orchestration loop ends (`completed`, `max_turns`, `stopped`, `interrupted`, `no_online_members`, or `error`) |
+| `error` | `{"group_id","agent"?,"error"}` | On offline/unreachable agent skip or upstream agent stream error |

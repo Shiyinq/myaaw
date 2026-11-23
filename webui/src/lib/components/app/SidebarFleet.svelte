@@ -37,10 +37,7 @@
 	its own content it shrank to a small pill hugging the icon.
 -->
 <div
-	class={[
-		'shrink-0 overflow-hidden transition-[height] duration-200',
-		compact ? 'h-12 border-b' : 'h-0 border-b-0'
-	]}
+	class={['shrink-0 overflow-hidden transition-[height] duration-200', compact ? 'h-12' : 'h-0']}
 >
 	<div
 		class="flex h-full items-center px-2 transition-opacity duration-100 {compact

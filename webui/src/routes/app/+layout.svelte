@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		Boxes,
 		Keyboard,
 		Languages,
+		Layers,
 		LayoutDashboard,
 		Play,
 		MessagesSquare,
@@ -31,7 +32,8 @@
 		RotateCw,
 		PanelLeft,
 		Puzzle,
-		UserRound
+		UserRound,
+		Users
 	} from 'lucide-svelte';
 	import {
 		agentSelection,
@@ -39,6 +41,7 @@
 		authStore,
 		commandPalette,
 		conversationHistory,
+		groupsStore,
 		shortcutHelp,
 		sidebar,
 		toastStore,
@@ -54,18 +57,22 @@
 	import { isActiveHref } from '$lib/utils/nav';
 	import type { NavGroup } from '$lib/utils/nav';
 	import ClassicSidebar from '$lib/components/classic/ClassicSidebar.svelte';
-	import AdvancedSidebar from '$lib/components/advanced/AdvancedSidebar.svelte';
+	import StudioSidebar from '$lib/components/studio/StudioSidebar.svelte';
+	import BotsSidebar from '$lib/components/bots/BotsSidebar.svelte';
+	import BotsAgentPicker from '$lib/components/bots/BotsAgentPicker.svelte';
 	import FocusRail from '$lib/components/focus/FocusRail.svelte';
 	import FocusTabBar from '$lib/components/focus/FocusTabBar.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ShortcutHelp from '$lib/components/app/ShortcutHelp.svelte';
 	import CommandPalette from '$lib/components/app/CommandPalette.svelte';
+	import CreateGroupDialog from '$lib/components/groups/CreateGroupDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
 	import { theme, userPrefersMode } from 'mode-watcher';
 	import { APPEARANCE, applyAppearance, isAppearanceActive } from '$lib/theme';
 	import { preferences } from '$lib/stores/preferences.svelte';
+	import { botPreviews } from '$lib/stores/botPreviews.svelte';
+	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
 	import { chatRuns } from '$lib/stores/chatRuns.svelte';
 	import { runCompletion } from '$lib/stores/runCompletion.svelte';
@@ -89,9 +96,12 @@
 	// shortcut and no page groups, just the agent picker and the chat list.
 	// Collapsing it keeps the same minimal rail on desktop.
 	// Focus mode is the third shell: one agent, its own fixed rail, and no menus.
+	// Bots mode is the fourth shell: a direct bot roster in the left sidebar and
+	// a Focus-style inspector panel on the right of the chat screen.
 	let shellMode = $derived(preferences.value.shellMode);
 	let classicMode = $derived(shellMode === 'classic');
 	let focusMode = $derived(shellMode === 'focus');
+	let botsMode = $derived(shellMode === 'bots');
 	let compactSidebar = $derived(sidebar.collapsed && wide);
 	let activeConversation = $derived(page.params.conversation ?? '');
 	let classicSearchInput = $state<HTMLInputElement | null>(null);
@@ -110,25 +120,62 @@
 	});
 
 	// The chat list belongs to the shell, so the chat page's history panel and the
-	// classic-mode sidebar share one fetch (see stores/conversationHistory).
-	conversationHistory.init();
+	// classic-mode sidebar share one fetch (see stores/conversationHistory). Only
+	// Classic mode fetches eagerly on every route; Bots/Focus/Studio lazy-load
+	// when ConversationList actually mounts.
+	conversationHistory.init(() => classicMode);
 
-	// Background turns (cron, heartbeat, sub-agent) are pushed over SSE. The
-	// connection is per agent and lives in the shell, so it keeps working on any
-	// page and while the reader switches agents.
+	let summaryLoadedForKey = '';
+
+	// Background turns (cron, heartbeat, sub-agent) and global group updates
+	// share a single multiplexed SSE stream (`GET /events`). Initial sidebar
+	// previews, unread counts, and in-flight DM runs are hydrated in one batched
+	// `GET /bots/summary` request instead of N×3 per-bot calls.
 	$effect(() => {
 		if (!isAuthenticated.value) {
 			chatUpdates.stop();
+			summaryLoadedForKey = '';
 			return;
 		}
-		// Only running agents can emit events; a stopped one would answer 502
-		// behind the control plane and retry forever.
-		const names = agentSelection.agents.filter((agent) => agent.running).map((agent) => agent.name);
-		chatUpdates.sync(names);
-		// A run the reader started outlives its chat page, and a reload reattaches it
-		// from the agent server. Recover them on any route, so an answer that lands
-		// while the reader is elsewhere is still announced.
-		for (const name of names) void chatRuns.restore(name);
+		const allAgents = agentSelection.agents;
+		const runningNames = allAgents.filter((agent) => agent.running).map((agent) => agent.name);
+		chatUpdates.sync(runningNames);
+
+		if (allAgents.length === 0) return;
+		const key = allAgents
+			.map((agent) => `${agent.name}:${agent.running ? 1 : 0}`)
+			.sort()
+			.join(',');
+		if (key === summaryLoadedForKey) return;
+		summaryLoadedForKey = key;
+
+		untrack(() => {
+			const rev = unreadChats.revision();
+			void agentSelection
+				.fetchSummary()
+				.then((res) => {
+					for (const item of res.bots ?? []) {
+						if (item.recent_conversations && item.recent_conversations.length > 0) {
+							unreadChats.observe(item.agent, item.recent_conversations, rev);
+						}
+						botPreviews.seed(
+							item.agent,
+							{
+								conversationId: item.latest_conversation_id ?? '',
+								text: item.latest_preview ?? '',
+								title: item.latest_title ?? '',
+								updatedAt: item.latest_updated_at ?? ''
+							},
+							false
+						);
+						chatRuns.restoreFromSummary(item.agent, item.active_runs ?? []);
+					}
+				})
+				.catch(() => {
+					// Fallback for older control planes without /bots/summary.
+					for (const name of runningNames) void chatRuns.restore(name);
+				});
+		});
 	});
 
 	// A run that ends while another conversation (or menu) is open must not leave a
@@ -285,10 +332,22 @@
 					icon: Wrench
 				},
 				{
+					href: '/app/schedule',
+					label: 'myaaw.nav.schedule',
+					description: 'myaaw.schedule.subtitle',
+					icon: Clock
+				},
+				{
 					href: '/app/contacts',
 					label: 'myaaw.nav.contacts',
 					description: 'myaaw.contacts.subtitle',
 					icon: Bot
+				},
+				{
+					href: '/app/artifacts',
+					label: 'myaaw.nav.artifacts',
+					description: 'myaaw.artifacts.subtitle',
+					icon: Layers
 				},
 				{
 					href: '/app/files',
@@ -306,6 +365,8 @@
 		},
 		{
 			label: 'myaaw.nav.group_configure',
+			collapsible: true,
+			defaultOpen: false,
 			items: [
 				{
 					href: '/app/providers',
@@ -324,17 +385,13 @@
 					label: 'myaaw.nav.config',
 					description: 'myaaw.config.subtitle',
 					icon: SlidersHorizontal
-				},
-				{
-					href: '/app/cron',
-					label: 'myaaw.nav.cron',
-					description: 'myaaw.cron.subtitle',
-					icon: Clock
 				}
 			]
 		},
 		{
 			label: 'myaaw.nav.group_operations',
+			collapsible: true,
+			defaultOpen: false,
 			items: [
 				{
 					href: '/app/server',
@@ -404,12 +461,18 @@
 
 	onMount(() => {
 		void agentSelection.load();
+		if (isAuthenticated.value) void groupsStore.load();
 	});
 
-	// The palette lists each agent's start/stop/restart, so refresh the daemon
-	// states as it opens instead of trusting a possibly stale list.
+	// The palette lists each agent's start/stop/restart and existing groups, so
+	// refresh states as it opens instead of trusting a possibly stale list.
 	$effect(() => {
-		if (commandPalette.open) void agentSelection.load(true);
+		if (commandPalette.open) {
+			untrack(() => {
+				void agentSelection.load(true);
+				if (isAuthenticated.value) void groupsStore.load(true);
+			});
+		}
 	});
 
 	// Everything the palette can reach: every destination of the shell, every
@@ -433,6 +496,30 @@
 		}
 		for (const item of hiddenNav) {
 			navigate(item.href, item.label, item.description, item.icon);
+		}
+
+		list.push({
+			id: 'action:create-group',
+			labelKey: 'myaaw.command.create_group',
+			aliases: ['group', 'grup', 'create group', 'buat grup', 'multi-agent', 'chat'],
+			group: 'action',
+			icon: Users,
+			run: () => groupsStore.openCreateDialog()
+		});
+
+		for (const grp of groupsStore.groups) {
+			list.push({
+				id: `group:${grp.id}`,
+				labelKey: 'myaaw.command.open_group',
+				params: { name: grp.name },
+				aliases: ['group', 'grup', grp.name, ...grp.members.map((m) => m.name)],
+				group: 'navigate',
+				icon: Users,
+				href: `/app/groups/${encodeURIComponent(grp.id)}`,
+				current:
+					page.url.pathname === `/app/groups/${grp.id}` ||
+					page.url.pathname === `/app/groups/${encodeURIComponent(grp.id)}`
+			});
 		}
 
 		for (const agent of agentSelection.agents) {
@@ -479,24 +566,49 @@
 			}
 		}
 
-		// The palette can flip between the three shells without a trip to Settings.
-		const shells = ['advanced', 'classic', 'focus'] as const;
-		list.push({
-			id: 'action:shell-mode',
-			labelKey: 'myaaw.command.shell_mode_cycle',
-			aliases: ['mode', 'layout', 'focus', 'classic', 'advanced', 'sidebar', 'shell'],
-			group: 'appearance',
-			icon: PanelLeft,
-			run: () => {
-				const next = shells[(shells.indexOf(preferences.value.shellMode) + 1) % shells.length];
-				const focusAgent =
-					preferences.value.focusAgent ||
-					agentSelection.current?.name ||
-					agentSelection.selected ||
-					'';
-				preferences.update({ shellMode: next, focusAgent });
+		// Each shell mode gets its own command so the palette can jump straight to
+		// any layout without cycling through the others.
+		const shellEntries = [
+			{
+				id: 'studio' as const,
+				labelKey: 'myaaw.settings.mode_studio',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'sidebar', 'studio', 'fleet']
+			},
+			{
+				id: 'bots' as const,
+				labelKey: 'myaaw.settings.mode_bots',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'bots', 'bot', 'lounge']
+			},
+			{
+				id: 'focus' as const,
+				labelKey: 'myaaw.settings.mode_focus',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'focus', 'fokus', 'minimal']
+			},
+			{
+				id: 'classic' as const,
+				labelKey: 'myaaw.settings.mode_classic',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'sidebar', 'classic', 'klasik']
 			}
-		});
+		];
+		for (const shell of shellEntries) {
+			list.push({
+				id: `action:shell-mode:${shell.id}`,
+				labelKey: 'myaaw.command.shell_mode',
+				params: { mode: t(shell.labelKey) },
+				aliases: shell.aliases,
+				group: 'appearance',
+				icon: PanelLeft,
+				current: preferences.value.shellMode === shell.id,
+				run: () => {
+					const focusAgent =
+						preferences.value.focusAgent ||
+						agentSelection.current?.name ||
+						agentSelection.selected ||
+						'';
+					preferences.update({ shellMode: shell.id, focusAgent });
+				}
+			});
+		}
 		for (const option of APPEARANCE) {
 			list.push({
 				id: `action:theme:${option.id}`,
@@ -554,9 +666,37 @@
 		return isActiveHref(page.url.pathname, href);
 	}
 
+	let rootEntry = $derived.by(() => {
+		if (classicMode) {
+			return {
+				href: '/app',
+				label: 'myaaw.home.classic_title',
+				description: 'myaaw.home.classic_subtitle',
+				icon: Boxes
+			};
+		}
+		if (focusMode) {
+			return {
+				href: '/app',
+				label: 'myaaw.home.focus_title',
+				description: 'myaaw.home.focus_subtitle',
+				icon: Boxes
+			};
+		}
+		if (botsMode) {
+			return {
+				href: '/app',
+				label: 'myaaw.home.bots_title',
+				description: 'myaaw.home.bots_subtitle',
+				icon: Boxes
+			};
+		}
+		return fleet;
+	});
+
 	let current = $derived(
 		isActive(fleet.href)
-			? fleet
+			? rootEntry
 			: (hiddenNav.find((item) => isActive(item.href)) ??
 					flatNav.find((item) => isActive(item.href)) ??
 					flatNav[0])
@@ -564,19 +704,48 @@
 	let isChat = $derived(
 		page.url.pathname === '/app/chat' || page.url.pathname.startsWith('/app/chat/')
 	);
+	let isGroupChat = $derived(page.url.pathname.startsWith('/app/groups/'));
+	let activeGroup = $derived(
+		isGroupChat ? groupsStore.groups.find((group) => group.id === page.params.id) : undefined
+	);
+	// In Bots mode the left sidebar is a bot roster (clicking a bot opens its chat),
+	// so agent-scoped pages (Artifacts, Schedule, Plugins, Configure, Operations)
+	// show a breadcrumb agent picker in the top bar.
+	let isBotsUtility = $derived(
+		botsMode &&
+			(page.url.pathname.startsWith('/app/dashboard') ||
+				page.url.pathname.startsWith('/app/contacts') ||
+				page.url.pathname.startsWith('/app/terminal') ||
+				page.url.pathname.startsWith('/app/artifacts') ||
+				page.url.pathname.startsWith('/app/schedule') ||
+				page.url.pathname.startsWith('/app/plugins') ||
+				page.url.pathname.startsWith('/app/providers') ||
+				page.url.pathname.startsWith('/app/channels') ||
+				page.url.pathname.startsWith('/app/config') ||
+				page.url.pathname.startsWith('/app/server') ||
+				page.url.pathname.startsWith('/app/logs') ||
+				page.url.pathname.startsWith('/app/backups') ||
+				page.url.pathname.startsWith('/app/approvals') ||
+				page.url.pathname.startsWith('/app/observability'))
+	);
+	// Split list + detail pages run their second sidebar's vertical divider all
+	// the way through the top bar on desktop, so the header floats transparently
+	// across both columns instead of capping the sidebar below a horizontal bar.
+	let hasSplitSidebar = $derived(
+		page.url.pathname.startsWith('/app/context') ||
+			page.url.pathname.startsWith('/app/skills') ||
+			page.url.pathname.startsWith('/app/files') ||
+			page.url.pathname.startsWith('/app/logs')
+	);
 	// Pages with a split list + editor layout manage their own scrolling, so the
 	// shell gives them the full height of the viewport instead of scrolling.
 	let isFullHeight = $derived(
 		isChat ||
+			isGroupChat ||
+			hasSplitSidebar ||
 			page.url.pathname.startsWith('/app/dashboard') ||
-			page.url.pathname.startsWith('/app/files') ||
 			page.url.pathname.startsWith('/app/terminal') ||
-			page.url.pathname.startsWith('/app/context') ||
-			page.url.pathname.startsWith('/app/skills') ||
-			page.url.pathname.startsWith('/app/logs') ||
-			page.url.pathname.startsWith('/app/observability') ||
-			page.url.pathname.startsWith('/app/tools') ||
-			page.url.pathname.startsWith('/app/contacts')
+			page.url.pathname.startsWith('/app/observability')
 	);
 
 	/** Opens the chat list (from the rail if needed) and focuses its search box. */
@@ -613,6 +782,7 @@
 	}
 
 	async function logout() {
+		groupsStore.reset();
 		await authStore.logout();
 		await goto('/login');
 	}
@@ -630,7 +800,7 @@
 <div
 	class={[
 		'h-dvh bg-background page-clear transition-[padding] duration-200',
-		focusMode || compactSidebar ? 'md:pl-14' : 'md:pl-60'
+		focusMode || compactSidebar ? 'md:pl-14' : botsMode ? 'md:pl-72' : 'md:pl-60'
 	]}
 >
 	{#if focusMode}
@@ -652,7 +822,7 @@
 			class={[
 				'fixed inset-y-0 left-0 z-50 flex w-full flex-col border-r bg-card shadow-xl frost-drawer transition-transform duration-200 md:z-40 md:translate-x-0 md:shadow-none md:transition-[width]',
 				drawerOpen ? 'translate-x-0' : '-translate-x-full',
-				compactSidebar ? 'md:w-14' : 'md:w-60'
+				compactSidebar ? 'md:w-14' : botsMode ? 'md:w-72' : 'md:w-60'
 			]}
 		>
 			<!-- Each shell owns its sidebar; the drawer frame above stays shared. -->
@@ -663,8 +833,10 @@
 					bind:searchInput={classicSearchInput}
 					onClose={() => (drawerOpen = false)}
 				/>
+			{:else if botsMode}
+				<BotsSidebar compact={compactSidebar} onClose={() => (drawerOpen = false)} />
 			{:else}
-				<AdvancedSidebar
+				<StudioSidebar
 					compact={compactSidebar}
 					{fleet}
 					groups={nav}
@@ -678,9 +850,16 @@
 		<header
 			class={focusMode && isChat
 				? 'pointer-events-none absolute inset-x-0 top-0 z-40 h-14 lg:z-60'
-				: 'h-14 shrink-0 border-b bg-background/80 backdrop-blur frost-chrome'}
+				: hasSplitSidebar || isChat || isGroupChat
+					? 'h-14 shrink-0 lg:pointer-events-none lg:absolute lg:inset-x-0 lg:top-0 lg:z-30'
+					: 'h-14 shrink-0'}
 		>
-			<div class="flex h-full items-center gap-2 px-2 sm:gap-3 sm:px-4">
+			<div
+				class={[
+					'flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-4',
+					hasSplitSidebar ? 'lg:pr-6 lg:pl-4' : 'lg:px-6'
+				]}
+			>
 				<!-- Phones reach the whole navigation through the drawer; from md up the
 				     sidebar is always on screen, so the control is not rendered there.
 				     Focus mode has no drawer: its mascot is a static brand mark, and the
@@ -699,7 +878,7 @@
 					<Button
 						variant="ghost"
 						size="icon-sm"
-						class="-mr-2 shrink-0 border-0 md:hidden"
+						class="-mr-2 shrink-0 rounded-full border-0 md:hidden"
 						onclick={() => (drawerOpen = true)}
 						title={t('myaaw.sidebar.open')}
 						aria-label={t('myaaw.sidebar.open')}
@@ -708,46 +887,73 @@
 						<Bloub mood="attentif" size={32} eager color={agentSelection.color} />
 					</Button>
 				{/if}
-				<div class="min-w-0 flex-1">
+				<div
+					class={[
+						hasSplitSidebar ? 'min-w-0 flex-1 lg:max-w-64 xl:max-w-72' : 'min-w-0 flex-1',
+						topBarTitle.desktopHidden ? 'lg:pointer-events-none lg:invisible' : ''
+					]}
+				>
 					{#if focusMode && isChat}
 						<!-- The chat screen has no title; the agent mark floats over it. -->
+					{:else if isChat || isGroupChat}
+						{@const dmTitle = activeConversation
+							? topBarTitle.chatTitle(`dm:${activeConversation}`)
+							: topBarTitle.value}
+						{@const title = isGroupChat
+							? activeGroup?.name ||
+								(topBarTitle.chatTitle(`group:${page.params.id}`) !== undefined
+									? t(current.label)
+									: undefined)
+							: dmTitle === undefined
+								? undefined
+								: dmTitle ||
+									(botsMode && (agentSelection.current?.name || agentSelection.selected)) ||
+									t(current.label)}
+						<h1
+							class="pointer-events-auto truncate text-base font-medium tracking-tight text-foreground"
+							title={isGroupChat
+								? activeGroup?.description || title
+								: dmTitle || (botsMode ? title : t(current.description))}
+						>
+							{title}
+						</h1>
 					{:else if topBarTitle.value}
 						<!-- A page can name itself: the open conversation, or the agent being
 						     edited, instead of the route's static label. -->
-						<h1 class="truncate text-sm font-semibold tracking-tight">{topBarTitle.value}</h1>
-						{#if topBarTitle.description}
-							<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
-								{topBarTitle.description}
-							</p>
-						{/if}
+						<h1
+							class="pointer-events-auto truncate text-base font-bold tracking-tight text-foreground sm:text-lg"
+							title={topBarTitle.description || topBarTitle.value}
+						>
+							{topBarTitle.value}
+						</h1>
 					{:else if !focusMode}
-						<div class="flex items-center gap-2">
-							<h1 class="truncate text-sm font-semibold tracking-tight">
+						<div class="flex min-w-0 items-center gap-2">
+							<h1
+								class="pointer-events-auto truncate text-base font-bold tracking-tight text-foreground sm:text-lg"
+								title={t(current.description)}
+							>
 								{t(current.label)}
 							</h1>
-							{#if isChat}
-								<Badge variant="outline" class="hidden shrink-0 sm:inline-flex">
-									{agentSelection.current?.name ?? agentSelection.selected ?? '—'}
-								</Badge>
+							{#if isBotsUtility}
+								<BotsAgentPicker />
 							{/if}
 						</div>
-						<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
-							{t(current.description)}
-						</p>
 					{:else}
 						<!-- Focus mode keeps the page header for every page except chat. -->
-						<h1 class="truncate text-sm font-semibold tracking-tight">{t(current.label)}</h1>
-						<p class="hidden truncate text-[11px] text-muted-foreground sm:block">
-							{t(current.description)}
-						</p>
+						<h1
+							class="pointer-events-auto truncate text-base font-bold tracking-tight text-foreground sm:text-lg"
+							title={t(current.description)}
+						>
+							{t(current.label)}
+						</h1>
 					{/if}
 				</div>
 
-				<div class="pointer-events-auto flex min-w-0 shrink-0 items-center gap-2">
+				<div class="pointer-events-auto ml-auto flex min-w-0 shrink-0 items-center gap-1.5">
 					{#if showHostBadge}
 						<a
 							href="/app/settings"
-							class="inline-flex max-w-none items-center gap-1.5 rounded-full border border-border/70 bg-background/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:max-w-36"
+							class="inline-flex max-w-none items-center gap-1.5 rounded-full bg-muted/50 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:max-w-36"
 							title={apiBase.isCustom
 								? t('myaaw.settings.connection_remote', { url: apiBase.value })
 								: t('myaaw.settings.connection_local')}
@@ -803,4 +1009,7 @@
 
 	<!-- Mod+K walks every page, and every agent, without touching the sidebar. -->
 	<CommandPalette {commands} />
+
+	<!-- Create group dialog, reachable from BotsSidebar and CommandPalette. -->
+	<CreateGroupDialog />
 </div>

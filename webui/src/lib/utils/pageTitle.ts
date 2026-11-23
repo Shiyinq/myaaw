@@ -29,12 +29,16 @@ const pageTitles: Record<string, PageTitle> = {
 	'/app/skills': { titleKey: 'myaaw.nav.skills', descriptionKey: 'myaaw.skills.subtitle' },
 	'/app/tools': { titleKey: 'myaaw.nav.tools', descriptionKey: 'myaaw.tools.subtitle' },
 	'/app/contacts': { titleKey: 'myaaw.nav.contacts', descriptionKey: 'myaaw.contacts.subtitle' },
+	'/app/artifacts': {
+		titleKey: 'myaaw.nav.artifacts',
+		descriptionKey: 'myaaw.artifacts.subtitle'
+	},
 	'/app/files': { titleKey: 'myaaw.nav.files', descriptionKey: 'myaaw.files.subtitle' },
 	'/app/terminal': { titleKey: 'myaaw.nav.terminal', descriptionKey: 'myaaw.terminal.subtitle' },
 	'/app/providers': { titleKey: 'myaaw.nav.providers', descriptionKey: 'myaaw.providers.subtitle' },
 	'/app/channels': { titleKey: 'myaaw.nav.channels', descriptionKey: 'myaaw.channels.subtitle' },
 	'/app/config': { titleKey: 'myaaw.nav.config', descriptionKey: 'myaaw.config.subtitle' },
-	'/app/cron': { titleKey: 'myaaw.nav.cron', descriptionKey: 'myaaw.cron.subtitle' },
+	'/app/schedule': { titleKey: 'myaaw.nav.schedule', descriptionKey: 'myaaw.schedule.subtitle' },
 	'/app/server': { titleKey: 'myaaw.nav.server', descriptionKey: 'myaaw.server.subtitle' },
 	'/app/logs': { titleKey: 'myaaw.nav.logs', descriptionKey: 'myaaw.logs.subtitle' },
 	'/app/backups': { titleKey: 'myaaw.nav.backups', descriptionKey: 'myaaw.backups.subtitle' },

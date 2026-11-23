@@ -14,6 +14,7 @@
 	import { agentSelection, conversationHistory, toastStore, topBarTitle } from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import { chatRuns, type ChatItem, type ChatRun } from '$lib/stores/chatRuns.svelte';
+	import { botPreviews, lastAssistantFromItems } from '$lib/stores/botPreviews.svelte';
 	import { chatUpdates } from '$lib/stores/conversationEvents.svelte';
 	import { unreadChats } from '$lib/stores/unreadChats.svelte';
 	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
@@ -28,6 +29,12 @@
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { MAX_ASK_QUOTES, MAX_ASK_QUOTE_CHARS, parseAskPrompt } from '$lib/utils/ask';
+	import { stripAttachDirectives } from '$lib/utils/attachments';
+	import {
+		parseInteractionText,
+		patchExtraBlockState,
+		stripInteractionTags
+	} from '$lib/utils/interactions';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import ConversationList from '$lib/components/app/ConversationList.svelte';
 	import AttachmentPanel from '$lib/components/app/AttachmentPanel.svelte';
@@ -35,9 +42,12 @@
 	import AskQuoteList from '$lib/components/app/AskQuoteList.svelte';
 	import PendingApprovalCard from '$lib/components/app/PendingApprovalCard.svelte';
 	import RunAttachments from '$lib/components/app/RunAttachments.svelte';
-	import ImageLightbox from '$lib/components/app/ImageLightbox.svelte';
+	import ExtraMessages from '$lib/components/extra/ExtraMessages.svelte';
+	import InteractionBadge from '$lib/components/extra/InteractionBadge.svelte';
+	import LightBox from '$lib/components/app/LightBox.svelte';
 	import FocusAgentPanel from '$lib/components/focus/FocusAgentPanel.svelte';
 	import FocusContextEditor from '$lib/components/focus/FocusContextEditor.svelte';
+	import BotsAgentPanel from '$lib/components/bots/BotsAgentPanel.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
@@ -78,8 +88,7 @@
 		Mic,
 		Minimize2,
 		Monitor,
-		PanelRightClose,
-		PanelRightOpen,
+		PanelRight,
 		Paperclip,
 		Pencil,
 		Quote,
@@ -101,6 +110,9 @@
 		ConversationAttachment,
 		ConversationDetail,
 		ConversationTurn,
+		InteractionKind,
+		InteractionRequest,
+		InteractionState,
 		LightboxImage,
 		Message,
 		ModelCapabilitiesView,
@@ -212,7 +224,8 @@
 	let shellMode = $derived(preferences.value.shellMode);
 	let classicMode = $derived(shellMode === 'classic');
 	let focusMode = $derived(shellMode === 'focus');
-	// In focus mode a context file replaces the transcript column until it closes.
+	let botsMode = $derived(shellMode === 'bots');
+	// In focus and bots modes a context file replaces the transcript column until it closes.
 	let focusContextPath = $state('');
 	// The right column shows either the conversation list or the files of the open
 	// chat. The choice is remembered per browser; a mode change never forces an
@@ -230,10 +243,22 @@
 	let attachmentCount = $state(0);
 	// The file whose preview pane replaces the transcript column (classic overlays it).
 	let previewAttachment = $state<ConversationAttachment | null>(null);
+	// Hide the floating desktop conversation title while a full-height attachment
+	// preview or inline context editor owns the top of the column, and restore it on close.
+	$effect(() => {
+		topBarTitle.setDesktopHidden(
+			Boolean(agent && (previewAttachment || (botsMode && focusContextPath)))
+		);
+		return () => topBarTitle.setDesktopHidden(false);
+	});
+
 	// The turn a "Show in chat" jump landed on, so its row can flash a ring.
 	let highlightedMessage = $state<number | null>(null);
 	let highlightTimer: ReturnType<typeof setTimeout> | undefined;
 	let conversationId = $state('');
+	let conversationUpdatedAt = $state('');
+	let transcriptAgent = $state('');
+	let explicitNewChat = $state(false);
 	// A run of the open conversation keeps streaming while the user is elsewhere;
 	// the page only renders whatever the store currently holds.
 	let activeRun = $derived(chatRuns.forConversation(agent ?? '', conversationId));
@@ -261,6 +286,36 @@
 		return () => clearInterval(timer);
 	});
 	let loading = $state(false);
+	// Keep Bots mode's left sidebar synced with the open conversation's latest
+	// assistant reply, gated by transcriptAgent so switching bots never writes the
+	// previous bot's transcript onto the new bot.
+	$effect(() => {
+		const currentAgent = agent;
+		if (!currentAgent) return;
+		const id = conversationId;
+		const rows = items;
+		const isRunStreaming = Boolean(
+			activeRun && activeRun.agent === currentAgent && activeRun.streaming
+		);
+		const runAgent = activeRun?.agent ?? '';
+		if (transcriptAgent !== currentAgent && runAgent !== currentAgent) return;
+		const updatedFallback = conversationUpdatedAt;
+		const title = topBarTitle.value;
+		if (!id && rows.length === 0) return;
+		if (loading && rows.length === 0) return;
+		const last = lastAssistantFromItems(rows);
+		const lastRowTime = rows[rows.length - 1]?.createdAt;
+		botPreviews.setOpenChat(
+			currentAgent,
+			{
+				conversationId: id,
+				text: last.text,
+				title,
+				updatedAt: last.updatedAt || lastRowTime || updatedFallback || ''
+			},
+			{ bumpActivity: isRunStreaming }
+		);
+	});
 	// A pending approval can belong to this run, or to a detached one (a sub-agent)
 	// announced on the agent's approval stream, which has no run object here.
 	let pendingApproval = $derived.by(() => {
@@ -492,9 +547,9 @@
 			.replace(/<userinfo>[\s\S]*?<\/userinfo>\s*/gi, '')
 			.replace(/<attached>[\s\S]*?<\/attached>\s*/gi, '')
 			.replace(/<trigger\b[^>]*>[\s\S]*?<\/trigger>\s*/gi, '')
-			.replace(/<trigger\b[\s\S]*$/i, '')
-			.trim();
-		return !stripped && hadSelections ? t('myaaw.chat.quoted_turn') : stripped;
+			.replace(/<trigger\b[\s\S]*$/i, '');
+		const cleaned = stripInteractionTags(stripped);
+		return !cleaned && hadSelections ? t('myaaw.chat.quoted_turn') : cleaned;
 	}
 
 	// The ticks are a window over the list, centred on the question being read. It
@@ -556,6 +611,16 @@
 		lastShellMode = mode;
 		classicAttachmentsOpen = false;
 		previewAttachment = null;
+		focusContextPath = '';
+	});
+
+	// Switching bots closes any inline context file opened for the previous bot.
+	let lastContextAgent = '';
+	$effect(() => {
+		const current = agent ?? '';
+		if (current === lastContextAgent) return;
+		lastContextAgent = current;
+		focusContextPath = '';
 	});
 
 	function scrollToBottom() {
@@ -839,6 +904,8 @@
 		// A finished run is redundant once the stored transcript is loaded; the
 		// server's copy includes the final answer. A live run keeps going.
 		chatRuns.settle(currentAgent, id);
+		transcriptAgent = currentAgent;
+		conversationUpdatedAt = detail.updated_at ?? '';
 		const title = detail.title ?? '';
 		applyTitle(id, title);
 		unreadChats.ack(currentAgent, id, detail.updated_at);
@@ -853,7 +920,9 @@
 		// Dictation belongs to the composer the reader is looking at.
 		stopSpeech();
 		if (!id) {
+			transcriptAgent = currentAgent;
 			historyItems = [];
+			conversationUpdatedAt = '';
 			clearRail();
 			storedUsage = null;
 			sessionStats = null;
@@ -861,6 +930,7 @@
 			topBarTitle.clear();
 			return;
 		}
+		transcriptAgent = currentAgent;
 		error = '';
 		groupOpen = {};
 		attachmentCount = 0;
@@ -870,7 +940,13 @@
 		topBarTitle.clear();
 
 		const detailKey = { agent: currentAgent, id, limit: PAGE_SIZE, offset: -1 };
-		const cached = conversationsStore.detail.peek(detailKey);
+		const existingRun = chatRuns.forConversation(currentAgent, id);
+		const hadUnread = unreadChats.has(currentAgent, id);
+		const peeked = conversationsStore.detail.peek(detailKey);
+		// When a live or just-finished background run already holds the latest
+		// timeline for this conversation, keep it on screen until the fresh server
+		// page lands instead of letting a stale cached transcript settle/wipe it.
+		const cached = existingRun ? undefined : peeked;
 
 		// Show the transcript the store already has before the request lands, so
 		// returning to a chat never flashes the loading state.
@@ -884,20 +960,25 @@
 			turns = [];
 			storedUsage = null;
 			clearRail();
+			if (existingRun) unreadChats.ack(currentAgent, id);
 		}
-		loading = !cached;
+		loading = !cached && !existingRun;
 
 		// The title and totals come from other stores, which may already know them
 		// even when the transcript cache is cold.
 		if (!cached) {
-			const knownTitle = conversationHistory.titleOf(id);
+			const knownTitle = conversationHistory.titleOf(id) || peeked?.title || '';
 			if (knownTitle) applyTitle(id, knownTitle);
 		}
 		const cachedStats = observabilityStore.sessionStats.peek({ agent: currentAgent, id });
 		sessionStats = cachedStats ? statsView(cachedStats) : null;
-		void refreshStats(currentAgent, id);
+		void refreshStats(currentAgent, id, Boolean(existingRun || hadUnread));
 		try {
-			await conversationsStore.ensureDetail(currentAgent, id, PAGE_SIZE, -1);
+			if (existingRun || hadUnread) {
+				await conversationsStore.detail.refresh(detailKey);
+			} else {
+				await conversationsStore.ensureDetail(currentAgent, id, PAGE_SIZE, -1);
+			}
 			if (conversationId !== id) return; // Another conversation won.
 			const detail = conversationsStore.detail.data;
 			if (detail) {
@@ -906,13 +987,14 @@
 					const olderLoaded = cached !== undefined && loadedOffset < cached.offset;
 					applyTranscript(currentAgent, id, detail, !olderLoaded);
 				}
-			} else if (!cached) {
+			} else if (!cached && !existingRun) {
 				error = conversationsStore.detail.error;
 			}
 		} catch (err) {
 			if (conversationId === id && !cached) error = getErrorMessage(err);
 		} finally {
 			if (conversationId === id) {
+				if (topBarTitle.chatTitle(`dm:${id}`) === undefined) topBarTitle.setChat(`dm:${id}`, '');
 				loading = false;
 				scrollToBottom();
 			}
@@ -967,6 +1049,7 @@
 				(item) => !known.has(item.localId)
 			);
 			historyItems = [...kept, ...tail];
+			conversationUpdatedAt = detail.updated_at ?? conversationUpdatedAt;
 			loadedOffset = Math.min(loadedOffset, detail.offset);
 			turns = detail.turns ?? turns;
 			// Keep the transcript cache current for the next mount.
@@ -1050,7 +1133,7 @@
 
 	function applyTitle(id: string, title: string) {
 		if (conversationId !== id) return; // Another conversation won.
-		topBarTitle.set(title);
+		topBarTitle.setChat(`dm:${id}`, title);
 		// Keep the history entry in step with the bar without reloading the list.
 		conversationHistory.update(id, title);
 		approvalQueue.setTitle(agent ?? '', id, title);
@@ -1429,6 +1512,7 @@
 		const openConversation = page.params.conversation ?? '';
 		// Do not load a conversation that belongs to the previous agent.
 		if (openConversation) loadKey = `${currentAgent}:${openConversation}`;
+		explicitNewChat = false;
 		conversationId = '';
 		historyItems = [];
 		clearRail();
@@ -1463,18 +1547,22 @@
 			return;
 		}
 
-		const key = `${currentAgent}:${currentConversation}`;
-		if (key === loadKey) return;
-
 		// The sidebar links to /app/chat, so restore the last opened conversation
-		// instead of dropping the user into a brand new chat.
-		if (!currentConversation) {
-			const last = lastConversationFor(currentAgent);
+		// instead of dropping the user into a brand new chat. In Bots mode also fall
+		// back to the bot's previewed latest conversation (e.g. on a fresh browser/incognito).
+		if (!currentConversation && !explicitNewChat) {
+			const last =
+				lastConversationFor(currentAgent) ||
+				(botsMode ? (botPreviews.get(currentAgent)?.conversationId ?? '') : '');
 			if (last) {
 				void goto(`/app/chat/${last}`, { replaceState: true, noScroll: true });
 				return;
 			}
 		}
+
+		const key = `${currentAgent}:${currentConversation}`;
+		if (key === loadKey) return;
+		if (currentConversation) explicitNewChat = false;
 
 		loadKey = key;
 		conversationId = currentConversation;
@@ -2506,6 +2594,43 @@
 		return true;
 	}
 
+	function patchLocalExtraBlock(blockId: string, state: InteractionState) {
+		if (!blockId) return;
+		historyItems = historyItems.map((item) => {
+			if (!item.extraMessages?.length) return item;
+			const next = patchExtraBlockState(item.extraMessages, blockId, state);
+			return next === item.extraMessages ? item : { ...item, extraMessages: next };
+		});
+		activeRun?.patchExtraBlock(blockId, state);
+	}
+
+	async function handleExtraInteract(req: InteractionRequest) {
+		if (!agent || !conversationId || streaming) return;
+		try {
+			const res = await conversationsStore.respondInteraction(agent, conversationId, req);
+			patchLocalExtraBlock(res.block_id || req.block_id, res.state);
+			conversationsStore.invalidate();
+			if (res.interaction_text) {
+				submit({
+					text: res.interaction_text,
+					quotes: [],
+					images: [],
+					files: []
+				});
+			}
+		} catch (err) {
+			const apiErr = err as { status?: number; state?: InteractionState } | undefined;
+			if (apiErr?.status === 409) {
+				if (apiErr.state) {
+					patchLocalExtraBlock(req.block_id, apiErr.state);
+				}
+				toastStore.info(t('myaaw.extra.already_submitted'));
+				return;
+			}
+			toastStore.error(getErrorMessage(err));
+		}
+	}
+
 	function send() {
 		// Sending ends the dictation, any read-aloud, and an unfinished edit.
 		stopSpeech();
@@ -2737,8 +2862,20 @@
 
 	function resetChat() {
 		// Runs of other conversations keep streaming: this only clears the view.
+		const currentAgent = agent ?? '';
+		explicitNewChat = true;
+		transcriptAgent = currentAgent;
 		conversationId = '';
+		conversationUpdatedAt = '';
 		historyItems = [];
+		if (currentAgent) {
+			botPreviews.setOpenChat(currentAgent, {
+				conversationId: '',
+				text: '',
+				title: '',
+				updatedAt: ''
+			});
+		}
 		clearRail();
 		input = '';
 		quotes = [];
@@ -2881,7 +3018,7 @@
 	function onHistoryRenamed(id: string, title: string) {
 		if (id !== conversationId) return;
 		stopTitlePolling();
-		topBarTitle.set(title);
+		topBarTitle.setChat(`dm:${id}`, title);
 	}
 
 	function messageText(message: Message): string {
@@ -2896,19 +3033,7 @@
 		return '';
 	}
 
-	/**
-	 * A delivery directive is backend syntax. Readers see the path it names, so
-	 * `@attach(/a/b.png)` renders as `/a/b.png` without the wrapper.
-	 */
-	const ATTACH_DIRECTIVE_RE = /@attach\(\s*(?:"([^"]+)"|'([^']+)'|([^)\s]+))\s*\)/gi;
-	/** Short form the model sometimes writes: `@/absolute/path`. */
-	const BARE_ATTACH_RE = /@((?:~\/?|\/)[^\s"'<>()]+)/g;
-
-	function displayText(text: string): string {
-		return text
-			.replace(ATTACH_DIRECTIVE_RE, (_match, ...groups) => groups.find((group) => group) ?? '')
-			.replace(BARE_ATTACH_RE, '$1');
-	}
+	const displayText = stripAttachDirectives;
 
 	/**
 	 * Uploads live under <agent>/user/uploads/<conversation>/<message>/ and the
@@ -2945,6 +3070,7 @@
 	 */
 	function splitTrigger(raw: string): {
 		trigger: TriggerKind | null;
+		interaction: InteractionKind | null;
 		text: string;
 		quotes: AskQuote[];
 	} {
@@ -2953,14 +3079,27 @@
 		const block = parsed.text.match(
 			/^\s*<trigger\b[^>]*\bkind="(cron|heartbeat|subagent)"[^>]*>[\s\S]*?<\/trigger>\s*/i
 		);
-		if (!block) return { trigger: null, text: parsed.text, quotes: parsed.quotes };
+		if (block) {
+			// The whole block is model-only, so the badge is the message.
+			return {
+				trigger: block[1].toLowerCase() as TriggerKind,
+				interaction: null,
+				text: '',
+				quotes: parsed.quotes
+			};
+		}
 
-		// The whole block is model-only, so the badge is the message.
-		return {
-			trigger: block[1].toLowerCase() as TriggerKind,
-			text: '',
-			quotes: parsed.quotes
-		};
+		const interactionParsed = parseInteractionText(parsed.text);
+		if (interactionParsed.kind) {
+			return {
+				trigger: null,
+				interaction: interactionParsed.kind,
+				text: interactionParsed.text,
+				quotes: parsed.quotes
+			};
+		}
+
+		return { trigger: null, interaction: null, text: parsed.text, quotes: parsed.quotes };
 	}
 
 	function triggerLabel(trigger: TriggerKind): string {
@@ -3193,19 +3332,31 @@
 
 			if (message.role === 'user') {
 				lastStep = -1;
-				const { trigger, text, quotes: storedQuotes } = splitTrigger(messageText(message));
+				const {
+					trigger,
+					interaction,
+					text,
+					quotes: storedQuotes
+				} = splitTrigger(messageText(message));
 				const images = messageImages(message);
-				// A trigger turn has no visible text: the badge is the message, so it still
-				// gets a row.
-				if (trigger || text || images.length > 0 || (message.uploads?.length ?? 0) > 0) {
+				// A trigger or interaction turn may have only a badge, so it still gets a row.
+				if (
+					trigger ||
+					interaction ||
+					text ||
+					images.length > 0 ||
+					(message.uploads?.length ?? 0) > 0
+				) {
 					timeline.push({
 						kind: 'user',
 						text,
 						quotes: storedQuotes.length > 0 ? storedQuotes : undefined,
 						trigger: trigger ?? undefined,
+						interaction: interaction ?? undefined,
 						images: images.length > 0 ? images : undefined,
 						uploads: message.uploads,
 						localId: nextId(),
+						messageId: message.id,
 						messageIndex,
 						createdAt: message.created_at,
 						senderId: message.sender_id,
@@ -3220,12 +3371,15 @@
 
 			const text = messageText(message);
 			const attachments = message.attachments ?? [];
-			if (text || attachments.length > 0) {
+			const extraMessages = message.extra_messages ?? [];
+			if (text || attachments.length > 0 || extraMessages.length > 0) {
 				timeline.push({
 					kind: 'text',
 					text,
 					attachments,
+					...(extraMessages.length > 0 ? { extraMessages } : {}),
 					localId: nextId(),
+					messageId: message.id,
 					messageIndex,
 					createdAt: message.created_at
 				});
@@ -3470,11 +3624,6 @@
 			return;
 		}
 
-		if (matchesShortcut(event, '/')) {
-			event.preventDefault();
-			void focusComposer();
-			return;
-		}
 		if (matchesShortcut(event, 'mod+enter')) {
 			event.preventDefault();
 			send();
@@ -3508,8 +3657,13 @@
 			return;
 		}
 
-		// Arrow and letter shortcuts must not steal keys from a text field.
+		// Slash, arrow, and letter shortcuts must not steal keys from a text field.
 		if (isTypingTarget(event.target)) return;
+		if (matchesShortcut(event, '/') && !isOverlayOpen()) {
+			event.preventDefault();
+			void focusComposer();
+			return;
+		}
 		if (matchesShortcut(event, 'alt+arrowup') || matchesShortcut(event, 'alt+arrowdown')) {
 			event.preventDefault();
 			jumpTurn(matchesShortcut(event, 'alt+arrowup') ? -1 : 1);
@@ -3783,9 +3937,13 @@
 			<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
 		{/if}
 		<Button
-			variant={historyOpen && rightTab === 'attachments' ? 'secondary' : 'outline'}
+			variant={historyOpen && rightTab === 'attachments' ? 'secondary' : 'ghost'}
 			size="icon-sm"
-			class="relative"
+			class={[
+				'relative rounded-full',
+				!(historyOpen && rightTab === 'attachments') &&
+					'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+			]}
 			onclick={openAttachments}
 			title={`${t('myaaw.chat.attachments_open')} (${formatShortcut('mod+shift+a')})`}
 			aria-label={t('myaaw.chat.attachments_open')}
@@ -3795,7 +3953,7 @@
 			<Paperclip class="h-4 w-4" />
 			{#if attachmentCount > 0}
 				<span
-					class="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
+					class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
 				>
 					{attachmentCount > 99 ? '99+' : attachmentCount}
 				</span>
@@ -3803,8 +3961,13 @@
 		</Button>
 		{#if !classicMode}
 			<Button
-				variant={historyOpen && rightTab === 'history' ? 'secondary' : 'outline'}
+				variant={historyOpen && rightTab === 'history' ? 'secondary' : 'ghost'}
 				size="icon-sm"
+				class={[
+					'rounded-full',
+					!(historyOpen && rightTab === 'history') &&
+						'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+				]}
 				onclick={toggleHistory}
 				title={`${historyOpen && rightTab === 'history' ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')} (${formatShortcut('mod+shift+h')})`}
 				aria-label={historyOpen && rightTab === 'history'
@@ -3813,12 +3976,8 @@
 				aria-pressed={historyOpen && rightTab === 'history'}
 				aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
 			>
-				{#if focusMode}
-					{#if historyOpen && rightTab === 'history'}
-						<PanelRightClose class="h-4 w-4" />
-					{:else}
-						<PanelRightOpen class="h-4 w-4" />
-					{/if}
+				{#if focusMode || botsMode}
+					<PanelRight class="h-4 w-4" />
 				{:else}
 					<History class="h-4 w-4" />
 				{/if}
@@ -3831,20 +3990,23 @@
 	<div
 		class={[
 			'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
-			focusMode && historyOpen ? 'lg:pr-88' : ''
+			focusMode
+				? historyOpen
+					? 'lg:pr-88'
+					: ''
+				: previewAttachment || (botsMode && focusContextPath)
+					? ''
+					: 'lg:mt-14'
 		]}
 	>
 		{#if agent && previewAttachment}
-			<!-- The focus header floats over the column; keep the pane below it there. -->
-			<div class={focusMode ? 'min-h-0 flex-1 pt-14 lg:pt-16' : 'min-h-0 flex-1'}>
-				<AttachmentPreview
-					{agent}
-					item={previewAttachment}
-					onClose={() => (previewAttachment = null)}
-					onShowInChat={showAttachmentInChat}
-				/>
-			</div>
-		{:else if agent && focusMode && focusContextPath}
+			<AttachmentPreview
+				{agent}
+				item={previewAttachment}
+				onClose={() => (previewAttachment = null)}
+				onShowInChat={showAttachmentInChat}
+			/>
+		{:else if agent && (focusMode || botsMode) && focusContextPath}
 			<FocusContextEditor {agent} path={focusContextPath} onClose={() => (focusContextPath = '')} />
 		{:else if !agent}
 			<div
@@ -4264,6 +4426,30 @@
 															<ChatTime at={item.createdAt ?? ''} />
 														</div>
 													</div>
+												{:else if item.interaction}
+													<div
+														class="flex w-full max-w-full flex-col items-end gap-1.5 terminal:items-start"
+													>
+														<InteractionBadge kind={item.interaction} />
+														{#if item.text}
+															<div
+																class="max-w-full wrap-break-word rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-(--chat-bubble-ring) terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
+															>
+																<span class="whitespace-pre-wrap">{item.text}</span>
+															</div>
+														{/if}
+														<div
+															class={cn(
+																'mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/user:opacity-100 group-focus-within/user:opacity-100 [@media(hover:none)]:opacity-100',
+																item.localId === latestUserKey && 'opacity-100'
+															)}
+														>
+															{#if item.text}
+																<CopyButton text={item.text} />
+															{/if}
+															<ChatTime at={item.createdAt ?? ''} />
+														</div>
+													</div>
 												{:else if item.text}
 													<div
 														class="flex w-full max-w-full flex-col items-end terminal:items-start"
@@ -4302,14 +4488,13 @@
 															</div>
 														{:else}
 															<div
-																class="max-w-full whitespace-pre-wrap wrap-break-word rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-(--chat-bubble-ring) terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
+																class="max-w-full wrap-break-word rounded-(--chat-bubble-radius) bg-secondary px-4 py-2.5 text-sm text-secondary-foreground ring-1 ring-(--chat-bubble-ring) terminal:bg-transparent terminal:px-0 terminal:py-0 terminal:text-foreground"
 															>
 																<span
 																	class="mr-1.5 hidden select-none font-semibold text-muted-foreground terminal:inline"
 																>
 																	❯
-																</span>
-																{item.text}
+																</span><span class="whitespace-pre-wrap">{item.text}</span>
 															</div>
 															{#if (item.quotes?.length ?? 0) > 0}
 																{@const quoteCount = item.quotes?.length ?? 0}
@@ -4360,14 +4545,25 @@
 													'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
 											)}
 										>
-											<div data-ask-source="answer" data-ask-id={item.localId}>
-												<Markdown
-													content={displayText(item.text ?? '')}
-													streaming={streaming && item.localId === latestAnswerKey}
-												/>
-											</div>
+											{#if displayText(item.text ?? '')}
+												<div data-ask-source="answer" data-ask-id={item.localId}>
+													<Markdown
+														content={displayText(item.text ?? '')}
+														streaming={streaming && item.localId === latestAnswerKey}
+													/>
+												</div>
+											{/if}
 											{#if (item.attachments?.length ?? 0) > 0}
 												<RunAttachments {agent} attachments={item.attachments ?? []} />
+											{/if}
+											{#if (item.extraMessages?.length ?? 0) > 0}
+												<ExtraMessages
+													{agent}
+													extraMessages={item.extraMessages ?? []}
+													messageId={item.messageId}
+													disabled={streaming}
+													onInteract={handleExtraInteract}
+												/>
 											{/if}
 											<div
 												class={cn(
@@ -4517,10 +4713,10 @@
 
 						<div
 							class={[
-								'border-t px-2 py-2 sm:px-4 sm:py-3',
+								'px-2 py-2 sm:px-4 sm:py-3',
 								frosted
 									? 'bg-linear-to-b from-transparent via-card/40 to-card/40 backdrop-blur-xl'
-									: 'bg-background/80 backdrop-blur'
+									: ''
 							]}
 						>
 							<div class="mx-auto w-full max-w-4xl">
@@ -5306,7 +5502,7 @@
 
 	{#if agent && focusMode}
 		<!-- Focus mode keeps the panel mounted so opening and closing slides it in
-		     and out, like the left drawer in advanced mode. -->
+		     and out, like the left drawer in studio mode. -->
 		{#if historyOpen}
 			<button
 				type="button"
@@ -5342,6 +5538,10 @@
 					activeId={conversationId}
 					bind:tab={focusPanelTab}
 					onOpen={openConversation}
+					onNewInFolder={(folderId) =>
+						void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+					onDeleted={onHistoryDeleted}
+					onRenamed={onHistoryRenamed}
 					onClose={toggleHistory}
 					onOpenContext={(path) => {
 						focusContextPath = path;
@@ -5349,6 +5549,55 @@
 					}}
 				/>
 			{/if}
+		</aside>
+	{:else if agent && botsMode}
+		<!-- Bots mode pairs the left bot roster with a Focus-style right inspector
+		     panel that runs full-height on desktop and slides over on small screens. -->
+		{#if historyOpen}
+			<button
+				type="button"
+				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+				aria-label={t('myaaw.focus.panel_close')}
+				onclick={closeSidePanel}
+			></button>
+		{/if}
+		<aside
+			inert={!historyOpen}
+			class={[
+				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
+				historyOpen ? 'flex lg:w-88' : 'hidden lg:flex lg:w-0 lg:border-l-0'
+			]}
+		>
+			<div class="flex h-full w-full flex-col lg:w-88 lg:min-w-88">
+				{#if rightTab === 'attachments'}
+					<div class="min-h-0 flex-1 lg:pt-14">
+						<AttachmentPanel
+							{agent}
+							{conversationId}
+							refreshKey={attachmentsRefresh}
+							onOpen={openAttachment}
+							onShowInChat={showAttachmentInChat}
+							onClose={closeSidePanel}
+						/>
+					</div>
+				{:else}
+					<BotsAgentPanel
+						{agent}
+						activeId={conversationId}
+						bind:tab={focusPanelTab}
+						onOpen={openConversation}
+						onNewInFolder={(folderId) =>
+							void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+						onDeleted={onHistoryDeleted}
+						onRenamed={onHistoryRenamed}
+						onClose={toggleHistory}
+						onOpenContext={(path) => {
+							focusContextPath = path;
+							if (browser && window.innerWidth < 1024) toggleHistory();
+						}}
+					/>
+				{/if}
+			</div>
 		</aside>
 	{:else if agent && !classicMode}
 		<!-- Drawer on small screens, a static third column from lg up. Kept mounted
@@ -5366,10 +5615,10 @@
 			inert={!historyOpen}
 			class={[
 				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
-				historyOpen ? 'flex lg:w-72' : 'hidden lg:flex lg:w-0 lg:border-l-0'
+				historyOpen ? 'flex lg:w-80' : 'hidden lg:flex lg:w-0 lg:border-l-0'
 			]}
 		>
-			<div class="flex h-full w-full flex-col lg:w-72 lg:min-w-72">
+			<div class="flex h-full w-full flex-col lg:w-80 lg:min-w-80 lg:pt-14">
 				{#if rightTab === 'attachments'}
 					<AttachmentPanel
 						{agent}
@@ -5396,7 +5645,7 @@
 	{/if}
 
 	{#if agent && classicMode}
-		<!-- Classic borrows the advanced layout: a drawer on phones and a static
+		<!-- Classic borrows the studio layout: a drawer on phones and a static
 		     third column from lg up. History already lives in its left sidebar. -->
 		{#if classicAttachmentsOpen}
 			<button
@@ -5410,10 +5659,10 @@
 			inert={!classicAttachmentsOpen}
 			class={[
 				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
-				classicAttachmentsOpen ? 'flex lg:w-72' : 'hidden lg:flex lg:w-0 lg:border-l-0'
+				classicAttachmentsOpen ? 'flex lg:w-80' : 'hidden lg:flex lg:w-0 lg:border-l-0'
 			]}
 		>
-			<div class="flex h-full w-full flex-col lg:w-72 lg:min-w-72">
+			<div class="flex h-full w-full flex-col lg:w-80 lg:min-w-80 lg:pt-14">
 				<AttachmentPanel
 					{agent}
 					{conversationId}
@@ -5426,7 +5675,7 @@
 		</aside>
 	{/if}
 
-	<ImageLightbox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />
+	<LightBox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />
 
 	{#if askAnchor}
 		<!-- The one action a text selection unlocks. It floats above the reply so the

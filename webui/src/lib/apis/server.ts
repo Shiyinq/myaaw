@@ -2,6 +2,7 @@ import { agentPath, client } from './client';
 import type { OKResponse, ServerStatus } from '$lib/types';
 
 export const server = {
+	version: () => client<{ version: string }>('/version'),
 	status: (agent: string) => client<ServerStatus>(agentPath(agent, '/server/status')),
 	start: (agent: string) =>
 		client<OKResponse>(agentPath(agent, '/server/start'), { method: 'POST' }),

@@ -220,7 +220,8 @@ The selection node resolves the active agent from `~/.myaaw/config/agents.json`.
 6. **Message Queue (`internal/services/queue`)**: Handles asynchronous messaging using fast, native **Go Channels**. Polled or webhook payloads are pushed to the in-memory queue and processed by the Consumer worker to reliably deliver messages.
 7. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
 8. **Local Workspace (`~/.myaaw`)**: The operational directory for the Agent.
-   - `config/`: Shared configuration — `agents.json` (registry and default agent), `controlplane.json` (credentials), and the model tables (`model_capabilities.json`, `model_prices.json`, `tool_prices.json`).
+   - `config/`: Shared configuration — `agents.json` (registry and default agent) and the model tables (`model_capabilities.json`, `model_prices.json`, `tool_prices.json`).
+   - `controlplane/`: Control-plane SQLite database (`controlplane.db` — credentials, synced UI settings, and multi-agent group chats).
    - `agents/<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The first agent is named during onboarding; only legacy upgrades use `default/`.
      - `config/model_prices.json` / `config/tool_prices.json`: optional per-agent overrides, merged per key over the shared tables. New agents do not receive them, and model capabilities have no per-agent layer.
      - `home/`: Long-term file storage containing the agent's core definitions:
@@ -510,11 +511,11 @@ Back up agent data into portable `tar.gz` archives. Archives are written to `~/.
 
 | Command | Description |
 | :--- | :--- |
-| `myaaw backup` | Back up every initialized agent plus the shared config (`agents.json`, `controlplane.json`, and the model tables). |
+| `myaaw backup` | Back up every initialized agent plus the shared state (`agents.json`, `controlplane/controlplane.db`, and the model tables). |
 | `myaaw backup --agent agent-b` | Back up one agent. |
 | `myaaw backup --agent agent-b,agent-c -o ~/Backups` | Back up several agents to a custom directory. |
 | `myaaw backup --include-workspace --include-logs` | Include workspace and log files. |
-| `myaaw backup --no-secrets` | Exclude `.env` and blank API keys and A2A tokens. |
+| `myaaw backup --no-secrets` | Exclude `.env`, blank API keys and A2A tokens, and strip `auth_account` from the `controlplane/controlplane.db` snapshot. |
 | `myaaw restore <archive>` | Verify and restore an archive; add `--force` to replace an existing agent. |
 | `myaaw restore` | Choose a backup interactively (arrow keys + enter) from `~/.myaaw-backups`; use `--dir` for another directory. |
 

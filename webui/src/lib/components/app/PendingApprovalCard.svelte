@@ -1,16 +1,25 @@
 <script lang="ts">
 	import { CornerDownRight, ShieldAlert } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { groupAccent } from '$lib/components/groups/accent';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import type { ApprovalDecision, ApprovalPrompt } from '$lib/types';
 
 	interface Props {
 		approval: ApprovalPrompt;
 		onDecide: (decision: ApprovalDecision) => void;
+		/** Optional agent name when rendered inside a multi-agent group chat. */
+		agentName?: string;
+		agentColor?: string;
+		/** Optional 1-based queue indicator when multiple approvals are waiting. */
+		queuePosition?: number;
+		queueTotal?: number;
 	}
 
-	let { approval, onDecide }: Props = $props();
+	let { approval, onDecide, agentName, agentColor, queuePosition, queueTotal }: Props = $props();
 	const { t } = useTranslation();
+
+	const agentBadge = $derived(agentName ? groupAccent(agentColor) : null);
 
 	/** The arguments start collapsed, like the CLI prompt; this opens the full JSON. */
 	let openArgs = $state(false);
@@ -41,6 +50,19 @@
 	<div class="flex flex-wrap items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
 		<ShieldAlert class="h-4 w-4 shrink-0" />
 		<span>{t('myaaw.chat.need_approval')}</span>
+		{#if agentName && agentBadge}
+			<span
+				class={[
+					'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1',
+					agentBadge.softBg,
+					agentBadge.text,
+					agentBadge.ring
+				]}
+			>
+				<span class={['h-1.5 w-1.5 rounded-full', agentBadge.dot]}></span>
+				@{agentName}
+			</span>
+		{/if}
 		{#if approval.subagent}
 			<!-- The task name alone reads like part of the tool; say where it came from. -->
 			<span
@@ -50,6 +72,13 @@
 			</span>
 		{/if}
 		<span class="truncate font-mono text-foreground">{approval.tool_name}</span>
+		{#if queueTotal && queueTotal > 1}
+			<span
+				class="ml-auto rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-amber-800 dark:text-amber-200"
+			>
+				{queuePosition ?? 1} / {queueTotal}
+			</span>
+		{/if}
 	</div>
 	{#if approval.subagent}
 		<p class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">

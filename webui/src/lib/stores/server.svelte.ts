@@ -16,6 +16,7 @@ const query = createQueryStore<{ agent: string }, ServerStatus>({
  */
 export const serverStore = {
 	query,
+	fetchVersion: () => serverApi.version(),
 	get data() {
 		return query.data;
 	},

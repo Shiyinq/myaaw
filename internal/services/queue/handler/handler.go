@@ -39,6 +39,21 @@ func (h *QueueHandlerImpl) HandleTelegramChat(c fiber.Ctx) error {
 	// Wrap raw Telegram payload in a QueueEnvelope
 	rawPayload := json.RawMessage(c.Body())
 
+	// Interactive extra_messages button clicks lock their block and enqueue
+	// a structured <interaction> turn.
+	if synth, handled := telegram.HandleExtraMessageCallback(rawPayload); handled {
+		if len(synth) > 0 {
+			envelope := &channel.QueueEnvelope{
+				Channel: "telegram",
+				Payload: synth,
+			}
+			if err := h.queueService.ProcessAndPublishMessage(envelope); err != nil {
+				return utils.ErrorInternalServer(c, "Failed to publish interaction message")
+			}
+		}
+		return c.Status(fiber.StatusOK).JSON(bson.M{"ok": true})
+	}
+
 	// Approval button presses are resolved inline and never enqueued.
 	if telegram.HandleApprovalCallback(rawPayload) {
 		return c.Status(fiber.StatusOK).JSON(bson.M{"ok": true})

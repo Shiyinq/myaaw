@@ -1,6 +1,7 @@
 import { auth as authApi } from '$lib/apis/auth';
 import { accessToken } from '$lib/stores/accessToken.svelte';
 import { isAuthenticated } from '$lib/stores/authStatus.svelte';
+import { settingsStore } from '$lib/stores/settings.svelte';
 import { getErrorMessage } from '$lib/utils/api';
 import { logger } from '$lib/utils/logger';
 import type {
@@ -13,6 +14,7 @@ import type {
 let isLoading = $state(false);
 let error = $state('');
 let profile = $state<MeResponse | null>(null);
+let profileError = $state('');
 
 export const authStore = {
 	get isLoading() {
@@ -24,6 +26,9 @@ export const authStore = {
 	get profile() {
 		return profile;
 	},
+	get profileError() {
+		return profileError;
+	},
 	get mustChangePassword() {
 		return profile?.must_change_password === true;
 	},
@@ -34,8 +39,13 @@ export const authStore = {
 		try {
 			const response = await authApi.login(credentials);
 			accessToken.set(response.token, response.expires_at);
+			try {
+				await Promise.all([authStore.loadProfile(), settingsStore.loadOnce(true)]);
+			} catch (err) {
+				accessToken.clear();
+				throw err;
+			}
 			isAuthenticated.set(true);
-			await authStore.loadProfile();
 			return response;
 		} catch (err) {
 			error = getErrorMessage(err);
@@ -55,14 +65,18 @@ export const authStore = {
 			accessToken.clear();
 			isAuthenticated.set(false);
 			profile = null;
+			profileError = '';
+			settingsStore.reset();
 		}
 	},
 
 	async loadProfile() {
+		profileError = '';
 		try {
 			profile = await authApi.me();
 			return profile;
 		} catch (err) {
+			profileError = getErrorMessage(err);
 			logger.error('Failed to load profile', err, { context: 'authStore' });
 			throw err;
 		}
@@ -73,6 +87,8 @@ export const authStore = {
 		accessToken.clear();
 		isAuthenticated.set(false);
 		profile = null;
+		profileError = '';
+		settingsStore.reset();
 	},
 
 	async changeUsername(payload: ChangeUsernameRequest) {

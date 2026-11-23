@@ -353,35 +353,60 @@ func createAgent(outDir string, toStdout bool, name string, opts Options, now ti
 	return Result{Agent: name, Path: path, Files: len(manifest.Files) + 1, Bytes: bytes}, nil
 }
 
+const controlPlaneArchivePath = "controlplane/controlplane.db"
+
 func createGlobal(root, outDir string, opts Options, now time.Time) (Result, error) {
+	tempDir, err := os.MkdirTemp("", "myaaw-backup-global-")
+	if err != nil {
+		return Result{}, err
+	}
+	defer os.RemoveAll(tempDir)
+
+	cpSnapshot, err := snapshotDatabase(root, tempDir, controlPlaneArchivePath)
+	if err != nil {
+		return Result{}, err
+	}
+	if cpSnapshot != "" && opts.NoSecrets {
+		if err := sanitizeControlPlaneSnapshot(cpSnapshot); err != nil {
+			return Result{}, fmt.Errorf("sanitize controlplane snapshot: %w", err)
+		}
+	}
+
 	manifest := Manifest{
 		Format:       FormatVersion,
 		MyaawVersion: opts.Version,
 		Agent:        "global",
 		CreatedAt:    now.UTC().Format(time.RFC3339),
 		Hostname:     hostname(),
-		Includes:     []string{"agents.json", "config/model_capabilities.json", "config/model_prices.json", "config/tool_prices.json"},
+		Includes:     []string{"agents.json", controlPlaneArchivePath, "config/model_capabilities.json", "config/model_prices.json", "config/tool_prices.json"},
 	}
-	if !opts.NoSecrets {
-		manifest.Includes = append(manifest.Includes, "controlplane.json")
+	if cpSnapshot != "" {
+		manifest.DatabaseSnapshot = "VACUUM INTO"
+	}
+	if opts.NoSecrets {
+		manifest.Excludes = []string{"auth_account"}
 	}
 
 	build := func(tw *tar.Writer) (Manifest, error) {
 		for _, name := range []string{
 			"agents.json",
-			"controlplane.json",
 			"config/model_capabilities.json",
 			"config/model_prices.json",
 			"config/tool_prices.json",
 		} {
-			if opts.NoSecrets && name == "controlplane.json" {
-				continue
-			}
 			path := globalDiskPath(root, name)
 			if _, err := os.Stat(path); err != nil {
 				continue
 			}
 			entry, err := addFile(tw, name, path)
+			if err != nil {
+				return Manifest{}, err
+			}
+			manifest.Files = append(manifest.Files, entry)
+		}
+		if cpSnapshot != "" {
+			_ = os.Chmod(cpSnapshot, 0o600)
+			entry, err := addFile(tw, controlPlaneArchivePath, cpSnapshot)
 			if err != nil {
 				return Manifest{}, err
 			}
@@ -397,11 +422,29 @@ func createGlobal(root, outDir string, opts Options, now time.Time) (Result, err
 	return Result{Agent: "global", Path: path, Files: len(manifest.Files) + 1, Bytes: bytes}, nil
 }
 
-// globalDiskPath maps an archive entry to its location on disk. The registry and
-// credentials use flat archive names for compatibility with older backups but
-// live under config/ on disk.
+// sanitizeControlPlaneSnapshot strips auth_account (password_hash) from a
+// temporary VACUUM INTO copy so --no-secrets archives retain settings and group
+// chats without leaking login credentials.
+func sanitizeControlPlaneSnapshot(path string) error {
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+
+	if _, err := db.Exec(`DELETE FROM auth_account`); err != nil && !strings.Contains(err.Error(), "no such table") {
+		return err
+	}
+	_, err = db.Exec(`VACUUM`)
+	return err
+}
+
+// globalDiskPath maps an archive entry to its location on disk. The registry
+// uses a flat archive name for compatibility with older backups but lives under
+// config/ on disk.
 func globalDiskPath(root, archiveName string) string {
-	if archiveName == "agents.json" || archiveName == "controlplane.json" {
+	if archiveName == "agents.json" {
 		target := filepath.Join(root, "config", archiveName)
 		if _, err := os.Stat(target); err == nil {
 			return target

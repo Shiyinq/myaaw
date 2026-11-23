@@ -1,4 +1,6 @@
 import type { AgentConfig } from './config';
+import type { ChatRunInfo } from './chat';
+import type { ConversationSummary } from './conversations';
 
 export interface AgentInfo {
 	name: string;
@@ -14,6 +16,21 @@ export interface AgentInfo {
 
 export interface AgentsResponse {
 	agents: AgentInfo[];
+}
+
+export interface BotSidebarSummary {
+	agent: string;
+	latest_conversation_id?: string;
+	latest_title?: string;
+	latest_preview?: string;
+	latest_updated_at?: string;
+	latest_read_at?: string | null;
+	recent_conversations?: ConversationSummary[];
+	active_runs?: ChatRunInfo[];
+}
+
+export interface BotsSummaryResponse {
+	bots: BotSidebarSummary[];
 }
 
 export interface OnboardProvider {

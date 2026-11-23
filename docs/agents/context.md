@@ -20,7 +20,9 @@ conversation history — byte-stable.
 | Platform, room, ids, speaker, time | channel adapter → `<userinfo>` | yes, user message |
 | Uploaded file paths | `<attached>` | yes, user message |
 | Trigger kind (cron, heartbeat, sub-agent) | bot service → `<trigger kind="…">` | yes, user message |
+| Interactive `extra_messages` response | control plane / channel callback → `<interaction kind="…">` | yes, user message |
 | Quoted excerpts from earlier replies | dashboard → `<selections>` | yes, user message |
+| Multi-agent group turn | control plane → `<group>` (`<group_context>` + `<chats>`) | yes, user message |
 | Sender metadata fields | `provider.Message.Sender*` | no, dashboard only |
 | Session scope (`tg:…`, `dc:…`) | conversation store | no, routing only |
 
@@ -237,7 +239,78 @@ there is no migration for them.
 
 ---
 
-## 6. Where the tags are hidden
+## 6. The `<interaction>` block
+
+When a user responds to an interactive `extra_messages` block (clicking an
+action/carousel button, picking a quick reply, submitting a dynamic form, or
+confirming a checklist), the control plane or channel callback formats the
+follow-up user turn with `provider.InteractionBlock(kind, payload, summary)`
+(`internal/provider/extra_messages.go`):
+
+```xml
+<interaction kind="form">
+{"action_id":"booking","block_id":"blk_8f2a","label":"Booking Details","values":{"date":"2026-11-25","guests":2}}
+</interaction>
+Booking Details: Date: 2026-11-25 · Guests: 2
+```
+
+- `kind` is one of `button`, `quick_reply`, `form`, or `checklist`.
+- Unlike `<trigger>` (where nothing follows `</trigger>`), `<interaction>` is
+  followed by a short plain-text summary. The model sees both the exact JSON
+  payload and the summary; the WebUI strips `<interaction>…</interaction>`,
+  renders a dedicated pill badge (`Button`, `Quick reply`, `Form`, or
+  `Checklist` via `InteractionBadge.svelte`), and displays the clean summary
+  beneath it.
+- In DM and channel sessions, `<interaction>` sits after `<userinfo>` /
+  `<attached>` just like `<trigger>`. In multi-agent group chats, the
+  interaction message is persisted with `reply_to_id` pointing at the
+  originating agent's message so the right agent receives the follow-up turn.
+- Free-text values inside `<interaction>` (such as form text inputs) are still
+  untrusted user data, never system instructions (documented in `SECURITY.md`).
+
+---
+
+## 7. The `<group>` block
+
+In a multi-agent group chat, the control plane orchestrator wraps each agent's
+turn payload in an outer `<group>` block containing two child blocks
+(`internal/services/controlplane/service/groups.go`):
+
+```xml
+<group>
+<group_context>
+Group: Architecture Council
+Topic: Review system design trade-offs.
+Members: @default, @myfriend
+You are: @default
+Mode: autonomous
+...
+</group_context>
+
+<chats>
+[User]: What do you both think about SQLite WAL?
+[myfriend]: WAL works well for concurrent reads.
+</chats>
+</group>
+```
+
+- `<group_context>` carries room metadata (group name, topic, member list, the
+  agent's `@handle`, discussion mode, and concise room rules).
+- `<chats>` carries only the unseen delta messages since that agent's last turn,
+  labeled by speaker (`[User]`, `[<agent_name>]`, `[System]`).
+- Because the control plane sends this prompt through the agent's regular
+  `/api/chat/stream` endpoint with the authenticated `user_id`, the agent's bot
+  service still prepends `<userinfo>` (and `<attached>` when files are present)
+  in front of `<group>`.
+- Everything inside `<chats>` is untrusted participant input (from the user or
+  other agents) and must never override `SECURITY.md` rules.
+- Only the outer `<group>` tag is Myaaw syntax; bare `<group_context>` or
+  `<chats>` in ordinary text or code are plain data. For full orchestration
+  details, see [Multi-Agent Group Chat](groups.md).
+
+---
+
+## 8. Where the tags are hidden
 
 The tags are model-only. Each surface strips them before rendering:
 
@@ -245,24 +318,29 @@ The tags are model-only. Each surface strips them before rendering:
 | :--- | :--- |
 | Chat bubbles and the edit box | `withoutContext()` in `webui/src/routes/app/chat/[[conversation]]/+page.svelte` |
 | Quoted excerpts | `parseAskPrompt()` in `webui/src/lib/utils/ask.ts` removes the block and leaves a `N selections` chip |
-| Trigger turns | `splitTrigger()` in the same file hides the whole block and draws a badge (icon + `cron`/`heartbeat`/`subagent`); the badge is not clickable |
+| Trigger turns | `splitTrigger()` in `chat/[[conversation]]/+page.svelte` hides the whole block and draws a badge (icon + `cron`/`heartbeat`/`subagent`); the badge is not clickable |
+| Interaction turns (DM & Group) | `parseInteractionText()` (`webui/src/lib/utils/interactions.ts`) strips `<interaction>…</interaction>`, renders `<InteractionBadge />` (`button`/`quick_reply`/`form`/`checklist`), and displays the trailing summary; sidebar previews strip via `stripInteractionTags()` |
+| Group turns | Group chat messages are stored cleanly in `controlplane.db` (`group_messages`); the `<group>` wrapper is synthesized per agent turn only when calling `/api/chat/stream` |
 | Auto-generated title | `provider.StripContextBlocks` in `conversation.go` |
 | Turn rail labels (control plane) | `provider.StripContextBlocks` in `controlplane/service/conversations.go` |
 | CLI resumed transcript | `provider.StripContextBlocks` in `cmd/myaaw/chat.go` |
 | Observability trace | **not** stripped: the trace shows the real prompt, including the block |
 
 `provider.StripContextBlocks` removes `<userinfo>` and `<attached>`, drops a
-whole `<selections>` block, and unwraps `<trigger>` down to its content
-(`provider.StripTriggerBlocks` uses the kind to drop the known rules), so a title,
-a preview, or the CLI shows what the turn was about and never the rules. A
-heartbeat holds no content, so it strips to nothing; quoted excerpts are not the
-user's words, so they strip to nothing too. `SplitContextBlocks`/`JoinContextBlocks`
-only handle the leading `<userinfo>`/`<attached>` blocks, so editing never touches
-the trigger marker or duplicates the excerpt block.
+whole `<selections>` block, unwraps `<trigger>` down to its content
+(`provider.StripTriggerBlocks` uses the kind to drop the known rules), and
+strips `<interaction>…</interaction>` envelopes via
+`provider.StripInteractionBlocks` while keeping the trailing summary — so a
+title, a preview, or the CLI shows what the turn was about and never the raw
+rules or JSON. A heartbeat holds no content, so it strips to nothing; quoted
+excerpts are not the user's words, so they strip to nothing too.
+`SplitContextBlocks`/`JoinContextBlocks` only handle the leading
+`<userinfo>`/`<attached>` blocks, so editing never touches the trigger marker or
+duplicates the excerpt block.
 
 ---
 
-## 7. Editing a message
+## 9. Editing a message
 
 The dashboard edit box contains only the text the person typed. On the server,
 `rewindToUserMessage` replaces **only** that text and preserves everything else:
@@ -279,13 +357,14 @@ Regeneration keeps the content untouched (`replacement == ""`), so it reuses the
 same prompt prefix.
 
 Messages written before this feature have no blocks; editing them does not
-invent one. Trigger turns are not editable in the dashboard: they render as a
-badge with no text to edit, and saving would drop the marker. Regenerating such a
-turn still re-runs the stored prompt.
+invent one. Trigger and interaction turns are not editable in the dashboard:
+trigger turns render as a badge with no text to edit, and interaction turns
+carry a structured `<interaction>` payload whose editing would drop the marker.
+Regenerating such a turn still re-runs the stored prompt.
 
 ---
 
-## 8. Prompt caching
+## 10. Prompt caching
 
 All supported providers cache by **prefix matching**: the first differing byte
 invalidates everything after it. Myaaw uses OpenAI-compatible providers
@@ -351,7 +430,7 @@ roughly equal to the system prompt plus the first turn.
 
 ---
 
-## 9. Is Myaaw cache-safe?
+## 11. Is Myaaw cache-safe?
 
 Yes, with these caveats:
 
@@ -369,7 +448,7 @@ Yes, with these caveats:
 
 ---
 
-## 10. Privacy and security
+## 12. Privacy and security
 
 - Channel and user names are untrusted: sanitized to one line, capped, and
   stripped of `<`/`>` so they cannot break the tag or inject instructions.
@@ -382,7 +461,7 @@ Yes, with these caveats:
 
 ---
 
-## 11. Where this lives in the code
+## 13. Where this lives in the code
 
 | Concern | Location |
 | :--- | :--- |
@@ -390,8 +469,10 @@ Yes, with these caveats:
 | `<userinfo>` renderer | `internal/agent/userinfo.go` |
 | Extract/strip blocks | `internal/provider/attachments.go` |
 | `<trigger>` block and its copy | `internal/provider/triggers.go` |
+| `<interaction>` block & stripping | `internal/provider/extra_messages.go` |
+| `<group>` prompt builder | `internal/services/controlplane/service/groups.go` |
 | Prepend block, edit preservation | `internal/services/bot/service/conversation.go` |
 | Adapters fill chat type/ids | `internal/channel/telegram/adapter.go`, `internal/channel/discord/adapter.go` |
-| Dashboard stripping and trigger badge | `webui/src/routes/app/chat/[[conversation]]/+page.svelte` |
+| Dashboard stripping, trigger & interaction badges | `webui/src/routes/app/chat/[[conversation]]/+page.svelte`, `webui/src/routes/app/groups/[id]/+page.svelte`, `webui/src/lib/utils/interactions.ts`, `webui/src/lib/components/extra/InteractionBadge.svelte` |
 | CLI stripping | `cmd/myaaw/chat.go` |
 | Cache measurement | `provider.Usage.CachedInputTokens`, observability |

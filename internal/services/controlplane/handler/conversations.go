@@ -284,6 +284,52 @@ func (h *Handler) MarkConversationRead(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ok": true})
 }
 
+// RespondConversationInteraction records an interactive extra_messages response
+// (button click, quick reply, dynamic form, checklist) atomically.
+// @Summary      Respond to conversation extra_messages interaction
+// @Description  Atomically locks a single-use interactive extra_messages block (button, quick reply, form, or checklist) in conversations.db and returns the formatted <interaction> text to dispatch as the next turn. Returns 409 Conflict with the persisted state if the block was already submitted.
+// @Tags         Conversations
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        name path string true "Agent name"
+// @Param        id path string true "Conversation ID"
+// @Param        user_id query int false "User ID (defaults to the authenticated user)"
+// @Param        request body service.InteractionRequest true "Interaction response payload"
+// @Success      200 {object} service.InteractionResponse
+// @Failure      400 {object} common.ErrorResponse
+// @Failure      401 {object} common.ErrorResponse
+// @Failure      403 {object} common.ErrorResponse
+// @Failure      404 {object} common.ErrorResponse
+// @Failure      409 {object} service.InteractionResponse
+// @Router       /agents/{name}/conversations/{id}/interactions [post]
+func (h *Handler) RespondConversationInteraction(c fiber.Ctx) error {
+	var req service.InteractionRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid JSON request body",
+		})
+	}
+	res, err := h.conversations.RespondInteraction(c.Params("name"), c.Params("id"), h.requestUserID(c), req)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInteractionAlreadySubmitted):
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"error":    err.Error(),
+				"block_id": res.BlockID,
+				"state":    res.State,
+			})
+		case errors.Is(err, service.ErrInteractionNotFound):
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		case errors.Is(err, service.ErrInteractionInvalid):
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		default:
+			return conversationError(c, err)
+		}
+	}
+	return c.JSON(res)
+}
+
 // RenameConversation updates a conversation title.
 // @Summary      Rename conversation
 // @Description  Only the owner can rename a conversation. Titles are trimmed and must not be empty.

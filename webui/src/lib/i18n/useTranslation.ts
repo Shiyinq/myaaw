@@ -1,5 +1,6 @@
 import { t as translate, locale, locales } from './index';
 import type { Locale } from './index';
+import { queueSettingsPatch } from '$lib/stores/settingsSync.svelte';
 
 /**
  * Custom hook for using translations in Svelte components.
@@ -8,6 +9,7 @@ import type { Locale } from './index';
 export function useTranslation() {
 	const changeLocale = (newLocale: Locale): void => {
 		locale.value = newLocale;
+		queueSettingsPatch({ locale: newLocale });
 	};
 
 	const isLocale = (checkLocale: Locale): boolean => {

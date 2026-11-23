@@ -273,7 +273,7 @@ func (t *SubAgentTool) runSubAgent(ctx context.Context, task SubAgentTask, targe
 		return
 	}
 
-	subAgent := agent.NewAgent(prov).WithExcludedTools("subagent", "provider", "memory")
+	subAgent := agent.NewAgent(prov).WithExcludedTools("subagent", "provider", "memory", "extra_messages")
 
 	systemPrompt := fmt.Sprintf(`You are a specialized sub-agent running in the background.
 Your name is: %s

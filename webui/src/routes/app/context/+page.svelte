@@ -170,7 +170,7 @@
 
 <div class="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
 	{#if !agent}
-		<div class="w-full p-4 lg:p-6">
+		<div class="w-full p-4 lg:p-6 lg:pt-16">
 			<Card>
 				<CardContent class="py-10 text-center text-sm text-muted-foreground">
 					{t('myaaw.agent.none')}
@@ -180,9 +180,9 @@
 	{:else}
 		<!-- Context files: a second sidebar nested inside the main one. -->
 		<aside
-			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-full lg:w-72 lg:border-r lg:border-b-0 lg:pt-14 xl:w-80"
 		>
-			<div class="shrink-0 space-y-2 border-b px-3 py-2.5">
+			<div class="shrink-0 space-y-2 px-4 py-2.5 lg:pt-1">
 				<SidebarHeader label={t('myaaw.context.files')} count={files.length} />
 				<SidebarSearchField
 					bind:inputRef={searchNav.input}
@@ -240,7 +240,10 @@
 			</div>
 		</aside>
 
-		<section bind:this={detail} class="flex min-w-0 flex-col p-4 lg:min-h-0 lg:flex-1 lg:p-6">
+		<section
+			bind:this={detail}
+			class="flex min-w-0 flex-col p-4 lg:mt-14 lg:min-h-0 lg:flex-1 lg:px-6 lg:pt-1 lg:pb-6"
+		>
 			{#if error}
 				<div
 					class="mb-3 shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"

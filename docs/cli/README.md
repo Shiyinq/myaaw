@@ -117,7 +117,7 @@ in the output. `server run` stays a single-agent foreground process.
 
 - **Per-agent everything.** Config, `.env`, database, memory, skills, logs, and the server port belong to one agent under `~/.myaaw/agents/<agent>/`. Use `--agent` or `agent use` to switch.
 - **Daemons are per agent.** Each agent runs `myaaw-server-<agent>` on its own `PORT`. Rebuilding the binary does not change a running daemon; restart each agent to pick up new code.
-- **Secrets stay local.** `.env`, `config/config.json`, `contacts.json`, and `config/controlplane.json` contain credentials. They are never printed unmasked by `config dump`.
+- **Secrets stay local.** `.env`, `config/config.json`, `contacts.json`, and `controlplane/controlplane.db` contain credentials. They are never printed unmasked by `config dump`.
 - **Exit codes.** Success is `0`. Command errors print a single `Error: ...` line and exit non-zero.
 - **Machine-readable output.** `backup` and `restore` accept `--json`.
 - **Shell completion.** `myaaw completion bash|zsh|fish|powershell`.
@@ -128,10 +128,11 @@ in the output. `server run` stays a single-agent foreground process.
 ~/.myaaw/
   config/                   # shared configuration
     agents.json             # registry
-    controlplane.json       # control plane credentials
     model_capabilities.json # model capability catalog
     model_prices.json       # shared model prices
     tool_prices.json        # shared tool prices
+  controlplane/             # control plane SQLite state
+    controlplane.db         # credentials, UI settings, and group chats
   pids/                     # daemon pid files (shared)
   webui/                    # optional dashboard bundle
   agents/

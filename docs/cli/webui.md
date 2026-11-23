@@ -67,7 +67,7 @@ curl -fsSL .../install.sh | bash -s -- --webui       # binary + dashboard
 | `--api-url` | `http://localhost:9000` | Control-plane URL. |
 | `--public` | `false` | Public hosting: `/setup` returns 404 and the login host hints are hidden. Saved in `config.json`, and read back when `MYAAW_WEBUI_PUBLIC` is unset. |
 | `--version` | latest | Release tag for `install` / `update` / `rollback`. |
-| `--purge` | `false` | With `uninstall`, also remove control-plane credentials. |
+| `--purge` | `false` | With `uninstall`, prompt with a warning and also delete `~/.myaaw/controlplane/controlplane.db` (`-wal`/`-shm` included: login credentials, UI settings, and group chats). |
 
 ## Data layout
 

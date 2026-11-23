@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"myaaw/internal/agentdir"
+	"myaaw/internal/provider"
 )
 
 type ToolsContext struct {
@@ -52,11 +53,13 @@ type ImageResult struct {
 	Data     string
 }
 
-// StructuredResult lets a tool return images and files alongside text.
+// StructuredResult lets a tool return images, files, and rich extra messages
+// alongside text.
 type StructuredResult struct {
-	Text        string
-	Images      []ImageResult
-	Attachments []FileAttachment
+	Text          string
+	Images        []ImageResult
+	Attachments   []FileAttachment
+	ExtraMessages []provider.ExtraMessage
 }
 
 // FileAttachment is a file a tool wants delivered to the user. A tool that

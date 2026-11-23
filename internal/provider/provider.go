@@ -59,6 +59,10 @@ type Message struct {
 	// previews. Providers never receive them: every adapter maps fields onto its
 	// own wire type.
 	Attachments []MessageAttachment `json:"attachments,omitempty" bson:"attachments,omitempty"`
+	// ExtraMessages are rich display/interactive blocks emitted by the
+	// extra_messages tool. Like Attachments, they are presentation metadata
+	// persisted with the transcript and never sent raw to LLM providers.
+	ExtraMessages []ExtraMessage `json:"extra_messages,omitempty" bson:"extra_messages,omitempty"`
 	// Trace stores all ReAct steps as JSON array for final response
 	Trace []ReactStep `json:"trace,omitempty" bson:"trace,omitempty"`
 	// Token Usage

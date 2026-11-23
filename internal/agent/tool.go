@@ -32,6 +32,8 @@ type ToolResult struct {
 	Terminate         bool
 	// Attachments are files the tool wants delivered to the user's channel.
 	Attachments []channel.Attachment
+	// ExtraMessages are rich UI blocks emitted by the extra_messages tool.
+	ExtraMessages []provider.ExtraMessage
 	Usage       provider.Usage
 	DurationMs  int64
 }
@@ -94,10 +96,11 @@ func (t *legacyTool) Execute(ctx context.Context, call ToolCallInput, onUpdate f
 			})
 		}
 		result = ToolResult{
-			Content:     content,
-			Attachments: structuredAttachments(sr.Attachments),
-			IsError:     looksLikeToolError(sr.Text),
-			DurationMs:  time.Since(started).Milliseconds(),
+			Content:       content,
+			Attachments:   structuredAttachments(sr.Attachments),
+			ExtraMessages: provider.CloneExtraMessages(sr.ExtraMessages),
+			IsError:       looksLikeToolError(sr.Text),
+			DurationMs:    time.Since(started).Milliseconds(),
 		}
 		return result
 	}

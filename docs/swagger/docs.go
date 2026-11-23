@@ -487,6 +487,10 @@ const docTemplate = `{
                     "description": "RewindUserOffset rewinds the transcript before this turn. 0 keeps the\ntranscript up to the last user message (regenerate); N keeps it up to the\nuser message N turns earlier (edit that message with ` + "`" + `text` + "`" + `).",
                     "type": "integer"
                 },
+                "scope": {
+                    "description": "Scope optionally isolates a session from the default DM/API list, e.g.\n\"group:\u003cgroup_id\u003e\" for control-plane multi-agent group chats.",
+                    "type": "string"
+                },
                 "text": {
                     "type": "string"
                 },
@@ -656,6 +660,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "request_id": {
+                    "type": "string"
+                },
+                "scope": {
                     "type": "string"
                 },
                 "started_at": {

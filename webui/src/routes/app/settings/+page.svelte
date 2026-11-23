@@ -49,9 +49,10 @@
 	]);
 
 	const shellModeOptions = $derived([
-		{ value: 'advanced', label: t('myaaw.settings.mode_advanced') },
-		{ value: 'classic', label: t('myaaw.settings.mode_classic') },
-		{ value: 'focus', label: t('myaaw.settings.mode_focus') }
+		{ value: 'studio', label: t('myaaw.settings.mode_studio') },
+		{ value: 'bots', label: t('myaaw.settings.mode_bots') },
+		{ value: 'focus', label: t('myaaw.settings.mode_focus') },
+		{ value: 'classic', label: t('myaaw.settings.mode_classic') }
 	]);
 
 	/** Switching to focus mode needs an agent; default to the current one. */
@@ -391,6 +392,15 @@
 					t('myaaw.settings.host_badge_desc'),
 					preferences.value.showHostBadge,
 					(next) => preferences.update({ showHostBadge: next })
+				)}
+			</div>
+
+			<div class="grid gap-2">
+				{@render toggle(
+					t('myaaw.settings.connection_badge'),
+					t('myaaw.settings.connection_badge_desc'),
+					preferences.value.showConnectionBadge,
+					(next) => preferences.update({ showConnectionBadge: next })
 				)}
 			</div>
 		</CardContent>

@@ -63,10 +63,20 @@ else
     RELEASE_URL="https://api.github.com/repos/${REPO}/releases/latest"
 fi
 
-echo "Fetching the latest WebUI bundle..."
-DOWNLOAD_URL=$(curl -s "$RELEASE_URL" | grep "browser_download_url.*myaaw-webui-.*\.tar\.gz\"" | cut -d '"' -f 4)
+echo "Fetching the WebUI bundle..."
+RELEASE_METADATA=$(curl -fsSL "$RELEASE_URL" | node -e '
+    const release = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+    const tag = release.tag_name;
+    const url = release.assets?.find((asset) => /^myaaw-webui-.*\.tar\.gz$/.test(asset.name))?.browser_download_url;
+    if (typeof tag === "string" && tag && typeof url === "string" && url) {
+        console.log(tag);
+        console.log(url);
+    }
+')
+RELEASE_TAG=$(printf '%s\n' "$RELEASE_METADATA" | sed -n '1p')
+DOWNLOAD_URL=$(printf '%s\n' "$RELEASE_METADATA" | sed -n '2p')
 
-if [ -z "$DOWNLOAD_URL" ]; then
+if [ -z "$RELEASE_TAG" ] || [ -z "$DOWNLOAD_URL" ]; then
     echo "❌ Could not find a WebUI bundle in the release."
     echo "   Check https://github.com/${REPO}/releases"
     exit 1
@@ -88,14 +98,10 @@ if [ "$PUBLIC" -eq 1 ]; then
     PUBLIC_JSON="true"
 fi
 
-cat > "$WEBUI_DIR/config.json" <<EOF
-{
-  "port": "${PORT}",
-  "api_url": "${API_URL}",
-  "version": "${VERSION:-latest}",
-  "public": ${PUBLIC_JSON}
-}
-EOF
+node -e '
+    const [port, api_url, version, publicMode] = process.argv.slice(1);
+    console.log(JSON.stringify({ port, api_url, version, public: publicMode === "true" }, null, 2));
+' "$PORT" "$API_URL" "$RELEASE_TAG" "$PUBLIC_JSON" > "$WEBUI_DIR/config.json"
 
 echo "✅ WebUI installed at ${WEBUI_DIR}/current"
 echo "🚀 Starting on http://127.0.0.1:${PORT} (control plane: ${API_URL})"

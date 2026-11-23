@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	realpathSync,
+	renameSync,
+	writeFileSync
+} from 'node:fs';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { arch, homedir, platform } from 'node:os';
@@ -120,7 +128,7 @@ export function publicMode(): boolean {
 function readWebUIConfig(): Record<string, unknown> | null {
 	try {
 		const path = join(homedir(), '.myaaw', 'webui', 'config.json');
-		const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'));
+		const parsed: unknown = JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
 		return typeof parsed === 'object' && parsed !== null
 			? (parsed as Record<string, unknown>)
 			: null;
@@ -134,6 +142,23 @@ function readWebUIConfig(): Record<string, unknown> | null {
 export function webuiConfigApiUrl(): string {
 	const parsed = readWebUIConfig();
 	return typeof parsed?.api_url === 'string' ? parsed.api_url : '';
+}
+
+// Only read the installed tag when this process is serving that bundle, not
+// when a source checkout happens to run on a host with another installed copy.
+export function webuiBundleVersion(): string | null {
+	const explicitVersion = env.MYAAW_WEBUI_VERSION?.trim();
+	if (explicitVersion) return explicitVersion;
+
+	try {
+		const installedDir = join(homedir(), '.myaaw', 'webui', 'current');
+		if (realpathSync(process.cwd()) !== realpathSync(installedDir)) return null;
+		const value = readWebUIConfig()?.version;
+		const version = typeof value === 'string' ? value.trim() : '';
+		return version && version !== 'latest' ? version : null;
+	} catch {
+		return null;
+	}
 }
 
 async function controlPlaneReachable(apiUrl: string): Promise<boolean> {

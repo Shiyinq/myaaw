@@ -61,7 +61,7 @@ Write-Host "Fetching the WebUI bundle..."
 $Release = Invoke-RestMethod -Uri $ReleaseUrl -Headers @{ "User-Agent" = "myaaw-webui-install" }
 $Asset = $Release.assets | Where-Object { $_.name -like "myaaw-webui-*.tar.gz" } | Select-Object -First 1
 
-if (-not $Asset) {
+if (-not $Release.tag_name -or -not $Asset) {
     Write-Host "Could not find a WebUI bundle in the release." -ForegroundColor Red
     Write-Host "Check https://github.com/$Repo/releases"
     exit 1
@@ -81,7 +81,7 @@ Remove-Item -Force $Tmp
 $Config = @{
     port    = "$Port"
     api_url = $ApiUrl
-    version = $(if ($Version) { $Version } else { "latest" })
+    version = $Release.tag_name
     public  = [bool]$Public
 } | ConvertTo-Json
 Set-Content -Path (Join-Path $WebUIDir "config.json") -Value $Config -Encoding UTF8

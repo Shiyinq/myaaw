@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,6 +44,7 @@ type chatRun struct {
 	startedAt    time.Time
 	finishedAt   time.Time
 	conversation string
+	scope        string
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
@@ -77,6 +79,22 @@ func (r *chatRun) conversationID() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.conversation
+}
+
+func (r *chatRun) setScope(scope string) {
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		return
+	}
+	r.mu.Lock()
+	r.scope = scope
+	r.mu.Unlock()
+}
+
+func (r *chatRun) scopeValue() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.scope
 }
 
 // publish appends one SSE event and wakes every attached stream.
@@ -180,6 +198,7 @@ func (r *chatRun) attach(w *bufio.Writer, after int) {
 type RunInfo struct {
 	RequestID      string `json:"request_id"`
 	ConversationID string `json:"conversation_id,omitempty"`
+	Scope          string `json:"scope,omitempty"`
 	Streaming      bool   `json:"streaming"`
 	StartedAt      string `json:"started_at"`
 	FinishedAt     string `json:"finished_at,omitempty"`
@@ -232,12 +251,18 @@ func (b *runBroker) list(conversationID string) []RunInfo {
 
 	infos := make([]RunInfo, 0, len(b.runs))
 	for _, run := range b.runs {
+		scope := run.scopeValue()
+		if conversationID == "" && strings.HasPrefix(scope, "group:") {
+			// Group-scoped runs belong to the group room stream, not the 1-on-1 DM sidebar/restorer.
+			continue
+		}
 		if conversationID != "" && run.conversationID() != conversationID {
 			continue
 		}
 		info := RunInfo{
 			RequestID:      run.requestID,
 			ConversationID: run.conversationID(),
+			Scope:          scope,
 			Streaming:      run.streaming(),
 			StartedAt:      run.startedAt.UTC().Format(time.RFC3339),
 		}

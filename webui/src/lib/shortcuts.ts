@@ -39,5 +39,13 @@ export const shortcutGroups: ShortcutGroup[] = [
 	{
 		titleKey: 'myaaw.shortcuts.group_speech',
 		entries: [{ combo: 'mod+shift+space', labelKey: 'myaaw.shortcuts.dictate' }]
+	},
+	{
+		titleKey: 'myaaw.shortcuts.group_bots',
+		entries: [
+			{ combo: 'alt+shift+arrowup', labelKey: 'myaaw.shortcuts.prev_bot' },
+			{ combo: 'alt+shift+arrowdown', labelKey: 'myaaw.shortcuts.next_bot' },
+			{ combo: 'alt+1-9', labelKey: 'myaaw.shortcuts.pick_bot' }
+		]
 	}
 ];

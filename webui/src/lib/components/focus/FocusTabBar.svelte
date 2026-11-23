@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { Clock, MessagesSquare, Puzzle } from 'lucide-svelte';
+	import { Clock, Layers, MessagesSquare, Puzzle } from 'lucide-svelte';
 	import AccountMenu from '$lib/components/app/AccountMenu.svelte';
+	import FocusMoreMenu from '$lib/components/focus/FocusMoreMenu.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
 	const { t } = useTranslation();
@@ -15,10 +16,16 @@
 			active: path.startsWith('/app/chat')
 		},
 		{
-			href: '/app/cron',
-			label: t('myaaw.focus.rail_cron'),
+			href: '/app/artifacts',
+			label: t('myaaw.focus.rail_artifacts'),
+			icon: Layers,
+			active: path.startsWith('/app/artifacts')
+		},
+		{
+			href: '/app/schedule',
+			label: t('myaaw.focus.rail_schedule'),
 			icon: Clock,
-			active: path.startsWith('/app/cron')
+			active: path.startsWith('/app/schedule')
 		},
 		{
 			href: '/app/plugins',
@@ -64,6 +71,8 @@
 			</span>
 		</a>
 	{/each}
+
+	<FocusMoreMenu tab side="top" align="center" />
 
 	<AccountMenu tab side="top" align="end" />
 </nav>

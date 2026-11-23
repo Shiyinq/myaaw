@@ -242,7 +242,7 @@ func TestRestoreRejectsUnlistedFile(t *testing.T) {
 func TestRestoreGlobalArchive(t *testing.T) {
 	root := setupHome(t, "default")
 	createAgentFixture(t, root, "default")
-	writeFile(t, filepath.Join(root, "controlplane.json"), `{"username":"admin"}`, 0o600)
+	cpPath := createControlPlaneDBFixture(t, root)
 
 	archives, err := Create(Options{OutputDir: t.TempDir()})
 	if err != nil {
@@ -259,7 +259,9 @@ func TestRestoreGlobalArchive(t *testing.T) {
 	}
 
 	writeFile(t, filepath.Join(root, "config", "agents.json"), `{"changed":true}`, 0o600)
-	writeFile(t, filepath.Join(root, "config", "controlplane.json"), `{"changed":true}`, 0o600)
+	// Write dummy stale WAL/SHM side files next to controlplane.db to verify restore cleans them up.
+	writeFile(t, cpPath+"-wal", "stale-wal-bytes", 0o600)
+	writeFile(t, cpPath+"-shm", "stale-shm-bytes", 0o600)
 
 	result, err := Restore(RestoreOptions{Archive: globalArchive, Force: true})
 	if err != nil {
@@ -279,6 +281,67 @@ func TestRestoreGlobalArchive(t *testing.T) {
 	previous, err := filepath.Glob(filepath.Join(root, "config", "agents.json.pre-restore-*"))
 	if err != nil || len(previous) == 0 {
 		t.Fatalf("pre-restore copy of agents.json was not created: %v", err)
+	}
+	cpPrevious, err := filepath.Glob(filepath.Join(root, "controlplane", "controlplane.db.pre-restore-*"))
+	if err != nil || len(cpPrevious) == 0 {
+		t.Fatalf("pre-restore copy of controlplane.db was not created: %v", err)
+	}
+	for _, side := range []string{cpPath + "-wal", cpPath + "-shm"} {
+		if _, err := os.Stat(side); !os.IsNotExist(err) {
+			t.Fatalf("stale side file %s was not removed on restore", side)
+		}
+	}
+
+	restoredDB, err := sql.Open("sqlite3", cpPath)
+	if err != nil {
+		t.Fatalf("open restored controlplane.db: %v", err)
+	}
+	defer restoredDB.Close()
+
+	var groupName string
+	if err := restoredDB.QueryRow(`SELECT name FROM groups WHERE id = 'grp-1'`).Scan(&groupName); err != nil || groupName != "Council" {
+		t.Fatalf("restored group = (%q, %v), want Council", groupName, err)
+	}
+}
+
+func TestRestoreGlobalNoSecretsPreservesSettingsAndGroups(t *testing.T) {
+	root := setupHome(t, "default")
+	createAgentFixture(t, root, "default")
+	cpPath := createControlPlaneDBFixture(t, root)
+
+	archives, err := Create(Options{OutputDir: t.TempDir(), NoSecrets: true})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var globalArchive string
+	for _, archive := range archives {
+		if archive.Agent == "global" {
+			globalArchive = archive.Path
+		}
+	}
+	if globalArchive == "" {
+		t.Fatal("global archive was not created")
+	}
+
+	if _, err := Restore(RestoreOptions{Archive: globalArchive, Force: true}); err != nil {
+		t.Fatalf("Restore global --no-secrets: %v", err)
+	}
+
+	db, err := sql.Open("sqlite3", cpPath)
+	if err != nil {
+		t.Fatalf("open restored controlplane.db: %v", err)
+	}
+	defer db.Close()
+
+	var authCount, settingsCount, msgCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM auth_account`).Scan(&authCount); err != nil || authCount != 0 {
+		t.Fatalf("auth_account count = %d, err = %v, want 0 (so AuthService auto-seeds defaults)", authCount, err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM settings`).Scan(&settingsCount); err != nil || settingsCount != 1 {
+		t.Fatalf("settings count = %d, err = %v, want 1", settingsCount, err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM group_messages`).Scan(&msgCount); err != nil || msgCount != 1 {
+		t.Fatalf("group_messages count = %d, err = %v, want 1", msgCount, err)
 	}
 }
 

@@ -80,6 +80,15 @@ definitions:
           type: string
         type: array
     type: object
+  channel.FileUpload:
+    properties:
+      data_base64:
+        type: string
+      mime_type:
+        type: string
+      name:
+        type: string
+    type: object
   common.ErrorResponse:
     properties:
       error:
@@ -322,6 +331,13 @@ definitions:
       agents:
         items:
           $ref: '#/definitions/service.AgentInfo'
+        type: array
+    type: object
+  handler.BotsSummaryResponse:
+    properties:
+      bots:
+        items:
+          $ref: '#/definitions/service.BotSidebarSummary'
         type: array
     type: object
   handler.BuiltinToggleRequest:
@@ -577,6 +593,9 @@ definitions:
       must_change_password:
         example: false
         type: boolean
+      role:
+        example: admin
+        type: string
       token:
         example: a1b2c3
         type: string
@@ -590,6 +609,11 @@ definitions:
         items:
           $ref: '#/definitions/service.LogFile'
         type: array
+    type: object
+  handler.MarkGroupReadRequest:
+    properties:
+      message_id:
+        type: string
     type: object
   handler.MarkReadRequest:
     properties:
@@ -750,6 +774,9 @@ definitions:
       must_change_password:
         example: false
         type: boolean
+      role:
+        example: admin
+        type: string
       user_id:
         example: 0
         type: integer
@@ -1210,12 +1237,55 @@ definitions:
       trigger:
         type: string
     type: object
+  provider.ExtraBlock:
+    properties:
+      data:
+        items:
+          type: integer
+        type: array
+      id:
+        type: string
+      interactive:
+        type: boolean
+      single_use:
+        type: boolean
+      state:
+        $ref: '#/definitions/provider.InteractionState'
+      type:
+        type: string
+    type: object
+  provider.ExtraMessage:
+    properties:
+      blocks:
+        items:
+          $ref: '#/definitions/provider.ExtraBlock'
+        type: array
+      created_at:
+        type: string
+      id:
+        type: string
+    type: object
   provider.FunctionCall:
     properties:
       arguments: {}
       name:
         type: string
       thought_signature:
+        type: string
+    type: object
+  provider.InteractionState:
+    properties:
+      actor:
+        type: string
+      answered_at:
+        type: string
+      payload:
+        additionalProperties: {}
+        type: object
+      status:
+        description: '"pending" | "submitted"'
+        type: string
+      summary:
         type: string
     type: object
   provider.Message:
@@ -1243,6 +1313,14 @@ definitions:
         type: integer
       error_message:
         type: string
+      extra_messages:
+        description: |-
+          ExtraMessages are rich display/interactive blocks emitted by the
+          extra_messages tool. Like Attachments, they are presentation metadata
+          persisted with the transcript and never sent raw to LLM providers.
+        items:
+          $ref: '#/definitions/provider.ExtraMessage'
+        type: array
       id:
         description: |-
           ID is the stable transcript-entry id, used to address the files a user
@@ -1459,6 +1537,23 @@ definitions:
           $ref: '#/definitions/service.GrantView'
         type: array
     type: object
+  service.AskQuote:
+    properties:
+      endOffset:
+        type: integer
+      id:
+        type: string
+      label:
+        type: string
+      source:
+        type: string
+      sourceId:
+        type: string
+      startOffset:
+        type: integer
+      text:
+        type: string
+    type: object
   service.BackupArchive:
     properties:
       agent:
@@ -1544,6 +1639,44 @@ definitions:
         type: integer
       watermark:
         type: boolean
+    type: object
+  service.BotRunSummary:
+    properties:
+      conversation_id:
+        type: string
+      finished_at:
+        type: string
+      request_id:
+        type: string
+      scope:
+        type: string
+      started_at:
+        type: string
+      streaming:
+        type: boolean
+    type: object
+  service.BotSidebarSummary:
+    properties:
+      active_runs:
+        items:
+          $ref: '#/definitions/service.BotRunSummary'
+        type: array
+      agent:
+        type: string
+      latest_conversation_id:
+        type: string
+      latest_preview:
+        type: string
+      latest_read_at:
+        type: string
+      latest_title:
+        type: string
+      latest_updated_at:
+        type: string
+      recent_conversations:
+        items:
+          $ref: '#/definitions/service.ConversationSummary'
+        type: array
     type: object
   service.BuiltinToolView:
     properties:
@@ -1782,6 +1915,11 @@ definitions:
       size:
         type: integer
     type: object
+  service.ContinueGroupRequest:
+    properties:
+      extra_turns:
+        type: integer
+    type: object
   service.ConversationActivity:
     properties:
       days:
@@ -1961,6 +2099,25 @@ definitions:
       text:
         type: string
     type: object
+  service.CreateGroupRequest:
+    properties:
+      description:
+        type: string
+      discussion_mode:
+        type: string
+      hide_thinking:
+        type: boolean
+      hide_tools:
+        type: boolean
+      max_turns:
+        type: integer
+      members:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+    type: object
   service.CronJobInput:
     properties:
       channel:
@@ -2061,6 +2218,264 @@ definitions:
           $ref: '#/definitions/service.SessionGrantView'
         type: array
     type: object
+  service.Group:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      discussion_mode:
+        type: string
+      hide_thinking:
+        type: boolean
+      hide_tools:
+        type: boolean
+      id:
+        type: string
+      last_read_message_id:
+        type: string
+      max_turns:
+        type: integer
+      members:
+        items:
+          $ref: '#/definitions/service.GroupMember'
+        type: array
+      name:
+        type: string
+      read_at:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  service.GroupAttachment:
+    properties:
+      agent:
+        type: string
+      created_at:
+        type: string
+      file_name:
+        type: string
+      group_id:
+        type: string
+      id:
+        type: string
+      kind:
+        description: '"image" | "video" | "audio" | "pdf" | "file" | "project"'
+        type: string
+      message_id:
+        type: string
+      mime_type:
+        type: string
+      path:
+        type: string
+      project_type:
+        type: string
+      sender_name:
+        type: string
+      sender_type:
+        type: string
+      size:
+        type: integer
+      stored_name:
+        type: string
+    type: object
+  service.GroupAttachmentsPage:
+    properties:
+      has_more:
+        type: boolean
+      items:
+        items:
+          $ref: '#/definitions/service.GroupAttachment'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  service.GroupDetail:
+    properties:
+      first_unread_message_id:
+        type: string
+      group:
+        $ref: '#/definitions/service.Group'
+      has_more:
+        type: boolean
+      limit:
+        type: integer
+      messages:
+        items:
+          $ref: '#/definitions/service.GroupMessage'
+        type: array
+      offset:
+        type: integer
+      run_state:
+        $ref: '#/definitions/service.GroupRunState'
+      total_messages:
+        type: integer
+      unread_count:
+        type: integer
+    type: object
+  service.GroupInteractionResponse:
+    properties:
+      block_id:
+        type: string
+      message:
+        $ref: '#/definitions/service.GroupMessage'
+      ok:
+        type: boolean
+      run_state:
+        $ref: '#/definitions/service.GroupRunState'
+      state:
+        $ref: '#/definitions/provider.InteractionState'
+    type: object
+  service.GroupLastMessage:
+    properties:
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      sender_name:
+        type: string
+      sender_type:
+        type: string
+    type: object
+  service.GroupMember:
+    properties:
+      agent_color:
+        type: string
+      conversation_id:
+        type: string
+      last_seen_message_id:
+        type: string
+      name:
+        type: string
+      running:
+        type: boolean
+    type: object
+  service.GroupMessage:
+    properties:
+      agent_color:
+        type: string
+      attachments:
+        items:
+          $ref: '#/definitions/service.GroupAttachment'
+        type: array
+      content:
+        type: string
+      created_at:
+        type: string
+      extra_messages:
+        items:
+          $ref: '#/definitions/provider.ExtraMessage'
+        type: array
+      group_id:
+        type: string
+      id:
+        type: string
+      quotes:
+        items:
+          $ref: '#/definitions/service.AskQuote'
+        type: array
+      reply_preview:
+        $ref: '#/definitions/service.ReplyPreview'
+      reply_to_id:
+        type: string
+      sender_name:
+        type: string
+      sender_type:
+        type: string
+      timeline:
+        items:
+          $ref: '#/definitions/api.TimelineItem'
+        type: array
+    type: object
+  service.GroupPendingApproval:
+    properties:
+      action:
+        type: string
+      agent:
+        type: string
+      agent_color:
+        type: string
+      approval_id:
+        type: string
+      args:
+        type: string
+      args_summary:
+        type: string
+      conversation_id:
+        type: string
+      group_id:
+        type: string
+      run_id:
+        type: string
+      subagent:
+        type: string
+      tool_name:
+        type: string
+    type: object
+  service.GroupRunState:
+    properties:
+      current_agent:
+        type: string
+      max_turns:
+        type: integer
+      pause_reason:
+        type: string
+      paused:
+        type: boolean
+      pending_approvals:
+        items:
+          $ref: '#/definitions/service.GroupPendingApproval'
+        type: array
+      queue:
+        items:
+          type: string
+        type: array
+      running:
+        type: boolean
+      turn_count:
+        type: integer
+    type: object
+  service.GroupSummary:
+    properties:
+      created_at:
+        type: string
+      current_agent:
+        type: string
+      description:
+        type: string
+      discussion_mode:
+        type: string
+      first_unread_message_id:
+        type: string
+      id:
+        type: string
+      last_message:
+        $ref: '#/definitions/service.GroupLastMessage'
+      max_turns:
+        type: integer
+      member_count:
+        type: integer
+      members:
+        items:
+          $ref: '#/definitions/service.GroupMember'
+        type: array
+      name:
+        type: string
+      pending_approval_count:
+        type: integer
+      running:
+        type: boolean
+      unread_count:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   service.HeartbeatPatch:
     properties:
       active:
@@ -2077,6 +2492,40 @@ definitions:
         type: string
       to:
         type: string
+    type: object
+  service.InteractionRequest:
+    properties:
+      action_id:
+        type: string
+      block_id:
+        type: string
+      card_id:
+        type: string
+      display_text:
+        type: string
+      kind:
+        description: button | quick_reply | form | checklist
+        type: string
+      label:
+        type: string
+      message_id:
+        type: string
+      value:
+        type: string
+      values:
+        additionalProperties: {}
+        type: object
+    type: object
+  service.InteractionResponse:
+    properties:
+      block_id:
+        type: string
+      interaction_text:
+        type: string
+      ok:
+        type: boolean
+      state:
+        $ref: '#/definitions/provider.InteractionState'
     type: object
   service.LogFile:
     properties:
@@ -2354,6 +2803,17 @@ definitions:
           $ref: '#/definitions/service.ProviderView'
         type: array
     type: object
+  service.ReplyPreview:
+    properties:
+      excerpt:
+        type: string
+      id:
+        type: string
+      sender_name:
+        type: string
+      sender_type:
+        type: string
+    type: object
   service.RestoreRequest:
     properties:
       agent:
@@ -2432,6 +2892,25 @@ definitions:
       configured:
         type: boolean
       masked:
+        type: string
+    type: object
+  service.SendGroupMessageRequest:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/channel.FileUpload'
+        type: array
+      images:
+        items:
+          type: string
+        type: array
+      quotes:
+        items:
+          $ref: '#/definitions/service.AskQuote'
+        type: array
+      reply_to_id:
+        type: string
+      text:
         type: string
     type: object
   service.ServerStatus:
@@ -2553,6 +3032,116 @@ definitions:
           ("cron"), or a subagent ("subagent"). Heartbeats are not recorded.
         type: string
       user_id:
+        type: string
+    type: object
+  service.Settings:
+    properties:
+      auto_scroll:
+        type: boolean
+      density:
+        type: string
+      dictation_lang:
+        type: string
+      focus_agent:
+        type: string
+      interrupt_on_send:
+        type: boolean
+      keep_drafts:
+        type: boolean
+      locale:
+        type: string
+      notify_browser:
+        type: boolean
+      notify_enabled:
+        type: boolean
+      notify_sound:
+        type: string
+      notify_volume:
+        type: number
+      queue_messages:
+        type: boolean
+      reduce_motion:
+        type: boolean
+      send_key:
+        type: string
+      shell_mode:
+        type: string
+      show_connection_badge:
+        type: boolean
+      show_host_badge:
+        type: boolean
+      show_run_mascot:
+        type: boolean
+      speak_responses:
+        type: boolean
+      speech_lang:
+        type: string
+      speech_rate:
+        type: number
+      speech_voice:
+        type: string
+      steps:
+        type: string
+      text_scale:
+        type: integer
+      theme:
+        type: string
+      theme_mode:
+        type: string
+    type: object
+  service.SettingsPatch:
+    properties:
+      auto_scroll:
+        type: boolean
+      density:
+        type: string
+      dictation_lang:
+        type: string
+      focus_agent:
+        type: string
+      interrupt_on_send:
+        type: boolean
+      keep_drafts:
+        type: boolean
+      locale:
+        type: string
+      notify_browser:
+        type: boolean
+      notify_enabled:
+        type: boolean
+      notify_sound:
+        type: string
+      notify_volume:
+        type: number
+      queue_messages:
+        type: boolean
+      reduce_motion:
+        type: boolean
+      send_key:
+        type: string
+      shell_mode:
+        type: string
+      show_connection_badge:
+        type: boolean
+      show_host_badge:
+        type: boolean
+      show_run_mascot:
+        type: boolean
+      speak_responses:
+        type: boolean
+      speech_lang:
+        type: string
+      speech_rate:
+        type: number
+      speech_voice:
+        type: string
+      steps:
+        type: string
+      text_scale:
+        type: integer
+      theme:
+        type: string
+      theme_mode:
         type: string
     type: object
   service.SkillDetail:
@@ -2682,6 +3271,25 @@ definitions:
         items:
           $ref: '#/definitions/service.MCPServerView'
         type: array
+    type: object
+  service.UpdateGroupRequest:
+    properties:
+      description:
+        type: string
+      discussion_mode:
+        type: string
+      hide_thinking:
+        type: boolean
+      hide_tools:
+        type: boolean
+      max_turns:
+        type: integer
+      members:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
     type: object
   skills.Skill:
     properties:
@@ -4195,6 +4803,67 @@ paths:
       security:
       - BearerAuth: []
       summary: Move a conversation
+      tags:
+      - Conversations
+  /agents/{name}/conversations/{id}/interactions:
+    post:
+      consumes:
+      - application/json
+      description: Atomically locks a single-use interactive extra_messages block
+        (button, quick reply, form, or checklist) in conversations.db and returns
+        the formatted <interaction> text to dispatch as the next turn. Returns 409
+        Conflict with the persisted state if the block was already submitted.
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User ID (defaults to the authenticated user)
+        in: query
+        name: user_id
+        type: integer
+      - description: Interaction response payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.InteractionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.InteractionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/service.InteractionResponse'
+      security:
+      - BearerAuth: []
+      summary: Respond to conversation extra_messages interaction
       tags:
       - Conversations
   /agents/{name}/conversations/{id}/pin:
@@ -7142,6 +7811,30 @@ paths:
       summary: Restore a backup
       tags:
       - Backups
+  /bots/summary:
+    get:
+      description: Aggregates latest DM preview, recent conversations, and active
+        DM runs for every agent in one request.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.BotsSummaryResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Batch bot sidebar summaries
+      tags:
+      - Agents
   /capabilities:
     get:
       produces:
@@ -7160,6 +7853,556 @@ paths:
       summary: Onboarding capabilities
       tags:
       - Agents
+  /events:
+    get:
+      description: Server-Sent Events multiplexing `conversation.updated`, `approval.required`,
+        and `approval.resolved` across multiple agents over one connection.
+      parameters:
+      - description: Comma-separated agent names (defaults to all running agents)
+        in: query
+        name: agents
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: OK
+      security:
+      - BearerAuth: []
+      summary: Multiplexed conversation events
+      tags:
+      - Chat
+  /groups:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/service.GroupSummary'
+              type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List groups
+      tags:
+      - Groups
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group configuration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/service.Group'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create group
+      tags:
+      - Groups
+  /groups/{id}:
+    delete:
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete group
+      tags:
+      - Groups
+    get:
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Message page size (0 = all, max 500)
+        in: query
+        name: limit
+        type: integer
+      - description: Message offset (default 0, negative starts from the end)
+        in: query
+        name: offset
+        type: integer
+      - description: Return up to limit messages strictly older than this message
+          ID
+        in: query
+        name: before_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.GroupDetail'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get group
+      tags:
+      - Groups
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Group patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.Group'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update group
+      tags:
+      - Groups
+  /groups/{id}/attachments:
+    get:
+      description: Returns uploaded images and files shared in a group, newest first.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page size (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset from newest attachment
+        in: query
+        name: offset
+        type: integer
+      - description: Comma-separated kind filter (image, video, audio, pdf, file)
+        in: query
+        name: kind
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.GroupAttachmentsPage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List group attachments
+      tags:
+      - Groups
+  /groups/{id}/continue:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Extra turns
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/service.ContinueGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Continue group run
+      tags:
+      - Groups
+  /groups/{id}/interactions:
+    post:
+      consumes:
+      - application/json
+      description: Atomically locks a single-use interactive extra_messages block
+        in a group message, broadcasts an extra_block_updated SSE event, and dispatches
+        a follow-up reply turn targeting the originating agent. Returns 409 Conflict
+        with the persisted state if already submitted.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Interaction response payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.InteractionRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/service.GroupInteractionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/service.InteractionResponse'
+      security:
+      - BearerAuth: []
+      summary: Respond to group extra_messages interaction
+      tags:
+      - Groups
+  /groups/{id}/messages:
+    delete:
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Clear group messages
+      tags:
+      - Groups
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Message payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.SendGroupMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Send group message
+      tags:
+      - Groups
+  /groups/{id}/read:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Optional message_id watermark (defaults to newest message)
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/handler.MarkGroupReadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Mark group read
+      tags:
+      - Groups
+  /groups/{id}/stop:
+    post:
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stop group run
+      tags:
+      - Groups
+  /groups/{id}/stream:
+    get:
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stream group events
+      tags:
+      - Groups
+  /groups/{id}/uploads/{msgId}/{file}:
+    get:
+      description: Serves an uploaded image or document for a group message. Pass
+        download=1 to force a file download.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Message ID
+        in: path
+        name: msgId
+        required: true
+        type: string
+      - description: Stored file name
+        in: path
+        name: file
+        required: true
+        type: string
+      - description: Force attachment download
+        in: query
+        name: download
+        type: boolean
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get group upload
+      tags:
+      - Groups
   /health:
     get:
       produces:
@@ -7221,6 +8464,61 @@ paths:
       summary: List models for a provider
       tags:
       - Providers
+  /settings:
+    get:
+      description: Returns the UI settings stored in the control-plane SQLite database.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.Settings'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get dashboard settings
+      tags:
+      - Settings
+    patch:
+      consumes:
+      - application/json
+      description: Merges changed fields into the control-plane SQLite settings table
+        and returns the normalized settings.
+      parameters:
+      - description: Settings patch
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.SettingsPatch'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.Settings'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update dashboard settings
+      tags:
+      - Settings
   /skills/builtin/{skill}:
     get:
       description: Reads the template embedded in the binary, including SKILL.md and

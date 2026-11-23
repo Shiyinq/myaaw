@@ -17,6 +17,7 @@
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import CodePreview from '$lib/components/common/CodePreview.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
@@ -250,7 +251,7 @@
 
 <div class="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
 	{#if !agent}
-		<div class="w-full p-4 lg:p-6">
+		<div class="w-full p-4 lg:p-6 lg:pt-16">
 			<Card>
 				<CardContent class="py-10 text-center text-sm text-muted-foreground">
 					{t('myaaw.agent.none')}
@@ -260,9 +261,9 @@
 	{:else}
 		<!-- Skill list: a second sidebar nested inside the main one. -->
 		<aside
-			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-auto lg:w-72 lg:border-r lg:border-b-0 xl:w-80"
+			class="flex shrink-0 flex-col border-b bg-card frost-aside lg:h-full lg:w-72 lg:border-r lg:border-b-0 lg:pt-14 xl:w-80"
 		>
-			<div class="shrink-0 space-y-2 border-b px-3 py-2.5">
+			<div class="shrink-0 space-y-2 px-4 py-2.5 lg:pt-1">
 				<SidebarHeader label={t('myaaw.skills.list')} count={totalSkills} />
 				<SidebarSearchField
 					bind:inputRef={searchNav.input}
@@ -301,13 +302,13 @@
 								data-nav-id={`custom:${skill.name}`}
 								aria-current={selected?.name === skill.name ? 'true' : undefined}
 							>
-								<input
-									type="checkbox"
-									checked={skill.enabled}
-									onchange={(event) => toggle(skill.name, event.currentTarget.checked)}
-									class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-									aria-label={t('myaaw.skills.enabled')}
-								/>
+								<span class="mt-0.5 shrink-0">
+									<Switch
+										checked={skill.enabled}
+										label={skill.display_name || skill.name}
+										onchange={(next) => toggle(skill.name, next)}
+									/>
+								</span>
 								<button
 									class="min-w-0 flex-1 text-left"
 									title={skill.description || skill.name}
@@ -351,14 +352,14 @@
 								aria-current={selected?.name === row.entry.name ? 'true' : undefined}
 								title={row.entry.description}
 							>
-								<input
-									type="checkbox"
-									checked={!!row.installed?.enabled}
-									onchange={(event) => setBuiltin(row.entry.name, event.currentTarget.checked)}
-									class="mt-0.5 h-4 w-4 shrink-0 accent-primary"
-									aria-label={row.entry.name}
-									disabled={installing === row.entry.name}
-								/>
+								<span class="mt-0.5 shrink-0">
+									<Switch
+										checked={!!row.installed?.enabled}
+										disabled={installing === row.entry.name}
+										label={row.entry.name}
+										onchange={(next) => setBuiltin(row.entry.name, next)}
+									/>
+								</span>
 								<div class="min-w-0 flex-1">
 									{#if row.installed}
 										<button
@@ -406,7 +407,10 @@
 			</div>
 		</aside>
 
-		<section bind:this={detail} class="flex min-w-0 flex-col p-4 lg:min-h-0 lg:flex-1 lg:p-6">
+		<section
+			bind:this={detail}
+			class="flex min-w-0 flex-col p-4 lg:mt-14 lg:min-h-0 lg:flex-1 lg:px-6 lg:pt-1 lg:pb-6"
+		>
 			{#if error}
 				<div
 					class="mb-3 shrink-0 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"

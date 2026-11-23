@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { Clock, MessagesSquare, Puzzle } from 'lucide-svelte';
+	import { Clock, Layers, MessagesSquare, Puzzle } from 'lucide-svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
 	import { agentSelection } from '$lib/stores';
 	import AccountMenu from '$lib/components/app/AccountMenu.svelte';
+	import FocusMoreMenu from '$lib/components/focus/FocusMoreMenu.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 
 	const { t } = useTranslation();
 
 	const chatActive = $derived(page.url.pathname.startsWith('/app/chat'));
-	const cronActive = $derived(page.url.pathname.startsWith('/app/cron'));
+	const artifactsActive = $derived(page.url.pathname.startsWith('/app/artifacts'));
+	const cronActive = $derived(page.url.pathname.startsWith('/app/schedule'));
 	const pluginsActive = $derived(page.url.pathname.startsWith('/app/plugins'));
 
 	const itemClass = (active: boolean) => [
@@ -32,7 +34,7 @@
 	<!-- The chat screen floats its own mark; every other page keeps the rail brand. -->
 	{#if !chatActive}
 		<a
-			href="/app/chat"
+			href="/app"
 			class="mb-1 flex h-10 w-10 items-center justify-center"
 			title={t('myaaw.focus.rail_brand')}
 			aria-label={t('myaaw.focus.rail_brand')}
@@ -54,11 +56,20 @@
 			<MessagesSquare class="h-4.5 w-4.5" />
 		</a>
 		<a
-			href="/app/cron"
+			href="/app/artifacts"
+			class={itemClass(artifactsActive)}
+			aria-current={artifactsActive ? 'page' : undefined}
+			title={t('myaaw.focus.rail_artifacts')}
+			aria-label={t('myaaw.focus.rail_artifacts')}
+		>
+			<Layers class="h-4.5 w-4.5" />
+		</a>
+		<a
+			href="/app/schedule"
 			class={itemClass(cronActive)}
 			aria-current={cronActive ? 'page' : undefined}
-			title={t('myaaw.focus.rail_cron')}
-			aria-label={t('myaaw.focus.rail_cron')}
+			title={t('myaaw.focus.rail_schedule')}
+			aria-label={t('myaaw.focus.rail_schedule')}
 		>
 			<Clock class="h-4.5 w-4.5" />
 		</a>
@@ -71,6 +82,7 @@
 		>
 			<Puzzle class="h-4.5 w-4.5" />
 		</a>
+		<FocusMoreMenu side="right" align="center" />
 	</nav>
 
 	<div class="flex-1"></div>

@@ -2368,6 +2368,95 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/conversations/{id}/interactions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Atomically locks a single-use interactive extra_messages block (button, quick reply, form, or checklist) in conversations.db and returns the formatted \u003cinteraction\u003e text to dispatch as the next turn. Returns 409 Conflict with the persisted state if the block was already submitted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Conversations"
+                ],
+                "summary": "Respond to conversation extra_messages interaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Conversation ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "User ID (defaults to the authenticated user)",
+                        "name": "user_id",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Interaction response payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.InteractionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.InteractionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/service.InteractionResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/conversations/{id}/pin": {
             "put": {
                 "security": [
@@ -6850,6 +6939,43 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/bots/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Aggregates latest DM preview, recent conversations, and active DM runs for every agent in one request.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Batch bot sidebar summaries",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.BotsSummaryResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/capabilities": {
             "get": {
                 "security": [
@@ -6873,6 +6999,862 @@ const docTemplatecontrolplane = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Server-Sent Events multiplexing ` + "`" + `conversation.updated` + "`" + `, ` + "`" + `approval.required` + "`" + `, and ` + "`" + `approval.resolved` + "`" + ` across multiple agents over one connection.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Multiplexed conversation events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated agent names (defaults to all running agents)",
+                        "name": "agents",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/groups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "List groups",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/service.GroupSummary"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Create group",
+                "parameters": [
+                    {
+                        "description": "Group configuration",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.CreateGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/service.Group"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Get group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Message page size (0 = all, max 500)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Message offset (default 0, negative starts from the end)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Return up to limit messages strictly older than this message ID",
+                        "name": "before_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.GroupDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Delete group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Update group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Group patch",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.UpdateGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.Group"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/attachments": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns uploaded images and files shared in a group, newest first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "List group attachments",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset from newest attachment",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated kind filter (image, video, audio, pdf, file)",
+                        "name": "kind",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.GroupAttachmentsPage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/continue": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Continue group run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Extra turns",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/service.ContinueGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/interactions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Atomically locks a single-use interactive extra_messages block in a group message, broadcasts an extra_block_updated SSE event, and dispatches a follow-up reply turn targeting the originating agent. Returns 409 Conflict with the persisted state if already submitted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Respond to group extra_messages interaction",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Interaction response payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.InteractionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/service.GroupInteractionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/service.InteractionResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/messages": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Send group message",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Message payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.SendGroupMessageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Clear group messages",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/read": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Mark group read",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Optional message_id watermark (defaults to newest message)",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.MarkGroupReadRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/stop": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Stop group run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/stream": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Stream group events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/groups/{id}/uploads/{msgId}/{file}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Serves an uploaded image or document for a group message. Pass download=1 to force a file download.",
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Get group upload",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Message ID",
+                        "name": "msgId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Stored file name",
+                        "name": "file",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Force attachment download",
+                        "name": "download",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -6972,6 +7954,92 @@ const docTemplatecontrolplane = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/settings": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the UI settings stored in the control-plane SQLite database.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Get dashboard settings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.Settings"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Merges changed fields into the control-plane SQLite settings table and returns the normalized settings.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Update dashboard settings",
+                "parameters": [
+                    {
+                        "description": "Settings patch",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.SettingsPatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.Settings"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
@@ -7208,6 +8276,20 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "channel.FileUpload": {
+            "type": "object",
+            "properties": {
+                "data_base64": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -7552,6 +8634,17 @@ const docTemplatecontrolplane = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/service.AgentInfo"
+                    }
+                }
+            }
+        },
+        "handler.BotsSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "bots": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.BotSidebarSummary"
                     }
                 }
             }
@@ -7932,6 +9025,10 @@ const docTemplatecontrolplane = `{
                     "type": "boolean",
                     "example": false
                 },
+                "role": {
+                    "type": "string",
+                    "example": "admin"
+                },
                 "token": {
                     "type": "string",
                     "example": "a1b2c3"
@@ -7950,6 +9047,14 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.LogFile"
                     }
+                }
+            }
+        },
+        "handler.MarkGroupReadRequest": {
+            "type": "object",
+            "properties": {
+                "message_id": {
+                    "type": "string"
                 }
             }
         },
@@ -8191,6 +9296,10 @@ const docTemplatecontrolplane = `{
                 "must_change_password": {
                     "type": "boolean",
                     "example": false
+                },
+                "role": {
+                    "type": "string",
+                    "example": "admin"
                 },
                 "user_id": {
                     "type": "integer",
@@ -8830,6 +9939,49 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "provider.ExtraBlock": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "interactive": {
+                    "type": "boolean"
+                },
+                "single_use": {
+                    "type": "boolean"
+                },
+                "state": {
+                    "$ref": "#/definitions/provider.InteractionState"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "provider.ExtraMessage": {
+            "type": "object",
+            "properties": {
+                "blocks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.ExtraBlock"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
         "provider.FunctionCall": {
             "type": "object",
             "properties": {
@@ -8838,6 +9990,28 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "thought_signature": {
+                    "type": "string"
+                }
+            }
+        },
+        "provider.InteractionState": {
+            "type": "object",
+            "properties": {
+                "actor": {
+                    "type": "string"
+                },
+                "answered_at": {
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "status": {
+                    "description": "\"pending\" | \"submitted\"",
+                    "type": "string"
+                },
+                "summary": {
                     "type": "string"
                 }
             }
@@ -8868,6 +10042,13 @@ const docTemplatecontrolplane = `{
                 },
                 "error_message": {
                     "type": "string"
+                },
+                "extra_messages": {
+                    "description": "ExtraMessages are rich display/interactive blocks emitted by the\nextra_messages tool. Like Attachments, they are presentation metadata\npersisted with the transcript and never sent raw to LLM providers.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.ExtraMessage"
+                    }
                 },
                 "id": {
                     "description": "ID is the stable transcript-entry id, used to address the files a user\nuploaded with that message.",
@@ -9172,6 +10353,32 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.AskQuote": {
+            "type": "object",
+            "properties": {
+                "endOffset": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "sourceId": {
+                    "type": "string"
+                },
+                "startOffset": {
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
         "service.BackupArchive": {
             "type": "object",
             "properties": {
@@ -9300,6 +10507,64 @@ const docTemplatecontrolplane = `{
                 },
                 "watermark": {
                     "type": "boolean"
+                }
+            }
+        },
+        "service.BotRunSummary": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "streaming": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "service.BotSidebarSummary": {
+            "type": "object",
+            "properties": {
+                "active_runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.BotRunSummary"
+                    }
+                },
+                "agent": {
+                    "type": "string"
+                },
+                "latest_conversation_id": {
+                    "type": "string"
+                },
+                "latest_preview": {
+                    "type": "string"
+                },
+                "latest_read_at": {
+                    "type": "string"
+                },
+                "latest_title": {
+                    "type": "string"
+                },
+                "latest_updated_at": {
+                    "type": "string"
+                },
+                "recent_conversations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ConversationSummary"
+                    }
                 }
             }
         },
@@ -9667,6 +10932,14 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ContinueGroupRequest": {
+            "type": "object",
+            "properties": {
+                "extra_turns": {
+                    "type": "integer"
+                }
+            }
+        },
         "service.ConversationActivity": {
             "type": "object",
             "properties": {
@@ -9910,6 +11183,35 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.CreateGroupRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "discussion_mode": {
+                    "type": "string"
+                },
+                "hide_thinking": {
+                    "type": "boolean"
+                },
+                "hide_tools": {
+                    "type": "boolean"
+                },
+                "max_turns": {
+                    "type": "integer"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "service.CronJobInput": {
             "type": "object",
             "properties": {
@@ -10063,6 +11365,398 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.Group": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "discussion_mode": {
+                    "type": "string"
+                },
+                "hide_thinking": {
+                    "type": "boolean"
+                },
+                "hide_tools": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_read_message_id": {
+                    "type": "string"
+                },
+                "max_turns": {
+                    "type": "integer"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.GroupMember"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "read_at": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.GroupAttachment": {
+            "type": "object",
+            "properties": {
+                "agent": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "group_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "\"image\" | \"video\" | \"audio\" | \"pdf\" | \"file\" | \"project\"",
+                    "type": "string"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "project_type": {
+                    "type": "string"
+                },
+                "sender_name": {
+                    "type": "string"
+                },
+                "sender_type": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "stored_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.GroupAttachmentsPage": {
+            "type": "object",
+            "properties": {
+                "has_more": {
+                    "type": "boolean"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.GroupAttachment"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.GroupDetail": {
+            "type": "object",
+            "properties": {
+                "first_unread_message_id": {
+                    "type": "string"
+                },
+                "group": {
+                    "$ref": "#/definitions/service.Group"
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.GroupMessage"
+                    }
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "run_state": {
+                    "$ref": "#/definitions/service.GroupRunState"
+                },
+                "total_messages": {
+                    "type": "integer"
+                },
+                "unread_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.GroupInteractionResponse": {
+            "type": "object",
+            "properties": {
+                "block_id": {
+                    "type": "string"
+                },
+                "message": {
+                    "$ref": "#/definitions/service.GroupMessage"
+                },
+                "ok": {
+                    "type": "boolean"
+                },
+                "run_state": {
+                    "$ref": "#/definitions/service.GroupRunState"
+                },
+                "state": {
+                    "$ref": "#/definitions/provider.InteractionState"
+                }
+            }
+        },
+        "service.GroupLastMessage": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "sender_name": {
+                    "type": "string"
+                },
+                "sender_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.GroupMember": {
+            "type": "object",
+            "properties": {
+                "agent_color": {
+                    "type": "string"
+                },
+                "conversation_id": {
+                    "type": "string"
+                },
+                "last_seen_message_id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "running": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "service.GroupMessage": {
+            "type": "object",
+            "properties": {
+                "agent_color": {
+                    "type": "string"
+                },
+                "attachments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.GroupAttachment"
+                    }
+                },
+                "content": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "extra_messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/provider.ExtraMessage"
+                    }
+                },
+                "group_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "quotes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.AskQuote"
+                    }
+                },
+                "reply_preview": {
+                    "$ref": "#/definitions/service.ReplyPreview"
+                },
+                "reply_to_id": {
+                    "type": "string"
+                },
+                "sender_name": {
+                    "type": "string"
+                },
+                "sender_type": {
+                    "type": "string"
+                },
+                "timeline": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.TimelineItem"
+                    }
+                }
+            }
+        },
+        "service.GroupPendingApproval": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "agent": {
+                    "type": "string"
+                },
+                "agent_color": {
+                    "type": "string"
+                },
+                "approval_id": {
+                    "type": "string"
+                },
+                "args": {
+                    "type": "string"
+                },
+                "args_summary": {
+                    "type": "string"
+                },
+                "conversation_id": {
+                    "type": "string"
+                },
+                "group_id": {
+                    "type": "string"
+                },
+                "run_id": {
+                    "type": "string"
+                },
+                "subagent": {
+                    "type": "string"
+                },
+                "tool_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.GroupRunState": {
+            "type": "object",
+            "properties": {
+                "current_agent": {
+                    "type": "string"
+                },
+                "max_turns": {
+                    "type": "integer"
+                },
+                "pause_reason": {
+                    "type": "string"
+                },
+                "paused": {
+                    "type": "boolean"
+                },
+                "pending_approvals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.GroupPendingApproval"
+                    }
+                },
+                "queue": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "running": {
+                    "type": "boolean"
+                },
+                "turn_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.GroupSummary": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "current_agent": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "discussion_mode": {
+                    "type": "string"
+                },
+                "first_unread_message_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_message": {
+                    "$ref": "#/definitions/service.GroupLastMessage"
+                },
+                "max_turns": {
+                    "type": "integer"
+                },
+                "member_count": {
+                    "type": "integer"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.GroupMember"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pending_approval_count": {
+                    "type": "integer"
+                },
+                "running": {
+                    "type": "boolean"
+                },
+                "unread_count": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "service.HeartbeatPatch": {
             "type": "object",
             "properties": {
@@ -10086,6 +11780,57 @@ const docTemplatecontrolplane = `{
                 },
                 "to": {
                     "type": "string"
+                }
+            }
+        },
+        "service.InteractionRequest": {
+            "type": "object",
+            "properties": {
+                "action_id": {
+                    "type": "string"
+                },
+                "block_id": {
+                    "type": "string"
+                },
+                "card_id": {
+                    "type": "string"
+                },
+                "display_text": {
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "button | quick_reply | form | checklist",
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                },
+                "values": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "service.InteractionResponse": {
+            "type": "object",
+            "properties": {
+                "block_id": {
+                    "type": "string"
+                },
+                "interaction_text": {
+                    "type": "string"
+                },
+                "ok": {
+                    "type": "boolean"
+                },
+                "state": {
+                    "$ref": "#/definitions/provider.InteractionState"
                 }
             }
         },
@@ -10496,6 +12241,23 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "service.ReplyPreview": {
+            "type": "object",
+            "properties": {
+                "excerpt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "sender_name": {
+                    "type": "string"
+                },
+                "sender_type": {
+                    "type": "string"
+                }
+            }
+        },
         "service.RestoreRequest": {
             "type": "object",
             "properties": {
@@ -10614,6 +12376,35 @@ const docTemplatecontrolplane = `{
                     "type": "boolean"
                 },
                 "masked": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.SendGroupMessageRequest": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/channel.FileUpload"
+                    }
+                },
+                "images": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "quotes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.AskQuote"
+                    }
+                },
+                "reply_to_id": {
+                    "type": "string"
+                },
+                "text": {
                     "type": "string"
                 }
             }
@@ -10788,6 +12579,172 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.Settings": {
+            "type": "object",
+            "properties": {
+                "auto_scroll": {
+                    "type": "boolean"
+                },
+                "density": {
+                    "type": "string"
+                },
+                "dictation_lang": {
+                    "type": "string"
+                },
+                "focus_agent": {
+                    "type": "string"
+                },
+                "interrupt_on_send": {
+                    "type": "boolean"
+                },
+                "keep_drafts": {
+                    "type": "boolean"
+                },
+                "locale": {
+                    "type": "string"
+                },
+                "notify_browser": {
+                    "type": "boolean"
+                },
+                "notify_enabled": {
+                    "type": "boolean"
+                },
+                "notify_sound": {
+                    "type": "string"
+                },
+                "notify_volume": {
+                    "type": "number"
+                },
+                "queue_messages": {
+                    "type": "boolean"
+                },
+                "reduce_motion": {
+                    "type": "boolean"
+                },
+                "send_key": {
+                    "type": "string"
+                },
+                "shell_mode": {
+                    "type": "string"
+                },
+                "show_connection_badge": {
+                    "type": "boolean"
+                },
+                "show_host_badge": {
+                    "type": "boolean"
+                },
+                "show_run_mascot": {
+                    "type": "boolean"
+                },
+                "speak_responses": {
+                    "type": "boolean"
+                },
+                "speech_lang": {
+                    "type": "string"
+                },
+                "speech_rate": {
+                    "type": "number"
+                },
+                "speech_voice": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "string"
+                },
+                "text_scale": {
+                    "type": "integer"
+                },
+                "theme": {
+                    "type": "string"
+                },
+                "theme_mode": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.SettingsPatch": {
+            "type": "object",
+            "properties": {
+                "auto_scroll": {
+                    "type": "boolean"
+                },
+                "density": {
+                    "type": "string"
+                },
+                "dictation_lang": {
+                    "type": "string"
+                },
+                "focus_agent": {
+                    "type": "string"
+                },
+                "interrupt_on_send": {
+                    "type": "boolean"
+                },
+                "keep_drafts": {
+                    "type": "boolean"
+                },
+                "locale": {
+                    "type": "string"
+                },
+                "notify_browser": {
+                    "type": "boolean"
+                },
+                "notify_enabled": {
+                    "type": "boolean"
+                },
+                "notify_sound": {
+                    "type": "string"
+                },
+                "notify_volume": {
+                    "type": "number"
+                },
+                "queue_messages": {
+                    "type": "boolean"
+                },
+                "reduce_motion": {
+                    "type": "boolean"
+                },
+                "send_key": {
+                    "type": "string"
+                },
+                "shell_mode": {
+                    "type": "string"
+                },
+                "show_connection_badge": {
+                    "type": "boolean"
+                },
+                "show_host_badge": {
+                    "type": "boolean"
+                },
+                "show_run_mascot": {
+                    "type": "boolean"
+                },
+                "speak_responses": {
+                    "type": "boolean"
+                },
+                "speech_lang": {
+                    "type": "string"
+                },
+                "speech_rate": {
+                    "type": "number"
+                },
+                "speech_voice": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "string"
+                },
+                "text_scale": {
+                    "type": "integer"
+                },
+                "theme": {
+                    "type": "string"
+                },
+                "theme_mode": {
                     "type": "string"
                 }
             }
@@ -10979,6 +12936,35 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.MCPServerView"
                     }
+                }
+            }
+        },
+        "service.UpdateGroupRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "discussion_mode": {
+                    "type": "string"
+                },
+                "hide_thinking": {
+                    "type": "boolean"
+                },
+                "hide_tools": {
+                    "type": "boolean"
+                },
+                "max_turns": {
+                    "type": "integer"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

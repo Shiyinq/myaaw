@@ -133,6 +133,7 @@ func (s *BotHandlerImpl) APIChat(c fiber.Ctx) error {
 	// The run outlives the request so an approval prompt can pause it, and so the
 	// client can still stop it through its request id.
 	chatRun := activeRuns.start(requestIDFor(req.RequestID))
+	chatRun.setScope(req.Scope)
 	runCtx := approvals.WithRequester(chatRun.Context(), &blockingApprovalRequester{run: run})
 
 	go func() {
@@ -253,6 +254,7 @@ func (s *BotHandlerImpl) APIChatStream(c fiber.Ctx) error {
 	// attaches to its event stream. A refresh, a closed tab or a logout leaves
 	// the answer running, and GET /api/chat/run/:id/stream attaches again later.
 	run := activeRuns.start(requestIDFor(req.RequestID))
+	run.setScope(req.Scope)
 	// Clients that did not choose an id can reattach with the one we picked.
 	run.publish("run", fiber.Map{"request_id": run.requestID})
 

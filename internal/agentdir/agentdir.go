@@ -277,8 +277,8 @@ func PIDDir() (string, error) {
 	return filepath.Join(root, "pids"), nil
 }
 
-// GlobalConfigDir returns ~/.myaaw/config, the shared folder for registry,
-// control-plane credentials, and the model data tables.
+// GlobalConfigDir returns ~/.myaaw/config, the shared folder for the agent
+// registry, media signing key, and model data tables.
 func GlobalConfigDir() (string, error) {
 	root, err := MyaawRoot()
 	if err != nil {
@@ -294,6 +294,25 @@ func GlobalConfigPath(elem string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, elem), nil
+}
+
+// ControlPlaneDir returns ~/.myaaw/controlplane, the folder holding the
+// consolidated control-plane SQLite database.
+func ControlPlaneDir() (string, error) {
+	root, err := MyaawRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "controlplane"), nil
+}
+
+// ControlPlaneDBPath returns ~/.myaaw/controlplane/controlplane.db.
+func ControlPlaneDBPath() (string, error) {
+	dir, err := ControlPlaneDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "controlplane.db"), nil
 }
 
 // RegistryPath returns ~/.myaaw/config/agents.json.
@@ -582,7 +601,15 @@ func EnsureLayout() error {
 		return err
 	}
 
-	// The registry and credentials must exist before any reader looks for them.
+	cpDir, err := ControlPlaneDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(cpDir, 0o700); err != nil {
+		return err
+	}
+
+	// The registry must exist before any reader looks for it.
 	if err := migrateGlobalState(root, configDir); err != nil {
 		return err
 	}
@@ -627,12 +654,12 @@ var globalDataFiles = []string{
 	"tool_prices.json",
 }
 
-// migrateGlobalState moves agents.json and controlplane.json into the global
-// config folder when the new file is missing. A file already in the new place
-// always wins; the old copy is left untouched. The same filesystem rename is
-// preferred, with a copy fallback for exotic layouts.
+// migrateGlobalState moves agents.json into the global config folder when the
+// new file is missing. A file already in the new place always wins; the old
+// copy is left untouched. The same filesystem rename is preferred, with a copy
+// fallback for exotic layouts.
 func migrateGlobalState(root, configDir string) error {
-	for _, name := range []string{"agents.json", "controlplane.json"} {
+	for _, name := range []string{"agents.json"} {
 		target := filepath.Join(configDir, name)
 		if _, err := os.Stat(target); err == nil {
 			continue

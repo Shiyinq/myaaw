@@ -110,7 +110,7 @@ func applyAPIFlags() {
 
 func runAPI() {
 	applyAPIFlags()
-	if err := controlplane.Run(net.JoinHostPort(apiHost, apiPort)); err != nil {
+	if err := controlplane.Run(net.JoinHostPort(apiHost, apiPort), Version); err != nil {
 		log.Fatalf("API server error: %v", err)
 	}
 }

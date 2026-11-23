@@ -24,6 +24,7 @@ func (r *BotServiceImpl) approvalGate(ctx context.Context, msg *channel.Incoming
 		Policy: policy,
 		Session: approvals.Session{
 			Channel:        msg.Channel,
+			Scope:          msg.Scope,
 			ConversationID: msg.ConversationID,
 			UserID:         strconv.Itoa(msg.UserID),
 		},

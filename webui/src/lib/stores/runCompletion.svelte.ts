@@ -1,7 +1,10 @@
 import { browser } from '$app/environment';
 import { showChatNotification } from '$lib/notifications/browser.svelte';
 import { playNotification } from '$lib/sound/notify.svelte';
+import { botPreviews, lastAssistantFromItems } from '$lib/stores/botPreviews.svelte';
 import { chatRuns, type ChatRun } from '$lib/stores/chatRuns.svelte';
+import { conversationsStore } from '$lib/stores/conversations.svelte';
+import { observabilityStore } from '$lib/stores/observability.svelte';
 import { preferences } from '$lib/stores/preferences.svelte';
 import { unreadChats } from '$lib/stores/unreadChats.svelte';
 
@@ -19,6 +22,29 @@ const previous = new Map<string, boolean>();
 function announce(run: ChatRun) {
 	const conversationId = run.conversationId;
 	if (!conversationId) return;
+
+	// A finished turn made any cached transcript or stats for this conversation
+	// stale; mark them dirty so reopening the chat never serves the old copy.
+	conversationsStore.detail.invalidate();
+	observabilityStore.sessionStats.invalidate({ agent: run.agent, id: conversationId });
+
+	// Push the finished answer straight into Bots mode's left sidebar preview so
+	// switching away to another bot still shows the new reply immediately.
+	const last = lastAssistantFromItems(run.items);
+	const updatedAt =
+		last.updatedAt ||
+		(run.finishedAt ? new Date(run.finishedAt).toISOString() : new Date().toISOString());
+	const existing = botPreviews.get(run.agent);
+	botPreviews.seed(
+		run.agent,
+		{
+			conversationId,
+			text: last.text || existing?.text || '',
+			title: existing?.title,
+			updatedAt
+		},
+		true
+	);
 
 	// The run finished normally, so the tone belongs to the completion itself,
 	// whichever page happens to be mounted. Keeping it here means one alert path

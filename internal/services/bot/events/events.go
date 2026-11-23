@@ -11,6 +11,7 @@ import "sync"
 // TurnEvent says one conversation gained a persisted turn.
 type TurnEvent struct {
 	ConversationID string `json:"conversation_id"`
+	Scope          string `json:"scope,omitempty"`
 	Trigger        string `json:"trigger"`
 	At             string `json:"at"`
 }

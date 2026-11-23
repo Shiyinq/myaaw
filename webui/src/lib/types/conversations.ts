@@ -1,4 +1,5 @@
 import type { Attachment } from './chat';
+import type { ExtraMessage } from './extra';
 
 export interface ContentPart {
 	type: string;
@@ -39,6 +40,8 @@ export interface Message {
 	duration_ms?: number;
 	/** Files delivered with this answer, so a reopened chat renders them again. */
 	attachments?: Attachment[];
+	/** Structured rich display / interactive blocks emitted by extra_messages. */
+	extra_messages?: ExtraMessage[];
 }
 
 /** A file a user attached to a message; persisted on the agent. */

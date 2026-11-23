@@ -221,7 +221,7 @@
 
 <div class="flex h-full min-h-0 flex-col">
 	{#if onClose}
-		<div class="flex shrink-0 items-center gap-2 border-b p-3">
+		<div class="flex shrink-0 items-center gap-2 px-3 pt-3 pb-1">
 			<Paperclip class="h-4 w-4 shrink-0 text-muted-foreground" />
 			<p class="min-w-0 flex-1 truncate text-sm font-semibold">
 				{t('myaaw.chat.attachments_title')}

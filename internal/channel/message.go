@@ -97,6 +97,9 @@ type OutgoingMessage struct {
 	// Attachments are files produced by the run (for example screenshots
 	// requested with deliver=true). Channels send them after the text.
 	Attachments []Attachment
+	// ExtraMessages are rich display/interactive UI blocks emitted by the
+	// extra_messages tool during the run.
+	ExtraMessages []provider.ExtraMessage
 	// RunID identifies the recorded trace for this message. It is empty when
 	// observability is disabled.
 	RunID string
@@ -180,6 +183,8 @@ type StreamChunk struct {
 	SubAgent string
 	// Attachments are files emitted by the run (Kind "attachment").
 	Attachments []Attachment
+	// ExtraMessages are rich UI blocks emitted by extra_messages (Kind "extra_messages").
+	ExtraMessages []provider.ExtraMessage
 	// Compaction numbers are set on Kind "compaction".
 	TokensBefore    int
 	TokensAfter     int
