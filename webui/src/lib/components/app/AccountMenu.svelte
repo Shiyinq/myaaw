@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Keyboard, LogOut, Settings2 } from 'lucide-svelte';
+	import { Info, Keyboard, LogOut, Settings2 } from 'lucide-svelte';
+	import { serverStore } from '$lib/stores/server.svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { authStore, shortcutHelp } from '$lib/stores';
@@ -23,6 +25,24 @@
 	const { t } = useTranslation();
 	const initials = $derived((authStore.profile?.username ?? 'MY').slice(0, 2).toUpperCase());
 	const profileActive = $derived(page.url.pathname.startsWith('/app/profile'));
+
+	let aboutOpen = $state(false);
+	let versions = $state<Awaited<ReturnType<typeof serverStore.fetchVersion>> | null>(null);
+	let versionLoading = $state(false);
+
+	async function showAbout() {
+		aboutOpen = true;
+		if (versionLoading) return;
+		versionLoading = true;
+		versions = null;
+		try {
+			versions = await serverStore.fetchVersion();
+		} catch {
+			// Older or unreachable control planes cannot provide their build version.
+		} finally {
+			versionLoading = false;
+		}
+	}
 
 	async function logout() {
 		await authStore.logout();
@@ -101,6 +121,10 @@
 			<Keyboard class="mr-2 h-4 w-4" />
 			{t('myaaw.shortcuts.title')}
 		</DropdownMenu.Item>
+		<DropdownMenu.Item onclick={showAbout}>
+			<Info class="mr-2 h-4 w-4" />
+			{t('myaaw.about.menu')}
+		</DropdownMenu.Item>
 		<DropdownMenu.Separator />
 		<DropdownMenu.Item variant="destructive" onclick={logout}>
 			<LogOut class="mr-2 h-4 w-4" />
@@ -108,3 +132,26 @@
 		</DropdownMenu.Item>
 	</DropdownMenu.Content>
 </DropdownMenu.Root>
+
+<Dialog.Root bind:open={aboutOpen}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>{t('myaaw.about.title')}</Dialog.Title>
+			<Dialog.Description>{t('myaaw.about.description')}</Dialog.Description>
+		</Dialog.Header>
+		<dl class="grid gap-3">
+			<div>
+				<dt class="text-xs text-muted-foreground">{t('myaaw.about.webui')}</dt>
+				<dd class="font-mono break-all">
+					{page.data.webuiVersion || t('myaaw.about.unversioned')}
+				</dd>
+			</div>
+			<div>
+				<dt class="text-xs text-muted-foreground">{t('myaaw.about.binary')}</dt>
+				<dd class="font-mono break-all" aria-live="polite">
+					{versionLoading ? t('common.loading') : versions?.version || t('myaaw.about.unavailable')}
+				</dd>
+			</div>
+		</dl>
+	</Dialog.Content>
+</Dialog.Root>

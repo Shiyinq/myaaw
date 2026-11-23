@@ -20,6 +20,10 @@ import (
 // NewApp builds the control-plane Fiber app. Public routes are registered
 // first, then the bearer-token middleware, then the secured routes.
 func NewApp() (*fiber.App, error) {
+	return newApp("dev")
+}
+
+func newApp(version string) (*fiber.App, error) {
 	if err := agentdir.EnsureLayout(); err != nil {
 		return nil, err
 	}
@@ -74,6 +78,10 @@ func NewApp() (*fiber.App, error) {
 	app.Post("/auth/login", h.Login)
 
 	app.Use(cpMiddleware.RequireAuth(auth))
+
+	app.Get("/version", func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{"version": version})
+	})
 
 	app.Get("/auth/me", h.Me)
 	app.Post("/auth/logout", h.Logout)
@@ -237,8 +245,8 @@ func NewApp() (*fiber.App, error) {
 	return app, nil
 }
 
-func Run(addr string) error {
-	app, err := NewApp()
+func Run(addr, version string) error {
+	app, err := newApp(version)
 	if err != nil {
 		return err
 	}

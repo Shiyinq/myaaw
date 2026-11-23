@@ -637,6 +637,15 @@
 			"bulk_stopped": "Agents stopped: {count}",
 			"bulk_failed": "Failed: {names}"
 		},
+		"about": {
+			"menu": "About",
+			"title": "About Myaaw",
+			"description": "Versions of this dashboard and the connected Myaaw control plane.",
+			"webui": "WebUI bundle",
+			"binary": "Myaaw binary",
+			"unversioned": "Unversioned build",
+			"unavailable": "Unavailable"
+		},
 		"profile": {
 			"title": "Profile",
 			"subtitle": "Your account, password, and username.",

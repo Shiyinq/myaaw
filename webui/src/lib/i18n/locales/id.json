@@ -637,6 +637,15 @@
 			"bulk_stopped": "Agent dihentikan: {count}",
 			"bulk_failed": "Gagal: {names}"
 		},
+		"about": {
+			"menu": "Tentang",
+			"title": "Tentang Myaaw",
+			"description": "Versi dashboard ini dan control plane Myaaw yang terhubung.",
+			"webui": "Bundle WebUI",
+			"binary": "Binary Myaaw",
+			"unversioned": "Build tanpa versi",
+			"unavailable": "Tidak tersedia"
+		},
 		"profile": {
 			"title": "Profil",
 			"subtitle": "Akun, kata sandi, dan nama pengguna.",

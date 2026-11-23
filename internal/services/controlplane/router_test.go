@@ -39,6 +39,24 @@ func TestRouterRequiresAuth(t *testing.T) {
 	}
 }
 
+func TestRouterReportsBinaryVersion(t *testing.T) {
+	setupTestAgent(t, "http://127.0.0.1:1")
+	const version = "v2026.11.20"
+	app, err := newApp(version)
+	if err != nil {
+		t.Fatalf("newApp: %v", err)
+	}
+
+	doJSON(t, app, "GET", "/version", "", "", fiber.StatusUnauthorized, nil)
+	var result struct {
+		Version string `json:"version"`
+	}
+	doJSON(t, app, "GET", "/version", login(t, app), "", fiber.StatusOK, &result)
+	if result.Version != version {
+		t.Fatalf("version = %q, want %q", result.Version, version)
+	}
+}
+
 func TestRouterListsOnboardingCapabilities(t *testing.T) {
 	setupTestAgent(t, "http://127.0.0.1:1")
 	app := mustNewApp(t)
