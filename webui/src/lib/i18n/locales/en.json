@@ -1070,6 +1070,8 @@
 			"disabled_ok": "{name} disabled"
 		},
 		"plugins": {
+			"empty_title": "No plugins yet",
+			"empty_desc": "Skills, tools, and connections will appear here.",
 			"title": "Plugins",
 			"subtitle": "The skills, tools, and connections this agent can use.",
 			"intro": "Everything this agent can do, in one place.",

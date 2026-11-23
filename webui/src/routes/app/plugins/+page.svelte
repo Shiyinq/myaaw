@@ -12,6 +12,7 @@
 	import ToolDialog from '$lib/components/tools/ToolDialog.svelte';
 	import PluginDetailsDialog from '$lib/components/plugins/PluginDetailsDialog.svelte';
 	import SkillCreatorDialog from '$lib/components/plugins/SkillCreatorDialog.svelte';
+	import EmptyState from '$lib/components/common/EmptyState.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -44,8 +45,12 @@
 	let catalog = $derived(agentsStore.capabilitiesData?.skills ?? []);
 	let view = $derived(toolsStore.query.data ?? null);
 	let installing = $state('');
-	let loading = $derived(skillsStore.list.loading || toolsStore.query.loading);
-	let error = $derived(skillsStore.list.error || toolsStore.query.error);
+	let loading = $derived(
+		skillsStore.list.loading || toolsStore.query.loading || agentSelection.loading
+	);
+	let error = $derived(
+		skillsStore.list.error || toolsStore.query.error || (!agent && agentSelection.error)
+	);
 	let query = $state('');
 
 	// The entry whose details are open, resolved against the current lists so a
@@ -365,6 +370,7 @@
 			icon={RefreshCw}
 			{loading}
 			onclick={() => {
+				if (!agent) void agentSelection.load(true);
 				void skillsStore.list.refresh();
 				void toolsStore.query.refresh();
 				void agentsStore.capabilities.refresh();
@@ -458,24 +464,28 @@
 		</div>
 	</div>
 
-	{#if !agent}
-		<p class="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-			{t('myaaw.agent.none')}
-		</p>
-	{:else if error}
-		<div class="flex flex-col items-start gap-2 rounded-xl border border-destructive/40 p-4">
-			<p class="text-sm text-destructive">{error}</p>
-			<Button
-				variant="outline"
-				size="sm"
-				onclick={() => {
-					void skillsStore.list.refresh();
-					void toolsStore.query.refresh();
-				}}
-			>
-				{t('common.refresh')}
-			</Button>
+	{#if error}
+		<div
+			role="alert"
+			class="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+		>
+			{error}
 		</div>
+	{/if}
+
+	{#if !agent && loading}
+		<div class="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+			<Loader2 class="h-4 w-4 animate-spin" />
+			{t('common.loading')}
+		</div>
+	{:else if !agent || error}
+		<EmptyState
+			title={t('myaaw.plugins.empty_title')}
+			description={t('myaaw.plugins.empty_desc')}
+			bloub="curieux"
+			icon={Puzzle}
+			class="min-h-80"
+		/>
 	{:else}
 		<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
 			{#each stats as stat (stat.label)}

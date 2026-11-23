@@ -1009,6 +1009,8 @@
 			"disabled_ok": "{name} dinonaktifkan"
 		},
 		"plugins": {
+			"empty_title": "Belum ada plugin",
+			"empty_desc": "Skill, tool, dan koneksi akan muncul di sini.",
 			"title": "Plugin",
 			"subtitle": "Skill, tool, dan koneksi yang bisa dipakai agen ini.",
 			"intro": "Semua kemampuan agen ini dalam satu tempat.",

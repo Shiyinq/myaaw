@@ -242,6 +242,15 @@
 		</div>
 	</div>
 
+	{#if agentSelection.error}
+		<div
+			role="alert"
+			class="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+		>
+			{agentSelection.error}
+		</div>
+	{/if}
+
 	<!-- Character cards grid -->
 	<div class="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
 		{#each bots as bot (bot.name)}

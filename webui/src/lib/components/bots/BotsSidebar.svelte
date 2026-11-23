@@ -1059,8 +1059,15 @@
 			{/each}
 		{/if}
 
-		{#if agentSelection.loading && agentSelection.agents.length === 0 && filter !== 'groups'}
+		{#if (!agentSelection.loaded || agentSelection.loading) && agentSelection.agents.length === 0 && filter !== 'groups'}
 			<p class="px-2 py-3 text-xs text-muted-foreground">{t('common.loading')}</p>
+		{:else if agentSelection.error && agentSelection.agents.length === 0 && filter !== 'groups'}
+			<p
+				role="alert"
+				class="mx-2 my-2 rounded-xl border border-destructive/30 bg-destructive/10 p-2 text-xs break-words text-destructive"
+			>
+				{agentSelection.error}
+			</p>
 		{:else if visibleAgents.length === 0 && visibleGroups.length === 0}
 			<p class="px-2 py-3 text-xs text-muted-foreground">
 				{searchTerm
