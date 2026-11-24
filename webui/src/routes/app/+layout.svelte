@@ -735,7 +735,8 @@
 		page.url.pathname.startsWith('/app/context') ||
 			page.url.pathname.startsWith('/app/skills') ||
 			page.url.pathname.startsWith('/app/files') ||
-			page.url.pathname.startsWith('/app/logs')
+			page.url.pathname.startsWith('/app/logs') ||
+			page.url.pathname.startsWith('/app/settings')
 	);
 	// Pages with a split list + editor layout manage their own scrolling, so the
 	// shell gives them the full height of the viewport instead of scrolling.

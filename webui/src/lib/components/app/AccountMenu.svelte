@@ -87,17 +87,21 @@
 					<span class="text-[10px] font-bold uppercase">{initials}</span>
 				</Button>
 			{:else}
-				<Button {...props} variant="outline" class="h-auto w-full justify-start gap-2 py-2">
+				<Button
+					{...props}
+					variant="outline"
+					class="h-auto w-full justify-start gap-2 py-2 text-left"
+				>
 					<span
 						class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold uppercase"
 					>
 						{initials}
 					</span>
-					<span class="flex min-w-0 flex-col items-start leading-tight">
+					<span class="flex min-w-0 flex-1 flex-col items-start text-left leading-tight">
 						<span class="w-full truncate text-sm font-medium">
 							{authStore.profile?.username ?? '—'}
 						</span>
-						<span class="text-[10px] text-muted-foreground">
+						<span class="w-full truncate text-[10px] text-muted-foreground">
 							user #{authStore.profile?.user_id ?? '—'}
 						</span>
 					</span>
