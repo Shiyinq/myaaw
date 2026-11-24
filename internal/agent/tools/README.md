@@ -18,7 +18,7 @@ The Myaaw Tools package contains a set of specialized tools that can be used wit
 
 ### 2. [Python Execution Tool](./python/README.md)
 
-**Function**: `execute_python`
+**Function**: `python`
 
 - Dynamic Python code execution
 - Package installation support
@@ -88,9 +88,9 @@ Tools are registered in the `toolsMap` within `NewTools()`:
 
 ```go
 toolsMap: map[string]ToolsFactory{
-    "bash":           bash.NewBashTool(),
-    "filesystem":     filesystem.NewFileSystemTool(),
-    "execute_python": python.NewPythonTool(),
+    "bash":       bash.NewBashTool(),
+    "filesystem": filesystem.NewFileSystemTool(),
+    "python":     python.NewPythonTool(),
 }
 ```
 
@@ -127,7 +127,7 @@ result := NewTools("bash", `{"command": "echo 'Hello World'"}`)
 ### Tool with Complex Parameters
 
 ```go
-result := NewTools("execute_python", `{
+result := NewTools("python", `{
     "code": "print('Hello World')",
     "packages": ["requests"]
 }`)

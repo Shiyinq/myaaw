@@ -44,7 +44,7 @@ Each skill is self-contained within its own directory and defined by a `SKILL.md
 Unlike traditional tool definitions that inject large JSON schemas for every tool into every single LLM prompt, Myaaw uses a **two-tier cognitive workflow**:
 
 1. **Compact Index in System Prompt**: At startup/request time, Myaaw scans `~/.myaaw/skills/` and injects only a lightweight summary (name and description) into the agent's system prompt.
-2. **On-Demand Loading & Execution**: When a user's task requires a skill, the agent reads the full `SKILL.md` via the `filesystem` tool, understands the parameters, and runs the script using `bash` or `execute_python`.
+2. **On-Demand Loading & Execution**: When a user's task requires a skill, the agent reads the full `SKILL.md` via the `filesystem` tool, understands the parameters, and runs the script using `bash` or `python`.
 
 ```
                         ┌──────────────────────────────┐

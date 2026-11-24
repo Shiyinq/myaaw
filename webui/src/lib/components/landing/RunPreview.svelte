@@ -30,7 +30,7 @@
 				}
 			},
 			{
-				name: 'execute_python',
+				name: 'python',
 				args: {
 					code: 'import csv, json, sys\nrows = list(csv.DictReader(sys.stdin))\ndone = sum(row["status"] == "done" for row in rows)\nprint(json.dumps({"done": done, "total": len(rows), "percent": round(done / len(rows) * 100)}))',
 					input:

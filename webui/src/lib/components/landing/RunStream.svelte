@@ -49,7 +49,7 @@
 
 	interface DemoTool {
 		id: string;
-		name: 'bash' | 'filesystem' | 'execute_python';
+		name: 'bash' | 'filesystem' | 'python';
 		args: {
 			command?: string;
 			code?: string;
@@ -87,7 +87,7 @@
 		},
 		{
 			id: 'compute',
-			name: 'execute_python',
+			name: 'python',
 			args: { code: pythonCode, input: tasksCsv, async: false },
 			result: `${JSON.stringify(stats, null, 2)}\n`,
 			outcome: t('landing.stream.compute_summary', stats)
@@ -145,7 +145,7 @@
 
 	function toolTitle(tool: DemoTool) {
 		if (tool.name === 'bash') return 'Bash';
-		if (tool.name === 'execute_python') return 'Python';
+		if (tool.name === 'python') return 'Python';
 		return t('myaaw.nav.files');
 	}
 
@@ -375,7 +375,7 @@
 													summary={invocation(tool).replace(/\s+/g, ' ').trim()}
 													icon={tool.name === 'bash'
 														? SquareTerminal
-														: tool.name === 'execute_python'
+														: tool.name === 'python'
 															? Code
 															: FolderOpen}
 													expanded={expandedTool === tool.id}

@@ -32,7 +32,7 @@ Myaaw provides an extensible, modular tooling system that empowers AI agents wit
 ## Overview & Architecture
 
 Myaaw combines three tiers of tools:
-1. **Built-in Tools**: Core capabilities (`bash`, `filesystem`, `cron`, `execute_python`, `provider`, `subagent`).
+1. **Built-in Tools**: Core capabilities (`bash`, `filesystem`, `cron`, `python`, `provider`, `subagent`).
 2. **Custom CLI Tools**: Standalone scripts or executables adhering to the `--schema` and `--execute` protocol.
 3. **MCP Servers**: Industry-standard [Model Context Protocol](https://modelcontextprotocol.io/) servers communicating via `stdio` JSON-RPC.
 
@@ -116,7 +116,7 @@ You can enable or disable built-in tools by setting their boolean flag in `built
 | **Bash** | `"bash"` | Execute system shell commands |
 | **Filesystem** | `"filesystem"` | Read, write, search, and manage local files |
 | **Cron** | `"cron"` | Schedule one-time or recurring tasks and reminders |
-| **Python** | `"python"` or `"execute_python"` | Dynamic Python code execution in isolated venv |
+| **Python** | `"python"` (alias `"execute_python"`) | Dynamic Python code execution in isolated venv |
 | **Provider** | `"provider"` | Change or switch LLM providers dynamically |
 | **Subagent** | `"subagent"` | Spawn autonomous subagents for task delegation |
 | **A2A Contact** | `"a2a_contact"` (alias `"contact"`) | Manage contacts and delegate tasks to another agent via the A2A protocol (`send`, `status`, `list`, `get`, `add`) |
@@ -481,7 +481,7 @@ tail -f ~/.myaaw/logs/tools.log
 2026/08/14 02:29:08 Tools configuration changed, reloading...
 2026/08/14 02:29:08 Built-in tool 'bash' disabled by config
 2026/08/14 02:29:08 Custom tool 'hello_helper' disabled by config
-2026/08/14 02:29:08 Total active tools: 24 | Tools: [cron execute_python filesystem playwright_browser_click playwright_browser_close ... provider subagent]
+2026/08/14 02:29:08 Total active tools: 24 | Tools: [cron filesystem playwright_browser_click playwright_browser_close ... provider python subagent]
 ```
 
 ---

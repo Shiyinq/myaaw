@@ -206,7 +206,7 @@ Both flags accept a comma-separated list in any order; the list is normalised to
 | Flag | Valid names |
 | :--- | :--- |
 | `--skills` | `calendar`, `cashflow`, `converter`, `notes`, `scraping`, `skill-creator`, `tavily`, `time`, `weather` |
-| `--disable-tools` | `a2a_auth_request`, `a2a_contact`, `a2a_input`, `bash`, `cron`, `execute_python`, `extra_messages`, `filesystem`, `provider`, `subagent` |
+| `--disable-tools` | `a2a_auth_request`, `a2a_contact`, `a2a_input`, `bash`, `cron`, `extra_messages`, `filesystem`, `provider`, `python`, `subagent` |
 
 ### Discovering the names
 
@@ -257,7 +257,7 @@ myaaw onboard --yes --agent agent-b --force \
 
 Notes:
 
-- Names are matched **case-insensitively**, and `python` (`execute_python`) and `contact` (`a2a_contact`) are accepted as aliases.
+- Names are matched **case-insensitively**, and `execute_python` (`python`) and `contact` (`a2a_contact`) are accepted as aliases.
 - Anything unknown is rejected before the agent is created or touched:
 
   ```text

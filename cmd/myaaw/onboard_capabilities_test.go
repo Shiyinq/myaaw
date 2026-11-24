@@ -150,12 +150,12 @@ func TestParseOnboardSelection(t *testing.T) {
 		t.Fatalf("selected = %v, want canonical order [notes time]", got)
 	}
 
-	got, err = parseOnboardSelection("python", tools, "--disable-tools")
+	got, err = parseOnboardSelection("execute_python", tools, "--disable-tools")
 	if err != nil {
-		t.Fatalf("python alias rejected: %v", err)
+		t.Fatalf("execute_python alias rejected: %v", err)
 	}
-	if len(got) != 1 || got[0] != "execute_python" {
-		t.Fatalf("python alias = %v, want [execute_python]", got)
+	if len(got) != 1 || got[0] != "python" {
+		t.Fatalf("execute_python alias = %v, want [python]", got)
 	}
 
 	got, err = parseOnboardSelection("contact", tools, "--disable-tools")
@@ -191,14 +191,14 @@ func TestExistingDisabledToolsAlias(t *testing.T) {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(toolsDir, "tools.json")
-	data := `{"builtin_tools":{"python":false,"contact":false,"bash":true}}`
+	data := `{"builtin_tools":{"execute_python":false,"contact":false,"bash":true}}`
 	if err := os.WriteFile(configPath, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	got := existingDisabledTools("agent-z")
-	if strings.Join(got, ",") != "a2a_contact,execute_python" {
-		t.Fatalf("disabled tools = %v, want [a2a_contact execute_python]", got)
+	if strings.Join(got, ",") != "a2a_contact,python" {
+		t.Fatalf("disabled tools = %v, want [a2a_contact python]", got)
 	}
 }
 

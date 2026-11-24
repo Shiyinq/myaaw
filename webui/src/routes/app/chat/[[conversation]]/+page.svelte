@@ -82,6 +82,7 @@
 		Globe,
 		HeartPulse,
 		History,
+		LayoutGrid,
 		ListEnd,
 		Loader2,
 		MessageSquarePlus,
@@ -98,7 +99,6 @@
 		ShieldOff,
 		Square,
 		SquareTerminal,
-		Users,
 		Wrench,
 		X
 	} from 'lucide-svelte';
@@ -3134,14 +3134,18 @@
 
 	const TOOL_LABELS: Record<string, string> = {
 		bash: 'Bash',
+		python: 'Python',
 		execute_python: 'Python',
 		filesystem: 'Files',
 		computer: 'Computer',
 		subagent: 'Agent',
 		cron: 'Cron',
 		provider: 'Provider',
-		a2a_contact: 'Contact',
-		contact: 'Contact'
+		a2a_contact: 'A2A Contact',
+		contact: 'A2A Contact',
+		a2a_input: 'A2A Input',
+		a2a_auth_request: 'A2A Auth',
+		extra_messages: 'Extra Messages'
 	};
 
 	// Fields that read well as a one-line summary, most specific first.
@@ -3177,12 +3181,16 @@
 	function toolIcon(name?: string) {
 		const key = (name ?? '').toLowerCase();
 		if (key === 'bash') return SquareTerminal;
-		if (key === 'execute_python') return Code;
+		if (key === 'python' || key === 'execute_python') return Code;
 		if (key === 'filesystem') return FolderOpen;
 		if (key === 'computer') return Monitor;
-		if (key === 'subagent') return Users;
+		if (key === 'subagent') return Bot;
 		if (key === 'cron') return Clock;
 		if (key === 'provider') return Cpu;
+		if (key === 'a2a_contact' || key === 'contact') return Globe;
+		if (key === 'a2a_input') return MessageSquarePlus;
+		if (key === 'a2a_auth_request') return ShieldCheck;
+		if (key === 'extra_messages') return LayoutGrid;
 		if (/scrap|search|crawl|web|fetch|a2a/.test(key)) return Globe;
 		return Wrench;
 	}

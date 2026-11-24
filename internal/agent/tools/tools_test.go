@@ -46,3 +46,15 @@ func TestIsBuiltinEnabledContactAlias(t *testing.T) {
 		t.Fatal("contact lookup should follow a2a_contact=false")
 	}
 }
+
+func TestIsBuiltinEnabledPythonAlias(t *testing.T) {
+	if isBuiltinEnabled("python", map[string]bool{"execute_python": false}) {
+		t.Fatal("python should follow legacy execute_python=false alias")
+	}
+	if !isBuiltinEnabled("python", map[string]bool{"execute_python": false, "python": true}) {
+		t.Fatal("explicit python=true should take precedence over legacy execute_python=false")
+	}
+	if isBuiltinEnabled("execute_python", map[string]bool{"python": false}) {
+		t.Fatal("execute_python lookup should follow python=false")
+	}
+}

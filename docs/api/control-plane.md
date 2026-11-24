@@ -663,7 +663,7 @@ List response:
 
 Rules:
 
-- Built-in tools (`a2a_auth_request`, `a2a_contact` with alias `contact`, `a2a_input`, `bash`, `computer`, `cron`, `execute_python` with alias `python`, `extra_messages`, `filesystem`, `provider`, `subagent`) can only be enabled or disabled.
+- Built-in tools (`a2a_auth_request`, `a2a_contact` with alias `contact`, `a2a_input`, `bash`, `computer`, `cron`, `extra_messages`, `filesystem`, `provider`, `python` with alias `execute_python`, `subagent`) can only be enabled or disabled.
 - Custom tool `name` and MCP server `name` must be unique; duplicates return `409`.
 - `schema` is optional for custom tools; omit it to let the loader discover it via `--schema`. Sending `"schema": null` on `PATCH` removes an inline schema. A present inline schema is returned in list/create/patch responses.
 - A provided schema must follow the OpenAI function format from the tools docs: valid JSON, `"type": "function"`, and a `function.name` matching the tool name.

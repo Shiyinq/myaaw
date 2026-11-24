@@ -93,27 +93,43 @@ func TestToolsServiceToggleBuiltin(t *testing.T) {
 		t.Fatalf("enabled = %+v", enabled)
 	}
 
-	// python is an alias for execute_python in the loader.
-	if err := svc.ToggleBuiltin("myfriend", "python", false); err != nil {
-		t.Fatalf("ToggleBuiltin python: %v", err)
+	// execute_python is a legacy alias for python in the loader.
+	if err := svc.ToggleBuiltin("myfriend", "execute_python", false); err != nil {
+		t.Fatalf("ToggleBuiltin execute_python: %v", err)
 	}
 	// contact is a legacy alias for a2a_contact in the loader.
 	if err := svc.ToggleBuiltin("myfriend", "contact", false); err != nil {
 		t.Fatalf("ToggleBuiltin contact: %v", err)
 	}
+	// Legacy aliases are normalized to their canonical keys when saved.
+	parsed = readToolsFile(t, agentRoot)
+	builtin, _ = parsed["builtin_tools"].(map[string]any)
+	if builtin["python"] != false || builtin["a2a_contact"] != false {
+		t.Fatalf("canonical keys missing after alias toggle: %+v", builtin)
+	}
+	if _, hasLegacy := builtin["execute_python"]; hasLegacy {
+		t.Fatalf("legacy execute_python key should not be written: %+v", builtin)
+	}
+	if _, hasLegacy := builtin["contact"]; hasLegacy {
+		t.Fatalf("legacy contact key should not be written: %+v", builtin)
+	}
+
 	view, err = svc.List("myfriend")
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	for _, tool := range view.Builtin {
-		if tool.Name == "execute_python" && tool.Enabled {
-			t.Fatalf("execute_python should follow the python alias, builtin = %+v", view.Builtin)
+		if tool.Name == "python" && tool.Enabled {
+			t.Fatalf("python should follow the execute_python alias, builtin = %+v", view.Builtin)
 		}
 		if tool.Name == "a2a_contact" && tool.Enabled {
 			t.Fatalf("a2a_contact should follow the contact alias, builtin = %+v", view.Builtin)
 		}
 	}
-	// Re-enabling via canonical name clears the legacy alias.
+	// Re-enabling via canonical names clears the legacy aliases.
+	if err := svc.ToggleBuiltin("myfriend", "python", true); err != nil {
+		t.Fatalf("ToggleBuiltin python: %v", err)
+	}
 	if err := svc.ToggleBuiltin("myfriend", "a2a_contact", true); err != nil {
 		t.Fatalf("ToggleBuiltin a2a_contact: %v", err)
 	}
@@ -122,6 +138,9 @@ func TestToolsServiceToggleBuiltin(t *testing.T) {
 		t.Fatalf("List: %v", err)
 	}
 	for _, tool := range view.Builtin {
+		if tool.Name == "python" && !tool.Enabled {
+			t.Fatalf("python should be enabled after canonical toggle, builtin = %+v", view.Builtin)
+		}
 		if tool.Name == "a2a_contact" && !tool.Enabled {
 			t.Fatalf("a2a_contact should be enabled after canonical toggle, builtin = %+v", view.Builtin)
 		}

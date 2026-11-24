@@ -35,7 +35,7 @@ Myaaw loads skills with progressive disclosure:
 2. **Activation** — when a task matches the description, the agent reads the
    full `SKILL.md` with the `filesystem` tool.
 3. **Execution** — the agent runs bundled scripts with `bash` or
-   `execute_python`, and reads `references/` only when needed.
+   `python`, and reads `references/` only when needed.
 
 ## Where skills live in Myaaw
 

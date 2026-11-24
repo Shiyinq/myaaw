@@ -29,7 +29,7 @@ func (h *Handler) ListTools(c fiber.Ctx) error {
 
 // ToggleBuiltinTool enables or disables a built-in tool.
 // @Summary      Enable or disable a built-in tool
-// @Description  Built-in tools can only be toggled, never deleted. Accepted names: a2a_auth_request, a2a_contact (alias contact), a2a_input, bash, computer, cron, execute_python (alias python), extra_messages, filesystem, provider, subagent.
+// @Description  Built-in tools can only be toggled, never deleted. Accepted names: a2a_auth_request, a2a_contact (alias contact), a2a_input, bash, computer, cron, extra_messages, filesystem, provider, python (alias execute_python), subagent.
 // @Tags         Tools
 // @Accept       json
 // @Produce      json

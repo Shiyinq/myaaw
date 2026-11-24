@@ -442,8 +442,8 @@ func ParseOnboardSelection(raw string, known []string, flag string) ([]string, e
 	for _, name := range known {
 		lookup[strings.ToLower(name)] = name
 	}
-	if _, ok := lookup["execute_python"]; ok {
-		lookup["python"] = "execute_python"
+	if _, ok := lookup["python"]; ok {
+		lookup["execute_python"] = "python"
 	}
 	if _, ok := lookup["a2a_contact"]; ok {
 		lookup["contact"] = "a2a_contact"
@@ -675,8 +675,8 @@ func ExistingDisabledTools(agentName string) []string {
 // used by the registry.
 func CanonicalToolName(name string) string {
 	switch name {
-	case "python":
-		return "execute_python"
+	case "execute_python":
+		return "python"
 	case "contact":
 		return "a2a_contact"
 	default:

@@ -20,7 +20,7 @@ Manages files and directories within allowed locations. You can combine these fu
 - `list_allowed_directories`: Shows the list of directories this tool can access.
 - `delete_path`: Deletes a specified file or directory.
 
-### Execute Python
+### Python
 Executes Python code and returns the result. This tool supports installing additional packages and stdin input. Write any files produced by the code under `~/.myaaw/home/workspace/`, not in the agent home root.
 
 ### Bash

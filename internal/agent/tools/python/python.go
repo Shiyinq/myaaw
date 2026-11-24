@@ -17,7 +17,7 @@ import (
 const toolSchema = `{
     "type": "function",
     "function": {
-        "name": "execute_python",
+        "name": "python",
         "description": "Executes Python code and returns the result. This tool supports installing additional packages and stdin input. It uses a virtual environment (auto-created if missing). Output is truncated at 32KB; full results are saved to logs.",
         "parameters": {
             "type": "object",
@@ -52,7 +52,7 @@ const toolSchema = `{
 }`
 
 func init() {
-	tools.RegisterBuiltin("execute_python", NewPythonTool())
+	tools.RegisterBuiltin("python", NewPythonTool())
 }
 
 type PythonTool struct{}
