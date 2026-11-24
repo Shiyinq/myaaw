@@ -28,6 +28,15 @@ let createDialogOpen = $state(false);
 let openGroupId = $state('');
 let unreadCounts = $state<Record<string, number>>({});
 const announcedMessageIds = new Set<string>();
+const detailCache = new Map<string, GroupDetail>();
+
+function cacheTailDetail(id: string, detail: GroupDetail) {
+	detailCache.set(id, {
+		...detail,
+		unread_count: 0,
+		first_unread_message_id: ''
+	});
+}
 
 function toSummary(group: Group, existing?: GroupSummary, runState?: GroupRunState): GroupSummary {
 	return {
@@ -96,6 +105,39 @@ export const groupsStore = {
 		openGroupId = '';
 		unreadCounts = {};
 		announcedMessageIds.clear();
+		detailCache.clear();
+	},
+	peekDetail(id: string): GroupDetail | undefined {
+		return id ? detailCache.get(id) : undefined;
+	},
+	peekGroup(id: string): Group | null {
+		if (!id) return null;
+		const cached = detailCache.get(id)?.group;
+		if (cached) return cached;
+		const summary = list.find((entry) => entry.id === id);
+		if (!summary) return null;
+		return {
+			id: summary.id,
+			name: summary.name,
+			description: summary.description,
+			members: summary.members,
+			discussion_mode: summary.discussion_mode,
+			max_turns: summary.max_turns,
+			created_at: summary.created_at,
+			updated_at: summary.updated_at
+		};
+	},
+	syncCachedMessages(id: string, messages: GroupMessage[], total?: number) {
+		const cached = detailCache.get(id);
+		if (!cached) return;
+		detailCache.set(id, {
+			...cached,
+			messages,
+			total_messages:
+				total !== undefined
+					? Math.max(total, messages.length)
+					: Math.max(cached.total_messages ?? messages.length, messages.length)
+		});
 	},
 	async load(force = false) {
 		if (untrack(() => loading)) return;
@@ -150,6 +192,7 @@ export const groupsStore = {
 						created_at: lastMsg.created_at
 					}
 				: null;
+			cacheTailDetail(id, detail);
 		}
 		upsertSummary(summary);
 		return detail;
@@ -158,11 +201,16 @@ export const groupsStore = {
 		const updated = await groupsApi.update(id, payload);
 		const existing = list.find((entry) => entry.id === id);
 		upsertSummary(toSummary(updated, existing));
+		const cached = detailCache.get(id);
+		if (cached) {
+			detailCache.set(id, { ...cached, group: updated });
+		}
 		return updated;
 	},
 	async remove(id: string): Promise<void> {
 		await groupsApi.remove(id);
 		list = list.filter((entry) => entry.id !== id);
+		detailCache.delete(id);
 	},
 	async clearMessages(id: string): Promise<void> {
 		await groupsApi.clearMessages(id);
@@ -177,6 +225,22 @@ export const groupsStore = {
 					}
 				: entry
 		);
+		const cached = detailCache.get(id);
+		if (cached) {
+			detailCache.set(id, {
+				...cached,
+				messages: [],
+				has_more: false,
+				total_messages: 0,
+				run_state: {
+					...cached.run_state,
+					running: false,
+					paused: false,
+					pause_reason: '',
+					current_agent: ''
+				}
+			});
+		}
 	},
 	async sendMessage(
 		id: string,
@@ -256,8 +320,22 @@ export const groupsStore = {
 					}
 				: entry
 		);
+		const cached = detailCache.get(id);
+		if (cached) {
+			detailCache.set(id, { ...cached, run_state: runState });
+		}
 	},
 	syncSummaryFromMessage(id: string, msg: GroupMessage) {
+		const cached = detailCache.get(id);
+		if (cached && !cached.messages.some((existingMsg) => existingMsg.id === msg.id)) {
+			const nextMessages = [...cached.messages, msg];
+			detailCache.set(id, {
+				...cached,
+				messages: nextMessages,
+				total_messages:
+					Math.max(cached.total_messages ?? cached.messages.length, cached.messages.length) + 1
+			});
+		}
 		const existing = list.find((entry) => entry.id === id);
 		if (!existing) return;
 		upsertSummary({

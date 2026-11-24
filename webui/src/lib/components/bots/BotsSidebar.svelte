@@ -47,6 +47,7 @@
 	import type { AgentInfo, GroupSummary } from '$lib/types';
 
 	type BotFilter = 'all' | 'groups' | 'bots' | 'running' | 'unread';
+	type RosterItem = { kind: 'group'; group: GroupSummary } | { kind: 'bot'; bot: AgentInfo };
 
 	const { t, locale } = useTranslation();
 
@@ -402,28 +403,53 @@
 		onClose();
 	}
 
-	// Quick keyboard switching between bots (Alt+Shift+Up/Down and Alt+1..9).
+	// Canonical top-to-bottom sidebar order (groups first, then bots) used by keyboard shortcuts.
+	const orderedRoster = $derived<RosterItem[]>([
+		...visibleGroups.map((group): RosterItem => ({ kind: 'group', group })),
+		...orderedBots.map((bot): RosterItem => ({ kind: 'bot', bot }))
+	]);
+
+	function selectRosterItem(item: RosterItem) {
+		if (item.kind === 'group') {
+			selectGroup(item.group);
+		} else {
+			selectBot(item.bot);
+		}
+	}
+
+	function activeRosterIndex(list: RosterItem[]): number {
+		const groupIdx = list.findIndex(
+			(item) => item.kind === 'group' && isGroupActive(item.group.id)
+		);
+		if (groupIdx >= 0) return groupIdx;
+		if (!onChatRoute) return -1;
+		return list.findIndex(
+			(item) => item.kind === 'bot' && item.bot.name === agentSelection.selected
+		);
+	}
+
+	// Quick keyboard switching between groups and bots (Alt+Shift+Up/Down and Alt+1..9).
 	// Scoped strictly to Bots mode because this component only mounts there.
 	$effect(() => {
 		if (typeof window === 'undefined') return;
 		const onKey = (event: KeyboardEvent) => {
 			if (event.defaultPrevented || isOverlayOpen()) return;
 			if (isTypingTarget(event.target)) return;
-			const list = orderedBots;
+			const list = orderedRoster;
 			if (list.length === 0) return;
 
 			if (matchesShortcut(event, 'alt+shift+arrowup')) {
 				event.preventDefault();
-				const idx = list.findIndex((bot) => bot.name === agentSelection.selected);
+				const idx = activeRosterIndex(list);
 				const prev = idx <= 0 ? list[list.length - 1] : list[idx - 1];
-				if (prev) selectBot(prev);
+				if (prev) selectRosterItem(prev);
 				return;
 			}
 			if (matchesShortcut(event, 'alt+shift+arrowdown')) {
 				event.preventDefault();
-				const idx = list.findIndex((bot) => bot.name === agentSelection.selected);
+				const idx = activeRosterIndex(list);
 				const next = idx < 0 || idx >= list.length - 1 ? list[0] : list[idx + 1];
-				if (next) selectBot(next);
+				if (next) selectRosterItem(next);
 				return;
 			}
 			if (
@@ -438,7 +464,7 @@
 				const target = list[index];
 				if (!target) return;
 				event.preventDefault();
-				selectBot(target);
+				selectRosterItem(target);
 			}
 		};
 		window.addEventListener('keydown', onKey);

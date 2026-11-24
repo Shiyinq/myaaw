@@ -225,18 +225,29 @@
 	const PAGE_SIZE = 50;
 	const INSPECTOR_KEY = 'myaaw_group_inspector_open';
 
+	const initialGroupId = page.params.id ?? '';
+	const initialCached = initialGroupId ? groupsStore.peekDetail(initialGroupId) : undefined;
+	const initialGroup =
+		initialCached?.group ?? (initialGroupId ? groupsStore.peekGroup(initialGroupId) : null);
+
 	let groupId = $derived(page.params.id ?? '');
-	let group = $state<Group | null>(null);
-	let messages = $state<GroupMessage[]>([]);
-	let hasMore = $state(false);
-	let totalMessages = $state(0);
+	let group = $state<Group | null>(initialGroup);
+	let messages = $state<GroupMessage[]>(initialCached?.messages ?? []);
+	let hasMore = $state(Boolean(initialCached?.has_more));
+	let totalMessages = $state(
+		Math.max(
+			initialCached?.total_messages ?? initialCached?.messages.length ?? 0,
+			initialCached?.messages.length ?? 0
+		)
+	);
 	let loadingOlder = $state(false);
 	let prepending = false;
+	let switchingGroup = false;
 	let jumpingToMessage = false;
 	let jumpTimer: ReturnType<typeof setTimeout> | undefined;
-	let runState = $state<GroupRunState>({ ...EMPTY_RUN_STATE });
+	let runState = $state<GroupRunState>(initialCached?.run_state ?? { ...EMPTY_RUN_STATE });
 	let activeTurn = $state<ActiveTurn | null>(null);
-	let loading = $state(true);
+	let loading = $state(!initialCached);
 	let loadError = $state('');
 
 	let input = $state('');
@@ -421,18 +432,20 @@
 		if (!id) return;
 		const token = ++loadToken;
 		untrack(() => {
-			loading = true;
+			const cached = groupsStore.peekDetail(id);
+			const fallbackGroup = cached?.group ?? groupsStore.peekGroup(id);
 			loadError = '';
-			hasMore = false;
-			totalMessages = 0;
 			loadingOlder = false;
 			prepending = false;
+			switchingGroup = true;
 			jumpingToMessage = false;
 			stickToBottom = true;
+			unreadBelowCount = 0;
 			sseStatusReceived = false;
+			liveIdsDuringLoad = new Set<string>();
 			unreadBannerId = '';
 			unreadBannerCount = 0;
-			messages = [];
+			previewAttachment = null;
 			activeTurn = null;
 			replyTo = null;
 			pendingQuotes = [];
@@ -444,24 +457,73 @@
 			expandedSteps = {};
 			expandedStepGroups = {};
 			liveStepsOverride = null;
-			void loadGroup(id, token);
+
+			if (cached) {
+				group = cached.group;
+				messages = cached.messages;
+				hasMore = Boolean(cached.has_more);
+				totalMessages = Math.max(
+					cached.total_messages ?? cached.messages.length,
+					cached.messages.length
+				);
+				runState = cached.run_state ?? { ...EMPTY_RUN_STATE };
+				loading = false;
+				void tick().then(() => {
+					if (token !== loadToken) return;
+					scrollToBottom(false);
+					requestAnimationFrame(() => {
+						if (token === loadToken) {
+							if (stickToBottom) scrollToBottom(false);
+							switchingGroup = false;
+						}
+					});
+				});
+			} else {
+				group = fallbackGroup;
+				messages = [];
+				hasMore = false;
+				totalMessages = 0;
+				runState = { ...EMPTY_RUN_STATE };
+				loading = true;
+			}
+			void loadGroup(id, token, Boolean(cached));
 		});
 	});
 
 	let sseStatusReceived = false;
+	let liveIdsDuringLoad = new Set<string>();
 	/** First unread message ID and count captured when opening this group. */
 	let unreadBannerId = $state('');
 	let unreadBannerCount = $state(0);
 
-	async function loadGroup(id: string, token: number) {
+	function sameMessages(a: GroupMessage[], b: GroupMessage[]): boolean {
+		if (a.length !== b.length) return false;
+		for (let i = 0; i < a.length; i += 1) {
+			if (
+				a[i].id !== b[i].id ||
+				a[i].content !== b[i].content ||
+				(a[i].extra_messages?.length ?? 0) !== (b[i].extra_messages?.length ?? 0) ||
+				(a[i].attachments?.length ?? 0) !== (b[i].attachments?.length ?? 0)
+			) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	async function loadGroup(id: string, token: number, hadCache: boolean) {
 		try {
 			const detail = await groupsStore.get(id, { limit: PAGE_SIZE, offset: -1 });
 			if (token !== loadToken) return;
 			group = detail.group;
 			const incoming = detail.messages ?? [];
 			const seen = new Set(incoming.map((m) => m.id));
-			const liveAfter = messages.filter((m) => !seen.has(m.id));
-			messages = [...incoming, ...liveAfter];
+			const liveAfter = messages.filter((m) => liveIdsDuringLoad.has(m.id) && !seen.has(m.id));
+			const nextMessages = [...incoming, ...liveAfter];
+			const messagesChanged = !hadCache || !sameMessages(messages, nextMessages);
+			if (messagesChanged) {
+				messages = nextMessages;
+			}
 			hasMore = Boolean(detail.has_more);
 			totalMessages = Math.max(detail.total_messages ?? incoming.length, messages.length);
 			if (!sseStatusReceived) {
@@ -477,7 +539,7 @@
 			}
 
 			// Flip `loading` off BEFORE awaiting `tick()` so the real transcript
-			// mounts (replacing the skeleton) and `scroller` exists.
+			// mounts (replacing the skeleton) and `scroller` has its real height.
 			loading = false;
 
 			if (initialUnread > 0 && firstUnreadId) {
@@ -513,24 +575,33 @@
 					}
 					stickToBottom = nearBottom();
 					unreadBelowCount = stickToBottom ? 0 : initialUnread;
+					switchingGroup = false;
 				};
 				scrollToUnread();
 				requestAnimationFrame(scrollToUnread);
-			} else {
+			} else if (messagesChanged || !hadCache) {
 				stickToBottom = true;
 				unreadBelowCount = 0;
 				await tick();
 				if (token !== loadToken) return;
 				scrollToBottom(false);
 				requestAnimationFrame(() => {
-					if (token === loadToken && stickToBottom) scrollToBottom(false);
+					if (token === loadToken) {
+						if (stickToBottom) scrollToBottom(false);
+						switchingGroup = false;
+					}
 				});
+			} else {
+				switchingGroup = false;
 			}
 		} catch (err) {
 			if (token !== loadToken) return;
-			loadError = getErrorMessage(err);
-			topBarTitle.setChat(`group:${id}`, '');
-			group = null;
+			switchingGroup = false;
+			if (!hadCache) {
+				loadError = getErrorMessage(err);
+				topBarTitle.setChat(`group:${id}`, '');
+				group = null;
+			}
 			loading = false;
 		}
 	}
@@ -786,6 +857,7 @@
 				const payload = data as unknown as GroupMessageEvent;
 				const msg = payload.message;
 				if (!msg?.id) return;
+				liveIdsDuringLoad.add(msg.id);
 				if (!messages.some((existing) => existing.id === msg.id)) {
 					messages = [...messages, msg];
 					totalMessages += 1;
@@ -895,6 +967,7 @@
 			const next = patchExtraBlockState(msg.extra_messages, blockId, state);
 			return next === msg.extra_messages ? msg : { ...msg, extra_messages: next };
 		});
+		if (groupId) groupsStore.syncCachedMessages(groupId, messages, totalMessages);
 	}
 
 	async function handleExtraInteract(req: InteractionRequest) {
@@ -966,6 +1039,7 @@
 	}
 
 	function onScroll() {
+		if (switchingGroup) return;
 		stickToBottom = nearBottom();
 		if (stickToBottom) unreadBelowCount = 0;
 		askAnchor = null;
@@ -1931,13 +2005,7 @@
 				onClose={() => (previewAttachment = null)}
 				onShowInChat={() => showAttachmentInChat(activeAtt)}
 			/>
-		{:else if loading}
-			<div class="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-6">
-				<Skeleton class="h-14 w-2/3 rounded-2xl" />
-				<Skeleton class="ml-auto h-12 w-1/2 rounded-2xl" />
-				<Skeleton class="h-24 w-3/4 rounded-2xl" />
-			</div>
-		{:else if loadError || !group}
+		{:else if !loading && (loadError || !group)}
 			<div class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
 				<AlertTriangle class="h-8 w-8 text-muted-foreground" />
 				<p class="text-sm font-medium">{loadError || t('myaaw.groups.not_found')}</p>
@@ -1958,340 +2026,513 @@
 					data-has-more={hasMore}
 					class={cn(
 						'relative mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6',
-						messages.length === 0 && !activeTurn && 'min-h-full justify-center'
+						!loading && messages.length === 0 && !activeTurn && 'min-h-full justify-center'
 					)}
 				>
-					<!-- Temporary yellow highlight overlay for located quotes -->
-					{#each quoteRects as rect, index (index)}
-						<span
-							aria-hidden="true"
-							class="pointer-events-none absolute z-10 rounded-xs bg-amber-300/45 dark:bg-amber-400/30"
-							style:left={`${rect.left}px`}
-							style:top={`${rect.top}px`}
-							style:width={`${rect.width}px`}
-							style:height={`${rect.height}px`}
-						></span>
-					{/each}
-
-					{#if loadingOlder}
-						<p
-							class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
+					{#if loading}
+						<div
+							class="flex flex-col gap-4"
 							aria-live="polite"
+							aria-label={t('myaaw.chat.loading')}
 						>
-							<Loader2 class="h-3.5 w-3.5 animate-spin" />
-							{t('myaaw.chat.loading_older')}
-						</p>
-					{/if}
+							<Skeleton class="h-14 w-2/3 rounded-2xl" />
+							<Skeleton class="ml-auto h-12 w-1/2 rounded-2xl" />
+							<Skeleton class="h-24 w-3/4 rounded-2xl" />
+						</div>
+					{:else}
+						<!-- Temporary yellow highlight overlay for located quotes -->
+						{#each quoteRects as rect, index (index)}
+							<span
+								aria-hidden="true"
+								class="pointer-events-none absolute z-10 rounded-xs bg-amber-300/45 dark:bg-amber-400/30"
+								style:left={`${rect.left}px`}
+								style:top={`${rect.top}px`}
+								style:width={`${rect.width}px`}
+								style:height={`${rect.height}px`}
+							></span>
+						{/each}
 
-					{#if messages.length === 0 && !activeTurn}
-						<!-- Empty state -->
-						<div class="my-auto flex flex-col items-center justify-center py-12 text-center">
-							<div class="flex items-center -space-x-2.5">
-								{#each group.members.slice(0, 5) as member (member.name)}
-									<span
-										class="grid h-12 w-12 place-items-center rounded-full bg-muted/80 ring-2 ring-background"
-									>
-										<Bloub
-											mood="attentif"
-											size={36}
-											tight
-											color={colorOf(colorForAgent(member.name, member.agent_color))}
-										/>
-									</span>
-								{/each}
-							</div>
-							<h2 class="mt-4 text-base font-semibold">{group.name}</h2>
-							{#if group.description}
-								<p class="mt-1 max-w-md text-xs text-muted-foreground">{group.description}</p>
-							{:else}
-								<p class="mt-1 max-w-md text-xs text-muted-foreground">
-									{t('myaaw.groups.empty_hint')}
-								</p>
-							{/if}
+						{#if loadingOlder}
+							<p
+								class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
+								aria-live="polite"
+							>
+								<Loader2 class="h-3.5 w-3.5 animate-spin" />
+								{t('myaaw.chat.loading_older')}
+							</p>
+						{/if}
 
-							<div class="mt-4 flex flex-wrap items-center justify-center gap-1.5">
-								<button
-									type="button"
-									onclick={() => insertStarterMention('all')}
-									class="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-								>
-									<AtSign class="h-3 w-3" />
-									all
-								</button>
-								{#each group.members as member (member.name)}
+						{#if messages.length === 0 && !activeTurn && group}
+							<!-- Empty state -->
+							<div class="my-auto flex flex-col items-center justify-center py-12 text-center">
+								<div class="flex items-center -space-x-2.5">
+									{#each group.members.slice(0, 5) as member (member.name)}
+										<span
+											class="grid h-12 w-12 place-items-center rounded-full bg-muted/80 ring-2 ring-background"
+										>
+											<Bloub
+												mood="attentif"
+												size={36}
+												tight
+												color={colorOf(colorForAgent(member.name, member.agent_color))}
+											/>
+										</span>
+									{/each}
+								</div>
+								<h2 class="mt-4 text-base font-semibold">{group.name}</h2>
+								{#if group.description}
+									<p class="mt-1 max-w-md text-xs text-muted-foreground">{group.description}</p>
+								{:else}
+									<p class="mt-1 max-w-md text-xs text-muted-foreground">
+										{t('myaaw.groups.empty_hint')}
+									</p>
+								{/if}
+
+								<div class="mt-4 flex flex-wrap items-center justify-center gap-1.5">
 									<button
 										type="button"
-										onclick={() => insertStarterMention(member.name)}
-										class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+										onclick={() => insertStarterMention('all')}
+										class="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 									>
-										<Bloub
-											mood="attentif"
-											size={16}
-											tight
-											color={colorOf(colorForAgent(member.name, member.agent_color))}
-										/>
-										@{member.name}
+										<AtSign class="h-3 w-3" />
+										all
 									</button>
-								{/each}
-							</div>
-						</div>
-					{/if}
-
-					{#each messages as msg (msg.id)}
-						{@const highlighted = highlightedMessageId === msg.id}
-						{#if unreadBannerId === msg.id && unreadBannerCount > 0}
-							<div
-								data-group-unread-divider
-								class="my-2 flex scroll-mt-4 items-center gap-3 select-none"
-							>
-								<div class="h-px flex-1 bg-primary/30"></div>
-								<span
-									class="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary"
-								>
-									{t('myaaw.groups.unread_divider', { count: unreadBannerCount })}
-								</span>
-								<div class="h-px flex-1 bg-primary/30"></div>
-							</div>
-						{/if}
-						{#if msg.sender_type === 'system'}
-							<div
-								data-group-message-id={msg.id}
-								class="mx-auto my-1 max-w-md rounded-full bg-muted/70 px-3 py-1 text-center text-[11px] text-muted-foreground"
-							>
-								{msg.content}
-							</div>
-						{:else if msg.sender_type === 'user'}
-							{@const parsedInteraction = parseInteractionText(msg.content)}
-							{@const userDisplayText = parsedInteraction.kind
-								? parsedInteraction.text
-								: msg.content}
-							{@const imageAttachments = (msg.attachments ?? []).filter(
-								(att) => att.kind === 'image'
-							)}
-							{@const fileAttachments = (msg.attachments ?? []).filter(
-								(att) => att.kind !== 'image'
-							)}
-							<div
-								data-group-message-id={msg.id}
-								class={[
-									'group ml-auto flex max-w-[85%] flex-col items-end gap-1.5 rounded-2xl transition-shadow duration-300',
-									highlighted ? 'ring-2 ring-primary/60 ring-offset-2 ring-offset-background' : ''
-								]}
-							>
-								{#if parsedInteraction.kind}
-									<InteractionBadge kind={parsedInteraction.kind} />
-								{/if}
-								{#if imageAttachments.length > 0}
-									<div class="flex flex-wrap justify-end gap-2">
-										{#each imageAttachments as att, imgIdx (att.id)}
-											{@const imgUrl = groupAttachmentUrl(att)}
-											<div class="relative inline-block max-w-full">
-												<button
-													type="button"
-													class="block cursor-zoom-in rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2"
-													aria-label={t('myaaw.chat.lightbox_open')}
-													onclick={() => openImageAttachmentsLightbox(imageAttachments, imgIdx)}
-												>
-													<img
-														src={imgUrl}
-														alt={att.file_name}
-														draggable="false"
-														class="max-h-48 rounded-2xl border object-contain"
-													/>
-												</button>
-												<button
-													type="button"
-													class="absolute right-1.5 bottom-1.5 grid size-7 place-items-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80"
-													title={t('myaaw.chat.download_file')}
-													aria-label={t('myaaw.chat.download_file')}
-													onclick={() => downloadGroupAttachment(att)}
-												>
-													<Download class="h-3.5 w-3.5" />
-												</button>
-											</div>
-										{/each}
-									</div>
-								{/if}
-								{#if fileAttachments.length > 0}
-									<div class="flex flex-wrap justify-end gap-2">
-										{#each fileAttachments as att (att.id)}
-											<button
-												type="button"
-												onclick={() => openAttachmentPreview(att)}
-												title={att.file_name}
-												class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-left transition-colors hover:border-foreground/30 hover:bg-muted"
-											>
-												<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
-												<span class="min-w-0 flex-1 truncate text-xs">{att.file_name}</span>
-												{#if att.size}
-													<span class="shrink-0 text-[10px] text-muted-foreground">
-														{formatBytes(att.size)}
-													</span>
-												{/if}
-												<Download
-													class="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover/file:text-foreground"
-												/>
-											</button>
-										{/each}
-									</div>
-								{/if}
-								{#if userDisplayText.trim().length > 0 || msg.reply_preview || (msg.quotes && msg.quotes.length > 0)}
-									<div
-										class="w-fit max-w-full rounded-2xl rounded-tr-sm bg-primary/10 px-3.5 py-2.5 text-sm text-foreground ring-1 ring-primary/15"
-									>
-										{#if msg.reply_preview}
-											{@render replyCard(msg.reply_preview)}
-										{/if}
-										{#if msg.quotes && msg.quotes.length > 0}
-											<div class="mb-2">
-												<AskQuoteList
-													quotes={msg.quotes}
-													onlocate={(quote) => void locateAskQuote(quote)}
-												/>
-											</div>
-										{/if}
-										{#if userDisplayText.trim().length > 0}
-											<p class="whitespace-pre-wrap wrap-break-word">
-												{@render mentionText(userDisplayText)}
-											</p>
-										{/if}
-									</div>
-								{/if}
-
-								<div class="mt-1 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
-									<span
-										class="inline-flex items-center gap-1 opacity-100 transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
-									>
+									{#each group.members as member (member.name)}
 										<button
 											type="button"
-											onclick={() => startReply(msg)}
-											title={t('myaaw.groups.reply')}
-											aria-label={t('myaaw.groups.reply')}
-											class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+											onclick={() => insertStarterMention(member.name)}
+											class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 										>
-											<Reply class="h-3 w-3" />
-											<span class="hidden sm:inline">{t('myaaw.groups.reply')}</span>
+											<Bloub
+												mood="attentif"
+												size={16}
+												tight
+												color={colorOf(colorForAgent(member.name, member.agent_color))}
+											/>
+											@{member.name}
 										</button>
-										<CopyButton text={userDisplayText} />
-									</span>
-									<ChatTime at={msg.created_at} />
+									{/each}
 								</div>
 							</div>
-						{:else}
-							{@const agentColor = colorForAgent(msg.sender_name, msg.agent_color)}
-							{@const accent = groupAccent(agentColor)}
-							{@const steps = stepsOf(msg.timeline)}
-							{@const groupStepsOpen = Boolean(expandedStepGroups[msg.id])}
-							{@const displayAgentText = stripAttachDirectives(msg.content)}
-							{@const agentRunAttachments = toRunAttachments(msg.attachments)}
-							<div
-								data-group-message-id={msg.id}
-								class={[
-									'group flex items-start gap-2.5 rounded-2xl p-1 -m-1 transition-all duration-300',
-									highlighted
-										? 'bg-primary/5 ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
-										: ''
-								]}
-							>
+						{/if}
+
+						{#each messages as msg (msg.id)}
+							{@const highlighted = highlightedMessageId === msg.id}
+							{#if unreadBannerId === msg.id && unreadBannerCount > 0}
 								<div
-									class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-muted/70 ring-1 ring-border/50"
+									data-group-unread-divider
+									class="my-2 flex scroll-mt-4 items-center gap-3 select-none"
 								>
-									<Bloub mood="attentif" size={26} tight color={colorOf(agentColor)} />
+									<div class="h-px flex-1 bg-primary/30"></div>
+									<span
+										class="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary"
+									>
+										{t('myaaw.groups.unread_divider', { count: unreadBannerCount })}
+									</span>
+									<div class="h-px flex-1 bg-primary/30"></div>
+								</div>
+							{/if}
+							{#if msg.sender_type === 'system'}
+								<div
+									data-group-message-id={msg.id}
+									class="mx-auto my-1 max-w-md rounded-full bg-muted/70 px-3 py-1 text-center text-[11px] text-muted-foreground"
+								>
+									{msg.content}
+								</div>
+							{:else if msg.sender_type === 'user'}
+								{@const parsedInteraction = parseInteractionText(msg.content)}
+								{@const userDisplayText = parsedInteraction.kind
+									? parsedInteraction.text
+									: msg.content}
+								{@const imageAttachments = (msg.attachments ?? []).filter(
+									(att) => att.kind === 'image'
+								)}
+								{@const fileAttachments = (msg.attachments ?? []).filter(
+									(att) => att.kind !== 'image'
+								)}
+								<div
+									data-group-message-id={msg.id}
+									class={[
+										'group ml-auto flex max-w-[85%] flex-col items-end gap-1.5 rounded-2xl transition-shadow duration-300',
+										highlighted ? 'ring-2 ring-primary/60 ring-offset-2 ring-offset-background' : ''
+									]}
+								>
+									{#if parsedInteraction.kind}
+										<InteractionBadge kind={parsedInteraction.kind} />
+									{/if}
+									{#if imageAttachments.length > 0}
+										<div class="flex flex-wrap justify-end gap-2">
+											{#each imageAttachments as att, imgIdx (att.id)}
+												{@const imgUrl = groupAttachmentUrl(att)}
+												<div class="relative inline-block max-w-full">
+													<button
+														type="button"
+														class="block cursor-zoom-in rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2"
+														aria-label={t('myaaw.chat.lightbox_open')}
+														onclick={() => openImageAttachmentsLightbox(imageAttachments, imgIdx)}
+													>
+														<img
+															src={imgUrl}
+															alt={att.file_name}
+															draggable="false"
+															class="max-h-48 rounded-2xl border object-contain"
+														/>
+													</button>
+													<button
+														type="button"
+														class="absolute right-1.5 bottom-1.5 grid size-7 place-items-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80"
+														title={t('myaaw.chat.download_file')}
+														aria-label={t('myaaw.chat.download_file')}
+														onclick={() => downloadGroupAttachment(att)}
+													>
+														<Download class="h-3.5 w-3.5" />
+													</button>
+												</div>
+											{/each}
+										</div>
+									{/if}
+									{#if fileAttachments.length > 0}
+										<div class="flex flex-wrap justify-end gap-2">
+											{#each fileAttachments as att (att.id)}
+												<button
+													type="button"
+													onclick={() => openAttachmentPreview(att)}
+													title={att.file_name}
+													class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-left transition-colors hover:border-foreground/30 hover:bg-muted"
+												>
+													<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+													<span class="min-w-0 flex-1 truncate text-xs">{att.file_name}</span>
+													{#if att.size}
+														<span class="shrink-0 text-[10px] text-muted-foreground">
+															{formatBytes(att.size)}
+														</span>
+													{/if}
+													<Download
+														class="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover/file:text-foreground"
+													/>
+												</button>
+											{/each}
+										</div>
+									{/if}
+									{#if userDisplayText.trim().length > 0 || msg.reply_preview || (msg.quotes && msg.quotes.length > 0)}
+										<div
+											class="w-fit max-w-full rounded-2xl rounded-tr-sm bg-primary/10 px-3.5 py-2.5 text-sm text-foreground ring-1 ring-primary/15"
+										>
+											{#if msg.reply_preview}
+												{@render replyCard(msg.reply_preview)}
+											{/if}
+											{#if msg.quotes && msg.quotes.length > 0}
+												<div class="mb-2">
+													<AskQuoteList
+														quotes={msg.quotes}
+														onlocate={(quote) => void locateAskQuote(quote)}
+													/>
+												</div>
+											{/if}
+											{#if userDisplayText.trim().length > 0}
+												<p class="whitespace-pre-wrap wrap-break-word">
+													{@render mentionText(userDisplayText)}
+												</p>
+											{/if}
+										</div>
+									{/if}
+
+									<div
+										class="mt-1 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground"
+									>
+										<span
+											class="inline-flex items-center gap-1 opacity-100 transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
+										>
+											<button
+												type="button"
+												onclick={() => startReply(msg)}
+												title={t('myaaw.groups.reply')}
+												aria-label={t('myaaw.groups.reply')}
+												class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+											>
+												<Reply class="h-3 w-3" />
+												<span class="hidden sm:inline">{t('myaaw.groups.reply')}</span>
+											</button>
+											<CopyButton text={userDisplayText} />
+										</span>
+										<ChatTime at={msg.created_at} />
+									</div>
+								</div>
+							{:else}
+								{@const agentColor = colorForAgent(msg.sender_name, msg.agent_color)}
+								{@const accent = groupAccent(agentColor)}
+								{@const steps = stepsOf(msg.timeline)}
+								{@const groupStepsOpen = Boolean(expandedStepGroups[msg.id])}
+								{@const displayAgentText = stripAttachDirectives(msg.content)}
+								{@const agentRunAttachments = toRunAttachments(msg.attachments)}
+								<div
+									data-group-message-id={msg.id}
+									class={[
+										'group flex items-start gap-2.5 rounded-2xl p-1 -m-1 transition-all duration-300',
+										highlighted
+											? 'bg-primary/5 ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
+											: ''
+									]}
+								>
+									<div
+										class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-muted/70 ring-1 ring-border/50"
+									>
+										<Bloub mood="attentif" size={26} tight color={colorOf(agentColor)} />
+									</div>
+
+									<div class="min-w-0 flex-1">
+										<div class="mb-1 flex items-center gap-2">
+											<span class={['text-xs font-semibold', accent.text]}>
+												{msg.sender_name}
+											</span>
+											<ChatTime at={msg.created_at} />
+										</div>
+
+										{#if steps.length > 0}
+											<div class="mb-1.5 space-y-0.5">
+												<button
+													type="button"
+													onclick={() =>
+														(expandedStepGroups = {
+															...expandedStepGroups,
+															[msg.id]: !groupStepsOpen
+														})}
+													aria-expanded={groupStepsOpen}
+													class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+												>
+													<Clock class="h-3.5 w-3.5 shrink-0" />
+													<span class="font-medium">{stepSummaryLabel(steps)}</span>
+													<ChevronDown
+														class={cn(
+															'h-3.5 w-3.5 shrink-0 transition-transform',
+															groupStepsOpen && 'rotate-180'
+														)}
+													/>
+												</button>
+
+												{#if groupStepsOpen}
+													<div class="space-y-0.5 pl-2">
+														{#each steps as step, sIndex (`${msg.id}-step-${sIndex}`)}
+															{@const stepKey = `${msg.id}-step-${sIndex}`}
+															{@const stepExpanded = Boolean(expandedSteps[stepKey])}
+															{#if step.kind === 'thought'}
+																<div data-ask-row={stepKey}>
+																	<ChatStep
+																		title={t('myaaw.chat.thinking')}
+																		summary={oneLine(step.text ?? '')}
+																		icon={Brain}
+																		expanded={stepExpanded}
+																		ontoggle={() =>
+																			(expandedSteps = {
+																				...expandedSteps,
+																				[stepKey]: !stepExpanded
+																			})}
+																		copyText={step.text ?? ''}
+																	>
+																		<p
+																			data-ask-source="thinking"
+																			data-ask-id={stepKey}
+																			class="whitespace-pre-wrap text-muted-foreground"
+																		>
+																			{step.text}
+																		</p>
+																	</ChatStep>
+																</div>
+															{:else if step.kind === 'tool'}
+																<div data-ask-row={stepKey}>
+																	<ChatStep
+																		title={step.name || t('myaaw.chat.tool')}
+																		summary={formatToolSummary(step)}
+																		icon={Wrench}
+																		error={Boolean(step.is_error)}
+																		expanded={stepExpanded}
+																		ontoggle={() =>
+																			(expandedSteps = {
+																				...expandedSteps,
+																				[stepKey]: !stepExpanded
+																			})}
+																		copyText={toolInvocation(step)}
+																	>
+																		<div
+																			data-ask-source="tool"
+																			data-ask-label={step.name || ''}
+																			data-ask-id={stepKey}
+																			class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
+																		>
+																			<pre
+																				class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
+																					class="select-none text-zinc-500"
+																					>$ </span>{toolInvocation(step)}</pre>
+																			{#if step.result}
+																				<pre
+																					class={cn(
+																						'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
+																						step.is_error ? 'text-red-400' : 'text-zinc-300'
+																					)}>{step.result}</pre>
+																			{/if}
+																		</div>
+																	</ChatStep>
+																</div>
+															{/if}
+														{/each}
+													</div>
+												{/if}
+											</div>
+										{/if}
+
+										<div
+											class="w-fit max-w-full rounded-2xl rounded-tl-sm border bg-card px-3.5 py-2.5 text-sm shadow-2xs"
+										>
+											{#if msg.reply_preview}
+												{@render replyCard(msg.reply_preview)}
+											{/if}
+											<div
+												data-ask-source="answer"
+												data-ask-id={msg.id}
+												use:highlightMentions={{ mentions: mentionTargets, key: displayAgentText }}
+											>
+												<Markdown content={displayAgentText} />
+											</div>
+										</div>
+
+										{#if agentRunAttachments.length > 0}
+											<div class="mt-2.5">
+												<RunAttachments agent={msg.sender_name} attachments={agentRunAttachments} />
+											</div>
+										{/if}
+
+										{#if (msg.extra_messages?.length ?? 0) > 0}
+											<ExtraMessages
+												agent={msg.sender_name}
+												extraMessages={msg.extra_messages ?? []}
+												messageId={msg.id}
+												onInteract={handleExtraInteract}
+											/>
+										{/if}
+
+										<div
+											class="mt-1 flex items-center gap-1.5 px-1 opacity-100 transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
+										>
+											<button
+												type="button"
+												onclick={() => startReply(msg)}
+												title={t('myaaw.groups.reply')}
+												aria-label={t('myaaw.groups.reply')}
+												class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+											>
+												<Reply class="h-3 w-3" />
+												<span>{t('myaaw.groups.reply')}</span>
+											</button>
+											<CopyButton text={msg.content} label />
+										</div>
+									</div>
+								</div>
+							{/if}
+						{/each}
+
+						<!-- Live streaming turn bubble -->
+						{#if activeTurn}
+							{@const liveAccent = groupAccent(activeTurn.agentColor)}
+							{@const visibleLiveTimeline = stepsOf(activeTurn.timeline)}
+							<div class="flex items-start gap-2.5" in:fade={{ duration: 120 }}>
+								<div
+									class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-muted/70 ring-1 ring-primary/40"
+								>
+									<Bloub mood="attentif" size={26} tight color={colorOf(activeTurn.agentColor)} />
 								</div>
 
 								<div class="min-w-0 flex-1">
 									<div class="mb-1 flex items-center gap-2">
-										<span class={['text-xs font-semibold', accent.text]}>
-											{msg.sender_name}
+										<span class={['text-xs font-semibold', liveAccent.text]}>
+											{activeTurn.agent}
 										</span>
-										<ChatTime at={msg.created_at} />
+										<span
+											class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+										>
+											<Loader2 class="h-2.5 w-2.5 animate-spin" />
+											{t('myaaw.groups.turn_badge', {
+												turn: activeTurn.turn,
+												max: activeTurn.maxTurns
+											})}
+										</span>
 									</div>
 
-									{#if steps.length > 0}
+									{#if visibleLiveTimeline.length > 0}
+										{@const liveStepsRunning = visibleLiveTimeline.some((s) => s.running)}
+										{@const liveOpen = isLiveStepsOpen(activeTurn)}
 										<div class="mb-1.5 space-y-0.5">
 											<button
 												type="button"
-												onclick={() =>
-													(expandedStepGroups = {
-														...expandedStepGroups,
-														[msg.id]: !groupStepsOpen
-													})}
-												aria-expanded={groupStepsOpen}
+												onclick={() => (liveStepsOverride = !liveOpen)}
+												aria-expanded={liveOpen}
 												class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
 											>
-												<Clock class="h-3.5 w-3.5 shrink-0" />
-												<span class="font-medium">{stepSummaryLabel(steps)}</span>
+												{#if liveStepsRunning}
+													<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+												{:else}
+													<Clock class="h-3.5 w-3.5 shrink-0" />
+												{/if}
+												<span class="font-medium">
+													{liveStepsRunning
+														? t('myaaw.chat.tool_running')
+														: stepSummaryLabel(visibleLiveTimeline)}
+												</span>
 												<ChevronDown
 													class={cn(
 														'h-3.5 w-3.5 shrink-0 transition-transform',
-														groupStepsOpen && 'rotate-180'
+														liveOpen && 'rotate-180'
 													)}
 												/>
 											</button>
 
-											{#if groupStepsOpen}
+											{#if liveOpen}
 												<div class="space-y-0.5 pl-2">
-													{#each steps as step, sIndex (`${msg.id}-step-${sIndex}`)}
-														{@const stepKey = `${msg.id}-step-${sIndex}`}
-														{@const stepExpanded = Boolean(expandedSteps[stepKey])}
+													{#each visibleLiveTimeline as step (step.localId)}
 														{#if step.kind === 'thought'}
-															<div data-ask-row={stepKey}>
-																<ChatStep
-																	title={t('myaaw.chat.thinking')}
-																	summary={oneLine(step.text ?? '')}
-																	icon={Brain}
-																	expanded={stepExpanded}
-																	ontoggle={() =>
-																		(expandedSteps = {
-																			...expandedSteps,
-																			[stepKey]: !stepExpanded
-																		})}
-																	copyText={step.text ?? ''}
-																>
-																	<p
-																		data-ask-source="thinking"
-																		data-ask-id={stepKey}
-																		class="whitespace-pre-wrap text-muted-foreground"
-																	>
-																		{step.text}
-																	</p>
-																</ChatStep>
-															</div>
+															<ChatStep
+																title={t('myaaw.chat.thinking')}
+																summary={oneLine(step.text ?? '')}
+																icon={Brain}
+																running={Boolean(step.running)}
+																expanded={Boolean(step.expanded)}
+																ontoggle={() => toggleLiveStep(step.localId)}
+															>
+																<p class="whitespace-pre-wrap text-muted-foreground">
+																	{step.text}
+																</p>
+															</ChatStep>
 														{:else if step.kind === 'tool'}
-															<div data-ask-row={stepKey}>
-																<ChatStep
-																	title={step.name || t('myaaw.chat.tool')}
-																	summary={formatToolSummary(step)}
-																	icon={Wrench}
-																	error={Boolean(step.is_error)}
-																	expanded={stepExpanded}
-																	ontoggle={() =>
-																		(expandedSteps = {
-																			...expandedSteps,
-																			[stepKey]: !stepExpanded
-																		})}
-																	copyText={toolInvocation(step)}
+															<ChatStep
+																title={step.name || t('myaaw.chat.tool')}
+																summary={formatToolSummary(step)}
+																icon={Wrench}
+																running={Boolean(step.running)}
+																error={Boolean(step.is_error)}
+																expanded={Boolean(step.expanded)}
+																ontoggle={() => toggleLiveStep(step.localId)}
+																copyText={toolInvocation(step)}
+															>
+																<div
+																	class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
 																>
-																	<div
-																		data-ask-source="tool"
-																		data-ask-label={step.name || ''}
-																		data-ask-id={stepKey}
-																		class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
-																	>
+																	<pre
+																		class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
+																			class="select-none text-zinc-500"
+																			>$ </span>{toolInvocation(step)}</pre>
+																	{#if step.result}
 																		<pre
-																			class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
-																				class="select-none text-zinc-500"
-																				>$ </span>{toolInvocation(step)}</pre>
-																		{#if step.result}
-																			<pre
-																				class={cn(
-																					'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
-																					step.is_error ? 'text-red-400' : 'text-zinc-300'
-																				)}>{step.result}</pre>
-																		{/if}
-																	</div>
-																</ChatStep>
-															</div>
+																			class={cn(
+																				'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
+																				step.is_error ? 'text-red-400' : 'text-zinc-300'
+																			)}>{step.result}</pre>
+																	{:else if step.running}
+																		<pre
+																			class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
+																				'myaaw.chat.tool_running'
+																			)}</pre>
+																	{/if}
+																</div>
+															</ChatStep>
 														{/if}
 													{/each}
 												</div>
@@ -2300,195 +2541,36 @@
 									{/if}
 
 									<div
-										class="w-fit max-w-full rounded-2xl rounded-tl-sm border bg-card px-3.5 py-2.5 text-sm shadow-2xs"
+										use:highlightMentions={{ mentions: mentionTargets, key: activeTurn.text }}
+										class="w-fit max-w-full rounded-2xl rounded-tl-sm border border-primary/25 bg-card px-3.5 py-2.5 text-sm"
 									>
-										{#if msg.reply_preview}
-											{@render replyCard(msg.reply_preview)}
-										{/if}
-										<div
-											data-ask-source="answer"
-											data-ask-id={msg.id}
-											use:highlightMentions={{ mentions: mentionTargets, key: displayAgentText }}
-										>
-											<Markdown content={displayAgentText} />
-										</div>
-									</div>
-
-									{#if agentRunAttachments.length > 0}
-										<div class="mt-2.5">
-											<RunAttachments agent={msg.sender_name} attachments={agentRunAttachments} />
-										</div>
-									{/if}
-
-									{#if (msg.extra_messages?.length ?? 0) > 0}
-										<ExtraMessages
-											agent={msg.sender_name}
-											extraMessages={msg.extra_messages ?? []}
-											messageId={msg.id}
-											onInteract={handleExtraInteract}
-										/>
-									{/if}
-
-									<div
-										class="mt-1 flex items-center gap-1.5 px-1 opacity-100 transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
-									>
-										<button
-											type="button"
-											onclick={() => startReply(msg)}
-											title={t('myaaw.groups.reply')}
-											aria-label={t('myaaw.groups.reply')}
-											class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-										>
-											<Reply class="h-3 w-3" />
-											<span>{t('myaaw.groups.reply')}</span>
-										</button>
-										<CopyButton text={msg.content} label />
-									</div>
-								</div>
-							</div>
-						{/if}
-					{/each}
-
-					<!-- Live streaming turn bubble -->
-					{#if activeTurn}
-						{@const liveAccent = groupAccent(activeTurn.agentColor)}
-						{@const visibleLiveTimeline = stepsOf(activeTurn.timeline)}
-						<div class="flex items-start gap-2.5" in:fade={{ duration: 120 }}>
-							<div
-								class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-muted/70 ring-1 ring-primary/40"
-							>
-								<Bloub mood="attentif" size={26} tight color={colorOf(activeTurn.agentColor)} />
-							</div>
-
-							<div class="min-w-0 flex-1">
-								<div class="mb-1 flex items-center gap-2">
-									<span class={['text-xs font-semibold', liveAccent.text]}>
-										{activeTurn.agent}
-									</span>
-									<span
-										class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
-									>
-										<Loader2 class="h-2.5 w-2.5 animate-spin" />
-										{t('myaaw.groups.turn_badge', {
-											turn: activeTurn.turn,
-											max: activeTurn.maxTurns
-										})}
-									</span>
-								</div>
-
-								{#if visibleLiveTimeline.length > 0}
-									{@const liveStepsRunning = visibleLiveTimeline.some((s) => s.running)}
-									{@const liveOpen = isLiveStepsOpen(activeTurn)}
-									<div class="mb-1.5 space-y-0.5">
-										<button
-											type="button"
-											onclick={() => (liveStepsOverride = !liveOpen)}
-											aria-expanded={liveOpen}
-											class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
-										>
-											{#if liveStepsRunning}
-												<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-											{:else}
-												<Clock class="h-3.5 w-3.5 shrink-0" />
-											{/if}
-											<span class="font-medium">
-												{liveStepsRunning
-													? t('myaaw.chat.tool_running')
-													: stepSummaryLabel(visibleLiveTimeline)}
-											</span>
-											<ChevronDown
-												class={cn(
-													'h-3.5 w-3.5 shrink-0 transition-transform',
-													liveOpen && 'rotate-180'
-												)}
-											/>
-										</button>
-
-										{#if liveOpen}
-											<div class="space-y-0.5 pl-2">
-												{#each visibleLiveTimeline as step (step.localId)}
-													{#if step.kind === 'thought'}
-														<ChatStep
-															title={t('myaaw.chat.thinking')}
-															summary={oneLine(step.text ?? '')}
-															icon={Brain}
-															running={Boolean(step.running)}
-															expanded={Boolean(step.expanded)}
-															ontoggle={() => toggleLiveStep(step.localId)}
-														>
-															<p class="whitespace-pre-wrap text-muted-foreground">
-																{step.text}
-															</p>
-														</ChatStep>
-													{:else if step.kind === 'tool'}
-														<ChatStep
-															title={step.name || t('myaaw.chat.tool')}
-															summary={formatToolSummary(step)}
-															icon={Wrench}
-															running={Boolean(step.running)}
-															error={Boolean(step.is_error)}
-															expanded={Boolean(step.expanded)}
-															ontoggle={() => toggleLiveStep(step.localId)}
-															copyText={toolInvocation(step)}
-														>
-															<div
-																class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
-															>
-																<pre
-																	class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
-																		class="select-none text-zinc-500"
-																		>$ </span>{toolInvocation(step)}</pre>
-																{#if step.result}
-																	<pre
-																		class={cn(
-																			'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
-																			step.is_error ? 'text-red-400' : 'text-zinc-300'
-																		)}>{step.result}</pre>
-																{:else if step.running}
-																	<pre
-																		class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
-																			'myaaw.chat.tool_running'
-																		)}</pre>
-																{/if}
-															</div>
-														</ChatStep>
-													{/if}
-												{/each}
+										{#if activeTurn.text}
+											<Markdown content={activeTurn.text} streaming />
+										{:else}
+											<div class="flex items-center gap-1.5 py-1 text-xs text-muted-foreground">
+												<span
+													class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.2s]"
+												></span>
+												<span
+													class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.1s]"
+												></span>
+												<span class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary"></span>
+												<span class="ml-1"
+													>{t('myaaw.groups.agent_thinking', { name: activeTurn.agent })}</span
+												>
 											</div>
 										{/if}
 									</div>
-								{/if}
-
-								<div
-									use:highlightMentions={{ mentions: mentionTargets, key: activeTurn.text }}
-									class="w-fit max-w-full rounded-2xl rounded-tl-sm border border-primary/25 bg-card px-3.5 py-2.5 text-sm"
-								>
-									{#if activeTurn.text}
-										<Markdown content={activeTurn.text} streaming />
-									{:else}
-										<div class="flex items-center gap-1.5 py-1 text-xs text-muted-foreground">
-											<span
-												class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.2s]"
-											></span>
-											<span
-												class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.1s]"
-											></span>
-											<span class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary"></span>
-											<span class="ml-1"
-												>{t('myaaw.groups.agent_thinking', { name: activeTurn.agent })}</span
-											>
-										</div>
+									{#if (activeTurn.extraMessages?.length ?? 0) > 0}
+										<ExtraMessages
+											agent={activeTurn.agent}
+											extraMessages={activeTurn.extraMessages ?? []}
+											disabled
+										/>
 									{/if}
 								</div>
-								{#if (activeTurn.extraMessages?.length ?? 0) > 0}
-									<ExtraMessages
-										agent={activeTurn.agent}
-										extraMessages={activeTurn.extraMessages ?? []}
-										disabled
-									/>
-								{/if}
 							</div>
-						</div>
+						{/if}
 					{/if}
 				</div>
 			</div>
