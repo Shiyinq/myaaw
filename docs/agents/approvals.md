@@ -2,7 +2,7 @@
 
 Myaaw can require an explicit user decision before a tool runs. The feature is
 generic: it covers built-in tools (`bash`, `filesystem`, `python`, `subagent`,
-`contact`, …), custom CLI tools, and MCP tools.
+`a2a_contact`, …), custom CLI tools, and MCP tools.
 
 There are three separate concepts:
 
@@ -411,19 +411,19 @@ does **not** resume the original turn: its final answer is delivered to the
 channel as a new message (Telegram/Discord message, CLI timeline entry), so the
 parent conversation can move on while the child works.
 
-### A2A / `contact`
+### A2A / `a2a_contact`
 
 | Side | Path | Policy that applies |
 |---|---|---|
-| **Calling agent (A)** | `contact` tool | A's normal policy, like any other tool. An interactive run shows the usual prompt; there is no A2A-specific rule. |
+| **Calling agent (A)** | `a2a_contact` tool | A's normal policy, like any other tool. An interactive run shows the usual prompt; there is no A2A-specific rule. |
 | **Called agent (B)** | inbound task (`Channel: "a2a"`) | B's policy only. The run has no interactive channel, so B uses its own `unattended` decision (default `allow`). |
 
-- `contact` (outbound) is an ordinary tool: gate it by leaving it out of
-  `allow`, exempt it by adding `contact` to `allow`.
+- `a2a_contact` (outbound) is an ordinary tool: gate it by leaving it out of
+  `allow`, exempt it by adding `a2a_contact` to `allow`.
 - A's policy stops at the server boundary. It does not control what B executes,
   and B's `unattended` setting does not affect A's tools.
 - "Unattended allow for A2A" therefore means the **inbound run on B**, not the
-  `contact` tool on the calling agent.
+  `a2a_contact` tool on the calling agent.
 - Letting B ask a human is not possible today: an inbound task has no
   originating interactive channel, so `unattended` is the only lever. A
   requester would have to be added explicitly (for example a Telegram prompt to

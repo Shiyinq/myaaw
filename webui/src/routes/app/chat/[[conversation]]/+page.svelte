@@ -3140,6 +3140,7 @@
 		subagent: 'Agent',
 		cron: 'Cron',
 		provider: 'Provider',
+		a2a_contact: 'Contact',
 		contact: 'Contact'
 	};
 

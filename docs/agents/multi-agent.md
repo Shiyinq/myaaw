@@ -232,7 +232,7 @@ This is the onboarding wizard for a new agent, starting at the provider step. It
 
 It also **auto-wires A2A contacts**: the new agent gets a generated `A2A_TOKEN`, its `contacts.json` is populated with every other initialized agent (name, URL, and that agent's `A2A_TOKEN`), and the new agent is added to each other agent's `contacts.json` with the new token. The agent is never added to its own contacts. Agents can therefore delegate to each other immediately after restart — no manual `contacts.json` edits. Agents without an `A2A_TOKEN` (open mode) are added as contacts without a token.
 
-Delegation from chat goes through the `contact` tool, which covers `send`, `status` (async polling), artifact download, and contact management. Other A2A v1.0 operations (cancel, task listing, streaming, subscribe, extended card, push configs) are available on the server but not exposed to the agent; see the coverage table in the [A2A guide](protocol/a2a.md#scope-of-the-contact-tool).
+Delegation from chat goes through the `a2a_contact` tool, which covers `send`, `status` (async polling), artifact download, and contact management. Other A2A v1.0 operations (cancel, task listing, streaming, subscribe, extended card, push configs) are available on the server but not exposed to the agent; see the coverage table in the [A2A guide](protocol/a2a.md#scope-of-the-a2a_contact-tool).
 
 Use `myaaw agent create <name> --yes ...` for a headless run; the flags are the same as [onboarding](../cli/onboard.md#headless-mode-ci-scripts).
 

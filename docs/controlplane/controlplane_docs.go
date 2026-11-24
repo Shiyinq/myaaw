@@ -6061,7 +6061,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Built-in tools can only be toggled, never deleted. Accepted names: bash, filesystem, cron, execute_python (alias python), provider, subagent.",
+                "description": "Built-in tools can only be toggled, never deleted. Accepted names: a2a_auth_request, a2a_contact (alias contact), a2a_input, bash, computer, cron, execute_python (alias python), extra_messages, filesystem, provider, subagent.",
                 "consumes": [
                     "application/json"
                 ],

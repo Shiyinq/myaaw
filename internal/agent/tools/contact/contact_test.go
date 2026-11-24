@@ -14,10 +14,38 @@ import (
 	"testing"
 	"time"
 
+	"myaaw/internal/agent/tools"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/config"
 	"myaaw/internal/services/a2a"
 )
+
+func TestContactToolRegisteredAsA2AContact(t *testing.T) {
+	var def struct {
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if err := json.Unmarshal(NewContactTool().ToolDefinition(), &def); err != nil {
+		t.Fatalf("unmarshal ToolDefinition: %v", err)
+	}
+	if def.Function.Name != "a2a_contact" {
+		t.Fatalf("ToolDefinition name = %q, want a2a_contact", def.Function.Name)
+	}
+
+	var foundNew, foundOld bool
+	for _, name := range tools.GetBuiltinToolNames() {
+		if name == "a2a_contact" {
+			foundNew = true
+		}
+		if name == "contact" {
+			foundOld = true
+		}
+	}
+	if !foundNew || foundOld {
+		t.Fatalf("builtin names = %v, want a2a_contact without contact", tools.GetBuiltinToolNames())
+	}
+}
 
 func setupContactAgent(t *testing.T, entries string) {
 	t.Helper()

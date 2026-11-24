@@ -2,9 +2,9 @@
 
 The A2A Input tool lets an agent that is **serving** an A2A task ask the caller for missing information. The task pauses in `input-required` state until the caller answers.
 
-This is the mirror image of the [Contact tool](../contact/README.md):
+This is the mirror image of the [A2A Contact tool](../contact/README.md):
 
-| | Contact tool | A2A Input tool |
+| | A2A Contact tool (`a2a_contact`) | A2A Input tool (`a2a_input`) |
 | :--- | :--- | :--- |
 | Direction | Caller → remote agent | Serving agent → caller |
 | Purpose | Send a task | Ask a question |
@@ -57,7 +57,7 @@ The agent should stop after this call. The task will be marked `input-required`,
 
 4. The caller resumes with the **same task ID**:
    - direct A2A: `SendMessage` with `message.taskId` set to the task id
-   - Myaaw caller: `contact` with `"taskId": "<task-id>"`
+   - Myaaw caller: `a2a_contact` with `"taskId": "<task-id>"`
 
 ## Availability
 
@@ -67,7 +67,7 @@ The tool only works while an A2A task is running. Outside that context it return
 Error: a2a_input is only available while handling an A2A task
 ```
 
-This is why it is a separate built-in tool instead of an action inside `contact`:
+This is why it is a separate built-in tool instead of an action inside `a2a_contact`:
 
 - it is only meaningful on the receiving side of a task;
 - it has no network side effects;
@@ -85,4 +85,4 @@ This is why it is a separate built-in tool instead of an action inside `contact`
 - [A2A Guide](../../../../docs/agents/protocol/a2a.md)
 - [A2A Protocol](../../../../docs/agents/protocol/a2a-protocol.md)
 - [A2A Interop Guide](../../../../docs/agents/protocol/a2a-interop.md)
-- [Contact Tool](../contact/README.md)
+- [A2A Contact Tool](../contact/README.md)

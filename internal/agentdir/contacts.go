@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// contactEntry mirrors the A2A contacts.json shape shared by the `contact`
+// contactEntry mirrors the A2A contacts.json shape shared by the `a2a_contact`
 // tool and the control-plane API. Unknown fields are preserved on back-fill
 // through the map-based helpers below.
 type contactEntry struct {

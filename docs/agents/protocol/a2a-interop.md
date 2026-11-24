@@ -102,7 +102,7 @@ curl -X POST http://localhost:9000/agents/A/contacts \
 myaaw --agent A chat -m "Tanya agent b: siapa kamu? Balas satu kalimat."
 ```
 
-The agent calls the built-in `contact` tool, which sends `SendMessage` to B and returns B's answer.
+The agent calls the built-in `a2a_contact` tool, which sends `SendMessage` to B and returns B's answer.
 
 Inspect what A knows:
 
@@ -115,7 +115,7 @@ Inspect what A knows:
 
 ### 2.4 Multi-turn (`input-required` / `auth-required`)
 
-If B needs more information, `contact` returns:
+If B needs more information, `a2a_contact` returns:
 
 ```text
 [input-required taskId=7f2c...]
@@ -214,7 +214,7 @@ On A (caller), trust B's key. Read B's Agent Card to get its signature, and deri
 A2A_TRUSTED_KEYS=b:<B-publicKey>
 ```
 
-Now on A, `contact get` reports `Card signature: verified` when B's key is pinned, otherwise `unverified`.
+Now on A, `a2a_contact get` reports `Card signature: verified` when B's key is pinned, otherwise `unverified`.
 
 > Request signing via `X-A2A-Signature` was a Myaaw-specific extension and has been removed in v1.0. A2A v1.0 authenticates requests with bearer tokens only; identity is established by signed Agent Cards.
 
@@ -232,9 +232,9 @@ Now on A, `contact get` reports `Card signature: verified` when B's key is pinne
 
 ## 4. Myaaw agent calling a non-Myaaw agent
 
-Myaaw's outbound path is the `contact` tool. It sends **`SendMessage`** with a `ROLE_USER` message and text parts, and expects a `SendMessageResponse{task}` result.
+Myaaw's outbound path is the `a2a_contact` tool. It sends **`SendMessage`** with a `ROLE_USER` message and text parts, and expects a `SendMessageResponse{task}` result.
 
-> **Binding note:** the `contact` tool speaks the **JSON-RPC** binding only. If the external peer exposes only the REST (`/message:send`) or gRPC (`A2AService.SendMessage`) binding, `contact` cannot call it directly — use a [custom tool](../mcp-and-custom-tools.md) or a direct call instead (see §4.5).
+> **Binding note:** the `a2a_contact` tool speaks the **JSON-RPC** binding only. If the external peer exposes only the REST (`/message:send`) or gRPC (`A2AService.SendMessage`) binding, `a2a_contact` cannot call it directly — use a [custom tool](../mcp-and-custom-tools.md) or a direct call instead (see §4.5).
 
 ### 4.1 What the external peer must provide
 
@@ -286,7 +286,7 @@ When resuming an interrupted task, Myaaw sets `"taskId": "<taskId>"` inside the 
 - `result.task.artifacts[].parts[]` with `text` — preferred.
 - `result.task.history[]` with `role` `ROLE_AGENT` and text parts — fallback.
 
-### 4.5 When `contact` is not enough
+### 4.5 When `a2a_contact` is not enough
 
 For a peer with a different method name or response shape, call it directly. The JSON-RPC example:
 
@@ -566,7 +566,7 @@ REST errors use `google.rpc.Status` (`error.code`, `error.status`, `error.detail
 
 | Capability | Myaaw ↔ Myaaw | Myaaw → external | External → Myaaw |
 | :--- | :--- | :--- | :--- |
-| JSON-RPC binding | Yes | Yes (`contact`) | Yes |
+| JSON-RPC binding | Yes | Yes (`a2a_contact`) | Yes |
 | HTTP+JSON (REST) binding | Yes | Manual/custom tool | Yes |
 | gRPC binding | Yes | Manual/custom tool | Yes (when `A2A_GRPC_PORT` set) |
 | Agent Card discovery | Yes | Yes | Yes |
@@ -587,9 +587,9 @@ REST errors use `google.rpc.Status` (`error.code`, `error.status`, `error.detail
 
 | Symptom | Likely cause | Fix |
 | :--- | :--- | :--- |
-| `contact` says `HTTP 401` | Wrong or missing token | Use B's token in A's `contacts.json`; restart B after editing `.env` |
-| `contact` says `HTTP 404` | URL is not the JSON-RPC endpoint | Use `<base>/a2a` |
-| `contact` says `not found` | Name mismatch | `{"action":"list"}` on A |
+| `a2a_contact` says `HTTP 401` | Wrong or missing token | Use B's token in A's `contacts.json`; restart B after editing `.env` |
+| `a2a_contact` says `HTTP 404` | URL is not the JSON-RPC endpoint | Use `<base>/a2a` |
+| `a2a_contact` says `not found` | Name mismatch | `{"action":"list"}` on A |
 | `-32009` | Missing/wrong `A2A-Version` | Send `A2A-Version: 1.0` |
 | `-32001` on `GetTask` | Task belongs to another caller | Use the token that created it |
 | `-32004` | Resuming a task that is not interrupted | Omit `taskId` to create a new task |

@@ -445,6 +445,9 @@ func ParseOnboardSelection(raw string, known []string, flag string) ([]string, e
 	if _, ok := lookup["execute_python"]; ok {
 		lookup["python"] = "execute_python"
 	}
+	if _, ok := lookup["a2a_contact"]; ok {
+		lookup["contact"] = "a2a_contact"
+	}
 
 	chosen := make(map[string]bool)
 	for _, part := range strings.Split(raw, ",") {
@@ -671,10 +674,14 @@ func ExistingDisabledTools(agentName string) []string {
 // CanonicalToolName maps the alias accepted by the runtime filter to the name
 // used by the registry.
 func CanonicalToolName(name string) string {
-	if name == "python" {
+	switch name {
+	case "python":
 		return "execute_python"
+	case "contact":
+		return "a2a_contact"
+	default:
+		return name
 	}
-	return name
 }
 
 // BuiltinToolNames lists the tools registered in the built-in registry.

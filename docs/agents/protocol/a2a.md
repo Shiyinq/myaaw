@@ -1,6 +1,6 @@
 # Agent2Agent (A2A) Guide
 
-Myaaw agents can delegate tasks to other agents using the [Agent2Agent (A2A) protocol v1.0](https://a2a-protocol.org/latest/specification/). Each agent server exposes an Agent Card for discovery and a JSON-RPC 2.0 endpoint for tasks. A built-in `contact` tool lets the agent call agents listed in its contact book.
+Myaaw agents can delegate tasks to other agents using the [Agent2Agent (A2A) protocol v1.0](https://a2a-protocol.org/latest/specification/). Each agent server exposes an Agent Card for discovery and a JSON-RPC 2.0 endpoint for tasks. A built-in `a2a_contact` tool lets the agent call agents listed in its contact book.
 
 > For the protocol model, task lifecycle, storage, request flows, security boundaries, and implementation details, see [a2a-protocol.md](a2a-protocol.md). For connection recipes (same machine, cross server, Myaaw to external, external to Myaaw), see [a2a-interop.md](a2a-interop.md). The section-by-section implementation validation is in [a2a-spec-compliance.md](a2a-spec-compliance.md).
 
@@ -72,7 +72,7 @@ The Agent Card then publishes a `signatures` array. To trust a peer, copy its ke
 A2A_TRUSTED_KEYS=peer-name:base64url-public-key
 ```
 
-`contact get` reports `Card signature: verified` (or `unverified`) against `A2A_TRUSTED_KEYS`.
+`a2a_contact get` reports `Card signature: verified` (or `unverified`) against `A2A_TRUSTED_KEYS`.
 
 ## 2. Agent Card (discovery)
 
@@ -224,7 +224,7 @@ Before each run, the message receives a note with the task output directory:
 
 Files written there are returned as artifacts, together with the text artifact. Small files (≤ 1 MiB) are inlined as `raw` parts (base64); larger files are returned as `url` parts pointing to `GET /tasks/{id}/artifacts?path=<name>` and streamed on demand, so a large file (for example a video) does not have to fit in a single JSON response. Limits: 10 files per task, up to 1 GiB per file. Symlinks are skipped.
 
-The `contact` tool downloads file artifacts (both `raw` and `url` parts) into the caller's `~/.myaaw/agents/<agent>/home/workspace/downloads/<taskId>/` and reports each saved path and size.
+The `a2a_contact` tool downloads file artifacts (both `raw` and `url` parts) into the caller's `~/.myaaw/agents/<agent>/home/workspace/downloads/<taskId>/` and reports each saved path and size.
 
 ### File parts
 
@@ -411,9 +411,9 @@ curl -X DELETE http://localhost:9000/agents/myfriend/contacts/research \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-## 5. The `contact` tool
+## 5. The `a2a_contact` tool
 
-The built-in `contact` tool manages the contact book and delegates tasks:
+The built-in `a2a_contact` tool manages the contact book and delegates tasks:
 
 | Action | Purpose | Parameters |
 | --- | --- | --- |
@@ -488,11 +488,11 @@ Without `taskId`, each `send` starts a new task. A `taskId` that is no longer wa
 
 `get` fetches the remote `/.well-known/agent-card.json` (5 second timeout) and reports its skills and signature status; when the remote agent is offline it falls back to the local contact metadata. `add` validates the name and URL the same way as the control-plane API, writes `contacts.json` atomically with mode `0600`, and never echoes the token back. Calls without `action` that include `contact` and `message` are still treated as `send` for backwards compatibility.
 
-### Scope of the `contact` tool
+### Scope of the `a2a_contact` tool
 
 The server implements the full A2A v1.0 surface; the tool is a delegation client and exposes only the part that fits an LLM tool call.
 
-| A2A v1.0 capability | Server | `contact` tool |
+| A2A v1.0 capability | Server | `a2a_contact` tool |
 | --- | :---: | --- |
 | Agent Card (public) | yes | yes (`get`) |
 | Extended Agent Card | yes | no |
@@ -520,12 +520,12 @@ All of them remain available over JSON-RPC, REST, and gRPC, so interop with othe
 - Tokens are compared in constant time.
 - Use HTTPS for contacts across hosts; bearer tokens travel in clear text over plain HTTP.
 - Prefer `A2A_CALLERS` with one token per caller so access can be revoked per agent and scopes can be narrowed.
-- `A2A_TRUSTED_KEYS` verifies signed Agent Cards; `contact get` reports the result.
+- `A2A_TRUSTED_KEYS` verifies signed Agent Cards; `a2a_contact get` reports the result.
 - Webhook URLs are validated against loopback, private, link-local, and shared-address ranges (SSRF guard). Set `A2A_ALLOW_PRIVATE_WEBHOOKS=true` only for local testing.
 - Rate limiting per caller is enabled with `A2A_RATE_LIMIT` (requests/second) and `A2A_RATE_BURST`; exceeding the limit returns HTTP 429.
 - A2A transcripts use a synthetic local user per calling agent: `a2a:<caller>` with IDs starting at `-1001`. They do not appear in the terminal or default control-plane conversation list, and each caller gets an isolated conversation namespace.
 - `GetTask`, `CancelTask`, `SubscribeToTask`, push config operations, and interrupted-task resume are limited to the caller that created the task. Legacy tasks without a recorded caller remain readable.
-- The `add` action lets the agent register a new endpoint. A prompt-injected model could add an attacker-controlled URL and send data to it. Block the tool (`AGENT_BLOCKED_TOOLS=contact`) or keep `contacts.json` read-only for agents that must not manage contacts.
+- The `add` action lets the agent register a new endpoint. A prompt-injected model could add an attacker-controlled URL and send data to it. Block the tool (`AGENT_BLOCKED_TOOLS=a2a_contact`) or keep `contacts.json` read-only for agents that must not manage contacts.
 
 ## 7. Limitations / next phase
 
@@ -535,7 +535,7 @@ All of them remain available over JSON-RPC, REST, and gRPC, so interop with othe
 - Async retries happen on restart only, capped at three started attempts.
 - `SubscribeToTask` buffers live in memory and expire after 10 minutes.
 - DNS names for webhooks are validated by name only; resolution is left to the delivery client (a documented SSRF limitation).
-- The `contact` tool covers `send`, `status`, artifact download, and contact management only; cancel, task listing, streaming, subscribe, extended card, and push configs are server-only for now. See the coverage table in [section 5](#scope-of-the-contact-tool).
+- The `a2a_contact` tool covers `send`, `status`, artifact download, and contact management only; cancel, task listing, streaming, subscribe, extended card, and push configs are server-only for now. See the coverage table in [section 5](#scope-of-the-a2a_contact-tool).
 - Contact HTTP calls use a configurable timeout (`A2A_CONTACT_TIMEOUT_SECONDS`, default 16 minutes) for both RPC calls and artifact downloads. Keep it above the remote agent's run timeout so the caller does not abandon a task that is still running.
 
 All three protocol bindings (JSON-RPC, HTTP+JSON/REST, and gRPC) are implemented.

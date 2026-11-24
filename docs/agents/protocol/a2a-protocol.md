@@ -4,7 +4,7 @@ This document describes the Agent2Agent (A2A) protocol model and how Myaaw imple
 
 ## 1. Why A2A
 
-Agents need a standard way to delegate work to each other — regardless of framework, language, or host. A2A defines agent discovery (an Agent Card), a task model, and a JSON-RPC 2.0 method surface. Myaaw implements the JSON-RPC binding of A2A v1.0 on both sides: as a **server** (each agent exposes `/a2a`) and as a **client** (the `contact` tool).
+Agents need a standard way to delegate work to each other — regardless of framework, language, or host. A2A defines agent discovery (an Agent Card), a task model, and a JSON-RPC 2.0 method surface. Myaaw implements the JSON-RPC binding of A2A v1.0 on both sides: as a **server** (each agent exposes `/a2a`) and as a **client** (the `a2a_contact` tool).
 
 ## 2. Protocol model
 
@@ -191,9 +191,9 @@ Service parameters are carried in gRPC metadata: `a2a-version` (required, `1.0`)
 
 `SendMessage` with `returnImmediately` → `prepareTask` (stores `submitted`, registers the push config) → `go runTask` → on each state change `notifyTask` posts `StreamResponse` events to the webhook(s) with retry/backoff.
 
-### 4.4 Agent-to-agent through the contact tool
+### 4.4 Agent-to-agent through the `a2a_contact` tool
 
-`contact send` → load `contacts.json` → `SendMessage` on the remote URL with the bearer token and `A2A-Version: 1.0` → parse `SendMessageResponse{task}` → return artifact text (or an `[input-required taskId=…]` header). Each send carries one `messageId` that is reused across transient retries, so the remote deduplicates them; a timeout is recovered with a `returnImmediately` retry of the same message. File artifacts (`raw` and `url` parts) are downloaded into the caller's `home/workspace/downloads/<taskId>/` and reported with their paths and sizes.
+`a2a_contact send` → load `contacts.json` → `SendMessage` on the remote URL with the bearer token and `A2A-Version: 1.0` → parse `SendMessageResponse{task}` → return artifact text (or an `[input-required taskId=…]` header). Each send carries one `messageId` that is reused across transient retries, so the remote deduplicates them; a timeout is recovered with a `returnImmediately` retry of the same message. File artifacts (`raw` and `url` parts) are downloaded into the caller's `home/workspace/downloads/<taskId>/` and reported with their paths and sizes.
 
 ### 4.5 Resuming an interrupted task
 
@@ -213,7 +213,7 @@ Service parameters are carried in gRPC metadata: `a2a-version` (required, `1.0`)
 - Runs are serialized per process: a queued task waits for the current run to finish, and its run timeout starts only after it is admitted.
 - Timestamps are UTC with millisecond precision on the wire.
 
-## 6. Contact registry and the `contact` tool
+## 6. Contact registry and the `a2a_contact` tool
 
 Contacts live in `~/.myaaw/agents/<agent>/contacts.json`:
 
@@ -223,7 +223,7 @@ Contacts live in `~/.myaaw/agents/<agent>/contacts.json`:
 ]
 ```
 
-The `contact` tool is a pure v1.0 client: it reads `supportedInterfaces` for discovery, always sends `A2A-Version: 1.0`, calls `SendMessage`, and parses `SendMessageResponse{task}`, `TASK_STATE_*`, `history`, and `artifactId`.
+The `a2a_contact` tool is a pure v1.0 client: it reads `supportedInterfaces` for discovery, always sends `A2A-Version: 1.0`, calls `SendMessage`, and parses `SendMessageResponse{task}`, `TASK_STATE_*`, `history`, and `artifactId`.
 
 ## 7. Security model
 

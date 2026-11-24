@@ -34,3 +34,15 @@ func TestSetEnvAppendsNewKey(t *testing.T) {
 		t.Errorf("unexpected value: %v", got)
 	}
 }
+
+func TestIsBuiltinEnabledContactAlias(t *testing.T) {
+	if isBuiltinEnabled("a2a_contact", map[string]bool{"contact": false}) {
+		t.Fatal("a2a_contact should follow legacy contact=false alias")
+	}
+	if !isBuiltinEnabled("a2a_contact", map[string]bool{"contact": false, "a2a_contact": true}) {
+		t.Fatal("explicit a2a_contact=true should take precedence over legacy contact=false")
+	}
+	if isBuiltinEnabled("contact", map[string]bool{"a2a_contact": false}) {
+		t.Fatal("contact lookup should follow a2a_contact=false")
+	}
+}

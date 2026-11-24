@@ -1,12 +1,12 @@
-# Contact Tool
+# A2A Contact Tool
 
-The Contact tool manages the agent's contact book and delegates work to other agents over the [Agent2Agent (A2A)](https://a2a-protocol.org/) protocol. Contacts are other agents, not sub-agents: they run in their own process, with their own tools, memory, and identity.
+The A2A Contact tool (`a2a_contact`) manages the agent's contact book and delegates work to other agents over the [Agent2Agent (A2A)](https://a2a-protocol.org/) protocol. Contacts are other agents, not sub-agents: they run in their own process, with their own tools, memory, and identity.
 
 For setup recipes, see [A2A Interop Guide](../../../../docs/agents/protocol/a2a-interop.md). For protocol internals, see [A2A Protocol](../../../../docs/agents/protocol/a2a-protocol.md).
 
 ## Function Name
 
-`contact`
+`a2a_contact`
 
 ## Actions
 
@@ -41,7 +41,7 @@ For long jobs (downloads, research, builds), return immediately and poll later:
 
 ```text
 [async taskId=7f2c...] state=TASK_STATE_SUBMITTED
-Task accepted. Use contact action "status" with this taskId to check progress.
+Task accepted. Use a2a_contact action "status" with this taskId to check progress.
 ```
 
 ```json
@@ -202,7 +202,7 @@ A2A_TRUSTED_KEYS=<remote-name>:<remote-public-key>
 
 This tool is a delegation client, not a complete A2A client. The myaaw server implements the full v1.0 protocol in all three bindings; the tool exposes the subset that fits an LLM tool call.
 
-| A2A v1.0 capability | myaaw server | `contact` tool |
+| A2A v1.0 capability | myaaw server | `a2a_contact` tool |
 | :--- | :---: | :--- |
 | Agent Card (public) | yes | yes (`get`) |
 | Extended Agent Card | yes | no |
@@ -247,7 +247,7 @@ Planned order if the tool is extended: `cancel` and `tasks` first (cheap, unbloc
 - Signed Agent Cards are verified against `A2A_TRUSTED_KEYS`; pin the peer's public key to trust it.
 - `list`/`get` mask tokens; `add` never echoes them.
 - Use HTTPS for contacts across hosts.
-- `add` lets the model register an endpoint. A prompt-injected model could point it at an attacker-controlled URL and send data there. If an agent must not manage contacts, block the tool with `AGENT_BLOCKED_TOOLS=contact` or make `contacts.json` read-only.
+- `add` lets the model register an endpoint. A prompt-injected model could point it at an attacker-controlled URL and send data there. If an agent must not manage contacts, block the tool with `AGENT_BLOCKED_TOOLS=a2a_contact` or make `contacts.json` read-only.
 
 ## Related
 

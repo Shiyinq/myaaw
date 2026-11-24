@@ -62,7 +62,7 @@ var A2AGRPCTLSKey string
 // roughly 4/3.
 var A2AMaxRequestBytes int = 32 << 20
 
-// A2AContactTimeoutSeconds bounds a contact tool call. It must exceed the
+// A2AContactTimeoutSeconds bounds an a2a_contact tool call. It must exceed the
 // remote agent's run timeout, otherwise the caller gives up while the task is
 // still running and a retry creates a duplicate task.
 var A2AContactTimeoutSeconds int = 960

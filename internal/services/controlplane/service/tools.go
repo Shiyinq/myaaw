@@ -171,6 +171,12 @@ func (s *ToolsService) ToggleBuiltin(agentName, name string, enabled bool) error
 		cfg.BuiltinTools = make(map[string]bool)
 	}
 	cfg.BuiltinTools[name] = enabled
+	switch name {
+	case "a2a_contact":
+		delete(cfg.BuiltinTools, "contact")
+	case "contact":
+		delete(cfg.BuiltinTools, "a2a_contact")
+	}
 	return saveToolsConfig(agentName, cfg)
 }
 
@@ -388,7 +394,7 @@ func validateBuiltinName(name string) error {
 			return nil
 		}
 	}
-	if name == "python" { // alias handled by the loader
+	if name == "python" || name == "contact" { // aliases handled by the loader
 		return nil
 	}
 	return fmt.Errorf("%w: %s", ErrUnknownBuiltin, name)
@@ -414,7 +420,7 @@ func validateManagedToolName(name, command string) error {
 			return fmt.Errorf("%w: %s is a built-in tool name", ErrInvalidToolName, name)
 		}
 	}
-	if strings.EqualFold(name, "python") {
+	if strings.EqualFold(name, "python") || strings.EqualFold(name, "contact") {
 		return fmt.Errorf("%w: %s is a built-in tool name", ErrInvalidToolName, name)
 	}
 	if strings.TrimSpace(command) == "" {
@@ -475,6 +481,14 @@ func builtinEnabled(name string, filter map[string]bool) bool {
 		}
 	case "python":
 		if enabled, ok := filter["execute_python"]; ok {
+			return enabled
+		}
+	case "a2a_contact":
+		if enabled, ok := filter["contact"]; ok {
+			return enabled
+		}
+	case "contact":
+		if enabled, ok := filter["a2a_contact"]; ok {
 			return enabled
 		}
 	}

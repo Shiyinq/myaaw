@@ -7244,7 +7244,9 @@ paths:
       consumes:
       - application/json
       description: 'Built-in tools can only be toggled, never deleted. Accepted names:
-        bash, filesystem, cron, execute_python (alias python), provider, subagent.'
+        a2a_auth_request, a2a_contact (alias contact), a2a_input, bash, computer,
+        cron, execute_python (alias python), extra_messages, filesystem, provider,
+        subagent.'
       parameters:
       - description: Agent name
         in: path

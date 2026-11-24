@@ -97,6 +97,10 @@ func TestToolsServiceToggleBuiltin(t *testing.T) {
 	if err := svc.ToggleBuiltin("myfriend", "python", false); err != nil {
 		t.Fatalf("ToggleBuiltin python: %v", err)
 	}
+	// contact is a legacy alias for a2a_contact in the loader.
+	if err := svc.ToggleBuiltin("myfriend", "contact", false); err != nil {
+		t.Fatalf("ToggleBuiltin contact: %v", err)
+	}
 	view, err = svc.List("myfriend")
 	if err != nil {
 		t.Fatalf("List: %v", err)
@@ -104,6 +108,22 @@ func TestToolsServiceToggleBuiltin(t *testing.T) {
 	for _, tool := range view.Builtin {
 		if tool.Name == "execute_python" && tool.Enabled {
 			t.Fatalf("execute_python should follow the python alias, builtin = %+v", view.Builtin)
+		}
+		if tool.Name == "a2a_contact" && tool.Enabled {
+			t.Fatalf("a2a_contact should follow the contact alias, builtin = %+v", view.Builtin)
+		}
+	}
+	// Re-enabling via canonical name clears the legacy alias.
+	if err := svc.ToggleBuiltin("myfriend", "a2a_contact", true); err != nil {
+		t.Fatalf("ToggleBuiltin a2a_contact: %v", err)
+	}
+	view, err = svc.List("myfriend")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, tool := range view.Builtin {
+		if tool.Name == "a2a_contact" && !tool.Enabled {
+			t.Fatalf("a2a_contact should be enabled after canonical toggle, builtin = %+v", view.Builtin)
 		}
 	}
 

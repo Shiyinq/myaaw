@@ -11,7 +11,7 @@ Myaaw supports three ways for multiple agents to collaborate. Choose the one tha
 | Mechanism | Who orchestrates | Visibility to user | Isolation & State | Best for |
 | :--- | :--- | :--- | :--- | :--- |
 | **Group Chat** (`groups`) | Control Plane (`GroupService`) | Shared multi-speaker room in WebUI; every turn streams live | Each agent keeps its own process, `SOUL.md`, `MEMORY.md`, tools, and dedicated group `conversation_id`; Control Plane stores the shared transcript | Brainstorming, multi-perspective reviews, supervised autonomous discussions where you can jump in, reply to older turns, or stop/continue |
-| **A2A / Contacts** (`contact` tool) | One agent calls another agent over HTTP (A2A v1.0) | Tool call inside a 1-on-1 chat | Separate processes across local or remote hosts; authenticated with `A2A_TOKEN` | Delegating a concrete subtask to a specialist agent (local or remote) without putting both in a shared room |
+| **A2A / Contacts** (`a2a_contact` tool) | One agent calls another agent over HTTP (A2A v1.0) | Tool call inside a 1-on-1 chat | Separate processes across local or remote hosts; authenticated with `A2A_TOKEN` | Delegating a concrete subtask to a specialist agent (local or remote) without putting both in a shared room |
 | **Subagents** | Parent agent spawns an internal worker run | Background trigger (`<trigger kind="subagent">`) | Same agent directory/config; isolated sub-run transcript | Splitting background work inside one agent |
 
 ---

@@ -59,7 +59,7 @@ type ContactTool struct {
 }
 
 func init() {
-	tools.RegisterBuiltin("contact", NewContactTool())
+	tools.RegisterBuiltin("a2a_contact", NewContactTool())
 }
 
 func NewContactTool() *ContactTool {
@@ -86,7 +86,7 @@ func (t *ContactTool) ToolDefinition() []byte {
 	return []byte(`{
 		"type": "function",
 		"function": {
-			"name": "contact",
+			"name": "a2a_contact",
 			"description": "Work with trusted contact agents over the A2A protocol. action=send delegates a task and returns the answer; set async=true to return immediately with a taskId, then use action=status to poll it. Pass taskId to action=send to answer a task that returned [input-required taskId=...]. action=list lists contacts; action=get shows one contact and its capabilities; action=add registers a new contact (only when the user explicitly provides the URL). Aliases accepted: send_message, list_contacts, get_contact, add_contact, poll.",
 			"parameters": {
 				"type": "object",
@@ -214,7 +214,7 @@ func (t *ContactTool) send(args contactArgs) string {
 }
 
 func asyncMessage(task rpcTask) string {
-	return fmt.Sprintf("[async taskId=%s] state=%s\nTask accepted. Use contact action \"status\" with this taskId to check progress.", task.ID, a2a.WireState(task.Status.State))
+	return fmt.Sprintf("[async taskId=%s] state=%s\nTask accepted. Use a2a_contact action \"status\" with this taskId to check progress.", task.ID, a2a.WireState(task.Status.State))
 }
 
 // status polls a previously started task and renders its result once it is done.

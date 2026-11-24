@@ -4,7 +4,7 @@ This document validates Myaaw's implementation against the [Agent2Agent (A2A) Pr
 
 > **Scope:** Myaaw implements the three standard bindings — **JSON-RPC** (`POST /a2a`), **HTTP+JSON/REST**, and **gRPC** (`lf.a2a.v1.A2AService`) — over one shared service. The legacy surface (lowercase states, `tasks/*` methods, `kind`-discriminated parts, `X-A2A-Signature`, `/.well-known/agent.json`) was removed, not aliased.
 >
-> This document validates the **server**. The built-in `contact` tool is a client that covers `send`, `status`, artifact download, and contact management only; cancel, task listing, streaming, subscribe, extended card, and push configs are reachable over the protocol but not exposed to the agent. See the coverage table in the [A2A guide](a2a.md#scope-of-the-contact-tool).
+> This document validates the **server**. The built-in `a2a_contact` tool is a client that covers `send`, `status`, artifact download, and contact management only; cancel, task listing, streaming, subscribe, extended card, and push configs are reachable over the protocol but not exposed to the agent. See the coverage table in the [A2A guide](a2a.md#scope-of-the-a2a_contact-tool).
 
 **How to verify:** `go build ./... && go vet ./... && go test ./...` — all green. A2A-specific tests live in `internal/services/a2a/*_test.go`, `internal/services/a2a/grpc/*_test.go`, and `internal/agent/tools/contact/*_test.go`.
 
@@ -120,7 +120,7 @@ Covered end-to-end by the test suite: basic task (`TestRPCSendAndGet`, `TestRest
 - Bearer tokens with constant-time comparison (`auth.go`, `subtle.ConstantTimeCompare`).
 - Credential sources: `A2A_TOKEN`, `A2A_TOKENS`, `A2A_CALLERS` (`name:token[:read|delegate]`).
 - Scopes: `read` (read methods) and `delegate` (writes + read). Evidence: `TestRPCReadOnlyScope`, `TestAuthenticateScopes`.
-- Signed Agent Cards verified against `A2A_TRUSTED_KEYS` (`cardsign.go`, `contact get`).
+- Signed Agent Cards verified against `A2A_TRUSTED_KEYS` (`cardsign.go`, `a2a_contact get`).
 
 ## 8. Agent Discovery: The Agent Card
 

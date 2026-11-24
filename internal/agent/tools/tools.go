@@ -247,6 +247,16 @@ func isBuiltinEnabled(name string, filter map[string]bool) bool {
 			return enabled
 		}
 	}
+	if name == "a2a_contact" {
+		if enabled, exists := filter["contact"]; exists {
+			return enabled
+		}
+	}
+	if name == "contact" {
+		if enabled, exists := filter["a2a_contact"]; exists {
+			return enabled
+		}
+	}
 	// Default to enabled if not explicitly disabled
 	return true
 }

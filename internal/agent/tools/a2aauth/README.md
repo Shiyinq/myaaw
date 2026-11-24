@@ -57,7 +57,7 @@ The agent should stop after this call. The task is marked `auth-required` and th
 
 4. The caller authenticates and resumes with the **same task ID**:
    - direct A2A: `SendMessage` with `message.taskId`
-   - Myaaw caller: `contact` with `"taskId": "<task-id>"`
+   - Myaaw caller: `a2a_contact` with `"taskId": "<task-id>"`
 
 ## Availability
 
@@ -80,4 +80,4 @@ Error: a2a_auth_request is only available while handling an A2A task
 - [A2A Protocol](../../../../docs/agents/protocol/a2a-protocol.md)
 - [A2A Interop Guide](../../../../docs/agents/protocol/a2a-interop.md)
 - [A2A Input Tool](../a2ainput/README.md)
-- [Contact Tool](../contact/README.md)
+- [A2A Contact Tool](../contact/README.md)
