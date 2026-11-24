@@ -77,7 +77,7 @@ func DefaultSettings() Settings {
 		Density:         "comfortable",
 		TextScale:       100,
 		ReduceMotion:    false,
-		ShellMode:       "studio",
+		ShellMode:       "bots",
 		FocusAgent:      "",
 		SendKey:         "enter",
 		AutoScroll:      true,

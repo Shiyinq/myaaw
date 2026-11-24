@@ -34,11 +34,11 @@ func TestSettingsEndpoints(t *testing.T) {
 		"PATCH",
 		"/settings",
 		token,
-		`{"shell_mode":"bots","locale":"id","theme":"obsidian","theme_mode":"dark","density":"compact"}`,
+		`{"shell_mode":"studio","locale":"id","theme":"obsidian","theme_mode":"dark","density":"compact"}`,
 		fiber.StatusOK,
 		&updated,
 	)
-	if updated.ShellMode != "bots" || updated.Locale != "id" || updated.Theme != "obsidian" || updated.ThemeMode != "dark" || updated.Density != "compact" {
+	if updated.ShellMode != "studio" || updated.Locale != "id" || updated.Theme != "obsidian" || updated.ThemeMode != "dark" || updated.Density != "compact" {
 		t.Fatalf("updated settings = %+v", updated)
 	}
 	// Untouched defaults remain intact.

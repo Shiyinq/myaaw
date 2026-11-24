@@ -570,14 +570,14 @@
 		// any layout without cycling through the others.
 		const shellEntries = [
 			{
-				id: 'studio' as const,
-				labelKey: 'myaaw.settings.mode_studio',
-				aliases: ['mode', 'layout', 'shell', 'tampilan', 'sidebar', 'studio', 'fleet']
-			},
-			{
 				id: 'bots' as const,
 				labelKey: 'myaaw.settings.mode_bots',
 				aliases: ['mode', 'layout', 'shell', 'tampilan', 'bots', 'bot', 'lounge']
+			},
+			{
+				id: 'studio' as const,
+				labelKey: 'myaaw.settings.mode_studio',
+				aliases: ['mode', 'layout', 'shell', 'tampilan', 'sidebar', 'studio', 'fleet']
 			},
 			{
 				id: 'focus' as const,

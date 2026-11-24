@@ -31,7 +31,7 @@ func TestAuthServiceSeedsDefaultSettings(t *testing.T) {
 	if err := json.Unmarshal([]byte(rawJSON), &stored); err != nil {
 		t.Fatalf("unmarshal settings: %v", err)
 	}
-	if stored["shell_mode"] != "studio" || stored["locale"] != "en" || stored["theme_mode"] != "system" || stored["show_connection_badge"] != false {
+	if stored["shell_mode"] != "bots" || stored["locale"] != "en" || stored["theme_mode"] != "system" || stored["show_connection_badge"] != false {
 		t.Fatalf("unexpected persisted settings defaults: %#v", stored)
 	}
 }
@@ -48,7 +48,7 @@ func TestAuthServiceReseedsAccountWhilePreservingSettings(t *testing.T) {
 	if _, err := first.UpdateSettings(SettingsPatch{
 		Locale:    strPtr("id"),
 		ThemeMode: strPtr("dark"),
-		ShellMode: strPtr("bots"),
+		ShellMode: strPtr("studio"),
 	}); err != nil {
 		t.Fatalf("UpdateSettings: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestAuthServiceReseedsAccountWhilePreservingSettings(t *testing.T) {
 		t.Fatalf("expected default login to succeed after re-seed: %v", err)
 	}
 	gotSettings := reloaded.Settings()
-	if gotSettings.Locale != "id" || gotSettings.ThemeMode != "dark" || gotSettings.ShellMode != "bots" {
+	if gotSettings.Locale != "id" || gotSettings.ThemeMode != "dark" || gotSettings.ShellMode != "studio" {
 		t.Fatalf("restored settings were lost during auth re-seed: %+v", gotSettings)
 	}
 }
@@ -88,7 +88,7 @@ func TestAuthServiceUpdateSettingsPersistsAndNormalizes(t *testing.T) {
 		Locale:              strPtr("id"),
 		ThemeMode:           strPtr("dark"),
 		Theme:               strPtr("obsidian"),
-		ShellMode:           strPtr("bots"),
+		ShellMode:           strPtr("studio"),
 		TextScale:           intPtr(150), // clamped to 125
 		QueueMessages:       boolPtr(true),
 		ShowConnectionBadge: boolPtr(true),
@@ -100,7 +100,7 @@ func TestAuthServiceUpdateSettingsPersistsAndNormalizes(t *testing.T) {
 	}
 	_ = auth.Close()
 
-	if updated.Locale != "id" || updated.ThemeMode != "dark" || updated.Theme != "obsidian" || updated.ShellMode != "bots" {
+	if updated.Locale != "id" || updated.ThemeMode != "dark" || updated.Theme != "obsidian" || updated.ShellMode != "studio" {
 		t.Fatalf("unexpected updated fields: %+v", updated)
 	}
 	if !updated.ShowConnectionBadge {
@@ -136,7 +136,7 @@ func TestAuthServiceUpdateSettingsPersistsAndNormalizes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second UpdateSettings: %v", err)
 	}
-	if next.Density != "compact" || next.ShellMode != "bots" || next.Locale != "id" || !next.ShowConnectionBadge {
+	if next.Density != "compact" || next.ShellMode != "studio" || next.Locale != "id" || !next.ShowConnectionBadge {
 		t.Fatalf("partial patch lost prior fields: %+v", next)
 	}
 	next, err = reloaded.UpdateSettings(SettingsPatch{ShowConnectionBadge: boolPtr(false)})

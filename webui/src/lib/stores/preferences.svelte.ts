@@ -16,7 +16,7 @@ export type SpeechLanguage = AudioLanguage | 'auto';
  * layout meant for a single agent, or the bots layout listing every agent as a
  * direct chat contact.
  */
-export type ShellMode = 'studio' | 'classic' | 'focus' | 'bots';
+export type ShellMode = 'bots' | 'studio' | 'focus' | 'classic';
 
 /**
  * Per-browser preferences that are not a theme: how dense the lists are, how
@@ -61,7 +61,7 @@ const DEFAULTS: Preferences = {
 	density: 'comfortable',
 	textScale: 100,
 	reduceMotion: false,
-	shellMode: 'studio',
+	shellMode: 'bots',
 	focusAgent: '',
 	sendKey: 'enter',
 	autoScroll: true,
@@ -111,7 +111,7 @@ function shellMode(parsed: StoredPreferences): ShellMode {
 	// classic shell was called "simple" before that.
 	if (value === 'advanced' || value === 'standard') return 'studio';
 	if (value === 'simple' || parsed.simpleMode === true) return 'classic';
-	return 'studio';
+	return 'bots';
 }
 
 /** Normalizes a partial/stored preferences object against defaults. */

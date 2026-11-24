@@ -49,8 +49,8 @@
 	]);
 
 	const shellModeOptions = $derived([
-		{ value: 'studio', label: t('myaaw.settings.mode_studio') },
 		{ value: 'bots', label: t('myaaw.settings.mode_bots') },
+		{ value: 'studio', label: t('myaaw.settings.mode_studio') },
 		{ value: 'focus', label: t('myaaw.settings.mode_focus') },
 		{ value: 'classic', label: t('myaaw.settings.mode_classic') }
 	]);
