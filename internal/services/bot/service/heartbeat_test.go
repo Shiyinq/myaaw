@@ -421,3 +421,38 @@ func TestHeartbeatJoinsExistingScopedConversation(t *testing.T) {
 		t.Fatalf("messages = %d, want 4 (system + 2 history + new)", len(messages))
 	}
 }
+
+func TestHeartbeatResolvesGroupSessionIDByScope(t *testing.T) {
+	const (
+		groupID = "f1d7574c-4eaf-4f40-b1ba-8128ecf580ca"
+		convID  = "65096c8b-65b4-4e12-ae83-416acc34863d"
+	)
+	repo := newFakeConversationRepo()
+	repo.conversations[convID] = &model.Conversation{
+		Id:     convID,
+		UserId: 42,
+		Scope:  "group:" + groupID,
+		Active: true,
+	}
+	svc := &BotServiceImpl{conversationRepo: repo}
+
+	for _, rawSession := range []string{groupID, "group:" + groupID} {
+		msg, err := svc.heartbeatMessage("Daily summary", HeartbeatTarget{
+			Channel:   "api",
+			To:        "42",
+			SessionID: rawSession,
+		}, "cron")
+		if err != nil {
+			t.Fatalf("heartbeatMessage(%q): %v", rawSession, err)
+		}
+		if msg.ConversationID != convID {
+			t.Errorf("session %q -> ConversationID = %q, want %q", rawSession, msg.ConversationID, convID)
+		}
+		if msg.Scope != "group:"+groupID {
+			t.Errorf("session %q -> Scope = %q, want %q", rawSession, msg.Scope, "group:"+groupID)
+		}
+		if msg.UserID != 42 {
+			t.Errorf("session %q -> UserID = %d, want 42", rawSession, msg.UserID)
+		}
+	}
+}

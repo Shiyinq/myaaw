@@ -201,6 +201,7 @@ type GroupService struct {
 
 	mu         sync.Mutex
 	runtimes   map[string]*groupRuntime
+	bridge     *groupEventBridge
 	globalMu   sync.Mutex
 	globalSubs map[chan GroupSSEEvent]struct{}
 }
@@ -386,6 +387,7 @@ func (s *GroupService) Create(req CreateGroupRequest) (Group, error) {
 	if err := s.store.Create(sg); err != nil {
 		return Group{}, err
 	}
+	s.notifyEventBridge()
 
 	group.Members = s.hydrateMembers(group.Members)
 	return group, nil
@@ -534,6 +536,7 @@ func (s *GroupService) Update(id string, req UpdateGroupRequest) (Group, error) 
 	}
 
 	updated.Group.Members = s.hydrateMembers(updated.Group.Members)
+	s.notifyEventBridge()
 	return updated.Group, nil
 }
 
@@ -563,6 +566,7 @@ func (s *GroupService) Delete(id string, userID int) error {
 		return err
 	}
 	_ = os.RemoveAll(s.store.UploadsDir(id))
+	s.notifyEventBridge()
 	return nil
 }
 
@@ -2101,7 +2105,7 @@ func extractPlainNameMentions(text string, members []GroupMember) []string {
 			continue
 		}
 		loc := pat.FindStringSubmatchIndex(stripped)
-		if loc != nil && len(loc) >= 4 {
+		if len(loc) >= 4 {
 			found = append(found, nameMatch{name: m.Name, pos: loc[2], rosterIdx: idx})
 		}
 	}

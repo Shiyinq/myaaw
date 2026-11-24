@@ -314,3 +314,38 @@ func TestCallToolUsesExplicitTargetOverContext(t *testing.T) {
 		t.Errorf("explicit session not used: %v", fields)
 	}
 }
+
+func TestCallToolDefaultsGroupScopeToGroupSessionIDAndUserID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	fakeCLI(t)
+
+	const (
+		groupID = "f1d7574c-4eaf-4f40-b1ba-8128ecf580ca"
+		convID  = "65096c8b-65b4-4e12-ae83-416acc34863d"
+	)
+
+	out := NewCronTool().CallTool(`{
+		"action": "add",
+		"name": "Group Reminder",
+		"message": "Check group updates",
+		"at": "5m"
+	}`, &tools.ToolsContext{
+		Channel:        "api",
+		UserID:         "42",
+		ConversationID: convID,
+		Scope:          "group:" + groupID,
+	})
+
+	fields := strings.Fields(out)
+	if !hasPair(fields, "--channel", "api") {
+		t.Errorf("expected --channel api: %v", fields)
+	}
+	if !hasPair(fields, "--to", "42") {
+		t.Errorf("expected --to 42 for API group: %v", fields)
+	}
+	if !hasPair(fields, "--session-id", groupID) {
+		t.Errorf("expected --session-id %s (group id), got: %v", groupID, fields)
+	}
+}

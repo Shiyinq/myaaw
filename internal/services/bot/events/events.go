@@ -6,14 +6,27 @@
 // purpose: one agent process serves one agent, so no routing table is needed.
 package events
 
-import "sync"
+import (
+	"sync"
+
+	"myaaw/internal/channel/api"
+	"myaaw/internal/provider"
+)
 
 // TurnEvent says one conversation gained a persisted turn.
+// Group-scoped triggered turns (cron, heartbeat, subagent) also include the
+// rendered assistant turn so the control plane can persist and broadcast it
+// into the shared group room without an extra round-trip.
 type TurnEvent struct {
-	ConversationID string `json:"conversation_id"`
-	Scope          string `json:"scope,omitempty"`
-	Trigger        string `json:"trigger"`
-	At             string `json:"at"`
+	ConversationID string                  `json:"conversation_id"`
+	Scope          string                  `json:"scope,omitempty"`
+	Trigger        string                  `json:"trigger"`
+	At             string                  `json:"at"`
+	MessageID      string                  `json:"message_id,omitempty"`
+	Text           string                  `json:"text,omitempty"`
+	Timeline       []api.TimelineItem           `json:"timeline,omitempty"`
+	Attachments    []provider.MessageAttachment `json:"attachments,omitempty"`
+	ExtraMessages  []provider.ExtraMessage      `json:"extra_messages,omitempty"`
 }
 
 // Broker fans one event out to every subscriber without blocking the publisher.

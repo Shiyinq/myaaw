@@ -346,6 +346,18 @@ func (r *BotServiceImpl) heartbeatMessage(prompt string, target HeartbeatTarget,
 			return nil, fmt.Errorf("load heartbeat session: %w", err)
 		}
 		if conv == nil {
+			// Accept a control-plane Group Session ID (raw "<group_id>" or "group:<group_id>")
+			// by resolving this agent's active conversation for that group scope.
+			scope := target.SessionID
+			if !strings.HasPrefix(scope, "group:") {
+				scope = "group:" + scope
+			}
+			conv, err = r.conversationRepo.GetActiveConversationByScope(0, scope)
+			if err != nil {
+				return nil, fmt.Errorf("load heartbeat group session: %w", err)
+			}
+		}
+		if conv == nil {
 			return nil, fmt.Errorf("heartbeat session %s not found", target.SessionID)
 		}
 		msg.ConversationID = conv.Id

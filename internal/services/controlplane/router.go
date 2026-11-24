@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"context"
 	"os"
 	"strings"
 
@@ -24,18 +25,23 @@ func NewApp() (*fiber.App, error) {
 }
 
 func newApp(version string) (*fiber.App, error) {
+	app, _, err := newAppWithGroups(version)
+	return app, err
+}
+
+func newAppWithGroups(version string) (*fiber.App, *service.GroupService, error) {
 	if err := agentdir.EnsureLayout(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	cpdb, err := service.OpenControlPlaneDB()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	auth, err := service.NewAuthServiceWithDB(cpdb)
 	if err != nil {
 		_ = cpdb.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	agents := service.NewAgentService()
 	proxy := service.NewProxyService(agents)
@@ -242,14 +248,17 @@ func newApp(version string) (*fiber.App, error) {
 	app.Get("/groups/:id/uploads/:msgId/:file", h.DownloadGroupUpload)
 	app.Get("/groups/:id/stream", h.StreamGroup)
 
-	return app, nil
+	return app, groupsSvc, nil
 }
 
 func Run(addr, version string) error {
-	app, err := newApp(version)
+	app, groupsSvc, err := newAppWithGroups(version)
 	if err != nil {
 		return err
 	}
+	bridgeCtx, cancelBridge := context.WithCancel(context.Background())
+	defer cancelBridge()
+	groupsSvc.StartEventBridge(bridgeCtx)
 	return app.Listen(addr)
 }
 

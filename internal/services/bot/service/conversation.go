@@ -13,6 +13,7 @@ import (
 	"myaaw/internal/agent/skills"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/channel"
+	"myaaw/internal/channel/api"
 	"myaaw/internal/config"
 	"myaaw/internal/obs/agenttrace"
 	"myaaw/internal/provider"
@@ -61,11 +62,11 @@ func conversationLockKey(msg *channel.IncomingMessage) string {
 }
 
 // publishTurnEvent tells SSE clients that a triggered turn was persisted.
-func (r *BotServiceImpl) publishTurnEvent(msg *channel.IncomingMessage) {
+func (r *BotServiceImpl) publishTurnEvent(msg *channel.IncomingMessage, out *channel.OutgoingMessage, transcript []provider.Message) {
 	if msg.TriggerType == "" || msg.ConversationID == "" {
 		return
 	}
-	events.Default().Publish(events.TurnEvent{
+	ev := events.TurnEvent{
 		ConversationID: msg.ConversationID,
 		Scope:          msg.Scope,
 		Trigger:        msg.TriggerType,
@@ -73,7 +74,69 @@ func (r *BotServiceImpl) publishTurnEvent(msg *channel.IncomingMessage) {
 		// timestamp, and a second-truncated value can sit just behind the turn's
 		// stored updated_at, which would make the chat unread again.
 		At: time.Now().UTC().Format(time.RFC3339Nano),
-	})
+	}
+	if strings.HasPrefix(msg.Scope, "group:") && out != nil {
+		ev.MessageID = lastAssistantMessageID(transcript, out.RunID)
+		ev.Text = out.Text
+		ev.Timeline = buildTurnTimeline(out.Trace, out.Thought, out.Text)
+		if len(out.Attachments) > 0 {
+			atts := make([]provider.MessageAttachment, 0, len(out.Attachments))
+			for _, a := range out.Attachments {
+				if strings.TrimSpace(a.Path) == "" {
+					continue
+				}
+				atts = append(atts, provider.MessageAttachment{
+					FileName:    a.FileName,
+					MimeType:    a.MimeType,
+					Path:        a.Path,
+					Kind:        a.Kind,
+					ProjectType: a.ProjectType,
+					Size:        a.Size,
+				})
+			}
+			ev.Attachments = atts
+		}
+		if len(out.ExtraMessages) > 0 {
+			ev.ExtraMessages = provider.CloneExtraMessages(out.ExtraMessages)
+		}
+	}
+	events.Default().Publish(ev)
+}
+
+func lastAssistantMessageID(transcript []provider.Message, fallback string) string {
+	for i := len(transcript) - 1; i >= 0; i-- {
+		if transcript[i].Role == "assistant" && strings.TrimSpace(transcript[i].ID) != "" {
+			return transcript[i].ID
+		}
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func buildTurnTimeline(trace []provider.ReactStep, finalThought, finalText string) []api.TimelineItem {
+	var items []api.TimelineItem
+	lastThought := ""
+	for i, step := range trace {
+		if step.Thought != "" && step.Thought != lastThought {
+			items = append(items, api.TimelineItem{Kind: "thought", Text: step.Thought})
+			lastThought = step.Thought
+		}
+		if step.Action != "" {
+			items = append(items, api.TimelineItem{
+				Kind:      "tool",
+				ID:        fmt.Sprintf("step-%d", i+1),
+				Name:      step.Action,
+				Arguments: step.ActionInput,
+				Result:    step.Observation,
+			})
+		}
+	}
+	if len(items) == 0 && finalThought != "" {
+		items = append(items, api.TimelineItem{Kind: "thought", Text: finalThought})
+	}
+	if strings.TrimSpace(finalText) != "" {
+		items = append(items, api.TimelineItem{Kind: "text", Text: finalText})
+	}
+	return items
 }
 
 func (r *BotServiceImpl) runConversation(
@@ -328,7 +391,7 @@ func (r *BotServiceImpl) runConversation(
 		if err := r.saveConversation(user, msg, result.Transcript); err != nil {
 			return nil, err
 		}
-		r.publishTurnEvent(msg)
+		r.publishTurnEvent(msg, out, result.Transcript)
 	}
 
 	if runErr != nil {

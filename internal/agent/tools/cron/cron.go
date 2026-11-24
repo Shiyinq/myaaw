@@ -162,16 +162,22 @@ func (t *CronTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 		sameChat := true
 		sameRoom := true
 		if ctx != nil {
+			groupID := ""
+			if strings.HasPrefix(ctx.Scope, "group:") {
+				groupID = strings.TrimSpace(strings.TrimPrefix(ctx.Scope, "group:"))
+			}
 			if to != "" && to != ctx.ChatID && to != ctx.UserID {
 				sameChat = false
 			}
-			sameRoom = sameChat && (threadID == "" || threadID == ctx.TopicID) && (sessionID == "" || sessionID == ctx.ConversationID)
+			sameRoom = sameChat &&
+				(threadID == "" || threadID == ctx.TopicID) &&
+				(sessionID == "" || sessionID == ctx.ConversationID || (groupID != "" && (sessionID == groupID || sessionID == ctx.Scope)))
 
 			if channel == "" {
 				channel = ctx.Channel
 			}
 			if to == "" {
-				if ctx.Scope != "" {
+				if ctx.Scope != "" && ctx.ChatID != "" {
 					to = ctx.ChatID
 				} else {
 					to = ctx.UserID
@@ -181,7 +187,11 @@ func (t *CronTool) CallTool(arguments string, ctx *tools.ToolsContext) string {
 				threadID = ctx.TopicID
 			}
 			if sessionID == "" && sameRoom {
-				sessionID = ctx.ConversationID
+				if groupID != "" {
+					sessionID = groupID
+				} else {
+					sessionID = ctx.ConversationID
+				}
 			}
 			if chatType == "" && sameChat {
 				chatType = ctx.ChatType
