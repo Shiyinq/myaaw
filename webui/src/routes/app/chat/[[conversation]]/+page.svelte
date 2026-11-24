@@ -22,6 +22,7 @@
 		capabilityFor,
 		loadModelGroups as loadCachedModelGroups,
 		loadModelCapabilities,
+		peekModelCapabilities,
 		type ModelGroup
 	} from '$lib/stores/modelCatalog';
 	import { tts } from '$lib/speech/tts.svelte';
@@ -352,11 +353,51 @@
 		ttftMs?: number;
 		context?: ContextUsage;
 	} | null>(null);
-	// Configured provider and its default model, as the terminal status line shows.
-	let providerInfo = $state<{
+	type ProviderInfoView = {
 		default: string;
 		providers: { name: string; type: string; model: string; thinkingLevel: string }[];
-	} | null>(null);
+	};
+
+	function buildProviderSnapshot(config: {
+		default_provider?: string;
+		providers?: { name: string; type?: string; default_model?: string; thinking_level?: string }[];
+		approvals?: { mode?: string };
+	}): {
+		info: ProviderInfoView;
+		levels: Record<string, string>;
+		approval: 'manual' | 'off';
+	} {
+		const info: ProviderInfoView = {
+			default: config.default_provider ?? '',
+			providers: (config.providers ?? []).map((provider) => ({
+				name: provider.name,
+				type: provider.type ?? '',
+				model: provider.default_model ?? '',
+				thinkingLevel: provider.thinking_level ?? ''
+			}))
+		};
+		const levels: Record<string, string> = {};
+		for (const provider of info.providers) {
+			if (provider.model) {
+				levels[`${provider.name}:${provider.model}`] = provider.thinkingLevel;
+			}
+		}
+		return {
+			info,
+			levels,
+			approval: config.approvals?.mode === 'off' ? 'off' : 'manual'
+		};
+	}
+
+	const initialAgentConfig = agentSelection.selected
+		? configStore.query.peek({ agent: agentSelection.selected })
+		: undefined;
+	const initialProviderSnapshot = initialAgentConfig
+		? buildProviderSnapshot(initialAgentConfig)
+		: null;
+
+	// Configured provider and its default model, as the terminal status line shows.
+	let providerInfo = $state<ProviderInfoView | null>(initialProviderSnapshot?.info ?? null);
 	// The composer's quick switches. The model menu lists every model of every
 	// configured provider; the list is fetched the first time the menu opens and
 	// cached for the rest of the page load.
@@ -364,16 +405,16 @@
 	let modelGroupsKey = '';
 	let modelMenuOpen = $state(false);
 	let loadingModels = $state(false);
-	let modelCapabilities = $state<ModelCapabilitiesView | null>(null);
+	let modelCapabilities = $state<ModelCapabilitiesView | null>(peekModelCapabilities());
 	// Thinking level is persisted per provider (the agent only ever runs the
 	// active provider). Keyed by provider:model so a pending choice survives a
 	// model switch within the same page load.
-	let thinkingLevels = $state<Record<string, string>>({});
-	let providerInfoLoaded = $state(false);
+	let thinkingLevels = $state<Record<string, string>>(initialProviderSnapshot?.levels ?? {});
+	let providerInfoLoaded = $state(Boolean(initialProviderSnapshot));
 	let switchingModel = $state(false);
 	let switchingThinking = $state(false);
 	// Approvals mode for the next message: "off" is Full access, "manual" asks.
-	let approvalMode = $state<'manual' | 'off'>('manual');
+	let approvalMode = $state<'manual' | 'off'>(initialProviderSnapshot?.approval ?? 'manual');
 	let switchingApproval = $state(false);
 	let pending = $state<PendingImage[]>([]);
 	let pendingFiles = $state<PendingFile[]>([]);
@@ -1219,31 +1260,31 @@
 		sessionStats = statsView(detail);
 	}
 
+	let providerLoadToken = 0;
+
+	/** Applies a config snapshot to the composer dropdown state. */
+	function applyProviderConfig(config: {
+		default_provider?: string;
+		providers?: { name: string; type?: string; default_model?: string; thinking_level?: string }[];
+		approvals?: { mode?: string };
+	}) {
+		const snap = buildProviderSnapshot(config);
+		providerInfo = snap.info;
+		thinkingLevels = snap.levels;
+		approvalMode = snap.approval;
+		providerInfoLoaded = true;
+	}
+
 	/** The agent's configured provider and its default model. */
-	async function loadProviderInfo(currentAgent: string) {
+	async function loadProviderInfo(currentAgent: string, token: number, hadCache: boolean) {
 		try {
 			const config = await configStore.fetchConfig(currentAgent);
-			providerInfo = {
-				default: config.default_provider ?? '',
-				providers: (config.providers ?? []).map((provider) => ({
-					name: provider.name,
-					type: provider.type ?? '',
-					model: provider.default_model ?? '',
-					thinkingLevel: provider.thinking_level ?? ''
-				}))
-			};
-			// Restore the persisted level for each configured provider/model pair.
-			const restored: Record<string, string> = {};
-			for (const provider of providerInfo.providers) {
-				if (provider.model) {
-					restored[thinkingKey(provider.name, provider.model)] = provider.thinkingLevel;
-				}
-			}
-			thinkingLevels = restored;
-			approvalMode = config.approvals?.mode === 'off' ? 'off' : 'manual';
+			configStore.query.write({ agent: currentAgent }, config);
+			if (token !== providerLoadToken || agentSelection.selected !== currentAgent) return;
+			applyProviderConfig(config);
 		} catch {
-			providerInfo = null;
-		} finally {
+			if (token !== providerLoadToken || agentSelection.selected !== currentAgent) return;
+			if (!hadCache) providerInfo = null;
 			providerInfoLoaded = true;
 		}
 	}
@@ -1302,6 +1343,19 @@
 				const level =
 					providerInfo.providers.find((entry) => entry.name === provider)?.thinkingLevel ?? '';
 				thinkingLevels = { ...thinkingLevels, [thinkingKey(provider, model)]: level };
+			}
+			const cachedCfg = configStore.query.peek({ agent: currentAgent });
+			if (cachedCfg) {
+				configStore.query.write(
+					{ agent: currentAgent },
+					{
+						...cachedCfg,
+						default_provider: provider,
+						providers: (cachedCfg.providers ?? []).map((entry) =>
+							entry.name === provider ? { ...entry, default_model: model } : entry
+						)
+					}
+				);
 			}
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
@@ -1418,6 +1472,18 @@
 					)
 				};
 			}
+			const cachedCfg = configStore.query.peek({ agent: currentAgent });
+			if (cachedCfg) {
+				configStore.query.write(
+					{ agent: currentAgent },
+					{
+						...cachedCfg,
+						providers: (cachedCfg.providers ?? []).map((entry) =>
+							entry.name === provider ? { ...entry, thinking_level: value } : entry
+						)
+					}
+				);
+			}
 		} catch (err) {
 			thinkingLevels = { ...thinkingLevels, [key]: previous };
 			toastStore.error(getErrorMessage(err));
@@ -1442,11 +1508,21 @@
 		const currentAgent = agentSelection.selected;
 		if (!currentAgent || currentAgent === providerKey) return;
 		providerKey = currentAgent;
-		providerInfo = null;
-		providerInfoLoaded = false;
-		modelGroups = null;
-		modelGroupsKey = '';
-		void loadProviderInfo(currentAgent);
+		const token = ++providerLoadToken;
+		untrack(() => {
+			modelGroups = null;
+			modelGroupsKey = '';
+			const cached = configStore.query.peek({ agent: currentAgent });
+			if (cached) {
+				applyProviderConfig(cached);
+			} else {
+				// Keep the previous trigger labels visible on cold first load instead of
+				// blanking `providerInfo = null` (which would unmount the thinking picker
+				// and shift the composer row horizontally while the config is in flight).
+				providerInfoLoaded = false;
+			}
+			void loadProviderInfo(currentAgent, token, Boolean(cached));
+		});
 	});
 
 	// Opening the menu before the config has arrived must not leave it empty: the

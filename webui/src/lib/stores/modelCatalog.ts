@@ -91,13 +91,24 @@ export function clearModelCatalog(agent?: string) {
 // The capability catalog is global and changes only when the binary or the
 // editable file changes, so one request per page load is enough.
 let capabilitiesCache: Promise<ModelCapabilitiesView> | null = null;
+let capabilitiesValue: ModelCapabilitiesView | null = null;
+
+export function peekModelCapabilities(): ModelCapabilitiesView | null {
+	return capabilitiesValue;
+}
 
 export function loadModelCapabilities(): Promise<ModelCapabilitiesView> {
 	if (!capabilitiesCache) {
-		capabilitiesCache = modelsApi.capabilities().catch((err) => {
-			capabilitiesCache = null;
-			throw err;
-		});
+		capabilitiesCache = modelsApi
+			.capabilities()
+			.then((view) => {
+				capabilitiesValue = view;
+				return view;
+			})
+			.catch((err) => {
+				capabilitiesCache = null;
+				throw err;
+			});
 	}
 	return capabilitiesCache;
 }
@@ -118,4 +129,5 @@ export function capabilityFor(
 
 export function clearModelCapabilities() {
 	capabilitiesCache = null;
+	capabilitiesValue = null;
 }
