@@ -57,7 +57,9 @@ func userInfoLine(msg *channel.IncomingMessage, now time.Time) string {
 		// plane injects it from the authenticated token.
 		parts = append(parts, fmt.Sprintf("UserID: %d", msg.UserID))
 	}
-	if session := strings.TrimSpace(msg.ConversationID); session != "" && session != "NEW" {
+	if groupID := groupIDFromScope(msg.Scope); groupID != "" {
+		parts = append(parts, "Group Session ID: "+sanitizeContext(groupID))
+	} else if session := strings.TrimSpace(msg.ConversationID); session != "" && session != "NEW" {
 		parts = append(parts, "Session: "+sanitizeContext(session))
 	}
 	parts = append(parts, "Current time: "+now.UTC().Format("2006-01-02 15:04:05")+" UTC")
@@ -175,6 +177,16 @@ func spaceLabel(msg *channel.IncomingMessage) string {
 		}
 	}
 	return ""
+}
+
+// groupIDFromScope extracts the group id from a control-plane group scope
+// ("group:<id>"). Non-group scopes return "".
+func groupIDFromScope(scope string) string {
+	scope = strings.TrimSpace(scope)
+	if !strings.HasPrefix(scope, "group:") {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(scope, "group:"))
 }
 
 // audienceLabel reports whether other people can read the answer.

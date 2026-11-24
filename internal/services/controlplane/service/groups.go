@@ -1874,6 +1874,7 @@ func buildDeltaPrompt(
 		memberTags = append(memberTags, "@"+sanitizeTagText(m.Name))
 	}
 	membersList := strings.Join(memberTags, ", ")
+	safeGroupID := sanitizeTagText(sg.Group.ID)
 	safeGroupName := sanitizeTagText(sg.Group.Name)
 	safeAgentName := sanitizeTagText(member.Name)
 
@@ -1881,6 +1882,9 @@ func buildDeltaPrompt(
 	if member.ConversationID == "" {
 		sb.WriteString("<group_context>\n")
 		sb.WriteString("Group: " + safeGroupName + "\n")
+		if safeGroupID != "" {
+			sb.WriteString("Group Session ID: " + safeGroupID + "\n")
+		}
 		if desc := sanitizeTagText(sg.Group.Description); desc != "" {
 			sb.WriteString("Topic: " + desc + "\n")
 		}
@@ -1899,8 +1903,13 @@ func buildDeltaPrompt(
 		sb.WriteString("</group_context>\n")
 	} else {
 		sb.WriteString("<group_context>\n")
-		sb.WriteString(fmt.Sprintf("Group: %s | You are: @%s | Members: %s | Mode: %s\n",
-			safeGroupName, safeAgentName, membersList, sg.Group.DiscussionMode))
+		header := "Group: " + safeGroupName
+		if safeGroupID != "" {
+			header += " | Group Session ID: " + safeGroupID
+		}
+		header += fmt.Sprintf(" | You are: @%s | Members: %s | Mode: %s\n",
+			safeAgentName, membersList, sg.Group.DiscussionMode)
+		sb.WriteString(header)
 		sb.WriteString("Note: Never append [DONE] when you @mention a teammate or when other members still need to answer.\n")
 		if addressedDirectly {
 			sb.WriteString("Note: You were directly mentioned or addressed — respond directly and do NOT reply with [PASS].\n")

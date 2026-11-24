@@ -395,6 +395,7 @@ func TestGroupAutonomousHandoffDeltaReplyQuotesAndSessionReuse(t *testing.T) {
 	}
 	if !strings.HasPrefix(r1.Text, "<group>\n<group_context>\n") ||
 		!strings.Contains(r1.Text, "Group: Arch Council") ||
+		!strings.Contains(r1.Text, "Group Session ID: "+group.ID) ||
 		!strings.Contains(r1.Text, "Rules:") ||
 		!strings.Contains(r1.Text, "</group_context>\n<chats>\n") ||
 		!strings.HasSuffix(r1.Text, "\n</chats>\n</group>") {
@@ -409,6 +410,9 @@ func TestGroupAutonomousHandoffDeltaReplyQuotesAndSessionReuse(t *testing.T) {
 	r3 := requests[2].Body
 	if r3.ConversationID != "conv-alice-1" || len(r3.Images) != 0 || len(r3.Files) != 0 {
 		t.Fatalf("req 3 session/images/files = %+v", r3)
+	}
+	if !strings.Contains(r3.Text, "Group Session ID: "+group.ID) || strings.Contains(r3.Text, "conv-alice-1") {
+		t.Fatalf("req 3 should expose Group Session ID (and not internal conversation id) in compact header:\n%s", r3.Text)
 	}
 	if strings.Contains(r3.Text, "Rules:") {
 		t.Fatalf("req 3 should use compact header, got:\n%s", r3.Text)

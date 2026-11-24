@@ -217,6 +217,23 @@ func TestRenderUserInfoSessionIsOptional(t *testing.T) {
 	assertOmits(t, block, "Session:")
 }
 
+func TestRenderUserInfoAPIGroupUsesGroupSessionID(t *testing.T) {
+	block := RenderUserInfo(&channel.IncomingMessage{
+		UserID:         42,
+		Channel:        "api",
+		Scope:          "group:f1d7574c-4eaf-4f40-b1ba-8128ecf580ca",
+		ConversationID: "65096c8b-65b4-4e12-ae83-416acc34863d",
+	}, testClock())
+
+	assertContains(t, block,
+		"Platform: API",
+		"Chat: API session (shared)",
+		"UserID: 42",
+		"Group Session ID: f1d7574c-4eaf-4f40-b1ba-8128ecf580ca",
+	)
+	assertOmits(t, block, "Session: 65096c8b-65b4-4e12-ae83-416acc34863d", "65096c8b-65b4-4e12-ae83-416acc34863d")
+}
+
 func TestRenderUserInfoSanitizesInjection(t *testing.T) {
 	block := RenderUserInfo(&channel.IncomingMessage{
 		Channel:   "discord",
