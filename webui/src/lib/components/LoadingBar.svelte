@@ -1,36 +1,38 @@
 <script lang="ts">
 	import { navigating } from '$app/state';
+	import { untrack } from 'svelte';
 	import { fade } from 'svelte/transition';
 
 	let p = $state(0);
 	let visible = $state(false);
-	let interval: any;
 
 	$effect(() => {
-		// Di Svelte 5, navigating selalu berupa objek.
-		// Kita harus cek properti .to untuk tahu apakah navigasi sedang aktif.
-		if (navigating.to) {
-			visible = true;
+		const shown = untrack(() => visible);
+		if (!navigating.to) {
+			if (!shown) return;
+			p = 1;
+			const hide = setTimeout(() => {
+				visible = false;
+			}, 400);
+			return () => clearTimeout(hide);
+		}
+
+		let interval: ReturnType<typeof setInterval> | undefined;
+		function start() {
 			p = 0.05;
-			if (interval) clearInterval(interval);
+			visible = true;
 			interval = setInterval(() => {
 				if (p < 0.9) p += (0.9 - p) * 0.1;
 			}, 150);
-		} else {
-			if (interval) clearInterval(interval);
-			// Hanya jalankan finish jika p > 0 (artinya ada navigasi yang baru selesai)
-			if (p > 0) {
-				p = 1;
-				const timeout = setTimeout(() => {
-					visible = false;
-					p = 0;
-				}, 400);
-				return () => clearTimeout(timeout);
-			}
 		}
 
+		let delay: ReturnType<typeof setTimeout> | undefined;
+		if (shown) start();
+		else delay = setTimeout(start, 200);
+
 		return () => {
-			if (interval) clearInterval(interval);
+			clearTimeout(delay);
+			clearInterval(interval);
 		};
 	});
 </script>
