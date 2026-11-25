@@ -1,4 +1,7 @@
+import { RUNTIMES_MANAGE_STALE_TIME } from '$lib/constants/query';
 import { agents as agentsApi } from '$lib/apis/agents';
+import { apiBase } from '$lib/stores/apiBase.svelte';
+import { createQueryStore } from './query.svelte';
 import type { SSEEvent } from '$lib/utils/sse';
 import type {
 	ManagedRuntimesResponse,
@@ -7,15 +10,68 @@ import type {
 	RuntimeDefaultsInput
 } from '$lib/types';
 
+const managed = createQueryStore<Record<string, never>, ManagedRuntimesResponse>({
+	key: () => `runtimes:manage:${apiBase.value}`,
+	fetcher: () => agentsApi.managedRuntimes(true, false),
+	staleTime: RUNTIMES_MANAGE_STALE_TIME
+});
+
+let forceRefreshing = $state(false);
+let forceError = $state('');
+
+function patchOne(updated: ManagedRuntimeView) {
+	managed.setData((prev) => {
+		if (!prev) return prev;
+		return {
+			...prev,
+			runtimes: prev.runtimes.map((item) => (item.id === updated.id ? updated : item))
+		};
+	});
+}
+
 export const runtimesManageStore = {
+	query: managed,
+	get data() {
+		return managed.data;
+	},
+	get loading() {
+		return managed.loading;
+	},
+	get refreshing() {
+		return managed.refreshing || forceRefreshing;
+	},
+	get error() {
+		return forceError || managed.error;
+	},
 	list(probeAuth = true, refresh = false): Promise<ManagedRuntimesResponse> {
 		return agentsApi.managedRuntimes(probeAuth, refresh);
 	},
-	getOne(id: string): Promise<ManagedRuntimeView> {
-		return agentsApi.managedRuntime(id);
+	/** Force a live backend probe (?refresh=1) while keeping cached cards on screen. */
+	async refresh(): Promise<void> {
+		if (forceRefreshing) return;
+		forceRefreshing = true;
+		forceError = '';
+		try {
+			const fresh = await agentsApi.managedRuntimes(true, true);
+			managed.write({}, fresh);
+		} catch (err) {
+			forceError = err instanceof Error ? err.message : String(err);
+		} finally {
+			forceRefreshing = false;
+		}
 	},
-	saveDefaults(id: string, payload: RuntimeDefaultsInput): Promise<ManagedRuntimeView> {
-		return agentsApi.saveRuntimeDefaults(id, payload);
+	replaceOne(updated: ManagedRuntimeView) {
+		patchOne(updated);
+	},
+	async getOne(id: string): Promise<ManagedRuntimeView> {
+		const updated = await agentsApi.managedRuntime(id);
+		patchOne(updated);
+		return updated;
+	},
+	async saveDefaults(id: string, payload: RuntimeDefaultsInput): Promise<ManagedRuntimeView> {
+		const updated = await agentsApi.saveRuntimeDefaults(id, payload);
+		patchOne(updated);
+		return updated;
 	},
 	streamInstall(
 		id: string,
@@ -49,5 +105,9 @@ export const runtimesManageStore = {
 	},
 	closeAuthSession(id: string, sid: string) {
 		return agentsApi.closeRuntimeAuthSession(id, sid);
+	},
+	reset() {
+		forceError = '';
+		managed.reset();
 	}
 };

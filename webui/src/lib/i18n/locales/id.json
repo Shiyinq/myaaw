@@ -1111,7 +1111,7 @@
 			"delete_confirm": "Hapus penyedia {name}?",
 			"no_key": "tanpa key",
 			"external_runtime_title": "Dikelola oleh runtime eksternal:",
-			"external_runtime_desc": "Agen ini berjalan menggunakan mesin CLI eksternal, bukan loop penyedia LLM bawaan Myaaw. Model, binary, direktori kerja, dan autentikasi dikonfigurasi di Pengaturan Agen.",
+			"external_runtime_desc": "Agen ini berjalan menggunakan mesin CLI eksternal, bukan Myaaw Agen. Model, binary, direktori kerja, dan autentikasi dikonfigurasi di Pengaturan Agen.",
 			"configure_runtime": "Konfigurasi Runtime"
 		},
 		"channels": {

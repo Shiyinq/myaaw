@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import {
 		Bot,
 		ChevronDown,
@@ -29,8 +28,8 @@
 	import RuntimeAuthDialog from './RuntimeAuthDialog.svelte';
 	import RuntimeDefaultsDialog from './RuntimeDefaultsDialog.svelte';
 	import { runtimesManageStore } from '$lib/stores/runtimes.svelte';
+	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
-	import { getErrorMessage } from '$lib/utils/api';
 	import { formatRuntimeModelValue } from '$lib/utils/runtimeTools';
 	import type { ManagedRuntimeView } from '$lib/types';
 
@@ -38,11 +37,16 @@
 
 	const compactBtn = 'h-7 gap-1.5 px-2.5 text-xs';
 
-	let loading = $state(true);
-	let refreshing = $state(false);
-	let loadError = $state('');
-	let managementEnabled = $state(true);
-	let runtimes = $state<ManagedRuntimeView[]>([]);
+	// Serves cached runtime data immediately across tab switches and page navigations,
+	// revalidating silently in the background when stale without showing skeletons again.
+	useQuery(runtimesManageStore.query, () => ({}));
+
+	const cached = $derived(runtimesManageStore.data);
+	const loading = $derived(runtimesManageStore.loading && !cached);
+	const refreshing = $derived(runtimesManageStore.refreshing);
+	const loadError = $derived(runtimesManageStore.error);
+	const managementEnabled = $derived(cached?.management_enabled ?? true);
+	const runtimes = $derived(cached?.runtimes ?? []);
 
 	// Install / Update modal state
 	let installOpen = $state(false);
@@ -91,28 +95,8 @@
 		return preferred?.command_preview ?? '';
 	}
 
-	onMount(() => {
-		void fetchAll(false);
-	});
-
-	async function fetchAll(isRefresh: boolean) {
-		if (isRefresh) refreshing = true;
-		else loading = true;
-		loadError = '';
-		try {
-			const res = await runtimesManageStore.list(true, isRefresh);
-			managementEnabled = res.management_enabled;
-			runtimes = res.runtimes ?? [];
-		} catch (err) {
-			loadError = getErrorMessage(err);
-		} finally {
-			loading = false;
-			refreshing = false;
-		}
-	}
-
 	function replaceRuntime(updated: ManagedRuntimeView) {
-		runtimes = runtimes.map((item) => (item.id === updated.id ? updated : item));
+		runtimesManageStore.replaceOne(updated);
 		if (defaultsTarget?.id === updated.id) {
 			defaultsTarget = updated;
 		}
@@ -164,7 +148,7 @@
 				<Button
 					variant="outline"
 					size="sm"
-					onclick={() => void fetchAll(true)}
+					onclick={() => void runtimesManageStore.refresh()}
 					disabled={loading || refreshing}
 					class="gap-1.5"
 				>

@@ -9,6 +9,7 @@
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import EmptyState from '$lib/components/common/EmptyState.svelte';
+	import RuntimeBadge from '$lib/components/common/RuntimeBadge.svelte';
 	import ProviderDialog from '$lib/components/providers/ProviderDialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -40,7 +41,7 @@
 	let isExternalRuntime = $derived(
 		!!selectedAgentInfo?.runtime_type && selectedAgentInfo.runtime_type !== 'myaaw'
 	);
-	useQuery(providersStore.list, () => (agent ? { agent } : null));
+	useQuery(providersStore.list, () => (agent && !isExternalRuntime ? { agent } : null));
 
 	let providers = $derived(providersStore.providers);
 	let defaultProvider = $derived(providersStore.defaultProvider);
@@ -79,6 +80,7 @@
 	}
 
 	function openCreate() {
+		if (isExternalRuntime) return;
 		editing = null;
 		dialogOpen = true;
 	}
@@ -139,33 +141,7 @@
 			</CardContent>
 		</Card>
 	{:else}
-		{#if isExternalRuntime}
-			<div
-				class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 text-sm"
-			>
-				<div class="space-y-0.5">
-					<p class="font-medium text-foreground">
-						{t('myaaw.providers.external_runtime_title')}
-						<span class="font-mono text-primary">
-							{selectedAgentInfo?.runtime_preset || selectedAgentInfo?.runtime_type}
-						</span>
-					</p>
-					<p class="text-xs text-muted-foreground">
-						{t('myaaw.providers.external_runtime_desc')}
-					</p>
-				</div>
-				<Button
-					variant="outline"
-					size="sm"
-					href={`/app/new?agent=${encodeURIComponent(agent)}`}
-					class="shrink-0"
-				>
-					{t('myaaw.providers.configure_runtime')}
-				</Button>
-			</div>
-		{/if}
-
-		{#if error}
+		{#if error && !isExternalRuntime}
 			<div
 				class="rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive"
 			>
@@ -178,30 +154,64 @@
 				<div class="flex flex-wrap items-center gap-2">
 					<Cpu class="h-4 w-4 text-primary" />
 					<h2 class="text-sm font-semibold text-foreground">{t('myaaw.providers.list')}</h2>
-					<span
-						class="rounded-full bg-muted px-2 py-0.5 text-[11px] leading-none font-medium text-muted-foreground tabular-nums"
-					>
-						{providers.length}
-					</span>
-					{#if defaultProvider}
+					{#if !isExternalRuntime}
 						<span
-							class="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground"
+							class="rounded-full bg-muted px-2 py-0.5 text-[11px] leading-none font-medium text-muted-foreground tabular-nums"
 						>
-							<Star class="h-2.5 w-2.5 text-primary" />
-							{t('myaaw.providers.default')}:
-							<span class="font-mono font-medium text-foreground">{defaultProvider}</span>
+							{providers.length}
 						</span>
+						{#if defaultProvider}
+							<span
+								class="inline-flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground"
+							>
+								<Star class="h-2.5 w-2.5 text-primary" />
+								{t('myaaw.providers.default')}:
+								<span class="font-mono font-medium text-foreground">{defaultProvider}</span>
+							</span>
+						{/if}
 					{/if}
 				</div>
 
-				<Button size="sm" onclick={openCreate} class="shrink-0 gap-1.5 rounded-lg">
-					<Plus class="h-3.5 w-3.5" />
-					{t('myaaw.providers.create')}
-				</Button>
+				{#if !isExternalRuntime}
+					<Button size="sm" onclick={openCreate} class="shrink-0 gap-1.5 rounded-lg">
+						<Plus class="h-3.5 w-3.5" />
+						{t('myaaw.providers.create')}
+					</Button>
+				{/if}
 			</div>
 
 			<div class="p-4 sm:p-5">
-				{#if loading}
+				{#if isExternalRuntime}
+					<div
+						class="flex min-h-60 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/80 bg-muted/20 px-6 py-10 text-center"
+					>
+						<RuntimeBadge
+							runtimeType={selectedAgentInfo?.runtime_type}
+							runtimePreset={selectedAgentInfo?.runtime_preset}
+							size="lg"
+							inline
+						/>
+						<div class="max-w-md space-y-1">
+							<p class="text-sm font-semibold text-foreground">
+								{t('myaaw.providers.external_runtime_title')}
+								<span class="font-mono text-primary">
+									{selectedAgentInfo?.runtime_preset || selectedAgentInfo?.runtime_type}
+								</span>
+							</p>
+							<p class="text-xs leading-relaxed text-muted-foreground">
+								{t('myaaw.providers.external_runtime_desc')}
+							</p>
+						</div>
+						<Button
+							variant="outline"
+							size="sm"
+							href={`/app/new?agent=${encodeURIComponent(agent)}`}
+							class="mt-1"
+						>
+							{t('myaaw.providers.configure_runtime')}
+						</Button>
+					</div>
+				{:else if loading}
 					<div class="space-y-2.5">
 						<Skeleton class="h-20 w-full rounded-xl" />
 						<Skeleton class="h-20 w-full rounded-xl" />
@@ -321,11 +331,13 @@
 		</div>
 	{/if}
 
-	<ProviderDialog
-		open={dialogOpen}
-		agent={agent ?? ''}
-		{editing}
-		{modelCapabilities}
-		onOpenChange={(next) => (dialogOpen = next)}
-	/>
+	{#if !isExternalRuntime}
+		<ProviderDialog
+			open={dialogOpen}
+			agent={agent ?? ''}
+			{editing}
+			{modelCapabilities}
+			onOpenChange={(next) => (dialogOpen = next)}
+		/>
+	{/if}
 </div>

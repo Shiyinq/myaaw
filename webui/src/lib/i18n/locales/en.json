@@ -1111,7 +1111,7 @@
 			"delete_confirm": "Delete provider {name}?",
 			"no_key": "no key",
 			"external_runtime_title": "Managed by external runtime:",
-			"external_runtime_desc": "This agent runs via an external CLI engine instead of Myaaw's built-in LLM provider loop. Model, binary, working directory, and authentication are configured in Agent Setup.",
+			"external_runtime_desc": "This agent runs via an external CLI engine instead of Myaaw Agent. Model, binary, working directory, and authentication are configured in Agent Setup.",
 			"configure_runtime": "Configure Runtime"
 		},
 		"channels": {
