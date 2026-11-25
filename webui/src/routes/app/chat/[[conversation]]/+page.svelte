@@ -30,6 +30,7 @@
 	import { cn } from '$lib/utils';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { formatRuntimeModelLabel, formatRuntimeModelValue } from '$lib/utils/runtimeTools';
 	import { MAX_ASK_QUOTES, MAX_ASK_QUOTE_CHARS, parseAskPrompt } from '$lib/utils/ask';
 	import { stripAttachDirectives } from '$lib/utils/attachments';
 	import {
@@ -1655,7 +1656,7 @@
 		const val = activeExternalModelValue;
 		if (!val) return runtimeConfig?.preset || t('myaaw.chat.model_label');
 		const match = (runtimeOptions?.models.options ?? []).find((item) => item.value === val);
-		return match?.label || modelDisplayName(val);
+		return match?.label || modelDisplayName(formatRuntimeModelValue(val));
 	});
 
 	let externalThinkingOptions = $derived.by((): RuntimeOptionItem[] => {
@@ -5362,7 +5363,10 @@
 																		<span
 																			class="block truncate font-mono text-[10px] text-muted-foreground"
 																		>
-																			{runtimeOptions.models.current}
+																			{formatRuntimeModelLabel(
+																				runtimeOptions.models.current,
+																				runtimeOptions.models.options
+																			)}
 																		</span>
 																	{/if}
 																</span>
@@ -5380,6 +5384,7 @@
 																			</DropdownMenu.Label>
 																		{/if}
 																		{#each grp.items as item (item.value)}
+																			{@const displayVal = formatRuntimeModelValue(item.value)}
 																			<DropdownMenu.Item
 																				class="items-start gap-2 py-1.5"
 																				onclick={() => void switchRuntimeModel(item.value)}
@@ -5407,11 +5412,11 @@
 																							</span>
 																						{/if}
 																					</span>
-																					{#if item.label !== item.value}
+																					{#if item.label !== displayVal}
 																						<span
 																							class="block truncate font-mono text-[10px] text-muted-foreground"
 																						>
-																							{item.value}
+																							{displayVal}
 																						</span>
 																					{/if}
 																					{#if item.thinking || item.vision}

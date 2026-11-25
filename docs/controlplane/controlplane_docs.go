@@ -11139,6 +11139,9 @@ const docTemplatecontrolplane = `{
                 "label": {
                     "type": "string"
                 },
+                "manual_download": {
+                    "type": "boolean"
+                },
                 "missing_tool": {
                     "type": "string"
                 },

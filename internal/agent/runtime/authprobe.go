@@ -138,6 +138,12 @@ func AuthActionMetadata(presetID string) AuthStatusInfo {
 			LoginCommand:   "opencode auth login",
 			LogoutCommand:  "opencode auth logout",
 		}
+	case "deepseek_harness":
+		return AuthStatusInfo{
+			Status:         AuthStatusUnknown,
+			SupportsLogin:  false,
+			SupportsLogout: false,
+		}
 	case "omp":
 		return AuthStatusInfo{
 			Status:        AuthStatusUnknown,
@@ -356,6 +362,38 @@ func ProbeAuthStatus(
 		}
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(mErr, context.DeadlineExceeded) {
 			info.Status = AuthStatusUnknown
+			return info
+		}
+		info.Status = AuthStatusUnauthenticated
+		return info
+
+	case "deepseek_harness":
+		var probeOpts RuntimeOptions
+		probeACPOptions(ctx, config.RuntimeConfig{
+			Type:    preset.Type,
+			Preset:  preset.ID,
+			Command: resolvedBin,
+			Args:    preset.DefaultArgs,
+		}, os.TempDir(), &probeOpts)
+		hasAccountModel := false
+		for _, m := range probeOpts.Models.Options {
+			if strings.Contains(strings.ToLower(m.Value), "deepseek-account") || strings.EqualFold(m.Group, "DeepSeek Account") {
+				hasAccountModel = true
+				break
+			}
+		}
+		if hasAccountModel {
+			info.Status = AuthStatusAuthenticated
+			info.Detail = fmt.Sprintf("DeepSeek Account · %d models", len(probeOpts.Models.Options))
+			return info
+		}
+		if hasSavedGlobalKey || hostHasEnvKey {
+			info.Status = AuthStatusAPIKeyConfigured
+			if n := len(probeOpts.Models.Options); n > 0 {
+				info.Detail = fmt.Sprintf("%s · %d models", envKeyName, n)
+			} else {
+				info.Detail = envKeyName
+			}
 			return info
 		}
 		info.Status = AuthStatusUnauthenticated

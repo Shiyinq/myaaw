@@ -17,7 +17,7 @@
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import CapabilityPicker from '$lib/components/onboard/CapabilityPicker.svelte';
-	import { isToolAvailableForRuntime } from '$lib/utils/runtimeTools';
+	import { formatRuntimeModelLabel, isToolAvailableForRuntime } from '$lib/utils/runtimeTools';
 	import AgentColorPicker from '$lib/components/onboard/AgentColorPicker.svelte';
 	import Section from '$lib/components/onboard/Section.svelte';
 	import FieldError from '$lib/components/common/FieldError.svelte';
@@ -1106,6 +1106,7 @@
 								<option value="codex">OpenAI Codex CLI (codex)</option>
 								<option value="antigravity">Google Antigravity (agy)</option>
 								<option value="opencode">OpenCode (opencode)</option>
+								<option value="deepseek_harness">DeepSeek Harness (dsh)</option>
 								<option value="pi">Pi Coding Agent (pi)</option>
 								<option value="omp">Oh My Pi (omp)</option>
 								<option value="custom_acp">{t('myaaw.onboard.runtime_custom_acp')}</option>
@@ -1178,11 +1179,16 @@
 								>
 									<option value="">
 										{t('myaaw.onboard.runtime_cli_default')}{runtimeOptions?.models.current
-											? ` (${runtimeOptions.models.current})`
+											? ` (${formatRuntimeModelLabel(runtimeOptions.models.current, runtimeOptions.models.options)})`
 											: ''}
 									</option>
 									{#if runtimeModel && !runtimeModelKnown}
-										<option value={runtimeModel}>{runtimeModel}</option>
+										<option value={runtimeModel}
+											>{formatRuntimeModelLabel(
+												runtimeModel,
+												runtimeOptions?.models.options
+											)}</option
+										>
 									{/if}
 									{#each runtimeModelGroups as grp (grp.group)}
 										{#if grp.group}
@@ -1737,7 +1743,9 @@
 									type: activeRuntimePreset
 										? runtimePresetLabel(activeRuntimePreset.id, activeRuntimePreset.label)
 										: runtimePreset,
-									model: runtimeModel || t('myaaw.onboard.runtime_cli_default')
+									model:
+										formatRuntimeModelLabel(runtimeModel, runtimeOptions?.models.options) ||
+										t('myaaw.onboard.runtime_cli_default')
 								})}
 							{:else}
 								{t('myaaw.onboard.summary_provider', {

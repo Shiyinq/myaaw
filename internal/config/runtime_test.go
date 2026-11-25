@@ -64,6 +64,7 @@ func TestRuntimePresetsOrder(t *testing.T) {
 		"codex",
 		"antigravity",
 		"opencode",
+		"deepseek_harness",
 		"pi",
 		"omp",
 		"custom_acp",

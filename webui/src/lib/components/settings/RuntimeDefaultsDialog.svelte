@@ -10,6 +10,7 @@
 	import { toastStore } from '$lib/stores';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { formatRuntimeModelLabel } from '$lib/utils/runtimeTools';
 	import type { ManagedRuntimeView, RuntimeOptionItem, RuntimeOptions } from '$lib/types';
 
 	interface Props {
@@ -289,11 +290,13 @@
 							>
 								<option value="">
 									{t('myaaw.onboard.runtime_cli_default')}{probedOptions?.models.current
-										? ` (${probedOptions.models.current})`
+										? ` (${formatRuntimeModelLabel(probedOptions.models.current, probedOptions.models.options)})`
 										: ''}
 								</option>
 								{#if defModel && !defModelKnown}
-									<option value={defModel}>{defModel}</option>
+									<option value={defModel}
+										>{formatRuntimeModelLabel(defModel, probedOptions?.models.options)}</option
+									>
 								{/if}
 								{#each defModelGroups as grp (grp.group)}
 									{#if grp.group}

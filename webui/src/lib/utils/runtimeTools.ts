@@ -27,3 +27,44 @@ export function isToolAvailableForRuntime(toolName: string, isExternal: boolean)
 	if (!isExternal) return true;
 	return !EXTERNAL_DELEGATED_TOOLS.has(toolName.trim().toLowerCase());
 }
+
+/**
+ * Formats an external runtime model value for human display. Some ACP runtimes
+ * (e.g. DeepSeek Harness) encode model IDs as JSON 2-tuples such as
+ * `["deepseek-account","deepseek-flash"]`; render those as
+ * `deepseek-account/deepseek-flash` while keeping the raw wire value for requests.
+ */
+export function formatRuntimeModelValue(raw?: string | null): string {
+	const value = (raw ?? '').trim();
+	if (!value) return '';
+	if (value.startsWith('[') && value.endsWith(']')) {
+		try {
+			const parsed: unknown = JSON.parse(value);
+			if (
+				Array.isArray(parsed) &&
+				parsed.length > 0 &&
+				parsed.every((part) => typeof part === 'string' && part.trim() !== '')
+			) {
+				return (parsed as string[]).map((part) => part.trim()).join('/');
+			}
+		} catch {
+			// Fall back to raw value.
+		}
+	}
+	return value;
+}
+
+/**
+ * Resolves a human-friendly label for an external runtime model ID, preferring
+ * the runtime's advertised option label and falling back to `formatRuntimeModelValue`.
+ */
+export function formatRuntimeModelLabel(
+	raw: string | null | undefined,
+	options?: ReadonlyArray<{ value: string; label: string }>
+): string {
+	const value = (raw ?? '').trim();
+	if (!value) return '';
+	const match = options?.find((item) => item.value === value);
+	if (match?.label) return match.label;
+	return formatRuntimeModelValue(value);
+}

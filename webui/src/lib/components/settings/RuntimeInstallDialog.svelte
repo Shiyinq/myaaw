@@ -24,6 +24,7 @@
 
 	let selectedMethodId = $state('');
 	let running = $state(false);
+	let rechecking = $state(false);
 	let finished = $state(false);
 	let errorMessage = $state('');
 	let logs = $state<string[]>([]);
@@ -87,6 +88,29 @@
 			}, 1500);
 		} catch {
 			// Ignore clipboard failures in restricted contexts.
+		}
+	}
+
+	async function recheckInstalled() {
+		if (!runtime || rechecking) return;
+		rechecking = true;
+		errorMessage = '';
+		try {
+			const updated = await runtimesManageStore.getOne(runtime.id);
+			onCompleted?.(updated);
+			if (updated.installed) {
+				finished = true;
+				toastStore.success(
+					t('myaaw.settings.runtimes_install_success', {
+						name: runtime.label,
+						version: updated.version || t('myaaw.settings.runtimes_installed')
+					})
+				);
+			}
+		} catch (err) {
+			errorMessage = getErrorMessage(err);
+		} finally {
+			rechecking = false;
 		}
 	}
 
@@ -208,53 +232,77 @@
 				</div>
 			{/if}
 
-			{#if activeMethod}
-				<div class="space-y-1.5">
-					<div class="flex items-center justify-between gap-2">
-						<Label class="text-xs">{t('myaaw.settings.runtimes_command_preview')}</Label>
-						{#if activeMethod.source_url}
-							<a
-								href={activeMethod.source_url}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
-							>
-								{t('myaaw.settings.runtimes_source_link')}
-								<ExternalLink class="h-3 w-3" />
-							</a>
-						{/if}
+			{#if activeMethod?.manual_download}
+				<div class="space-y-3 rounded-xl border bg-muted/30 p-4">
+					<div class="space-y-1">
+						<p class="text-xs font-medium text-foreground">
+							{t('myaaw.settings.runtimes_download_title')}
+						</p>
+						<p class="text-xs leading-relaxed text-muted-foreground">
+							{t('myaaw.settings.runtimes_download_hint', { name: runtime?.label ?? '' })}
+						</p>
 					</div>
-					<div
-						class="flex min-w-0 items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 py-2"
-					>
-						<code class="min-w-0 flex-1 break-all font-mono text-xs text-foreground">
-							{activeMethod.command_preview}
-						</code>
-						<button
-							type="button"
-							onclick={() => void copyCommand()}
-							class="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-							title={t('common.markdown.copy')}
+					{#if activeMethod.source_url}
+						<a
+							href={activeMethod.source_url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="inline-flex items-center gap-1.5 font-mono text-xs text-primary hover:underline"
 						>
-							{#if copied}
-								<Check class="h-3.5 w-3.5 text-emerald-500" />
-							{:else}
-								<Copy class="h-3.5 w-3.5" />
+							{activeMethod.source_url}
+							<ExternalLink class="h-3.5 w-3.5" />
+						</a>
+					{/if}
+				</div>
+			{:else}
+				{#if activeMethod}
+					<div class="space-y-1.5">
+						<div class="flex items-center justify-between gap-2">
+							<Label class="text-xs">{t('myaaw.settings.runtimes_command_preview')}</Label>
+							{#if activeMethod.source_url}
+								<a
+									href={activeMethod.source_url}
+									target="_blank"
+									rel="noopener noreferrer"
+									class="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+								>
+									{t('myaaw.settings.runtimes_source_link')}
+									<ExternalLink class="h-3 w-3" />
+								</a>
 							{/if}
-						</button>
+						</div>
+						<div
+							class="flex min-w-0 items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 py-2"
+						>
+							<code class="min-w-0 flex-1 break-all font-mono text-xs text-foreground">
+								{activeMethod.command_preview}
+							</code>
+							<button
+								type="button"
+								onclick={() => void copyCommand()}
+								class="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+								title={t('common.markdown.copy')}
+							>
+								{#if copied}
+									<Check class="h-3.5 w-3.5 text-emerald-500" />
+								{:else}
+									<Copy class="h-3.5 w-3.5" />
+								{/if}
+							</button>
+						</div>
 					</div>
+				{/if}
+
+				<div
+					class="flex min-h-[220px] min-w-0 flex-1 overflow-hidden rounded-xl border bg-zinc-950 text-zinc-100 sm:h-64 sm:flex-none"
+				>
+					<pre
+						bind:this={logContainer}
+						class="h-full w-full overflow-y-auto p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words">{#if logs.length === 0}<span
+								class="text-zinc-400">{t('myaaw.settings.runtimes_log_waiting')}</span
+							>{:else}{logs.join('\n')}{/if}</pre>
 				</div>
 			{/if}
-
-			<div
-				class="flex min-h-[220px] min-w-0 flex-1 overflow-hidden rounded-xl border bg-zinc-950 text-zinc-100 sm:h-64 sm:flex-none"
-			>
-				<pre
-					bind:this={logContainer}
-					class="h-full w-full overflow-y-auto p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words">{#if logs.length === 0}<span
-							class="text-zinc-400">{t('myaaw.settings.runtimes_log_waiting')}</span
-						>{:else}{logs.join('\n')}{/if}</pre>
-			</div>
 
 			{#if errorMessage}
 				<div
@@ -272,23 +320,49 @@
 				{finished ? t('common.markdown.close') : t('common.cancel')}
 			</Button>
 			{#if !finished}
-				<Button
-					size="sm"
-					disabled={!activeMethod?.available || running}
-					onclick={() => void runJob()}
-					class="gap-1.5"
-				>
-					{#if running}
-						<Loader2 class="h-3.5 w-3.5 animate-spin" />
-						{t('myaaw.settings.runtimes_installing')}
-					{:else if mode === 'update'}
-						<RefreshCw class="h-3.5 w-3.5" />
-						{t('myaaw.settings.runtimes_update_start')}
-					{:else}
-						<Download class="h-3.5 w-3.5" />
-						{t('myaaw.settings.runtimes_install_start')}
+				{#if activeMethod?.manual_download}
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={rechecking}
+						onclick={() => void recheckInstalled()}
+						class="gap-1.5"
+					>
+						<RefreshCw class={`h-3.5 w-3.5 ${rechecking ? 'animate-spin' : ''}`} />
+						{t('myaaw.settings.runtimes_download_recheck')}
+					</Button>
+					{#if activeMethod.source_url}
+						<Button
+							size="sm"
+							href={activeMethod.source_url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="gap-1.5"
+						>
+							<Download class="h-3.5 w-3.5" />
+							{t('myaaw.settings.runtimes_download_open')}
+							<ExternalLink class="h-3 w-3" />
+						</Button>
 					{/if}
-				</Button>
+				{:else}
+					<Button
+						size="sm"
+						disabled={!activeMethod?.available || running}
+						onclick={() => void runJob()}
+						class="gap-1.5"
+					>
+						{#if running}
+							<Loader2 class="h-3.5 w-3.5 animate-spin" />
+							{t('myaaw.settings.runtimes_installing')}
+						{:else if mode === 'update'}
+							<RefreshCw class="h-3.5 w-3.5" />
+							{t('myaaw.settings.runtimes_update_start')}
+						{:else}
+							<Download class="h-3.5 w-3.5" />
+							{t('myaaw.settings.runtimes_install_start')}
+						{/if}
+					</Button>
+				{/if}
 			{/if}
 		</Dialog.Footer>
 	</Dialog.Content>

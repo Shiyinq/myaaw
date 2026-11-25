@@ -342,16 +342,23 @@ func (r *acpRuntime) acquireSession(ctx context.Context, convKey string, cfg age
 	resumed := false
 	var sessionMeta acpSessionMeta
 	if wantResume && cfg.ExternalSessionID != "" {
-		if raw, err := proc.call(ctx, "session/load", map[string]any{
+		resumeParams := map[string]any{
 			"sessionId":  cfg.ExternalSessionID,
 			"cwd":        cwd,
 			"mcpServers": acpMCP,
-		}); err == nil {
+		}
+		if raw, err := proc.call(ctx, "session/load", resumeParams); err == nil {
+			_ = json.Unmarshal(raw, &sessionMeta)
+			proc.sessionID = cfg.ExternalSessionID
+			resumed = true
+		} else if raw, rErr := proc.call(ctx, "session/resume", resumeParams); rErr == nil {
+			// DeepSeek Harness (`@deepseek-ai/dsh-acp`) implements ACP `session/resume`
+			// instead of `session/load` for persistent session restoration without replay.
 			_ = json.Unmarshal(raw, &sessionMeta)
 			proc.sessionID = cfg.ExternalSessionID
 			resumed = true
 		} else {
-			log.Printf("[ACP] session/load failed for %s (%v); creating fresh session", cfg.ExternalSessionID, err)
+			log.Printf("[ACP] session/load (%v) and session/resume (%v) failed for %s; creating fresh session", err, rErr, cfg.ExternalSessionID)
 		}
 	}
 

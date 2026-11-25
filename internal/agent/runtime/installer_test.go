@@ -14,7 +14,7 @@ import (
 )
 
 func TestInstallMethodsAllowlistAndAuthArgs(t *testing.T) {
-	for _, preset := range []string{"antigravity", "claude_code", "codex", "opencode", "omp", "pi"} {
+	for _, preset := range []string{"antigravity", "claude_code", "codex", "opencode", "deepseek_harness", "omp", "pi"} {
 		methods := InstallMethodsForPreset(preset)
 		if len(methods) == 0 {
 			t.Fatalf("expected at least 1 official install method for %s on %s", preset, goruntime.GOOS)

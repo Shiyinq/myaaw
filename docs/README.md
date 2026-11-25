@@ -7,7 +7,7 @@ Start with the [main README](../README.md) for installation and a feature overvi
 | Document | Description |
 | :--- | :--- |
 | [Multi-Agent Guide](agents/multi-agent.md) | Registry, agent commands, per-agent config, channels, ports, and servers. |
-| [External Agent Runtimes](agents/external-agents.md) | Running Antigravity (`agy acp`), Claude Code, Oh My Pi (`omp`), Pi, Codex, and custom ACP CLIs inside isolated Myaaw agents with bridged approvals and MCP ecosystem tools. |
+| [External Agent Runtimes](agents/external-agents.md) | Running Claude Code, Codex, Antigravity (`agy acp`), OpenCode, DeepSeek Harness (`dsh`), Pi, Oh My Pi (`omp`), and custom ACP CLIs inside isolated Myaaw agents with bridged approvals and MCP ecosystem tools. |
 | [Multi-Agent Group Chat](agents/groups.md) | Shared multi-agent rooms, delta context sync, autonomous `@mention` discussion, Reply vs. Quotes, and guardrails. |
 | [Agent Loop](agents/agent-loop.md) | `RunEvents` engine, transcript v2, compaction, tools, and retries. |
 | [Agent Context](agents/context.md) | What the agent knows per turn, the `<userinfo>`/`<attached>` blocks, and prompt-cache safety. |

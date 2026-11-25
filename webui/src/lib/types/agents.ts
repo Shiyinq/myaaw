@@ -44,6 +44,7 @@ export interface RuntimeInstallMethod {
 	available: boolean;
 	missing_tool?: string;
 	recommended: boolean;
+	manual_download?: boolean;
 }
 
 export type RuntimeAuthStatus =

@@ -68,6 +68,67 @@ func TestApplyACPSessionMeta_ConfigOptions(t *testing.T) {
 	}
 }
 
+func TestApplyACPSessionMeta_GroupedDeepSeekHarnessOptions(t *testing.T) {
+	raw := `{
+		"sessionId": "34e1f1a4-94e2-4f2a-8631-05bb6a8c0876",
+		"configOptions": [
+			{
+				"id": "model",
+				"name": "Model",
+				"category": "model",
+				"type": "select",
+				"currentValue": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+				"options": [
+					{
+						"group": "deepseek-official",
+						"name": "DeepSeek",
+						"options": [
+							{"value": "[\"deepseek-official\",\"deepseek-v4-flash\"]", "name": "deepseek-v4-flash"}
+						]
+					},
+					{
+						"group": "deepseek-account",
+						"name": "DeepSeek Account",
+						"options": [
+							{"value": "[\"deepseek-account\",\"deepseek-flash\"]", "name": "DeepSeek-V4.1-Flash"},
+							{"value": "[\"deepseek-account\",\"deepseek-v4-pro\"]", "name": "DeepSeek-V4-Pro", "description": "Stronger reasoning"}
+						]
+					}
+				]
+			},
+			{
+				"id": "reasoning_effort",
+				"name": "Reasoning effort",
+				"category": "thought_level",
+				"type": "select",
+				"currentValue": "high",
+				"options": [
+					{"value": "off", "name": "Off"},
+					{"value": "low", "name": "Low"},
+					{"value": "high", "name": "High"},
+					{"value": "max", "name": "Max"}
+				]
+			}
+		]
+	}`
+	var meta acpSessionMeta
+	if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	opts := RuntimeOptions{}
+	applyACPSessionMeta(meta, &opts)
+
+	if len(opts.Models.Options) != 3 {
+		t.Fatalf("expected 3 grouped models, got %d: %+v", len(opts.Models.Options), opts.Models.Options)
+	}
+	if opts.Models.Options[1].Group != "DeepSeek Account" || opts.Models.Options[1].Label != "DeepSeek-V4.1-Flash" {
+		t.Fatalf("unexpected grouped model[1]: %+v", opts.Models.Options[1])
+	}
+	if opts.Thinking.ConfigID != "reasoning_effort" || opts.Thinking.Current != "high" || len(opts.Thinking.Options) != 4 {
+		t.Fatalf("unexpected reasoning_effort options: %+v", opts.Thinking)
+	}
+}
+
 func TestExtractPiThinkingLevels(t *testing.T) {
 	got := extractPiThinkingLevels(true, map[string]any{
 		"minimal": nil,

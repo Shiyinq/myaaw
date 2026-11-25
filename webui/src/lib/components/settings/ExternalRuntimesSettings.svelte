@@ -31,6 +31,7 @@
 	import { runtimesManageStore } from '$lib/stores/runtimes.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { formatRuntimeModelValue } from '$lib/utils/runtimeTools';
 	import type { ManagedRuntimeView } from '$lib/types';
 
 	const { t } = useTranslation();
@@ -83,8 +84,9 @@
 
 	function recommendedInstallCommand(rt: ManagedRuntimeView): string {
 		const preferred =
+			rt.install_methods.find((m) => m.available && !m.manual_download && m.recommended) ??
 			rt.install_methods.find((m) => m.available && m.recommended) ??
-			rt.install_methods.find((m) => m.recommended) ??
+			rt.install_methods.find((m) => !m.manual_download) ??
 			rt.install_methods[0];
 		return preferred?.command_preview ?? '';
 	}
@@ -316,12 +318,13 @@
 							{/if}
 
 							{#if rt.defaults.model}
+								{@const displayModel = formatRuntimeModelValue(rt.defaults.model)}
 								<span class="shrink-0 text-muted-foreground/40">·</span>
 								<span
 									class="max-w-36 shrink-0 truncate rounded border bg-background/70 px-1.5 py-0.5 font-mono text-[10px] text-foreground/85"
-									title={rt.defaults.model}
+									title={displayModel}
 								>
-									{rt.defaults.model}
+									{displayModel}
 								</span>
 							{/if}
 

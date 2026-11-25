@@ -216,6 +216,26 @@ func extraSearchDirs() []string {
 			}
 		}
 	}
+	// Bundled CLI inside DeepSeek Harness Desktop installations.
+	var dshDesktopDirs []string
+	switch goruntime.GOOS {
+	case "darwin":
+		dshDesktopDirs = append(dshDesktopDirs, "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin")
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			dshDesktopDirs = append(dshDesktopDirs, filepath.Join(home, "Applications", "DeepSeek Harness.app", "Contents", "Resources", "runtime", "cli", "bin"))
+		}
+	case "windows":
+		if localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); localAppData != "" {
+			dshDesktopDirs = append(dshDesktopDirs, filepath.Join(localAppData, "Programs", "DeepSeek Harness", "resources", "runtime", "cli", "bin"))
+		}
+	default:
+		dshDesktopDirs = append(dshDesktopDirs, "/opt/DeepSeek Harness/resources/runtime/cli/bin")
+	}
+	for _, d := range dshDesktopDirs {
+		if info, err := os.Stat(d); err == nil && info.IsDir() {
+			dirs = append(dirs, d)
+		}
+	}
 	return dirs
 }
 

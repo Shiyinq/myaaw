@@ -40,8 +40,8 @@ type RuntimeConfig struct {
 	// Type selects the protocol driver: myaaw, acp, claude_code, omp, pi, codex.
 	Type string `json:"type,omitempty"`
 	// Preset identifies the user-facing catalog entry (e.g. "myaaw",
-	// "claude_code", "codex", "antigravity", "opencode", "pi", "omp",
-	// "custom_acp").
+	// "claude_code", "codex", "antigravity", "opencode", "deepseek_harness",
+	// "pi", "omp", "custom_acp").
 	Preset string `json:"preset,omitempty"`
 	// Command and Args override the preset default binary and arguments.
 	Command string   `json:"command,omitempty"`
@@ -201,6 +201,26 @@ var runtimePresetCatalog = []RuntimePreset{
 			SupportsCLIAuth:       false,
 		},
 		ToSNotice: "Configure standard API keys or local models in OpenCode.",
+	},
+	{
+		ID:               "deepseek_harness",
+		Label:            "DeepSeek Harness (dsh)",
+		Description:      "Runs DeepSeek Harness over Agent Client Protocol (dsh --profile acp).",
+		Type:             RuntimeTypeACP,
+		DefaultCommand:   "dsh",
+		DefaultArgs:      []string{"--profile", "acp"},
+		DefaultAPIKeyEnv: "DEEPSEEK_API_KEY",
+		DefaultAuth:      AuthSourceCLILogin,
+		Capabilities: RuntimeCapabilities{
+			NeedsLLMProvider:      false,
+			ManagesCoreTools:      true,
+			SupportsApprovals:     true,
+			SupportsModelOverride: true,
+			SupportsImages:        true,
+			SupportsMCPBridge:     true,
+			SupportsCLIAuth:       true,
+		},
+		ToSNotice: "Uses DeepSeek Harness (Desktop bundled CLI or npm @deepseek-ai/dsh, Node >= 24.9). Use private mode for personal DeepSeek Account logins, or DEEPSEEK_API_KEY for public/unattended workloads.",
 	},
 	{
 		ID:               "pi",

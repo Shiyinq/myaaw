@@ -214,17 +214,27 @@ func applyConfiguredCurrents(opts RuntimeOptions, cfg config.RuntimeConfig) Runt
 	return opts
 }
 
+type acpConfigOptionValue struct {
+	Value       string `json:"value"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type acpConfigOptionEntry struct {
+	Value       string                 `json:"value"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Group       string                 `json:"group"`
+	Options     []acpConfigOptionValue `json:"options"`
+}
+
 type acpConfigOption struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Category     string `json:"category"`
-	Type         string `json:"type"`
-	CurrentValue string `json:"currentValue"`
-	Options      []struct {
-		Value       string `json:"value"`
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	} `json:"options"`
+	ID           string                 `json:"id"`
+	Name         string                 `json:"name"`
+	Category     string                 `json:"category"`
+	Type         string                 `json:"type"`
+	CurrentValue string                 `json:"currentValue"`
+	Options      []acpConfigOptionEntry `json:"options"`
 }
 
 type acpSessionMeta struct {
@@ -249,7 +259,7 @@ type acpSessionMeta struct {
 }
 
 func probeACPOptions(parent context.Context, cfg config.RuntimeConfig, workingDir string, opts *RuntimeOptions) {
-	ctx, cancel := context.WithTimeout(parent, 8*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 12*time.Second)
 	defer cancel()
 
 	bin, err := ResolveBinary(cfg.Command)
@@ -372,6 +382,29 @@ func applyACPSessionMeta(meta acpSessionMeta, opts *RuntimeOptions) {
 		id := strings.ToLower(strings.TrimSpace(co.ID))
 		items := make([]RuntimeOptionItem, 0, len(co.Options))
 		for _, o := range co.Options {
+			if len(o.Options) > 0 {
+				groupLabel := strings.TrimSpace(o.Name)
+				if groupLabel == "" {
+					groupLabel = strings.TrimSpace(o.Group)
+				}
+				for _, sub := range o.Options {
+					val := strings.TrimSpace(sub.Value)
+					if val == "" {
+						continue
+					}
+					label := strings.TrimSpace(sub.Name)
+					if label == "" {
+						label = val
+					}
+					items = append(items, RuntimeOptionItem{
+						Value:       val,
+						Label:       label,
+						Description: strings.TrimSpace(sub.Description),
+						Group:       groupLabel,
+					})
+				}
+				continue
+			}
 			val := strings.TrimSpace(o.Value)
 			if val == "" {
 				continue

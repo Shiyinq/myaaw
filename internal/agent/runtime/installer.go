@@ -38,17 +38,19 @@ type InstallMethod struct {
 	Available      bool   `json:"available"`
 	MissingTool    string `json:"missing_tool,omitempty"`
 	Recommended    bool   `json:"recommended"`
+	ManualDownload bool   `json:"manual_download,omitempty"`
 }
 
 type officialRecipe struct {
-	id          string
-	label       string
-	preview     string
-	sourceURL   string
-	osList      []string // empty means all OSes
-	prereqTools []string // every tool must resolve via ResolveBinary
-	execArgs    func(resolvedBin string) (bin string, args []string, usesNPM bool, err error)
-	recommended bool
+	id             string
+	label          string
+	preview        string
+	sourceURL      string
+	osList         []string // empty means all OSes
+	prereqTools    []string // every tool must resolve via ResolveBinary
+	execArgs       func(resolvedBin string) (bin string, args []string, usesNPM bool, err error)
+	recommended    bool
+	manualDownload bool
 }
 
 // OfficialDocsURL returns the official vendor documentation URL for a preset.
@@ -62,6 +64,8 @@ func OfficialDocsURL(presetID string) string {
 		return "https://github.com/openai/codex"
 	case "opencode":
 		return "https://opencode.ai/docs"
+	case "deepseek_harness":
+		return "https://github.com/deepseek-ai/deepseek-harness"
 	case "omp":
 		return "https://github.com/can1357/oh-my-pi"
 	case "pi":
@@ -256,6 +260,43 @@ var installCatalog = map[string][]officialRecipe{
 			execArgs:    toolExec("brew", "install", "anomalyco/tap/opencode"),
 		},
 	},
+	"deepseek_harness": {
+		{
+			id:             "desktop_app",
+			label:          "DeepSeek Harness Desktop (macOS Apple Silicon)",
+			preview:        "https://www.deepseek.com/harness/",
+			sourceURL:      "https://www.deepseek.com/harness/",
+			osList:         []string{"darwin"},
+			recommended:    true,
+			manualDownload: true,
+		},
+		{
+			id:             "desktop_app",
+			label:          "DeepSeek Harness Desktop (Windows 64-bit)",
+			preview:        "https://www.deepseek.com/harness/",
+			sourceURL:      "https://www.deepseek.com/harness/",
+			osList:         []string{"windows"},
+			recommended:    true,
+			manualDownload: true,
+		},
+		{
+			id:          "npm",
+			label:       "npm (@deepseek-ai/dsh)",
+			preview:     "npm install -g @deepseek-ai/dsh@latest",
+			sourceURL:   "https://www.npmjs.com/package/@deepseek-ai/dsh",
+			prereqTools: []string{"npm"},
+			execArgs:    toolExec("npm", "install", "-g", "@deepseek-ai/dsh@latest"),
+			recommended: goruntime.GOOS == "linux",
+		},
+		{
+			id:          "pnpm",
+			label:       "pnpm (@deepseek-ai/dsh)",
+			preview:     "pnpm add -g @deepseek-ai/dsh@latest",
+			sourceURL:   "https://www.npmjs.com/package/@deepseek-ai/dsh",
+			prereqTools: []string{"pnpm"},
+			execArgs:    toolExec("pnpm", "add", "-g", "@deepseek-ai/dsh@latest"),
+		},
+	},
 	"omp": {
 		{
 			id:          "official_script",
@@ -381,6 +422,7 @@ func installMethodsForOS(presetID, targetOS string) []InstallMethod {
 			Available:      avail,
 			MissingTool:    missing,
 			Recommended:    r.recommended,
+			ManualDownload: r.manualDownload,
 		})
 	}
 	return out
@@ -438,6 +480,36 @@ func updateRecipeForPreset(presetID, resolvedBin, targetOS string) *officialReci
 				sourceURL:   "https://www.npmjs.com/package/@openai/codex",
 				prereqTools: []string{"npm"},
 				execArgs:    toolExec("npm", "install", "-g", "@openai/codex@latest"),
+				recommended: true,
+			}
+		}
+	case "deepseek_harness":
+		if strings.Contains(resolvedBin, "DeepSeek Harness.app") || strings.Contains(resolvedBin, filepath.Join("DeepSeek Harness", "resources", "runtime")) {
+			// DeepSeek Harness Desktop bundles a signed Electron+dsh runtime and
+			// manages its own updates inside the Desktop app.
+			return nil
+		}
+		if strings.Contains(resolvedBin, "pnpm") {
+			if ok, _ := checkPrereqs([]string{"pnpm"}); ok {
+				return &officialRecipe{
+					id:          "pnpm",
+					label:       "pnpm Update (@deepseek-ai/dsh@latest)",
+					preview:     "pnpm add -g @deepseek-ai/dsh@latest",
+					sourceURL:   "https://www.npmjs.com/package/@deepseek-ai/dsh",
+					prereqTools: []string{"pnpm"},
+					execArgs:    toolExec("pnpm", "add", "-g", "@deepseek-ai/dsh@latest"),
+					recommended: true,
+				}
+			}
+		}
+		if ok, _ := checkPrereqs([]string{"npm"}); ok {
+			return &officialRecipe{
+				id:          "npm",
+				label:       "npm Update (@deepseek-ai/dsh@latest)",
+				preview:     "npm install -g @deepseek-ai/dsh@latest",
+				sourceURL:   "https://www.npmjs.com/package/@deepseek-ai/dsh",
+				prereqTools: []string{"npm"},
+				execArgs:    toolExec("npm", "install", "-g", "@deepseek-ai/dsh@latest"),
 				recommended: true,
 			}
 		}
@@ -522,6 +594,9 @@ func RunOfficialInstall(ctx context.Context, presetID, methodID string, onLine f
 	}
 	if chosen == nil {
 		return fmt.Errorf("%w: %s for %s", ErrUnsupportedInstallMethod, methodID, presetID)
+	}
+	if chosen.manualDownload || chosen.execArgs == nil {
+		return fmt.Errorf("%w: %s requires downloading from %s", ErrUnsupportedInstallMethod, chosen.id, chosen.sourceURL)
 	}
 	return executeRecipe(ctx, id, *chosen, "", onLine)
 }

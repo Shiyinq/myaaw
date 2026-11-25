@@ -417,6 +417,8 @@
 			"runtime_preset_codex_tos": "Uses your unmodified local codex binary. Use private mode on your own machine for ChatGPT logins, or OPENAI_API_KEY for VPS/public/unattended workloads.",
 			"runtime_preset_opencode_desc": "Runs OpenCode over Agent Client Protocol (opencode acp).",
 			"runtime_preset_opencode_tos": "Configure standard API keys or local models in OpenCode.",
+			"runtime_preset_deepseek_harness_desc": "Runs DeepSeek Harness over Agent Client Protocol (dsh --profile acp).",
+			"runtime_preset_deepseek_harness_tos": "Uses DeepSeek Harness (Desktop bundled CLI or npm @deepseek-ai/dsh, Node >= 24.9). Use private mode for personal DeepSeek Account logins, or DEEPSEEK_API_KEY for public/unattended workloads.",
 			"runtime_preset_custom_acp_desc": "Connect any Agent Client Protocol (ACP) compliant CLI binary over JSON-RPC stdio."
 		},
 		"chat": {
@@ -832,6 +834,10 @@
 			"runtimes_source_link": "View official source",
 			"runtimes_install_start": "Run Official Installer",
 			"runtimes_update_start": "Run Official Update",
+			"runtimes_download_title": "Official Desktop App Installer",
+			"runtimes_download_hint": "Download and install {name} from the official website (includes its own bundled CLI runtime, no separate Node.js needed). Once installed, click Re-check below.",
+			"runtimes_download_open": "Open Official Download",
+			"runtimes_download_recheck": "Re-check",
 			"runtimes_installing": "Running...",
 			"runtimes_install_success": "{name} installed ({version})",
 			"runtimes_update_success": "{name} updated ({version})",

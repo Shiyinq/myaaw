@@ -417,6 +417,8 @@
 			"runtime_preset_codex_tos": "Menggunakan binary codex lokal Anda tanpa modifikasi. Gunakan mode privat di mesin Anda sendiri untuk login ChatGPT, atau OPENAI_API_KEY untuk VPS/publik/otomatis.",
 			"runtime_preset_opencode_desc": "Menjalankan OpenCode melalui Agent Client Protocol (opencode acp).",
 			"runtime_preset_opencode_tos": "Konfigurasikan API key standar atau model lokal di OpenCode.",
+			"runtime_preset_deepseek_harness_desc": "Menjalankan DeepSeek Harness melalui Agent Client Protocol (dsh --profile acp).",
+			"runtime_preset_deepseek_harness_tos": "Menggunakan DeepSeek Harness (CLI bawaan aplikasi Desktop atau npm @deepseek-ai/dsh, Node >= 24.9). Gunakan mode privat untuk login DeepSeek Account pribadi, atau DEEPSEEK_API_KEY untuk beban kerja publik/otomatis.",
 			"runtime_preset_custom_acp_desc": "Hubungkan binary CLI apa pun yang mendukung Agent Client Protocol (ACP) melalui JSON-RPC stdio."
 		},
 		"chat": {
@@ -832,6 +834,10 @@
 			"runtimes_source_link": "Lihat sumber resmi",
 			"runtimes_install_start": "Jalankan Installer Resmi",
 			"runtimes_update_start": "Jalankan Update Resmi",
+			"runtimes_download_title": "Installer Resmi Aplikasi Desktop",
+			"runtimes_download_hint": "Unduh dan pasang {name} dari situs resminya (sudah termasuk CLI bawaan, tidak perlu pasang Node.js terpisah). Setelah terpasang, klik Periksa ulang di bawah.",
+			"runtimes_download_open": "Buka Halaman Unduhan Resmi",
+			"runtimes_download_recheck": "Periksa ulang",
 			"runtimes_installing": "Memproses...",
 			"runtimes_install_success": "{name} berhasil dipasang ({version})",
 			"runtimes_update_success": "{name} berhasil diperbarui ({version})",
