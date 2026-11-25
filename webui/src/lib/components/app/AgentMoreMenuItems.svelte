@@ -73,6 +73,11 @@
 		 * that Classic mode does not display in its sidebar.
 		 */
 		includeWorkspaceLinks?: boolean;
+		/**
+		 * Show utility links (`Artifacts`, `Schedule`, `Plugins`) in the agent menu
+		 * (used in Bots mode so each bot's menu opens them scoped to that agent).
+		 */
+		includeUtilityLinks?: boolean;
 		/** Append `?agent=<name>` and select the agent on navigation (used in Bots mode). */
 		passAgentParam?: boolean;
 		/** Optional custom handler for `New chat`. */
@@ -92,6 +97,7 @@
 		includeChatLink = false,
 		includeServerControls = false,
 		includeWorkspaceLinks = false,
+		includeUtilityLinks = false,
 		passAgentParam = false,
 		onNewChat,
 		onStarted,
@@ -117,11 +123,20 @@
 					{ href: '/app/contacts', label: t('myaaw.nav.contacts'), icon: Bot },
 					{ href: '/app/terminal', label: t('myaaw.nav.terminal'), icon: SquareTerminal }
 				]
-			: [
-					{ href: '/app/dashboard', label: t('myaaw.nav.dashboard'), icon: LayoutDashboard },
-					{ href: '/app/contacts', label: t('myaaw.nav.contacts'), icon: Bot },
-					{ href: '/app/terminal', label: t('myaaw.nav.terminal'), icon: SquareTerminal }
-				]
+			: includeUtilityLinks
+				? [
+						{ href: '/app/dashboard', label: t('myaaw.nav.dashboard'), icon: LayoutDashboard },
+						{ href: '/app/artifacts', label: t('myaaw.nav.artifacts'), icon: Layers },
+						{ href: '/app/schedule', label: t('myaaw.nav.schedule'), icon: Clock },
+						{ href: '/app/plugins', label: t('myaaw.plugins.title'), icon: Puzzle },
+						{ href: '/app/contacts', label: t('myaaw.nav.contacts'), icon: Bot },
+						{ href: '/app/terminal', label: t('myaaw.nav.terminal'), icon: SquareTerminal }
+					]
+				: [
+						{ href: '/app/dashboard', label: t('myaaw.nav.dashboard'), icon: LayoutDashboard },
+						{ href: '/app/contacts', label: t('myaaw.nav.contacts'), icon: Bot },
+						{ href: '/app/terminal', label: t('myaaw.nav.terminal'), icon: SquareTerminal }
+					]
 	);
 
 	const configureItems = $derived([

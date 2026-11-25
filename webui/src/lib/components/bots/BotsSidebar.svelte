@@ -5,13 +5,10 @@
 	import {
 		Bot,
 		Check,
-		Clock,
-		Layers,
 		ListFilter,
 		Loader2,
 		MoreHorizontal,
 		Plus,
-		Puzzle,
 		Search,
 		Settings2,
 		ShieldAlert,
@@ -43,7 +40,6 @@
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { getErrorMessage } from '$lib/utils/api';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut } from '$lib/utils/keys';
-	import { isActiveHref } from '$lib/utils/nav';
 	import { formatChatTimestamp } from '$lib/utils/time';
 	import type { AgentInfo, GroupSummary } from '$lib/types';
 
@@ -326,27 +322,6 @@
 		groupsStore.openCreateDialog();
 		onClose();
 	}
-
-	const utilityLinks = $derived([
-		{
-			href: '/app/artifacts',
-			label: t('myaaw.nav.artifacts'),
-			icon: Layers,
-			active: isActiveHref(page.url.pathname, '/app/artifacts')
-		},
-		{
-			href: '/app/schedule',
-			label: t('myaaw.nav.schedule'),
-			icon: Clock,
-			active: isActiveHref(page.url.pathname, '/app/schedule')
-		},
-		{
-			href: '/app/plugins',
-			label: t('myaaw.plugins.title'),
-			icon: Puzzle,
-			active: isActiveHref(page.url.pathname, '/app/plugins')
-		}
-	]);
 
 	function readLastConversation(name: string): string {
 		if (typeof localStorage === 'undefined') return '';
@@ -639,6 +614,7 @@
 						}}
 						includeChatActions
 						includeServerControls
+						includeUtilityLinks
 						passAgentParam
 						onNewChat={() => void newChatForBot(bot)}
 						onStarted={(startedName) => {
@@ -1169,45 +1145,5 @@
 		{/if}
 	</nav>
 {/if}
-
-<!-- Utility links stay mounted outside the compact/expanded swap so the icons
-     stay pixel-anchored with zero remounting, horizontal jump, or flicker while
-     the sidebar animates between compact rail and expanded widths. -->
-<div
-	aria-hidden="true"
-	class="mx-auto my-1 h-px shrink-0 bg-border transition-[width,opacity] duration-200 {compact
-		? 'w-6 opacity-100'
-		: 'w-0 opacity-0'}"
-></div>
-<div class="shrink-0 space-y-0.5 px-2 py-1">
-	{#each utilityLinks as item (item.href)}
-		{@const Icon = item.icon}
-		<a
-			href={item.href}
-			title={compact ? item.label : undefined}
-			aria-label={compact ? item.label : undefined}
-			aria-current={item.active ? 'page' : undefined}
-			class={[
-				'relative flex h-9 items-center overflow-hidden rounded-lg pl-3 text-sm transition-colors list-row',
-				compact ? 'gap-0 pr-0' : 'gap-2.5 pr-2.5',
-				item.active
-					? 'bg-accent font-medium text-accent-foreground'
-					: 'text-muted-foreground hover:bg-muted hover:text-foreground'
-			]}
-		>
-			{#if compact && item.active}
-				<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary"></span>
-			{/if}
-			<Icon class="h-4 w-4 shrink-0" />
-			<span
-				class="truncate overflow-hidden whitespace-nowrap transition-all duration-200 {compact
-					? 'max-w-0 opacity-0 delay-0'
-					: 'max-w-full opacity-100 delay-200'}"
-			>
-				{item.label}
-			</span>
-		</a>
-	{/each}
-</div>
 
 <SidebarAccount {compact} />
