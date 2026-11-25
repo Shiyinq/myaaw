@@ -43,6 +43,7 @@ Agent names must match `[A-Za-z0-9][A-Za-z0-9_-]*` and be at most 64 characters.
 | `agent create <name>` | Create an agent and run the onboarding wizard | [Agent Command](agent.md#agent-create-name) |
 | `agent use [name]` | Set the default agent | [Agent Command](agent.md#agent-use-name) |
 | `agent delete [name]` | Stop the daemon and delete all data | [Agent Command](agent.md#agent-delete-name---yes) |
+| `runtime list` | List available native and external CLI runtimes (`--check-auth`, `--json`) | [Runtime Command](runtime.md) |
 | `cron list` | List scheduled jobs | [Cron](cron.md) |
 | `cron add` | Create a cron, interval, or one-time job | [Cron](cron.md) |
 | `cron remove <id>` | Delete a job | [Cron](cron.md) |

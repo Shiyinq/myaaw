@@ -144,7 +144,7 @@ myaaw onboard --yes \
 | `--install` | Copy the binary to `~/.local/bin` (off by default in headless mode) |
 | `--restart` | Restart the agent daemon after writing, if it is running |
 | `--force` | Allow reconfiguring an existing agent |
-| `--list-capabilities` | Print the built-in skill and tool names with descriptions, then exit (add `--json` for machine-readable output) |
+| `--list-capabilities` | Print the built-in skills, built-in tools, and detected runtime presets, then exit (add `--json` for machine-readable output) |
 | `--json` | Print a machine-readable summary (implies `--yes`) |
 
 Rules:
@@ -233,8 +233,10 @@ Both flags accept a comma-separated list in any order; the list is normalised to
 `--list-capabilities` prints the same lists with their descriptions, so no trial-and-error is needed:
 
 ```bash
-myaaw onboard --list-capabilities          # human readable
-myaaw onboard --list-capabilities --json   # {"skills": [...], "tools": [...]}
+myaaw onboard --list-capabilities          # skills, built-in tools, and runtimes
+myaaw onboard --list-capabilities --json   # {"skills": [...], "tools": [...], "runtimes": [...]}
+myaaw runtime list                         # detailed runtime status, versions, and binary paths
+myaaw runtime list --check-auth            # also probe CLI login readiness
 ```
 
 ```bash
@@ -380,6 +382,7 @@ myaaw --agent agent-b chat
 ## Related
 
 - [Agent Command](agent.md)
+- [Runtime Command](runtime.md)
 - [Multi-Agent Guide](../agents/multi-agent.md)
 - [External Agent Runtimes](../agents/external-agents.md)
 - [Service Management](service.md)

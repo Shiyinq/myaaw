@@ -54,6 +54,8 @@ Each Myaaw agent can run either the **native Myaaw Agent** or an **external CLI 
 | **Custom ACP CLI** | ACP JSON-RPC (`acp`) | User-configured binary |
 
 ```sh
+myaaw runtime list                         # list presets and detect installed host CLIs
+myaaw runtime list --check-auth            # also probe CLI login status
 myaaw onboard --yes --agent coder --runtime codex
 ```
 
@@ -516,6 +518,7 @@ Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent gu
 | **`--agent <name>`** | global flag | Target a specific agent for `chat`, `status`, `logs`, `server`, `provider`, `channel`, `config`, `cron`, `webhook`, `voice`, `voice-classic`, and `consumer`. Without it, the registry default is used. |
 | **`chat`** | `--agent <name>`, `-m "text"` | Interactive chat shows an agent picker when more than one initialized agent exists. |
 | **`onboard`** | `--agent <name>`, `--runtime <preset>` | Configure a native provider or an external CLI runtime (`claude_code`, `codex`, `antigravity`, `opencode`, `deepseek_harness`, `pi`, `omp`, `custom_acp`) plus channels for a specific agent. |
+| **`runtime`** | `list [--check-auth] [--json]` | List available native and external CLI runtimes detected on this host (version, binary path, auth readiness, and agents using each runtime). |
 | **`server`** | `start`, `stop`, `restart`, `status` | Each agent runs its own daemon (`myaaw-server-<agent>`) on its own `PORT`. |
 | **`provider`** | `create`, `list`, `default <name>`, `delete` | Providers are stored in `~/.myaaw/agents/<agent>/config/config.json`. |
 | **`channel`** | `create`, `list`, `edit`, `delete` | Channel tokens are per agent; use a different Telegram/Discord token for each running agent. |
@@ -661,6 +664,7 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | [CLI Reference](docs/cli/README.md) | Every command, flag, global option, and convention. |
 | [Onboarding](docs/cli/onboard.md) | First-run or per-agent setup: agent name, provider, channels, webhook, heartbeat; runs interactively or headless. |
 | [Agent](docs/cli/agent.md) | `agent list/create/use/delete`, name rules, ports, and what create writes. |
+| [Runtime](docs/cli/runtime.md) | `runtime list [--check-auth] [--json]` — host CLI detection, versions, auth readiness, and agent usage. |
 | [Chat](docs/cli/chat.md) | Interactive TUI, one-shot messages, sessions, models, and file attachments. |
 | [Voice](docs/cli/voice.md) | Real-time voice and the classic STT/TTS pipeline. |
 | [Service Management](docs/cli/service.md) | `server` daemon lifecycle, status, logs, and ports. |

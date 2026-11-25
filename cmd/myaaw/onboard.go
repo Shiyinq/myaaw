@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	agentruntime "myaaw/internal/agent/runtime"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/cli/theme"
@@ -122,7 +123,7 @@ func registerOnboardFlags(cmd *cobra.Command) {
 	f.StringVar(&onboardOpts.noTools, "disable-tools", "", "built-in tools to disable, comma separated")
 	f.BoolVar(&onboardOpts.keepProvider, "keep-provider", false, "keep the current provider and model (update only)")
 	f.StringVar(&onboardOpts.botType, "bot-type", "", "access type: private or public (default: private)")
-	f.BoolVar(&onboardOpts.listCaps, "list-capabilities", false, "list built-in skills and tools, then exit")
+	f.BoolVar(&onboardOpts.listCaps, "list-capabilities", false, "list built-in skills, tools, and runtimes, then exit")
 	f.StringVar(&onboardOpts.disableChannels, "disable-channel", "", "channels to turn off: telegram, discord, or both")
 	f.StringVar(&onboardOpts.runtimePreset, "runtime", "", "agent runtime preset: myaaw, claude_code, codex, antigravity, opencode, deepseek_harness, pi, omp, or custom_acp")
 	f.StringVar(&onboardOpts.runtimeCmd, "runtime-command", "", "override external runtime binary command")
@@ -766,8 +767,9 @@ type capabilityEntry struct {
 }
 
 type capabilitiesSummary struct {
-	Skills []capabilityEntry `json:"skills"`
-	Tools  []capabilityEntry `json:"tools"`
+	Skills   []capabilityEntry              `json:"skills"`
+	Tools    []capabilityEntry              `json:"tools"`
+	Runtimes []agentruntime.DetectedRuntime `json:"runtimes,omitempty"`
 }
 
 // builtinCapabilities lists the embedded skills and the built-in tools with
@@ -793,6 +795,7 @@ func builtinCapabilities() capabilitiesSummary {
 // can discover valid values for --skills and --disable-tools.
 func printCapabilities(asJSON bool) {
 	summary := builtinCapabilities()
+	summary.Runtimes = agentruntime.Discover(context.Background())
 	if asJSON {
 		data, err := json.MarshalIndent(summary, "", "  ")
 		if err != nil {
@@ -811,7 +814,21 @@ func printCapabilities(asJSON bool) {
 	for _, entry := range summary.Tools {
 		fmt.Printf("  %-18s %s\n", entry.Name, truncateOneLine(entry.Description, 100))
 	}
-	fmt.Println("\nUse these names with --skills and --disable-tools.")
+	fmt.Println("\nRuntimes:")
+	for _, rt := range summary.Runtimes {
+		state := "not installed"
+		if rt.Installed {
+			if rt.Version != "" {
+				state = "installed · " + rt.Version
+			} else {
+				state = "installed"
+			}
+		} else if rt.ID == "custom_acp" {
+			state = "custom binary"
+		}
+		fmt.Printf("  %-18s %s (%s)\n", rt.ID, rt.Label, state)
+	}
+	fmt.Println("\nUse these names with --skills, --disable-tools, and --runtime.")
 }
 
 // canonicalToolName maps the alias accepted by the runtime filter to the name

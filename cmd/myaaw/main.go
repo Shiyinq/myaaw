@@ -78,6 +78,15 @@ func isWebUICommand(cmd *cobra.Command) bool {
 	return false
 }
 
+func isRuntimeCommand(cmd *cobra.Command) bool {
+	for current := cmd; current != nil; current = current.Parent() {
+		if current.Name() == "runtime" {
+			return true
+		}
+	}
+	return false
+}
+
 func startAgentBackgroundLoaders() {
 	tools.ConfigureLogging()
 	skills.ConfigureLogging()
@@ -113,8 +122,12 @@ func init() {
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		// Add global spacing, except for commands that stream structured data
-		// directly to stdout (backup -o -, mcp-bridge JSON-RPC).
-		if cmd.Name() != "backup" && cmd.Name() != "mcp-bridge" {
+		// directly to stdout (backup -o -, mcp-bridge JSON-RPC, or --json output).
+		jsonFlag := false
+		if f := cmd.Flags().Lookup("json"); f != nil && f.Value.String() == "true" {
+			jsonFlag = true
+		}
+		if cmd.Name() != "backup" && cmd.Name() != "mcp-bridge" && !jsonFlag {
 			fmt.Println()
 		}
 
@@ -146,7 +159,7 @@ func init() {
 			"webui":     true,
 		}
 
-		if metaCommands[cmd.Name()] || isAgentCommand(cmd) || isAPISubcommand(cmd) || isCodesignCommand(cmd) || isWebUICommand(cmd) {
+		if metaCommands[cmd.Name()] || isAgentCommand(cmd) || isAPISubcommand(cmd) || isCodesignCommand(cmd) || isWebUICommand(cmd) || isRuntimeCommand(cmd) {
 			return nil
 		}
 
@@ -228,7 +241,7 @@ func init() {
 
 				groups := []cmdGroup{
 					{name: "Chat & Voice", cmdNames: []string{"chat", "voice", "voice-classic"}},
-					{name: "Agents & Automation", cmdNames: []string{"agent", "cron"}},
+					{name: "Agents & Automation", cmdNames: []string{"agent", "runtime", "cron"}},
 					{name: "Channels & Integrations", cmdNames: []string{"channel", "provider", "webhook"}},
 					{name: "Monitoring & Diagnostics", cmdNames: []string{"status", "logs", "observability", "doctor"}},
 					{name: "Settings & Desktop", cmdNames: []string{"config", "computer", "codesign"}},
