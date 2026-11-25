@@ -93,6 +93,7 @@ invalid: my friend, ../admin, my.friend, my/friend, -agent, _agent, pids
     │   │   └── uploads/
     │   ├── cron/
     │   ├── tools/
+    │   ├── runtime/       # external CLI MCP bridge config & local sessions (when enabled)
     │   └── database/
     │       ├── myaaw.db
     │       ├── calendar/

@@ -5,6 +5,8 @@ Myaaw provides an extensible, modular tooling system that empowers AI agents wit
 > Paths such as `~/.myaaw/tools/` in this guide refer to the active agent's directory: `~/.myaaw/agents/<agent>/tools/`. The default agent uses `~/.myaaw/agents/default/tools/`.
 
 > **Looking for on-demand agent skills?** Check out the [Agent Skills Guide](skills.md) for dynamic `SKILL.md` workflows.
+>
+> **Using an External Agent Runtime (`agy`, `claude`, `omp`, `pi`, `codex`)?** Core coding tools (`filesystem`, `bash`, `python`, `subagent`, `provider`) are delegated to the external CLI's own native tools, while Myaaw ecosystem tools (`cron`, `a2a_*`, `extra_messages`, `computer`, and `custom_tools` from `tools.json`) are exposed over stdio via `myaaw mcp-bridge`, and enabled `mcp_servers` in `tools.json` are forwarded directly to ACP and Claude Code. See [External Agent Runtimes](external-agents.md#6-how-external-agents-connect-to-tools--myaaw-mcp-bridge).
 
 ---
 

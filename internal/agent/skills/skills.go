@@ -106,6 +106,15 @@ type skillEntry struct {
 // disabled via ~/.myaaw/agents/<agent>/skills/skills.json or the SKILL.md frontmatter
 // (`enabled: false`) are skipped.
 func GetSkillsInstruction() string {
+	return GetSkillsInstructionForRuntime(false)
+}
+
+// GetSkillsInstructionForRuntime behaves like GetSkillsInstruction, but when
+// isExternal is true it emits runtime-neutral tool wording and an absolute
+// Python interpreter path so external coding agents (Claude Code, Antigravity,
+// OMP, Pi, Codex) do not search for Myaaw's literal 'filesystem' tool or a
+// relative .venv/bin/python outside the agent home directory.
+func GetSkillsInstructionForRuntime(isExternal bool) string {
 	myaawPath, err := agent.EnsureMyaawConfig()
 	if err != nil {
 		return ""
@@ -114,12 +123,17 @@ func GetSkillsInstruction() string {
 	if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
 		return ""
 	}
-	return buildSkillsInstruction(skillsDir, loadSkillsFilter(skillsDir))
+	homeDir := filepath.Join(myaawPath, "home")
+	return buildSkillsInstructionForRuntime(skillsDir, homeDir, loadSkillsFilter(skillsDir), isExternal)
 }
 
 // buildSkillsInstruction generates the Agent Skills prompt section from the
 // given skills directory, skipping skills disabled by the filter.
 func buildSkillsInstruction(skillsDir string, filter map[string]bool) string {
+	return buildSkillsInstructionForRuntime(skillsDir, "", filter, false)
+}
+
+func buildSkillsInstructionForRuntime(skillsDir, homeDir string, filter map[string]bool, isExternal bool) string {
 	skills, err := listEnabledSkills(skillsDir, filter)
 	if err != nil {
 		fmt.Printf("Error reading skills directory: %v\n", err)
@@ -128,7 +142,20 @@ func buildSkillsInstruction(skillsDir string, filter map[string]bool) string {
 
 	var sb strings.Builder
 	sb.WriteString("\n\n# Agent Skills\n\n")
-	sb.WriteString("You have access to the following skills. You can use the 'filesystem' to read file skill and 'bash' tool to execute script if available.\n")
+	if isExternal {
+		sb.WriteString("You have access to the following Myaaw skills. Use your built-in file-reading tool to read a skill's documentation and your built-in shell/command tool to execute its scripts if available.\n")
+		sb.WriteString("Any mention of 'filesystem' or 'bash' inside a SKILL.md file refers to your native file-reading and shell execution tools.\n")
+		if homeDir != "" {
+			venvPython := filepath.Join(homeDir, ".venv", "bin", "python")
+			if _, statErr := os.Stat(venvPython); statErr == nil {
+				fmt.Fprintf(&sb, "When a SKILL.md runs `.venv/bin/python`, use `%s` (or `python3` if standard library only).\n", venvPython)
+			} else {
+				sb.WriteString("When a SKILL.md runs `.venv/bin/python`, use `python3` (or the agent home `.venv/bin/python` if installed).\n")
+			}
+		}
+	} else {
+		sb.WriteString("You have access to the following skills. You can use the 'filesystem' to read file skill and 'bash' tool to execute script if available.\n")
+	}
 	sb.WriteString(fmt.Sprintf("To use a skill, you must first read its documentation in the `%s/<skill-name>/SKILL.md` file. \nIf skills need user_id, userId, or userID, you must use User ID from the User Info. \n\n", skillsDir))
 
 	for _, skill := range skills {

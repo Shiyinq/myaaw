@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { nameSchema, optionalUrlSchema, required, tooLong } from './primitives';
+import { nameSchema, optionalUrlSchema, tooLong } from './primitives';
 
 /** Telegram bot tokens look like `<bot-id>:<secret>`. */
 const telegramTokenSchema = z
@@ -55,15 +55,16 @@ const durationSchema = z
  */
 export const agentSetupSchema = z.object({
 	name: nameSchema,
-	provider_type: z.enum(['openai', 'gemini', 'openai_chatgpt']),
+	provider_type: z.enum(['openai', 'gemini', 'openai_chatgpt']).optional(),
 	provider_name: z
 		.string()
 		.trim()
 		.max(64, tooLong)
-		.refine((value) => !/\s/.test(value), 'provider_name'),
+		.refine((value) => !/\s/.test(value), 'provider_name')
+		.optional(),
 	base_url: optionalUrlSchema.optional(),
 	api_key: z.string().optional(),
-	model: z.string().trim().min(1, required).max(256, tooLong),
+	model: z.string().trim().max(256, tooLong).optional(),
 	telegram_token: telegramTokenSchema,
 	webhook_url: webhookUrlSchema,
 	heartbeat_to: chatIdSchema,

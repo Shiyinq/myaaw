@@ -4,7 +4,7 @@ Myaaw provides a dynamic, lightweight, and extensible **Agent Skills System**. S
 
 Each skill is self-contained within its own directory and defined by a `SKILL.md` specification file. When needed, Myaaw agents dynamically read skill documentation using filesystem tools and execute corresponding scripts in an isolated environment.
 
-> Paths such as `~/.myaaw/skills/` in this guide refer to the active agent's directory: `~/.myaaw/agents/<agent>/skills/`. The default agent uses `~/.myaaw/agents/default/skills/`.
+> Paths such as `~/.myaaw/skills/` in this guide refer to the active agent's directory: `~/.myaaw/agents/<agent>/skills/`. The default agent uses `~/.myaaw/agents/default/skills/`. For how skills run on external CLI runtimes (Antigravity, Claude Code, OMP, Pi, Codex), see [External Agent Runtimes](external-agents.md#4-context-skills-attach-and-the-myaaw-mcp-bridge).
 
 ---
 

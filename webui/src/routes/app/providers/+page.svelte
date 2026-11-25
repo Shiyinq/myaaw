@@ -34,6 +34,12 @@
 	let modelCapabilities = $state<ModelCapabilitiesView | null>(null);
 
 	let agent = $derived(agentSelection.selected);
+	let selectedAgentInfo = $derived(
+		agentSelection.agents.find((entry) => entry.name === agent) ?? null
+	);
+	let isExternalRuntime = $derived(
+		!!selectedAgentInfo?.runtime_type && selectedAgentInfo.runtime_type !== 'myaaw'
+	);
 	useQuery(providersStore.list, () => (agent ? { agent } : null));
 
 	let providers = $derived(providersStore.providers);
@@ -133,6 +139,34 @@
 			</CardContent>
 		</Card>
 	{:else}
+		{#if isExternalRuntime}
+			<div
+				class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 text-sm"
+			>
+				<div class="space-y-0.5">
+					<p class="font-medium text-foreground">
+						Managed by external runtime:
+						<span class="font-mono text-primary">
+							{selectedAgentInfo?.runtime_preset || selectedAgentInfo?.runtime_type}
+						</span>
+					</p>
+					<p class="text-xs text-muted-foreground">
+						This agent runs via an external CLI engine instead of Myaaw's built-in LLM provider
+						loop. Model, binary, working directory, and authentication are configured in Agent
+						Setup.
+					</p>
+				</div>
+				<Button
+					variant="outline"
+					size="sm"
+					href={`/app/new?agent=${encodeURIComponent(agent)}`}
+					class="shrink-0"
+				>
+					Configure Runtime
+				</Button>
+			</div>
+		{/if}
+
 		{#if error}
 			<div
 				class="rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive"

@@ -24,6 +24,7 @@ import (
 // fields mean "leave the current value alone", matching the wizard's keep
 // semantics.
 type Input struct {
+	Runtime              *config.RuntimeConfig
 	ProviderName         string
 	ProviderType         string
 	ProviderBaseURL      string
@@ -124,6 +125,9 @@ func Apply(name string, in Input, port int) (*config.Config, []string, error) {
 	SanitizeConfig(cfg)
 
 	merged := MergeConfig(cfg, in)
+	if err := config.ValidateRuntime(merged.Runtime, &merged.Bot); err != nil {
+		return nil, nil, err
+	}
 	if in.ProviderName != "" {
 		p := merged.Providers[in.ProviderName]
 		if err := NormalizeProviderAuth(&p); err != nil {
@@ -149,6 +153,7 @@ func Apply(name string, in Input, port int) (*config.Config, []string, error) {
 	}
 
 	var warnings []string
+	warnings = append(warnings, config.RuntimeWarnings(merged.Runtime, &merged.Heartbeat)...)
 	if in.TelegramToken != "" && in.TelegramMode == "webhook" {
 		publicURL := strings.TrimRight(strings.TrimSpace(in.TelegramWebhookURL), "/")
 		if publicURL == "" {
@@ -189,6 +194,14 @@ func MergeConfig(base *config.Config, in Input) *config.Config {
 	if cfg.Channels.Discord != nil {
 		dc := *cfg.Channels.Discord
 		cfg.Channels.Discord = &dc
+	}
+	if in.Runtime != nil {
+		rt := config.MergeRuntime(in.Runtime)
+		if !rt.IsExternal() {
+			cfg.Runtime = nil
+		} else {
+			cfg.Runtime = &rt
+		}
 	}
 	if in.ProviderName != "" {
 		cfg.Providers[in.ProviderName] = config.ProviderConfig{

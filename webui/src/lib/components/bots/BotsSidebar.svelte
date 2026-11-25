@@ -120,6 +120,28 @@
 		}
 	}
 
+	function runtimeBadgeLabel(bot: AgentInfo): string {
+		if (!bot.runtime_type || bot.runtime_type === 'myaaw') return '';
+		switch (bot.runtime_preset || bot.runtime_type) {
+			case 'antigravity':
+				return 'AGY';
+			case 'claude_code':
+				return 'Claude';
+			case 'omp':
+				return 'OMP';
+			case 'pi':
+				return 'Pi';
+			case 'codex':
+				return 'Codex';
+			case 'gemini_cli':
+				return 'Gemini';
+			case 'opencode':
+				return 'OpenCode';
+			default:
+				return 'ACP';
+		}
+	}
+
 	async function refreshLatest(name: string, force = false) {
 		try {
 			const res = await conversationsStore.fetchList(name, { limit: 1 });
@@ -546,7 +568,16 @@
 
 			<span class="min-w-0 flex-1">
 				<span class="flex items-center justify-between gap-1.5">
-					<span class="truncate text-sm font-semibold text-foreground">{bot.name}</span>
+					<span class="flex min-w-0 items-center gap-1.5">
+						<span class="truncate text-sm font-semibold text-foreground">{bot.name}</span>
+						{#if runtimeBadgeLabel(bot)}
+							<span
+								class="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[9px] leading-none font-semibold tracking-wide text-primary uppercase"
+							>
+								{runtimeBadgeLabel(bot)}
+							</span>
+						{/if}
+					</span>
 					{#if timeLabel}
 						<span
 							class={[

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"myaaw/internal/agent"
+	agentruntime "myaaw/internal/agent/runtime"
 	"myaaw/internal/channel"
 	"myaaw/internal/channel/discord"
 	"myaaw/internal/channel/telegram"
@@ -14,6 +15,7 @@ import (
 	"myaaw/internal/provider"
 	"myaaw/internal/services/bot/model"
 	"myaaw/internal/services/bot/repository"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -47,6 +49,8 @@ type BotServiceImpl struct {
 	llmProvider           provider.LLMProvider
 	transcriber           provider.Transcriber
 	agent                 agent.AgentProvider
+	runtime               agentruntime.Runtime
+	currentRuntimeConfig  config.RuntimeConfig
 	currentProviderID     string
 	currentProviderConfig config.ProviderConfig
 	providerErr           error
@@ -78,15 +82,30 @@ func selectedProviderConfig() config.ProviderConfig {
 }
 
 func NewBotService(userRepo repository.UserRepository, conversationRepo repository.ConversationRepository) BotService {
+	rtCfg := config.EffectiveRuntime()
 	selected := selectedProviderConfig()
-	llmProvider, providerErr := provider.CreateLLMProviderFromConfig(selected)
-	if providerErr != nil {
-		llmProvider = nil
-		// Not fatal: the supervisor would otherwise crash-loop the agent when a
-		// provider key is missing or a provider name is mistyped. Requests fail
-		// with a clear message instead, and a config fix is picked up by
-		// checkAndReloadProvider on the next message.
-		log.Printf("⚠️  Failed to create LLM provider %s: %v. Chat requests will fail until the provider is fixed.", config.LLMProviderName, providerErr)
+
+	var (
+		llmProvider provider.LLMProvider
+		providerErr error
+		rt          agentruntime.Runtime
+	)
+
+	if rtCfg.IsExternal() {
+		rt, providerErr = agentruntime.Create(rtCfg, nil)
+		if providerErr != nil {
+			log.Printf("⚠️  Failed to initialize external runtime %s: %v. Chat requests will fail until runtime config is fixed.", rtCfg.Preset, providerErr)
+		}
+	} else {
+		llmProvider, providerErr = provider.CreateLLMProviderFromConfig(selected)
+		if providerErr != nil {
+			llmProvider = nil
+			// Not fatal: the supervisor would otherwise crash-loop the agent when a
+			// provider key is missing or a provider name is mistyped. Requests fail
+			// with a clear message instead, and a config fix is picked up by
+			// checkAndReloadProvider on the next message.
+			log.Printf("⚠️  Failed to create LLM provider %s: %v. Chat requests will fail until the provider is fixed.", config.LLMProviderName, providerErr)
+		}
 	}
 
 	// A transcriber is optional: without one, voice notes are skipped instead of
@@ -106,20 +125,55 @@ func NewBotService(userRepo repository.UserRepository, conversationRepo reposito
 		conversationRepo:      conversationRepo,
 		llmProvider:           llmProvider,
 		transcriber:           transcriber,
+		runtime:               rt,
+		currentRuntimeConfig:  rtCfg,
 		currentProviderID:     config.CurrentProviderID,
 		currentProviderConfig: selected,
 		providerErr:           providerErr,
 	}
-	if llmProvider != nil {
+	if rt != nil {
+		svc.agent = rt
+	} else if llmProvider != nil {
 		svc.agent = agent.NewAgent(llmProvider)
 	}
 	return svc
 }
 
-// requireProvider reports whether chat requests can reach an LLM.
+func (r *BotServiceImpl) isExternalRuntime() bool {
+	return r.runtime != nil && r.runtime.IsExternal()
+}
+
+func (r *BotServiceImpl) activeProviderName() string {
+	if r.runtime != nil && r.runtime.IsExternal() {
+		return r.runtime.DisplayProvider()
+	}
+	if r.llmProvider != nil {
+		return r.llmProvider.ProviderName()
+	}
+	return config.LLMProviderName
+}
+
+func (r *BotServiceImpl) activeDefaultModel() string {
+	if r.runtime != nil && r.runtime.IsExternal() {
+		return r.runtime.DisplayModel()
+	}
+	if r.llmProvider != nil {
+		return r.llmProvider.DefaultModel("")
+	}
+	return config.LLMDefaultModel
+}
+
+// requireProvider reports whether chat requests can reach an execution backend
+// (either an external CLI runtime or a native LLM provider).
 func (r *BotServiceImpl) requireProvider() error {
-	if r.llmProvider == nil || r.agent == nil {
+	if r.isExternalRuntime() && r.agent != nil {
+		return nil
+	}
+	if r.agent == nil || (!r.isExternalRuntime() && r.llmProvider == nil) {
 		if r.providerErr != nil {
+			if r.currentRuntimeConfig.IsExternal() {
+				return fmt.Errorf("external runtime %q is not ready: %w", r.currentRuntimeConfig.Preset, r.providerErr)
+			}
 			return fmt.Errorf("LLM provider is not configured: %w", r.providerErr)
 		}
 		return errors.New("LLM provider is not configured: check the provider type and API key or signed-in credential in config.json")
@@ -128,18 +182,42 @@ func (r *BotServiceImpl) requireProvider() error {
 }
 
 func (r *BotServiceImpl) checkAndReloadProvider() {
+	rtCfg := config.EffectiveRuntime()
 	selected := selectedProviderConfig()
-	if r.currentProviderID == config.CurrentProviderID && r.currentProviderConfig == selected {
+	runtimeChanged := !reflect.DeepEqual(r.currentRuntimeConfig, rtCfg)
+	providerChanged := r.currentProviderID != config.CurrentProviderID || r.currentProviderConfig != selected
+	if !runtimeChanged && (rtCfg.IsExternal() || !providerChanged) {
+		return
+	}
+
+	if r.runtime != nil {
+		_ = r.runtime.Close()
+		r.runtime = nil
+	}
+	r.currentRuntimeConfig = rtCfg
+	r.currentProviderID = config.CurrentProviderID
+	r.currentProviderConfig = selected
+	r.agent = nil
+	r.llmProvider = nil
+	r.providerErr = nil
+
+	if rtCfg.IsExternal() {
+		rt, err := agentruntime.Create(rtCfg, nil)
+		r.providerErr = err
+		if err != nil {
+			log.Printf("Failed to hot-reload external runtime %s: %v", rtCfg.Preset, err)
+			return
+		}
+		r.runtime = rt
+		r.agent = rt
+		log.Printf("Successfully hot-reloaded external runtime to: %s (cmd: %s)", rtCfg.Preset, rtCfg.Command)
 		return
 	}
 
 	// Never keep the previous account/client when the selected configuration is
 	// invalid (notably a disconnected OAuth reference). A later reconnect is
 	// detected even if the provider ID and model have not changed.
-	r.currentProviderID = config.CurrentProviderID
-	r.currentProviderConfig = selected
 	r.llmProvider, r.providerErr = provider.CreateLLMProviderFromConfig(selected)
-	r.agent = nil
 	if r.providerErr != nil {
 		r.llmProvider = nil
 		log.Printf("Failed to hot-reload provider %s: %v", config.CurrentProviderID, r.providerErr)
@@ -172,8 +250,8 @@ func (r *BotServiceImpl) checkUser(msg *channel.IncomingMessage) (*model.User, e
 		newUser := model.User{
 			UserId:   msg.UserID,
 			Name:     name,
-			Provider: r.llmProvider.ProviderName(),
-			Model:    r.llmProvider.DefaultModel(""),
+			Provider: r.activeProviderName(),
+			Model:    r.activeDefaultModel(),
 		}
 		user, err = r.userRepo.CreateUser(&newUser)
 
@@ -186,8 +264,8 @@ func (r *BotServiceImpl) checkUser(msg *channel.IncomingMessage) (*model.User, e
 }
 
 func (r *BotServiceImpl) changeProviderAndModel(user *model.User) (*model.User, error) {
-	systemProvider := r.llmProvider.ProviderName()
-	systemModel := r.llmProvider.DefaultModel("")
+	systemProvider := r.activeProviderName()
+	systemModel := r.activeDefaultModel()
 
 	log.Printf("Provider mismatch!")
 	log.Printf("Automatically updating user %v configurations", user.UserId)
@@ -225,7 +303,7 @@ func (r *BotServiceImpl) BotContext(ctx context.Context, msg *channel.IncomingMe
 		return nil, err
 	}
 
-	if user.Provider != r.llmProvider.ProviderName() || user.Model != r.llmProvider.DefaultModel("") {
+	if user.Provider != r.activeProviderName() || user.Model != r.activeDefaultModel() {
 		user, err = r.changeProviderAndModel(user)
 		if err != nil {
 			return nil, err
@@ -259,7 +337,7 @@ func (r *BotServiceImpl) BotStreamContext(ctx context.Context, msg *channel.Inco
 		return nil, err
 	}
 
-	if user.Provider != r.llmProvider.ProviderName() || user.Model != r.llmProvider.DefaultModel("") {
+	if user.Provider != r.activeProviderName() || user.Model != r.activeDefaultModel() {
 		user, err = r.changeProviderAndModel(user)
 		if err != nil {
 			return nil, err

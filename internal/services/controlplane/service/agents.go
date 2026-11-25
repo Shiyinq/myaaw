@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"myaaw/internal/agentdir"
+	"myaaw/internal/config"
 	"myaaw/internal/daemon"
 )
 
@@ -31,7 +32,9 @@ type AgentInfo struct {
 	CreatedAt string `json:"created_at"`
 	// AgentColor is always resolved: an agent registered before colours existed
 	// reads back as the palette default, so clients never have to know it.
-	AgentColor string `json:"agent_color"`
+	AgentColor    string `json:"agent_color"`
+	RuntimeType   string `json:"runtime_type,omitempty"`
+	RuntimePreset string `json:"runtime_preset,omitempty"`
 }
 
 // AgentService resolves per-agent paths, ports, and reachability.
@@ -108,11 +111,14 @@ func (s *AgentService) List() ([]AgentInfo, error) {
 
 	agents := make([]AgentInfo, 0, len(names))
 	for _, name := range names {
+		rtType, rtPreset := resolveAgentRuntime(name)
 		info := AgentInfo{
-			Name:       name,
-			Default:    name == registry.Default,
-			CreatedAt:  createdAtRFC3339(registry, name),
-			AgentColor: agentdir.AgentColorOrDefault(registry.Agents[name].AgentColor),
+			Name:          name,
+			Default:       name == registry.Default,
+			CreatedAt:     createdAtRFC3339(registry, name),
+			AgentColor:    agentdir.AgentColorOrDefault(registry.Agents[name].AgentColor),
+			RuntimeType:   rtType,
+			RuntimePreset: rtPreset,
 		}
 		baseURL, port, err := s.resolve(name)
 		if err == nil {
@@ -139,11 +145,14 @@ func (s *AgentService) Get(name string) (AgentInfo, error) {
 		return AgentInfo{}, err
 	}
 
+	rtType, rtPreset := resolveAgentRuntime(name)
 	info := AgentInfo{
-		Name:       name,
-		Default:    name == registry.Default,
-		CreatedAt:  createdAtRFC3339(registry, name),
-		AgentColor: agentdir.AgentColorOrDefault(registry.Agents[name].AgentColor),
+		Name:          name,
+		Default:       name == registry.Default,
+		CreatedAt:     createdAtRFC3339(registry, name),
+		AgentColor:    agentdir.AgentColorOrDefault(registry.Agents[name].AgentColor),
+		RuntimeType:   rtType,
+		RuntimePreset: rtPreset,
 	}
 	baseURL, port, err := s.resolve(name)
 	if err != nil {
@@ -236,6 +245,19 @@ func (s *AgentService) reachable(baseURL string, port int) bool {
 	}
 	_ = conn.Close()
 	return true
+}
+
+func resolveAgentRuntime(name string) (string, string) {
+	path, err := agentdir.ConfigPath(name)
+	if err != nil {
+		return config.RuntimeTypeMyaaw, "myaaw"
+	}
+	cfg, err := config.LoadConfigFile(path)
+	if err != nil || cfg == nil || cfg.Runtime == nil {
+		return config.RuntimeTypeMyaaw, "myaaw"
+	}
+	merged := config.MergeRuntime(cfg.Runtime)
+	return merged.Type, merged.Preset
 }
 
 func readEnvFile(path string) map[string]string {

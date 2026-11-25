@@ -99,6 +99,10 @@ func EnsureSchema(db *sql.DB) error {
 		// Channel records which platform owns a conversation (telegram, discord,
 		// api, cli). Rows created before the column existed stay empty.
 		{"channel", `ALTER TABLE conversations ADD COLUMN channel TEXT NOT NULL DEFAULT ''`},
+		// External agent session references allow ACP, Claude Code, Codex, and
+		// Pi/OMP runtimes to resume conversations cleanly across turns and restarts.
+		{"external_session_id", `ALTER TABLE conversations ADD COLUMN external_session_id TEXT NOT NULL DEFAULT ''`},
+		{"external_runtime", `ALTER TABLE conversations ADD COLUMN external_runtime TEXT NOT NULL DEFAULT ''`},
 	} {
 		if columns[column.name] {
 			continue

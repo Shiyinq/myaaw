@@ -107,7 +107,35 @@ export interface ServiceSecretView {
 	api_key: SecretState;
 }
 
+export interface RuntimeCapabilities {
+	needs_llm_provider: boolean;
+	manages_core_tools: boolean;
+	supports_approvals: boolean;
+	supports_model_override: boolean;
+	supports_images: boolean;
+	supports_mcp_bridge: boolean;
+	supports_cli_auth: boolean;
+}
+
+export interface RuntimeView {
+	type: string;
+	preset: string;
+	command?: string;
+	args?: string[];
+	working_dir?: string;
+	additional_dirs?: string[];
+	model?: string;
+	auth_source?: string;
+	api_key_env?: string;
+	api_key: SecretState;
+	permission_mode?: string;
+	mcp_bridge: boolean;
+	idle_timeout_seconds: number;
+	capabilities: RuntimeCapabilities;
+}
+
 export interface AgentConfig {
+	runtime?: RuntimeView;
 	default_provider: string;
 	providers: ProviderView[];
 	channels: ChannelView[];

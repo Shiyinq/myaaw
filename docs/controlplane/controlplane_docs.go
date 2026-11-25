@@ -7961,6 +7961,36 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/runtimes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Discover available agent runtimes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.RuntimesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/settings": {
             "get": {
                 "security": [
@@ -8497,6 +8527,32 @@ const docTemplatecontrolplane = `{
                     "additionalProperties": {
                         "$ref": "#/definitions/config.ToolPriceConfig"
                     }
+                }
+            }
+        },
+        "config.RuntimeCapabilities": {
+            "type": "object",
+            "properties": {
+                "manages_core_tools": {
+                    "type": "boolean"
+                },
+                "needs_llm_provider": {
+                    "type": "boolean"
+                },
+                "supports_approvals": {
+                    "type": "boolean"
+                },
+                "supports_cli_auth": {
+                    "type": "boolean"
+                },
+                "supports_images": {
+                    "type": "boolean"
+                },
+                "supports_mcp_bridge": {
+                    "type": "boolean"
+                },
+                "supports_model_override": {
+                    "type": "boolean"
                 }
             }
         },
@@ -9166,6 +9222,17 @@ const docTemplatecontrolplane = `{
                 "to": {
                     "type": "string",
                     "example": "/home/AGENTS.old.md"
+                }
+            }
+        },
+        "handler.RuntimesResponse": {
+            "type": "object",
+            "properties": {
+                "runtimes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/runtime.DetectedRuntime"
+                    }
                 }
             }
         },
@@ -10270,6 +10337,53 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "runtime.DetectedRuntime": {
+            "type": "object",
+            "properties": {
+                "binary_path": {
+                    "type": "string"
+                },
+                "capabilities": {
+                    "$ref": "#/definitions/config.RuntimeCapabilities"
+                },
+                "default_api_key_env": {
+                    "type": "string"
+                },
+                "default_args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "default_auth": {
+                    "type": "string"
+                },
+                "default_command": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "installed": {
+                    "type": "boolean"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "tos_notice": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
         "service.ActivityDay": {
             "type": "object",
             "properties": {
@@ -10307,6 +10421,12 @@ const docTemplatecontrolplane = `{
                 },
                 "running": {
                     "type": "boolean"
+                },
+                "runtime_preset": {
+                    "type": "string"
+                },
+                "runtime_type": {
+                    "type": "string"
                 }
             }
         },
@@ -10756,6 +10876,9 @@ const docTemplatecontrolplane = `{
                 "observability": {
                     "$ref": "#/definitions/service.ObservabilityPatch"
                 },
+                "runtime": {
+                    "$ref": "#/definitions/service.RuntimePatch"
+                },
                 "synthesizer": {
                     "$ref": "#/definitions/service.SecretPatch"
                 },
@@ -10843,6 +10966,9 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "$ref": "#/definitions/service.ProviderView"
                     }
+                },
+                "runtime": {
+                    "$ref": "#/definitions/service.RuntimeView"
                 },
                 "synthesizer": {
                     "$ref": "#/definitions/service.ServiceSecretView"
@@ -12090,6 +12216,9 @@ const docTemplatecontrolplane = `{
                 "provider": {
                     "$ref": "#/definitions/service.OnboardProviderInput"
                 },
+                "runtime": {
+                    "$ref": "#/definitions/service.OnboardRuntimeInput"
+                },
                 "skills": {
                     "type": "array",
                     "items": {
@@ -12112,6 +12241,61 @@ const docTemplatecontrolplane = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "service.OnboardRuntimeInput": {
+            "type": "object",
+            "properties": {
+                "additional_dirs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "api_key": {
+                    "type": "string"
+                },
+                "api_key_env": {
+                    "type": "string"
+                },
+                "args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "auth_source": {
+                    "type": "string",
+                    "example": "cli_login"
+                },
+                "command": {
+                    "type": "string",
+                    "example": "agy"
+                },
+                "idle_timeout_seconds": {
+                    "type": "integer"
+                },
+                "mcp_bridge": {
+                    "type": "boolean"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "permission_mode": {
+                    "type": "string",
+                    "example": "bridge"
+                },
+                "preset": {
+                    "type": "string",
+                    "example": "antigravity"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "acp"
+                },
+                "working_dir": {
+                    "type": "string"
                 }
             }
         },
@@ -12330,6 +12514,109 @@ const docTemplatecontrolplane = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "service.RuntimePatch": {
+            "type": "object",
+            "properties": {
+                "additional_dirs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "api_key": {
+                    "type": "string"
+                },
+                "api_key_env": {
+                    "type": "string"
+                },
+                "args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "auth_source": {
+                    "type": "string"
+                },
+                "command": {
+                    "type": "string"
+                },
+                "idle_timeout_seconds": {
+                    "type": "integer"
+                },
+                "mcp_bridge": {
+                    "type": "boolean"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "permission_mode": {
+                    "type": "string"
+                },
+                "preset": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "working_dir": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.RuntimeView": {
+            "type": "object",
+            "properties": {
+                "additional_dirs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "api_key": {
+                    "$ref": "#/definitions/service.SecretState"
+                },
+                "api_key_env": {
+                    "type": "string"
+                },
+                "args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "auth_source": {
+                    "type": "string"
+                },
+                "capabilities": {
+                    "$ref": "#/definitions/config.RuntimeCapabilities"
+                },
+                "command": {
+                    "type": "string"
+                },
+                "idle_timeout_seconds": {
+                    "type": "integer"
+                },
+                "mcp_bridge": {
+                    "type": "boolean"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "permission_mode": {
+                    "type": "string"
+                },
+                "preset": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "working_dir": {
+                    "type": "string"
                 }
             }
         },

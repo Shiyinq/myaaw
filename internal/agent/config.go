@@ -92,6 +92,15 @@ type RunConfig struct {
 	// so implementations must be quick and must not mutate the slice. Panics are
 	// recovered so a failing persistence hook cannot break the run.
 	OnCheckpoint func(ctx context.Context, transcript []provider.Message)
+
+	// External runtime session metadata. Native Myaaw runs ignore these fields;
+	// external CLI drivers (ACP, Claude Code, Pi/OMP, Codex) use them to map a
+	// Myaaw conversation onto a persistent external session and handle rewinds.
+	ConversationID    string
+	ExternalSessionID string
+	ExternalRuntime   string
+	Rewind            bool
+	OnExternalSession func(runtimeName, sessionID string)
 }
 
 // DefaultRunConfig builds a run config from global configuration.

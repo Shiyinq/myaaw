@@ -113,12 +113,18 @@ myaaw onboard --yes \
 | :--- | :--- |
 | `--agent <name>` | Agent name (required in headless mode; `agent create <name>` supplies it) |
 | `--yes` | Skip every prompt (implied when stdin is not a TTY) |
-| `--provider openai\|gemini\|openai_chatgpt` | Provider type (required for a new agent; omit it, or pass `--keep-provider`, to leave the provider alone on an update) |
+| `--provider openai\|gemini\|openai_chatgpt` | Provider type (required for a new native `myaaw` agent; optional when `--runtime` selects an external CLI runtime, or omit / pass `--keep-provider` on an update) |
 | `--keep-provider` | Keep the current provider, model, and API key (update only) |
 | `--provider-name` | Provider name stored in `config.json` |
 | `--base-url` | Provider base URL |
 | `--api-key` | API key (prefer `MYAAW_API_KEY`) |
-| `--model` | Default model |
+| `--model` | Default model (or model override for an external runtime) |
+| `--runtime <preset>` | Execution runtime preset: `myaaw` (default), `antigravity`, `claude_code`, `omp`, `pi`, `codex`, `gemini_cli`, `opencode`, or `custom_acp` |
+| `--runtime-command <bin>` | Override the external CLI binary command |
+| `--runtime-args <a,b>` | Override external CLI arguments (comma separated) |
+| `--working-dir <path>` | Working directory for an external runtime (default: `~/.myaaw/agents/<name>/home/workspace`) |
+| `--runtime-auth cli_login\|api_key` | External runtime authentication mode (`cli_login` requires `bot.type: private`) |
+| `--runtime-permission bridge\|auto\|read_only` | External runtime tool-approval routing mode (default: `bridge`) |
 | `--channel telegram\|discord\|both\|skip` | Channel choice |
 | `--disable-channel telegram\|discord\|both` | Turn saved channels off (the token is kept so they can be re-enabled) |
 | `--telegram-mode polling\|webhook` | Telegram mode |
@@ -150,10 +156,19 @@ Rules:
 - A leftover `~/.myaaw/agents/<name>/` directory also requires `--force`, so a failed run cannot silently overwrite data.
 
 ```bash
-# Docker / CI
+# Docker / CI (native Myaaw runtime)
 MYAAW_API_KEY="$KEY" myaaw onboard --yes --agent ci \
   --provider gemini --model models/gemini-2.5-flash --json
+
+# External CLI runtime (Google Antigravity ACP, isolated in ~/.myaaw/agents/coder-agy/home/workspace)
+myaaw onboard --yes --agent coder-agy --runtime antigravity --bot-type private
+
+# External CLI runtime (Claude Code targeting a repo with bridged approvals)
+myaaw onboard --yes --agent claude-dev --runtime claude_code \
+  --working-dir ~/Development/my-app --runtime-permission bridge
 ```
+
+See [External Agent Runtimes](../agents/external-agents.md) for all presets, MCP bridge options, and account safety guardrails.
 
 ## Owner IDs
 
@@ -361,6 +376,7 @@ myaaw --agent agent-b chat
 
 - [Agent Command](agent.md)
 - [Multi-Agent Guide](../agents/multi-agent.md)
+- [External Agent Runtimes](../agents/external-agents.md)
 - [Service Management](service.md)
 - [Providers](provider.md)
 - [Channels](channel.md)

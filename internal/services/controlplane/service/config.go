@@ -97,7 +97,25 @@ type ServiceSecretView struct {
 	APIKey   SecretState `json:"api_key"`
 }
 
+type RuntimeView struct {
+	Type               string                     `json:"type"`
+	Preset             string                     `json:"preset"`
+	Command            string                     `json:"command,omitempty"`
+	Args               []string                   `json:"args,omitempty"`
+	WorkingDir         string                     `json:"working_dir,omitempty"`
+	AdditionalDirs     []string                   `json:"additional_dirs,omitempty"`
+	Model              string                     `json:"model,omitempty"`
+	AuthSource         string                     `json:"auth_source,omitempty"`
+	APIKeyEnv          string                     `json:"api_key_env,omitempty"`
+	APIKey             SecretState                `json:"api_key"`
+	PermissionMode     string                     `json:"permission_mode,omitempty"`
+	MCPBridge          bool                       `json:"mcp_bridge"`
+	IdleTimeoutSeconds int                        `json:"idle_timeout_seconds"`
+	Capabilities       config.RuntimeCapabilities `json:"capabilities"`
+}
+
 type ConfigView struct {
+	Runtime         RuntimeView                 `json:"runtime"`
 	DefaultProvider string                      `json:"default_provider"`
 	Providers       []ProviderView              `json:"providers"`
 	Channels        []ChannelView               `json:"channels"`
@@ -149,6 +167,7 @@ func (s *ConfigService) Config(agentName string) (ConfigView, error) {
 // configView builds the read shape of a config with every secret masked.
 func configView(cfg *config.Config) ConfigView {
 	return ConfigView{
+		Runtime:         runtimeView(cfg.Runtime),
 		DefaultProvider: cfg.DefaultProvider,
 		Providers:       providerViews(cfg),
 		Channels:        channelViews(cfg),
@@ -165,6 +184,30 @@ func configView(cfg *config.Config) ConfigView {
 		},
 		Observability: mergedObservability(cfg.Observability),
 		Approvals:     mergedApprovals(cfg.Approvals),
+	}
+}
+
+func runtimeView(raw *config.RuntimeConfig) RuntimeView {
+	merged := config.MergeRuntime(raw)
+	idle := config.DefaultRuntimeIdleTimeoutSeconds
+	if merged.IdleTimeoutSeconds != nil && *merged.IdleTimeoutSeconds > 0 {
+		idle = *merged.IdleTimeoutSeconds
+	}
+	return RuntimeView{
+		Type:               merged.Type,
+		Preset:             merged.Preset,
+		Command:            merged.Command,
+		Args:               merged.Args,
+		WorkingDir:         merged.WorkingDir,
+		AdditionalDirs:     merged.AdditionalDirs,
+		Model:              merged.Model,
+		AuthSource:         merged.AuthSource,
+		APIKeyEnv:          merged.APIKeyEnv,
+		APIKey:             secretState(merged.APIKey),
+		PermissionMode:     merged.PermissionMode,
+		MCPBridge:          merged.MCPBridgeEnabled(),
+		IdleTimeoutSeconds: idle,
+		Capabilities:       config.CapabilitiesForRuntime(&merged),
 	}
 }
 
@@ -622,7 +665,24 @@ func writeFileAtomic(path string, data []byte) error {
 // absent fields are left untouched, present fields replace the current value.
 // Keys are never removed; a field can only be set to a new value (including an
 // empty one).
+type RuntimePatch struct {
+	Type               *string   `json:"type,omitempty"`
+	Preset             *string   `json:"preset,omitempty"`
+	Command            *string   `json:"command,omitempty"`
+	Args               *[]string `json:"args,omitempty"`
+	WorkingDir         *string   `json:"working_dir,omitempty"`
+	AdditionalDirs     *[]string `json:"additional_dirs,omitempty"`
+	Model              *string   `json:"model,omitempty"`
+	AuthSource         *string   `json:"auth_source,omitempty"`
+	APIKeyEnv          *string   `json:"api_key_env,omitempty"`
+	APIKey             *string   `json:"api_key,omitempty"`
+	PermissionMode     *string   `json:"permission_mode,omitempty"`
+	MCPBridge          *bool     `json:"mcp_bridge,omitempty"`
+	IdleTimeoutSeconds *int      `json:"idle_timeout_seconds,omitempty"`
+}
+
 type ConfigPatch struct {
+	Runtime       *RuntimePatch       `json:"runtime,omitempty"`
 	Bot           *BotPatch           `json:"bot,omitempty"`
 	Heartbeat     *HeartbeatPatch     `json:"heartbeat,omitempty"`
 	Cron          *CronPatch          `json:"cron,omitempty"`
@@ -880,6 +940,15 @@ func applyConfigPatch(cfg *config.Config, patch ConfigPatch) error {
 			return err
 		}
 	}
+	if patch.Runtime != nil {
+		if err := applyRuntimePatch(&cfg.Runtime, *patch.Runtime, &cfg.Bot); err != nil {
+			return err
+		}
+	} else if cfg.Runtime != nil && patch.Bot != nil {
+		if err := config.ValidateRuntime(cfg.Runtime, &cfg.Bot); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+		}
+	}
 	if patch.Heartbeat != nil {
 		if err := applyHeartbeatPatch(&cfg.Heartbeat, *patch.Heartbeat); err != nil {
 			return err
@@ -903,6 +972,73 @@ func applyConfigPatch(cfg *config.Config, patch ConfigPatch) error {
 		if err := applyApprovalsPatch(&cfg.Approvals, *patch.Approvals); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func applyRuntimePatch(target **config.RuntimeConfig, patch RuntimePatch, bot *config.GlobalBotConfig) error {
+	next := config.MergeRuntime(*target)
+	if patch.Preset != nil {
+		preset := strings.TrimSpace(*patch.Preset)
+		next.Preset = preset
+		if p, ok := config.LookupRuntimePreset(preset); ok {
+			next.Type = p.Type
+			next.Command = p.DefaultCommand
+			next.Args = append([]string(nil), p.DefaultArgs...)
+			if p.DefaultAPIKeyEnv != "" {
+				next.APIKeyEnv = p.DefaultAPIKeyEnv
+			}
+			if p.DefaultAuth != "" {
+				next.AuthSource = p.DefaultAuth
+			}
+		}
+	}
+	if patch.Type != nil {
+		next.Type = *patch.Type
+	}
+	if patch.Command != nil {
+		next.Command = *patch.Command
+	}
+	if patch.Args != nil {
+		next.Args = append([]string(nil), (*patch.Args)...)
+	}
+	if patch.WorkingDir != nil {
+		next.WorkingDir = *patch.WorkingDir
+	}
+	if patch.AdditionalDirs != nil {
+		next.AdditionalDirs = append([]string(nil), (*patch.AdditionalDirs)...)
+	}
+	if patch.Model != nil {
+		next.Model = *patch.Model
+	}
+	if patch.AuthSource != nil {
+		next.AuthSource = *patch.AuthSource
+	}
+	if patch.APIKeyEnv != nil {
+		next.APIKeyEnv = *patch.APIKeyEnv
+	}
+	if patch.APIKey != nil {
+		next.APIKey = *patch.APIKey
+	}
+	if patch.PermissionMode != nil {
+		next.PermissionMode = *patch.PermissionMode
+	}
+	if patch.MCPBridge != nil {
+		v := *patch.MCPBridge
+		next.MCPBridge = &v
+	}
+	if patch.IdleTimeoutSeconds != nil {
+		v := *patch.IdleTimeoutSeconds
+		next.IdleTimeoutSeconds = &v
+	}
+	next = config.MergeRuntime(&next)
+	if err := config.ValidateRuntime(&next, bot); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+	}
+	if !next.IsExternal() {
+		*target = nil
+	} else {
+		*target = &next
 	}
 	return nil
 }

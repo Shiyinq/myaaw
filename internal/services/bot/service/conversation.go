@@ -170,7 +170,7 @@ func (r *BotServiceImpl) runConversation(
 		defer registry.unregister(key, turn)
 	}
 
-	messages, err := r.buildConversationMessages(user, msg)
+	messages, conv, err := r.buildConversationMessagesWithConv(user, msg)
 	if err != nil {
 		return nil, err
 	}
@@ -184,6 +184,23 @@ func (r *BotServiceImpl) runConversation(
 
 	cfg := agent.DefaultRunConfig(user.Model)
 	cfg.ContextMaxTokens = config.AgentContextMaxTokens
+	cfg.ConversationID = msg.ConversationID
+	cfg.Rewind = msg.RewindUserOffset != nil
+	if conv != nil {
+		cfg.ExternalSessionID = conv.ExternalSessionID
+		cfg.ExternalRuntime = conv.ExternalRuntime
+	}
+	if msg.ConversationID != "" {
+		convID := msg.ConversationID
+		cfg.OnExternalSession = func(runtimeName, sessionID string) {
+			if sessionID == "" {
+				return
+			}
+			if err := r.conversationRepo.UpdateExternalSession(convID, runtimeName, sessionID); err != nil {
+				log.Printf("Failed to persist external session for %s: %v", convID, err)
+			}
+		}
+	}
 
 	// Tools that schedule work (cron) or reference the current chat need the
 	// session identity. The system prompt is static now, so it cannot be parsed
@@ -430,8 +447,20 @@ func conversationAccessible(conv *model.Conversation, user *model.User, msg *cha
 }
 
 func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channel.IncomingMessage) ([]provider.Message, error) {
-	userSystem := agent.NewSystemPromptBuilder(msg.Channel).Build()
-	userSystem += skills.GetSkillsInstruction()
+	messages, _, err := r.buildConversationMessagesWithConv(user, msg)
+	return messages, err
+}
+
+func (r *BotServiceImpl) buildConversationMessagesWithConv(user *model.User, msg *channel.IncomingMessage) ([]provider.Message, *model.Conversation, error) {
+	isExternal := r.isExternalRuntime()
+	rtLabel := ""
+	workingDir := ""
+	if isExternal && r.runtime != nil {
+		rtLabel = r.runtime.DisplayProvider()
+		workingDir = r.runtime.WorkingDir()
+	}
+	userSystem := agent.NewSystemPromptBuilder(msg.Channel).BuildForRuntime(isExternal, rtLabel, workingDir)
+	userSystem += skills.GetSkillsInstructionForRuntime(isExternal)
 	messages := []provider.Message{
 		{
 			Role:    "system",
@@ -447,7 +476,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 	case msg.ConversationID != "":
 		found, err := r.conversationRepo.GetConversationById(msg.ConversationID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		switch {
 		case found == nil && msg.Channel == "a2a":
@@ -456,20 +485,20 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 			// ID so later tasks continue the same conversation.
 			created, err := r.conversationRepo.CreateConversationWithId(user.UserId, msg.ConversationID, msg.Channel, "")
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			conv = created
 		case found == nil:
-			return nil, ErrConversationNotFound
+			return nil, nil, ErrConversationNotFound
 		case !conversationAccessible(found, user, msg):
-			return nil, ErrConversationForbidden
+			return nil, nil, ErrConversationForbidden
 		default:
 			conv = found
 		}
 	default:
 		active, err := r.conversationRepo.GetActiveConversationByScope(user.UserId, msg.Scope)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		conv = active
 	}
@@ -481,8 +510,9 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 	} else {
 		created, err := r.conversationRepo.CreateConversationInScope(user.UserId, msg.Scope, msg.Channel, "New Chat")
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		conv = created
 		convMessages = agent.MigrateLegacyTranscript(created.Messages)
 		msg.ConversationID = created.Id
 	}
@@ -516,7 +546,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 	if msg.RewindUserOffset != nil {
 		rewound, rewindErr := rewindToUserMessage(convMessages, *msg.RewindUserOffset, msg.Text)
 		if rewindErr != nil {
-			return nil, rewindErr
+			return nil, nil, rewindErr
 		}
 		// A regeneration sends no text of its own. Record the prompt it replays so
 		// the observability run still shows which question the answer was for.
@@ -529,7 +559,7 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 			}
 		}
 		messages = append(messages, rewound...)
-		return messages, nil
+		return messages, conv, nil
 	}
 
 	messages = append(messages, convMessages...)
@@ -541,10 +571,10 @@ func (r *BotServiceImpl) buildConversationMessages(user *model.User, msg *channe
 		var appendErr error
 		messages, appendErr = r.appendUserTurn(messages, msg.ConversationID, turn)
 		if appendErr != nil {
-			return nil, appendErr
+			return nil, nil, appendErr
 		}
 	}
-	return messages, nil
+	return messages, conv, nil
 }
 
 // appendUserTurn stores one chat message (with its uploads) as a user entry and
@@ -576,9 +606,13 @@ func (r *BotServiceImpl) appendUserTurn(messages []provider.Message, conversatio
 		}
 	}
 
-	// Only documents go into the <attached> block: images already reach the model
-	// inline, and adding their path would ask it to read them with a tool too.
-	userMessage := r.buildUserMessage(msg, uploads)
+	// External runtimes that do not accept inline image blocks still see the
+	// saved image paths in <attached> so they can inspect them with native tools.
+	attachedUploads := uploads
+	if r.isExternalRuntime() && len(imageUploads) > 0 && (r.runtime == nil || !r.runtime.Capabilities().SupportsImages) {
+		attachedUploads = append(append([]provider.Upload(nil), uploads...), imageUploads...)
+	}
+	userMessage := r.buildUserMessage(msg, attachedUploads)
 	userMessage.ID = messageID
 	userMessage.Uploads = append(uploads, imageUploads...)
 	created := time.Now().UTC()
@@ -744,7 +778,7 @@ func (r *BotServiceImpl) buildUserMessage(msg *channel.IncomingMessage, uploads 
 	}
 
 	if len(msg.Images) > 0 {
-		providerName := r.llmProvider.ProviderName()
+		providerName := r.activeProviderName()
 		isOpenAI := providerName == "openai"
 		isGroq := providerName == "groq"
 
@@ -881,6 +915,12 @@ func (r *BotServiceImpl) GenerateConversationTitle(user *model.User, messages []
 		return defaultTitle, nil
 	}
 
+	// External CLI runtimes do not configure a separate LLMProvider in Myaaw;
+	// derive a clean deterministic title instead of spawning an extra CLI turn.
+	if r.llmProvider == nil {
+		return deriveConversationTitle(firstUserMsg), nil
+	}
+
 	prompt := "Generate a short and clear conversation title (max 7 words) for the following user message: " + firstUserMsg
 	llmMessages := []provider.Message{
 		{Role: "system", Content: "You are a conversation title assistant. The title must be short, clear, and a maximum of 7 words."},
@@ -898,4 +938,20 @@ func (r *BotServiceImpl) GenerateConversationTitle(user *model.User, messages []
 		return title, nil
 	}
 	return defaultTitle, nil
+}
+
+func deriveConversationTitle(text string) string {
+	clean := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(text, "\r", " "), "\n", " "))
+	words := strings.Fields(clean)
+	if len(words) == 0 {
+		return "New Chat"
+	}
+	if len(words) > 7 {
+		words = words[:7]
+	}
+	title := strings.Join(words, " ")
+	if len(title) > 64 {
+		title = strings.TrimSpace(title[:64]) + "…"
+	}
+	return title
 }

@@ -91,8 +91,9 @@ Chat and conversation endpoints use this ID automatically. Clients do not need t
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/agents` | list agents with `default`, `running`, `port`, `base_url` |
+| `GET` | `/agents` | list agents with `default`, `running`, `port`, `base_url`, `agent_color`, `runtime_type`, `runtime_preset` |
 | `GET` | `/capabilities` | provider presets, embedded skills and built-in tools for the onboarding form |
+| `GET` | `/runtimes` | supported agent runtimes (built-in `myaaw` + external CLI presets) with live host binary discovery |
 | `GET` | `/agents/:name` | one agent |
 | `POST` | `/agents/:name/onboard` | create or reconfigure an agent with the full setup in one call |
 | `DELETE` | `/agents/:name` | delete agent data (default agent is protected) |
@@ -121,7 +122,55 @@ curl -X POST http://localhost:9000/agents/myfriend/onboard \
   }'
 ```
 
-`201` means the agent was created, `200` means it was reconfigured. The body is `{created, config, warnings}`; `warnings` carries non-fatal issues such as a failed Telegram webhook registration.
+`201` means the agent was created, `200` means it was reconfigured. The body is `{created, config, warnings}`; `warnings` carries non-fatal issues such as a failed Telegram webhook registration or a high-frequency heartbeat warning on a `cli_login` external runtime.
+
+`POST /agents/:name/onboard` also accepts an optional `runtime` object (`preset`, `type`, `command`, `args`, `working_dir`, `additional_dirs`, `model`, `auth_source`, `api_key_env`, `api_key`, `permission_mode`, `mcp_bridge`, `idle_timeout_seconds`) to create or switch an agent to an external CLI engine such as Google Antigravity (`antigravity`), Claude Code (`claude_code`), Oh My Pi (`omp`), Pi (`pi`), Codex (`codex`), Gemini CLI (`gemini_cli`), OpenCode (`opencode`), or `custom_acp`. When an external runtime is selected, `provider` is optional; `bot.type: "public"` is rejected when `auth_source` is `"cli_login"`. See [External Agent Runtimes](../agents/external-agents.md).
+
+```bash
+curl -X POST http://localhost:9000/agents/coder-agy/onboard \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{
+    "runtime": {
+      "preset": "antigravity",
+      "auth_source": "cli_login",
+      "permission_mode": "bridge",
+      "mcp_bridge": true
+    },
+    "bot": {"type": "private", "owner_ids": ["123456789"]}
+  }'
+```
+
+### Runtimes catalog (`GET /runtimes`)
+
+`GET /runtimes` is not scoped to an agent: it returns every built-in runtime preset alongside live host binary discovery (searching the process `PATH` plus common user/package-manager directories such as `~/.local/bin`, Homebrew, `nvm`, `fnm`, `bun`, etc.) so onboarding forms can show which CLIs are installed and their detected versions.
+
+```bash
+curl http://localhost:9000/runtimes -H "Authorization: Bearer $TOKEN"
+```
+
+```json
+{
+  "runtimes": [
+    {
+      "id": "myaaw",
+      "type": "myaaw",
+      "label": "Myaaw (Built-in)",
+      "installed": true,
+      "version": "built-in"
+    },
+    {
+      "id": "antigravity",
+      "type": "acp",
+      "label": "Google Antigravity (agy)",
+      "default_command": "agy",
+      "default_args": ["acp"],
+      "installed": true,
+      "binary_path": "/Users/you/.local/bin/agy",
+      "version": "1.5.17"
+    }
+  ]
+}
+```
 
 ### Capabilities catalog
 
@@ -813,7 +862,7 @@ Use `POST /providers/models` with `{ "type": "openai_chatgpt", "auth_mode": "oau
 
 ## 12. Config
 
-`GET /agents/:name/config` returns providers, channels, bot settings, heartbeat, cron, transcriber, synthesizer, and observability with all secrets masked.
+`GET /agents/:name/config` returns `runtime`, providers, channels, bot settings, heartbeat, cron, transcriber, synthesizer, observability, and approvals with all secrets masked.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -822,13 +871,17 @@ Use `POST /providers/models` with `{ "type": "openai_chatgpt", "auth_mode": "oau
 | `POST` | `/agents/:name/config/reset` | restore the whole `config.json` to the template (resets providers and channels too) |
 | `PATCH` | `/agents/:name/config/reset` | reset only the named bot fields and sections |
 
-`PATCH /config` covers `bot` (`type`, `owner_ids`, and every tuning field), `heartbeat` (`active`, `channel`, `to`, `thread_id`, `session_id`, `chat_type`, `every`), `cron.active`, `transcriber`, `synthesizer`, and `observability`. Omitted fields are left untouched, so a key is never deleted:
+`PATCH /config` covers `runtime`, `bot` (`type`, `owner_ids`, and every tuning field), `heartbeat` (`active`, `channel`, `to`, `thread_id`, `session_id`, `chat_type`, `every`), `cron.active`, `transcriber`, `synthesizer`, `observability`, and `approvals`. Omitted fields are left untouched, so a key is never deleted:
 
 ```bash
 curl -X PATCH http://localhost:9000/agents/myfriend/config \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"bot":{"type":"public","max_iterations":50},"heartbeat":{"active":false}}'
 ```
+
+### Runtime settings
+
+`GET /agents/:name/config` always includes a merged `runtime` view (`type`, `preset`, `command`, `args`, `working_dir`, `additional_dirs`, `model`, `auth_source`, `api_key_env`, masked `api_key`, `permission_mode`, `mcp_bridge`, `idle_timeout_seconds`, and `capabilities`). `PATCH /agents/:name/config` validates the updated `runtime` block against `bot.type` (for example rejecting `bot.type: "public"` with `auth_source: "cli_login"`). Sending an empty `runtime.api_key` keeps any stored key. See [External Agent Runtimes](../agents/external-agents.md).
 
 `PATCH /config/reset` takes the same section names and restores them from the template. Every section accepts `true` for the whole section, `[]` for the same thing, or a list of field names; `false` leaves it alone. So `{"bot": []}` resets the whole bot section, `{"bot": ["type"]}` resets one bot field, and `{"heartbeat": ["every"], "approvals": ["mode"]}` resets two fields in two sections. The heartbeat fields are `active`, `channel`, `to`, `thread_id`, `session_id`, `chat_type`, and `every`. Providers and channels are not touched by this variant.
 

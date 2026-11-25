@@ -21,6 +21,8 @@ func newTestConversationRepo(t *testing.T) *ConversationRepositoryImpl {
 		user_id INTEGER,
 		scope TEXT NOT NULL DEFAULT '',
 		channel TEXT NOT NULL DEFAULT '',
+		external_session_id TEXT NOT NULL DEFAULT '',
+		external_runtime TEXT NOT NULL DEFAULT '',
 		title TEXT,
 		messages TEXT,
 		active BOOLEAN,

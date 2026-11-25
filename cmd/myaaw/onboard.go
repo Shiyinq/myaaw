@@ -66,6 +66,13 @@ type onboardOptions struct {
 	botType         string
 	disableChannels string
 	listCaps        bool
+	// External agent runtime flags (myaaw, antigravity, claude_code, omp, pi, codex, gemini_cli, opencode, custom_acp).
+	runtimePreset string
+	runtimeCmd    string
+	runtimeArgs   string
+	workingDir    string
+	runtimeAuth   string
+	runtimePerm   string
 	// disableToolsSet reports whether --disable-tools was passed, so an
 	// update without the flag can preserve the current disabled set.
 	disableToolsSet bool
@@ -117,6 +124,12 @@ func registerOnboardFlags(cmd *cobra.Command) {
 	f.StringVar(&onboardOpts.botType, "bot-type", "", "access type: private or public (default: private)")
 	f.BoolVar(&onboardOpts.listCaps, "list-capabilities", false, "list built-in skills and tools, then exit")
 	f.StringVar(&onboardOpts.disableChannels, "disable-channel", "", "channels to turn off: telegram, discord, or both")
+	f.StringVar(&onboardOpts.runtimePreset, "runtime", "", "agent runtime preset: myaaw, antigravity, claude_code, omp, pi, codex, gemini_cli, opencode, or custom_acp")
+	f.StringVar(&onboardOpts.runtimeCmd, "runtime-command", "", "override external runtime binary command")
+	f.StringVar(&onboardOpts.runtimeArgs, "runtime-args", "", "override external runtime CLI args (comma separated)")
+	f.StringVar(&onboardOpts.workingDir, "working-dir", "", "working directory for external runtime (default: ~/.myaaw/agents/<name>/home/workspace)")
+	f.StringVar(&onboardOpts.runtimeAuth, "runtime-auth", "", "external runtime auth mode: cli_login or api_key")
+	f.StringVar(&onboardOpts.runtimePerm, "runtime-permission", "", "external runtime permission mode: bridge, auto, or read_only")
 }
 
 func runOnboard(cmd *cobra.Command, args []string) {
@@ -2436,6 +2449,9 @@ func (m onboardModel) renderTimeline() string {
 
 type onboardSummary struct {
 	Agent         string            `json:"agent"`
+	Runtime       string            `json:"runtime,omitempty"`
+	RuntimeType   string            `json:"runtime_type,omitempty"`
+	WorkingDir    string            `json:"working_dir,omitempty"`
 	Config        string            `json:"config"`
 	Env           string            `json:"env"`
 	Port          string            `json:"port"`
@@ -2521,10 +2537,18 @@ func runOnboardHeadless(agentName string) int {
 	}
 
 	fmt.Printf("Agent:    %s\n", summary.Agent)
+	if summary.Runtime != "" {
+		fmt.Printf("Runtime:  %s (%s)\n", summary.Runtime, summary.RuntimeType)
+	}
+	if summary.WorkingDir != "" {
+		fmt.Printf("Workdir:  %s\n", summary.WorkingDir)
+	}
 	fmt.Printf("Config:   %s\n", summary.Config)
 	fmt.Printf("Env:      %s\n", summary.Env)
 	fmt.Printf("Port:     %s\n", summary.Port)
-	fmt.Printf("Provider: %s (%s)\n", summary.Provider, summary.ProviderType)
+	if summary.Provider != "" {
+		fmt.Printf("Provider: %s (%s)\n", summary.Provider, summary.ProviderType)
+	}
 	if summary.BaseURL != "" {
 		fmt.Printf("Base URL: %s\n", summary.BaseURL)
 	}
@@ -2586,11 +2610,20 @@ func buildOnboardSummary(agentName string, cfg *config.Config, in onboardInput, 
 		return summary
 	}
 
+	rt := config.MergeRuntime(cfg.Runtime)
+	summary.Runtime = rt.Preset
+	summary.RuntimeType = rt.Type
+	if rt.IsExternal() {
+		summary.WorkingDir = rt.WorkingDir
+		summary.Model = rt.Model
+	}
 	summary.Provider = cfg.DefaultProvider
 	if p, ok := cfg.Providers[cfg.DefaultProvider]; ok {
 		summary.ProviderType = p.Type
 		summary.BaseURL = p.BaseURL
-		summary.Model = p.DefaultModel
+		if !rt.IsExternal() {
+			summary.Model = p.DefaultModel
+		}
 	}
 	if cfg.Channels.Telegram != nil && cfg.Channels.Telegram.Active {
 		summary.Channels["telegram"] = cfg.Channels.Telegram.Mode
@@ -2622,11 +2655,48 @@ func headlessInput(agentName string, opts onboardOptions) (onboardInput, error) 
 	var in onboardInput
 	existing := loadAgentConfig(agentName)
 
+	isExternalRuntime := false
+	if strings.TrimSpace(opts.runtimePreset) != "" || strings.TrimSpace(opts.runtimeCmd) != "" || strings.TrimSpace(opts.workingDir) != "" || strings.TrimSpace(opts.runtimeAuth) != "" || strings.TrimSpace(opts.runtimePerm) != "" {
+		rt := config.RuntimeConfig{
+			Preset:         strings.TrimSpace(opts.runtimePreset),
+			Command:        strings.TrimSpace(opts.runtimeCmd),
+			WorkingDir:     strings.TrimSpace(opts.workingDir),
+			Model:          strings.TrimSpace(opts.model),
+			AuthSource:     strings.TrimSpace(opts.runtimeAuth),
+			PermissionMode: strings.TrimSpace(opts.runtimePerm),
+		}
+		if rawArgs := strings.TrimSpace(opts.runtimeArgs); rawArgs != "" {
+			for _, part := range strings.Split(rawArgs, ",") {
+				if trimmed := strings.TrimSpace(part); trimmed != "" {
+					rt.Args = append(rt.Args, trimmed)
+				}
+			}
+		}
+		if key := firstNonEmpty(opts.apiKey, os.Getenv("MYAAW_API_KEY")); key != "" && rt.AuthSource == config.AuthSourceAPIKey {
+			rt.APIKey = key
+		}
+		merged := config.MergeRuntime(&rt)
+		var botCheck *config.GlobalBotConfig
+		if strings.TrimSpace(opts.botType) != "" {
+			botCheck = &config.GlobalBotConfig{Type: strings.TrimSpace(opts.botType)}
+		} else if existing != nil {
+			botCheck = &existing.Bot
+		}
+		if err := config.ValidateRuntime(&merged, botCheck); err != nil {
+			return in, err
+		}
+		in.Runtime = &merged
+		isExternalRuntime = merged.IsExternal()
+	} else if existing != nil && existing.Runtime != nil && config.MergeRuntime(existing.Runtime).IsExternal() {
+		isExternalRuntime = true
+	}
+
 	// An update usually only touches part of the config, so the provider can be
-	// left alone explicitly (--keep-provider) or by omitting --provider.
-	keepProvider := opts.keepProvider || (strings.TrimSpace(opts.provider) == "" && existing != nil)
+	// left alone explicitly (--keep-provider), when using an external runtime,
+	// or by omitting --provider on an existing agent.
+	keepProvider := opts.keepProvider || isExternalRuntime || (strings.TrimSpace(opts.provider) == "" && existing != nil)
 	if keepProvider {
-		if existing == nil {
+		if existing == nil && !isExternalRuntime {
 			return in, fmt.Errorf("--provider is required for a new agent (openai or gemini)")
 		}
 	} else {

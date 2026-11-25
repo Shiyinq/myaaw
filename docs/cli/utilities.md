@@ -79,8 +79,20 @@ permission model.
 
 ## `myaaw doctor`
 
-Checks environment readiness for Myaaw features, starting with desktop
-automation (computer use):
+Checks environment readiness for the active agent (`--agent <name>` selects a specific agent), covering **Agent runtime** readiness first and **Computer use (desktop automation)** second:
+
+### Agent runtime
+
+| Check | What it verifies |
+| :--- | :--- |
+| Agent | Active agent resolved from `--agent` or the default registry entry |
+| Active runtime | Effective runtime preset and driver type (e.g. `myaaw (myaaw)`, `antigravity (acp)`, `pi (pi)`) |
+| Runtime binary *(external only)* | Resolves the external CLI binary via `PATH` plus common user bin folders (`~/.local/bin`, Homebrew, `nvm`, etc.) |
+| Working directory *(external only)* | Resolved `cwd` (`runtime.working_dir` or `~/.myaaw/agents/<name>/home/workspace`) |
+| Auth / Permissions *(external only)* | Configured `auth_source` (`cli_login` / `api_key`) and `permission_mode` (`bridge` / `auto` / `read_only`) |
+| Policy check / Warning *(external only)* | Validates `bot.type` compatibility (blocks `public` + `cli_login`) and warns on high-frequency heartbeats |
+
+### Computer use (desktop automation)
 
 | Check | What it verifies |
 | :--- | :--- |
@@ -100,6 +112,7 @@ for the three panes and the `tccutil reset` recovery.
 
 ```bash
 myaaw doctor
+myaaw --agent coder-agy doctor
 ```
 
 The probe is **non-destructive**: it never moves the pointer or sends input.

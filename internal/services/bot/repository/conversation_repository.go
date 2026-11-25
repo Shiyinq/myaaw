@@ -24,6 +24,7 @@ type ConversationRepository interface {
 	CreateConversationInScope(userId int, scope, channel, title string) (*model.Conversation, error)
 	UpdateConversationById(id string, messages []provider.Message, title string) error
 	UpdateConversationTitle(id string, title string) error
+	UpdateExternalSession(id string, runtimeName, sessionID string) error
 	DeleteConversationById(id string) error
 	GetActiveConversationByUserId(userId int) (*model.Conversation, error)
 	GetActiveConversationByScope(userId int, scope string) (*model.Conversation, error)
@@ -44,7 +45,7 @@ func NewConversationRepository(db *sql.DB) ConversationRepository {
 	return &ConversationRepositoryImpl{db: db}
 }
 
-const conversationColumns = `id, user_id, scope, channel, title, messages, active, created_at, updated_at`
+const conversationColumns = `id, user_id, scope, channel, external_session_id, external_runtime, title, messages, active, created_at, updated_at`
 
 // rowScanner is implemented by both *sql.Row and *sql.Rows.
 type rowScanner interface {
@@ -53,16 +54,20 @@ type rowScanner interface {
 
 func scanConversation(row rowScanner) (*model.Conversation, error) {
 	var (
-		conv         model.Conversation
-		scope        sql.NullString
-		messagesJSON string
+		conv              model.Conversation
+		scope             sql.NullString
+		externalSessionID sql.NullString
+		externalRuntime   sql.NullString
+		messagesJSON      string
 	)
 	if err := row.Scan(
-		&conv.Id, &conv.UserId, &scope, &conv.Channel, &conv.Title, &messagesJSON, &conv.Active, &conv.CreatedAt, &conv.UpdatedAt,
+		&conv.Id, &conv.UserId, &scope, &conv.Channel, &externalSessionID, &externalRuntime, &conv.Title, &messagesJSON, &conv.Active, &conv.CreatedAt, &conv.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
 	conv.Scope = scope.String
+	conv.ExternalSessionID = externalSessionID.String
+	conv.ExternalRuntime = externalRuntime.String
 
 	if err := json.Unmarshal([]byte(messagesJSON), &conv.Messages); err != nil {
 		// fallback if it fails
@@ -234,6 +239,17 @@ func (r *ConversationRepositoryImpl) UpdateConversationTitle(id string, title st
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update conversation title: %w", err)
+	}
+	return nil
+}
+
+func (r *ConversationRepositoryImpl) UpdateExternalSession(id string, runtimeName, sessionID string) error {
+	_, err := r.db.Exec(
+		`UPDATE conversations SET external_runtime = ?, external_session_id = ?, updated_at = ? WHERE id = ?`,
+		runtimeName, sessionID, time.Now().UTC(), id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update external session: %w", err)
 	}
 	return nil
 }

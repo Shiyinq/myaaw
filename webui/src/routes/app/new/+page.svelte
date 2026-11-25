@@ -39,6 +39,7 @@
 	import type {
 		CapabilityEntry,
 		CapabilitiesView,
+		DetectedRuntime,
 		ModelListView,
 		OnboardRequest,
 		ProviderOption,
@@ -53,6 +54,7 @@
 
 	/** What the agent already had, so only changed sections are written. */
 	interface SetupSnapshot {
+		runtime: string;
 		provider: string;
 		skills: string;
 		tools: string;
@@ -66,6 +68,21 @@
 		'h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 disabled:opacity-60';
 
 	let name = $state('');
+	let runtimes = $state<DetectedRuntime[]>([]);
+	let runtimePreset = $state('myaaw');
+	let runtimeCommand = $state('');
+	let runtimeArgs = $state('');
+	let runtimeWorkingDir = $state('');
+	let runtimeModel = $state('');
+	let runtimeAuthSource = $state<'cli_login' | 'api_key'>('cli_login');
+	let runtimeApiKeyEnv = $state('');
+	let runtimeApiKey = $state('');
+	let runtimeApiKeySaved = $state(false);
+	let runtimePermissionMode = $state<'bridge' | 'auto' | 'read_only'>('bridge');
+	let runtimeMcpBridge = $state(true);
+	let isExternalRuntime = $derived(runtimePreset !== 'myaaw');
+	let activeRuntimePreset = $derived(runtimes.find((entry) => entry.id === runtimePreset) ?? null);
+
 	let presetId = $state('openai');
 	let providerType = $state('openai');
 	let providerName = $state('');
@@ -235,6 +252,18 @@
 	);
 
 	let snapshot = $derived<SetupSnapshot>({
+		runtime: [
+			runtimePreset,
+			runtimeCommand.trim(),
+			runtimeArgs.trim(),
+			runtimeWorkingDir.trim(),
+			runtimeModel.trim(),
+			runtimeAuthSource,
+			runtimeApiKeyEnv.trim(),
+			runtimeApiKey.trim(),
+			runtimePermissionMode,
+			runtimeMcpBridge
+		].join('|'),
 		provider: [
 			providerType,
 			providerName.trim(),
@@ -259,6 +288,7 @@
 		color: agentColor
 	});
 	let changed = $derived({
+		runtime: !!initial && initial.runtime !== snapshot.runtime,
 		provider: !!initial && initial.provider !== snapshot.provider,
 		skills: !!initial && initial.skills !== snapshot.skills,
 		tools: !!initial && initial.tools !== snapshot.tools,
@@ -327,7 +357,12 @@
 		manualModel = false;
 		try {
 			try {
-				capabilities = await agentsStore.fetchCapabilities();
+				const [capsRes, runtimesRes] = await Promise.all([
+					agentsStore.fetchCapabilities(),
+					agentsStore.fetchRuntimes().catch(() => ({ runtimes: [] }))
+				]);
+				capabilities = capsRes;
+				runtimes = runtimesRes.runtimes ?? [];
 			} catch (err) {
 				loadError = `${t('myaaw.onboard.load_failed')} ${getErrorMessage(err)}`;
 			}
@@ -343,9 +378,39 @@
 		}
 	}
 
+	function applyRuntimePreset(id: string) {
+		runtimePreset = id;
+		const preset = runtimes.find((entry) => entry.id === id);
+		if (!preset || preset.id === 'myaaw') {
+			runtimeCommand = '';
+			runtimeArgs = '';
+			runtimeApiKeyEnv = '';
+			runtimeAuthSource = 'cli_login';
+			return;
+		}
+		runtimeCommand = preset.default_command ?? '';
+		runtimeArgs = (preset.default_args ?? []).join(', ');
+		runtimeApiKeyEnv = preset.default_api_key_env ?? '';
+		runtimeAuthSource = preset.default_auth === 'api_key' ? 'api_key' : 'cli_login';
+		if (runtimeAuthSource === 'cli_login') {
+			botType = 'private';
+		}
+	}
+
 	/** Mirrors the wizard defaults: no skills, every built-in tool enabled. */
 	function resetForm() {
 		name = '';
+		runtimePreset = 'myaaw';
+		runtimeCommand = '';
+		runtimeArgs = '';
+		runtimeWorkingDir = '';
+		runtimeModel = '';
+		runtimeAuthSource = 'cli_login';
+		runtimeApiKeyEnv = '';
+		runtimeApiKey = '';
+		runtimeApiKeySaved = false;
+		runtimePermissionMode = 'bridge';
+		runtimeMcpBridge = true;
 		credentialId = '';
 		connection = undefined;
 		connecting = false;
@@ -415,6 +480,37 @@
 			name = target;
 			serverRunning = info.running;
 			agentColor = colorOf(info.agent_color);
+
+			if (config.runtime && config.runtime.type && config.runtime.type !== 'myaaw') {
+				runtimePreset = config.runtime.preset || config.runtime.type;
+				runtimeCommand = config.runtime.command ?? '';
+				runtimeArgs = (config.runtime.args ?? []).join(', ');
+				runtimeWorkingDir = config.runtime.working_dir ?? '';
+				runtimeModel = config.runtime.model ?? '';
+				runtimeAuthSource = config.runtime.auth_source === 'api_key' ? 'api_key' : 'cli_login';
+				runtimeApiKeyEnv = config.runtime.api_key_env ?? '';
+				runtimeApiKey = '';
+				runtimeApiKeySaved = config.runtime.api_key?.configured ?? false;
+				runtimePermissionMode =
+					config.runtime.permission_mode === 'auto'
+						? 'auto'
+						: config.runtime.permission_mode === 'read_only'
+							? 'read_only'
+							: 'bridge';
+				runtimeMcpBridge = config.runtime.mcp_bridge ?? true;
+			} else {
+				runtimePreset = 'myaaw';
+				runtimeCommand = '';
+				runtimeArgs = '';
+				runtimeWorkingDir = '';
+				runtimeModel = '';
+				runtimeAuthSource = 'cli_login';
+				runtimeApiKeyEnv = '';
+				runtimeApiKey = '';
+				runtimeApiKeySaved = false;
+				runtimePermissionMode = 'bridge';
+				runtimeMcpBridge = true;
+			}
 
 			const provider =
 				config.providers.find((item) => item.name === config.default_provider) ??
@@ -538,14 +634,38 @@
 	function buildPayload(data: AgentSetupForm): OnboardRequest {
 		const payload: OnboardRequest = {};
 
-		if (!initial || changed.provider) {
+		if (!initial || changed.runtime) {
+			if (isExternalRuntime) {
+				const parsedArgs = runtimeArgs
+					.split(',')
+					.map((v) => v.trim())
+					.filter(Boolean);
+				payload.runtime = {
+					preset: runtimePreset,
+					type: activeRuntimePreset?.type || undefined,
+					command: runtimeCommand.trim() || undefined,
+					args: parsedArgs.length > 0 ? parsedArgs : undefined,
+					working_dir: runtimeWorkingDir.trim() || undefined,
+					model: runtimeModel.trim() || undefined,
+					auth_source: runtimeAuthSource,
+					api_key_env: runtimeApiKeyEnv.trim() || undefined,
+					api_key: runtimeApiKey.trim() || undefined,
+					permission_mode: runtimePermissionMode,
+					mcp_bridge: runtimeMcpBridge
+				};
+			} else {
+				payload.runtime = { preset: 'myaaw', type: 'myaaw' };
+			}
+		}
+
+		if (!isExternalRuntime && (!initial || changed.provider)) {
 			payload.provider = {
-				type: data.provider_type,
+				type: data.provider_type || providerType,
 				name: data.provider_name || undefined,
 				...(isChatGPT
 					? { auth_mode: 'oauth' as const, credential_id: credentialId }
 					: { base_url: data.base_url || undefined, api_key: data.api_key?.trim() || undefined }),
-				model: data.model
+				model: data.model || model
 			};
 		}
 		if (!initial || changed.skills) {
@@ -594,18 +714,18 @@
 
 	async function submit() {
 		if (connecting) return;
-		if (isChatGPT && !connected) {
+		if (!isExternalRuntime && isChatGPT && !connected) {
 			toastStore.error(t('myaaw.chatgpt.connect_required'));
 			return;
 		}
 		const target = (agentParam || name).trim();
 		const result = validate(agentSetupSchema, {
 			name: target,
-			provider_type: providerType,
-			provider_name: providerName,
-			base_url: isChatGPT ? undefined : baseUrl,
-			api_key: isChatGPT ? undefined : apiKey,
-			model,
+			provider_type: isExternalRuntime ? undefined : providerType,
+			provider_name: isExternalRuntime ? undefined : providerName,
+			base_url: isExternalRuntime || isChatGPT ? undefined : baseUrl,
+			api_key: isExternalRuntime || isChatGPT ? undefined : apiKey,
+			model: isExternalRuntime ? undefined : model,
 			telegram_token: telegramToken,
 			webhook_url: webhookUrl,
 			heartbeat_to: heartbeatTo,
@@ -618,7 +738,21 @@
 		}
 
 		const fieldErrors: FieldErrors = {};
-		if (!isChatGPT && !initial && apiKey.trim() === '') fieldErrors.api_key = 'api_key_required';
+		if (isExternalRuntime) {
+			if (runtimePreset === 'custom_acp' && runtimeCommand.trim() === '') {
+				fieldErrors.runtime_command = 'required';
+			}
+			if (runtimeAuthSource === 'cli_login' && botType === 'public') {
+				toastStore.error(
+					'Personal CLI logins cannot use public bot mode. Switch Access to Private or use an API key.'
+				);
+				openAccess = true;
+				return;
+			}
+		} else {
+			if (!isChatGPT && !initial && apiKey.trim() === '') fieldErrors.api_key = 'api_key_required';
+			if (model.trim() === '') fieldErrors.model = 'required';
+		}
 		if (wantsTelegram && telegramToken.trim() === '' && !telegramConfigured) {
 			fieldErrors.telegram_token = 'required';
 		}
@@ -679,7 +813,7 @@
 			onclick={() => void submit()}
 			variant="default"
 			loading={saving}
-			disabled={loading || connecting || (isChatGPT && !connected)}
+			disabled={loading || connecting || (!isExternalRuntime && isChatGPT && !connected)}
 		/>
 	{/snippet}
 </TopBarActions>
@@ -731,131 +865,308 @@
 						<FieldError code={errors.name} />
 					</div>
 					<div class="grid content-start gap-1.5">
-						<Label for="onboard-provider-type">{t('myaaw.onboard.provider_type')}</Label>
+						<Label for="onboard-runtime-preset">Agent Engine / Runtime</Label>
 						<select
-							id="onboard-provider-type"
+							id="onboard-runtime-preset"
 							class={selectClass}
-							value={presetId}
-							onchange={(event) => applyPreset(event.currentTarget.value)}
+							value={runtimePreset}
+							onchange={(event) => applyRuntimePreset(event.currentTarget.value)}
 						>
-							{#each providerChoices as option (option.id)}
-								<option value={option.id}>{option.label}</option>
-							{/each}
+							{#if runtimes.length > 0}
+								{#each runtimes as rt (rt.id)}
+									<option value={rt.id}>
+										{rt.label}{rt.id !== 'myaaw' && rt.default_command
+											? rt.installed
+												? ' (installed)'
+												: ' (not installed)'
+											: ''}
+									</option>
+								{/each}
+							{:else}
+								<option value="myaaw">Myaaw (Built-in)</option>
+								<option value="antigravity">Google Antigravity (agy)</option>
+								<option value="claude_code">Claude Code (claude)</option>
+								<option value="omp">Oh My Pi (omp)</option>
+								<option value="pi">Pi Coding Agent (pi)</option>
+								<option value="codex">OpenAI Codex CLI (codex)</option>
+								<option value="gemini_cli">Gemini CLI (gemini)</option>
+								<option value="opencode">OpenCode (opencode)</option>
+								<option value="custom_acp">Custom ACP Agent</option>
+							{/if}
 						</select>
+						{#if activeRuntimePreset?.description}
+							<p class="text-[11px] text-muted-foreground">
+								{activeRuntimePreset.description}
+								{#if isExternalRuntime && activeRuntimePreset.installed && activeRuntimePreset.version}
+									· <span class="font-mono text-emerald-600 dark:text-emerald-400"
+										>{activeRuntimePreset.version}</span
+									>
+								{/if}
+							</p>
+						{/if}
 					</div>
 				</div>
 
-				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="grid content-start gap-1.5">
-						<Label for="onboard-provider-name">{t('myaaw.onboard.provider_name')}</Label>
-						<Input
-							id="onboard-provider-name"
-							bind:value={providerName}
-							placeholder={activePreset?.id ?? providerType}
-						/>
-						<p class="text-[11px] text-muted-foreground">
-							{t('myaaw.onboard.provider_name_hint')}
-						</p>
-						<FieldError code={errors.provider_name} />
-					</div>
-					{#if !isChatGPT}
-						<div class="grid content-start gap-1.5">
-							<Label for="onboard-base-url">{t('myaaw.providers.base_url')}</Label>
-							<Input
-								id="onboard-base-url"
-								bind:value={baseUrl}
-								placeholder={activePreset?.default_base_url ?? 'https://api.openai.com'}
-								oninput={clearDiscovered}
-							/>
-							<FieldError code={errors.base_url} />
+				{#if isExternalRuntime}
+					<Separator />
+					<div class="space-y-4">
+						<div class="grid gap-4 sm:grid-cols-2">
+							<div class="grid content-start gap-1.5">
+								<Label for="onboard-runtime-command">CLI Binary</Label>
+								<Input
+									id="onboard-runtime-command"
+									bind:value={runtimeCommand}
+									placeholder={activeRuntimePreset?.default_command || 'agy'}
+								/>
+								<FieldError code={errors.runtime_command} />
+							</div>
+							<div class="grid content-start gap-1.5">
+								<Label for="onboard-runtime-args">CLI Arguments (comma separated)</Label>
+								<Input
+									id="onboard-runtime-args"
+									bind:value={runtimeArgs}
+									placeholder={(activeRuntimePreset?.default_args ?? []).join(', ') || 'acp'}
+								/>
+							</div>
 						</div>
-					{/if}
-				</div>
-				{#if isChatGPT}
-					{#key `${agentParam}:${name.trim()}:${connectionVersion}`}
-						<ChatGPTConnection
-							agent={(agentParam || name).trim()}
-							providerId={reconfigure && savedProvider?.name === providerName.trim()
-								? savedProvider.name
-								: undefined}
-							bind:credentialId
-							bind:connection
-							bind:busy={connecting}
-							onchange={clearDiscovered}
-						/>
-					{/key}
-				{/if}
 
-				<div class="grid gap-4 sm:grid-cols-2">
-					{#if !isChatGPT}
-						<div class="grid content-start gap-1.5">
-							<Label for="onboard-api-key">{t('myaaw.providers.api_key')}</Label>
-							<Input
-								id="onboard-api-key"
-								type="password"
-								bind:value={apiKey}
-								placeholder={reconfigure ? t('myaaw.onboard.api_key_saved') : 'sk-...'}
-								oninput={clearDiscovered}
-							/>
-							<FieldError code={errors.api_key} />
+						<div class="grid gap-4 sm:grid-cols-2">
+							<div class="grid content-start gap-1.5">
+								<Label for="onboard-runtime-workdir">Working Directory (optional)</Label>
+								<Input
+									id="onboard-runtime-workdir"
+									bind:value={runtimeWorkingDir}
+									placeholder="~/.myaaw/agents/<name>/home/workspace"
+								/>
+								<p class="text-[11px] text-muted-foreground">
+									Leave empty to isolate inside this agent's own workspace directory.
+								</p>
+							</div>
+							<div class="grid content-start gap-1.5">
+								<Label for="onboard-runtime-model">Model Override (optional)</Label>
+								<Input
+									id="onboard-runtime-model"
+									bind:value={runtimeModel}
+									placeholder="Leave empty to use CLI default"
+								/>
+							</div>
 						</div>
-					{/if}
-					<div class="grid content-start gap-1.5">
-						<Label for="onboard-model">{t('myaaw.onboard.model')}</Label>
-						{#if discovered && discovered.models.length > 0 && !manualModel}
-							<select id="onboard-model" class={selectClass} bind:value={model}>
-								{#each discovered.models as option}
-									<option value={option}>{option}</option>
+
+						<div class="grid gap-4 sm:grid-cols-2">
+							<div class="grid content-start gap-1.5">
+								<Label for="onboard-runtime-auth">Authentication Mode</Label>
+								<select
+									id="onboard-runtime-auth"
+									class={selectClass}
+									value={runtimeAuthSource}
+									onchange={(event) => {
+										runtimeAuthSource = event.currentTarget.value as 'cli_login' | 'api_key';
+										if (runtimeAuthSource === 'cli_login') botType = 'private';
+									}}
+								>
+									{#if !activeRuntimePreset || activeRuntimePreset.capabilities.supports_cli_auth}
+										<option value="cli_login">Local CLI Login (personal private use)</option>
+									{/if}
+									<option value="api_key">Official API Key (server / automation safe)</option>
+								</select>
+							</div>
+							<div class="grid content-start gap-1.5">
+								<Label for="onboard-runtime-permission">Tool Approvals</Label>
+								<select
+									id="onboard-runtime-permission"
+									class={selectClass}
+									value={runtimePermissionMode}
+									onchange={(event) =>
+										(runtimePermissionMode = event.currentTarget.value as
+											| 'bridge'
+											| 'auto'
+											| 'read_only')}
+								>
+									<option value="bridge">Bridge to Myaaw Approvals (WebUI / TG / Discord)</option>
+									<option value="auto">Auto-approve inside workspace</option>
+									<option value="read_only">Read-only (deny writes & shell mutations)</option>
+								</select>
+							</div>
+						</div>
+
+						{#if runtimeAuthSource === 'api_key'}
+							<div class="grid gap-4 sm:grid-cols-2">
+								<div class="grid content-start gap-1.5">
+									<Label for="onboard-runtime-apikey-env">API Key Env Var</Label>
+									<Input
+										id="onboard-runtime-apikey-env"
+										bind:value={runtimeApiKeyEnv}
+										placeholder={activeRuntimePreset?.default_api_key_env || 'OPENAI_API_KEY'}
+									/>
+								</div>
+								<div class="grid content-start gap-1.5">
+									<Label for="onboard-runtime-apikey"
+										>API Key (optional if already in host env)</Label
+									>
+									<Input
+										id="onboard-runtime-apikey"
+										type="password"
+										bind:value={runtimeApiKey}
+										placeholder={runtimeApiKeySaved
+											? t('myaaw.onboard.api_key_saved')
+											: 'Leave empty to inherit host env'}
+									/>
+								</div>
+							</div>
+						{/if}
+
+						<label class="flex items-center gap-2 text-xs text-foreground">
+							<Checkbox bind:checked={runtimeMcpBridge} />
+							<span>
+								Attach Myaaw Ecosystem MCP Bridge (<code class="font-mono">cron</code>,
+								<code class="font-mono">a2a_contact</code>,
+								<code class="font-mono">extra_messages</code>, custom tools)
+							</span>
+						</label>
+
+						{#if activeRuntimePreset?.tos_notice}
+							<div
+								class="rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground"
+							>
+								{activeRuntimePreset.tos_notice}
+								{#if runtimeAuthSource === 'cli_login'}
+									Need to sign in to the CLI on a remote host? Open
+									<a href="/app/terminal" class="underline">Workspace → Terminal</a>.
+								{/if}
+							</div>
+						{/if}
+					</div>
+				{:else}
+					<div class="grid gap-4 sm:grid-cols-2">
+						<div class="grid content-start gap-1.5">
+							<Label for="onboard-provider-type">{t('myaaw.onboard.provider_type')}</Label>
+							<select
+								id="onboard-provider-type"
+								class={selectClass}
+								value={presetId}
+								onchange={(event) => applyPreset(event.currentTarget.value)}
+							>
+								{#each providerChoices as option (option.id)}
+									<option value={option.id}>{option.label}</option>
 								{/each}
 							</select>
-						{:else}
+						</div>
+						<div class="grid content-start gap-1.5">
+							<Label for="onboard-provider-name">{t('myaaw.onboard.provider_name')}</Label>
 							<Input
-								id="onboard-model"
-								bind:value={model}
-								placeholder={isChatGPT
-									? t('myaaw.chatgpt.model_hint')
-									: (activePreset?.default_model ?? 'gpt-4o')}
+								id="onboard-provider-name"
+								bind:value={providerName}
+								placeholder={activePreset?.id ?? providerType}
 							/>
-						{/if}
-						<FieldError code={errors.model} />
+							<p class="text-[11px] text-muted-foreground">
+								{t('myaaw.onboard.provider_name_hint')}
+							</p>
+							<FieldError code={errors.provider_name} />
+						</div>
 					</div>
-				</div>
 
-				<!-- Discovery needs the credentials above, so it comes right after them
-				     and keeps the two fields above on the same baseline. -->
-				<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-					<Button
-						variant="outline"
-						size="sm"
-						loading={discovering}
-						disabled={!canDiscover}
-						onclick={() => void discover()}
-					>
-						<Wand2 class="mr-2 h-4 w-4" />
-						{t('myaaw.onboard.model_discover')}
-					</Button>
-					{#if !canDiscover}
-						<span
-							>{t(
-								isChatGPT ? 'myaaw.chatgpt.connect_required' : 'myaaw.onboard.model_discover_hint'
-							)}</span
-						>
-					{:else if discovered}
-						<span>
-							{discovered.source === 'live'
-								? t('myaaw.onboard.model_live')
-								: t('myaaw.onboard.model_fallback')}
-						</span>
-						{#if discovered.warning}
-							<span class="truncate">{discovered.warning}</span>
-						{/if}
-						{#if discovered.models.length > 0}
-							<button type="button" class="underline" onclick={toggleManualModel}>
-								{manualModel ? t('myaaw.onboard.model_list') : t('myaaw.onboard.model_manual')}
-							</button>
-						{/if}
+					{#if !isChatGPT}
+						<div class="grid gap-4 sm:grid-cols-2">
+							<div class="grid content-start gap-1.5">
+								<Label for="onboard-base-url">{t('myaaw.providers.base_url')}</Label>
+								<Input
+									id="onboard-base-url"
+									bind:value={baseUrl}
+									placeholder={activePreset?.default_base_url ?? 'https://api.openai.com'}
+									oninput={clearDiscovered}
+								/>
+								<FieldError code={errors.base_url} />
+							</div>
+						</div>
 					{/if}
-				</div>
+					{#if isChatGPT}
+						{#key `${agentParam}:${name.trim()}:${connectionVersion}`}
+							<ChatGPTConnection
+								agent={(agentParam || name).trim()}
+								providerId={reconfigure && savedProvider?.name === providerName.trim()
+									? savedProvider.name
+									: undefined}
+								bind:credentialId
+								bind:connection
+								bind:busy={connecting}
+								onchange={clearDiscovered}
+							/>
+						{/key}
+					{/if}
+
+					<div class="grid gap-4 sm:grid-cols-2">
+						{#if !isChatGPT}
+							<div class="grid content-start gap-1.5">
+								<Label for="onboard-api-key">{t('myaaw.providers.api_key')}</Label>
+								<Input
+									id="onboard-api-key"
+									type="password"
+									bind:value={apiKey}
+									placeholder={reconfigure ? t('myaaw.onboard.api_key_saved') : 'sk-...'}
+									oninput={clearDiscovered}
+								/>
+								<FieldError code={errors.api_key} />
+							</div>
+						{/if}
+						<div class="grid content-start gap-1.5">
+							<Label for="onboard-model">{t('myaaw.onboard.model')}</Label>
+							{#if discovered && discovered.models.length > 0 && !manualModel}
+								<select id="onboard-model" class={selectClass} bind:value={model}>
+									{#each discovered.models as option}
+										<option value={option}>{option}</option>
+									{/each}
+								</select>
+							{:else}
+								<Input
+									id="onboard-model"
+									bind:value={model}
+									placeholder={isChatGPT
+										? t('myaaw.chatgpt.model_hint')
+										: (activePreset?.default_model ?? 'gpt-4o')}
+								/>
+							{/if}
+							<FieldError code={errors.model} />
+						</div>
+					</div>
+
+					<!-- Discovery needs the credentials above, so it comes right after them
+					     and keeps the two fields above on the same baseline. -->
+					<div
+						class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground"
+					>
+						<Button
+							variant="outline"
+							size="sm"
+							loading={discovering}
+							disabled={!canDiscover}
+							onclick={() => void discover()}
+						>
+							<Wand2 class="mr-2 h-4 w-4" />
+							{t('myaaw.onboard.model_discover')}
+						</Button>
+						{#if !canDiscover}
+							<span
+								>{t(
+									isChatGPT ? 'myaaw.chatgpt.connect_required' : 'myaaw.onboard.model_discover_hint'
+								)}</span
+							>
+						{:else if discovered}
+							<span>
+								{discovered.source === 'live'
+									? t('myaaw.onboard.model_live')
+									: t('myaaw.onboard.model_fallback')}
+							</span>
+							{#if discovered.warning}
+								<span class="truncate">{discovered.warning}</span>
+							{/if}
+							{#if discovered.models.length > 0}
+								<button type="button" class="underline" onclick={toggleManualModel}>
+									{manualModel ? t('myaaw.onboard.model_list') : t('myaaw.onboard.model_manual')}
+								</button>
+							{/if}
+						{/if}
+					</div>
+				{/if}
 			</CardContent>
 		</Card>
 

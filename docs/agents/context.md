@@ -40,6 +40,8 @@ BOOTSTRAP → IDENTITY → AGENTS → SECURITY → Agent Home → Runtime → Wo
 
 then `skills.GetSkillsInstruction()` is appended at the call site.
 
+> **External Agent Runtimes:** When an agent uses an external CLI runtime (`antigravity`, `claude_code`, `omp`, `pi`, `codex`, `acp`), Myaaw calls `SystemPromptBuilder.BuildForRuntime(true, runtimeLabel, workingDir)` and `skills.GetSkillsInstructionForRuntime(true)`. This keeps `BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SECURITY.md`, `SOUL.md`, `USER.md`, workspace paths, and `@attach` delivery, while **omitting native `TOOLS.md`** and rewriting the skills prompt with runtime-neutral tool wording and the absolute `home/.venv/bin/python` path. See [External Agent Runtimes](external-agents.md#4-how-external-agents-connect-to-myaaw-homemd).
+
 It deliberately contains **no** user id, **no** chat context, and **no** clock.
 Those change per turn or per speaker, and anything that changes before the
 conversation history invalidates provider prefix caching for everything after it

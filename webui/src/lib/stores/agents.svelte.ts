@@ -27,6 +27,9 @@ export const agentsStore = {
 	fetchCapabilities() {
 		return agentsApi.capabilities();
 	},
+	fetchRuntimes() {
+		return agentsApi.runtimes();
+	},
 	/** Fetch the fleet and push it into the shared selection store. */
 	async reload(): Promise<AgentInfo[]> {
 		const { agents } = await agentsApi.list();

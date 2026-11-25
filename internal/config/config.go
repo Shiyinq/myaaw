@@ -76,6 +76,7 @@ var Heartbeat HeartbeatConfig
 var TelegramMode string // "webhook" or "polling"
 var Verbose bool
 var CurrentProviderID string
+var Runtime RuntimeConfig
 var AgentMaxIterations int = 100
 var AgentWarningIterations int = 90
 var AgentContextMaxTokens int = 64000
@@ -132,6 +133,7 @@ var (
 const MaxQueueWorkers = 16
 
 type Config struct {
+	Runtime         *RuntimeConfig            `json:"runtime,omitempty"`
 	DefaultProvider string                    `json:"default_provider,omitempty"`
 	Providers       map[string]ProviderConfig `json:"providers,omitempty"`
 	Heartbeat       HeartbeatConfig           `json:"heartbeat"`
@@ -664,6 +666,20 @@ func LoadBaseConfig() {
 	CurrentProviderID = ""
 	LLMDefaultModel = ""
 	LLMProviderThinkingLevel = strings.TrimSpace(os.Getenv("LLM_THINKING_LEVEL"))
+	Runtime = DefaultRuntime()
+	if rtType := strings.TrimSpace(os.Getenv("MYAAW_RUNTIME_TYPE")); rtType != "" {
+		Runtime.Type = rtType
+	}
+	if rtPreset := strings.TrimSpace(os.Getenv("MYAAW_RUNTIME_PRESET")); rtPreset != "" {
+		Runtime.Preset = rtPreset
+	}
+	if rtCmd := strings.TrimSpace(os.Getenv("MYAAW_RUNTIME_COMMAND")); rtCmd != "" {
+		Runtime.Command = rtCmd
+	}
+	if rtWD := strings.TrimSpace(os.Getenv("MYAAW_RUNTIME_WORKING_DIR")); rtWD != "" {
+		Runtime.WorkingDir = rtWD
+	}
+	Runtime = MergeRuntime(&Runtime)
 
 	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")
 	TranscriberAPIKey = os.Getenv("TRANSCRIBER_API_KEY")
@@ -830,6 +846,11 @@ func LoadBaseConfig() {
 
 		Heartbeat = jsonConfig.Heartbeat
 		CronActive = jsonConfig.Cron.Active
+
+		// Priority: config.json Runtime > .env
+		if jsonConfig.Runtime != nil {
+			Runtime = MergeRuntime(jsonConfig.Runtime)
+		}
 
 		// Priority: config.json Providers > .env
 		if jsonConfig.DefaultProvider != "" && jsonConfig.Providers != nil {

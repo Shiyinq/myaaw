@@ -1,4 +1,4 @@
-import type { AgentConfig } from './config';
+import type { AgentConfig, RuntimeCapabilities } from './config';
 import type { ChatRunInfo } from './chat';
 import type { ConversationSummary } from './conversations';
 
@@ -12,6 +12,44 @@ export interface AgentInfo {
 	created_at?: string;
 	/** Bloub palette key; absent from an older control plane, read it with `colorOf()`. */
 	agent_color?: string;
+	runtime_type?: string;
+	runtime_preset?: string;
+}
+
+export interface DetectedRuntime {
+	id: string;
+	label: string;
+	description: string;
+	type: string;
+	default_command?: string;
+	default_args?: string[];
+	default_api_key_env?: string;
+	default_auth?: string;
+	capabilities: RuntimeCapabilities;
+	tos_notice?: string;
+	installed: boolean;
+	binary_path?: string;
+	version?: string;
+}
+
+export interface RuntimesResponse {
+	runtimes: DetectedRuntime[];
+}
+
+export interface OnboardRuntime {
+	type?: string;
+	preset?: string;
+	command?: string;
+	args?: string[];
+	working_dir?: string;
+	additional_dirs?: string[];
+	model?: string;
+	auth_source?: string;
+	api_key_env?: string;
+	api_key?: string;
+	permission_mode?: string;
+	mcp_bridge?: boolean;
+	idle_timeout_seconds?: number;
 }
 
 export interface AgentsResponse {
@@ -65,6 +103,7 @@ export interface OnboardBot {
 }
 
 export interface OnboardRequest {
+	runtime?: OnboardRuntime;
 	provider?: OnboardProvider;
 	skills?: string[];
 	disable_tools?: string[];

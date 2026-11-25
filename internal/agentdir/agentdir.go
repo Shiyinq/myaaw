@@ -214,6 +214,14 @@ func LogsDir(name string) (string, error)   { return agentPath(name, "logs") }
 func CacheDir(name string) (string, error) { return agentPath(name, "cache") }
 func CronDir(name string) (string, error)  { return agentPath(name, "cron") }
 func ToolsDir(name string) (string, error) { return agentPath(name, "tools") }
+
+// RuntimeDir holds per-agent external runtime bridge configs and local state
+// (for example mcp-bridge.json and Pi/OMP session files). It never stores
+// third-party CLI OAuth credentials.
+func RuntimeDir(name string) (string, error) { return agentPath(name, "runtime") }
+func RuntimeSessionsDir(name string) (string, error) {
+	return agentPath(name, filepath.Join("runtime", "sessions"))
+}
 func TelegramOffsetPath(name string) (string, error) {
 	return agentPath(name, filepath.Join("database", "telegram_offset"))
 }
@@ -236,9 +244,11 @@ func ActiveEnvPath() (string, error)      { return activePath(".env") }
 func ActiveSkillsDir() (string, error)    { return activePath("skills") }
 func ActiveJobsDir() (string, error)      { return activePath("jobs") }
 func ActiveLogsDir() (string, error)      { return activePath("logs") }
-func ActiveCronDir() (string, error)      { return activePath("cron") }
-func ActiveToolsDir() (string, error)     { return activePath("tools") }
-func ActiveContactsPath() (string, error) { return activePath("contacts.json") }
+func ActiveCronDir() (string, error)            { return activePath("cron") }
+func ActiveToolsDir() (string, error)           { return activePath("tools") }
+func ActiveRuntimeDir() (string, error)         { return activePath("runtime") }
+func ActiveRuntimeSessionsDir() (string, error) { return activePath(filepath.Join("runtime", "sessions")) }
+func ActiveContactsPath() (string, error)       { return activePath("contacts.json") }
 
 // ApprovalsPath returns the approval grant store path. Grants live under
 // config/ next to config.json; a legacy root-level approvals.json is migrated

@@ -6,7 +6,8 @@ import type {
 	CapabilitiesView,
 	OKResponse,
 	OnboardRequest,
-	OnboardResponse
+	OnboardResponse,
+	RuntimesResponse
 } from '$lib/types';
 
 export const agents = {
@@ -18,5 +19,7 @@ export const agents = {
 	onboard: (name: string, payload: OnboardRequest) =>
 		client<OnboardResponse>(agentPath(name, '/onboard'), { method: 'POST', body: payload }),
 	// Provider types plus the skills and tools an agent can be created with.
-	capabilities: () => client<CapabilitiesView>('/capabilities')
+	capabilities: () => client<CapabilitiesView>('/capabilities'),
+	// Supported agent runtimes (native Myaaw + external CLIs) with host PATH detection.
+	runtimes: () => client<RuntimesResponse>('/runtimes')
 };

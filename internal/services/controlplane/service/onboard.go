@@ -50,10 +50,29 @@ type OnboardBotInput struct {
 	OwnerIDs []string `json:"owner_ids,omitempty"`
 }
 
+// OnboardRuntimeInput selects the execution engine (native myaaw or an external
+// CLI agent such as antigravity, claude_code, omp, pi, codex, or custom_acp).
+type OnboardRuntimeInput struct {
+	Type               string   `json:"type,omitempty" example:"acp"`
+	Preset             string   `json:"preset,omitempty" example:"antigravity"`
+	Command            string   `json:"command,omitempty" example:"agy"`
+	Args               []string `json:"args,omitempty"`
+	WorkingDir         string   `json:"working_dir,omitempty"`
+	AdditionalDirs     []string `json:"additional_dirs,omitempty"`
+	Model              string   `json:"model,omitempty"`
+	AuthSource         string   `json:"auth_source,omitempty" example:"cli_login"`
+	APIKeyEnv          string   `json:"api_key_env,omitempty"`
+	APIKey             string   `json:"api_key,omitempty"`
+	PermissionMode     string   `json:"permission_mode,omitempty" example:"bridge"`
+	MCPBridge          *bool    `json:"mcp_bridge,omitempty"`
+	IdleTimeoutSeconds *int     `json:"idle_timeout_seconds,omitempty"`
+}
+
 // OnboardRequest is the one-shot create/reconfigure payload. Omitting a section
 // keeps its current value; on a new agent the omitted parts fall back to the
 // template defaults.
 type OnboardRequest struct {
+	Runtime      *OnboardRuntimeInput   `json:"runtime,omitempty"`
 	Provider     *OnboardProviderInput  `json:"provider,omitempty"`
 	Skills       []string               `json:"skills,omitempty"`
 	DisableTools *[]string              `json:"disable_tools,omitempty"`
@@ -128,6 +147,38 @@ func (s *AgentService) Onboard(name string, req OnboardRequest) (OnboardResult, 
 func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
 	var in onboard.Input
 	existing := readConfigIfExists(name)
+
+	if req.Runtime != nil {
+		rt := config.RuntimeConfig{
+			Type:               req.Runtime.Type,
+			Preset:             req.Runtime.Preset,
+			Command:            req.Runtime.Command,
+			Args:               req.Runtime.Args,
+			WorkingDir:         req.Runtime.WorkingDir,
+			AdditionalDirs:     req.Runtime.AdditionalDirs,
+			Model:              req.Runtime.Model,
+			AuthSource:         req.Runtime.AuthSource,
+			APIKeyEnv:          req.Runtime.APIKeyEnv,
+			APIKey:             req.Runtime.APIKey,
+			PermissionMode:     req.Runtime.PermissionMode,
+			MCPBridge:          req.Runtime.MCPBridge,
+			IdleTimeoutSeconds: req.Runtime.IdleTimeoutSeconds,
+		}
+		if existing != nil && existing.Runtime != nil && rt.APIKey == "" {
+			rt.APIKey = existing.Runtime.APIKey
+		}
+		merged := config.MergeRuntime(&rt)
+		var botCheck *config.GlobalBotConfig
+		if req.Bot != nil {
+			botCheck = &config.GlobalBotConfig{Type: req.Bot.Type}
+		} else if existing != nil {
+			botCheck = &existing.Bot
+		}
+		if err := config.ValidateRuntime(&merged, botCheck); err != nil {
+			return in, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+		}
+		in.Runtime = &merged
+	}
 
 	if req.Provider != nil {
 		p := req.Provider

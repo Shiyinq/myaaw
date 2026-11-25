@@ -106,14 +106,15 @@ func init() {
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(codesignCmd)
 	rootCmd.AddCommand(computerCmd)
+	rootCmd.AddCommand(mcpBridgeCmd)
 
 	rootCmd.PersistentFlags().BoolVarP(&config.Verbose, "verbose", "v", false, "enable verbose logging")
 	rootCmd.PersistentFlags().StringVar(&agentFlag, "agent", "", "agent name to use (defaults to the registry default)")
 
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		// Add global spacing, except for commands that may stream data to
-		// stdout (backup -o -).
-		if cmd.Name() != "backup" {
+		// Add global spacing, except for commands that stream structured data
+		// directly to stdout (backup -o -, mcp-bridge JSON-RPC).
+		if cmd.Name() != "backup" && cmd.Name() != "mcp-bridge" {
 			fmt.Println()
 		}
 

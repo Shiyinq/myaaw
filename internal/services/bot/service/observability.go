@@ -86,7 +86,7 @@ func (r *BotServiceImpl) traceRun(
 		Channel:        msg.Channel,
 		UserID:         user.Id,
 		ConversationID: msg.ConversationID,
-		Provider:       config.LLMProviderName,
+		Provider:       r.activeProviderName(),
 		Model:          user.Model,
 		Agent:          activeAgentName(),
 		Trigger:        runTrigger(msg.Channel, msg.TriggerType),

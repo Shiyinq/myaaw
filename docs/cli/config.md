@@ -201,7 +201,7 @@ prompts, sub-agents, A2A, and API endpoints.
 | Path | Contents |
 | :--- | :--- |
 | `~/.myaaw/agents/<agent>/.env` | Port, base URL, tokens, API keys. |
-| `~/.myaaw/agents/<agent>/config/config.json` | Providers, channels, bot settings, heartbeat, cron defaults, approvals policy. |
+| `~/.myaaw/agents/<agent>/config/config.json` | Runtime engine (`runtime`), providers, channels, bot settings, heartbeat, cron defaults, approvals policy. |
 | `~/.myaaw/agents/<agent>/config/approvals.json` | Runtime approval grants (allow session / always). |
 | `~/.myaaw/agents/<agent>/database/myaaw.db` | Conversations and runtime state. |
 
@@ -241,5 +241,6 @@ myaaw config approvals grants revoke bash
 - [Providers](provider.md)
 - [Channels](channel.md)
 - [Onboarding](onboard.md)
+- [External Agent Runtimes](../agents/external-agents.md)
 - [Tool Approvals](../agents/approvals.md)
 - [Utilities](utilities.md)

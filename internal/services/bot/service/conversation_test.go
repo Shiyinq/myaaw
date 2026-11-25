@@ -94,6 +94,9 @@ func (f *fakeConversationRepo) UpdateConversationById(id string, messages []prov
 }
 
 func (f *fakeConversationRepo) UpdateConversationTitle(string, string) error { return nil }
+func (f *fakeConversationRepo) UpdateExternalSession(string, string, string) error {
+	return nil
+}
 
 func (f *fakeConversationRepo) DeleteConversationById(string) error { return nil }
 

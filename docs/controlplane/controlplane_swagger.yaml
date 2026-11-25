@@ -231,6 +231,23 @@ definitions:
           $ref: '#/definitions/config.ToolPriceConfig'
         type: object
     type: object
+  config.RuntimeCapabilities:
+    properties:
+      manages_core_tools:
+        type: boolean
+      needs_llm_provider:
+        type: boolean
+      supports_approvals:
+        type: boolean
+      supports_cli_auth:
+        type: boolean
+      supports_images:
+        type: boolean
+      supports_mcp_bridge:
+        type: boolean
+      supports_model_override:
+        type: boolean
+    type: object
   config.ToolPriceConfig:
     properties:
       per_call:
@@ -689,6 +706,13 @@ definitions:
       to:
         example: /home/AGENTS.old.md
         type: string
+    type: object
+  handler.RuntimesResponse:
+    properties:
+      runtimes:
+        items:
+          $ref: '#/definitions/runtime.DetectedRuntime'
+        type: array
     type: object
   handler.SearchResponse:
     properties:
@@ -1480,6 +1504,37 @@ definitions:
       token_count:
         type: integer
     type: object
+  runtime.DetectedRuntime:
+    properties:
+      binary_path:
+        type: string
+      capabilities:
+        $ref: '#/definitions/config.RuntimeCapabilities'
+      default_api_key_env:
+        type: string
+      default_args:
+        items:
+          type: string
+        type: array
+      default_auth:
+        type: string
+      default_command:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      installed:
+        type: boolean
+      label:
+        type: string
+      tos_notice:
+        type: string
+      type:
+        type: string
+      version:
+        type: string
+    type: object
   service.ActivityDay:
     properties:
       count:
@@ -1508,6 +1563,10 @@ definitions:
         type: integer
       running:
         type: boolean
+      runtime_preset:
+        type: string
+      runtime_type:
+        type: string
     type: object
   service.ApprovalsPatch:
     properties:
@@ -1800,6 +1859,8 @@ definitions:
         $ref: '#/definitions/service.HeartbeatPatch'
       observability:
         $ref: '#/definitions/service.ObservabilityPatch'
+      runtime:
+        $ref: '#/definitions/service.RuntimePatch'
       synthesizer:
         $ref: '#/definitions/service.SecretPatch'
       transcriber:
@@ -1858,6 +1919,8 @@ definitions:
         items:
           $ref: '#/definitions/service.ProviderView'
         type: array
+      runtime:
+        $ref: '#/definitions/service.RuntimeView'
       synthesizer:
         $ref: '#/definitions/service.ServiceSecretView'
       transcriber:
@@ -2703,6 +2766,8 @@ definitions:
         $ref: '#/definitions/service.OnboardHeartbeatInput'
       provider:
         $ref: '#/definitions/service.OnboardProviderInput'
+      runtime:
+        $ref: '#/definitions/service.OnboardRuntimeInput'
       skills:
         items:
           type: string
@@ -2718,6 +2783,44 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  service.OnboardRuntimeInput:
+    properties:
+      additional_dirs:
+        items:
+          type: string
+        type: array
+      api_key:
+        type: string
+      api_key_env:
+        type: string
+      args:
+        items:
+          type: string
+        type: array
+      auth_source:
+        example: cli_login
+        type: string
+      command:
+        example: agy
+        type: string
+      idle_timeout_seconds:
+        type: integer
+      mcp_bridge:
+        type: boolean
+      model:
+        type: string
+      permission_mode:
+        example: bridge
+        type: string
+      preset:
+        example: antigravity
+        type: string
+      type:
+        example: acp
+        type: string
+      working_dir:
+        type: string
     type: object
   service.ProjectStatus:
     properties:
@@ -2863,6 +2966,74 @@ definitions:
         type: array
       total:
         type: integer
+    type: object
+  service.RuntimePatch:
+    properties:
+      additional_dirs:
+        items:
+          type: string
+        type: array
+      api_key:
+        type: string
+      api_key_env:
+        type: string
+      args:
+        items:
+          type: string
+        type: array
+      auth_source:
+        type: string
+      command:
+        type: string
+      idle_timeout_seconds:
+        type: integer
+      mcp_bridge:
+        type: boolean
+      model:
+        type: string
+      permission_mode:
+        type: string
+      preset:
+        type: string
+      type:
+        type: string
+      working_dir:
+        type: string
+    type: object
+  service.RuntimeView:
+    properties:
+      additional_dirs:
+        items:
+          type: string
+        type: array
+      api_key:
+        $ref: '#/definitions/service.SecretState'
+      api_key_env:
+        type: string
+      args:
+        items:
+          type: string
+        type: array
+      auth_source:
+        type: string
+      capabilities:
+        $ref: '#/definitions/config.RuntimeCapabilities'
+      command:
+        type: string
+      idle_timeout_seconds:
+        type: integer
+      mcp_bridge:
+        type: boolean
+      model:
+        type: string
+      permission_mode:
+        type: string
+      preset:
+        type: string
+      type:
+        type: string
+      working_dir:
+        type: string
     type: object
   service.ScopeView:
     properties:
@@ -8466,6 +8637,24 @@ paths:
       summary: List models for a provider
       tags:
       - Providers
+  /runtimes:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.RuntimesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Discover available agent runtimes
+      tags:
+      - Agents
   /settings:
     get:
       description: Returns the UI settings stored in the control-plane SQLite database.

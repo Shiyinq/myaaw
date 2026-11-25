@@ -48,6 +48,7 @@ A key is either a whole tool or one action of a tool:
 - `filesystem:read_file` — only the `read_file` action (from the `tool_name` argument).
 - `computer:click` — only the `click` action (from the `action` argument).
 - `playwright_browser_navigate` — an MCP tool, keyed by its registered name.
+- `acp:<tool>`, `claude:<tool>`, `codex:<tool>` — bridged permission requests from an external CLI runtime when `runtime.permission_mode` is `"bridge"` (the default). See [External Agent Runtimes](external-agents.md).
 - `*` — everything (useful in `deny`).
 
 Rules are matched against the **resolved key** and the bare tool name, so

@@ -6,7 +6,9 @@ import (
 	"os"
 	"time"
 
+	agentruntime "myaaw/internal/agent/runtime"
 	"myaaw/internal/agent/tools/computer"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/cli/theme"
 	"myaaw/internal/config"
 
@@ -19,10 +21,34 @@ var doctorCmd = &cobra.Command{
 	Long: "Probe the environment for what Myaaw needs: desktop automation " +
 		"permissions, dependencies, and feature configuration.",
 	Run: func(cmd *cobra.Command, args []string) {
+		if _, err := agentdir.ResolveActive(agentFlag); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: invalid --agent %q: %v\n", agentFlag, err)
+		}
 		config.LoadBaseConfig()
 
 		fmt.Println(theme.RenderPrimary("Myaaw Doctor"))
 		fmt.Println(theme.RenderSecondary("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"))
+
+		rt := config.EffectiveRuntime()
+		fmt.Println(theme.RenderMuted("Agent runtime"))
+		fmt.Printf("  %-30s %s\n", "Agent", theme.RenderMuted(agentdir.Active()))
+		fmt.Printf("  %-30s %s (%s)\n", "Active runtime", theme.RenderSuccess(rt.Preset), rt.Type)
+		if rt.IsExternal() {
+			if path, err := agentruntime.ResolveBinary(rt.Command); err == nil {
+				fmt.Printf("  %-30s %s (%s)\n", "Runtime binary", theme.RenderSuccess("OK"), path)
+			} else {
+				fmt.Printf("  %-30s %s (%v)\n", "Runtime binary", theme.RenderError("FAIL"), err)
+			}
+			fmt.Printf("  %-30s %s\n", "Working directory", theme.RenderMuted(agentruntime.ResolveWorkingDir(rt)))
+			fmt.Printf("  %-30s %s\n", "Auth / Permissions", theme.RenderMuted(rt.AuthSource+" / "+rt.PermissionMode))
+			if err := config.ValidateRuntime(&rt, &config.GlobalBotConfig{Type: config.BotType}); err != nil {
+				fmt.Printf("  %-30s %s\n", "Policy check", theme.RenderError(err.Error()))
+			}
+			for _, w := range config.RuntimeWarnings(&rt, &config.Heartbeat) {
+				fmt.Printf("  %-30s %s\n", "Warning", theme.RenderWarning(w))
+			}
+		}
+		fmt.Println()
 
 		fmt.Println(theme.RenderMuted("Computer use (desktop automation)"))
 		fmt.Printf("  %-30s %s\n", "Launched from", theme.RenderMuted(launchContext()))

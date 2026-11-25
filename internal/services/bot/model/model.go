@@ -24,8 +24,12 @@ type Conversation struct {
 	Scope string `json:"scope,omitempty"`
 	// Channel is the platform that owns the conversation (telegram, discord,
 	// api, cli). Empty for rows created before the column existed.
-	Channel   string             `json:"channel,omitempty"`
-	Title     string             `json:"title"`
+	Channel string `json:"channel,omitempty"`
+	// ExternalSessionID and ExternalRuntime track the remote session/thread ID
+	// when the agent runs on an external CLI runtime (ACP, Claude Code, Pi/OMP, Codex).
+	ExternalSessionID string             `json:"external_session_id,omitempty"`
+	ExternalRuntime   string             `json:"external_runtime,omitempty"`
+	Title             string             `json:"title"`
 	Messages  []provider.Message `json:"messages"`
 	Active    bool               `json:"active"`
 	CreatedAt time.Time          `json:"created_at"`

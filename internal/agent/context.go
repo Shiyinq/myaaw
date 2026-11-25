@@ -77,6 +77,15 @@ func newSystemPromptBuilder(channelName string, getwd func() (string, error), en
 }
 
 func (b *SystemPromptBuilder) Build() string {
+	return b.BuildForRuntime(false, "", "")
+}
+
+// BuildForRuntime assembles the system prompt from the agent's home directory.
+// When isExternal is true, Myaaw's native TOOLS.md (which documents built-in
+// Myaaw filesystem/python/bash function names) is omitted so external coding
+// agents use their own native file/shell tools without confusion, and an
+// external runtime summary is appended instead.
+func (b *SystemPromptBuilder) BuildForRuntime(isExternal bool, runtimeLabel, workingDir string) string {
 	var sb strings.Builder
 
 	// 0. Bootstrap (Highest Priority)
@@ -118,6 +127,15 @@ func (b *SystemPromptBuilder) Build() string {
 	sb.WriteString("## Runtime\n")
 	fmt.Fprintf(&sb, "OS: %s\n", runtime.GOOS)
 	fmt.Fprintf(&sb, "Arch: %s\n", runtime.GOARCH)
+	if isExternal {
+		if strings.TrimSpace(runtimeLabel) != "" {
+			fmt.Fprintf(&sb, "Engine: %s (hosted inside Myaaw)\n", strings.TrimSpace(runtimeLabel))
+		}
+		if strings.TrimSpace(workingDir) != "" {
+			fmt.Fprintf(&sb, "Working directory: %s\n", strings.TrimSpace(workingDir))
+		}
+		sb.WriteString("Use your own built-in file, search, and shell tools for coding and filesystem operations. Myaaw ecosystem capabilities (such as cron, a2a_contact, extra_messages, and custom tools) are exposed via the attached Myaaw MCP server when enabled.\n")
+	}
 	sb.WriteString("\n")
 
 	// 4. Workspace (Dynamic)
@@ -153,8 +171,11 @@ func (b *SystemPromptBuilder) Build() string {
 	}
 
 	// 6. Workspace / Context Injection
-	// Order: SOUL, TOOLS, USER
+	// Order: SOUL, TOOLS (native only), USER
 	files := []string{"SOUL.md", "TOOLS.md", "USER.md"}
+	if isExternal {
+		files = []string{"SOUL.md", "USER.md"}
+	}
 
 	for _, fileName := range files {
 		content := b.readContent(fileName)
