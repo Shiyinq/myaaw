@@ -65,6 +65,8 @@ Keys and tokens are masked while typing. `Esc` goes back one step so answers are
 
 For **ChatGPT Subscription**, browser sign-in writes host-global credentials immediately; cancelling Review leaves no agent, but retains that credential for reuse. Browser login needs the browser on the same machine as Myaaw. Subscription model discovery does not offer fabricated/default or unauthenticated manual models. Headless setup uses `--provider openai_chatgpt --credential-id LOCAL_ID --model MODEL` instead of an API key. See the [setup, recovery, and privacy guide](chatgpt-subscription.md).
 
+For **External Agent Runtimes** (`claude_code`, `codex`, `antigravity`, `opencode`, `deepseek_harness`, `pi`, `omp`, `custom_acp`), the interactive TUI wizard configures native Myaaw providers; create or update external-runtime agents from the CLI using the `--runtime` flags in [Headless mode](#headless-mode-ci-scripts) below (or via the WebUI at `/app/new`).
+
 ## Provider defaults
 
 The base URL prompt is prefilled with the public endpoint for the chosen type:
@@ -119,7 +121,7 @@ myaaw onboard --yes \
 | `--base-url` | Provider base URL |
 | `--api-key` | API key (prefer `MYAAW_API_KEY`) |
 | `--model` | Default model (or model override for an external runtime) |
-| `--runtime <preset>` | Execution runtime preset: `myaaw` (default), `antigravity`, `claude_code`, `omp`, `pi`, `codex`, `opencode`, or `custom_acp` |
+| `--runtime <preset>` | Execution runtime preset: `myaaw` (default), `antigravity`, `claude_code`, `codex`, `opencode`, `deepseek_harness`, `pi`, `omp`, or `custom_acp` |
 | `--runtime-command <bin>` | Override the external CLI binary command |
 | `--runtime-args <a,b>` | Override external CLI arguments (comma separated) |
 | `--working-dir <path>` | Working directory for an external runtime (default: `~/.myaaw/agents/<name>/home/workspace`) |
@@ -166,6 +168,9 @@ myaaw onboard --yes --agent coder-agy --runtime antigravity --bot-type private
 # External CLI runtime (Claude Code targeting a repo with bridged approvals)
 myaaw onboard --yes --agent claude-dev --runtime claude_code \
   --working-dir ~/Development/my-app --runtime-permission bridge
+
+# External CLI runtime (DeepSeek Harness ACP)
+myaaw onboard --yes --agent dsh-dev --runtime deepseek_harness --bot-type private
 ```
 
 See [External Agent Runtimes](../agents/external-agents.md) for all presets, MCP bridge options, and account safety guardrails.
@@ -251,7 +256,7 @@ myaaw onboard --yes --agent agent-b --force \
   --disable-tools bash,cron,provider,subagent
 ```
 
-`--skills` and `--disable-tools` can be used independently, but headless mode always needs `--provider`:
+`--skills` and `--disable-tools` can be used independently; for native `myaaw` agents, headless mode requires `--provider` (or `--keep-provider` on updates), whereas external `--runtime` presets do not require `--provider`:
 
 ```bash
 # update an existing agent: only change the disabled tools
@@ -282,7 +287,7 @@ Notes:
 
   The command exits with status 1 and creates no directory, registry entry, or contacts. The same applies to `--disable-tools`.
 - The interactive wizard cannot produce this error: skills and tools are toggled from the built-in list, not typed.
-- Headless mode always requires `--provider`, and it rewrites the default provider entry with the values you pass. To keep the provider exactly as it is, use the interactive wizard and press Enter through the provider steps; there, skills and tools can be changed on their own.
+- For native `myaaw` agents, headless mode requires `--provider` (unless `--keep-provider` is passed on an update) and rewrites the default provider entry with the values you pass; when `--runtime` selects an external CLI runtime, `--provider` is optional. To keep a native provider exactly as it is interactively, use the TUI wizard and select **Keep current provider**.
 - Adding a skill that is already installed is a no-op; existing folders are never overwritten.
 - There is no flag to remove a skill. Delete `~/.myaaw/agents/<agent>/skills/<name>/` manually, because onboarding will not delete user data.
 

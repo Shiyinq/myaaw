@@ -22,6 +22,8 @@
 - [x] **Conversation Memory**: Remembers your chat history for natural flow.
 - [x] **Agent Skills**: Dynamically extensible capabilities via `SKILL.md` definitions.
 - [x] **Powerful Tools**: Native integration with Filesystem, Bash, and Python execution.
+- [x] **External Agent Runtimes**: Run external coding/agent CLIs (Claude Code, OpenAI Codex, Google Antigravity, OpenCode, DeepSeek Harness, Pi, Oh My Pi, or any custom ACP CLI) inside isolated Myaaw agents with bridged tool approvals, Myaaw MCP ecosystem tools, and WebUI install/login management.
+- [x] **Multi-Agent & Group Chat**: Isolated per-agent processes, A2A inter-agent calls, and shared multi-agent group chat rooms.
 - [x] **Heartbeat (Autonomous Check)**: Scheduled background checks for health and tasks via `HEARTBEAT.md`.
 - [x] **CLI Voice Chat**: Native support for Real-time Voice (Gemini Live) and Classic STT/TTS pipeline with screen/camera sharing via CLI.
 - [x] **Single Binary & Zero Config**: Runs entirely locally using SQLite and Go Channels. No Docker or complex databases required!
@@ -36,6 +38,27 @@ myaaw --agent myfriend provider connect-chatgpt personal --default
 
 ChatGPT Subscription requires a browser on the same machine as Myaaw. Host-global OAuth credentials stay outside agent backups; plan quotas apply and there is no automatic API-key fallback. See the [ChatGPT Subscription setup and privacy guide](docs/cli/chatgpt-subscription.md).
 
+## 🧩 External Agent Runtimes
+
+Each Myaaw agent can run either the **native Myaaw Agent** or an **external CLI runtime** while keeping Myaaw's isolated workspace, SQLite history, Telegram/Discord/WebUI channels, Cron/Heartbeat automation, tool approvals, and MCP ecosystem tools (`myaaw mcp-bridge`).
+
+| Preset | Protocol | Default Command |
+| :--- | :--- | :--- |
+| **Claude Code** | Stream-JSON (`claude_code`) | `claude` |
+| **OpenAI Codex CLI** | App-Server JSON-RPC (`codex`) | `codex app-server` |
+| **Google Antigravity** | ACP JSON-RPC (`acp`) | `agy acp` |
+| **OpenCode** | ACP JSON-RPC (`acp`) | `opencode acp` |
+| **DeepSeek Harness** | ACP JSON-RPC (`acp`) | `dsh --profile acp` |
+| **Pi Coding Agent** | JSONL RPC (`pi`) | `pi --mode rpc` |
+| **Oh My Pi** | JSONL RPC (`omp`) | `omp --mode rpc` |
+| **Custom ACP CLI** | ACP JSON-RPC (`acp`) | User-configured binary |
+
+```sh
+myaaw onboard --yes --agent coder --runtime codex
+```
+
+In the optional WebUI dashboard (**Settings → External Runtimes**), you can detect host binaries, run official vendor installers/updaters, sign in or out via a scoped interactive terminal (PTY) without Myaaw storing third-party OAuth tokens, and configure shared global defaults inherited by new agents. See the [External Agent Runtimes Guide](docs/agents/external-agents.md) for architecture, protocol details, security boundaries, and troubleshooting.
+
 
 ## 📡 Supported Channels
 
@@ -43,12 +66,14 @@ Myaaw can be integrated with various platforms:
 
 - 📨 **Telegram**: Integration via Bot API (Polling or Webhook).
 - 👾 **Discord**: Integration via Discord Bot.
+- 🖥 **WebUI Dashboard**: Multi-agent chat, group rooms, runtime management, files, approvals, and terminal via `myaaw api`.
 - 💻 **Terminal**: Interactive TUI chat and CLI management.
 
 
 # Table of Contents
 - [✨ Key Features](#-key-features)
 - [🤖 Supported Providers](#-supported-providers)
+- [🧩 External Agent Runtimes](#-external-agent-runtimes)
 - [📡 Supported Channels](#-supported-channels)
 - [🏗 Architecture](#-architecture)
 - [🚀 Quick Start (Non-Technical)](#-quick-start-non-technical)
@@ -61,14 +86,16 @@ Myaaw can be integrated with various platforms:
 - [💻 Myaaw CLI Reference](#-myaaw-cli-reference)
 - [📚 Documentation](#-documentation)
   - [Agents](#-agents)
+  - [Provider integrations](#-provider-integrations)
   - [CLI](#-cli)
   - [API](#-api)
+  - [WebUI](#-webui)
   - [Generated references](#-generated-references)
 
 
 ## 🏗 Architecture
 
-Myaaw uses one binary with **one isolated process per agent**. Each agent process owns its Fiber server, channels, database, workspace, and event-driven agent loop (v2). A shared registry and PID directory coordinate the agents on one machine.
+Myaaw uses one binary with **one isolated process per agent**. Each agent process owns its Fiber server, channels, database, workspace, and either the **native Myaaw Agent** or an **external CLI runtime driver** (ACP, Codex, Claude Code, Pi/OMP RPC) bridged back to Myaaw's approvals and MCP tools. A shared `~/.myaaw` state directory and optional unified **Control Plane (`myaaw api`)** coordinate multiple agents, group chats, and host runtime management on one machine.
 
 ```mermaid
 graph TD
@@ -77,6 +104,7 @@ graph TD
     subgraph "Entry Points"
         TG[Telegram]
         DC[Discord]
+        WEB[WebUI Dashboard]
         CLI[Terminal Chat]
         Voice[Voice / Voice Classic]
         API[REST API]
@@ -84,41 +112,48 @@ graph TD
 
     User --> TG
     User --> DC
+    User --> WEB
     User --> CLI
     User --> Voice
     User --> API
 
+    CP["Control Plane API<br/>myaaw api (port 9000)<br/>Proxy · Groups · Runtime Manager · Auth PTY"]
+    WEB --> CP
+    CP --> SRV_A
+    CP --> SRV_B
+    CP --> SHARED
+
     subgraph SHARED["~/.myaaw (shared state)"]
-        REG[(config/agents.json<br/>default agent + registry)]
-        PIDS[(pids/<br/>myaaw-server-AGENT.pid)]
-        REG ~~~ PIDS
+        REG[("config/agents.json<br/>default agent + registry")]
+        CPDB[("controlplane/controlplane.db<br/>auth · groups · runtime_defaults")]
+        PIDS[("pids/<br/>myaaw-server-AGENT.pid")]
+        REG ~~~ CPDB ~~~ PIDS
     end
 
-    SEL[Agent Selection<br/>--agent / picker / MYAAW_AGENT<br/>reads agents.json]
+    SEL["Agent Selection<br/>--agent / picker / MYAAW_AGENT<br/>reads agents.json"]
     CLI --> SEL
     Voice --> SEL
     SEL -- "chat → default" --> BOT_A
-    SEL -- "chat → myfriend" --> BOT_B
+    SEL -- "chat → coder" --> BOT_B
     SEL -- "voice → default" --> PROV_A
-    SEL -- "voice → myfriend" --> PROV_B
 
-    subgraph PROC_A["Agent Process A - default (port 8080)"]
-        CH_A[Telegram / Discord<br/>token A]
-        SRV_A[Fiber Server]
-        BOT_A[Bot Service]
-        DB_A[(SQLite A)]
-        HOME_A[home/ + workspace/]
-        QUEUE_A[In-Memory Queue A]
-        CONSUMER_A[Queue Consumer]
-        CRON_A[Cron / Heartbeat]
-        UI_A[Event Timeline<br/>TUI / Telegram / Discord]
+    subgraph PROC_A["Agent Process A - default (port 8080 · Native Myaaw Runtime)"]
+        CH_A["Telegram / Discord<br/>token A"]
+        SRV_A["Fiber Server"]
+        BOT_A["Bot Service"]
+        DB_A[("SQLite A")]
+        HOME_A["home/ + workspace/"]
+        QUEUE_A["In-Memory Queue A"]
+        CONSUMER_A["Queue Consumer"]
+        CRON_A["Cron / Heartbeat"]
+        UI_A["Event Timeline<br/>TUI / WebUI / TG / DC"]
 
-        subgraph "Agent Core A"
-            SP_A[System Prompt Builder<br/>identity + skills]
-            LOOP_A[RunEvents Loop<br/>event-driven]
-            TRANS_A[Transcript v2<br/>compaction]
-            TOOL_A[Tools<br/>Bash / FS / Python / Skills]
-            PROV_A[LLM Provider A]
+        subgraph "Native Agent Core A"
+            SP_A["System Prompt Builder<br/>identity + skills"]
+            LOOP_A["RunEvents Loop<br/>event-driven"]
+            TRANS_A["Transcript v2<br/>compaction"]
+            TOOL_A["Tools<br/>Bash / FS / Python / Skills / MCP"]
+            PROV_A["LLM Provider A<br/>Gemini / OpenAI / ChatGPT"]
         end
 
         CH_A -- "enqueue" --> QUEUE_A
@@ -138,23 +173,22 @@ graph TD
         LOOP_A -- "events" --> UI_A
     end
 
-    subgraph PROC_B["Agent Process B - myfriend (port 8081)"]
-        CH_B[Telegram / Discord<br/>token B]
-        SRV_B[Fiber Server]
-        BOT_B[Bot Service]
-        DB_B[(SQLite B)]
-        HOME_B[home/ + workspace/]
-        QUEUE_B[In-Memory Queue B]
-        CONSUMER_B[Queue Consumer]
-        CRON_B[Cron / Heartbeat]
-        UI_B[Event Timeline<br/>TUI / Telegram / Discord]
+    subgraph PROC_B["Agent Process B - coder (port 8081 · External CLI Runtime)"]
+        CH_B["Telegram / Discord<br/>token B"]
+        SRV_B["Fiber Server"]
+        BOT_B["Bot Service"]
+        DB_B[("SQLite B<br/>+ external session IDs")]
+        HOME_B["home/ + workspace/"]
+        QUEUE_B["In-Memory Queue B"]
+        CONSUMER_B["Queue Consumer"]
+        CRON_B["Cron / Heartbeat"]
+        UI_B["Event Timeline<br/>TUI / WebUI / TG / DC"]
 
-        subgraph "Agent Core B"
-            SP_B[System Prompt Builder<br/>identity + skills]
-            LOOP_B[RunEvents Loop<br/>event-driven]
-            TRANS_B[Transcript v2<br/>compaction]
-            TOOL_B[Tools<br/>Bash / FS / Python / Skills]
-            PROV_B[LLM Provider B]
+        subgraph "External Runtime Bridge B"
+            SP_B["System Prompt Builder<br/>identity + skills"]
+            DRV_B["Runtime Driver<br/>ACP / Codex / Claude Code / Pi RPC"]
+            GATE_B["Approval Gate +<br/>Myaaw MCP Bridge<br/>cron · memory · A2A · extra_messages"]
+            EXT_CLI["External CLI Subprocess<br/>agy · claude · codex · opencode<br/>dsh · pi · omp · custom ACP"]
         end
 
         CH_B -- "enqueue" --> QUEUE_B
@@ -162,16 +196,16 @@ graph TD
         CONSUMER_B -- "POST /webhook/bot" --> SRV_B
         CRON_B -- "POST /heartbeat" --> SRV_B
         SRV_B --> BOT_B
-        BOT_B -- "builds messages" --> SP_B
-        SP_B --> LOOP_B
-        LOOP_B <--> TRANS_B
-        TRANS_B <--> DB_B
-        LOOP_B <--> TOOL_B
-        LOOP_B <--> PROV_B
+        BOT_B -- "builds turn input" --> SP_B
+        SP_B --> DRV_B
+        DRV_B <--> EXT_CLI
+        EXT_CLI <-- "stdio JSON-RPC / MCP" --> GATE_B
+        DRV_B <--> GATE_B
         BOT_B <--> DB_B
         SP_B -- "reads identity / persona" --> HOME_B
-        TOOL_B -- "read/write workspace + memory" --> HOME_B
-        LOOP_B -- "events" --> UI_B
+        EXT_CLI -- "works inside workspace" --> HOME_B
+        GATE_B -- "memory / cron / attach" --> HOME_B
+        DRV_B -- "normalized events" --> UI_B
     end
 
     TG --> CH_A
@@ -190,38 +224,43 @@ graph TD
     classDef storage fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#000;
     classDef core fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000;
     classDef agent fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000;
+    classDef ext fill:#ede7f6,stroke:#5e35b1,stroke-width:2px,color:#000;
     classDef auto fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px,color:#000;
     classDef wksp fill:#e0f7fa,stroke:#00acc1,stroke-width:2px,color:#000;
 
-    class REG,PIDS,DB_A,DB_B storage;
-    class SEL,CH_A,CH_B,SRV_A,SRV_B,BOT_A,BOT_B core;
-    class LOOP_A,LOOP_B,TRANS_A,TRANS_B,TOOL_A,TOOL_B,PROV_A,PROV_B,SP_A,SP_B agent;
+    class REG,CPDB,PIDS,DB_A,DB_B storage;
+    class CP,SEL,CH_A,CH_B,SRV_A,SRV_B,BOT_A,BOT_B core;
+    class LOOP_A,TRANS_A,TOOL_A,PROV_A,SP_A,SP_B agent;
+    class DRV_B,GATE_B,EXT_CLI ext;
     class QUEUE_A,QUEUE_B,CONSUMER_A,CONSUMER_B,CRON_A,CRON_B,UI_A,UI_B auto;
     class HOME_A,HOME_B wksp;
 ```
 
 Telegram and Discord payloads always pass through a queue first: **channel adapter → in-memory queue → queue consumer → that agent's own `POST /webhook/bot`**. The queue is an in-process Go channel, so each agent process has its own queue; messages can never move between agents. Cron and heartbeat are the exception: they call `POST /heartbeat` directly on their own server.
 
-Both processes share `~/.myaaw/config/agents.json` (registry and default agent) and `~/.myaaw/pids/` (one `myaaw-server-<agent>.pid` file per running server). Nothing else is shared: config, `.env`, SQLite, `home/`, skills, jobs, logs, and ports are per agent.
+Agents share `~/.myaaw/config/agents.json` (registry and default agent), `~/.myaaw/pids/` (one `myaaw-server-<agent>.pid` file per running server), and `~/.myaaw/controlplane/controlplane.db` (Control Plane auth, synced UI settings, multi-agent group chats, and global external runtime defaults). Nothing else is shared: config, `.env`, SQLite, `home/`, skills, jobs, logs, and ports are per agent.
 
-`Agent Core` marks the components that belong to the agent itself (system prompt builder, event loop, transcript, tools, provider). The `System Prompt Builder` reads identity files from `home/` (`BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SECURITY.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) and `skills/`, and Bot Service passes the resulting messages to the loop. `MEMORY.md` and `memory/` are not auto-injected: the agent reads and writes them through tools during a run, following the rules in `AGENTS.md`.
+- **Native Myaaw Runtime (Process A)**: Runs Myaaw's built-in `RunEvents` loop, transcript v2 compaction, native tools, and direct LLM providers (`Gemini`, `OpenAI`-compatible, `ChatGPT Subscription`). The `System Prompt Builder` reads identity files from `home/` (`BOOTSTRAP.md`, `IDENTITY.md`, `AGENTS.md`, `SECURITY.md`, `SOUL.md`, `TOOLS.md`, `USER.md`) and `skills/`, while `MEMORY.md` and `memory/` are accessed on demand through tools.
+- **External CLI Runtime (Process B)**: Keeps the exact same Myaaw channels, queue, SQLite history, workspace, Cron, and Heartbeat envelope, but `Bot Service` delegates turns through `internal/agent/runtime` (`ACP`, `Codex app-server`, `Claude Code`, or `Pi/OMP RPC`) to a pooled host CLI subprocess. Tool permission requests route back through Myaaw's `Approval Gate`, and `myaaw mcp-bridge` exposes Myaaw's ecosystem tools (memory, cron, A2A contacts, file attachments, and interactive `extra_messages`) to the external CLI over local MCP. External CLI sessions are persisted per conversation in SQLite so turns resume cleanly with delta prompts.
+- **Control Plane (`myaaw api`)**: Provides the unified API for the WebUI dashboard and remote clients, proxying per-agent traffic, orchestrating multi-agent group chats, and managing host external runtimes (concurrent binary discovery, official vendor installers/updaters, scoped interactive login/logout PTYs, and global defaults).
 
-Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, and `home/`. `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
+Terminal sessions are not web clients. `myaaw chat` runs in its own process, creates a Bot Service directly, and calls `BotStream` in-process — it never goes through Fiber or the in-memory queue, but it uses the same per-agent config, SQLite, `home/`, and configured runtime (native or external). `myaaw voice` talks to Gemini Live directly, while `myaaw voice-classic` builds the agent and provider itself and still uses the full tool-enabled loop.
 
-The selection node resolves the active agent from `~/.myaaw/config/agents.json`. Telegram and Discord do not use it: each bot token already binds messages to one agent process. Only CLI sessions resolve `--agent` / picker / `MYAAW_AGENT`, and they use the selected agent's config, SQLite, and `home/`: `myaaw chat` drives the Bot Service and loop in its own process, `myaaw voice` goes straight to the provider, and `myaaw voice-classic` drives the loop with tools.
+The selection node resolves the active agent from `~/.myaaw/config/agents.json`. Telegram and Discord do not use it: each bot token already binds messages to one agent process. Only CLI sessions resolve `--agent` / picker / `MYAAW_AGENT`, and they use the selected agent's config, SQLite, and `home/`: `myaaw chat` drives the Bot Service (and configured runtime) in its own process, `myaaw voice` goes straight to the provider, and `myaaw voice-classic` drives the native loop with tools.
 
 ### Key Components
 
 1. **Channels (`internal/channel`)**: The entry point for interactions. It provides an `Adapter` interface to normalize messages from Telegram, Discord, REST APIs, or Terminal CLI into a standard format.
-2. **Server & Workers (`cmd/myaaw`)**: Uses Cobra CLI to manage the application. `myaaw server --agent <name>` boots one Fiber server for that agent while spinning up its own background goroutines for Queue Consumer, Cron, and Heartbeat. The CLI also provides `myaaw chat`, `myaaw voice`, and `myaaw voice-classic`.
-3. **Bot Service (`internal/services/bot`)**: The per-agent core brain. It processes normalized messages from that agent's channels and Terminal CLI, retrieves chat history from the agent's SQLite database, and invokes the event-driven agent loop. Voice CLIs (`myaaw voice`/`voice-classic`) bypass this to connect directly to the Agent/Providers for lower latency.
+2. **Server & Workers (`cmd/myaaw`)**: Uses Cobra CLI to manage the application. `myaaw server --agent <name>` boots one Fiber server for that agent while spinning up its own background goroutines for Queue Consumer, Cron, and Heartbeat. The CLI also provides `myaaw api` (unified control plane), `myaaw chat`, `myaaw voice`, `myaaw voice-classic`, and `myaaw mcp-bridge`.
+3. **Bot Service (`internal/services/bot`)**: The per-agent core brain. It processes normalized messages from that agent's channels and Terminal CLI, retrieves chat history from the agent's SQLite database, and invokes either the native event-driven agent loop or the configured external runtime driver. Voice CLIs (`myaaw voice`/`voice-classic`) bypass this to connect directly to the Agent/Providers for lower latency.
 4. **Agentic Layer (`internal/agent`)**: Implements an event-driven ReAct (Reasoning and Action) loop. It streams lifecycle events (turns, message deltas, tool execution), executes tool calls with validation and parallel scheduling, and manages transcript compaction and usage aggregation. Legacy trace-based conversations are migrated on read.
-5. **Providers (`internal/provider`)**: A factory-based abstraction layer for various LLMs (Gemini, OpenAI, Groq, Ollama), Transcribers (STT), and Synthesizers (TTS). Currently, Gemini is the main provider for Myaaw's intelligence and live-voice functionality.
-6. **Message Queue (`internal/services/queue`)**: Handles asynchronous messaging using fast, native **Go Channels**. Polled or webhook payloads are pushed to the in-memory queue and processed by the Consumer worker to reliably deliver messages.
-7. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
-8. **Local Workspace (`~/.myaaw`)**: The operational directory for the Agent.
+5. **External Runtime Drivers & MCP Bridge (`internal/agent/runtime`)**: Pluggable subprocess drivers for external CLI agents (`acp`, `codex`, `claude_code`, `pi`, `omp`) that normalize streaming deltas, tool calls, and permission prompts into Myaaw's unified event timeline, pool idle subprocesses, manage official vendor install/update and auth probing, and expose Myaaw ecosystem tools back to external CLIs via a local authenticated MCP bridge (`myaaw mcp-bridge`).
+6. **Providers (`internal/provider`)**: A factory-based abstraction layer for native LLMs (Gemini, OpenAI-compatible, ChatGPT Subscription OAuth, Groq, Ollama), Transcribers (STT), and Synthesizers (TTS).
+7. **Message Queue (`internal/services/queue`)**: Handles asynchronous messaging using fast, native **Go Channels**. Polled or webhook payloads are pushed to the in-memory queue and processed by the Consumer worker to reliably deliver messages.
+8. **Automation (`internal/cron`, `internal/heartbeat`)**: Background schedulers. The `cron` handles scheduled messages, while the `heartbeat` autonomously wakes up the agent at intervals to check `HEARTBEAT.md` for pending background duties.
+9. **Local Workspace (`~/.myaaw`)**: The operational directory for the Agent.
    - `config/`: Shared configuration — `agents.json` (registry and default agent) and the model tables (`model_capabilities.json`, `model_prices.json`, `tool_prices.json`).
-   - `controlplane/`: Control-plane SQLite database (`controlplane.db` — credentials, synced UI settings, and multi-agent group chats).
+   - `controlplane/`: Control-plane SQLite database (`controlplane.db` — credentials, synced UI settings, multi-agent group chats, and global external runtime defaults).
    - `agents/<agent>/`: Per-agent config, `.env`, database, memory, workspace, skills, and logs. The first agent is named during onboarding; only legacy upgrades use `default/`.
      - `config/model_prices.json` / `config/tool_prices.json`: optional per-agent overrides, merged per key over the shared tables. New agents do not receive them, and model capabilities have no per-agent layer.
      - `home/`: Long-term file storage containing the agent's core definitions:
@@ -232,7 +271,7 @@ The selection node resolves the active agent from `~/.myaaw/config/agents.json`.
        - `HEARTBEAT.md`: Ongoing active background jobs and tasks.
        - `MEMORY.md` & `memory/`: Historical conversation summarizations and logs.
        - `workspace/`: All agent-created output. Coding projects live in `workspace/projects/` and downloads in `workspace/downloads/`; the home root stays reserved for identity and memory files.
-9. **Multi-Agent Runtime (`internal/agentdir`)**: Resolves the active agent from `--agent`, `MYAAW_AGENT`, or `config/agents.json`. Each agent process gets an isolated config, `.env`, SQLite database, home, workspace, skills, jobs, logs, cron, tools, channels, and server port.
+10. **Multi-Agent Runtime (`internal/agentdir`)**: Resolves the active agent from `--agent`, `MYAAW_AGENT`, or `config/agents.json`. Each agent process gets an isolated config, `.env`, SQLite database, home, workspace, skills, jobs, logs, cron, tools, channels, and server port.
 
 ## 🚀 Quick Start (Non-Technical)
 
@@ -476,7 +515,7 @@ Full guide: [agent command reference](docs/cli/agent.md) and the [Multi-Agent gu
 | **`agent`** | `list`, `create <name>`, `use [name]`, `delete [name]` | Manage agents. `create` runs the onboarding wizard for a new agent. `use` and `delete` open an arrow-key picker when no name is passed; `delete` asks for confirmation. |
 | **`--agent <name>`** | global flag | Target a specific agent for `chat`, `status`, `logs`, `server`, `provider`, `channel`, `config`, `cron`, `webhook`, `voice`, `voice-classic`, and `consumer`. Without it, the registry default is used. |
 | **`chat`** | `--agent <name>`, `-m "text"` | Interactive chat shows an agent picker when more than one initialized agent exists. |
-| **`onboard`** | `--agent <name>` | Configure providers and channels for a specific agent. |
+| **`onboard`** | `--agent <name>`, `--runtime <preset>` | Configure a native provider or an external CLI runtime (`claude_code`, `codex`, `antigravity`, `opencode`, `deepseek_harness`, `pi`, `omp`, `custom_acp`) plus channels for a specific agent. |
 | **`server`** | `start`, `stop`, `restart`, `status` | Each agent runs its own daemon (`myaaw-server-<agent>`) on its own `PORT`. |
 | **`provider`** | `create`, `list`, `default <name>`, `delete` | Providers are stored in `~/.myaaw/agents/<agent>/config/config.json`. |
 | **`channel`** | `create`, `list`, `edit`, `delete` | Channel tokens are per agent; use a different Telegram/Discord token for each running agent. |
@@ -533,7 +572,7 @@ Myaaw runs as a unified background service daemon.
 | Command | Subcommands | Description |
 | :--- | :--- | :--- |
 | **`server`** | `run`, `start`, `stop`, `status` | Manage the Myaaw Server (API + Background Workers) daemon. |
-| **`api`** | `run`, `start`, `stop`, `status`, `restart` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000, `--host` defaults to loopback). `--terminal` also allows the dashboard to open a shell on that host. |
+| **`api`** | `run`, `start`, `stop`, `status`, `restart` | Run the unified control plane API used by web/desktop/mobile clients (default port 9000, `--host` defaults to loopback), including global external runtime management (`MYAAW_RUNTIME_MANAGEMENT=0` disables host install/login). `--terminal` also allows the dashboard to open a shell on that host. |
 | **`webui`** | `install`, `run`, `start`, `stop`, `restart`, `status`, `update`, `rollback`, `uninstall`, `open` | Install and manage the optional dashboard (Node.js) separately from the binary. |
 | **`webhook`** | `set`, `info`, `delete` | Manage Telegram bot webhook configuration easily. |
 
@@ -592,10 +631,13 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | Document | Description |
 | :--- | :--- |
 | [Multi-Agent Guide](docs/agents/multi-agent.md) | Registry, agent commands, per-agent config, channels, ports, and servers. |
+| [External Agent Runtimes](docs/agents/external-agents.md) | Running Claude Code, Codex, Antigravity (`agy acp`), OpenCode, DeepSeek Harness (`dsh`), Pi, Oh My Pi (`omp`), and custom ACP CLIs inside isolated Myaaw agents with bridged approvals, MCP tools, and WebUI management. |
+| [Multi-Agent Group Chat](docs/agents/groups.md) | Shared multi-agent rooms, delta context sync, autonomous `@mention` discussion, Reply vs. Quotes, and guardrails. |
 | [Agent Loop](docs/agents/agent-loop.md) | Event-driven `RunEvents` engine, transcript v2, compaction, and retries. |
 | [Agent Attachments](docs/agents/attachments.md) | Delivering agent-produced files: the `@attach` contract, per-surface previews, validation and security, persistence, and rendering. |
+| [Extra Messages](docs/agents/extra-messages.md) | Rich display and interactive UI blocks (`extra_messages`): carousels, buttons, quick replies, dynamic forms, checklists, and interaction round-trips. |
 | [Thinking Levels](docs/agents/thinking.md) | Reasoning effort per provider: catalog data, resolver rules, and wire shapes for Gemini, OpenAI, DeepSeek, and ChatGPT. |
-| [Tool Approvals](docs/agents/approvals.md) | Approval policy, grants, and flows across CLI, Telegram, Discord, API, sub-agents, and A2A. |
+| [Tool Approvals](docs/agents/approvals.md) | Approval policy, grants, and flows across CLI, Telegram, Discord, API, sub-agents, external runtimes, and A2A. |
 | [Agent Skills](docs/agents/skills.md) | `SKILL.md` skills: discovery, prompt injection, execution, and data isolation. |
 | [MCP & Custom Tools](docs/agents/mcp-and-custom-tools.md) | MCP servers, custom CLI tools, `tools.json`, and hot reloading. |
 | [A2A Guide](docs/agents/protocol/a2a.md) | Enable the endpoint, call another agent, and manage contacts. |
@@ -638,7 +680,7 @@ All guides are grouped by topic. Start with the [Documentation Index](docs/READM
 | Document | Description |
 | :--- | :--- |
 | [API](docs/api/api.md) | Per-agent `/api/chat`, `/api/chat/stream`, `/api/events`, timeline items, and SSE events. |
-| [Control Plane API](docs/api/control-plane.md) | `myaaw api`: auth, agent switching, chat proxy, files, providers, channels, logs, and cron. |
+| [Control Plane API](docs/api/control-plane.md) | `myaaw api`: auth, agent switching, chat proxy, external runtime management & auth PTY, group chats, files, providers, channels, logs, and cron. |
 | [Web Terminal](docs/api/terminal.md) | A real shell on the API host from the browser: `--terminal`, session lifecycle, and security. |
 
 ### 🖥 WebUI

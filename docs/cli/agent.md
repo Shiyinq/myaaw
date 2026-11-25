@@ -59,12 +59,18 @@ The global install question is only shown for the **first agent** on the machine
 
 Cancelling with `Ctrl+C` before Review leaves nothing behind; no directory, registry entry, or contacts are created.
 
-It accepts the same flags as [`myaaw onboard`](onboard.md#headless-mode-ci-scripts), so it can also run headless:
+It accepts the same flags as [`myaaw onboard`](onboard.md#headless-mode-ci-scripts), so it can also run headless for both native providers and external CLI runtimes:
 
 ```bash
+# Native Myaaw provider
 myaaw agent create agent-b --yes \
   --provider gemini --model models/gemini-2.5-flash \
   --channel telegram --telegram-token "$TG_TOKEN" --owner 123456789
+
+# External CLI runtime (no --provider needed)
+myaaw agent create coder --yes \
+  --runtime codex --working-dir ~/Development/my-app \
+  --runtime-permission bridge --bot-type private
 ```
 
 To reconfigure an existing agent, use `myaaw --agent <name> onboard` instead; `agent create` never overwrites an existing agent.
@@ -121,6 +127,7 @@ myaaw agent delete agent-c --yes
 ## Related
 
 - [Multi-Agent Guide](../agents/multi-agent.md) — registry, selecting an agent, per-agent providers, channels, ports, and servers.
+- [External Agent Runtimes](../agents/external-agents.md) — running Claude Code, Codex, Antigravity, OpenCode, DeepSeek Harness, Pi, Oh My Pi, or custom ACP CLIs inside an agent.
 - [Onboarding](onboard.md)
 - [Backup & Restore](backup.md)
 - [Service Management](service.md)
