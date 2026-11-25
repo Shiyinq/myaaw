@@ -21,6 +21,7 @@
 	} from 'lucide-svelte';
 	import AgentMoreMenuItems from '$lib/components/app/AgentMoreMenuItems.svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
+	import RuntimeBadge from '$lib/components/common/RuntimeBadge.svelte';
 	import SidebarAccount from '$lib/components/app/SidebarAccount.svelte';
 	import SidebarBrand from '$lib/components/app/SidebarBrand.svelte';
 	import { groupAccent } from '$lib/components/groups/accent';
@@ -117,28 +118,6 @@
 				},
 				force
 			);
-		}
-	}
-
-	function runtimeBadgeLabel(bot: AgentInfo): string {
-		if (!bot.runtime_type || bot.runtime_type === 'myaaw') return '';
-		switch (bot.runtime_preset || bot.runtime_type) {
-			case 'antigravity':
-				return 'AGY';
-			case 'claude_code':
-				return 'Claude';
-			case 'omp':
-				return 'OMP';
-			case 'pi':
-				return 'Pi';
-			case 'codex':
-				return 'Codex';
-			case 'gemini_cli':
-				return 'Gemini';
-			case 'opencode':
-				return 'OpenCode';
-			default:
-				return 'ACP';
 		}
 	}
 
@@ -544,6 +523,7 @@
 				class="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-muted/60 ring-1 ring-border/40"
 			>
 				<Bloub mood="attentif" size={30} tight color={colorOf(bot.agent_color)} />
+				<RuntimeBadge runtimeType={bot.runtime_type} runtimePreset={bot.runtime_preset} />
 				{#if busy}
 					<span
 						aria-hidden="true"
@@ -568,16 +548,7 @@
 
 			<span class="min-w-0 flex-1">
 				<span class="flex items-center justify-between gap-1.5">
-					<span class="flex min-w-0 items-center gap-1.5">
-						<span class="truncate text-sm font-semibold text-foreground">{bot.name}</span>
-						{#if runtimeBadgeLabel(bot)}
-							<span
-								class="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[9px] leading-none font-semibold tracking-wide text-primary uppercase"
-							>
-								{runtimeBadgeLabel(bot)}
-							</span>
-						{/if}
-					</span>
+					<span class="truncate text-sm font-semibold text-foreground">{bot.name}</span>
 					{#if timeLabel}
 						<span
 							class={[
@@ -948,7 +919,14 @@
 				{#if active}
 					<span class="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary"></span>
 				{/if}
-				<Bloub mood="attentif" size={28} tight color={colorOf(bot.agent_color)} />
+				<span class="relative inline-flex items-center justify-center">
+					<Bloub mood="attentif" size={28} tight color={colorOf(bot.agent_color)} />
+					<RuntimeBadge
+						runtimeType={bot.runtime_type}
+						runtimePreset={bot.runtime_preset}
+						class="-top-1.5 -left-1.5"
+					/>
+				</span>
 				{#if approvals > 0}
 					<span
 						class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[9px] leading-4 font-semibold text-white tabular-nums"

@@ -14,6 +14,7 @@
 		X
 	} from 'lucide-svelte';
 	import Bloub from '$lib/components/common/Bloub.svelte';
+	import RuntimeBadge from '$lib/components/common/RuntimeBadge.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
@@ -273,6 +274,11 @@
 								class="relative grid h-13 w-13 shrink-0 place-items-center rounded-2xl bg-muted/60 ring-1 ring-border/50"
 							>
 								<Bloub mood="attentif" size={44} tight color={colorOf(bot.agent_color)} />
+								<RuntimeBadge
+									runtimeType={bot.runtime_type}
+									runtimePreset={bot.runtime_preset}
+									size="md"
+								/>
 								<span
 									aria-hidden="true"
 									class={[

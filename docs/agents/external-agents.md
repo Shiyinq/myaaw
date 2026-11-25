@@ -457,7 +457,7 @@ myaaw --agent coder-agy doctor
 ```
 
 ### Dashboard Setup
-Open **New Agent (`/app/new`)** in the WebUI, pick any detected engine from **Agent Engine / Runtime** (`GET /runtimes`), and configure working directory, authentication mode, and tool approval routing. External agents display a subtle runtime badge (`AGY`, `Claude`, `OMP`, `Pi`, `Codex`) in the Bots sidebar while keeping the full `/app/chat` experience.
+Open **New Agent (`/app/new`)** in the WebUI, pick any detected engine from **Agent Engine / Runtime** (`GET /runtimes`), and configure working directory, authentication mode, and tool approval routing. External agents display their runtime logo badge at the top-left corner of the agent icon in the Bots sidebar and home cards while keeping the full `/app/chat` experience.
 
 ### Verifying an Active External Agent at Runtime
 

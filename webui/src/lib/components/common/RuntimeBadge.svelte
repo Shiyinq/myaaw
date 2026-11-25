@@ -1,0 +1,509 @@
+<script lang="ts">
+	import { cn } from '$lib/utils';
+
+	interface Props {
+		runtimeType?: string;
+		runtimePreset?: string;
+		/** `sm` fits 36–40px sidebar icons; `md` fits 52px BotsHome cards. */
+		size?: 'sm' | 'md';
+		class?: string;
+	}
+
+	let {
+		runtimeType = '',
+		runtimePreset = '',
+		size = 'sm',
+		class: className = ''
+	}: Props = $props();
+
+	const uid = $props.id();
+
+	const key = $derived.by(() => {
+		if (!runtimeType || runtimeType === 'myaaw') return '';
+		const raw = (runtimePreset || runtimeType).toLowerCase();
+		switch (raw) {
+			case 'antigravity':
+			case 'claude_code':
+			case 'omp':
+			case 'pi':
+			case 'codex':
+			case 'gemini_cli':
+			case 'opencode':
+				return raw;
+			default:
+				return 'acp';
+		}
+	});
+
+	const label = $derived.by(() => {
+		switch (key) {
+			case 'antigravity':
+				return 'Google Antigravity (agy)';
+			case 'claude_code':
+				return 'Claude Code';
+			case 'omp':
+				return 'Oh My Pi (omp)';
+			case 'pi':
+				return 'Pi Coding Agent (pi)';
+			case 'codex':
+				return 'OpenAI Codex CLI';
+			case 'gemini_cli':
+				return 'Gemini CLI';
+			case 'opencode':
+				return 'OpenCode';
+			case 'acp':
+				return 'External ACP Agent';
+			default:
+				return '';
+		}
+	});
+
+	const badgeSize = $derived(size === 'md' ? 'h-5.5 w-5.5' : 'h-[18px] w-[18px]');
+	const iconSize = $derived(size === 'md' ? 'h-3.5 w-3.5' : 'h-3 w-3');
+	const piIconSize = $derived(size === 'md' ? 'h-3 w-3' : 'h-2.5 w-2.5');
+	const badgeSurface = $derived.by(() => {
+		if (key === 'opencode') return 'bg-[#131010] text-white';
+		if (key === 'omp') return 'bg-[#0d0d0d] text-[#fafafa]';
+		return 'bg-card text-foreground';
+	});
+</script>
+
+{#if key}
+	<span
+		title={label}
+		aria-label={label}
+		class={cn(
+			'pointer-events-none absolute -top-1 -left-1 z-10 grid place-items-center overflow-hidden rounded-full shadow-xs ring-2 ring-card',
+			badgeSurface,
+			badgeSize,
+			className
+		)}
+	>
+		{#if key === 'antigravity'}
+			<!-- Official Google Antigravity logo (@lobehub/icons-static-svg) -->
+			<svg viewBox="0 0 24 24" class={iconSize} aria-hidden="true" focusable="false">
+				<mask id="{uid}-agy-0" maskUnits="userSpaceOnUse" x="0" y="1" width="24" height="23">
+					<path
+						d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z"
+						fill="#fff"
+					/>
+				</mask>
+				<g mask="url(#{uid}-agy-0)">
+					<g filter="url(#{uid}-agy-1)">
+						<path
+							d="M-1.018-3.992c-.408 3.591 2.686 6.89 6.91 7.37 4.225.48 7.98-2.043 8.387-5.633.408-3.59-2.686-6.89-6.91-7.37-4.225-.479-7.98 2.043-8.387 5.633z"
+							fill="#FFE432"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-2)">
+						<path
+							d="M15.269 7.747c1.058 4.557 5.691 7.374 10.348 6.293 4.657-1.082 7.575-5.653 6.516-10.21-1.058-4.556-5.691-7.374-10.348-6.292-4.657 1.082-7.575 5.653-6.516 10.21z"
+							fill="#FC413D"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-3)">
+						<path
+							d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z"
+							fill="#00B95C"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-4)">
+						<path
+							d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z"
+							fill="#00B95C"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-5)">
+						<path
+							d="M-7.608 14.703c3.352 3.424 9.126 3.208 12.896-.483 3.77-3.69 4.108-9.459.756-12.883C2.69-2.087-3.083-1.871-6.853 1.82c-3.77 3.69-4.108 9.458-.755 12.883z"
+							fill="#00B95C"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-6)">
+						<path
+							d="M9.932 27.617c1.04 4.482 5.384 7.303 9.7 6.3 4.316-1.002 6.971-5.448 5.93-9.93-1.04-4.483-5.384-7.304-9.7-6.301-4.316 1.002-6.971 5.448-5.93 9.93z"
+							fill="#3186FF"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-7)">
+						<path
+							d="M2.572-8.185C.392-3.329 2.778 2.472 7.9 4.771c5.122 2.3 11.042.227 13.222-4.63 2.18-4.855-.205-10.656-5.327-12.955-5.122-2.3-11.042-.227-13.222 4.63z"
+							fill="#FBBC04"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-8)">
+						<path
+							d="M-3.267 38.686c-5.277-2.072 3.742-19.117 5.984-24.83 2.243-5.712 8.34-8.664 13.616-6.592 5.278 2.071 11.533 13.482 9.29 19.195-2.242 5.713-23.613 14.298-28.89 12.227z"
+							fill="#3186FF"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-9)">
+						<path
+							d="M28.71 17.471c-1.413 1.649-5.1.808-8.236-1.878-3.135-2.687-4.531-6.201-3.118-7.85 1.412-1.649 5.1-.808 8.235 1.878s4.532 6.2 3.119 7.85z"
+							fill="#749BFF"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-10)">
+						<path
+							d="M18.163 9.077c5.81 3.93 12.502 4.19 14.946.577 2.443-3.612-.287-9.727-6.098-13.658-5.81-3.931-12.502-4.19-14.946-.577-2.443 3.612.287 9.727 6.098 13.658z"
+							fill="#FC413D"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-11)">
+						<path
+							d="M-.915 2.684c-1.44 3.473-.97 6.967 1.05 7.804 2.02.837 4.824-1.3 6.264-4.772 1.44-3.473.97-6.967-1.05-7.804-2.02-.837-4.824 1.3-6.264 4.772z"
+							fill="#FFEE48"
+						/>
+					</g>
+				</g>
+				<mask
+					id="{uid}-agy-0"
+					maskUnits="userSpaceOnUse"
+					x="0"
+					y="1"
+					width="24"
+					height="23"
+				>
+					<path
+						d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z"
+						fill="#fff"
+					/>
+				</mask>
+				<g mask="url(#{uid}-agy-0)">
+					<g filter="url(#{uid}-agy-1)">
+						<path
+							d="M-1.018-3.992c-.408 3.591 2.686 6.89 6.91 7.37 4.225.48 7.98-2.043 8.387-5.633.408-3.59-2.686-6.89-6.91-7.37-4.225-.479-7.98 2.043-8.387 5.633z"
+							fill="#FFE432"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-2)">
+						<path
+							d="M15.269 7.747c1.058 4.557 5.691 7.374 10.348 6.293 4.657-1.082 7.575-5.653 6.516-10.21-1.058-4.556-5.691-7.374-10.348-6.292-4.657 1.082-7.575 5.653-6.516 10.21z"
+							fill="#FC413D"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-3)">
+						<path
+							d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z"
+							fill="#00B95C"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-4)">
+						<path
+							d="M-12.443 10.804c1.338 4.703 7.36 7.11 13.453 5.378 6.092-1.733 9.947-6.95 8.61-11.652C8.282-.173 2.26-2.58-3.833-.848-9.925.884-13.78 6.1-12.443 10.804z"
+							fill="#00B95C"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-5)">
+						<path
+							d="M-7.608 14.703c3.352 3.424 9.126 3.208 12.896-.483 3.77-3.69 4.108-9.459.756-12.883C2.69-2.087-3.083-1.871-6.853 1.82c-3.77 3.69-4.108 9.458-.755 12.883z"
+							fill="#00B95C"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-6)">
+						<path
+							d="M9.932 27.617c1.04 4.482 5.384 7.303 9.7 6.3 4.316-1.002 6.971-5.448 5.93-9.93-1.04-4.483-5.384-7.304-9.7-6.301-4.316 1.002-6.971 5.448-5.93 9.93z"
+							fill="#3186FF"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-7)">
+						<path
+							d="M2.572-8.185C.392-3.329 2.778 2.472 7.9 4.771c5.122 2.3 11.042.227 13.222-4.63 2.18-4.855-.205-10.656-5.327-12.955-5.122-2.3-11.042-.227-13.222 4.63z"
+							fill="#FBBC04"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-8)">
+						<path
+							d="M-3.267 38.686c-5.277-2.072 3.742-19.117 5.984-24.83 2.243-5.712 8.34-8.664 13.616-6.592 5.278 2.071 11.533 13.482 9.29 19.195-2.242 5.713-23.613 14.298-28.89 12.227z"
+							fill="#3186FF"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-9)">
+						<path
+							d="M28.71 17.471c-1.413 1.649-5.1.808-8.236-1.878-3.135-2.687-4.531-6.201-3.118-7.85 1.412-1.649 5.1-.808 8.235 1.878s4.532 6.2 3.119 7.85z"
+							fill="#749BFF"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-10)">
+						<path
+							d="M18.163 9.077c5.81 3.93 12.502 4.19 14.946.577 2.443-3.612-.287-9.727-6.098-13.658-5.81-3.931-12.502-4.19-14.946-.577-2.443 3.612.287 9.727 6.098 13.658z"
+							fill="#FC413D"
+						/>
+					</g>
+					<g filter="url(#{uid}-agy-11)">
+						<path
+							d="M-.915 2.684c-1.44 3.473-.97 6.967 1.05 7.804 2.02.837 4.824-1.3 6.264-4.772 1.44-3.473.97-6.967-1.05-7.804-2.02-.837-4.824 1.3-6.264 4.772z"
+							fill="#FFEE48"
+						/>
+					</g>
+				</g>
+				<defs>
+					<filter
+						id="{uid}-agy-1"
+						x="-3.288"
+						y="-11.917"
+						width="19.838"
+						height="17.587"
+						filterUnits="userSpaceOnUse"
+						color-interpolation-filters="sRGB"
+					>
+						<feFlood flood-opacity="0" result="BackgroundImageFix" />
+						<feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+						<feGaussianBlur stdDeviation="1.117" />
+					</filter>
+					<filter
+						id="{uid}-agy-2"
+						x="4.251"
+						y="-13.493"
+						width="38.9"
+						height="38.565"
+						filterUnits="userSpaceOnUse"
+						color-interpolation-filters="sRGB"
+					>
+						<feFlood flood-opacity="0" result="BackgroundImageFix" />
+						<feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+						<feGaussianBlur stdDeviation="5.4" />
+					</filter>
+					<filter
+						id="{uid}-agy-3"
+						x="-21.889"
+						y="-10.592"
+						width="40.955"
+						height="36.517"
+						filterUnits="userSpaceOnUse"
+						color-interpolation-filters="sRGB"
+					>
+						<feFlood flood-opacity="0" result="BackgroundImageFix" />
+						<feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+						<feGaussianBlur stdDeviation="4.591" />
+					</filter>
+					<filter
+						id="{uid}-agy-4"
+						x="-21.889"
+						y="-10.592"
+						width="40.955"
+						height="36.517"
+						filterUnits="userSpaceOnUse"
+						color-interpolation-filters="sRGB"
+					>
+						<feFlood flood-opacity="0" result="BackgroundImageFix" />
+						<feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+						<feGaussianBlur stdDeviation="4.591" />
+					</filter>
+					<filter
+						id="{uid}-agy-5"
+						x="-19.099"
+						y="-10.278"
+						width="36.632"
+						height="36.595"
+						filterUnits="userSpaceOnUse"
+						color-interpolation-filters="sRGB"
+					>
+						<feFlood flood-opacity="0" result="BackgroundImageFix" />
+						<feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+						<feGaussianBlur stdDeviation="4.591" />
+					</filter>
+					<filter
+						id="{uid}-agy-6"
+						x=".981"
+						y="8.758"
+						width="33.533"
+						height="34.087"
+						filterUnits="userSpaceOnUse"
+						color-interpolation-filters="sRGB"
+					>
+						<feFlood flood-opacity="0" result="BackgroundImageFix" />
+						<feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+						<feGaussianBlur stdDeviation="4.363" />
+					</filter>
+					<filter
+						id="{uid}-agy-7"
+						x="-6.143"
+						y="-21.659"
+						width="35.978"
+						height="35.276"
+						filterUnits="userSpaceOnUse"
+						color-interpolation-filters="sRGB"
+					>
+						<feFlood flood-opacity="0" result="BackgroundImageFix" />
+						<feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+						<feGaussianBlur stdDeviation="3.954" />
+					</filter>
+					<filter
+						id="{uid}-agy-8"
+						x="-11.96"
+						y="-.46"
+						width="45.114"
+						height="46.523"
+						filterUnits="userSpaceOnUse"
+						color-interpolation-filters="sRGB"
+					>
+						<feFlood flood-opacity="0" result="BackgroundImageFix" />
+						<feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+						<feGaussianBlur stdDeviation="3.531" />
+					</filter>
+					<filter
+						id="{uid}-agy-9"
+						x="10.485"
+						y=".58"
+						width="25.094"
+						height="24.054"
+						filterUnits="userSpaceOnUse"
+						color-interpolation-filters="sRGB"
+					>
+						<feFlood flood-opacity="0" result="BackgroundImageFix" />
+						<feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+						<feGaussianBlur stdDeviation="3.159" />
+					</filter>
+					<filter
+						id="{uid}-agy-10"
+						x="5.833"
+						y="-12.467"
+						width="33.508"
+						height="30.007"
+						filterUnits="userSpaceOnUse"
+						color-interpolation-filters="sRGB"
+					>
+						<feFlood flood-opacity="0" result="BackgroundImageFix" />
+						<feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+						<feGaussianBlur stdDeviation="2.669" />
+					</filter>
+					<filter
+						id="{uid}-agy-11"
+						x="-8.355"
+						y="-8.876"
+						width="22.194"
+						height="26.151"
+						filterUnits="userSpaceOnUse"
+						color-interpolation-filters="sRGB"
+					>
+						<feFlood flood-opacity="0" result="BackgroundImageFix" />
+						<feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+						<feGaussianBlur stdDeviation="3.303" />
+					</filter>
+				</defs>
+			</svg>
+		{:else if key === 'claude_code'}
+			<!-- Official Anthropic Claude logo (@lobehub/icons-static-svg) -->
+			<svg viewBox="0 0 24 24" class={iconSize} aria-hidden="true" focusable="false">
+				<path
+					d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z"
+					fill="#D97757"
+					fill-rule="nonzero"
+				/>
+			</svg>
+		{:else if key === 'opencode'}
+			<!-- Official OpenCode logo (opencode.ai/favicon.svg) -->
+			<svg viewBox="0 0 512 512" class="h-full w-full" aria-hidden="true" focusable="false">
+				<rect width="512" height="512" fill="#131010" />
+				<path d="M320 224V352H192V224H320Z" fill="#5A5858" />
+				<path
+					fill-rule="evenodd"
+					clip-rule="evenodd"
+					d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z"
+					fill="white"
+				/>
+			</svg>
+		{:else if key === 'pi'}
+			<!-- Official Pi Coding Agent logo (pi.dev/favicon.svg) -->
+			<svg viewBox="0 0 560 560" class={piIconSize} aria-hidden="true" focusable="false">
+				<path d="M420 280H280V140H0V0H420V280Z" fill="currentColor" />
+				<path d="M560 560H420V280H560V560Z" fill="currentColor" />
+				<path d="M140 560H0V140H140V280H280V420H140V560Z" fill="currentColor" />
+			</svg>
+		{:else if key === 'omp'}
+			<!-- Official Oh My Pi logo (can1357/oh-my-pi assets/icon.svg) -->
+			<svg viewBox="0 0 120 90" class={iconSize} aria-hidden="true" focusable="false">
+				<rect x="10" y="8" width="100" height="12" rx="2" fill="#fafafa" />
+				<rect x="25" y="20" width="12" height="62" rx="2" fill="#fafafa" />
+				<rect x="75" y="20" width="12" height="45" rx="2" fill="#fafafa" />
+				<rect x="71" y="55" width="20" height="16" rx="3" fill="#f97316" />
+				<rect x="76" y="59" width="3" height="8" rx="1" fill="#0d0d0d" />
+				<rect x="82" y="59" width="3" height="8" rx="1" fill="#0d0d0d" />
+				<circle cx="18" cy="14" r="2" fill="#f97316" opacity="0.8" />
+				<circle cx="102" cy="14" r="2" fill="#f97316" opacity="0.8" />
+			</svg>
+		{:else if key === 'codex'}
+			<!-- Official OpenAI logo (@lobehub/icons-static-svg) -->
+			<svg
+				viewBox="0 0 24 24"
+				class={iconSize}
+				fill="currentColor"
+				fill-rule="evenodd"
+				aria-hidden="true"
+				focusable="false"
+			>
+				<path
+					d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z"
+				/>
+			</svg>
+		{:else if key === 'gemini_cli'}
+			<!-- Official Google Gemini logo (@lobehub/icons-static-svg) -->
+			<svg viewBox="0 0 24 24" class={iconSize} aria-hidden="true" focusable="false">
+				<path
+					d="M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z"
+					fill="#3186FF"
+				/>
+				<path
+					d="M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z"
+					fill="url(#{uid}-gem-0)"
+				/>
+				<path
+					d="M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z"
+					fill="url(#{uid}-gem-1)"
+				/>
+				<path
+					d="M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z"
+					fill="url(#{uid}-gem-2)"
+				/>
+				<defs>
+					<linearGradient
+						id="{uid}-gem-0"
+						x1="7"
+						y1="15.5"
+						x2="11"
+						y2="12"
+						gradientUnits="userSpaceOnUse"
+					>
+						<stop stop-color="#08B962" />
+						<stop offset="1" stop-color="#08B962" stop-opacity="0" />
+					</linearGradient>
+					<linearGradient
+						id="{uid}-gem-1"
+						x1="8"
+						y1="5.5"
+						x2="11.5"
+						y2="11"
+						gradientUnits="userSpaceOnUse"
+					>
+						<stop stop-color="#F94543" />
+						<stop offset="1" stop-color="#F94543" stop-opacity="0" />
+					</linearGradient>
+					<linearGradient
+						id="{uid}-gem-2"
+						x1="3.5"
+						y1="13.5"
+						x2="17.5"
+						y2="12"
+						gradientUnits="userSpaceOnUse"
+					>
+						<stop stop-color="#FABC12" />
+						<stop offset=".46" stop-color="#FABC12" stop-opacity="0" />
+					</linearGradient>
+				</defs>
+			</svg>
+		{:else}
+			<!-- Generic / Custom ACP terminal prompt mark -->
+			<svg viewBox="0 0 24 24" class={iconSize} aria-hidden="true" focusable="false">
+				<path
+					d="M5 8l5 4-5 4M12.5 16H19"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2.4"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
+			</svg>
+		{/if}
+	</span>
+{/if}
