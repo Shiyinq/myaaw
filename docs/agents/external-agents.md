@@ -343,7 +343,97 @@ flowchart LR
 
 ---
 
-## 7. Supported Runtimes & Protocols
+## 7. Dynamic Runtime Controls (Model, Thinking Level, Tool Approvals, & Runtime Mode)
+
+In `/app/chat`, external-runtime agents expose the same three composer controls as native Myaaw agents—**Model**, **Thinking Level**, and **Approval / Mode**—without hardcoding model lists, reasoning levels, or CLI modes anywhere in Myaaw.
+
+Every option is discovered **dynamically at runtime** from the installed CLI binary via `GET /agents/:name/runtime/options` (cached for 60 seconds per agent, with `?refresh=1` or the refresh button in the Model picker forcing a fresh probe). Selections are saved to `config.json` via `PATCH /agents/:name/config` (`runtime.model`, `runtime.thinking_level`, `runtime.permission_mode`, `runtime.session_mode`), and `BotServiceImpl.checkAndReloadProvider()` hot-reloads the runtime automatically on the next turn without restarting the agent daemon.
+
+### Discovery & Live Switching Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User (WebUI /app/chat)
+    participant CP as Control Plane (myaaw api)
+    participant Probe as Live CLI Probe (options.go)
+    participant Cfg as ~/.myaaw/agents/NAME/config/config.json
+    participant Daemon as Agent Daemon (BotServiceImpl)
+    participant CLI as External CLI Subprocess
+
+    User->>CP: GET /agents/NAME/runtime/options
+    alt Cache miss or ?refresh=1
+        CP->>Probe: DiscoverRuntimeOptions(ctx, runtimeCfg, workingDir)
+        alt ACP (agy / opencode / gemini / custom)
+            Probe->>CLI: initialize → session/new (read configOptions / models / modes)
+        else Pi / Oh My Pi
+            Probe->>CLI: --mode rpc --no-session → get_state + get_available_models
+        else Codex
+            Probe->>CLI: app-server → initialize → model/list
+        else Claude Code
+            Probe->>CLI: claude --help (parse --effort & --permission-mode choices)
+        end
+        Probe-->>CP: RuntimeOptions (models, thinking, session_modes, approval_modes)
+    end
+    CP-->>User: Populate Model, Thinking, & Approval/Mode dropdowns
+
+    User->>CP: PATCH /agents/NAME/config (runtime: model / thinking_level / permission_mode / session_mode)
+    CP->>Cfg: Persist updated runtime block
+    CP-->>User: Return updated ConfigView
+
+    User->>Daemon: Send next chat message
+    Daemon->>Daemon: checkAndReloadProvider() detects runtime diff & hot-reloads driver
+    Daemon->>CLI: Apply model, thinking_level, session_mode & permission_mode on turn
+```
+
+### Per-Driver Dynamic Discovery & Enforcement
+
+| Runtime Driver | How Options Are Discovered (Zero Hardcoding) | How Selections Are Applied on Turns |
+| :--- | :--- | :--- |
+| **ACP (`agy`, `opencode`, `gemini`, `custom_acp`)** | `initialize` → `session/new` reads standard ACP `configOptions` (`category: "model"`, `"thought_level"`, `"mode"`) with fallback to `models.availableModels` and `modes.availableModes` | `session/set_config_option` on new and resumed sessions (with fallback to `session/set_model` and `session/set_mode`) |
+| **Pi & Oh My Pi (`pi`, `omp`)** | Spawns `<cmd> --mode rpc --no-session` and queries `get_state` + `get_available_models`, extracting provider groups, context window, vision, and **per-model `thinkingLevelMap`** | Passes `--model <provider/id>` and `--thinking <level>` on spawn (re-attaching the same `--session <conv>.jsonl` file so history continues seamlessly) |
+| **Codex (`codex`)** | Spawns `codex app-server` and queries `initialize` → `model/list` (including `supportedReasoningEfforts` per model) | Passes `model` and `effort` in `turn/start` |
+| **Claude Code (`claude`)** | Parses live `--help` output for `--effort` and `--permission-mode` choices; enables custom model ID input | Passes `--model`, `--effort`, and `--permission-mode` CLI flags |
+
+- **Adaptive UI:** If the active runtime or chosen model does not report thinking levels (for example OpenCode models without a `thought_level` config option, or a non-reasoning Pi model), the **Thinking** dropdown hides automatically. Likewise, if a runtime does not support interactive approval prompts (`SupportsApprovals == false`, such as Pi/OMP) and reports no native session modes, the **Approval / Mode** dropdown stays hidden.
+- **Custom Model Override:** All external runtimes keep **CLI Default** (clears `runtime.model`) and an inline **Custom model ID** field inside the Model menu for aliases or newly released models.
+
+### Two-Layer Permission Control: `Tool Approvals` vs. `Runtime Mode`
+
+When an external CLI supports both Myaaw approval bridging and its own native session modes (for example Google Antigravity `agy` or OpenCode), the Shield dropdown cleanly separates the **two layers**:
+
+```mermaid
+flowchart LR
+    subgraph Layer1["Layer 1: Runtime Mode (Inside External CLI — runtime.session_mode)"]
+        CLIMode["CLI Native Behavior\n- Antigravity: Default / Accept edits / Auto / Plan\n- OpenCode: build / plan\n- Claude Code: --permission-mode choices"]
+        Decide{"Does CLI need\npermission to run tool?"}
+    end
+
+    subgraph Layer2["Layer 2: Tool Approvals (Inside Myaaw — runtime.permission_mode)"]
+        Gate{"Myaaw Permission Mode"}
+        Auto["Full Access (auto)\nImmediately allow without prompting"]
+        Bridge["Approval (bridge)\nForward to Myaaw approvals.Gate\n(WebUI / Telegram / Discord / TUI)"]
+        ReadOnly["Read Only (read_only)\nAllow read/list/search/grep/glob only;\ndeny edits & shell commands"]
+    end
+
+    CLIMode --> Decide
+    Decide -->|"No (e.g. Plan read-only\nor Accept edits on file edit)"| RunDirect["CLI executes or skips directly"]
+    Decide -->|"Yes (emits permission request)"| Gate
+    Gate --> Auto
+    Gate --> Bridge
+    Gate --> ReadOnly
+```
+
+- **`Tool Approvals` (`runtime.permission_mode`)** controls **how Myaaw answers** whenever the external CLI sends a permission request (`session/request_permission`, `control_request`, etc.):
+  - **Full Access (`auto`):** Myaaw auto-approves every tool call from the CLI with zero confirmation prompts.
+  - **Approval (`bridge`):** Myaaw routes the request through `approvals.Gate` so you can click *Allow Once / Allow Session / Always / Deny* from WebUI, Telegram, Discord, or CLI TUI.
+  - **Read Only (`read_only`):** Myaaw only allows inspection/read tools and rejects edits or command execution.
+- **`Runtime Mode` (`runtime.session_mode`)** controls **the CLI's own internal execution mode** (populated dynamically from the CLI):
+  - For example, selecting **`Plan`** on Antigravity or OpenCode puts the CLI itself into planning mode before editing code, while selecting **`Accept edits`** on Antigravity auto-accepts workspace edits and only asks before shell commands.
+
+---
+
+## 8. Supported Runtimes & Protocols
 
 Myaaw drives external agents over structured machine-readable `stdio` protocols (never raw terminal ANSI scraping):
 
@@ -365,7 +455,7 @@ When Myaaw runs as a background service under macOS `launchd` or Linux `systemd`
 
 ---
 
-## 8. Per-Agent Directory Layout & Isolation
+## 9. Per-Agent Directory Layout & Isolation
 
 Every external-runtime agent keeps the exact same isolated directory layout under `~/.myaaw/agents/<name>/`, plus a `runtime/` folder for per-agent MCP bridge config and local session files:
 
@@ -397,7 +487,7 @@ Every external-runtime agent keeps the exact same isolated directory layout unde
 
 ---
 
-## 9. Session Continuity, Warm Pooling, & `/stop`
+## 10. Session Continuity, Warm Pooling, & `/stop`
 
 - **Dual state:** Myaaw persists `external_session_id` and `external_runtime` on each `conversations` row in `myaaw.db`. Turn 1 creates a session; subsequent turns send only the new user message(s) while still recording full Transcript v2 turns in SQLite.
 - **Warm process pool:** Stateful stdio drivers (`acp`, `omp`/`pi`, `codex`) keep subprocesses warm per `conversation_id` and automatically reap idle processes after `idle_timeout_seconds` (default `900` seconds).
@@ -406,7 +496,7 @@ Every external-runtime agent keeps the exact same isolated directory layout unde
 
 ---
 
-## 10. Account Safety & Provider ToS Guardrails
+## 11. Account Safety & Provider ToS Guardrails
 
 Myaaw is designed to avoid OAuth credential scraping and Terms-of-Service violations:
 
@@ -417,7 +507,7 @@ Myaaw is designed to avoid OAuth credential scraping and Terms-of-Service violat
 
 ---
 
-## 11. Configuration, Quickstart, & Verification
+## 12. Configuration, Quickstart, & Verification
 
 ### Example `config.json` (Antigravity ACP)
 ```json
@@ -427,6 +517,9 @@ Myaaw is designed to avoid OAuth credential scraping and Terms-of-Service violat
     "type": "acp",
     "command": "agy",
     "args": ["acp"],
+    "model": "gemini-4-neon",
+    "thinking_level": "high",
+    "session_mode": "default",
     "auth_source": "cli_login",
     "permission_mode": "bridge",
     "mcp_bridge": true,

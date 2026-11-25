@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	myaaw "myaaw"
+	agentruntime "myaaw/internal/agent/runtime"
 	"myaaw/internal/agentdir"
 	"myaaw/internal/auth/chatgpt"
 	"myaaw/internal/config"
@@ -105,6 +107,8 @@ type RuntimeView struct {
 	WorkingDir         string                     `json:"working_dir,omitempty"`
 	AdditionalDirs     []string                   `json:"additional_dirs,omitempty"`
 	Model              string                     `json:"model,omitempty"`
+	ThinkingLevel      string                     `json:"thinking_level,omitempty"`
+	SessionMode        string                     `json:"session_mode,omitempty"`
 	AuthSource         string                     `json:"auth_source,omitempty"`
 	APIKeyEnv          string                     `json:"api_key_env,omitempty"`
 	APIKey             SecretState                `json:"api_key"`
@@ -164,6 +168,24 @@ func (s *ConfigService) Config(agentName string) (ConfigView, error) {
 	return configView(cfg), nil
 }
 
+// RuntimeOptions probes the configured external CLI runtime for an agent and
+// returns its live dynamic models, thinking levels, session modes, and Myaaw
+// approval routing options.
+func (s *ConfigService) RuntimeOptions(ctx context.Context, agentName string, refresh bool) (agentruntime.RuntimeOptions, error) {
+	cfg, err := loadAgentConfig(agentName)
+	if err != nil {
+		return agentruntime.RuntimeOptions{}, err
+	}
+	rt := config.MergeRuntime(cfg.Runtime)
+	workingDir := strings.TrimSpace(rt.WorkingDir)
+	if workingDir == "" {
+		if home, hErr := agentdir.Home(agentName); hErr == nil && home != "" {
+			workingDir = filepath.Join(home, "workspace")
+		}
+	}
+	return agentruntime.DiscoverRuntimeOptionsCached(ctx, agentName, rt, workingDir, refresh), nil
+}
+
 // configView builds the read shape of a config with every secret masked.
 func configView(cfg *config.Config) ConfigView {
 	return ConfigView{
@@ -201,6 +223,8 @@ func runtimeView(raw *config.RuntimeConfig) RuntimeView {
 		WorkingDir:         merged.WorkingDir,
 		AdditionalDirs:     merged.AdditionalDirs,
 		Model:              merged.Model,
+		ThinkingLevel:      merged.ThinkingLevel,
+		SessionMode:        merged.SessionMode,
 		AuthSource:         merged.AuthSource,
 		APIKeyEnv:          merged.APIKeyEnv,
 		APIKey:             secretState(merged.APIKey),
@@ -673,6 +697,8 @@ type RuntimePatch struct {
 	WorkingDir         *string   `json:"working_dir,omitempty"`
 	AdditionalDirs     *[]string `json:"additional_dirs,omitempty"`
 	Model              *string   `json:"model,omitempty"`
+	ThinkingLevel      *string   `json:"thinking_level,omitempty"`
+	SessionMode        *string   `json:"session_mode,omitempty"`
 	AuthSource         *string   `json:"auth_source,omitempty"`
 	APIKeyEnv          *string   `json:"api_key_env,omitempty"`
 	APIKey             *string   `json:"api_key,omitempty"`
@@ -1010,6 +1036,12 @@ func applyRuntimePatch(target **config.RuntimeConfig, patch RuntimePatch, bot *c
 	}
 	if patch.Model != nil {
 		next.Model = *patch.Model
+	}
+	if patch.ThinkingLevel != nil {
+		next.ThinkingLevel = *patch.ThinkingLevel
+	}
+	if patch.SessionMode != nil {
+		next.SessionMode = *patch.SessionMode
 	}
 	if patch.AuthSource != nil {
 		next.AuthSource = *patch.AuthSource

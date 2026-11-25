@@ -94,6 +94,7 @@ Chat and conversation endpoints use this ID automatically. Clients do not need t
 | `GET` | `/agents` | list agents with `default`, `running`, `port`, `base_url`, `agent_color`, `runtime_type`, `runtime_preset` |
 | `GET` | `/capabilities` | provider presets, embedded skills and built-in tools for the onboarding form |
 | `GET` | `/runtimes` | supported agent runtimes (built-in `myaaw` + external CLI presets) with live host binary discovery |
+| `GET` | `/agents/:name/runtime/options` | live dynamic discovery of models, thinking levels, native CLI session modes, and Myaaw approval modes (`?refresh=1` bypasses 60s cache) |
 | `GET` | `/agents/:name` | one agent |
 | `POST` | `/agents/:name/onboard` | create or reconfigure an agent with the full setup in one call |
 | `DELETE` | `/agents/:name` | delete agent data (default agent is protected) |
@@ -881,7 +882,7 @@ curl -X PATCH http://localhost:9000/agents/myfriend/config \
 
 ### Runtime settings
 
-`GET /agents/:name/config` always includes a merged `runtime` view (`type`, `preset`, `command`, `args`, `working_dir`, `additional_dirs`, `model`, `auth_source`, `api_key_env`, masked `api_key`, `permission_mode`, `mcp_bridge`, `idle_timeout_seconds`, and `capabilities`). `PATCH /agents/:name/config` validates the updated `runtime` block against `bot.type` (for example rejecting `bot.type: "public"` with `auth_source: "cli_login"`). Sending an empty `runtime.api_key` keeps any stored key. See [External Agent Runtimes](../agents/external-agents.md).
+`GET /agents/:name/config` always includes a merged `runtime` view (`type`, `preset`, `command`, `args`, `working_dir`, `additional_dirs`, `model`, `thinking_level`, `session_mode`, `auth_source`, `api_key_env`, masked `api_key`, `permission_mode`, `mcp_bridge`, `idle_timeout_seconds`, and `capabilities`). `PATCH /agents/:name/config` validates the updated `runtime` block against `bot.type` (for example rejecting `bot.type: "public"` with `auth_source: "cli_login"`). Sending an empty `runtime.api_key` keeps any stored key. See [External Agent Runtimes](../agents/external-agents.md).
 
 `PATCH /config/reset` takes the same section names and restores them from the template. Every section accepts `true` for the whole section, `[]` for the same thing, or a list of field names; `false` leaves it alone. So `{"bot": []}` resets the whole bot section, `{"bot": ["type"]}` resets one bot field, and `{"heartbeat": ["every"], "approvals": ["mode"]}` resets two fields in two sections. The heartbeat fields are `active`, `channel`, `to`, `thread_id`, `session_id`, `chat_type`, and `every`. Providers and channels are not touched by this variant.
 

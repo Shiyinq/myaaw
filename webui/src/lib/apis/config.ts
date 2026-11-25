@@ -1,7 +1,8 @@
 import { agentPath, client } from './client';
-import type { AgentConfig, ApprovalsConfig } from '$lib/types';
+import type { AgentConfig, ApprovalsConfig, OnboardRuntime } from '$lib/types';
 
 export interface ConfigPatch {
+	runtime?: OnboardRuntime;
 	bot?: Record<string, unknown>;
 	heartbeat?: Record<string, unknown>;
 	cron?: { active?: boolean };

@@ -1535,6 +1535,57 @@ definitions:
       version:
         type: string
     type: object
+  runtime.RuntimeOptionGroup:
+    properties:
+      allow_custom:
+        type: boolean
+      config_id:
+        type: string
+      current:
+        type: string
+      options:
+        items:
+          $ref: '#/definitions/runtime.RuntimeOptionItem'
+        type: array
+    type: object
+  runtime.RuntimeOptionItem:
+    properties:
+      context_window:
+        type: integer
+      description:
+        type: string
+      group:
+        type: string
+      label:
+        type: string
+      thinking:
+        type: boolean
+      thinking_levels:
+        items:
+          type: string
+        type: array
+      value:
+        type: string
+      vision:
+        type: boolean
+    type: object
+  runtime.RuntimeOptions:
+    properties:
+      approval_modes:
+        $ref: '#/definitions/runtime.RuntimeOptionGroup'
+      models:
+        $ref: '#/definitions/runtime.RuntimeOptionGroup'
+      runtime_preset:
+        type: string
+      runtime_type:
+        type: string
+      session_modes:
+        $ref: '#/definitions/runtime.RuntimeOptionGroup'
+      thinking:
+        $ref: '#/definitions/runtime.RuntimeOptionGroup'
+      warning:
+        type: string
+    type: object
   service.ActivityDay:
     properties:
       count:
@@ -2816,6 +2867,10 @@ definitions:
       preset:
         example: antigravity
         type: string
+      session_mode:
+        type: string
+      thinking_level:
+        type: string
       type:
         example: acp
         type: string
@@ -2995,6 +3050,10 @@ definitions:
         type: string
       preset:
         type: string
+      session_mode:
+        type: string
+      thinking_level:
+        type: string
       type:
         type: string
       working_dir:
@@ -3029,6 +3088,10 @@ definitions:
       permission_mode:
         type: string
       preset:
+        type: string
+      session_mode:
+        type: string
+      thinking_level:
         type: string
       type:
         type: string
@@ -6709,6 +6772,38 @@ paths:
       summary: Set default provider
       tags:
       - Providers
+  /agents/{name}/runtime/options:
+    get:
+      parameters:
+      - description: Agent name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Bypass the 60s cache and re-probe the CLI
+        in: query
+        name: refresh
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/runtime.RuntimeOptions'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Discover live runtime options for an agent
+      tags:
+      - Agents
   /agents/{name}/server/restart:
     post:
       parameters:

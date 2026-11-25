@@ -679,6 +679,12 @@ func LoadBaseConfig() {
 	if rtWD := strings.TrimSpace(os.Getenv("MYAAW_RUNTIME_WORKING_DIR")); rtWD != "" {
 		Runtime.WorkingDir = rtWD
 	}
+	if rtThink := strings.TrimSpace(os.Getenv("MYAAW_RUNTIME_THINKING_LEVEL")); rtThink != "" {
+		Runtime.ThinkingLevel = rtThink
+	}
+	if rtMode := strings.TrimSpace(os.Getenv("MYAAW_RUNTIME_SESSION_MODE")); rtMode != "" {
+		Runtime.SessionMode = rtMode
+	}
 	Runtime = MergeRuntime(&Runtime)
 
 	TranscriberProviderName = os.Getenv("TRANSCRIBER_PROVIDER_NAME")

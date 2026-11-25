@@ -7,6 +7,7 @@ import type {
 	OKResponse,
 	OnboardRequest,
 	OnboardResponse,
+	RuntimeOptions,
 	RuntimesResponse
 } from '$lib/types';
 
@@ -21,5 +22,10 @@ export const agents = {
 	// Provider types plus the skills and tools an agent can be created with.
 	capabilities: () => client<CapabilitiesView>('/capabilities'),
 	// Supported agent runtimes (native Myaaw + external CLIs) with host PATH detection.
-	runtimes: () => client<RuntimesResponse>('/runtimes')
+	runtimes: () => client<RuntimesResponse>('/runtimes'),
+	// Live dynamic models, thinking levels, session modes, and approval modes for an agent's runtime.
+	runtimeOptions: (name: string, refresh = false) =>
+		client<RuntimeOptions>(
+			agentPath(name, refresh ? '/runtime/options?refresh=1' : '/runtime/options')
+		)
 };

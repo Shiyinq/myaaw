@@ -54,6 +54,13 @@ type RuntimeConfig struct {
 	AdditionalDirs []string `json:"additional_dirs,omitempty"`
 	// Model optionally overrides the external CLI's default model.
 	Model string `json:"model,omitempty"`
+	// ThinkingLevel optionally overrides the external CLI's reasoning/thinking
+	// effort level (values are discovered dynamically from each CLI).
+	ThinkingLevel string `json:"thinking_level,omitempty"`
+	// SessionMode optionally overrides the external CLI's native session/agent
+	// mode (for example ACP modes like "default", "accept-edits", "auto", "plan",
+	// or "build", discovered dynamically from the CLI).
+	SessionMode string `json:"session_mode,omitempty"`
 	// AuthSource declares how the external CLI authenticates: "cli_login" or
 	// "api_key".
 	AuthSource string `json:"auth_source,omitempty"`
@@ -339,6 +346,8 @@ func NormalizeRuntime(in RuntimeConfig) RuntimeConfig {
 	out.Command = strings.TrimSpace(out.Command)
 	out.WorkingDir = strings.TrimSpace(out.WorkingDir)
 	out.Model = strings.TrimSpace(out.Model)
+	out.ThinkingLevel = strings.TrimSpace(out.ThinkingLevel)
+	out.SessionMode = strings.TrimSpace(out.SessionMode)
 	out.AuthSource = strings.ToLower(strings.TrimSpace(out.AuthSource))
 	out.APIKeyEnv = strings.TrimSpace(out.APIKeyEnv)
 	out.APIKey = strings.TrimSpace(out.APIKey)
@@ -452,6 +461,12 @@ func MergeRuntime(raw *RuntimeConfig) RuntimeConfig {
 	}
 	if n.Model != "" {
 		merged.Model = n.Model
+	}
+	if n.ThinkingLevel != "" {
+		merged.ThinkingLevel = n.ThinkingLevel
+	}
+	if n.SessionMode != "" {
+		merged.SessionMode = n.SessionMode
 	}
 	if n.AuthSource != "" {
 		merged.AuthSource = n.AuthSource

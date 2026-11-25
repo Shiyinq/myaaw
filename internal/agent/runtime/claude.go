@@ -87,6 +87,12 @@ func (r *claudeRuntime) RunEvents(
 	if model := strings.TrimSpace(r.cfg.Model); model != "" {
 		args = append(args, "--model", model)
 	}
+	if effort := strings.TrimSpace(r.cfg.ThinkingLevel); effort != "" {
+		args = append(args, "--effort", effort)
+	}
+	if mode := strings.TrimSpace(r.cfg.SessionMode); mode != "" {
+		args = append(args, "--permission-mode", mode)
+	}
 	for _, dir := range AllowedDirs(r.cfg) {
 		args = append(args, "--add-dir", dir)
 	}

@@ -4980,6 +4980,57 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "/agents/{name}/runtime/options": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Discover live runtime options for an agent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Agent name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Bypass the 60s cache and re-probe the CLI",
+                        "name": "refresh",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/runtime.RuntimeOptions"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/agents/{name}/server/restart": {
             "post": {
                 "security": [
@@ -10384,6 +10435,84 @@ const docTemplatecontrolplane = `{
                 }
             }
         },
+        "runtime.RuntimeOptionGroup": {
+            "type": "object",
+            "properties": {
+                "allow_custom": {
+                    "type": "boolean"
+                },
+                "config_id": {
+                    "type": "string"
+                },
+                "current": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/runtime.RuntimeOptionItem"
+                    }
+                }
+            }
+        },
+        "runtime.RuntimeOptionItem": {
+            "type": "object",
+            "properties": {
+                "context_window": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "group": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "thinking": {
+                    "type": "boolean"
+                },
+                "thinking_levels": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "value": {
+                    "type": "string"
+                },
+                "vision": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "runtime.RuntimeOptions": {
+            "type": "object",
+            "properties": {
+                "approval_modes": {
+                    "$ref": "#/definitions/runtime.RuntimeOptionGroup"
+                },
+                "models": {
+                    "$ref": "#/definitions/runtime.RuntimeOptionGroup"
+                },
+                "runtime_preset": {
+                    "type": "string"
+                },
+                "runtime_type": {
+                    "type": "string"
+                },
+                "session_modes": {
+                    "$ref": "#/definitions/runtime.RuntimeOptionGroup"
+                },
+                "thinking": {
+                    "$ref": "#/definitions/runtime.RuntimeOptionGroup"
+                },
+                "warning": {
+                    "type": "string"
+                }
+            }
+        },
         "service.ActivityDay": {
             "type": "object",
             "properties": {
@@ -12290,6 +12419,12 @@ const docTemplatecontrolplane = `{
                     "type": "string",
                     "example": "antigravity"
                 },
+                "session_mode": {
+                    "type": "string"
+                },
+                "thinking_level": {
+                    "type": "string"
+                },
                 "type": {
                     "type": "string",
                     "example": "acp"
@@ -12559,6 +12694,12 @@ const docTemplatecontrolplane = `{
                 "preset": {
                     "type": "string"
                 },
+                "session_mode": {
+                    "type": "string"
+                },
+                "thinking_level": {
+                    "type": "string"
+                },
                 "type": {
                     "type": "string"
                 },
@@ -12610,6 +12751,12 @@ const docTemplatecontrolplane = `{
                     "type": "string"
                 },
                 "preset": {
+                    "type": "string"
+                },
+                "session_mode": {
+                    "type": "string"
+                },
+                "thinking_level": {
                     "type": "string"
                 },
                 "type": {

@@ -340,12 +340,14 @@ func (r *acpRuntime) acquireSession(ctx context.Context, convKey string, cfg age
 	}
 
 	resumed := false
+	var sessionMeta acpSessionMeta
 	if wantResume && cfg.ExternalSessionID != "" {
-		if _, err := proc.call(ctx, "session/load", map[string]any{
+		if raw, err := proc.call(ctx, "session/load", map[string]any{
 			"sessionId":  cfg.ExternalSessionID,
 			"cwd":        cwd,
 			"mcpServers": acpMCP,
 		}); err == nil {
+			_ = json.Unmarshal(raw, &sessionMeta)
 			proc.sessionID = cfg.ExternalSessionID
 			resumed = true
 		} else {
@@ -362,21 +364,14 @@ func (r *acpRuntime) acquireSession(ctx context.Context, convKey string, cfg age
 			proc.kill()
 			return nil, false, fmt.Errorf("acp session/new: %w", err)
 		}
-		var out struct {
-			SessionID string `json:"sessionId"`
-		}
-		if err := json.Unmarshal(raw, &out); err != nil || strings.TrimSpace(out.SessionID) == "" {
+		if err := json.Unmarshal(raw, &sessionMeta); err != nil || strings.TrimSpace(sessionMeta.SessionID) == "" {
 			proc.kill()
 			return nil, false, fmt.Errorf("acp session/new returned invalid sessionId: %s", string(raw))
 		}
-		proc.sessionID = out.SessionID
-		if model := strings.TrimSpace(r.cfg.Model); model != "" {
-			_, _ = proc.call(ctx, "session/set_model", map[string]any{
-				"sessionId": proc.sessionID,
-				"modelId":   model,
-			})
-		}
+		proc.sessionID = sessionMeta.SessionID
 	}
+
+	r.applyACPSessionOptions(ctx, proc, sessionMeta)
 
 	proc.lastUsed = time.Now()
 	r.poolMu.Lock()
@@ -386,6 +381,56 @@ func (r *acpRuntime) acquireSession(ctx context.Context, convKey string, cfg age
 	r.sessions[convKey] = proc
 	r.poolMu.Unlock()
 	return proc, resumed, nil
+}
+
+func (r *acpRuntime) applyACPSessionOptions(ctx context.Context, proc *acpProcess, meta acpSessionMeta) {
+	modelConfigID := "model"
+	thinkingConfigID := "thought_level"
+	modeConfigID := "mode"
+	for _, co := range meta.ConfigOptions {
+		cat := strings.ToLower(strings.TrimSpace(co.Category))
+		id := strings.ToLower(strings.TrimSpace(co.ID))
+		switch {
+		case cat == "model" || id == "model":
+			modelConfigID = co.ID
+		case cat == "thought_level" || id == "thought_level" || strings.Contains(id, "effort") || strings.Contains(id, "thinking") || strings.Contains(id, "reasoning"):
+			thinkingConfigID = co.ID
+		case cat == "mode" || id == "mode":
+			modeConfigID = co.ID
+		}
+	}
+
+	if model := strings.TrimSpace(r.cfg.Model); model != "" {
+		if _, err := proc.call(ctx, "session/set_config_option", map[string]any{
+			"sessionId": proc.sessionID,
+			"configId":  modelConfigID,
+			"value":     model,
+		}); err != nil {
+			_, _ = proc.call(ctx, "session/set_model", map[string]any{
+				"sessionId": proc.sessionID,
+				"modelId":   model,
+			})
+		}
+	}
+	if level := strings.TrimSpace(r.cfg.ThinkingLevel); level != "" {
+		_, _ = proc.call(ctx, "session/set_config_option", map[string]any{
+			"sessionId": proc.sessionID,
+			"configId":  thinkingConfigID,
+			"value":     level,
+		})
+	}
+	if mode := strings.TrimSpace(r.cfg.SessionMode); mode != "" {
+		if _, err := proc.call(ctx, "session/set_config_option", map[string]any{
+			"sessionId": proc.sessionID,
+			"configId":  modeConfigID,
+			"value":     mode,
+		}); err != nil {
+			_, _ = proc.call(ctx, "session/set_mode", map[string]any{
+				"sessionId": proc.sessionID,
+				"modeId":    mode,
+			})
+		}
+	}
 }
 
 func (r *acpRuntime) evictSession(convKey string, proc *acpProcess) {

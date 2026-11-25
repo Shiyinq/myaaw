@@ -36,6 +36,34 @@ export interface RuntimesResponse {
 	runtimes: DetectedRuntime[];
 }
 
+export interface RuntimeOptionItem {
+	value: string;
+	label: string;
+	description?: string;
+	group?: string;
+	context_window?: number;
+	thinking?: boolean;
+	vision?: boolean;
+	thinking_levels?: string[];
+}
+
+export interface RuntimeOptionGroup {
+	config_id?: string;
+	current?: string;
+	options: RuntimeOptionItem[];
+	allow_custom?: boolean;
+}
+
+export interface RuntimeOptions {
+	runtime_type: string;
+	runtime_preset: string;
+	models: RuntimeOptionGroup;
+	thinking: RuntimeOptionGroup;
+	session_modes: RuntimeOptionGroup;
+	approval_modes: RuntimeOptionGroup;
+	warning?: string;
+}
+
 export interface OnboardRuntime {
 	type?: string;
 	preset?: string;
@@ -44,6 +72,8 @@ export interface OnboardRuntime {
 	working_dir?: string;
 	additional_dirs?: string[];
 	model?: string;
+	thinking_level?: string;
+	session_mode?: string;
 	auth_source?: string;
 	api_key_env?: string;
 	api_key?: string;

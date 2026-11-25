@@ -60,6 +60,8 @@ type OnboardRuntimeInput struct {
 	WorkingDir         string   `json:"working_dir,omitempty"`
 	AdditionalDirs     []string `json:"additional_dirs,omitempty"`
 	Model              string   `json:"model,omitempty"`
+	ThinkingLevel      string   `json:"thinking_level,omitempty"`
+	SessionMode        string   `json:"session_mode,omitempty"`
 	AuthSource         string   `json:"auth_source,omitempty" example:"cli_login"`
 	APIKeyEnv          string   `json:"api_key_env,omitempty"`
 	APIKey             string   `json:"api_key,omitempty"`
@@ -157,6 +159,8 @@ func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
 			WorkingDir:         req.Runtime.WorkingDir,
 			AdditionalDirs:     req.Runtime.AdditionalDirs,
 			Model:              req.Runtime.Model,
+			ThinkingLevel:      req.Runtime.ThinkingLevel,
+			SessionMode:        req.Runtime.SessionMode,
 			AuthSource:         req.Runtime.AuthSource,
 			APIKeyEnv:          req.Runtime.APIKeyEnv,
 			APIKey:             req.Runtime.APIKey,

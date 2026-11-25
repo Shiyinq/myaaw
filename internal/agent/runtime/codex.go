@@ -278,6 +278,9 @@ func (r *codexRuntime) RunEvents(
 	if model := strings.TrimSpace(r.cfg.Model); model != "" {
 		startParams["model"] = model
 	}
+	if effort := strings.TrimSpace(r.cfg.ThinkingLevel); effort != "" {
+		startParams["effort"] = effort
+	}
 
 	rawTurn, err := proc.call(ctx, "turn/start", startParams)
 	if err != nil {

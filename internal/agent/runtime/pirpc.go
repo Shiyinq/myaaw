@@ -305,6 +305,9 @@ func (r *piRPCRuntime) acquireProcess(convKey, sessionFile string, rewind, wantR
 	if model := strings.TrimSpace(r.cfg.Model); model != "" {
 		args = append(args, "--model", model)
 	}
+	if thinking := strings.TrimSpace(r.cfg.ThinkingLevel); thinking != "" {
+		args = append(args, "--thinking", thinking)
+	}
 	if sessionFile != "" {
 		args = append(args, "--session", sessionFile)
 	}

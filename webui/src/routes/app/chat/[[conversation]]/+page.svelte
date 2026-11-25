@@ -25,6 +25,7 @@
 		peekModelCapabilities,
 		type ModelGroup
 	} from '$lib/stores/modelCatalog';
+	import { loadRuntimeOptions, peekRuntimeOptions } from '$lib/stores/runtimeOptions';
 	import { tts } from '$lib/speech/tts.svelte';
 	import { cn } from '$lib/utils';
 	import { isOverlayOpen, isTypingTarget, matchesShortcut, formatShortcut } from '$lib/utils/keys';
@@ -117,6 +118,9 @@
 		LightboxImage,
 		Message,
 		ModelCapabilitiesView,
+		RuntimeOptionItem,
+		RuntimeOptions,
+		RuntimeView,
 		SessionStats,
 		Upload,
 		Usage
@@ -359,10 +363,12 @@
 	};
 
 	function buildProviderSnapshot(config: {
+		runtime?: RuntimeView;
 		default_provider?: string;
 		providers?: { name: string; type?: string; default_model?: string; thinking_level?: string }[];
 		approvals?: { mode?: string };
 	}): {
+		runtime: RuntimeView | null;
 		info: ProviderInfoView;
 		levels: Record<string, string>;
 		approval: 'manual' | 'off';
@@ -383,6 +389,7 @@
 			}
 		}
 		return {
+			runtime: config.runtime ?? null,
 			info,
 			levels,
 			approval: config.approvals?.mode === 'off' ? 'off' : 'manual'
@@ -395,6 +402,16 @@
 	const initialProviderSnapshot = initialAgentConfig
 		? buildProviderSnapshot(initialAgentConfig)
 		: null;
+
+	// Active runtime view (native "myaaw" or external CLI runtime).
+	let runtimeConfig = $state<RuntimeView | null>(initialProviderSnapshot?.runtime ?? null);
+	let isExternalRuntime = $derived(Boolean(runtimeConfig?.type && runtimeConfig.type !== 'myaaw'));
+	let runtimeOptions = $state<RuntimeOptions | null>(
+		agentSelection.selected ? peekRuntimeOptions(agentSelection.selected) : null
+	);
+	let loadingRuntimeOptions = $state(false);
+	let customRuntimeModel = $state('');
+	let runtimeOptionsToken = 0;
 
 	// Configured provider and its default model, as the terminal status line shows.
 	let providerInfo = $state<ProviderInfoView | null>(initialProviderSnapshot?.info ?? null);
@@ -1264,15 +1281,128 @@
 
 	/** Applies a config snapshot to the composer dropdown state. */
 	function applyProviderConfig(config: {
+		runtime?: RuntimeView;
 		default_provider?: string;
 		providers?: { name: string; type?: string; default_model?: string; thinking_level?: string }[];
 		approvals?: { mode?: string };
 	}) {
 		const snap = buildProviderSnapshot(config);
+		runtimeConfig = snap.runtime;
 		providerInfo = snap.info;
 		thinkingLevels = snap.levels;
 		approvalMode = snap.approval;
 		providerInfoLoaded = true;
+	}
+
+	async function ensureRuntimeOptions(currentAgent: string, refresh = false) {
+		if (!currentAgent) return;
+		const token = ++runtimeOptionsToken;
+		const cached = refresh ? null : peekRuntimeOptions(currentAgent);
+		if (cached) {
+			runtimeOptions = cached;
+			return;
+		}
+		loadingRuntimeOptions = true;
+		try {
+			const opts = await loadRuntimeOptions(currentAgent, refresh);
+			if (token !== runtimeOptionsToken || agent !== currentAgent) return;
+			runtimeOptions = opts;
+		} catch (err) {
+			if (token !== runtimeOptionsToken || agent !== currentAgent) return;
+			if (refresh) toastStore.error(getErrorMessage(err));
+		} finally {
+			if (token === runtimeOptionsToken) loadingRuntimeOptions = false;
+		}
+	}
+
+	async function patchRuntimeConfig(
+		patch: {
+			model?: string;
+			thinking_level?: string;
+			session_mode?: string;
+			permission_mode?: string;
+		},
+		extra?: { approvals?: { mode: 'manual' | 'off' } }
+	) {
+		const currentAgent = agent;
+		if (!currentAgent) return;
+		const updated = await configStore.patch(currentAgent, {
+			runtime: patch,
+			...(extra ?? {})
+		});
+		configStore.query.write({ agent: currentAgent }, updated);
+		if (agent === currentAgent) {
+			applyProviderConfig(updated);
+		}
+	}
+
+	async function switchRuntimeModel(model: string) {
+		const currentAgent = agent;
+		if (!currentAgent) return;
+		const trimmed = model.trim();
+		if ((runtimeConfig?.model ?? '') === trimmed) return;
+		switchingModel = true;
+		try {
+			await patchRuntimeConfig({ model: trimmed });
+			customRuntimeModel = '';
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			switchingModel = false;
+		}
+	}
+
+	async function switchRuntimeThinking(level: string) {
+		const currentAgent = agent;
+		if (!currentAgent) return;
+		const trimmed = level.trim();
+		if ((runtimeConfig?.thinking_level ?? '') === trimmed) return;
+		switchingThinking = true;
+		try {
+			await patchRuntimeConfig({ thinking_level: trimmed });
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			switchingThinking = false;
+		}
+	}
+
+	async function switchRuntimePermission(mode: string) {
+		const currentAgent = agent;
+		if (!currentAgent) return;
+		if ((runtimeConfig?.permission_mode ?? 'bridge') === mode) return;
+		switchingApproval = true;
+		try {
+			await patchRuntimeConfig(
+				{ permission_mode: mode },
+				mode === 'bridge' ? { approvals: { mode: 'manual' } } : undefined
+			);
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			switchingApproval = false;
+		}
+	}
+
+	async function switchRuntimeSessionMode(mode: string) {
+		const currentAgent = agent;
+		if (!currentAgent) return;
+		if ((runtimeConfig?.session_mode ?? '') === mode) return;
+		switchingApproval = true;
+		try {
+			await patchRuntimeConfig({ session_mode: mode });
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+		} finally {
+			switchingApproval = false;
+		}
+	}
+
+	function formatTokenCount(tokens?: number) {
+		if (!tokens) return '';
+		if (tokens >= 1_000_000) return `${Number((tokens / 1_000_000).toFixed(1))}M`;
+		if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+		return String(tokens);
 	}
 
 	/** The agent's configured provider and its default model. */
@@ -1503,6 +1633,92 @@
 			: ''
 	);
 
+	// Dynamic composer state for external CLI runtimes (discovered live via
+	// GET /agents/:name/runtime/options with zero hardcoded model or mode lists).
+	let externalModelGroups = $derived.by(() => {
+		const list = runtimeOptions?.models.options ?? [];
+		const grouped = new Map<string, RuntimeOptionItem[]>();
+		for (const item of list) {
+			const key = item.group ?? '';
+			const bucket = grouped.get(key);
+			if (bucket) bucket.push(item);
+			else grouped.set(key, [item]);
+		}
+		return Array.from(grouped.entries()).map(([group, items]) => ({ group, items }));
+	});
+
+	let activeExternalModelValue = $derived(
+		runtimeConfig?.model?.trim() || runtimeOptions?.models.current?.trim() || ''
+	);
+
+	let activeExternalModelLabel = $derived.by(() => {
+		const val = activeExternalModelValue;
+		if (!val) return runtimeConfig?.preset || t('myaaw.chat.model_label');
+		const match = (runtimeOptions?.models.options ?? []).find((item) => item.value === val);
+		return match?.label || modelDisplayName(val);
+	});
+
+	let externalThinkingOptions = $derived.by((): RuntimeOptionItem[] => {
+		if (!isExternalRuntime || !runtimeOptions) return [];
+		const models = runtimeOptions.models.options ?? [];
+		const hasPerModel = models.some((m) => (m.thinking_levels?.length ?? 0) > 0);
+		if (hasPerModel) {
+			const selected = activeExternalModelValue;
+			const match = models.find((m) => m.value === selected);
+			if (match) {
+				return (match.thinking_levels ?? []).map((lvl) => ({
+					value: lvl,
+					label: thinkingLabel(lvl)
+				}));
+			}
+		}
+		return runtimeOptions.thinking.options ?? [];
+	});
+
+	let activeExternalThinkingValue = $derived(runtimeConfig?.thinking_level?.trim() ?? '');
+
+	let activeExternalThinkingLabel = $derived.by(() => {
+		if (activeExternalThinkingValue) {
+			const match = externalThinkingOptions.find((o) => o.value === activeExternalThinkingValue);
+			return match?.label || thinkingLabel(activeExternalThinkingValue);
+		}
+		const liveCurrent = runtimeOptions?.thinking.current?.trim() ?? '';
+		if (liveCurrent) {
+			const match = externalThinkingOptions.find((o) => o.value === liveCurrent);
+			return match?.label || thinkingLabel(liveCurrent);
+		}
+		return t('myaaw.chat.thinking_default_short');
+	});
+
+	let externalApprovalOptions = $derived(runtimeOptions?.approval_modes.options ?? []);
+	let externalSessionModeOptions = $derived(runtimeOptions?.session_modes.options ?? []);
+	let showExternalPermissionMenu = $derived(
+		isExternalRuntime &&
+			(externalApprovalOptions.length > 0 ||
+				externalSessionModeOptions.length > 0 ||
+				Boolean(!runtimeOptions && runtimeConfig?.capabilities?.supports_approvals))
+	);
+
+	let activeExternalPermission = $derived(runtimeConfig?.permission_mode || 'bridge');
+	let activeExternalSessionMode = $derived(runtimeConfig?.session_mode?.trim() ?? '');
+	let activeExternalPermissionLabel = $derived.by(() => {
+		const permMatch = externalApprovalOptions.find((o) => o.value === activeExternalPermission);
+		const permLabel =
+			permMatch?.label ||
+			(activeExternalPermission === 'auto'
+				? t('myaaw.chat.approval_full_access')
+				: activeExternalPermission === 'read_only'
+					? 'Read Only'
+					: t('myaaw.chat.approval_manual'));
+		const modeVal =
+			activeExternalSessionMode || runtimeOptions?.session_modes.current?.trim() || '';
+		const modeMatch = externalSessionModeOptions.find((o) => o.value === modeVal);
+		const modeLabel = modeMatch?.label || modeVal;
+		if (externalApprovalOptions.length === 0 && modeLabel) return modeLabel;
+		if (activeExternalSessionMode && modeLabel) return `${modeLabel} · ${permLabel}`;
+		return permLabel;
+	});
+
 	let providerKey = '';
 	$effect(() => {
 		const currentAgent = agentSelection.selected;
@@ -1512,6 +1728,8 @@
 		untrack(() => {
 			modelGroups = null;
 			modelGroupsKey = '';
+			customRuntimeModel = '';
+			runtimeOptions = peekRuntimeOptions(currentAgent);
 			const cached = configStore.query.peek({ agent: currentAgent });
 			if (cached) {
 				applyProviderConfig(cached);
@@ -1523,6 +1741,14 @@
 			}
 			void loadProviderInfo(currentAgent, token, Boolean(cached));
 		});
+	});
+
+	// Probe live runtime options whenever an external CLI agent is selected.
+	$effect(() => {
+		const currentAgent = agent;
+		const external = isExternalRuntime;
+		if (!currentAgent || !external) return;
+		untrack(() => void ensureRuntimeOptions(currentAgent, false));
 	});
 
 	// Opening the menu before the config has arrived must not leave it empty: the
@@ -5037,134 +5263,563 @@
 											{/if}
 										</div>
 										<div class="flex shrink-0 items-center gap-1">
-											<DropdownMenu.Root
-												onOpenChange={(open) => {
-													modelMenuOpen = open;
-												}}
-											>
-												<DropdownMenu.Trigger>
-													{#snippet child({ props })}
-														<button
-															{...props}
-															type="button"
-															class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
-															disabled={switchingModel}
-															title={activeProvider
-																? `${activeProvider} · ${modelDisplayName(activeModel)}`
-																: t('myaaw.chat.model_picker')}
-															aria-label={t('myaaw.chat.model_picker')}
-														>
-															{#if switchingModel}
-																<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-															{:else}
-																<Cpu class="h-3.5 w-3.5 shrink-0" />
-															{/if}
-															<span class="hidden truncate sm:inline sm:max-w-56">
-																{activeModel
-																	? modelDisplayName(activeModel)
-																	: t('myaaw.chat.model_label')}
+											{#if isExternalRuntime}
+												<DropdownMenu.Root
+													onOpenChange={(open) => {
+														modelMenuOpen = open;
+														if (open && !runtimeOptions && agent) {
+															void ensureRuntimeOptions(agent, false);
+														}
+													}}
+												>
+													<DropdownMenu.Trigger>
+														{#snippet child({ props })}
+															<button
+																{...props}
+																type="button"
+																class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+																disabled={switchingModel}
+																title={`${runtimeConfig?.preset ?? 'runtime'} · ${activeExternalModelLabel}`}
+																aria-label={t('myaaw.chat.model_picker')}
+															>
+																{#if switchingModel || (loadingRuntimeOptions && !runtimeOptions)}
+																	<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+																{:else}
+																	<Cpu class="h-3.5 w-3.5 shrink-0" />
+																{/if}
+																<span class="hidden truncate sm:inline sm:max-w-56">
+																	{activeExternalModelLabel}
+																</span>
+																<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+															</button>
+														{/snippet}
+													</DropdownMenu.Trigger>
+													<DropdownMenu.Content
+														align="end"
+														side="top"
+														class="max-h-96 w-76 overflow-y-auto"
+													>
+														<div class="flex items-center justify-between gap-2 px-2 py-1.5">
+															<span
+																class="truncate text-[10px] font-semibold tracking-wide text-muted-foreground uppercase"
+															>
+																{runtimeConfig?.preset || runtimeConfig?.type}
 															</span>
-															<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
-														</button>
-													{/snippet}
-												</DropdownMenu.Trigger>
-												<DropdownMenu.Content align="end" side="top" class="max-h-80 w-72">
-													{#if (!providerInfoLoaded || loadingModels) && !modelGroups}
-														<div
-															class="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground"
-														>
-															<Loader2 class="h-3.5 w-3.5 animate-spin" />
-															{t('myaaw.chat.model_loading')}
+															<button
+																type="button"
+																class="grid h-6 w-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+																disabled={loadingRuntimeOptions}
+																title="Refresh models from CLI"
+																aria-label="Refresh models from CLI"
+																onclick={(e) => {
+																	e.stopPropagation();
+																	if (agent) void ensureRuntimeOptions(agent, true);
+																}}
+															>
+																<RotateCcw
+																	class={cn('h-3 w-3', loadingRuntimeOptions && 'animate-spin')}
+																/>
+															</button>
 														</div>
-													{:else if !modelGroups || modelGroups.length === 0}
-														<p class="px-2 py-1 text-xs text-muted-foreground">
-															{t('myaaw.chat.model_none')}
-														</p>
-													{:else}
-														{#each modelGroups as group, index (group.name)}
-															{#if index > 0}<DropdownMenu.Separator />{/if}
-															<DropdownMenu.Group>
-																<DropdownMenu.Label
-																	class="flex items-center gap-1.5 text-[10px] tracking-wide uppercase"
-																>
-																	<span class="truncate">{group.name}</span>
-																	{#if group.name === activeProvider}
+														<DropdownMenu.Separator />
+														{#if loadingRuntimeOptions && !runtimeOptions}
+															<div
+																class="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground"
+															>
+																<Loader2 class="h-3.5 w-3.5 animate-spin" />
+																{t('myaaw.chat.model_loading')}
+															</div>
+														{:else}
+															<DropdownMenu.Item
+																class="items-start gap-2 py-1.5"
+																onclick={() => void switchRuntimeModel('')}
+															>
+																<Check
+																	class={cn(
+																		'mt-0.5 h-3.5 w-3.5 shrink-0',
+																		!runtimeConfig?.model ? 'opacity-100' : 'opacity-0'
+																	)}
+																/>
+																<span class="min-w-0 flex-1">
+																	<span class="block text-xs font-medium">CLI Default</span>
+																	{#if runtimeOptions?.models.current}
 																		<span
-																			class="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary normal-case"
+																			class="block truncate font-mono text-[10px] text-muted-foreground"
 																		>
-																			{t('myaaw.chat.model_active')}
+																			{runtimeOptions.models.current}
 																		</span>
 																	{/if}
-																</DropdownMenu.Label>
-																{#each group.models as model (model)}
-																	{@const capability = capabilityFor(modelCapabilities, model)}
-																	{@const chips = capabilityChips(model)}
-																	<DropdownMenu.Item
-																		class="items-start gap-2 py-1.5"
-																		onclick={() => void switchModel(group.name, model)}
+																</span>
+															</DropdownMenu.Item>
+															{#if externalModelGroups.length > 0}
+																<DropdownMenu.Separator />
+																{#each externalModelGroups as grp, gIdx (grp.group)}
+																	{#if gIdx > 0}<DropdownMenu.Separator />{/if}
+																	<DropdownMenu.Group>
+																		{#if grp.group}
+																			<DropdownMenu.Label
+																				class="text-[10px] tracking-wide text-muted-foreground uppercase"
+																			>
+																				{grp.group}
+																			</DropdownMenu.Label>
+																		{/if}
+																		{#each grp.items as item (item.value)}
+																			<DropdownMenu.Item
+																				class="items-start gap-2 py-1.5"
+																				onclick={() => void switchRuntimeModel(item.value)}
+																			>
+																				<Check
+																					class={cn(
+																						'mt-0.5 h-3.5 w-3.5 shrink-0',
+																						runtimeConfig?.model === item.value
+																							? 'opacity-100'
+																							: 'opacity-0'
+																					)}
+																				/>
+																				<span class="min-w-0 flex-1">
+																					<span class="flex items-center gap-1.5">
+																						<span class="truncate text-xs font-medium">
+																							{item.label}
+																						</span>
+																						{#if formatTokenCount(item.context_window)}
+																							<span
+																								class="ml-auto shrink-0 text-[9px] text-muted-foreground"
+																							>
+																								{t('myaaw.chat.context_window', {
+																									count: formatTokenCount(item.context_window)
+																								})}
+																							</span>
+																						{/if}
+																					</span>
+																					{#if item.label !== item.value}
+																						<span
+																							class="block truncate font-mono text-[10px] text-muted-foreground"
+																						>
+																							{item.value}
+																						</span>
+																					{/if}
+																					{#if item.thinking || item.vision}
+																						<span class="mt-1 flex flex-wrap gap-1">
+																							{#if item.thinking}
+																								<span
+																									class="rounded bg-muted px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground"
+																								>
+																									{t('myaaw.chat.model_cap_thinking')}
+																								</span>
+																							{/if}
+																							{#if item.vision}
+																								<span
+																									class="rounded bg-muted px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground"
+																								>
+																									{t('myaaw.chat.model_cap_vision')}
+																								</span>
+																							{/if}
+																						</span>
+																					{/if}
+																				</span>
+																			</DropdownMenu.Item>
+																		{/each}
+																	</DropdownMenu.Group>
+																{/each}
+															{/if}
+															{#if runtimeOptions?.warning}
+																<p
+																	class="px-2 py-1.5 text-[10px] wrap-break-word text-amber-600 dark:text-amber-400"
+																>
+																	{runtimeOptions.warning}
+																</p>
+															{/if}
+															{#if runtimeOptions?.models.allow_custom !== false}
+																<DropdownMenu.Separator />
+																<form
+																	class="flex items-center gap-1.5 p-1.5"
+																	onsubmit={(e) => {
+																		e.preventDefault();
+																		if (customRuntimeModel.trim()) {
+																			void switchRuntimeModel(customRuntimeModel.trim());
+																		}
+																	}}
+																>
+																	<input
+																		type="text"
+																		bind:value={customRuntimeModel}
+																		placeholder="Custom model ID..."
+																		onkeydown={(e) => e.stopPropagation()}
+																		class="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 font-mono text-[11px] outline-none focus:ring-1 focus:ring-ring"
+																	/>
+																	<button
+																		type="submit"
+																		disabled={!customRuntimeModel.trim() || switchingModel}
+																		class="h-7 shrink-0 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground transition-opacity disabled:opacity-50"
 																	>
+																		Set
+																	</button>
+																</form>
+															{/if}
+														{/if}
+													</DropdownMenu.Content>
+												</DropdownMenu.Root>
+
+												{#if externalThinkingOptions.length > 0}
+													<DropdownMenu.Root>
+														<DropdownMenu.Trigger>
+															{#snippet child({ props })}
+																<button
+																	{...props}
+																	type="button"
+																	class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+																	disabled={switchingThinking}
+																	title={t('myaaw.chat.thinking_level')}
+																	aria-label={t('myaaw.chat.thinking_level')}
+																>
+																	{#if switchingThinking}
+																		<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+																	{:else}
+																		<Brain class="h-3.5 w-3.5 shrink-0" />
+																	{/if}
+																	<span class="hidden whitespace-nowrap sm:inline">
+																		{activeExternalThinkingLabel}
+																	</span>
+																	<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+																</button>
+															{/snippet}
+														</DropdownMenu.Trigger>
+														<DropdownMenu.Content align="end" side="top" class="w-44">
+															<DropdownMenu.Item
+																class="items-start gap-2"
+																onclick={() => void switchRuntimeThinking('')}
+															>
+																<Check
+																	class={cn(
+																		'mt-0.5 h-3.5 w-3.5 shrink-0',
+																		!activeExternalThinkingValue ? 'opacity-100' : 'opacity-0'
+																	)}
+																/>
+																{t('myaaw.chat.thinking_default')}
+															</DropdownMenu.Item>
+															<DropdownMenu.Separator />
+															{#each externalThinkingOptions as item (item.value)}
+																<DropdownMenu.Item
+																	class="items-start gap-2"
+																	onclick={() => void switchRuntimeThinking(item.value)}
+																>
+																	<Check
+																		class={cn(
+																			'mt-0.5 h-3.5 w-3.5 shrink-0',
+																			activeExternalThinkingValue === item.value
+																				? 'opacity-100'
+																				: 'opacity-0'
+																		)}
+																	/>
+																	{item.label}
+																</DropdownMenu.Item>
+															{/each}
+														</DropdownMenu.Content>
+													</DropdownMenu.Root>
+												{/if}
+
+												{#if showExternalPermissionMenu}
+													<DropdownMenu.Root>
+														<DropdownMenu.Trigger>
+															{#snippet child({ props })}
+																<button
+																	{...props}
+																	type="button"
+																	class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+																	disabled={switchingApproval}
+																	title={activeExternalPermissionLabel}
+																	aria-label={t('myaaw.chat.approval_picker')}
+																>
+																	{#if switchingApproval}
+																		<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+																	{:else if activeExternalPermission === 'auto'}
+																		<ShieldOff class="h-3.5 w-3.5 shrink-0" />
+																	{:else}
+																		<ShieldCheck class="h-3.5 w-3.5 shrink-0" />
+																	{/if}
+																	<span class="hidden whitespace-nowrap sm:inline">
+																		{activeExternalPermissionLabel}
+																	</span>
+																	<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+																</button>
+															{/snippet}
+														</DropdownMenu.Trigger>
+														<DropdownMenu.Content align="end" side="top" class="w-60">
+															{#if externalApprovalOptions.length > 0}
+																<DropdownMenu.Label
+																	class="text-[10px] tracking-wide text-muted-foreground uppercase"
+																>
+																	Tool Approvals
+																</DropdownMenu.Label>
+																{#each externalApprovalOptions as item (item.value)}
+																	<DropdownMenu.Item
+																		class="items-start gap-2"
+																		onclick={() => void switchRuntimePermission(item.value)}
+																	>
+																		{#if item.value === 'auto'}
+																			<ShieldOff class="mt-0.5 h-4 w-4 shrink-0" />
+																		{:else}
+																			<ShieldCheck class="mt-0.5 h-4 w-4 shrink-0" />
+																		{/if}
+																		<span class="min-w-0 flex-1">
+																			<span class="block">{item.label}</span>
+																			{#if item.description}
+																				<span
+																					class="block text-[10px] whitespace-normal text-muted-foreground"
+																				>
+																					{item.description}
+																				</span>
+																			{/if}
+																		</span>
 																		<Check
 																			class={cn(
 																				'mt-0.5 h-3.5 w-3.5 shrink-0',
-																				group.name === activeProvider && model === activeModel
+																				activeExternalPermission === item.value
 																					? 'opacity-100'
 																					: 'opacity-0'
 																			)}
 																		/>
-																		<span class="min-w-0 flex-1">
-																			<span class="flex items-center gap-1.5">
-																				<span class="truncate font-mono text-xs">
-																					{modelDisplayName(model)}
-																				</span>
-																				{#if modelStatusLabel(capability?.status)}
-																					<span
-																						class="shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
-																					>
-																						{modelStatusLabel(capability?.status)}
-																					</span>
-																				{/if}
-																				{#if contextWindowLabel(model)}
-																					<span
-																						class="ml-auto shrink-0 text-[9px] text-muted-foreground"
-																					>
-																						{t('myaaw.chat.context_window', {
-																							count: contextWindowLabel(model)
-																						})}
-																					</span>
-																				{/if}
+																	</DropdownMenu.Item>
+																{/each}
+															{/if}
+															{#if externalSessionModeOptions.length > 0}
+																{#if externalApprovalOptions.length > 0}
+																	<DropdownMenu.Separator />
+																{/if}
+																<DropdownMenu.Label
+																	class="text-[10px] tracking-wide text-muted-foreground uppercase"
+																>
+																	Runtime Mode
+																</DropdownMenu.Label>
+																<DropdownMenu.Item
+																	class="items-start gap-2"
+																	onclick={() => void switchRuntimeSessionMode('')}
+																>
+																	<span class="min-w-0 flex-1">
+																		<span class="block">CLI Default</span>
+																		{#if runtimeOptions?.session_modes.current}
+																			<span class="block text-[10px] text-muted-foreground">
+																				{runtimeOptions.session_modes.current}
 																			</span>
-																			{#if chips.length > 0}
-																				<span class="mt-1 flex flex-wrap gap-1">
-																					{#each chips as [key, labelKey] (key)}
-																						<span
-																							class="rounded bg-muted px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground"
-																						>
-																							{t(labelKey)}
-																						</span>
-																					{/each}
+																		{/if}
+																	</span>
+																	<Check
+																		class={cn(
+																			'mt-0.5 h-3.5 w-3.5 shrink-0',
+																			!activeExternalSessionMode ? 'opacity-100' : 'opacity-0'
+																		)}
+																	/>
+																</DropdownMenu.Item>
+																{#each externalSessionModeOptions as item (item.value)}
+																	<DropdownMenu.Item
+																		class="items-start gap-2"
+																		onclick={() => void switchRuntimeSessionMode(item.value)}
+																	>
+																		<span class="min-w-0 flex-1">
+																			<span class="block">{item.label}</span>
+																			{#if item.description}
+																				<span
+																					class="block text-[10px] whitespace-normal text-muted-foreground"
+																				>
+																					{item.description}
 																				</span>
 																			{/if}
 																		</span>
+																		<Check
+																			class={cn(
+																				'mt-0.5 h-3.5 w-3.5 shrink-0',
+																				activeExternalSessionMode === item.value
+																					? 'opacity-100'
+																					: 'opacity-0'
+																			)}
+																		/>
 																	</DropdownMenu.Item>
 																{/each}
-																{#if group.models.length === 0}
-																	<p class="px-2 py-1 text-[11px] text-muted-foreground">
-																		{t('myaaw.chat.model_none')}
-																	</p>
+															{/if}
+														</DropdownMenu.Content>
+													</DropdownMenu.Root>
+												{/if}
+											{:else}
+												<DropdownMenu.Root
+													onOpenChange={(open) => {
+														modelMenuOpen = open;
+													}}
+												>
+													<DropdownMenu.Trigger>
+														{#snippet child({ props })}
+															<button
+																{...props}
+																type="button"
+																class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+																disabled={switchingModel}
+																title={activeProvider
+																	? `${activeProvider} · ${modelDisplayName(activeModel)}`
+																	: t('myaaw.chat.model_picker')}
+																aria-label={t('myaaw.chat.model_picker')}
+															>
+																{#if switchingModel}
+																	<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+																{:else}
+																	<Cpu class="h-3.5 w-3.5 shrink-0" />
 																{/if}
-																{#if group.warning}
-																	<p
-																		class="px-2 pb-1 text-[10px] wrap-break-word text-amber-600 dark:text-amber-400"
+																<span class="hidden truncate sm:inline sm:max-w-56">
+																	{activeModel
+																		? modelDisplayName(activeModel)
+																		: t('myaaw.chat.model_label')}
+																</span>
+																<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+															</button>
+														{/snippet}
+													</DropdownMenu.Trigger>
+													<DropdownMenu.Content align="end" side="top" class="max-h-80 w-72">
+														{#if (!providerInfoLoaded || loadingModels) && !modelGroups}
+															<div
+																class="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground"
+															>
+																<Loader2 class="h-3.5 w-3.5 animate-spin" />
+																{t('myaaw.chat.model_loading')}
+															</div>
+														{:else if !modelGroups || modelGroups.length === 0}
+															<p class="px-2 py-1 text-xs text-muted-foreground">
+																{t('myaaw.chat.model_none')}
+															</p>
+														{:else}
+															{#each modelGroups as group, index (group.name)}
+																{#if index > 0}<DropdownMenu.Separator />{/if}
+																<DropdownMenu.Group>
+																	<DropdownMenu.Label
+																		class="flex items-center gap-1.5 text-[10px] tracking-wide uppercase"
 																	>
-																		{group.warning}
-																	</p>
-																{/if}
-															</DropdownMenu.Group>
-														{/each}
-													{/if}
-												</DropdownMenu.Content>
-											</DropdownMenu.Root>
-											{#if activeThinkingOptions.length > 0}
+																		<span class="truncate">{group.name}</span>
+																		{#if group.name === activeProvider}
+																			<span
+																				class="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium text-primary normal-case"
+																			>
+																				{t('myaaw.chat.model_active')}
+																			</span>
+																		{/if}
+																	</DropdownMenu.Label>
+																	{#each group.models as model (model)}
+																		{@const capability = capabilityFor(modelCapabilities, model)}
+																		{@const chips = capabilityChips(model)}
+																		<DropdownMenu.Item
+																			class="items-start gap-2 py-1.5"
+																			onclick={() => void switchModel(group.name, model)}
+																		>
+																			<Check
+																				class={cn(
+																					'mt-0.5 h-3.5 w-3.5 shrink-0',
+																					group.name === activeProvider && model === activeModel
+																						? 'opacity-100'
+																						: 'opacity-0'
+																				)}
+																			/>
+																			<span class="min-w-0 flex-1">
+																				<span class="flex items-center gap-1.5">
+																					<span class="truncate font-mono text-xs">
+																						{modelDisplayName(model)}
+																					</span>
+																					{#if modelStatusLabel(capability?.status)}
+																						<span
+																							class="shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
+																						>
+																							{modelStatusLabel(capability?.status)}
+																						</span>
+																					{/if}
+																					{#if contextWindowLabel(model)}
+																						<span
+																							class="ml-auto shrink-0 text-[9px] text-muted-foreground"
+																						>
+																							{t('myaaw.chat.context_window', {
+																								count: contextWindowLabel(model)
+																							})}
+																						</span>
+																					{/if}
+																				</span>
+																				{#if chips.length > 0}
+																					<span class="mt-1 flex flex-wrap gap-1">
+																						{#each chips as [key, labelKey] (key)}
+																							<span
+																								class="rounded bg-muted px-1.5 py-0.5 text-[9px] font-normal text-muted-foreground"
+																							>
+																								{t(labelKey)}
+																							</span>
+																						{/each}
+																					</span>
+																				{/if}
+																			</span>
+																		</DropdownMenu.Item>
+																	{/each}
+																	{#if group.models.length === 0}
+																		<p class="px-2 py-1 text-[11px] text-muted-foreground">
+																			{t('myaaw.chat.model_none')}
+																		</p>
+																	{/if}
+																	{#if group.warning}
+																		<p
+																			class="px-2 pb-1 text-[10px] wrap-break-word text-amber-600 dark:text-amber-400"
+																		>
+																			{group.warning}
+																		</p>
+																	{/if}
+																</DropdownMenu.Group>
+															{/each}
+														{/if}
+													</DropdownMenu.Content>
+												</DropdownMenu.Root>
+												{#if activeThinkingOptions.length > 0}
+													<DropdownMenu.Root>
+														<DropdownMenu.Trigger>
+															{#snippet child({ props })}
+																<button
+																	{...props}
+																	type="button"
+																	class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
+																	disabled={switchingThinking}
+																	title={t('myaaw.chat.thinking_level')}
+																	aria-label={t('myaaw.chat.thinking_level')}
+																>
+																	<Brain class="h-3.5 w-3.5 shrink-0" />
+																	<span class="hidden whitespace-nowrap sm:inline">
+																		{activeThinkingValue
+																			? thinkingLabel(activeThinkingValue)
+																			: t('myaaw.chat.thinking_default_short')}
+																	</span>
+																	<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
+																</button>
+															{/snippet}
+														</DropdownMenu.Trigger>
+														<DropdownMenu.Content align="end" side="top" class="w-44">
+															<DropdownMenu.Item
+																class="items-start gap-2"
+																onclick={() => void switchThinkingLevel('')}
+															>
+																<Check
+																	class={cn(
+																		'mt-0.5 h-3.5 w-3.5 shrink-0',
+																		activeThinkingValue ? 'opacity-0' : 'opacity-100'
+																	)}
+																/>
+																{t('myaaw.chat.thinking_default')}
+															</DropdownMenu.Item>
+															<DropdownMenu.Separator />
+															{#each activeThinkingOptions as value (value)}
+																<DropdownMenu.Item
+																	class="items-start gap-2"
+																	onclick={() => void switchThinkingLevel(value)}
+																>
+																	<Check
+																		class={cn(
+																			'mt-0.5 h-3.5 w-3.5 shrink-0',
+																			activeThinkingValue === value ? 'opacity-100' : 'opacity-0'
+																		)}
+																	/>
+																	{thinkingLabel(value)}
+																</DropdownMenu.Item>
+															{/each}
+														</DropdownMenu.Content>
+													</DropdownMenu.Root>
+												{/if}
 												<DropdownMenu.Root>
 													<DropdownMenu.Trigger>
 														{#snippet child({ props })}
@@ -5172,127 +5827,76 @@
 																{...props}
 																type="button"
 																class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
-																disabled={switchingThinking}
-																title={t('myaaw.chat.thinking_level')}
-																aria-label={t('myaaw.chat.thinking_level')}
+																disabled={switchingApproval}
+																title={approvalMode === 'off'
+																	? t('myaaw.chat.approval_full_access')
+																	: t('myaaw.chat.approval_manual')}
+																aria-label={t('myaaw.chat.approval_picker')}
 															>
-																<Brain class="h-3.5 w-3.5 shrink-0" />
+																{#if switchingApproval}
+																	<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+																{:else if approvalMode === 'off'}
+																	<ShieldOff class="h-3.5 w-3.5 shrink-0" />
+																{:else}
+																	<ShieldCheck class="h-3.5 w-3.5 shrink-0" />
+																{/if}
 																<span class="hidden whitespace-nowrap sm:inline">
-																	{activeThinkingValue
-																		? thinkingLabel(activeThinkingValue)
-																		: t('myaaw.chat.thinking_default_short')}
+																	{approvalMode === 'off'
+																		? t('myaaw.chat.approval_full_access')
+																		: t('myaaw.chat.approval_manual')}
 																</span>
 																<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
 															</button>
 														{/snippet}
 													</DropdownMenu.Trigger>
-													<DropdownMenu.Content align="end" side="top" class="w-44">
+													<DropdownMenu.Content align="end" side="top" class="w-56">
 														<DropdownMenu.Item
 															class="items-start gap-2"
-															onclick={() => void switchThinkingLevel('')}
+															onclick={() => void switchApproval('off')}
 														>
+															<ShieldOff class="mt-0.5 h-4 w-4 shrink-0" />
+															<span class="min-w-0 flex-1">
+																<span class="block">
+																	{t('myaaw.chat.approval_full_access')}
+																</span>
+																<span
+																	class="block text-[10px] whitespace-normal text-muted-foreground"
+																>
+																	{t('myaaw.chat.approval_full_access_desc')}
+																</span>
+															</span>
 															<Check
 																class={cn(
 																	'mt-0.5 h-3.5 w-3.5 shrink-0',
-																	activeThinkingValue ? 'opacity-0' : 'opacity-100'
+																	approvalMode === 'off' ? 'opacity-100' : 'opacity-0'
 																)}
 															/>
-															{t('myaaw.chat.thinking_default')}
 														</DropdownMenu.Item>
-														<DropdownMenu.Separator />
-														{#each activeThinkingOptions as value (value)}
-															<DropdownMenu.Item
-																class="items-start gap-2"
-																onclick={() => void switchThinkingLevel(value)}
-															>
-																<Check
-																	class={cn(
-																		'mt-0.5 h-3.5 w-3.5 shrink-0',
-																		activeThinkingValue === value ? 'opacity-100' : 'opacity-0'
-																	)}
-																/>
-																{thinkingLabel(value)}
-															</DropdownMenu.Item>
-														{/each}
+														<DropdownMenu.Item
+															class="items-start gap-2"
+															onclick={() => void switchApproval('manual')}
+														>
+															<ShieldCheck class="mt-0.5 h-4 w-4 shrink-0" />
+															<span class="min-w-0 flex-1">
+																<span class="block">
+																	{t('myaaw.chat.approval_manual')}
+																</span>
+																<span
+																	class="block text-[10px] whitespace-normal text-muted-foreground"
+																>
+																	{t('myaaw.chat.approval_manual_desc')}
+																</span>
+															</span>
+															<Check
+																class={cn(
+																	'mt-0.5 h-3.5 w-3.5 shrink-0',
+																	approvalMode === 'manual' ? 'opacity-100' : 'opacity-0'
+																)}
+															/>
+														</DropdownMenu.Item>
 													</DropdownMenu.Content>
 												</DropdownMenu.Root>
 											{/if}
-											<DropdownMenu.Root>
-												<DropdownMenu.Trigger>
-													{#snippet child({ props })}
-														<button
-															{...props}
-															type="button"
-															class="flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none disabled:opacity-60"
-															disabled={switchingApproval}
-															title={approvalMode === 'off'
-																? t('myaaw.chat.approval_full_access')
-																: t('myaaw.chat.approval_manual')}
-															aria-label={t('myaaw.chat.approval_picker')}
-														>
-															{#if switchingApproval}
-																<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-															{:else if approvalMode === 'off'}
-																<ShieldOff class="h-3.5 w-3.5 shrink-0" />
-															{:else}
-																<ShieldCheck class="h-3.5 w-3.5 shrink-0" />
-															{/if}
-															<span class="hidden whitespace-nowrap sm:inline">
-																{approvalMode === 'off'
-																	? t('myaaw.chat.approval_full_access')
-																	: t('myaaw.chat.approval_manual')}
-															</span>
-															<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
-														</button>
-													{/snippet}
-												</DropdownMenu.Trigger>
-												<DropdownMenu.Content align="end" side="top" class="w-56">
-													<DropdownMenu.Item
-														class="items-start gap-2"
-														onclick={() => void switchApproval('off')}
-													>
-														<ShieldOff class="mt-0.5 h-4 w-4 shrink-0" />
-														<span class="min-w-0 flex-1">
-															<span class="block">
-																{t('myaaw.chat.approval_full_access')}
-															</span>
-															<span
-																class="block text-[10px] whitespace-normal text-muted-foreground"
-															>
-																{t('myaaw.chat.approval_full_access_desc')}
-															</span>
-														</span>
-														<Check
-															class={cn(
-																'mt-0.5 h-3.5 w-3.5 shrink-0',
-																approvalMode === 'off' ? 'opacity-100' : 'opacity-0'
-															)}
-														/>
-													</DropdownMenu.Item>
-													<DropdownMenu.Item
-														class="items-start gap-2"
-														onclick={() => void switchApproval('manual')}
-													>
-														<ShieldCheck class="mt-0.5 h-4 w-4 shrink-0" />
-														<span class="min-w-0 flex-1">
-															<span class="block">
-																{t('myaaw.chat.approval_manual')}
-															</span>
-															<span
-																class="block text-[10px] whitespace-normal text-muted-foreground"
-															>
-																{t('myaaw.chat.approval_manual_desc')}
-															</span>
-														</span>
-														<Check
-															class={cn(
-																'mt-0.5 h-3.5 w-3.5 shrink-0',
-																approvalMode === 'manual' ? 'opacity-100' : 'opacity-0'
-															)}
-														/>
-													</DropdownMenu.Item>
-												</DropdownMenu.Content>
-											</DropdownMenu.Root>
 											{#if streaming && !canSend}
 												<Button
 													size="icon"

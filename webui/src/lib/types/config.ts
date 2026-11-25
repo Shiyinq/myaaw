@@ -125,6 +125,8 @@ export interface RuntimeView {
 	working_dir?: string;
 	additional_dirs?: string[];
 	model?: string;
+	thinking_level?: string;
+	session_mode?: string;
 	auth_source?: string;
 	api_key_env?: string;
 	api_key: SecretState;
