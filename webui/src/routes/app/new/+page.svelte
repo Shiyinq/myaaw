@@ -1070,7 +1070,6 @@
 								<option value="omp">Oh My Pi (omp)</option>
 								<option value="pi">Pi Coding Agent (pi)</option>
 								<option value="codex">OpenAI Codex CLI (codex)</option>
-								<option value="gemini_cli">Gemini CLI (gemini)</option>
 								<option value="opencode">OpenCode (opencode)</option>
 								<option value="custom_acp">{t('myaaw.onboard.runtime_custom_acp')}</option>
 							{/if}
@@ -1246,7 +1245,9 @@
 								</select>
 							</div>
 							<div class="grid content-start gap-1.5">
-								<Label for="onboard-runtime-permission">{t('myaaw.onboard.runtime_approvals')}</Label>
+								<Label for="onboard-runtime-permission"
+									>{t('myaaw.onboard.runtime_approvals')}</Label
+								>
 								<select
 									id="onboard-runtime-permission"
 									class={selectClass}

@@ -40,7 +40,7 @@ type RuntimeConfig struct {
 	// Type selects the protocol driver: myaaw, acp, claude_code, omp, pi, codex.
 	Type string `json:"type,omitempty"`
 	// Preset identifies the user-facing catalog entry (e.g. "myaaw",
-	// "antigravity", "claude_code", "omp", "pi", "codex", "gemini_cli",
+	// "antigravity", "claude_code", "omp", "pi", "codex",
 	// "opencode", "custom_acp").
 	Preset string `json:"preset,omitempty"`
 	// Command and Args override the preset default binary and arguments.
@@ -219,26 +219,6 @@ var runtimePresetCatalog = []RuntimePreset{
 			SupportsCLIAuth:       true,
 		},
 		ToSNotice: "Uses your unmodified local codex binary. Use private mode on your own machine for ChatGPT logins, or OPENAI_API_KEY for VPS/public/unattended workloads.",
-	},
-	{
-		ID:               "gemini_cli",
-		Label:            "Gemini CLI (gemini)",
-		Description:      "Runs the official Google Gemini CLI over Agent Client Protocol (gemini --acp).",
-		Type:             RuntimeTypeACP,
-		DefaultCommand:   "gemini",
-		DefaultArgs:      []string{"--acp"},
-		DefaultAPIKeyEnv: "GEMINI_API_KEY",
-		DefaultAuth:      AuthSourceCLILogin,
-		Capabilities: RuntimeCapabilities{
-			NeedsLLMProvider:      false,
-			ManagesCoreTools:      true,
-			SupportsApprovals:     true,
-			SupportsModelOverride: true,
-			SupportsImages:        true,
-			SupportsMCPBridge:     true,
-			SupportsCLIAuth:       true,
-		},
-		ToSNotice: "Uses your unmodified local gemini binary via ACP. Use private mode for personal logins, or GEMINI_API_KEY for public/unattended workloads.",
 	},
 	{
 		ID:               "opencode",

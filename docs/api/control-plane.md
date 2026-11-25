@@ -126,7 +126,7 @@ curl -X POST http://localhost:9000/agents/myfriend/onboard \
 
 `201` means the agent was created, `200` means it was reconfigured. The body is `{created, config, warnings}`; `warnings` carries non-fatal issues such as a failed Telegram webhook registration or a high-frequency heartbeat warning on a `cli_login` external runtime.
 
-`POST /agents/:name/onboard` also accepts an optional `runtime` object (`preset`, `type`, `command`, `args`, `working_dir`, `additional_dirs`, `model`, `auth_source`, `api_key_env`, `api_key`, `permission_mode`, `mcp_bridge`, `idle_timeout_seconds`) to create or switch an agent to an external CLI engine such as Google Antigravity (`antigravity`), Claude Code (`claude_code`), Oh My Pi (`omp`), Pi (`pi`), Codex (`codex`), Gemini CLI (`gemini_cli`), OpenCode (`opencode`), or `custom_acp`. When an external runtime is selected, `provider` is optional; `bot.type: "public"` is rejected when `auth_source` is `"cli_login"`. See [External Agent Runtimes](../agents/external-agents.md).
+`POST /agents/:name/onboard` also accepts an optional `runtime` object (`preset`, `type`, `command`, `args`, `working_dir`, `additional_dirs`, `model`, `auth_source`, `api_key_env`, `api_key`, `permission_mode`, `mcp_bridge`, `idle_timeout_seconds`) to create or switch an agent to an external CLI engine such as Google Antigravity (`antigravity`), Claude Code (`claude_code`), Oh My Pi (`omp`), Pi (`pi`), Codex (`codex`), OpenCode (`opencode`), or `custom_acp`. When an external runtime is selected, `provider` is optional; `bot.type: "public"` is rejected when `auth_source` is `"cli_login"`. See [External Agent Runtimes](../agents/external-agents.md).
 
 ```bash
 curl -X POST http://localhost:9000/agents/coder-agy/onboard \

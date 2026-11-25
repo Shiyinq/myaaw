@@ -119,7 +119,7 @@ myaaw onboard --yes \
 | `--base-url` | Provider base URL |
 | `--api-key` | API key (prefer `MYAAW_API_KEY`) |
 | `--model` | Default model (or model override for an external runtime) |
-| `--runtime <preset>` | Execution runtime preset: `myaaw` (default), `antigravity`, `claude_code`, `omp`, `pi`, `codex`, `gemini_cli`, `opencode`, or `custom_acp` |
+| `--runtime <preset>` | Execution runtime preset: `myaaw` (default), `antigravity`, `claude_code`, `omp`, `pi`, `codex`, `opencode`, or `custom_acp` |
 | `--runtime-command <bin>` | Override the external CLI binary command |
 | `--runtime-args <a,b>` | Override external CLI arguments (comma separated) |
 | `--working-dir <path>` | Working directory for an external runtime (default: `~/.myaaw/agents/<name>/home/workspace`) |

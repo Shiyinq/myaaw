@@ -410,8 +410,6 @@
 			"runtime_preset_pi_tos": "Configure standard API keys in pi. Avoid unofficial consumer-OAuth plugins.",
 			"runtime_preset_codex_desc": "Runs the official Codex CLI via codex app-server JSON-RPC with bridged approvals.",
 			"runtime_preset_codex_tos": "Uses your unmodified local codex binary. Use private mode on your own machine for ChatGPT logins, or OPENAI_API_KEY for VPS/public/unattended workloads.",
-			"runtime_preset_gemini_cli_desc": "Runs the official Google Gemini CLI over Agent Client Protocol (gemini --acp).",
-			"runtime_preset_gemini_cli_tos": "Uses your unmodified local gemini binary via ACP. Use private mode for personal logins, or GEMINI_API_KEY for public/unattended workloads.",
 			"runtime_preset_opencode_desc": "Runs OpenCode over Agent Client Protocol (opencode acp).",
 			"runtime_preset_opencode_tos": "Configure standard API keys or local models in OpenCode.",
 			"runtime_preset_custom_acp_desc": "Connect any Agent Client Protocol (ACP) compliant CLI binary over JSON-RPC stdio."

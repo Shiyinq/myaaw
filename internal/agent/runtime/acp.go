@@ -20,8 +20,8 @@ import (
 )
 
 // acpRuntime implements the Agent Client Protocol (ACP) over JSON-RPC 2.0 stdio,
-// supporting Google Antigravity (`agy acp`), Gemini CLI (`gemini --acp`),
-// OpenCode (`opencode acp`), Claude/Codex ACP adapters, and custom ACP servers.
+// supporting Google Antigravity (`agy acp`), OpenCode (`opencode acp`),
+// Claude/Codex ACP adapters, and custom ACP servers.
 type acpRuntime struct {
 	externalBase
 

@@ -1,6 +1,6 @@
 # External Agent Runtimes
 
-Myaaw lets every isolated agent choose its own **Agent Runtime (Engine)**—either Myaaw's built-in ReAct loop (`myaaw`) or an external CLI coding agent such as **Google Antigravity (`agy`)**, **Claude Code (`claude`)**, **Oh My Pi (`omp`)**, **Pi (`pi`)**, **OpenAI Codex CLI (`codex`)**, **Gemini CLI (`gemini`)**, **OpenCode (`opencode`)**, or any **Agent Client Protocol (ACP)** compliant binary.
+Myaaw lets every isolated agent choose its own **Agent Runtime (Engine)**—either Myaaw's built-in ReAct loop (`myaaw`) or an external CLI coding agent such as **Google Antigravity (`agy`)**, **Claude Code (`claude`)**, **Oh My Pi (`omp`)**, **Pi (`pi`)**, **OpenAI Codex CLI (`codex`)**, **OpenCode (`opencode`)**, or any **Agent Client Protocol (ACP)** compliant binary.
 
 An external-runtime agent remains a first-class Myaaw agent:
 
@@ -334,7 +334,7 @@ flowchart LR
 
 1. **Tool Filtering (`CoreCodingTools`):** `internal/agent/mcpbridge/bridge.go` calls `tools.GetFactories(CoreCodingTools...)`, excluding `filesystem`, `bash`, `python`, `subagent`, and `provider`, and also skips `mcp_*` proxy wrappers (because user stdio MCP servers from `tools/tools.json` are attached directly to the external CLI instead of double-proxying).
 2. **Automatic Attachment per Driver:**
-   - **ACP (`agy`, `gemini`, `opencode`, `custom_acp`):** Myaaw passes `mcpServers` directly in `session/new` / `session/load` containing `"myaaw"` (`myaaw --agent <name> mcp-bridge`) plus every enabled stdio server from `~/.myaaw/agents/<name>/tools/tools.json`.
+   - **ACP (`agy`, `opencode`, `custom_acp`):** Myaaw passes `mcpServers` directly in `session/new` / `session/load` containing `"myaaw"` (`myaaw --agent <name> mcp-bridge`) plus every enabled stdio server from `~/.myaaw/agents/<name>/tools/tools.json`.
    - **Claude Code (`claude`):** Myaaw writes `~/.myaaw/agents/<name>/runtime/mcp-bridge.json` (mode `0600`) in standard `{"mcpServers": {...}}` format and passes `--mcp-config <path>`.
    - **Disabling the bridge:** Set `"mcp_bridge": false` in `runtime` (or uncheck *Attach Myaaw Ecosystem MCP Bridge* in `/app/new`) if you want a pure coding agent without Myaaw ecosystem tools.
 3. **Loopback `TurnBridgeServer` (`127.0.0.1:0`):** Because `myaaw mcp-bridge` runs as a child process spawned by the external CLI, it doesn't share memory with the agent daemon. Each external runtime starts a localhost-only HTTP server with a random 128-bit Bearer token (`MYAAW_BRIDGE_URL`, `MYAAW_BRIDGE_TOKEN`):
@@ -364,7 +364,7 @@ sequenceDiagram
     User->>CP: GET /agents/NAME/runtime/options
     alt Cache miss or ?refresh=1
         CP->>Probe: DiscoverRuntimeOptions(ctx, runtimeCfg, workingDir)
-        alt ACP (agy / opencode / gemini / custom)
+        alt ACP (agy / opencode / custom)
             Probe->>CLI: initialize → session/new (read configOptions / models / modes)
         else Pi / Oh My Pi
             Probe->>CLI: --mode rpc --no-session → get_state + get_available_models
@@ -390,7 +390,7 @@ sequenceDiagram
 
 | Runtime Driver | How Options Are Discovered (Zero Hardcoding) | How Selections Are Applied on Turns |
 | :--- | :--- | :--- |
-| **ACP (`agy`, `opencode`, `gemini`, `custom_acp`)** | `initialize` → `session/new` reads standard ACP `configOptions` (`category: "model"`, `"thought_level"`, `"mode"`) with fallback to `models.availableModels` and `modes.availableModes` | `session/set_config_option` on new and resumed sessions (with fallback to `session/set_model` and `session/set_mode`) |
+| **ACP (`agy`, `opencode`, `custom_acp`)** | `initialize` → `session/new` reads standard ACP `configOptions` (`category: "model"`, `"thought_level"`, `"mode"`) with fallback to `models.availableModels` and `modes.availableModes` | `session/set_config_option` on new and resumed sessions (with fallback to `session/set_model` and `session/set_mode`) |
 | **Pi & Oh My Pi (`pi`, `omp`)** | Spawns `<cmd> --mode rpc --no-session` and queries `get_state` + `get_available_models`, extracting provider groups, context window, vision, and **per-model `thinkingLevelMap`** | Passes `--model <provider/id>` and `--thinking <level>` on spawn (re-attaching the same `--session <conv>.jsonl` file so history continues seamlessly) |
 | **Codex (`codex`)** | Spawns `codex app-server` and queries `initialize` → `model/list` (including `supportedReasoningEfforts` per model) | Passes `model` and `effort` in `turn/start` |
 | **Claude Code (`claude`)** | Parses live `--help` output for `--effort` and `--permission-mode` choices; enables custom model ID input | Passes `--model`, `--effort`, and `--permission-mode` CLI flags |
@@ -445,7 +445,6 @@ Myaaw drives external agents over structured machine-readable `stdio` protocols 
 | `omp` | `omp` | `omp --mode rpc` | Pi/OMP JSONL RPC stdio | — | — | Scoped `.jsonl` in `runtime/sessions/` |
 | `pi` | `pi` | `pi --mode rpc` | Pi JSONL RPC stdio | — | — | Scoped `.jsonl` in `runtime/sessions/` |
 | `codex` | `codex` | `codex app-server` | Codex JSON-RPC 2.0 stdio | Yes | — | `thread/resume` |
-| `gemini_cli` | `acp` | `gemini --acp` | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
 | `opencode` | `acp` | `opencode acp` | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
 | `custom_acp` | `acp` | *(custom)* | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
 

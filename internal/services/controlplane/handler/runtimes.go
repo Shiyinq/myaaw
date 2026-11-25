@@ -14,7 +14,7 @@ type RuntimesResponse struct {
 }
 
 // GetRuntimes lists every supported agent runtime preset (native Myaaw plus
-// external CLIs such as Antigravity, Claude Code, OMP, Pi, Codex, Gemini CLI,
+// external CLIs such as Antigravity, Claude Code, OMP, Pi, Codex,
 // OpenCode, and Custom ACP) along with live host PATH detection.
 // @Summary      Discover available agent runtimes
 // @Tags         Agents

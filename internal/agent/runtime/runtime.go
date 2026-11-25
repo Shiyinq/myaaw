@@ -107,7 +107,7 @@ func Discover(ctx context.Context) []DetectedRuntime {
 // ResolveBinary locates a CLI binary across the current PATH plus common user
 // and package-manager bin directories (~/.local/bin, Homebrew, nvm, bun, etc.)
 // so background daemons launched by macOS launchd or Linux systemd still find
-// installed CLIs like agy, pi, omp, claude, codex, and gemini.
+// installed CLIs like agy, pi, omp, claude, codex, and opencode.
 func ResolveBinary(command string) (string, error) {
 	cmd := strings.TrimSpace(command)
 	if cmd == "" {
