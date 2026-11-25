@@ -190,18 +190,25 @@ func (r *codexRuntime) RunEvents(
 						Status           string `json:"status"`
 						AggregatedOutput string `json:"aggregatedOutput"`
 						Result           any    `json:"result"`
-						Tool             string `json:"tool"`
+						Error            *struct {
+							Message string `json:"message"`
+						} `json:"error"`
+						Tool string `json:"tool"`
 					} `json:"item"`
 				}
 				if json.Unmarshal(params, &ev) == nil {
-					isErr := strings.EqualFold(ev.Item.Status, "failed") || strings.EqualFold(ev.Item.Status, "declined")
+					isErr := strings.EqualFold(ev.Item.Status, "failed") || strings.EqualFold(ev.Item.Status, "declined") || ev.Item.Error != nil
 					switch ev.Item.Type {
 					case "commandExecution":
 						acc.EndTool(ev.Item.ID, "command", ev.Item.AggregatedOutput, isErr)
 					case "fileChange":
 						acc.EndTool(ev.Item.ID, "file_change", ev.Item.Status, isErr)
 					case "mcpToolCall":
-						acc.EndTool(ev.Item.ID, ev.Item.Tool, marshalArgsJSON(ev.Item.Result), isErr)
+						output := extractPiToolText(ev.Item.Result)
+						if ev.Item.Error != nil && strings.TrimSpace(ev.Item.Error.Message) != "" {
+							output = ev.Item.Error.Message
+						}
+						acc.EndTool(ev.Item.ID, ev.Item.Tool, output, isErr)
 					}
 				}
 			case "thread/tokenUsage/updated":
@@ -244,16 +251,27 @@ func (r *codexRuntime) RunEvents(
 		},
 		func(id json.RawMessage, method string, params json.RawMessage) {
 			switch method {
-			case "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
+			case "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/mcpToolCall/requestApproval":
 				go func() {
 					var req struct {
-						Command any `json:"command"`
-						Reason  any `json:"reason"`
+						Command any    `json:"command"`
+						Reason  any    `json:"reason"`
+						Tool    string `json:"tool"`
+						Server  string `json:"server"`
 					}
 					_ = json.Unmarshal(params, &req)
 					toolName := "command"
-					if strings.Contains(method, "fileChange") {
+					switch {
+					case strings.Contains(method, "fileChange"):
 						toolName = "file_change"
+					case strings.Contains(method, "mcpToolCall"):
+						toolName = strings.TrimSpace(req.Tool)
+						if toolName == "" {
+							toolName = "mcp_tool"
+						}
+						if srv := strings.TrimSpace(req.Server); srv != "" {
+							toolName = "mcp:" + srv + ":" + toolName
+						}
 					}
 					allowed, _ := r.evaluatePermission(ctx, cfg, "codex", toolName, params)
 					decision := "accept"
@@ -261,6 +279,70 @@ func (r *codexRuntime) RunEvents(
 						decision = "decline"
 					}
 					_ = proc.sendResult(id, map[string]any{"decision": decision})
+				}()
+			case "mcpServer/elicitation/request":
+				go func() {
+					var req struct {
+						ServerName string         `json:"serverName"`
+						Mode       string         `json:"mode"`
+						Message    string         `json:"message"`
+						URL        string         `json:"url"`
+						Meta       map[string]any `json:"_meta"`
+					}
+					_ = json.Unmarshal(params, &req)
+					serverName := strings.TrimSpace(req.ServerName)
+					if serverName == "" {
+						serverName = "mcp"
+					}
+					toolName := "mcp:" + serverName
+					for _, k := range []string{"tool_name", "toolName", "codex_tool_name", "tool"} {
+						if v, ok := req.Meta[k].(string); ok && strings.TrimSpace(v) != "" {
+							toolName = "mcp:" + serverName + ":" + strings.TrimSpace(v)
+							break
+						}
+					}
+					summary := map[string]any{
+						"server":  serverName,
+						"message": strings.TrimSpace(req.Message),
+					}
+					if strings.TrimSpace(req.URL) != "" {
+						summary["url"] = strings.TrimSpace(req.URL)
+					}
+					allowed, _ := r.evaluatePermission(ctx, cfg, "codex", toolName, summary)
+					if allowed {
+						var content any = map[string]any{}
+						if strings.EqualFold(strings.TrimSpace(req.Mode), "url") {
+							content = nil
+						}
+						_ = proc.sendResult(id, map[string]any{
+							"action":  "accept",
+							"content": content,
+							"_meta":   nil,
+						})
+					} else {
+						_ = proc.sendResult(id, map[string]any{
+							"action":  "decline",
+							"content": nil,
+							"_meta":   nil,
+						})
+					}
+				}()
+			case "item/permissions/requestApproval":
+				go func() {
+					var req struct {
+						Reason      string          `json:"reason"`
+						Permissions json.RawMessage `json:"permissions"`
+					}
+					_ = json.Unmarshal(params, &req)
+					allowed, _ := r.evaluatePermission(ctx, cfg, "codex", "permissions", params)
+					var granted any = map[string]any{}
+					if allowed && len(req.Permissions) > 0 && string(req.Permissions) != "null" {
+						granted = req.Permissions
+					}
+					_ = proc.sendResult(id, map[string]any{
+						"permissions": granted,
+						"scope":       "turn",
+					})
 				}()
 			default:
 				_ = proc.sendError(id, -32601, "unsupported codex client method: "+method)
@@ -353,6 +435,9 @@ func (r *codexRuntime) acquireThread(ctx context.Context, convKey string, cfg ag
 	if len(args) == 0 {
 		args = []string{"app-server"}
 	}
+	mcpSpecs := BuildMCPServers(r.cfg.MCPBridgeEnabled(), r.bridgeURL(), r.bridgeToken())
+	args = append(args, BuildCodexMCPArgs(mcpSpecs)...)
+
 	bin, err := ResolveBinary(r.cfg.Command)
 	if err != nil {
 		return nil, false, err

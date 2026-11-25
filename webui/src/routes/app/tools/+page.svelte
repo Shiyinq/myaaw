@@ -3,6 +3,7 @@
 	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { isExternalRuntimeType, isToolAvailableForRuntime } from '$lib/utils/runtimeTools';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
@@ -42,10 +43,13 @@
 	let agent = $derived(agentSelection.selected);
 	useQuery(toolsStore.query, () => (agent ? { agent } : null));
 
+	let isExternalAgent = $derived(isExternalRuntimeType(agentSelection.current?.runtime_type));
 	let view = $derived(toolsStore.data ?? null);
 	let loading = $derived(toolsStore.loading);
 	let error = $derived(toolsStore.error);
-	let builtinTools = $derived(view?.builtin ?? []);
+	let builtinTools = $derived(
+		(view?.builtin ?? []).filter((tool) => isToolAvailableForRuntime(tool.name, isExternalAgent))
+	);
 	let customTools = $derived(view?.custom ?? []);
 	let mcpServers = $derived(view?.mcp_servers ?? []);
 	let builtinEnabledCount = $derived(builtinTools.filter((tool) => tool.enabled).length);
@@ -255,7 +259,14 @@
 						</div>
 					{:else}
 						<!-- Built-in tools -->
-						<Tabs.Content value="builtin" class="mt-0">
+						<Tabs.Content value="builtin" class="mt-0 space-y-3">
+							{#if isExternalAgent}
+								<p
+									class="rounded-lg border border-border/70 bg-muted/35 px-3 py-2 text-xs leading-relaxed text-muted-foreground"
+								>
+									{t('myaaw.plugins.tools_external_notice')}
+								</p>
+							{/if}
 							{#if builtinTools.length === 0}
 								<EmptyState
 									title={t('myaaw.tools.empty')}

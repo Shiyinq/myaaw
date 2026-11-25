@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -249,6 +250,130 @@ func WriteMCPConfigFile(servers []MCPServerSpec) (string, error) {
 	target := filepath.Join(dir, "mcp-bridge.json")
 	if err := os.WriteFile(target, data, 0o600); err != nil {
 		return "", fmt.Errorf("write mcp-bridge.json: %w", err)
+	}
+	return target, nil
+}
+
+// BuildCodexMCPArgs encodes MCP server specifications as repeatable
+// `-c mcp_servers.<name>.*=...` TOML override flags for `codex app-server`.
+// This injects per-agent Myaaw MCP bridge settings without modifying ~/.codex/config.toml.
+func BuildCodexMCPArgs(servers []MCPServerSpec) []string {
+	var args []string
+	for _, s := range servers {
+		name := strings.TrimSpace(s.Name)
+		cmd := strings.TrimSpace(s.Command)
+		if name == "" || cmd == "" {
+			continue
+		}
+		key := formatTOMLKey(name)
+		args = append(args, "-c", fmt.Sprintf("mcp_servers.%s.command=%s", key, marshalTOMLString(cmd)))
+		if len(s.Args) > 0 {
+			args = append(args, "-c", fmt.Sprintf("mcp_servers.%s.args=%s", key, marshalTOMLStringArray(s.Args)))
+		}
+		if len(s.Env) > 0 {
+			keys := make([]string, 0, len(s.Env))
+			for k := range s.Env {
+				if strings.TrimSpace(k) != "" {
+					keys = append(keys, k)
+				}
+			}
+			sort.Strings(keys)
+			if len(keys) > 0 {
+				parts := make([]string, 0, len(keys))
+				for _, k := range keys {
+					parts = append(parts, fmt.Sprintf("%s=%s", formatTOMLKey(k), marshalTOMLString(s.Env[k])))
+				}
+				args = append(args, "-c", fmt.Sprintf("mcp_servers.%s.env={%s}", key, strings.Join(parts, ",")))
+			}
+		}
+	}
+	return args
+}
+
+func formatTOMLKey(key string) string {
+	if key == "" {
+		return `""`
+	}
+	for i := 0; i < len(key); i++ {
+		ch := key[i]
+		isBare := (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-'
+		if !isBare {
+			return marshalTOMLString(key)
+		}
+	}
+	return key
+}
+
+func marshalTOMLString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func marshalTOMLStringArray(items []string) string {
+	b, _ := json.Marshal(items)
+	return string(b)
+}
+
+// SyncPiProjectMCPConfig merges Myaaw's MCP server entries into
+// <workingDir>/.pi/mcp.json with `exposure: "direct"` so Pi (`pi --mode rpc --approve`)
+// attaches Myaaw ecosystem tools directly while preserving any user-defined servers.
+// When `servers` does not include "myaaw", any stale "myaaw" entry is removed.
+func SyncPiProjectMCPConfig(workingDir string, servers []MCPServerSpec) (string, error) {
+	wd := strings.TrimSpace(workingDir)
+	if wd == "" {
+		return "", nil
+	}
+	target := filepath.Join(wd, ".pi", "mcp.json")
+	existingBytes, readErr := os.ReadFile(target)
+	if len(servers) == 0 && os.IsNotExist(readErr) {
+		return "", nil
+	}
+
+	root := make(map[string]any)
+	if readErr == nil && len(existingBytes) > 0 {
+		_ = json.Unmarshal(existingBytes, &root)
+	}
+	mcpMap, _ := root["mcpServers"].(map[string]any)
+	if mcpMap == nil {
+		mcpMap = make(map[string]any)
+	}
+
+	hasMyaaw := false
+	for _, s := range servers {
+		name := strings.TrimSpace(s.Name)
+		cmd := strings.TrimSpace(s.Command)
+		if name == "" || cmd == "" {
+			continue
+		}
+		if name == "myaaw" {
+			hasMyaaw = true
+		}
+		entry := map[string]any{
+			"command":  cmd,
+			"exposure": "direct",
+		}
+		if len(s.Args) > 0 {
+			entry["args"] = s.Args
+		}
+		if len(s.Env) > 0 {
+			entry["env"] = s.Env
+		}
+		mcpMap[name] = entry
+	}
+	if !hasMyaaw {
+		delete(mcpMap, "myaaw")
+	}
+	root["mcpServers"] = mcpMap
+
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return "", fmt.Errorf("create .pi dir: %w", err)
+	}
+	data, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(target, append(data, '\n'), 0o600); err != nil {
+		return "", fmt.Errorf("write .pi/mcp.json: %w", err)
 	}
 	return target, nil
 }

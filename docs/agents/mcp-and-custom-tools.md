@@ -6,7 +6,7 @@ Myaaw provides an extensible, modular tooling system that empowers AI agents wit
 
 > **Looking for on-demand agent skills?** Check out the [Agent Skills Guide](skills.md) for dynamic `SKILL.md` workflows.
 >
-> **Using an External Agent Runtime (`agy`, `claude`, `omp`, `pi`, `codex`)?** Core coding tools (`filesystem`, `bash`, `python`, `subagent`, `provider`) are delegated to the external CLI's own native tools, while Myaaw ecosystem tools (`cron`, `a2a_*`, `extra_messages`, `computer`, and `custom_tools` from `tools.json`) are exposed over stdio via `myaaw mcp-bridge`, and enabled `mcp_servers` in `tools.json` are forwarded directly to ACP and Claude Code. See [External Agent Runtimes](external-agents.md#6-how-external-agents-connect-to-tools--myaaw-mcp-bridge).
+> **Using an External Agent Runtime (`claude`, `codex`, `agy`, `opencode`, `pi`, `omp`)?** The 5 core coding tools (`filesystem`, `bash`, `python`, `subagent`, `provider`) are delegated to the external CLI's own native tools and automatically hidden from the WebUI built-in tool toggles (`/app/new`, `/app/plugins`, `/app/tools`) for external agents. Only the 5 Myaaw ecosystem tools (`cron`, `extra_messages`, `a2a_contact`, `a2a_input`, `a2a_auth_request`), plus `computer` (when enabled) and `custom_tools` from `tools.json`, are exposed over stdio via `myaaw mcp-bridge`. Enabled `mcp_servers` in `tools.json` are forwarded directly to ACP (`agy`, `opencode`, `custom_acp`), Claude Code (`--mcp-config`), Codex (`-c mcp_servers.*`), and Pi (`.pi/mcp.json` + `--approve`). See [External Agent Runtimes](external-agents.md#6-how-external-agents-connect-to-tools--myaaw-mcp-bridge).
 
 ---
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -211,7 +212,32 @@ func runMockCodex() {
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"thread": map[string]any{"id": "codex-thr-1"}}})
 		case "turn/start":
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"turn": map[string]any{"id": "turn-1"}}})
-			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "item/agentMessage/delta", "params": map[string]any{"delta": "Codex OK"}})
+			// Trigger MCP tool approval via mcpServer/elicitation/request and wait for response.
+			_ = enc.Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      77,
+				"method":  "mcpServer/elicitation/request",
+				"params": map[string]any{
+					"threadId":   "codex-thr-1",
+					"turnId":     "turn-1",
+					"serverName": "myaaw",
+					"mode":       "form",
+					"message":    "Allow MCP tool a2a_contact?",
+					"_meta":      map[string]any{"tool_name": "a2a_contact"},
+				},
+			})
+			action := "missing"
+			if sc.Scan() {
+				var resp struct {
+					Result struct {
+						Action string `json:"action"`
+					} `json:"result"`
+				}
+				if json.Unmarshal(sc.Bytes(), &resp) == nil && resp.Result.Action != "" {
+					action = resp.Result.Action
+				}
+			}
+			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "item/agentMessage/delta", "params": map[string]any{"delta": "Codex OK (" + action + ")"}})
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "method": "turn/completed", "params": map[string]any{"turn": map[string]any{"status": "completed"}}})
 		}
 	}
@@ -371,8 +397,13 @@ func TestPiRPCRuntimeAndCodexRuntime(t *testing.T) {
 		defer rt.Close()
 
 		var savedThread string
+		gate := &approvals.Gate{
+			Policy: approvals.Policy{Mode: "manual"},
+			Auto:   approvals.AllowOnce,
+		}
 		res, err := rt.RunEvents(context.Background(), agent.RunConfig{
 			ConversationID: "conv-codex-1",
+			ApprovalGate:   gate,
 			OnExternalSession: func(_, sid string) {
 				savedThread = sid
 			},
@@ -380,7 +411,7 @@ func TestPiRPCRuntimeAndCodexRuntime(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Codex RunEvents failed: %v", err)
 		}
-		if got := provider.MessageText(res.Final); got != "Codex OK" || savedThread != "codex-thr-1" {
+		if got := provider.MessageText(res.Final); got != "Codex OK (accept)" || savedThread != "codex-thr-1" {
 			t.Fatalf("unexpected Codex result: text=%q thread=%q", got, savedThread)
 		}
 	})
@@ -425,5 +456,82 @@ func TestResolveBinaryFindsLocalBinUnderMinimalPATH(t *testing.T) {
 	}
 	if resolved != fakeAgy {
 		t.Fatalf("expected %q, got %q", fakeAgy, resolved)
+	}
+}
+
+func TestCodexAndPiMCPBridgeWiring(t *testing.T) {
+	specs := []MCPServerSpec{
+		{
+			Name:    "myaaw",
+			Command: "/usr/local/bin/myaaw",
+			Args:    []string{"--agent", "coder", "mcp-bridge"},
+			Env: map[string]string{
+				"MYAAW_BRIDGE_URL":   "http://127.0.0.1:9999",
+				"MYAAW_BRIDGE_TOKEN": "secret-tok",
+			},
+		},
+		{
+			Name:    "custom.tool",
+			Command: "/opt/tools/srv",
+		},
+	}
+
+	codexArgs := BuildCodexMCPArgs(specs)
+	joined := strings.Join(codexArgs, " ")
+	for _, want := range []string{
+		`-c mcp_servers.myaaw.command="/usr/local/bin/myaaw"`,
+		`-c mcp_servers.myaaw.args=["--agent","coder","mcp-bridge"]`,
+		`-c mcp_servers.myaaw.env={MYAAW_BRIDGE_TOKEN="secret-tok",MYAAW_BRIDGE_URL="http://127.0.0.1:9999"}`,
+		`-c mcp_servers."custom.tool".command="/opt/tools/srv"`,
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("BuildCodexMCPArgs missing %q in %q", want, joined)
+		}
+	}
+
+	wd := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(wd, ".pi"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wd, ".pi", "mcp.json"), []byte(`{"mcpServers":{"user_srv":{"command":"echo"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath, err := SyncPiProjectMCPConfig(wd, specs[:1])
+	if err != nil {
+		t.Fatalf("SyncPiProjectMCPConfig failed: %v", err)
+	}
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read synced .pi/mcp.json: %v", err)
+	}
+	var parsed struct {
+		MCPServers map[string]struct {
+			Command  string            `json:"command"`
+			Args     []string          `json:"args"`
+			Env      map[string]string `json:"env"`
+			Exposure string            `json:"exposure"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("unmarshal .pi/mcp.json: %v", err)
+	}
+	if parsed.MCPServers["user_srv"].Command != "echo" {
+		t.Fatalf("expected existing user_srv to be preserved, got %+v", parsed.MCPServers)
+	}
+	myaawSrv := parsed.MCPServers["myaaw"]
+	if myaawSrv.Command != "/usr/local/bin/myaaw" || myaawSrv.Exposure != "direct" || myaawSrv.Env["MYAAW_BRIDGE_TOKEN"] != "secret-tok" {
+		t.Fatalf("unexpected myaaw entry in .pi/mcp.json: %+v", myaawSrv)
+	}
+
+	if _, err := SyncPiProjectMCPConfig(wd, nil); err != nil {
+		t.Fatalf("SyncPiProjectMCPConfig disable failed: %v", err)
+	}
+	raw2, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw2), `"myaaw"`) || !strings.Contains(string(raw2), `"user_srv"`) {
+		t.Fatalf("expected myaaw removed and user_srv kept, got: %s", string(raw2))
 	}
 }

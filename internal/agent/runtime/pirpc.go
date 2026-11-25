@@ -311,6 +311,15 @@ func (r *piRPCRuntime) acquireProcess(convKey, sessionFile string, rewind, wantR
 	if sessionFile != "" {
 		args = append(args, "--session", sessionFile)
 	}
+	if r.cfg.Type == config.RuntimeTypePi {
+		mcpSpecs := BuildMCPServers(r.cfg.MCPBridgeEnabled(), r.bridgeURL(), r.bridgeToken())
+		if _, err := SyncPiProjectMCPConfig(r.WorkingDir(), mcpSpecs); err != nil {
+			log.Printf("[Pi] sync .pi/mcp.json: %v", err)
+		}
+		if len(mcpSpecs) > 0 && !hasArgFlag(args, "--approve", "-a") {
+			args = append(args, "--approve")
+		}
+	}
 
 	bin, err := ResolveBinary(r.cfg.Command)
 	if err != nil {
@@ -447,4 +456,15 @@ func extractPiToolText(v any) string {
 		}
 	}
 	return marshalArgsJSON(v)
+}
+
+func hasArgFlag(args []string, flags ...string) bool {
+	for _, a := range args {
+		for _, f := range flags {
+			if a == f {
+				return true
+			}
+		}
+	}
+	return false
 }

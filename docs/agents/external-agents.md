@@ -332,10 +332,16 @@ flowchart LR
 
 ### How Each Piece Works
 
-1. **Tool Filtering (`CoreCodingTools`):** `internal/agent/mcpbridge/bridge.go` calls `tools.GetFactories(CoreCodingTools...)`, excluding `filesystem`, `bash`, `python`, `subagent`, and `provider`, and also skips `mcp_*` proxy wrappers (because user stdio MCP servers from `tools/tools.json` are attached directly to the external CLI instead of double-proxying).
+1. **Tool Filtering (`CoreCodingTools` — why `myaaw` MCP exposes 5 built-in tools by default):**
+   - `internal/agent/mcpbridge/bridge.go` calls `tools.GetFactories(CoreCodingTools...)`, intentionally **excluding 5 core coding tools** (`filesystem`, `bash`, `python`, `subagent`, and `provider`) because external CLIs already provide native shell, file editing, subagents, and their own model/provider management.
+   - As a result, the `myaaw` MCP server exposes **5 built-in Myaaw ecosystem tools** by default—`cron`, `extra_messages`, `a2a_contact`, `a2a_input`, and `a2a_auth_request`—plus `computer` (when Computer Use is enabled) and every enabled **Custom CLI tool** from `tools/tools.json`.
+   - User-configured stdio MCP servers from `tools/tools.json` (`mcp_servers`) are attached directly to the external CLI instead of double-proxying through `mcp_*` wrappers.
+   - To avoid confusing no-op switches, the WebUI (**New Agent `/app/new`**, **Plugins `/app/plugins`**, and **Tools `/app/tools`**) automatically hides those 5 delegated `CoreCodingTools` whenever an external runtime is selected, showing only the Myaaw ecosystem tools that toggling actually controls.
 2. **Automatic Attachment per Driver:**
    - **ACP (`agy`, `opencode`, `custom_acp`):** Myaaw passes `mcpServers` directly in `session/new` / `session/load` containing `"myaaw"` (`myaaw --agent <name> mcp-bridge`) plus every enabled stdio server from `~/.myaaw/agents/<name>/tools/tools.json`.
    - **Claude Code (`claude`):** Myaaw writes `~/.myaaw/agents/<name>/runtime/mcp-bridge.json` (mode `0600`) in standard `{"mcpServers": {...}}` format and passes `--mcp-config <path>`.
+   - **OpenAI Codex CLI (`codex`):** Myaaw appends per-process TOML override flags (`-c mcp_servers.<name>.command=...`, `args=[...]`, `env={...}`) to `codex app-server` without modifying `~/.codex/config.toml`. Codex MCP approval prompts (`mcpServer/elicitation/request`) and permission escalations (`item/permissions/requestApproval`) are bridged directly into Myaaw's `approvals.Gate`.
+   - **Pi Coding Agent (`pi`):** Myaaw merges `"myaaw"` (and enabled stdio servers from `tools/tools.json`) with `"exposure": "direct"` into `<working_dir>/.pi/mcp.json` (preserving any user-defined entries) and passes `--approve` to `pi --mode rpc`.
    - **Disabling the bridge:** Set `"mcp_bridge": false` in `runtime` (or uncheck *Attach Myaaw Ecosystem MCP Bridge* in `/app/new`) if you want a pure coding agent without Myaaw ecosystem tools.
 3. **Loopback `TurnBridgeServer` (`127.0.0.1:0`):** Because `myaaw mcp-bridge` runs as a child process spawned by the external CLI, it doesn't share memory with the agent daemon. Each external runtime starts a localhost-only HTTP server with a random 128-bit Bearer token (`MYAAW_BRIDGE_URL`, `MYAAW_BRIDGE_TOKEN`):
    - `GET /context` returns the active turn's `ToolsContext` (`user_id`, `channel`, `conversation_id`, `chat_id`, `topic_id`, `scope`), so tools like `cron` know which chat/channel to schedule reminders for.
@@ -441,10 +447,10 @@ Myaaw drives external agents over structured machine-readable `stdio` protocols 
 | :--- | :--- | :--- | :--- | :---: | :---: | :--- |
 | `myaaw` | `myaaw` | *(in-process)* | Native ReAct loop | Yes | *(native)* | SQLite transcript |
 | `claude_code` | `claude_code` | `claude` | Bidirectional `stream-json` stdio | Yes | Yes (`--mcp-config`) | `--resume <id>` |
-| `codex` | `codex` | `codex app-server` | Codex JSON-RPC 2.0 stdio | Yes | — | `thread/resume` |
+| `codex` | `codex` | `codex app-server` | Codex JSON-RPC 2.0 stdio | Yes | Yes (`-c mcp_servers.*`) | `thread/resume` |
 | `antigravity` | `acp` | `agy acp` | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
 | `opencode` | `acp` | `opencode acp` | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
-| `pi` | `pi` | `pi --mode rpc` | Pi JSONL RPC stdio | — | — | Scoped `.jsonl` in `runtime/sessions/` |
+| `pi` | `pi` | `pi --mode rpc` | Pi JSONL RPC stdio | — | Yes (`.pi/mcp.json` + `--approve`) | Scoped `.jsonl` in `runtime/sessions/` |
 | `omp` | `omp` | `omp --mode rpc` | Pi/OMP JSONL RPC stdio | — | — | Scoped `.jsonl` in `runtime/sessions/` |
 | `custom_acp` | `acp` | *(custom)* | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
 

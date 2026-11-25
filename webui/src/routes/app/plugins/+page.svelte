@@ -5,6 +5,7 @@
 	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { getErrorMessage } from '$lib/utils/api';
+	import { isExternalRuntimeType, isToolAvailableForRuntime } from '$lib/utils/runtimeTools';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
@@ -72,7 +73,10 @@
 		return values.some((value) => (value ?? '').toLowerCase().includes(search));
 	}
 
-	const builtin = $derived(view?.builtin ?? []);
+	const isExternalAgent = $derived(isExternalRuntimeType(agentSelection.current?.runtime_type));
+	const builtin = $derived(
+		(view?.builtin ?? []).filter((item) => isToolAvailableForRuntime(item.name, isExternalAgent))
+	);
 	const custom = $derived(view?.custom ?? []);
 	const servers = $derived(view?.mcp_servers ?? []);
 
@@ -574,6 +578,13 @@
 
 			<section class="space-y-2">
 				{@render groupHeader(Wrench, t('myaaw.plugins.tools'), t('myaaw.plugins.tools_desc'))}
+				{#if isExternalAgent}
+					<p
+						class="rounded-lg border border-border/70 bg-muted/35 px-3 py-2 text-xs leading-relaxed text-muted-foreground"
+					>
+						{t('myaaw.plugins.tools_external_notice')}
+					</p>
+				{/if}
 				{#if shownBuiltin.length === 0}
 					<p class="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">
 						{t('myaaw.plugins.empty')}

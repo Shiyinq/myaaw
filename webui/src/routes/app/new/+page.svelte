@@ -17,6 +17,7 @@
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
 	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import CapabilityPicker from '$lib/components/onboard/CapabilityPicker.svelte';
+	import { isToolAvailableForRuntime } from '$lib/utils/runtimeTools';
 	import AgentColorPicker from '$lib/components/onboard/AgentColorPicker.svelte';
 	import Section from '$lib/components/onboard/Section.svelte';
 	import FieldError from '$lib/components/common/FieldError.svelte';
@@ -402,6 +403,9 @@
 
 	let capabilitySkills = $derived<CapabilityEntry[]>(capabilities?.skills ?? []);
 	let capabilityTools = $derived<CapabilityEntry[]>(capabilities?.tools ?? []);
+	let visibleCapabilityTools = $derived<CapabilityEntry[]>(
+		capabilityTools.filter((item) => isToolAvailableForRuntime(item.name, isExternalRuntime))
+	);
 
 	let selectedSkills = $derived(
 		Object.keys(skillSelection)
@@ -409,12 +413,13 @@
 			.sort()
 	);
 	let disabledTools = $derived(
-		Object.keys(toolSelection)
-			.filter((key) => !toolSelection[key])
+		visibleCapabilityTools
+			.map((item) => item.name)
+			.filter((key) => toolSelection[key] === false)
 			.sort()
 	);
 	let enabledToolCount = $derived(
-		Object.keys(toolSelection).filter((key) => toolSelection[key]).length
+		visibleCapabilityTools.filter((item) => toolSelection[item.name]).length
 	);
 
 	let snapshot = $derived<SetupSnapshot>({
@@ -468,7 +473,10 @@
 	let capabilitiesSummary = $derived(
 		`${t('myaaw.onboard.summary_skills', { count: selectedSkills.length })} · ${t(
 			'myaaw.onboard.summary_tools',
-			{ count: enabledToolCount, total: capabilityTools.length }
+			{
+				count: isExternalRuntime && !runtimeMcpBridge ? 0 : enabledToolCount,
+				total: visibleCapabilityTools.length
+			}
 		)}`
 	);
 	let channelSummary = $derived(
@@ -1525,7 +1533,27 @@
 						{t('myaaw.onboard.tools_desc')}
 					</span>
 				</div>
-				<CapabilityPicker items={capabilityTools} selection={toolSelection} emptyLabel="—" />
+				{#if isExternalRuntime}
+					<p
+						class={[
+							'rounded-lg border px-3 py-2 text-[11px] leading-relaxed',
+							runtimeMcpBridge
+								? 'border-border/70 bg-muted/35 text-muted-foreground'
+								: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+						]}
+					>
+						{runtimeMcpBridge
+							? t('myaaw.onboard.tools_external_notice')
+							: t('myaaw.onboard.tools_mcp_disabled_notice')}
+					</p>
+				{/if}
+				<div class={isExternalRuntime && !runtimeMcpBridge ? 'pointer-events-none opacity-50' : ''}>
+					<CapabilityPicker
+						items={visibleCapabilityTools}
+						selection={toolSelection}
+						emptyLabel="—"
+					/>
+				</div>
 			</div>
 		</Section>
 
