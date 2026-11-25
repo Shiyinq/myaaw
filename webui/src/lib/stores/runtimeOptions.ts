@@ -8,9 +8,14 @@ export function peekRuntimeOptions(agent: string): RuntimeOptions | null {
 	return cache.get(agent) ?? null;
 }
 
-export function invalidateRuntimeOptions(agent: string): void {
-	cache.delete(agent);
-	inflight.delete(agent);
+export function invalidateRuntimeOptions(agent?: string): void {
+	if (agent) {
+		cache.delete(agent);
+		inflight.delete(agent);
+	} else {
+		cache.clear();
+		inflight.clear();
+	}
 }
 
 export async function loadRuntimeOptions(agent: string, refresh = false): Promise<RuntimeOptions> {

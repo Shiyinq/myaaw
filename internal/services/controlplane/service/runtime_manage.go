@@ -12,6 +12,7 @@ import (
 	"time"
 
 	agentruntime "myaaw/internal/agent/runtime"
+	"myaaw/internal/agentdir"
 	"myaaw/internal/config"
 )
 
@@ -132,15 +133,97 @@ func (s *RuntimeManageService) PTY() *RuntimeAuthPTYService {
 	return s.pty
 }
 
-// List returns the full management catalog for all external runtime presets.
-// When probeAuth is true, installed CLIs are probed concurrently for login status.
-func (s *RuntimeManageService) List(ctx context.Context, probeAuth, refresh bool) (ManagedRuntimesResponse, error) {
-	detected := agentruntime.Discover(ctx)
-	defaultsMap, err := s.loadAllDefaults()
-	if err != nil {
-		return ManagedRuntimesResponse{}, err
+// Warmup pre-populates binary discovery, auth status, and actively used
+// external runtime option caches asynchronously in background goroutines on
+// control-plane startup so the very first UI requests return immediately.
+func (s *RuntimeManageService) Warmup(ctx context.Context) {
+	if s == nil {
+		return
 	}
-	usedMap := s.agentsByPreset()
+	go func() {
+		warmCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+		defer cancel()
+		res, err := s.List(warmCtx, true, false)
+		if err != nil {
+			return
+		}
+		// Pre-warm runtime options concurrently for installed presets actively
+		// used by agents whose auth probe doesn't already populate options
+		// (e.g. antigravity, opencode, claude_code).
+		var wg sync.WaitGroup
+		for _, rt := range res.Runtimes {
+			if !rt.Installed || len(rt.UsedByAgents) == 0 {
+				continue
+			}
+			// codex, deepseek_harness, omp, and pi already populated
+			// DiscoverRuntimeOptionsCached during List()'s auth probe.
+			switch rt.ID {
+			case "codex", "deepseek_harness", "omp", "pi":
+				continue
+			}
+			entry := rt
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				rawCfg := config.RuntimeConfig{
+					Type:    entry.Type,
+					Preset:  entry.ID,
+					Command: entry.BinaryPath,
+					Args:    entry.DefaultArgs,
+				}
+				if def, ok := s.RawDefaults(entry.ID); ok {
+					if def.Command != "" {
+						rawCfg.Command = def.Command
+					}
+					if len(def.Args) > 0 {
+						rawCfg.Args = def.Args
+					}
+					rawCfg.AuthSource = def.AuthSource
+					rawCfg.APIKeyEnv = def.APIKeyEnv
+					rawCfg.APIKey = def.APIKey
+				}
+				agentruntime.DiscoverRuntimeOptionsCached(warmCtx, "warmup:"+entry.ID, rawCfg, os.TempDir(), false)
+			}()
+		}
+		wg.Wait()
+	}()
+}
+
+// List returns the full management catalog for all external runtime presets.
+// Binary discovery, DB defaults, agent usage, custom binary probes, and (when
+// probeAuth is true) CLI auth probes all execute concurrently with goroutines
+// so even a completely cold first request has zero sequential waterfall.
+func (s *RuntimeManageService) List(ctx context.Context, probeAuth, refresh bool) (ManagedRuntimesResponse, error) {
+	var (
+		detected    []agentruntime.DetectedRuntime
+		defaultsMap map[string]storedRuntimeDefaults
+		defaultsErr error
+		usedMap     map[string][]string
+	)
+
+	// Start binary discovery (`--version` probes across presets in parallel)
+	// concurrently with local metadata reads (SQLite defaults + agent YAML headers).
+	// Wait for DiscoverCached to finish before launching per-preset auth probes so
+	// no single CLI ever runs `--version` and its auth subcommand simultaneously
+	// (preventing local DB/state lock contention in tools like opencode & codex).
+	var initWG sync.WaitGroup
+	initWG.Add(3)
+	go func() {
+		defer initWG.Done()
+		detected = agentruntime.DiscoverCached(ctx, refresh)
+	}()
+	go func() {
+		defer initWG.Done()
+		defaultsMap, defaultsErr = s.loadAllDefaults()
+	}()
+	go func() {
+		defer initWG.Done()
+		usedMap = s.agentsByPreset()
+	}()
+	initWG.Wait()
+	if defaultsErr != nil {
+		return ManagedRuntimesResponse{}, defaultsErr
+	}
 
 	external := make([]agentruntime.DetectedRuntime, 0, len(detected))
 	for _, rt := range detected {
@@ -151,7 +234,7 @@ func (s *RuntimeManageService) List(ctx context.Context, probeAuth, refresh bool
 	}
 
 	out := make([]ManagedRuntimeView, len(external))
-	var wg sync.WaitGroup
+	var probeWG sync.WaitGroup
 	for i, rt := range external {
 		idx := i
 		entry := rt
@@ -159,64 +242,66 @@ func (s *RuntimeManageService) List(ctx context.Context, probeAuth, refresh bool
 		if !hasDef {
 			def = defaultStoredDefaults(entry.RuntimePreset)
 		}
-		// If the user configured a custom binary command in global defaults,
-		// resolve installation & version against that command.
-		if customCmd := strings.TrimSpace(def.Command); customCmd != "" {
-			if path, rErr := agentruntime.ResolveBinary(customCmd); rErr == nil {
-				entry.Installed = true
-				entry.BinaryPath = path
-				entry.Version = probeCustomVersion(ctx, path)
-			} else {
-				entry.Installed = false
-				entry.BinaryPath = ""
-				entry.Version = ""
+
+		// Run custom-binary overrides and auth probes concurrently across presets
+		// (1 goroutine per preset, never running two commands of the same CLI at once).
+		probeWG.Add(1)
+		go func(slot int, det agentruntime.DetectedRuntime, saved storedRuntimeDefaults) {
+			defer probeWG.Done()
+			customCmd := strings.TrimSpace(saved.Command)
+			defaultCmd := strings.TrimSpace(det.DefaultCommand)
+			if customCmd != "" && customCmd != defaultCmd {
+				if path, rErr := agentruntime.ResolveBinary(customCmd); rErr == nil {
+					det.Installed = true
+					det.BinaryPath = path
+					det.Version = probeCustomVersion(ctx, path)
+				} else {
+					det.Installed = false
+					det.BinaryPath = ""
+					det.Version = ""
+				}
 			}
-		}
 
-		methods := agentruntime.InstallMethodsForPreset(entry.ID)
-		if methods == nil {
-			methods = []agentruntime.InstallMethod{}
-		}
-		var updateMethod *agentruntime.InstallMethod
-		if entry.Installed {
-			updateMethod = agentruntime.UpdateMethodForPreset(entry.ID, entry.BinaryPath)
-		}
-		used := usedMap[entry.ID]
-		if used == nil {
-			used = []string{}
-		}
+			methods := agentruntime.InstallMethodsForPreset(det.ID)
+			if methods == nil {
+				methods = []agentruntime.InstallMethod{}
+			}
+			var updateMethod *agentruntime.InstallMethod
+			if det.Installed {
+				updateMethod = agentruntime.UpdateMethodForPreset(det.ID, det.BinaryPath)
+			}
+			used := usedMap[det.ID]
+			if used == nil {
+				used = []string{}
+			}
 
-		view := ManagedRuntimeView{
-			DetectedRuntime: entry,
-			DocsURL:         agentruntime.OfficialDocsURL(entry.ID),
-			InstallMethods:  methods,
-			UpdateMethod:    updateMethod,
-			Auth:            agentruntime.AuthActionMetadata(entry.ID),
-			Defaults:        toDefaultsView(def),
-			UsedByAgents:    used,
-		}
-		if def.APIKey != "" {
-			view.Auth.Status = agentruntime.AuthStatusAPIKeyConfigured
-			view.Auth.Detail = def.APIKeyEnv
-		}
-		out[idx] = view
-
-		if probeAuth && entry.Installed {
-			wg.Add(1)
-			go func(slot int, preset config.RuntimePreset, binPath string, saved storedRuntimeDefaults) {
-				defer wg.Done()
-				out[slot].Auth = agentruntime.ProbeAuthStatusCached(
+			auth := agentruntime.AuthActionMetadata(det.ID)
+			if probeAuth && det.Installed {
+				auth = agentruntime.ProbeAuthStatusCached(
 					ctx,
-					preset,
-					binPath,
+					det.RuntimePreset,
+					det.BinaryPath,
 					saved.APIKeyEnv,
 					saved.APIKey != "",
 					refresh,
 				)
-			}(idx, entry.RuntimePreset, entry.BinaryPath, def)
-		}
+			} else if saved.APIKey != "" {
+				auth.Status = agentruntime.AuthStatusAPIKeyConfigured
+				auth.Detail = saved.APIKeyEnv
+			}
+
+			out[slot] = ManagedRuntimeView{
+				DetectedRuntime: det,
+				DocsURL:         agentruntime.OfficialDocsURL(det.ID),
+				InstallMethods:  methods,
+				UpdateMethod:    updateMethod,
+				Auth:            auth,
+				Defaults:        toDefaultsView(saved),
+				UsedByAgents:    used,
+			}
+		}(idx, entry, def)
 	}
-	wg.Wait()
+	probeWG.Wait()
 
 	return ManagedRuntimesResponse{
 		ManagementEnabled: s.Enabled(),
@@ -225,7 +310,7 @@ func (s *RuntimeManageService) List(ctx context.Context, probeAuth, refresh bool
 }
 
 // GetOne returns the refreshed ManagedRuntimeView (including live auth probe)
-// for a single external runtime preset.
+// for a single external runtime preset without re-probing every other runtime.
 func (s *RuntimeManageService) GetOne(ctx context.Context, presetID string) (ManagedRuntimeView, error) {
 	id := strings.ToLower(strings.TrimSpace(presetID))
 	preset, ok := config.LookupRuntimePreset(id)
@@ -233,27 +318,62 @@ func (s *RuntimeManageService) GetOne(ctx context.Context, presetID string) (Man
 		return ManagedRuntimeView{}, ErrRuntimeNotFound
 	}
 	agentruntime.InvalidateAuthStatusCache(preset.ID)
-	res, err := s.List(ctx, false, false)
-	if err != nil {
-		return ManagedRuntimeView{}, err
+
+	entry := agentruntime.DiscoverOne(ctx, preset)
+	def, hasDef := s.RawDefaults(preset.ID)
+	if !hasDef {
+		def = defaultStoredDefaults(preset)
 	}
-	for _, item := range res.Runtimes {
-		if item.ID == preset.ID {
-			if item.Installed {
-				rawDef, _ := s.RawDefaults(preset.ID)
-				item.Auth = agentruntime.ProbeAuthStatusCached(
-					ctx,
-					preset,
-					item.BinaryPath,
-					rawDef.APIKeyEnv,
-					rawDef.APIKey != "",
-					true,
-				)
-			}
-			return item, nil
+	customCmd := strings.TrimSpace(def.Command)
+	defaultCmd := strings.TrimSpace(entry.DefaultCommand)
+	if customCmd != "" && customCmd != defaultCmd {
+		if path, rErr := agentruntime.ResolveBinary(customCmd); rErr == nil {
+			entry.Installed = true
+			entry.BinaryPath = path
+			entry.Version = probeCustomVersion(ctx, path)
+		} else {
+			entry.Installed = false
+			entry.BinaryPath = ""
+			entry.Version = ""
 		}
 	}
-	return ManagedRuntimeView{}, ErrRuntimeNotFound
+
+	methods := agentruntime.InstallMethodsForPreset(entry.ID)
+	if methods == nil {
+		methods = []agentruntime.InstallMethod{}
+	}
+	var updateMethod *agentruntime.InstallMethod
+	if entry.Installed {
+		updateMethod = agentruntime.UpdateMethodForPreset(entry.ID, entry.BinaryPath)
+	}
+	used := s.agentsByPreset()[entry.ID]
+	if used == nil {
+		used = []string{}
+	}
+
+	view := ManagedRuntimeView{
+		DetectedRuntime: entry,
+		DocsURL:         agentruntime.OfficialDocsURL(entry.ID),
+		InstallMethods:  methods,
+		UpdateMethod:    updateMethod,
+		Auth:            agentruntime.AuthActionMetadata(entry.ID),
+		Defaults:        toDefaultsView(def),
+		UsedByAgents:    used,
+	}
+	if entry.Installed {
+		view.Auth = agentruntime.ProbeAuthStatusCached(
+			ctx,
+			preset,
+			entry.BinaryPath,
+			def.APIKeyEnv,
+			def.APIKey != "",
+			true,
+		)
+	} else if def.APIKey != "" {
+		view.Auth.Status = agentruntime.AuthStatusAPIKeyConfigured
+		view.Auth.Detail = def.APIKeyEnv
+	}
+	return view, nil
 }
 
 // SaveDefaults creates or updates the global default configuration for presetID,
@@ -496,22 +616,20 @@ func (s *RuntimeManageService) loadAllDefaults() (map[string]storedRuntimeDefaul
 
 func (s *RuntimeManageService) agentsByPreset() map[string][]string {
 	out := make(map[string][]string)
-	if s == nil || s.agents == nil {
-		return out
-	}
-	list, err := s.agents.List()
+	names, err := agentdir.ListAgents()
 	if err != nil {
 		return out
 	}
-	for _, ag := range list {
-		preset := strings.TrimSpace(ag.RuntimePreset)
+	for _, name := range names {
+		rtType, rtPreset := resolveAgentRuntime(name)
+		preset := strings.TrimSpace(rtPreset)
 		if preset == "" {
-			preset = strings.TrimSpace(ag.RuntimeType)
+			preset = strings.TrimSpace(rtType)
 		}
 		if preset == "" || preset == config.RuntimeTypeMyaaw {
 			continue
 		}
-		out[preset] = append(out[preset], ag.Name)
+		out[preset] = append(out[preset], name)
 	}
 	return out
 }
@@ -612,12 +730,5 @@ func toDefaultsView(d storedRuntimeDefaults) RuntimeDefaultsView {
 }
 
 func probeCustomVersion(ctx context.Context, binaryPath string) string {
-	subCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
-	defer cancel()
-	for _, rt := range agentruntime.Discover(subCtx) {
-		if rt.BinaryPath == binaryPath && rt.Version != "" {
-			return rt.Version
-		}
-	}
-	return ""
+	return agentruntime.ProbeBinaryVersion(ctx, binaryPath)
 }

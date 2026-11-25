@@ -26,6 +26,7 @@ interface CacheEntry {
 // module alive, while a full refresh clears it. A provider appearing,
 // disappearing or changing type invalidates the entry.
 const cache = new Map<string, CacheEntry>();
+const inflight = new Map<string, Promise<ModelGroup[]>>();
 
 function signature(providers: CatalogProvider[]): string {
 	return providers
@@ -52,7 +53,14 @@ export async function loadModelGroups(
 	const hit = cache.get(agent);
 	if (hit && hit.signature === key) return ensureCurrent(hit.groups, providers);
 
-	const groups = await Promise.all(
+	const inflightKey = `${agent}::${key}`;
+	const pending = inflight.get(inflightKey);
+	if (pending) {
+		const groups = await pending;
+		return ensureCurrent(groups, providers);
+	}
+
+	const job = Promise.all(
 		providers.map(async (provider): Promise<ModelGroup> => {
 			try {
 				const view = await providersApi.models(agent, provider.name);
@@ -77,15 +85,32 @@ export async function loadModelGroups(
 				};
 			}
 		})
-	);
-	cache.set(agent, { signature: key, groups });
-	return groups;
+	)
+		.then((groups) => {
+			cache.set(agent, { signature: key, groups });
+			return groups;
+		})
+		.finally(() => {
+			if (inflight.get(inflightKey) === job) {
+				inflight.delete(inflightKey);
+			}
+		});
+
+	inflight.set(inflightKey, job);
+	return job;
 }
 
 /** Drops one agent's cache, or every agent's when `agent` is empty. */
 export function clearModelCatalog(agent?: string) {
-	if (agent) cache.delete(agent);
-	else cache.clear();
+	if (agent) {
+		cache.delete(agent);
+		for (const k of inflight.keys()) {
+			if (k.startsWith(`${agent}::`)) inflight.delete(k);
+		}
+	} else {
+		cache.clear();
+		inflight.clear();
+	}
 }
 
 // The capability catalog is global and changes only when the binary or the

@@ -44,6 +44,7 @@
 	const cached = $derived(runtimesManageStore.data);
 	const loading = $derived(runtimesManageStore.loading && !cached);
 	const refreshing = $derived(runtimesManageStore.refreshing);
+	const probingAuth = $derived(runtimesManageStore.probingAuth);
 	const loadError = $derived(runtimesManageStore.error);
 	const managementEnabled = $derived(cached?.management_enabled ?? true);
 	const runtimes = $derived(cached?.runtimes ?? []);
@@ -262,6 +263,13 @@
 												class="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
 											>
 												{t('myaaw.settings.runtimes_auth_unauthenticated')}
+											</span>
+										{:else if probingAuth && rt.installed && rt.id !== 'custom_acp'}
+											<span
+												class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+											>
+												<RefreshCw class="h-2.5 w-2.5 animate-spin" />
+												{t('myaaw.settings.runtimes_auth_checking')}
 											</span>
 										{/if}
 									{/if}

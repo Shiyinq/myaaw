@@ -171,5 +171,6 @@ func (s *ConfigService) DisconnectProvider(agent, id string) error {
 	p.CredentialID, p.APIKey, p.BaseURL = "", "", ""
 	p.AuthMode = "oauth"
 	cfg.Providers[id] = p
+	InvalidateProviderModelsCache()
 	return saveAgentConfig(agent, cfg)
 }

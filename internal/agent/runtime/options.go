@@ -3,8 +3,11 @@ package runtime
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -51,20 +54,95 @@ type RuntimeOptions struct {
 }
 
 type cachedRuntimeOptions struct {
-	key       string
+	preset    string
 	fetchedAt time.Time
 	value     RuntimeOptions
+}
+
+type runtimeOptionsInflight struct {
+	done  chan struct{}
+	value RuntimeOptions
 }
 
 var (
 	runtimeOptionsCacheMu sync.Mutex
 	runtimeOptionsCache   = make(map[string]cachedRuntimeOptions)
-	runtimeOptionsTTL     = 60 * time.Second
+	runtimeOptionsRunning = make(map[string]*runtimeOptionsInflight)
+	runtimeOptionsTTL     = 5 * time.Minute
 )
 
-// DiscoverRuntimeOptionsCached returns cached live runtime options for one
-// agent unless refresh is true, the TTL expired, or the runtime configuration
-// fingerprint changed.
+// InvalidateRuntimeOptionsCache drops cached runtime option discovery entries
+// for presetID (or every preset when presetID is empty) so installs, updates,
+// and login/logout transitions always probe fresh models and auth state.
+func InvalidateRuntimeOptionsCache(presetID string) {
+	id := strings.ToLower(strings.TrimSpace(presetID))
+	runtimeOptionsCacheMu.Lock()
+	defer runtimeOptionsCacheMu.Unlock()
+	if id == "" {
+		runtimeOptionsCache = make(map[string]cachedRuntimeOptions)
+		return
+	}
+	for k, entry := range runtimeOptionsCache {
+		if entry.preset == id {
+			delete(runtimeOptionsCache, k)
+		}
+	}
+}
+
+func runtimeOptionsCacheKey(cfg config.RuntimeConfig) string {
+	cmdKey := strings.TrimSpace(cfg.Command)
+	if resolved, err := ResolveBinary(cmdKey); err == nil && resolved != "" {
+		cmdKey = resolved
+	}
+	keyFingerprint := ""
+	if cfg.AuthSource == config.AuthSourceAPIKey && cfg.APIKey != "" {
+		sum := sha256.Sum256([]byte(cfg.APIKeyEnv + ":" + cfg.APIKey))
+		keyFingerprint = hex.EncodeToString(sum[:8])
+	}
+	return fmt.Sprintf("%s|%s|%s|%s|%s",
+		cfg.Type, cfg.Preset, cmdKey, strings.Join(cfg.Args, "\x00"), keyFingerprint)
+}
+
+func cloneRuntimeOptions(in RuntimeOptions) RuntimeOptions {
+	out := in
+	if len(in.Models.Options) > 0 {
+		out.Models.Options = make([]RuntimeOptionItem, len(in.Models.Options))
+		for i, item := range in.Models.Options {
+			if len(item.ThinkingLevels) > 0 {
+				item.ThinkingLevels = append([]string(nil), item.ThinkingLevels...)
+			}
+			out.Models.Options[i] = item
+		}
+	}
+	if len(in.Thinking.Options) > 0 {
+		out.Thinking.Options = append([]RuntimeOptionItem(nil), in.Thinking.Options...)
+	}
+	if len(in.SessionModes.Options) > 0 {
+		out.SessionModes.Options = append([]RuntimeOptionItem(nil), in.SessionModes.Options...)
+	}
+	if len(in.ApprovalModes.Options) > 0 {
+		out.ApprovalModes.Options = append([]RuntimeOptionItem(nil), in.ApprovalModes.Options...)
+	}
+	return out
+}
+
+// cleanupProbeProcess tears down a one-shot probe subprocess asynchronously so
+// the caller can return immediately after parsing the JSON-RPC response without
+// blocking on the 300ms SIGTERM grace period.
+func cleanupProbeProcess(stdin io.Closer, cmd *exec.Cmd) {
+	go func() {
+		if stdin != nil {
+			_ = stdin.Close()
+		}
+		terminateProcessGroup(cmd)
+		_ = cmd.Wait()
+	}()
+}
+
+// DiscoverRuntimeOptionsCached returns cached live runtime options unless
+// refresh is true or the 5-minute TTL expired. Cache entries are shared across
+// agents, onboarding probes, and auth status checks for the same runtime binary
+// and arguments, and concurrent callers coalesce onto a single CLI probe.
 func DiscoverRuntimeOptionsCached(
 	ctx context.Context,
 	agentName string,
@@ -72,30 +150,47 @@ func DiscoverRuntimeOptionsCached(
 	workingDir string,
 	refresh bool,
 ) RuntimeOptions {
+	_ = agentName
 	cfg := config.MergeRuntime(&raw)
-	cacheKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s",
-		agentName, cfg.Type, cfg.Preset, cfg.Command, strings.Join(cfg.Args, "\x00"), workingDir)
+	if !cfg.IsExternal() {
+		return DiscoverRuntimeOptions(ctx, cfg, workingDir)
+	}
+	cacheKey := runtimeOptionsCacheKey(cfg)
 
+	runtimeOptionsCacheMu.Lock()
 	if !refresh {
-		runtimeOptionsCacheMu.Lock()
-		if entry, ok := runtimeOptionsCache[agentName]; ok && entry.key == cacheKey && time.Since(entry.fetchedAt) < runtimeOptionsTTL {
-			val := entry.value
+		if entry, ok := runtimeOptionsCache[cacheKey]; ok && time.Since(entry.fetchedAt) < runtimeOptionsTTL {
+			val := cloneRuntimeOptions(entry.value)
 			runtimeOptionsCacheMu.Unlock()
 			return applyConfiguredCurrents(val, cfg)
 		}
-		runtimeOptionsCacheMu.Unlock()
 	}
+	if inflight, ok := runtimeOptionsRunning[cacheKey]; ok {
+		runtimeOptionsCacheMu.Unlock()
+		select {
+		case <-inflight.done:
+			return applyConfiguredCurrents(cloneRuntimeOptions(inflight.value), cfg)
+		case <-ctx.Done():
+			return DiscoverRuntimeOptions(ctx, cfg, workingDir)
+		}
+	}
+	inflight := &runtimeOptionsInflight{done: make(chan struct{})}
+	runtimeOptionsRunning[cacheKey] = inflight
+	runtimeOptionsCacheMu.Unlock()
 
 	opts := DiscoverRuntimeOptions(ctx, cfg, workingDir)
+	runtimeOptionsCacheMu.Lock()
 	if opts.Warning == "" {
-		runtimeOptionsCacheMu.Lock()
-		runtimeOptionsCache[agentName] = cachedRuntimeOptions{
-			key:       cacheKey,
+		runtimeOptionsCache[cacheKey] = cachedRuntimeOptions{
+			preset:    strings.ToLower(strings.TrimSpace(cfg.Preset)),
 			fetchedAt: time.Now(),
-			value:     opts,
+			value:     cloneRuntimeOptions(opts),
 		}
-		runtimeOptionsCacheMu.Unlock()
 	}
+	inflight.value = cloneRuntimeOptions(opts)
+	delete(runtimeOptionsRunning, cacheKey)
+	close(inflight.done)
+	runtimeOptionsCacheMu.Unlock()
 	return applyConfiguredCurrents(opts, cfg)
 }
 
@@ -287,11 +382,7 @@ func probeACPOptions(parent context.Context, cfg config.RuntimeConfig, workingDi
 		opts.Warning = fmt.Sprintf("start %s: %v", cfg.Command, err)
 		return
 	}
-	defer func() {
-		_ = stdin.Close()
-		terminateProcessGroup(cmd)
-		_ = cmd.Wait()
-	}()
+	defer cleanupProbeProcess(stdin, cmd)
 
 	writeReq := func(id int, method string, params any) error {
 		data, err := json.Marshal(map[string]any{
@@ -519,11 +610,7 @@ func probePiRPCOptions(parent context.Context, cfg config.RuntimeConfig, working
 		opts.Warning = fmt.Sprintf("start %s: %v", cfg.Command, err)
 		return
 	}
-	defer func() {
-		_ = stdin.Close()
-		terminateProcessGroup(cmd)
-		_ = cmd.Wait()
-	}()
+	defer cleanupProbeProcess(stdin, cmd)
 
 	_, _ = stdin.Write([]byte(`{"id":"1","type":"get_state"}` + "\n"))
 	_, _ = stdin.Write([]byte(`{"id":"2","type":"get_available_models"}` + "\n"))
@@ -714,11 +801,7 @@ func probeCodexOptions(parent context.Context, cfg config.RuntimeConfig, working
 		opts.Warning = fmt.Sprintf("start %s: %v", cfg.Command, err)
 		return
 	}
-	defer func() {
-		_ = stdin.Close()
-		terminateProcessGroup(cmd)
-		_ = cmd.Wait()
-	}()
+	defer cleanupProbeProcess(stdin, cmd)
 
 	writeReq := func(id int, method string, params any) error {
 		data, err := json.Marshal(map[string]any{

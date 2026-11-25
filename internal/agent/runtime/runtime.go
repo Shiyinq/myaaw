@@ -11,6 +11,7 @@ import (
 	goruntime "runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"myaaw/internal/agent"
@@ -78,29 +79,157 @@ type DetectedRuntime struct {
 	Version    string `json:"version,omitempty"`
 }
 
-// Discover probes the host PATH for every built-in runtime preset.
-func Discover(ctx context.Context) []DetectedRuntime {
-	presets := config.RuntimePresets()
-	out := make([]DetectedRuntime, 0, len(presets))
-	for _, preset := range presets {
-		entry := DetectedRuntime{RuntimePreset: preset}
-		if preset.Type == config.RuntimeTypeMyaaw {
-			entry.Installed = true
-			entry.Version = "built-in"
-			out = append(out, entry)
-			continue
+type cachedDiscover struct {
+	fetchedAt time.Time
+	items     []DetectedRuntime
+}
+
+var (
+	discoverCacheMu  sync.Mutex
+	discoverCache    cachedDiscover
+	discoverTTL      = 5 * time.Minute
+	discoverInflight chan struct{}
+
+	extraDirsMu      sync.Mutex
+	extraDirsKey     string
+	extraDirsCached  []string
+	extraDirsFetched time.Time
+	extraDirsTTL     = 30 * time.Second
+)
+
+// InvalidateExtraSearchDirsCache clears the cached extra PATH bin directory
+// list so newly created installer directories (e.g. ~/.opencode/bin) are found
+// immediately without waiting for the 30s directory scan TTL.
+func InvalidateExtraSearchDirsCache() {
+	extraDirsMu.Lock()
+	extraDirsCached = nil
+	extraDirsFetched = time.Time{}
+	extraDirsMu.Unlock()
+}
+
+// InvalidateDiscoverCache drops cached host CLI binary discovery so the next
+// query re-probes binary paths and versions live.
+func InvalidateDiscoverCache() {
+	discoverCacheMu.Lock()
+	discoverCache = cachedDiscover{}
+	discoverCacheMu.Unlock()
+	InvalidateExtraSearchDirsCache()
+}
+
+// DiscoverCached returns cached host binary discovery unless refresh is true
+// or the cache TTL has expired. Concurrent callers coalesce onto one in-flight
+// probe so parallel requests (e.g. /runtimes + /runtimes/manage) never spawn
+// duplicate CLI version checks.
+func DiscoverCached(ctx context.Context, refresh bool) []DetectedRuntime {
+	if refresh {
+		InvalidateExtraSearchDirsCache()
+	}
+	for {
+		discoverCacheMu.Lock()
+		if !refresh && len(discoverCache.items) > 0 && time.Since(discoverCache.fetchedAt) < discoverTTL {
+			out := cloneDetectedRuntimes(discoverCache.items)
+			discoverCacheMu.Unlock()
+			return out
 		}
-		if preset.DefaultCommand == "" {
-			out = append(out, entry)
-			continue
+		if waitCh := discoverInflight; waitCh != nil {
+			discoverCacheMu.Unlock()
+			select {
+			case <-waitCh:
+				refresh = false
+				continue
+			case <-ctx.Done():
+				return Discover(ctx)
+			}
 		}
+		ch := make(chan struct{})
+		discoverInflight = ch
+		discoverCacheMu.Unlock()
+
+		items := Discover(ctx)
+		discoverCacheMu.Lock()
+		discoverCache = cachedDiscover{
+			fetchedAt: time.Now(),
+			items:     cloneDetectedRuntimes(items),
+		}
+		discoverInflight = nil
+		close(ch)
+		discoverCacheMu.Unlock()
+		return items
+	}
+}
+
+// DiscoverOne probes a single runtime preset live and updates the cached entry
+// in place when a cache snapshot is present.
+func DiscoverOne(ctx context.Context, preset config.RuntimePreset) DetectedRuntime {
+	InvalidateExtraSearchDirsCache()
+	entry := DetectedRuntime{RuntimePreset: preset}
+	if preset.Type == config.RuntimeTypeMyaaw {
+		entry.Installed = true
+		entry.Version = "built-in"
+		return entry
+	}
+	if preset.DefaultCommand != "" {
 		if path, err := ResolveBinary(preset.DefaultCommand); err == nil {
 			entry.Installed = true
 			entry.BinaryPath = path
-			entry.Version = probeBinaryVersion(ctx, path)
+			entry.Version = ProbeBinaryVersion(ctx, path)
 		}
-		out = append(out, entry)
 	}
+	discoverCacheMu.Lock()
+	for i := range discoverCache.items {
+		if discoverCache.items[i].ID == preset.ID {
+			discoverCache.items[i] = entry
+			break
+		}
+	}
+	discoverCacheMu.Unlock()
+	return entry
+}
+
+func cloneDetectedRuntimes(in []DetectedRuntime) []DetectedRuntime {
+	out := make([]DetectedRuntime, len(in))
+	for i, item := range in {
+		if len(item.DefaultArgs) > 0 {
+			item.DefaultArgs = append([]string(nil), item.DefaultArgs...)
+		}
+		out[i] = item
+	}
+	return out
+}
+
+// Discover probes the host PATH concurrently for every built-in runtime preset.
+func Discover(ctx context.Context) []DetectedRuntime {
+	presets := config.RuntimePresets()
+	out := make([]DetectedRuntime, len(presets))
+	var wg sync.WaitGroup
+	for i, preset := range presets {
+		idx := i
+		p := preset
+		if p.Type == config.RuntimeTypeMyaaw {
+			out[idx] = DetectedRuntime{
+				RuntimePreset: p,
+				Installed:     true,
+				Version:       "built-in",
+			}
+			continue
+		}
+		if p.DefaultCommand == "" {
+			out[idx] = DetectedRuntime{RuntimePreset: p}
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			entry := DetectedRuntime{RuntimePreset: p}
+			if path, err := ResolveBinary(p.DefaultCommand); err == nil {
+				entry.Installed = true
+				entry.BinaryPath = path
+				entry.Version = ProbeBinaryVersion(ctx, path)
+			}
+			out[idx] = entry
+		}()
+	}
+	wg.Wait()
 	return out
 }
 
@@ -166,8 +295,20 @@ func EnrichedPATH() string {
 }
 
 func extraSearchDirs() []string {
+	home, _ := os.UserHomeDir()
+	localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
+	cacheKey := home + "\x00" + localAppData
+
+	extraDirsMu.Lock()
+	if extraDirsKey == cacheKey && !extraDirsFetched.IsZero() && time.Since(extraDirsFetched) < extraDirsTTL {
+		cached := append([]string(nil), extraDirsCached...)
+		extraDirsMu.Unlock()
+		return cached
+	}
+	extraDirsMu.Unlock()
+
 	var dirs []string
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
+	if home != "" {
 		staticUserDirs := []string{
 			filepath.Join(home, ".local", "bin"),
 			filepath.Join(home, ".gemini", "antigravity", "bin"),
@@ -221,11 +362,11 @@ func extraSearchDirs() []string {
 	switch goruntime.GOOS {
 	case "darwin":
 		dshDesktopDirs = append(dshDesktopDirs, "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin")
-		if home, err := os.UserHomeDir(); err == nil && home != "" {
-			dshDesktopDirs = append(dshDesktopDirs, filepath.Join(home, "Applications", "DeepSeek Harness.app", "Contents", "Resources", "runtime", "cli", "bin"))
+		if home != "" {
+			dshDesktopDirs = append(dshDesktopDirs, filepath.Join(home, "Applications", "DeepSeek Harness.app", "Contents/Resources/runtime/cli/bin"))
 		}
 	case "windows":
-		if localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); localAppData != "" {
+		if localAppData != "" {
 			dshDesktopDirs = append(dshDesktopDirs, filepath.Join(localAppData, "Programs", "DeepSeek Harness", "resources", "runtime", "cli", "bin"))
 		}
 	default:
@@ -236,6 +377,12 @@ func extraSearchDirs() []string {
 			dirs = append(dirs, d)
 		}
 	}
+
+	extraDirsMu.Lock()
+	extraDirsKey = cacheKey
+	extraDirsCached = append([]string(nil), dirs...)
+	extraDirsFetched = time.Now()
+	extraDirsMu.Unlock()
 	return dirs
 }
 
@@ -250,7 +397,9 @@ func isExecutableFile(path string) bool {
 	return info.Mode()&0o111 != 0
 }
 
-func probeBinaryVersion(parent context.Context, binary string) string {
+// ProbeBinaryVersion runs `<binary> --version` with a short bounded timeout
+// and returns the first trimmed output line.
+func ProbeBinaryVersion(parent context.Context, binary string) string {
 	ctx, cancel := context.WithTimeout(parent, 1500*time.Millisecond)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, binary, "--version")

@@ -47,27 +47,45 @@ type cachedAuthStatus struct {
 	value     AuthStatusInfo
 }
 
+type authProbeInflight struct {
+	done  chan struct{}
+	value AuthStatusInfo
+}
+
 var (
-	authStatusCacheMu sync.Mutex
-	authStatusCache   = make(map[string]cachedAuthStatus)
-	authStatusTTL     = 60 * time.Second
+	authStatusCacheMu  sync.Mutex
+	authStatusCache    = make(map[string]cachedAuthStatus)
+	authStatusInflight = make(map[string]*authProbeInflight)
+	authStatusTTL      = 5 * time.Minute
+	authUnauthTTL      = 15 * time.Second
 )
 
-// InvalidateAuthStatusCache drops cached CLI authentication status for presetID
-// (or all presets when presetID is empty) so the next query re-probes live.
+func authCacheEntryFresh(entry cachedAuthStatus) bool {
+	ttl := authStatusTTL
+	if entry.value.Status == AuthStatusUnauthenticated {
+		ttl = authUnauthTTL
+	}
+	return time.Since(entry.fetchedAt) < ttl
+}
+
+// InvalidateAuthStatusCache drops cached CLI authentication status and any
+// paired runtime option discovery for presetID (or all presets when empty) so
+// the next query re-probes live.
 func InvalidateAuthStatusCache(presetID string) {
 	id := strings.ToLower(strings.TrimSpace(presetID))
 	authStatusCacheMu.Lock()
-	defer authStatusCacheMu.Unlock()
 	if id == "" {
 		authStatusCache = make(map[string]cachedAuthStatus)
-		return
+	} else {
+		delete(authStatusCache, id)
 	}
-	delete(authStatusCache, id)
+	authStatusCacheMu.Unlock()
+	InvalidateRuntimeOptionsCache(id)
 }
 
 // ProbeAuthStatusCached returns cached CLI auth readiness unless refresh is true
-// or the 60s TTL expired.
+// or the TTL expired. Concurrent callers for the same cache key coalesce onto a
+// single in-flight subprocess probe instead of spawning duplicate CLI processes.
 func ProbeAuthStatusCached(
 	parent context.Context,
 	preset config.RuntimePreset,
@@ -77,26 +95,44 @@ func ProbeAuthStatusCached(
 	refresh bool,
 ) AuthStatusInfo {
 	cacheKey := fmt.Sprintf("%s|%s|%s|%t", preset.ID, resolvedBin, apiKeyEnv, hasSavedGlobalKey)
+	if refresh {
+		InvalidateRuntimeOptionsCache(preset.ID)
+	}
+
+	authStatusCacheMu.Lock()
 	if !refresh {
-		authStatusCacheMu.Lock()
-		if entry, ok := authStatusCache[preset.ID]; ok && entry.key == cacheKey && time.Since(entry.fetchedAt) < authStatusTTL {
+		if entry, ok := authStatusCache[preset.ID]; ok && entry.key == cacheKey && authCacheEntryFresh(entry) {
 			val := entry.value
 			authStatusCacheMu.Unlock()
 			return val
 		}
-		authStatusCacheMu.Unlock()
 	}
+	if inflight, ok := authStatusInflight[cacheKey]; ok {
+		authStatusCacheMu.Unlock()
+		select {
+		case <-inflight.done:
+			return inflight.value
+		case <-parent.Done():
+			return AuthActionMetadata(preset.ID)
+		}
+	}
+	inflight := &authProbeInflight{done: make(chan struct{})}
+	authStatusInflight[cacheKey] = inflight
+	authStatusCacheMu.Unlock()
 
 	res := ProbeAuthStatus(parent, preset, resolvedBin, apiKeyEnv, hasSavedGlobalKey)
+	authStatusCacheMu.Lock()
 	if res.Status != AuthStatusUnknown {
-		authStatusCacheMu.Lock()
 		authStatusCache[preset.ID] = cachedAuthStatus{
 			key:       cacheKey,
 			fetchedAt: time.Now(),
 			value:     res,
 		}
-		authStatusCacheMu.Unlock()
 	}
+	inflight.value = res
+	delete(authStatusInflight, cacheKey)
+	close(inflight.done)
+	authStatusCacheMu.Unlock()
 	return res
 }
 
@@ -275,18 +311,19 @@ func ProbeAuthStatus(
 		}
 
 	case "codex":
+		// Run `codex login status` before `codex app-server` so two codex processes
+		// never race on ~/.codex PATH alias creation or state locks.
 		out, exitCode, err := runNonInteractiveProbe(ctx, resolvedBin, "login", "status")
 		lower := strings.ToLower(out)
 		if err == nil && exitCode == 0 && !strings.Contains(lower, "not logged in") {
 			info.Status = AuthStatusAuthenticated
 			summary := parseCodexAuthSummary(out)
-			var probeOpts RuntimeOptions
-			probeCodexOptions(ctx, config.RuntimeConfig{
+			probeOpts := DiscoverRuntimeOptionsCached(ctx, "authprobe:"+preset.ID, config.RuntimeConfig{
 				Type:    preset.Type,
 				Preset:  preset.ID,
 				Command: resolvedBin,
 				Args:    preset.DefaultArgs,
-			}, os.TempDir(), &probeOpts)
+			}, os.TempDir(), false)
 			if n := len(probeOpts.Models.Options); n > 0 {
 				if summary != "" {
 					info.Detail = fmt.Sprintf("%s · %d models", summary, n)
@@ -335,6 +372,8 @@ func ProbeAuthStatus(
 		return info
 
 	case "opencode":
+		// Run `opencode auth list` then `opencode models` sequentially so two
+		// opencode processes never contend on OpenCode's local state/cache DB.
 		out, exitCode, err := runNonInteractiveProbe(ctx, resolvedBin, "auth", "list")
 		if err == nil && exitCode == 0 {
 			count := countOpenCodeProviders(out)
@@ -360,7 +399,7 @@ func ProbeAuthStatus(
 				return info
 			}
 		}
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(mErr, context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(mErr, context.DeadlineExceeded) || mErr != nil {
 			info.Status = AuthStatusUnknown
 			return info
 		}
@@ -368,13 +407,12 @@ func ProbeAuthStatus(
 		return info
 
 	case "deepseek_harness":
-		var probeOpts RuntimeOptions
-		probeACPOptions(ctx, config.RuntimeConfig{
+		probeOpts := DiscoverRuntimeOptionsCached(ctx, "authprobe:"+preset.ID, config.RuntimeConfig{
 			Type:    preset.Type,
 			Preset:  preset.ID,
 			Command: resolvedBin,
 			Args:    preset.DefaultArgs,
-		}, os.TempDir(), &probeOpts)
+		}, os.TempDir(), false)
 		hasAccountModel := false
 		for _, m := range probeOpts.Models.Options {
 			if strings.Contains(strings.ToLower(m.Value), "deepseek-account") || strings.EqualFold(m.Group, "DeepSeek Account") {
@@ -405,13 +443,12 @@ func ProbeAuthStatus(
 			info.Detail = envKeyName
 			return info
 		}
-		var probeOpts RuntimeOptions
-		probePiRPCOptions(ctx, config.RuntimeConfig{
+		probeOpts := DiscoverRuntimeOptionsCached(ctx, "authprobe:"+preset.ID, config.RuntimeConfig{
 			Type:    preset.Type,
 			Preset:  preset.ID,
 			Command: resolvedBin,
 			Args:    preset.DefaultArgs,
-		}, os.TempDir(), &probeOpts)
+		}, os.TempDir(), false)
 		if len(probeOpts.Models.Options) > 0 {
 			info.Status = AuthStatusAuthenticated
 			info.Detail = fmt.Sprintf("%d models ready", len(probeOpts.Models.Options))

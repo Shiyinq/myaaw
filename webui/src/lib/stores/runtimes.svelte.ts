@@ -1,6 +1,8 @@
 import { RUNTIMES_MANAGE_STALE_TIME } from '$lib/constants/query';
 import { agents as agentsApi } from '$lib/apis/agents';
 import { apiBase } from '$lib/stores/apiBase.svelte';
+import { agentsStore } from '$lib/stores/agents.svelte';
+import { invalidateRuntimeOptions } from '$lib/stores/runtimeOptions';
 import { createQueryStore } from './query.svelte';
 import type { SSEEvent } from '$lib/utils/sse';
 import type {
@@ -10,14 +12,49 @@ import type {
 	RuntimeDefaultsInput
 } from '$lib/types';
 
-const managed = createQueryStore<Record<string, never>, ManagedRuntimesResponse>({
-	key: () => `runtimes:manage:${apiBase.value}`,
-	fetcher: () => agentsApi.managedRuntimes(true, false),
-	staleTime: RUNTIMES_MANAGE_STALE_TIME
-});
-
 let forceRefreshing = $state(false);
 let forceError = $state('');
+let probingAuth = $state(false);
+
+const managed = createQueryStore<Record<string, never>, ManagedRuntimesResponse>({
+	key: () => `runtimes:manage:${apiBase.value}`,
+	fetcher: async () => {
+		// On a cold store, start the full probe_auth=1 request immediately. If the
+		// backend cache is already warm, it resolves in a few ms with just 1 HTTP
+		// request. Only if it takes >150ms (cold backend) do we fire a fast
+		// probe_auth=0 request to paint the cards right away while auth resolves.
+		const cold = managed.peek({}) === undefined;
+		if (!cold) {
+			return agentsApi.managedRuntimes(true, false);
+		}
+		let fullDone = false;
+		const fallbackTimer = setTimeout(() => {
+			if (fullDone || managed.peek({}) !== undefined) return;
+			probingAuth = true;
+			void agentsApi
+				.managedRuntimes(false, false)
+				.then((fast) => {
+					if (!fullDone && managed.peek({}) === undefined) {
+						managed.write({}, fast);
+					}
+				})
+				.catch(() => {
+					// Ignore fast-phase errors; full request reports any real failure.
+				});
+		}, 150);
+		try {
+			const full = await agentsApi.managedRuntimes(true, false);
+			fullDone = true;
+			clearTimeout(fallbackTimer);
+			return full;
+		} finally {
+			fullDone = true;
+			clearTimeout(fallbackTimer);
+			probingAuth = false;
+		}
+	},
+	staleTime: RUNTIMES_MANAGE_STALE_TIME
+});
 
 function patchOne(updated: ManagedRuntimeView) {
 	managed.setData((prev) => {
@@ -27,6 +64,10 @@ function patchOne(updated: ManagedRuntimeView) {
 			runtimes: prev.runtimes.map((item) => (item.id === updated.id ? updated : item))
 		};
 	});
+	// Keep /app/new runtime discovery and chat composer model lists in sync
+	// immediately after installs, updates, logins, logouts, or default edits.
+	agentsStore.runtimes.invalidate({});
+	invalidateRuntimeOptions();
 }
 
 export const runtimesManageStore = {
@@ -39,6 +80,9 @@ export const runtimesManageStore = {
 	},
 	get refreshing() {
 		return managed.refreshing || forceRefreshing;
+	},
+	get probingAuth() {
+		return probingAuth;
 	},
 	get error() {
 		return forceError || managed.error;
@@ -54,6 +98,8 @@ export const runtimesManageStore = {
 		try {
 			const fresh = await agentsApi.managedRuntimes(true, true);
 			managed.write({}, fresh);
+			agentsStore.runtimes.invalidate({});
+			invalidateRuntimeOptions();
 		} catch (err) {
 			forceError = err instanceof Error ? err.message : String(err);
 		} finally {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"myaaw/internal/agentdir"
@@ -116,25 +117,33 @@ func (s *AgentService) List() ([]AgentInfo, error) {
 		return nil, err
 	}
 
-	agents := make([]AgentInfo, 0, len(names))
-	for _, name := range names {
-		rtType, rtPreset := resolveAgentRuntime(name)
-		info := AgentInfo{
-			Name:          name,
-			Default:       name == registry.Default,
-			CreatedAt:     createdAtRFC3339(registry, name),
-			AgentColor:    agentdir.AgentColorOrDefault(registry.Agents[name].AgentColor),
-			RuntimeType:   rtType,
-			RuntimePreset: rtPreset,
-		}
-		baseURL, port, err := s.resolve(name)
-		if err == nil {
-			info.BaseURL = baseURL
-			info.Port = port
-			info.Running = s.reachable(baseURL, port)
-		}
-		agents = append(agents, info)
+	agents := make([]AgentInfo, len(names))
+	var wg sync.WaitGroup
+	for i, name := range names {
+		idx := i
+		agentName := name
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rtType, rtPreset := resolveAgentRuntime(agentName)
+			info := AgentInfo{
+				Name:          agentName,
+				Default:       agentName == registry.Default,
+				CreatedAt:     createdAtRFC3339(registry, agentName),
+				AgentColor:    agentdir.AgentColorOrDefault(registry.Agents[agentName].AgentColor),
+				RuntimeType:   rtType,
+				RuntimePreset: rtPreset,
+			}
+			baseURL, port, rErr := s.resolve(agentName)
+			if rErr == nil {
+				info.BaseURL = baseURL
+				info.Port = port
+				info.Running = s.reachable(baseURL, port)
+			}
+			agents[idx] = info
+		}()
 	}
+	wg.Wait()
 	return agents, nil
 }
 

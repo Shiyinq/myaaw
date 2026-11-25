@@ -803,6 +803,7 @@
 			"runtimes_auth_free_tier": "Ready (Free models)",
 			"runtimes_auth_api_key": "API key ready",
 			"runtimes_auth_unauthenticated": "Not signed in",
+			"runtimes_auth_checking": "Checking auth...",
 			"runtimes_auth_unknown": "Auth unchecked",
 			"runtimes_used_by": "Used by",
 			"runtimes_agents_one": "1 agent",

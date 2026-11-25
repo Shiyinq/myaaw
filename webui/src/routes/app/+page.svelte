@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { agentsStore } from '$lib/stores/agents.svelte';
+	import { runtimesManageStore } from '$lib/stores/runtimes.svelte';
+	import { invalidateRuntimeOptions } from '$lib/stores/runtimeOptions';
 	import { serverStore } from '$lib/stores/server.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences.svelte';
@@ -108,6 +110,8 @@
 			return;
 		try {
 			await agentsStore.remove(name);
+			invalidateRuntimeOptions(name);
+			runtimesManageStore.query.invalidate({});
 			toastStore.success(t('myaaw.home.agent_deleted'));
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));

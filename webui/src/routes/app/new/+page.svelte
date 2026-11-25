@@ -532,12 +532,20 @@
 		manualModel = false;
 		try {
 			try {
+				const cachedManaged = runtimesManageStore.data;
 				const [capsRes, runtimesRes, managedRes] = await Promise.all([
-					agentsStore.fetchCapabilities(),
-					agentsStore.fetchRuntimes().catch(() => ({ runtimes: [] })),
-					runtimesManageStore.list(false).catch(() => ({ management_enabled: true, runtimes: [] }))
+					agentsStore.ensureCapabilities().then(() => agentsStore.capabilitiesData),
+					agentsStore
+						.ensureRuntimes()
+						.then(() => agentsStore.runtimesData ?? { runtimes: [] })
+						.catch(() => ({ runtimes: [] })),
+					cachedManaged
+						? Promise.resolve(cachedManaged)
+						: runtimesManageStore
+								.list(false)
+								.catch(() => ({ management_enabled: true, runtimes: [] }))
 				]);
-				capabilities = capsRes;
+				capabilities = capsRes ?? (await agentsStore.fetchCapabilities());
 				runtimes = runtimesRes.runtimes ?? [];
 				managedRuntimes = managedRes.runtimes ?? [];
 			} catch (err) {
@@ -995,6 +1003,7 @@
 		try {
 			const response = await agentsStore.onboard(target, buildPayload(result.data));
 			invalidateRuntimeOptions(target);
+			runtimesManageStore.query.invalidate({});
 			toastStore.success(
 				reconfigure
 					? t('myaaw.onboard.updated', { name: target })

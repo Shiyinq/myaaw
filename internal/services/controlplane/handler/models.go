@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strings"
+
 	"myaaw/internal/services/controlplane/service"
 
 	"github.com/gofiber/fiber/v3"
@@ -62,7 +64,9 @@ func (h *Handler) GetModelCapabilities(c fiber.Ctx) error {
 // @Failure      404 {object} common.ErrorResponse
 // @Router       /agents/{name}/providers/{id}/models [get]
 func (h *Handler) GetProviderModels(c fiber.Ctx) error {
-	view, err := h.config.ProviderModels(c.Params("name"), c.Params("id"))
+	refreshRaw := strings.ToLower(strings.TrimSpace(c.Query("refresh")))
+	refresh := refreshRaw == "1" || refreshRaw == "true" || refreshRaw == "yes"
+	view, err := h.config.ProviderModelsWithRefresh(c.Params("name"), c.Params("id"), refresh)
 	if err != nil {
 		return configWriteError(c, err)
 	}

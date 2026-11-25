@@ -803,6 +803,7 @@
 			"runtimes_auth_free_tier": "Siap (Model gratis)",
 			"runtimes_auth_api_key": "API key siap",
 			"runtimes_auth_unauthenticated": "Belum login",
+			"runtimes_auth_checking": "Memeriksa login...",
 			"runtimes_auth_unknown": "Auth belum dicek",
 			"runtimes_used_by": "Dipakai oleh",
 			"runtimes_agents_one": "1 agen",

@@ -42,8 +42,10 @@ type RuntimeAuthSessionRequest struct {
 // @Failure      401 {object} common.ErrorResponse
 // @Router       /runtimes [get]
 func (h *Handler) GetRuntimes(c fiber.Ctx) error {
+	refreshRaw := strings.ToLower(strings.TrimSpace(c.Query("refresh")))
+	refresh := refreshRaw == "1" || refreshRaw == "true" || refreshRaw == "yes"
 	return c.JSON(RuntimesResponse{
-		Runtimes: agentruntime.Discover(c.Context()),
+		Runtimes: agentruntime.DiscoverCached(c.Context(), refresh),
 	})
 }
 

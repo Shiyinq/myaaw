@@ -29,5 +29,5 @@ export const SERVER_STATUS_STALE_TIME = 10_000;
 /** A project build changes state while the drawer polls it. */
 export const PROJECT_STATUS_STALE_TIME = 10_000;
 
-/** External runtime host probes are cached on the backend for 60s. */
-export const RUNTIMES_MANAGE_STALE_TIME = 60_000;
+/** External runtime host probes are cached on the backend for 5m. */
+export const RUNTIMES_MANAGE_STALE_TIME = 5 * 60_000;

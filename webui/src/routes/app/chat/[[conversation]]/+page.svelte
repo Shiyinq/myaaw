@@ -1755,20 +1755,26 @@
 		});
 	});
 
-	// Probe live runtime options whenever an external CLI agent is selected.
+	// Probe live runtime options whenever an external CLI agent's config is loaded.
+	// Guard on `providerInfoLoaded` so switching from an external agent to a native
+	// Myaaw agent doesn't fire a spurious /runtime/options call with stale state.
 	$effect(() => {
 		const currentAgent = agent;
 		const external = isExternalRuntime;
-		if (!currentAgent || !external) return;
+		const loaded = providerInfoLoaded;
+		if (!currentAgent || !loaded || !external) return;
 		untrack(() => void ensureRuntimeOptions(currentAgent, false));
 	});
 
-	// Opening the menu before the config has arrived must not leave it empty: the
-	// effect retries as soon as the provider list is available.
+	// Prefetch native provider models silently in the background once the agent's
+	// config is loaded so opening the model picker dropdown is instantaneous.
 	$effect(() => {
 		const currentAgent = agent;
+		const loaded = providerInfoLoaded;
+		const external = isExternalRuntime;
 		const providers = providerInfo?.providers;
-		if (!modelMenuOpen || !currentAgent || !providers?.length) return;
+		void modelMenuOpen;
+		if (!currentAgent || !loaded || external || !providers?.length) return;
 		untrack(() => void loadModelGroups());
 	});
 
