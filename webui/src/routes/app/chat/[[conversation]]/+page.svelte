@@ -411,7 +411,6 @@
 		agentSelection.selected ? peekRuntimeOptions(agentSelection.selected) : null
 	);
 	let loadingRuntimeOptions = $state(false);
-	let customRuntimeModel = $state('');
 	let runtimeOptionsToken = 0;
 
 	// Configured provider and its default model, as the terminal status line shows.
@@ -1345,7 +1344,6 @@
 		switchingModel = true;
 		try {
 			await patchRuntimeConfig({ model: trimmed });
-			customRuntimeModel = '';
 		} catch (err) {
 			toastStore.error(getErrorMessage(err));
 		} finally {
@@ -1743,7 +1741,6 @@
 		untrack(() => {
 			modelGroups = null;
 			modelGroupsKey = '';
-			customRuntimeModel = '';
 			runtimeOptions = peekRuntimeOptions(currentAgent);
 			const cached = configStore.query.peek({ agent: currentAgent });
 			if (cached) {
@@ -5449,33 +5446,6 @@
 																>
 																	{runtimeOptions.warning}
 																</p>
-															{/if}
-															{#if runtimeOptions?.models.allow_custom !== false}
-																<DropdownMenu.Separator />
-																<form
-																	class="flex items-center gap-1.5 p-1.5"
-																	onsubmit={(e) => {
-																		e.preventDefault();
-																		if (customRuntimeModel.trim()) {
-																			void switchRuntimeModel(customRuntimeModel.trim());
-																		}
-																	}}
-																>
-																	<input
-																		type="text"
-																		bind:value={customRuntimeModel}
-																		placeholder={t('myaaw.chat.runtime_custom_model_placeholder')}
-																		onkeydown={(e) => e.stopPropagation()}
-																		class="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 font-mono text-[11px] outline-none focus:ring-1 focus:ring-ring"
-																	/>
-																	<button
-																		type="submit"
-																		disabled={!customRuntimeModel.trim() || switchingModel}
-																		class="h-7 shrink-0 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground transition-opacity disabled:opacity-50"
-																	>
-																		{t('myaaw.chat.runtime_custom_model_set')}
-																	</button>
-																</form>
 															{/if}
 														{/if}
 													</DropdownMenu.Content>
