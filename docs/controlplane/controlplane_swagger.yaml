@@ -8732,6 +8732,41 @@ paths:
       summary: List models for a provider
       tags:
       - Providers
+  /runtime/options:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Bypass the 60s cache and re-probe the CLI
+        in: query
+        name: refresh
+        type: boolean
+      - description: Runtime selection to probe
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.OnboardRuntimeInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/runtime.RuntimeOptions'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Discover live runtime options for an unsaved runtime selection
+      tags:
+      - Agents
   /runtimes:
     get:
       produces:

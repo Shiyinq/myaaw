@@ -145,15 +145,13 @@
 			>
 				<div class="space-y-0.5">
 					<p class="font-medium text-foreground">
-						Managed by external runtime:
+						{t('myaaw.providers.external_runtime_title')}
 						<span class="font-mono text-primary">
 							{selectedAgentInfo?.runtime_preset || selectedAgentInfo?.runtime_type}
 						</span>
 					</p>
 					<p class="text-xs text-muted-foreground">
-						This agent runs via an external CLI engine instead of Myaaw's built-in LLM provider
-						loop. Model, binary, working directory, and authentication are configured in Agent
-						Setup.
+						{t('myaaw.providers.external_runtime_desc')}
 					</p>
 				</div>
 				<Button
@@ -162,7 +160,7 @@
 					href={`/app/new?agent=${encodeURIComponent(agent)}`}
 					class="shrink-0"
 				>
-					Configure Runtime
+					{t('myaaw.providers.configure_runtime')}
 				</Button>
 			</div>
 		{/if}

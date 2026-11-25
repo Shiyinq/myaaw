@@ -94,6 +94,7 @@ Chat and conversation endpoints use this ID automatically. Clients do not need t
 | `GET` | `/agents` | list agents with `default`, `running`, `port`, `base_url`, `agent_color`, `runtime_type`, `runtime_preset` |
 | `GET` | `/capabilities` | provider presets, embedded skills and built-in tools for the onboarding form |
 | `GET` | `/runtimes` | supported agent runtimes (built-in `myaaw` + external CLI presets) with live host binary discovery |
+| `POST` | `/runtime/options` | live dynamic discovery for an unsaved runtime selection (used by the New Agent form before the agent exists; `?refresh=1` bypasses 60s cache) |
 | `GET` | `/agents/:name/runtime/options` | live dynamic discovery of models, thinking levels, native CLI session modes, and Myaaw approval modes (`?refresh=1` bypasses 60s cache) |
 | `GET` | `/agents/:name` | one agent |
 | `POST` | `/agents/:name/onboard` | create or reconfigure an agent with the full setup in one call |

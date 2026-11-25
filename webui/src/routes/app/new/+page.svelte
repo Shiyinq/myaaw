@@ -36,6 +36,11 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Plus, Save, Wand2, X } from 'lucide-svelte';
+	import {
+		invalidateRuntimeOptions,
+		loadRuntimeOptions as loadAgentRuntimeOptions,
+		probeRuntimeOptions as probeRuntimeOptionsApi
+	} from '$lib/stores/runtimeOptions';
 	import type {
 		CapabilityEntry,
 		CapabilitiesView,
@@ -43,7 +48,9 @@
 		ModelListView,
 		OnboardRequest,
 		ProviderOption,
-		ProviderConnection
+		ProviderConnection,
+		RuntimeOptionItem,
+		RuntimeOptions
 	} from '$lib/types';
 
 	const { t } = useTranslation();
@@ -72,8 +79,14 @@
 	let runtimePreset = $state('myaaw');
 	let runtimeCommand = $state('');
 	let runtimeArgs = $state('');
-	let runtimeWorkingDir = $state('');
 	let runtimeModel = $state('');
+	let runtimeThinking = $state('');
+	let runtimeSessionMode = $state('');
+	// Live options discovered from the selected CLI (models, thinking levels,
+	// native modes, approval routing); nothing here is hardcoded.
+	let runtimeOptions = $state<RuntimeOptions | null>(null);
+	let loadingRuntimeOptions = $state(false);
+	let runtimeProbeToken = 0;
 	let runtimeAuthSource = $state<'cli_login' | 'api_key'>('cli_login');
 	let runtimeApiKeyEnv = $state('');
 	let runtimeApiKey = $state('');
@@ -82,6 +95,152 @@
 	let runtimeMcpBridge = $state(true);
 	let isExternalRuntime = $derived(runtimePreset !== 'myaaw');
 	let activeRuntimePreset = $derived(runtimes.find((entry) => entry.id === runtimePreset) ?? null);
+
+	// Saved CLI identity on reconfigure so unchanged agents probe via
+	// GET /agents/:name/runtime/options (preserving masked API keys & workspace).
+	let savedRuntimeProbeKey = $state('');
+
+	const parseRuntimeArgs = (raw: string) =>
+		raw
+			.split(',')
+			.map((v) => v.trim())
+			.filter(Boolean);
+
+	function tOr(key: string, fallback: string): string {
+		const translated = t(key);
+		return translated === key ? fallback : translated;
+	}
+
+	function runtimePresetLabel(id: string, fallback: string): string {
+		if (id === 'myaaw') return t('myaaw.onboard.runtime_builtin');
+		if (id === 'custom_acp') return t('myaaw.onboard.runtime_custom_acp');
+		return fallback;
+	}
+
+	function runtimePresetDescription(preset: DetectedRuntime | null): string {
+		if (!preset) return '';
+		return tOr(`myaaw.onboard.runtime_preset_${preset.id}_desc`, preset.description ?? '');
+	}
+
+	function runtimePresetToSNotice(preset: DetectedRuntime | null): string {
+		if (!preset?.tos_notice) return '';
+		return tOr(`myaaw.onboard.runtime_preset_${preset.id}_tos`, preset.tos_notice);
+	}
+
+	function runtimeApprovalLabel(item: RuntimeOptionItem): string {
+		return tOr(`myaaw.chat.approval_runtime_${item.value}`, item.label);
+	}
+
+	function runtimeApprovalDescription(item: RuntimeOptionItem | undefined): string {
+		if (!item?.description) return '';
+		return tOr(`myaaw.chat.approval_runtime_${item.value}_desc`, item.description);
+	}
+
+	function formatThinkingLabel(level: string): string {
+		const normalized = level.trim().toLowerCase();
+		if (normalized === 'off' || normalized === 'none') return t('myaaw.chat.thinking_off');
+		if (normalized === 'xhigh') return 'XHigh';
+		return level
+			.trim()
+			.replace(/[_-]+/g, ' ')
+			.replace(/\b\w/g, (ch) => ch.toUpperCase());
+	}
+
+	async function probeRuntimeOptions(refresh: boolean) {
+		const token = ++runtimeProbeToken;
+		loadingRuntimeOptions = true;
+		try {
+			const args = parseRuntimeArgs(runtimeArgs);
+			const currentProbeKey = [
+				runtimePreset,
+				runtimeCommand.trim(),
+				args.join(','),
+				runtimeAuthSource,
+				runtimeApiKeyEnv.trim(),
+				runtimeApiKey.trim()
+			].join('|');
+			const opts =
+				reconfigure && agentParam && savedRuntimeProbeKey === currentProbeKey
+					? await loadAgentRuntimeOptions(agentParam, refresh)
+					: await probeRuntimeOptionsApi(
+							{
+								preset: runtimePreset,
+								type: activeRuntimePreset?.type || undefined,
+								command: runtimeCommand.trim() || undefined,
+								args: args.length > 0 ? args : undefined,
+								model: runtimeModel.trim() || undefined,
+								auth_source: runtimeAuthSource,
+								api_key_env: runtimeApiKeyEnv.trim() || undefined,
+								api_key: runtimeApiKey.trim() || undefined
+							},
+							refresh
+						);
+			if (token !== runtimeProbeToken) return;
+			runtimeOptions = opts;
+		} catch (err) {
+			if (token !== runtimeProbeToken) return;
+			runtimeOptions = null;
+			if (refresh) toastStore.error(getErrorMessage(err));
+		} finally {
+			if (token === runtimeProbeToken) loadingRuntimeOptions = false;
+		}
+	}
+
+	// Re-probe the CLI whenever the engine, binary, or arguments change.
+	$effect(() => {
+		const external = isExternalRuntime;
+		const command = runtimeCommand.trim();
+		void runtimePreset;
+		void runtimeArgs;
+		if (!external || !command) {
+			runtimeProbeToken++;
+			runtimeOptions = null;
+			loadingRuntimeOptions = false;
+			return;
+		}
+		const timer = setTimeout(() => void probeRuntimeOptions(false), 450);
+		return () => clearTimeout(timer);
+	});
+
+	let runtimeModelGroups = $derived.by(() => {
+		const grouped = new Map<string, RuntimeOptionItem[]>();
+		for (const item of runtimeOptions?.models.options ?? []) {
+			const key = item.group ?? '';
+			const bucket = grouped.get(key);
+			if (bucket) bucket.push(item);
+			else grouped.set(key, [item]);
+		}
+		return Array.from(grouped.entries()).map(([group, items]) => ({ group, items }));
+	});
+	let runtimeModelKnown = $derived(
+		(runtimeOptions?.models.options ?? []).some((item) => item.value === runtimeModel)
+	);
+	let runtimeThinkingOptions = $derived.by((): RuntimeOptionItem[] => {
+		if (!runtimeOptions) return [];
+		const models = runtimeOptions.models.options ?? [];
+		if (models.some((m) => (m.thinking_levels?.length ?? 0) > 0)) {
+			const selected = runtimeModel || runtimeOptions.models.current || '';
+			const match = models.find((m) => m.value === selected);
+			if (match) {
+				return (match.thinking_levels ?? []).map((lvl) => ({
+					value: lvl,
+					label: formatThinkingLabel(lvl)
+				}));
+			}
+		}
+		return runtimeOptions.thinking.options ?? [];
+	});
+	let runtimeApprovalOptions = $derived(runtimeOptions?.approval_modes.options ?? []);
+	let runtimeSessionModeOptions = $derived(runtimeOptions?.session_modes.options ?? []);
+
+	// Clear stale thinking level if the newly selected model does not support it.
+	$effect(() => {
+		if (!runtimeThinking || !runtimeOptions) return;
+		const opts = runtimeThinkingOptions;
+		if (opts.length === 0 || !opts.some((item) => item.value === runtimeThinking)) {
+			runtimeThinking = '';
+		}
+	});
 
 	let presetId = $state('openai');
 	let providerType = $state('openai');
@@ -142,6 +301,9 @@
 
 	let agentParam = $derived(page.url.searchParams.get('agent') ?? '');
 	let reconfigure = $derived(agentParam !== '');
+	let resolvedWorkspacePath = $derived(
+		`~/.myaaw/agents/${(agentParam || name).trim() || '<name>'}/home/workspace`
+	);
 
 	// Editing an existing agent must not introduce itself as a new one. The shell
 	// reads this override on every page, and the cleanup drops it on the way out.
@@ -256,8 +418,9 @@
 			runtimePreset,
 			runtimeCommand.trim(),
 			runtimeArgs.trim(),
-			runtimeWorkingDir.trim(),
 			runtimeModel.trim(),
+			runtimeThinking,
+			runtimeSessionMode,
 			runtimeAuthSource,
 			runtimeApiKeyEnv.trim(),
 			runtimeApiKey.trim(),
@@ -380,6 +543,12 @@
 
 	function applyRuntimePreset(id: string) {
 		runtimePreset = id;
+		// Options belong to the previous CLI; clear choices so a stale model or
+		// mode is never sent to a different engine.
+		runtimeModel = '';
+		runtimeThinking = '';
+		runtimeSessionMode = '';
+		runtimeOptions = null;
 		const preset = runtimes.find((entry) => entry.id === id);
 		if (!preset || preset.id === 'myaaw') {
 			runtimeCommand = '';
@@ -403,14 +572,16 @@
 		runtimePreset = 'myaaw';
 		runtimeCommand = '';
 		runtimeArgs = '';
-		runtimeWorkingDir = '';
 		runtimeModel = '';
+		runtimeThinking = '';
+		runtimeSessionMode = '';
 		runtimeAuthSource = 'cli_login';
 		runtimeApiKeyEnv = '';
 		runtimeApiKey = '';
 		runtimeApiKeySaved = false;
 		runtimePermissionMode = 'bridge';
 		runtimeMcpBridge = true;
+		savedRuntimeProbeKey = '';
 		credentialId = '';
 		connection = undefined;
 		connecting = false;
@@ -485,8 +656,9 @@
 				runtimePreset = config.runtime.preset || config.runtime.type;
 				runtimeCommand = config.runtime.command ?? '';
 				runtimeArgs = (config.runtime.args ?? []).join(', ');
-				runtimeWorkingDir = config.runtime.working_dir ?? '';
 				runtimeModel = config.runtime.model ?? '';
+				runtimeThinking = config.runtime.thinking_level ?? '';
+				runtimeSessionMode = config.runtime.session_mode ?? '';
 				runtimeAuthSource = config.runtime.auth_source === 'api_key' ? 'api_key' : 'cli_login';
 				runtimeApiKeyEnv = config.runtime.api_key_env ?? '';
 				runtimeApiKey = '';
@@ -498,12 +670,22 @@
 							? 'read_only'
 							: 'bridge';
 				runtimeMcpBridge = config.runtime.mcp_bridge ?? true;
+				savedRuntimeProbeKey = [
+					runtimePreset,
+					runtimeCommand.trim(),
+					parseRuntimeArgs(runtimeArgs).join(','),
+					runtimeAuthSource,
+					runtimeApiKeyEnv.trim(),
+					''
+				].join('|');
 			} else {
+				savedRuntimeProbeKey = '';
 				runtimePreset = 'myaaw';
 				runtimeCommand = '';
 				runtimeArgs = '';
-				runtimeWorkingDir = '';
 				runtimeModel = '';
+				runtimeThinking = '';
+				runtimeSessionMode = '';
 				runtimeAuthSource = 'cli_login';
 				runtimeApiKeyEnv = '';
 				runtimeApiKey = '';
@@ -636,17 +818,17 @@
 
 		if (!initial || changed.runtime) {
 			if (isExternalRuntime) {
-				const parsedArgs = runtimeArgs
-					.split(',')
-					.map((v) => v.trim())
-					.filter(Boolean);
+				const parsedArgs = parseRuntimeArgs(runtimeArgs);
 				payload.runtime = {
 					preset: runtimePreset,
 					type: activeRuntimePreset?.type || undefined,
 					command: runtimeCommand.trim() || undefined,
 					args: parsedArgs.length > 0 ? parsedArgs : undefined,
-					working_dir: runtimeWorkingDir.trim() || undefined,
-					model: runtimeModel.trim() || undefined,
+					working_dir: '',
+					// Empty strings are sent on purpose so "CLI Default" clears a saved choice.
+					model: runtimeModel.trim(),
+					thinking_level: runtimeThinking,
+					session_mode: runtimeSessionMode,
 					auth_source: runtimeAuthSource,
 					api_key_env: runtimeApiKeyEnv.trim() || undefined,
 					api_key: runtimeApiKey.trim() || undefined,
@@ -743,9 +925,7 @@
 				fieldErrors.runtime_command = 'required';
 			}
 			if (runtimeAuthSource === 'cli_login' && botType === 'public') {
-				toastStore.error(
-					'Personal CLI logins cannot use public bot mode. Switch Access to Private or use an API key.'
-				);
+				toastStore.error(t('myaaw.onboard.runtime_public_cli_error'));
 				openAccess = true;
 				return;
 			}
@@ -777,6 +957,7 @@
 		saving = true;
 		try {
 			const response = await agentsStore.onboard(target, buildPayload(result.data));
+			invalidateRuntimeOptions(target);
 			toastStore.success(
 				reconfigure
 					? t('myaaw.onboard.updated', { name: target })
@@ -865,7 +1046,7 @@
 						<FieldError code={errors.name} />
 					</div>
 					<div class="grid content-start gap-1.5">
-						<Label for="onboard-runtime-preset">Agent Engine / Runtime</Label>
+						<Label for="onboard-runtime-preset">{t('myaaw.onboard.runtime_engine')}</Label>
 						<select
 							id="onboard-runtime-preset"
 							class={selectClass}
@@ -875,15 +1056,15 @@
 							{#if runtimes.length > 0}
 								{#each runtimes as rt (rt.id)}
 									<option value={rt.id}>
-										{rt.label}{rt.id !== 'myaaw' && rt.default_command
+										{runtimePresetLabel(rt.id, rt.label)}{rt.id !== 'myaaw' && rt.default_command
 											? rt.installed
-												? ' (installed)'
-												: ' (not installed)'
+												? ` (${t('myaaw.onboard.runtime_installed')})`
+												: ` (${t('myaaw.onboard.runtime_not_installed')})`
 											: ''}
 									</option>
 								{/each}
 							{:else}
-								<option value="myaaw">Myaaw (Built-in)</option>
+								<option value="myaaw">{t('myaaw.onboard.runtime_builtin')}</option>
 								<option value="antigravity">Google Antigravity (agy)</option>
 								<option value="claude_code">Claude Code (claude)</option>
 								<option value="omp">Oh My Pi (omp)</option>
@@ -891,13 +1072,13 @@
 								<option value="codex">OpenAI Codex CLI (codex)</option>
 								<option value="gemini_cli">Gemini CLI (gemini)</option>
 								<option value="opencode">OpenCode (opencode)</option>
-								<option value="custom_acp">Custom ACP Agent</option>
+								<option value="custom_acp">{t('myaaw.onboard.runtime_custom_acp')}</option>
 							{/if}
 						</select>
-						{#if activeRuntimePreset?.description}
+						{#if runtimePresetDescription(activeRuntimePreset)}
 							<p class="text-[11px] text-muted-foreground">
-								{activeRuntimePreset.description}
-								{#if isExternalRuntime && activeRuntimePreset.installed && activeRuntimePreset.version}
+								{runtimePresetDescription(activeRuntimePreset)}
+								{#if isExternalRuntime && activeRuntimePreset?.installed && activeRuntimePreset.version}
 									· <span class="font-mono text-emerald-600 dark:text-emerald-400"
 										>{activeRuntimePreset.version}</span
 									>
@@ -912,7 +1093,7 @@
 					<div class="space-y-4">
 						<div class="grid gap-4 sm:grid-cols-2">
 							<div class="grid content-start gap-1.5">
-								<Label for="onboard-runtime-command">CLI Binary</Label>
+								<Label for="onboard-runtime-command">{t('myaaw.onboard.runtime_binary')}</Label>
 								<Input
 									id="onboard-runtime-command"
 									bind:value={runtimeCommand}
@@ -921,7 +1102,7 @@
 								<FieldError code={errors.runtime_command} />
 							</div>
 							<div class="grid content-start gap-1.5">
-								<Label for="onboard-runtime-args">CLI Arguments (comma separated)</Label>
+								<Label for="onboard-runtime-args">{t('myaaw.onboard.runtime_args')}</Label>
 								<Input
 									id="onboard-runtime-args"
 									bind:value={runtimeArgs}
@@ -932,29 +1113,123 @@
 
 						<div class="grid gap-4 sm:grid-cols-2">
 							<div class="grid content-start gap-1.5">
-								<Label for="onboard-runtime-workdir">Working Directory (optional)</Label>
+								<Label for="onboard-runtime-workdir">{t('myaaw.onboard.runtime_workdir')}</Label>
 								<Input
 									id="onboard-runtime-workdir"
-									bind:value={runtimeWorkingDir}
-									placeholder="~/.myaaw/agents/<name>/home/workspace"
+									value={resolvedWorkspacePath}
+									readonly
+									disabled
+									class="font-mono text-xs"
 								/>
 								<p class="text-[11px] text-muted-foreground">
-									Leave empty to isolate inside this agent's own workspace directory.
+									{t('myaaw.onboard.runtime_workdir_hint')}
 								</p>
 							</div>
 							<div class="grid content-start gap-1.5">
-								<Label for="onboard-runtime-model">Model Override (optional)</Label>
-								<Input
+								<Label for="onboard-runtime-model">{t('myaaw.onboard.model')}</Label>
+								<select
 									id="onboard-runtime-model"
-									bind:value={runtimeModel}
-									placeholder="Leave empty to use CLI default"
-								/>
+									class={selectClass}
+									value={runtimeModel}
+									disabled={loadingRuntimeOptions && !runtimeOptions}
+									onchange={(event) => (runtimeModel = event.currentTarget.value)}
+								>
+									<option value="">
+										{t('myaaw.onboard.runtime_cli_default')}{runtimeOptions?.models.current
+											? ` (${runtimeOptions.models.current})`
+											: ''}
+									</option>
+									{#if runtimeModel && !runtimeModelKnown}
+										<option value={runtimeModel}>{runtimeModel}</option>
+									{/if}
+									{#each runtimeModelGroups as grp (grp.group)}
+										{#if grp.group}
+											<optgroup label={grp.group}>
+												{#each grp.items as item (item.value)}
+													<option value={item.value}>{item.label}</option>
+												{/each}
+											</optgroup>
+										{:else}
+											{#each grp.items as item (item.value)}
+												<option value={item.value}>{item.label}</option>
+											{/each}
+										{/if}
+									{/each}
+								</select>
+								<p class="text-[11px] text-muted-foreground">
+									{#if loadingRuntimeOptions}
+										{t('myaaw.onboard.runtime_models_loading')}
+									{:else if runtimeOptions?.warning}
+										{t('myaaw.onboard.runtime_models_error', { error: runtimeOptions.warning })}
+									{:else if runtimeOptions && runtimeOptions.models.options.length === 0}
+										{t('myaaw.onboard.runtime_models_empty')}
+									{:else}
+										{t('myaaw.onboard.runtime_models_live')}
+									{/if}
+									{#if runtimeCommand.trim()}
+										<button
+											type="button"
+											class="underline"
+											onclick={() => void probeRuntimeOptions(true)}
+										>
+											{t('common.refresh')}
+										</button>
+									{/if}
+								</p>
 							</div>
 						</div>
 
+						{#if runtimeThinkingOptions.length > 0 || runtimeSessionModeOptions.length > 0}
+							<div class="grid gap-4 sm:grid-cols-2">
+								{#if runtimeThinkingOptions.length > 0}
+									<div class="grid content-start gap-1.5">
+										<Label for="onboard-runtime-thinking">{t('myaaw.providers.thinking')}</Label>
+										<select
+											id="onboard-runtime-thinking"
+											class={selectClass}
+											value={runtimeThinking}
+											onchange={(event) => (runtimeThinking = event.currentTarget.value)}
+										>
+											<option value="">
+												{t('myaaw.onboard.runtime_cli_default')}{runtimeOptions?.thinking.current
+													? ` (${runtimeOptions.thinking.current})`
+													: ''}
+											</option>
+											{#each runtimeThinkingOptions as item (item.value)}
+												<option value={item.value}>{item.label}</option>
+											{/each}
+										</select>
+									</div>
+								{/if}
+								{#if runtimeSessionModeOptions.length > 0}
+									<div class="grid content-start gap-1.5">
+										<Label for="onboard-runtime-session-mode"
+											>{t('myaaw.onboard.runtime_mode')}</Label
+										>
+										<select
+											id="onboard-runtime-session-mode"
+											class={selectClass}
+											value={runtimeSessionMode}
+											onchange={(event) => (runtimeSessionMode = event.currentTarget.value)}
+										>
+											<option value="">
+												{t('myaaw.onboard.runtime_cli_default')}{runtimeOptions?.session_modes
+													.current
+													? ` (${runtimeOptions.session_modes.current})`
+													: ''}
+											</option>
+											{#each runtimeSessionModeOptions as item (item.value)}
+												<option value={item.value}>{item.label}</option>
+											{/each}
+										</select>
+									</div>
+								{/if}
+							</div>
+						{/if}
+
 						<div class="grid gap-4 sm:grid-cols-2">
 							<div class="grid content-start gap-1.5">
-								<Label for="onboard-runtime-auth">Authentication Mode</Label>
+								<Label for="onboard-runtime-auth">{t('myaaw.onboard.runtime_auth_mode')}</Label>
 								<select
 									id="onboard-runtime-auth"
 									class={selectClass}
@@ -965,34 +1240,52 @@
 									}}
 								>
 									{#if !activeRuntimePreset || activeRuntimePreset.capabilities.supports_cli_auth}
-										<option value="cli_login">Local CLI Login (personal private use)</option>
+										<option value="cli_login">{t('myaaw.onboard.runtime_auth_cli_login')}</option>
 									{/if}
-									<option value="api_key">Official API Key (server / automation safe)</option>
+									<option value="api_key">{t('myaaw.onboard.runtime_auth_api_key')}</option>
 								</select>
 							</div>
 							<div class="grid content-start gap-1.5">
-								<Label for="onboard-runtime-permission">Tool Approvals</Label>
+								<Label for="onboard-runtime-permission">{t('myaaw.onboard.runtime_approvals')}</Label>
 								<select
 									id="onboard-runtime-permission"
 									class={selectClass}
 									value={runtimePermissionMode}
+									disabled={runtimeApprovalOptions.length === 0}
 									onchange={(event) =>
 										(runtimePermissionMode = event.currentTarget.value as
 											| 'bridge'
 											| 'auto'
 											| 'read_only')}
 								>
-									<option value="bridge">Bridge to Myaaw Approvals (WebUI / TG / Discord)</option>
-									<option value="auto">Auto-approve inside workspace</option>
-									<option value="read_only">Read-only (deny writes & shell mutations)</option>
+									{#each runtimeApprovalOptions as item (item.value)}
+										<option value={item.value}>{runtimeApprovalLabel(item)}</option>
+									{:else}
+										<option value={runtimePermissionMode}>
+											{loadingRuntimeOptions
+												? t('common.loading')
+												: runtimeOptions
+													? t('myaaw.onboard.runtime_approvals_managed_by_cli')
+													: t('myaaw.onboard.runtime_set_binary_first')}
+										</option>
+									{/each}
 								</select>
+								{#if runtimeApprovalDescription(runtimeApprovalOptions.find((o) => o.value === runtimePermissionMode))}
+									<p class="text-[11px] text-muted-foreground">
+										{runtimeApprovalDescription(
+											runtimeApprovalOptions.find((o) => o.value === runtimePermissionMode)
+										)}
+									</p>
+								{/if}
 							</div>
 						</div>
 
 						{#if runtimeAuthSource === 'api_key'}
 							<div class="grid gap-4 sm:grid-cols-2">
 								<div class="grid content-start gap-1.5">
-									<Label for="onboard-runtime-apikey-env">API Key Env Var</Label>
+									<Label for="onboard-runtime-apikey-env"
+										>{t('myaaw.onboard.runtime_api_key_env')}</Label
+									>
 									<Input
 										id="onboard-runtime-apikey-env"
 										bind:value={runtimeApiKeyEnv}
@@ -1000,16 +1293,14 @@
 									/>
 								</div>
 								<div class="grid content-start gap-1.5">
-									<Label for="onboard-runtime-apikey"
-										>API Key (optional if already in host env)</Label
-									>
+									<Label for="onboard-runtime-apikey">{t('myaaw.onboard.runtime_api_key')}</Label>
 									<Input
 										id="onboard-runtime-apikey"
 										type="password"
 										bind:value={runtimeApiKey}
 										placeholder={runtimeApiKeySaved
 											? t('myaaw.onboard.api_key_saved')
-											: 'Leave empty to inherit host env'}
+											: t('myaaw.onboard.runtime_api_key_placeholder')}
 									/>
 								</div>
 							</div>
@@ -1018,20 +1309,23 @@
 						<label class="flex items-center gap-2 text-xs text-foreground">
 							<Checkbox bind:checked={runtimeMcpBridge} />
 							<span>
-								Attach Myaaw Ecosystem MCP Bridge (<code class="font-mono">cron</code>,
+								{t('myaaw.onboard.runtime_mcp_bridge')} (<code class="font-mono">cron</code>,
 								<code class="font-mono">a2a_contact</code>,
-								<code class="font-mono">extra_messages</code>, custom tools)
+								<code class="font-mono">extra_messages</code>,
+								{t('myaaw.onboard.runtime_mcp_bridge_custom_tools')})
 							</span>
 						</label>
 
-						{#if activeRuntimePreset?.tos_notice}
+						{#if runtimePresetToSNotice(activeRuntimePreset)}
 							<div
 								class="rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground"
 							>
-								{activeRuntimePreset.tos_notice}
+								{runtimePresetToSNotice(activeRuntimePreset)}
 								{#if runtimeAuthSource === 'cli_login'}
-									Need to sign in to the CLI on a remote host? Open
-									<a href="/app/terminal" class="underline">Workspace → Terminal</a>.
+									{t('myaaw.onboard.runtime_remote_login_hint')}
+									<a href="/app/terminal" class="underline"
+										>{t('myaaw.onboard.runtime_open_terminal')}</a
+									>.
 								{/if}
 							</div>
 						{/if}
@@ -1372,15 +1666,26 @@
 						<p class="font-medium">{t('myaaw.onboard.identity')}</p>
 						<p class="truncate text-xs text-muted-foreground">
 							{name || '—'} ·
-							{t('myaaw.onboard.summary_provider', {
-								type: providerType,
-								model: model || '—'
-							})}
+							{#if isExternalRuntime}
+								{t('myaaw.onboard.summary_provider', {
+									type: activeRuntimePreset
+										? runtimePresetLabel(activeRuntimePreset.id, activeRuntimePreset.label)
+										: runtimePreset,
+									model: runtimeModel || t('myaaw.onboard.runtime_cli_default')
+								})}
+							{:else}
+								{t('myaaw.onboard.summary_provider', {
+									type: providerType,
+									model: model || '—'
+								})}
+							{/if}
 						</p>
 					</div>
 					{#if reconfigure}
 						<Badge variant="outline" class="shrink-0">
-							{changed.provider ? t('myaaw.onboard.changing') : t('myaaw.onboard.unchanged')}
+							{changed.runtime || changed.provider || changed.color
+								? t('myaaw.onboard.changing')
+								: t('myaaw.onboard.unchanged')}
 						</Badge>
 					{/if}
 				</div>
@@ -1412,7 +1717,9 @@
 					<div class="min-w-0">
 						<p class="font-medium">{t('myaaw.onboard.access')}</p>
 						<p class="truncate text-xs text-muted-foreground">
-							{botType} · {heartbeatSummary}
+							{botType === 'public'
+								? t('myaaw.onboard.bot_public')
+								: t('myaaw.onboard.bot_private')} · {heartbeatSummary}
 						</p>
 					</div>
 					{#if reconfigure}

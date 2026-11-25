@@ -186,6 +186,54 @@ func (s *ConfigService) RuntimeOptions(ctx context.Context, agentName string, re
 	return agentruntime.DiscoverRuntimeOptionsCached(ctx, agentName, rt, workingDir, refresh), nil
 }
 
+// ProbeRuntimeOptions discovers live runtime options for a runtime selection
+// that is not saved yet (the New Agent form, where the agent does not exist).
+// Nothing is written; the candidate CLI is only probed.
+func (s *ConfigService) ProbeRuntimeOptions(ctx context.Context, in OnboardRuntimeInput, refresh bool) (agentruntime.RuntimeOptions, error) {
+	rt := config.MergeRuntime(&config.RuntimeConfig{
+		Type:           in.Type,
+		Preset:         in.Preset,
+		Command:        in.Command,
+		Args:           in.Args,
+		WorkingDir:     in.WorkingDir,
+		Model:          in.Model,
+		ThinkingLevel:  in.ThinkingLevel,
+		SessionMode:    in.SessionMode,
+		AuthSource:     in.AuthSource,
+		APIKeyEnv:      in.APIKeyEnv,
+		APIKey:         in.APIKey,
+		PermissionMode: in.PermissionMode,
+	})
+	if !rt.IsExternal() {
+		return agentruntime.DiscoverRuntimeOptions(ctx, rt, ""), nil
+	}
+	if strings.TrimSpace(rt.Command) == "" {
+		return agentruntime.RuntimeOptions{}, fmt.Errorf("%w: runtime.command is required", ErrInvalidConfig)
+	}
+	// The agent may not have a workspace yet (or the user typed a `~` path), so
+	// expand `~` and fall back to os.TempDir() if the directory does not exist.
+	workingDir := strings.TrimSpace(rt.WorkingDir)
+	if workingDir == "~" || strings.HasPrefix(workingDir, "~/") {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			if workingDir == "~" {
+				workingDir = home
+			} else {
+				workingDir = filepath.Join(home, workingDir[2:])
+			}
+		}
+	}
+	if workingDir != "" {
+		if info, err := os.Stat(workingDir); err != nil || !info.IsDir() {
+			workingDir = ""
+		}
+	}
+	if workingDir == "" {
+		workingDir = os.TempDir()
+	}
+	key := "probe:" + rt.Preset + ":" + rt.Command + ":" + strings.Join(rt.Args, ",") + ":" + workingDir
+	return agentruntime.DiscoverRuntimeOptionsCached(ctx, key, rt, workingDir, refresh), nil
+}
+
 // configView builds the read shape of a config with every secret masked.
 func configView(cfg *config.Config) ConfigView {
 	return ConfigView{

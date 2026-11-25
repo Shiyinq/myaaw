@@ -8006,6 +8006,62 @@
                 }
             }
         },
+        "/runtime/options": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agents"
+                ],
+                "summary": "Discover live runtime options for an unsaved runtime selection",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Bypass the 60s cache and re-probe the CLI",
+                        "name": "refresh",
+                        "in": "query"
+                    },
+                    {
+                        "description": "Runtime selection to probe",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.OnboardRuntimeInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/runtime.RuntimeOptions"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/runtimes": {
             "get": {
                 "security": [

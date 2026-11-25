@@ -1,11 +1,16 @@
 import { agents as agentsApi } from '$lib/apis/agents';
-import type { RuntimeOptions } from '$lib/types';
+import type { OnboardRuntime, RuntimeOptions } from '$lib/types';
 
 const cache = new Map<string, RuntimeOptions>();
 const inflight = new Map<string, Promise<RuntimeOptions>>();
 
 export function peekRuntimeOptions(agent: string): RuntimeOptions | null {
 	return cache.get(agent) ?? null;
+}
+
+export function invalidateRuntimeOptions(agent: string): void {
+	cache.delete(agent);
+	inflight.delete(agent);
 }
 
 export async function loadRuntimeOptions(agent: string, refresh = false): Promise<RuntimeOptions> {
@@ -30,4 +35,12 @@ export async function loadRuntimeOptions(agent: string, refresh = false): Promis
 
 	inflight.set(agent, req);
 	return req;
+}
+
+/** Probes a runtime selection that is not saved yet (New Agent form). */
+export function probeRuntimeOptions(
+	payload: OnboardRuntime,
+	refresh = false
+): Promise<RuntimeOptions> {
+	return agentsApi.probeRuntimeOptions(payload, refresh);
 }

@@ -1699,17 +1699,31 @@
 				Boolean(!runtimeOptions && runtimeConfig?.capabilities?.supports_approvals))
 	);
 
+	function tOr(key: string, fallback: string): string {
+		const translated = t(key);
+		return translated === key ? fallback : translated;
+	}
+
+	function runtimeApprovalLabel(item: RuntimeOptionItem): string {
+		return tOr(`myaaw.chat.approval_runtime_${item.value}`, item.label);
+	}
+
+	function runtimeApprovalDescription(item: RuntimeOptionItem): string {
+		if (!item.description) return '';
+		return tOr(`myaaw.chat.approval_runtime_${item.value}_desc`, item.description);
+	}
+
 	let activeExternalPermission = $derived(runtimeConfig?.permission_mode || 'bridge');
 	let activeExternalSessionMode = $derived(runtimeConfig?.session_mode?.trim() ?? '');
 	let activeExternalPermissionLabel = $derived.by(() => {
 		const permMatch = externalApprovalOptions.find((o) => o.value === activeExternalPermission);
-		const permLabel =
-			permMatch?.label ||
-			(activeExternalPermission === 'auto'
+		const permLabel = permMatch
+			? runtimeApprovalLabel(permMatch)
+			: activeExternalPermission === 'auto'
 				? t('myaaw.chat.approval_full_access')
 				: activeExternalPermission === 'read_only'
-					? 'Read Only'
-					: t('myaaw.chat.approval_manual'));
+					? t('myaaw.chat.approval_read_only')
+					: t('myaaw.chat.approval_manual');
 		const modeVal =
 			activeExternalSessionMode || runtimeOptions?.session_modes.current?.trim() || '';
 		const modeMatch = externalSessionModeOptions.find((o) => o.value === modeVal);
@@ -5309,8 +5323,8 @@
 																type="button"
 																class="grid h-6 w-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
 																disabled={loadingRuntimeOptions}
-																title="Refresh models from CLI"
-																aria-label="Refresh models from CLI"
+																title={t('myaaw.chat.runtime_refresh_models')}
+																aria-label={t('myaaw.chat.runtime_refresh_models')}
 																onclick={(e) => {
 																	e.stopPropagation();
 																	if (agent) void ensureRuntimeOptions(agent, true);
@@ -5341,7 +5355,9 @@
 																	)}
 																/>
 																<span class="min-w-0 flex-1">
-																	<span class="block text-xs font-medium">CLI Default</span>
+																	<span class="block text-xs font-medium"
+																		>{t('myaaw.chat.runtime_cli_default')}</span
+																	>
 																	{#if runtimeOptions?.models.current}
 																		<span
 																			class="block truncate font-mono text-[10px] text-muted-foreground"
@@ -5443,7 +5459,7 @@
 																	<input
 																		type="text"
 																		bind:value={customRuntimeModel}
-																		placeholder="Custom model ID..."
+																		placeholder={t('myaaw.chat.runtime_custom_model_placeholder')}
 																		onkeydown={(e) => e.stopPropagation()}
 																		class="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 font-mono text-[11px] outline-none focus:ring-1 focus:ring-ring"
 																	/>
@@ -5452,7 +5468,7 @@
 																		disabled={!customRuntimeModel.trim() || switchingModel}
 																		class="h-7 shrink-0 rounded-md bg-primary px-2 text-[11px] font-medium text-primary-foreground transition-opacity disabled:opacity-50"
 																	>
-																		Set
+																		{t('myaaw.chat.runtime_custom_model_set')}
 																	</button>
 																</form>
 															{/if}
@@ -5549,7 +5565,7 @@
 																<DropdownMenu.Label
 																	class="text-[10px] tracking-wide text-muted-foreground uppercase"
 																>
-																	Tool Approvals
+																	{t('myaaw.chat.runtime_tool_approvals')}
 																</DropdownMenu.Label>
 																{#each externalApprovalOptions as item (item.value)}
 																	<DropdownMenu.Item
@@ -5562,12 +5578,12 @@
 																			<ShieldCheck class="mt-0.5 h-4 w-4 shrink-0" />
 																		{/if}
 																		<span class="min-w-0 flex-1">
-																			<span class="block">{item.label}</span>
-																			{#if item.description}
+																			<span class="block">{runtimeApprovalLabel(item)}</span>
+																			{#if runtimeApprovalDescription(item)}
 																				<span
 																					class="block text-[10px] whitespace-normal text-muted-foreground"
 																				>
-																					{item.description}
+																					{runtimeApprovalDescription(item)}
 																				</span>
 																			{/if}
 																		</span>
@@ -5589,14 +5605,14 @@
 																<DropdownMenu.Label
 																	class="text-[10px] tracking-wide text-muted-foreground uppercase"
 																>
-																	Runtime Mode
+																	{t('myaaw.chat.runtime_mode')}
 																</DropdownMenu.Label>
 																<DropdownMenu.Item
 																	class="items-start gap-2"
 																	onclick={() => void switchRuntimeSessionMode('')}
 																>
 																	<span class="min-w-0 flex-1">
-																		<span class="block">CLI Default</span>
+																		<span class="block">{t('myaaw.chat.runtime_cli_default')}</span>
 																		{#if runtimeOptions?.session_modes.current}
 																			<span class="block text-[10px] text-muted-foreground">
 																				{runtimeOptions.session_modes.current}

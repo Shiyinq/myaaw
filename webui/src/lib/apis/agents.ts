@@ -7,6 +7,7 @@ import type {
 	OKResponse,
 	OnboardRequest,
 	OnboardResponse,
+	OnboardRuntime,
 	RuntimeOptions,
 	RuntimesResponse
 } from '$lib/types';
@@ -27,5 +28,11 @@ export const agents = {
 	runtimeOptions: (name: string, refresh = false) =>
 		client<RuntimeOptions>(
 			agentPath(name, refresh ? '/runtime/options?refresh=1' : '/runtime/options')
-		)
+		),
+	// Same discovery for a runtime selection that is not saved yet (New Agent form).
+	probeRuntimeOptions: (payload: OnboardRuntime, refresh = false) =>
+		client<RuntimeOptions>(refresh ? '/runtime/options?refresh=1' : '/runtime/options', {
+			method: 'POST',
+			body: payload
+		})
 };
