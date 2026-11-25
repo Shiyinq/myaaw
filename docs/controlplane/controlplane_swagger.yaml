@@ -707,6 +707,22 @@ definitions:
         example: /home/AGENTS.old.md
         type: string
     type: object
+  handler.RuntimeAuthSessionRequest:
+    properties:
+      cols:
+        type: integer
+      headless:
+        type: boolean
+      mode:
+        type: string
+      rows:
+        type: integer
+    type: object
+  handler.RuntimeInstallRequest:
+    properties:
+      method:
+        type: string
+    type: object
   handler.RuntimesResponse:
     properties:
       runtimes:
@@ -1504,6 +1520,23 @@ definitions:
       token_count:
         type: integer
     type: object
+  runtime.AuthStatusInfo:
+    properties:
+      detail:
+        type: string
+      login_command:
+        type: string
+      logout_command:
+        type: string
+      status:
+        type: string
+      supports_headless:
+        type: boolean
+      supports_login:
+        type: boolean
+      supports_logout:
+        type: boolean
+    type: object
   runtime.DetectedRuntime:
     properties:
       binary_path:
@@ -1533,6 +1566,23 @@ definitions:
       type:
         type: string
       version:
+        type: string
+    type: object
+  runtime.InstallMethod:
+    properties:
+      available:
+        type: boolean
+      command_preview:
+        type: string
+      id:
+        type: string
+      label:
+        type: string
+      missing_tool:
+        type: string
+      recommended:
+        type: boolean
+      source_url:
         type: string
     type: object
   runtime.RuntimeOptionGroup:
@@ -2665,6 +2715,62 @@ definitions:
       name:
         type: string
     type: object
+  service.ManagedRuntimeView:
+    properties:
+      auth:
+        $ref: '#/definitions/runtime.AuthStatusInfo'
+      binary_path:
+        type: string
+      capabilities:
+        $ref: '#/definitions/config.RuntimeCapabilities'
+      default_api_key_env:
+        type: string
+      default_args:
+        items:
+          type: string
+        type: array
+      default_auth:
+        type: string
+      default_command:
+        type: string
+      defaults:
+        $ref: '#/definitions/service.RuntimeDefaultsView'
+      description:
+        type: string
+      docs_url:
+        type: string
+      id:
+        type: string
+      install_methods:
+        items:
+          $ref: '#/definitions/runtime.InstallMethod'
+        type: array
+      installed:
+        type: boolean
+      label:
+        type: string
+      tos_notice:
+        type: string
+      type:
+        type: string
+      update_method:
+        $ref: '#/definitions/runtime.InstallMethod'
+      used_by_agents:
+        items:
+          type: string
+        type: array
+      version:
+        type: string
+    type: object
+  service.ManagedRuntimesResponse:
+    properties:
+      management_enabled:
+        type: boolean
+      runtimes:
+        items:
+          $ref: '#/definitions/service.ManagedRuntimeView'
+        type: array
+    type: object
   service.ModelCapabilitiesView:
     properties:
       models:
@@ -3021,6 +3127,81 @@ definitions:
         type: array
       total:
         type: integer
+    type: object
+  service.RuntimeAuthSessionInfo:
+    properties:
+      cols:
+        type: integer
+      command_preview:
+        type: string
+      id:
+        type: string
+      mode:
+        type: string
+      preset:
+        type: string
+      rows:
+        type: integer
+    type: object
+  service.RuntimeDefaultsInput:
+    properties:
+      api_key:
+        type: string
+      api_key_env:
+        type: string
+      apply_to_agents:
+        items:
+          type: string
+        type: array
+      args:
+        items:
+          type: string
+        type: array
+      auth_source:
+        type: string
+      clear_api_key:
+        type: boolean
+      command:
+        type: string
+      mcp_bridge:
+        type: boolean
+      model:
+        type: string
+      permission_mode:
+        type: string
+      session_mode:
+        type: string
+      thinking_level:
+        type: string
+    type: object
+  service.RuntimeDefaultsView:
+    properties:
+      api_key:
+        $ref: '#/definitions/service.SecretState'
+      api_key_env:
+        type: string
+      args:
+        items:
+          type: string
+        type: array
+      auth_source:
+        type: string
+      command:
+        type: string
+      mcp_bridge:
+        type: boolean
+      model:
+        type: string
+      permission_mode:
+        type: string
+      preset:
+        type: string
+      session_mode:
+        type: string
+      thinking_level:
+        type: string
+      updated_at:
+        type: string
     type: object
   service.RuntimePatch:
     properties:
@@ -8785,6 +8966,377 @@ paths:
       summary: Discover available agent runtimes
       tags:
       - Agents
+  /runtimes/{id}/auth/session:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Runtime preset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Login/logout mode and initial terminal dimensions
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.RuntimeAuthSessionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.RuntimeAuthSessionInfo'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Start an interactive CLI login or logout session
+      tags:
+      - Runtimes
+  /runtimes/{id}/auth/session/{sid}:
+    delete:
+      parameters:
+      - description: Runtime preset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Auth session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Close an interactive CLI auth PTY session
+      tags:
+      - Runtimes
+  /runtimes/{id}/auth/session/{sid}/input:
+    post:
+      consumes:
+      - application/octet-stream
+      parameters:
+      - description: Runtime preset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Auth session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Send input to an interactive CLI auth PTY
+      tags:
+      - Runtimes
+  /runtimes/{id}/auth/session/{sid}/resize:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Runtime preset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Auth session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      - description: Window dimensions
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.terminalSizeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.OKResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Resize an interactive CLI auth PTY
+      tags:
+      - Runtimes
+  /runtimes/{id}/auth/session/{sid}/stream:
+    get:
+      parameters:
+      - description: Runtime preset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Auth session ID
+        in: path
+        name: sid
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: raw PTY output
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stream interactive CLI auth PTY output
+      tags:
+      - Runtimes
+  /runtimes/{id}/defaults:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Runtime preset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Global runtime defaults
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.RuntimeDefaultsInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ManagedRuntimeView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Save global defaults for an external runtime
+      tags:
+      - Runtimes
+  /runtimes/{id}/install:
+    post:
+      consumes:
+      - application/json
+      description: 'Streams SSE events: ready, line, done, error. Only allowlisted
+        official vendor recipes are accepted.'
+      parameters:
+      - description: Runtime preset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Official install method selection
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/handler.RuntimeInstallRequest'
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Install an external runtime CLI from its official source
+      tags:
+      - Runtimes
+  /runtimes/{id}/manage:
+    get:
+      parameters:
+      - description: Runtime preset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ManagedRuntimeView'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get external runtime status and global defaults
+      tags:
+      - Runtimes
+  /runtimes/{id}/update:
+    post:
+      description: 'Streams SSE events: ready, line, done, error.'
+      parameters:
+      - description: Runtime preset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update an installed external runtime CLI
+      tags:
+      - Runtimes
+  /runtimes/manage:
+    get:
+      parameters:
+      - description: Probe installed CLIs for authentication status (default true
+          unless 0/false)
+        in: query
+        name: probe_auth
+        type: boolean
+      - description: Bypass the 60s auth probe cache
+        in: query
+        name: refresh
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.ManagedRuntimesResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List external runtimes with install, auth, and global defaults
+      tags:
+      - Runtimes
   /settings:
     get:
       description: Returns the UI settings stored in the control-plane SQLite database.

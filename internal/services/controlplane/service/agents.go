@@ -40,10 +40,17 @@ type AgentInfo struct {
 // AgentService resolves per-agent paths, ports, and reachability.
 type AgentService struct {
 	reachTimeout time.Duration
+	runtimeMgr   *RuntimeManageService
 }
 
 func NewAgentService() *AgentService {
 	return &AgentService{reachTimeout: 150 * time.Millisecond}
+}
+
+// SetRuntimeManager attaches the shared RuntimeManageService so agent onboarding
+// can inherit global runtime defaults stored in controlplane.db.
+func (s *AgentService) SetRuntimeManager(mgr *RuntimeManageService) {
+	s.runtimeMgr = mgr
 }
 
 // Delete removes an agent directory and unregisters it. The default agent is

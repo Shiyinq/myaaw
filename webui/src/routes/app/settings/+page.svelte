@@ -12,10 +12,12 @@
 	import { Button } from '$lib/components/ui/button';
 	import ConnectionPicker from '$lib/components/common/ConnectionPicker.svelte';
 	import SidebarHeader from '$lib/components/app/SidebarHeader.svelte';
+	import ExternalRuntimesSettings from '$lib/components/settings/ExternalRuntimesSettings.svelte';
 	import {
 		Accessibility,
 		Bell,
 		Check,
+		Cpu,
 		MessageSquare,
 		Palette,
 		Server,
@@ -52,6 +54,7 @@
 	type SettingsGroupId =
 		| 'appearance'
 		| 'chat'
+		| 'runtimes'
 		| 'voice'
 		| 'notifications'
 		| 'accessibility'
@@ -60,6 +63,7 @@
 	const VALID_GROUPS: readonly SettingsGroupId[] = [
 		'appearance',
 		'chat',
+		'runtimes',
 		'voice',
 		'notifications',
 		'accessibility',
@@ -81,6 +85,12 @@
 			label: t('myaaw.settings.chat'),
 			description: t('myaaw.settings.chat_desc'),
 			icon: MessageSquare
+		},
+		{
+			id: 'runtimes' as const,
+			label: t('myaaw.settings.runtimes'),
+			description: t('myaaw.settings.runtimes_desc'),
+			icon: Cpu
 		},
 		{
 			id: 'voice' as const,
@@ -695,6 +705,8 @@
 						</div>
 					</CardContent>
 				</Card>
+			{:else if activeGroup === 'runtimes'}
+				<ExternalRuntimesSettings />
 			{:else if activeGroup === 'voice'}
 				<Card>
 					<CardHeader>

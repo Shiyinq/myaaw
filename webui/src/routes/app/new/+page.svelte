@@ -41,10 +41,12 @@
 		loadRuntimeOptions as loadAgentRuntimeOptions,
 		probeRuntimeOptions as probeRuntimeOptionsApi
 	} from '$lib/stores/runtimeOptions';
+	import { runtimesManageStore } from '$lib/stores/runtimes.svelte';
 	import type {
 		CapabilityEntry,
 		CapabilitiesView,
 		DetectedRuntime,
+		ManagedRuntimeView,
 		ModelListView,
 		OnboardRequest,
 		ProviderOption,
@@ -76,6 +78,7 @@
 
 	let name = $state('');
 	let runtimes = $state<DetectedRuntime[]>([]);
+	let managedRuntimes = $state<ManagedRuntimeView[]>([]);
 	let runtimePreset = $state('myaaw');
 	let runtimeCommand = $state('');
 	let runtimeArgs = $state('');
@@ -91,6 +94,7 @@
 	let runtimeApiKeyEnv = $state('');
 	let runtimeApiKey = $state('');
 	let runtimeApiKeySaved = $state(false);
+	let runtimeGlobalKeySaved = $state(false);
 	let runtimePermissionMode = $state<'bridge' | 'auto' | 'read_only'>('bridge');
 	let runtimeMcpBridge = $state(true);
 	let isExternalRuntime = $derived(runtimePreset !== 'myaaw');
@@ -520,12 +524,14 @@
 		manualModel = false;
 		try {
 			try {
-				const [capsRes, runtimesRes] = await Promise.all([
+				const [capsRes, runtimesRes, managedRes] = await Promise.all([
 					agentsStore.fetchCapabilities(),
-					agentsStore.fetchRuntimes().catch(() => ({ runtimes: [] }))
+					agentsStore.fetchRuntimes().catch(() => ({ runtimes: [] })),
+					runtimesManageStore.list(false).catch(() => ({ management_enabled: true, runtimes: [] }))
 				]);
 				capabilities = capsRes;
 				runtimes = runtimesRes.runtimes ?? [];
+				managedRuntimes = managedRes.runtimes ?? [];
 			} catch (err) {
 				loadError = `${t('myaaw.onboard.load_failed')} ${getErrorMessage(err)}`;
 			}
@@ -549,6 +555,7 @@
 		runtimeThinking = '';
 		runtimeSessionMode = '';
 		runtimeOptions = null;
+		runtimeGlobalKeySaved = false;
 		const preset = runtimes.find((entry) => entry.id === id);
 		if (!preset || preset.id === 'myaaw') {
 			runtimeCommand = '';
@@ -557,10 +564,27 @@
 			runtimeAuthSource = 'cli_login';
 			return;
 		}
-		runtimeCommand = preset.default_command ?? '';
-		runtimeArgs = (preset.default_args ?? []).join(', ');
-		runtimeApiKeyEnv = preset.default_api_key_env ?? '';
-		runtimeAuthSource = preset.default_auth === 'api_key' ? 'api_key' : 'cli_login';
+		const savedDef = !reconfigure
+			? managedRuntimes.find((entry) => entry.id === id)?.defaults
+			: undefined;
+		runtimeCommand = savedDef?.command || preset.default_command || '';
+		runtimeArgs = (
+			savedDef?.args && savedDef.args.length > 0 ? savedDef.args : (preset.default_args ?? [])
+		).join(', ');
+		runtimeModel = savedDef?.model ?? '';
+		runtimeThinking = savedDef?.thinking_level ?? '';
+		runtimeSessionMode = savedDef?.session_mode ?? '';
+		runtimeApiKeyEnv = savedDef?.api_key_env || preset.default_api_key_env || '';
+		const preferredAuth = savedDef?.auth_source || preset.default_auth;
+		runtimeAuthSource = preferredAuth === 'api_key' ? 'api_key' : 'cli_login';
+		runtimePermissionMode =
+			savedDef?.permission_mode === 'auto'
+				? 'auto'
+				: savedDef?.permission_mode === 'read_only'
+					? 'read_only'
+					: 'bridge';
+		runtimeMcpBridge = savedDef?.mcp_bridge ?? true;
+		runtimeGlobalKeySaved = savedDef?.api_key?.configured ?? false;
 		if (runtimeAuthSource === 'cli_login') {
 			botType = 'private';
 		}
@@ -579,6 +603,7 @@
 		runtimeApiKeyEnv = '';
 		runtimeApiKey = '';
 		runtimeApiKeySaved = false;
+		runtimeGlobalKeySaved = false;
 		runtimePermissionMode = 'bridge';
 		runtimeMcpBridge = true;
 		savedRuntimeProbeKey = '';
@@ -614,6 +639,10 @@
 		toolSelection = tools;
 
 		applyPreset('openai', true);
+		const requestedRuntime = (page.url.searchParams.get('runtime') ?? '').trim();
+		if (requestedRuntime && requestedRuntime !== 'myaaw') {
+			applyRuntimePreset(requestedRuntime);
+		}
 		initial = null;
 	}
 
@@ -1065,12 +1094,12 @@
 								{/each}
 							{:else}
 								<option value="myaaw">{t('myaaw.onboard.runtime_builtin')}</option>
-								<option value="antigravity">Google Antigravity (agy)</option>
 								<option value="claude_code">Claude Code (claude)</option>
-								<option value="omp">Oh My Pi (omp)</option>
-								<option value="pi">Pi Coding Agent (pi)</option>
 								<option value="codex">OpenAI Codex CLI (codex)</option>
+								<option value="antigravity">Google Antigravity (agy)</option>
 								<option value="opencode">OpenCode (opencode)</option>
+								<option value="pi">Pi Coding Agent (pi)</option>
+								<option value="omp">Oh My Pi (omp)</option>
 								<option value="custom_acp">{t('myaaw.onboard.runtime_custom_acp')}</option>
 							{/if}
 						</select>
@@ -1084,6 +1113,12 @@
 								{/if}
 							</p>
 						{/if}
+						<p class="text-[11px] text-muted-foreground">
+							{t('myaaw.onboard.runtime_manage_link_prefix')}
+							<a href="/app/settings#runtimes" class="underline hover:text-foreground">
+								{t('myaaw.onboard.runtime_manage_link_label')}
+							</a>.
+						</p>
 					</div>
 				</div>
 
@@ -1301,7 +1336,9 @@
 										bind:value={runtimeApiKey}
 										placeholder={runtimeApiKeySaved
 											? t('myaaw.onboard.api_key_saved')
-											: t('myaaw.onboard.runtime_api_key_placeholder')}
+											: runtimeGlobalKeySaved
+												? t('myaaw.onboard.runtime_global_key_saved')
+												: t('myaaw.onboard.runtime_api_key_placeholder')}
 									/>
 								</div>
 							</div>

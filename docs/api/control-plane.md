@@ -57,7 +57,7 @@ Store the returned `token` and send it on every other request:
 Authorization: Bearer <token>
 ```
 
-Credentials, synced dashboard settings, and multi-agent group chats live in the SQLite database `~/.myaaw/controlplane/controlplane.db` (`0700` directory, `0600` database file, WAL mode). The `auth_account` table stores the username, bcrypt password hash (never plaintext), `role` (defaults to `"admin"`), and agent `user_id` (default `0`). Clients do not need to send `user_id`.
+Credentials, synced dashboard settings, global external runtime defaults (`runtime_defaults`), and multi-agent group chats live in the SQLite database `~/.myaaw/controlplane/controlplane.db` (`0700` directory, `0600` database file, WAL mode). The `auth_account` table stores the username, bcrypt password hash (never plaintext), `role` (defaults to `"admin"`), and agent `user_id` (default `0`). Clients do not need to send `user_id`.
 
 ## 3. Authentication
 
@@ -94,6 +94,12 @@ Chat and conversation endpoints use this ID automatically. Clients do not need t
 | `GET` | `/agents` | list agents with `default`, `running`, `port`, `base_url`, `agent_color`, `runtime_type`, `runtime_preset` |
 | `GET` | `/capabilities` | provider presets, embedded skills and built-in tools for the onboarding form |
 | `GET` | `/runtimes` | supported agent runtimes (built-in `myaaw` + external CLI presets) with live host binary discovery |
+| `GET` | `/runtimes/manage` | external runtime management view (install status, official install/update recipes, non-intrusive CLI auth status, masked global defaults, and agents using each runtime) |
+| `GET` | `/runtimes/:id/manage` | refresh install, auth, and global defaults for one external runtime preset |
+| `PUT` | `/runtimes/:id/defaults` | save global default configuration (and optional masked global API key) for an external runtime preset |
+| `POST` | `/runtimes/:id/install` | SSE stream running a compiled-in official vendor installer (`official_script`, `npm`, `bun`, `brew`) |
+| `POST` | `/runtimes/:id/update` | SSE stream running the official update command for an installed external runtime |
+| `POST` | `/runtimes/:id/auth/session` | open a scoped interactive PTY running the official CLI `login` or `logout` command (`stream`, `input`, `resize`, `DELETE` under `/runtimes/:id/auth/session/:sid`) |
 | `POST` | `/runtime/options` | live dynamic discovery for an unsaved runtime selection (used by the New Agent form before the agent exists; `?refresh=1` bypasses 60s cache) |
 | `GET` | `/agents/:name/runtime/options` | live dynamic discovery of models, thinking levels, native CLI session modes, and Myaaw approval modes (`?refresh=1` bypasses 60s cache) |
 | `GET` | `/agents/:name` | one agent |
@@ -126,7 +132,7 @@ curl -X POST http://localhost:9000/agents/myfriend/onboard \
 
 `201` means the agent was created, `200` means it was reconfigured. The body is `{created, config, warnings}`; `warnings` carries non-fatal issues such as a failed Telegram webhook registration or a high-frequency heartbeat warning on a `cli_login` external runtime.
 
-`POST /agents/:name/onboard` also accepts an optional `runtime` object (`preset`, `type`, `command`, `args`, `working_dir`, `additional_dirs`, `model`, `auth_source`, `api_key_env`, `api_key`, `permission_mode`, `mcp_bridge`, `idle_timeout_seconds`) to create or switch an agent to an external CLI engine such as Google Antigravity (`antigravity`), Claude Code (`claude_code`), Oh My Pi (`omp`), Pi (`pi`), Codex (`codex`), OpenCode (`opencode`), or `custom_acp`. When an external runtime is selected, `provider` is optional; `bot.type: "public"` is rejected when `auth_source` is `"cli_login"`. See [External Agent Runtimes](../agents/external-agents.md).
+`POST /agents/:name/onboard` also accepts an optional `runtime` object (`preset`, `type`, `command`, `args`, `working_dir`, `additional_dirs`, `model`, `thinking_level`, `session_mode`, `auth_source`, `api_key_env`, `api_key`, `permission_mode`, `mcp_bridge`, `idle_timeout_seconds`) to create or switch an agent to an external CLI engine such as Claude Code (`claude_code`), OpenAI Codex CLI (`codex`), Google Antigravity (`antigravity`), OpenCode (`opencode`), Pi (`pi`), Oh My Pi (`omp`), or `custom_acp`. Unspecified fields on new agents automatically inherit saved global defaults from `PUT /runtimes/:id/defaults`. When an external runtime is selected, `provider` is optional; `bot.type: "public"` is rejected when `auth_source` is `"cli_login"`. See [External Agent Runtimes](../agents/external-agents.md).
 
 ```bash
 curl -X POST http://localhost:9000/agents/coder-agy/onboard \
@@ -142,9 +148,14 @@ curl -X POST http://localhost:9000/agents/coder-agy/onboard \
   }'
 ```
 
-### Runtimes catalog (`GET /runtimes`)
+### Runtimes catalog & Global Management (`GET /runtimes`, `/runtimes/manage`)
 
-`GET /runtimes` is not scoped to an agent: it returns every built-in runtime preset alongside live host binary discovery (searching the process `PATH` plus common user/package-manager directories such as `~/.local/bin`, Homebrew, `nvm`, `fnm`, `bun`, etc.) so onboarding forms can show which CLIs are installed and their detected versions.
+`GET /runtimes` is not scoped to an agent: it returns every built-in runtime preset (ordered from built-in `myaaw`, popular official vendor CLIs, open-source CLIs, to `custom_acp`) alongside live host binary discovery (searching the process `PATH` plus common user/package-manager directories such as `~/.local/bin`, Homebrew, `nvm`, `fnm`, `bun`, etc.) so onboarding forms can show which CLIs are installed and their detected versions.
+
+`/runtimes/manage` and `/runtimes/:id/{manage,defaults,install,update,auth/session}` back **Settings → External Runtimes (`/app/settings#runtimes`)**:
+- `POST /runtimes/:id/install` and `POST /runtimes/:id/update` execute only compiled-in official vendor recipes (never arbitrary user shell strings) and stream logs over SSE.
+- `POST /runtimes/:id/auth/session` launches only allowlisted official CLI `login`/`logout` subcommands in a scoped PTY (never a general interactive shell). Set `MYAAW_RUNTIME_MANAGEMENT=0` to disable host install/update/login actions (`403`) while keeping read-only status and global defaults enabled.
+- `PUT /runtimes/:id/defaults` stores per-runtime defaults and a write-only masked global `api_key` in `controlplane.db` (`runtime_defaults`), with optional `apply_to_agents: true` to propagate changes to existing agents using that runtime.
 
 ```bash
 curl http://localhost:9000/runtimes -H "Authorization: Bearer $TOKEN"

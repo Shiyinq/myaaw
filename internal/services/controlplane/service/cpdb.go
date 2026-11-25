@@ -11,7 +11,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const controlPlaneSchemaVersion = 5
+const controlPlaneSchemaVersion = 6
 
 var controlPlaneSchemaV1 = []string{
 	`CREATE TABLE IF NOT EXISTS auth_account (
@@ -72,6 +72,20 @@ var controlPlaneSchemaV1 = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_group_messages_group_seq
 		ON group_messages(group_id, seq ASC)`,
+	`CREATE TABLE IF NOT EXISTS runtime_defaults (
+		preset          TEXT PRIMARY KEY,
+		command         TEXT NOT NULL DEFAULT '',
+		args_json       TEXT NOT NULL DEFAULT '[]',
+		model           TEXT NOT NULL DEFAULT '',
+		thinking_level  TEXT NOT NULL DEFAULT '',
+		session_mode    TEXT NOT NULL DEFAULT '',
+		auth_source     TEXT NOT NULL DEFAULT '',
+		api_key_env     TEXT NOT NULL DEFAULT '',
+		api_key         TEXT NOT NULL DEFAULT '',
+		permission_mode TEXT NOT NULL DEFAULT '',
+		mcp_bridge      INTEGER NOT NULL DEFAULT 1,
+		updated_at      TEXT NOT NULL
+	)`,
 }
 
 // ControlPlaneDB owns the shared SQLite connection for ~/.myaaw/controlplane/controlplane.db.
@@ -209,6 +223,25 @@ func (c *ControlPlaneDB) migrate() error {
 			if _, err := tx.Exec(`ALTER TABLE group_messages ADD COLUMN extra_messages_json TEXT NOT NULL DEFAULT ''`); err != nil {
 				_ = tx.Rollback()
 				return fmt.Errorf("apply controlplane schema v5: %w", err)
+			}
+		}
+		if version < 6 {
+			if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS runtime_defaults (
+				preset          TEXT PRIMARY KEY,
+				command         TEXT NOT NULL DEFAULT '',
+				args_json       TEXT NOT NULL DEFAULT '[]',
+				model           TEXT NOT NULL DEFAULT '',
+				thinking_level  TEXT NOT NULL DEFAULT '',
+				session_mode    TEXT NOT NULL DEFAULT '',
+				auth_source     TEXT NOT NULL DEFAULT '',
+				api_key_env     TEXT NOT NULL DEFAULT '',
+				api_key         TEXT NOT NULL DEFAULT '',
+				permission_mode TEXT NOT NULL DEFAULT '',
+				mcp_bridge      INTEGER NOT NULL DEFAULT 1,
+				updated_at      TEXT NOT NULL
+			)`); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("apply controlplane schema v6: %w", err)
 			}
 		}
 	}

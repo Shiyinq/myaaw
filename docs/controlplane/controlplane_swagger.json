@@ -8092,6 +8092,588 @@
                 }
             }
         },
+        "/runtimes/manage": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtimes"
+                ],
+                "summary": "List external runtimes with install, auth, and global defaults",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Probe installed CLIs for authentication status (default true unless 0/false)",
+                        "name": "probe_auth",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Bypass the 60s auth probe cache",
+                        "name": "refresh",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ManagedRuntimesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/runtimes/{id}/auth/session": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtimes"
+                ],
+                "summary": "Start an interactive CLI login or logout session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runtime preset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Login/logout mode and initial terminal dimensions",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.RuntimeAuthSessionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.RuntimeAuthSessionInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/runtimes/{id}/auth/session/{sid}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtimes"
+                ],
+                "summary": "Close an interactive CLI auth PTY session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runtime preset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Auth session ID",
+                        "name": "sid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/runtimes/{id}/auth/session/{sid}/input": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/octet-stream"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtimes"
+                ],
+                "summary": "Send input to an interactive CLI auth PTY",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runtime preset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Auth session ID",
+                        "name": "sid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/runtimes/{id}/auth/session/{sid}/resize": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtimes"
+                ],
+                "summary": "Resize an interactive CLI auth PTY",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runtime preset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Auth session ID",
+                        "name": "sid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Window dimensions",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.terminalSizeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.OKResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/runtimes/{id}/auth/session/{sid}/stream": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Runtimes"
+                ],
+                "summary": "Stream interactive CLI auth PTY output",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runtime preset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Auth session ID",
+                        "name": "sid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "raw PTY output",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/runtimes/{id}/defaults": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtimes"
+                ],
+                "summary": "Save global defaults for an external runtime",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runtime preset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Global runtime defaults",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.RuntimeDefaultsInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ManagedRuntimeView"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/runtimes/{id}/install": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Streams SSE events: ready, line, done, error. Only allowlisted official vendor recipes are accepted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Runtimes"
+                ],
+                "summary": "Install an external runtime CLI from its official source",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runtime preset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Official install method selection",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/handler.RuntimeInstallRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/runtimes/{id}/manage": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtimes"
+                ],
+                "summary": "Get external runtime status and global defaults",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runtime preset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/service.ManagedRuntimeView"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/runtimes/{id}/update": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Streams SSE events: ready, line, done, error.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "Runtimes"
+                ],
+                "summary": "Update an installed external runtime CLI",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Runtime preset ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/settings": {
             "get": {
                 "security": [
@@ -9326,6 +9908,31 @@
                 }
             }
         },
+        "handler.RuntimeAuthSessionRequest": {
+            "type": "object",
+            "properties": {
+                "cols": {
+                    "type": "integer"
+                },
+                "headless": {
+                    "type": "boolean"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "rows": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.RuntimeInstallRequest": {
+            "type": "object",
+            "properties": {
+                "method": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.RuntimesResponse": {
             "type": "object",
             "properties": {
@@ -10438,6 +11045,32 @@
                 }
             }
         },
+        "runtime.AuthStatusInfo": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "type": "string"
+                },
+                "login_command": {
+                    "type": "string"
+                },
+                "logout_command": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "supports_headless": {
+                    "type": "boolean"
+                },
+                "supports_login": {
+                    "type": "boolean"
+                },
+                "supports_logout": {
+                    "type": "boolean"
+                }
+            }
+        },
         "runtime.DetectedRuntime": {
             "type": "object",
             "properties": {
@@ -10481,6 +11114,32 @@
                     "type": "string"
                 },
                 "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "runtime.InstallMethod": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "command_preview": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "missing_tool": {
+                    "type": "string"
+                },
+                "recommended": {
+                    "type": "boolean"
+                },
+                "source_url": {
                     "type": "string"
                 }
             }
@@ -12176,6 +12835,91 @@
                 }
             }
         },
+        "service.ManagedRuntimeView": {
+            "type": "object",
+            "properties": {
+                "auth": {
+                    "$ref": "#/definitions/runtime.AuthStatusInfo"
+                },
+                "binary_path": {
+                    "type": "string"
+                },
+                "capabilities": {
+                    "$ref": "#/definitions/config.RuntimeCapabilities"
+                },
+                "default_api_key_env": {
+                    "type": "string"
+                },
+                "default_args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "default_auth": {
+                    "type": "string"
+                },
+                "default_command": {
+                    "type": "string"
+                },
+                "defaults": {
+                    "$ref": "#/definitions/service.RuntimeDefaultsView"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "docs_url": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "install_methods": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/runtime.InstallMethod"
+                    }
+                },
+                "installed": {
+                    "type": "boolean"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "tos_notice": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "update_method": {
+                    "$ref": "#/definitions/runtime.InstallMethod"
+                },
+                "used_by_agents": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.ManagedRuntimesResponse": {
+            "type": "object",
+            "properties": {
+                "management_enabled": {
+                    "type": "boolean"
+                },
+                "runtimes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/service.ManagedRuntimeView"
+                    }
+                }
+            }
+        },
         "service.ModelCapabilitiesView": {
             "type": "object",
             "properties": {
@@ -12699,6 +13443,120 @@
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "service.RuntimeAuthSessionInfo": {
+            "type": "object",
+            "properties": {
+                "cols": {
+                    "type": "integer"
+                },
+                "command_preview": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "preset": {
+                    "type": "string"
+                },
+                "rows": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.RuntimeDefaultsInput": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "api_key_env": {
+                    "type": "string"
+                },
+                "apply_to_agents": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "auth_source": {
+                    "type": "string"
+                },
+                "clear_api_key": {
+                    "type": "boolean"
+                },
+                "command": {
+                    "type": "string"
+                },
+                "mcp_bridge": {
+                    "type": "boolean"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "permission_mode": {
+                    "type": "string"
+                },
+                "session_mode": {
+                    "type": "string"
+                },
+                "thinking_level": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.RuntimeDefaultsView": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "$ref": "#/definitions/service.SecretState"
+                },
+                "api_key_env": {
+                    "type": "string"
+                },
+                "args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "auth_source": {
+                    "type": "string"
+                },
+                "command": {
+                    "type": "string"
+                },
+                "mcp_bridge": {
+                    "type": "boolean"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "permission_mode": {
+                    "type": "string"
+                },
+                "preset": {
+                    "type": "string"
+                },
+                "session_mode": {
+                    "type": "string"
+                },
+                "thinking_level": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },

@@ -1,6 +1,6 @@
 # External Agent Runtimes
 
-Myaaw lets every isolated agent choose its own **Agent Runtime (Engine)**—either Myaaw's built-in ReAct loop (`myaaw`) or an external CLI coding agent such as **Google Antigravity (`agy`)**, **Claude Code (`claude`)**, **Oh My Pi (`omp`)**, **Pi (`pi`)**, **OpenAI Codex CLI (`codex`)**, **OpenCode (`opencode`)**, or any **Agent Client Protocol (ACP)** compliant binary.
+Myaaw lets every isolated agent choose its own **Agent Runtime (Engine)**—either Myaaw's built-in ReAct loop (`myaaw`) or an external CLI coding agent such as **Claude Code (`claude`)**, **OpenAI Codex CLI (`codex`)**, **Google Antigravity (`agy`)**, **OpenCode (`opencode`)**, **Pi (`pi`)**, **Oh My Pi (`omp`)**, or any **Agent Client Protocol (ACP)** compliant binary.
 
 An external-runtime agent remains a first-class Myaaw agent:
 
@@ -440,12 +440,12 @@ Myaaw drives external agents over structured machine-readable `stdio` protocols 
 | Preset (`runtime.preset`) | Driver (`runtime.type`) | Default Command | Protocol | Bridged Approvals | Auto MCP Bridge | Session Resume |
 | :--- | :--- | :--- | :--- | :---: | :---: | :--- |
 | `myaaw` | `myaaw` | *(in-process)* | Native ReAct loop | Yes | *(native)* | SQLite transcript |
-| `antigravity` | `acp` | `agy acp` | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
 | `claude_code` | `claude_code` | `claude` | Bidirectional `stream-json` stdio | Yes | Yes (`--mcp-config`) | `--resume <id>` |
-| `omp` | `omp` | `omp --mode rpc` | Pi/OMP JSONL RPC stdio | — | — | Scoped `.jsonl` in `runtime/sessions/` |
-| `pi` | `pi` | `pi --mode rpc` | Pi JSONL RPC stdio | — | — | Scoped `.jsonl` in `runtime/sessions/` |
 | `codex` | `codex` | `codex app-server` | Codex JSON-RPC 2.0 stdio | Yes | — | `thread/resume` |
+| `antigravity` | `acp` | `agy acp` | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
 | `opencode` | `acp` | `opencode acp` | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
+| `pi` | `pi` | `pi --mode rpc` | Pi JSONL RPC stdio | — | — | Scoped `.jsonl` in `runtime/sessions/` |
+| `omp` | `omp` | `omp --mode rpc` | Pi/OMP JSONL RPC stdio | — | — | Scoped `.jsonl` in `runtime/sessions/` |
 | `custom_acp` | `acp` | *(custom)* | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
 
 ### Background Daemon Binary Discovery (`ResolveBinary` & `EnrichedPATH`)
@@ -502,7 +502,7 @@ Myaaw is designed to avoid OAuth credential scraping and Terms-of-Service violat
 1. **Zero credential touching:** Myaaw never reads, copies, or proxies `~/.gemini`, `~/.claude`, `~/.codex`, or keychain tokens. Only the unmodified official CLI binary installed on your host runs over `stdio`.
 2. **Personal CLI login (`auth_source: "cli_login"`):** Safe for **private, personal interactive use** on your own machine (matching editor integrations such as Zed or JetBrains ACP). Myaaw **blocks `bot.type: "public"`** when `auth_source` is `cli_login` and warns on high-frequency heartbeats (`< 15m`).
 3. **Official API keys (`auth_source: "api_key"`):** Recommended for public bots, unattended 24/7 cron/heartbeat schedules, VPS/cloud deployments, and third-party harnesses (`omp` / `pi`).
-4. **Remote CLI login helper:** If you host Myaaw on another machine and need to run an interactive first-time CLI login (`agy`, `claude`, `codex`), open **Workspace → Terminal (`/app/terminal`)** (when enabled with `myaaw api start --terminal`).
+4. **Scoped official CLI login/logout modal:** Open **Settings → External Runtimes (`/app/settings#runtimes`)** and click **Sign in** / **Manage Auth** on any installed runtime. Myaaw spawns only the allowlisted official CLI subcommand (`claude auth login`, `codex login`, `agy`, `opencode auth login`, `pi`, `omp login`) inside an isolated PTY (no arbitrary shell), auto-detecting OAuth URLs and Device Auth codes for remote/headless logins without ever touching tokens. (For ad-hoc shell troubleshooting on a remote host, **Workspace → Terminal (`/app/terminal`)** remains available when enabled with `myaaw api start --terminal`.)
 
 ---
 
@@ -548,8 +548,13 @@ MYAAW_API_KEY=sk-... myaaw onboard --yes --agent omp-dev --runtime omp \
 myaaw --agent coder-agy doctor
 ```
 
-### Dashboard Setup
-Open **New Agent (`/app/new`)** in the WebUI, pick any detected engine from **Agent Engine / Runtime** (`GET /runtimes`), and configure working directory, authentication mode, and tool approval routing. External agents display their runtime logo badge at the top-left corner of the agent icon in the Bots sidebar and home cards while keeping the full `/app/chat` experience.
+### Dashboard Setup & Global Runtime Settings
+- **Global Runtime Management (`/app/settings#runtimes`):** Open **Settings → External Runtimes** to manage all supported external CLIs (ordered from popular official vendor CLIs → open-source CLIs → Custom ACP):
+  - **Official 1-click Install & Update:** Runs only compiled-in official vendor recipes (`claude.ai/install.sh`, `@openai/codex@latest`, `antigravity.google/cli/install.sh`, `opencode.ai/install`, `pi.dev/install.sh`, `omp.sh/install`, plus Homebrew/npm/Bun alternatives) with live streaming SSE output and automatic non-root `npm` handling (using the user's `nvm`/Homebrew prefix or falling back to `~/.npm-global` symlinked into `~/.local/bin`).
+  - **Non-intrusive Auth Status & Interactive Login/Logout:** Detects signed-in sessions (`claude auth status`, `codex login status` + model count, `agy models`, `opencode auth list` + built-in free-tier model detection, `pi`/`omp` RPC models) and provides a scoped interactive PTY modal for official CLI `login`/`logout` (including headless `--device-auth` / `--no-browser` modes and clickable OAuth URL / Device Code helpers).
+  - **Global Defaults per Runtime:** Save default `model`, `thinking_level`, `session_mode`, `permission_mode`, `auth_source`, `mcp_bridge`, `idle_timeout_seconds`, and an optional masked write-only global `api_key` in `controlplane.db` (`runtime_defaults` table). New agents inherit these defaults automatically on onboard, and you can optionally apply saved defaults to existing agents using that runtime.
+  - **Opt-out guard:** Set `MYAAW_RUNTIME_MANAGEMENT=0` when starting `myaaw api` to disable host-level CLI installation, updates, and interactive login PTYs while keeping read-only status inspection and global defaults available.
+- **Create / Reconfigure Agent (`/app/new`):** Open **New Agent (`/app/new`)** in the WebUI, pick any engine from **Agent Engine / Runtime** (`GET /runtimes`), and configure authentication mode, dynamic model/thinking/runtime mode, and tool approval routing. External agents display their runtime logo badge at the top-left corner of the agent icon in the Bots sidebar and home cards while keeping the full `/app/chat` experience.
 
 ### Verifying an Active External Agent at Runtime
 

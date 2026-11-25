@@ -1,4 +1,4 @@
-import type { AgentConfig, RuntimeCapabilities } from './config';
+import type { AgentConfig, RuntimeCapabilities, SecretState } from './config';
 import type { ChatRunInfo } from './chat';
 import type { ConversationSummary } from './conversations';
 
@@ -34,6 +34,87 @@ export interface DetectedRuntime {
 
 export interface RuntimesResponse {
 	runtimes: DetectedRuntime[];
+}
+
+export interface RuntimeInstallMethod {
+	id: string;
+	label: string;
+	command_preview: string;
+	source_url: string;
+	available: boolean;
+	missing_tool?: string;
+	recommended: boolean;
+}
+
+export type RuntimeAuthStatus =
+	| 'authenticated'
+	| 'free_tier'
+	| 'unauthenticated'
+	| 'api_key_configured'
+	| 'unknown'
+	| 'not_applicable';
+
+export interface RuntimeAuthInfo {
+	status: RuntimeAuthStatus;
+	detail?: string;
+	supports_login: boolean;
+	supports_logout: boolean;
+	supports_headless: boolean;
+	login_command?: string;
+	logout_command?: string;
+}
+
+export interface RuntimeDefaultsView {
+	preset: string;
+	command?: string;
+	args?: string[];
+	model?: string;
+	thinking_level?: string;
+	session_mode?: string;
+	auth_source?: string;
+	api_key_env?: string;
+	api_key: SecretState;
+	permission_mode?: string;
+	mcp_bridge: boolean;
+	updated_at?: string;
+}
+
+export interface RuntimeDefaultsInput {
+	command?: string;
+	args?: string[];
+	model?: string;
+	thinking_level?: string;
+	session_mode?: string;
+	auth_source?: string;
+	api_key_env?: string;
+	api_key?: string;
+	clear_api_key?: boolean;
+	permission_mode?: string;
+	mcp_bridge?: boolean;
+	apply_to_agents?: string[];
+}
+
+export interface ManagedRuntimeView extends DetectedRuntime {
+	docs_url?: string;
+	install_methods: RuntimeInstallMethod[];
+	update_method?: RuntimeInstallMethod;
+	auth: RuntimeAuthInfo;
+	defaults: RuntimeDefaultsView;
+	used_by_agents: string[];
+}
+
+export interface ManagedRuntimesResponse {
+	management_enabled: boolean;
+	runtimes: ManagedRuntimeView[];
+}
+
+export interface RuntimeAuthSessionInfo {
+	id: string;
+	preset: string;
+	mode: string;
+	command_preview: string;
+	cols: number;
+	rows: number;
 }
 
 export interface RuntimeOptionItem {

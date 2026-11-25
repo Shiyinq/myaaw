@@ -112,7 +112,7 @@ func (s *AgentService) Onboard(name string, req OnboardRequest) (OnboardResult, 
 		}
 	}
 
-	input, err := buildOnboardInput(name, req)
+	input, err := buildOnboardInput(name, req, s.runtimeMgr)
 	if err != nil {
 		return OnboardResult{}, err
 	}
@@ -146,7 +146,7 @@ func (s *AgentService) Onboard(name string, req OnboardRequest) (OnboardResult, 
 	return OnboardResult{Created: !existed, Config: view, Warnings: warnings}, nil
 }
 
-func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
+func buildOnboardInput(name string, req OnboardRequest, runtimeMgr *RuntimeManageService) (onboard.Input, error) {
 	var in onboard.Input
 	existing := readConfigIfExists(name)
 
@@ -170,6 +170,53 @@ func buildOnboardInput(name string, req OnboardRequest) (onboard.Input, error) {
 		}
 		if existing != nil && existing.Runtime != nil && rt.APIKey == "" {
 			rt.APIKey = existing.Runtime.APIKey
+		}
+		// Seed omitted fields on a new external agent (and fallback API key) from
+		// Global Runtime Defaults saved in Settings.
+		presetKey := strings.TrimSpace(rt.Preset)
+		if presetKey == "" {
+			presetKey = strings.TrimSpace(rt.Type)
+		}
+		if runtimeMgr != nil && presetKey != "" && presetKey != config.RuntimeTypeMyaaw {
+			if def, hasDef := runtimeMgr.RawDefaults(presetKey); hasDef {
+				if strings.TrimSpace(rt.Command) == "" && def.Command != "" {
+					rt.Command = def.Command
+				}
+				if len(rt.Args) == 0 && len(def.Args) > 0 {
+					rt.Args = append([]string(nil), def.Args...)
+				}
+				if existing == nil {
+					if rt.Model == "" && def.Model != "" {
+						rt.Model = def.Model
+					}
+					if rt.ThinkingLevel == "" && def.ThinkingLevel != "" {
+						rt.ThinkingLevel = def.ThinkingLevel
+					}
+					if rt.SessionMode == "" && def.SessionMode != "" {
+						rt.SessionMode = def.SessionMode
+					}
+					if rt.AuthSource == "" && def.AuthSource != "" {
+						rt.AuthSource = def.AuthSource
+					}
+					if rt.APIKeyEnv == "" && def.APIKeyEnv != "" {
+						rt.APIKeyEnv = def.APIKeyEnv
+					}
+					if rt.PermissionMode == "" && def.PermissionMode != "" {
+						rt.PermissionMode = def.PermissionMode
+					}
+					if rt.MCPBridge == nil {
+						mcpVal := def.MCPBridge
+						rt.MCPBridge = &mcpVal
+					}
+				}
+				effectiveAuth := strings.TrimSpace(rt.AuthSource)
+				if effectiveAuth == "" {
+					effectiveAuth = def.AuthSource
+				}
+				if effectiveAuth == config.AuthSourceAPIKey && rt.APIKey == "" && def.APIKey != "" {
+					rt.APIKey = def.APIKey
+				}
+			}
 		}
 		merged := config.MergeRuntime(&rt)
 		var botCheck *config.GlobalBotConfig

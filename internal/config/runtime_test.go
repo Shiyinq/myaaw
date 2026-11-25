@@ -56,3 +56,25 @@ func TestValidateRuntimeToSGuardrails(t *testing.T) {
 		t.Fatalf("expected high-frequency heartbeat warning, got: %v", warnings)
 	}
 }
+
+func TestRuntimePresetsOrder(t *testing.T) {
+	want := []string{
+		"myaaw",
+		"claude_code",
+		"codex",
+		"antigravity",
+		"opencode",
+		"pi",
+		"omp",
+		"custom_acp",
+	}
+	presets := RuntimePresets()
+	if len(presets) != len(want) {
+		t.Fatalf("RuntimePresets() len = %d, want %d", len(presets), len(want))
+	}
+	for i, id := range want {
+		if presets[i].ID != id {
+			t.Fatalf("RuntimePresets()[%d].ID = %q, want %q", i, presets[i].ID, id)
+		}
+	}
+}

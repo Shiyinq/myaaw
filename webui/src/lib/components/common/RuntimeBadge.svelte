@@ -4,8 +4,10 @@
 	interface Props {
 		runtimeType?: string;
 		runtimePreset?: string;
-		/** `sm` fits 36–40px sidebar icons; `md` fits 52px BotsHome cards. */
-		size?: 'sm' | 'md';
+		/** `sm` fits 36–40px sidebar icons; `md` fits 52px BotsHome cards; `lg` fits Settings cards. */
+		size?: 'sm' | 'md' | 'lg';
+		/** Render as an inline rounded icon tile instead of an absolute corner badge. */
+		inline?: boolean;
 		class?: string;
 	}
 
@@ -13,6 +15,7 @@
 		runtimeType = '',
 		runtimePreset = '',
 		size = 'sm',
+		inline = false,
 		class: className = ''
 	}: Props = $props();
 
@@ -55,9 +58,13 @@
 		}
 	});
 
-	const badgeSize = $derived(size === 'md' ? 'h-5.5 w-5.5' : 'h-[18px] w-[18px]');
-	const iconSize = $derived(size === 'md' ? 'h-3.5 w-3.5' : 'h-3 w-3');
-	const piIconSize = $derived(size === 'md' ? 'h-3 w-3' : 'h-2.5 w-2.5');
+	const badgeSize = $derived(
+		size === 'lg' ? 'h-9 w-9' : size === 'md' ? 'h-5.5 w-5.5' : 'h-[18px] w-[18px]'
+	);
+	const iconSize = $derived(size === 'lg' ? 'h-5 w-5' : size === 'md' ? 'h-3.5 w-3.5' : 'h-3 w-3');
+	const piIconSize = $derived(
+		size === 'lg' ? 'h-4.5 w-4.5' : size === 'md' ? 'h-3 w-3' : 'h-2.5 w-2.5'
+	);
 	const badgeSurface = $derived.by(() => {
 		if (key === 'opencode') return 'bg-[#131010] text-white';
 		if (key === 'omp') return 'bg-[#0d0d0d] text-[#fafafa]';
@@ -70,7 +77,9 @@
 		title={label}
 		aria-label={label}
 		class={cn(
-			'pointer-events-none absolute -top-1 -left-1 z-10 grid place-items-center overflow-hidden rounded-full shadow-xs ring-2 ring-card',
+			inline
+				? 'grid shrink-0 place-items-center overflow-hidden rounded-xl border border-border/70 shadow-xs'
+				: 'pointer-events-none absolute -top-1 -left-1 z-10 grid place-items-center overflow-hidden rounded-full shadow-xs ring-2 ring-card',
 			badgeSurface,
 			badgeSize,
 			className

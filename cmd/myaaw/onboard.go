@@ -66,7 +66,7 @@ type onboardOptions struct {
 	botType         string
 	disableChannels string
 	listCaps        bool
-	// External agent runtime flags (myaaw, antigravity, claude_code, omp, pi, codex, opencode, custom_acp).
+	// External agent runtime flags (myaaw, claude_code, codex, antigravity, opencode, pi, omp, custom_acp).
 	runtimePreset string
 	runtimeCmd    string
 	runtimeArgs   string
@@ -124,7 +124,7 @@ func registerOnboardFlags(cmd *cobra.Command) {
 	f.StringVar(&onboardOpts.botType, "bot-type", "", "access type: private or public (default: private)")
 	f.BoolVar(&onboardOpts.listCaps, "list-capabilities", false, "list built-in skills and tools, then exit")
 	f.StringVar(&onboardOpts.disableChannels, "disable-channel", "", "channels to turn off: telegram, discord, or both")
-	f.StringVar(&onboardOpts.runtimePreset, "runtime", "", "agent runtime preset: myaaw, antigravity, claude_code, omp, pi, codex, opencode, or custom_acp")
+	f.StringVar(&onboardOpts.runtimePreset, "runtime", "", "agent runtime preset: myaaw, claude_code, codex, antigravity, opencode, pi, omp, or custom_acp")
 	f.StringVar(&onboardOpts.runtimeCmd, "runtime-command", "", "override external runtime binary command")
 	f.StringVar(&onboardOpts.runtimeArgs, "runtime-args", "", "override external runtime CLI args (comma separated)")
 	f.StringVar(&onboardOpts.workingDir, "working-dir", "", "working directory for external runtime (default: ~/.myaaw/agents/<name>/home/workspace)")

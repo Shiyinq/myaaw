@@ -25,6 +25,7 @@ type Handler struct {
 	terminals     *service.TerminalService
 	backups       *service.BackupService
 	groups        *service.GroupService
+	runtimes      *service.RuntimeManageService
 }
 
 func New(
@@ -67,6 +68,11 @@ func New(
 		backups:       backupsSvc,
 		groups:        groupsSvc,
 	}
+}
+
+// SetRuntimeManager attaches the global external runtime management service.
+func (h *Handler) SetRuntimeManager(mgr *service.RuntimeManageService) {
+	h.runtimes = mgr
 }
 
 // Health reports whether the control plane is accepting requests.

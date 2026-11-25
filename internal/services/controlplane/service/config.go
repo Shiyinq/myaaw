@@ -134,11 +134,18 @@ type ConfigView struct {
 
 // ConfigService reads per-agent configuration with secrets masked.
 type ConfigService struct {
-	chatGPT chatGPTSessions
+	chatGPT    chatGPTSessions
+	runtimeMgr *RuntimeManageService
 }
 
 func NewConfigService() *ConfigService {
 	return &ConfigService{}
+}
+
+// SetRuntimeManager attaches the shared RuntimeManageService so option probes
+// can reuse saved global API keys without exposing secrets to the client.
+func (s *ConfigService) SetRuntimeManager(mgr *RuntimeManageService) {
+	s.runtimeMgr = mgr
 }
 
 func (s *ConfigService) Providers(agentName string) (ProvidersView, error) {
@@ -206,6 +213,14 @@ func (s *ConfigService) ProbeRuntimeOptions(ctx context.Context, in OnboardRunti
 	})
 	if !rt.IsExternal() {
 		return agentruntime.DiscoverRuntimeOptions(ctx, rt, ""), nil
+	}
+	if s.runtimeMgr != nil && rt.AuthSource == config.AuthSourceAPIKey && rt.APIKey == "" && rt.Preset != "" {
+		if def, hasDef := s.runtimeMgr.RawDefaults(rt.Preset); hasDef && def.APIKey != "" {
+			rt.APIKey = def.APIKey
+			if rt.APIKeyEnv == "" && def.APIKeyEnv != "" {
+				rt.APIKeyEnv = def.APIKeyEnv
+			}
+		}
 	}
 	if strings.TrimSpace(rt.Command) == "" {
 		return agentruntime.RuntimeOptions{}, fmt.Errorf("%w: runtime.command is required", ErrInvalidConfig)
