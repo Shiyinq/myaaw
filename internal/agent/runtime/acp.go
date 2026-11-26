@@ -453,7 +453,7 @@ func (r *acpRuntime) spawnACPProcess() (*acpProcess, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(bin, r.cfg.Args...)
+	cmd := exec.Command(bin, acpSubprocessArgs(r.cfg)...)
 	cmd.Dir = r.WorkingDir()
 	cmd.Env = BuildSubprocessEnv(r.cfg, r.bridgeURL(), r.bridgeToken())
 	configureProcessGroup(cmd)

@@ -6,6 +6,7 @@ An external-runtime agent remains a first-class Myaaw agent:
 
 - It lives in its own isolated directory at `~/.myaaw/agents/<name>/`.
 - It streams text, reasoning/thinking, tool calls, tool results, and interactive approval requests straight into **Myaaw's WebUI (`/app/chat`)**, **CLI TUI (`myaaw chat`)**, **Telegram**, **Discord**, **Multi-Agent Group Chats**, **Cron/Heartbeat**, and **A2A**.
+- **Telemetry is disabled by default** across all external runtimes (no extra CLI flags or environment setup required; see [Section 11](#11-account-safety-telemetry-opt-out--provider-tos-guardrails)).
 - You can freely mix native `myaaw` agents and external-runtime agents inside the same fleet and even inside the same Multi-Agent Group Chat room.
 
 ---
@@ -448,7 +449,7 @@ Myaaw drives external agents over structured machine-readable `stdio` protocols 
 | `myaaw` | `myaaw` | *(in-process)* | Native ReAct loop | Yes | *(native)* | SQLite transcript |
 | `claude_code` | `claude_code` | `claude` | Bidirectional `stream-json` stdio | Yes | Yes (`--mcp-config`) | `--resume <id>` |
 | `codex` | `codex` | `codex app-server` | Codex JSON-RPC 2.0 stdio | Yes | Yes (`-c mcp_servers.*`) | `thread/resume` |
-| `antigravity` | `acp` | `agy acp` | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
+| `antigravity` | `acp` | `agy acp --disable-telemetry` | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
 | `opencode` | `acp` | `opencode acp` | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/load` |
 | `deepseek_harness` | `acp` | `dsh --profile acp` | ACP (JSON-RPC 2.0 stdio) | Yes | Yes (`session/new`) | `session/resume` |
 | `pi` | `pi` | `pi --mode rpc` | Pi JSONL RPC stdio | — | Yes (`.pi/mcp.json` + `--approve`) | Scoped `.jsonl` in `runtime/sessions/` |
@@ -502,14 +503,54 @@ Every external-runtime agent keeps the exact same isolated directory layout unde
 
 ---
 
-## 11. Account Safety & Provider ToS Guardrails
+## 11. Account Safety, Telemetry Opt-out & Provider ToS Guardrails
 
-Myaaw is designed to avoid OAuth credential scraping and Terms-of-Service violations:
+Myaaw is designed to avoid OAuth credential scraping, unwanted telemetry reporting, and Terms-of-Service violations:
 
 1. **Zero credential touching:** Myaaw never reads, copies, or proxies `~/.gemini`, `~/.claude`, `~/.codex`, or keychain tokens. Only the unmodified official CLI binary installed on your host runs over `stdio`.
 2. **Personal CLI login (`auth_source: "cli_login"`):** Safe for **private, personal interactive use** on your own machine (matching editor integrations such as Zed or JetBrains ACP). Myaaw **blocks `bot.type: "public"`** when `auth_source` is `cli_login` and warns on high-frequency heartbeats (`< 15m`).
 3. **Official API keys (`auth_source: "api_key"`):** Recommended for public bots, unattended 24/7 cron/heartbeat schedules, VPS/cloud deployments, and third-party harnesses (`omp` / `pi`).
 4. **Scoped official CLI login/logout modal:** Open **Settings → External Runtimes (`/app/settings#runtimes`)** and click **Sign in** / **Manage Auth** on any installed runtime. Myaaw spawns only the allowlisted official CLI subcommand (`claude auth login`, `codex login`, `agy`, `opencode auth login`, `pi`, `omp login`) inside an isolated PTY (no arbitrary shell), auto-detecting OAuth URLs and Device Auth codes for remote/headless logins without ever touching tokens. (For ad-hoc shell troubleshooting on a remote host, **Workspace → Terminal (`/app/terminal`)** remains available when enabled with `myaaw api start --terminal`.)
+
+### Telemetry Disabled by Default Across All External Runtimes
+
+> **Default behavior:** Telemetry is **disabled by default out of the box** for all external runtimes—both newly created agents and existing saved agents. You do **not** need to add CLI flags or export environment variables manually.
+
+Every external runtime subprocess spawned by Myaaw—during live chat turns, dynamic option probes (`GET /agents/:name/runtime/options`), and non-interactive auth status probes—automatically runs with telemetry opt-out flags and child-process environment variables (`BuildSubprocessEnv`, `acpSubprocessArgs`, `codexSubprocessArgs`). These overrides live strictly in the spawned child process and never modify your shell profile, `.env`, or global CLI config files.
+
+- **Universal child-process opt-outs (all external runtimes):**
+  `DO_NOT_TRACK=1`, `OTEL_SDK_DISABLED=true`, `OTEL_TRACES_EXPORTER=none`, `OTEL_METRICS_EXPORTER=none`, `OTEL_LOGS_EXPORTER=none`.
+
+| Runtime | CLI Flag Applied | Runtime-Specific Subprocess Env Vars |
+| :--- | :--- | :--- |
+| **Google Antigravity (`agy`)** | `--disable-telemetry` *(default preset arg & auto-injected for existing `agy acp` agents)* | `GEMINI_TELEMETRY_ENABLED=false` |
+| **Gemini CLI (`custom_acp` / `gemini`)** | — | `GEMINI_TELEMETRY_ENABLED=false` |
+| **OpenAI Codex CLI (`codex`)** | `-c analytics.enabled=false` | Universal OTel / `DO_NOT_TRACK` |
+| **Claude Code (`claude`)** | — | `DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` |
+| **DeepSeek Harness (`dsh`)** | — | `DSH_TELEMETRY_DISABLED=1`, `DSH_TELEMETRY_MODE=DISABLED` |
+| **OpenCode (`opencode`)** | — | `OPENCODE_DISABLE_AUTOUPDATE=true` *(live model catalog remains enabled for the Model picker)* |
+| **Pi (`pi`) & Oh My Pi (`omp`)** | — | `PI_TELEMETRY=false` |
+
+#### Verifying Telemetry Opt-out at Runtime
+
+After sending at least one chat message so the external CLI subprocess is warm, you can verify that telemetry opt-out is active in three ways:
+
+1. **Inspect CLI arguments on the host (`--disable-telemetry` / `-c analytics.enabled=false`):**
+   ```bash
+   ps -eo pid,ppid,command | grep -E "agy acp|codex|dsh|opencode acp|pi --mode rpc" | grep -v grep
+   ```
+2. **Inspect filtered telemetry environment variables on the warm subprocess** *(macOS `ps eww`; filters only telemetry keys so tokens/secrets are never printed)*:
+   ```bash
+   for pid in $(pgrep -f "agy acp|codex app-server|dsh-desktop-host|opencode acp|pi --mode rpc"); do
+     echo "=== PID $pid ==="
+     ps eww -p "$pid" | grep -oE "(MYAAW_AGENT=[^ ]+|DO_NOT_TRACK=[^ ]+|OTEL_[A-Z_]+=[^ ]+|GEMINI_TELEMETRY_ENABLED=[^ ]+|DSH_TELEMETRY_[A-Z_]+=[^ ]+|OPENCODE_DISABLE_AUTOUPDATE=[^ ]+|PI_TELEMETRY=[^ ]+|DISABLE_TELEMETRY=[^ ]+|CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=[^ ]+|--disable-telemetry|analytics\.enabled=[^ ]+)" | sort -u
+   done
+   ```
+3. **Ask the agent directly in `/app/chat` (Recommended):** Because the external CLI's shell tool inherits the subprocess environment, simply ask the agent to run:
+   ```bash
+   env | grep -iE '^(MYAAW_AGENT|DO_NOT_TRACK|OTEL_|GEMINI_TELEMETRY|DSH_TELEMETRY|OPENCODE_DISABLE|PI_TELEMETRY|DISABLE_TELEMETRY|DISABLE_ERROR_REPORTING|CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC)' | sort
+   ```
+   This works identically across macOS, Linux, and Windows without touching host process tables or exposing unrelated environment variables. *(Note: DeepSeek Harness's bash sandbox intentionally strips `DSH_*` variables from child shell commands, so use step 2 above if you want to confirm `DSH_TELEMETRY_DISABLED` / `DSH_TELEMETRY_MODE` on the parent `dsh` process itself.)*
 
 ---
 
@@ -522,7 +563,7 @@ Myaaw is designed to avoid OAuth credential scraping and Terms-of-Service violat
     "preset": "antigravity",
     "type": "acp",
     "command": "agy",
-    "args": ["acp"],
+    "args": ["acp", "--disable-telemetry"],
     "model": "gemini-4-neon",
     "thinking_level": "high",
     "session_mode": "default",

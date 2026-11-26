@@ -470,7 +470,11 @@ func runNonInteractiveProbe(ctx context.Context, bin string, args ...string) (st
 	configureProcessGroup(cmd)
 	cmd.Stdin = nil // Immediate EOF if the CLI attempts to read stdin.
 	cmd.Dir = os.TempDir()
-	cmd.Env = setEnvVar(append([]string(nil), os.Environ()...), "PATH", EnrichedPATH())
+	env := setEnvVar(append([]string(nil), os.Environ()...), "PATH", EnrichedPATH())
+	applyTelemetryOptOutEnv(func(k, v string) {
+		env = setEnvVar(env, k, v)
+	}, config.RuntimeConfig{Command: bin})
+	cmd.Env = env
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf

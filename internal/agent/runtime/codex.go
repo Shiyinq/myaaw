@@ -336,17 +336,8 @@ func (r *codexRuntime) acquireThread(ctx context.Context, convKey string, cfg ag
 		return existing, true, nil
 	}
 
-	args := append([]string(nil), r.cfg.Args...)
-	if len(args) == 0 {
-		args = []string{"app-server"}
-	}
 	effort, summary := codexReasoningParams(r.cfg.ThinkingLevel)
-	if effort != "" {
-		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%s", marshalTOMLString(effort)))
-	}
-	if summary != "" {
-		args = append(args, "-c", fmt.Sprintf("model_reasoning_summary=%s", marshalTOMLString(summary)))
-	}
+	args := codexSubprocessArgs(r.cfg, true)
 	mcpSpecs := BuildMCPServers(r.cfg.MCPBridgeEnabled(), r.bridgeURL(), r.bridgeToken())
 	args = append(args, BuildCodexMCPArgs(mcpSpecs)...)
 

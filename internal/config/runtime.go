@@ -167,7 +167,7 @@ var runtimePresetCatalog = []RuntimePreset{
 		Description:      "Runs the official Antigravity CLI over Agent Client Protocol (agy acp).",
 		Type:             RuntimeTypeACP,
 		DefaultCommand:   "agy",
-		DefaultArgs:      []string{"acp"},
+		DefaultArgs:      []string{"acp", "--disable-telemetry"},
 		DefaultAPIKeyEnv: "GEMINI_API_KEY",
 		DefaultAuth:      AuthSourceCLILogin,
 		Capabilities: RuntimeCapabilities{

@@ -525,7 +525,97 @@ func BuildSubprocessEnv(cfg config.RuntimeConfig, bridgeURL, bridgeToken string)
 	if bridgeToken != "" {
 		set("MYAAW_BRIDGE_TOKEN", bridgeToken)
 	}
+	applyTelemetryOptOutEnv(set, cfg)
 	return env
+}
+
+// applyTelemetryOptOutEnv injects standard and per-CLI telemetry opt-out
+// environment variables so external agent subprocesses never ship usage
+// analytics or OTel traces out of Myaaw.
+func applyTelemetryOptOutEnv(set func(k, v string), cfg config.RuntimeConfig) {
+	// Universal privacy / OpenTelemetry opt-out signals.
+	set("DO_NOT_TRACK", "1")
+	set("OTEL_SDK_DISABLED", "true")
+	set("OTEL_TRACES_EXPORTER", "none")
+	set("OTEL_METRICS_EXPORTER", "none")
+	set("OTEL_LOGS_EXPORTER", "none")
+
+	preset := strings.ToLower(strings.TrimSpace(cfg.Preset))
+	rtType := strings.ToLower(strings.TrimSpace(cfg.Type))
+	cmdBase := strings.ToLower(strings.TrimSuffix(filepath.Base(strings.TrimSpace(cfg.Command)), ".exe"))
+
+	switch {
+	case rtType == config.RuntimeTypeClaudeCode || preset == "claude_code" || cmdBase == "claude":
+		set("DISABLE_TELEMETRY", "1")
+		set("DISABLE_ERROR_REPORTING", "1")
+		set("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
+	case preset == "deepseek_harness" || cmdBase == "dsh":
+		set("DSH_TELEMETRY_DISABLED", "1")
+		set("DSH_TELEMETRY_MODE", "DISABLED")
+	case preset == "antigravity" || cmdBase == "agy" || cmdBase == "gemini":
+		set("GEMINI_TELEMETRY_ENABLED", "false")
+	case preset == "opencode" || cmdBase == "opencode":
+		set("OPENCODE_DISABLE_AUTOUPDATE", "true")
+	case rtType == config.RuntimeTypePi || rtType == config.RuntimeTypeOMP || preset == "pi" || preset == "omp" || cmdBase == "pi" || cmdBase == "omp":
+		set("PI_TELEMETRY", "false")
+	}
+}
+
+// acpSubprocessArgs builds the argv for an ACP CLI subprocess and ensures
+// Antigravity (`agy acp`) always receives `--disable-telemetry`, including for
+// existing saved agents whose config only stored `["acp"]`.
+func acpSubprocessArgs(cfg config.RuntimeConfig) []string {
+	args := append([]string(nil), cfg.Args...)
+	preset := strings.ToLower(strings.TrimSpace(cfg.Preset))
+	cmdBase := strings.ToLower(strings.TrimSuffix(filepath.Base(strings.TrimSpace(cfg.Command)), ".exe"))
+	if preset == "antigravity" || cmdBase == "agy" {
+		hasACP := false
+		hasDisableTelemetry := false
+		for _, a := range args {
+			trimmed := strings.TrimSpace(a)
+			if trimmed == "acp" {
+				hasACP = true
+			}
+			if trimmed == "--disable-telemetry" || trimmed == "--disable_telemetry" ||
+				strings.HasPrefix(trimmed, "--disable-telemetry=") || strings.HasPrefix(trimmed, "--disable_telemetry=") {
+				hasDisableTelemetry = true
+			}
+		}
+		if hasACP && !hasDisableTelemetry {
+			args = append(args, "--disable-telemetry")
+		}
+	}
+	return args
+}
+
+// codexSubprocessArgs builds the argv for `codex app-server`, disabling Codex
+// analytics (`-c analytics.enabled=false`) and optionally injecting reasoning
+// effort/summary overrides for turns.
+func codexSubprocessArgs(cfg config.RuntimeConfig, includeReasoning bool) []string {
+	args := append([]string(nil), cfg.Args...)
+	if len(args) == 0 {
+		args = []string{"app-server"}
+	}
+	hasAnalyticsOverride := false
+	for _, a := range args {
+		if strings.Contains(a, "analytics.enabled") {
+			hasAnalyticsOverride = true
+			break
+		}
+	}
+	if !hasAnalyticsOverride {
+		args = append(args, "-c", "analytics.enabled=false")
+	}
+	if includeReasoning {
+		effort, summary := codexReasoningParams(cfg.ThinkingLevel)
+		if effort != "" {
+			args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%s", marshalTOMLString(effort)))
+		}
+		if summary != "" {
+			args = append(args, "-c", fmt.Sprintf("model_reasoning_summary=%s", marshalTOMLString(summary)))
+		}
+	}
+	return args
 }
 
 // BuildTurnInput splits a Myaaw transcript into system prompt, user turn text

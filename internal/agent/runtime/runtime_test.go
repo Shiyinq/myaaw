@@ -732,3 +732,99 @@ func TestCodexReasoningAndTurnNotifications(t *testing.T) {
 		}
 	})
 }
+
+func TestTelemetryOptOutArgsAndEnv(t *testing.T) {
+	envMap := func(env []string) map[string]string {
+		out := make(map[string]string, len(env))
+		for _, entry := range env {
+			if k, v, ok := strings.Cut(entry, "="); ok {
+				out[k] = v
+			}
+		}
+		return out
+	}
+
+	// Antigravity ACP injects --disable-telemetry even for legacy saved args ["acp"]
+	agyLegacy := config.RuntimeConfig{Type: config.RuntimeTypeACP, Preset: "antigravity", Command: "agy", Args: []string{"acp"}}
+	agyArgs := acpSubprocessArgs(agyLegacy)
+	if len(agyArgs) != 2 || agyArgs[0] != "acp" || agyArgs[1] != "--disable-telemetry" {
+		t.Fatalf("expected --disable-telemetry appended for agy acp, got %v", agyArgs)
+	}
+	// Does not duplicate when already present
+	agyPreset := config.MergeRuntime(&config.RuntimeConfig{Preset: "antigravity"})
+	if got := acpSubprocessArgs(agyPreset); len(got) != 2 {
+		t.Fatalf("expected no duplicate --disable-telemetry, got %v", got)
+	}
+
+	// Codex disables analytics in both probe and turn modes
+	codexCfg := config.MergeRuntime(&config.RuntimeConfig{Preset: "codex", ThinkingLevel: "high"})
+	probeArgs := strings.Join(codexSubprocessArgs(codexCfg, false), " ")
+	if !strings.Contains(probeArgs, "-c analytics.enabled=false") {
+		t.Fatalf("expected codex probe args to disable analytics, got %q", probeArgs)
+	}
+	turnArgs := strings.Join(codexSubprocessArgs(codexCfg, true), " ")
+	for _, want := range []string{"-c analytics.enabled=false", `-c model_reasoning_effort="high"`, `-c model_reasoning_summary="auto"`} {
+		if !strings.Contains(turnArgs, want) {
+			t.Fatalf("expected codex turn args to contain %q, got %q", want, turnArgs)
+		}
+	}
+
+	// Per-runtime telemetry opt-out env vars
+	cases := []struct {
+		name string
+		cfg  config.RuntimeConfig
+		want map[string]string
+	}{
+		{
+			name: "antigravity",
+			cfg:  agyPreset,
+			want: map[string]string{"DO_NOT_TRACK": "1", "OTEL_SDK_DISABLED": "true", "GEMINI_TELEMETRY_ENABLED": "false"},
+		},
+		{
+			name: "custom_gemini",
+			cfg:  config.RuntimeConfig{Type: config.RuntimeTypeACP, Preset: "custom_acp", Command: "/usr/local/bin/gemini"},
+			want: map[string]string{"DO_NOT_TRACK": "1", "OTEL_SDK_DISABLED": "true", "GEMINI_TELEMETRY_ENABLED": "false"},
+		},
+		{
+			name: "claude_code",
+			cfg:  config.MergeRuntime(&config.RuntimeConfig{Preset: "claude_code"}),
+			want: map[string]string{"DO_NOT_TRACK": "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"},
+		},
+		{
+			name: "deepseek_harness",
+			cfg:  config.MergeRuntime(&config.RuntimeConfig{Preset: "deepseek_harness"}),
+			want: map[string]string{"DO_NOT_TRACK": "1", "DSH_TELEMETRY_DISABLED": "1", "DSH_TELEMETRY_MODE": "DISABLED"},
+		},
+		{
+			name: "opencode",
+			cfg:  config.MergeRuntime(&config.RuntimeConfig{Preset: "opencode"}),
+			want: map[string]string{"DO_NOT_TRACK": "1", "OTEL_SDK_DISABLED": "true", "OPENCODE_DISABLE_AUTOUPDATE": "true"},
+		},
+		{
+			name: "pi",
+			cfg:  config.MergeRuntime(&config.RuntimeConfig{Preset: "pi"}),
+			want: map[string]string{"DO_NOT_TRACK": "1", "PI_TELEMETRY": "false"},
+		},
+		{
+			name: "omp",
+			cfg:  config.MergeRuntime(&config.RuntimeConfig{Preset: "omp"}),
+			want: map[string]string{"DO_NOT_TRACK": "1", "PI_TELEMETRY": "false"},
+		},
+		{
+			name: "codex",
+			cfg:  codexCfg,
+			want: map[string]string{"DO_NOT_TRACK": "1", "OTEL_SDK_DISABLED": "true", "OTEL_TRACES_EXPORTER": "none", "OTEL_METRICS_EXPORTER": "none", "OTEL_LOGS_EXPORTER": "none"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := envMap(BuildSubprocessEnv(tc.cfg, "", ""))
+			for k, wantVal := range tc.want {
+				if got[k] != wantVal {
+					t.Fatalf("%s: env[%q] = %q, want %q", tc.name, k, got[k], wantVal)
+				}
+			}
+		})
+	}
+}

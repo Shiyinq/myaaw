@@ -363,7 +363,7 @@ func probeACPOptions(parent context.Context, cfg config.RuntimeConfig, workingDi
 		return
 	}
 
-	cmd := exec.Command(bin, cfg.Args...)
+	cmd := exec.Command(bin, acpSubprocessArgs(cfg)...)
 	cmd.Dir = workingDir
 	cmd.Env = BuildSubprocessEnv(cfg, "", "")
 	configureProcessGroup(cmd)
@@ -778,10 +778,7 @@ func probeCodexOptions(parent context.Context, cfg config.RuntimeConfig, working
 		return
 	}
 
-	args := append([]string(nil), cfg.Args...)
-	if len(args) == 0 {
-		args = []string{"app-server"}
-	}
+	args := codexSubprocessArgs(cfg, false)
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = workingDir
 	cmd.Env = BuildSubprocessEnv(cfg, "", "")

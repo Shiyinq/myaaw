@@ -12,7 +12,7 @@ func TestMergeRuntimeDefaultsAndPresets(t *testing.T) {
 	}
 
 	agy := MergeRuntime(&RuntimeConfig{Preset: "antigravity"})
-	if agy.Type != RuntimeTypeACP || agy.Command != "agy" || len(agy.Args) != 1 || agy.Args[0] != "acp" {
+	if agy.Type != RuntimeTypeACP || agy.Command != "agy" || len(agy.Args) != 2 || agy.Args[0] != "acp" || agy.Args[1] != "--disable-telemetry" {
 		t.Fatalf("unexpected antigravity preset merge: %+v", agy)
 	}
 	if !agy.IsExternal() || !agy.MCPBridgeEnabled() {
