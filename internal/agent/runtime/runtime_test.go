@@ -637,3 +637,98 @@ func TestTurnAccumulatorOrderingAndDuplicateToolUpdates(t *testing.T) {
 		}
 	})
 }
+
+func TestCodexReasoningAndTurnNotifications(t *testing.T) {
+	t.Run("codexReasoningParams maps thinking level to effort and summary", func(t *testing.T) {
+		cases := []struct {
+			in          string
+			wantEffort  string
+			wantSummary string
+		}{
+			{"", "", "auto"},
+			{"high", "high", "auto"},
+			{"XHigh", "xhigh", "auto"},
+			{"off", "none", "none"},
+			{"none", "none", "none"},
+		}
+		for _, tc := range cases {
+			effort, summary := codexReasoningParams(tc.in)
+			if effort != tc.wantEffort || summary != tc.wantSummary {
+				t.Fatalf("codexReasoningParams(%q) = (%q, %q), want (%q, %q)", tc.in, effort, summary, tc.wantEffort, tc.wantSummary)
+			}
+		}
+	})
+
+	t.Run("codex turn preserves reasoning summaries, commentary separation, and tool calls", func(t *testing.T) {
+		acc := newTurnAccumulator(context.Background(), agent.RunConfig{}, []provider.Message{
+			{Role: "user", Content: "multi-step codex test"},
+		}, nil)
+		state := newCodexTurnState(acc)
+		var doneErr error
+		doneCalled := false
+		signalDone := func(err error) {
+			doneCalled = true
+			doneErr = err
+		}
+
+		// Step 1: streamed multi-part reasoning summary -> commentary agentMessage -> dynamicToolCall
+		state.handleNotification("item/reasoning/summaryPartAdded", json.RawMessage(`{"itemId":"rs-1","summaryIndex":0}`), signalDone)
+		state.handleNotification("item/reasoning/summaryTextDelta", json.RawMessage(`{"itemId":"rs-1","delta":"**Step 1**"}`), signalDone)
+		state.handleNotification("item/reasoning/summaryPartAdded", json.RawMessage(`{"itemId":"rs-1","summaryIndex":1}`), signalDone)
+		state.handleNotification("item/reasoning/summaryTextDelta", json.RawMessage(`{"itemId":"rs-1","delta":"Check current time."}`), signalDone)
+		state.handleNotification("item/completed", json.RawMessage(`{"item":{"id":"rs-1","type":"reasoning","summary":["**Step 1**","Check current time."],"content":[]}}`), signalDone)
+
+		state.handleNotification("item/agentMessage/delta", json.RawMessage(`{"itemId":"msg-1","delta":"Checking time now."}`), signalDone)
+		state.handleNotification("item/completed", json.RawMessage(`{"item":{"id":"msg-1","type":"agentMessage","phase":"commentary","text":"Checking time now."}}`), signalDone)
+
+		state.handleNotification("item/started", json.RawMessage(`{"item":{"id":"dyn-1","type":"dynamicToolCall","tool":"get_time","arguments":{"tz":"WIB"}}}`), signalDone)
+		state.handleNotification("item/completed", json.RawMessage(`{"item":{"id":"dyn-1","type":"dynamicToolCall","tool":"get_time","status":"completed","success":true,"contentItems":[{"type":"inputText","text":"23:59 WIB"}]}}`), signalDone)
+
+		// Step 2: non-streamed reasoning fallback on item/completed -> commentary -> sleep + commandExecution
+		state.handleNotification("item/completed", json.RawMessage(`{"item":{"id":"rs-2","type":"reasoning","summary":["**Step 2**","Run pwd."],"content":[]}}`), signalDone)
+		state.handleNotification("item/agentMessage/delta", json.RawMessage(`{"itemId":"msg-2","delta":"Now running pwd."}`), signalDone)
+		state.handleNotification("item/started", json.RawMessage(`{"item":{"id":"sleep-1","type":"sleep","durationMs":1000}}`), signalDone)
+		state.handleNotification("item/completed", json.RawMessage(`{"item":{"id":"sleep-1","type":"sleep","durationMs":1000}}`), signalDone)
+		state.handleNotification("item/started", json.RawMessage(`{"item":{"id":"cmd-1","type":"commandExecution","command":"/bin/zsh -lc pwd"}}`), signalDone)
+		state.handleNotification("item/completed", json.RawMessage(`{"item":{"id":"cmd-1","type":"commandExecution","status":"completed","aggregatedOutput":"/workspace\n"}}`), signalDone)
+
+		// Step 3: back-to-back commentary + final_answer agentMessage items without an intervening tool
+		state.handleNotification("item/agentMessage/delta", json.RawMessage(`{"itemId":"msg-3","delta":"Wrapping up."}`), signalDone)
+		state.handleNotification("item/agentMessage/delta", json.RawMessage(`{"itemId":"msg-4","delta":"All done in /workspace."}`), signalDone)
+		state.handleNotification("turn/completed", json.RawMessage(`{"turn":{"status":"completed"}}`), signalDone)
+
+		if !doneCalled || doneErr != nil {
+			t.Fatalf("expected clean turn completion, called=%v err=%v", doneCalled, doneErr)
+		}
+
+		res, err := acc.Finish(provider.StopNormal, nil)
+		if err != nil {
+			t.Fatalf("Finish failed: %v", err)
+		}
+		// Expected: [asst1(rs-1 + msg-1 + dyn-1), tool1, asst2(rs-2 + msg-2 + sleep-1), tool(sleep), asst3(cmd-1), tool(cmd), asst4(msg-3), asst5(msg-4)]
+		if len(res.NewMessages) != 8 {
+			t.Fatalf("expected 8 messages, got %d: %+v", len(res.NewMessages), res.NewMessages)
+		}
+		if res.NewMessages[0].Thought != "**Step 1**\n\nCheck current time." || provider.MessageText(res.NewMessages[0]) != "Checking time now." {
+			t.Fatalf("unexpected step 1 msg: %+v", res.NewMessages[0])
+		}
+		if res.NewMessages[1].Role != "tool" || res.NewMessages[1].Name != "get_time" || provider.MessageText(res.NewMessages[1]) != "23:59 WIB" {
+			t.Fatalf("unexpected step 1 tool msg: %+v", res.NewMessages[1])
+		}
+		if res.NewMessages[2].Thought != "**Step 2**\n\nRun pwd." || provider.MessageText(res.NewMessages[2]) != "Now running pwd." {
+			t.Fatalf("unexpected step 2 msg: %+v", res.NewMessages[2])
+		}
+		if res.NewMessages[3].Role != "tool" || res.NewMessages[3].Name != "sleep" || provider.MessageText(res.NewMessages[3]) != "Slept 1000ms" {
+			t.Fatalf("unexpected sleep tool msg: %+v", res.NewMessages[3])
+		}
+		if res.NewMessages[5].Role != "tool" || res.NewMessages[5].Name != "command" || provider.MessageText(res.NewMessages[5]) != "/workspace\n" {
+			t.Fatalf("unexpected step 2 command tool msg: %+v", res.NewMessages[5])
+		}
+		if provider.MessageText(res.NewMessages[6]) != "Wrapping up." {
+			t.Fatalf("expected separate commentary msg[6], got %+v", res.NewMessages[6])
+		}
+		if provider.MessageText(res.NewMessages[7]) != "All done in /workspace." {
+			t.Fatalf("expected clean final answer msg[7], got %+v", res.NewMessages[7])
+		}
+	})
+}

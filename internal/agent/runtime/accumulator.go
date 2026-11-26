@@ -158,9 +158,45 @@ func (a *turnAccumulator) AddThinkingDelta(delta string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sealToolCallsBeforeNarrationLocked()
+	// If text was already streamed for a previous step/commentary without an
+	// intervening tool call, seal it before opening a new thinking block so
+	// thinking -> text -> thinking -> text never collapses out of order.
+	if a.curText.Len() > 0 {
+		a.flushAssistantTurnLocked(provider.StopNormal, nil)
+	}
 	a.ensureMessageStartedLocked()
 	a.curThought.WriteString(delta)
 	a.emitLocked(agent.AgentEvent{Type: agent.EventMessageUpdate, ThinkingDelta: delta})
+}
+
+// AddThinkingSeparator inserts a paragraph break inside the currently open
+// thinking block (e.g. between multi-part reasoning summaries) without
+// creating empty leading whitespace.
+func (a *turnAccumulator) AddThinkingSeparator() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.curText.Len() > 0 || len(a.curToolCalls) > 0 || a.curThought.Len() == 0 {
+		return
+	}
+	if strings.HasSuffix(a.curThought.String(), "\n") {
+		return
+	}
+	a.curThought.WriteString("\n\n")
+	a.emitLocked(agent.AgentEvent{Type: agent.EventMessageUpdate, ThinkingDelta: "\n\n"})
+}
+
+// SplitAssistantMessage flushes any buffered assistant message that already
+// carries text or tool calls so a subsequent distinct assistant message item
+// (such as Codex's commentary followed by final_answer) is persisted separately
+// rather than concatenated. A thought-only buffer is kept open so the upcoming
+// text attaches to its preceding reasoning block.
+func (a *turnAccumulator) SplitAssistantMessage() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.curText.Len() == 0 && len(a.curToolCalls) == 0 {
+		return
+	}
+	a.flushAssistantTurnLocked(provider.StopNormal, nil)
 }
 
 // sealToolCallsBeforeNarrationLocked persists the assistant message that holds

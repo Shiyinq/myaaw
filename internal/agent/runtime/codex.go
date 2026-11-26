@@ -144,110 +144,11 @@ func (r *codexRuntime) RunEvents(
 
 	var activeTurnID string
 	var turnIDMu sync.Mutex
+	turnState := newCodexTurnState(acc)
 
 	proc.setHandlers(
 		func(method string, params json.RawMessage) {
-			switch method {
-			case "item/agentMessage/delta":
-				var d struct {
-					Delta string `json:"delta"`
-				}
-				if json.Unmarshal(params, &d) == nil {
-					acc.AddTextDelta(d.Delta)
-				}
-			case "item/reasoning/textDelta", "item/reasoning/summaryTextDelta":
-				var d struct {
-					Delta string `json:"delta"`
-				}
-				if json.Unmarshal(params, &d) == nil {
-					acc.AddThinkingDelta(d.Delta)
-				}
-			case "item/started":
-				var ev struct {
-					Item struct {
-						ID      string `json:"id"`
-						Type    string `json:"type"`
-						Command any    `json:"command"`
-						Tool    string `json:"tool"`
-						Args    any    `json:"arguments"`
-					} `json:"item"`
-				}
-				if json.Unmarshal(params, &ev) == nil {
-					switch ev.Item.Type {
-					case "commandExecution":
-						acc.StartTool(ev.Item.ID, "command", marshalArgsJSON(ev.Item.Command))
-					case "fileChange":
-						acc.StartTool(ev.Item.ID, "file_change", "{}")
-					case "mcpToolCall":
-						acc.StartTool(ev.Item.ID, ev.Item.Tool, marshalArgsJSON(ev.Item.Args))
-					}
-				}
-			case "item/completed":
-				var ev struct {
-					Item struct {
-						ID               string `json:"id"`
-						Type             string `json:"type"`
-						Status           string `json:"status"`
-						AggregatedOutput string `json:"aggregatedOutput"`
-						Result           any    `json:"result"`
-						Error            *struct {
-							Message string `json:"message"`
-						} `json:"error"`
-						Tool string `json:"tool"`
-					} `json:"item"`
-				}
-				if json.Unmarshal(params, &ev) == nil {
-					isErr := strings.EqualFold(ev.Item.Status, "failed") || strings.EqualFold(ev.Item.Status, "declined") || ev.Item.Error != nil
-					switch ev.Item.Type {
-					case "commandExecution":
-						acc.EndTool(ev.Item.ID, "command", ev.Item.AggregatedOutput, isErr)
-					case "fileChange":
-						acc.EndTool(ev.Item.ID, "file_change", ev.Item.Status, isErr)
-					case "mcpToolCall":
-						output := extractPiToolText(ev.Item.Result)
-						if ev.Item.Error != nil && strings.TrimSpace(ev.Item.Error.Message) != "" {
-							output = ev.Item.Error.Message
-						}
-						acc.EndTool(ev.Item.ID, ev.Item.Tool, output, isErr)
-					}
-				}
-			case "thread/tokenUsage/updated":
-				var ev struct {
-					TokenUsage struct {
-						Last struct {
-							InputTokens           int `json:"inputTokens"`
-							OutputTokens          int `json:"outputTokens"`
-							CachedInputTokens     int `json:"cachedInputTokens"`
-							ReasoningOutputTokens int `json:"reasoningOutputTokens"`
-							TotalTokens           int `json:"totalTokens"`
-						} `json:"last"`
-					} `json:"tokenUsage"`
-				}
-				if json.Unmarshal(params, &ev) == nil {
-					u := ev.TokenUsage.Last
-					acc.AddUsage(provider.Usage{
-						PromptTokens:      u.InputTokens,
-						CompletionTokens:  u.OutputTokens,
-						CachedInputTokens: u.CachedInputTokens,
-						ThoughtsTokens:    u.ReasoningOutputTokens,
-						TotalTokens:       u.TotalTokens,
-					})
-				}
-			case "turn/completed":
-				var ev struct {
-					Turn struct {
-						Status string `json:"status"`
-						Error  *struct {
-							Message string `json:"message"`
-						} `json:"error"`
-					} `json:"turn"`
-				}
-				if json.Unmarshal(params, &ev) == nil && ev.Turn.Error != nil && ev.Turn.Error.Message != "" {
-					signalDone(errors.New(ev.Turn.Error.Message))
-					return
-				}
-				signalDone(nil)
-			}
+			turnState.handleNotification(method, params, signalDone)
 		},
 		func(id json.RawMessage, method string, params json.RawMessage) {
 			switch method {
@@ -360,8 +261,12 @@ func (r *codexRuntime) RunEvents(
 	if model := strings.TrimSpace(r.cfg.Model); model != "" {
 		startParams["model"] = model
 	}
-	if effort := strings.TrimSpace(r.cfg.ThinkingLevel); effort != "" {
+	effort, summary := codexReasoningParams(r.cfg.ThinkingLevel)
+	if effort != "" {
 		startParams["effort"] = effort
+	}
+	if summary != "" {
+		startParams["summary"] = summary
 	}
 
 	rawTurn, err := proc.call(ctx, "turn/start", startParams)
@@ -435,6 +340,13 @@ func (r *codexRuntime) acquireThread(ctx context.Context, convKey string, cfg ag
 	if len(args) == 0 {
 		args = []string{"app-server"}
 	}
+	effort, summary := codexReasoningParams(r.cfg.ThinkingLevel)
+	if effort != "" {
+		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%s", marshalTOMLString(effort)))
+	}
+	if summary != "" {
+		args = append(args, "-c", fmt.Sprintf("model_reasoning_summary=%s", marshalTOMLString(summary)))
+	}
 	mcpSpecs := BuildMCPServers(r.cfg.MCPBridgeEnabled(), r.bridgeURL(), r.bridgeToken())
 	args = append(args, BuildCodexMCPArgs(mcpSpecs)...)
 
@@ -503,10 +415,24 @@ func (r *codexRuntime) acquireThread(ctx context.Context, convKey string, cfg ag
 		if r.cfg.PermissionMode == config.PermissionModeAuto {
 			approvalPolicy = "never"
 		}
-		raw, err := proc.call(ctx, "thread/start", map[string]any{
+		threadParams := map[string]any{
 			"cwd":            r.WorkingDir(),
 			"approvalPolicy": approvalPolicy,
-		})
+		}
+		if model := strings.TrimSpace(r.cfg.Model); model != "" {
+			threadParams["model"] = model
+		}
+		threadCfg := map[string]any{}
+		if effort != "" {
+			threadCfg["model_reasoning_effort"] = effort
+		}
+		if summary != "" {
+			threadCfg["model_reasoning_summary"] = summary
+		}
+		if len(threadCfg) > 0 {
+			threadParams["config"] = threadCfg
+		}
+		raw, err := proc.call(ctx, "thread/start", threadParams)
 		if err != nil {
 			proc.kill()
 			return nil, false, fmt.Errorf("codex thread/start: %w", err)
@@ -548,4 +474,332 @@ func (r *codexRuntime) evictThread(convKey string, proc *acpProcess) {
 		delete(r.sessions, convKey)
 	}
 	r.poolMu.Unlock()
+}
+
+// codexReasoningParams converts Myaaw's thinking_level setting into Codex
+// app-server effort and summary values. Matches Myaaw's native ChatGPT
+// provider (`summary: "auto"`) so Codex requests reasoning summaries instead
+// of leaving `model_reasoning_summary` unset (`summary: []`).
+func codexReasoningParams(thinkingLevel string) (effort string, summary string) {
+	lvl := strings.ToLower(strings.TrimSpace(thinkingLevel))
+	if lvl == "off" || lvl == "none" {
+		return "none", "none"
+	}
+	return lvl, "auto"
+}
+
+type codexTurnState struct {
+	acc                *turnAccumulator
+	activeAgentMsgID   string
+	activeReasoningID  string
+	streamedAgentMsgs  map[string]bool
+	streamedReasonings map[string]bool
+}
+
+func newCodexTurnState(acc *turnAccumulator) *codexTurnState {
+	return &codexTurnState{
+		acc:                acc,
+		streamedAgentMsgs:  make(map[string]bool),
+		streamedReasonings: make(map[string]bool),
+	}
+}
+
+func (s *codexTurnState) handleNotification(method string, params json.RawMessage, signalDone func(error)) {
+	switch method {
+	case "item/agentMessage/delta":
+		var d struct {
+			ItemID string `json:"itemId"`
+			Delta  string `json:"delta"`
+		}
+		if json.Unmarshal(params, &d) == nil && d.Delta != "" {
+			if d.ItemID != "" && s.activeAgentMsgID != "" && d.ItemID != s.activeAgentMsgID {
+				s.acc.SplitAssistantMessage()
+			}
+			if d.ItemID != "" {
+				s.activeAgentMsgID = d.ItemID
+				s.streamedAgentMsgs[d.ItemID] = true
+			}
+			s.acc.AddTextDelta(d.Delta)
+		}
+
+	case "item/reasoning/summaryPartAdded":
+		var d struct {
+			ItemID       string `json:"itemId"`
+			SummaryIndex int    `json:"summaryIndex"`
+		}
+		if json.Unmarshal(params, &d) == nil && d.SummaryIndex > 0 && s.streamedReasonings[d.ItemID] {
+			s.acc.AddThinkingSeparator()
+		}
+
+	case "item/reasoning/textDelta", "item/reasoning/summaryTextDelta":
+		var d struct {
+			ItemID string `json:"itemId"`
+			Delta  string `json:"delta"`
+		}
+		if json.Unmarshal(params, &d) == nil && d.Delta != "" {
+			if d.ItemID != "" && s.activeReasoningID != "" && d.ItemID != s.activeReasoningID {
+				s.acc.AddThinkingSeparator()
+			}
+			if d.ItemID != "" {
+				s.activeReasoningID = d.ItemID
+				s.streamedReasonings[d.ItemID] = true
+			}
+			s.acc.AddThinkingDelta(d.Delta)
+		}
+
+	case "item/started":
+		var ev struct {
+			Item struct {
+				ID         string `json:"id"`
+				Type       string `json:"type"`
+				Command    any    `json:"command"`
+				Changes    any    `json:"changes"`
+				Server     string `json:"server"`
+				Tool       string `json:"tool"`
+				Args       any    `json:"arguments"`
+				Query      string `json:"query"`
+				Prompt     string `json:"prompt"`
+				Path       string `json:"path"`
+				DurationMs int64  `json:"durationMs"`
+			} `json:"item"`
+		}
+		if json.Unmarshal(params, &ev) == nil {
+			switch ev.Item.Type {
+			case "commandExecution":
+				s.activeAgentMsgID = ""
+				s.acc.StartTool(ev.Item.ID, "command", marshalArgsJSON(ev.Item.Command))
+			case "fileChange":
+				s.activeAgentMsgID = ""
+				args := "{}"
+				if ev.Item.Changes != nil {
+					args = marshalArgsJSON(ev.Item.Changes)
+				}
+				s.acc.StartTool(ev.Item.ID, "file_change", args)
+			case "mcpToolCall":
+				s.activeAgentMsgID = ""
+				s.acc.StartTool(ev.Item.ID, codexToolName(ev.Item.Tool, ev.Item.Server, "mcp_tool"), marshalArgsJSON(ev.Item.Args))
+			case "dynamicToolCall":
+				s.activeAgentMsgID = ""
+				s.acc.StartTool(ev.Item.ID, codexToolName(ev.Item.Tool, "", "tool"), marshalArgsJSON(ev.Item.Args))
+			case "webSearch":
+				s.activeAgentMsgID = ""
+				args := "{}"
+				if strings.TrimSpace(ev.Item.Query) != "" {
+					args = marshalArgsJSON(map[string]any{"query": ev.Item.Query})
+				}
+				s.acc.StartTool(ev.Item.ID, "web_search", args)
+			case "collabAgentToolCall":
+				s.activeAgentMsgID = ""
+				args := "{}"
+				if strings.TrimSpace(ev.Item.Prompt) != "" {
+					args = marshalArgsJSON(map[string]any{"prompt": ev.Item.Prompt})
+				}
+				s.acc.StartTool(ev.Item.ID, codexToolName(ev.Item.Tool, "", "agent"), args)
+			case "imageView":
+				s.activeAgentMsgID = ""
+				args := "{}"
+				if strings.TrimSpace(ev.Item.Path) != "" {
+					args = marshalArgsJSON(map[string]any{"path": ev.Item.Path})
+				}
+				s.acc.StartTool(ev.Item.ID, "image_view", args)
+			case "imageGeneration":
+				s.activeAgentMsgID = ""
+				s.acc.StartTool(ev.Item.ID, "image_generation", "{}")
+			case "sleep":
+				s.activeAgentMsgID = ""
+				args := "{}"
+				if ev.Item.DurationMs > 0 {
+					args = marshalArgsJSON(map[string]any{"duration_ms": ev.Item.DurationMs})
+				}
+				s.acc.StartTool(ev.Item.ID, "sleep", args)
+			}
+		}
+
+	case "item/completed":
+		var ev struct {
+			Item struct {
+				ID               string   `json:"id"`
+				Type             string   `json:"type"`
+				Status           string   `json:"status"`
+				Success          *bool    `json:"success"`
+				Text             string   `json:"text"`
+				Summary          []string `json:"summary"`
+				Content          []string `json:"content"`
+				AggregatedOutput string   `json:"aggregatedOutput"`
+				Result           any      `json:"result"`
+				Results          any      `json:"results"`
+				ContentItems     any      `json:"contentItems"`
+				Output           any      `json:"output"`
+				Query            string   `json:"query"`
+				Path             string   `json:"path"`
+				SavedPath        string   `json:"savedPath"`
+				Failure          string   `json:"failure"`
+				Name             string   `json:"name"`
+				Server           string   `json:"server"`
+				Tool             string   `json:"tool"`
+				DurationMs       int64    `json:"durationMs"`
+				Error            *struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			} `json:"item"`
+		}
+		if json.Unmarshal(params, &ev) == nil {
+			isErr := strings.EqualFold(ev.Item.Status, "failed") ||
+				strings.EqualFold(ev.Item.Status, "declined") ||
+				ev.Item.Error != nil ||
+				(ev.Item.Success != nil && !*ev.Item.Success) ||
+				strings.TrimSpace(ev.Item.Failure) != ""
+
+			switch ev.Item.Type {
+			case "reasoning":
+				if !s.streamedReasonings[ev.Item.ID] {
+					if text := extractCodexReasoningText(ev.Item.Summary, ev.Item.Content); text != "" {
+						if ev.Item.ID != "" && s.activeReasoningID != "" && ev.Item.ID != s.activeReasoningID {
+							s.acc.AddThinkingSeparator()
+						}
+						if ev.Item.ID != "" {
+							s.activeReasoningID = ev.Item.ID
+							s.streamedReasonings[ev.Item.ID] = true
+						}
+						s.acc.AddThinkingDelta(text)
+					}
+				}
+			case "agentMessage":
+				if !s.streamedAgentMsgs[ev.Item.ID] && ev.Item.Text != "" {
+					if ev.Item.ID != "" && s.activeAgentMsgID != "" && ev.Item.ID != s.activeAgentMsgID {
+						s.acc.SplitAssistantMessage()
+					}
+					if ev.Item.ID != "" {
+						s.activeAgentMsgID = ev.Item.ID
+						s.streamedAgentMsgs[ev.Item.ID] = true
+					}
+					s.acc.AddTextDelta(ev.Item.Text)
+				}
+			case "commandExecution":
+				s.acc.EndTool(ev.Item.ID, "command", ev.Item.AggregatedOutput, isErr)
+			case "fileChange":
+				s.acc.EndTool(ev.Item.ID, "file_change", ev.Item.Status, isErr)
+			case "mcpToolCall":
+				output := extractPiToolText(ev.Item.Result)
+				if ev.Item.Error != nil && strings.TrimSpace(ev.Item.Error.Message) != "" {
+					output = ev.Item.Error.Message
+				}
+				s.acc.EndTool(ev.Item.ID, codexToolName(ev.Item.Tool, ev.Item.Server, "mcp_tool"), output, isErr)
+			case "dynamicToolCall":
+				output := extractCodexContentItems(ev.Item.ContentItems)
+				s.acc.EndTool(ev.Item.ID, codexToolName(ev.Item.Tool, "", "tool"), output, isErr)
+			case "webSearch":
+				output := extractPiToolText(ev.Item.Results)
+				if strings.TrimSpace(output) == "" {
+					output = ev.Item.Query
+				}
+				s.acc.EndTool(ev.Item.ID, "web_search", output, isErr)
+			case "collabAgentToolCall":
+				s.acc.EndTool(ev.Item.ID, codexToolName(ev.Item.Tool, "", "agent"), ev.Item.Status, isErr)
+			case "imageView":
+				s.acc.EndTool(ev.Item.ID, "image_view", ev.Item.Path, isErr)
+			case "imageGeneration":
+				output := strings.TrimSpace(ev.Item.SavedPath)
+				if strings.TrimSpace(ev.Item.Failure) != "" {
+					output = ev.Item.Failure
+				}
+				if output == "" {
+					output = ev.Item.Status
+				}
+				s.acc.EndTool(ev.Item.ID, "image_generation", output, isErr)
+			case "functionCallOutput":
+				s.acc.EndTool(ev.Item.ID, codexToolName(ev.Item.Name, "", "tool"), extractPiToolText(ev.Item.Output), isErr)
+			case "sleep":
+				output := "Sleep completed."
+				if ev.Item.DurationMs > 0 {
+					output = fmt.Sprintf("Slept %dms", ev.Item.DurationMs)
+				}
+				s.acc.EndTool(ev.Item.ID, "sleep", output, isErr)
+			}
+		}
+
+	case "thread/tokenUsage/updated":
+		var ev struct {
+			TokenUsage struct {
+				Last struct {
+					InputTokens           int `json:"inputTokens"`
+					OutputTokens          int `json:"outputTokens"`
+					CachedInputTokens     int `json:"cachedInputTokens"`
+					ReasoningOutputTokens int `json:"reasoningOutputTokens"`
+					TotalTokens           int `json:"totalTokens"`
+				} `json:"last"`
+			} `json:"tokenUsage"`
+		}
+		if json.Unmarshal(params, &ev) == nil {
+			u := ev.TokenUsage.Last
+			s.acc.AddUsage(provider.Usage{
+				PromptTokens:      u.InputTokens,
+				CompletionTokens:  u.OutputTokens,
+				CachedInputTokens: u.CachedInputTokens,
+				ThoughtsTokens:    u.ReasoningOutputTokens,
+				TotalTokens:       u.TotalTokens,
+			})
+		}
+
+	case "turn/completed":
+		var ev struct {
+			Turn struct {
+				Status string `json:"status"`
+				Error  *struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			} `json:"turn"`
+		}
+		if json.Unmarshal(params, &ev) == nil && ev.Turn.Error != nil && ev.Turn.Error.Message != "" {
+			signalDone(errors.New(ev.Turn.Error.Message))
+			return
+		}
+		signalDone(nil)
+	}
+}
+
+func codexToolName(tool, server, fallback string) string {
+	if t := strings.TrimSpace(tool); t != "" {
+		return t
+	}
+	if s := strings.TrimSpace(server); s != "" {
+		return s
+	}
+	return fallback
+}
+
+func extractCodexReasoningText(summary, content []string) string {
+	join := func(items []string) string {
+		parts := make([]string, 0, len(items))
+		for _, item := range items {
+			if trimmed := strings.TrimSpace(item); trimmed != "" {
+				parts = append(parts, trimmed)
+			}
+		}
+		return strings.Join(parts, "\n\n")
+	}
+	if text := join(summary); text != "" {
+		return text
+	}
+	return join(content)
+}
+
+func extractCodexContentItems(v any) string {
+	if v == nil {
+		return ""
+	}
+	if arr, ok := v.([]any); ok {
+		parts := make([]string, 0, len(arr))
+		for _, item := range arr {
+			if m, ok := item.(map[string]any); ok {
+				if text, ok := m["text"].(string); ok && text != "" {
+					parts = append(parts, text)
+				}
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, "\n")
+		}
+	}
+	return extractPiToolText(v)
 }
