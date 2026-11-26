@@ -251,13 +251,13 @@ func (r *acpRuntime) RunEvents(
 	var resultMeta struct {
 		StopReason string `json:"stopReason"`
 		Usage      *struct {
-			InputTokens       int `json:"inputTokens"`
-			OutputTokens      int `json:"outputTokens"`
-			TotalTokens       int `json:"totalTokens"`
-			CachedReadTokens  int `json:"cachedReadTokens"`
-			ThoughtTokens     int `json:"thoughtTokens"`
-			PromptTokens      int `json:"prompt_tokens"`
-			CompletionTokens  int `json:"completion_tokens"`
+			InputTokens      int `json:"inputTokens"`
+			OutputTokens     int `json:"outputTokens"`
+			TotalTokens      int `json:"totalTokens"`
+			CachedReadTokens int `json:"cachedReadTokens"`
+			ThoughtTokens    int `json:"thoughtTokens"`
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
 		} `json:"usage"`
 	}
 	if len(promptRes) > 0 && json.Unmarshal(promptRes, &resultMeta) == nil && resultMeta.Usage != nil {
@@ -666,17 +666,14 @@ func (p *acpProcess) kill() {
 func handleACPUpdate(raw json.RawMessage, acc *turnAccumulator) {
 	var envelope struct {
 		Update struct {
-			SessionUpdate string `json:"sessionUpdate"`
-			Content       *struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-			ToolCallID string `json:"toolCallId"`
-			Title      string `json:"title"`
-			Kind       string `json:"kind"`
-			Status     string `json:"status"`
-			RawInput   any    `json:"rawInput"`
-			RawOutput  any    `json:"rawOutput"`
+			SessionUpdate string          `json:"sessionUpdate"`
+			Content       json.RawMessage `json:"content"`
+			ToolCallID    string          `json:"toolCallId"`
+			Title         string          `json:"title"`
+			Kind          string          `json:"kind"`
+			Status        string          `json:"status"`
+			RawInput      any             `json:"rawInput"`
+			RawOutput     any             `json:"rawOutput"`
 		} `json:"update"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
@@ -685,12 +682,12 @@ func handleACPUpdate(raw json.RawMessage, acc *turnAccumulator) {
 	u := envelope.Update
 	switch u.SessionUpdate {
 	case "agent_message_chunk":
-		if u.Content != nil && u.Content.Text != "" {
-			acc.AddTextDelta(u.Content.Text)
+		if text := extractACPContentText(u.Content); text != "" {
+			acc.AddTextDelta(text)
 		}
 	case "agent_thought_chunk":
-		if u.Content != nil && u.Content.Text != "" {
-			acc.AddThinkingDelta(u.Content.Text)
+		if text := extractACPContentText(u.Content); text != "" {
+			acc.AddThinkingDelta(text)
 		}
 	case "tool_call":
 		name := u.Title
@@ -698,10 +695,21 @@ func handleACPUpdate(raw json.RawMessage, acc *turnAccumulator) {
 			name = u.Kind
 		}
 		acc.StartTool(u.ToolCallID, name, marshalArgsJSON(u.RawInput))
+		switch strings.ToLower(u.Status) {
+		case "completed":
+			acc.EndTool(u.ToolCallID, name, extractACPOutput(u.RawOutput, u.Content), false)
+		case "failed", "error", "cancelled", "canceled":
+			acc.EndTool(u.ToolCallID, name, extractACPOutput(u.RawOutput, u.Content), true)
+		}
 	case "tool_call_update":
 		name := u.Title
 		if name == "" {
 			name = u.Kind
+		}
+		if u.RawInput != nil {
+			if args := marshalArgsJSON(u.RawInput); args != "" && args != "{}" {
+				acc.UpdateToolArgs(u.ToolCallID, name, args)
+			}
 		}
 		output := extractACPOutput(u.RawOutput, u.Content)
 		switch strings.ToLower(u.Status) {
@@ -717,24 +725,77 @@ func handleACPUpdate(raw json.RawMessage, acc *turnAccumulator) {
 	}
 }
 
-func extractACPOutput(rawOutput any, content *struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}) string {
+func extractACPContentText(raw json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return ""
+	}
+	// ACP message/thought chunks encode `content` as a single object `{type, text}`.
+	if strings.HasPrefix(trimmed, "{") {
+		var single struct {
+			Type    string `json:"type"`
+			Text    string `json:"text"`
+			Content *struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		if json.Unmarshal(raw, &single) == nil {
+			if single.Text != "" {
+				return single.Text
+			}
+			if single.Content != nil && single.Content.Text != "" {
+				return single.Content.Text
+			}
+		}
+		return ""
+	}
+	// ACP tool_call / tool_call_update encode `content` as an array of ToolCallContent blocks.
+	if strings.HasPrefix(trimmed, "[") {
+		var blocks []struct {
+			Type    string `json:"type"`
+			Text    string `json:"text"`
+			Path    string `json:"path"`
+			Content *struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		if json.Unmarshal(raw, &blocks) == nil {
+			var parts []string
+			for _, b := range blocks {
+				switch {
+				case b.Text != "":
+					parts = append(parts, b.Text)
+				case b.Content != nil && b.Content.Text != "":
+					parts = append(parts, b.Content.Text)
+				case b.Type == "diff" && b.Path != "":
+					parts = append(parts, "diff: "+b.Path)
+				}
+			}
+			return strings.Join(parts, "\n")
+		}
+	}
+	return ""
+}
+
+func extractACPOutput(rawOutput any, content json.RawMessage) string {
 	if rawOutput != nil {
 		switch v := rawOutput.(type) {
 		case string:
-			return v
+			if v != "" {
+				return v
+			}
 		default:
 			if b, err := json.Marshal(v); err == nil {
-				return string(b)
+				s := strings.TrimSpace(string(b))
+				if s != "" && s != "null" && s != "{}" && s != "[]" {
+					return s
+				}
 			}
 		}
 	}
-	if content != nil && content.Text != "" {
-		return content.Text
-	}
-	return ""
+	return extractACPContentText(content)
 }
 
 func (r *acpRuntime) handleACPPermission(ctx context.Context, cfg agent.RunConfig, proc *acpProcess, id json.RawMessage, raw json.RawMessage) {

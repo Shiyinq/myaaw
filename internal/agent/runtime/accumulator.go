@@ -51,6 +51,8 @@ type turnAccumulator struct {
 	curThought     strings.Builder
 	curToolCalls   []provider.ToolCall
 	openTools      map[string]*pendingTool
+	openToolOrder  []string
+	completedTools map[string]bool
 	toolSeq        int
 	lastFinal      provider.Message
 }
@@ -69,13 +71,14 @@ func newTurnAccumulator(
 		runID = newRuntimeRunID()
 	}
 	acc := &turnAccumulator{
-		ctx:        ctx,
-		cfg:        cfg,
-		runID:      runID,
-		startedAt:  time.Now(),
-		emitRaw:    emitRaw,
-		transcript: agent.MigrateLegacyTranscript(history),
-		openTools:  make(map[string]*pendingTool),
+		ctx:            ctx,
+		cfg:            cfg,
+		runID:          runID,
+		startedAt:      time.Now(),
+		emitRaw:        emitRaw,
+		transcript:     agent.MigrateLegacyTranscript(history),
+		openTools:      make(map[string]*pendingTool),
+		completedTools: make(map[string]bool),
 	}
 	acc.emitLocked(agent.AgentEvent{Type: agent.EventAgentStart})
 	acc.checkpointLocked()
@@ -142,6 +145,7 @@ func (a *turnAccumulator) AddTextDelta(delta string) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.sealToolCallsBeforeNarrationLocked()
 	a.ensureMessageStartedLocked()
 	a.curText.WriteString(delta)
 	a.emitLocked(agent.AgentEvent{Type: agent.EventMessageUpdate, Delta: delta})
@@ -153,14 +157,30 @@ func (a *turnAccumulator) AddThinkingDelta(delta string) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.sealToolCallsBeforeNarrationLocked()
 	a.ensureMessageStartedLocked()
 	a.curThought.WriteString(delta)
 	a.emitLocked(agent.AgentEvent{Type: agent.EventMessageUpdate, ThinkingDelta: delta})
 }
 
+// sealToolCallsBeforeNarrationLocked persists the assistant message that holds
+// already-issued tool calls (with its own pre-tool text/thought) as soon as the
+// model narrates or thinks again. Anything streamed afterwards belongs to a new
+// message, so ordering stays thinking -> text -> tool -> thinking -> text -> final
+// even when the CLI never reports a terminal status for a tool.
+func (a *turnAccumulator) sealToolCallsBeforeNarrationLocked() {
+	if len(a.curToolCalls) == 0 {
+		return
+	}
+	a.flushAssistantTurnLocked(provider.StopNormal, nil)
+}
+
 func (a *turnAccumulator) StartTool(id, name, argsJSON string) string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if id != "" && a.completedTools[id] {
+		return id
+	}
 	a.ensureMessageStartedLocked()
 	if id == "" {
 		a.toolSeq++
@@ -197,6 +217,7 @@ func (a *turnAccumulator) StartTool(id, name, argsJSON string) string {
 		thought:   a.curThought.String(),
 		startedAt: time.Now(),
 	}
+	a.openToolOrder = append(a.openToolOrder, id)
 	a.emitLocked(agent.AgentEvent{
 		Type:          agent.EventToolExecutionStart,
 		ToolCallID:    id,
@@ -204,6 +225,29 @@ func (a *turnAccumulator) StartTool(id, name, argsJSON string) string {
 		ToolArguments: argsJSON,
 	})
 	return id
+}
+
+func (a *turnAccumulator) UpdateToolArgs(id, name, argsJSON string) {
+	if id == "" || argsJSON == "" || argsJSON == "{}" {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if p, ok := a.openTools[id]; ok {
+		if name != "" {
+			p.name = name
+		}
+		p.args = argsJSON
+	}
+	for i := range a.curToolCalls {
+		if a.curToolCalls[i].ID == id {
+			if name != "" {
+				a.curToolCalls[i].Function.Name = name
+			}
+			a.curToolCalls[i].Function.Arguments = argsJSON
+			return
+		}
+	}
 }
 
 func (a *turnAccumulator) UpdateTool(id, name, text string, isError bool) {
@@ -230,6 +274,16 @@ func (a *turnAccumulator) UpdateTool(id, name, text string, isError bool) {
 func (a *turnAccumulator) EndTool(id, name, output string, isError bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.endToolLocked(id, name, output, isError, true)
+}
+
+func (a *turnAccumulator) endToolLocked(id, name, output string, isError bool, openNextStep bool) {
+	if id != "" && a.completedTools[id] {
+		// Ignore duplicate terminal updates (e.g. repeated ACP tool_call_update
+		// completed frames) so completed tools are never re-created after the
+		// assistant's final answer.
+		return
+	}
 
 	pending := a.openTools[id]
 	if pending == nil {
@@ -238,6 +292,7 @@ func (a *turnAccumulator) EndTool(id, name, output string, isError bool) {
 		pending = a.openTools[id]
 	}
 	delete(a.openTools, id)
+	a.completedTools[id] = true
 
 	// Flush the assistant message carrying this step's tool calls before writing
 	// the tool result message, matching Transcript v2 ordering.
@@ -280,13 +335,17 @@ func (a *turnAccumulator) EndTool(id, name, output string, isError bool) {
 	a.emitLocked(agent.AgentEvent{Type: agent.EventTraceUpdate, Trace: a.trace})
 	a.checkpointLocked()
 
-	// If every tool in this step completed, close the step and open a fresh one
-	// for the assistant's follow-up text so pre-tool narration stays separate.
-	if len(a.openTools) == 0 && a.stepOpen {
+	// If every tool in this step completed and no narration is pending, close the
+	// step and open a fresh one for the follow-up. Pending text/thought (streamed
+	// after the tool-call message was sealed) must never be reset by a rollover.
+	if len(a.openTools) == 0 && a.stepOpen && a.curText.Len() == 0 && a.curThought.Len() == 0 {
+		a.openToolOrder = nil
 		finalRef := a.lastFinal
 		a.emitLocked(agent.AgentEvent{Type: agent.EventStepEnd, Message: &finalRef, Trace: a.trace})
 		a.stepOpen = false
-		a.startStepLocked()
+		if openNextStep {
+			a.startStepLocked()
+		}
 	}
 }
 
@@ -315,6 +374,7 @@ func (a *turnAccumulator) startToolUnlocked(id, name, argsJSON string) string {
 		thought:   a.curThought.String(),
 		startedAt: time.Now(),
 	}
+	a.openToolOrder = append(a.openToolOrder, id)
 	a.emitLocked(agent.AgentEvent{
 		Type:          agent.EventToolExecutionStart,
 		ToolCallID:    id,
@@ -401,6 +461,21 @@ func (a *turnAccumulator) Finish(stopReason provider.StopReason, runErr error) (
 			stopReason = provider.StopError
 		default:
 			stopReason = provider.StopNormal
+		}
+	}
+
+	// Close any dangling open tools (e.g. CLIs that emitted tool_call without a
+	// terminal tool_call_update) before flushing the final assistant answer so
+	// tool calls never get merged onto the final answer message.
+	if len(a.openTools) > 0 {
+		remaining := append([]string(nil), a.openToolOrder...)
+		for _, id := range remaining {
+			if p, ok := a.openTools[id]; ok {
+				a.endToolLocked(p.id, p.name, "", stopReason == provider.StopError, false)
+			}
+		}
+		for _, p := range a.openTools {
+			a.endToolLocked(p.id, p.name, "", stopReason == provider.StopError, false)
 		}
 	}
 

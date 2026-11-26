@@ -2265,6 +2265,63 @@
 			if (pending >= 0) answers.add(pending);
 		}
 
+		// Normalize completed turns so any trailing step items (e.g. a late tool
+		// call or legacy external-runtime message that carried both answer text and
+		// tool_calls) are grouped together ABOVE the turn's final answer rather than
+		// splitting into a second "Completed · Xs" pill below the answer.
+		const orderedItems: Item[] = [];
+		const orderedAnswers = new Set<number>();
+		const flushSegment = (segStart: number, segEnd: number, completed: boolean) => {
+			if (segStart >= segEnd) return;
+			let answerIdx = -1;
+			if (completed) {
+				for (let idx = segEnd - 1; idx >= segStart; idx -= 1) {
+					if (answers.has(idx)) {
+						answerIdx = idx;
+						break;
+					}
+				}
+			}
+			if (answerIdx < 0) {
+				for (let idx = segStart; idx < segEnd; idx += 1) {
+					const outIdx = orderedItems.length;
+					orderedItems.push(items[idx]);
+					if (answers.has(idx)) orderedAnswers.add(outIdx);
+				}
+				return;
+			}
+			const trailingSteps: Item[] = [];
+			const trailingOther: Item[] = [];
+			for (let idx = answerIdx + 1; idx < segEnd; idx += 1) {
+				if (STEP_KINDS.has(items[idx].kind)) {
+					trailingSteps.push(items[idx]);
+				} else {
+					trailingOther.push(items[idx]);
+				}
+			}
+			for (let idx = segStart; idx < answerIdx; idx += 1) {
+				orderedItems.push(items[idx]);
+			}
+			for (const step of trailingSteps) {
+				orderedItems.push(step);
+			}
+			orderedAnswers.add(orderedItems.length);
+			orderedItems.push(items[answerIdx]);
+			for (const other of trailingOther) {
+				orderedItems.push(other);
+			}
+		};
+
+		let segStart = 0;
+		for (let idx = 0; idx < items.length; idx += 1) {
+			if (items[idx].kind === 'user') {
+				flushSegment(segStart, idx, true);
+				orderedItems.push(items[idx]);
+				segStart = idx + 1;
+			}
+		}
+		flushSegment(segStart, items.length, !streaming);
+
 		const rows: TimelineRow[] = [];
 		let steps: Item[] = [];
 		let lines: string[] = [];
@@ -2289,14 +2346,14 @@
 			steps = [];
 			lines = [];
 		};
-		items.forEach((item, index) => {
-			const processText = item.kind === 'text' && !answers.has(index);
+		orderedItems.forEach((item, index) => {
+			const processText = item.kind === 'text' && !orderedAnswers.has(index);
 			if (STEP_KINDS.has(item.kind) || processText) {
 				steps.push(item);
 				const line = itemTranscript(item);
 				if (line) lines.push(line);
 			} else {
-				if (item.kind === 'text' && answers.has(index)) {
+				if (item.kind === 'text' && orderedAnswers.has(index)) {
 					// The run's answer belongs to its transcript, even though it is
 					// shown outside the collapsible group.
 					const answer = (item.text ?? '').trim();
@@ -3615,7 +3672,29 @@
 		// reader has open) under the same key.
 		const nextId = () => `history-${messageIndex}-${index++}`;
 
-		for (const message of messages) {
+		// Identify the last assistant message carrying visible content in each turn.
+		// If a legacy external-runtime turn stored both final answer text and
+		// tool_calls on that same message, emit tool_calls before the answer text so
+		// tools and duration stay grouped above the answer.
+		const lastAnswerMsg = new Set<number>();
+		let pendingAnswerMsg = -1;
+		for (let i = 0; i < messages.length; i += 1) {
+			const m = messages[i];
+			if (m.role === 'user') {
+				if (pendingAnswerMsg >= 0) lastAnswerMsg.add(pendingAnswerMsg);
+				pendingAnswerMsg = -1;
+			} else if (m.role === 'assistant') {
+				const hasVisible =
+					Boolean(messageText(m)) ||
+					(m.attachments?.length ?? 0) > 0 ||
+					(m.extra_messages?.length ?? 0) > 0;
+				if (hasVisible) pendingAnswerMsg = i;
+			}
+		}
+		if (pendingAnswerMsg >= 0) lastAnswerMsg.add(pendingAnswerMsg);
+
+		for (let msgIdx = 0; msgIdx < messages.length; msgIdx += 1) {
+			const message = messages[msgIdx];
 			messageIndex += 1;
 			index = 0;
 			if (message.thought) {
@@ -3701,34 +3780,49 @@
 			const text = messageText(message);
 			const attachments = message.attachments ?? [];
 			const extraMessages = message.extra_messages ?? [];
-			if (text || attachments.length > 0 || extraMessages.length > 0) {
-				timeline.push({
-					kind: 'text',
-					text,
-					attachments,
-					...(extraMessages.length > 0 ? { extraMessages } : {}),
-					localId: nextId(),
-					messageId: message.id,
-					messageIndex,
-					createdAt: message.created_at
-				});
-			}
+			const hasVisible = Boolean(text || attachments.length > 0 || extraMessages.length > 0);
+			const emitToolsFirst =
+				hasVisible && (message.tool_calls?.length ?? 0) > 0 && lastAnswerMsg.has(msgIdx);
 
-			for (const call of message.tool_calls ?? []) {
-				const id = call.id ?? '';
-				const args = call.function?.arguments;
-				timeline.push({
-					kind: 'tool',
-					id,
-					name: call.function?.name,
-					arguments: typeof args === 'string' ? args : args ? JSON.stringify(args) : undefined,
-					running: false,
-					expanded: false,
-					localId: nextId(),
-					messageIndex
-				});
-				lastStep = timeline.length - 1;
-				if (id) tools.set(id, timeline.length - 1);
+			const pushTools = () => {
+				for (const call of message.tool_calls ?? []) {
+					const id = call.id ?? '';
+					const args = call.function?.arguments;
+					timeline.push({
+						kind: 'tool',
+						id,
+						name: call.function?.name,
+						arguments: typeof args === 'string' ? args : args ? JSON.stringify(args) : undefined,
+						running: false,
+						expanded: false,
+						localId: nextId(),
+						messageIndex
+					});
+					lastStep = timeline.length - 1;
+					if (id) tools.set(id, timeline.length - 1);
+				}
+			};
+			const pushVisible = () => {
+				if (hasVisible) {
+					timeline.push({
+						kind: 'text',
+						text,
+						attachments,
+						...(extraMessages.length > 0 ? { extraMessages } : {}),
+						localId: nextId(),
+						messageId: message.id,
+						messageIndex,
+						createdAt: message.created_at
+					});
+				}
+			};
+
+			if (emitToolsFirst) {
+				pushTools();
+				pushVisible();
+			} else {
+				pushVisible();
+				pushTools();
 			}
 
 			// The final assistant message carries the turn's duration; pin it on the

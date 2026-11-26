@@ -535,3 +535,105 @@ func TestCodexAndPiMCPBridgeWiring(t *testing.T) {
 		t.Fatalf("expected myaaw removed and user_srv kept, got: %s", string(raw2))
 	}
 }
+
+func TestTurnAccumulatorOrderingAndDuplicateToolUpdates(t *testing.T) {
+	t.Run("acp tool_call with completed status stays before final answer", func(t *testing.T) {
+		acc := newTurnAccumulator(context.Background(), agent.RunConfig{}, []provider.Message{
+			{Role: "user", Content: "check pwd"},
+		}, nil)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"checking workspace"}}}`), acc)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"tool_call","toolCallId":"tc-1","title":"pwd","status":"completed","rawInput":{},"rawOutput":"/tmp/ws"}}`), acc)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Workspace is /tmp/ws"}}}`), acc)
+		// Duplicate trailing completed update after final text must be ignored.
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"tool_call_update","toolCallId":"tc-1","title":"pwd","status":"completed","rawOutput":"/tmp/ws"}}`), acc)
+
+		res, err := acc.Finish(provider.StopNormal, nil)
+		if err != nil {
+			t.Fatalf("Finish failed: %v", err)
+		}
+		if len(res.NewMessages) != 3 {
+			t.Fatalf("expected 3 messages [assistant(tool_call), tool, assistant(final)], got %d: %+v", len(res.NewMessages), res.NewMessages)
+		}
+		if res.NewMessages[0].Role != "assistant" || len(res.NewMessages[0].ToolCalls) != 1 || res.NewMessages[0].Thought != "checking workspace" {
+			t.Fatalf("unexpected msg[0]: %+v", res.NewMessages[0])
+		}
+		if res.NewMessages[1].Role != "tool" || res.NewMessages[1].ToolCallID != "tc-1" {
+			t.Fatalf("unexpected msg[1]: %+v", res.NewMessages[1])
+		}
+		if res.NewMessages[2].Role != "assistant" || len(res.NewMessages[2].ToolCalls) != 0 || provider.MessageText(res.NewMessages[2]) != "Workspace is /tmp/ws" {
+			t.Fatalf("unexpected final msg[2]: %+v", res.NewMessages[2])
+		}
+	})
+
+	t.Run("text streamed while tool is still open persists after tool result", func(t *testing.T) {
+		acc := newTurnAccumulator(context.Background(), agent.RunConfig{}, []provider.Message{
+			{Role: "user", Content: "check status"},
+		}, nil)
+		acc.AddThinkingDelta("thinking first")
+		acc.StartTool("tc-open", "bash", `{"cmd":"pwd"}`)
+		acc.AddTextDelta("Final answer text")
+		// Simulate CLI finishing without sending tool_call_update(completed).
+		res, err := acc.Finish(provider.StopNormal, nil)
+		if err != nil {
+			t.Fatalf("Finish failed: %v", err)
+		}
+		if len(res.NewMessages) != 3 {
+			t.Fatalf("expected 3 messages [assistant(tool_call), tool, assistant(final)], got %d: %+v", len(res.NewMessages), res.NewMessages)
+		}
+		if len(res.NewMessages[0].ToolCalls) != 1 || provider.MessageText(res.NewMessages[0]) != "" {
+			t.Fatalf("expected tool-call stub without final answer text, got %+v", res.NewMessages[0])
+		}
+		if res.NewMessages[1].Role != "tool" || res.NewMessages[1].ToolCallID != "tc-open" {
+			t.Fatalf("expected synthetic tool close msg, got %+v", res.NewMessages[1])
+		}
+		if res.NewMessages[2].Role != "assistant" || len(res.NewMessages[2].ToolCalls) != 0 || provider.MessageText(res.NewMessages[2]) != "Final answer text" {
+			t.Fatalf("expected clean final assistant msg, got %+v", res.NewMessages[2])
+		}
+	})
+
+	t.Run("acp multi-step with array tool_call_update content preserves exact chronological order", func(t *testing.T) {
+		acc := newTurnAccumulator(context.Background(), agent.RunConfig{}, []provider.Message{
+			{Role: "user", Content: "multi-step test"},
+		}, nil)
+		// Step 1: thinking -> text -> Bash (pending {}) -> in_progress (real args) -> completed (array content)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Think 1"}}}`), acc)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Tahap 1"}}}`), acc)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"tool_call","toolCallId":"call-bash","title":"Bash","status":"pending","rawInput":{}}}`), acc)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"tool_call_update","toolCallId":"call-bash","title":"Bash","status":"in_progress","rawInput":{"command":"date -u"}}}`), acc)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"tool_call_update","toolCallId":"call-bash","title":"Bash","status":"completed","content":[{"type":"content","content":{"type":"text","text":"20:54:56 UTC"}}]}}`), acc)
+
+		// Step 2: thinking -> text -> Read (pending {}) -> in_progress (real path) -> completed (array content)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Think 2"}}}`), acc)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Tahap 2"}}}`), acc)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"tool_call","toolCallId":"call-read","title":"Read","status":"pending","rawInput":{}}}`), acc)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"tool_call_update","toolCallId":"call-read","title":"Read","status":"in_progress","rawInput":{"path":"."}}}`), acc)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"tool_call_update","toolCallId":"call-read","title":"Read","status":"completed","content":[{"type":"text","text":"README.md"}]}}`), acc)
+
+		// Step 3: final thinking -> final answer
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"Think 3"}}}`), acc)
+		handleACPUpdate(json.RawMessage(`{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Jawaban akhir"}}}`), acc)
+
+		res, err := acc.Finish(provider.StopNormal, nil)
+		if err != nil {
+			t.Fatalf("Finish failed: %v", err)
+		}
+		if len(res.NewMessages) != 5 {
+			t.Fatalf("expected 5 messages [asst1, tool1, asst2, tool2, asst3], got %d: %+v", len(res.NewMessages), res.NewMessages)
+		}
+		if res.NewMessages[0].Thought != "Think 1" || provider.MessageText(res.NewMessages[0]) != "Tahap 1" || len(res.NewMessages[0].ToolCalls) != 1 || res.NewMessages[0].ToolCalls[0].Function.Arguments != `{"command":"date -u"}` {
+			t.Fatalf("unexpected step 1 assistant msg: %+v", res.NewMessages[0])
+		}
+		if res.NewMessages[1].Role != "tool" || res.NewMessages[1].ToolCallID != "call-bash" || provider.MessageText(res.NewMessages[1]) != "20:54:56 UTC" {
+			t.Fatalf("unexpected step 1 tool msg: %+v", res.NewMessages[1])
+		}
+		if res.NewMessages[2].Thought != "Think 2" || provider.MessageText(res.NewMessages[2]) != "Tahap 2" || len(res.NewMessages[2].ToolCalls) != 1 || res.NewMessages[2].ToolCalls[0].Function.Arguments != `{"path":"."}` {
+			t.Fatalf("unexpected step 2 assistant msg: %+v", res.NewMessages[2])
+		}
+		if res.NewMessages[3].Role != "tool" || res.NewMessages[3].ToolCallID != "call-read" || provider.MessageText(res.NewMessages[3]) != "README.md" {
+			t.Fatalf("unexpected step 2 tool msg: %+v", res.NewMessages[3])
+		}
+		if res.NewMessages[4].Thought != "Think 3" || provider.MessageText(res.NewMessages[4]) != "Jawaban akhir" || len(res.NewMessages[4].ToolCalls) != 0 {
+			t.Fatalf("unexpected final assistant msg: %+v", res.NewMessages[4])
+		}
+	})
+}
