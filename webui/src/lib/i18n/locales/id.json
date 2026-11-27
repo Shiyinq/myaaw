@@ -1621,7 +1621,11 @@
 			"empty_filter": "Tidak ada item yang sesuai filter.",
 			"empty_groups": "Belum ada grup.",
 			"actions": "Aksi agen",
-			"reconfigure": "Konfigurasi ulang"
+			"reconfigure": "Konfigurasi ulang",
+			"lounge_view_grid": "Tampilan grid",
+			"lounge_view_list": "Tampilan daftar",
+			"lounge_rooms": "Ruang grup",
+			"lounge_waiting": "Menunggu perhatianmu"
 		},
 		"focus": {
 			"rail_label": "Navigasi fokus",

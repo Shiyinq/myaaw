@@ -15,10 +15,13 @@
 		Loader2,
 		MoreHorizontal,
 		Pencil,
+		Play,
 		Plus,
+		RotateCw,
 		Search,
 		Settings2,
 		ShieldAlert,
+		Square,
 		Trash2,
 		Users,
 		X
@@ -34,6 +37,7 @@
 	import { colorOf } from '$lib/bloub';
 	import { agentSelection, groupsStore, toastStore } from '$lib/stores';
 	import { createAgentDialog } from '$lib/stores/createAgentDialog.svelte';
+	import { fleetBulk } from '$lib/stores/fleetBulk.svelte';
 	import {
 		BOTS_SECTION_AGENTS,
 		BOTS_SECTION_GROUPS,
@@ -1818,15 +1822,68 @@
 														: 'opacity-0 group-focus-within/sec:opacity-100 group-hover/sec:opacity-100 [@media(hover:none)]:opacity-100'
 												]}
 											>
-												<MoreHorizontal class="h-3.5 w-3.5" />
+												{#if sec.kind === 'agents' && fleetBulk.busy}
+													<Loader2 class="h-3.5 w-3.5 animate-spin" />
+												{:else}
+													<MoreHorizontal class="h-3.5 w-3.5" />
+												{/if}
 											</button>
 										{/snippet}
 									</DropdownMenu.Trigger>
-									<DropdownMenu.Content align="end" class="w-44">
+									<DropdownMenu.Content align="end" class={sec.kind === 'agents' ? 'w-60' : 'w-44'}>
 										{#if sec.kind === 'custom'}
 											<DropdownMenu.Item onclick={() => openEditSection(sec.id)} class="gap-2">
 												<Pencil class="h-3.5 w-3.5" />
 												{t('myaaw.bots.section_edit')}
+											</DropdownMenu.Item>
+											<DropdownMenu.Separator />
+										{/if}
+										{#if sec.kind === 'agents'}
+											<DropdownMenu.Item
+												disabled={fleetBulk.busy !== '' ||
+													runningTotal === agentSelection.agents.length}
+												onclick={() => {
+													openMenuSection = '';
+													void fleetBulk.run('start', t);
+												}}
+												class="gap-2"
+											>
+												{#if fleetBulk.busy === 'start'}
+													<Loader2 class="h-3.5 w-3.5 animate-spin" />
+												{:else}
+													<Play class="h-3.5 w-3.5" />
+												{/if}
+												{t('myaaw.server.start_all')}
+											</DropdownMenu.Item>
+											<DropdownMenu.Item
+												disabled={fleetBulk.busy !== '' || runningTotal === 0}
+												onclick={() => {
+													openMenuSection = '';
+													void fleetBulk.run('restart', t);
+												}}
+												class="gap-2"
+											>
+												{#if fleetBulk.busy === 'restart'}
+													<Loader2 class="h-3.5 w-3.5 animate-spin" />
+												{:else}
+													<RotateCw class="h-3.5 w-3.5" />
+												{/if}
+												{t('myaaw.server.restart_all')}
+											</DropdownMenu.Item>
+											<DropdownMenu.Item
+												disabled={fleetBulk.busy !== '' || runningTotal === 0}
+												onclick={() => {
+													openMenuSection = '';
+													void fleetBulk.run('stop', t);
+												}}
+												class="gap-2"
+											>
+												{#if fleetBulk.busy === 'stop'}
+													<Loader2 class="h-3.5 w-3.5 animate-spin" />
+												{:else}
+													<Square class="h-3.5 w-3.5" />
+												{/if}
+												{t('myaaw.server.stop_all')}
 											</DropdownMenu.Item>
 											<DropdownMenu.Separator />
 										{/if}

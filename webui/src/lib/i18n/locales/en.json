@@ -1621,7 +1621,11 @@
 			"empty_filter": "No items match this filter.",
 			"empty_groups": "No groups yet.",
 			"actions": "Agent actions",
-			"reconfigure": "Reconfigure"
+			"reconfigure": "Reconfigure",
+			"lounge_view_grid": "Grid view",
+			"lounge_view_list": "List view",
+			"lounge_rooms": "Group rooms",
+			"lounge_waiting": "Needs your attention"
 		},
 		"focus": {
 			"rail_label": "Focus navigation",

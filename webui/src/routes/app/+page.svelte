@@ -4,6 +4,7 @@
 	import { runtimesManageStore } from '$lib/stores/runtimes.svelte';
 	import { invalidateRuntimeOptions } from '$lib/stores/runtimeOptions';
 	import { serverStore } from '$lib/stores/server.svelte';
+	import { fleetBulk, type FleetBulkKind } from '$lib/stores/fleetBulk.svelte';
 	import { agentSelection, toastStore } from '$lib/stores';
 	import { preferences } from '$lib/stores/preferences.svelte';
 	import { getErrorMessage } from '$lib/utils/api';
@@ -51,9 +52,7 @@
 	let shellMode = $derived(preferences.value.shellMode);
 	let loading = $state(false);
 	let toggling = $state<string | null>(null);
-	// Which fleet-wide action is running, if any. One at a time, so the daemons
-	// never race for the same port.
-	let bulkBusy = $state<'' | 'start' | 'restart' | 'stop'>('');
+	let bulkBusy = $derived(fleetBulk.busy);
 
 	let agents = $derived(agentSelection.agents);
 	let runningCount = $derived(agents.filter((agent) => agent.running).length);
@@ -165,72 +164,9 @@
 		}
 	}
 
-	/**
-	 * Starts what is stopped, or restarts/stops what is running, for the whole fleet.
-	 * Every badge flips before the first request goes out, so the labels on the cards
-	 * answer the click immediately instead of after the daemons finish booting.
-	 */
-	async function bulkAction(kind: 'start' | 'restart' | 'stop') {
-		if (bulkBusy || toggling) return;
-		const targets = agents.filter((agent) => (kind === 'start' ? !agent.running : agent.running));
-		if (targets.length === 0) return;
-		if (
-			kind === 'stop' &&
-			!(await askConfirm({
-				message: t('myaaw.home.stop_all_confirm', { count: targets.length }),
-				variant: 'destructive'
-			}))
-		) {
-			return;
-		}
-
-		bulkBusy = kind;
-		const running = kind !== 'stop';
-		for (const agent of targets) agentSelection.setRunning(agent.name, running);
-
-		const failed: string[] = [];
-		for (const agent of targets) {
-			try {
-				if (kind === 'start') await serverStore.start(agent.name);
-				else if (kind === 'restart') await serverStore.restart(agent.name);
-				else await serverStore.stop(agent.name);
-			} catch {
-				failed.push(agent.name);
-			}
-		}
-
-		await waitForStates(
-			targets.filter((agent) => !failed.includes(agent.name)).map((agent) => agent.name),
-			running
-		);
-		if (failed.length > 0) await agentSelection.load(true);
-
-		bulkBusy = '';
-		if (failed.length > 0) {
-			toastStore.error(t('myaaw.server.bulk_failed', { names: failed.join(', ') }));
-		}
-		const done = targets.length - failed.length;
-		if (done > 0) {
-			const key =
-				kind === 'start' ? 'bulk_started' : kind === 'restart' ? 'bulk_restarted' : 'bulk_stopped';
-			toastStore.success(t(`myaaw.server.${key}`, { count: done }));
-		}
-	}
-
-	/** Polls until every named agent reports the expected state, then gives up. */
-	async function waitForStates(names: string[], running: boolean) {
-		const pending = new Set(names);
-		for (let attempt = 0; attempt < 20 && pending.size > 0; attempt += 1) {
-			await new Promise((resolve) => setTimeout(resolve, 300));
-			try {
-				const list = await agentsStore.reload();
-				for (const agent of list) {
-					if (pending.has(agent.name) && agent.running === running) pending.delete(agent.name);
-				}
-			} catch {
-				// Transient failures are expected while the daemons boot; keep polling.
-			}
-		}
+	async function bulkAction(kind: FleetBulkKind) {
+		if (toggling) return;
+		await fleetBulk.run(kind, t);
 	}
 
 	function openOnboard() {
