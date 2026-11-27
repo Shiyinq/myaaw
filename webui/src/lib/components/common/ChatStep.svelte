@@ -29,13 +29,15 @@
 		copyText = '',
 		children
 	}: Props = $props();
+
+	const cleanSummary = $derived(summary.trim());
 </script>
 
-<div class="text-xs">
+<div class="min-w-0 text-xs">
 	<button
 		type="button"
 		class={cn(
-			'flex w-full items-center gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-muted/60',
+			'flex w-full min-w-0 items-center gap-2 overflow-hidden rounded-md px-1 py-1 text-left transition-colors hover:bg-muted/60',
 			error && 'text-destructive'
 		)}
 		onclick={ontoggle}
@@ -44,12 +46,12 @@
 		<IconComponent
 			class={cn('h-3.5 w-3.5 shrink-0', error ? 'text-destructive' : 'text-muted-foreground')}
 		/>
-		<span class="shrink-0 font-medium">{title}</span>
-		{#if summary}
-			<span class="text-muted-foreground">·</span>
-			<span class="min-w-0 flex-1 truncate text-muted-foreground">{summary}</span>
+		{#if cleanSummary}
+			<span class="max-w-[55%] min-w-0 shrink truncate font-medium" {title}>{title}</span>
+			<span class="shrink-0 text-muted-foreground">·</span>
+			<span class="min-w-0 flex-1 truncate text-muted-foreground">{cleanSummary}</span>
 		{:else}
-			<span class="min-w-0 flex-1"></span>
+			<span class="min-w-0 flex-1 truncate font-medium" {title}>{title}</span>
 		{/if}
 		{#if running}
 			<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
