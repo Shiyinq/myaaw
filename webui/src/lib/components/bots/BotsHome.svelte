@@ -1249,9 +1249,6 @@
 					{unreads}
 				</span>
 			{/if}
-			<ArrowUpRight
-				class="h-4 w-4 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-foreground"
-			/>
 		</div>
 	</button>
 {/snippet}
