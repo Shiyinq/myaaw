@@ -47,6 +47,10 @@ function toSummary(group: Group, existing?: GroupSummary, runState?: GroupRunSta
 		member_count: (group.members ?? []).length,
 		discussion_mode: group.discussion_mode,
 		max_turns: group.max_turns,
+		working_dir: group.working_dir,
+		working_dir_exists: group.working_dir_exists,
+		has_git: group.has_git,
+		git_branch: group.git_branch,
 		running: runState ? runState.running : (existing?.running ?? false),
 		current_agent: runState ? runState.current_agent : (existing?.current_agent ?? ''),
 		last_message: existing?.last_message ?? null,
@@ -123,6 +127,10 @@ export const groupsStore = {
 			members: summary.members,
 			discussion_mode: summary.discussion_mode,
 			max_turns: summary.max_turns,
+			working_dir: summary.working_dir,
+			working_dir_exists: summary.working_dir_exists,
+			has_git: summary.has_git,
+			git_branch: summary.git_branch,
 			created_at: summary.created_at,
 			updated_at: summary.updated_at
 		};

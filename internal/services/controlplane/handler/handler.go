@@ -50,6 +50,9 @@ func New(
 	backupsSvc *service.BackupService,
 	groupsSvc *service.GroupService,
 ) *Handler {
+	if conversations != nil && groupsSvc != nil {
+		conversations.SetGroupWorkingDirResolver(groupsSvc.ResolveWorkingDir)
+	}
 	return &Handler{
 		auth:          auth,
 		agents:        agents,

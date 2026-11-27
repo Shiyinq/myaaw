@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1452,5 +1453,113 @@ func TestGroupServiceGlobalUpdatesAndReplayOnDisconnect(t *testing.T) {
 	}
 	if afterRead.UnreadCount != 0 || afterRead.FirstUnreadMessageID != "" {
 		t.Fatalf("after MarkRead unread = (%d, %q), want (0, \"\")", afterRead.UnreadCount, afterRead.FirstUnreadMessageID)
+	}
+}
+
+func TestGroupWorkingDirAttachLockResolveAndDispatch(t *testing.T) {
+	projectDir := t.TempDir()
+	otherDir := t.TempDir()
+	t.Setenv("MYAAW_ALLOW_HOST_DIRS", "1")
+	t.Setenv("MYAAW_WORKSPACE_ROOTS", filepath.Dir(projectDir))
+
+	var (
+		mu             sync.Mutex
+		seenWorkingDir string
+		seenPrompt     string
+	)
+	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat/stream" {
+			http.NotFound(w, r)
+			return
+		}
+		var req agentChatStreamRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		seenWorkingDir = req.WorkingDir
+		seenPrompt = req.Text
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "event: conversation\ndata: {\"conversation_id\":\"conv-wd-1\"}\n\n")
+		fmt.Fprint(w, "event: done\ndata: {\"text\":\"Checked project! [DONE]\",\"conversation_id\":\"conv-wd-1\"}\n\n")
+	}))
+	defer agentServer.Close()
+
+	dir := newMockAgentDirectory(
+		AgentInfo{Name: "coder", AgentColor: "bleu", Running: true, BaseURL: agentServer.URL},
+	)
+	svc := NewGroupServiceWithStore(newTestGroupStore(t), dir, agentServer.Client())
+
+	// Create group without a project first, then attach working_dir via PATCH/Update.
+	created, err := svc.Create(CreateGroupRequest{
+		Name:    "Project Team",
+		Members: []string{"coder"},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.WorkingDir != "" {
+		t.Fatalf("initial WorkingDir = %q, want empty", created.WorkingDir)
+	}
+
+	updated, err := svc.Update(created.ID, UpdateGroupRequest{WorkingDir: &projectDir})
+	if err != nil {
+		t.Fatalf("Update attach working_dir: %v", err)
+	}
+	if updated.WorkingDir == "" || !updated.WorkingDirExists {
+		t.Fatalf("expected hydrated WorkingDir & WorkingDirExists=true, got %+v", updated)
+	}
+
+	// Immutable once attached (same rule as DM chats).
+	if _, err := svc.Update(created.ID, UpdateGroupRequest{WorkingDir: &otherDir}); !errors.Is(err, ErrWorkingDirLocked) {
+		t.Fatalf("expected ErrWorkingDirLocked on change, got %v", err)
+	}
+	empty := ""
+	if _, err := svc.Update(created.ID, UpdateGroupRequest{WorkingDir: &empty}); !errors.Is(err, ErrWorkingDirLocked) {
+		t.Fatalf("expected ErrWorkingDirLocked on clear, got %v", err)
+	}
+
+	// ConversationService resolves "group:<id>" transparently for shared /fs, /git, and /terminal.
+	convSvc := NewConversationService()
+	convSvc.SetGroupWorkingDirResolver(svc.ResolveWorkingDir)
+	resolved, err := convSvc.ResolveWorkingDir("coder", "group:"+created.ID, 1)
+	if err != nil {
+		t.Fatalf("ResolveWorkingDir(group): %v", err)
+	}
+	if resolved != updated.WorkingDir {
+		t.Fatalf("ResolveWorkingDir = %q, want %q", resolved, updated.WorkingDir)
+	}
+	// Fiber path params pass percent-encoded colons ("group%3A<id>") on /git/* routes.
+	resolvedEscaped, err := convSvc.ResolveWorkingDir("coder", "group%3A"+created.ID, 1)
+	if err != nil {
+		t.Fatalf("ResolveWorkingDir(escaped group): %v", err)
+	}
+	if resolvedEscaped != updated.WorkingDir {
+		t.Fatalf("ResolveWorkingDir(escaped) = %q, want %q", resolvedEscaped, updated.WorkingDir)
+	}
+
+	// Sending a group message forwards working_dir to member agents' /api/chat/stream.
+	ch, _, unsub, err := svc.Subscribe(created.ID)
+	defer unsub()
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	if _, _, err := svc.SendMessage(created.ID, 1, SendGroupMessageRequest{Text: "check repo"}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	waitForRunEnd(t, ch, 3*time.Second)
+
+	mu.Lock()
+	gotWD := seenWorkingDir
+	gotPrompt := seenPrompt
+	mu.Unlock()
+	if gotWD != updated.WorkingDir {
+		t.Fatalf("agent stream working_dir = %q, want %q", gotWD, updated.WorkingDir)
+	}
+	if !strings.Contains(gotPrompt, "Shared project working directory: "+updated.WorkingDir) {
+		t.Fatalf("group prompt missing shared working_dir context:\n%s", gotPrompt)
 	}
 }

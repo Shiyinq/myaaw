@@ -495,11 +495,13 @@ func conversationError(c fiber.Ctx, err error) error {
 	switch {
 	case errors.Is(err, service.ErrAgentNotFound):
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "agent not found"})
-	case errors.Is(err, service.ErrConversationNotFound):
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "conversation not found"})
+	case errors.Is(err, service.ErrConversationNotFound), errors.Is(err, service.ErrGroupNotFound):
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	case errors.Is(err, service.ErrConversationForbidden):
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "conversation belongs to another user"})
-	case errors.Is(err, service.ErrInvalidTitle), errors.Is(err, service.ErrInvalidWorkingDir):
+	case errors.Is(err, service.ErrInvalidTitle),
+		errors.Is(err, service.ErrInvalidWorkingDir),
+		errors.Is(err, service.ErrInvalidGroupID):
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	case errors.Is(err, service.ErrWorkingDirLocked):
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})

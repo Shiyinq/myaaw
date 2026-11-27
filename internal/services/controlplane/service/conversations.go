@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	pathpkg "path"
 	"path/filepath"
@@ -282,10 +283,18 @@ func visibleMessageCount(messages []provider.Message) int {
 }
 
 // ConversationService reads and mutates conversations in an agent's SQLite database.
-type ConversationService struct{}
+type ConversationService struct {
+	groupWorkingDir func(groupID, agentName string) (string, error)
+}
 
 func NewConversationService() *ConversationService {
 	return &ConversationService{}
+}
+
+// SetGroupWorkingDirResolver lets shared /fs, /git, and /terminal endpoints
+// resolve a group's attached project directory via a "group:<id>" context ID.
+func (s *ConversationService) SetGroupWorkingDirResolver(fn func(groupID, agentName string) (string, error)) {
+	s.groupWorkingDir = fn
 }
 
 // List returns conversations owned by userID. search matches the title only.
@@ -1159,6 +1168,16 @@ func (s *ConversationService) ListProjectsPage(
 // conversation owned by userID. It returns an empty string when the
 // conversation has no attached directory.
 func (s *ConversationService) ResolveWorkingDir(agentName, id string, userID int) (string, error) {
+	trimmedID := strings.TrimSpace(id)
+	if unescaped, err := url.PathUnescape(trimmedID); err == nil {
+		trimmedID = strings.TrimSpace(unescaped)
+	}
+	if groupID, ok := strings.CutPrefix(trimmedID, "group:"); ok && groupID != "" {
+		if s.groupWorkingDir == nil {
+			return "", ErrGroupNotFound
+		}
+		return s.groupWorkingDir(groupID, agentName)
+	}
 	db, err := openAgentDB(agentName)
 	if err != nil {
 		return "", err

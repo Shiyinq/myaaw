@@ -1718,7 +1718,7 @@ Host-level multi-agent chat rooms coordinated by the control plane. Rooms, membe
 | `GET` | `/groups` | list groups sorted by `updated_at` descending (`{"groups": [...]}`) |
 | `POST` | `/groups` | create a group → `201` `Group` |
 | `GET` | `/groups/:id?limit=&offset=&before_id=` | fetch group metadata, a page of messages, and live `run_state` |
-| `PATCH` | `/groups/:id` | update `name`, `description`, `members`, `discussion_mode`, or `max_turns` |
+| `PATCH` | `/groups/:id` | update `name`, `description`, `members`, `discussion_mode`, `max_turns`, display flags, or attach an initial `working_dir` (`409` if changing/clearing an already-attached folder) |
 | `DELETE` | `/groups/:id` | stop any active run, close SSE subscribers, and delete the group (`{"deleted": true}`) |
 | `DELETE` | `/groups/:id/messages` | stop any active run, clear messages, reset member cursors/sessions (`{"cleared": true}`) |
 | `POST` | `/groups/:id/messages` | send a user message and start (or interrupt) orchestration → `202` `{"message", "run_state"}` |
@@ -1738,7 +1738,9 @@ Host-level multi-agent chat rooms coordinated by the control plane. Rooms, membe
   - `members`: required array of at least 1 initialized agent name (deduplicated preserving order; unknown agents return `400`).
   - `discussion_mode`: `"autonomous"` (default), `"all"`, or `"mention"`.
   - `max_turns`: optional, defaults to `8` when omitted or `0`, allowed range `1`–`50`.
-- **Update (`PATCH /groups/:id`)**: all fields are optional pointers; omitted fields stay unchanged. Updating `members` preserves `last_seen_message_id` and `conversation_id` for existing members while new members start empty.
+  - `working_dir`: optional host project directory validated by `workspaceguard`. When set, `Group` and `GroupSummary` responses also include hydrated `working_dir_exists`, `has_git`, and `git_branch` fields, and every orchestrated member turn receives `working_dir` in `/api/chat/stream`.
+- **Update (`PATCH /groups/:id`)**: all fields are optional pointers; omitted fields stay unchanged. Updating `members` preserves `last_seen_message_id` and `conversation_id` for existing members while new members start empty. `working_dir` can be attached once; attempting to change or clear an already-attached folder returns `409 Conflict`.
+- **Shared project Files, Git, and Terminal**: pass `group:<group_id>` as `conversation_id` (query param on `/agents/:name/fs*`, path param on `/agents/:name/conversations/:id/git/*`, or body field on `POST /agents/:name/terminal`) to reuse the exact same workspace endpoints for a group's attached `working_dir`.
 - **Send message (`POST /groups/:id/messages`)**: accepts `{text, reply_to_id?, quotes?, images?, files?}`. Requires non-empty trimmed `text`, or at least one entry in `images` or `files` (`400` otherwise). When `reply_to_id` is supplied, it must reference an existing message in the same group (`400` otherwise). The authenticated control-plane `user_id` is injected automatically when forwarding turns to agent daemons.
 - **Pagination (`GET /groups/:id`)**:
   - `limit`: optional page size (`0` or omitted returns all messages for backwards compatibility; capped at `500`).

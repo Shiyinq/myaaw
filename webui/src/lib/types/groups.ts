@@ -95,6 +95,10 @@ export interface Group {
 	max_turns: number;
 	hide_thinking?: boolean;
 	hide_tools?: boolean;
+	working_dir?: string;
+	working_dir_exists?: boolean;
+	has_git?: boolean;
+	git_branch?: string;
 	last_read_message_id?: string;
 	read_at?: string;
 	created_at: string;
@@ -117,6 +121,10 @@ export interface GroupSummary {
 	member_count: number;
 	discussion_mode: DiscussionMode;
 	max_turns: number;
+	working_dir?: string;
+	working_dir_exists?: boolean;
+	has_git?: boolean;
+	git_branch?: string;
 	running: boolean;
 	current_agent: string;
 	pending_approval_count?: number;
@@ -153,6 +161,7 @@ export interface CreateGroupRequest {
 	max_turns?: number;
 	hide_thinking?: boolean;
 	hide_tools?: boolean;
+	working_dir?: string;
 }
 
 export interface UpdateGroupRequest {
@@ -163,6 +172,7 @@ export interface UpdateGroupRequest {
 	max_turns?: number;
 	hide_thinking?: boolean;
 	hide_tools?: boolean;
+	working_dir?: string;
 }
 
 export interface SendGroupMessageRequest {

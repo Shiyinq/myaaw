@@ -41,6 +41,19 @@
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import GroupInspectorPanel from '$lib/components/groups/GroupInspectorPanel.svelte';
 	import GroupReplyBar from '$lib/components/groups/GroupReplyBar.svelte';
+	import {
+		AttachWorkingDirDialog,
+		ChatRightActivityBar,
+		ProjectComposerControls,
+		ProjectSidebarPanel,
+		ProjectTabBar,
+		ProjectTerminalGroup,
+		ProjectWorkspacePane
+	} from '$lib/components/workspace';
+	import {
+		createProjectWorkspace,
+		type ChatRightPanelKind
+	} from '$lib/stores/projectWorkspace.svelte';
 	import { groupAccent } from '$lib/components/groups/accent';
 	import {
 		highlightMentions,
@@ -103,6 +116,8 @@
 		InteractionRequest,
 		InteractionState,
 		LightboxImage,
+		ProjectDiffTarget,
+		ProjectMultiDiffTarget,
 		ReplyPreview,
 		TimelineItem
 	} from '$lib/types';
@@ -285,16 +300,63 @@
 	let expandedStepGroups = $state<Record<string, boolean>>({});
 	let liveStepsOverride = $state<boolean | null>(null);
 
-	// Right inspector panel state.
-	let inspectorOpen = $state(
-		browser ? window.innerWidth >= 1024 && localStorage.getItem(INSPECTOR_KEY) !== 'false' : false
+	// Shared project workspace controller (reused identically from 1-on-1 DM chat).
+	const project = createProjectWorkspace();
+	const terminalGroupHolder: { current?: ProjectTerminalGroup } = {};
+
+	// Right panel state: unified between Group Inspector ('info' | 'attachments') and Project ('project').
+	let activeRightPanel = $state<ChatRightPanelKind | null>(
+		browser && window.innerWidth >= 1024 && localStorage.getItem(INSPECTOR_KEY) !== 'false'
+			? 'info'
+			: null
 	);
 	let inspectorTab = $state<'members' | 'attachments' | 'settings'>('members');
+	const inspectorOpen = $derived(activeRightPanel !== null);
 	let attachmentsRefreshKey = $state(0);
 	let previewAttachment = $state<GroupAttachment | null>(null);
 	let lightboxOpen = $state(false);
 	let lightboxIndex = $state(0);
 	let lightboxItems = $state<LightboxImage[]>([]);
+
+	/** Effective agent host context backing shared /fs, /git, and /terminal routes for this group. */
+	const workspaceAgent = $derived.by(() => {
+		const known = new Set(agentSelection.agents.map((a) => a.name));
+		const runningMember = group?.members.find((m) => m.running && known.has(m.name));
+		if (runningMember) return runningMember.name;
+		const firstMember = group?.members.find((m) => known.has(m.name));
+		if (firstMember) return firstMember.name;
+		return (
+			agentSelection.agents.find((a) => a.default)?.name || agentSelection.agents[0]?.name || ''
+		);
+	});
+	const projectContextId = $derived(group ? `group:${group.id}` : '');
+	const projectScopeKeyStr = $derived(
+		group && project.workingDir ? `group:${group.id}:${project.workingDir}` : ''
+	);
+
+	// Sync shared project workspace controller whenever the active group changes.
+	$effect(() => {
+		const current = group;
+		if (!current) {
+			untrack(() => project.reset(false));
+			return;
+		}
+		const wd = current.working_dir ?? '';
+		const exists = current.working_dir_exists ?? true;
+		const git = Boolean(current.has_git);
+		const branch = current.git_branch ?? '';
+		const scopeAgent = `group:${current.id}`;
+		const ctxId = `group:${current.id}`;
+		untrack(() => {
+			project.setDirectory(wd, exists, git, scopeAgent, ctxId, { gitBranch: branch });
+			if (!wd && activeRightPanel === 'project') {
+				activeRightPanel =
+					browser && window.innerWidth >= 1024 && localStorage.getItem(INSPECTOR_KEY) !== 'false'
+						? 'info'
+						: null;
+			}
+		});
+	});
 
 	function openImageAttachmentsLightbox(images: GroupAttachment[], index: number) {
 		if (images.length === 0) return;
@@ -313,10 +375,104 @@
 
 	function showAttachmentInChat(item: GroupAttachment) {
 		previewAttachment = null;
-		if (browser && window.innerWidth < 1024 && inspectorOpen) {
-			inspectorOpen = false;
+		project.selectChat();
+		if (browser && window.innerWidth < 1024 && activeRightPanel !== null) {
+			activeRightPanel = null;
 		}
 		void jumpToMessage(item.message_id);
+	}
+
+	function closeRightPanel() {
+		activeRightPanel = null;
+		project.panelOpen = false;
+		if (browser && window.innerWidth >= 1024) {
+			localStorage.setItem(INSPECTOR_KEY, 'false');
+		}
+	}
+
+	function openProjectPanel() {
+		if (!project.workingDir) {
+			project.dialogOpen = true;
+			return;
+		}
+		if (activeRightPanel === 'project') {
+			closeRightPanel();
+			return;
+		}
+		activeRightPanel = 'project';
+		project.panelOpen = true;
+	}
+
+	function toggleAttachmentsPanel() {
+		if (activeRightPanel === 'attachments') {
+			closeRightPanel();
+			return;
+		}
+		inspectorTab = 'attachments';
+		activeRightPanel = 'attachments';
+		project.panelOpen = false;
+	}
+
+	async function handleSelectWorkingDir(dir: string) {
+		if (!group) return;
+		try {
+			const updated = await groupsStore.update(group.id, { working_dir: dir });
+			group = updated;
+			project.setDirectory(
+				updated.working_dir ?? dir,
+				updated.working_dir_exists ?? true,
+				Boolean(updated.has_git),
+				`group:${updated.id}`,
+				`group:${updated.id}`,
+				{ openPanelIfFresh: true, gitBranch: updated.git_branch ?? '' }
+			);
+			activeRightPanel = 'project';
+			toastStore.success(t('myaaw.workspace.attached'));
+		} catch (err) {
+			toastStore.error(getErrorMessage(err));
+			throw err;
+		}
+	}
+
+	function openProjectFile(virtualPath: string) {
+		previewAttachment = null;
+		const mobile = browser && window.innerWidth < 1024;
+		project.openFile(virtualPath, mobile);
+		if (mobile) activeRightPanel = null;
+	}
+
+	function openProjectDiff(req: ProjectDiffTarget) {
+		previewAttachment = null;
+		const mobile = browser && window.innerWidth < 1024;
+		project.openDiff(req, mobile);
+		if (mobile) activeRightPanel = null;
+	}
+
+	function openProjectMultiDiff(req: ProjectMultiDiffTarget) {
+		previewAttachment = null;
+		const mobile = browser && window.innerWidth < 1024;
+		project.openMultiDiff(req, mobile);
+		if (mobile) activeRightPanel = null;
+	}
+
+	function toggleProjectTerminal() {
+		previewAttachment = null;
+		const mobile = browser && window.innerWidth < 1024;
+		project.toggleTerminal();
+		if (mobile) activeRightPanel = null;
+	}
+
+	function closeProjectTerminal() {
+		terminalGroupHolder.current?.terminateAll();
+		project.closeTerminal();
+	}
+
+	function handleComposerFolderClick() {
+		if (!project.workingDir) {
+			project.dialogOpen = true;
+			return;
+		}
+		openProjectPanel();
 	}
 
 	// Scroll & composer refs.
@@ -402,27 +558,43 @@
 	}
 
 	function toggleInspector() {
-		inspectorOpen = !inspectorOpen;
+		if (activeRightPanel === 'info') {
+			closeRightPanel();
+			return;
+		}
+		if (inspectorTab === 'attachments') {
+			inspectorTab = 'members';
+		}
+		activeRightPanel = 'info';
+		project.panelOpen = false;
 		if (browser && window.innerWidth >= 1024) {
-			localStorage.setItem(INSPECTOR_KEY, String(inspectorOpen));
+			localStorage.setItem(INSPECTOR_KEY, 'true');
 		}
 	}
+
+	// Keep the activity bar indicator synchronized when the user switches tabs inside GroupInspectorPanel.
+	$effect(() => {
+		if (activeRightPanel === 'info' && inspectorTab === 'attachments') {
+			activeRightPanel = 'attachments';
+		} else if (activeRightPanel === 'attachments' && inspectorTab !== 'attachments') {
+			activeRightPanel = 'info';
+		}
+	});
 
 	// Support `?inspector=1` / `?inspector=settings` deep links from sidebar actions.
 	$effect(() => {
 		const param = page.url.searchParams.get('inspector');
 		if (!param) return;
-		inspectorOpen = true;
+		activeRightPanel = 'info';
 		inspectorTab = param === 'members' ? 'members' : 'settings';
 	});
 
 	$effect(() => () => topBarTitle.clear());
 
-	// Hide the floating desktop group title while AttachmentPreview owns the top
-	// of the column (matching regular 1-on-1 chat), so the title never overlaps
-	// and header buttons stay clickable.
+	// Hide the floating desktop group title while AttachmentPreview or ProjectTabBar
+	// owns the top of the column (matching regular 1-on-1 chat).
 	$effect(() => {
-		topBarTitle.setDesktopHidden(Boolean(previewAttachment));
+		topBarTitle.setDesktopHidden(Boolean(previewAttachment || project.hasTabBar));
 		return () => topBarTitle.setDesktopHidden(false);
 	});
 
@@ -883,6 +1055,7 @@
 				if (activeTurn?.agent === payload.agent) {
 					activeTurn = null;
 				}
+				project.bumpRefresh();
 				break;
 			}
 			case 'approval_required': {
@@ -934,6 +1107,7 @@
 				if (payload.reason === 'no_online_members') {
 					toastStore.warning(t('myaaw.groups.no_online_members'));
 				}
+				project.bumpRefresh();
 				break;
 			}
 			case 'error': {
@@ -1959,7 +2133,7 @@
 			variant={inspectorOpen ? 'secondary' : 'ghost'}
 			size="icon-sm"
 			class={[
-				'rounded-full',
+				'rounded-full lg:hidden',
 				!inspectorOpen && 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
 			]}
 			onclick={toggleInspector}
@@ -1976,8 +2150,13 @@
 </TopBarActions>
 
 <div class="relative flex h-full min-h-0 w-full overflow-hidden">
-	<!-- Main chat column -->
-	<div class={['relative flex min-h-0 min-w-0 flex-1 flex-col', !previewAttachment && 'lg:pt-14']}>
+	<!-- Main chat & workspace column -->
+	<div
+		class={[
+			'relative flex min-h-0 min-w-0 flex-1 flex-col',
+			!previewAttachment && !project.hasTabBar && 'lg:pt-14'
+		]}
+	>
 		{#if previewAttachment}
 			{@const activeAtt = previewAttachment}
 			<AttachmentPreview
@@ -2014,365 +2193,577 @@
 				</Button>
 			</div>
 		{:else}
-			<!-- Scrollable transcript (exact max-w-4xl & px-4 py-6 matching regular 1-on-1 chat) -->
-			<div
-				bind:this={scroller}
-				onscroll={onScroll}
-				class="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
-			>
+			{#if project.hasTabBar}
+				<ProjectTabBar
+					tabs={project.tabs}
+					terminalOpen={project.terminalOpen}
+					activeTabId={project.activeTabId}
+					onSelectChat={() => project.selectChat()}
+					onSelectTerminal={() => project.selectTerminal()}
+					onCloseTerminal={closeProjectTerminal}
+					onSelectTab={(id) => project.selectTab(id)}
+					onCloseTab={(id) => project.closeTab(id)}
+				/>
+			{/if}
+
+			{#if project.showingFileTab && workspaceAgent}
+				<ProjectWorkspacePane
+					agent={workspaceAgent}
+					conversationId={projectContextId}
+					activeTab={project.activeTab}
+					refreshKey={project.refreshKey}
+					onCloseTab={(id) => project.closeTab(id)}
+					onOpenFile={openProjectFile}
+					onSaved={() => project.bumpRefresh()}
+				/>
+			{/if}
+
+			{#if project.workingDir && project.terminalOpen && workspaceAgent}
+				<div class={project.showingTerminal ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+					<ProjectTerminalGroup
+						bind:this={
+							() => terminalGroupHolder.current,
+							(instance) => {
+								terminalGroupHolder.current = instance;
+							}
+						}
+						agent={workspaceAgent}
+						cwd={project.workingDir}
+						conversationId={projectContextId}
+						scopeKey={projectScopeKeyStr}
+						onCloseAll={() => project.closeTerminal()}
+					/>
+				</div>
+			{/if}
+
+			<div class={project.showingChat ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+				<!-- Scrollable transcript (exact max-w-4xl & px-4 py-6 matching regular 1-on-1 chat) -->
 				<div
-					bind:this={transcript}
-					data-total-messages={totalMessages}
-					data-has-more={hasMore}
-					class={cn(
-						'relative mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6',
-						!loading && messages.length === 0 && !activeTurn && 'min-h-full justify-center'
-					)}
+					bind:this={scroller}
+					onscroll={onScroll}
+					class="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
 				>
-					{#if loading}
-						<div
-							class="flex flex-col gap-4"
-							aria-live="polite"
-							aria-label={t('myaaw.chat.loading')}
-						>
-							<Skeleton class="h-14 w-2/3 rounded-2xl" />
-							<Skeleton class="ml-auto h-12 w-1/2 rounded-2xl" />
-							<Skeleton class="h-24 w-3/4 rounded-2xl" />
-						</div>
-					{:else}
-						<!-- Temporary yellow highlight overlay for located quotes -->
-						{#each quoteRects as rect, index (index)}
-							<span
-								aria-hidden="true"
-								class="pointer-events-none absolute z-10 rounded-xs bg-amber-300/45 dark:bg-amber-400/30"
-								style:left={`${rect.left}px`}
-								style:top={`${rect.top}px`}
-								style:width={`${rect.width}px`}
-								style:height={`${rect.height}px`}
-							></span>
-						{/each}
-
-						{#if loadingOlder}
-							<p
-								class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
+					<div
+						bind:this={transcript}
+						data-total-messages={totalMessages}
+						data-has-more={hasMore}
+						class={cn(
+							'relative mx-auto flex w-full max-w-4xl flex-col gap-5 px-4 py-6',
+							!loading && messages.length === 0 && !activeTurn && 'min-h-full justify-center'
+						)}
+					>
+						{#if loading}
+							<div
+								class="flex flex-col gap-4"
 								aria-live="polite"
+								aria-label={t('myaaw.chat.loading')}
 							>
-								<Loader2 class="h-3.5 w-3.5 animate-spin" />
-								{t('myaaw.chat.loading_older')}
-							</p>
-						{/if}
+								<Skeleton class="h-14 w-2/3 rounded-2xl" />
+								<Skeleton class="ml-auto h-12 w-1/2 rounded-2xl" />
+								<Skeleton class="h-24 w-3/4 rounded-2xl" />
+							</div>
+						{:else}
+							<!-- Temporary yellow highlight overlay for located quotes -->
+							{#each quoteRects as rect, index (index)}
+								<span
+									aria-hidden="true"
+									class="pointer-events-none absolute z-10 rounded-xs bg-amber-300/45 dark:bg-amber-400/30"
+									style:left={`${rect.left}px`}
+									style:top={`${rect.top}px`}
+									style:width={`${rect.width}px`}
+									style:height={`${rect.height}px`}
+								></span>
+							{/each}
 
-						{#if messages.length === 0 && !activeTurn && group}
-							<!-- Empty state -->
-							<div class="my-auto flex flex-col items-center justify-center py-12 text-center">
-								<div class="flex items-center -space-x-2.5">
-									{#each group.members.slice(0, 5) as member (member.name)}
-										<span
-											class="grid h-12 w-12 place-items-center rounded-full bg-muted/80 ring-2 ring-background"
-										>
-											<Bloub
-												mood="attentif"
-												size={36}
-												tight
-												color={colorOf(colorForAgent(member.name, member.agent_color))}
-											/>
-										</span>
-									{/each}
-								</div>
-								<h2 class="mt-4 text-base font-semibold">{group.name}</h2>
-								{#if group.description}
-									<p class="mt-1 max-w-md text-xs text-muted-foreground">{group.description}</p>
-								{:else}
-									<p class="mt-1 max-w-md text-xs text-muted-foreground">
-										{t('myaaw.groups.empty_hint')}
-									</p>
-								{/if}
+							{#if loadingOlder}
+								<p
+									class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
+									aria-live="polite"
+								>
+									<Loader2 class="h-3.5 w-3.5 animate-spin" />
+									{t('myaaw.chat.loading_older')}
+								</p>
+							{/if}
 
-								<div class="mt-4 flex flex-wrap items-center justify-center gap-1.5">
-									<button
-										type="button"
-										onclick={() => insertStarterMention('all')}
-										class="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-									>
-										<AtSign class="h-3 w-3" />
-										all
-									</button>
-									{#each group.members as member (member.name)}
+							{#if messages.length === 0 && !activeTurn && group}
+								<!-- Empty state -->
+								<div class="my-auto flex flex-col items-center justify-center py-12 text-center">
+									<div class="flex items-center -space-x-2.5">
+										{#each group.members.slice(0, 5) as member (member.name)}
+											<span
+												class="grid h-12 w-12 place-items-center rounded-full bg-muted/80 ring-2 ring-background"
+											>
+												<Bloub
+													mood="attentif"
+													size={36}
+													tight
+													color={colorOf(colorForAgent(member.name, member.agent_color))}
+												/>
+											</span>
+										{/each}
+									</div>
+									<h2 class="mt-4 text-base font-semibold">{group.name}</h2>
+									{#if group.description}
+										<p class="mt-1 max-w-md text-xs text-muted-foreground">{group.description}</p>
+									{:else}
+										<p class="mt-1 max-w-md text-xs text-muted-foreground">
+											{t('myaaw.groups.empty_hint')}
+										</p>
+									{/if}
+
+									<div class="mt-4 flex flex-wrap items-center justify-center gap-1.5">
 										<button
 											type="button"
-											onclick={() => insertStarterMention(member.name)}
-											class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+											onclick={() => insertStarterMention('all')}
+											class="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 										>
-											<Bloub
-												mood="attentif"
-												size={16}
-												tight
-												color={colorOf(colorForAgent(member.name, member.agent_color))}
-											/>
-											@{member.name}
+											<AtSign class="h-3 w-3" />
+											all
 										</button>
-									{/each}
-								</div>
-							</div>
-						{/if}
-
-						{#each messages as msg (msg.id)}
-							{@const highlighted = highlightedMessageId === msg.id}
-							{#if unreadBannerId === msg.id && unreadBannerCount > 0}
-								<div
-									data-group-unread-divider
-									class="my-2 flex scroll-mt-4 items-center gap-3 select-none"
-								>
-									<div class="h-px flex-1 bg-primary/30"></div>
-									<span
-										class="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary"
-									>
-										{t('myaaw.groups.unread_divider', { count: unreadBannerCount })}
-									</span>
-									<div class="h-px flex-1 bg-primary/30"></div>
-								</div>
-							{/if}
-							{#if msg.sender_type === 'system'}
-								<div
-									data-group-message-id={msg.id}
-									class="mx-auto my-1 max-w-md rounded-full bg-muted/70 px-3 py-1 text-center text-[11px] text-muted-foreground"
-								>
-									{msg.content}
-								</div>
-							{:else if msg.sender_type === 'user'}
-								{@const parsedInteraction = parseInteractionText(msg.content)}
-								{@const userDisplayText = parsedInteraction.kind
-									? parsedInteraction.text
-									: msg.content}
-								{@const imageAttachments = (msg.attachments ?? []).filter(
-									(att) => att.kind === 'image'
-								)}
-								{@const fileAttachments = (msg.attachments ?? []).filter(
-									(att) => att.kind !== 'image'
-								)}
-								<div
-									data-group-message-id={msg.id}
-									class={[
-										'group ml-auto flex max-w-[85%] flex-col items-end gap-1.5 rounded-2xl transition-shadow duration-300',
-										highlighted ? 'ring-2 ring-primary/60 ring-offset-2 ring-offset-background' : ''
-									]}
-								>
-									{#if parsedInteraction.kind}
-										<InteractionBadge kind={parsedInteraction.kind} />
-									{/if}
-									{#if imageAttachments.length > 0}
-										<div class="flex flex-wrap justify-end gap-2">
-											{#each imageAttachments as att, imgIdx (att.id)}
-												{@const imgUrl = groupAttachmentUrl(att)}
-												<div class="relative inline-block max-w-full">
-													<button
-														type="button"
-														class="block cursor-zoom-in rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2"
-														aria-label={t('myaaw.chat.lightbox_open')}
-														onclick={() => openImageAttachmentsLightbox(imageAttachments, imgIdx)}
-													>
-														<img
-															src={imgUrl}
-															alt={att.file_name}
-															draggable="false"
-															class="max-h-48 rounded-2xl border object-contain"
-														/>
-													</button>
-													<button
-														type="button"
-														class="absolute right-1.5 bottom-1.5 grid size-7 place-items-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80"
-														title={t('myaaw.chat.download_file')}
-														aria-label={t('myaaw.chat.download_file')}
-														onclick={() => downloadGroupAttachment(att)}
-													>
-														<Download class="h-3.5 w-3.5" />
-													</button>
-												</div>
-											{/each}
-										</div>
-									{/if}
-									{#if fileAttachments.length > 0}
-										<div class="flex flex-wrap justify-end gap-2">
-											{#each fileAttachments as att (att.id)}
-												<button
-													type="button"
-													onclick={() => openAttachmentPreview(att)}
-													title={att.file_name}
-													class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-left transition-colors hover:border-foreground/30 hover:bg-muted"
-												>
-													<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
-													<span class="min-w-0 flex-1 truncate text-xs">{att.file_name}</span>
-													{#if att.size}
-														<span class="shrink-0 text-[10px] text-muted-foreground">
-															{formatBytes(att.size)}
-														</span>
-													{/if}
-													<Download
-														class="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover/file:text-foreground"
-													/>
-												</button>
-											{/each}
-										</div>
-									{/if}
-									{#if userDisplayText.trim().length > 0 || msg.reply_preview || (msg.quotes && msg.quotes.length > 0)}
-										<div
-											class="w-fit max-w-full rounded-2xl rounded-tr-sm bg-primary/10 px-3.5 py-2.5 text-sm text-foreground ring-1 ring-primary/15"
-										>
-											{#if msg.reply_preview}
-												{@render replyCard(msg.reply_preview)}
-											{/if}
-											{#if msg.quotes && msg.quotes.length > 0}
-												<div class="mb-2">
-													<AskQuoteList
-														quotes={msg.quotes}
-														onlocate={(quote) => void locateAskQuote(quote)}
-													/>
-												</div>
-											{/if}
-											{#if userDisplayText.trim().length > 0}
-												<p class="whitespace-pre-wrap wrap-break-word">
-													{@render mentionText(userDisplayText)}
-												</p>
-											{/if}
-										</div>
-									{/if}
-
-									<div
-										class="mt-1 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground"
-									>
-										<span
-											class="inline-flex items-center gap-1 opacity-100 transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
-										>
+										{#each group.members as member (member.name)}
 											<button
 												type="button"
-												onclick={() => startReply(msg)}
-												title={t('myaaw.groups.reply')}
-												aria-label={t('myaaw.groups.reply')}
-												class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+												onclick={() => insertStarterMention(member.name)}
+												class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 											>
-												<Reply class="h-3 w-3" />
-												<span class="hidden sm:inline">{t('myaaw.groups.reply')}</span>
+												<Bloub
+													mood="attentif"
+													size={16}
+													tight
+													color={colorOf(colorForAgent(member.name, member.agent_color))}
+												/>
+												@{member.name}
 											</button>
-											<CopyButton text={userDisplayText} />
-										</span>
-										<ChatTime at={msg.created_at} />
+										{/each}
 									</div>
 								</div>
-							{:else}
-								{@const agentColor = colorForAgent(msg.sender_name, msg.agent_color)}
-								{@const accent = groupAccent(agentColor)}
-								{@const steps = stepsOf(msg.timeline)}
-								{@const groupStepsOpen = Boolean(expandedStepGroups[msg.id])}
-								{@const displayAgentText = stripAttachDirectives(msg.content)}
-								{@const agentRunAttachments = toRunAttachments(msg.attachments)}
-								<div
-									data-group-message-id={msg.id}
-									class={[
-										'group flex items-start gap-2.5 rounded-2xl p-1 -m-1 transition-all duration-300',
-										highlighted
-											? 'bg-primary/5 ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
-											: ''
-									]}
-								>
+							{/if}
+
+							{#each messages as msg (msg.id)}
+								{@const highlighted = highlightedMessageId === msg.id}
+								{#if unreadBannerId === msg.id && unreadBannerCount > 0}
 									<div
-										class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-muted/70 ring-1 ring-border/50"
+										data-group-unread-divider
+										class="my-2 flex scroll-mt-4 items-center gap-3 select-none"
 									>
-										<Bloub mood="attentif" size={26} tight color={colorOf(agentColor)} />
+										<div class="h-px flex-1 bg-primary/30"></div>
+										<span
+											class="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary"
+										>
+											{t('myaaw.groups.unread_divider', { count: unreadBannerCount })}
+										</span>
+										<div class="h-px flex-1 bg-primary/30"></div>
+									</div>
+								{/if}
+								{#if msg.sender_type === 'system'}
+									<div
+										data-group-message-id={msg.id}
+										class="mx-auto my-1 max-w-md rounded-full bg-muted/70 px-3 py-1 text-center text-[11px] text-muted-foreground"
+									>
+										{msg.content}
+									</div>
+								{:else if msg.sender_type === 'user'}
+									{@const parsedInteraction = parseInteractionText(msg.content)}
+									{@const userDisplayText = parsedInteraction.kind
+										? parsedInteraction.text
+										: msg.content}
+									{@const imageAttachments = (msg.attachments ?? []).filter(
+										(att) => att.kind === 'image'
+									)}
+									{@const fileAttachments = (msg.attachments ?? []).filter(
+										(att) => att.kind !== 'image'
+									)}
+									<div
+										data-group-message-id={msg.id}
+										class={[
+											'group ml-auto flex max-w-[85%] flex-col items-end gap-1.5 rounded-2xl transition-shadow duration-300',
+											highlighted
+												? 'ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
+												: ''
+										]}
+									>
+										{#if parsedInteraction.kind}
+											<InteractionBadge kind={parsedInteraction.kind} />
+										{/if}
+										{#if imageAttachments.length > 0}
+											<div class="flex flex-wrap justify-end gap-2">
+												{#each imageAttachments as att, imgIdx (att.id)}
+													{@const imgUrl = groupAttachmentUrl(att)}
+													<div class="relative inline-block max-w-full">
+														<button
+															type="button"
+															class="block cursor-zoom-in rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2"
+															aria-label={t('myaaw.chat.lightbox_open')}
+															onclick={() => openImageAttachmentsLightbox(imageAttachments, imgIdx)}
+														>
+															<img
+																src={imgUrl}
+																alt={att.file_name}
+																draggable="false"
+																class="max-h-48 rounded-2xl border object-contain"
+															/>
+														</button>
+														<button
+															type="button"
+															class="absolute right-1.5 bottom-1.5 grid size-7 place-items-center rounded-full bg-black/60 text-white shadow-sm transition-colors hover:bg-black/80"
+															title={t('myaaw.chat.download_file')}
+															aria-label={t('myaaw.chat.download_file')}
+															onclick={() => downloadGroupAttachment(att)}
+														>
+															<Download class="h-3.5 w-3.5" />
+														</button>
+													</div>
+												{/each}
+											</div>
+										{/if}
+										{#if fileAttachments.length > 0}
+											<div class="flex flex-wrap justify-end gap-2">
+												{#each fileAttachments as att (att.id)}
+													<button
+														type="button"
+														onclick={() => openAttachmentPreview(att)}
+														title={att.file_name}
+														class="group/file flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2.5 py-1.5 text-left transition-colors hover:border-foreground/30 hover:bg-muted"
+													>
+														<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+														<span class="min-w-0 flex-1 truncate text-xs">{att.file_name}</span>
+														{#if att.size}
+															<span class="shrink-0 text-[10px] text-muted-foreground">
+																{formatBytes(att.size)}
+															</span>
+														{/if}
+														<Download
+															class="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover/file:text-foreground"
+														/>
+													</button>
+												{/each}
+											</div>
+										{/if}
+										{#if userDisplayText.trim().length > 0 || msg.reply_preview || (msg.quotes && msg.quotes.length > 0)}
+											<div
+												class="w-fit max-w-full rounded-2xl rounded-tr-sm bg-primary/10 px-3.5 py-2.5 text-sm text-foreground ring-1 ring-primary/15"
+											>
+												{#if msg.reply_preview}
+													{@render replyCard(msg.reply_preview)}
+												{/if}
+												{#if msg.quotes && msg.quotes.length > 0}
+													<div class="mb-2">
+														<AskQuoteList
+															quotes={msg.quotes}
+															onlocate={(quote) => void locateAskQuote(quote)}
+														/>
+													</div>
+												{/if}
+												{#if userDisplayText.trim().length > 0}
+													<p class="whitespace-pre-wrap wrap-break-word">
+														{@render mentionText(userDisplayText)}
+													</p>
+												{/if}
+											</div>
+										{/if}
+
+										<div
+											class="mt-1 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground"
+										>
+											<span
+												class="inline-flex items-center gap-1 opacity-100 transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
+											>
+												<button
+													type="button"
+													onclick={() => startReply(msg)}
+													title={t('myaaw.groups.reply')}
+													aria-label={t('myaaw.groups.reply')}
+													class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+												>
+													<Reply class="h-3 w-3" />
+													<span class="hidden sm:inline">{t('myaaw.groups.reply')}</span>
+												</button>
+												<CopyButton text={userDisplayText} />
+											</span>
+											<ChatTime at={msg.created_at} />
+										</div>
+									</div>
+								{:else}
+									{@const agentColor = colorForAgent(msg.sender_name, msg.agent_color)}
+									{@const accent = groupAccent(agentColor)}
+									{@const steps = stepsOf(msg.timeline)}
+									{@const groupStepsOpen = Boolean(expandedStepGroups[msg.id])}
+									{@const displayAgentText = stripAttachDirectives(msg.content)}
+									{@const agentRunAttachments = toRunAttachments(msg.attachments)}
+									<div
+										data-group-message-id={msg.id}
+										class={[
+											'group flex items-start gap-2.5 rounded-2xl p-1 -m-1 transition-all duration-300',
+											highlighted
+												? 'bg-primary/5 ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
+												: ''
+										]}
+									>
+										<div
+											class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-muted/70 ring-1 ring-border/50"
+										>
+											<Bloub mood="attentif" size={26} tight color={colorOf(agentColor)} />
+										</div>
+
+										<div class="min-w-0 flex-1">
+											<div class="mb-1 flex items-center gap-2">
+												<span class={['text-xs font-semibold', accent.text]}>
+													{msg.sender_name}
+												</span>
+												<ChatTime at={msg.created_at} />
+											</div>
+
+											{#if steps.length > 0}
+												<div class="mb-1.5 space-y-0.5">
+													<button
+														type="button"
+														onclick={() =>
+															(expandedStepGroups = {
+																...expandedStepGroups,
+																[msg.id]: !groupStepsOpen
+															})}
+														aria-expanded={groupStepsOpen}
+														class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+													>
+														<Clock class="h-3.5 w-3.5 shrink-0" />
+														<span class="font-medium">{stepSummaryLabel(steps)}</span>
+														<ChevronDown
+															class={cn(
+																'h-3.5 w-3.5 shrink-0 transition-transform',
+																groupStepsOpen && 'rotate-180'
+															)}
+														/>
+													</button>
+
+													{#if groupStepsOpen}
+														<div class="space-y-0.5 pl-2">
+															{#each steps as step, sIndex (`${msg.id}-step-${sIndex}`)}
+																{@const stepKey = `${msg.id}-step-${sIndex}`}
+																{@const stepExpanded = Boolean(expandedSteps[stepKey])}
+																{#if step.kind === 'thought'}
+																	<div data-ask-row={stepKey}>
+																		<ChatStep
+																			title={t('myaaw.chat.thinking')}
+																			summary={oneLine(step.text ?? '')}
+																			icon={Brain}
+																			expanded={stepExpanded}
+																			ontoggle={() =>
+																				(expandedSteps = {
+																					...expandedSteps,
+																					[stepKey]: !stepExpanded
+																				})}
+																			copyText={step.text ?? ''}
+																		>
+																			<p
+																				data-ask-source="thinking"
+																				data-ask-id={stepKey}
+																				class="whitespace-pre-wrap text-muted-foreground"
+																			>
+																				{step.text}
+																			</p>
+																		</ChatStep>
+																	</div>
+																{:else if step.kind === 'tool'}
+																	<div data-ask-row={stepKey}>
+																		<ChatStep
+																			title={step.name || t('myaaw.chat.tool')}
+																			summary={formatToolSummary(step)}
+																			icon={Wrench}
+																			error={Boolean(step.is_error)}
+																			expanded={stepExpanded}
+																			ontoggle={() =>
+																				(expandedSteps = {
+																					...expandedSteps,
+																					[stepKey]: !stepExpanded
+																				})}
+																			copyText={toolInvocation(step)}
+																		>
+																			<div
+																				data-ask-source="tool"
+																				data-ask-label={step.name || ''}
+																				data-ask-id={stepKey}
+																				class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
+																			>
+																				<pre
+																					class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
+																						class="select-none text-zinc-500"
+																						>$ </span>{toolInvocation(step)}</pre>
+																				{#if step.result}
+																					<pre
+																						class={cn(
+																							'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
+																							step.is_error ? 'text-red-400' : 'text-zinc-300'
+																						)}>{step.result}</pre>
+																				{/if}
+																			</div>
+																		</ChatStep>
+																	</div>
+																{/if}
+															{/each}
+														</div>
+													{/if}
+												</div>
+											{/if}
+
+											<div
+												class="w-fit max-w-full rounded-2xl rounded-tl-sm border bg-card px-3.5 py-2.5 text-sm shadow-2xs"
+											>
+												{#if msg.reply_preview}
+													{@render replyCard(msg.reply_preview)}
+												{/if}
+												<div
+													data-ask-source="answer"
+													data-ask-id={msg.id}
+													use:highlightMentions={{
+														mentions: mentionTargets,
+														key: displayAgentText
+													}}
+												>
+													<Markdown content={displayAgentText} />
+												</div>
+											</div>
+
+											{#if agentRunAttachments.length > 0}
+												<div class="mt-2.5">
+													<RunAttachments
+														agent={msg.sender_name}
+														attachments={agentRunAttachments}
+													/>
+												</div>
+											{/if}
+
+											{#if (msg.extra_messages?.length ?? 0) > 0}
+												<ExtraMessages
+													agent={msg.sender_name}
+													extraMessages={msg.extra_messages ?? []}
+													messageId={msg.id}
+													onInteract={handleExtraInteract}
+												/>
+											{/if}
+
+											<div
+												class="mt-1 flex items-center gap-1.5 px-1 opacity-100 transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
+											>
+												<button
+													type="button"
+													onclick={() => startReply(msg)}
+													title={t('myaaw.groups.reply')}
+													aria-label={t('myaaw.groups.reply')}
+													class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+												>
+													<Reply class="h-3 w-3" />
+													<span>{t('myaaw.groups.reply')}</span>
+												</button>
+												<CopyButton text={msg.content} label />
+											</div>
+										</div>
+									</div>
+								{/if}
+							{/each}
+
+							<!-- Live streaming turn bubble -->
+							{#if activeTurn}
+								{@const liveAccent = groupAccent(activeTurn.agentColor)}
+								{@const visibleLiveTimeline = stepsOf(activeTurn.timeline)}
+								<div class="flex items-start gap-2.5" in:fade={{ duration: 120 }}>
+									<div
+										class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-muted/70 ring-1 ring-primary/40"
+									>
+										<Bloub mood="attentif" size={26} tight color={colorOf(activeTurn.agentColor)} />
 									</div>
 
 									<div class="min-w-0 flex-1">
 										<div class="mb-1 flex items-center gap-2">
-											<span class={['text-xs font-semibold', accent.text]}>
-												{msg.sender_name}
+											<span class={['text-xs font-semibold', liveAccent.text]}>
+												{activeTurn.agent}
 											</span>
-											<ChatTime at={msg.created_at} />
+											<span
+												class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+											>
+												<Loader2 class="h-2.5 w-2.5 animate-spin" />
+												{t('myaaw.groups.turn_badge', {
+													turn: activeTurn.turn,
+													max: activeTurn.maxTurns
+												})}
+											</span>
 										</div>
 
-										{#if steps.length > 0}
+										{#if visibleLiveTimeline.length > 0}
+											{@const liveStepsRunning = visibleLiveTimeline.some((s) => s.running)}
+											{@const liveOpen = isLiveStepsOpen(activeTurn)}
 											<div class="mb-1.5 space-y-0.5">
 												<button
 													type="button"
-													onclick={() =>
-														(expandedStepGroups = {
-															...expandedStepGroups,
-															[msg.id]: !groupStepsOpen
-														})}
-													aria-expanded={groupStepsOpen}
+													onclick={() => (liveStepsOverride = !liveOpen)}
+													aria-expanded={liveOpen}
 													class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
 												>
-													<Clock class="h-3.5 w-3.5 shrink-0" />
-													<span class="font-medium">{stepSummaryLabel(steps)}</span>
+													{#if liveStepsRunning}
+														<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
+													{:else}
+														<Clock class="h-3.5 w-3.5 shrink-0" />
+													{/if}
+													<span class="font-medium">
+														{liveStepsRunning
+															? t('myaaw.chat.tool_running')
+															: stepSummaryLabel(visibleLiveTimeline)}
+													</span>
 													<ChevronDown
 														class={cn(
 															'h-3.5 w-3.5 shrink-0 transition-transform',
-															groupStepsOpen && 'rotate-180'
+															liveOpen && 'rotate-180'
 														)}
 													/>
 												</button>
 
-												{#if groupStepsOpen}
+												{#if liveOpen}
 													<div class="space-y-0.5 pl-2">
-														{#each steps as step, sIndex (`${msg.id}-step-${sIndex}`)}
-															{@const stepKey = `${msg.id}-step-${sIndex}`}
-															{@const stepExpanded = Boolean(expandedSteps[stepKey])}
+														{#each visibleLiveTimeline as step (step.localId)}
 															{#if step.kind === 'thought'}
-																<div data-ask-row={stepKey}>
-																	<ChatStep
-																		title={t('myaaw.chat.thinking')}
-																		summary={oneLine(step.text ?? '')}
-																		icon={Brain}
-																		expanded={stepExpanded}
-																		ontoggle={() =>
-																			(expandedSteps = {
-																				...expandedSteps,
-																				[stepKey]: !stepExpanded
-																			})}
-																		copyText={step.text ?? ''}
-																	>
-																		<p
-																			data-ask-source="thinking"
-																			data-ask-id={stepKey}
-																			class="whitespace-pre-wrap text-muted-foreground"
-																		>
-																			{step.text}
-																		</p>
-																	</ChatStep>
-																</div>
+																<ChatStep
+																	title={t('myaaw.chat.thinking')}
+																	summary={oneLine(step.text ?? '')}
+																	icon={Brain}
+																	running={Boolean(step.running)}
+																	expanded={Boolean(step.expanded)}
+																	ontoggle={() => toggleLiveStep(step.localId)}
+																>
+																	<p class="whitespace-pre-wrap text-muted-foreground">
+																		{step.text}
+																	</p>
+																</ChatStep>
 															{:else if step.kind === 'tool'}
-																<div data-ask-row={stepKey}>
-																	<ChatStep
-																		title={step.name || t('myaaw.chat.tool')}
-																		summary={formatToolSummary(step)}
-																		icon={Wrench}
-																		error={Boolean(step.is_error)}
-																		expanded={stepExpanded}
-																		ontoggle={() =>
-																			(expandedSteps = {
-																				...expandedSteps,
-																				[stepKey]: !stepExpanded
-																			})}
-																		copyText={toolInvocation(step)}
+																<ChatStep
+																	title={step.name || t('myaaw.chat.tool')}
+																	summary={formatToolSummary(step)}
+																	icon={Wrench}
+																	running={Boolean(step.running)}
+																	error={Boolean(step.is_error)}
+																	expanded={Boolean(step.expanded)}
+																	ontoggle={() => toggleLiveStep(step.localId)}
+																	copyText={toolInvocation(step)}
+																>
+																	<div
+																		class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
 																	>
-																		<div
-																			data-ask-source="tool"
-																			data-ask-label={step.name || ''}
-																			data-ask-id={stepKey}
-																			class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
-																		>
+																		<pre
+																			class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
+																				class="select-none text-zinc-500"
+																				>$ </span>{toolInvocation(step)}</pre>
+																		{#if step.result}
 																			<pre
-																				class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
-																					class="select-none text-zinc-500"
-																					>$ </span>{toolInvocation(step)}</pre>
-																			{#if step.result}
-																				<pre
-																					class={cn(
-																						'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
-																						step.is_error ? 'text-red-400' : 'text-zinc-300'
-																					)}>{step.result}</pre>
-																			{/if}
-																		</div>
-																	</ChatStep>
-																</div>
+																				class={cn(
+																					'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
+																					step.is_error ? 'text-red-400' : 'text-zinc-300'
+																				)}>{step.result}</pre>
+																		{:else if step.running}
+																			<pre
+																				class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
+																					'myaaw.chat.tool_running'
+																				)}</pre>
+																		{/if}
+																	</div>
+																</ChatStep>
 															{/if}
 														{/each}
 													</div>
@@ -2381,548 +2772,406 @@
 										{/if}
 
 										<div
-											class="w-fit max-w-full rounded-2xl rounded-tl-sm border bg-card px-3.5 py-2.5 text-sm shadow-2xs"
+											use:highlightMentions={{ mentions: mentionTargets, key: activeTurn.text }}
+											class="w-fit max-w-full rounded-2xl rounded-tl-sm border border-primary/25 bg-card px-3.5 py-2.5 text-sm"
 										>
-											{#if msg.reply_preview}
-												{@render replyCard(msg.reply_preview)}
-											{/if}
-											<div
-												data-ask-source="answer"
-												data-ask-id={msg.id}
-												use:highlightMentions={{ mentions: mentionTargets, key: displayAgentText }}
-											>
-												<Markdown content={displayAgentText} />
-											</div>
-										</div>
-
-										{#if agentRunAttachments.length > 0}
-											<div class="mt-2.5">
-												<RunAttachments agent={msg.sender_name} attachments={agentRunAttachments} />
-											</div>
-										{/if}
-
-										{#if (msg.extra_messages?.length ?? 0) > 0}
-											<ExtraMessages
-												agent={msg.sender_name}
-												extraMessages={msg.extra_messages ?? []}
-												messageId={msg.id}
-												onInteract={handleExtraInteract}
-											/>
-										{/if}
-
-										<div
-											class="mt-1 flex items-center gap-1.5 px-1 opacity-100 transition-opacity sm:pointer-events-none sm:opacity-0 sm:group-focus-within:pointer-events-auto sm:group-focus-within:opacity-100 sm:group-hover:pointer-events-auto sm:group-hover:opacity-100"
-										>
-											<button
-												type="button"
-												onclick={() => startReply(msg)}
-												title={t('myaaw.groups.reply')}
-												aria-label={t('myaaw.groups.reply')}
-												class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-											>
-												<Reply class="h-3 w-3" />
-												<span>{t('myaaw.groups.reply')}</span>
-											</button>
-											<CopyButton text={msg.content} label />
-										</div>
-									</div>
-								</div>
-							{/if}
-						{/each}
-
-						<!-- Live streaming turn bubble -->
-						{#if activeTurn}
-							{@const liveAccent = groupAccent(activeTurn.agentColor)}
-							{@const visibleLiveTimeline = stepsOf(activeTurn.timeline)}
-							<div class="flex items-start gap-2.5" in:fade={{ duration: 120 }}>
-								<div
-									class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-muted/70 ring-1 ring-primary/40"
-								>
-									<Bloub mood="attentif" size={26} tight color={colorOf(activeTurn.agentColor)} />
-								</div>
-
-								<div class="min-w-0 flex-1">
-									<div class="mb-1 flex items-center gap-2">
-										<span class={['text-xs font-semibold', liveAccent.text]}>
-											{activeTurn.agent}
-										</span>
-										<span
-											class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
-										>
-											<Loader2 class="h-2.5 w-2.5 animate-spin" />
-											{t('myaaw.groups.turn_badge', {
-												turn: activeTurn.turn,
-												max: activeTurn.maxTurns
-											})}
-										</span>
-									</div>
-
-									{#if visibleLiveTimeline.length > 0}
-										{@const liveStepsRunning = visibleLiveTimeline.some((s) => s.running)}
-										{@const liveOpen = isLiveStepsOpen(activeTurn)}
-										<div class="mb-1.5 space-y-0.5">
-											<button
-												type="button"
-												onclick={() => (liveStepsOverride = !liveOpen)}
-												aria-expanded={liveOpen}
-												class="inline-flex items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60"
-											>
-												{#if liveStepsRunning}
-													<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" />
-												{:else}
-													<Clock class="h-3.5 w-3.5 shrink-0" />
-												{/if}
-												<span class="font-medium">
-													{liveStepsRunning
-														? t('myaaw.chat.tool_running')
-														: stepSummaryLabel(visibleLiveTimeline)}
-												</span>
-												<ChevronDown
-													class={cn(
-														'h-3.5 w-3.5 shrink-0 transition-transform',
-														liveOpen && 'rotate-180'
-													)}
-												/>
-											</button>
-
-											{#if liveOpen}
-												<div class="space-y-0.5 pl-2">
-													{#each visibleLiveTimeline as step (step.localId)}
-														{#if step.kind === 'thought'}
-															<ChatStep
-																title={t('myaaw.chat.thinking')}
-																summary={oneLine(step.text ?? '')}
-																icon={Brain}
-																running={Boolean(step.running)}
-																expanded={Boolean(step.expanded)}
-																ontoggle={() => toggleLiveStep(step.localId)}
-															>
-																<p class="whitespace-pre-wrap text-muted-foreground">
-																	{step.text}
-																</p>
-															</ChatStep>
-														{:else if step.kind === 'tool'}
-															<ChatStep
-																title={step.name || t('myaaw.chat.tool')}
-																summary={formatToolSummary(step)}
-																icon={Wrench}
-																running={Boolean(step.running)}
-																error={Boolean(step.is_error)}
-																expanded={Boolean(step.expanded)}
-																ontoggle={() => toggleLiveStep(step.localId)}
-																copyText={toolInvocation(step)}
-															>
-																<div
-																	class="overflow-hidden rounded-lg bg-zinc-900 text-zinc-100 ring-1 ring-inset ring-white/10"
-																>
-																	<pre
-																		class="overflow-x-auto p-3 font-mono text-[11px] leading-relaxed"><span
-																			class="select-none text-zinc-500"
-																			>$ </span>{toolInvocation(step)}</pre>
-																	{#if step.result}
-																		<pre
-																			class={cn(
-																				'max-h-72 overflow-auto border-t border-white/10 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all',
-																				step.is_error ? 'text-red-400' : 'text-zinc-300'
-																			)}>{step.result}</pre>
-																	{:else if step.running}
-																		<pre
-																			class="border-t border-white/10 p-3 font-mono text-[11px] text-zinc-500">{t(
-																				'myaaw.chat.tool_running'
-																			)}</pre>
-																	{/if}
-																</div>
-															</ChatStep>
-														{/if}
-													{/each}
+											{#if activeTurn.text}
+												<Markdown content={activeTurn.text} streaming />
+											{:else}
+												<div class="flex items-center gap-1.5 py-1 text-xs text-muted-foreground">
+													<span
+														class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.2s]"
+													></span>
+													<span
+														class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.1s]"
+													></span>
+													<span class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary"></span>
+													<span class="ml-1"
+														>{t('myaaw.groups.agent_thinking', { name: activeTurn.agent })}</span
+													>
 												</div>
 											{/if}
 										</div>
-									{/if}
-
-									<div
-										use:highlightMentions={{ mentions: mentionTargets, key: activeTurn.text }}
-										class="w-fit max-w-full rounded-2xl rounded-tl-sm border border-primary/25 bg-card px-3.5 py-2.5 text-sm"
-									>
-										{#if activeTurn.text}
-											<Markdown content={activeTurn.text} streaming />
-										{:else}
-											<div class="flex items-center gap-1.5 py-1 text-xs text-muted-foreground">
-												<span
-													class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.2s]"
-												></span>
-												<span
-													class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary [animation-delay:-0.1s]"
-												></span>
-												<span class="h-1.5 w-1.5 animate-bounce rounded-full bg-primary"></span>
-												<span class="ml-1"
-													>{t('myaaw.groups.agent_thinking', { name: activeTurn.agent })}</span
-												>
-											</div>
+										{#if (activeTurn.extraMessages?.length ?? 0) > 0}
+											<ExtraMessages
+												agent={activeTurn.agent}
+												extraMessages={activeTurn.extraMessages ?? []}
+												disabled
+											/>
 										{/if}
 									</div>
-									{#if (activeTurn.extraMessages?.length ?? 0) > 0}
-										<ExtraMessages
-											agent={activeTurn.agent}
-											extraMessages={activeTurn.extraMessages ?? []}
-											disabled
+								</div>
+							{/if}
+						{/if}
+					</div>
+				</div>
+
+				<!-- Composer footer (no border-t divider, exact max-w-4xl & padding matching regular 1-on-1 chat) -->
+				<div class="shrink-0 px-2 py-2 sm:px-4 sm:py-3">
+					<div class="relative mx-auto w-full max-w-4xl space-y-2">
+						{#if !stickToBottom && messages.length > 0}
+							<button
+								type="button"
+								transition:fade={{ duration: 150 }}
+								onclick={() => scrollToBottom(true)}
+								title={t('myaaw.groups.scroll_bottom')}
+								aria-label={t('myaaw.groups.scroll_bottom')}
+								class="absolute right-1 -top-12 z-20 inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-border/80 bg-card/95 px-2.5 text-muted-foreground shadow-md backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground"
+							>
+								{#if unreadBelowCount > 0}
+									<span
+										class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] leading-none font-semibold text-primary-foreground tabular-nums"
+									>
+										{unreadBelowCount > 99 ? '99+' : unreadBelowCount}
+									</span>
+								{/if}
+								<ArrowDown class="h-4 w-4" />
+							</button>
+						{/if}
+						<!-- Live run status / pause banner -->
+						{#if runState.running}
+							<div
+								class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/25 bg-primary/8 px-3 py-2 text-xs"
+							>
+								<div class="flex min-w-0 items-center gap-2">
+									<span class="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary"></span>
+									<span class="truncate font-medium text-foreground">
+										{#if runState.current_agent}
+											{t('myaaw.groups.status_thinking', {
+												name: runState.current_agent,
+												turn: runState.turn_count,
+												max: runState.max_turns
+											})}
+										{:else}
+											{t('myaaw.groups.status_running', {
+												turn: runState.turn_count,
+												max: runState.max_turns
+											})}
+										{/if}
+									</span>
+									{#if runState.queue && runState.queue.length > 0}
+										<span class="hidden truncate text-[11px] text-muted-foreground sm:inline">
+											· {t('myaaw.groups.next_queue', {
+												agents: runState.queue.map((a) => `@${a}`).join(', ')
+											})}
+										</span>
+									{/if}
+								</div>
+								<Button
+									size="sm"
+									variant="outline"
+									class="h-7 gap-1.5 border-destructive/40 px-2.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+									disabled={stopping}
+									onclick={() => void handleStop()}
+								>
+									{#if stopping}
+										<Loader2 class="h-3 w-3 animate-spin" />
+									{:else}
+										<Square class="h-3 w-3" />
+									{/if}
+									{t('myaaw.groups.stop')}
+								</Button>
+							</div>
+						{:else if runState.paused && runState.pause_reason === 'max_turns'}
+							<div
+								class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs"
+							>
+								<div class="min-w-0">
+									<p class="font-medium text-amber-800 dark:text-amber-300">
+										{t('myaaw.groups.paused_max_turns', {
+											turn: runState.turn_count,
+											max: runState.max_turns
+										})}
+									</p>
+									{#if runState.queue && runState.queue.length > 0}
+										<p class="truncate text-[11px] text-muted-foreground">
+											{t('myaaw.groups.next_queue', {
+												agents: runState.queue.map((a) => `@${a}`).join(', ')
+											})}
+										</p>
+									{/if}
+								</div>
+								<Button
+									size="sm"
+									class="h-7 gap-1.5 px-2.5 text-xs"
+									disabled={continuing}
+									onclick={() => void handleContinue()}
+								>
+									{#if continuing}
+										<Loader2 class="h-3 w-3 animate-spin" />
+									{:else}
+										<Play class="h-3 w-3" />
+									{/if}
+									{t('myaaw.groups.continue_turns', { count: 5 })}
+								</Button>
+							</div>
+						{/if}
+
+						<!-- WhatsApp-style Reply bar -->
+						{#if replyTo}
+							<GroupReplyBar
+								message={replyTo}
+								agentColor={replyTo.sender_type === 'agent'
+									? colorForAgent(replyTo.sender_name, replyTo.agent_color)
+									: undefined}
+								onclear={() => (replyTo = null)}
+							/>
+						{/if}
+
+						<!-- @mention autocomplete popup -->
+						{#if mentionOpen && mentionCandidates.length > 0}
+							<div
+								role="listbox"
+								aria-label={t('myaaw.groups.mention_list')}
+								class="absolute bottom-full left-0 z-30 mb-2 w-64 overflow-hidden rounded-xl border bg-popover p-1 shadow-lg"
+							>
+								{#each mentionCandidates as candidate, idx (candidate.handle)}
+									<button
+										type="button"
+										role="option"
+										aria-selected={idx === mentionIndex}
+										onmousedown={(e) => {
+											e.preventDefault();
+											insertMention(candidate);
+										}}
+										onmouseenter={() => (mentionIndex = idx)}
+										class={[
+											'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors',
+											idx === mentionIndex
+												? 'bg-accent text-accent-foreground'
+												: 'hover:bg-muted/70'
+										]}
+									>
+										{#if candidate.isAll}
+											<span
+												class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary"
+											>
+												<Users class="h-3.5 w-3.5" />
+											</span>
+										{:else}
+											<span class="relative shrink-0">
+												<Bloub
+													mood="attentif"
+													size={22}
+													tight
+													color={colorOf(candidate.agentColor)}
+												/>
+												<span
+													aria-hidden="true"
+													class={[
+														'absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full ring-2 ring-popover',
+														candidate.running ? 'bg-emerald-500' : 'bg-muted-foreground/40'
+													]}
+												></span>
+											</span>
+										{/if}
+										<span class="min-w-0 flex-1">
+											<span class="block truncate font-semibold">@{candidate.handle}</span>
+											<span class="block truncate text-[10px] text-muted-foreground">
+												{candidate.label}
+											</span>
+										</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
+
+						{#if activeGroupApproval}
+							<div class="mb-2">
+								<PendingApprovalCard
+									approval={{
+										approval_id: activeGroupApproval.approvalId,
+										tool_name: activeGroupApproval.toolName,
+										action: activeGroupApproval.action,
+										args_summary: activeGroupApproval.argsSummary,
+										args: activeGroupApproval.args,
+										subagent: activeGroupApproval.subAgent
+									}}
+									agentName={activeGroupApproval.agent}
+									agentColor={memberColorMap.get(activeGroupApproval.agent) ||
+										activeGroupApproval.agentColor}
+									queuePosition={1}
+									queueTotal={groupApprovals.length}
+									onDecide={(decision) => void decideGroupApproval(activeGroupApproval, decision)}
+								/>
+							</div>
+						{/if}
+
+						<!-- Rounded floating composer card (matching regular 1-on-1 chat) -->
+						<div
+							role="region"
+							aria-label={t('myaaw.groups.composer_placeholder')}
+							class={[
+								'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60 terminal:rounded-none frost-card',
+								dragOver ? 'border-ring ring-2 ring-ring/30' : ''
+							]}
+							ondragover={(event) => {
+								event.preventDefault();
+								dragOver = true;
+							}}
+							ondragleave={(event) => {
+								event.preventDefault();
+								dragOver = false;
+							}}
+							ondrop={(event) => {
+								event.preventDefault();
+								dragOver = false;
+								void addFiles(event.dataTransfer?.files);
+							}}
+						>
+							{#if pending.length > 0}
+								<div class="flex flex-wrap gap-2 px-3 pt-3">
+									{#each pending as image (image.id)}
+										<div class="relative">
+											<img
+												src={image.dataUrl}
+												alt={image.name}
+												class="h-16 w-16 rounded-lg border object-cover"
+											/>
+											<button
+												type="button"
+												class="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:text-foreground"
+												onclick={() => removePending(image.id)}
+												aria-label={t('myaaw.chat.remove_image')}
+												title={t('myaaw.chat.remove_image')}
+											>
+												<X class="h-3 w-3" />
+											</button>
+										</div>
+									{/each}
+								</div>
+							{/if}
+
+							{#if pendingFiles.length > 0}
+								<div class="flex flex-wrap gap-2 px-3 pt-3">
+									{#each pendingFiles as file (file.id)}
+										<div
+											class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
+										>
+											<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
+											<span class="min-w-0 flex-1 truncate text-xs">{file.name}</span>
+											<span class="shrink-0 text-[10px] text-muted-foreground">
+												{formatBytes(file.size)}
+											</span>
+											<button
+												type="button"
+												class="shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+												onclick={() => removePendingFile(file.id)}
+												aria-label={t('myaaw.chat.remove_image')}
+												title={t('myaaw.chat.remove_image')}
+											>
+												<X class="h-3 w-3" />
+											</button>
+										</div>
+									{/each}
+								</div>
+							{/if}
+
+							{#if dragOver}
+								<p class="px-4 pt-2 text-[11px] font-medium text-foreground">
+									{t('myaaw.chat.drop_files')}
+								</p>
+							{/if}
+
+							{#if pendingQuotes.length > 0}
+								<div class="px-3 pt-3" data-ask-quotes>
+									<AskQuoteList
+										quotes={pendingQuotes}
+										onremove={removeAskQuote}
+										onclear={clearAskQuotes}
+										onlocate={(quote) => void locateAskQuote(quote)}
+									/>
+								</div>
+							{/if}
+
+							<textarea
+								bind:this={composer}
+								bind:value={input}
+								oninput={handleComposerInput}
+								onkeydown={handleComposerKeydown}
+								onpaste={onPaste}
+								onclick={updateMentionMenu}
+								rows={1}
+								placeholder={t('myaaw.groups.composer_placeholder')}
+								class="max-h-40 min-h-11 w-full resize-none rounded-t-2xl bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground terminal:rounded-none sm:min-h-13 sm:px-4 sm:py-3"
+							></textarea>
+
+							<div
+								class="@container flex flex-wrap items-center justify-between gap-1 px-2 pb-1.5 sm:px-3 sm:pb-2"
+							>
+								<div class="flex min-w-0 items-center gap-1">
+									<input
+										bind:this={fileInput}
+										type="file"
+										accept="image/*,.txt,.md,.markdown,.csv,.tsv,.json,.xml,.yaml,.yml,.log,.rtf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp"
+										multiple
+										class="hidden"
+										onchange={onFileInput}
+									/>
+									<Button
+										type="button"
+										size="icon-sm"
+										variant="ghost"
+										class="shrink-0 rounded-full"
+										disabled={pending.length >= MAX_IMAGES && pendingFiles.length >= MAX_FILES}
+										onclick={() => fileInput?.click()}
+										aria-label={t('myaaw.chat.attach')}
+										aria-keyshortcuts="Control+Shift+F Meta+Shift+F"
+										title={`${t('myaaw.chat.attach')} (${formatShortcut('mod+shift+f')})`}
+									>
+										<Paperclip class="h-4 w-4" />
+									</Button>
+									<Button
+										type="button"
+										size="icon-sm"
+										variant="ghost"
+										class={cn('shrink-0 rounded-full', listening && 'text-destructive')}
+										onclick={toggleSpeech}
+										aria-pressed={listening}
+										aria-label={listening
+											? t('myaaw.chat.speech_stop')
+											: t('myaaw.chat.speech_start')}
+										aria-keyshortcuts="Control+Shift+Space Meta+Shift+Space"
+										title={`${listening ? t('myaaw.chat.speech_stop') : t('myaaw.chat.speech_start')} (${formatShortcut('mod+shift+space')})`}
+									>
+										<Mic class={cn('h-4 w-4', listening && 'animate-pulse')} />
+									</Button>
+									{#if listening}
+										<span
+											class="hidden min-w-0 truncate text-[10px] text-muted-foreground sm:inline"
+										>
+											{t('myaaw.chat.speech_listening')}
+										</span>
+									{/if}
+									{#if workspaceAgent}
+										<ProjectComposerControls
+											workingDir={project.workingDir}
+											workingDirName={project.workingDirName}
+											hasGit={project.hasGit}
+											gitBranch={project.gitBranch}
+											terminalOpen={project.showingTerminal}
+											onFolderClick={handleComposerFolderClick}
+											onToggleTerminal={toggleProjectTerminal}
 										/>
 									{/if}
 								</div>
-							</div>
-						{/if}
-					{/if}
-				</div>
-			</div>
 
-			<!-- Composer footer (no border-t divider, exact max-w-4xl & padding matching regular 1-on-1 chat) -->
-			<div class="shrink-0 px-2 py-2 sm:px-4 sm:py-3">
-				<div class="relative mx-auto w-full max-w-4xl space-y-2">
-					{#if !stickToBottom && messages.length > 0}
-						<button
-							type="button"
-							transition:fade={{ duration: 150 }}
-							onclick={() => scrollToBottom(true)}
-							title={t('myaaw.groups.scroll_bottom')}
-							aria-label={t('myaaw.groups.scroll_bottom')}
-							class="absolute right-1 -top-12 z-20 inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-border/80 bg-card/95 px-2.5 text-muted-foreground shadow-md backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground"
-						>
-							{#if unreadBelowCount > 0}
-								<span
-									class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] leading-none font-semibold text-primary-foreground tabular-nums"
-								>
-									{unreadBelowCount > 99 ? '99+' : unreadBelowCount}
-								</span>
-							{/if}
-							<ArrowDown class="h-4 w-4" />
-						</button>
-					{/if}
-					<!-- Live run status / pause banner -->
-					{#if runState.running}
-						<div
-							class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/25 bg-primary/8 px-3 py-2 text-xs"
-						>
-							<div class="flex min-w-0 items-center gap-2">
-								<span class="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary"></span>
-								<span class="truncate font-medium text-foreground">
-									{#if runState.current_agent}
-										{t('myaaw.groups.status_thinking', {
-											name: runState.current_agent,
-											turn: runState.turn_count,
-											max: runState.max_turns
-										})}
-									{:else}
-										{t('myaaw.groups.status_running', {
-											turn: runState.turn_count,
-											max: runState.max_turns
-										})}
-									{/if}
-								</span>
-								{#if runState.queue && runState.queue.length > 0}
-									<span class="hidden truncate text-[11px] text-muted-foreground sm:inline">
-										· {t('myaaw.groups.next_queue', {
-											agents: runState.queue.map((a) => `@${a}`).join(', ')
-										})}
-									</span>
-								{/if}
-							</div>
-							<Button
-								size="sm"
-								variant="outline"
-								class="h-7 gap-1.5 border-destructive/40 px-2.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-								disabled={stopping}
-								onclick={() => void handleStop()}
-							>
-								{#if stopping}
-									<Loader2 class="h-3 w-3 animate-spin" />
-								{:else}
-									<Square class="h-3 w-3" />
-								{/if}
-								{t('myaaw.groups.stop')}
-							</Button>
-						</div>
-					{:else if runState.paused && runState.pause_reason === 'max_turns'}
-						<div
-							class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs"
-						>
-							<div class="min-w-0">
-								<p class="font-medium text-amber-800 dark:text-amber-300">
-									{t('myaaw.groups.paused_max_turns', {
-										turn: runState.turn_count,
-										max: runState.max_turns
-									})}
-								</p>
-								{#if runState.queue && runState.queue.length > 0}
-									<p class="truncate text-[11px] text-muted-foreground">
-										{t('myaaw.groups.next_queue', {
-											agents: runState.queue.map((a) => `@${a}`).join(', ')
-										})}
-									</p>
-								{/if}
-							</div>
-							<Button
-								size="sm"
-								class="h-7 gap-1.5 px-2.5 text-xs"
-								disabled={continuing}
-								onclick={() => void handleContinue()}
-							>
-								{#if continuing}
-									<Loader2 class="h-3 w-3 animate-spin" />
-								{:else}
-									<Play class="h-3 w-3" />
-								{/if}
-								{t('myaaw.groups.continue_turns', { count: 5 })}
-							</Button>
-						</div>
-					{/if}
-
-					<!-- WhatsApp-style Reply bar -->
-					{#if replyTo}
-						<GroupReplyBar
-							message={replyTo}
-							agentColor={replyTo.sender_type === 'agent'
-								? colorForAgent(replyTo.sender_name, replyTo.agent_color)
-								: undefined}
-							onclear={() => (replyTo = null)}
-						/>
-					{/if}
-
-					<!-- @mention autocomplete popup -->
-					{#if mentionOpen && mentionCandidates.length > 0}
-						<div
-							role="listbox"
-							aria-label={t('myaaw.groups.mention_list')}
-							class="absolute bottom-full left-0 z-30 mb-2 w-64 overflow-hidden rounded-xl border bg-popover p-1 shadow-lg"
-						>
-							{#each mentionCandidates as candidate, idx (candidate.handle)}
-								<button
-									type="button"
-									role="option"
-									aria-selected={idx === mentionIndex}
-									onmousedown={(e) => {
-										e.preventDefault();
-										insertMention(candidate);
-									}}
-									onmouseenter={() => (mentionIndex = idx)}
-									class={[
-										'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors',
-										idx === mentionIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted/70'
-									]}
-								>
-									{#if candidate.isAll}
-										<span
-											class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary"
-										>
-											<Users class="h-3.5 w-3.5" />
-										</span>
-									{:else}
-										<span class="relative shrink-0">
-											<Bloub
-												mood="attentif"
-												size={22}
-												tight
-												color={colorOf(candidate.agentColor)}
-											/>
-											<span
-												aria-hidden="true"
-												class={[
-													'absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full ring-2 ring-popover',
-													candidate.running ? 'bg-emerald-500' : 'bg-muted-foreground/40'
-												]}
-											></span>
-										</span>
-									{/if}
-									<span class="min-w-0 flex-1">
-										<span class="block truncate font-semibold">@{candidate.handle}</span>
-										<span class="block truncate text-[10px] text-muted-foreground">
-											{candidate.label}
-										</span>
-									</span>
-								</button>
-							{/each}
-						</div>
-					{/if}
-
-					{#if activeGroupApproval}
-						<div class="mb-2">
-							<PendingApprovalCard
-								approval={{
-									approval_id: activeGroupApproval.approvalId,
-									tool_name: activeGroupApproval.toolName,
-									action: activeGroupApproval.action,
-									args_summary: activeGroupApproval.argsSummary,
-									args: activeGroupApproval.args,
-									subagent: activeGroupApproval.subAgent
-								}}
-								agentName={activeGroupApproval.agent}
-								agentColor={memberColorMap.get(activeGroupApproval.agent) ||
-									activeGroupApproval.agentColor}
-								queuePosition={1}
-								queueTotal={groupApprovals.length}
-								onDecide={(decision) => void decideGroupApproval(activeGroupApproval, decision)}
-							/>
-						</div>
-					{/if}
-
-					<!-- Rounded floating composer card (matching regular 1-on-1 chat) -->
-					<div
-						role="region"
-						aria-label={t('myaaw.groups.composer_placeholder')}
-						class={[
-							'rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/60 terminal:rounded-none frost-card',
-							dragOver ? 'border-ring ring-2 ring-ring/30' : ''
-						]}
-						ondragover={(event) => {
-							event.preventDefault();
-							dragOver = true;
-						}}
-						ondragleave={(event) => {
-							event.preventDefault();
-							dragOver = false;
-						}}
-						ondrop={(event) => {
-							event.preventDefault();
-							dragOver = false;
-							void addFiles(event.dataTransfer?.files);
-						}}
-					>
-						{#if pending.length > 0}
-							<div class="flex flex-wrap gap-2 px-3 pt-3">
-								{#each pending as image (image.id)}
-									<div class="relative">
-										<img
-											src={image.dataUrl}
-											alt={image.name}
-											class="h-16 w-16 rounded-lg border object-cover"
-										/>
-										<button
-											type="button"
-											class="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm hover:text-foreground"
-											onclick={() => removePending(image.id)}
-											aria-label={t('myaaw.chat.remove_image')}
-											title={t('myaaw.chat.remove_image')}
-										>
-											<X class="h-3 w-3" />
-										</button>
-									</div>
-								{/each}
-							</div>
-						{/if}
-
-						{#if pendingFiles.length > 0}
-							<div class="flex flex-wrap gap-2 px-3 pt-3">
-								{#each pendingFiles as file (file.id)}
-									<div
-										class="flex max-w-[16rem] items-center gap-2 rounded-lg border bg-muted/40 px-2 py-1.5"
-									>
-										<FileText class="h-4 w-4 shrink-0 text-muted-foreground" />
-										<span class="min-w-0 flex-1 truncate text-xs">{file.name}</span>
-										<span class="shrink-0 text-[10px] text-muted-foreground">
-											{formatBytes(file.size)}
-										</span>
-										<button
-											type="button"
-											class="shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-											onclick={() => removePendingFile(file.id)}
-											aria-label={t('myaaw.chat.remove_image')}
-											title={t('myaaw.chat.remove_image')}
-										>
-											<X class="h-3 w-3" />
-										</button>
-									</div>
-								{/each}
-							</div>
-						{/if}
-
-						{#if dragOver}
-							<p class="px-4 pt-2 text-[11px] font-medium text-foreground">
-								{t('myaaw.chat.drop_files')}
-							</p>
-						{/if}
-
-						{#if pendingQuotes.length > 0}
-							<div class="px-3 pt-3" data-ask-quotes>
-								<AskQuoteList
-									quotes={pendingQuotes}
-									onremove={removeAskQuote}
-									onclear={clearAskQuotes}
-									onlocate={(quote) => void locateAskQuote(quote)}
-								/>
-							</div>
-						{/if}
-
-						<textarea
-							bind:this={composer}
-							bind:value={input}
-							oninput={handleComposerInput}
-							onkeydown={handleComposerKeydown}
-							onpaste={onPaste}
-							onclick={updateMentionMenu}
-							rows={1}
-							placeholder={t('myaaw.groups.composer_placeholder')}
-							class="max-h-40 min-h-11 w-full resize-none rounded-t-2xl bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground terminal:rounded-none sm:min-h-13 sm:px-4 sm:py-3"
-						></textarea>
-
-						<div class="flex items-center justify-between px-2 pb-1.5 sm:px-3 sm:pb-2">
-							<div class="flex min-w-0 items-center gap-1">
-								<input
-									bind:this={fileInput}
-									type="file"
-									accept="image/*,.txt,.md,.markdown,.csv,.tsv,.json,.xml,.yaml,.yml,.log,.rtf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp"
-									multiple
-									class="hidden"
-									onchange={onFileInput}
-								/>
 								<Button
 									type="button"
 									size="icon-sm"
-									variant="ghost"
 									class="shrink-0 rounded-full"
-									disabled={pending.length >= MAX_IMAGES && pendingFiles.length >= MAX_FILES}
-									onclick={() => fileInput?.click()}
-									aria-label={t('myaaw.chat.attach')}
-									aria-keyshortcuts="Control+Shift+F Meta+Shift+F"
-									title={`${t('myaaw.chat.attach')} (${formatShortcut('mod+shift+f')})`}
+									disabled={!canSend}
+									onclick={() => void handleSend()}
+									title={t('myaaw.chat.send')}
+									aria-label={t('myaaw.chat.send')}
 								>
-									<Paperclip class="h-4 w-4" />
+									{#if sending}
+										<Loader2 class="h-4 w-4 animate-spin" />
+									{:else}
+										<Send class="h-4 w-4" />
+									{/if}
 								</Button>
-								<Button
-									type="button"
-									size="icon-sm"
-									variant="ghost"
-									class={cn('shrink-0 rounded-full', listening && 'text-destructive')}
-									onclick={toggleSpeech}
-									aria-pressed={listening}
-									aria-label={listening
-										? t('myaaw.chat.speech_stop')
-										: t('myaaw.chat.speech_start')}
-									aria-keyshortcuts="Control+Shift+Space Meta+Shift+Space"
-									title={`${listening ? t('myaaw.chat.speech_stop') : t('myaaw.chat.speech_start')} (${formatShortcut('mod+shift+space')})`}
-								>
-									<Mic class={cn('h-4 w-4', listening && 'animate-pulse')} />
-								</Button>
-								{#if listening}
-									<span class="hidden min-w-0 truncate text-[10px] text-muted-foreground sm:inline">
-										{t('myaaw.chat.speech_listening')}
-									</span>
-								{/if}
 							</div>
-
-							<Button
-								type="button"
-								size="icon-sm"
-								class="shrink-0 rounded-full"
-								disabled={!canSend}
-								onclick={() => void handleSend()}
-								title={t('myaaw.chat.send')}
-								aria-label={t('myaaw.chat.send')}
-							>
-								{#if sending}
-									<Loader2 class="h-4 w-4 animate-spin" />
-								{:else}
-									<Send class="h-4 w-4" />
-								{/if}
-							</Button>
 						</div>
 					</div>
 				</div>
@@ -2930,15 +3179,14 @@
 		{/if}
 	</div>
 
-	<!-- Right inspector panel: smooth slide-in drawer on small screens, smooth
-	     width-animated static column from lg up (kept mounted like regular chat). -->
+	<!-- Right inspector / project sidebar panel + unified activity bar -->
 	{#if group}
 		{#if inspectorOpen}
 			<button
 				type="button"
 				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
 				aria-label={t('myaaw.focus.panel_close')}
-				onclick={toggleInspector}
+				onclick={closeRightPanel}
 				transition:fade={{ duration: 150 }}
 			></button>
 		{/if}
@@ -2947,35 +3195,96 @@
 			class={[
 				'fixed inset-y-0 right-0 z-50 flex w-80 max-w-[85vw] shrink-0 flex-col overflow-hidden border-l bg-card shadow-xl frost-drawer transition-transform duration-200 ease-out lg:static lg:z-auto lg:h-full lg:max-w-none lg:translate-x-0 lg:shadow-none lg:transition-[width] lg:duration-200',
 				inspectorOpen
-					? 'translate-x-0 lg:w-80'
+					? activeRightPanel === 'project'
+						? 'translate-x-0 lg:w-[17rem]'
+						: 'translate-x-0 lg:w-80'
 					: 'pointer-events-none translate-x-full lg:pointer-events-auto lg:w-0 lg:border-l-0'
 			]}
 		>
-			<div class="flex h-full w-full flex-col lg:w-80 lg:min-w-80">
-				<GroupInspectorPanel
-					{group}
-					bind:tab={inspectorTab}
-					pendingApprovals={groupApprovals}
-					{attachmentsRefreshKey}
-					onDecideApproval={(entry, decision) => void decideGroupApproval(entry, decision)}
-					onOpenAttachment={openAttachmentPreview}
-					onShowAttachmentInChat={showAttachmentInChat}
-					onClose={toggleInspector}
-					onUpdated={(updated) => (group = updated)}
-					onCleared={() => {
-						messages = [];
-						hasMore = false;
-						totalMessages = 0;
-						loadingOlder = false;
-						activeTurn = null;
-						replyTo = null;
-						pendingQuotes = [];
-						attachmentsRefreshKey += 1;
-						runState = { ...EMPTY_RUN_STATE, max_turns: group?.max_turns ?? 8 };
-					}}
-				/>
+			<div
+				class={[
+					'flex h-full w-full flex-col',
+					activeRightPanel === 'project' ? 'lg:w-[17rem] lg:min-w-[17rem]' : 'lg:w-80 lg:min-w-80'
+				]}
+			>
+				{#if project.workingDir && workspaceAgent}
+					<div class={activeRightPanel === 'project' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+						<ProjectSidebarPanel
+							agent={workspaceAgent}
+							conversationId={projectContextId}
+							workingDir={project.workingDir}
+							workingDirExists={project.workingDirExists}
+							hasGit={project.hasGit}
+							refreshKey={project.refreshKey}
+							terminalOpen={project.showingTerminal}
+							activeFilePath={project.activeFilePath}
+							subTab={project.sidebarTab}
+							scopeKey={projectScopeKeyStr}
+							showChatsTab={false}
+							onSubTabChange={(tab) => (project.sidebarTab = tab)}
+							onOpenFile={openProjectFile}
+							onOpenDiff={openProjectDiff}
+							onOpenMultiDiff={openProjectMultiDiff}
+							onToggleTerminal={toggleProjectTerminal}
+							onFileRenamed={(fromPath, toPath) => project.handleFileRenamed(fromPath, toPath)}
+							onFileDeleted={(deletedPath) => project.handleFileDeleted(deletedPath)}
+							onGitBranchChange={(branch) => {
+								project.gitBranch = branch;
+							}}
+							onClose={closeRightPanel}
+						/>
+					</div>
+				{/if}
+
+				{#if activeRightPanel === 'info' || activeRightPanel === 'attachments'}
+					<GroupInspectorPanel
+						{group}
+						bind:tab={inspectorTab}
+						pendingApprovals={groupApprovals}
+						{attachmentsRefreshKey}
+						onDecideApproval={(entry, decision) => void decideGroupApproval(entry, decision)}
+						onOpenAttachment={openAttachmentPreview}
+						onShowAttachmentInChat={showAttachmentInChat}
+						onClose={closeRightPanel}
+						onUpdated={(updated) => (group = updated)}
+						onCleared={() => {
+							messages = [];
+							hasMore = false;
+							totalMessages = 0;
+							loadingOlder = false;
+							activeTurn = null;
+							replyTo = null;
+							pendingQuotes = [];
+							attachmentsRefreshKey += 1;
+							runState = { ...EMPTY_RUN_STATE, max_turns: group?.max_turns ?? 8 };
+						}}
+					/>
+				{/if}
 			</div>
 		</aside>
+
+		<ChatRightActivityBar
+			activePanel={activeRightPanel}
+			showInfoAndNewChat={true}
+			showNewChat={false}
+			infoKind="group"
+			infoLabel={t('myaaw.groups.show_inspector')}
+			showProject={Boolean(workspaceAgent)}
+			hasProject={Boolean(project.workingDir)}
+			hasGit={project.hasGit}
+			workingDir={project.workingDir}
+			onToggleInfo={toggleInspector}
+			onToggleProject={openProjectPanel}
+			onToggleAttachments={toggleAttachmentsPanel}
+		/>
+	{/if}
+
+	{#if group && workspaceAgent && !project.workingDir}
+		<AttachWorkingDirDialog
+			bind:open={project.dialogOpen}
+			agent={workspaceAgent}
+			onSelect={handleSelectWorkingDir}
+		/>
 	{/if}
 
 	<LightBox bind:open={lightboxOpen} bind:index={lightboxIndex} items={lightboxItems} />

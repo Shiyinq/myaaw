@@ -156,6 +156,10 @@ type Group struct {
 	MaxTurns          int           `json:"max_turns"`
 	HideThinking      bool          `json:"hide_thinking"`
 	HideTools         bool          `json:"hide_tools"`
+	WorkingDir        string        `json:"working_dir,omitempty"`
+	WorkingDirExists  bool          `json:"working_dir_exists,omitempty"`
+	HasGit            bool          `json:"has_git,omitempty"`
+	GitBranch         string        `json:"git_branch,omitempty"`
 	LastReadMessageID string        `json:"last_read_message_id,omitempty"`
 	ReadAt            string        `json:"read_at,omitempty"`
 	CreatedAt         string        `json:"created_at"`
@@ -180,6 +184,10 @@ type GroupSummary struct {
 	MemberCount          int               `json:"member_count"`
 	DiscussionMode       string            `json:"discussion_mode"`
 	MaxTurns             int               `json:"max_turns"`
+	WorkingDir           string            `json:"working_dir,omitempty"`
+	WorkingDirExists     bool              `json:"working_dir_exists,omitempty"`
+	HasGit               bool              `json:"has_git,omitempty"`
+	GitBranch            string            `json:"git_branch,omitempty"`
 	Running              bool              `json:"running"`
 	CurrentAgent         string            `json:"current_agent"`
 	PendingApprovalCount int               `json:"pending_approval_count,omitempty"`
@@ -212,6 +220,7 @@ type CreateGroupRequest struct {
 	MaxTurns       int      `json:"max_turns"`
 	HideThinking   bool     `json:"hide_thinking"`
 	HideTools      bool     `json:"hide_tools"`
+	WorkingDir     string   `json:"working_dir,omitempty"`
 }
 
 // UpdateGroupRequest is the payload for PATCH /groups/:id.
@@ -223,6 +232,7 @@ type UpdateGroupRequest struct {
 	MaxTurns       *int      `json:"max_turns"`
 	HideThinking   *bool     `json:"hide_thinking"`
 	HideTools      *bool     `json:"hide_tools"`
+	WorkingDir     *string   `json:"working_dir"`
 }
 
 // SendGroupMessageRequest is the payload for POST /groups/:id/messages.
@@ -299,7 +309,7 @@ func (s *GroupStore) List() ([]storedGroup, error) {
 	db := s.db.DB()
 
 	rows, err := db.Query(`
-		SELECT id, name, description, discussion_mode, max_turns, hide_thinking, hide_tools, last_read_message_id, read_at, created_at, updated_at
+		SELECT id, name, description, discussion_mode, max_turns, hide_thinking, hide_tools, working_dir, last_read_message_id, read_at, created_at, updated_at
 		FROM groups
 		ORDER BY updated_at DESC, id ASC`)
 	if err != nil {
@@ -315,7 +325,7 @@ func (s *GroupStore) List() ([]storedGroup, error) {
 			hideThinking int
 			hideTools    int
 		)
-		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.DiscussionMode, &g.MaxTurns, &hideThinking, &hideTools, &g.LastReadMessageID, &g.ReadAt, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.DiscussionMode, &g.MaxTurns, &hideThinking, &hideTools, &g.WorkingDir, &g.LastReadMessageID, &g.ReadAt, &g.CreatedAt, &g.UpdatedAt); err != nil {
 			return nil, err
 		}
 		g.HideThinking = hideThinking != 0
@@ -671,11 +681,12 @@ func (s *GroupStore) Create(sg *storedGroup) error {
 	}()
 
 	if _, err = tx.Exec(`
-		INSERT INTO groups (id, name, description, discussion_mode, max_turns, hide_thinking, hide_tools, last_read_message_id, read_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO groups (id, name, description, discussion_mode, max_turns, hide_thinking, hide_tools, working_dir, last_read_message_id, read_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		sg.Group.ID, sg.Group.Name, sg.Group.Description,
 		sg.Group.DiscussionMode, sg.Group.MaxTurns,
 		boolToInt(sg.Group.HideThinking), boolToInt(sg.Group.HideTools),
+		sg.Group.WorkingDir,
 		sg.Group.LastReadMessageID, sg.Group.ReadAt,
 		sg.Group.CreatedAt, sg.Group.UpdatedAt,
 	); err != nil {
@@ -731,11 +742,12 @@ func (s *GroupStore) Update(id string, fn func(sg *storedGroup) error) (*storedG
 
 	if _, err = tx.Exec(`
 		UPDATE groups
-		SET name = ?, description = ?, discussion_mode = ?, max_turns = ?, hide_thinking = ?, hide_tools = ?, last_read_message_id = ?, read_at = ?, updated_at = ?
+		SET name = ?, description = ?, discussion_mode = ?, max_turns = ?, hide_thinking = ?, hide_tools = ?, working_dir = ?, last_read_message_id = ?, read_at = ?, updated_at = ?
 		WHERE id = ?`,
 		sg.Group.Name, sg.Group.Description,
 		sg.Group.DiscussionMode, sg.Group.MaxTurns,
 		boolToInt(sg.Group.HideThinking), boolToInt(sg.Group.HideTools),
+		sg.Group.WorkingDir,
 		sg.Group.LastReadMessageID, sg.Group.ReadAt,
 		sg.Group.UpdatedAt, id,
 	); err != nil {
@@ -863,10 +875,10 @@ func loadGroupAndMembers(q sqlQueryer, id string) (Group, error) {
 		hideTools    int
 	)
 	err := q.QueryRow(`
-		SELECT id, name, description, discussion_mode, max_turns, hide_thinking, hide_tools, last_read_message_id, read_at, created_at, updated_at
+		SELECT id, name, description, discussion_mode, max_turns, hide_thinking, hide_tools, working_dir, last_read_message_id, read_at, created_at, updated_at
 		FROM groups
 		WHERE id = ?`, id,
-	).Scan(&g.ID, &g.Name, &g.Description, &g.DiscussionMode, &g.MaxTurns, &hideThinking, &hideTools, &g.LastReadMessageID, &g.ReadAt, &g.CreatedAt, &g.UpdatedAt)
+	).Scan(&g.ID, &g.Name, &g.Description, &g.DiscussionMode, &g.MaxTurns, &hideThinking, &hideTools, &g.WorkingDir, &g.LastReadMessageID, &g.ReadAt, &g.CreatedAt, &g.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Group{}, ErrGroupNotFound
 	}

@@ -9037,6 +9037,12 @@ const docTemplatecontrolplane = `{
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -14191,6 +14197,9 @@ const docTemplatecontrolplane = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "working_dir": {
+                    "type": "string"
                 }
             }
         },
@@ -14618,6 +14627,12 @@ const docTemplatecontrolplane = `{
                 "discussion_mode": {
                     "type": "string"
                 },
+                "git_branch": {
+                    "type": "string"
+                },
+                "has_git": {
+                    "type": "boolean"
+                },
                 "hide_thinking": {
                     "type": "boolean"
                 },
@@ -14647,6 +14662,12 @@ const docTemplatecontrolplane = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "working_dir": {
+                    "type": "string"
+                },
+                "working_dir_exists": {
+                    "type": "boolean"
                 }
             }
         },
@@ -14963,6 +14984,12 @@ const docTemplatecontrolplane = `{
                 "first_unread_message_id": {
                     "type": "string"
                 },
+                "git_branch": {
+                    "type": "string"
+                },
+                "has_git": {
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -14995,6 +15022,12 @@ const docTemplatecontrolplane = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "working_dir": {
+                    "type": "string"
+                },
+                "working_dir_exists": {
+                    "type": "boolean"
                 }
             }
         },
@@ -16589,6 +16622,9 @@ const docTemplatecontrolplane = `{
                     }
                 },
                 "name": {
+                    "type": "string"
+                },
+                "working_dir": {
                     "type": "string"
                 }
             }

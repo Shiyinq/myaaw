@@ -11,7 +11,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const controlPlaneSchemaVersion = 6
+const controlPlaneSchemaVersion = 7
 
 var controlPlaneSchemaV1 = []string{
 	`CREATE TABLE IF NOT EXISTS auth_account (
@@ -37,6 +37,7 @@ var controlPlaneSchemaV1 = []string{
 		max_turns            INTEGER NOT NULL DEFAULT 8,
 		hide_thinking        INTEGER NOT NULL DEFAULT 0,
 		hide_tools           INTEGER NOT NULL DEFAULT 0,
+		working_dir          TEXT    NOT NULL DEFAULT '',
 		last_read_message_id TEXT    NOT NULL DEFAULT '',
 		read_at              TEXT    NOT NULL DEFAULT '',
 		created_at           TEXT    NOT NULL,
@@ -242,6 +243,12 @@ func (c *ControlPlaneDB) migrate() error {
 			)`); err != nil {
 				_ = tx.Rollback()
 				return fmt.Errorf("apply controlplane schema v6: %w", err)
+			}
+		}
+		if version < 7 {
+			if _, err := tx.Exec(`ALTER TABLE groups ADD COLUMN working_dir TEXT NOT NULL DEFAULT ''`); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("apply controlplane schema v7: %w", err)
 			}
 		}
 	}

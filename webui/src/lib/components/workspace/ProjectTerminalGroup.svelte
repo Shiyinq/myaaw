@@ -42,14 +42,16 @@
 		agent: string;
 		cwd: string;
 		conversationId?: string;
+		/** Optional persistence scope key override (defaults to `agent:cwd`). */
+		scopeKey?: string;
 		onCloseAll: () => void;
 	}
 
-	let { agent, cwd, conversationId = '', onCloseAll }: Props = $props();
+	let { agent, cwd, conversationId = '', scopeKey = '', onCloseAll }: Props = $props();
 
 	const { t } = useTranslation();
 
-	const groupKey = $derived(agent && cwd ? `${agent}:${cwd}` : '');
+	const groupKey = $derived(scopeKey || (agent && cwd ? `${agent}:${cwd}` : ''));
 	const initialSaved = untrack(() => readGroupState(groupKey));
 
 	let tabs = $state<TerminalTabItem[]>(

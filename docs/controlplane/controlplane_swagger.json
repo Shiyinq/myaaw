@@ -9031,6 +9031,12 @@
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
                     }
                 }
             }
@@ -14185,6 +14191,9 @@
                 },
                 "name": {
                     "type": "string"
+                },
+                "working_dir": {
+                    "type": "string"
                 }
             }
         },
@@ -14612,6 +14621,12 @@
                 "discussion_mode": {
                     "type": "string"
                 },
+                "git_branch": {
+                    "type": "string"
+                },
+                "has_git": {
+                    "type": "boolean"
+                },
                 "hide_thinking": {
                     "type": "boolean"
                 },
@@ -14641,6 +14656,12 @@
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "working_dir": {
+                    "type": "string"
+                },
+                "working_dir_exists": {
+                    "type": "boolean"
                 }
             }
         },
@@ -14957,6 +14978,12 @@
                 "first_unread_message_id": {
                     "type": "string"
                 },
+                "git_branch": {
+                    "type": "string"
+                },
+                "has_git": {
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -14989,6 +15016,12 @@
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "working_dir": {
+                    "type": "string"
+                },
+                "working_dir_exists": {
+                    "type": "boolean"
                 }
             }
         },
@@ -16583,6 +16616,9 @@
                     }
                 },
                 "name": {
+                    "type": "string"
+                },
+                "working_dir": {
                     "type": "string"
                 }
             }

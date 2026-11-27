@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Bot, FolderGit2, FolderOpen, MessageSquarePlus, Paperclip } from 'lucide-svelte';
+	import { Bot, FolderGit2, FolderOpen, MessageSquarePlus, Paperclip, Users } from 'lucide-svelte';
 	import type { ChatRightPanelKind } from '$lib/stores/projectWorkspace.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { formatShortcut } from '$lib/utils/keys';
@@ -8,8 +8,14 @@
 	interface Props {
 		/** Active panel currently open in the unified right sidebar, or null when hidden. */
 		activePanel: ChatRightPanelKind | null;
-		/** Show Bot Info & New Chat actions (false in Classic mode where the left sidebar owns them). */
+		/** Show Info button (false in Classic mode where the left sidebar owns it). */
 		showInfoAndNewChat?: boolean;
+		/** Show the bottom New Chat action (defaults to `showInfoAndNewChat`; set false in Group rooms). */
+		showNewChat?: boolean;
+		/** Icon style for the top Info button (`'bot'` in 1-on-1 chat, `'group'` in Group rooms). */
+		infoKind?: 'bot' | 'group';
+		/** Optional label override for the top Info button (defaults to `myaaw.chat.bot_info`). */
+		infoLabel?: string;
 		/** Show Project toggle (hidden on empty state when no project is attached yet). */
 		showProject?: boolean;
 		hasProject?: boolean;
@@ -19,12 +25,15 @@
 		onToggleInfo: () => void;
 		onToggleProject: () => void;
 		onToggleAttachments: () => void;
-		onNewChat: () => void;
+		onNewChat?: () => void;
 	}
 
 	let {
 		activePanel,
 		showInfoAndNewChat = true,
+		showNewChat,
+		infoKind = 'bot',
+		infoLabel = '',
 		showProject = false,
 		hasProject = false,
 		hasGit = false,
@@ -38,10 +47,12 @@
 
 	const { t } = useTranslation();
 	const attachmentsActive = $derived(activePanel === 'attachments');
+	const resolvedInfoLabel = $derived(infoLabel || t('myaaw.chat.bot_info'));
+	const resolvedShowNewChat = $derived(Boolean(onNewChat) && (showNewChat ?? showInfoAndNewChat));
 </script>
 
 <nav
-	aria-label={t('myaaw.chat.bot_info')}
+	aria-label={resolvedInfoLabel}
 	class="relative z-40 hidden h-full w-12 shrink-0 flex-col items-center gap-1 border-l bg-card/70 py-2.5 lg:flex"
 >
 	{#if showInfoAndNewChat}
@@ -55,8 +66,8 @@
 					: 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
 			)}
 			onclick={onToggleInfo}
-			title={`${t('myaaw.chat.bot_info')} (${formatShortcut('mod+shift+h')})`}
-			aria-label={t('myaaw.chat.bot_info')}
+			title={`${resolvedInfoLabel} (${formatShortcut('mod+shift+h')})`}
+			aria-label={resolvedInfoLabel}
 			aria-pressed={active}
 			aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
 		>
@@ -66,7 +77,11 @@
 					class="pointer-events-none absolute top-1.5 -right-1.5 bottom-1.5 w-0.5 rounded-full bg-primary"
 				></span>
 			{/if}
-			<Bot class="h-[18px] w-[18px]" />
+			{#if infoKind === 'group'}
+				<Users class="h-[18px] w-[18px]" />
+			{:else}
+				<Bot class="h-[18px] w-[18px]" />
+			{/if}
 		</button>
 	{/if}
 
@@ -131,7 +146,7 @@
 		{/if}
 	</button>
 
-	{#if showInfoAndNewChat}
+	{#if resolvedShowNewChat && onNewChat}
 		<div class="my-0.5 h-px w-5 bg-border/60" role="separator"></div>
 		<button
 			type="button"

@@ -81,7 +81,7 @@ func (h *Handler) GetGroup(c fiber.Ctx) error {
 	return c.JSON(detail)
 }
 
-// UpdateGroup updates a group's name, description, members, discussion mode, or max_turns.
+// UpdateGroup updates a group's name, description, members, discussion mode, max_turns, display flags, or initial working_dir.
 // @Summary      Update group
 // @Tags         Groups
 // @Accept       json
@@ -93,6 +93,7 @@ func (h *Handler) GetGroup(c fiber.Ctx) error {
 // @Failure      400 {object} common.ErrorResponse
 // @Failure      401 {object} common.ErrorResponse
 // @Failure      404 {object} common.ErrorResponse
+// @Failure      409 {object} common.ErrorResponse
 // @Router       /groups/{id} [patch]
 func (h *Handler) UpdateGroup(c fiber.Ctx) error {
 	var req service.UpdateGroupRequest
@@ -430,11 +431,13 @@ func (h *Handler) RespondGroupInteraction(c fiber.Ctx) error {
 
 func groupError(c fiber.Ctx, err error) error {
 	switch {
-	case errors.Is(err, service.ErrInvalidGroupID), errors.Is(err, service.ErrGroupValidation):
+	case errors.Is(err, service.ErrInvalidGroupID),
+		errors.Is(err, service.ErrGroupValidation),
+		errors.Is(err, service.ErrInvalidWorkingDir):
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	case errors.Is(err, service.ErrGroupNotFound):
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "group not found"})
-	case errors.Is(err, service.ErrGroupNotPaused):
+	case errors.Is(err, service.ErrGroupNotPaused), errors.Is(err, service.ErrWorkingDirLocked):
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 	default:
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})

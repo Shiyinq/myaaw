@@ -26,6 +26,7 @@ import (
 	"myaaw/internal/channel"
 	"myaaw/internal/channel/api"
 	"myaaw/internal/provider"
+	"myaaw/internal/workspaceguard"
 
 	"github.com/google/uuid"
 )
@@ -293,6 +294,38 @@ func (s *GroupService) getRuntime(id string) *groupRuntime {
 	return s.runtimes[id]
 }
 
+// hydrateGroupWorkspace populates live filesystem/git flags for a group's
+// attached working directory using the same helpers as 1-on-1 conversations.
+func hydrateGroupWorkspace(g *Group) {
+	if g == nil || strings.TrimSpace(g.WorkingDir) == "" {
+		return
+	}
+	g.WorkingDirExists, g.HasGit = workingDirStatus(g.WorkingDir)
+	if g.HasGit {
+		g.GitBranch = workspaceguard.GitBranch(g.WorkingDir)
+	} else {
+		g.GitBranch = ""
+	}
+}
+
+// ResolveWorkingDir returns the validated attached working directory for a
+// group. It returns an empty string when the group has no attached directory.
+func (s *GroupService) ResolveWorkingDir(groupID, agentName string) (string, error) {
+	sg, err := s.store.Get(groupID)
+	if err != nil {
+		return "", err
+	}
+	dir := strings.TrimSpace(sg.Group.WorkingDir)
+	if dir == "" {
+		return "", nil
+	}
+	validated, err := workspaceguard.ValidateDir(agentName, dir)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrInvalidWorkingDir, err)
+	}
+	return validated, nil
+}
+
 // List returns all groups with hydrated member status, live run status, and last message preview.
 func (s *GroupService) List() ([]GroupSummary, error) {
 	stored, err := s.store.List()
@@ -302,15 +335,20 @@ func (s *GroupService) List() ([]GroupSummary, error) {
 
 	summaries := make([]GroupSummary, 0, len(stored))
 	for _, sg := range stored {
+		hydrateGroupWorkspace(&sg.Group)
 		members := s.hydrateMembers(sg.Group.Members)
 		summary := GroupSummary{
-			ID:             sg.Group.ID,
-			Name:           sg.Group.Name,
-			Description:    sg.Group.Description,
-			Members:        members,
-			MemberCount:    len(members),
+			ID:                   sg.Group.ID,
+			Name:                 sg.Group.Name,
+			Description:          sg.Group.Description,
+			Members:              members,
+			MemberCount:          len(members),
 			DiscussionMode:       sg.Group.DiscussionMode,
 			MaxTurns:             sg.Group.MaxTurns,
+			WorkingDir:           sg.Group.WorkingDir,
+			WorkingDirExists:     sg.Group.WorkingDirExists,
+			HasGit:               sg.Group.HasGit,
+			GitBranch:            sg.Group.GitBranch,
 			UnreadCount:          sg.UnreadCount,
 			FirstUnreadMessageID: sg.FirstUnreadMessageID,
 			CreatedAt:            sg.Group.CreatedAt,
@@ -360,6 +398,14 @@ func (s *GroupService) Create(req CreateGroupRequest) (Group, error) {
 	if err != nil {
 		return Group{}, err
 	}
+	cleanWD := ""
+	if trimmedWD := strings.TrimSpace(req.WorkingDir); trimmedWD != "" {
+		validatedWD, err := workspaceguard.ValidateDir("", trimmedWD)
+		if err != nil {
+			return Group{}, fmt.Errorf("%w: %v", ErrInvalidWorkingDir, err)
+		}
+		cleanWD = validatedWD
+	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	members := make([]GroupMember, 0, len(memberNames))
@@ -376,6 +422,7 @@ func (s *GroupService) Create(req CreateGroupRequest) (Group, error) {
 		MaxTurns:       maxTurns,
 		HideThinking:   req.HideThinking,
 		HideTools:      req.HideTools,
+		WorkingDir:     cleanWD,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -390,6 +437,7 @@ func (s *GroupService) Create(req CreateGroupRequest) (Group, error) {
 	s.notifyEventBridge()
 
 	group.Members = s.hydrateMembers(group.Members)
+	hydrateGroupWorkspace(&group)
 	return group, nil
 }
 
@@ -406,6 +454,7 @@ func (s *GroupService) GetPage(id string, limit, offset int, beforeID string) (G
 	}
 
 	page.Group.Members = s.hydrateMembers(page.Group.Members)
+	hydrateGroupWorkspace(&page.Group)
 	for i := range page.Messages {
 		if page.Messages[i].SenderType == "agent" && len(page.Messages[i].Attachments) == 0 && page.Messages[i].SenderName != "" {
 			if collected := collectAgentMessageAttachments(page.Group.ID, page.Messages[i].ID, page.Messages[i].SenderName, page.Messages[i].Content, page.Messages[i].CreatedAt); len(collected) > 0 {
@@ -481,6 +530,18 @@ func (s *GroupService) Update(id string, req UpdateGroupRequest) (Group, error) 
 		}
 		validatedMembers = names
 	}
+	var validatedWorkingDir *string
+	if req.WorkingDir != nil {
+		cleanWD := ""
+		if trimmed := strings.TrimSpace(*req.WorkingDir); trimmed != "" {
+			v, err := workspaceguard.ValidateDir("", trimmed)
+			if err != nil {
+				return Group{}, fmt.Errorf("%w: %v", ErrInvalidWorkingDir, err)
+			}
+			cleanWD = v
+		}
+		validatedWorkingDir = &cleanWD
+	}
 
 	updated, err := s.store.Update(id, func(sg *storedGroup) error {
 		if validatedName != nil {
@@ -500,6 +561,13 @@ func (s *GroupService) Update(id string, req UpdateGroupRequest) (Group, error) 
 		}
 		if req.HideTools != nil {
 			sg.Group.HideTools = *req.HideTools
+		}
+		if validatedWorkingDir != nil {
+			existingWD := strings.TrimSpace(sg.Group.WorkingDir)
+			if existingWD != "" && existingWD != *validatedWorkingDir {
+				return ErrWorkingDirLocked
+			}
+			sg.Group.WorkingDir = *validatedWorkingDir
 		}
 		if req.Members != nil {
 			existing := make(map[string]GroupMember, len(sg.Group.Members))
@@ -536,6 +604,7 @@ func (s *GroupService) Update(id string, req UpdateGroupRequest) (Group, error) 
 	}
 
 	updated.Group.Members = s.hydrateMembers(updated.Group.Members)
+	hydrateGroupWorkspace(&updated.Group)
 	s.notifyEventBridge()
 	return updated.Group, nil
 }
@@ -1142,7 +1211,7 @@ func (s *GroupService) runLoop(ctx context.Context, groupID string, userID int, 
 		rt.mu.Unlock()
 
 		prompt, images, files := buildDeltaPrompt(sg, member, triggerMsgID, triggerImages, triggerFiles, addressedDirectly)
-		res, callErr := s.streamAgentTurn(ctx, groupID, nextAgent, agentColor, agentInfo.BaseURL, userID, requestID, member.ConversationID, prompt, images, files, rt, gen)
+		res, callErr := s.streamAgentTurn(ctx, groupID, nextAgent, agentColor, agentInfo.BaseURL, userID, requestID, member.ConversationID, sg.Group.WorkingDir, prompt, images, files, rt, gen)
 
 		// Self-healing 404 fallback if the agent's stored conversation was wiped.
 		if errors.Is(callErr, errAgentConversationNotFound) && member.ConversationID != "" {
@@ -1166,7 +1235,7 @@ func (s *GroupService) runLoop(ctx context.Context, groupID string, userID int, 
 				}
 				rt.mu.Unlock()
 				prompt, images, files = buildDeltaPrompt(sg, member, triggerMsgID, triggerImages, triggerFiles, addressedDirectly)
-				res, callErr = s.streamAgentTurn(ctx, groupID, nextAgent, agentColor, agentInfo.BaseURL, userID, requestID, "", prompt, images, files, rt, gen)
+				res, callErr = s.streamAgentTurn(ctx, groupID, nextAgent, agentColor, agentInfo.BaseURL, userID, requestID, "", sg.Group.WorkingDir, prompt, images, files, rt, gen)
 			}
 		}
 
@@ -1475,6 +1544,7 @@ type agentChatStreamRequest struct {
 	Text           string               `json:"text"`
 	RequestID      string               `json:"request_id"`
 	ConversationID string               `json:"conversation_id,omitempty"`
+	WorkingDir     string               `json:"working_dir,omitempty"`
 	Scope          string               `json:"scope,omitempty"`
 	Images         []string             `json:"images,omitempty"`
 	Files          []channel.FileUpload `json:"files,omitempty"`
@@ -1484,7 +1554,7 @@ func (s *GroupService) streamAgentTurn(
 	ctx context.Context,
 	groupID, agentName, agentColor, baseURL string,
 	userID int,
-	requestID, conversationID, prompt string,
+	requestID, conversationID, workingDir, prompt string,
 	images []string,
 	files []channel.FileUpload,
 	rt *groupRuntime,
@@ -1498,6 +1568,7 @@ func (s *GroupService) streamAgentTurn(
 		Text:           prompt,
 		RequestID:      requestID,
 		ConversationID: conversationID,
+		WorkingDir:     strings.TrimSpace(workingDir),
 		Scope:          "group:" + groupID,
 		Images:         images,
 		Files:          files,
@@ -1895,6 +1966,9 @@ func buildDeltaPrompt(
 		sb.WriteString("Members: " + membersList + "\n")
 		sb.WriteString("Your identity: @" + safeAgentName + "\n")
 		sb.WriteString("Discussion mode: " + sg.Group.DiscussionMode + "\n")
+		if wd := strings.TrimSpace(sg.Group.WorkingDir); wd != "" {
+			sb.WriteString("Shared project working directory: " + wd + "\n")
+		}
 		sb.WriteString("Rules:\n")
 		sb.WriteString("- You are participating in a shared multi-agent group chat. Keep responses concise and in your own persona.\n")
 		sb.WriteString("- Never impersonate other agents or prefix your reply with \"[" + safeAgentName + "]:\".\n")
@@ -1914,6 +1988,9 @@ func buildDeltaPrompt(
 		header += fmt.Sprintf(" | You are: @%s | Members: %s | Mode: %s\n",
 			safeAgentName, membersList, sg.Group.DiscussionMode)
 		sb.WriteString(header)
+		if wd := strings.TrimSpace(sg.Group.WorkingDir); wd != "" {
+			sb.WriteString("Shared project working directory: " + wd + "\n")
+		}
 		sb.WriteString("Note: Never append [DONE] when you @mention a teammate or when other members still need to answer.\n")
 		if addressedDirectly {
 			sb.WriteString("Note: You were directly mentioned or addressed — respond directly and do NOT reply with [PASS].\n")

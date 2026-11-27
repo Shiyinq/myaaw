@@ -2445,6 +2445,8 @@ definitions:
         type: array
       name:
         type: string
+      working_dir:
+        type: string
     type: object
   service.CronJobInput:
     properties:
@@ -2723,6 +2725,10 @@ definitions:
         type: string
       discussion_mode:
         type: string
+      git_branch:
+        type: string
+      has_git:
+        type: boolean
       hide_thinking:
         type: boolean
       hide_tools:
@@ -2743,6 +2749,10 @@ definitions:
         type: string
       updated_at:
         type: string
+      working_dir:
+        type: string
+      working_dir_exists:
+        type: boolean
     type: object
   service.GroupAttachment:
     properties:
@@ -2950,6 +2960,10 @@ definitions:
         type: string
       first_unread_message_id:
         type: string
+      git_branch:
+        type: string
+      has_git:
+        type: boolean
       id:
         type: string
       last_message:
@@ -2972,6 +2986,10 @@ definitions:
         type: integer
       updated_at:
         type: string
+      working_dir:
+        type: string
+      working_dir_exists:
+        type: boolean
     type: object
   service.HeartbeatPatch:
     properties:
@@ -4041,6 +4059,8 @@ definitions:
           type: string
         type: array
       name:
+        type: string
+      working_dir:
         type: string
     type: object
   service.WorkspaceBrowseEntry:
@@ -9966,6 +9986,10 @@ paths:
             $ref: '#/definitions/common.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/common.ErrorResponse'
       security:

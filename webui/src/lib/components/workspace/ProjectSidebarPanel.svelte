@@ -50,6 +50,10 @@
 		onGitBranchChange?: (branch: string) => void;
 		onConversationDeleted?: (id: string) => void;
 		onConversationRenamed?: (id: string, title: string) => void;
+		/** Optional persistence scope key override (defaults to `agent:workingDir`). */
+		scopeKey?: string;
+		/** Show the per-project Chats subtab (true in 1-on-1 DM chats; false in Group rooms). */
+		showChatsTab?: boolean;
 		onClose?: () => void;
 		embedded?: boolean;
 	}
@@ -78,6 +82,8 @@
 		onGitBranchChange,
 		onConversationDeleted,
 		onConversationRenamed,
+		scopeKey = '',
+		showChatsTab = true,
 		onClose,
 		embedded = false
 	}: Props = $props();
@@ -85,8 +91,11 @@
 	const { t } = useTranslation();
 
 	let localSubTab = $state<ProjectSidebarTab>('files');
-	const subTab = $derived(controlledSubTab ?? localSubTab);
-	const treeScopeKey = $derived(projectScopeKey(agent, workingDir));
+	const rawSubTab = $derived(controlledSubTab ?? localSubTab);
+	const subTab = $derived<ProjectSidebarTab>(
+		!showChatsTab && rawSubTab === 'chats' ? 'files' : rawSubTab
+	);
+	const treeScopeKey = $derived(scopeKey || projectScopeKey(agent, workingDir));
 	let expanded = $state<Record<string, boolean>>(untrack(() => readExpandedTree(treeScopeKey)));
 	let childrenMap = $state<Record<string, FileEntry[]>>({});
 	let loadingDir = $state<Record<string, boolean>>({});
@@ -286,7 +295,12 @@
 			{#if !conversationId}
 				<p class="text-[11px] text-muted-foreground">{t('myaaw.workspace.pending_attach_hint')}</p>
 			{:else}
-				<div class="grid grid-cols-3 gap-1 rounded-md border bg-muted/30 p-0.5">
+				<div
+					class={[
+						'grid gap-1 rounded-md border bg-muted/30 p-0.5',
+						showChatsTab ? 'grid-cols-3' : 'grid-cols-2'
+					]}
+				>
 					<button
 						type="button"
 						class={[
@@ -321,18 +335,20 @@
 							</span>
 						{/if}
 					</button>
-					<button
-						type="button"
-						class={[
-							'rounded px-2 py-1 text-[11px] font-medium transition-colors',
-							subTab === 'chats'
-								? 'bg-background text-foreground shadow-xs'
-								: 'text-muted-foreground hover:text-foreground'
-						]}
-						onclick={() => selectSubTab('chats')}
-					>
-						{t('myaaw.workspace.subtab_chats')}
-					</button>
+					{#if showChatsTab}
+						<button
+							type="button"
+							class={[
+								'rounded px-2 py-1 text-[11px] font-medium transition-colors',
+								subTab === 'chats'
+									? 'bg-background text-foreground shadow-xs'
+									: 'text-muted-foreground hover:text-foreground'
+							]}
+							onclick={() => selectSubTab('chats')}
+						>
+							{t('myaaw.workspace.subtab_chats')}
+						</button>
+					{/if}
 				</div>
 			{/if}
 		</div>

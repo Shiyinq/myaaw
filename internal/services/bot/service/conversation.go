@@ -521,6 +521,13 @@ func (r *BotServiceImpl) buildConversationMessagesWithConv(user *model.User, msg
 				return nil, nil, err
 			}
 			conv.WorkingDir = requestedWorkingDir
+			// Clear any external CLI session started before the project folder
+			// was attached so external runtimes open cleanly in the new cwd.
+			if conv.ExternalSessionID != "" {
+				_ = r.conversationRepo.UpdateExternalSession(conv.Id, "", "")
+				conv.ExternalSessionID = ""
+				conv.ExternalRuntime = ""
+			}
 		}
 	} else {
 		created, err := r.conversationRepo.CreateConversationInScope(user.UserId, msg.Scope, msg.Channel, "New Chat")
