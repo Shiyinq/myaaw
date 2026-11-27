@@ -28,6 +28,7 @@ var (
 	ErrConversationForbidden = errors.New("conversation belongs to another user")
 	ErrInvalidTitle          = errors.New("title must not be empty")
 	ErrInvalidWorkingDir     = errors.New("invalid working directory")
+	ErrWorkingDirLocked      = errors.New("working directory cannot be changed once attached; start a new chat to use a different folder")
 )
 
 type ConversationSummary struct {
@@ -920,10 +921,10 @@ func (s *ConversationService) Create(
 	}, nil
 }
 
-// UpdateWorkingDir attaches, changes, or clears (when empty) the working
-// directory of a conversation owned by userID. Changing the working directory
-// clears any stored external runtime session so the next turn starts cleanly in
-// the new directory while keeping the transcript.
+// UpdateWorkingDir attaches a working directory to a conversation owned by
+// userID that does not yet have one. Once a conversation has a working
+// directory attached, changing or clearing it is rejected with
+// ErrWorkingDirLocked so the user must start a new chat for a different folder.
 func (s *ConversationService) UpdateWorkingDir(
 	agentName, id string,
 	userID int,
@@ -964,7 +965,12 @@ func (s *ConversationService) UpdateWorkingDir(
 		return "", false, false, ErrConversationForbidden
 	}
 
-	if currentWD.String != cleanWD {
+	existingWD := strings.TrimSpace(currentWD.String)
+	if existingWD != "" && existingWD != cleanWD {
+		return "", false, false, ErrWorkingDirLocked
+	}
+
+	if existingWD != cleanWD {
 		if _, err := db.Exec(
 			`UPDATE conversations SET working_dir = ?, external_session_id = '', external_runtime = '', updated_at = ? WHERE id = ?`,
 			cleanWD, time.Now().UTC(), id,

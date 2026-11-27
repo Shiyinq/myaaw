@@ -5420,7 +5420,8 @@ paths:
       consumes:
       - application/json
       description: Only the owner can update a conversation. Accepts title and/or
-        working_dir (empty string detaches).
+        working_dir (working_dir is immutable once attached; changing or clearing
+        it returns 409).
       parameters:
       - description: Agent name
         in: path
@@ -5463,6 +5464,10 @@ paths:
             $ref: '#/definitions/common.ErrorResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/common.ErrorResponse'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/common.ErrorResponse'
       security:

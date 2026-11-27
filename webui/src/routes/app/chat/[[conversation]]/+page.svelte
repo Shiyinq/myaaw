@@ -3357,15 +3357,9 @@
 	}
 
 	async function handleSelectWorkingDir(selectedPath: string) {
-		if (!agent || !selectedPath) return;
+		if (!agent || !selectedPath || project.workingDir) return;
 		if (conversationId) {
-			const prevDir = project.workingDir;
 			const res = await conversationsStore.updateWorkingDir(agent, conversationId, selectedPath);
-			if (prevDir && prevDir !== res.working_dir) {
-				terminalGroupHolder.current?.terminateAll();
-				project.clearSavedScope(agent, conversationId);
-				project.clearTabs();
-			}
 			project.setDirectory(
 				res.working_dir,
 				res.working_dir_exists,
@@ -3401,18 +3395,6 @@
 		}
 		// Open the dedicated Project sidebar without touching the main agent sidebar.
 		project.panelOpen = true;
-	}
-
-	async function handleDetachWorkingDir() {
-		if (!agent) return;
-		terminalGroupHolder.current?.terminateAll();
-		if (conversationId) {
-			await conversationsStore.updateWorkingDir(agent, conversationId, '');
-			project.clearSavedScope(agent, conversationId);
-			conversationsStore.invalidate();
-		}
-		project.reset(true);
-		toastStore.success(t('myaaw.workspace.detached'));
 	}
 
 	function openProjectFile(virtualPath: string) {
@@ -4781,8 +4763,10 @@
 												workingDir={project.workingDir}
 												workingDirName={project.workingDirName}
 												hasGit={project.hasGit}
-												onOpenPicker={() => (project.dialogOpen = true)}
-												onDetach={() => void handleDetachWorkingDir()}
+												onOpenPicker={() => {
+													if (!project.workingDir) project.dialogOpen = true;
+												}}
+												onOpenProject={openProjectPanel}
 											/>
 										{/if}
 									</div>
@@ -6536,8 +6520,6 @@
 				onOpenDiff={openProjectDiff}
 				onOpenMultiDiff={openProjectMultiDiff}
 				onToggleTerminal={toggleProjectTerminal}
-				onChangeWorkingDir={() => (project.dialogOpen = true)}
-				onDetachWorkingDir={() => void handleDetachWorkingDir()}
 				onFileRenamed={(fromPath, toPath) => project.handleFileRenamed(fromPath, toPath)}
 				onFileDeleted={(deletedPath) => project.handleFileDeleted(deletedPath)}
 				onClose={() => (project.panelOpen = false)}
@@ -6720,13 +6702,11 @@
 		</aside>
 	{/if}
 
-	{#if agent}
+	{#if agent && !project.workingDir}
 		<AttachWorkingDirDialog
 			bind:open={project.dialogOpen}
 			{agent}
-			currentPath={project.workingDir}
 			onSelect={handleSelectWorkingDir}
-			onDetach={project.workingDir ? handleDetachWorkingDir : undefined}
 		/>
 	{/if}
 

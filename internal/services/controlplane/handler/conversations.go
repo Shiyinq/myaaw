@@ -362,9 +362,9 @@ func (h *Handler) CreateConversation(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(detail)
 }
 
-// RenameConversation updates a conversation title and/or attached working directory.
+// RenameConversation updates a conversation title and/or attaches an initial working directory.
 // @Summary      Update conversation
-// @Description  Only the owner can update a conversation. Accepts title and/or working_dir (empty string detaches).
+// @Description  Only the owner can update a conversation. Accepts title and/or working_dir (working_dir is immutable once attached; changing or clearing it returns 409).
 // @Tags         Conversations
 // @Accept       json
 // @Produce      json
@@ -378,6 +378,7 @@ func (h *Handler) CreateConversation(c fiber.Ctx) error {
 // @Failure      401 {object} common.ErrorResponse
 // @Failure      403 {object} common.ErrorResponse
 // @Failure      404 {object} common.ErrorResponse
+// @Failure      409 {object} common.ErrorResponse
 // @Router       /agents/{name}/conversations/{id} [patch]
 func (h *Handler) RenameConversation(c fiber.Ctx) error {
 	var req RenameConversationRequest
@@ -465,6 +466,8 @@ func conversationError(c fiber.Ctx, err error) error {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "conversation belongs to another user"})
 	case errors.Is(err, service.ErrInvalidTitle), errors.Is(err, service.ErrInvalidWorkingDir):
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	case errors.Is(err, service.ErrWorkingDirLocked):
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 	default:
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}

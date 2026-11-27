@@ -953,7 +953,7 @@ turning recording on: the trace database is opened once per process.
 | `GET` | `/agents/:name/conversations/activity?from=&to=` | per-day conversation counts for the dashboard activity map |
 | `GET` | `/agents/:name/conversations/:id?limit=&offset=` | conversation with a page of messages (includes `working_dir`, `working_dir_exists`, `has_git`) |
 | `GET` | `/agents/:name/conversations/:id/attachments?limit=&offset=&kind=` | every file in the conversation, deduplicated by path |
-| `PATCH` | `/agents/:name/conversations/:id` | update `{title?, working_dir?}` (sending `working_dir: ""` detaches the project folder) |
+| `PATCH` | `/agents/:name/conversations/:id` | update `{title?, working_dir?}` (`working_dir` can only be attached once; changing or clearing an already-attached folder returns `409 Conflict` — start a new chat instead) |
 | `DELETE` | `/agents/:name/conversations/:id` | delete a conversation |
 | `PUT` | `/agents/:name/conversations/:id/pin` | pin or unpin `{pinned}` |
 | `PUT` | `/agents/:name/conversations/:id/folder` | move into a folder, or to Recents with `{"folder_id": null}` |

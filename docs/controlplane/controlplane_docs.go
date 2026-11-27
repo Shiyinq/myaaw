@@ -2193,7 +2193,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Only the owner can update a conversation. Accepts title and/or working_dir (empty string detaches).",
+                "description": "Only the owner can update a conversation. Accepts title and/or working_dir (working_dir is immutable once attached; changing or clearing it returns 409).",
                 "consumes": [
                     "application/json"
                 ],
@@ -2262,6 +2262,12 @@ const docTemplatecontrolplane = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/common.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/common.ErrorResponse"
                         }

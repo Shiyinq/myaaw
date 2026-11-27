@@ -10,8 +10,7 @@
 		FolderPlus,
 		HardDrive,
 		Loader2,
-		Server,
-		Unlink
+		Server
 	} from 'lucide-svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
@@ -33,10 +32,9 @@
 		agent: string;
 		currentPath?: string;
 		onSelect: (path: string) => void | Promise<void>;
-		onDetach?: () => void | Promise<void>;
 	}
 
-	let { open = $bindable(false), agent, currentPath = '', onSelect, onDetach }: Props = $props();
+	let { open = $bindable(false), agent, currentPath = '', onSelect }: Props = $props();
 
 	const { t } = useTranslation();
 
@@ -126,19 +124,6 @@
 		submitting = true;
 		try {
 			await onSelect(targetPath);
-			open = false;
-		} catch (err) {
-			error = getErrorMessage(err);
-		} finally {
-			submitting = false;
-		}
-	}
-
-	async function handleDetach() {
-		if (!onDetach || submitting) return;
-		submitting = true;
-		try {
-			await onDetach();
 			open = false;
 		} catch (err) {
 			error = getErrorMessage(err);
@@ -361,39 +346,23 @@
 				{/if}
 			</div>
 
-			<Dialog.Footer class="flex flex-wrap items-center justify-between gap-2 sm:justify-between">
-				<div class="flex items-center gap-2">
-					{#if currentPath && onDetach}
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							disabled={submitting}
-							onclick={() => void handleDetach()}
-						>
-							<Unlink class="h-3.5 w-3.5" />
-							{t('myaaw.workspace.detach')}
-						</Button>
+			<Dialog.Footer class="flex flex-wrap items-center justify-end gap-2">
+				<Button type="button" variant="ghost" size="sm" onclick={() => (open = false)}>
+					{t('common.cancel')}
+				</Button>
+				<Button
+					type="button"
+					size="sm"
+					disabled={!browseData?.can_attach || !browseData?.path || submitting}
+					onclick={() => browseData?.path && void attachPath(browseData.path)}
+				>
+					{#if submitting}
+						<Loader2 class="h-3.5 w-3.5 animate-spin" />
+					{:else}
+						<Check class="h-3.5 w-3.5" />
 					{/if}
-				</div>
-				<div class="flex items-center gap-2">
-					<Button type="button" variant="ghost" size="sm" onclick={() => (open = false)}>
-						{t('common.cancel')}
-					</Button>
-					<Button
-						type="button"
-						size="sm"
-						disabled={!browseData?.can_attach || !browseData?.path || submitting}
-						onclick={() => browseData?.path && void attachPath(browseData.path)}
-					>
-						{#if submitting}
-							<Loader2 class="h-3.5 w-3.5 animate-spin" />
-						{:else}
-							<Check class="h-3.5 w-3.5" />
-						{/if}
-						{t('myaaw.workspace.attach_current')}
-					</Button>
-				</div>
+					{t('myaaw.workspace.attach_current')}
+				</Button>
 			</Dialog.Footer>
 		{/if}
 	</Dialog.Content>

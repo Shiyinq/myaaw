@@ -20,8 +20,7 @@
 		onOpenDiff: (req: ProjectDiffTarget) => void;
 		onOpenMultiDiff: (req: ProjectMultiDiffTarget) => void;
 		onToggleTerminal: () => void;
-		onChangeWorkingDir: () => void;
-		onDetachWorkingDir?: () => void;
+		onChangeWorkingDir?: () => void;
 		onFileRenamed?: (fromPath: string, toPath: string) => void;
 		onFileDeleted?: (deletedPath: string) => void;
 		onClose: () => void;
@@ -45,7 +44,6 @@
 		onOpenMultiDiff,
 		onToggleTerminal,
 		onChangeWorkingDir,
-		onDetachWorkingDir,
 		onFileRenamed,
 		onFileDeleted,
 		onClose
@@ -94,7 +92,6 @@
 				{onOpenMultiDiff}
 				{onToggleTerminal}
 				{onChangeWorkingDir}
-				{onDetachWorkingDir}
 				{onFileRenamed}
 				{onFileDeleted}
 				{onClose}

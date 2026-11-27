@@ -1,14 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import {
-		FolderGit2,
-		FolderOpen,
-		GitBranch,
-		RefreshCw,
-		SquareTerminal,
-		Unlink,
-		X
-	} from 'lucide-svelte';
+	import { FolderGit2, FolderOpen, GitBranch, RefreshCw, SquareTerminal, X } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { filesStore } from '$lib/stores/files.svelte';
@@ -41,8 +33,7 @@
 		onOpenDiff: (req: ProjectDiffTarget) => void;
 		onOpenMultiDiff: (req: ProjectMultiDiffTarget) => void;
 		onToggleTerminal: () => void;
-		onChangeWorkingDir: () => void;
-		onDetachWorkingDir?: () => void;
+		onChangeWorkingDir?: () => void;
 		onFileRenamed?: (fromPath: string, toPath: string) => void;
 		onFileDeleted?: (deletedPath: string) => void;
 		onClose?: () => void;
@@ -65,7 +56,6 @@
 		onOpenMultiDiff,
 		onToggleTerminal,
 		onChangeWorkingDir,
-		onDetachWorkingDir,
 		onFileRenamed,
 		onFileDeleted,
 		onClose,
@@ -207,10 +197,12 @@
 				<p class="text-sm font-medium">{t('myaaw.workspace.no_project_title')}</p>
 				<p class="text-xs text-muted-foreground">{t('myaaw.workspace.no_project_desc')}</p>
 			</div>
-			<Button size="sm" variant="outline" onclick={onChangeWorkingDir}>
-				<FolderOpen class="h-3.5 w-3.5" />
-				{t('myaaw.workspace.attach_button')}
-			</Button>
+			{#if onChangeWorkingDir}
+				<Button size="sm" variant="outline" onclick={onChangeWorkingDir}>
+					<FolderOpen class="h-3.5 w-3.5" />
+					{t('myaaw.workspace.attach_button')}
+				</Button>
+			{/if}
 		</div>
 	{:else}
 		<div class="shrink-0 space-y-2 border-b px-3 py-2.5">
@@ -252,26 +244,6 @@
 								: 'h-3.5 w-3.5'}
 						/>
 					</Button>
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						onclick={onChangeWorkingDir}
-						title={t('myaaw.workspace.change_dir')}
-						aria-label={t('myaaw.workspace.change_dir')}
-					>
-						<FolderOpen class="h-3.5 w-3.5" />
-					</Button>
-					{#if onDetachWorkingDir}
-						<Button
-							variant="ghost"
-							size="icon-sm"
-							onclick={onDetachWorkingDir}
-							title={t('myaaw.workspace.detach')}
-							aria-label={t('myaaw.workspace.detach')}
-						>
-							<Unlink class="h-3.5 w-3.5" />
-						</Button>
-					{/if}
 				</div>
 			</div>
 

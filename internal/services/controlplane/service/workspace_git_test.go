@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -382,5 +383,45 @@ func TestGitSourceControlActionsAndSecurity(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(repoDir, "app.txt"))
 	if string(data) != "v2\n" {
 		t.Fatalf("expected app.txt reverted to v2, got %q", string(data))
+	}
+}
+
+func TestConversationServiceWorkingDirLockedOnceAttached(t *testing.T) {
+	home, agentName := setupTestAgentForWorkspace(t)
+	t.Setenv("MYAAW_ALLOWED_WORKSPACES", home)
+
+	dirA := filepath.Join(home, "proj-a")
+	dirB := filepath.Join(home, "proj-b")
+	for _, d := range []string{dirA, dirB} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	convSvc := NewConversationService()
+	created, err := convSvc.Create(agentName, 0, "Unattached Chat", "", "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Attaching an initial folder to an unattached chat succeeds.
+	wd, exists, _, err := convSvc.UpdateWorkingDir(agentName, created.ID, 0, dirA)
+	if err != nil || wd == "" || !exists {
+		t.Fatalf("initial UpdateWorkingDir failed: wd=%q exists=%v err=%v", wd, exists, err)
+	}
+
+	// Sending the same directory again is an idempotent no-op.
+	if wd2, _, _, err := convSvc.UpdateWorkingDir(agentName, created.ID, 0, dirA); err != nil || wd2 != wd {
+		t.Fatalf("idempotent UpdateWorkingDir failed: wd2=%q err=%v", wd2, err)
+	}
+
+	// Changing to another directory is rejected with ErrWorkingDirLocked.
+	if _, _, _, err := convSvc.UpdateWorkingDir(agentName, created.ID, 0, dirB); !errors.Is(err, ErrWorkingDirLocked) {
+		t.Fatalf("expected ErrWorkingDirLocked on change, got %v", err)
+	}
+
+	// Detaching (clearing to empty) is also rejected with ErrWorkingDirLocked.
+	if _, _, _, err := convSvc.UpdateWorkingDir(agentName, created.ID, 0, ""); !errors.Is(err, ErrWorkingDirLocked) {
+		t.Fatalf("expected ErrWorkingDirLocked on clear, got %v", err)
 	}
 }
