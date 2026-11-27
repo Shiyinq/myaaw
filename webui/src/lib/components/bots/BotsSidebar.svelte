@@ -63,7 +63,7 @@
 		GroupSummary
 	} from '$lib/types';
 
-	type BotFilter = 'all' | 'groups' | 'bots' | 'running' | 'unread';
+	type BotFilter = 'all' | 'groups' | 'bots' | 'running' | 'stopped' | 'unread';
 	type RosterItem = { kind: 'group'; group: GroupSummary } | { kind: 'bot'; bot: AgentInfo };
 
 	interface SidebarSectionView {
@@ -311,6 +311,7 @@
 	const isFiltering = $derived(filter !== 'all' || searchTerm.length > 0);
 
 	const runningTotal = $derived(agentSelection.agents.filter((bot) => bot.running).length);
+	const stoppedTotal = $derived(agentSelection.agents.filter((bot) => !bot.running).length);
 	const attentionFilterCount = $derived(
 		agentSelection.agents.filter((bot) => needsAttention(bot.name)).length +
 			groupsStore.groups.filter((grp) => groupNeedsAttention(grp)).length
@@ -330,6 +331,7 @@
 		return agentSelection.agents.filter((bot) => {
 			if (searchTerm && !bot.name.toLowerCase().includes(searchTerm)) return false;
 			if (filter === 'running' && !bot.running) return false;
+			if (filter === 'stopped' && bot.running) return false;
 			if (filter === 'unread' && !needsAttention(bot.name)) return false;
 			return true;
 		});
@@ -1579,6 +1581,13 @@
 						{t('myaaw.bots.filter_running')}
 					</span>
 					<span class="text-[11px] text-muted-foreground tabular-nums">{runningTotal}</span>
+				</DropdownMenu.Item>
+				<DropdownMenu.Item onclick={() => (filter = 'stopped')} class="justify-between gap-2">
+					<span class="flex items-center gap-2">
+						<Check class={filter === 'stopped' ? 'h-3.5 w-3.5' : 'h-3.5 w-3.5 opacity-0'} />
+						{t('myaaw.bots.filter_stopped')}
+					</span>
+					<span class="text-[11px] text-muted-foreground tabular-nums">{stoppedTotal}</span>
 				</DropdownMenu.Item>
 				<DropdownMenu.Item onclick={() => (filter = 'unread')} class="justify-between gap-2">
 					<span class="flex items-center gap-2">
