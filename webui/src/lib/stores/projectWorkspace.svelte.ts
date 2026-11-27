@@ -2,6 +2,7 @@ import { browser } from '$app/environment';
 import type { ProjectDiffTarget, ProjectMultiDiffTarget, ProjectWorkspaceTab } from '$lib/types';
 
 export type ProjectSidebarTab = 'files' | 'git' | 'chats';
+export type ChatRightPanelKind = 'info' | 'project' | 'attachments';
 export type TerminalLayoutMode = 'auto' | 'single' | 'split-v' | 'split-h' | 'grid';
 
 export interface PersistedTerminalGroup {
@@ -372,6 +373,7 @@ export function createProjectWorkspace() {
 	let workingDir = $state('');
 	let workingDirExists = $state(true);
 	let hasGit = $state(false);
+	let gitBranch = $state('');
 	/** Conversation ID backing `/fs/*` and `/git/*` even while a draft new chat has `conversationId === ''`. */
 	let contextConversationId = $state('');
 	let panelOpen = $state(false);
@@ -429,6 +431,7 @@ export function createProjectWorkspace() {
 		workingDir = '';
 		workingDirExists = true;
 		hasGit = false;
+		gitBranch = '';
 		contextConversationId = '';
 		tabs = [];
 		terminalOpen = false;
@@ -448,7 +451,7 @@ export function createProjectWorkspace() {
 		git = false,
 		agent = '',
 		conversationId = '',
-		options: { openPanelIfFresh?: boolean; focusChat?: boolean } = {}
+		options: { openPanelIfFresh?: boolean; focusChat?: boolean; gitBranch?: string } = {}
 	) {
 		const nextKey = projectScopeKey(agent, dir);
 
@@ -463,6 +466,8 @@ export function createProjectWorkspace() {
 		if (nextKey && nextKey === currentScopeKey && workingDir === dir) {
 			workingDirExists = exists;
 			hasGit = git;
+			if (!git) gitBranch = '';
+			else if (options.gitBranch !== undefined) gitBranch = options.gitBranch;
 			if (conversationId) contextConversationId = conversationId;
 			if (options.focusChat) activeTabId = 'chat';
 			persistCurrent();
@@ -475,6 +480,7 @@ export function createProjectWorkspace() {
 		workingDir = dir;
 		workingDirExists = exists;
 		hasGit = git;
+		gitBranch = git ? (options.gitBranch ?? '') : '';
 		contextConversationId = conversationId;
 
 		const restored = nextKey ? restoreScope(nextKey) : false;
@@ -715,6 +721,12 @@ export function createProjectWorkspace() {
 		},
 		get hasGit() {
 			return hasGit;
+		},
+		get gitBranch() {
+			return gitBranch;
+		},
+		set gitBranch(v: string) {
+			gitBranch = v;
 		},
 		get workingDirName() {
 			return workingDirName;

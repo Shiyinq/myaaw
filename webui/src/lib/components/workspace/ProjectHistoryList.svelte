@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import {
 		AlertTriangle,
+		Check,
 		ChevronDown,
 		ChevronRight,
 		FolderGit2,
@@ -9,13 +10,17 @@
 		GitBranch,
 		Loader2,
 		MessageSquarePlus,
+		Pencil,
 		RefreshCw,
-		Search
+		Search,
+		Trash2,
+		X
 	} from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
 	import { chatRuns } from '$lib/stores/chatRuns.svelte';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { conversationHistory } from '$lib/stores/conversationHistory.svelte';
 	import { conversationsStore } from '$lib/stores/conversations.svelte';
 	import {
@@ -46,6 +51,8 @@
 		onOpen: (id: string) => void;
 		onNewInProject?: (project: ConversationProject) => void;
 		onAttachProject?: () => void;
+		onDeleted?: (id: string) => void;
+		onRenamed?: (id: string, title: string) => void;
 	}
 
 	let {
@@ -55,7 +62,9 @@
 		refreshKey = 0,
 		onOpen,
 		onNewInProject,
-		onAttachProject
+		onAttachProject,
+		onDeleted,
+		onRenamed
 	}: Props = $props();
 
 	const { t, locale } = useTranslation();
@@ -76,6 +85,17 @@
 
 	let scrollRoot = $state<HTMLElement | null>(null);
 	let projectsSentinel = $state<HTMLElement | null>(null);
+	let editingId = $state('');
+	let editingDir = '';
+	let editingTitle = $state('');
+	let renameInput = $state<HTMLInputElement | null>(null);
+
+	$effect(() => {
+		if (editingId && renameInput) {
+			renameInput.focus();
+			renameInput.select();
+		}
+	});
 
 	// Conversations whose run is still streaming in the background. The open one
 	// is skipped: its own timeline already shows the progress.
@@ -338,6 +358,66 @@
 		if (parts.length <= 3) return fullPath;
 		return `…/${parts.slice(-3).join('/')}`;
 	}
+
+	function startRename(dir: string, chat: ConversationSummary) {
+		editingId = chat.id;
+		editingDir = dir;
+		editingTitle = chat.title || '';
+	}
+
+	async function saveRename() {
+		if (!editingId) return;
+		const id = editingId;
+		const dir = editingDir;
+		const title = editingTitle.trim();
+		if (!title) return;
+		if (await conversationHistory.rename(id, title)) {
+			editingId = '';
+			const state = chatsByDir[dir];
+			if (state) {
+				chatsByDir = {
+					...chatsByDir,
+					[dir]: {
+						...state,
+						items: state.items.map((item) => (item.id === id ? { ...item, title } : item))
+					}
+				};
+			}
+			onRenamed?.(id, title);
+		}
+	}
+
+	async function removeChat(dir: string, chat: ConversationSummary) {
+		if (
+			!(await askConfirm({
+				message: t('myaaw.conversations.delete_confirm'),
+				variant: 'destructive'
+			}))
+		) {
+			return;
+		}
+		if (await conversationHistory.remove(chat.id)) {
+			if (editingId === chat.id) editingId = '';
+			const state = chatsByDir[dir];
+			if (state) {
+				chatsByDir = {
+					...chatsByDir,
+					[dir]: {
+						...state,
+						items: state.items.filter((item) => item.id !== chat.id)
+					}
+				};
+			}
+			projects = projects
+				.map((proj) =>
+					proj.working_dir === dir
+						? { ...proj, conversation_count: Math.max(0, proj.conversation_count - 1) }
+						: proj
+				)
+				.filter((proj) => proj.conversation_count > 0);
+			onDeleted?.(chat.id);
+		}
+	}
 </script>
 
 <div class="flex h-full min-h-0 flex-col">
@@ -533,51 +613,107 @@
 														(unreadChats.has(agent, chat.id) ||
 															approvalQueue.has(agent, chat.id)) &&
 														!selected}
-													<button
-														type="button"
+													<div
 														class={[
-															'flex w-full flex-col rounded-lg px-2 py-1.5 text-left text-xs transition-colors',
+															'group/entry relative rounded-lg transition-colors',
 															selected
-																? 'bg-primary/12 font-medium text-foreground'
+																? 'bg-primary/12 text-foreground'
 																: 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
 														]}
-														onclick={() => onOpen(chat.id)}
 													>
-														<span class="flex w-full min-w-0 items-center gap-1.5">
-															{#if isStreaming}
-																<Loader2
-																	class="h-3 w-3 shrink-0 animate-spin text-muted-foreground"
-																	aria-label={t('myaaw.chat.streaming')}
-																	data-streaming="true"
+														{#if editingId === chat.id}
+															<div class="flex items-center gap-1 p-1">
+																<Input
+																	bind:value={editingTitle}
+																	bind:ref={renameInput}
+																	class="h-7 text-xs"
+																	onkeydown={(event) => {
+																		if (event.key === 'Enter') void saveRename();
+																		if (event.key === 'Escape') editingId = '';
+																	}}
 																/>
-															{/if}
-															{#if isUnread}
-																<span
-																	class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-																	role="img"
-																	aria-label={t('myaaw.chat.unread')}
-																></span>
-															{/if}
-															<span
-																class={[
-																	'min-w-0 flex-1 truncate text-xs text-foreground',
-																	isUnread || selected ? 'font-medium' : ''
-																]}
+																<Button
+																	size="icon-xs"
+																	variant="secondary"
+																	onclick={() => void saveRename()}
+																	aria-label={t('common.save')}
+																>
+																	<Check class="h-3 w-3" />
+																</Button>
+																<Button
+																	size="icon-xs"
+																	variant="ghost"
+																	onclick={() => (editingId = '')}
+																	aria-label={t('common.cancel')}
+																>
+																	<X class="h-3 w-3" />
+																</Button>
+															</div>
+														{:else}
+															<button
+																type="button"
+																class="flex w-full flex-col rounded-lg px-2 py-1.5 text-left text-xs"
+																onclick={() => onOpen(chat.id)}
 															>
-																{chat.title || t('myaaw.chat.new')}
-															</span>
-														</span>
-														<span
-															class="mt-0.5 block w-full truncate text-[10px] text-muted-foreground/75 tabular-nums"
-														>
-															{formatConversationTimestamp(chat.updated_at, locale.value)}
-															{#if chat.message_count > 0}
-																· {t('myaaw.conversations.messages', {
-																	count: chat.message_count
-																})}
-															{/if}
-														</span>
-													</button>
+																<span class="flex w-full min-w-0 items-center gap-1.5">
+																	{#if isStreaming}
+																		<Loader2
+																			class="h-3 w-3 shrink-0 animate-spin text-muted-foreground"
+																			aria-label={t('myaaw.chat.streaming')}
+																			data-streaming="true"
+																		/>
+																	{/if}
+																	{#if isUnread}
+																		<span
+																			class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+																			role="img"
+																			aria-label={t('myaaw.chat.unread')}
+																		></span>
+																	{/if}
+																	<span
+																		class={[
+																			'min-w-0 flex-1 truncate text-xs text-foreground',
+																			isUnread || selected ? 'font-medium' : ''
+																		]}
+																	>
+																		{chat.title || t('myaaw.chat.new')}
+																	</span>
+																</span>
+																<span
+																	class="mt-0.5 block w-full truncate text-[10px] text-muted-foreground/75 tabular-nums"
+																>
+																	{formatConversationTimestamp(chat.updated_at, locale.value)}
+																	{#if chat.message_count > 0}
+																		· {t('myaaw.conversations.messages', {
+																			count: chat.message_count
+																		})}
+																	{/if}
+																</span>
+															</button>
+															<div
+																class="pointer-events-none absolute top-1 right-1 flex items-center gap-0.5 rounded-md bg-muted/95 pl-0.5 opacity-0 transition-opacity group-focus-within/entry:pointer-events-auto group-focus-within/entry:opacity-100 group-hover/entry:pointer-events-auto group-hover/entry:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
+															>
+																<Button
+																	variant="ghost"
+																	size="icon-xs"
+																	onclick={() => startRename(proj.working_dir, chat)}
+																	aria-label={t('myaaw.chat.rename')}
+																	title={t('myaaw.chat.rename')}
+																>
+																	<Pencil class="h-3 w-3" />
+																</Button>
+																<Button
+																	variant="ghost"
+																	size="icon-xs"
+																	onclick={() => void removeChat(proj.working_dir, chat)}
+																	aria-label={t('common.delete')}
+																	title={t('common.delete')}
+																>
+																	<Trash2 class="h-3 w-3 text-destructive" />
+																</Button>
+															</div>
+														{/if}
+													</div>
 												{/each}
 											</div>
 										{/each}

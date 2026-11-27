@@ -134,6 +134,7 @@ type ConversationDetail struct {
 	WorkingDir       string             `json:"working_dir,omitempty"`
 	WorkingDirExists bool               `json:"working_dir_exists,omitempty"`
 	HasGit           bool               `json:"has_git,omitempty"`
+	GitBranch        string             `json:"git_branch,omitempty"`
 	Messages         []provider.Message `json:"messages"`
 	TotalMessages int                `json:"total_messages"`
 	Limit         int                `json:"limit"`
@@ -498,6 +499,9 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 	}
 	if detail.WorkingDir != "" {
 		detail.WorkingDirExists, detail.HasGit = workingDirStatus(detail.WorkingDir)
+		if detail.HasGit {
+			detail.GitBranch = workspaceguard.GitBranch(detail.WorkingDir)
+		}
 	}
 	detail.Pinned = pinnedAt.Valid
 	if pinnedAt.Valid {
@@ -927,9 +931,12 @@ func (s *ConversationService) Create(
 		return ConversationDetail{}, err
 	}
 
-	exists, hasGit := false, false
+	exists, hasGit, gitBranch := false, false, ""
 	if cleanWD != "" {
 		exists, hasGit = workingDirStatus(cleanWD)
+		if hasGit {
+			gitBranch = workspaceguard.GitBranch(cleanWD)
+		}
 	}
 	return ConversationDetail{
 		ID:               id,
@@ -943,6 +950,7 @@ func (s *ConversationService) Create(
 		WorkingDir:       cleanWD,
 		WorkingDirExists: exists,
 		HasGit:           hasGit,
+		GitBranch:        gitBranch,
 		Messages:         []provider.Message{},
 		Turns:            []ConversationTurn{},
 	}, nil

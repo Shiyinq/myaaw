@@ -88,24 +88,24 @@
 <!-- Unified workspace tab bar: pinned [Chat | Terminal] on the left + scrollable open files/diffs -->
 <div
 	bind:this={root}
-	class="flex h-14 shrink-0 items-center gap-1.5 border-b bg-muted/25 pl-2"
+	class="flex h-10 shrink-0 items-center gap-1.5 pl-2"
 	style:padding-right="{gutter}px"
 >
 	<!-- Pinned left group: Chat and Terminal always stay visible regardless of file tab scroll -->
 	<div
 		class={[
-			'flex shrink-0 items-center gap-1 py-1',
-			tabs.length > 0 && 'border-r border-border/60 pr-1.5'
+			'flex shrink-0 items-center gap-1',
+			tabs.length > 0 && 'border-r border-border/50 pr-1.5'
 		]}
 	>
 		<button
 			type="button"
 			data-tab-id="chat"
 			class={[
-				'flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
+				'flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors',
 				activeTabId === 'chat'
-					? 'border-border bg-background text-foreground shadow-2xs'
-					: 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+					? 'border-border/80 bg-muted/70 text-foreground'
+					: 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
 			]}
 			onclick={onSelectChat}
 			title={t('myaaw.nav.chat')}
@@ -119,15 +119,15 @@
 			<div
 				data-tab-id="terminal"
 				class={[
-					'flex shrink-0 items-center gap-1 rounded-md border text-xs transition-colors',
+					'flex shrink-0 items-center gap-0.5 rounded-md border text-xs transition-colors',
 					termSelected
-						? 'border-border bg-background text-foreground shadow-2xs'
-						: 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+						? 'border-border/80 bg-muted/70 text-foreground'
+						: 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
 				]}
 			>
 				<button
 					type="button"
-					class="flex items-center gap-1.5 py-1.5 pr-1 pl-2.5 text-left font-medium"
+					class="flex items-center gap-1.5 py-1 pr-1 pl-2 text-left font-medium"
 					onclick={onSelectTerminal}
 					title={t('myaaw.nav.terminal')}
 				>
@@ -136,7 +136,7 @@
 				</button>
 				<button
 					type="button"
-					class="mr-1 grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+					class="mr-0.5 grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 					onclick={onCloseTerminal}
 					aria-label={t('common.close')}
 					title={t('common.close')}
@@ -151,22 +151,22 @@
 	<div
 		bind:this={tabStrip}
 		onwheel={onTabStripWheel}
-		class="flex min-w-0 flex-1 touch-pan-x items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+		class="flex min-w-0 flex-1 touch-pan-x items-center gap-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
 	>
 		{#each tabs as tab (tab.id)}
 			{@const selected = tab.id === activeTabId}
 			<div
 				data-tab-id={tab.id}
 				class={[
-					'group/tab flex max-w-52 shrink-0 items-center gap-1 rounded-md border text-xs transition-colors',
+					'group/tab flex max-w-52 shrink-0 items-center gap-0.5 rounded-md border text-xs transition-colors',
 					selected
-						? 'border-border bg-background text-foreground shadow-2xs'
-						: 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+						? 'border-border/80 bg-muted/70 text-foreground'
+						: 'border-transparent bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'
 				]}
 			>
 				<button
 					type="button"
-					class="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 pr-1 pl-2.5 text-left"
+					class="flex min-w-0 flex-1 items-center gap-1.5 py-1 pr-1 pl-2 text-left"
 					onclick={() => onSelectTab(tab.id)}
 					title={tab.kind === 'multi-diff'
 						? tab.label
@@ -190,7 +190,7 @@
 				</button>
 				<button
 					type="button"
-					class="mr-1 grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+					class="mr-0.5 grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 					onclick={() => onCloseTab(tab.id)}
 					aria-label={t('common.close')}
 					title={t('common.close')}

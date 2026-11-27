@@ -911,7 +911,7 @@
 									(botsMode && (agentSelection.current?.name || agentSelection.selected)) ||
 									t(current.label)}
 						<h1
-							class="pointer-events-auto truncate text-base font-medium tracking-tight text-foreground"
+							class="pointer-events-auto w-fit max-w-full truncate text-base font-medium tracking-tight text-foreground"
 							title={isGroupChat
 								? activeGroup?.description || title
 								: dmTitle || (botsMode ? title : t(current.description))}

@@ -13895,6 +13895,9 @@ const docTemplatecontrolplane = `{
                 "folder_id": {
                     "type": "string"
                 },
+                "git_branch": {
+                    "type": "string"
+                },
                 "has_git": {
                     "type": "boolean"
                 },

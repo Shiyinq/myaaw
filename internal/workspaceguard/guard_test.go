@@ -96,3 +96,74 @@ func TestValidateCreatableDirAndHasGit(t *testing.T) {
 		t.Fatalf("expected HasGit=true after .git created")
 	}
 }
+
+func TestGitBranch(t *testing.T) {
+	root := t.TempDir()
+
+	// Non-git directory returns empty string.
+	plainDir := filepath.Join(root, "plain")
+	if err := os.MkdirAll(plainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := GitBranch(plainDir); got != "" {
+		t.Fatalf("expected empty branch for non-git dir, got %q", got)
+	}
+
+	// Standard .git directory with branch ref.
+	repoDir := filepath.Join(root, "repo")
+	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, ".git", "HEAD"), []byte("ref: refs/heads/feat/chat-working-dir\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := GitBranch(repoDir); got != "feat/chat-working-dir" {
+		t.Fatalf("expected feat/chat-working-dir, got %q", got)
+	}
+
+	// Detached HEAD returns 7-char short commit hash.
+	if err := os.WriteFile(filepath.Join(repoDir, ".git", "HEAD"), []byte("a1b2c3d4e5f60718293a4b5c6d7e8f9012345678\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := GitBranch(repoDir); got != "a1b2c3d" {
+		t.Fatalf("expected short detached hash a1b2c3d, got %q", got)
+	}
+
+	// Worktree .git pointer file (relative gitdir).
+	wtGitDir := filepath.Join(repoDir, ".git", "worktrees", "wt-rel")
+	if err := os.MkdirAll(wtGitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtGitDir, "HEAD"), []byte("ref: refs/heads/worktree-rel\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wtRelDir := filepath.Join(root, "wt-rel")
+	if err := os.MkdirAll(wtRelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtRelDir, ".git"), []byte("gitdir: ../repo/.git/worktrees/wt-rel\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := GitBranch(wtRelDir); got != "worktree-rel" {
+		t.Fatalf("expected worktree-rel for relative worktree pointer, got %q", got)
+	}
+
+	// Worktree .git pointer file (absolute gitdir) with detached HEAD.
+	wtAbsGitDir := filepath.Join(repoDir, ".git", "worktrees", "wt-abs")
+	if err := os.MkdirAll(wtAbsGitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtAbsGitDir, "HEAD"), []byte("deadbeef1234567890\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wtAbsDir := filepath.Join(root, "wt-abs")
+	if err := os.MkdirAll(wtAbsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wtAbsDir, ".git"), []byte("gitdir: "+wtAbsGitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := GitBranch(wtAbsDir); got != "deadbee" {
+		t.Fatalf("expected deadbee for detached absolute worktree pointer, got %q", got)
+	}
+}

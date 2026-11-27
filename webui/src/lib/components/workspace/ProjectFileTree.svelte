@@ -321,7 +321,7 @@
 						<Input
 							bind:value={renameDraft}
 							placeholder={t('myaaw.workspace.rename_placeholder')}
-							class="h-6 flex-1 px-1.5 text-xs"
+							class="h-7 flex-1 px-1.5 text-[13px]"
 							autofocus
 							onkeydown={(e) => {
 								if (e.key === 'Escape') {
@@ -350,13 +350,13 @@
 				{:else}
 					<div
 						class={[
-							'group/row flex items-center rounded-md pr-1 transition-colors hover:bg-muted/70',
+							'group/row relative flex items-center rounded-md pr-1 transition-colors hover:bg-muted/70',
 							isActive && 'bg-primary/10 text-foreground'
 						]}
 					>
 						<button
 							type="button"
-							class="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs"
+							class="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left text-[13px] leading-tight"
 							style:padding-left="{8 + row.depth * 14}px"
 							onclick={() =>
 								row.entry.is_dir ? onToggleDir(row.entry) : onOpenFile(row.entry.path)}
@@ -364,23 +364,23 @@
 						>
 							{#if row.entry.is_dir}
 								{#if loadingDir[row.entry.path]}
-									<Loader2 class="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
+									<Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
 								{:else if expanded[row.entry.path]}
-									<ChevronDown class="h-3 w-3 shrink-0 text-muted-foreground" />
+									<ChevronDown class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 								{:else}
-									<ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground" />
+									<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 								{/if}
 								{#if expanded[row.entry.path]}
-									<FolderOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+									<FolderOpen class="h-4 w-4 shrink-0 text-muted-foreground" />
 								{:else}
-									<Folder class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+									<Folder class="h-4 w-4 shrink-0 text-muted-foreground" />
 								{/if}
 							{:else}
-								<span class="w-3 shrink-0"></span>
+								<span class="w-3.5 shrink-0"></span>
 								{#if isCodeFile(row.entry.name)}
-									<FileCode2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+									<FileCode2 class="h-4 w-4 shrink-0 text-muted-foreground" />
 								{:else}
-									<FileIcon class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+									<FileIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
 								{/if}
 							{/if}
 							<span
@@ -398,7 +398,7 @@
 						</button>
 
 						<div
-							class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 [@media(hover:none)]:opacity-100"
+							class="pointer-events-none absolute top-1/2 right-5 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-muted/95 px-0.5 opacity-0 shadow-2xs transition-opacity group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:static [@media(hover:none)]:translate-y-0 [@media(hover:none)]:bg-transparent [@media(hover:none)]:px-0 [@media(hover:none)]:opacity-100 [@media(hover:none)]:shadow-none"
 						>
 							<button
 								type="button"

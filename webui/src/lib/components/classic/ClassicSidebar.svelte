@@ -75,6 +75,9 @@
 		if (proj.latest_conversation_id) {
 			params.set('anchor', proj.latest_conversation_id);
 		}
+		if (proj.git_branch) {
+			params.set('branch', proj.git_branch);
+		}
 		void goto(`/app/chat?${params.toString()}`);
 	}
 
@@ -182,6 +185,9 @@
 					onAttachProject={() => {
 						attachProject();
 						onClose();
+					}}
+					onDeleted={(id) => {
+						if (id === activeId) newChat();
 					}}
 				/>
 			</div>

@@ -27,6 +27,9 @@
 		onNewChatInProject?: () => void;
 		onFileRenamed?: (fromPath: string, toPath: string) => void;
 		onFileDeleted?: (deletedPath: string) => void;
+		onGitBranchChange?: (branch: string) => void;
+		onConversationDeleted?: (id: string) => void;
+		onConversationRenamed?: (id: string, title: string) => void;
 		onClose: () => void;
 	}
 
@@ -53,6 +56,9 @@
 		onNewChatInProject,
 		onFileRenamed,
 		onFileDeleted,
+		onGitBranchChange,
+		onConversationDeleted,
+		onConversationRenamed,
 		onClose
 	}: Props = $props();
 
@@ -104,6 +110,9 @@
 				{onNewChatInProject}
 				{onFileRenamed}
 				{onFileDeleted}
+				{onGitBranchChange}
+				{onConversationDeleted}
+				{onConversationRenamed}
 				{onClose}
 			/>
 		</div>

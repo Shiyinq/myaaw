@@ -294,7 +294,7 @@
 			</p>
 			<ul class="space-y-0.5">
 				{#each items as item (item.path)}
-					<li class="flex items-center gap-1 rounded-lg hover:bg-muted/60">
+					<li class="group/item relative flex items-center rounded-lg hover:bg-muted/60">
 						{#if item.kind === 'project'}
 							<ProjectCard
 								{agent}
@@ -353,7 +353,7 @@
 						{/if}
 						<button
 							type="button"
-							class="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+							class="pointer-events-none absolute top-1/2 right-1.5 grid size-7 -translate-y-1/2 place-items-center rounded-md bg-muted/95 text-muted-foreground opacity-0 shadow-2xs transition-opacity group-focus-within/item:pointer-events-auto group-focus-within/item:opacity-100 group-hover/item:pointer-events-auto group-hover/item:opacity-100 hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:static [@media(hover:none)]:mr-1 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:bg-transparent [@media(hover:none)]:opacity-100 [@media(hover:none)]:shadow-none"
 							title={t('myaaw.chat.attachments_show_in_chat')}
 							aria-label={t('myaaw.chat.attachments_show_in_chat')}
 							onclick={() => onShowInChat(item)}

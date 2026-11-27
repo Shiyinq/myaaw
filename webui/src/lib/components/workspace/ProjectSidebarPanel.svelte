@@ -47,6 +47,9 @@
 		onNewChatInProject?: () => void;
 		onFileRenamed?: (fromPath: string, toPath: string) => void;
 		onFileDeleted?: (deletedPath: string) => void;
+		onGitBranchChange?: (branch: string) => void;
+		onConversationDeleted?: (id: string) => void;
+		onConversationRenamed?: (id: string, title: string) => void;
 		onClose?: () => void;
 		embedded?: boolean;
 	}
@@ -72,6 +75,9 @@
 		onNewChatInProject,
 		onFileRenamed,
 		onFileDeleted,
+		onGitBranchChange,
+		onConversationDeleted,
+		onConversationRenamed,
 		onClose,
 		embedded = false
 	}: Props = $props();
@@ -176,7 +182,11 @@
 		loadingGit = true;
 		gitError = '';
 		try {
-			gitStatus = await workspaceStore.gitStatus(agent, conversationId);
+			const status = await workspaceStore.gitStatus(agent, conversationId);
+			gitStatus = status;
+			if (status.has_git) {
+				onGitBranchChange?.(status.branch ?? '');
+			}
 		} catch (err) {
 			gitError = getErrorMessage(err);
 		} finally {
@@ -220,12 +230,18 @@
 		<div class="shrink-0 space-y-2 border-b px-3 py-2.5">
 			<div class="flex items-start justify-between gap-2">
 				<div class="min-w-0 flex-1">
-					<div class="flex items-center gap-1.5">
-						<p class="truncate text-xs font-semibold" title={workingDir}>{folderName}</p>
+					<div class="flex min-w-0 items-center gap-1.5">
+						<p class="max-w-[55%] shrink-0 truncate text-xs font-semibold" title={workingDir}>
+							{folderName}
+						</p>
 						{#if gitStatus?.has_git && gitStatus.branch}
-							<Badge variant="secondary" class="h-4 shrink-0 gap-1 px-1.5 font-mono text-[10px]">
-								<GitBranch class="h-2.5 w-2.5" />
-								{gitStatus.branch}
+							<Badge
+								variant="secondary"
+								class="h-4 max-w-full min-w-0 shrink gap-1 px-1.5 font-mono text-[10px]"
+								title={gitStatus.branch}
+							>
+								<GitBranch class="h-2.5 w-2.5 shrink-0" />
+								<span class="min-w-0 truncate">{gitStatus.branch}</span>
 							</Badge>
 						{/if}
 					</div>
@@ -362,6 +378,8 @@
 					refreshKey={refreshKey + localRefreshSeq}
 					{onSelectConversation}
 					{onNewChatInProject}
+					onDeleted={onConversationDeleted}
+					onRenamed={onConversationRenamed}
 				/>
 			{/if}
 		{/if}

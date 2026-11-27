@@ -29,6 +29,7 @@
 	} from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
 	import { workspaceStore } from '$lib/stores/workspace.svelte';
 	import {
@@ -175,7 +176,6 @@
 
 	let busyAction = $state('');
 	let commitMessage = $state('');
-	let amend = $state(false);
 
 	let branchesOpen = $state(false);
 	let branchesData = $state<GitBranchesResponse | null>(null);
@@ -270,9 +270,18 @@
 		}
 	}
 
+	type CommitMode = 'commit' | 'amend' | 'commit-push' | 'commit-sync';
+
 	const hasAnyChanges = $derived(stagedItems.length > 0 || workingItems.length > 0);
 	const canCommit = $derived(
-		Boolean(commitMessage.trim()) && (amend || stagedItems.length > 0) && busyAction === ''
+		Boolean(commitMessage.trim()) && stagedItems.length > 0 && busyAction === ''
+	);
+	const canAmend = $derived(Boolean(commitMessage.trim()) && busyAction === '');
+	const isCommitBusy = $derived(
+		busyAction === 'commit' ||
+			busyAction === 'amend' ||
+			busyAction === 'commit-push' ||
+			busyAction === 'commit-sync'
 	);
 
 	function toggleViewMode() {
@@ -400,16 +409,27 @@
 		if (stashesSectionOpen) void loadStashes();
 	}
 
-	async function handleCommit() {
-		if (!canCommit) return;
-		await runAction('commit', async () => {
+	async function handleCommit(mode: CommitMode = 'commit') {
+		const useAmend = mode === 'amend';
+		if (useAmend ? !canAmend : !canCommit) return;
+		await runAction(mode, async () => {
 			await workspaceStore.gitCommit(agent, conversationId, {
 				message: commitMessage.trim(),
-				amend
+				amend: useAmend
 			});
 			commitMessage = '';
-			amend = false;
-			toastStore.success(t('myaaw.workspace.git_committed'));
+			if (mode === 'commit-push') {
+				await workspaceStore.gitPush(agent, conversationId, !gitStatus?.upstream);
+				toastStore.success(t('myaaw.workspace.git_committed_pushed'));
+			} else if (mode === 'commit-sync') {
+				if (gitStatus?.upstream) {
+					await workspaceStore.gitPull(agent, conversationId);
+				}
+				await workspaceStore.gitPush(agent, conversationId, !gitStatus?.upstream);
+				toastStore.success(t('myaaw.workspace.git_committed_synced'));
+			} else {
+				toastStore.success(t('myaaw.workspace.git_committed'));
+			}
 		});
 	}
 
@@ -504,10 +524,12 @@
 
 {#snippet changeRow(item: GitChangeItem, depth: number, showDirSuffix: boolean)}
 	{@const parts = splitFilePath(item.path)}
-	<div class="group/git flex items-center rounded-md pr-1 transition-colors hover:bg-muted/70">
+	<div
+		class="group/git relative flex items-center rounded-md pr-1 transition-colors hover:bg-muted/70"
+	>
 		<button
 			type="button"
-			class="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left text-xs"
+			class="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left text-[13px] leading-tight"
 			style:padding-left="{6 + depth * 12}px"
 			onclick={() =>
 				onOpenDiff({
@@ -518,22 +540,22 @@
 			title={item.path}
 		>
 			{#if isCodeFile(parts.name)}
-				<FileCode2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+				<FileCode2 class="h-4 w-4 shrink-0 text-muted-foreground" />
 			{:else}
-				<FileIcon class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+				<FileIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
 			{/if}
-			<span class="truncate text-xs">{parts.name}</span>
 			{#if showDirSuffix && parts.dir}
-				<span class="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground/75">
+				<span class="max-w-[70%] shrink-0 truncate text-[13px]">{parts.name}</span>
+				<span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/75">
 					{parts.dir}
 				</span>
 			{:else}
-				<span class="flex-1"></span>
+				<span class="min-w-0 flex-1 truncate text-[13px]">{parts.name}</span>
 			{/if}
 		</button>
 
 		<div
-			class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/git:opacity-100 group-focus-within/git:opacity-100 [@media(hover:none)]:opacity-100"
+			class="pointer-events-none absolute top-1/2 right-6 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-muted/95 px-0.5 opacity-0 shadow-2xs transition-opacity group-focus-within/git:pointer-events-auto group-focus-within/git:opacity-100 group-hover/git:pointer-events-auto group-hover/git:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:static [@media(hover:none)]:translate-y-0 [@media(hover:none)]:bg-transparent [@media(hover:none)]:px-0 [@media(hover:none)]:opacity-100 [@media(hover:none)]:shadow-none"
 		>
 			{#if item.status !== 'D'}
 				<button
@@ -882,29 +904,64 @@
 									}
 								}}
 							></textarea>
-							<Button
-								size="sm"
-								class="h-7.5 w-full text-xs"
-								disabled={!canCommit}
-								onclick={() => void handleCommit()}
-							>
-								{#if busyAction === 'commit'}
-									<Loader2 class="h-3.5 w-3.5 animate-spin" />
-								{:else}
-									<Check class="h-3.5 w-3.5" />
-								{/if}
-								{t('myaaw.workspace.git_commit_btn')}
-							</Button>
-							<label
-								class="flex cursor-pointer items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground select-none"
-							>
-								<input
-									type="checkbox"
-									bind:checked={amend}
-									class="h-3.5 w-3.5 rounded border-border accent-primary"
-								/>
-								<span>{t('myaaw.workspace.git_amend')}</span>
-							</label>
+							<div class="flex h-7.5 w-full overflow-hidden rounded-md">
+								<Button
+									size="sm"
+									class="h-7.5 flex-1 rounded-r-none text-xs"
+									disabled={!canCommit}
+									onclick={() => void handleCommit('commit')}
+								>
+									{#if isCommitBusy}
+										<Loader2 class="h-3.5 w-3.5 animate-spin" />
+									{:else}
+										<Check class="h-3.5 w-3.5" />
+									{/if}
+									{t('myaaw.workspace.git_commit_btn')}
+								</Button>
+								<DropdownMenu.Root>
+									<DropdownMenu.Trigger>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												size="sm"
+												class="h-7.5 w-7 shrink-0 rounded-l-none border-l border-primary-foreground/20 px-0"
+												disabled={!canAmend}
+												aria-label={t('myaaw.workspace.git_commit_more')}
+												title={t('myaaw.workspace.git_commit_more')}
+											>
+												<ChevronDown class="h-3.5 w-3.5" />
+											</Button>
+										{/snippet}
+									</DropdownMenu.Trigger>
+									<DropdownMenu.Content align="end" class="w-44">
+										<DropdownMenu.Item
+											disabled={!canCommit}
+											onclick={() => void handleCommit('commit')}
+										>
+											{t('myaaw.workspace.git_commit_btn')}
+										</DropdownMenu.Item>
+										<DropdownMenu.Item
+											disabled={!canAmend}
+											onclick={() => void handleCommit('amend')}
+										>
+											{t('myaaw.workspace.git_commit_amend')}
+										</DropdownMenu.Item>
+										<DropdownMenu.Separator />
+										<DropdownMenu.Item
+											disabled={!canCommit}
+											onclick={() => void handleCommit('commit-push')}
+										>
+											{t('myaaw.workspace.git_commit_push')}
+										</DropdownMenu.Item>
+										<DropdownMenu.Item
+											disabled={!canCommit}
+											onclick={() => void handleCommit('commit-sync')}
+										>
+											{t('myaaw.workspace.git_commit_sync')}
+										</DropdownMenu.Item>
+									</DropdownMenu.Content>
+								</DropdownMenu.Root>
+							</div>
 						</div>
 
 						{#if gitStatus.clean}
@@ -973,7 +1030,7 @@
 												{@const dirCollapsed = Boolean(collapsedStagedDirs[row.path])}
 												<button
 													type="button"
-													class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-xs transition-colors hover:bg-muted/70"
+													class="flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] leading-tight transition-colors hover:bg-muted/70"
 													style:padding-left="{6 + row.depth * 12}px"
 													onclick={() =>
 														(collapsedStagedDirs = {
@@ -982,11 +1039,11 @@
 														})}
 												>
 													{#if dirCollapsed}
-														<ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground" />
-														<Folder class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														<Folder class="h-4 w-4 shrink-0 text-muted-foreground" />
 													{:else}
-														<ChevronDown class="h-3 w-3 shrink-0 text-muted-foreground" />
-														<FolderOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														<ChevronDown class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														<FolderOpen class="h-4 w-4 shrink-0 text-muted-foreground" />
 													{/if}
 													<span class="min-w-0 flex-1 truncate">{row.name}</span>
 													<span
@@ -1078,7 +1135,7 @@
 												{@const dirCollapsed = Boolean(collapsedWorkingDirs[row.path])}
 												<button
 													type="button"
-													class="flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left text-xs transition-colors hover:bg-muted/70"
+													class="flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left text-[13px] leading-tight transition-colors hover:bg-muted/70"
 													style:padding-left="{6 + row.depth * 12}px"
 													onclick={() =>
 														(collapsedWorkingDirs = {
@@ -1087,11 +1144,11 @@
 														})}
 												>
 													{#if dirCollapsed}
-														<ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground" />
-														<Folder class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														<Folder class="h-4 w-4 shrink-0 text-muted-foreground" />
 													{:else}
-														<ChevronDown class="h-3 w-3 shrink-0 text-muted-foreground" />
-														<FolderOpen class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														<ChevronDown class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+														<FolderOpen class="h-4 w-4 shrink-0 text-muted-foreground" />
 													{/if}
 													<span class="min-w-0 flex-1 truncate">{row.name}</span>
 													<span

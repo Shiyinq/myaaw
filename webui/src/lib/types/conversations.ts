@@ -193,6 +193,7 @@ export interface ConversationDetail {
 	working_dir?: string;
 	working_dir_exists?: boolean;
 	has_git?: boolean;
+	git_branch?: string;
 	messages: Message[];
 	total_messages: number;
 	limit: number;

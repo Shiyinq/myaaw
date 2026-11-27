@@ -271,7 +271,7 @@
 	so clicking any bot in the left roster opens its full workspace sidebar.
 -->
 <div class="flex h-full min-h-0 flex-col">
-	<div class="relative flex shrink-0 flex-col items-center gap-1 px-4 pt-4 pb-2 lg:pt-16">
+	<div class="relative flex shrink-0 flex-col items-center gap-1 px-4 pt-4 pb-2 lg:pt-5">
 		<Button
 			variant="ghost"
 			size="icon-sm"
@@ -397,6 +397,8 @@
 				{onOpen}
 				{onNewInProject}
 				{onAttachProject}
+				{onDeleted}
+				{onRenamed}
 			/>
 		</div>
 	{:else}

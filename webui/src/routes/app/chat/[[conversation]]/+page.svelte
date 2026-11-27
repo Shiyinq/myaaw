@@ -53,17 +53,21 @@
 	import BotsAgentPanel from '$lib/components/bots/BotsAgentPanel.svelte';
 	import {
 		AttachWorkingDirDialog,
+		ChatRightActivityBar,
 		ProjectComposerControls,
 		ProjectEmptyStateCta,
 		ProjectHistoryList,
-		ProjectSidebarDrawer,
+		ProjectSidebarPanel,
 		ProjectTabBar,
 		ProjectTerminalGroup,
 		ProjectWorkspacePane
 	} from '$lib/components/workspace';
-	import { activeProjectScope, createProjectWorkspace } from '$lib/stores/projectWorkspace.svelte';
+	import {
+		activeProjectScope,
+		createProjectWorkspace,
+		type ChatRightPanelKind
+	} from '$lib/stores/projectWorkspace.svelte';
 	import TopBarActions from '$lib/components/app/TopBarActions.svelte';
-	import TopBarButton from '$lib/components/app/TopBarButton.svelte';
 	import Markdown from '$lib/components/common/Markdown.svelte';
 	import ChatStep from '$lib/components/common/ChatStep.svelte';
 	import CopyButton from '$lib/components/common/CopyButton.svelte';
@@ -104,7 +108,6 @@
 		Mic,
 		Minimize2,
 		Monitor,
-		PanelRight,
 		Paperclip,
 		Pencil,
 		Quote,
@@ -250,8 +253,8 @@
 	// chat. The choice is remembered per browser; a mode change never forces an
 	// empty panel open.
 	const PANEL_TAB_KEY = 'myaaw_chat_right_tab';
-	let rightTab = $state<'history' | 'attachments'>(
-		browser && localStorage.getItem(PANEL_TAB_KEY) === 'attachments' ? 'attachments' : 'history'
+	let rightTab = $state<ChatRightPanelKind>(
+		browser && localStorage.getItem(PANEL_TAB_KEY) === 'attachments' ? 'attachments' : 'info'
 	);
 	// Focus/Bots right panel owns a tab set of its own; the header can return it to history.
 	let focusPanelTab = $state<'history' | 'projects' | 'context' | 'control'>('history');
@@ -262,8 +265,6 @@
 	let recentProjects = $state<ConversationProject[]>([]);
 	let projectsRefreshSeq = $state(0);
 	let loadedProjectsKey = '';
-	// Classic has no right column, so its attachment surface is an overlay drawer.
-	let classicAttachmentsOpen = $state(false);
 	// Optional per-chat project workspace controller (files, multi-tab viewer, Git, terminal).
 	const project = createProjectWorkspace();
 	const terminalGroupHolder: { current?: ProjectTerminalGroup } = {};
@@ -725,17 +726,30 @@
 	);
 	let searchBox = $state<HTMLInputElement | null>(null);
 
+	/** The panel currently visible inside the unified right sidebar, or null when collapsed. */
+	let activeRightPanel = $derived.by((): ChatRightPanelKind | null => {
+		if (!agent || !historyOpen) return null;
+		if (rightTab === 'project' && !project.workingDir) return null;
+		if (classicMode && rightTab === 'info') return null;
+		return rightTab;
+	});
+	let rightSidebarOpen = $derived(activeRightPanel !== null);
+
 	$effect(() => {
-		if (browser) localStorage.setItem(PANEL_TAB_KEY, rightTab);
+		if (browser && (rightTab === 'info' || rightTab === 'attachments')) {
+			localStorage.setItem(PANEL_TAB_KEY, rightTab);
+		}
 	});
 
-	// A shell change never leaves an overlay from the previous mode on screen.
+	// A shell change never leaves an unsupported panel open from the previous mode.
 	let lastShellMode = '';
 	$effect(() => {
 		const mode = shellMode;
 		if (mode === lastShellMode) return;
 		lastShellMode = mode;
-		classicAttachmentsOpen = false;
+		if (mode === 'classic' && rightTab === 'info') {
+			historyOpen = false;
+		}
 		previewAttachment = null;
 		focusContextPath = '';
 	});
@@ -1041,16 +1055,19 @@
 			detail.working_dir_exists ?? true,
 			detail.has_git ?? false,
 			currentAgent,
-			id
+			id,
+			{ gitBranch: detail.git_branch }
 		);
 		if (pendingProjectSidebarSwap) {
 			pendingProjectSidebarSwap = false;
 			if (detail.working_dir) {
-				if (historyOpen) closeSidePanel();
-				if (!browser || window.innerWidth >= 1024) {
-					project.panelOpen = true;
-				}
+				showProjectSidebar();
 			}
+		} else if (detail.working_dir && project.panelOpen && (!browser || window.innerWidth >= 1024)) {
+			rightTab = 'project';
+			historyOpen = true;
+		} else if (!detail.working_dir && rightTab === 'project') {
+			historyOpen = false;
 		}
 		const title = detail.title ?? '';
 		applyTitle(id, title);
@@ -1950,6 +1967,7 @@
 			const targetWorkingDir = page.url.searchParams.get('working_dir') ?? '';
 			const targetAnchor = page.url.searchParams.get('anchor') ?? '';
 			const targetHasGit = page.url.searchParams.get('has_git') === '1';
+			const targetBranch = page.url.searchParams.get('branch') ?? '';
 			const wantsAttach = page.url.searchParams.get('attach') === '1';
 			if (targetWorkingDir) {
 				pendingFolder = '';
@@ -1957,8 +1975,10 @@
 				resetChat({ preserveProject: sameProject });
 				project.setDirectory(targetWorkingDir, true, targetHasGit, currentAgent, targetAnchor, {
 					openPanelIfFresh: true,
-					focusChat: true
+					focusChat: true,
+					gitBranch: targetBranch || undefined
 				});
+				showProjectSidebar();
 				void goto('/app/chat', { replaceState: true, noScroll: true });
 				return;
 			}
@@ -1997,7 +2017,9 @@
 		conversationId = currentConversation;
 		focusContextPath = '';
 		previewAttachment = null;
-		classicAttachmentsOpen = false;
+		if (classicMode && rightTab === 'attachments') {
+			historyOpen = false;
+		}
 		rememberConversation(currentConversation);
 		void loadConversation(currentAgent, currentConversation);
 	});
@@ -3351,13 +3373,12 @@
 			proj.has_git,
 			currentAgent,
 			proj.latest_conversation_id,
-			{ openPanelIfFresh: true, focusChat: true }
+			{ openPanelIfFresh: true, focusChat: true, gitBranch: proj.git_branch }
 		);
-		if (historyOpen) {
+		if (browser && window.innerWidth < 1024) {
 			closeSidePanel();
-		}
-		if (!browser || window.innerWidth >= 1024) {
-			project.panelOpen = true;
+		} else {
+			showProjectSidebar();
 		}
 		if (page.url.pathname !== '/app/chat') {
 			await goto('/app/chat');
@@ -3367,6 +3388,7 @@
 
 	function startWithoutProject() {
 		project.leaveProject();
+		if (rightTab === 'project') historyOpen = false;
 		void focusComposer();
 	}
 
@@ -3378,7 +3400,8 @@
 	/** Opens the chat history and puts the cursor in its search box. */
 	async function focusHistorySearch() {
 		studioHistoryTab = 'history';
-		if (!historyOpen) toggleHistory();
+		focusPanelTab = 'history';
+		if (activeRightPanel !== 'info') toggleRightPanel('info');
 		await tick();
 		searchBox?.focus();
 		searchBox?.select();
@@ -3415,9 +3438,9 @@
 			project.preserveForNewChat();
 		} else {
 			project.reset(true);
+			if (rightTab === 'project') historyOpen = false;
 		}
 		attachmentCount = 0;
-		classicAttachmentsOpen = false;
 		if (composer) composer.style.height = '';
 		storedUsage = null;
 		sessionStats = null;
@@ -3431,27 +3454,50 @@
 		groupOpen = {};
 	}
 
-	function toggleHistory() {
-		if (classicMode) return;
-		// The history button shows history; a second press on it closes the panel.
-		if (historyOpen && rightTab === 'history') {
-			historyOpen = false;
-		} else {
-			historyOpen = true;
-			rightTab = 'history';
-			focusPanelTab = 'history';
-		}
-		if (browser) localStorage.setItem(HISTORY_KEY, String(historyOpen));
-	}
-
-	/** Closes whichever right-panel surface the current shell uses. */
-	function closeSidePanel() {
-		if (classicMode) {
-			classicAttachmentsOpen = false;
+	/**
+	 * Unified VS Code-style right sidebar controller:
+	 * - Clicking an inactive icon while another panel is open swaps content in-place.
+	 * - Clicking an icon while nothing is open slides the sidebar in from the right.
+	 * - Clicking the already-active icon a second time collapses the sidebar.
+	 */
+	function toggleRightPanel(kind: ChatRightPanelKind) {
+		if (!agent) return;
+		if (kind === 'info' && classicMode) return;
+		if (kind === 'project' && !project.workingDir) {
+			project.dialogOpen = true;
 			return;
 		}
+		if (activeRightPanel === kind) {
+			historyOpen = false;
+			project.panelOpen = false;
+			if (browser && !classicMode) localStorage.setItem(HISTORY_KEY, 'false');
+			return;
+		}
+		rightTab = kind;
+		historyOpen = true;
+		project.panelOpen = kind === 'project';
+		if (browser && !classicMode) localStorage.setItem(HISTORY_KEY, 'true');
+	}
+
+	function showProjectSidebar() {
+		if (!agent || !project.workingDir) return;
+		if (!browser || window.innerWidth >= 1024) {
+			rightTab = 'project';
+			historyOpen = true;
+			project.panelOpen = true;
+			if (browser && !classicMode) localStorage.setItem(HISTORY_KEY, 'true');
+		}
+	}
+
+	function toggleHistory() {
+		toggleRightPanel('info');
+	}
+
+	/** Closes whichever right-panel surface is currently open. */
+	function closeSidePanel() {
 		historyOpen = false;
-		if (browser) localStorage.setItem(HISTORY_KEY, 'false');
+		project.panelOpen = false;
+		if (browser && !classicMode) localStorage.setItem(HISTORY_KEY, 'false');
 	}
 
 	function openConversation(id: string) {
@@ -3459,24 +3505,18 @@
 		previewAttachment = null;
 		if (browser && window.innerWidth < 1024) {
 			closeSidePanel();
-			project.panelOpen = false;
 		}
 		if (id !== conversationId) void goto(`/app/chat/${id}`);
 	}
 
-	/** Opens a conversation picked from the right Bot Info / History sidebar, swapping to the Project Sidebar for project chats. */
+	/** Opens a conversation picked from the right Bot Info / History sidebar, swapping in-place to the Project panel for project chats. */
 	function openConversationFromSidebar(id: string) {
 		focusContextPath = '';
 		previewAttachment = null;
-		const fromProjectsTab =
-			((botsMode || focusMode) && focusPanelTab === 'projects') ||
-			(!botsMode && !focusMode && !classicMode && studioHistoryTab === 'projects');
 		if (id === conversationId) {
 			if (project.workingDir) {
-				if (historyOpen) closeSidePanel();
-				if (!browser || window.innerWidth >= 1024) {
-					project.panelOpen = true;
-				}
+				if (browser && window.innerWidth < 1024) closeSidePanel();
+				else showProjectSidebar();
 			} else if (browser && window.innerWidth < 1024) {
 				closeSidePanel();
 			}
@@ -3484,18 +3524,15 @@
 		}
 		if (browser && window.innerWidth < 1024) {
 			closeSidePanel();
-			project.panelOpen = false;
 		} else {
-			if (fromProjectsTab && historyOpen) closeSidePanel();
 			pendingProjectSidebarSwap = true;
 		}
 		void goto(`/app/chat/${id}`);
 	}
 
-	/** Toggles the dedicated Project sidebar (independent of the agent sidebar) or opens the folder picker when none is attached. */
+	/** Toggles the Project view inside the unified right sidebar (or opens the folder picker when none is attached). */
 	function openProjectPanel() {
-		if (!agent) return;
-		project.togglePanel();
+		toggleRightPanel('project');
 	}
 
 	async function handleSelectWorkingDir(selectedPath: string) {
@@ -3527,7 +3564,8 @@
 				created.working_dir_exists ?? true,
 				created.has_git ?? false,
 				agent,
-				created.id
+				created.id,
+				{ gitBranch: created.git_branch }
 			);
 			conversationsStore.invalidate();
 			projectsRefreshSeq += 1;
@@ -3537,8 +3575,8 @@
 			toastStore.success(t('myaaw.workspace.attached'));
 			await goto(`/app/chat/${created.id}`, { replaceState: true, noScroll: true });
 		}
-		// Open the dedicated Project sidebar without touching the main agent sidebar.
-		project.panelOpen = true;
+		// Open the Project view inside the unified right sidebar.
+		showProjectSidebar();
 	}
 
 	function openProjectFile(virtualPath: string) {
@@ -3573,21 +3611,7 @@
 	 * the conversation list: each toggles its own view in the shared right column.
 	 */
 	function openAttachments() {
-		if (!browser || !agent) return;
-		if (classicMode) {
-			classicAttachmentsOpen = !classicAttachmentsOpen;
-			return;
-		}
-		if (historyOpen && rightTab === 'attachments') {
-			historyOpen = false;
-			if (browser) localStorage.setItem(HISTORY_KEY, 'false');
-			return;
-		}
-		rightTab = 'attachments';
-		if (!historyOpen) {
-			historyOpen = true;
-			localStorage.setItem(HISTORY_KEY, 'true');
-		}
+		toggleRightPanel('attachments');
 	}
 
 	/** Opens one file in the shared preview pane. */
@@ -4617,88 +4641,90 @@
 
 <TopBarActions id="chat-actions">
 	{#snippet children()}
-		{#if !classicMode}
-			<TopBarButton label={t('myaaw.chat.new')} icon={MessageSquarePlus} onclick={newChat} />
-		{/if}
-		{#if agent && (project.workingDir || items.length > 0)}
+		<!-- Desktop moves these actions to the vertical right Activity Bar; phones keep them in the top bar. -->
+		<div class="flex items-center gap-1 lg:hidden">
+			{#if !classicMode}
+				<Button
+					variant={activeRightPanel === 'info' ? 'secondary' : 'ghost'}
+					size="icon-sm"
+					class={[
+						'rounded-full',
+						activeRightPanel !== 'info' &&
+							'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+					]}
+					onclick={toggleHistory}
+					title={`${t('myaaw.chat.bot_info')} (${formatShortcut('mod+shift+h')})`}
+					aria-label={t('myaaw.chat.bot_info')}
+					aria-pressed={activeRightPanel === 'info'}
+					aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
+				>
+					<Bot class="h-4 w-4" />
+				</Button>
+			{/if}
+			{#if agent && (project.workingDir || items.length > 0)}
+				<Button
+					variant={activeRightPanel === 'project' ? 'secondary' : 'ghost'}
+					size="icon-sm"
+					class={[
+						'relative rounded-full',
+						activeRightPanel !== 'project' &&
+							'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+					]}
+					onclick={openProjectPanel}
+					title={project.workingDir
+						? `${t('myaaw.workspace.tab_project')}: ${project.workingDir}`
+						: t('myaaw.workspace.attach_tooltip')}
+					aria-label={t('myaaw.workspace.tab_project')}
+					aria-pressed={activeRightPanel === 'project'}
+				>
+					{#if project.hasGit}
+						<FolderGit2 class={cn('h-4 w-4', project.workingDir && 'text-primary')} />
+					{:else}
+						<FolderOpen class={cn('h-4 w-4', project.workingDir && 'text-primary')} />
+					{/if}
+				</Button>
+			{/if}
 			<Button
-				variant={project.workingDir && project.panelOpen ? 'secondary' : 'ghost'}
+				variant={activeRightPanel === 'attachments' ? 'secondary' : 'ghost'}
 				size="icon-sm"
 				class={[
 					'relative rounded-full',
-					!project.workingDir && 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
-				]}
-				onclick={openProjectPanel}
-				title={project.workingDir
-					? `${t('myaaw.workspace.tab_project')}: ${project.workingDir}`
-					: t('myaaw.workspace.attach_tooltip')}
-				aria-label={t('myaaw.workspace.tab_project')}
-				aria-pressed={Boolean(project.workingDir && project.panelOpen)}
-			>
-				{#if project.hasGit}
-					<FolderGit2 class={cn('h-4 w-4', project.workingDir && 'text-primary')} />
-				{:else}
-					<FolderOpen class={cn('h-4 w-4', project.workingDir && 'text-primary')} />
-				{/if}
-			</Button>
-		{/if}
-		<Button
-			variant={historyOpen && rightTab === 'attachments' ? 'secondary' : 'ghost'}
-			size="icon-sm"
-			class={[
-				'relative rounded-full',
-				!(historyOpen && rightTab === 'attachments') &&
-					'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
-			]}
-			onclick={openAttachments}
-			title={`${t('myaaw.chat.attachments_open')} (${formatShortcut('mod+shift+a')})`}
-			aria-label={t('myaaw.chat.attachments_open')}
-			aria-keyshortcuts="Control+Shift+A Meta+Shift+A"
-			aria-pressed={historyOpen && rightTab === 'attachments'}
-		>
-			<Paperclip class="h-4 w-4" />
-			{#if attachmentCount > 0}
-				<span
-					class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
-				>
-					{attachmentCount > 99 ? '99+' : attachmentCount}
-				</span>
-			{/if}
-		</Button>
-		{#if !classicMode}
-			<Button
-				variant={historyOpen && rightTab === 'history' ? 'secondary' : 'ghost'}
-				size="icon-sm"
-				class={[
-					'rounded-full',
-					!(historyOpen && rightTab === 'history') &&
+					activeRightPanel !== 'attachments' &&
 						'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
 				]}
-				onclick={toggleHistory}
-				title={`${historyOpen && rightTab === 'history' ? t('myaaw.chat.history_hide') : t('myaaw.chat.history_show')} (${formatShortcut('mod+shift+h')})`}
-				aria-label={historyOpen && rightTab === 'history'
-					? t('myaaw.chat.history_hide')
-					: t('myaaw.chat.history_show')}
-				aria-pressed={historyOpen && rightTab === 'history'}
-				aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
+				onclick={openAttachments}
+				title={`${t('myaaw.chat.attachments_open')} (${formatShortcut('mod+shift+a')})`}
+				aria-label={t('myaaw.chat.attachments_open')}
+				aria-keyshortcuts="Control+Shift+A Meta+Shift+A"
+				aria-pressed={activeRightPanel === 'attachments'}
 			>
-				{#if focusMode || botsMode}
-					<PanelRight class="h-4 w-4" />
-				{:else}
-					<History class="h-4 w-4" />
+				<Paperclip class="h-4 w-4" />
+				{#if attachmentCount > 0}
+					<span
+						class="absolute -top-0.5 -right-0.5 grid min-w-4 place-items-center rounded-full bg-primary px-1 text-[9px] leading-4 font-semibold text-primary-foreground tabular-nums"
+					>
+						{attachmentCount > 99 ? '99+' : attachmentCount}
+					</span>
 				{/if}
 			</Button>
-		{/if}
+			{#if !classicMode}
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					class="rounded-full text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+					onclick={newChat}
+					title={t('myaaw.chat.new')}
+					aria-label={t('myaaw.chat.new')}
+				>
+					<MessageSquarePlus class="h-4 w-4" />
+				</Button>
+			{/if}
+		</div>
 	{/snippet}
 </TopBarActions>
 
 <div class="relative flex h-full min-h-0">
-	<div
-		class={[
-			'flex min-w-0 flex-1 transition-[padding] duration-200',
-			focusMode && historyOpen ? 'lg:pr-88' : ''
-		]}
-	>
+	<div class="flex min-w-0 flex-1">
 		<div
 			class={[
 				'flex min-w-0 flex-1 flex-col',
@@ -5735,6 +5761,7 @@
 														workingDir={project.workingDir}
 														workingDirName={project.workingDirName}
 														hasGit={project.hasGit}
+														gitBranch={project.gitBranch}
 														terminalOpen={project.terminalOpen}
 														onFolderClick={() =>
 															project.workingDir ? openProjectPanel() : (project.dialogOpen = true)}
@@ -5775,7 +5802,7 @@
 																		<Cpu class="h-3.5 w-3.5 shrink-0" />
 																	{/if}
 																	<span
-																		class="hidden truncate @[30rem]:inline @[30rem]:max-w-28 @[46rem]:max-w-44 @[52rem]:max-w-56"
+																		class="hidden truncate @[30rem]:inline @[30rem]:max-w-24 @[46rem]:max-w-36 @[52rem]:max-w-48"
 																	>
 																		{activeExternalModelLabel}
 																	</span>
@@ -5945,7 +5972,7 @@
 																		{:else}
 																			<Brain class="h-3.5 w-3.5 shrink-0" />
 																		{/if}
-																		<span class="hidden whitespace-nowrap @[40rem]:inline">
+																		<span class="hidden whitespace-nowrap @[42rem]:inline">
 																			{activeExternalThinkingLabel}
 																		</span>
 																		<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
@@ -6005,7 +6032,7 @@
 																		{:else}
 																			<ShieldCheck class="h-3.5 w-3.5 shrink-0" />
 																		{/if}
-																		<span class="hidden whitespace-nowrap @[40rem]:inline">
+																		<span class="hidden whitespace-nowrap @[42rem]:inline">
 																			{activeExternalPermissionLabel}
 																		</span>
 																		<ChevronDown class="h-3 w-3 shrink-0 opacity-60" />
@@ -6133,7 +6160,7 @@
 																		<Cpu class="h-3.5 w-3.5 shrink-0" />
 																	{/if}
 																	<span
-																		class="hidden truncate @[30rem]:inline @[30rem]:max-w-28 @[46rem]:max-w-44 @[52rem]:max-w-56"
+																		class="hidden truncate @[30rem]:inline @[30rem]:max-w-24 @[46rem]:max-w-36 @[52rem]:max-w-48"
 																	>
 																		{activeModel
 																			? modelDisplayName(activeModel)
@@ -6252,7 +6279,7 @@
 																		aria-label={t('myaaw.chat.thinking_level')}
 																	>
 																		<Brain class="h-3.5 w-3.5 shrink-0" />
-																		<span class="hidden whitespace-nowrap @[40rem]:inline">
+																		<span class="hidden whitespace-nowrap @[42rem]:inline">
 																			{activeThinkingValue
 																				? thinkingLabel(activeThinkingValue)
 																				: t('myaaw.chat.thinking_default_short')}
@@ -6312,7 +6339,7 @@
 																	{:else}
 																		<ShieldCheck class="h-3.5 w-3.5 shrink-0" />
 																	{/if}
-																	<span class="hidden whitespace-nowrap @[40rem]:inline">
+																	<span class="hidden whitespace-nowrap @[42rem]:inline">
 																		{approvalMode === 'off'
 																			? t('myaaw.chat.approval_full_access')
 																			: t('myaaw.chat.approval_manual')}
@@ -6660,95 +6687,13 @@
 				</div>
 			{/if}
 		</div>
-
-		{#if agent}
-			<ProjectSidebarDrawer
-				{agent}
-				conversationId={projectConversationId}
-				activeConversationId={conversationId}
-				workingDir={project.workingDir}
-				workingDirExists={project.workingDirExists}
-				hasGit={project.hasGit}
-				refreshKey={project.refreshKey + projectsRefreshSeq}
-				open={project.panelOpen}
-				{focusMode}
-				terminalOpen={project.showingTerminal}
-				activeFilePath={project.activeFilePath}
-				subTab={project.sidebarTab}
-				onSubTabChange={(tab) => (project.sidebarTab = tab)}
-				onOpenFile={openProjectFile}
-				onOpenDiff={openProjectDiff}
-				onOpenMultiDiff={openProjectMultiDiff}
-				onToggleTerminal={toggleProjectTerminal}
-				onSelectConversation={openConversation}
-				onNewChatInProject={() => void newChat()}
-				onFileRenamed={(fromPath, toPath) => project.handleFileRenamed(fromPath, toPath)}
-				onFileDeleted={(deletedPath) => project.handleFileDeleted(deletedPath)}
-				onClose={() => (project.panelOpen = false)}
-			/>
-		{/if}
 	</div>
 
-	{#if agent && focusMode}
-		<!-- Focus mode keeps the panel mounted so opening and closing slides it in
-		     and out, like the left drawer in studio mode. -->
-		{#if historyOpen}
-			<button
-				type="button"
-				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
-				aria-label={t('myaaw.chat.history_hide')}
-				onclick={closeSidePanel}
-			></button>
-		{/if}
-		<aside
-			class={[
-				'fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card transition-transform duration-200 lg:w-88 lg:max-w-none frost-drawer',
-				historyOpen ? 'translate-x-0' : 'translate-x-full'
-			]}
-			inert={!historyOpen}
-		>
-			{#if rightTab === 'attachments'}
-				<!-- The focus header floats over the panel on a desktop and its actions
-				     would cover the title, so keep the panel below them there. A phone
-				     drawer sits above the header and needs no gap. -->
-				<div class="min-h-0 flex-1 lg:pt-16">
-					<AttachmentPanel
-						{agent}
-						{conversationId}
-						refreshKey={attachmentsRefresh}
-						onOpen={openAttachment}
-						onShowInChat={showAttachmentInChat}
-						onClose={closeSidePanel}
-					/>
-				</div>
-			{:else}
-				<FocusAgentPanel
-					{agent}
-					activeId={conversationId}
-					activeWorkingDir={project.workingDir}
-					projectsRefreshKey={projectsRefreshSeq}
-					bind:tab={focusPanelTab}
-					onOpen={openConversationFromSidebar}
-					onNewInFolder={(folderId) =>
-						void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
-					onNewInProject={(proj) => void startNewChatInProject(proj)}
-					onAttachProject={() => {
-						if (!project.workingDir) project.dialogOpen = true;
-					}}
-					onDeleted={onHistoryDeleted}
-					onRenamed={onHistoryRenamed}
-					onClose={toggleHistory}
-					onOpenContext={(path) => {
-						focusContextPath = path;
-						if (browser && window.innerWidth < 1024) toggleHistory();
-					}}
-				/>
-			{/if}
-		</aside>
-	{:else if agent && botsMode}
-		<!-- Bots mode pairs the left bot roster with a Focus-style right inspector
-		     panel that runs full-height on desktop and slides over on small screens. -->
-		{#if historyOpen}
+	{#if agent}
+		<!-- Unified VS Code-style right sidebar: slides in from the right only when
+		     opening from closed; switching between Bot Info, Project, and Attachments
+		     swaps content in-place without sliding. -->
+		{#if rightSidebarOpen}
 			<button
 				type="button"
 				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
@@ -6757,15 +6702,67 @@
 			></button>
 		{/if}
 		<aside
-			inert={!historyOpen}
+			inert={!rightSidebarOpen}
 			class={[
-				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
-				historyOpen ? 'flex lg:w-88' : 'hidden lg:flex lg:w-0 lg:border-l-0'
+				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:relative lg:z-40 lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
+				rightSidebarOpen
+					? activeRightPanel === 'project' || activeRightPanel === 'attachments'
+						? 'flex lg:w-[17rem]'
+						: botsMode || focusMode
+							? 'flex lg:w-88'
+							: 'flex lg:w-80'
+					: 'hidden lg:flex lg:w-0 lg:border-l-0'
 			]}
 		>
-			<div class="flex h-full w-full flex-col lg:w-88 lg:min-w-88">
-				{#if rightTab === 'attachments'}
-					<div class="min-h-0 flex-1 lg:pt-14">
+			<div
+				class={[
+					'flex h-full w-full flex-col',
+					activeRightPanel === 'project' || activeRightPanel === 'attachments'
+						? 'lg:w-[17rem] lg:min-w-[17rem]'
+						: botsMode || focusMode
+							? 'lg:w-88 lg:min-w-88'
+							: 'lg:w-80 lg:min-w-80'
+				]}
+			>
+				{#if project.workingDir}
+					<div class={activeRightPanel === 'project' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+						<ProjectSidebarPanel
+							{agent}
+							conversationId={projectConversationId}
+							activeConversationId={conversationId}
+							workingDir={project.workingDir}
+							workingDirExists={project.workingDirExists}
+							hasGit={project.hasGit}
+							refreshKey={project.refreshKey + projectsRefreshSeq}
+							terminalOpen={project.showingTerminal}
+							activeFilePath={project.activeFilePath}
+							subTab={project.sidebarTab}
+							onSubTabChange={(tab) => (project.sidebarTab = tab)}
+							onOpenFile={openProjectFile}
+							onOpenDiff={openProjectDiff}
+							onOpenMultiDiff={openProjectMultiDiff}
+							onToggleTerminal={toggleProjectTerminal}
+							onSelectConversation={openConversation}
+							onNewChatInProject={() => void newChat()}
+							onFileRenamed={(fromPath, toPath) => project.handleFileRenamed(fromPath, toPath)}
+							onFileDeleted={(deletedPath) => project.handleFileDeleted(deletedPath)}
+							onGitBranchChange={(branch) => {
+								const changed = project.gitBranch !== '' && project.gitBranch !== branch;
+								project.gitBranch = branch;
+								if (changed) projectsRefreshSeq += 1;
+							}}
+							onConversationDeleted={(id) => {
+								onHistoryDeleted(id);
+								projectsRefreshSeq += 1;
+							}}
+							onConversationRenamed={onHistoryRenamed}
+							onClose={closeSidePanel}
+						/>
+					</div>
+				{/if}
+
+				{#if activeRightPanel === 'attachments'}
+					<div class="flex min-h-0 flex-1 flex-col">
 						<AttachmentPanel
 							{agent}
 							{conversationId}
@@ -6775,170 +6772,150 @@
 							onClose={closeSidePanel}
 						/>
 					</div>
-				{:else}
-					<BotsAgentPanel
-						{agent}
-						activeId={conversationId}
-						activeWorkingDir={project.workingDir}
-						projectsRefreshKey={projectsRefreshSeq}
-						bind:tab={focusPanelTab}
-						onOpen={openConversationFromSidebar}
-						onNewInFolder={(folderId) =>
-							void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
-						onNewInProject={(proj) => void startNewChatInProject(proj)}
-						onAttachProject={() => {
-							if (!project.workingDir) project.dialogOpen = true;
-						}}
-						onDeleted={onHistoryDeleted}
-						onRenamed={onHistoryRenamed}
-						onClose={toggleHistory}
-						onOpenContext={(path) => {
-							focusContextPath = path;
-							if (browser && window.innerWidth < 1024) toggleHistory();
-						}}
-					/>
-				{/if}
-			</div>
-		</aside>
-	{:else if agent && !classicMode}
-		<!-- Drawer on small screens, a static third column from lg up. Kept mounted
-		     on desktop so hiding it animates the width instead of snapping the
-		     transcript and the composer. -->
-		{#if historyOpen}
-			<button
-				type="button"
-				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
-				aria-label={t('myaaw.chat.history_hide')}
-				onclick={closeSidePanel}
-			></button>
-		{/if}
-		<aside
-			inert={!historyOpen}
-			class={[
-				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
-				historyOpen ? 'flex lg:w-80' : 'hidden lg:flex lg:w-0 lg:border-l-0'
-			]}
-		>
-			<div class="flex h-full w-full flex-col lg:w-80 lg:min-w-80 lg:pt-14">
-				{#if rightTab === 'attachments'}
-					<AttachmentPanel
-						{agent}
-						{conversationId}
-						refreshKey={attachmentsRefresh}
-						onOpen={openAttachment}
-						onShowInChat={showAttachmentInChat}
-						onClose={closeSidePanel}
-					/>
-				{:else}
-					<div class="flex shrink-0 items-center gap-1.5 px-3 pt-2 pb-1">
-						<div role="tablist" class="relative grid flex-1 grid-cols-2 rounded-lg border p-0.5">
-							<span
-								aria-hidden="true"
-								class="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc((100%-0.25rem)/2)] rounded-md bg-primary transition-transform duration-200 ease-out will-change-transform"
-								style:transform={`translateX(${studioHistoryTab === 'projects' ? 100 : 0}%)`}
-							></span>
-							<button
-								type="button"
-								role="tab"
-								aria-selected={studioHistoryTab === 'history'}
-								class={[
-									'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium select-none transition-colors duration-150',
-									studioHistoryTab === 'history'
-										? 'text-primary-foreground'
-										: 'text-muted-foreground hover:text-foreground'
-								]}
-								onclick={() => (studioHistoryTab = 'history')}
-							>
-								<History class="h-3.5 w-3.5 shrink-0" />
-								<span class="truncate">{t('myaaw.focus.tab_history')}</span>
-							</button>
-							<button
-								type="button"
-								role="tab"
-								aria-selected={studioHistoryTab === 'projects'}
-								class={[
-									'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium select-none transition-colors duration-150',
-									studioHistoryTab === 'projects'
-										? 'text-primary-foreground'
-										: 'text-muted-foreground hover:text-foreground'
-								]}
-								onclick={() => (studioHistoryTab = 'projects')}
-							>
-								<FolderGit2 class="h-3.5 w-3.5 shrink-0" />
-								<span class="truncate">{t('myaaw.focus.tab_projects')}</span>
-							</button>
-						</div>
-						<Button
-							variant="ghost"
-							size="icon-sm"
-							class="shrink-0 lg:hidden"
-							onclick={closeSidePanel}
-							aria-label={t('common.close')}
-						>
-							<X class="h-4 w-4" />
-						</Button>
-					</div>
-					{#if studioHistoryTab === 'history'}
-						<div class="min-h-0 flex-1 overflow-hidden">
-							<ConversationList
-								activeId={conversationId}
-								onOpen={openConversationFromSidebar}
-								onNewInFolder={(folderId) =>
-									void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
-								onDeleted={onHistoryDeleted}
-								onRenamed={onHistoryRenamed}
-								bind:searchInput={searchBox}
-							/>
-						</div>
+				{:else if activeRightPanel === 'info' && !classicMode}
+					{#if focusMode}
+						<FocusAgentPanel
+							{agent}
+							activeId={conversationId}
+							activeWorkingDir={project.workingDir}
+							projectsRefreshKey={projectsRefreshSeq}
+							bind:tab={focusPanelTab}
+							onOpen={openConversationFromSidebar}
+							onNewInFolder={(folderId) =>
+								void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+							onNewInProject={(proj) => void startNewChatInProject(proj)}
+							onAttachProject={() => {
+								if (!project.workingDir) project.dialogOpen = true;
+							}}
+							onDeleted={onHistoryDeleted}
+							onRenamed={onHistoryRenamed}
+							onClose={closeSidePanel}
+							onOpenContext={(path) => {
+								focusContextPath = path;
+								if (browser && window.innerWidth < 1024) closeSidePanel();
+							}}
+						/>
+					{:else if botsMode}
+						<BotsAgentPanel
+							{agent}
+							activeId={conversationId}
+							activeWorkingDir={project.workingDir}
+							projectsRefreshKey={projectsRefreshSeq}
+							bind:tab={focusPanelTab}
+							onOpen={openConversationFromSidebar}
+							onNewInFolder={(folderId) =>
+								void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+							onNewInProject={(proj) => void startNewChatInProject(proj)}
+							onAttachProject={() => {
+								if (!project.workingDir) project.dialogOpen = true;
+							}}
+							onDeleted={onHistoryDeleted}
+							onRenamed={onHistoryRenamed}
+							onClose={closeSidePanel}
+							onOpenContext={(path) => {
+								focusContextPath = path;
+								if (browser && window.innerWidth < 1024) closeSidePanel();
+							}}
+						/>
 					{:else}
-						<div class="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
-							<ProjectHistoryList
-								{agent}
-								activeId={conversationId}
-								activeWorkingDir={project.workingDir}
-								refreshKey={projectsRefreshSeq}
-								onOpen={openConversationFromSidebar}
-								onNewInProject={(proj) => void startNewChatInProject(proj)}
-								onAttachProject={() => {
-									if (!project.workingDir) project.dialogOpen = true;
-								}}
-							/>
+						<div class="flex shrink-0 items-center gap-1.5 px-3 pt-2.5 pb-1">
+							<div role="tablist" class="relative grid flex-1 grid-cols-2 rounded-lg border p-0.5">
+								<span
+									aria-hidden="true"
+									class="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc((100%-0.25rem)/2)] rounded-md bg-primary transition-transform duration-200 ease-out will-change-transform"
+									style:transform={`translateX(${studioHistoryTab === 'projects' ? 100 : 0}%)`}
+								></span>
+								<button
+									type="button"
+									role="tab"
+									aria-selected={studioHistoryTab === 'history'}
+									class={[
+										'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium select-none transition-colors duration-150',
+										studioHistoryTab === 'history'
+											? 'text-primary-foreground'
+											: 'text-muted-foreground hover:text-foreground'
+									]}
+									onclick={() => (studioHistoryTab = 'history')}
+								>
+									<History class="h-3.5 w-3.5 shrink-0" />
+									<span class="truncate">{t('myaaw.focus.tab_history')}</span>
+								</button>
+								<button
+									type="button"
+									role="tab"
+									aria-selected={studioHistoryTab === 'projects'}
+									class={[
+										'relative z-10 flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium select-none transition-colors duration-150',
+										studioHistoryTab === 'projects'
+											? 'text-primary-foreground'
+											: 'text-muted-foreground hover:text-foreground'
+									]}
+									onclick={() => (studioHistoryTab = 'projects')}
+								>
+									<FolderGit2 class="h-3.5 w-3.5 shrink-0" />
+									<span class="truncate">{t('myaaw.focus.tab_projects')}</span>
+								</button>
+							</div>
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								class="shrink-0 lg:hidden"
+								onclick={closeSidePanel}
+								aria-label={t('common.close')}
+							>
+								<X class="h-4 w-4" />
+							</Button>
 						</div>
+						{#if studioHistoryTab === 'history'}
+							<div class="min-h-0 flex-1 overflow-hidden">
+								<ConversationList
+									activeId={conversationId}
+									onOpen={openConversationFromSidebar}
+									onNewInFolder={(folderId) =>
+										void goto(`/app/chat?new=1&folder=${encodeURIComponent(folderId)}`)}
+									onDeleted={onHistoryDeleted}
+									onRenamed={onHistoryRenamed}
+									bind:searchInput={searchBox}
+								/>
+							</div>
+						{:else}
+							<div class="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
+								<ProjectHistoryList
+									{agent}
+									activeId={conversationId}
+									activeWorkingDir={project.workingDir}
+									refreshKey={projectsRefreshSeq}
+									onOpen={openConversationFromSidebar}
+									onNewInProject={(proj) => void startNewChatInProject(proj)}
+									onAttachProject={() => {
+										if (!project.workingDir) project.dialogOpen = true;
+									}}
+									onDeleted={(id) => {
+										onHistoryDeleted(id);
+										projectsRefreshSeq += 1;
+									}}
+									onRenamed={onHistoryRenamed}
+								/>
+							</div>
+						{/if}
 					{/if}
 				{/if}
 			</div>
 		</aside>
-	{/if}
 
-	{#if agent && classicMode}
-		<!-- Classic borrows the studio layout: a drawer on phones and a static
-		     third column from lg up. History already lives in its left sidebar. -->
-		{#if classicAttachmentsOpen}
-			<button
-				type="button"
-				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
-				aria-label={t('myaaw.chat.attachments_close_list')}
-				onclick={() => (classicAttachmentsOpen = false)}
-			></button>
-		{/if}
-		<aside
-			inert={!classicAttachmentsOpen}
-			class={[
-				'fixed inset-y-0 right-0 z-50 w-full flex-col overflow-hidden border-l bg-card lg:static lg:z-auto lg:h-full lg:max-w-none frost-drawer lg:transition-[width] lg:duration-200',
-				classicAttachmentsOpen ? 'flex lg:w-80' : 'hidden lg:flex lg:w-0 lg:border-l-0'
-			]}
-		>
-			<div class="flex h-full w-full flex-col lg:w-80 lg:min-w-80 lg:pt-14">
-				<AttachmentPanel
-					{agent}
-					{conversationId}
-					refreshKey={attachmentsRefresh}
-					onOpen={openAttachment}
-					onShowInChat={showAttachmentInChat}
-					onClose={() => (classicAttachmentsOpen = false)}
-				/>
-			</div>
-		</aside>
+		<ChatRightActivityBar
+			activePanel={activeRightPanel}
+			showInfoAndNewChat={!classicMode}
+			showProject={Boolean(project.workingDir || items.length > 0)}
+			hasProject={Boolean(project.workingDir)}
+			hasGit={project.hasGit}
+			workingDir={project.workingDir}
+			{attachmentCount}
+			onToggleInfo={toggleHistory}
+			onToggleProject={openProjectPanel}
+			onToggleAttachments={openAttachments}
+			onNewChat={newChat}
+		/>
 	{/if}
 
 	{#if agent && !project.workingDir}
