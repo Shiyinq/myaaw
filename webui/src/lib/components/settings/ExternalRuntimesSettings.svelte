@@ -28,6 +28,7 @@
 	import RuntimeAuthDialog from './RuntimeAuthDialog.svelte';
 	import RuntimeDefaultsDialog from './RuntimeDefaultsDialog.svelte';
 	import { runtimesManageStore } from '$lib/stores/runtimes.svelte';
+	import { createAgentDialog } from '$lib/stores/createAgentDialog.svelte';
 	import { useQuery } from '$lib/stores/useQuery.svelte';
 	import { useTranslation } from '$lib/i18n/useTranslation';
 	import { formatRuntimeModelValue } from '$lib/utils/runtimeTools';
@@ -460,7 +461,13 @@
 								<Button
 									size="sm"
 									variant="outline"
-									href={`/app/new?runtime=${encodeURIComponent(rt.id)}`}
+									onclick={() =>
+										createAgentDialog.openCreate({
+											runtime: rt.id,
+											onSuccess: () => {
+												void runtimesManageStore.list(true);
+											}
+										})}
 									class={compactBtn}
 								>
 									<Plus class="h-3 w-3" />

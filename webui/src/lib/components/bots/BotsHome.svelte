@@ -21,6 +21,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { colorOf } from '$lib/bloub';
 	import { agentSelection, toastStore } from '$lib/stores';
+	import { createAgentDialog } from '$lib/stores/createAgentDialog.svelte';
 	import { approvalQueue } from '$lib/stores/approvalQueue.svelte';
 	import { botPreviews, streamingReplyFromItems } from '$lib/stores/botPreviews.svelte';
 	import { chatRuns } from '$lib/stores/chatRuns.svelte';
@@ -392,7 +393,12 @@
 		<!-- Create new bot card -->
 		<button
 			type="button"
-			onclick={() => void goto('/app/new')}
+			onclick={() =>
+				createAgentDialog.openCreate({
+					onSuccess: () => {
+						void goto('/app/chat');
+					}
+				})}
 			class="flex min-h-44 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed bg-card/40 p-6 text-center text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-muted/40 hover:text-foreground"
 		>
 			<span class="grid h-11 w-11 place-items-center rounded-2xl border border-dashed">

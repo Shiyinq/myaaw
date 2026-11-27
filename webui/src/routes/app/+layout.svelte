@@ -67,6 +67,7 @@
 	import ShortcutHelp from '$lib/components/app/ShortcutHelp.svelte';
 	import CommandPalette from '$lib/components/app/CommandPalette.svelte';
 	import CreateGroupDialog from '$lib/components/groups/CreateGroupDialog.svelte';
+	import CreateAgentDialog from '$lib/components/onboard/CreateAgentDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { theme, userPrefersMode } from 'mode-watcher';
 	import { APPEARANCE, applyAppearance, isAppearanceActive } from '$lib/theme';
@@ -1013,4 +1014,7 @@
 
 	<!-- Create group dialog, reachable from BotsSidebar and CommandPalette. -->
 	<CreateGroupDialog />
+
+	<!-- Create agent dialog, reachable from Bots mode and Settings -> External Runtimes. -->
+	<CreateAgentDialog />
 </div>

@@ -33,6 +33,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { colorOf } from '$lib/bloub';
 	import { agentSelection, groupsStore, toastStore } from '$lib/stores';
+	import { createAgentDialog } from '$lib/stores/createAgentDialog.svelte';
 	import {
 		BOTS_SECTION_AGENTS,
 		BOTS_SECTION_GROUPS,
@@ -777,8 +778,12 @@
 	}
 
 	function createBot() {
-		void goto('/app/new');
 		onClose();
+		createAgentDialog.openCreate({
+			onSuccess: () => {
+				void goto('/app/chat');
+			}
+		});
 	}
 
 	function selectRosterItem(item: RosterItem) {
