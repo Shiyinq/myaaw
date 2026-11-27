@@ -5520,7 +5520,8 @@ paths:
   /agents/{name}/conversations/{id}/attachments:
     get:
       description: Scans the stored transcript and returns agent deliveries and user
-        uploads. `kind` filters on the rendering kind (image, video, audio, pdf, file).
+        uploads. `kind` filters on the rendering kind (image, video, audio, pdf, file,
+        project).
       parameters:
       - description: Agent name
         in: path

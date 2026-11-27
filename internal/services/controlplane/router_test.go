@@ -1203,7 +1203,8 @@ func TestRouterConversationAttachments(t *testing.T) {
 			{"name":"photo.jpg","path":"/home/someone/.myaaw/agents/myfriend/user/uploads/conv-mine/m1/photo.jpg","mime_type":"image/jpeg","size":2048}
 		]},
 		{"role":"assistant","content":"report","attachments":[
-			{"file_name":"report.pdf","path":"/home/workspace/out/report.pdf","kind":"pdf","size":4096}
+			{"file_name":"report.pdf","path":"/home/workspace/out/report.pdf","kind":"pdf","size":4096},
+			{"file_name":"demo-app","path":"/home/workspace/projects/demo-app","kind":"project"}
 		]}
 	]`
 	now := time.Now().UTC()
@@ -1242,7 +1243,7 @@ func TestRouterConversationAttachments(t *testing.T) {
 
 	var page attachmentPage
 	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine/attachments", token, "", fiber.StatusOK, &page)
-	if page.Total != 2 || len(page.Items) != 2 || page.HasMore {
+	if page.Total != 3 || len(page.Items) != 3 || page.HasMore {
 		t.Fatalf("attachments = %+v", page)
 	}
 	if page.Items[0].Origin != "user" || page.Items[0].Path != "/user/uploads/conv-mine/m1/photo.jpg" {
@@ -1251,6 +1252,9 @@ func TestRouterConversationAttachments(t *testing.T) {
 	if page.Items[1].Origin != "agent" || page.Items[1].Kind != "pdf" || page.Items[1].MessageIndex != 1 {
 		t.Fatalf("agent row = %+v", page.Items[1])
 	}
+	if page.Items[2].Origin != "agent" || page.Items[2].Kind != "project" || page.Items[2].MessageIndex != 1 {
+		t.Fatalf("project row = %+v", page.Items[2])
+	}
 
 	var images attachmentPage
 	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine/attachments?kind=image", token, "", fiber.StatusOK, &images)
@@ -1258,9 +1262,15 @@ func TestRouterConversationAttachments(t *testing.T) {
 		t.Fatalf("images = %+v", images)
 	}
 
+	var projects attachmentPage
+	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine/attachments?kind=project", token, "", fiber.StatusOK, &projects)
+	if projects.Total != 1 || len(projects.Items) != 1 || projects.Items[0].Kind != "project" {
+		t.Fatalf("projects = %+v", projects)
+	}
+
 	var first attachmentPage
 	doJSON(t, app, "GET", "/agents/myfriend/conversations/conv-mine/attachments?limit=1", token, "", fiber.StatusOK, &first)
-	if first.Total != 2 || len(first.Items) != 1 || !first.HasMore {
+	if first.Total != 3 || len(first.Items) != 1 || !first.HasMore {
 		t.Fatalf("first page = %+v", first)
 	}
 

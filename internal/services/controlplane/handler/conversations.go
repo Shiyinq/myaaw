@@ -200,7 +200,7 @@ func (h *Handler) GetConversation(c fiber.Ctx) error {
 // ListConversationAttachments returns the files that appear in one
 // conversation, oldest first, deduplicated by path.
 // @Summary      List conversation attachments
-// @Description  Scans the stored transcript and returns agent deliveries and user uploads. `kind` filters on the rendering kind (image, video, audio, pdf, file).
+// @Description  Scans the stored transcript and returns agent deliveries and user uploads. `kind` filters on the rendering kind (image, video, audio, pdf, file, project).
 // @Tags         Conversations
 // @Produce      json
 // @Security     BearerAuth
@@ -247,10 +247,16 @@ func attachmentKinds(raw string) ([]string, error) {
 		switch kind {
 		case "":
 			continue
-		case "image", "video", "audio", "pdf", "file":
+		case "image", "video", "audio", "pdf", "file", "project":
 			if !seen[kind] {
 				seen[kind] = true
 				kinds = append(kinds, kind)
+			}
+			continue
+		case "projects":
+			if !seen["project"] {
+				seen["project"] = true
+				kinds = append(kinds, "project")
 			}
 			continue
 		case "document", "documents":
@@ -263,7 +269,7 @@ func attachmentKinds(raw string) ([]string, error) {
 			}
 			continue
 		default:
-			return nil, errors.New("kind must be image, video, audio, pdf, or file")
+			return nil, errors.New("kind must be image, video, audio, pdf, file, or project")
 		}
 	}
 	return kinds, nil

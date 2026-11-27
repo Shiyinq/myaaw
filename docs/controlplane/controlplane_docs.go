@@ -2358,7 +2358,7 @@ const docTemplatecontrolplane = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Scans the stored transcript and returns agent deliveries and user uploads. ` + "`" + `kind` + "`" + ` filters on the rendering kind (image, video, audio, pdf, file).",
+                "description": "Scans the stored transcript and returns agent deliveries and user uploads. ` + "`" + `kind` + "`" + ` filters on the rendering kind (image, video, audio, pdf, file, project).",
                 "produces": [
                     "application/json"
                 ],

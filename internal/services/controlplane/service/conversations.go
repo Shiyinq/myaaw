@@ -563,7 +563,7 @@ func (s *ConversationService) Get(agentName, id string, userID, limit, offset in
 // cheaper than shipping the whole transcript to a browser.
 //
 // limit defaults to 50 and is capped at 200; offset walks the deduplicated list.
-// kinds keeps only the listed rendering kinds (image, video, audio, pdf, file).
+// kinds keeps only the listed rendering kinds (image, video, audio, pdf, file, project).
 func (s *ConversationService) Attachments(
 	agentName, id string,
 	userID, limit, offset int,
