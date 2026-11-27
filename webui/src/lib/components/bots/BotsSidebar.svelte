@@ -101,6 +101,38 @@
 	let dragState = $state<DragState>(null);
 	let dropItemTarget = $state<string | null>(null);
 	let dropSectionTarget = $state<{ sectionId: string; position: 'before' | 'after' } | null>(null);
+	let slotWidths = $state<Record<string, number>>({});
+
+	function trackSlotWidth(node: HTMLElement, sectionId: string) {
+		const update = () => {
+			const w = Math.floor(node.clientWidth);
+			if (slotWidths[sectionId] !== w) {
+				slotWidths = { ...slotWidths, [sectionId]: w };
+			}
+		};
+		update();
+		const observer = new ResizeObserver(update);
+		observer.observe(node);
+		return {
+			destroy() {
+				observer.disconnect();
+			}
+		};
+	}
+
+	/** Computes how many 20px overlapping (-space-x-1.5 -> 14px step) avatars fit inside the inline header slot. */
+	function inlineAvatarSlice(
+		sectionId: string,
+		total: number
+	): { count: number; overflow: number } {
+		if (total <= 0) return { count: 0, overflow: 0 };
+		const w = slotWidths[sectionId] ?? 80;
+		if (20 + (total - 1) * 14 + 12 <= w) {
+			return { count: total, overflow: 0 };
+		}
+		const count = Math.max(0, Math.min(total - 1, Math.floor((w - 32) / 14)));
+		return { count, overflow: total - count };
+	}
 
 	// Load groups list whenever authenticated.
 	$effect(() => {
@@ -1224,6 +1256,81 @@
 	{/if}
 {/snippet}
 
+{#snippet collapsedAvatarStack(items: RosterItem[], sectionId: string)}
+	{@const slice = inlineAvatarSlice(sectionId, items.length)}
+	{@const shown = items.slice(0, slice.count)}
+	{@const overflow = slice.overflow}
+	<div
+		use:trackSlotWidth={sectionId}
+		class="-my-1 flex min-w-0 flex-1 items-center -space-x-1.5 overflow-x-clip overflow-y-visible py-1.5 pr-1 pl-1.5"
+	>
+		{#each shown as item (item.kind === 'group' ? `c-g:${item.group.id}` : `c-a:${item.bot.name}`)}
+			{#if item.kind === 'group'}
+				{@const grp = item.group}
+				{@const active = isGroupActive(grp.id)}
+				<button
+					type="button"
+					onclick={(event) => {
+						event.stopPropagation();
+						selectGroup(grp);
+					}}
+					title={grp.name}
+					aria-label={grp.name}
+					class={[
+						'relative grid h-5 w-5 shrink-0 place-items-center rounded-full bg-muted ring-2 transition-transform hover:z-20 hover:scale-110',
+						active ? 'ring-primary' : 'ring-background'
+					]}
+				>
+					{#if grp.members.length > 0}
+						<span class="grid grid-cols-2 gap-[1.5px] p-[3px]">
+							{#each grp.members.slice(0, 4) as member (member.name)}
+								<span
+									aria-hidden="true"
+									class={['h-[5px] w-[5px] rounded-full', groupAccent(member.agent_color).dot]}
+								></span>
+							{/each}
+						</span>
+					{:else}
+						<Users class="h-2.5 w-2.5 text-muted-foreground" />
+					{/if}
+				</button>
+			{:else}
+				{@const bot = item.bot}
+				{@const active = onChatRoute && agentSelection.selected === bot.name}
+				<button
+					type="button"
+					onclick={(event) => {
+						event.stopPropagation();
+						selectBot(bot);
+					}}
+					title={bot.name}
+					aria-label={bot.name}
+					class={[
+						'relative grid h-5 w-5 shrink-0 place-items-center rounded-full bg-muted ring-2 transition-transform hover:z-20 hover:scale-110',
+						active ? 'ring-primary' : 'ring-background'
+					]}
+				>
+					<Bloub mood="attentif" size={15} tight color={colorOf(bot.agent_color)} />
+				</button>
+			{/if}
+		{/each}
+		{#if overflow > 0}
+			<button
+				type="button"
+				onclick={(event) => {
+					event.stopPropagation();
+					botsSidebarStore.toggleCollapsed(sectionId);
+				}}
+				title={`+${overflow}`}
+				aria-label={`+${overflow}`}
+				class="relative z-0 grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-muted px-1 text-[9px] font-semibold text-muted-foreground ring-2 ring-background tabular-nums transition-colors hover:bg-accent hover:text-foreground"
+			>
+				+{overflow}
+			</button>
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet compactRosterButton(item: RosterItem)}
 	{#if item.kind === 'group'}
 		{@const grp = item.group}
@@ -1382,7 +1489,9 @@
 				class="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
 			/>
 			<input
-				type="search"
+				type="text"
+				inputmode="search"
+				role="searchbox"
 				bind:value={query}
 				placeholder={t('myaaw.bots.search')}
 				aria-label={t('myaaw.bots.search')}
@@ -1543,7 +1652,10 @@
 							type="button"
 							onclick={() => botsSidebarStore.toggleCollapsed(BOTS_SECTION_UNREAD)}
 							aria-expanded={!unreadCollapsed}
-							class="flex min-w-0 flex-1 items-center gap-1 rounded-md px-0.5 py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground"
+							class={[
+								'flex min-w-0 items-center gap-1 rounded-md px-0.5 py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground',
+								unreadCollapsed ? 'max-w-[46%] shrink-0' : 'flex-1'
+							]}
 						>
 							<ChevronDown
 								class={unreadCollapsed
@@ -1554,6 +1666,9 @@
 								{t('myaaw.bots.section_unread')}
 							</span>
 						</button>
+						{#if unreadCollapsed}
+							{@render collapsedAvatarStack(attentionItems, BOTS_SECTION_UNREAD)}
+						{/if}
 						{#if unreadCollapsed}
 							<span
 								class={[
@@ -1627,7 +1742,10 @@
 							type="button"
 							onclick={() => botsSidebarStore.toggleCollapsed(sec.id)}
 							aria-expanded={!secCollapsed}
-							class="flex min-w-0 flex-1 items-center gap-1 rounded-md px-0.5 py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground"
+							class={[
+								'flex min-w-0 items-center gap-1 rounded-md px-0.5 py-0.5 text-left text-muted-foreground transition-colors hover:text-foreground',
+								secCollapsed && sec.items.length > 0 ? 'max-w-[46%] shrink-0' : 'flex-1'
+							]}
 						>
 							<ChevronDown
 								class={secCollapsed
@@ -1643,6 +1761,10 @@
 								{sec.label}
 							</span>
 						</button>
+
+						{#if secCollapsed && sec.items.length > 0}
+							{@render collapsedAvatarStack(sec.items, sec.id)}
+						{/if}
 
 						<div class="flex shrink-0 items-center gap-1">
 							{#if secCollapsed && hasRunningInside}

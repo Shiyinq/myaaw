@@ -1574,7 +1574,7 @@
 			"new_section": "New section",
 			"list_label": "Agents",
 			"select_agent": "Choose agent",
-			"search": "Search agents & groups...",
+			"search": "Search...",
 			"no_matches": "No matching agents or groups.",
 			"thinking": "Thinking…",
 			"ready": "Ready to chat",
